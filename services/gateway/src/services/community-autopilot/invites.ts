@@ -24,6 +24,7 @@
  */
 import { randomBytes } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { creditWalletSucceeded, referralRewardEventId } from '../wallet/vtna-reward-keys';
 
 export const INVITE_TARGET_TYPE = 'member_invite';
 export const INVITE_MAX_ACCOUNT_AGE_DAYS = 14;
@@ -174,11 +175,13 @@ export async function claimInvite(sb: SupabaseClient, claimantId: string, code: 
   }
   const referralId = (inserted as Array<{ id: string }> | null)?.[0]?.id ?? '';
 
-  const reward = await maybeRewardInviter(sb, referralId, link.user_id, now);
+  const reward = await maybeRewardInviter(sb, referralId, link.user_id, claimantId, link.tenant_id, now);
   return { status: 'attributed', referral_id: referralId, rewarded: reward.rewarded, reward_reason: reward.reason, credits: reward.credits };
 }
 
-async function maybeRewardInviter(sb: SupabaseClient, referralId: string, inviterId: string, now: Date): Promise<{ rewarded: boolean; reason?: string; credits?: number }> {
+async function maybeRewardInviter(
+  sb: SupabaseClient, referralId: string, inviterId: string, referredId: string, tenantId: string | null, now: Date,
+): Promise<{ rewarded: boolean; reason?: string; credits?: number }> {
   if (!referralId) return { rewarded: false, reason: 'no_referral_row' };
   if (!isInviteRewardEnabled()) return { rewarded: false, reason: 'reward_disabled' };
   const since = new Date(now.getTime() - 30 * 86_400_000).toISOString();
@@ -192,8 +195,18 @@ async function maybeRewardInviter(sb: SupabaseClient, referralId: string, invite
     .eq('id', referralId).eq('status', 'signed_up').select('id');
   if (!(moved as unknown[] | null)?.length) return { rewarded: false, reason: 'already_rewarded' };
 
-  const { error } = await sb.rpc('increment_wallet_balance', { p_user_id: inviterId, p_currency_type: 'CREDITS', p_amount: credits });
-  if (error) {
+  // VTID-04809: earned VTNA on the canonical ledger, keyed so AP-0405 paying
+  // the same referral lands as a duplicate instead of a second credit.
+  const { data, error } = await sb.rpc('credit_wallet', {
+    p_tenant_id: tenantId,
+    p_user_id: inviterId,
+    p_amount: credits,
+    p_type: 'reward',
+    p_source: 'member_invite',
+    p_source_event_id: referralRewardEventId(inviterId, referredId),
+    p_description: 'Invite reward',
+  });
+  if (!creditWalletSucceeded(data, error)) {
     await sb.from('referrals').update({ status: 'signed_up', rewarded_at: null, reward_amount: null }).eq('id', referralId).eq('status', 'rewarded');
     return { rewarded: false, reason: 'credit_failed' };
   }

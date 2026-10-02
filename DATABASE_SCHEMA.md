@@ -715,6 +715,21 @@ blocks. Kill switch: `CONNECTED_APPS_CALENDAR_PUSH=false`.
 
 ### Wallet System (USD / Credits / VTNA) — added 2026-07-17
 
+> **VTID-04809 (2026-10-01, owner decision): `user_wallets.CREDITS` is the
+> canonical VTNA ledger.** 1 VTNA = 1 CREDIT = **EUR 0.01** (pegged to EUR;
+> the USD figure is a live ECB conversion). `user_wallets.earned_balance`
+> holds the earned part of the CREDITS balance (`CHECK 0 <= earned_balance
+> <= balance`); rewards (shop, subscription conversion) spend earned VTNA
+> only, every other debit can only reach `balance - earned_balance`.
+> `credit_wallet(p_tenant_id, p_user_id, p_amount, p_type, p_source,
+> p_source_event_id, p_description)` now exists and writes here: `reward` →
+> earned, `purchase` → purchased, negative amounts debit that bucket,
+> idempotent per (member, `p_source_event_id`) via
+> `wallet_transactions.idempotency_key`; `service_role` only. Members can no
+> longer write `user_wallets`/`wallet_transactions` directly and
+> `update_user_balance` refuses `'add'`. Migration
+> `20261001180000_vtid_04809_vtna_reward_ledger.sql`.
+
 **This is the live, production system backing the wallet UI** (`useWallet.ts`
 in `vitana-v1` → `user_wallets` + RPCs below). It predates and is entirely
 separate from the newer EUR/USD Stripe deposit tables (`wallet_accounts`,
@@ -740,6 +755,7 @@ CREATE TABLE public.user_wallets (
   user_id UUID NOT NULL,
   currency_type TEXT NOT NULL,      -- 'USD' | 'VTNA' | 'CREDITS'
   balance NUMERIC(15,2) NOT NULL DEFAULT 0.00,   -- was 1000.00 until VTID wallet-reset
+  earned_balance NUMERIC(15,2) NOT NULL DEFAULT 0, -- VTID-04809: earned VTNA inside CREDITS
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(user_id, currency_type)
@@ -755,6 +771,8 @@ CREATE TABLE public.wallet_transactions (   -- old (2025-09) schema; still the l
   fees NUMERIC(15,2) DEFAULT 0.00,
   status TEXT DEFAULT 'pending',
   metadata JSONB,
+  idempotency_key TEXT,             -- VTID-04809: unique per (member, key)
+  credit_source TEXT,               -- VTID-04809: 'earned' | 'purchased'
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -785,6 +803,8 @@ CREATE TABLE public.wallet_balance_resets (   -- added VTID wallet-reset, 2026-0
 **Canonical exchange rate** (the only `is_active=true` rows in
 `exchange_rates`, matching `vitana-v1`'s `src/lib/exchangeRates.ts`):
 **1 USD = 100 CREDITS = 100 VTNA**, VTNA:CREDITS at 1:1 parity.
+VTID-04809 adds the EUR peg rows **1 EUR = 100 CREDITS = 100 VTNA**, which
+are the reference for every VTNA price shown to a member.
 
 **RPCs** (`get_user_balance`, `update_user_balance`, `initialize_user_wallet`,
 `process_wallet_exchange`, `process_wallet_transfer`,
@@ -1312,6 +1332,7 @@ CREATE TABLE my_new_table (
 | 2026-09-29 | `confirm_recommendation_commission` also locks the `product_orders` row (`FOR UPDATE`) when it re-checks that the order is still a sale, so a decline that commits first prevents payment. It also re-checks the payee against `service_bot_accounts` and `notification_test_actors`: an account registered as one during the hold is closed `skipped_ineligible` (`reversal_reason='excluded_account'`), never paid. CREATE OR REPLACE only. Migration `20260929120400_vtid_04741_confirm_commission_order_lock_exclusions.sql`. | Claude | VTID-04741 |
 | 2026-09-29 | `reverse_recommendation_commission` also locks the `product_orders` row and reverses or reports only while the order is still `refunded`/`cancelled`/`chargeback`; otherwise it returns `order_not_reversing` and changes nothing. The caller's read can be stale if a later sync has moved the order back to `converted`. CREATE OR REPLACE only. Migration `20260929120500_vtid_04741_reverse_commission_order_recheck.sql`. | Claude | VTID-04741 |
 | 2026-09-29 | At payment, `confirm_recommendation_commission` refreshes `payout_amount_minor`, `currency` and `vitana_commission_cents` from the order's current `commission_cents` and `currency`, at the row's recorded `rate_applied` (never today's settings). A network can correct an order after the pending row was written. It returns `order_no_commission` when the order no longer carries a commission. CREATE OR REPLACE only. Migration `20260929120600_vtid_04741_confirm_commission_refresh_terms.sql`. | Claude | VTID-04741 |
+| 2026-10-01 | **VTID-04809 — `user_wallets.CREDITS` is the canonical VTNA ledger.** New `user_wallets.earned_balance` (CHECK `0 <= earned_balance <= balance`, CREDITS only); new `wallet_transactions.idempotency_key` (unique per member) and `credit_source` (`earned`/`purchased`). `credit_wallet()` re-created on this ledger with the signature its callers already used (it never existed live, so diary-streak, milestone, AP-0708, autopilot-completion and Stripe credit-pack credits were silently dropped). Closed two self-credit holes: dropped RLS policy `Users can update their own wallets` and revoked INSERT/UPDATE/DELETE/TRUNCATE on `user_wallets`/`wallet_transactions` from `anon`/`authenticated`; `update_user_balance` refuses `'add'` and is no longer executable by `anon`. EUR peg rows in `exchange_rates`. Migration `20261001180000_vtid_04809_vtna_reward_ledger.sql`. | Claude | VTID-04809 |
 
 ---
 

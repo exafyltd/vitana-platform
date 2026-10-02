@@ -1029,9 +1029,15 @@ Standing rules for any Commerce change:
    (merchant of record, tax, KYC, payout obligations are configuration set
    after legal/accounting confirmation). Earning participants are not
    employees.
-8. **Do not add a fifth wallet.** Member earnings belong in
-   `wallet_accounts`/`wallet_ledger_entries`; the legacy wallets are not
-   extended.
+8. **Do not add a fifth wallet.** Member cash earnings (commissions,
+   payouts — real EUR/USD) belong in `wallet_accounts`/`wallet_ledger_entries`.
+   **VTNA is the exception (VTID-04809, owner decision 2026-10-01):**
+   `user_wallets.CREDITS` is the canonical VTNA ledger, pegged at
+   1 VTNA = EUR 0.01. Every VTNA reward goes through `credit_wallet()`
+   (`p_type 'reward'`, a stable `p_source_event_id`), lands in
+   `earned_balance`, and only rewards (shop, subscription conversion) may
+   spend it. Never credit VTNA with `increment_wallet_balance()` or from the
+   client.
 
 ---
 
