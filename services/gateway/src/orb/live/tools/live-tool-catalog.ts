@@ -26,6 +26,7 @@ import { ADMIN_TOOL_SCHEMAS } from '../../../services/admin-voice-tools';
 import { BACKOFFICE_TOOL_SCHEMAS } from '../../../services/backoffice-voice-tools';
 import { resolveOrbSurface, type OrbSurface } from '../surface';
 import { OPERATOR_DELEGATE_TOOL, OPERATOR_DELEGATE_TOOL_NAME } from './operator-delegate';
+import { commerceSetupTools } from './commerce-setup-tool';
 import { commerceDelegationTools, DEEP_DIVE_TOOL, DEEP_DIVE_TOOL_NAME, DELEGATION_COMPANION_TOOLS, memberDelegationTools } from './delegation-tools';
 // BOOTSTRAP-VOICE-CATALOG-COMPLETE — Vertex declarations for every tool built
 // out from the Voice Tools Catalog's `status: planned` backlog + the P0
@@ -209,12 +210,13 @@ function applyCommandHubGate(tools: object[]): object[] {
  * search only. Community, health, diary, memory and developer tools are
  * absent, so nothing personal can be read or written from business mode.
  * VTID-04400 adds the commerce onboarding specialist (read-only, flag-gated).
+ * VTID-04840 adds draft_business_setup (drafts only, COMMERCE_AI_SETUP_ENABLED).
  */
 function applyCommerceGate(tools: object[]): object[] {
   const out: object[] = [];
   // VTID-04400: the commerce onboarding specialist (+ async companions),
   // added to the first declaration group, only when its flag is 'true'.
-  let extra = commerceDelegationTools() as Array<{ name?: unknown }>;
+  let extra = [...commerceDelegationTools(), ...commerceSetupTools()] as Array<{ name?: unknown }>;
   for (const group of tools as Array<Record<string, unknown>>) {
     if (Array.isArray(group.function_declarations)) {
       const kept = (group.function_declarations as Array<{ name?: unknown }>).filter((d) =>

@@ -22,34 +22,18 @@ import { getCallerId } from './partner-orgs';
 import { normalizeSetupKey } from '../services/partner-setup';
 import {
   BUSINESS_CATEGORIES,
+  allowDraft,
   applySetupDraft,
   draftFromWebsite,
   isCommerceAiSetupEnabled,
   normalizeWebsiteUrl,
+  resetDraftLimits,
 } from '../services/commerce-ai-setup';
 
 const router = Router();
 
-/** Drafting reads a site and calls the model: bounded per member. */
-const DRAFT_LIMIT_PER_HOUR = 10;
-const draftWindows = new Map<string, number[]>();
-
-export function allowDraft(userId: string, now: number = Date.now()): boolean {
-  const hourAgo = now - 60 * 60 * 1000;
-  const recent = (draftWindows.get(userId) ?? []).filter((t) => t > hourAgo);
-  if (recent.length >= DRAFT_LIMIT_PER_HOUR) {
-    draftWindows.set(userId, recent);
-    return false;
-  }
-  recent.push(now);
-  draftWindows.set(userId, recent);
-  return true;
-}
-
-/** Test hook. */
-export function resetDraftLimits(): void {
-  draftWindows.clear();
-}
+// Drafting is bounded per member; the voice tool (VTID-04840) shares the budget.
+export { allowDraft, resetDraftLimits };
 
 function enabled(res: Response): boolean {
   if (isCommerceAiSetupEnabled()) return true;
