@@ -36,5 +36,5 @@ AC-8: The new route file is claimed by the commerce domain in the developer atla
 ## Scope
 
 - New: `services/gateway/src/services/commerce-ai-setup.ts`, `services/gateway/src/routes/commerce-ai-setup.ts`, the Jest suite, this evidence pack and the staging suite.
-- Changed: `services/gateway/src/index.ts` (mount), `services/gateway/src/orb/developer/domain-atlas.ts` (commerce domain claims the route).
+- Changed: `services/gateway/src/index.ts` (mount), `services/gateway/src/orb/developer/domain-atlas.ts` (commerce domain claims the route), `services/gateway/src/types/cicd.ts` (the `commerce.ai_setup.applied` event type).
 - No migration, no schema change. Drafting uses the existing `planner` stage on Bedrock (CLAUDE.md 10a).
