@@ -1070,7 +1070,9 @@ export type CicdEventType =
   | 'partner_org.catalogue_imported'
   // VTID-04499: onboarding connections and mapping step
   | 'partner_org.connection_started'
-  | 'partner_org.mapping_step_changed';
+  | 'partner_org.mapping_step_changed'
+  // VTID-04838: a supplier's confirmed AI-setup draft created a business and/or draft products.
+  | 'commerce.ai_setup.applied';
 
 export interface CicdOasisEvent {
   vtid: string;
