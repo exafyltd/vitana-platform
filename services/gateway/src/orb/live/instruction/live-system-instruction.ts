@@ -29,6 +29,7 @@ import {
   getContent as getNavContent,
   lookupByRoute as lookupNavByRoute,
 } from '../../../lib/navigation-catalog';
+import { findScreenForRoute, pageOf, screenText, surfaceForRoute } from '../../../navigation/nav-registry';
 // VTID-03118 (Phase B.4): bucket thresholds come from PolicyResolver instead
 // of inline literals. Resolver returns byte-identical values for the seeded
 // defaults (Phase B.2 / VTID-03114).
@@ -178,6 +179,11 @@ export function describeTimeSince(lastSessionInfo: { time: string; wasFailure: b
  */
 export function describeRoute(route: string | undefined | null, lang: string): { title: string; path: string } | null {
   if (!route || typeof route !== 'string') return null;
+  // VTID-04846: with NAV_V2_ENABLED the screen registry names the page.
+  if (process.env.NAV_V2_ENABLED === 'true') {
+    const screen = findScreenForRoute(route, surfaceForRoute(route));
+    return screen ? { title: screenText(screen, lang).title, path: pageOf(route) } : { title: route, path: route };
+  }
   const entry = lookupNavByRoute(route);
   if (entry) {
     const content = getNavContent(entry, lang);

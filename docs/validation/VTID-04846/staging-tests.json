@@ -1,0 +1,18 @@
+{
+  "vtid": "VTID-04846",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/navigation/vtid-04846-registry-only.test.ts",
+      "cwd": "services/gateway",
+      "reason": "with NAV_V2_ENABLED the registry answers every navigation case: entity screens open with the id a prior tool result supplied (old argument names too) and never without it, disabled panels stay closed, get_current_screen and the system instruction name pages from the registry, the admin area refuses, a resolver outage opens exact names only, and the My Journey mode switch survives"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/nav-redirect test/navigation test/nav-golden",
+      "cwd": "services/gateway",
+      "reason": "member and Command Hub navigation unchanged: golden set, 50-case redirect suite, leave-one-out ratchet and the VTID-04814 surface isolation all pass"
+    }
+  ]
+}
