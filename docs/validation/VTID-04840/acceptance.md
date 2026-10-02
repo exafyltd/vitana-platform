@@ -24,7 +24,7 @@ AC-3: Voice writes nothing: the module never calls apply; it refuses off the com
 AC-4: Opened from the setup sheet (`commerce_setup: true`, first turn only, switch on), the commerce opener asks for the website as an English INTENT naming the tool — no scripted sentence (NEVER rule 41); every other opener is unchanged.
   TEST: services/gateway/test/vtid-04840-commerce-voice-setup.test.ts
   TEST: services/gateway/test/vtid-04560-role-separation-regression.test.ts
-AC-5: The widget exposes `VitanaOrb.startCommerceSetup()` (one-shot `commerce_setup` on the next session start) and forwards the three directives as `vitana:commerce-setup-reading|draft|failed` window events.
+AC-5: The widget exposes `VitanaOrb.startCommerceSetup()` (one-shot `commerce_setup` on the next session start) and forwards the three directives as `vitana:commerce-setup-reading|draft|failed` window events; once a draft is there it lets the current sentence finish and closes the full-screen orb so the review card underneath is visible.
   TEST: docs/validation/VTID-04840/staging-tests.json (deployed widget body)
 
 ## Scope

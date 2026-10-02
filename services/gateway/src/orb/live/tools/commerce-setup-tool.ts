@@ -120,7 +120,8 @@ export async function runDraftBusinessSetup(
     success: true,
     result:
       `Reading ${url} now; nothing is saved. In one short sentence of your own, tell the user you are reading their site ` +
-      'and that the draft will open on the screen in a moment for them to check and confirm with one tap. ' +
+      'and that the draft will open on the screen in a moment for them to check and confirm with one tap; ' +
+      'this voice conversation closes by itself when the draft is there. ' +
       'Do not describe products you have not seen, and do not say the business is created.',
   };
 }

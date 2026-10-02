@@ -3964,6 +3964,33 @@
           } catch (e) {
             console.error('[VTOrb] commerce setup event dispatch failed:', e);
           }
+          // The review card is on the host page, under this full-screen
+          // overlay: once the draft is there, let the current sentence finish
+          // and close the orb so the supplier sees it (same drain as
+          // end_conversation). The supplier confirms it on the screen.
+          if (msg.directive === 'commerce_setup_draft') {
+            _s.conversationEnding = true;
+            var _csAttempts = 0;
+            (function (myGen) {
+              (function _waitForCsSpeechEnd() {
+                setTimeout(function () {
+                  if (_s._sessionGeneration !== myGen) return;
+                  var stillPlaying = _s.audioPlaying ||
+                    (_s.scheduledSources && _s.scheduledSources.length > 0) ||
+                    (_s.audioQueue && _s.audioQueue.length > 0);
+                  if (stillPlaying && _csAttempts++ < 100) {
+                    _waitForCsSpeechEnd();
+                    return;
+                  }
+                  setTimeout(function () {
+                    if (_s._sessionGeneration !== myGen) return;
+                    try { _hide(); }
+                    catch (e) { console.error('[VTOrb] _hide on commerce_setup_draft failed:', e); }
+                  }, 200);
+                }, 300);
+              })();
+            })(_s._sessionGeneration);
+          }
         } else {
           console.warn('[VTOrb] Unknown orb_directive: ' + msg.directive);
         }
