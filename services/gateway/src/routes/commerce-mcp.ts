@@ -97,7 +97,7 @@ function unauthorized(req: Request, res: Response, description: string) {
     .json({ jsonrpc: '2.0', id: null, error: { code: -32001, message: description } });
 }
 
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => { // inline-bearer-auth
   // impact-allow-no-oasis: every tools/call emits commerce.mcp.tool_called
   // (services/commerce-mcp.ts auditToolCall), and each Commerce write emits
   // its own partner_org.* event through the shared services.
