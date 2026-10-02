@@ -105,11 +105,16 @@ describe('VTID-04820 gate', () => {
 describe('VTID-04820 wiring and pins', () => {
   const root = path.resolve(__dirname, '../../..');
   test('after submit\'s state moves, before the response, never awaited', () => {
-    const src = fs.readFileSync(path.join(__dirname, '../src/routes/partner-onboarding.ts'), 'utf8');
-    const at = src.indexOf('void runPartnerTriage({ org, tenantId: (req as AuthenticatedRequest).identity?.tenant_id ?? null, steps: checklist.steps, verificationLevel: checklist.verification_level_required, rulesOutcome: verdict.outcome });');
-    expect(at).toBeGreaterThan(src.indexOf("reason: 'submit',"));
-    expect(at).toBeLessThan(src.lastIndexOf('return respondWithState(res, supabase, orgId, 200, {'));
-    expect(src).toContain('if (applied.length && isPartnerTriageOn()) {');
+    // VTID-04847: submit moved into the shared Commerce service (the route and
+    // the MCP tool both call submitForVerification); the order is unchanged.
+    const src = fs.readFileSync(path.join(__dirname, '../src/services/partner-onboarding-service.ts'), 'utf8');
+    const fn = src.slice(src.indexOf('export async function submitForVerification'), src.indexOf('export async function listCatalogue'));
+    const at = fn.indexOf('void runPartnerTriage({\n      org,\n      tenantId: caller.tenantId ?? null,\n      steps: checklist.steps,\n      verificationLevel: checklist.verification_level_required,\n      rulesOutcome: verdict.outcome,\n    });');
+    expect(at).toBeGreaterThan(fn.indexOf("reason: 'submit',"));
+    expect(at).toBeLessThan(fn.lastIndexOf('return orgState(s, orgId, 200, { transitions: applied, open_steps: verdict.open_steps });'));
+    expect(fn).toContain('if (applied.length && isPartnerTriageOn()) {');
+    const route = fs.readFileSync(path.join(__dirname, '../src/routes/partner-onboarding.ts'), 'utf8');
+    expect(route).toContain('submitForVerification(');
   });
   test('both gateways pin shadow, never enforce', () => {
     for (const f of ['AWS-STAGE-DEPLOY-GATEWAY.yml', 'AWS-PROD-DEPLOY-GATEWAY.yml']) {

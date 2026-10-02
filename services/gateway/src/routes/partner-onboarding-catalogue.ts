@@ -51,19 +51,13 @@ import {
   syncCatalogueStep,
   upsertOrgMerchant,
 } from '../services/partner-setup';
-import { getCallerId, requireOrgAdmin } from './partner-orgs';
+import { getCallerId, isExafyAdmin, requireOrgAdmin } from './partner-orgs';
+import { CATALOGUE_LOCKED_STATES, listCatalogue, updateProduct } from '../services/partner-onboarding-service';
 import { loadOrg, respondWithState, type OrgRow, type Supa } from './partner-onboarding';
-import {
-  ProductPatchSchema,
-  SHIPS_SOMEWHERE_MESSAGE,
-  SUPPLIER_SOURCE_NETWORK,
-  shipsSomewhere,
-} from './vcaop-portal-my-products';
+import { SUPPLIER_SOURCE_NETWORK } from './vcaop-portal-my-products';
 
 const router = Router();
 
-/** Lifecycle states in which the catalogue can no longer be edited. */
-const CATALOGUE_LOCKED_STATES = ['rejected', 'suspended'];
 
 /**
  * Re-exported from services/partner-setup.ts (VTID-04837), where the merchant
@@ -105,22 +99,11 @@ async function loadEditableOrg(s: Supa, req: Request, res: Response): Promise<Or
 router.get('/:orgId/catalogue', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
   const s = getSupabase();
   if (!s) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
-  const { org, error } = await loadOrg(s, req.params.orgId);
-  if (error) return res.status(500).json({ ok: false, error });
-  if (!org) return res.status(404).json({ ok: false, error: 'ORG_NOT_FOUND' });
-
-  const found = await findOrgMerchant(s, org.id);
-  if (found.error) return res.status(500).json({ ok: false, error: found.error });
-  if (!found.merchant) return res.json({ ok: true, merchant: null, products: [] });
-
-  const { data, error: pErr } = await s
-    .from('products')
-    .select(PRODUCT_FIELDS)
-    .eq('merchant_id', found.merchant.id)
-    .order('updated_at', { ascending: false })
-    .limit(500);
-  if (pErr) return res.status(500).json({ ok: false, error: pErr.message });
-  return res.json({ ok: true, merchant: found.merchant, products: data ?? [] });
+  const callerId = getCallerId(req);
+  if (!callerId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  // VTID-04847: shared with the Commerce MCP endpoint.
+  const r = await listCatalogue(s, { userId: callerId, exafyAdmin: isExafyAdmin(req), orgAdminChecked: true }, req.params.orgId);
+  return res.status(r.status).json(r.body);
 });
 
 // ==================== Merchant ====================
@@ -247,62 +230,14 @@ router.post('/:orgId/catalogue/products/import', requireAuth, requireOrgAdmin(),
 
 router.patch('/:orgId/catalogue/products/:productId', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
   // impact-allow-no-oasis: the OASIS event is emitted by catalogueEvent()
-  // below, only when the catalogue step's status moves (CLAUDE.md §6: state
-  // transitions, not every save).
+  // inside updateProduct, only when the catalogue step's status moves
+  // (CLAUDE.md §6: state transitions, not every save).
   const s = getSupabase();
   if (!s) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const callerId = getCallerId(req);
-  const org = await loadEditableOrg(s, req, res);
-  if (!org) return;
-
-  const found = await findOrgMerchant(s, org.id);
-  if (found.error) return res.status(500).json({ ok: false, error: found.error });
-  if (!found.merchant) return res.status(404).json({ ok: false, error: 'PRODUCT_NOT_FOUND' });
-  const merchantId = found.merchant.id;
-
-  const parsed = ProductPatchSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: 'invalid_product', details: parsed.error.flatten() });
-  }
-  if (Object.keys(parsed.data).length === 0) {
-    return res.status(400).json({ ok: false, error: 'invalid_product', message: 'no fields to change' });
-  }
-
-  // The ships-to rule holds for the product's final state, not the patch.
-  if (parsed.data.ships_to_countries !== undefined || parsed.data.ships_to_regions !== undefined) {
-    const { data: current, error } = await s
-      .from('products')
-      .select('ships_to_countries,ships_to_regions')
-      .eq('id', req.params.productId)
-      .eq('merchant_id', merchantId)
-      .maybeSingle();
-    if (error) return res.status(500).json({ ok: false, error: error.message });
-    if (!current) return res.status(404).json({ ok: false, error: 'PRODUCT_NOT_FOUND' });
-    if (!shipsSomewhere({ ...(current as object), ...parsed.data })) {
-      return res.status(400).json({
-        ok: false,
-        error: 'invalid_product',
-        details: { fieldErrors: { ships_to_countries: [SHIPS_SOMEWHERE_MESSAGE] } },
-      });
-    }
-  }
-
-  // merchant_id is the authorization: another org's product matches no row.
-  const { data, error } = await s
-    .from('products')
-    .update(parsed.data)
-    .eq('id', req.params.productId)
-    .eq('merchant_id', merchantId)
-    .select(PRODUCT_FIELDS)
-    .maybeSingle();
-  if (error) return res.status(500).json({ ok: false, error: error.message });
-  if (!data) return res.status(404).json({ ok: false, error: 'PRODUCT_NOT_FOUND' });
-
-  const step = await syncCatalogueStep(s, org.id, merchantId, callerId);
-  if (step.error) return res.status(500).json({ ok: false, error: step.error });
-  if (step.changed) await catalogueEvent(org.id, step, callerId);
-
-  return respondWithState(res, s, org.id, 200, { product: data });
+  if (!callerId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const r = await updateProduct(s, { userId: callerId, exafyAdmin: isExafyAdmin(req), orgAdminChecked: true }, req.params.orgId, req.params.productId, req.body);
+  return res.status(r.status).json(r.body);
 });
 
 export default router;
