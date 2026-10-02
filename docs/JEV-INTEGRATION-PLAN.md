@@ -930,8 +930,21 @@ Enforcing any gate waits for agreement data, which needs a production deploy.
   pin the prod task-definition step is at 19,964 of GitHub's 20,000 chars:
   the next Jev gate first moves the Jev pins into their own step.
 
-P3 status: A9, A10, C4, F (first slice), E8, E10, E1, E2 built in shadow.
-Left in P3: F's weekly root-cause roll-up into findings.
+- **F (second slice) — VTID-04825 (shadow).** `jev/gates/root-cause-rollup-gate.ts`.
+  Once per UTC day, each Dev Autopilot execution that ended badly the day
+  before (failed, reverted, escalated, cancelled) gets a root-cause class from
+  Jev `execution_root_cause` (status, stage and the failure texts, cut and
+  redacted) next to a keyword rule on the same text (quota/outage, scope
+  violation, turn cap via the retry breaker's own pattern, merge conflict,
+  deploy, verification, CI checks, cancelled). Every Monday the last seven
+  days' classes — these and B3's incident causes — are counted; each class
+  seen at least 3 times is recorded as `would_open_finding`. Opening the
+  finding is enforce. Evidence when built: of the last 12 bad endings, 3 were
+  a daily Bedrock token quota and 1 a scope-guard trip on the generated
+  `specs/command-hub-symbol-index.json`.
+
+P3 status: complete in shadow — A9, A10, C4, F (both slices), E8, E10, E1, E2.
+The Jev pins now have their own production deploy step (VTID-04824).
 
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce

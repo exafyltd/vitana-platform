@@ -291,6 +291,49 @@ const defs: JevDecisionDef[] = [
     buildState: (i) => ({ search: i.query, documents: i.candidates }),
   },
   {
+    // VTID-04825 (P3 F, second slice): a Dev Autopilot execution ended badly.
+    // Its root-cause class, from status, stage and the failure texts (cut,
+    // redacted) — never plan bodies or diffs. Counted weekly.
+    name: 'execution_root_cause',
+    description: 'The root-cause class of a Dev Autopilot execution that failed, was reverted, escalated or cancelled.',
+    roles: ENGINEERING,
+    input: z.object({
+      status: text(30),
+      failure_stage: optText(30),
+      error: optText(400),
+      gate_reason: optText(200),
+      bridge_reason: optText(200),
+      deploy_error: optText(200),
+      failed_checks: z.array(text(80)).max(10),
+      fix_mode: z.boolean(),
+      cancelled_by_human: z.boolean(),
+    }),
+    questions: {
+      cause: {
+        type: 'choice',
+        instructions: 'What is the root cause this execution ended badly?',
+        criteria: {
+          llm_quota_or_outage: 'The model provider failed: a quota, rate limit or outage.',
+          scope_violation: 'The change touched files outside its allowed scope.',
+          ci_test_failure: 'Tests or checks failed in CI.',
+          merge_conflict: 'The branch could not merge (conflict, dirty state).',
+          deploy_failure: 'The deploy failed.',
+          verification_regression: 'The deployed change caused errors and was rolled back.',
+          plan_too_broad: 'The task was too broad or vague to finish.',
+          agent_turn_cap: 'The agent ran out of turns without finishing.',
+          cancelled_by_human: 'A person cancelled or rejected it.',
+          unknown: 'Not enough information to tell.',
+        },
+      },
+    },
+    primary: 'cause',
+    threshold: 0.6,
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
+    pii: 'redact',
+    buildState: (i) => ({ execution: i }),
+  },
+  {
     // VTID-04822 (P3 E2): a company document found by E1 arrives untyped.
     // Its type decides where it goes next (clause review, payment match,
     // knowledge base). From name, kind and source only — never contents.

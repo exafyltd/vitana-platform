@@ -1857,6 +1857,15 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Jev voice opener outcomes scheduler initialization failed (non-fatal):', error);
       }
 
+      // VTID-04825 (Jev F): root cause of each Dev Autopilot execution that ended badly (daily)
+      // and the weekly roll-up of top classes (Mondays, UTC). Off unless JEV_ROOT_CAUSE_ROLLUP_MODE is set.
+      try {
+        const { startRootCauseScheduler } = require('./services/jev/gates/root-cause-rollup-gate');
+        if (startRootCauseScheduler()) console.log('🧭 Jev root-cause roll-up scheduler started (VTID-04825)');
+      } catch (error) {
+        console.warn('⚠️ Jev root-cause roll-up scheduler initialization failed (non-fatal):', error);
+      }
+
       // VTID-01185: Initialize autonomous self-improvement engine
       try {
         const { initializeAutonomousEngine } = require('./services/recommendation-engine/autonomous-engine');

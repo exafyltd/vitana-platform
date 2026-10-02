@@ -68,6 +68,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   JEV_PLANNABILITY_MODE: { staging: "shadow", prod: "shadow" },
   JEV_PR_CLASH_MODE: { staging: "shadow", prod: "shadow" },
   JEV_REPEAT_RUN_GUARD_MODE: { staging: "shadow", prod: "shadow" },
+  JEV_ROOT_CAUSE_ROLLUP_MODE: { staging: "shadow", prod: "shadow" },
   JEV_SELFHEAL_DEPLOY_CAUSE_MODE: { staging: "shadow", prod: "shadow" },
   JEV_SELFHEAL_INCIDENT_DEDUPE_MODE: { staging: "shadow", prod: "shadow" },
   JEV_SELFHEAL_PRETRIAGE_MODE: { staging: "shadow", prod: "shadow" },
