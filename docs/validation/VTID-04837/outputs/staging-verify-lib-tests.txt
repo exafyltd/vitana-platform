@@ -1,0 +1,30 @@
+# Subtest: production hosts are refused as test targets
+# Subtest: the fixed staging targets are not production
+# Subtest: deploy paths decide whether a commit belongs to a service
+# Subtest: VTIDs are extracted, normalised and de-duplicated
+# Subtest: a GET http test is valid
+# Subtest: writes are refused unless they are an auth-rejected probe
+# Subtest: playwright specs must be .staging.spec.ts inside the repo
+# Subtest: existing suites are limited to test-runner commands and need a reason
+# Subtest: manifest identity and shape are checked
+# Subtest: planRange: suites run, missing ones fail only after the rule took effect
+# Subtest: planRange: an invalid manifest is reported, not run
+# Subtest: live commit matching
+# Subtest: evaluateHttp checks status, json type, fields and body
+# Subtest: an accepted write probe is flagged loudly
+# Subtest: outcome: superseded beats everything, missing suites fail
+# Subtest: ready message asks the question only on a pass and lists what ships
+# Subtest: a body check finds code served past the first megabyte
+# Subtest: the body cap is large enough for every Command Hub asset
+# Subtest: a body past the cap is reported as cut off, not as a plain miss
+# Subtest: the runner reads response bodies through clipBody, never a fixed slice
+# Subtest: production already past the verified commit is its own failed state
+# Subtest: every other baseline state keeps its meaning
+# tests 22
+# suites 0
+# pass 22
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 122.86673
