@@ -8,13 +8,13 @@
       "target": "gateway",
       "path": "/command-hub/",
       "expect_status": 200,
-      "expect_body_contains": "/command-hub/orb-widget.js?v=20261002-vtid-04840-commerce-setup"
+      "expect_body_contains": "/command-hub/orb-widget.js?v=20261002-vtid-04843-widget-rebust"
     },
     {
       "kind": "http",
       "name": "the widget at that versioned URL carries the VTID-04644 after-turn directive",
       "target": "gateway",
-      "path": "/command-hub/orb-widget.js?v=20261002-vtid-04840-commerce-setup",
+      "path": "/command-hub/orb-widget.js?v=20261002-vtid-04843-widget-rebust",
       "expect_status": 200,
       "expect_content_type": "application/javascript",
       "expect_body_contains": "msg.after_turn === true"
