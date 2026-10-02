@@ -389,25 +389,8 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       },
     },
   },
-  {
-    screen_id: 'AUTH.EARTHLINKS_PORTAL',
-    route: '/earthlinks',
-    category: 'auth',
-    access: 'public',
-    anonymous_safe: true,
-    i18n: {
-      en: {
-        title: 'Earthlinks Portal',
-        description: 'Registration and sign-in for the Earthlinks tenant.',
-        when_to_visit: 'When the user mentions Earthlinks specifically and wants to register or sign in.',
-      },
-      de: {
-        title: 'Earthlinks Portal',
-        description: 'Registrierung und Anmeldung für den Earthlinks Tenant.',
-        when_to_visit: 'Wenn der Nutzer Earthlinks erwähnt und sich registrieren oder anmelden möchte.',
-      },
-    },
-  },
+  // VTID-04836: AUTH.EARTHLINKS_PORTAL removed - Earthlinks was merged into
+  // Maxina (VTID-01985); /earthlinks now redirects to /maxina in the app.
   {
     screen_id: 'AUTH.GENERIC',
     route: '/auth',

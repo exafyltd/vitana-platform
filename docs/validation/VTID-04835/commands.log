@@ -1,0 +1,10 @@
+# VTID-04835 — commands run in this session (services/gateway unless noted)
+grep -rn "process.on(\|SIGTERM\|SIGINT" src (origin/main)                              # no signal handler anywhere in the gateway
+grep -rn "stopTimeout\|initProcessEnabled" .github/workflows (repo root)               # not set — task defs are cloned from the live one; ECS default stopTimeout 30 s
+npx tsc --noEmit -p .                                                                  # clean
+npx jest test/vtid-04835-shutdown-drain.test.ts                                        # 10/10 — outputs/jest-vtid-04835.txt
+(related suites, shared run with VTID-04834)                                           # 45 suites, 765 tests — outputs/jest-related-suites.txt
+npm run test:roles ; npm run test:support ; npm run test:operator                      # 105 / 84 / 30 pass
+npx jest --silent --ci (full gateway suite)                                            # 1469 passed, 1 skipped; 23591 tests passed, 0 failed — outputs/jest-full-gateway.txt
+(repo root) node scripts/ci/staging-verify/run.mjs check-pr ... (VTID-04834, VTID-04835)  # ✓ change suite present and valid
+# VTID-04542 snapshot NOT updated.
