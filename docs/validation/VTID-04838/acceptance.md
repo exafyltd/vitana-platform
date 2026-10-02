@@ -15,7 +15,8 @@ OASIS_PROOF: `commerce.ai_setup.applied` (vtid VTID-04838, source commerce-ai-se
 
 ## Acceptance criteria
 
-AC-1: Off by default: every endpoint answers 404 AI_SETUP_DISABLED unless COMMERCE_AI_SETUP_ENABLED is exactly "true"; /status reports it for the portal.
+AC-1: Signed-in only; off by default: draft and apply answer 404 AI_SETUP_DISABLED unless COMMERCE_AI_SETUP_ENABLED is exactly "true"; /status reports it for the portal; input (URL, category, price, setup key) is checked before anything is read or written; drafting is rate-limited per member.
+  TEST: services/gateway/test/vtid-04838-commerce-ai-setup-routes.test.ts
   TEST: services/gateway/test/vtid-04838-commerce-ai-setup.test.ts
 AC-2: Drafting reads the website through the SSRF-guarded fetch, uses a Shopify shop's public /products.json for exact titles, prices, links and images, and turns the page into readable text (no scripts, styles, comments).
   TEST: services/gateway/test/vtid-04838-commerce-ai-setup.test.ts
