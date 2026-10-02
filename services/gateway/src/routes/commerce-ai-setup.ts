@@ -1,6 +1,7 @@
 /**
  * VTID-04838 — "Set up with AI" endpoints for the Commerce Portal.
  *
+ *   GET  /api/v1/commerce/ai-setup/status                       → { enabled }  (the portal shows AI first only when on)
  *   POST /api/v1/commerce/ai-setup/draft  { website }            → { draft }   (reads, writes nothing)
  *   POST /api/v1/commerce/ai-setup/apply  { setup_key, org_id?, website, business, products }
  *                                                                   → creates the business + draft products
@@ -55,6 +56,10 @@ function enabled(res: Response): boolean {
   res.status(404).json({ ok: false, error: 'AI_SETUP_DISABLED' });
   return false;
 }
+
+router.get('/status', requireAuth, (_req: Request, res: Response) => {
+  res.json({ ok: true, enabled: isCommerceAiSetupEnabled() });
+});
 
 router.post('/draft', requireAuth, async (req: Request, res: Response) => {
   if (!enabled(res)) return;

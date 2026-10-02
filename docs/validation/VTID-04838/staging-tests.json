@@ -5,6 +5,15 @@
     {
       "kind": "http",
       "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/commerce/ai-setup/status",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "the status endpoint the portal reads is mounted behind sign-in"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
       "method": "POST",
       "path": "/api/v1/commerce/ai-setup/draft",
       "rejected_probe": true,
