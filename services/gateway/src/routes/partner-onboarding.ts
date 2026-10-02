@@ -24,22 +24,20 @@ import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-j
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import {
-  PARTNER_TYPES,
-  canTransition,
-  isLifecycleState,
   isPartnerType,
   parseCompanyFacts,
-  type LifecycleState,
-  type PartnerType,
 } from '../services/partner-lifecycle';
 import {
   buildChecklist,
-  evaluateVerification,
-  submitTransitions,
   type Checklist,
 } from '../services/partner-onboarding-checklist';
-import { getCallerId, requireOrgAdmin } from './partner-orgs';
-import { isPartnerTriageOn, runPartnerTriage } from '../services/jev/gates/partner-triage-gate';
+import { getCallerId, isExafyAdmin, requireOrgAdmin } from './partner-orgs';
+import {
+  startOnboarding,
+  submitForVerification,
+  updateCompany,
+  type Caller,
+} from '../services/partner-onboarding-service';
 import { detectPlatform } from '../services/platform-detect';
 import { VERIFICATION_LEVEL_REQUIRED } from '../services/partner-onboarding-checklist';
 import {
@@ -64,13 +62,17 @@ import {
 
 const router = Router();
 
+/** The authenticated caller as the onboarding service sees it. */
+function callerOf(req: Request, callerId: string): Caller {
+  const identity = (req as AuthenticatedRequest).identity;
+  return { userId: callerId, exafyAdmin: isExafyAdmin(req), email: identity?.email ?? null, tenantId: identity?.tenant_id ?? null };
+}
+
 export type Supa = NonNullable<ReturnType<typeof getSupabase>>;
 
 const ORG_FIELDS =
   'id, org_key, display_name, partner_type, commerce_vertical, lifecycle_state, status, trust_level, legal_name, country, vat_id, website, owner_user_id, created_at';
 
-/** States in which the partner may still edit the company facts. */
-const COMPANY_EDITABLE_STATES: readonly LifecycleState[] = ['draft', 'needs_action'];
 
 export interface OrgRow {
   id: string;
@@ -164,73 +166,9 @@ router.post('/start', requireAuth, async (req: Request, res: Response) => {
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const callerId = getCallerId(req);
   if (!callerId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
-
-  // The account step is "a signed-in user with an email address".
-  const email = (req as AuthenticatedRequest).identity?.email;
-  if (!email) return res.status(403).json({ ok: false, error: 'ACCOUNT_EMAIL_REQUIRED' });
-
-  const partnerType = req.body?.partner_type;
-  if (!isPartnerType(partnerType)) {
-    return res.status(400).json({ ok: false, error: `partner_type must be one of: ${PARTNER_TYPES.join(', ')}` });
-  }
-  const displayName = typeof req.body?.display_name === 'string' ? req.body.display_name.trim() : '';
-  if (!displayName || displayName.length > 200) {
-    return res.status(400).json({ ok: false, error: 'display_name is required (at most 200 characters)' });
-  }
-
-  // Idempotent per user + type while the org is still a draft.
-  const existing = await supabase
-    .from('partner_organizations')
-    .select('id')
-    .eq('owner_user_id', callerId)
-    .eq('partner_type', partnerType)
-    .eq('lifecycle_state', 'draft')
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (existing.error) return res.status(500).json({ ok: false, error: existing.error.message });
-  if (existing.data) {
-    return respondWithState(res, supabase, (existing.data as { id: string }).id, 200, { created: false });
-  }
-
-  let orgId: string | null = null;
-  for (let attempt = 0; attempt < 2 && !orgId; attempt++) {
-    const { data, error } = await supabase
-      .from('partner_organizations')
-      .insert({
-        org_key: makeOrgKey(displayName),
-        display_name: displayName,
-        org_type: partnerType,
-        partner_type: partnerType,
-        lifecycle_state: 'draft',
-        owner_user_id: callerId,
-        business_details: {},
-      })
-      .select('id')
-      .single();
-    if (data) orgId = (data as { id: string }).id;
-    else if (error?.code !== '23505') {
-      return res.status(500).json({ ok: false, error: error?.message ?? 'partner_organizations insert failed' });
-    }
-  }
-  if (!orgId) return res.status(500).json({ ok: false, error: 'ORG_KEY_COLLISION' });
-
-  const { error: memberErr } = await supabase
-    .from('partner_organization_members')
-    .insert({ partner_organization_id: orgId, user_id: callerId, role: 'org_admin', granted_by: callerId });
-  if (memberErr) return res.status(500).json({ ok: false, error: memberErr.message });
-
-  await emitOasisEvent({
-    vtid: 'VTID-04478',
-    type: 'partner_org.onboarding_started',
-    source: 'partner-onboarding',
-    status: 'success',
-    message: `Partner onboarding started for "${displayName}" (${partnerType}).`,
-    payload: { partner_organization_id: orgId, partner_type: partnerType },
-    actor_id: callerId,
-  });
-
-  return respondWithState(res, supabase, orgId, 201, { created: true });
+  // VTID-04847: the rules live in services/partner-onboarding-service.ts.
+  const r = await startOnboarding(supabase, callerOf(req, callerId), req.body ?? {});
+  return res.status(r.status).json(r.body);
 });
 
 // ==================== Status ====================
@@ -246,41 +184,10 @@ router.get('/:orgId', requireAuth, requireOrgAdmin(), async (req: Request, res: 
 router.patch('/:orgId/company', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
-  const orgId = req.params.orgId;
-
-  const { org, error } = await loadOrg(supabase, orgId);
-  if (error) return res.status(500).json({ ok: false, error });
-  if (!org) return res.status(404).json({ ok: false, error: 'ORG_NOT_FOUND' });
-  // Changing verified facts on a submitted or live org needs a re-verification
-  // flow, which does not exist yet.
-  if (!COMPANY_EDITABLE_STATES.includes(org.lifecycle_state as LifecycleState)) {
-    return res.status(409).json({ ok: false, error: 'COMPANY_LOCKED', lifecycle_state: org.lifecycle_state });
-  }
-
-  const parsed = parseCompanyFacts(req.body);
-  if (!parsed.ok) return res.status(400).json({ ok: false, error: parsed.error });
-  if (Object.keys(parsed.facts).length === 0) {
-    return res.status(400).json({ ok: false, error: 'at least one of legal_name, country, vat_id, website is required' });
-  }
-
-  const { error: updErr } = await supabase
-    .from('partner_organizations')
-    .update({ ...parsed.facts, updated_at: new Date().toISOString() })
-    .eq('id', orgId);
-  if (updErr) return res.status(500).json({ ok: false, error: updErr.message });
-
-  await emitOasisEvent({
-    vtid: 'VTID-04478',
-    type: 'partner_org.company_updated',
-    source: 'partner-onboarding',
-    status: 'success',
-    message: `Partner organization ${orgId} updated its company facts.`,
-    // Field names only: the values (VAT id, legal name) stay in the org row.
-    payload: { partner_organization_id: orgId, fields: Object.keys(parsed.facts) },
-    actor_id: getCallerId(req) ?? undefined,
-  });
-
-  return respondWithState(res, supabase, orgId);
+  const callerId = getCallerId(req);
+  if (!callerId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const r = await updateCompany(supabase, { ...callerOf(req, callerId), orgAdminChecked: true }, req.params.orgId, req.body);
+  return res.status(r.status).json(r.body);
 });
 
 // ==================== Detect (VTID-04481) ====================
@@ -564,78 +471,10 @@ router.post('/:orgId/terms/accept', requireAuth, requireOrgAdmin(), async (req: 
 router.post('/:orgId/submit', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
-  const orgId = req.params.orgId;
   const callerId = getCallerId(req);
-
-  const { org, error } = await loadOrg(supabase, orgId);
-  if (error) return res.status(500).json({ ok: false, error });
-  if (!org) return res.status(404).json({ ok: false, error: 'ORG_NOT_FOUND' });
-  if (!isPartnerType(org.partner_type)) {
-    return res.status(409).json({ ok: false, error: 'PARTNER_TYPE_MISSING' });
-  }
-  if (!isLifecycleState(org.lifecycle_state)) {
-    return res.status(500).json({ ok: false, error: `unknown lifecycle_state ${org.lifecycle_state}` });
-  }
-
-  const loaded = await loadChecklist(supabase, org);
-  if (loaded.error || !loaded.checklist) return res.status(500).json({ ok: false, error: loaded.error ?? 'checklist unavailable' });
-  const checklist = loaded.checklist;
-
-  if (!checklist.submit_ready) {
-    return res.status(409).json({ ok: false, error: 'SUBMIT_PREREQUISITES_MISSING', missing: checklist.submit_missing, checklist });
-  }
-
-  const verdict = evaluateVerification(checklist);
-  const moves = submitTransitions(org.lifecycle_state, verdict.outcome);
-  if (!moves) {
-    return res.status(409).json({ ok: false, error: 'NOT_SUBMITTABLE', lifecycle_state: org.lifecycle_state });
-  }
-
-  const applied: Array<{ from: LifecycleState; to: LifecycleState }> = [];
-  for (const move of moves) {
-    if (!canTransition(move.from, move.to)) {
-      return res.status(500).json({ ok: false, error: `illegal transition ${move.from} -> ${move.to}` });
-    }
-    const { data, error: updErr } = await supabase
-      .from('partner_organizations')
-      .update({ lifecycle_state: move.to, updated_at: new Date().toISOString() })
-      .eq('id', orgId)
-      .eq('lifecycle_state', move.from)
-      .select('id');
-    if (updErr) return res.status(500).json({ ok: false, error: updErr.message, applied });
-    if (!Array.isArray(data) || data.length === 0) {
-      return res.status(409).json({ ok: false, error: 'CONCURRENT_UPDATE', applied });
-    }
-    applied.push(move);
-
-    await emitOasisEvent({
-      vtid: 'VTID-04478',
-      type: 'partner_org.lifecycle_changed',
-      source: 'partner-onboarding',
-      status: move.to === 'needs_action' ? 'warning' : 'success',
-      message: `Partner organization ${orgId}: ${move.from} -> ${move.to}.`,
-      payload: {
-        partner_organization_id: orgId,
-        partner_type: org.partner_type as PartnerType,
-        from: move.from,
-        to: move.to,
-        reason: 'submit',
-        ...(move.to === 'needs_action' ? { open_steps: verdict.open_steps, failed_steps: verdict.failed_steps } : {}),
-      },
-      actor_id: callerId ?? undefined,
-    });
-  }
-
-  // VTID-04820 (Jev E10, shadow): advisory triage of the submitted application,
-  // next to the rules' outcome. Never awaited; the submit is unchanged.
-  if (applied.length && isPartnerTriageOn()) {
-    void runPartnerTriage({ org, tenantId: (req as AuthenticatedRequest).identity?.tenant_id ?? null, steps: checklist.steps, verificationLevel: checklist.verification_level_required, rulesOutcome: verdict.outcome });
-  }
-
-  return respondWithState(res, supabase, orgId, 200, {
-    transitions: applied,
-    open_steps: verdict.open_steps,
-  });
+  if (!callerId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const r = await submitForVerification(supabase, { ...callerOf(req, callerId), orgAdminChecked: true }, req.params.orgId);
+  return res.status(r.status).json(r.body);
 });
 
 export default router;
