@@ -62,6 +62,9 @@ router.get('/status', requireAuth, (_req: Request, res: Response) => {
 });
 
 router.post('/draft', requireAuth, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: drafting reads a website and returns a proposal;
+  // it writes nothing, so there is no state transition to record (CLAUDE.md
+  // §6). The write — apply — emits commerce.ai_setup.applied.
   if (!enabled(res)) return;
   const callerId = getCallerId(req);
   if (!callerId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
