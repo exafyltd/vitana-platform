@@ -1,0 +1,241 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/vtid-04826-calendar-pillar-priority.test.ts
+  VTID-04826 pillar of an event
+    ✓ {"wellness_tags":["movement"]} → exercise (6 ms)
+    ✓ {"wellness_tags":["Sleep"]} → sleep (1 ms)
+    ✓ {"wellness_tags":["meetup","walk"]} → mental (1 ms)
+    ✓ {"wellness_tags":["unknown"],"event_type":"workout"} → exercise
+    ✓ {"event_type":"nutrition"} → nutrition
+    ✓ {"event_type":"meeting","wellness_tags":[]} → null (1 ms)
+    ✓ {} → null (12 ms)
+  VTID-04826 pillar boost
+    ✓ weakest +10, second weakest +5, others 0 (1 ms)
+    ✓ no boost without a pillar, without scores, with under three pillars known, or when the pillars are level (1 ms)
+  VTID-04826 reprioritizeUserEvents
+    ✓ the weakest pillar ranks first, the second weakest next, the rest keep the base (4 ms)
+    ✓ without index data the old flat +3 for movement stays (1 ms)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/calendar/calendar-logic.golden.test.ts
+  recurrence
+    ✓ parses every rule shape the valid_rrule CHECK allows, and rejects the rest (4 ms)
+    ✓ expands daily-across-dst-berlin (22 ms)
+    ✓ expands daily-spring-forward-new-york (2 ms)
+    ✓ expands monthly-on-the-31st (2 ms)
+    ✓ expands weekly-byday-interval-2 (2 ms)
+    ✓ expands weekly-no-byday-uses-start-weekday (2 ms)
+    ✓ expands count-stops-series (15 ms)
+    ✓ expands count-with-window-starting-mid-series (2 ms)
+    ✓ expands until-stops-series (3 ms)
+    ✓ expands no-timezone-uses-fallback (2 ms)
+    ✓ expands invalid-timezone-uses-fallback (2 ms)
+    ✓ expands occurrence-overlapping-window-start-is-kept (2 ms)
+    ✓ expands limit-caps-results (2 ms)
+    ✓ expands bad-rule-or-window-gives-nothing (1 ms)
+    ✓ converts wall-clock times in both directions, DST gaps resolving forward (3 ms)
+  calendar window
+    ✓ role community, busy blocks on (5 ms)
+    ✓ role developer, busy blocks on (3 ms)
+    ✓ role admin, busy blocks on (3 ms)
+    ✓ role professional, busy blocks on (3 ms)
+    ✓ role super_admin, busy blocks on (3 ms)
+    ✓ role null, busy blocks on (3 ms)
+    ✓ role community, busy blocks off (3 ms)
+    ✓ a busy block never carries anything identifying (3 ms)
+    ✓ role visibility and write context (2 ms)
+    ✓ summary shape the assistant reads (2 ms)
+  move rules
+    ✓ pins which entries a member may move (2 ms)
+  reminders
+    ✓ default rules and emoji per entry kind (2 ms)
+    ✓ what fires, without quiet hours (9 ms)
+    ✓ what fires, with quiet hours 22:00–07:00 (defaults move, explicit ones stay) (10 ms)
+    ✓ the text each reminder says (15 ms)
+    ✓ quiet-hours parsing and window math (4 ms)
+    ✓ reminder keys and the loop switch (2 ms)
+  external calendars
+    ✓ which entries leave Vitanaland at all (2 ms)
+    ✓ Google event bodies (1 ms)
+    ✓ Google push plan: create, update, delete, orphan (2 ms)
+    ✓ Google free/busy is cleaned and merged (2 ms)
+    ✓ Outlook (Graph) event bodies and repeat rules (6 ms)
+    ✓ iCloud iCalendar objects (4 ms)
+    ✓ shared push plan for Outlook and iCloud (3 ms)
+    ✓ subscription (.ics) feed (3 ms)
+  work lenses
+    ✓ who gets which lens (1 ms)
+    ✓ source rows become read-only entries (4 ms)
+  maintenance and helpers
+    ✓ rescheduler: is the day over, and the next slot (7 ms)
+    ✓ today is the user's local today (6 ms)
+    ✓ producers only rewrite what changed (2 ms)
+    ✓ 90-day journey stage by day (1 ms)
+  request contracts
+    ✓ create (6 ms)
+    ✓ update, list and complete (3 ms)
+    ✓ allowed values match the database CHECK lists (5 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [CalendarRescheduler] rescheduled=1 cancelled=0 errors=0
+
+      at Object.rescheduleUnactivatedTasks (src/services/calendar-rescheduler.ts:205:13)
+
+  console.log
+    [CalendarRescheduler] rescheduled=0 cancelled=1 errors=0
+
+      at Object.rescheduleUnactivatedTasks (src/services/calendar-rescheduler.ts:205:13)
+
+PASS test/calendar/calendar-coverage.guard.test.ts
+  calendar coverage manifest
+    ✓ lists every calendar source file (1 ms)
+    ✓ lists no file that is gone (5 ms)
+    ✓ src/types/calendar.ts is imported by each listed test (1 ms)
+    ✓ src/routes/calendar.ts is imported by each listed test (1 ms)
+    ✓ src/routes/calendar-repository.ts is imported by each listed test (1 ms)
+    ✓ src/services/calendar-service.ts is imported by each listed test (1 ms)
+    ✓ src/services/calendar-recurrence.ts is imported by each listed test (5 ms)
+    ✓ src/services/calendar-reminders.ts is imported by each listed test (1 ms)
+    ✓ src/services/calendar-producers.ts is imported by each listed test
+    ✓ src/services/calendar-work-lens.ts is imported by each listed test (1 ms)
+    ✓ src/services/calendar-ics-feed.ts is imported by each listed test (1 ms)
+    ✓ src/services/calendar-google-sync.ts is imported by each listed test (1 ms)
+    ✓ src/services/calendar-rescheduler.ts is imported by each listed test
+    ✓ src/services/calendar-prioritizer.ts is imported by each listed test (1 ms)
+    ✓ src/services/calendar-today.ts is imported by each listed test
+    ✓ src/services/journey-calendar-mapper.ts is imported by each listed test
+    ✓ src/services/connected-apps/calendar-push.ts is imported by each listed test
+    ✓ src/services/orb-tools/calendar-management-tools.ts is imported by each listed test (1 ms)
+    ✓ src/services/orb-tools/calendar-management-tools-repository.ts is imported by each listed test
+    ✓ src/services/assistant-continuation/providers/next-action/sources/calendar-upcoming.ts is imported by each listed test (1 ms)
+    ✓ src/services/assistant-continuation/providers/next-action/sources/calendar-upcoming-repository.ts is imported by each listed test
+    ✓ src/services/recommendation-engine/analyzers/calendar-prep-analyzer.ts is imported by each listed test
+    ✓ src/services/recommendation-engine/analyzers/calendar-prep-analyzer-repository.ts is imported by each listed test
+    ✓ src/orb/live/tools/calendar-write-guard.ts is imported by each listed test (1 ms)
+    ✓ the CALENDAR-REGRESSION workflow watches the calendar code and runs every listed test (2 ms)
+
+  console.log
+    [OASIS Event] Emitted: calendar.maintenance.manual_run for VTID-04374 (b858bc70-5daa-482e-a9dc-6a171f819414)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [OASIS Event] Emitted: calendar.maintenance.manual_run for VTID-04374 (68bd397a-65dc-4e2a-a8c3-011be5933675)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+PASS test/vtid-04374-calendar-maintenance.test.ts
+  isDayOver
+    ✓ false while the entry is still running or later today (26 ms)
+    ✓ true once the local day it ended on is over (1 ms)
+    ✓ uses the local day, not UTC: 23:30 Berlin yesterday is 21:30 UTC (1 ms)
+  nextSlot
+    ✓ tomorrow at the same local time, duration kept (2 ms)
+    ✓ keeps the local wall-clock time across the DST change (09:00 stays 09:00) (1 ms)
+    ✓ never lands in the past after a missed run (1 ms)
+  rescheduleUnactivatedTasks
+    ✓ reads one-off, uncompleted, unactivated Autopilot/journey entries only (5 ms)
+    ✓ moves an entry whose day is over; leaves today's alone (40 ms)
+    ✓ drops an entry after 3 moves instead of moving it again (11 ms)
+    ✓ a row completed in the meantime is not counted (8 ms)
+  flags and routes
+    ✓ the loop runs only on exactly "true" (1 ms)
+    ✓ a signed-in member cannot run the global jobs (71 ms)
+    ✓ Exafy staff can (62 ms)
+    ✓ the loop is wired at boot and pinned on staging only (3 ms)
+  /meetup-reminders is retired
+    ✓ the route is a no-op and nothing reads the missing attendance table (1 ms)
+  moving your own entry
+    ✓ your own entries and Vitana suggestions move (1 ms)
+    ✓ anything a source owns does not (1 ms)
+    ✓ done, cancelled and series entries do not
+    ✓ keeps the entry length when only a new start is given (55 ms)
+    ✓ refuses a booked appointment with a reason the app can show (45 ms)
+    ✓ rejects bad input and work items before reading anything (50 ms)
+
+  console.log
+    [Calendar] Bulk created 2 events for user u1...
+
+      at src/routes/calendar.ts:608:13
+
+PASS test/calendar/calendar-routes.contract.test.ts
+  route table
+    ✓ exposes exactly these routes, in this order (61 ms)
+  who may call
+    ✓ get /events refuses an anonymous caller and calls nothing (61 ms)
+    ✓ get /events/window?from=2026-10-05T00:00:00Z&to=2026-10-06T00:00:00Z refuses an anonymous caller and calls nothing (30 ms)
+    ✓ get /events/upcoming refuses an anonymous caller and calls nothing (33 ms)
+    ✓ get /events/today refuses an anonymous caller and calls nothing (29 ms)
+    ✓ get /events/history refuses an anonymous caller and calls nothing (36 ms)
+    ✓ get /events/gaps refuses an anonymous caller and calls nothing (33 ms)
+    ✓ get /conflicts refuses an anonymous caller and calls nothing (29 ms)
+    ✓ post /events refuses an anonymous caller and calls nothing (32 ms)
+    ✓ post /events/bulk refuses an anonymous caller and calls nothing (28 ms)
+    ✓ patch /events/e1 refuses an anonymous caller and calls nothing (37 ms)
+    ✓ post /events/e1/move refuses an anonymous caller and calls nothing (48 ms)
+    ✓ post /events/e1/complete refuses an anonymous caller and calls nothing (38 ms)
+    ✓ delete /events/e1 refuses an anonymous caller and calls nothing (41 ms)
+    ✓ post /journey/initialize refuses an anonymous caller and calls nothing (26 ms)
+    ✓ get /subscription refuses an anonymous caller and calls nothing (34 ms)
+    ✓ post /subscription refuses an anonymous caller and calls nothing (58 ms)
+    ✓ delete /subscription refuses an anonymous caller and calls nothing (30 ms)
+    ✓ get /google refuses an anonymous caller and calls nothing (32 ms)
+    ✓ post /google/enable refuses an anonymous caller and calls nothing (35 ms)
+    ✓ post /google/disable refuses an anonymous caller and calls nothing (36 ms)
+    ✓ post /reschedule refuses an anonymous caller and calls nothing (30 ms)
+    ✓ post /reprioritize refuses an anonymous caller and calls nothing (36 ms)
+    ✓ health and the feed are open (39 ms)
+    ✓ whole-calendar jobs are staff only (68 ms)
+  reads
+    ✓ list, upcoming, today, history, gaps, conflicts (44 ms)
+    ✓ window: validation (25 ms)
+    ✓ window: member view — emoji, reminders, movable, external busy (75 ms)
+    ✓ window: staff developer lens adds read-only work items only when asked; include flags turn parts off (81 ms)
+  writes
+    ✓ create: validation, defaults and role tagging (39 ms)
+    ✓ bulk (52 ms)
+    ✓ update and delete (79 ms)
+    ✓ move: validation, ownership rules, default duration (215 ms)
+    ✓ complete: work items are read-only, completion reaches the source (86 ms)
+    ✓ journey initialize (42 ms)
+  subscription and Google
+    ✓ feed link lifecycle (47 ms)
+    ✓ Google sync state and switch (91 ms)
+
+Test Suites: 5 passed, 5 total
+Tests:       143 passed, 143 total
+Snapshots:   0 total
+Time:        3.214 s
+Ran all test suites matching /test\/vtid-04826-calendar-pillar-priority.test.ts|test\/vtid-04374-calendar-maintenance.test.ts|test\/calendar/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
