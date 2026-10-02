@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04844",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04844-commerce-guide-instruction.test.ts test/vtid-04840-commerce-setup-opening.test.ts test/orb/live/commerce-surface.test.ts test/orb/live/instruction/work-surface-overlays.test.ts test/vtid-04560-role-separation-regression.test.ts test/orb/latency/vtid-04542-voice-payload-identity.test.ts",
+      "cwd": "services/gateway",
+      "reason": "what Vitana says in a commerce voice session needs a microphone and a live model, so the instruction, the opener and the supplier facts are pinned here; the owner hears the guide in the real Talk to Vitana session on staging (owner decision 2026-10-02)"
+    }
+  ]
+}
