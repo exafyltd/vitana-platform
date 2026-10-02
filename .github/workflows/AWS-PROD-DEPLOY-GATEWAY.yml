@@ -914,6 +914,19 @@ jobs:
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Jev secret and $(echo "$NEW_DEF" | jq '[.containerDefinitions[0].environment[] | select(.name | test("^JEV_.*_MODE$"))] | length') gate switches set"
 
+      - name: Build task-definition (drop dead secret refs)
+        # VTID-04849: the live task def carried DB_PASSWORD from the Aurora
+        # managed secret rds!cluster-eba8a4f2-…; vitana-aurora-prod no longer has
+        # a managed master secret, so that secret is gone and every new task
+        # failed with ResourceInitializationError (ResourceNotFoundException) —
+        # no deploy, rollback or task restart could start. The gateway never
+        # reads DB_PASSWORD. Dropped here so it is not cloned forward. Every mode.
+        run: |
+          set -e
+          NEW_DEF=$(jq '.containerDefinitions[0].secrets |= [ (. // [])[] | select(.name != "DB_PASSWORD") ]' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Secrets now: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].secrets[].name]')"
+
       - name: Build task-definition (2/2 — optional overrides) + register + roll the service
         id: roll
         env:
