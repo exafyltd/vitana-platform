@@ -28,7 +28,8 @@ import { resolveJevAccess, roleMayUseDecision, JevCaller, JevPlane } from './jev
 import { applyPiiPolicy } from './jev-pii';
 import { getJevDecision, JevDecisionDef } from './jev-decisions';
 import { emitJevDecisionEvent, jevCostUsd, JevOutcome } from './jev-telemetry';
-import { evaluateJevPolicy, isTenantScoped, JEV_DEFAULT_TENANT_FLAG, JEV_PLATFORM_TENANT } from './jev-policy';
+import { evaluateJevPolicy, isTenantScoped, isJevBudgetedPlane, jevSpendPlane, JEV_BUDGETED_PLANES, JEV_DEFAULT_TENANT_FLAG, JEV_PLATFORM_TENANT } from './jev-policy';
+import { maybeRaiseBudgetAlerts } from './jev-budget-alerts';
 import { getDefaultJevControl, JevControl } from './jev-tenant-control';
 
 /** Jev allows 64k tokens per request; stay far below it without a tokenizer. */
@@ -158,10 +159,16 @@ export async function decide(name: string, input: unknown, caller: JevCaller, op
   if (!flag) return fallback('tenant_config_unavailable', { status: 503 });
   const policy = evaluateJevPolicy({ plane: access.plane, data: def.data, decisionPlanes: def.planes, flag, env });
   if (!policy.allowed) return denied(policy.reason);
-  if (flag.monthly_budget_usd !== null) {
-    const spent = await control.getMonthSpend(tenantKey);
+  // VTID-04857: the budget caps community/customer spend only; internal and
+  // system_autopilot calls are never throttled by it (internal is unlimited).
+  const spendPlane = jevSpendPlane(access.plane, def.data);
+  const budget = isJevBudgetedPlane(spendPlane) ? flag.monthly_budget_usd : null;
+  let budgetedSpent = 0;
+  if (budget !== null) {
+    const spent = await control.getMonthSpend(tenantKey, JEV_BUDGETED_PLANES);
     if (spent === null) return fallback('budget_check_failed', { status: 503 });
-    if (spent >= flag.monthly_budget_usd) return fallback('tenant_budget_exhausted', { status: 429 });
+    if (spent >= budget) return fallback('tenant_budget_exhausted', { status: 429 });
+    budgetedSpent = spent;
   }
 
   const pii = applyPiiPolicy(def.buildState(parsed.data), def.pii);
@@ -183,7 +190,8 @@ export async function decide(name: string, input: unknown, caller: JevCaller, op
   const verdict = answers[def.primary];
   const outcome: 'decided' | 'abstained' = verdict.confidence >= def.threshold ? 'decided' : 'abstained';
   const cost = jevCostUsd(res.model, res.usage.input_tokens);
-  void control.recordSpend(tenantKey, access.plane, res.usage.input_tokens, cost);
+  void control.recordSpend(tenantKey, spendPlane, res.usage.input_tokens, cost);
+  if (budget !== null) void maybeRaiseBudgetAlerts({ tenantId: tenantKey, budgetUsd: budget, spentBeforeUsd: budgetedSpent, costUsd: cost });
   emitJevDecisionEvent({
     ...base,
     outcome,
