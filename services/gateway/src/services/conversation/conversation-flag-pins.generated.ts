@@ -42,7 +42,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   FEATURE_ORB_GREETING_TTS_BRIDGE_ENV: { staging: "off", prod: null },
   FEATURE_ORB_NOVA_PREWARM_ENV: { staging: "staging-only", prod: null },
   FEATURE_ORB_SAFE_FAST_GREETING_ENV: { staging: "staging-only", prod: "staging+prod" },
-  FEATURE_ORB_WS_TRANSPORT_ENV: { staging: "staging-only", prod: null },
+  FEATURE_ORB_WS_TRANSPORT_ENV: { staging: "staging-only", prod: "staging+prod" },
   FEEDBACK_AUTO_DISPATCH_ENABLED: { staging: "true", prod: null },
   GATEWAY_PUBLIC_URL: { staging: "https://preview-aws-gateway.vitanaland.com", prod: null },
   GATEWAY_URL: { staging: "https://preview-aws-gateway.vitanaland.com", prod: null },
