@@ -33,6 +33,12 @@ TEST: services/gateway/test/vtid-04864-vtna-reward-rules.test.ts
 TEST: services/gateway/test/vtid-04508-community-invites.test.ts
 TEST: services/gateway/test/services/automation-handlers-sharing-growth.test.ts
 
+AC-7 Codex review fixes: the invite cap is atomic (claim_invite_reward(): per-inviter advisory lock + cap + signed_up->rewarded in one step, verified in PGlite); AP-0708 pays only approved VTNA rules (legacy types like product_review are not paid); the overview reads lifetime earned keys, the cap window and the recent list separately, so early milestones never read as unearned.
+TEST: services/gateway/test/vtid-04508-community-invites.test.ts
+TEST: services/gateway/test/services/automation-handlers-wallet-payments.test.ts
+TEST: services/gateway/test/vtid-04864-vtna-reward-rules.test.ts
+Evidence: outputs/pglite-claim-invite.txt (migration 20261003140000_vtid_04864_claim_invite_reward.sql).
+
 Contract changes made on purpose (tests updated with a comment each):
 - welcomeBonusEventId() now returns the onboarding_complete milestone key (was onboarding_welcome_bonus:<user>).
 - celebrateDiaryStreak() reports wallet_credit 0 when nothing was credited (was the tier amount even on failure).

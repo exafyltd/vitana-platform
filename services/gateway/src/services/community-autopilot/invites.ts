@@ -189,16 +189,21 @@ async function maybeRewardInviter(
 ): Promise<{ rewarded: boolean; reason?: string; credits?: number }> {
   if (!referralId) return { rewarded: false, reason: 'no_referral_row' };
   if (!isInviteRewardEnabled()) return { rewarded: false, reason: 'reward_disabled' };
-  const since = new Date(now.getTime() - 30 * 86_400_000).toISOString();
-  const { data: recent } = await sb.from('referrals').select('id').eq('referrer_id', inviterId).eq('status', 'rewarded').gte('rewarded_at', since);
-  if (((recent as unknown[] | null)?.length ?? 0) >= INVITE_REWARD_MONTHLY_CAP) return { rewarded: false, reason: 'monthly_cap' };
-
   const credits = inviteRewardCredits();
-  // Exactly once: only the call that moves signed_up → rewarded may credit.
-  const { data: moved } = await sb.from('referrals')
-    .update({ status: 'rewarded', rewarded_at: now.toISOString(), reward_amount: credits })
-    .eq('id', referralId).eq('status', 'signed_up').select('id');
-  if (!(moved as unknown[] | null)?.length) return { rewarded: false, reason: 'already_rewarded' };
+  // VTID-04864: cap check + signed_up → rewarded in ONE locked DB step
+  // (claim_invite_reward), so two claims for the same inviter can never both
+  // pass the cap. Only the call that moved the referral may credit.
+  const { data: claim, error: claimErr } = await sb.rpc('claim_invite_reward', {
+    p_referral_id: referralId,
+    p_inviter_id: inviterId,
+    p_amount: credits,
+    p_cap: INVITE_REWARD_MONTHLY_CAP,
+    p_window_days: getRewardRule('invite_friend_joined')?.cap?.days ?? 30,
+    p_now: now.toISOString(),
+  });
+  const claimed = claim as { ok?: boolean; claimed?: boolean; reason?: string } | null;
+  if (claimErr || !claimed?.ok) return { rewarded: false, reason: 'claim_failed' };
+  if (!claimed.claimed) return { rewarded: false, reason: claimed.reason ?? 'not_claimed' };
 
   // VTID-04809: earned VTNA on the canonical ledger, keyed so AP-0405 paying
   // the same referral lands as a duplicate instead of a second credit.

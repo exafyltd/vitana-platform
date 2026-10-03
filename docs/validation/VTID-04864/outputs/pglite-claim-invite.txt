@@ -1,0 +1,8 @@
+ok   a signed_up referral is claimed
+ok   status rewarded, amount 1000
+ok   the same referral is never claimed twice
+ok   another inviter cannot claim this referral
+ok   the 11th in 30 days hits the cap
+ok   a capped referral stays signed_up
+ok   after the 30-day window it can be claimed
+ALL CLAIM_INVITE_REWARD CHECKS PASSED

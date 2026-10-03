@@ -147,16 +147,18 @@ describe('VTID-04864: the invite reward is on by default', () => {
 });
 
 describe('VTID-04864: the Wallet → Rewards overview', () => {
-  const now = new Date('2026-10-03T12:00:00Z');
-  const rows = [
+  const recent = [
     { amount: 20, idempotency_key: `milestone_profile_complete_${U}`, created_at: '2026-10-02T10:00:00Z' },
     { amount: 20, idempotency_key: `milestone_diary_streak_3_${U}`, created_at: '2026-10-01T10:00:00Z' },
-    { amount: 200, idempotency_key: `referral_reward:${U}:x`, created_at: '2026-09-20T10:00:00Z' },
-    { amount: 200, idempotency_key: `referral_reward:${U}:y`, created_at: '2026-08-01T10:00:00Z' },
   ];
+  const input = {
+    earnedKeys: [`milestone_profile_complete_${U}`, `milestone_diary_streak_3_${U}`],
+    windowCounts: { invite_friend_joined: 1 },
+    recent,
+  };
 
-  it('marks earned once-rules and counts capped rules inside the window only', () => {
-    const o = buildRewardOverview(U, rows, 440, now, { COMMUNITY_INVITE_REWARD_ENABLED: 'true' } as any);
+  it('marks earned once-rules from the lifetime keys and shows the window count for capped rules', () => {
+    const o = buildRewardOverview(U, input, 440, {} as any);
     const all = o.groups.flatMap((g) => g.rules);
     expect(all.find((r) => r.id === 'profile_complete')?.earned).toBe(true);
     expect(all.find((r) => r.id === 'first_diary')?.earned).toBe(false);
@@ -167,8 +169,16 @@ describe('VTID-04864: the Wallet → Rewards overview', () => {
     expect(o.eur_per_vtna).toBe(0.01);
   });
 
+  it('an early milestone stays earned however many rewards came after it (lifetime keys, not the recent list)', () => {
+    const o = buildRewardOverview(U, { earnedKeys: [`milestone_onboarding_complete_${U}`], windowCounts: {}, recent: [] }, 0, {} as any);
+    expect(o.groups.flatMap((g) => g.rules).find((r) => r.id === 'onboarding_complete')?.earned).toBe(true);
+    const src = fs.readFileSync(path.join(__dirname, '../src/services/rewards/reward-overview-service.ts'), 'utf8');
+    expect(src).toContain('repo.fetchEarnedKeys(sb, userId, onceKeys)');
+    expect(src).not.toMatch(/HISTORY_SCAN/);
+  });
+
   it('never shows a rule that does not pay: the invite rules are hidden while their switch is off', () => {
-    const off = buildRewardOverview(U, [], 0, now, { COMMUNITY_INVITE_REWARD_ENABLED: 'false' } as any);
+    const off = buildRewardOverview(U, input, 0, { COMMUNITY_INVITE_REWARD_ENABLED: 'false' } as any);
     expect(off.groups.map((g) => g.group)).toEqual(['first_steps', 'habits']);
     expect(visibleRewardRules({ COMMUNITY_INVITE_REWARD_ENABLED: 'false' } as any).some((r) => r.id === 'invite_friend_joined')).toBe(false);
     expect(visibleRewardRules({} as any).some((r) => r.id === 'invited_friends_10')).toBe(true);
@@ -178,7 +188,7 @@ describe('VTID-04864: the Wallet → Rewards overview', () => {
     expect(ruleIdForKey(`milestone_first_group_${U}`, U)).toBe('first_group');
     expect(ruleIdForKey(`referral_reward:${U}:z`, U)).toBe('invite_friend_joined');
     expect(ruleIdForKey('rec_complete_abc', U)).toBeNull();
-    const o = buildRewardOverview(U, rows, 0, now, { COMMUNITY_INVITE_REWARD_ENABLED: 'false' } as any);
+    const o = buildRewardOverview(U, input, 0, {} as any);
     expect(o.recent[0]).toEqual({ rule_id: 'profile_complete', amount: 20, created_at: '2026-10-02T10:00:00Z' });
     expect(JSON.stringify(o)).not.toMatch(/celebration|description|title/);
   });

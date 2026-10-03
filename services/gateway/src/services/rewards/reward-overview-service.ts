@@ -12,13 +12,13 @@ import * as repo from './reward-overview-repository';
 import {
   RewardRuleGroup,
   VTNA_NEVER_EARNS,
+  VTNA_REWARD_RULES,
   rewardEventId,
   visibleRewardRules,
 } from './vtna-reward-rules';
 import { inviteRewardCredits } from '../community-autopilot/invites';
 
 export const VTNA_EUR_VALUE = 0.01;
-const HISTORY_SCAN = 200;
 const RECENT_SHOWN = 10;
 
 export interface RewardOverviewRule {
@@ -56,35 +56,34 @@ export function ruleIdForKey(key: string | null | undefined, userId: string): st
   return null;
 }
 
+export interface RewardOverviewInput {
+  /** Once-only rule keys this member has ever been paid (lifetime). */
+  earnedKeys: string[];
+  /** Per capped rule: how many were paid inside its rolling window. */
+  windowCounts: Record<string, number>;
+  /** Most recent reward rows, newest first (history list only). */
+  recent: Array<{ amount: number | string; idempotency_key: string | null; created_at: string }>;
+}
+
 export function buildRewardOverview(
   userId: string,
-  rows: Array<{ amount: number | string; idempotency_key: string | null; created_at: string }>,
+  input: RewardOverviewInput,
   earnedBalance: number,
-  now: Date = new Date(),
   env: NodeJS.ProcessEnv = process.env,
 ): RewardOverview {
-  const keys = new Set(rows.map((r) => r.idempotency_key).filter(Boolean) as string[]);
+  const keys = new Set(input.earnedKeys);
   const groups = GROUP_ORDER.map((group) => ({
     group,
     rules: visibleRewardRules(env)
       .filter((r) => r.group === group)
-      .map((r) => {
-        let usedInWindow: number | null = null;
-        if (r.cap) {
-          const since = now.getTime() - r.cap.days * 86_400_000;
-          usedInWindow = rows.filter(
-            (row) => ruleIdForKey(row.idempotency_key, userId) === r.id && Date.parse(row.created_at) >= since,
-          ).length;
-        }
-        return {
-          id: r.id,
-          amount: r.id === 'invite_friend_joined' ? inviteRewardCredits() : r.amount,
-          once: r.once,
-          cap: r.cap ?? null,
-          earned: r.once ? keys.has(rewardEventId(r.id, userId)) : false,
-          used_in_window: usedInWindow,
-        };
-      }),
+      .map((r) => ({
+        id: r.id,
+        amount: r.id === 'invite_friend_joined' ? inviteRewardCredits() : r.amount,
+        once: r.once,
+        cap: r.cap ?? null,
+        earned: r.once ? keys.has(rewardEventId(r.id, userId)) : false,
+        used_in_window: r.cap ? input.windowCounts[r.id] ?? 0 : null,
+      })),
   })).filter((g) => g.rules.length > 0);
 
   return {
@@ -94,7 +93,7 @@ export function buildRewardOverview(
     earned_balance: earnedBalance,
     groups,
     never_earns: [...VTNA_NEVER_EARNS],
-    recent: rows.slice(0, RECENT_SHOWN).map((r) => ({
+    recent: input.recent.slice(0, RECENT_SHOWN).map((r) => ({
       rule_id: ruleIdForKey(r.idempotency_key, userId),
       amount: Number(r.amount),
       created_at: r.created_at,
@@ -102,19 +101,33 @@ export function buildRewardOverview(
   };
 }
 
-export async function getRewardOverview(userId: string): Promise<RewardOverview> {
+export async function getRewardOverview(userId: string, now: Date = new Date()): Promise<RewardOverview> {
+  const empty: RewardOverviewInput = { earnedKeys: [], windowCounts: {}, recent: [] };
   const sb = getSupabase();
-  if (!sb) return buildRewardOverview(userId, [], 0);
-  const [{ data: rows, error }, { data: wallet }] = await Promise.all([
-    repo.fetchRewardTransactions(sb, userId, HISTORY_SCAN),
+  if (!sb) return buildRewardOverview(userId, empty, 0);
+
+  const onceKeys = VTNA_REWARD_RULES.filter((r) => r.once).map((r) => rewardEventId(r.id, userId));
+  const invite = VTNA_REWARD_RULES.find((r) => r.id === 'invite_friend_joined');
+  const since = new Date(now.getTime() - (invite?.cap?.days ?? 30) * 86_400_000).toISOString();
+
+  const [earned, windowRows, recent, wallet] = await Promise.all([
+    repo.fetchEarnedKeys(sb, userId, onceKeys),
+    repo.fetchKeyPrefixSince(sb, userId, `referral_reward:${userId}:`, since),
+    repo.fetchRecentRewards(sb, userId, RECENT_SHOWN),
     repo.fetchEarnedBalance(sb, userId),
   ]);
-  if (error) {
-    console.error(`[reward-overview] reading rewards failed for ${userId.slice(0, 8)}: ${error.message}`);
+  for (const [name, r] of [['earned keys', earned], ['invite window', windowRows], ['recent rewards', recent]] as const) {
+    if ((r as { error?: { message: string } | null }).error) {
+      console.error(`[reward-overview] reading ${name} failed for ${userId.slice(0, 8)}: ${(r as any).error.message}`);
+    }
   }
   return buildRewardOverview(
     userId,
-    (rows ?? []) as Array<{ amount: number; idempotency_key: string | null; created_at: string }>,
-    Number((wallet as { earned_balance?: number } | null)?.earned_balance ?? 0),
+    {
+      earnedKeys: ((earned.data ?? []) as Array<{ idempotency_key: string }>).map((x) => x.idempotency_key),
+      windowCounts: { invite_friend_joined: (windowRows.data ?? []).length },
+      recent: (recent.data ?? []) as RewardOverviewInput['recent'],
+    },
+    Number((wallet.data as { earned_balance?: number } | null)?.earned_balance ?? 0),
   );
 }
