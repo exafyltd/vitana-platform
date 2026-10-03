@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04851",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
+    { "kind": "existing", "ref": "npx jest test/services/memory/vtid-04851-recall-fact-recency.test.ts", "cwd": "services/gateway",
+      "reason": "the selection happens inside a voice session's memory read; on real sessions the evidence is the VTID-04784 recall-shadow lines (only_served should fall towards 0), read with scripts/memory/recall-shadow-report.sh (read-only)" }
+  ]
+}

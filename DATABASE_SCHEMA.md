@@ -412,6 +412,74 @@ CREATE TABLE operator_messages (
 
 ---
 
+### voice_session_facts / voice_session_facts_hourly — committed, NOT yet applied (VTID-04776)
+
+One row per ORB voice session (SSE, WebSocket and LiveKit) — the per-session
+fact behind the Command Hub Voice Supervisor (`/api/v1/voice/supervisor/*`).
+Before it a session existed only as OASIS events with no tenant column, and the
+start/stop events carried no role, surface, language or provider. Migration
+`20261001120000_vtid_04776_voice_session_facts.sql` (additive, idempotent;
+apply with `RUN-MIGRATION.yml`). Verified against a local Postgres 16: applies
+twice cleanly, backfill idempotent, anon/authenticated refused.
+
+```sql
+CREATE TABLE voice_session_facts (
+  session_id         TEXT PRIMARY KEY,      -- live-<uuid> (gateway) / orb-<uuid> (LiveKit)
+  tenant_id          UUID NULL,
+  user_id            UUID NULL,
+  is_anonymous       BOOLEAN NOT NULL DEFAULT false,
+  surface            TEXT NULL,             -- vitanaland | command-hub | admin | backoffice | commerce
+  role               TEXT NULL,             -- role the Assistant Profile served
+  persona_key        TEXT NULL,
+  profile_resolution TEXT NULL,             -- declared | route | narrowed | unverified | anonymous
+  lang               TEXT NULL,
+  provider           TEXT NULL,             -- nova_sonic | cascade | vertex_serbian_bridge | livekit | unknown (CHECK)
+  selection_reason   TEXT NULL,
+  transport          TEXT NULL,             -- sse | ws | livekit (CHECK)
+  is_mobile          BOOLEAN NULL,
+  app_version        TEXT NULL,
+  entry              TEXT NULL,
+  started_at         TIMESTAMPTZ NOT NULL,
+  ended_at           TIMESTAMPTZ NULL,
+  last_activity_at   TIMESTAMPTZ NULL,      -- refreshed every 5 min while live
+  duration_ms        INTEGER NULL,
+  turn_count         INTEGER NULL,
+  user_turns         INTEGER NULL,
+  model_turns        INTEGER NULL,
+  audio_in_chunks    INTEGER NULL,
+  audio_out_chunks   INTEGER NULL,
+  ttfa_ms            INTEGER NULL,          -- session start -> first model audio
+  p50_turn_ms        INTEGER NULL,          -- reserved; not written yet
+  close_reason       TEXT NULL,
+  close_code         INTEGER NULL,          -- last upstream close code before the end
+  failure_class      TEXT NULL,             -- voice-failure-taxonomy class, NULL when healthy
+  outcome            TEXT NULL,             -- ok | silent | one_way | dropped | error | abandoned | active (CHECK)
+  stall_count        INTEGER NULL,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()   -- trigger-maintained
+);
+-- indexes: (started_at DESC), (tenant_id, started_at DESC), (surface, role, started_at DESC),
+--          (provider, started_at DESC), (lang, started_at DESC), partial (started_at DESC) WHERE ended_at IS NULL
+```
+
+- Written only by the gateway (`services/gateway/src/services/voice-session-facts.ts`),
+  fire-and-forget: start (session/start, LiveKit token mint), updates (provider
+  selected, first audio, member role resolved, activity heartbeat, orb-agent
+  start via `/api/v1/oasis/emit`), end (all five gateway stop paths, WS
+  cleanup, orb-agent stop). Kill switch `VOICE_SESSION_FACTS_ENABLED=false`.
+- `outcome` / `failure_class` come from `classifyVoiceSessionOutcome()` (reuses
+  `classifyQualityFromSessionStop` / `detectAudioOneWay`).
+- View `voice_session_facts_hourly` (`security_invoker`): per hour x tenant x
+  surface x role x provider x lang — sessions, ok/silent/one_way/dropped/error
+  counts, avg duration, p50/p95 ttfa (`percentile_cont`).
+- Function `voice_session_facts_backfill(p_since timestamptz) RETURNS int`:
+  best-effort rebuild from `oasis_events` (start/stop/profile.resolved/
+  provider.selected joined on `metadata->>session_id`), `ON CONFLICT DO NOTHING`,
+  `p_since` required and at most 30 days back. NOT run by the migration —
+  operator step after apply.
+- RLS on, no policies; `anon`/`authenticated` revoked on table and view;
+  `service_role` only (table, view, function).
+
 ### conversation_metrics_hourly — APPLIED 2026-09-23 (VTID-04371)
 
 Hourly conversation metrics for Command Hub → Conversation → Monitor and
@@ -647,6 +715,21 @@ blocks. Kill switch: `CONNECTED_APPS_CALENDAR_PUSH=false`.
 
 ### Wallet System (USD / Credits / VTNA) — added 2026-07-17
 
+> **VTID-04809 (2026-10-01, owner decision): `user_wallets.CREDITS` is the
+> canonical VTNA ledger.** 1 VTNA = 1 CREDIT = **EUR 0.01** (pegged to EUR;
+> the USD figure is a live ECB conversion). `user_wallets.earned_balance`
+> holds the earned part of the CREDITS balance (`CHECK 0 <= earned_balance
+> <= balance`); rewards (shop, subscription conversion) spend earned VTNA
+> only, every other debit can only reach `balance - earned_balance`.
+> `credit_wallet(p_tenant_id, p_user_id, p_amount, p_type, p_source,
+> p_source_event_id, p_description)` now exists and writes here: `reward` →
+> earned, `purchase` → purchased, negative amounts debit that bucket,
+> idempotent per (member, `p_source_event_id`) via
+> `wallet_transactions.idempotency_key`; `service_role` only. Members can no
+> longer write `user_wallets`/`wallet_transactions` directly and
+> `update_user_balance` refuses `'add'`. Migration
+> `20261001180000_vtid_04809_vtna_reward_ledger.sql`.
+
 **This is the live, production system backing the wallet UI** (`useWallet.ts`
 in `vitana-v1` → `user_wallets` + RPCs below). It predates and is entirely
 separate from the newer EUR/USD Stripe deposit tables (`wallet_accounts`,
@@ -672,6 +755,7 @@ CREATE TABLE public.user_wallets (
   user_id UUID NOT NULL,
   currency_type TEXT NOT NULL,      -- 'USD' | 'VTNA' | 'CREDITS'
   balance NUMERIC(15,2) NOT NULL DEFAULT 0.00,   -- was 1000.00 until VTID wallet-reset
+  earned_balance NUMERIC(15,2) NOT NULL DEFAULT 0, -- VTID-04809: earned VTNA inside CREDITS
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(user_id, currency_type)
@@ -687,6 +771,8 @@ CREATE TABLE public.wallet_transactions (   -- old (2025-09) schema; still the l
   fees NUMERIC(15,2) DEFAULT 0.00,
   status TEXT DEFAULT 'pending',
   metadata JSONB,
+  idempotency_key TEXT,             -- VTID-04809: unique per (member, key)
+  credit_source TEXT,               -- VTID-04809: 'earned' | 'purchased'
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -717,6 +803,8 @@ CREATE TABLE public.wallet_balance_resets (   -- added VTID wallet-reset, 2026-0
 **Canonical exchange rate** (the only `is_active=true` rows in
 `exchange_rates`, matching `vitana-v1`'s `src/lib/exchangeRates.ts`):
 **1 USD = 100 CREDITS = 100 VTNA**, VTNA:CREDITS at 1:1 parity.
+VTID-04809 adds the EUR peg rows **1 EUR = 100 CREDITS = 100 VTNA**, which
+are the reference for every VTNA price shown to a member.
 
 **RPCs** (`get_user_balance`, `update_user_balance`, `initialize_user_wallet`,
 `process_wallet_exchange`, `process_wallet_transfer`,
@@ -1165,6 +1253,8 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-10-01 | VTID-04798, **applied live** 2026-10-01 with the owner's go (migration `20261001160000_vtid_04798_memory_sensitivity.sql`, RUN-MIGRATION run 36895020174; verified: 457 fact rows and 65 items special_category, both triggers and constraints present): `memory_facts.sensitivity` and `memory_items.sensitivity` (text NOT NULL DEFAULT 'standard', CHECK in ('standard','special_category')) mark GDPR Art. 9 data. One rule decides it: immutable function `memory_sensitivity_of(text)` on the fact key / category key, applied by BEFORE INSERT/UPDATE triggers `trg_memory_facts_sensitivity` / `trg_memory_items_sensitivity` (they only ever raise to special_category) and by a backfill (measured 2026-10-01: 95 of 392 current fact keys, 457 fact rows, 65 items). `memory_items.sensitivity_flag` (VTID-01116, never written) is left as is. Tested on a throwaway Postgres: `scripts/ci/sql-tests/run-memory-sensitivity-test.sh` (CI `SQL-MEMORY-SENSITIVITY.yml`). | Claude Code | VTID-04798 |
+| 2026-10-01 | VTID-04776, **committed, NOT applied** (migration `20261001120000_vtid_04776_voice_session_facts.sql`, additive): table `voice_session_facts` (one row per ORB voice session, PK `session_id`; RLS on, service_role only), view `voice_session_facts_hourly` (security_invoker), trigger `trg_voice_session_facts_touch`, function `voice_session_facts_backfill(p_since)` (service_role, max 30 days back, not run by the migration). Read by `/api/v1/voice/supervisor/*` (VTID-04776/04778/04780). The gateway writes it fire-and-forget and logs loudly while the table is missing, so apply before relying on the Supervisor; then run the backfill for the history you want. | Claude Code | VTID-04776 |
 | 2026-09-28 | VTID-04674, **applied live** (`vtid_04674_notification_type_controls`, starting list approved by the owner in session): the admin switch per notification type. It adds `notification_type_controls` (+ audit, + daily block counts), `notification_categories.member_can_disable`, the decision functions, the BEFORE INSERT guard on `user_notifications`, two read models, index `idx_user_notifications_tenant_time`, and member categories `posts_reactions` and `tips_updates`. Starting state: 13 types ON for every tenant (the ones delivered in the last 30 days plus `reminder_due`); everything else OFF and registered as OFF on first send. Idempotent; tested twice against a local Postgres (`docs/validation/VTID-04674/`). Verified live read-only: 26 rows ON (13 types × 2 tenants), trigger enabled, categories extended, 0 blocks at apply time. | Claude Code | VTID-04674 |
 | 2026-09-26 | VTID-04668, **not yet applied** (migration `20260926160000_vtid_04668_recommendation_priority.sql`, additive): nullable `autopilot_recommendations.priority_score numeric` and `autopilot_recommendations.quality jsonb`, plus partial index `idx_autopilot_recommendations_dev_priority` on `(status, priority_score DESC) WHERE user_id IS NULL`. Written by the gateway for developer rows only (`user_id IS NULL`, not `community` / `operator_onramp`): `priority_score = value × confidence × success_odds / max(expected_cost_usd, 0.05)`; `quality = {version, value, confidence, success_odds, expected_cost_usd, expected_input_tokens, executable, basis, scored_at}` (VTID-04669 adds `review`, `review_attempts`, `review_last_attempt_at`). The same write maps `impact_score` (from value) and `effort_score` (from expected cost) so older readers keep working. Community rows keep NULL. Apply before the gateway code is deployed. | Claude Code | VTID-04668 |
 | 2026-09-26 | VTID-04624, **applied live** (`vtid_04624_operator_readonly_query`): function `operator_readonly_query(q text) RETURNS jsonb` (SECURITY INVOKER, EXECUTE granted to `service_role` only — revoked from public/anon/authenticated). Backs the Operator Console's `dev_run_sql_readonly` on the live database (owner decision 2026-09-26; the Aurora copy the tool was designed for has had no replication since the 2026-09-21 full load). Sets `transaction_read_only=on` and `lock_timeout=2s` before executing the statement as a subquery of a jsonb aggregate; the PostgREST login role caps each call at 8 s. Verified live in a rolled-back transaction: a read returns rows; an INSERT through a function, switching back to read-write and a stacked statement are all refused; `auth.users` is not readable by service_role. Migration `20260926110000_vtid_04624_operator_readonly_query.sql`. | Claude Code | VTID-04624 |
@@ -1234,6 +1324,15 @@ CREATE TABLE my_new_table (
 | 2026-09-24 | Added nullable `autopilot_recommendations.action` jsonb (`{kind, params}`, closed registry in `services/community-autopilot/action-registry.ts`; NULL = informational). Executing an action writes one `agent_runs` row (`plane='community_autopilot'`, `agent_id='community-autopilot'`, `idempotency_key='community_autopilot:<rec>:<kind>'`). Applied live. | Claude | VTID-04503 |
 | 2026-09-24 | Unique partial indexes `uq_referrals_referred_id` on `referrals(referred_id) WHERE referred_id IS NOT NULL` (one referral per member; the invite claim is idempotent on it) and `uq_sharing_links_member_invite` on `sharing_links(user_id) WHERE target_type='member_invite'` (one reusable personal invite link per member). Both tables had no duplicates. Migration `20260924200000_vtid_04508_invite_attribution.sql`. Applied live. | Claude | VTID-04508 |
 | 2026-09-24 | **Pending drop, not yet applied:** `autopilot_actions`, `autopilot_action_templates`, `automation_executions`, `autopilot_feedback` — 0 rows each (measured live), no dependent view or function, only FK into them is `autopilot_feedback → autopilot_actions`. Never written; Autopilot state is `autopilot_recommendations`, automation runs are `automation_runs`. Readers removed from the `fetch-user-context`, `get-proactive-context`, `analyze-patterns` and `request-account-deletion` edge functions (`exafyltd/vitana-v1`). Guarded migration `vitana-v1/supabase/migrations/20260924220000_vtid_04514_drop_dead_autopilot_tables.sql` refuses a table with rows; apply it only after those edge functions are deployed. `automation_rules` and `tenant_autopilot_runs` are kept (still read). | Claude | VTID-04514 |
+| 2026-09-29 | `product_clicks` gains `referrer_user_id` (recommender of the validated referral, stored on the click) and `attribution_rejected_reason` (why a `?rec_id=` was dropped, or `unverified`), plus partial index `idx_product_clicks_referrer`. `product_orders.user_id` becomes nullable so a signed-out buyer's sale can be attributed (RLS `user_id = auth.uid()` never matches NULL). Migration `20260929120000_vtid_04740_referrer_on_click_anonymous_buyers.sql`. | Claude | VTID-04740 |
+| 2026-09-29 | `product_orders.tenant_id` becomes nullable: a signed-out buyer's click records no tenant, and the Awin order sync copies the click's tenant onto the order, so without this the anonymous sale's upsert failed. NULL is the honest value for an unknown buyer's tenant; RLS on `product_orders` does not use `tenant_id`. Migration `20260929120200_vtid_04740_product_orders_tenant_nullable.sql`. | Claude | VTID-04740 |
+| 2026-09-29 | RLS `product_clicks_select_own` narrowed to `user_id = auth.uid()`. It had also exposed every anonymous click (`user_id IS NULL`) to every authenticated user, and a click now carries `referrer_user_id`. No client reads the table; gateway reads use the service role. Migration `20260929120700_vtid_04740_product_clicks_select_own_only.sql`. | Claude | VTID-04740 |
+| 2026-09-29 | `recommendation_commissions.status` CHECK widened to `pending`/`credited`/`skipped_ineligible`/`failed`/`reversed`; new `confirm_after`, `confirmed_at`, `reversed_at`, `reversal_reason` and partial index `idx_recommendation_commissions_due`. A conversion the network has not approved is held `pending` until `confirm_after` (window from `admin_settings.recommendation_commission_return_window_days`, seeded `{"days":30}`), then credited or reversed; network-approved conversions (Awin) confirm at once. Migration `20260929120100_vtid_04741_recommendation_commission_hold.sql`. | Claude | VTID-04741 |
+| 2026-09-29 | New functions `confirm_recommendation_commission(p_commission_id uuid)` and `reverse_recommendation_commission(p_order_id uuid, p_reason text)` (SECURITY DEFINER, `service_role` only, return `jsonb`). Each confirms or reverses a held commission in ONE transaction under a row lock. Confirm: re-check the order, `credit_wallet_for_earning`, status and stats. Reverse: `pending → reversed`, or a paid commission reported once, with its OASIS event in the same commit. No table changes. Migration `20260929120300_vtid_04741_commission_confirm_reverse_functions.sql`. | Claude | VTID-04741 |
+| 2026-09-29 | `confirm_recommendation_commission` also locks the `product_orders` row (`FOR UPDATE`) when it re-checks that the order is still a sale, so a decline that commits first prevents payment. It also re-checks the payee against `service_bot_accounts` and `notification_test_actors`: an account registered as one during the hold is closed `skipped_ineligible` (`reversal_reason='excluded_account'`), never paid. CREATE OR REPLACE only. Migration `20260929120400_vtid_04741_confirm_commission_order_lock_exclusions.sql`. | Claude | VTID-04741 |
+| 2026-09-29 | `reverse_recommendation_commission` also locks the `product_orders` row and reverses or reports only while the order is still `refunded`/`cancelled`/`chargeback`; otherwise it returns `order_not_reversing` and changes nothing. The caller's read can be stale if a later sync has moved the order back to `converted`. CREATE OR REPLACE only. Migration `20260929120500_vtid_04741_reverse_commission_order_recheck.sql`. | Claude | VTID-04741 |
+| 2026-09-29 | At payment, `confirm_recommendation_commission` refreshes `payout_amount_minor`, `currency` and `vitana_commission_cents` from the order's current `commission_cents` and `currency`, at the row's recorded `rate_applied` (never today's settings). A network can correct an order after the pending row was written. It returns `order_no_commission` when the order no longer carries a commission. CREATE OR REPLACE only. Migration `20260929120600_vtid_04741_confirm_commission_refresh_terms.sql`. | Claude | VTID-04741 |
+| 2026-10-01 | **VTID-04809 — `user_wallets.CREDITS` is the canonical VTNA ledger.** New `user_wallets.earned_balance` (CHECK `0 <= earned_balance <= balance`, CREDITS only); new `wallet_transactions.idempotency_key` (unique per member) and `credit_source` (`earned`/`purchased`). `credit_wallet()` re-created on this ledger with the signature its callers already used (it never existed live, so diary-streak, milestone, AP-0708, autopilot-completion and Stripe credit-pack credits were silently dropped). Closed two self-credit holes: dropped RLS policy `Users can update their own wallets` and revoked INSERT/UPDATE/DELETE/TRUNCATE on `user_wallets`/`wallet_transactions` from `anon`/`authenticated`; `update_user_balance` refuses `'add'` and is no longer executable by `anon`. EUR peg rows in `exchange_rates`. Migration `20261001180000_vtid_04809_vtna_reward_ledger.sql`. | Claude | VTID-04809 |
 
 ---
 
@@ -1970,6 +2069,15 @@ Existing `user_guided_journey_state.current_session` pointers (> 1) were
 shifted +4 so they keep referencing the same content. The current published
 snapshot was rewritten in place by the same migration.
 
+**VTID-04762 (Audiobook Season 0):** now **100 sessions / 260 topics**.
+Migration `20261001120000` prepended the six-episode Prolog (T255-T260,
+`chapter_id='prolog'`, shown as Season 0 of the Audiobook) at sessions 1-6 and
+shifted everything else to 7-100. The `session` CHECK is now
+`BETWEEN 1 AND 100`; `current_session` pointers > 1 shifted +6 (members who
+already started keep their place and the Prolog counts as heard); the current
+published snapshot was rewritten in place; English translation rows (incl.
+`vitana_voice_script`) ship with it and I18N-DB-SEED fills the other locales.
+
 ---
 
 ### journey_checklist_translations (BOOTSTRAP-GUIDED-JOURNEY-POPUP)
@@ -2107,6 +2215,19 @@ CREATE TABLE product_recommendations (
   UNIQUE (user_id, product_id)
 );
 ```
+
+**Commission lifecycle (VTID-04741):** `recommendation_commissions.status`
+is `pending` (held until `confirm_after`) → `credited` (paid to the wallet,
+`confirmed_at`), or `reversed` (order refunded/cancelled/charged back before
+payment, `reversed_at`/`reversal_reason`); `skipped_ineligible` and `failed`
+as before. Network-approved conversions confirm at once. A reversal after
+payment is reported as `marketplace.recommendation.commission_reversal_after_payout`,
+not clawed back (clawback policy is open, architecture D-11), and only once
+(marked by `reversal_reason` on the `credited` row). Confirm and reverse each
+run as one transaction under a row lock (`confirm_recommendation_commission`,
+`reverse_recommendation_commission`), so a crash never leaves a commission
+marked paid without money, and a confirm and a reversal of the same order
+serialize.
 
 **Auth model:** RLS on, owner-select-only (`auth.uid() = user_id`) +
 service-role full access. **All gateway routes use the service-role client,
@@ -2887,6 +3008,49 @@ get full access to every `partner_registry` row linked to their org;
 Supabase/gateway credentials were reachable from this session; see
 `docs/validation/VTID-03932/acceptance.md`.
 
+### Supplier go-live lists products (VTID-04769) — APPLIED to the live project 2026-10-01
+
+Migration `20261001120000_vtid_04769_supplier_go_live_lists_products.sql`.
+`products.is_active` stays the one truth every member-facing reader filters
+on; for **supplier** products (merchant linked to a partner organization, or
+owned by a test/service account) the database now maintains it:
+
+- `products.first_listed_at TIMESTAMPTZ` — when a supplier product was first
+  switched on; `NULL` = never-listed draft.
+- `products.listing_hold TEXT` (`org_not_live` | `excluded_account`) — why the
+  gate is holding a product off; `NULL` = not held.
+- Org reaches `lifecycle_state = 'live'` (also via the legacy
+  `POST /partner-orgs/:id/activate` status write) → its waiting products
+  (drafts and held ones) go on. Products added while live go on at once.
+- Org paused/suspended, or its owner registered in `service_bot_accounts` /
+  `notification_test_actors` → its products go off with `listing_hold` set,
+  and come back when that clears.
+- An explicit `is_active` write (admin) is a decision: switch-off is never
+  undone by a go-live; switch-on while the org is not live is held until it is.
+- Network products (no partner org, no owner) are never read or written.
+
+Helpers `supplier_listing_block(uuid)` and `refresh_supplier_listings(uuid)`
+are service_role only. Scenarios: `docs/validation/VTID-04769/`.
+
+
+### Discover categories as data (VTID-04783) — APPLIED 2026-10-01 (VTID-04783)
+
+Migration `20261001140000_vtid_04783_discover_categories.sql`.
+
+- `discover_categories(key PK, label_key, icon, sort_order, is_active)` and
+  `discover_subcategories(category_key FK, key, label_key, sort_order, is_active)`
+  — Discover's product categories. `label_key` is a frontend i18n key. Public
+  read (RLS select-all), service-role write. Adding a category is a row here
+  plus its label in the frontend catalogue.
+- `catalog_verticals.discover_category` (FK) — the Discover category a
+  supplier vertical lands in; NULL = none yet (services, until step C).
+- `trg_products_discover_category` (BEFORE INSERT/UPDATE OF category,
+  subcategory, merchant_id) — supplier products only (merchant linked to an
+  org or owned by a user): category becomes the vertical's Discover category;
+  a subcategory survives only if it belongs to that category. Network
+  products are untouched.
+- `discover_category_counts()` — active products per (category, subcategory)
+  in known categories; backs `GET /api/v1/discover/categories`.
 ---
 
 ## Memory — canonical stores, embeddings, health (VTID-04341 / 04342 / 04343 / 04345, 2026-09-23) — APPLIED to the live project
@@ -2897,6 +3061,9 @@ Plan and rationale: `docs/MEMORY-SYSTEM-PLAN.md`. Canonical user memory is two t
 |---|---|---|
 | `memory_facts` | Current key/value facts with provenance and supersession (`superseded_by IS NULL` = current). Written only through `write_fact()`. | `embedding vector(1024)`, `embedding_model = 'amazon.titan-embed-text-v2:0'` |
 | `memory_items` | Episodes (conversation turns today; session summaries, diary, daily learnings in later phases). | `embedding vector(1024)`, same model |
+
+- **Sensitivity (VTID-04798)** — every row of both tables carries `sensitivity`: `special_category` (health, religion, sexual orientation, ethnic origin, political opinion, genetic/biometric data; for this app also diet, intake, steps and the Vitana Index) or `standard`. The database sets it from the key (`memory_sensitivity_of`), whoever writes. `special_category` rows reach the member's own surfaces and the Health Coach only; anything that can show a row to another member reads `standard` only (the member ranker).
+- **Role scope** — `memory_items.active_role` (NULL = personal, VTID-04367). `memory_facts` is personal memory only: a conversation on a work surface (Command Hub, admin, BackOffice, commerce) writes no facts (VTID-04798).
 
 - **`write_fact(...)`** — if the current fact for (tenant, user, entity, fact_key) has the same value (trimmed, case-insensitive) and the incoming provenance is not stronger, returns the existing id and writes nothing. Strength: `user_*` 3 > `system_observed` 2 > `assistant_inferred` 1 > other 0. A different value, or a stronger source confirming the same value, supersedes as before.
 - **Embeddings** are written by the gateway only (`services/gateway/src/services/memory-embedding.ts`): on write (`memory_items`, fire-and-forget), async after `write_fact` (facts), and by the hourly AP-0910 backfill for anything left NULL. No fallback provider — a vector from another model is never written into these columns.
@@ -3069,3 +3236,41 @@ The explicit-preference table is called **`user_explicit_preferences`**:
 Functions: `preference_set/delete`, `constraint_set/delete`,
 `preference_bundle_get`, `preference_confirm`, `inference_reinforce/downgrade`,
 `preference_get_audit` (pagination fixed as above).
+
+### Jev spend and shadow decisions (VTID-04754)
+Tables: `jev_spend_counters` (PK `tenant_id, plane, month`; `calls`,
+`input_tokens`, `cost_usd`), `jev_shadow_decisions` (one row per shadow or
+enforce gate run: `gate`, `decision`, `mode`, `plane`, `tenant_id`,
+`subject_type`/`subject_ref`, `jev_outcome`, `jev_verdict`, `jev_confidence`,
+`system_action`, later `agreed`/`outcome`/`outcome_at`, `cost_usd`).
+Service role only; RLS on with no client policies. Platform-level spend
+(no tenant) is counted under `00000000-0000-0000-0000-000000000000`.
+
+Functions: `jev_record_spend(tenant, plane, input_tokens, cost_usd)` (atomic
+increment, returns the tenant's month total), `jev_shadow_gate_stats(days)`
+(per-gate calls, decided, agreement rate, cost). Per-tenant control lives in
+`tenant_settings.feature_flags.jev = {enabled, planes[], monthly_budget_usd}`
+(no new column).
+
+## Account erasure — `erasure_registry`, `erase_user_data()` (VTID-04765, 2026-10-01) — NOT YET APPLIED
+
+`request-account-deletion` (vitana-v1 edge function) deleted 20 hand-listed tables, then the auth user. On 2026-10-01 the live schema had ~200 more public tables whose `user_id` does not cascade from `auth.users` — memory, diary, health, notifications among them — so their rows outlived the account.
+
+Migration `supabase/migrations/20261001120000_vtid_04765_erase_user_data.sql`.
+
+### erasure_registry
+| Column | Type | Notes |
+|---|---|---|
+| `table_name` | text PK | a public table |
+| `action` | text | only `retain` |
+| `reason` | text NOT NULL | the legal reason (bookkeeping retention, allowlists) |
+| `created_at` | timestamptz | |
+
+Seeded with the financial ledgers and order/payment records (HGB §257, AO §147; to be confirmed by counsel) and the two test/service-account allowlists. service_role only.
+
+### `erase_user_data(p_user_id uuid, p_dry_run boolean default false) returns jsonb`
+- Finds every ordinary or partitioned public table with a uuid `user_id` itself; new tables are covered without a list.
+- Skips `retain` tables and tables whose `user_id` cascades from `auth.users`; those go with the auth user as before.
+- Retries foreign-key failures for up to 5 passes and sweeps again after delete triggers.
+- Returns `{deleted, retained, errors, passes}`. The edge function deletes the auth user only when `errors` is empty.
+- SECURITY DEFINER, `service_role` only. Tested on a throwaway Postgres: `scripts/ci/sql-tests/run-erase-user-data-test.sh` (CI: `SQL-ERASE-USER-DATA.yml`).

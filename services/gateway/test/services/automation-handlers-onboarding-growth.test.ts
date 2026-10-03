@@ -6,7 +6,8 @@
  * -> global_community_groups/global_community_group_members,
  * community_meetups/community_meetup_attendance -> global_community_events/
  * global_event_participants, relationship_edges' real column set, app_users'
- * user_id PK, and credit_wallet() -> increment_wallet_balance().
+ * user_id PK. The welcome bonus moved from increment_wallet_balance() to the
+ * idempotent credit_wallet() ledger in VTID-04809.
  */
 
 import * as fs from 'fs';
@@ -51,7 +52,7 @@ function makeFakeSupabase(resultsByTable: Record<string, Array<{ data?: any; cou
       };
       return chain;
     },
-    rpc: jest.fn(async () => ({ data: null, error: null })),
+    rpc: jest.fn(async () => ({ data: { ok: true }, error: null })),
   };
 }
 
@@ -107,9 +108,10 @@ describe('onboarding-growth — source-level wall against never-deployed / wrong
     expect(src).toContain("eq('edge_type', 'suggested')");
   });
 
-  it('no longer calls the nonexistent credit_wallet RPC', () => {
-    expect(src).not.toContain("rpc('credit_wallet'");
-    expect(src).toContain("rpc('increment_wallet_balance'");
+  it('credits the welcome bonus through the idempotent credit_wallet ledger (VTID-04809)', () => {
+    const repoSrc = fs.readFileSync(path.join(__dirname, '../../src/services/automation-handlers/onboarding-growth-repository.ts'), 'utf8');
+    expect(repoSrc).toContain("rpc('credit_wallet'");
+    expect(repoSrc).not.toContain("rpc('increment_wallet_balance'");
   });
 
   it('registry: all AP-1300 automations marked IMPLEMENTED have a registered handler', () => {
@@ -133,12 +135,39 @@ describe('runOrbGuidedOnboarding (AP-1301)', () => {
     const handler = getHandler('runOrbGuidedOnboarding')!;
     const result = await handler(ctx);
     expect(notify).toHaveBeenCalledTimes(1);
-    expect(supabase.rpc).toHaveBeenCalledWith('increment_wallet_balance', expect.objectContaining({ p_user_id: 'u1' }));
+    expect(supabase.rpc).toHaveBeenCalledWith('credit_wallet', expect.objectContaining({
+      p_user_id: 'u1', p_amount: 50, p_type: 'reward', p_source: 'AP-1301',
+      p_source_event_id: 'onboarding_welcome_bonus:u1',
+    }));
     expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('Credited welcome bonus'));
     expect(result.usersAffected).toBe(1);
   });
 
-  it('on an increment_wallet_balance RPC error: logs the failure instead of a false success message, and does not count it as an action taken', async () => {
+  it('a re-run lands as a duplicate: logged, not counted as a new credit', async () => {
+    const supabase = makeFakeSupabase({
+      app_users: [{ data: { display_name: 'Alex', created_at: new Date().toISOString() }, error: null }],
+      user_interests: [{ count: 0, data: [], error: null }],
+    });
+    supabase.rpc = jest.fn(async () => ({ data: { ok: true, duplicate: true }, error: null }));
+    const { ctx } = makeCtx(supabase, { user_id: 'u1' });
+    await getHandler('runOrbGuidedOnboarding')!(ctx);
+    expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('Welcome bonus already credited'));
+    expect(ctx.log).not.toHaveBeenCalledWith(expect.stringContaining('Credited welcome bonus'));
+  });
+
+  it('a credit_wallet business refusal (data.ok=false) is logged as a failure', async () => {
+    const supabase = makeFakeSupabase({
+      app_users: [{ data: { display_name: 'Alex', created_at: new Date().toISOString() }, error: null }],
+      user_interests: [{ count: 0, data: [], error: null }],
+    });
+    supabase.rpc = jest.fn(async () => ({ data: { ok: false, error: 'USER_REQUIRED' }, error: null }));
+    const { ctx } = makeCtx(supabase, { user_id: 'u1' });
+    await getHandler('runOrbGuidedOnboarding')!(ctx);
+    expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('USER_REQUIRED'));
+    expect(ctx.log).not.toHaveBeenCalledWith(expect.stringContaining('Credited welcome bonus'));
+  });
+
+  it('on a credit_wallet RPC error: logs the failure instead of a false success message, and does not count it as an action taken', async () => {
     const supabase = makeFakeSupabase({
       app_users: [{ data: { display_name: 'Alex', created_at: new Date().toISOString() }, error: null }],
       user_interests: [{ count: 0, data: [], error: null }],

@@ -73,9 +73,17 @@ export function packToRecallItems(pack: MemoryPack): OrbRecallResult['sections']
       category_key: 'personal',
       source: 'memory_facts',
       content: `${f.fact_key}: ${f.fact_value}`,
-      content_json: { fact_key: f.fact_key, fact_value: f.fact_value, entity: f.entity },
+      content_json: { fact_key: f.fact_key, fact_value: f.fact_value, entity: f.entity, asserted_at: f.asserted_at || null },
       importance: Math.round((Number.isFinite(f.confidence) ? f.confidence : 0.85) * 100),
-      occurred_at: f.asserted_at || now,
+      // VTID-04851: a current fact is true now, however long ago it was
+      // learned. The context window decays relevance by occurred_at (half
+      // after ~2 weeks), so stamping the learned date let episodes push old
+      // facts — a spouse's name, a child's — out of the prompt: the shadow
+      // comparison (VTID-04784) found recall ~3 facts short of the legacy
+      // read in 11 of 18 production sessions. The legacy read stamps facts
+      // with the read time; this does the same. The learned date stays in
+      // content_json.asserted_at.
+      occurred_at: now,
       created_at: f.asserted_at || now,
     });
   }

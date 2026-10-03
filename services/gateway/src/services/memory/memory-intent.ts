@@ -39,6 +39,18 @@ export function detectForgetIntent(text: string): boolean {
   return FORGET_INTENT.test(text);
 }
 
+// VTID-04748: "lösch/entfern" without a memory word ("den Namen von meinem
+// Hund löscht … lösche das bitte", production 2026-09-29). It can also mean a
+// calendar entry or a message, so the backstop acts on it only when a stored
+// fact actually matches.
+const LOOSE_FORGET_INTENT = /\bl(ö|oe)sch(e|en|t|st)?\b|\bentfern(e|en|t|st)?\b|\b(delete|erase|remove)\b|\bborra\b|\bobri(š|s)i\b/i;
+
+export function detectLooseForgetIntent(text: string): boolean {
+  if (!text) return false;
+  if (REMEMBER_NEGATION.test(text)) return false;
+  return LOOSE_FORGET_INTENT.test(text);
+}
+
 // Conditional mood: "wenn ich … hätte/wäre/würde", "if I had/were … would",
 // "si tuviera … sería". A plain future ("wenn ich morgen Zeit habe") does not match.
 const HYPOTHETICAL = new RegExp(

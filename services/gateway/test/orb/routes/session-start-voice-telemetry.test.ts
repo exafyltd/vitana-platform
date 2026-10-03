@@ -24,7 +24,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const ORB_LIVE_PATH = path.resolve(__dirname, '../../../src/routes/orb-live.ts');
+const ORB_LIVE_PATH = path.resolve(__dirname, '../../../src/orb/live/session/live-session-controller.ts');
 
 let source: string;
 
@@ -34,12 +34,12 @@ beforeAll(() => {
 
 /** The `emitLiveSessionEvent('vtid.live.session.start', {...})` payload. */
 function sessionStartPayload(): string {
-  const marker = "emitLiveSessionEvent('vtid.live.session.start'";
+  const marker = "deps.emitLiveSessionEvent('vtid.live.session.start'";
   const start = source.indexOf(marker);
   expect(start).toBeGreaterThan(-1);
   // Bounded window: far past the payload's end, but scoped to this one emit
   // so a match cannot be satisfied by an unrelated call site elsewhere.
-  return source.slice(start, start + 2000);
+  return source.slice(start, start + 3000);
 }
 
 describe('VTID-03704: session-start voice telemetry', () => {
@@ -67,6 +67,6 @@ describe('VTID-03704: session-start voice telemetry', () => {
     // The Gemini-era name is still emitted on purpose: dropping a field that
     // historical rows carry would make old and new sessions incomparable in
     // the same query. It is now accompanied, not substituted.
-    expect(sessionStartPayload()).toMatch(/voice:\s*getLiveApiVoice\(/);
+    expect(sessionStartPayload()).toMatch(/live_api_voice:\s*getLiveApiVoice\(/);
   });
 });

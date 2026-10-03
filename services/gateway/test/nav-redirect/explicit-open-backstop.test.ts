@@ -216,14 +216,14 @@ describe('VTID-04644 explicit open backstop — through the registry', () => {
     expect(maybeRunExplicitOpenBackstop(deps, session, 'open my wallet', false)).toBeNull();
   });
 
-  it('is off with ORB_NAV_OPEN_BACKSTOP_ENABLED=false, and without the registry dispatcher', () => {
+  it('is off with ORB_NAV_OPEN_BACKSTOP_ENABLED=false, and in the admin area (VTID-04846)', () => {
     const { session } = fakeSession();
     process.env.ORB_NAV_OPEN_BACKSTOP_ENABLED = 'false';
     expect(maybeRunExplicitOpenBackstop(deps, session, 'open my wallet', false)).toBeNull();
     delete process.env.ORB_NAV_OPEN_BACKSTOP_ENABLED;
-    process.env.NAV_V2_ENABLED = 'false';
-    expect(maybeRunExplicitOpenBackstop(deps, session, 'open my wallet', false)).toBeNull();
-    process.env.NAV_V2_ENABLED = 'true';
+    const admin = fakeSession().session as any;
+    admin.current_route = '/admin/users';
+    expect(maybeRunExplicitOpenBackstop(deps, admin, 'open my wallet', false)).toBeNull();
   });
 });
 

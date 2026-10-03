@@ -1,0 +1,9 @@
+# VTID-04759 — commands (services/gateway unless noted)
+node --max-old-space-size=4096 node_modules/.bin/tsc --noEmit -p .        # clean
+npx jest test/vtid-04759 test/vtid-04754-jev-prod-workflow                 # outputs/jest-gates.txt
+npx jest <16 triage/bridge/reconciler/route/outage-gate/operator/support suites>  # 263 tests pass
+npx jest <61 suites reading the deploy workflows or the flag pins>        # pass
+npx jest (full gateway suite)                                              # 1414 suites, 22739 tests, 0 failed
+(root) node scripts/conversation/generate-flag-pins.mjs --check            # current
+(root) node scripts/ci/dev-autopilot-impact-scan.mjs                       # 0 findings
+(read-only) oasis_events llm.call.failed 14 d grouped by stage/provider/error — the classifier fixtures

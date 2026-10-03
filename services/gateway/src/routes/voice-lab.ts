@@ -500,7 +500,42 @@ router.get(
   },
 );
 
-router.use(requireAuth);
+/**
+ * VTID-04780: everything below — /live/sessions*, /probe, /healing/*,
+ * /debug/events — returns or acts on EVERY tenant's voice sessions and the
+ * platform's self-healing state. It sat behind `requireAuth` alone, so any
+ * signed-in community member could read all tenants' sessions (user ids,
+ * emails, transcripts' turn data). Now the same developer gate Voice Improve
+ * uses (routes/voice-improve.ts requireDevAccess): exafy_admin JWT — what
+ * the Command Hub's buildContextHeaders sends — or the internal gateway
+ * token. Tenant-scoped reads live in /api/v1/voice/supervisor.
+ */
+export async function requireVoiceLabDevAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const internal = process.env.GATEWAY_INTERNAL_TOKEN;
+  if (internal && req.get('X-Gateway-Internal') === internal) {
+    return next();
+  }
+  await requireAuth(req as AuthenticatedRequest, res, () => {
+    const identity = (req as AuthenticatedRequest).identity;
+    if (!identity) {
+      res.status(401).json({ ok: false, error: 'UNAUTHENTICATED', vtid: 'VTID-04780' });
+      return;
+    }
+    if (identity.exafy_admin === true) {
+      next();
+      return;
+    }
+    console.warn(`[VTID-04780] voice-lab access denied: user ${identity.user_id} is not exafy_admin (${req.method} ${req.path})`);
+    res.status(403).json({
+      ok: false,
+      error: 'FORBIDDEN',
+      message: 'Voice Lab requires developer access (exafy_admin)',
+      vtid: 'VTID-04780',
+    });
+  });
+}
+
+router.use(requireVoiceLabDevAccess);
 
 // =============================================================================
 // Types & Schemas

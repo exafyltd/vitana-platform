@@ -817,7 +817,8 @@ jobs:
           # AWS principal staging already uses. No additional GCP-side grant
           # was needed or made.
           #
-          # `sr` only, same narrow selector gate as staging
+          # `sr`+`ru` only (VTID-04813: own switch each), same narrow
+          # selector gate as staging
           # (upstream-provider-selector.ts's tryVertexBridgeRescue, checked
           # before the cascade at all 5 call sites) — every other language
           # and every other Vitana process is unaffected.
@@ -826,10 +827,12 @@ jobs:
             .containerDefinitions[0].environment |=
               ( [ .[] | select(.name | IN("GOOGLE_CLOUD_PROJECT","VERTEX_AI_LOCATION",
                                           "VERTEX_SERBIAN_BRIDGE_ENABLED",
+                                          "VERTEX_RUSSIAN_BRIDGE_ENABLED",
                                           "GCP_SERVICE_ACCOUNT_JSON") | not) ]
                 + [ {name:"GOOGLE_CLOUD_PROJECT", value:"project-da3eb05a-c86e-47cb-85f"},
                     {name:"VERTEX_AI_LOCATION", value:"global"},
                     {name:"VERTEX_SERBIAN_BRIDGE_ENABLED", value:"true"},
+                    {name:"VERTEX_RUSSIAN_BRIDGE_ENABLED", value:"true"},
                     {name:"GCP_SERVICE_ACCOUNT_JSON", value:$CRED} ] )')
 
           # VTID-03709: hand off to the next step via the runner's filesystem.
@@ -853,6 +856,76 @@ jobs:
           echo "arn=$PREV_ARN" >> "$GITHUB_OUTPUT"
           echo "sha=$PREV_SHA" >> "$GITHUB_OUTPUT"
           echo "Rollback target: $PREV_ARN (commit $PREV_SHA)"
+
+      - name: Build task-definition (Jev gates)
+        # VTID-04824: its own step so a new gate pin never pushes step 2/2 past
+        # GitHub's 20,000-char run limit. Reads the partial task definition
+        # step 1/2 wrote and writes it back; step 2/2 (env_overrides last)
+        # can still override anything set here. Every deploy mode.
+        env:
+          # VTID-04754: the TypeSafe key (shared with staging, owner decision
+          # 2026-09-30). A full ARN: the prod deploy role has no
+          # secretsmanager:Describe*, so a bare name cannot be resolved.
+          JEV_SECRET_ARN: arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/typesafe-api-key-YElucz
+        run: |
+          set -e
+          NEW_DEF="$(cat /tmp/vitana-new-task-def.json)"
+          # VTID-04754: Jev (TypeSafe System One) decisions, internal roles
+          # only. Declared here so prod no longer relies on the live task def
+          # carrying rev 140's manual edit forward. JEV_COMMUNITY_ENABLED is
+          # never set (community plane stays off).
+          NEW_DEF=$(echo "$NEW_DEF" | jq --arg J "$JEV_SECRET_ARN" '
+            .containerDefinitions[0].secrets |=
+              ( [ (. // [])[] | select(.name != "TYPESAFE_API_KEY") ]
+                + [ {name:"TYPESAFE_API_KEY", valueFrom:$J} ] )
+            | .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name != "JEV_DECISIONS_ENABLED" and (.name | test("^JEV_.*_MODE$") | not)) ]
+                + [ {name:"JEV_DECISIONS_ENABLED", value:"true"},
+                    {name:"JEV_SELFHEAL_PROVIDER_FAILURE_MODE", value:"shadow"},
+                    {name:"JEV_SELFHEAL_INCIDENT_DEDUPE_MODE", value:"shadow"},
+                    {name:"JEV_AGENT_PROGRESS_MODE", value:"shadow"},
+                    {name:"JEV_CLAIM_FEASIBILITY_MODE", value:"shadow"},
+                    {name:"JEV_VOICE_SESSION_OUTCOME_MODE", value:"shadow"},
+                    {name:"JEV_CRM_LEAD_SCORE_MODE", value:"shadow"},
+                    {name:"JEV_CRM_ACCOUNT_CLASSIFICATION_MODE", value:"shadow"},
+                    {name:"JEV_FINDING_DEDUPE_MODE", value:"shadow"},
+                    {name:"JEV_SELFHEAL_PRETRIAGE_MODE", value:"shadow"},
+                    {name:"JEV_CI_FAILURE_ROUTING_MODE", value:"shadow"},
+                    {name:"JEV_REPEAT_RUN_GUARD_MODE", value:"shadow"},
+                    {name:"JEV_SELFHEAL_DEPLOY_CAUSE_MODE", value:"shadow"},
+                    {name:"JEV_FIX_VERIFICATION_MODE", value:"shadow"},
+                    {name:"JEV_VOICE_BACKSTOP_CLUSTERS_MODE", value:"shadow"},
+                    {name:"JEV_VOICE_SLOW_SESSION_MODE", value:"shadow"},
+                    {name:"JEV_PLANNABILITY_MODE", value:"shadow"},
+                    {name:"JEV_TEST_SELECTION_MODE", value:"shadow"},
+                    {name:"JEV_PR_CLASH_MODE", value:"shadow"},
+                    {name:"JEV_CRM_DUPLICATE_ACCOUNT_MODE", value:"shadow"},
+                    {name:"JEV_APPROVAL_RISK_MODE", value:"shadow"},
+                    {name:"JEV_CHANGE_RISK_MODE", value:"shadow"},
+                    {name:"JEV_OPERATOR_ROUTE_MODE", value:"shadow"},
+                    {name:"JEV_VOICE_OPENER_OUTCOMES_MODE", value:"shadow"},
+                    {name:"JEV_LESSON_NOVELTY_MODE", value:"shadow"},
+                    {name:"JEV_PAYMENT_INVOICE_MATCH_MODE", value:"shadow"},
+                    {name:"JEV_PARTNER_ONBOARDING_TRIAGE_MODE", value:"shadow"},
+                    {name:"JEV_COMPANY_DOC_RELEVANCE_MODE", value:"shadow"},
+                    {name:"JEV_DOCUMENT_TYPE_ROUTING_MODE", value:"shadow"},
+                    {name:"JEV_ROOT_CAUSE_ROLLUP_MODE", value:"shadow"} ] )')
+          # Jev gates (one VTID each, docs/JEV-INTEGRATION-PLAN.md §10.4): shadow only; enforce per gate after agreement data.
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Jev secret and $(echo "$NEW_DEF" | jq '[.containerDefinitions[0].environment[] | select(.name | test("^JEV_.*_MODE$"))] | length') gate switches set"
+
+      - name: Build task-definition (drop dead secret refs)
+        # VTID-04849: the live task def carried DB_PASSWORD from the Aurora
+        # managed secret rds!cluster-eba8a4f2-…; vitana-aurora-prod no longer has
+        # a managed master secret, so that secret is gone and every new task
+        # failed with ResourceInitializationError (ResourceNotFoundException) —
+        # no deploy, rollback or task restart could start. The gateway never
+        # reads DB_PASSWORD. Dropped here so it is not cloned forward. Every mode.
+        run: |
+          set -e
+          NEW_DEF=$(jq '.containerDefinitions[0].secrets |= [ (. // [])[] | select(.name != "DB_PASSWORD") ]' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Secrets now: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].secrets[].name]')"
 
       - name: Build task-definition (2/2 — optional overrides) + register + roll the service
         id: roll
@@ -1146,6 +1219,30 @@ jobs:
             .containerDefinitions[0].secrets |=
               ( [ (. // [])[] | select(.name != "GITHUB_SAFE_MERGE_TOKEN") ]
                 + [ {name:"GITHUB_SAFE_MERGE_TOKEN", valueFrom:$GH} ] )')
+
+          # VTID-04824: the Jev secret and gate switches are set in their own step,
+          # "Build task-definition (Jev gates)", before this one.
+
+          # VTID-04784: memory plan phase 2. Prod keeps serving the legacy ORB
+          # memory read; recall() runs in the background and one counts-only
+          # '[VTID-04784] recall-shadow' line compares the two per session.
+          # Read-only, never awaited. The recall switch itself stays unset
+          # until scripts/memory/recall-shadow-report.sh shows they agree.
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name != "MEMORY_ORB_RECALL_SHADOW") ]
+                + [ {name:"MEMORY_ORB_RECALL_SHADOW", value:"true"} ] )')
+
+          # VTID-04786: AP-0910 memory embedding backfill runs here from its own
+          # in-process loop (every 30 min, one task per interval via
+          # automation_runs). Its scheduler died with GCP; the job only writes
+          # embeddings onto members' own memory rows. Maxina holds 97% of the
+          # backlog. The general heartbeat loop stays off on prod.
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name != "MEMORY_EMBEDDING_BACKFILL_LOOP_ENABLED" and .name != "MEMORY_EMBEDDING_BACKFILL_TENANT_IDS") ]
+                + [ {name:"MEMORY_EMBEDDING_BACKFILL_LOOP_ENABLED", value:"true"},
+                    {name:"MEMORY_EMBEDDING_BACKFILL_TENANT_IDS", value:"2e7528b8-472a-4356-88da-0280d4639cce"} ] )')
 
           # VTID-03958: the generic escape hatch. Runs LAST, after every
           # named-input override above, so it can override anything they set

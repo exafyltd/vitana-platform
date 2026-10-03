@@ -10,6 +10,9 @@
  *   - Manual `curl -H 'X-Scheduler-Secret: $MARKETPLACE_SYNC_SECRET' ...`
  *     when an operator wants to force-run outside the schedule
  *
+ * `all` (the daily run) also confirms held recommendation commissions that
+ * are due (VTID-04741).
+ *
  * The supported networks come from the provider registry — adding Amazon,
  * Rakuten, etc. requires no changes here.
  *
@@ -30,6 +33,20 @@ function secretMatches(provided: string | undefined): boolean {
   const b = Buffer.from(provided);
   if (a.length !== b.length) return false;
   return timingSafeEqual(a, b);
+}
+
+async function confirmHeldCommissions() {
+  try {
+    const { confirmDueRecommendationCommissions } = await import('../services/recommendation-commissions/credit-recommender');
+    const r = await confirmDueRecommendationCommissions();
+    console.log(`[marketplace-sync-scheduler] held commissions: examined ${r.examined}, credited ${r.credited}, reversed ${r.reversed}, failed ${r.failed}`);
+    return r;
+  } catch (err: unknown) {
+    // Non-fatal for the catalogue sync: the rows stay pending and are retried next run.
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[marketplace-sync-scheduler] confirming held commissions failed:', message);
+    return { ok: false, error: message };
+  }
 }
 
 router.post('/sync/:network', async (req: Request, res: Response) => {
@@ -67,7 +84,11 @@ router.post('/sync/:network', async (req: Request, res: Response) => {
         .map(([k, v]) => `${k}=${JSON.stringify(v.totals)}`)
         .join(' ');
       console.log(`[marketplace-sync-scheduler] all done in ${Date.now() - startedAt}ms ${summary}`);
-      res.json({ ok: true, network: 'all', duration_ms: Date.now() - startedAt, result });
+      // VTID-04741: the daily run also pays held recommendation commissions
+      // whose return window has passed. Checkout orders are held with no
+      // network to confirm them, so this scheduled run is what pays them.
+      const held_commissions = await confirmHeldCommissions();
+      res.json({ ok: true, network: 'all', duration_ms: Date.now() - startedAt, result, held_commissions });
       return;
     }
 

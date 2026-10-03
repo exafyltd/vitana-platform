@@ -1,0 +1,5 @@
+PASS test/vtid-04806-plannability.test.ts
+PASS test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+PASS test/vtid-04465-operator-pipeline-regression.test.ts (6.363 s)
+Test Suites: 3 passed, 3 total
+Tests:       49 passed, 49 total

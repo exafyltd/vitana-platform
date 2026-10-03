@@ -1,0 +1,8 @@
+2026-10-01 — migration 20261001100000_vtid_04754_jev_spend_and_shadow.sql applied
+(additive: 2 tables, 2 functions; required by the MIGRATION-DRIFT-CHECK gate).
+Verified after apply:
+  jev_shadow_decisions: rls=true
+  jev_spend_counters:   rls=true
+  functions: jev_record_spend, jev_shadow_gate_stats
+  authenticated SELECT on jev_spend_counters: false
+  anon EXECUTE on jev_record_spend: false

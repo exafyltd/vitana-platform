@@ -156,7 +156,8 @@
       "catalog",
       "runs",
       "run-tests",
-      "e2e"
+      "e2e",
+      "test-contracts"
     ],
     "intelligence-memory-dev": [
       "memory-vault",
@@ -182,12 +183,12 @@
     ]
   },
   "screen_inventory": {
-    "total_screens": 116,
-    "total_entries": 290,
+    "total_screens": 117,
+    "total_entries": 291,
     "last_synced": "2026-04-27",
     "source": "auto-regen via services/gateway/scripts/regen-screens-catalog.mjs",
     "role_counts": {
-      "DEVELOPER": 111,
+      "DEVELOPER": 112,
       "COMMUNITY": 89,
       "PATIENT": 9,
       "PROFESSIONAL": 9,
@@ -893,6 +894,13 @@
         "module": "Testing & QA",
         "tab": "E2E",
         "url_path": "/command-hub/testing-qa/e2e/",
+        "role": "DEVELOPER"
+      },
+      {
+        "screen_id": "DEV-TESTING_TEST_CONTRACTS",
+        "module": "Testing & QA",
+        "tab": "Test Contracts",
+        "url_path": "/command-hub/testing-qa/test-contracts/",
         "role": "DEVELOPER"
       },
       {

@@ -270,16 +270,28 @@ jobs:
         run: |
           set -euo pipefail
           NAME="vitana/gateway/staging/typesafe-api-key"
-          ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
+          # VTID-04754: keep the AWS error so "not found" and "access denied"
+          # are told apart in the log instead of both reading as "absent".
+          ERR="$RUNNER_TEMP/jev-describe.err"
+          ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>"$ERR" || true)
           F="$RUNNER_TEMP/connected-apps.json"
           if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
-            echo "  $NAME absent - Jev stays inert (VTID-04473)"
+            if grep -q ResourceNotFoundException "$ERR"; then
+              echo "  $NAME not found - Jev stays inert (VTID-04473)"
+            elif grep -qE 'AccessDenied|not authorized' "$ERR"; then
+              echo "::warning::$NAME access denied for the deploy role - Jev stays inert: $(head -c 300 "$ERR")"
+            else
+              echo "::warning::$NAME lookup failed - Jev stays inert: $(head -c 300 "$ERR")"
+            fi
             jq -c '.env += [{name:"JEV_DECISIONS_ENABLED", value:"false"}]' "$F" > "$F.tmp"
           else
             echo "  resolved $NAME -> TYPESAFE_API_KEY, JEV_DECISIONS_ENABLED=true"
             jq -c --arg a "$ARN" '.env += [{name:"JEV_DECISIONS_ENABLED", value:"true"}] | .sec += [{name:"TYPESAFE_API_KEY", valueFrom:$a}]' "$F" > "$F.tmp"
           fi
           mv "$F.tmp" "$F"
+          # VTID-04759/04764/04774/04775/04782: Jev P1 gates B1/B2, A1, A2, C1, E3/E6 in shadow (record only).
+          # VTID-04797/04799: P2 gates A8 (finding near-duplicate), B3 (self-heal pre-triage) in shadow.
+          jq -c '.env += [{name:"JEV_SELFHEAL_PROVIDER_FAILURE_MODE", value:"shadow"}, {name:"JEV_SELFHEAL_INCIDENT_DEDUPE_MODE", value:"shadow"}, {name:"JEV_AGENT_PROGRESS_MODE", value:"shadow"}, {name:"JEV_CLAIM_FEASIBILITY_MODE", value:"shadow"}, {name:"JEV_VOICE_SESSION_OUTCOME_MODE", value:"shadow"}, {name:"JEV_CRM_LEAD_SCORE_MODE", value:"shadow"}, {name:"JEV_CRM_ACCOUNT_CLASSIFICATION_MODE", value:"shadow"}, {name:"JEV_FINDING_DEDUPE_MODE", value:"shadow"}, {name:"JEV_SELFHEAL_PRETRIAGE_MODE", value:"shadow"}, {name:"JEV_CI_FAILURE_ROUTING_MODE", value:"shadow"}, {name:"JEV_REPEAT_RUN_GUARD_MODE", value:"shadow"}, {name:"JEV_SELFHEAL_DEPLOY_CAUSE_MODE", value:"shadow"}, {name:"JEV_FIX_VERIFICATION_MODE", value:"shadow"}, {name:"JEV_VOICE_BACKSTOP_CLUSTERS_MODE", value:"shadow"}, {name:"JEV_VOICE_SLOW_SESSION_MODE", value:"shadow"}, {name:"JEV_PLANNABILITY_MODE", value:"shadow"}, {name:"JEV_TEST_SELECTION_MODE", value:"shadow"}, {name:"JEV_PR_CLASH_MODE", value:"shadow"}, {name:"JEV_CRM_DUPLICATE_ACCOUNT_MODE", value:"shadow"}, {name:"JEV_APPROVAL_RISK_MODE", value:"shadow"}, {name:"JEV_CHANGE_RISK_MODE", value:"shadow"}, {name:"JEV_OPERATOR_ROUTE_MODE", value:"shadow"}, {name:"JEV_VOICE_OPENER_OUTCOMES_MODE", value:"shadow"}, {name:"JEV_LESSON_NOVELTY_MODE", value:"shadow"}, {name:"JEV_PAYMENT_INVOICE_MATCH_MODE", value:"shadow"}, {name:"JEV_PARTNER_ONBOARDING_TRIAGE_MODE", value:"shadow"}, {name:"JEV_COMPANY_DOC_RELEVANCE_MODE", value:"shadow"}, {name:"JEV_DOCUMENT_TYPE_ROUTING_MODE", value:"shadow"}, {name:"JEV_ROOT_CAUSE_ROLLUP_MODE", value:"shadow"}]' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
           jq -c '{env, sec: [.sec[].name]}' "$F"
       # VTID-04542 latency plan (comment kept outside the run: scalar, VTID-03788
       # size guard): four exact-'true' flags pinned on STAGING ONLY until re-measured
@@ -747,6 +759,9 @@ jobs:
 #   MEMORY_ORB_RECALL_ENABLED (VTID-04452) -- the ORB live prompt reads
 #     memory through the broker; falls back to the legacy read on failure.
 #     Staging only, to measure '[VTID-04452] orb recall in Nms' first.
+#   MEMORY_ORB_RECALL_SHADOW (VTID-04784) -- after each ORB memory read, the
+#     other read path runs in the background and one counts-only
+#     '[VTID-04784] recall-shadow' line compares them (memory plan phase 2).
 # Plus read-only SQL (VTID-04023): if vitana/gateway/staging/operator-sql-
 # readonly-url exists, the task def gets OPERATOR_SQL_READONLY_ENABLED=true +
 # the URL as a secret; absent (VTID-04624, owner decision 2026-09-26) it gets
@@ -998,9 +1013,7 @@ jobs:
                                                 "ORB_CASCADED_VOICE_ENABLED",
                                                 "OPERATOR_EXECUTION_ONRAMP_ENABLED",
                                                 "OPERATOR_ONRAMP_EXECUTOR",
-                                                "OPERATOR_CODEBASE_READ_ENABLED",
-                                                "OPERATOR_DB_READONLY_ENABLED",
-                                                "OPERATOR_AWS_READONLY_ENABLED",
+                                                "OPERATOR_CODEBASE_READ_ENABLED","OPERATOR_DB_READONLY_ENABLED","OPERATOR_AWS_READONLY_ENABLED",
                                                 "OPERATOR_BOOTSTRAP_PACK_ENABLED","OPERATOR_BOOTSTRAP_BUILD_INFO_URLS",
                                                 "DEV_AUTOPILOT_LLM_REVIEW_ENABLED",
                                                 "DEV_AUTOPILOT_USE_JOB","DEV_AUTOPILOT_JOB_CLOUD",
@@ -1008,7 +1021,7 @@ jobs:
                                                 "OPERATOR_PLANNER_ENABLED",
                                                 "OPERATOR_VTID_SELF_ALLOCATE_ENABLED","OPERATOR_PR_APPROVAL_REQUIRED",
                                                 "OPERATOR_THREADS_ENABLED","OPERATOR_TURN_MEMORY_ENABLED",
-                                                "REMINDERS_INPROCESS_DISPATCH_ENABLED","CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","MEMORY_ORB_RECALL_ENABLED",
+                                                "REMINDERS_INPROCESS_DISPATCH_ENABLED","CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","MEMORY_ORB_RECALL_ENABLED","MEMORY_ORB_RECALL_SHADOW",
                                                 "FEEDBACK_AUTO_DISPATCH_ENABLED","LEDGER_WRITE_AUTH_MODE",
                                                 "NAV_V2_ENABLED","NAV_REGISTRY_URL",
                                                 "OPERATOR_SQL_READONLY_ENABLED","OPERATOR_SQL_READONLY_BACKEND",
@@ -1017,8 +1030,9 @@ jobs:
                                                 "AURORA_CA_BUNDLE_PATH",
                                                 "GOOGLE_CLOUD_PROJECT","VERTEX_AI_LOCATION",
                                                 "VERTEX_SERBIAN_BRIDGE_ENABLED",
+                                                "VERTEX_RUSSIAN_BRIDGE_ENABLED",
                                                 "GCP_SERVICE_ACCOUNT_JSON",
-                                                "OPERATOR_CODEINTEL_ENABLED", "ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED","ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED","ORCHESTRATOR_DELEGATION_PERSIST_ENABLED",
+                                                "OPERATOR_CODEINTEL_ENABLED", "ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED","ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED","ORCHESTRATOR_DELEGATION_PERSIST_ENABLED","COMMERCE_AI_SETUP_ENABLED","COMMERCE_MCP_ENABLED",
                                                 "DEV_AUTOPILOT_SCAN_TOKEN",
                                                 "DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED",
                                                 "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR",
@@ -1080,14 +1094,17 @@ jobs:
                           {name:"FEEDBACK_AUTO_DISPATCH_ENABLED", value:"true"},
                           {name:"LEDGER_WRITE_AUTH_MODE", value:"enforce"},
                           {name:"MEMORY_ORB_RECALL_ENABLED", value:"true"},
+                          {name:"MEMORY_ORB_RECALL_SHADOW", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},
                           {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"},
                           {name:"GOOGLE_CLOUD_PROJECT", value:"project-da3eb05a-c86e-47cb-85f"},
                           {name:"VERTEX_AI_LOCATION", value:"global"},
                           {name:"VERTEX_SERBIAN_BRIDGE_ENABLED", value:"true"},
+                          {name:"VERTEX_RUSSIAN_BRIDGE_ENABLED", value:"true"},
                           {name:"GCP_SERVICE_ACCOUNT_JSON", value:$GCP_CRED_CONFIG},
                           {name:"OPERATOR_CODEINTEL_ENABLED", value:"true"}, {name:"ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED", value:"true"}, {name:"ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED", value:"true"}, {name:"ORCHESTRATOR_DELEGATION_PERSIST_ENABLED", value:"true"},
+                          {name:"COMMERCE_AI_SETUP_ENABLED", value:"true"}, {name:"COMMERCE_MCP_ENABLED", value:"true"},
                           {name:"CODEINTEL_PLATFORM_REPO_DIR", value:"/repo-platform"},
                           {name:"CODEINTEL_V1_REPO_DIR", value:"/repo-vitana-v1"},
                           {name:"DEV_AUTOPILOT_SCAN_TOKEN", value:$SCAN_TOKEN} ] )

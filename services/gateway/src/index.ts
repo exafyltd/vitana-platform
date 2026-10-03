@@ -199,6 +199,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const partnerOnboardingRouter = require('./routes/partner-onboarding').default;
   const partnerOnboardingCatalogueRouter = require('./routes/partner-onboarding-catalogue').default;
   const partnerOnboardingConnectionsRouter = require('./routes/partner-onboarding-connections').default;
+  // VTID-04838: Commerce "Set up with AI" — website → draft, confirmed draft → business (COMMERCE_AI_SETUP_ENABLED)
+  const commerceAiSetupRouter = require('./routes/commerce-ai-setup').default;
+  // VTID-04847: Commerce MCP endpoint (/mcp + OAuth protected-resource metadata; COMMERCE_MCP_ENABLED)
+  const commerceMcpModule = require('./routes/commerce-mcp');
   // VTID-03939: Commerce Partner Onboarding Phase 3 — a patient's own aggregated health results
   const patientHealthResultsRouter = require('./routes/patient-health-results').default;
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
@@ -515,8 +519,6 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminI18nOpsRouter = require('./routes/admin-i18n-ops').default;
   // VTID-AP-ADMIN: Tenant-scoped Autopilot admin — settings, bindings, runs, recommendations
   const adminAutopilotRouter = require('./routes/admin-autopilot').default;
-  // VTID-NAV-02: Navigator catalog DB cache warmer (runs at boot)
-  const { warmNavCatalogCache } = require('./lib/nav-catalog-db');
   // Voice Feedback — Test user bug reports & UX improvement suggestions
   const voiceFeedbackRouter = require('./routes/voice-feedback').default;
   // VTID-01250: Autopilot Automations Engine — AP-XXXX registry, executor, wallet, sharing
@@ -942,6 +944,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const voiceImproveRouter = require('./routes/voice-improve').default;
   mountRouterSync(app, '/api/v1', voiceImproveRouter, { owner: 'voice-improve' });
 
+  // VTID-04776/04778/04780: Voice Supervisor (Command Hub → Voice → Supervisor)
+  // GET /api/v1/voice/supervisor/{meta,overview,segments,sessions,fixes,fixes/:id/impact}
+  // exafy_admin sees all tenants; a tenant admin is confined to their tenant.
+  const voiceSupervisorRouter = require('./routes/voice-supervisor').default;
+  mountRouterSync(app, '/api/v1/voice/supervisor', voiceSupervisorRouter, { owner: 'voice-supervisor' });
+
   // VTID-02954 (PR-L1): Test Contract Registry — autonomy spine for self-healing
   // GET /api/v1/test-contracts + /:id + /by-capability/:cap + POST /:id/run
   const testContractsRouter = require('./routes/test-contracts').default;
@@ -1156,6 +1164,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/partner-onboarding', partnerOnboardingCatalogueRouter, { owner: 'partner-onboarding-catalogue' });
   // VTID-04499: onboarding connections step (/:orgId/connections)
   mountRouterSync(app, '/api/v1/partner-onboarding', partnerOnboardingConnectionsRouter, { owner: 'partner-onboarding-connections' });
+  // VTID-04838: Commerce "Set up with AI" (off unless COMMERCE_AI_SETUP_ENABLED=true)
+  mountRouterSync(app, '/api/v1/commerce/ai-setup', commerceAiSetupRouter, { owner: 'commerce-ai-setup' });
+  // VTID-04847: Commerce MCP — a supplier's AI assistant onboards their business (off unless COMMERCE_MCP_ENABLED=true)
+  mountRouterSync(app, '/mcp', commerceMcpModule.default, { owner: 'commerce-mcp' });
+  mountRouterSync(app, '/.well-known', commerceMcpModule.wellKnownRouter, { owner: 'commerce-mcp-well-known' });
   // VTID-03939: Commerce Partner Onboarding Phase 3 — GET /api/v1/patient/health-results
   mountRouterSync(app, '/api/v1/patient', patientHealthResultsRouter, { owner: 'patient-health-results' });
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
@@ -1616,6 +1629,27 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ ORB WebSocket server initialization failed (non-fatal):', error);
       }
 
+      // VTID-04835: SIGTERM/SIGINT drain. Before this the gateway had no
+      // signal handler at all, so a task ECS replaced ended every live ORB
+      // voice session with no vtid.live.session.stop / voice_session_facts end.
+      // Emits a `server_shutdown` stop per unreported live session (bounded,
+      // 5 s), then closes the server and exits.
+      try {
+        const { installGracefulShutdown } = require('./services/graceful-shutdown');
+        const { emitShutdownStopsForLiveSessions } = require('./orb/live/session/live-session-controller');
+        installGracefulShutdown(server, {
+          drainTimeoutMs: 5_000,
+          drainHooks: [
+            async () => {
+              const r = await emitShutdownStopsForLiveSessions('server_shutdown', 4_500);
+              console.log(`[VTID-04835] live-session drain: emitted=${r.emitted} skipped=${r.skipped} timedOut=${r.timedOut}`);
+            },
+          ],
+        });
+      } catch (error) {
+        console.warn('⚠️ Graceful shutdown handler installation failed (non-fatal):', error);
+      }
+
       // VTID-01178: Initialize autopilot controller (ensure VTIDs exist in ledger)
       try {
         const { initializeAutopilotController } = require('./services/autopilot-controller');
@@ -1710,6 +1744,27 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Reminder dispatch loop initialization failed (non-fatal):', error);
       }
 
+      // VTID-04786: AP-0910 memory embedding backfill, the one job of the
+      // automation engine that runs on production (it notifies nobody).
+      try {
+        const { startMemoryEmbeddingBackfillLoop } = require('./services/memory-embedding-backfill-loop');
+        startMemoryEmbeddingBackfillLoop();
+      } catch (error) {
+        console.warn('⚠️ Memory embedding backfill loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04763: the Audiobook's daily "your episode for today" push for
+      // members who asked for it. Same on-switch as reminder dispatch.
+      try {
+        const { startAudiobookReminderLoop } = require('./services/guided-journey/audiobook-reminder-dispatch');
+        const { getSupabase: getAudiobookSupabase } = require('./lib/supabase');
+        if (startAudiobookReminderLoop(() => getAudiobookSupabase())) {
+          console.log('🎧 Audiobook daily reminder loop started');
+        }
+      } catch (error) {
+        console.warn('⚠️ Audiobook daily reminder loop initialization failed (non-fatal):', error);
+      }
+
       // VTID-04338: default reminders for calendar entries — reconciles the
       // reminders table against upcoming entries every minute.
       try {
@@ -1801,6 +1856,42 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         startProductAnalyticsRollupScheduler();
       } catch (error) {
         console.warn('⚠️ Product analytics rollup scheduler initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04804 (Jev C2): voice backstop clusters, judged once per UTC day.
+      // Off unless JEV_VOICE_BACKSTOP_CLUSTERS_MODE is set; shadow only.
+      try {
+        const { startBackstopClusterScheduler } = require('./services/jev/gates/backstop-cluster-gate');
+        if (startBackstopClusterScheduler()) console.log('🧩 Jev voice backstop cluster scheduler started (VTID-04804)');
+      } catch (error) {
+        console.warn('⚠️ Jev voice backstop cluster scheduler initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04805 (Jev C3): stalled voice sessions, cause judged once per UTC day.
+      // Off unless JEV_VOICE_SLOW_SESSION_MODE is set; shadow only.
+      try {
+        const { startSlowSessionScheduler } = require('./services/jev/gates/slow-session-gate');
+        if (startSlowSessionScheduler()) console.log('🐢 Jev slow voice session scheduler started (VTID-04805)');
+      } catch (error) {
+        console.warn('⚠️ Jev slow voice session scheduler initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04817 (Jev C4): voice opener outcomes over the last 7 days, judged once per UTC day.
+      // Off unless JEV_VOICE_OPENER_OUTCOMES_MODE is set; shadow only.
+      try {
+        const { startOpenerOutcomesScheduler } = require('./services/jev/gates/opener-outcome-gate');
+        if (startOpenerOutcomesScheduler()) console.log('👋 Jev voice opener outcomes scheduler started (VTID-04817)');
+      } catch (error) {
+        console.warn('⚠️ Jev voice opener outcomes scheduler initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04825 (Jev F): root cause of each Dev Autopilot execution that ended badly (daily)
+      // and the weekly roll-up of top classes (Mondays, UTC). Off unless JEV_ROOT_CAUSE_ROLLUP_MODE is set.
+      try {
+        const { startRootCauseScheduler } = require('./services/jev/gates/root-cause-rollup-gate');
+        if (startRootCauseScheduler()) console.log('🧭 Jev root-cause roll-up scheduler started (VTID-04825)');
+      } catch (error) {
+        console.warn('⚠️ Jev root-cause roll-up scheduler initialization failed (non-fatal):', error);
       }
 
       // VTID-01185: Initialize autonomous self-improvement engine
@@ -1975,28 +2066,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ ConflictPairResolver cache warm failed (non-fatal, using fallback literals):', error);
       }
 
-      // VTID-NAV-02: Pre-warm Navigator catalog DB cache + start periodic refresh
-      try {
-        warmNavCatalogCache();
-        console.log('🧭 Navigator catalog DB cache warming (VTID-NAV-02)');
-
-        // VTID-NAV-SEMANTIC: Pre-compute embedding vectors for semantic search.
-        // Non-blocking — runs in the background, keyword scorer is the fallback
-        // until embeddings are ready.
-        const { warmCatalogEmbeddings } = require('./lib/navigation-catalog');
-        warmCatalogEmbeddings()
-          .then(() => console.log('🧠 Navigator semantic embeddings warmed'))
-          .catch((err: any) => console.warn('⚠️ Semantic embedding warm failed (non-fatal):', err.message));
-      } catch (error) {
-        console.warn('⚠️ Navigator catalog cache warm failed (non-fatal, using static fallback):', error);
-      }
-
-      // VTID-04517: registry-backed navigation (NAV_V2_ENABLED). Loads the
+      // VTID-04517 / VTID-04846: registry-backed navigation. Loads the
       // frontend's /nav-registry.json and builds the screen index in the
       // background; the bundled vectors make that near-instant unless the
-      // registry gained texts. Non-fatal: tools fall back to the legacy
-      // navigator until the index exists.
-      if (process.env.NAV_V2_ENABLED === 'true') {
+      // registry gained texts. Until the index exists the tools open exact
+      // screen names only and say so otherwise.
+      {
         const { warmNavService, navServiceStatus } = require('./navigation/nav-service');
         warmNavService()
           .then(() => console.log('🧭 Registry navigation ready', JSON.stringify(navServiceStatus())))

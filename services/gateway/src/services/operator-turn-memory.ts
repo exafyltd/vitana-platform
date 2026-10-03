@@ -24,7 +24,8 @@
  */
 
 import { callViaRouter } from './llm-router';
-import { writeDevMemory, type DevMemoryCategory, type DevMemorySource, type WriteDevMemoryInput } from './dev-agent-memory';
+import { recallDevMemory, writeDevMemory, type DevMemoryCategory, type DevMemorySource, type WriteDevMemoryInput } from './dev-agent-memory';
+import { isLessonNoveltyOn, runLessonNoveltyCheck, type LessonRecall } from './jev/gates/lesson-novelty-gate';
 
 const LOG_PREFIX = '[operator-turn-memory]';
 export const MAX_ITEMS_PER_TURN = 3;
@@ -143,6 +144,9 @@ export interface TurnMemoryInput {
  * Extract durable facts from one turn and write them. Never throws.
  * Returns how many rows were written (0 when disabled, skipped, or failed).
  */
+/** VTID-04818: the three stored lessons most similar to a candidate (same search the agents recall with). */
+const storedLessonRecall: LessonRecall = (query) => recallDevMemory(query, 'vitana-platform', { limit: 3 });
+
 export async function extractAndRecordTurnMemory(
   input: TurnMemoryInput,
   opts: { extract?: Extractor; write?: Writer; env?: NodeJS.ProcessEnv } = {},
@@ -156,6 +160,11 @@ export async function extractAndRecordTurnMemory(
     const items = parseExtraction(text, input.vtidHint);
     let written = 0;
     for (const m of items) {
+      // VTID-04818 (Jev F, shadow): is this lesson new and durable next to the
+      // stored ones? Never awaited; the write below is unchanged.
+      if (isLessonNoveltyOn(env)) {
+        void runLessonNoveltyCheck({ threadId: input.threadId, candidate: { category: m.category, title: m.title, content: m.content }, recall: storedLessonRecall, env });
+      }
       const r = await (opts.write || writeDevMemory)({
         repo: 'vitana-platform',
         category: m.category,

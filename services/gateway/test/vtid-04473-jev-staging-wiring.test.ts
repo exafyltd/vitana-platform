@@ -42,8 +42,10 @@ describe('VTID-04473 Jev staging wiring', () => {
     expect(s).toContain('$RUNNER_TEMP/connected-apps.json');
   });
 
-  test('community stays off everywhere; production is not wired', () => {
-    expect(stage).not.toMatch(/name:\s*"?JEV_COMMUNITY_ENABLED/);
-    expect(prod).not.toMatch(/JEV_|TYPESAFE/);
+  // VTID-04754: production now declares Jev itself (see the VTID-04754 pin test);
+  // community stays off on both.
+  test('community stays off everywhere', () => {
+    expect(stage).not.toMatch(/JEV_COMMUNITY_ENABLED"/);
+    expect(prod).not.toMatch(/JEV_COMMUNITY_ENABLED"/);
   });
 });

@@ -10,7 +10,7 @@
  * This is the regression contract for "we added a screen": a new screen
  * whose phrasings cannot be told apart from an existing screen's fails here.
  */
-import { pageOf } from './nav-registry';
+import { pageOf, screenSurface } from './nav-registry';
 import { decide, NavIndex, rankScreens } from './nav-resolver';
 
 /** Share of a screen's held-out phrasings that must rank it in the top five. */
@@ -48,13 +48,16 @@ export function evaluateRegistryIndex(index: NavIndex): RegistryEval {
   let top1 = 0, top5 = 0, confident = 0, wrongPage = 0, n = 0;
   const page = (id: string) => pageOf(index.screens.get(id)!.route);
 
-  // Evaluation assumes a signed-in member on any device: every voice screen is reachable.
+  // Evaluation assumes a signed-in member on any device, on the surface the
+  // phrasing's screen belongs to (VTID-04814): a Command Hub phrasing is
+  // asked on the Command Hub, a member phrasing in the app.
   const phrasings = index.docs.filter((d) => d.kind === 'phrasing');
   // About 5,000 queries over 7,600 rows: ~35 s of arithmetic on a CI runner.
   phrasings.forEach((d) => {
     n++;
-    const ranked = rankScreens(index, d.vec, { ...ctx, ignoreText: d.text });
-    const r = decide(index, ranked, ctx);
+    const own = { ...ctx, surface: screenSurface(index.screens.get(d.screenId) || {}) };
+    const ranked = rankScreens(index, d.vec, { ...own, ignoreText: d.text });
+    const r = decide(index, ranked, own);
     const pos = ranked.findIndex(([id]) => id === d.screenId);
     const row = rows.get(d.screenId) || { screen_id: d.screenId, phrasings: 0, top1: 0, top5: 0, confident_wrong_page: 0 };
     const lang = (byLang[d.lang] ||= { phrasings: 0, top1: 0, top5: 0, confident_wrong_page: 0 });

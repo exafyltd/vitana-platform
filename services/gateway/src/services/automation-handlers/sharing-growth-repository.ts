@@ -140,8 +140,9 @@ export async function fetchUserDisplayName(supabase: SupabaseClient, userId: str
 
 // ==================== wallet ====================
 
-export async function incrementWalletBalance(supabase: SupabaseClient, params: { p_user_id: string; p_currency_type: string; p_amount: number }) {
-  return supabase.rpc('increment_wallet_balance', params);
+// VTID-04809: earned VTNA on user_wallets.CREDITS, idempotent per source event.
+export async function creditRewardWallet(supabase: SupabaseClient, params: { p_tenant_id: string | null; p_user_id: string; p_amount: number; p_type: 'reward'; p_source: string; p_source_event_id: string; p_description: string }) {
+  return supabase.rpc('credit_wallet', params);
 }
 
 // ==================== relationship_edges ====================

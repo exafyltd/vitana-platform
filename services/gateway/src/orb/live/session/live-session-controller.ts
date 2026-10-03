@@ -96,6 +96,15 @@ import {
   fetchRecentConversationTranscript,
 } from '../../../services/orb-memory-bridge';
 import { emitOasisEvent } from '../../../services/oasis-event-service';
+// VTID-04776: one voice_session_facts row per session (Voice Supervisor).
+import {
+  recordVoiceSessionStart,
+  updateVoiceSessionFacts,
+  recordLiveSessionEnd,
+  stopEventContext,
+  uuidOrNull,
+  flushVoiceSessionFactsWrites,
+} from '../../../services/voice-session-facts';
 import { SessionStartTimer, deriveLatencyEntry } from '../latency-context';
 import { defaultWakeTimelineRecorder } from '../../../services/wake-timeline/wake-timeline-recorder';
 import { decideWakeBriefForSession } from '../../../services/wake-brief-wiring';
@@ -118,7 +127,11 @@ import {
   isAdminRole,
 } from '../../../services/admin-scanners/briefing';
 import { dispatchVoiceFailureFireAndForget } from '../../../services/voice-self-healing-adapter';
+import { buildVoiceOutcomeSignals } from '../../../services/jev/gates/voice-outcome-gate'; // VTID-04775
 import { finalizeLiveSession } from './finalize-live-session';
+import { getLiveApiVoice } from '../voice/live-api-voice';
+import { resolveNovaSonicVoiceOrFallback } from '../voice/nova-sonic-voice';
+import { isNovaSonicLanguageSupported } from '../upstream/nova-sonic-config';
 import { createRequestMemo } from './request-memo';
 import {
   sessions,
@@ -350,6 +363,22 @@ export function cleanupExpiredSessions(): void {
 }
 
 /**
+ * VTID-04834: the canonical `metadata.transport` vocabulary on the
+ * `vtid.live.session.*` OASIS topics — `'websocket'` | `'sse'` (LiveKit
+ * emits its own `'livekit'`). Every stop site (cleanupWsSession, the WS
+ * stop_session frame, the idle sweep, emitSseDisconnectStop) and the
+ * orb.live.* latency/wake-timeline topics already used `'websocket'`, and
+ * the Voice Lab reads `startEvent.metadata.transport` as
+ * `'websocket' | 'sse' | 'livekit'`. The start event was the one outlier
+ * (`'ws'`), so it is mapped here. `voice_session_facts.transport` keeps its
+ * DB-constrained short form (`'ws'|'sse'|'livekit'`, see toFactsTransport,
+ * which accepts both spellings).
+ */
+export function oasisTransportLabel(t: 'ws' | 'sse' | string | null | undefined): 'websocket' | 'sse' {
+  return t === 'ws' || t === 'websocket' ? 'websocket' : 'sse';
+}
+
+/**
  * Close + clean up a WebSocket client session. Originally inline at
  * orb-live.ts:~13931.
  *
@@ -466,10 +495,13 @@ export function cleanupWsSession(
           turn_count: ls.turn_count ?? 0,
           user_turns: turns.filter((t) => t.role === 'user').length,
           model_turns: turns.filter((t) => t.role === 'assistant').length,
+          // VTID-04776: which Vitana / language / provider this session was.
+          ...stopEventContext(ls, reason),
         })?.catch(() => {
           /* fire-and-forget: teardown must never depend on OASIS */
         });
         ls.stopEventEmitted = true;
+        recordLiveSessionEnd(ls, liveSessionKey, reason); // VTID-04776
       } catch {
         /* telemetry must never cost us the teardown it describes */
       }
@@ -489,6 +521,167 @@ export function cleanupWsSession(
 
   wsClientSessions.delete(sessionId);
   console.log(`[VTID-01222] WebSocket session cleaned up: ${sessionId}`);
+}
+
+/**
+ * VTID-04785: the SSE twin of VTID-03561. `GET /live/stream`'s
+ * `req.on('close')` handler is how almost every SSE session ends (tab closed,
+ * app backgrounded, EventSource closed before or instead of
+ * `POST /live/session/stop`). It finalized memory, closed the upstream and
+ * DELETED the session from `liveSessions` — but emitted no
+ * `vtid.live.session.stop`. Because it deletes, neither the idle sweep nor a
+ * later `POST /live/session/stop` (404 "Session not found") could report it
+ * afterwards. Measured on prod 2026-10-01 (24 h): 82 of 107 SSE sessions had
+ * no stop event; 76 of those 82 carry `conversation.session.finalized` with
+ * `reason='sse_disconnect'` — this exact handler. WS was 12/12.
+ *
+ * Emits the stop + records the voice_session_facts end exactly once per
+ * session object (the `stopEventEmitted` latch shared with every other end
+ * path), and never throws: it runs inside a socket 'close' callback.
+ * Returns true when it emitted.
+ */
+export function emitSseDisconnectStop(
+  ls: any,
+  sessionId: string,
+  reason: string = 'sse_disconnect',
+): boolean {
+  if (!ls || ls.stopEventEmitted) return false;
+  try {
+    const deps = getDeps();
+    const liveSessionKey = ls.sessionId || sessionId;
+    const nowMs = Date.now();
+    const startedMs = ls.createdAt instanceof Date ? ls.createdAt.getTime() : null;
+    const lastActivityMs = ls.lastActivity instanceof Date ? ls.lastActivity.getTime() : null;
+    const turns = Array.isArray(ls.transcriptTurns) ? ls.transcriptTurns : [];
+    // Latch BEFORE the emit so a re-entrant close cannot double-book.
+    ls.stopEventEmitted = true;
+    void deps.emitLiveSessionEvent?.('vtid.live.session.stop', {
+      session_id: liveSessionKey,
+      user_id: ls.identity?.user_id || null,
+      tenant_id: ls.identity?.tenant_id || null,
+      transport: 'sse',
+      idle_ms: lastActivityMs === null ? null : nowMs - lastActivityMs,
+      audio_in_chunks: ls.audioInChunks ?? 0,
+      audio_in_forwarded_chunks: ls.audioInForwarded ?? 0,
+      audio_out_chunks: ls.audioOutChunks ?? 0,
+      video_frames: ls.videoInFrames ?? 0,
+      duration_ms: startedMs === null ? null : nowMs - startedMs,
+      turn_count: ls.turn_count ?? 0,
+      user_turns: turns.filter((t: { role?: string }) => t.role === 'user').length,
+      model_turns: turns.filter((t: { role?: string }) => t.role === 'assistant').length,
+      ...stopEventContext(ls, reason),
+    })?.catch(() => {
+      /* fire-and-forget: teardown must never depend on OASIS */
+    });
+    recordLiveSessionEnd(ls, liveSessionKey, reason);
+    return true;
+  } catch {
+    /* telemetry must never cost us the teardown it describes */
+    return true;
+  }
+}
+
+/** VTID-04835: what a shutdown drain did. */
+export interface ShutdownStopsResult {
+  /** Sessions a `server_shutdown` stop was emitted for. */
+  emitted: number;
+  /** Sessions skipped because another end path already reported them. */
+  skipped: number;
+  /** True when the bound expired before every write settled. */
+  timedOut: boolean;
+}
+
+/**
+ * VTID-04835: SIGTERM drain. When ECS replaces a task (deploy, scale-in,
+ * health replacement) every live voice session on it used to vanish with no
+ * `vtid.live.session.stop` and no voice_session_facts end — the gateway had
+ * no SIGTERM handler at all, so node (PID 1 in the container) ignored the
+ * signal until SIGKILL at stopTimeout.
+ *
+ * For every session in `liveSessions` not yet reported (the shared VTID-03561
+ * `stopEventEmitted` latch, set BEFORE the emit so a socket close racing the
+ * drain cannot double-book), this emits one stop with `reason` and the usual
+ * stopEventContext fields, records the facts end, then awaits the OASIS emits
+ * and the queued facts writes — bounded by `timeoutMs` in total. Never
+ * throws, never waits past the bound (the timer is unref'd), idempotent: a
+ * second call finds every session latched and emits nothing.
+ */
+export async function emitShutdownStopsForLiveSessions(
+  reason: string = 'server_shutdown',
+  timeoutMs: number = 5_000,
+): Promise<ShutdownStopsResult> {
+  const result: ShutdownStopsResult = { emitted: 0, skipped: 0, timedOut: false };
+  const writes: Array<Promise<unknown>> = [];
+  let deps: LiveSessionControllerDeps | null = null;
+  try {
+    deps = getDeps();
+  } catch {
+    deps = null; // not configured (never booted the ORB) — still record facts
+  }
+  try {
+    for (const [sid, ls] of liveSessions) {
+      try {
+        if (!ls || ls.stopEventEmitted) {
+          result.skipped++;
+          continue;
+        }
+        ls.stopEventEmitted = true; // latch before the emit
+        const liveSessionKey = ls.sessionId || sid;
+        const nowMs = Date.now();
+        const startedMs = ls.createdAt instanceof Date ? ls.createdAt.getTime() : null;
+        const lastActivityMs = ls.lastActivity instanceof Date ? ls.lastActivity.getTime() : null;
+        const turns = Array.isArray(ls.transcriptTurns) ? ls.transcriptTurns : [];
+        let p: unknown;
+        try {
+          p = deps?.emitLiveSessionEvent?.('vtid.live.session.stop', {
+            session_id: liveSessionKey,
+            user_id: ls.identity?.user_id || null,
+            tenant_id: ls.identity?.tenant_id || null,
+            transport: oasisTransportLabel(ls.clientWs ? 'ws' : 'sse'),
+            idle_ms: lastActivityMs === null ? null : nowMs - lastActivityMs,
+            audio_in_chunks: ls.audioInChunks ?? 0,
+            audio_in_forwarded_chunks: ls.audioInForwarded ?? 0,
+            audio_out_chunks: ls.audioOutChunks ?? 0,
+            video_frames: ls.videoInFrames ?? 0,
+            duration_ms: startedMs === null ? null : nowMs - startedMs,
+            turn_count: ls.turn_count ?? 0,
+            user_turns: turns.filter((t: { role?: string }) => t.role === 'user').length,
+            model_turns: turns.filter((t: { role?: string }) => t.role === 'assistant').length,
+            ...stopEventContext(ls, reason),
+          });
+        } catch {
+          p = undefined; // a broken emitter must not cost the facts end below
+        }
+        if (p && typeof (p as Promise<unknown>).then === 'function') {
+          writes.push((p as Promise<unknown>).catch(() => undefined));
+        }
+        recordLiveSessionEnd(ls, liveSessionKey, reason);
+        result.emitted++;
+      } catch {
+        /* one bad session must not cost the others their stop */
+      }
+    }
+    writes.push(flushVoiceSessionFactsWrites().catch(() => undefined));
+  } catch {
+    /* never throw from a signal handler */
+  }
+
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const bound = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), Math.max(0, timeoutMs));
+    if (timer && typeof (timer as { unref?: () => void }).unref === 'function') {
+      (timer as { unref: () => void }).unref();
+    }
+  });
+  try {
+    const outcome = await Promise.race([Promise.allSettled(writes).then(() => 'done' as const), bound]);
+    result.timedOut = outcome === 'timeout';
+  } catch {
+    /* unreachable: allSettled never rejects */
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+  return result;
 }
 
 // =============================================================================
@@ -705,6 +898,29 @@ export function buildVertexWakeBriefBlock(
   // tells the model to compose its own opener, and the GUIDE MODE block names
   // the topic — so the sentence is redundant as well as risky, and omitting it
   // satisfies NEVER-rule 41 (write the INTENT, never the finished sentence).
+  // VTID-04760 — the first-time welcome carries an INTENT, not a sentence
+  // (NEVER-rule 41). Render it compositionally: the model writes the welcome
+  // in the member's language, in its own words. Same marker, so the SHORT-GAP
+  // pool and the brain's rival openers stay suppressed for this turn.
+  if (dedupeKey?.startsWith('first-time-welcome:')) {
+    return `\n\n${VERTEX_WAKE_BRIEF_OVERRIDE_MARKER}
+
+## SPOKEN FIRST UTTERANCE — FIRST-EVER CONVERSATION (VTID-04760)
+
+What your opening must do (compose every word yourself, in the user's own
+language; this is an intent, not text to read out):
+${safe}
+
+Rules:
+  - Do NOT pick a phrase from the "SHORT-GAP GREETING PHRASES" section —
+    that section is SUPPRESSED for this turn.
+  - Do NOT list features or screens.
+  - After speaking, stop and wait for the user's reply. On a yes, start
+    Episode 1 by calling narrate_guided_session.${dedupeLine}
+
+This is your first spoken turn this session.`;
+  }
+
   if (dedupeKey?.startsWith('guided_topic:')) {
     return `\n\n${VERTEX_WAKE_BRIEF_OVERRIDE_MARKER}
 
@@ -1166,7 +1382,11 @@ export async function handleLiveSessionStart(
     const wsStart = Date.now();
     contextReadyPromise = Promise.resolve().then(async () => {
       const [briefingResult, storedLangResult, workContextResult] = await Promise.allSettled([
-        wsIdentity.tenant_id ? fetchAdminBriefingBlock(wsIdentity.tenant_id, 3) : Promise.resolve(null),
+        // VTID-04844: the tenant-admin briefing is admin context; a supplier on
+        // the commerce surface must never hear the tenant's admin insights.
+        wsIdentity.tenant_id && assistantProfile.surface !== 'commerce'
+          ? fetchAdminBriefingBlock(wsIdentity.tenant_id, 3)
+          : Promise.resolve(null),
         storedLangPromise,
         import('../../profile/work-surface-context')
           .then((m) => m.buildWorkSurfaceKnowledge(assistantProfile, {
@@ -1394,6 +1614,8 @@ export async function handleLiveSessionStart(
         }).text;
 
         session.active_role = resolvedRole;
+        // VTID-04776: the member role is only known here (async context build).
+        updateVoiceSessionFacts(sessionId, { role: resolvedRole ?? null, lang: finalLang });
         session.lastSessionInfo = fetchedSessionInfo;
         session.contextInstruction = finalContext;
         session.contextPack = bootstrapResult.contextPack;
@@ -1787,6 +2009,9 @@ export async function handleLiveSessionStart(
     // voice". The widget sends it on the first start only; the greeting
     // ladder opens with the support-report intake while no turn has run.
     support_report: (body as any).support_report === true,
+    // VTID-04840: the supplier tapped "Talk to Vitana" in the commerce AI
+    // setup sheet; the commerce opener then asks for their website.
+    commerce_setup: (body as any).commerce_setup === true,
     // VTID-04430: the host app's build stamp; voice-filed tickets store it.
     app_version: normalizeAppVersion((body as any).app_version),
   };
@@ -2445,18 +2670,54 @@ export async function handleLiveSessionStart(
   // telemetry must never block the wake path. The event still fires; the
   // user's response no longer waits for it. Errors are swallowed into the
   // emitter's own logging (it already logs internally).
+  //
+  // VTID-04834: this is the ONE `vtid.live.session.start` for both transports.
+  // The WS transport used to emit a second one from handleWsStartMessage
+  // (orb-live.ts, transport:'websocket') ~0.4-0.8 s after this one, so every
+  // WS session was counted twice. That emit is deleted; the fields only it
+  // carried (Nova voice, Live-API voice, authenticated, context_bootstrap
+  // hit counts) are merged in here. `transport` uses the OASIS vocabulary
+  // shared with every `vtid.live.session.stop` site — see
+  // oasisTransportLabel().
+  const _ctxPackAtStart = (session.contextPack ?? contextPack) as ContextPack | undefined;
   deps.emitLiveSessionEvent('vtid.live.session.start', {
     session_id: sessionId,
     user_id: orbIdentity?.user_id || 'anonymous',
     tenant_id: orbIdentity?.tenant_id || null,
     email: orbIdentity?.email || null,
-    active_role: sseActiveRole || null,
+    // VTID-04776: a member session's role was null here. The Assistant
+    // Profile already carries the role the screen declared (view_role), so
+    // use it when the fixed work-surface / guided role is not set. A member
+    // session from an older widget that declares no view_role still reports
+    // null: its stored role is only read later inside the async context
+    // build, and voice_session_facts.role is updated when it resolves.
+    active_role: sseActiveRole || assistantProfile.role || null,
+    surface: assistantProfile.surface,
     user_agent: req.headers['user-agent'] || null,
     origin: req.headers['origin'] || req.headers['referer'] || null,
-    transport: transportLabel,
+    transport: oasisTransportLabel(transportLabel),
     lang,
     modalities: responseModalities,
+    response_modalities: responseModalities,
     voice: deps.getVoiceForLang(lang),
+    // VTID-03704 fields, formerly only on the deleted WS start emit:
+    // `live_api_voice` is the Gemini-era Live-API name (the old WS `voice`),
+    // `nova_voice` what Nova actually speaks with (fallback-reporting
+    // resolver, so a substitution is visible), and whether the language is
+    // on Nova at all.
+    live_api_voice: getLiveApiVoice(lang),
+    nova_voice: resolveNovaSonicVoiceOrFallback({ language: lang, persona: null }).voice,
+    nova_language_supported: isNovaSonicLanguageSupported(lang),
+    authenticated: !isAnonymousSession,
+    context_bootstrap: {
+      included: !!(session.contextInstruction ?? contextInstruction),
+      latency_ms: session.contextBootstrapLatencyMs ?? contextBootstrapLatencyMs ?? null,
+      skipped_reason: session.contextBootstrapSkippedReason || contextBootstrapSkippedReason || null,
+      deferred: !!contextReadyPromise,
+      memory_hits: _ctxPackAtStart?.memory_hits?.length || 0,
+      knowledge_hits: _ctxPackAtStart?.knowledge_hits?.length || 0,
+      tools_enabled: !isAnonymousSession,
+    },
   }).catch((err) => {
     console.warn(
       `[ORB-FAST-START] emitLiveSessionEvent failed (non-blocking) for ${sessionId}: ${err instanceof Error ? err.message : String(err)}`,
@@ -2491,6 +2752,26 @@ export async function handleLiveSessionStart(
   } catch {
     // Telemetry never blocks session start.
   }
+
+  // VTID-04776: the session's fact row (fire-and-forget, never throws).
+  // Placed after the latency context so `entry` is known; provider, first
+  // audio and the member role arrive later as updates.
+  recordVoiceSessionStart({
+    session_id: sessionId,
+    tenant_id: uuidOrNull(session.identity?.tenant_id),
+    user_id: uuidOrNull(session.identity?.user_id),
+    is_anonymous: isAnonymousSession,
+    surface: assistantProfile.surface,
+    role: sseActiveRole || assistantProfile.role || null,
+    persona_key: assistantProfile.personaKey ?? null,
+    profile_resolution: assistantProfile.resolution,
+    lang,
+    transport: transportLabel,
+    is_mobile: typeof session.is_mobile === 'boolean' ? session.is_mobile : !!clientContext.isMobile,
+    app_version: session.app_version ?? null,
+    entry: session.latencyContext?.entry ?? null,
+    started_at: session.createdAt.toISOString(),
+  });
 
   return res.status(200).json({
     ok: true,
@@ -2637,9 +2918,15 @@ export async function handleLiveSessionStop(
   // Emit OASIS event
   // VTID-NAV-TIMEJOURNEY: include user_id so fetchLastSessionInfo can find
   // this event when the user next opens the ORB.
-  await deps.emitLiveSessionEvent('vtid.live.session.stop', {
+  // VTID-04834: once per session — a session another path already reported
+  // (superseded, WS stop_session, SIGTERM drain) is still in liveSessions
+  // until the sweep reaps it; a late POST stop must not book a second stop.
+  const _alreadyReported = session.stopEventEmitted === true;
+  session.stopEventEmitted = true; // VTID-03561 — latched before the emit
+  if (!_alreadyReported) await deps.emitLiveSessionEvent('vtid.live.session.stop', {
     session_id,
     user_id: session.identity?.user_id || null,
+    transport: oasisTransportLabel(session.clientWs ? 'ws' : 'sse'), // VTID-04834
     tenant_id: session.identity?.tenant_id || null,
     audio_in_chunks: session.audioInChunks,
     audio_in_forwarded_chunks: session.audioInForwarded, // VTID-VOICE-FWD (Track A)
@@ -2649,8 +2936,11 @@ export async function handleLiveSessionStop(
     turn_count: session.turn_count,
     user_turns: session.transcriptTurns.filter((t) => t.role === 'user').length,
     model_turns: session.transcriptTurns.filter((t) => t.role === 'assistant').length,
+    // VTID-04776: this stop had no reason; it is the client's explicit
+    // POST /live/session/stop. Plus which Vitana / language / provider.
+    ...stopEventContext(session, 'client_stop'),
   });
-  session.stopEventEmitted = true; // VTID-03561
+  if (!_alreadyReported) recordLiveSessionEnd(session, session_id, 'client_stop'); // VTID-04776
 
   // VTID-03255: write a Journey Foundation session summary (fire-and-forget).
   // Feeds the "since we last spoke" line + morning greeting on next open. Never
@@ -2668,7 +2958,7 @@ export async function handleLiveSessionStop(
 
   // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
   // VTID-01994: pass session metrics for mode-independent quality classifier.
-  dispatchVoiceFailureFireAndForget({
+  if (!_alreadyReported) dispatchVoiceFailureFireAndForget({
     sessionId: session_id,
     tenantScope: session.identity?.tenant_id || 'global',
     metadata: { synthetic: (session as any).synthetic === true },
@@ -2681,6 +2971,10 @@ export async function handleLiveSessionStop(
       user_turns: session.transcriptTurns.filter((t) => t.role === 'user').length,
       model_turns: session.transcriptTurns.filter((t) => t.role === 'assistant').length,
     },
+    // VTID-04775 flow-test-exempt: post-session telemetry handed to the
+    // self-healing dispatch after the session has stopped; nothing Vitana says,
+    // picks or remembers changes. Wiring pinned by test/vtid-04775-voice-outcome-gate.test.ts.
+    outcomeSignals: buildVoiceOutcomeSignals(session, 'user_stop'),
   });
 
   // Session-end memory commit from the in-memory transcriptTurns (the full,
@@ -2706,6 +3000,7 @@ export async function handleLiveSessionStop(
             userId,
             sessionId: session_id,
             activeRole,
+            workSurface: session.assistantProfile?.isWorkSurface === true,
             channel: 'orb_voice',
             trigger: 'sse_stop_memory_items',
           });

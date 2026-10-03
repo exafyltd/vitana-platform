@@ -1,0 +1,7 @@
+# full gateway jest run on main 0b7912d + VTID-04826 — summary lines
+  ●  Cannot log after tests are done. Did you forget to wait for something async in your test?
+  ● foo › returns the right value
+Snapshots:   109 passed, 109 total
+Test Suites: 1 skipped, 1466 passed, 1466 of 1467 total
+Tests:       29 skipped, 6 todo, 23557 passed, 23592 total
+Time:        163.213 s, estimated 176 s

@@ -20,7 +20,7 @@ After a successful sign-up, the system sends a confirmation email; clicking the 
 
 ## Why it matters
 
-Vitana is multi-tenant. The same platform also runs Alkalma, Earthlinks, and other communities. The /maxina URL is what makes sure you land in the right place. Members who have signed up via a different portal won't see Maxina's events, knowledge, or curated content — and Maxina members who accidentally use the wrong portal will look for their data and not find it. The Maxina-branded login is the gate.
+Vitana is multi-tenant. The same platform also runs Alkalma and other communities. The /maxina URL is what makes sure you land in the right place. Members who have signed up via a different portal won't see Maxina's events, knowledge, or curated content — and Maxina members who accidentally use the wrong portal will look for their data and not find it. The Maxina-branded login is the gate.
 
 It is also the most-likely first impression. The visual identity, the welcome copy, and the call-to-action set the tone for what people expect from the rest of the experience.
 

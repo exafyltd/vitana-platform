@@ -1,0 +1,5 @@
+{"vtid":"VTID-04806","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"jev admin stats still auth-gated (gate rows surface here)","path":"/api/v1/jev/admin/stats","expect_status":401},
+{"kind":"existing","ref":"npx jest test/vtid-04806-plannability.test.ts test/vtid-04465-operator-pipeline-regression.test.ts","cwd":"services/gateway","reason":"The gate runs when Dev Autopilot plans a finding, which a read-only staging probe cannot cause. Modes, outcomes, agreement and wiring are proven by these suites; the planner suites prove planning is unchanged."}
+]}

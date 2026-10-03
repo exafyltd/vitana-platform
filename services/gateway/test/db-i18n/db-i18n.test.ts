@@ -445,6 +445,38 @@ describe('translateUnits batch splitting', () => {
     expect(res.translated.get('K0')?.title).toBe('第一行\n第二行');
   });
 
+  /**
+   * VTID-04845 — live evidence from I18N-DB-SEED runs 36984616124 and
+   * 36997779127: the German source `„Was weißt du über mich?“` came back in
+   * Polish/Portuguese/Serbian/Turkish/Chinese with its closing quote as an
+   * unescaped ASCII `"` inside the string value, on every run.
+   */
+  it('recovers from an unescaped quote inside a JSON string value (VTID-04845)', async () => {
+    const completeImpl: TranslateCompleteFn = async () =>
+      okText('{"K0": {"title": "Zapytaj Vitanę: „Co o mnie wiesz?" i posłuchaj."}}');
+    const res = await translateUnits(units.slice(0, 1), opts(completeImpl), ['title'], 1);
+    expect(res.failures).toHaveLength(0);
+    expect(res.translated.get('K0')?.title).toBe('Zapytaj Vitanę: „Co o mnie wiesz?" i posłuchaj.');
+  });
+
+  it('ends the value at the real closing quote when another field follows (VTID-04845)', async () => {
+    // A misread boundary would swallow `, "note": "ok` into the title.
+    const completeImpl: TranslateCompleteFn = async () =>
+      okText('{"K0": {"title": "Pergunte: "O que sabes sobre mim?"", "note": "ok"}}');
+    const res = await translateUnits(units.slice(0, 1), opts(completeImpl), ['title'], 1);
+    expect(res.failures).toHaveLength(0);
+    expect(res.translated.get('K0')?.title).toBe('Pergunte: "O que sabes sobre mim?"');
+  });
+
+  it('repairs inner quotes in a multi-unit batch without merging units (VTID-04845)', async () => {
+    const completeImpl: TranslateCompleteFn = async () =>
+      okText('{\n  "K0": {"title": "Sor: "Ne biliyorsun?""},\n  "K1": {"title": "Dein Plan"}\n}');
+    const res = await translateUnits(units.slice(0, 2), opts(completeImpl), ['title'], 2);
+    expect(res.failures).toHaveLength(0);
+    expect(res.translated.get('K0')?.title).toBe('Sor: "Ne biliyorsun?"');
+    expect(res.translated.get('K1')?.title).toBe('Dein Plan');
+  });
+
   it('still reports a failure when the JSON is genuinely unparseable, sanitization or not', async () => {
     const completeImpl: TranslateCompleteFn = async () => okText('{"K0": {"title": "unterminated');
     const res = await translateUnits(units.slice(0, 1), opts(completeImpl), ['title'], 1);

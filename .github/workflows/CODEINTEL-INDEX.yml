@@ -158,7 +158,16 @@ jobs:
         run: |
           set -e
           # Structural index only — no prose synthesis, no provider, no cost.
-          repowise init --no-prose -y
+          # --no-claude-md --no-agents: the session seed (VTID-04758) must carry
+          # a config that never writes tracked editor files. Editing config.yaml
+          # in the session instead makes RepoWise re-render every page (measured:
+          # 6705 pages, ~14 min) on each seeded session start.
+          repowise init --no-prose -y --no-claude-md --no-agents
+          # init stamps its config fingerprint before writing those two flags
+          # into config.yaml, so the first update after it re-renders every
+          # page. Re-stamp, so a session's first update on this seed is
+          # incremental (measured: 6703 pages -> 1).
+          python ../tools/scripts/codeintel/repowise_restamp_config.py .
           repowise export --format json --full -o .repowise/export
           test -s .repowise/export/wiki_pages.json
 
@@ -172,6 +181,28 @@ jobs:
             --repo "${{ matrix.repo }}" \
             --sha "${{ steps.gate.outputs.sha }}" \
             --out bundle
+          ls -la bundle
+
+      # VTID-04758: also ship the full RepoWise index itself, so a Claude Code
+      # session seeds from it (scripts/codeintel/session-setup.sh) instead of
+      # rebuilding for ~10 min on a shallow clone. Graphify is not shipped: its
+      # AST cache does not survive a move between checkouts, so a seeded update
+      # costs the same as the ~2 min local build.
+      - name: Package the session seed (RepoWise index)
+        if: steps.gate.outputs.skip == 'false'
+        run: |
+          set -e
+          # Fold the WAL into wiki.db so the tarball is self-contained.
+          python3 -c "import sqlite3; sqlite3.connect('src/.repowise/wiki.db').execute('PRAGMA wal_checkpoint(TRUNCATE)')"
+          tar -czf bundle/repowise-index.tar.gz -C src \
+            --exclude=.repowise/export --exclude=.repowise/decisions.yaml \
+            --exclude=.repowise/mcp.json --exclude='.repowise/wiki.db-wal' --exclude='.repowise/wiki.db-shm' \
+            --exclude=.repowise/parse_cache.pkl \
+            .repowise
+          jq --arg root "$GITHUB_WORKSPACE/src" \
+             --arg rw "$(repowise --version | awk '{print $NF}')" \
+             '.session_seed = {format: 1, source_root: $root, repowise_version: $rw, files: {repowise: "repowise-index.tar.gz"}}' \
+             bundle/manifest.json > bundle/manifest.tmp && mv bundle/manifest.tmp bundle/manifest.json
           ls -la bundle
 
       - name: Configure AWS credentials (GitHub OIDC — no static keys)
@@ -188,6 +219,7 @@ jobs:
           PREFIX="s3://${CODE_INDEX_BUCKET}/${{ matrix.repo }}/${{ steps.gate.outputs.sha }}"
           aws s3 cp bundle/graph-index.json.gz "$PREFIX/graph-index.json.gz" --content-type application/json --content-encoding gzip
           aws s3 cp bundle/risk-index.json.gz  "$PREFIX/risk-index.json.gz"  --content-type application/json --content-encoding gzip
+          aws s3 cp bundle/repowise-index.tar.gz "$PREFIX/repowise-index.tar.gz" --content-type application/gzip
           aws s3 cp bundle/manifest.json       "$PREFIX/manifest.json"       --content-type application/json
           # The pointer goes last, so a reader never sees latest/ name a sha
           # whose objects are not all there yet.

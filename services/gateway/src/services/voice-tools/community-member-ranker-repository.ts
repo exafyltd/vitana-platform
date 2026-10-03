@@ -62,12 +62,16 @@ export async function fetchUserCreatedAt(sb: SupabaseClient, userId: string) {
 
 // ==================== memory_facts ====================
 
+// VTID-04798: another member sees the matched fact as the reason for a
+// suggestion, so only `standard` facts are searched. Health and the other
+// GDPR Art. 9 categories (`special_category`) never match another member.
 export async function searchMemoryFactsByKeyword(sb: SupabaseClient, kwLike: string) {
   return sb
     .from('memory_facts')
     .select('user_id, fact_key, fact_value, provenance_source')
     .or(`fact_key.ilike.${kwLike},fact_value.ilike.${kwLike}`)
     .in('provenance_source', ['user_stated', 'assistant_inferred'])
+    .eq('sensitivity', 'standard')
     .limit(50);
 }
 
@@ -79,11 +83,6 @@ export async function searchExpertiseFacts(sb: SupabaseClient) {
   return sb.from('memory_facts').select('user_id, fact_key, fact_value').or('fact_key.ilike.expert_in_%,fact_key.ilike.certified_%,fact_key.ilike.degree_%').limit(100);
 }
 
-// ==================== health_features_daily ====================
-
-export async function searchHealthFeaturesByKeyword(sb: SupabaseClient, kwLike: string) {
-  return sb.from('health_features_daily').select('user_id, feature_key').ilike('feature_key', kwLike).limit(200);
-}
 
 // ==================== community_groups ====================
 

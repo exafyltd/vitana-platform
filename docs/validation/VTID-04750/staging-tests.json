@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04750",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
+    { "kind": "existing", "ref": "npx jest test/services/memory/vtid-04750-facts-over-old-notes.test.ts", "cwd": "services/gateway",
+      "reason": "pinned by unit tests built from production session live-11ec418b; a read-only staging suite cannot speak to the voice model" }
+  ]
+}

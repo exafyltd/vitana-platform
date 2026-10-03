@@ -1,0 +1,15 @@
+    ✓ records the Nova voice that actually speaks (14 ms)
+    ✓ records whether the language is on Nova at all (2 ms)
+    ✓ resolves the Nova voice through the fallback-REPORTING resolver (2 ms)
+    ✓ keeps the legacy live-api voice field rather than silently replacing it (2 ms)
+    ✓ a WS start (via the adapter) emits exactly one start, labelled websocket, with the merged fields (36 ms)
+    ✓ an SSE start keeps transport sse (4 ms)
+    ✓ orb-live.ts has no start emit of its own; the controller has exactly one (8 ms)
+    ✓ canonical OASIS transport vocabulary is websocket | sse (1 ms)
+    ✓ stop_session frame reports the LIVE id (not the ws- socket id) and removes the live session (17 ms)
+    ✓ stop_session then socket close then idle sweep then POST stop: still exactly one stop (the prod sequence) (21 ms)
+    ✓ socket close alone emits one stop (cleanupWsSession), and a later sweep adds none (2 ms)
+    ✓ the idle sweep still reports a session nobody reported, exactly once (2 ms)
+    ✓ POST /live/session/stop reports transport and does not re-report a latched session (7 ms)
+Test Suites: 2 passed, 2 total
+Tests:       13 passed, 13 total

@@ -68,7 +68,9 @@ describe('VTID-04525 B7 — conversation flag registry', () => {
     expect(readFileSync(join(SRC, 'orb/live/duplex/full-duplex-gate.ts'), 'utf8')).toContain("process.env[FULL_DUPLEX_ENV_VAR] === 'true'");
     expect(readFileSync(join(SRC, 'orb/live/upstream/nova-sonic-config.ts'), 'utf8')).toContain("env.NOVA_SONIC_GLOBAL_ENABLED === 'true'");
     expect(readFileSync(join(SRC, 'orb/live/session/upstream-message-handler.ts'), 'utf8')).toContain("process.env.NAV_CONTINUATION_BIND === 'true'");
-    expect(readFileSync(join(SRC, 'orb/live/tools/live-tool-catalog.ts'), 'utf8')).toContain("process.env.NAV_V2_ENABLED === 'true'");
+    // VTID-04846: the registry navigator is the only navigator; no code reads NAV_V2_ENABLED.
+    expect(readFileSync(join(SRC, 'orb/live/tools/live-tool-catalog.ts'), 'utf8')).not.toContain('NAV_V2_ENABLED');
+    expect(CONVERSATION_FLAGS.some((f) => f.name === 'NAV_V2_ENABLED')).toBe(false);
   });
 
   test('invalid raw values are flagged per parse rule', () => {
@@ -103,13 +105,14 @@ describe('VTID-04525 B7 — conversation flag registry', () => {
 
   // VTID-04473: the Jev switch is a workflow pin, not a conversation flag. The
   // generated pins must show both staging values (true with the TypeSafe key,
-  // false without) and no production pin — prod is deliberately not wired.
-  test('JEV_DECISIONS_ENABLED is pinned on staging only, and is not a conversation flag', () => {
+  // false without). VTID-04754: production now declares it too ('true', with
+  // the pinned secret ARN) instead of relying on a hand-edited task def.
+  test('JEV_DECISIONS_ENABLED is a workflow pin (staging true|false, prod true), not a conversation flag', () => {
     const { GATEWAY_WORKFLOW_PINS } = require('../../../src/services/conversation/conversation-flag-pins.generated');
     const pin = GATEWAY_WORKFLOW_PINS.JEV_DECISIONS_ENABLED;
     expect(pin).toBeDefined();
     expect(String(pin.staging).split(' | ').sort()).toEqual(['false', 'true']);
-    expect(pin.prod).toBeNull();
+    expect(pin.prod).toBe('true');
     expect(CONVERSATION_FLAGS.some((f) => f.name === 'JEV_DECISIONS_ENABLED')).toBe(false);
   });
   // VTID-04541: the registry voice navigator is switched on in production,

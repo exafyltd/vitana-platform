@@ -23,8 +23,8 @@
  * keyed per vertical and belong to the one-product form.
  */
 
-import { ProductSchema } from '../routes/vcaop-portal-my-products';
-import type { z } from 'zod';
+import { ProductSchema, SHIPS_SOMEWHERE_MESSAGE } from '../routes/vcaop-portal-my-products';
+import type { z, ZodIssue } from 'zod';
 
 export const CSV_MAX_CHARS = 1_000_000;
 export const CSV_MAX_ROWS = 500;
@@ -33,16 +33,55 @@ export const MAX_PRICE_CENTS = 2_147_483_647;
 
 export type ProductDraft = z.infer<typeof ProductSchema>;
 
+/**
+ * VTID-04746: every error carries a stable `code` (+ `params`) next to its
+ * English `message`, so the portal renders it in the partner's language
+ * (CLAUDE.md: backend-supplied UI text ships a key and params, never a raw
+ * string). `message` stays for logs and API callers.
+ */
+export type CsvErrorParams = Record<string, string | number>;
+
+export type CsvFileErrorCode =
+  | 'empty'
+  | 'too_large'
+  | 'no_header'
+  | 'unknown_columns'
+  | 'duplicate_columns'
+  | 'missing_column'
+  | 'missing_price_column'
+  | 'no_rows'
+  | 'too_many_rows'
+  | 'unterminated_quote';
+
+export type CsvRowErrorCode =
+  | 'field_count'
+  | 'price_both'
+  | 'not_money'
+  | 'not_cents'
+  | 'amount_too_large'
+  | 'required'
+  | 'too_short'
+  | 'too_long'
+  | 'wrong_length'
+  | 'invalid_url'
+  | 'invalid_choice'
+  | 'ships_to_required'
+  | 'invalid_value';
+
 export interface CsvRowError {
   /** 1-based line in the file; the header is line 1. */
   line: number;
   field?: string;
   message: string;
+  code: CsvRowErrorCode;
+  params?: CsvErrorParams;
 }
 
 export interface CsvImportResult {
   /** A problem with the file as a whole: nothing in it can be judged row by row. */
   fileError: string | null;
+  fileErrorCode: CsvFileErrorCode | null;
+  fileErrorParams?: CsvErrorParams;
   rows: Array<{ line: number; product: ProductDraft }>;
   errors: CsvRowError[];
   columns: string[];
@@ -50,7 +89,7 @@ export interface CsvImportResult {
 
 const TEXT_COLUMNS = [
   'title', 'description', 'brand', 'currency', 'affiliate_url',
-  'origin_country', 'availability', 'category',
+  'origin_country', 'availability', 'category', 'subcategory',
 ] as const;
 const LIST_COLUMNS = ['images', 'ships_to_countries', 'ships_to_regions'] as const;
 const MONEY_COLUMNS = ['price', 'price_cents', 'compare_at_price', 'compare_at_price_cents'] as const;
@@ -126,60 +165,89 @@ function money(
   const m = row[major]?.trim() ?? '';
   const c = row[cents]?.trim() ?? '';
   if (m && c) {
-    errors.push({ line, field: cents, message: `give ${major} or ${cents}, not both` });
+    errors.push({ line, field: cents, message: `give ${major} or ${cents}, not both`, code: 'price_both', params: { major, cents } });
     return undefined;
   }
   let value: number | null = null;
   let field = major;
   if (m) {
     value = majorUnitsToCents(m);
-    if (value === null) errors.push({ line, field: major, message: `not a money amount: ${m}` });
+    if (value === null) errors.push({ line, field: major, message: `not a money amount: ${m}`, code: 'not_money', params: { value: m } });
   } else if (c) {
     field = cents;
     value = /^\d{1,11}$/.test(c) ? Number(c) : null;
-    if (value === null) errors.push({ line, field: cents, message: `not a whole number of cents: ${c}` });
+    if (value === null) errors.push({ line, field: cents, message: `not a whole number of cents: ${c}`, code: 'not_cents', params: { value: c } });
   }
   if (value === null) return undefined;
   // Checked here, not left to the insert: a dry run must reject what the
   // real import would fail on.
   if (value > MAX_PRICE_CENTS) {
-    errors.push({ line, field, message: `amount too large (max ${MAX_PRICE_CENTS} cents)` });
+    errors.push({ line, field, message: `amount too large (max ${MAX_PRICE_CENTS} cents)`, code: 'amount_too_large', params: { max: MAX_PRICE_CENTS } });
     return undefined;
   }
   return value;
 }
 
 export function parseCatalogueCsv(input: string): CsvImportResult {
-  const empty = (fileError: string, columns: string[] = []): CsvImportResult => ({ fileError, rows: [], errors: [], columns });
-  if (typeof input !== 'string' || input.trim() === '') return empty('the file is empty');
-  if (input.length > CSV_MAX_CHARS) return empty(`the file is larger than ${CSV_MAX_CHARS} characters`);
+  const empty = (
+    code: CsvFileErrorCode,
+    fileError: string,
+    params?: CsvErrorParams,
+    columns: string[] = [],
+  ): CsvImportResult => ({ fileError, fileErrorCode: code, ...(params ? { fileErrorParams: params } : {}), rows: [], errors: [], columns });
+  if (typeof input !== 'string' || input.trim() === '') return empty('empty', 'the file is empty');
+  if (input.length > CSV_MAX_CHARS) {
+    return empty('too_large', `the file is larger than ${CSV_MAX_CHARS} characters`, { max: CSV_MAX_CHARS });
+  }
 
   const text = input.charCodeAt(0) === 0xfeff ? input.slice(1) : input;
   const delimiter = detectDelimiter(text.split(/\r?\n/, 1)[0] ?? '');
   const parsed = parseCsv(text, delimiter);
-  if (parsed.error) return empty(parsed.error);
+  if (parsed.error) {
+    const line = Number(/line (\d+)/.exec(parsed.error)?.[1] ?? 0);
+    return empty('unterminated_quote', parsed.error, { line });
+  }
   const [header, ...data] = parsed.records;
-  if (!header) return empty('the file has no header row');
+  if (!header) return empty('no_header', 'the file has no header row');
 
   const columns = header.cells.map((c) => c.trim().toLowerCase());
   const unknown = columns.filter((c) => !CSV_COLUMNS.includes(c));
-  if (unknown.length) return empty(`unknown column(s): ${unknown.join(', ')}`, columns);
+  if (unknown.length) {
+    return empty('unknown_columns', `unknown column(s): ${unknown.join(', ')}`, { columns: unknown.join(', ') }, columns);
+  }
   const dup = columns.filter((c, idx) => columns.indexOf(c) !== idx);
-  if (dup.length) return empty(`duplicate column(s): ${[...new Set(dup)].join(', ')}`, columns);
+  if (dup.length) {
+    const names = [...new Set(dup)].join(', ');
+    return empty('duplicate_columns', `duplicate column(s): ${names}`, { columns: names }, columns);
+  }
   for (const required of ['title', 'currency', 'affiliate_url', 'origin_country']) {
-    if (!columns.includes(required)) return empty(`missing required column: ${required}`, columns);
+    if (!columns.includes(required)) {
+      return empty('missing_column', `missing required column: ${required}`, { column: required }, columns);
+    }
   }
   if (!columns.includes('price') && !columns.includes('price_cents')) {
-    return empty('missing required column: price or price_cents', columns);
+    return empty('missing_price_column', 'missing required column: price or price_cents', undefined, columns);
   }
-  if (data.length === 0) return empty('the file has no product rows', columns);
-  if (data.length > CSV_MAX_ROWS) return empty(`the file has ${data.length} product rows; the limit is ${CSV_MAX_ROWS}`, columns);
+  if (data.length === 0) return empty('no_rows', 'the file has no product rows', undefined, columns);
+  if (data.length > CSV_MAX_ROWS) {
+    return empty(
+      'too_many_rows',
+      `the file has ${data.length} product rows; the limit is ${CSV_MAX_ROWS}`,
+      { count: data.length, limit: CSV_MAX_ROWS },
+      columns,
+    );
+  }
 
   const rows: CsvImportResult['rows'] = [];
   const errors: CsvRowError[] = [];
   for (const rec of data) {
     if (rec.cells.length !== columns.length) {
-      errors.push({ line: rec.line, message: `expected ${columns.length} fields, found ${rec.cells.length}` });
+      errors.push({
+        line: rec.line,
+        message: `expected ${columns.length} fields, found ${rec.cells.length}`,
+        code: 'field_count',
+        params: { expected: columns.length, found: rec.cells.length },
+      });
       continue;
     }
     const row: Record<string, string> = {};
@@ -207,11 +275,34 @@ export function parseCatalogueCsv(input: string): CsvImportResult {
     if (!result.success) {
       for (const issue of result.error.issues) {
         const field = issue.path.length ? String(issue.path[0]) : undefined;
-        errors.push({ line: rec.line, field, message: issue.message });
+        errors.push({ line: rec.line, field, message: issue.message, ...schemaIssueCode(issue) });
       }
       continue;
     }
     rows.push({ line: rec.line, product: result.data });
   }
-  return { fileError: null, rows, errors, columns };
+  return { fileError: null, fileErrorCode: null, rows, errors, columns };
+}
+
+/** A product-schema issue as a stable code (+ params) the portal can translate. */
+export function schemaIssueCode(issue: ZodIssue): { code: CsvRowErrorCode; params?: CsvErrorParams } {
+  switch (issue.code) {
+    case 'invalid_type':
+      return { code: issue.received === 'undefined' ? 'required' : 'invalid_value' };
+    case 'too_small':
+      if (issue.exact) return { code: 'wrong_length', params: { length: Number(issue.minimum) } };
+      if (issue.type === 'string' && Number(issue.minimum) === 1) return { code: 'required' };
+      return { code: 'too_short', params: { min: Number(issue.minimum) } };
+    case 'too_big':
+      if (issue.exact) return { code: 'wrong_length', params: { length: Number(issue.maximum) } };
+      return { code: 'too_long', params: { max: Number(issue.maximum) } };
+    case 'invalid_string':
+      return { code: issue.validation === 'url' ? 'invalid_url' : 'invalid_value' };
+    case 'invalid_enum_value':
+      return { code: 'invalid_choice', params: { options: issue.options.join(', ') } };
+    case 'custom':
+      return { code: issue.message === SHIPS_SOMEWHERE_MESSAGE ? 'ships_to_required' : 'invalid_value' };
+    default:
+      return { code: 'invalid_value' };
+  }
 }

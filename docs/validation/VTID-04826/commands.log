@@ -1,0 +1,6 @@
+# VTID-04826 — commands (services/gateway)
+# Evidence (read-only SQL, prod Supabase 2026-10-02): vitana_index_scores 4,970 rows for 242 users, latest 2026-10-01;
+# pillar scores range ~10–57 (score_total ≤ 245). calendar-prioritizer.ts never read the table.
+npx tsc --noEmit -p .                                                  # clean
+npx jest test/vtid-04826-calendar-pillar-priority.test.ts test/vtid-04374-calendar-maintenance.test.ts test/calendar   # 143 passed (outputs/jest-calendar.txt)
+npx jest (full gateway suite, main 0b7912d + this change)         # 1466 suites passed, 23557 tests, 0 failed (outputs/jest-full.txt)

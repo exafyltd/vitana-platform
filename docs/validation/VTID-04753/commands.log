@@ -1,0 +1,4 @@
+cd services/gateway && npx tsc --noEmit -p .                       # clean
+npx jest test/orb/live/session/vtid-04753-recall-hold.test.ts      # 23 passed
+npx jest test/orb/live/session/vtid-04702-remember-hold.test.ts test/services/memory   # all passed
+npx jest --silent                                                  # 1410 suites passed, 22643 tests passed, 0 failed

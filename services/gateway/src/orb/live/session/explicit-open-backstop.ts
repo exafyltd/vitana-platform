@@ -17,11 +17,10 @@
  * then the screen opens through openScreen(), with every gate (access,
  * viewport, already there) exactly as when the model calls the tool.
  *
- * Registry dispatcher only (NAV_V2_ENABLED), never on role surfaces the
- * registry does not cover. `ORB_NAV_OPEN_BACKSTOP_ENABLED=false` turns it off.
+ * Never in the admin area (no voice navigation there, VTID-04846). `ORB_NAV_OPEN_BACKSTOP_ENABLED=false` turns it off.
  */
 import WebSocket from 'ws';
-import { isLegacySurface, isNavV2Enabled, openScreen, type NavCallContext } from '../../../navigation/nav-dispatch';
+import { callSurface, isNavigationOffSurface, openScreen, type NavCallContext } from '../../../navigation/nav-dispatch';
 import { recordPendingNavAck, type NavAckSession } from '../../../navigation/nav-ack';
 import { resolveScreenRequest } from '../../../navigation/nav-service';
 
@@ -135,10 +134,10 @@ export function maybeRunExplicitOpenBackstop(
   navigatedDuringTurn: boolean,
 ): Promise<string | null> | null {
   const session = sessionIn as ExplicitOpenSession;
-  if (!isExplicitOpenBackstopEnabled() || !isNavV2Enabled()) return null;
+  if (!isExplicitOpenBackstopEnabled()) return null;
   if (!session.active || navigatedDuringTurn || session.navigationDispatched || session.pendingNavigation) return null;
   const currentRoute = session.current_route || null;
-  if (isLegacySurface(currentRoute)) return null;
+  if (isNavigationOffSurface(currentRoute)) return null;
   if (!detectExplicitOpenRequest(userText)) return null;
 
   const words = userText.replace(/\s+/g, ' ').trim().slice(-300);
@@ -157,6 +156,8 @@ export function maybeRunExplicitOpenBackstop(
       lang: navCtx.lang,
       authenticated: !navCtx.isAnonymous,
       viewport: navCtx.isMobile ? 'mobile' : undefined,
+      // VTID-04814: on the Command Hub only Command Hub screens.
+      surface: callSurface(navCtx),
     });
     if (r.kind !== 'match') {
       deps.emitDiag(session, 'nav_open_backstop', { outcome: r.kind, candidates: 'candidates' in r ? r.candidates.slice(0, 3).map((c) => c.screen_id) : [] });

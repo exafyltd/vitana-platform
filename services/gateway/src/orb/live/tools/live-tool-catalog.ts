@@ -26,6 +26,7 @@ import { ADMIN_TOOL_SCHEMAS } from '../../../services/admin-voice-tools';
 import { BACKOFFICE_TOOL_SCHEMAS } from '../../../services/backoffice-voice-tools';
 import { resolveOrbSurface, type OrbSurface } from '../surface';
 import { OPERATOR_DELEGATE_TOOL, OPERATOR_DELEGATE_TOOL_NAME } from './operator-delegate';
+import { commerceSetupTools } from './commerce-setup-tool';
 import { commerceDelegationTools, DEEP_DIVE_TOOL, DEEP_DIVE_TOOL_NAME, DELEGATION_COMPANION_TOOLS, memberDelegationTools } from './delegation-tools';
 // BOOTSTRAP-VOICE-CATALOG-COMPLETE — Vertex declarations for every tool built
 // out from the Voice Tools Catalog's `status: planned` backlog + the P0
@@ -111,7 +112,7 @@ export function buildLiveApiTools(
   surface?: string | null,
 ): object[] {
   return applySurfaceGate(
-    withNavV2ScreenDescription(buildLiveApiToolsUngated(mode, currentRoute, activeRole)),
+    buildLiveApiToolsUngated(mode, currentRoute, activeRole),
     resolveOrbSurface({ currentRoute, explicit: surface }),
     mode,
   );
@@ -133,7 +134,7 @@ const NAVIGATION_TOOL_NAMES = new Set(['get_current_screen', 'navigate', 'end_co
  * Before, a work surface could find a screen and never open it.
  */
 function isSurfaceNavigationTool(name: string): boolean {
-  return NAVIGATION_TOOL_NAMES.has(name) || (name === 'navigate_to_screen' && process.env.NAV_V2_ENABLED === 'true');
+  return NAVIGATION_TOOL_NAMES.has(name) || name === 'navigate_to_screen';
 }
 // Computed lazily: the declaration arrays come from modules that some route
 // tests mock at import time, so reading them at module load would throw.
@@ -152,7 +153,7 @@ function surfaceAllowlist(surface: 'admin' | 'backoffice'): Set<string> {
  * declarations, diary/water/journey tools included) with the developer
  * tools appended last — so the tool-catalog byte budget (VTID-04026/04097)
  * almost certainly trimmed the developer tools away. It now gets the
- * navigation tools, memory/knowledge search, the developer read tools, and
+ * navigation tools, the developer read tools, and
  * `operator_delegate` — the one way voice queues work (same Operator turn,
  * approval hold and exafy_admin gate as the Operator Console).
  *
@@ -164,7 +165,9 @@ export const COMMAND_HUB_RETIRED_VOICE_TOOLS = new Set([
   'dev_allocate_vtid', 'dev_create_task', 'dev_update_task', 'dev_cancel_task', 'dev_complete_task',
   'dev_terminalize_vtid', 'dev_execute_vtid', 'dev_run_exec_workflow', 'dev_submit_evidence',
 ]);
-const COMMAND_HUB_EXTRA_TOOLS = new Set(['search_memory', OPERATOR_DELEGATE_TOOL_NAME, DEEP_DIVE_TOOL_NAME, ...DELEGATION_COMPANION_TOOLS.map((t) => t.name)]);
+// VTID-04798 (owner decision 2026-10-01): no search_memory here — the Command
+// Hub never reads the member's personal memory (CLAUDE.md 42g).
+const COMMAND_HUB_EXTRA_TOOLS = new Set([OPERATOR_DELEGATE_TOOL_NAME, DEEP_DIVE_TOOL_NAME, ...DELEGATION_COMPANION_TOOLS.map((t) => t.name)]);
 function commandHubAllowlist(): Set<string> {
   return new Set<string>([
     ...namesOf(DEVELOPER_DOMAIN_TOOL_DECLARATIONS).filter((n) => !COMMAND_HUB_RETIRED_VOICE_TOOLS.has(n)),
@@ -180,7 +183,9 @@ function applyCommandHubGate(tools: object[]): object[] {
     if (Array.isArray(group.function_declarations)) {
       const kept = (group.function_declarations as Array<{ name?: unknown }>).filter((d) => {
         const name = typeof d?.name === 'string' ? d.name : '';
-        return NAVIGATION_TOOL_NAMES.has(name) || allowed.has(name);
+        // VTID-04814: the registry answers navigate on the Command Hub too,
+        // and its answers say "call navigate_to_screen" — so it is declared here.
+        return isSurfaceNavigationTool(name) || allowed.has(name);
       });
       if (!delegateAdded && !kept.some((d) => d.name === OPERATOR_DELEGATE_TOOL_NAME)) {
         kept.push(OPERATOR_DELEGATE_TOOL as { name?: unknown });
@@ -205,12 +210,13 @@ function applyCommandHubGate(tools: object[]): object[] {
  * search only. Community, health, diary, memory and developer tools are
  * absent, so nothing personal can be read or written from business mode.
  * VTID-04400 adds the commerce onboarding specialist (read-only, flag-gated).
+ * VTID-04840 adds draft_business_setup (drafts only, COMMERCE_AI_SETUP_ENABLED).
  */
 function applyCommerceGate(tools: object[]): object[] {
   const out: object[] = [];
   // VTID-04400: the commerce onboarding specialist (+ async companions),
   // added to the first declaration group, only when its flag is 'true'.
-  let extra = commerceDelegationTools() as Array<{ name?: unknown }>;
+  let extra = [...commerceDelegationTools(), ...commerceSetupTools()] as Array<{ name?: unknown }>;
   for (const group of tools as Array<Record<string, unknown>>) {
     if (Array.isArray(group.function_declarations)) {
       const kept = (group.function_declarations as Array<{ name?: unknown }>).filter((d) =>
@@ -303,21 +309,8 @@ export const NAVIGATE_TO_SCREEN_V2_DESCRIPTION = [
   'Never speak a route or a screen_id aloud — use the title.',
 ].join('\n');
 
-function withNavV2ScreenDescription(tools: object[]): object[] {
-  if (process.env.NAV_V2_ENABLED !== 'true') return tools;
-  return (tools as Array<Record<string, unknown>>).map((group) => {
-    if (!Array.isArray(group.function_declarations)) return group;
-    const decls = group.function_declarations as Array<Record<string, unknown>>;
-    if (!decls.some((d) => d?.name === 'navigate_to_screen')) return group;
-    return {
-      ...group,
-      function_declarations: decls.map((d) =>
-        d?.name === 'navigate_to_screen' ? { ...d, description: NAVIGATE_TO_SCREEN_V2_DESCRIPTION } : d),
-    };
-  });
-}
 
-/** VTID-04517 — `navigate` as the registry resolver answers it (NAV_V2_ENABLED). */
+/** VTID-04517 — `navigate` as the registry resolver answers it. */
 export const NAVIGATE_V2_DECLARATION = {
   name: 'navigate',
   description: [
@@ -397,93 +390,10 @@ function buildLiveApiToolsUngated(
         properties: {},
       },
     },
-    {
-      name: 'navigate',
-      description: [
-        'Guide the user to the right screen in the Vitana platform. Call this',
-        'tool whenever the user wants to go somewhere, find a feature, learn',
-        'how to do something, or mentions any screen, page, section, or area',
-        'of the app — even indirectly.',
-        '',
-        'You do NOT need to know which screen to send them to. Just pass the',
-        'user\'s words and the backend will find the right destination, search',
-        'the knowledge base for how-to guidance, and handle the redirect.',
-        '',
-        'WHEN TO CALL:',
-        '- "open my profile" / "open my wallet" / "open my inbox"',
-        '- "where are the podcasts" / "show me my health data"',
-        '- "I want to set up a business" / "how do I track my biology?"',
-        '- "open the screen with music" / "where is my diary"',
-        '- Any request where the user wants to SEE or DO something on a screen',
-        '',
-        'WHEN NOT TO CALL:',
-        '- Pure small talk with no screen destination ("how are you", "thank you")',
-        '- Quick factual questions ("what is longevity?")',
-        '',
-        'CONFIRMING A DESTINATION YOU JUST OFFERED — READ THIS CAREFULLY, it',
-        'has TWO different cases and using the wrong one causes a bad loop:',
-        '',
-        '  CASE A — you already called navigate() or navigate_to_screen for',
-        '  this and got back CANDIDATES / an ALTERNATIVE with real screen_ids',
-        '  (an either/or question, e.g. "Do you mean Chat or Notifications?"):',
-        '  the screen_id is ALREADY KNOWN. When the user answers, call',
-        '  navigate_to_screen DIRECTLY with that screen_id — do NOT call',
-        '  navigate() again. Re-running navigate() with free text throws away',
-        '  the resolved screen_id and can match something else entirely (e.g.',
-        '  a sub-page one level deeper), which is exactly how "pick an option,',
-        '  then get more options" loops happen. One clarifying question, then',
-        '  navigate_to_screen — never a second navigate() call for the same ask.',
-        '',
-        '  CASE B — you offered a destination from your OWN knowledge, without',
-        '  ever having called navigate()/navigate_to_screen for it (so there is',
-        '  no screen_id yet) — e.g. you said "Should I take you to Connected',
-        '  Apps?" or "Soll ich dich zu den verbundenen Apps bringen?" out of',
-        '  general conversation. If the user simply confirms ("yes", "ja",',
-        '  "mach das", "do it", "gerne", "klar", "sure") without repeating the',
-        '  destination, pass THE DESTINATION YOU OFFERED as the question (a',
-        '  bare confirmation carries no screen information on its own).',
-        '  Example: you said "Soll ich dich zu den verbundenen Apps bringen?"',
-        '  and the user replies "Ja, mach das" — call navigate with',
-        '  question: "verbundene Apps", not question: "Ja, mach das".',
-        '',
-        'WHAT YOU GET BACK:',
-        '- GUIDANCE: a short explanation you should speak naturally to the user,',
-        '  telling them about the feature and what they can do there.',
-        '- NAVIGATING_TO: the screen the user is being taken to (or null if no',
-        '  match was found).',
-        '- If a redirect is happening, the orb will close automatically after',
-        '  you finish speaking. Just speak the guidance naturally — do not add',
-        '  a separate transition sentence.',
-        '- If NAVIGATING_TO is null, ask the user to clarify what they are',
-        '  looking for.',
-        '',
-        'IMPORTANT: When you speak the guidance, be helpful and warm. Explain',
-        'the feature briefly, tell them what they can do on that screen, and',
-        'let them know you are taking them there. Example: "The Business Hub',
-        'is where you can set up your services and start earning. You\'ll find',
-        'a Create button to get started. Let me take you there."',
-      ].join('\n'),
-      parameters: {
-        type: 'object',
-        properties: {
-          question: {
-            type: 'string',
-            description: 'The user\'s question, request, or intent in their own words. Pass exactly what they said — the backend handles all matching and routing.',
-          },
-        },
-        required: ['question'],
-      },
-    },
+    // VTID-04517 / VTID-04846: answered by the screen registry, which says
+    // whether the member wants the screen OPENED or only asked WHERE it is.
+    NAVIGATE_V2_DECLARATION,
   ];
-
-  // VTID-04517: with NAV_V2_ENABLED, `navigate` is answered by the screen
-  // registry and says whether the member wants the screen OPENED or only
-  // asked WHERE it is. Same name, so every other description that mentions
-  // navigate / navigate_to_screen stays true.
-  if (process.env.NAV_V2_ENABLED === 'true') {
-    const i = navigatorTools.findIndex((t) => t.name === 'navigate');
-    navigatorTools[i] = NAVIGATE_V2_DECLARATION;
-  }
 
   if (mode === 'anonymous') {
     // VTID-NAV-ANON-FIX: On landing/portal pages, anonymous sessions get NO
@@ -2544,57 +2454,23 @@ function buildLiveApiToolsUngated(
             required: ['intent_id', 'recipient_vitana_ids'],
           },
         },
-        // VTID-02770 — Voice navigation. The Navigator returns a relative URL
+        // VTID-02770 — Voice navigation. The gateway returns a relative URL
         // the frontend ORB widget intercepts and routes to.
         //
-        // The valid set of `screen_id` values is the Navigation Catalog
-        // (services/gateway/src/lib/navigation-catalog.ts) — the single source
-        // of truth, ~150 entries and growing. There is no enum here on purpose:
-        // an enum drifts the moment a new screen ships. Send any screen_id or
-        // alias slug; the gateway validates with exact match → alias match →
-        // fuzzy resolve, in that order.
+        // The valid set of `screen_id` values is the screen registry
+        // (vitana-v1 src/navigation/registry/, plus the Command Hub's
+        // navigation/data/command-hub-screens.json) — VTID-04517 / VTID-04846.
+        // There is no enum here on purpose: an enum drifts the moment a new
+        // screen ships. Unknown ids are resolved from the stated reason.
         {
           name: 'navigate_to_screen',
-          description: [
-            'Redirect the user to a screen, page, drawer, or overlay.',
-            '',
-            '── HARD-REDIRECT LEXICON — ALWAYS call this tool when the user uses any of these phrasings AND the requested item maps unambiguously to one screen ──',
-            '  Open       — "open …", "take me to …", "go to …", "launch …", "öffne …", "geh zu …", "bring mich zu …"',
-            '  Show       — "show me …", "let me see …", "display …", "zeig mir …", "lass mich … sehen"',
-            '  Guide      — "guide me to …", "navigate me to …", "lead me to …", "führe mich zu …"',
-            '  Locate     — "where can I find …", "where is …", "where do I see …", "wo finde ich …", "wo ist …"',
-            '  Action     — "where can I execute …", "where do I do …", "where can I log …", "wo kann ich …"',
-            '  Read       — "read me my …", "read this …", "read that …", "lies mir … vor"',
-            '  Not-found  — "I could not find …", "I can\'t find …", "I don\'t see …", "ich finde … nicht"',
-            '',
-            'When any of these phrasings is used and the target is unambiguous, the redirect IS the answer. Do not narrate, do not ask permission, do not re-confirm. After calling, say a brief voice cue ("Opening your matches" / "Hier ist dein Index").',
-            '',
-            '── DISAMBIGUATION ──',
-            'If the request could legitimately map to multiple screens (e.g. "show me my news" → HOME.OVERVIEW / HOME.NEWS_ALL / HOME.NEWS_COMMUNITY, all three are tabs of /home — the default "Longevity News" tab is HOME.OVERVIEW, NOT a "news"-named id, so do not guess its id from the pattern of the other two; "where can I see my events" → events / calendar / reminders), DO NOT GUESS. Ask one short either/or question using the catalog titles, then call this tool with the user\'s pick, using the EXACT screen_id you already identified for that option when you built the question — never re-derive or re-guess the id from memory on the follow-up turn, since near-identical entries (e.g. multiple "news" screens) are easy to swap. Example: "Do you mean all news, community news, or the longevity feed?" / "Meinst du alle Neuigkeiten, Community-Neuigkeiten oder den Longevity-Feed?"',
-            '',
-            '── CONFIRMING A DESTINATION YOU JUST OFFERED ──',
-            'If you just offered to take the user somewhere by name (e.g. you asked "Should I take you to Connected Apps?" or "Soll ich dich zu den verbundenen Apps bringen?") and the user simply confirms without repeating the destination ("yes", "ja", "mach das", "do it", "gerne", "klar", "sure") — call this tool with the screen_id you already identified for YOUR OWN offer. A bare confirmation carries no screen information on its own, so do not treat it as a fresh, ambiguous request that needs re-resolving or re-asking — you already know the target, just navigate there.',
-            '',
-            '── HOW TO PICK A screen_id ──',
-            'Send the canonical id when known: COMM.FIND_PARTNER, HEALTH.VITANA_INDEX, DISCOVER.MARKETPLACE, OVERLAY.CALENDAR, MEMORY.DIARY, REMINDERS.OVERVIEW, INBOX.OVERVIEW, PROFILE.ME, PROFILE.PUBLIC, SETTINGS.CONNECTED_APPS, BUSINESS.OVERVIEW, COMM.OPEN_ASKS, COMM.MEMBERS, COMM.TALK_TO_VITANA, INTENTS.BOARD, INTENTS.MINE, INTENTS.MATCH_DETAIL, etc. If you only know a slug, send that — alias resolution handles "find-partner", "marketplace", "vitana-index", "calendar", "diary", "reminders", "members", "open-asks", "intent-board", "connected-apps", and the legacy snake_case forms (find_partner, events_meetups, …). Slugs work in EN or DE.',
-            '',
-            'Overlays (entry_kind=overlay): they open as a popup/drawer on the current screen instead of navigating. Examples: OVERLAY.CALENDAR, LIFE_COMPASS.OVERLAY, OVERLAY.VITANA_INDEX, OVERLAY.PROFILE_PREVIEW, OVERLAY.MEETUP_DRAWER, OVERLAY.EVENT_DRAWER, OVERLAY.WALLET_POPUP, OVERLAY.MASTER_ACTION. Same tool, same call site — the catalog tells the gateway which to render.',
-            '',
-            '── PARAMETERIZED ROUTES ──',
-            'If the catalog entry has `:param` placeholders, also send the param: `match_id` for INTENTS.MATCH_DETAIL; `vitana_id` (+ optional `intent_id`) for PROFILE.PUBLIC / PROFILE.WITH_MATCH; `meetup_id` / `event_id` for OVERLAY.MEETUP_DRAWER / OVERLAY.EVENT_DRAWER; `user_id` for OVERLAY.PROFILE_PREVIEW; `id` for DISCOVER.PRODUCT_DETAIL / DISCOVER.PROVIDER_PROFILE / NEWS.DETAIL; `groupId` for COMM.GROUP_DETAIL; `roomId` for COMM.LIVE_ROOM_VIEWER; `recipient_id` for INBOX.CONVERSATION; `chat_group_id` for INBOX.GROUP. NEVER invent/guess a value for any of these params — if you do not already know the real id from context, use the corresponding LIST/overview screen instead (see below) or ask the user which one they mean.',
-            '',
-            '── "MY MATCHES" — do not confuse the list with a single detail ──',
-            'INTENTS.MATCH_DETAIL is a SINGLE match\'s detail page — it requires a real `match_id` you already have from context (e.g. the user just discussed that specific match). For "show me my matches" / "My Matches" / any general request to see their matches, use COMM.FIND_PARTNER_MATCHES (mobile) or COMM.MATCHES (desktop) instead — those need no parameter. Calling INTENTS.MATCH_DETAIL without a real match_id always fails.',
-            '',
-            '── "OPEN THAT MESSAGE" — do not confuse the general inbox with one specific thread ──',
-            'INBOX.OVERVIEW is the general inbox — use it when no specific sender/group is known yet. INBOX.CONVERSATION opens ONE specific person\'s DM thread and needs a real `recipient_id`; INBOX.GROUP opens ONE specific group chat and needs a real `chat_group_id`. Both ids must come from a prior tool result (view_messages\'s senders, recent_conversations/list_conversations\'s contacts, send_group_chat_message\'s group_id) — NEVER invent one from a spoken name. If the user says "open/show me that message" right after you named a sender or read view_messages results, you already have their user_id — call INBOX.CONVERSATION with it instead of just re-offering the general inbox. If you do not have the id, call view_messages or recent_conversations first, or fall back to INBOX.OVERVIEW.',
-          ].join('\n'),
+          description: NAVIGATE_TO_SCREEN_V2_DESCRIPTION,
           parameters: {
             type: 'object',
             properties: {
               screen_id: {
                 type: 'string',
-                description: 'Catalog screen_id (e.g. "COMM.FIND_PARTNER") OR a known alias slug ("find-partner", "marketplace"). Validated server-side with exact → alias → fuzzy resolution; unknown ids are rejected with suggestions.',
+                description: 'Registry screen_id from a navigate result or a prior tool result (e.g. "INBOX.OVERVIEW"), or a known alias slug ("inbox", "marketplace"). An unknown id is resolved from the reason instead.',
               },
               target: {
                 type: 'string',

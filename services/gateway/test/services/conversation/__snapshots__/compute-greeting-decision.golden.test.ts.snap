@@ -715,10 +715,10 @@ exports[`computeGreetingDecision — rung golden snapshots rung 2: safe_fast_fir
   "diag": {
     "is_first_session": true,
     "lang": "de",
-    "prompt_len": 559,
+    "prompt_len": 610,
     "wake_opener": "safe_fast_first_time_welcome",
   },
-  "directive": "Open with a short, warm spoken welcome of two or three sentences, as audio. INTENT: The user's name is "Dragan" — address them by it. This is their very first voice conversation. Welcome them warmly to Maxina, introduce yourself as Vitana, their personal longevity assistant, say you will guide them step by step through their journey and show them how everything works, and invite them to start their first session together. Compose the wording yourself, in the user's own language, in your own words, choosing fresh wording every time. Then stop and listen.",
+  "directive": "Open with a short, warm spoken welcome of two or three sentences, as audio. INTENT: The user's name is "Dragan" — address them by it. This is their very first voice conversation. Welcome them warmly to Maxina, introduce yourself as Vitana, their personal longevity assistant, reassure them there is no rush and nothing to figure out alone, and invite them to start Episode 1 of their Audiobook, where you explain step by step how everything works and they only have to listen. Compose the wording yourself, in the user's own language, in your own words, choosing fresh wording every time. Then stop and listen.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,

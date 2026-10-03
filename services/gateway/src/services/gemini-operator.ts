@@ -729,6 +729,18 @@ KNOWN BLIND SPOT: GitHub's code search index excludes any file over 384KB. servi
       description: 'Run a deep investigation (up to about two and a half minutes) when a question needs evidence from several places: code and its callers, git history, OASIS events, logs, database rows, live staging/production endpoints (GET only) or a screen\'s implementation. Returns findings with their sources. Read-only. Requires a signed-in developer.',
       parameters: { type: 'object', properties: { question: { type: 'string', description: 'The full question, with every name, id, time window and environment mentioned.' } }, required: ['question'] }
     },
+    // VTID-04821: Exafy company documents (Exafy Google Drive / OneDrive),
+    // reached only through the caller's own exafy.io account.
+    {
+      name: 'dev_company_docs_search',
+      description: 'Search Exafy company documents on the Exafy Google Drive and OneDrive the caller has connected with their exafy.io account. Returns file names, kinds, dates and links (never contents). If a drive is not connected, says so; offer dev_company_docs_connect. Read-only. Exafy staff (exafy_admin) only.',
+      parameters: { type: 'object', properties: { query: { type: 'string', description: 'What to look for: words in the document name or text.' } }, required: ['query'] }
+    },
+    {
+      name: 'dev_company_docs_connect',
+      description: 'Get the sign-in link that connects the caller\'s Exafy company drive (provider "google" for the Exafy Google Drive, "microsoft" for OneDrive) read-only. Only exafy.io accounts are searched afterwards. Exafy staff (exafy_admin) only.',
+      parameters: { type: 'object', properties: { provider: { type: 'string', description: '"google" (Exafy Drive, default) or "microsoft" (OneDrive).' } }, required: [] }
+    },
     // VTID-04116: Operator Console codebase intelligence — RepoWise. Closes
     // the gap the VTID-04002 gap analysis flagged: CLAUDE.md's mandatory
     // codebase-intelligence workflow had nothing installed anywhere to
@@ -3633,6 +3645,46 @@ async function executeDeveloperKnowledgeTool(
   }
 }
 
+/**
+ * VTID-04821: Exafy company documents. Only a verified exafy_admin on this
+ * request; each person searches their own connected exafy.io drives. Jev's
+ * relevance check (E1, shadow) runs after the result, never awaited.
+ */
+export async function executeCompanyDocsTool(
+  toolName: string,
+  args: Record<string, unknown>,
+  threadId: string,
+): Promise<ToolExecutionResult> {
+  const auth = getThreadAuth(threadId);
+  if (!auth || !auth.user_id || !auth.exafy_admin) return { ok: false, error: `${toolName} is for signed-in Exafy staff only` };
+  const tenantId = threadIdentityMap.get(threadId)?.tenant_id ?? null;
+  try {
+    const { getSupabase } = await import('../lib/supabase');
+    const sb = getSupabase();
+    if (!sb) return { ok: false, error: 'database unavailable' };
+    const docs = await import('./company-docs/company-docs');
+    if (toolName === 'dev_company_docs_connect') {
+      const provider = args.provider === 'microsoft' ? 'microsoft' : 'google';
+      if (!tenantId) return { ok: false, error: 'no active tenant on this session; sign in again' };
+      const r = await docs.companyDocsConnectUrl({ userId: auth.user_id, tenantId, provider, sb });
+      if (!r.ok) return { ok: false, error: r.error };
+      return { ok: true, data: { provider, auth_url: r.auth_url, note: `Sign in with your ${docs.companyDocsDomains().join(' / ')} account. Other accounts are never searched.` } };
+    }
+    const query = typeof args.query === 'string' ? args.query.trim().slice(0, 300) : '';
+    if (!query) return { ok: false, error: 'query is required' };
+    const { docs: found, sources } = await docs.searchCompanyDocs(auth.user_id, query, { sb });
+    if (found.length) {
+      const { isCompanyDocRelevanceOn, runCompanyDocRelevance } = await import('./jev/gates/company-doc-relevance-gate');
+      if (isCompanyDocRelevanceOn()) void runCompanyDocRelevance({ query, docs: found, tenantId });
+      const { isDocumentTypeRoutingOn, runDocumentTypeRouting } = await import('./jev/gates/document-type-gate');
+      if (isDocumentTypeRoutingOn()) void runDocumentTypeRouting({ docs: found, tenantId });
+    }
+    return { ok: true, data: { query, results: found, sources } };
+  } catch (e) {
+    return { ok: false, error: `${toolName} failed: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
 export async function executeTool(
   toolName: string,
   args: Record<string, unknown>,
@@ -3844,6 +3896,12 @@ export async function executeTool(
       case 'dev_domain_atlas':
       case 'dev_deep_dive':
         result = await executeDeveloperKnowledgeTool(toolName, args as Record<string, unknown>, threadId);
+        break;
+
+      // VTID-04821: Exafy company documents (staff only).
+      case 'dev_company_docs_search':
+      case 'dev_company_docs_connect':
+        result = await executeCompanyDocsTool(toolName, args as Record<string, unknown>, threadId);
         break;
 
       // VTID-04229: Operator Console codebase index (S3 bundle)
