@@ -30,7 +30,21 @@ function memSb(seed: { links?: any[]; referrals?: any[]; tenants?: any[]; rpcErr
     user_tenants: [...(seed.tenants ?? [{ user_id: NEWBIE, tenant_id: TENANT }])],
     profiles: [{ user_id: INVITER, first_name: 'Ana' }],
   };
-  const rpc = jest.fn(async () => (seed.rpcError ? { data: null, error: { message: 'boom' } } : { data: { ok: true }, error: null }));
+  // VTID-04864: claim_invite_reward mirrors the SQL function (verified in
+  // PGlite, docs/validation/VTID-04864): cap over the window, then the
+  // signed_up → rewarded move; credit_wallet keeps the old behaviour.
+  const rpc = jest.fn(async (name: string, a: any) => {
+    if (name === 'claim_invite_reward') {
+      const since = new Date(Date.parse(a.p_now) - a.p_window_days * 86_400_000).toISOString();
+      const used = t.referrals.filter((r) => r.referrer_id === a.p_inviter_id && r.status === 'rewarded' && r.rewarded_at >= since).length;
+      if (used >= a.p_cap) return { data: { ok: true, claimed: false, reason: 'monthly_cap' }, error: null };
+      const row = t.referrals.find((r) => r.id === a.p_referral_id && r.referrer_id === a.p_inviter_id && r.status === 'signed_up');
+      if (!row) return { data: { ok: true, claimed: false, reason: 'already_rewarded' }, error: null };
+      Object.assign(row, { status: 'rewarded', rewarded_at: a.p_now, reward_amount: a.p_amount });
+      return { data: { ok: true, claimed: true }, error: null };
+    }
+    return seed.rpcError ? { data: null, error: { message: 'boom' } } : { data: { ok: true }, error: null };
+  });
   let n = 0;
   const sb: any = {
     t, rpc,
@@ -123,7 +137,9 @@ describe('eligibility (anti-abuse)', () => {
 });
 
 describe('claim', () => {
-  it('attributes once; the reward stays off unless the flag is exactly true', async () => {
+  // VTID-04864: the reward is on by default; 'false' is the off switch.
+  it('attributes once; the reward is off when the flag is exactly false', async () => {
+    process.env.COMMUNITY_INVITE_REWARD_ENABLED = 'false';
     const sb = memSb({ links: [link] });
     const first = await claimInvite(sb, NEWBIE, 'abcd2345', deps());
     expect(first).toMatchObject({ status: 'attributed', rewarded: false, reward_reason: 'reward_disabled' });
@@ -137,12 +153,15 @@ describe('claim', () => {
     process.env.COMMUNITY_INVITE_REWARD_ENABLED = 'true';
     const sb = memSb({ links: [link] });
     const r = await claimInvite(sb, NEWBIE, 'abcd2345', deps());
-    expect(r).toMatchObject({ status: 'attributed', rewarded: true, credits: 200 });
-    expect(sb.rpc).toHaveBeenCalledTimes(1);
+    // VTID-04864: 1,000 VTNA per invited friend (owner decision 2026-10-03; was 200).
+    expect(r).toMatchObject({ status: 'attributed', rewarded: true, credits: 1000 });
+    // VTID-04864: the cap check is its own atomic RPC; exactly one credit.
+    expect(sb.rpc.mock.calls.filter((c: any[]) => c[0] === 'credit_wallet')).toHaveLength(1);
+    expect(sb.rpc).toHaveBeenCalledWith('claim_invite_reward', expect.objectContaining({ p_cap: 10, p_window_days: 30, p_amount: 1000 }));
     // VTID-04809: earned VTNA on the canonical ledger, keyed per referral so
     // AP-0405 paying the same referral cannot double it.
     expect(sb.rpc).toHaveBeenCalledWith('credit_wallet', expect.objectContaining({
-      p_user_id: INVITER, p_amount: 200, p_type: 'reward', p_source: 'member_invite',
+      p_user_id: INVITER, p_amount: 1000, p_type: 'reward', p_source: 'member_invite',
       p_source_event_id: `referral_reward:${INVITER}:${NEWBIE}`,
     }));
     expect(sb.t.referrals[0].status).toBe('rewarded');
@@ -156,7 +175,7 @@ describe('claim', () => {
     const sb = memSb({ links: [link], referrals: prior });
     const r = await claimInvite(sb, NEWBIE, 'abcd2345', deps());
     expect(r).toMatchObject({ status: 'attributed', rewarded: false, reward_reason: 'monthly_cap' });
-    expect(sb.rpc).not.toHaveBeenCalled();
+    expect(sb.rpc).not.toHaveBeenCalledWith('credit_wallet', expect.anything());
   });
 
   it('a failed credit rolls the referral back to signed_up', async () => {

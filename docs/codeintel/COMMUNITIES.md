@@ -1191,7 +1191,7 @@ it for anything more than orientation.
 - Discover Marketplace Overview
 - Direct Messaging
 - Media and Voice Messages
-- VTN Tokens and Staking
+- VTNA Tokens and Staking
 - Business Hub Overview
 - Knowledge Base Authoring Guide
 - Staging Acceptance Evidence
@@ -1463,7 +1463,7 @@ it for anything more than orientation.
 - Document Management Skill
 - Knowledge Base Skill
 - Scheduling Skill
-- VTN Wallet Skill
+- VTNA Wallet Skill
 - Dev Dependencies Config
 - AI Agent Schema
 - Service Endpoint Schema

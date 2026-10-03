@@ -15,6 +15,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import * as repo from './milestone-service-repository';
+import { rewardAmount, rewardEventId } from './rewards/vtna-reward-rules';
 
 // =============================================================================
 // Milestone Definitions
@@ -163,6 +164,12 @@ export const MILESTONES: Record<string, MilestoneDefinition> = {
     target: '/invite',
   },
 };
+
+// VTID-04864: amounts come from the one VTNA rule table (vtna-reward-rules.ts),
+// never from this file — a milestone that is not a reward rule pays 0.
+for (const [id, def] of Object.entries(MILESTONES)) {
+  def.reward = rewardAmount(id);
+}
 
 // =============================================================================
 // Milestone State — tracks which milestones a user has achieved
@@ -458,7 +465,7 @@ export async function scanUserMilestones(
           p_amount: def.reward,
           p_type: 'reward',
           p_source: 'milestone',
-          p_source_event_id: `milestone_${milestoneId}_${userId}`,
+          p_source_event_id: rewardEventId(milestoneId, userId),
           p_description: def.celebration,
         });
         if (walletErr) {
@@ -548,7 +555,7 @@ export async function checkMilestonesForAction(
           p_amount: def.reward,
           p_type: 'reward',
           p_source: 'milestone',
-          p_source_event_id: `milestone_${milestoneId}_${userId}`,
+          p_source_event_id: rewardEventId(milestoneId, userId),
           p_description: def.celebration,
         });
         if (walletErr) {

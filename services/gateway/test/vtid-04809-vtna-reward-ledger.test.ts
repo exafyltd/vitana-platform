@@ -109,7 +109,8 @@ describe('VTID-04809 reward callers', () => {
   });
 
   it('the welcome bonus is keyed per member', () => {
-    expect(welcomeBonusEventId('u1')).toBe('onboarding_welcome_bonus:u1');
+    // VTID-04864: the welcome bonus shares the onboarding_complete milestone key so it cannot pay twice.
+    expect(welcomeBonusEventId('u1')).toBe('milestone_onboarding_complete_u1');
   });
 
   it('treats an RPC error or data.ok !== true as a failed credit', () => {

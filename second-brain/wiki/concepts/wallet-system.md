@@ -6,14 +6,14 @@
 
 ### Overview
 
-The Vitana Wallet is a multi-currency transaction system supporting three currency types: USD, VTN (Vitana tokens), and Credits. It provides real-time balance management, currency exchange with fee calculation, and secure transaction processing. As of December 2024, core functionality is production-ready for beta launch.
+The Vitana Wallet is a multi-currency transaction system supporting three currency types: USD, VTNA (Vitana tokens), and Credits. It provides real-time balance management, currency exchange with fee calculation, and secure transaction processing. As of December 2024, core functionality is production-ready for beta launch.
 
 ### Currency Model
 
 | Currency | Purpose | Default Balance |
 |----------|---------|-----------------|
 | USD | Fiat currency representation | 1,000.00 |
-| VTN | Vitana platform tokens | 1,000.00 |
+| VTNA | Vitana platform tokens | 1,000.00 |
 | CREDITS | In-app credits for services | 1,000.00 |
 
 Exchange rate simulation includes trend indicators (up, down, stable) and 24-hour change tracking. A 1% fee is applied on currency exchanges.
@@ -43,7 +43,7 @@ Exchange rate simulation includes trend indicators (up, down, stable) and 24-hou
 
 ### Frontend Components
 
-- **QuickExchangeWidget** -- currency conversion UI (USD, VTN, Credits) with real-time rates
+- **QuickExchangeWidget** -- currency conversion UI (USD, VTNA, Credits) with real-time rates
 - **WalletPopup** -- sidebar wallet with balance overview using real database data
 - **Payment flows** -- Request, Send, Transfer components
 - **Chat integration** -- payment attachments in messaging
@@ -77,7 +77,7 @@ Exchange rate simulation includes trend indicators (up, down, stable) and 24-hou
 - WebSocket scaling beyond ~1,000 concurrent users
 - External payment gateways (Stripe/PayPal for USD deposits)
 - Bank account linking
-- Blockchain connectivity for VTN tokens
+- Blockchain connectivity for VTNA tokens
 - Analytics and reporting dashboards
 
 ### Infrastructure Costs

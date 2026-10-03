@@ -18,22 +18,27 @@
  *   - one referral per claimant ever (unique index, migration 20260924200000);
  *   - at most INVITE_REWARD_MONTHLY_CAP rewarded invites per inviter / 30 days.
  * The credit runs once: the referral must move signed_up → rewarded first.
- * The reward is off unless COMMUNITY_INVITE_REWARD_ENABLED is exactly 'true';
+ * VTID-04864 (owner decision 2026-10-03): the reward is ON by default; set
+ * COMMUNITY_INVITE_REWARD_ENABLED to exactly 'false' to switch it off. (It
+ * used to be off unless the flag was exactly 'true', and no deploy set it.)
+ * Was:  off unless COMMUNITY_INVITE_REWARD_ENABLED is exactly 'true';
  * attribution is recorded either way. Vitanaland never contacts the invited
  * person — the member shares the link through their own channel.
  */
 import { randomBytes } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { creditWalletSucceeded, referralRewardEventId } from '../wallet/vtna-reward-keys';
+import { INVITE_MILESTONE_FRIENDS, getRewardRule, rewardAmount, rewardEventId } from '../rewards/vtna-reward-rules';
 
 export const INVITE_TARGET_TYPE = 'member_invite';
 export const INVITE_MAX_ACCOUNT_AGE_DAYS = 14;
-export const INVITE_REWARD_MONTHLY_CAP = 10;
+// VTID-04864: amount and cap come from the VTNA rule table.
+export const INVITE_REWARD_MONTHLY_CAP = getRewardRule('invite_friend_joined')?.cap?.count ?? 10;
 /** REWARD_TABLE.referral_completed (types/automations.ts). */
-export const DEFAULT_INVITE_REWARD_CREDITS = 200;
+export const DEFAULT_INVITE_REWARD_CREDITS = rewardAmount('invite_friend_joined') || 1000;
 
 export function isInviteRewardEnabled(): boolean {
-  return process.env.COMMUNITY_INVITE_REWARD_ENABLED === 'true';
+  return process.env.COMMUNITY_INVITE_REWARD_ENABLED !== 'false';
 }
 
 export function inviteRewardCredits(): number {
@@ -184,16 +189,21 @@ async function maybeRewardInviter(
 ): Promise<{ rewarded: boolean; reason?: string; credits?: number }> {
   if (!referralId) return { rewarded: false, reason: 'no_referral_row' };
   if (!isInviteRewardEnabled()) return { rewarded: false, reason: 'reward_disabled' };
-  const since = new Date(now.getTime() - 30 * 86_400_000).toISOString();
-  const { data: recent } = await sb.from('referrals').select('id').eq('referrer_id', inviterId).eq('status', 'rewarded').gte('rewarded_at', since);
-  if (((recent as unknown[] | null)?.length ?? 0) >= INVITE_REWARD_MONTHLY_CAP) return { rewarded: false, reason: 'monthly_cap' };
-
   const credits = inviteRewardCredits();
-  // Exactly once: only the call that moves signed_up → rewarded may credit.
-  const { data: moved } = await sb.from('referrals')
-    .update({ status: 'rewarded', rewarded_at: now.toISOString(), reward_amount: credits })
-    .eq('id', referralId).eq('status', 'signed_up').select('id');
-  if (!(moved as unknown[] | null)?.length) return { rewarded: false, reason: 'already_rewarded' };
+  // VTID-04864: cap check + signed_up → rewarded in ONE locked DB step
+  // (claim_invite_reward), so two claims for the same inviter can never both
+  // pass the cap. Only the call that moved the referral may credit.
+  const { data: claim, error: claimErr } = await sb.rpc('claim_invite_reward', {
+    p_referral_id: referralId,
+    p_inviter_id: inviterId,
+    p_amount: credits,
+    p_cap: INVITE_REWARD_MONTHLY_CAP,
+    p_window_days: getRewardRule('invite_friend_joined')?.cap?.days ?? 30,
+    p_now: now.toISOString(),
+  });
+  const claimed = claim as { ok?: boolean; claimed?: boolean; reason?: string } | null;
+  if (claimErr || !claimed?.ok) return { rewarded: false, reason: 'claim_failed' };
+  if (!claimed.claimed) return { rewarded: false, reason: claimed.reason ?? 'not_claimed' };
 
   // VTID-04809: earned VTNA on the canonical ledger, keyed so AP-0405 paying
   // the same referral lands as a duplicate instead of a second credit.
@@ -210,5 +220,40 @@ async function maybeRewardInviter(
     await sb.from('referrals').update({ status: 'signed_up', rewarded_at: null, reward_amount: null }).eq('id', referralId).eq('status', 'rewarded');
     return { rewarded: false, reason: 'credit_failed' };
   }
+  await maybePayInviteMilestone(sb, inviterId, tenantId);
   return { rewarded: true, credits };
+}
+
+/**
+ * VTID-04864: the one-time invited_friends_10 bonus (10,000 VTNA) when the
+ * inviter's 10th invited friend has been rewarded. Keyed per member, so it
+ * can land at most once however often this runs. Never fails the invite
+ * reward that triggered it.
+ */
+export async function maybePayInviteMilestone(
+  sb: SupabaseClient, inviterId: string, tenantId: string | null,
+): Promise<{ paid: boolean; reason?: string }> {
+  try {
+    const { data: rewarded } = await sb.from('referrals').select('id')
+      .eq('referrer_id', inviterId).eq('status', 'rewarded').limit(1000);
+    if (((rewarded as unknown[] | null)?.length ?? 0) < INVITE_MILESTONE_FRIENDS) return { paid: false, reason: 'below_milestone' };
+    const amount = rewardAmount('invited_friends_10');
+    const { data, error } = await sb.rpc('credit_wallet', {
+      p_tenant_id: tenantId,
+      p_user_id: inviterId,
+      p_amount: amount,
+      p_type: 'reward',
+      p_source: 'member_invite_milestone',
+      p_source_event_id: rewardEventId('invited_friends_10', inviterId),
+      p_description: `${INVITE_MILESTONE_FRIENDS} invited friends joined`,
+    });
+    if (!creditWalletSucceeded(data, error)) {
+      console.error(`[invites] invite milestone credit failed for ${inviterId.slice(0, 8)}: ${error?.message ?? (data as { error?: string } | null)?.error ?? 'unknown'}`);
+      return { paid: false, reason: 'credit_failed' };
+    }
+    return { paid: !(data as { duplicate?: boolean }).duplicate, reason: (data as { duplicate?: boolean }).duplicate ? 'already_paid' : undefined };
+  } catch (err: any) {
+    console.warn(`[invites] invite milestone check failed: ${err?.message ?? err}`);
+    return { paid: false, reason: 'check_failed' };
+  }
 }

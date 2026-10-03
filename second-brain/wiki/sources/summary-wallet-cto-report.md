@@ -13,7 +13,7 @@
 ### Current Implementation (Completed)
 
 **Frontend:**
-- QuickExchangeWidget for USD/VTN/Credits conversion with 1% fee and trend indicators
+- QuickExchangeWidget for USD/VTNA/Credits conversion with 1% fee and trend indicators
 - WalletPopup sidebar with real balance data
 - Payment flows (Request, Send, Transfer)
 - Chat-integrated payment attachments
@@ -48,7 +48,7 @@
 
 **Real-Time Scaling:** Push notifications, WebSocket scaling beyond ~1,000 users, transaction queuing
 
-**External Integrations:** Stripe/PayPal for USD, bank account linking, blockchain for VTN, external exchange rate feeds
+**External Integrations:** Stripe/PayPal for USD, bank account linking, blockchain for VTNA, external exchange rate feeds
 
 **Analytics:** Spending pattern analysis, revenue dashboards, compliance reporting
 

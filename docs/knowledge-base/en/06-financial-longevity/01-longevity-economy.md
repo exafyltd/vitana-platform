@@ -80,5 +80,5 @@ Your financial health and your physical health are not separate concerns. Inside
 
 - [What Is Maxina?](kb-en-01-01) -- The complete overview of the longevity ecosystem
 - [Earning Through Wellness](kb-en-06-02) -- How members earn through trusted wellness recommendations
-- [Credits, Cash, and VTN](kb-en-06-03) -- The three value layers in Maxina's economy
+- [Credits, Cash, and VTNA](kb-en-06-03) -- The three value layers in Maxina's economy
 - [Responsible Recommendations](kb-en-06-04) -- How recommendation quality and trust are maintained

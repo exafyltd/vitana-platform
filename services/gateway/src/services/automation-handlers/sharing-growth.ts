@@ -10,6 +10,7 @@ import { AutomationContext, REWARD_TABLE } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
 import * as repo from './sharing-growth-repository';
 import { creditWalletSucceeded, referralRewardEventId } from '../wallet/vtna-reward-keys';
+import { rewardAmount } from '../rewards/vtna-reward-rules';
 import { proposeToMember, tallyOutcomes, type ProposalOutcome } from '../community-autopilot/automation-proposals';
 
 const APP_URL = process.env.APP_URL || 'https://vitana.app';
@@ -137,7 +138,7 @@ async function runInviteAfterPositive(ctx: AutomationContext) {
   // Delay 30 min is handled by heartbeat interval; send immediately here
   ctx.notify(userId, 'orb_suggestion', {
     title: 'Enjoying Vitana?',
-    body: 'Know someone who\'d love it? Invite them and earn 200 credits!',
+    body: `Know someone who'd love it? Invite them and earn ${rewardAmount('invite_friend_joined')} VTNA when they join!`,
     data: { url: '/invite', short_code: shortCode },
   });
 
@@ -529,7 +530,7 @@ async function runBringYourCircleInviteWave(ctx: AutomationContext) {
 
   ctx.notify(userId, 'orb_suggestion', {
     title: 'Bring your circle to Vitana 🎉',
-    body: `You're on a roll — invite a few friends who'd vibe with your matches. ${rewardConfig.amount} credits per friend who joins.`,
+    body: `You're on a roll — invite a few friends who'd vibe with your matches. ${rewardConfig.amount} VTNA per friend who joins.`,
     data: { url: '/invite', short_code: shortCode, share_link: deepLink, automation_id: 'AP-0411' },
   });
 

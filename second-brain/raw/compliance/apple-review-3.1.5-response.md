@@ -46,7 +46,7 @@ VTNA is **not a cryptocurrency token**. It is an internal platform credit (like 
 - **Cannot be withdrawn as real currency** - closed-loop system with no fiat off-ramps
 - **Not obtainable outside the platform** - earned solely through platform engagement (health milestones, community participation)
 - **Fixed admin-controlled conversion rates** - not market-driven
-- **Platform documentation explicitly states:** "VTN is not a cryptocurrency. It is not designed for speculation or day trading."
+- **Platform documentation explicitly states:** "VTNA is not a cryptocurrency. It is not designed for speculation or day trading."
 
 ### 7. AML and KYC Compliance
 
