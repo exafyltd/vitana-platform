@@ -3250,7 +3250,11 @@ Functions: `jev_record_spend(tenant, plane, input_tokens, cost_usd)` (atomic
 increment, returns the tenant's month total), `jev_shadow_gate_stats(days)`
 (per-gate calls, decided, agreement rate, cost). Per-tenant control lives in
 `tenant_settings.feature_flags.jev = {enabled, planes[], monthly_budget_usd}`
-(no new column).
+(no new column). Since VTID-04857 the budget is compared with the sum of the
+tenant's `member`/`patient`/`partner_org` rows only (internal and
+system_autopilot are uncapped); member-content calls are counted under
+`member`. Budgets set by `data-fixups/20261003120000_vtid_04857_jev_community_budgets.sql`
+(maxina 50, alkalma 10).
 
 ## Account erasure — `erasure_registry`, `erase_user_data()` (VTID-04765, 2026-10-01) — NOT YET APPLIED
 

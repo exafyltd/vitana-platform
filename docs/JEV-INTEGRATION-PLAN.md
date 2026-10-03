@@ -643,7 +643,12 @@ Community Autopilot may send telemetry; member data follows the member rules
 4. `tenant_settings.feature_flags.jev = {enabled, planes[], monthly_budget_usd}`.
    No flag = internal planes only, no cap. Malformed or unreadable = fail
    closed. Spend persisted per tenant × plane × month (`jev_spend_counters`).
-   Budget exhausted → fallback 429 + event.
+   Budget exhausted → fallback 429 + event. **VTID-04857:** the budget caps
+   community/customer spend only (`member`, `patient`, `partner_org`;
+   member content counts as `member` whoever runs it); internal and
+   system_autopilot are never capped. The owner is paged at 80% and 100%
+   (`jev.budget.threshold_crossed` + Command Hub chat, once per tenant ×
+   month × level).
 5. Shadow framework: `jev_shadow_decisions`, `JEV_<GATE>_MODE=off|shadow|enforce`
    (exact; anything else off), `runJevGate()`, `recordJevShadowOutcome()`.
    Command Hub card `/command-hub/jev.html`: calls, cost, month spend,
@@ -960,8 +965,11 @@ dev/ops/backoffice; member ranking priced per tenant budget.
 ### 10.6 Owner decisions still open
 1. TypeSafe DPA / zero-retention (unlocks member_content and phi).
 2. Which Drive/OneDrive account(s) Backoffice search reads.
-3. Community cost control: per-tenant monthly budget, which tenants (maxina,
-   alkalma) get the member plane.
+3. ~~Community cost control~~ — approved 2026-10-03: Maxina $50/month,
+   Alkalma $10/month, 80% page, rules at 100%; Class A community uses on;
+   Class B (incl. D1–D8 ranking) shadow first, 300/member/day, safety exempt;
+   Class C off; community rate share ≈30% of 1,200 rpm. Slice 1 is
+   VTID-04857 (budget scope + alerts + tenant flags).
 4. Whether Community Autopilot on member data counts as the member plane
    (implemented as yes).
 
