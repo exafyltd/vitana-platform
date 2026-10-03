@@ -41,7 +41,9 @@ Contract change on purpose: the VTID-04754 test that expected an internal call t
 
 ## OASIS
 
-OASIS_IMPACT: one new topic, `jev.budget.threshold_crossed` (VTID-04857, source `jev:budget`, warning at 80%, error at 100%, payload `alert_key, tenant_id, month, level_pct, budget_usd, spent_usd`), at most two per tenant per month. Existing `jev.decision.*` events unchanged.
+OASIS_IMPACT: yes — one new topic, `jev.budget.threshold_crossed` (VTID-04857, source `jev:budget`, warning at 80%, error at 100%, payload `alert_key, tenant_id, month, level_pct, budget_usd, spent_usd`), at most two per tenant per month. Existing `jev.decision.*` events unchanged.
+
+OASIS_PROOF: `services/gateway/test/vtid-04857-jev-community-budget.test.ts` — "the call that crosses 80% pages the owner once, with an OASIS event" asserts exactly one `jev.budget.threshold_crossed` emit (vtid VTID-04857, status warning, payload tenant_id/level_pct 80/budget_usd 50) and no second emit on the next call; "100% is an error-level page" asserts status error, `alert_key` `t1:2026-10-01:100`, level_pct 100; "internal calls never page about a budget" asserts no emit. Live proof after the budgets apply: `select metadata from oasis_events where topic='jev.budget.threshold_crossed'` (none expected until a community decision spends).
 
 ## MERGE_PAYLOAD_PREVIEW
 
