@@ -125,13 +125,25 @@ describe('billing-repository', () => {
     });
   });
 
-  describe('fetchLatestFoundingCampaignCode', () => {
-    it('scopes to the founding_500 campaign, newest first', async () => {
+  describe('Founding 1000 (VTID-04859)', () => {
+    it('counts seats on founding_members', async () => {
+      const sb = makeSupabaseStub({ count: 3 });
+      await repo.countFoundingSeats(sb as any);
+      expect(sb.from).toHaveBeenCalledWith('founding_members');
+      expect(sb.calls).toContainEqual({ method: 'select', args: ['user_id', { count: 'exact', head: true }] });
+    });
+
+    it('reads one member\'s seat by user id', async () => {
       const sb = makeSupabaseStub({ data: null });
-      await repo.fetchLatestFoundingCampaignCode(sb as any);
-      expect(sb.calls).toContainEqual({ method: 'eq', args: ['campaign', 'founding_500'] });
-      expect(sb.calls).toContainEqual({ method: 'order', args: ['created_at', { ascending: false }] });
-      expect(sb.calls).toContainEqual({ method: 'limit', args: [1] });
+      await repo.fetchFoundingMember(sb as any, 'u1');
+      expect(sb.from).toHaveBeenCalledWith('founding_members');
+      expect(sb.calls).toContainEqual({ method: 'eq', args: ['user_id', 'u1'] });
+    });
+
+    it('marks the celebration through mark_founding_celebrated', async () => {
+      const sb = makeSupabaseStub({ data: { ok: true } });
+      await repo.rpcMarkFoundingCelebrated(sb as any, 'u1');
+      expect(sb.rpc).toHaveBeenCalledWith('mark_founding_celebrated', { p_user_id: 'u1' });
     });
   });
 

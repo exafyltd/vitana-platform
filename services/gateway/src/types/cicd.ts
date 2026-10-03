@@ -1073,7 +1073,9 @@ export type CicdEventType =
   | 'partner_org.mapping_step_changed'
   // VTID-04838: a supplier's confirmed AI-setup draft created a business and/or draft products.
   | 'commerce.ai_setup.applied'
-  | 'commerce.mcp.tool_called';
+  | 'commerce.mcp.tool_called'
+  // VTID-04859: a Founding Member saw (and closed) their free-year celebration.
+  | 'billing.founding.celebrated';
 
 export interface CicdOasisEvent {
   vtid: string;
