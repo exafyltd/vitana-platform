@@ -13,7 +13,7 @@ TEST: services/gateway/test/vtid-04860-vtna-token-name.test.ts
 
 AC-3 The live knowledge base is renamed by a migration that is whole-word only, leaves ticket serials ("VTN-<digit>") and identifiers (vtn_*) untouched, is idempotent and non-destructive.
 TEST: services/gateway/test/vtid-04860-vtna-token-name.test.ts
-Migration: supabase/migrations/20261003100000_vtid_04860_knowledge_docs_vtna_name.sql (applied at the production step; staging shares the production database).
+Migration: supabase/migrations/20261003120000_vtid_04860_knowledge_docs_vtna_name.sql (applied at the production step; staging shares the production database).
 
 AC-4 Nothing else changes behaviour: the suites covering every touched gateway file still pass.
 TEST: services/gateway/test (18 suites touching diary-streak-celebrator, automation-registry, wallet-payments, worker-orchestrator-service)

@@ -25,12 +25,14 @@
 import { randomBytes } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { creditWalletSucceeded, referralRewardEventId } from '../wallet/vtna-reward-keys';
+import { getRewardRule, rewardAmount } from '../rewards/vtna-reward-rules';
 
 export const INVITE_TARGET_TYPE = 'member_invite';
 export const INVITE_MAX_ACCOUNT_AGE_DAYS = 14;
-export const INVITE_REWARD_MONTHLY_CAP = 10;
+// VTID-04864: amount and cap come from the VTNA rule table.
+export const INVITE_REWARD_MONTHLY_CAP = getRewardRule('invite_friend_joined')?.cap?.count ?? 10;
 /** REWARD_TABLE.referral_completed (types/automations.ts). */
-export const DEFAULT_INVITE_REWARD_CREDITS = 200;
+export const DEFAULT_INVITE_REWARD_CREDITS = rewardAmount('invite_friend_joined') || 200;
 
 export function isInviteRewardEnabled(): boolean {
   return process.env.COMMUNITY_INVITE_REWARD_ENABLED === 'true';

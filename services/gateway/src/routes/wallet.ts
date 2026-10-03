@@ -5,6 +5,7 @@
  *   GET  /api/v1/wallet/deposits/:id
  *   GET  /api/v1/wallet/balance
  *   GET  /api/v1/wallet/transactions
+ *   GET  /api/v1/wallet/reward-rules   (VTID-04864: VTNA rules + this member's progress)
  *
  * All routes require an authenticated Supabase JWT (requireAuth middleware).
  * Wallet writes happen ONLY in the webhook handler and service modules;
@@ -23,6 +24,7 @@ import {
   getTransactionsForUser,
 } from '../services/wallet/balance-service';
 import { isWalletCurrency } from '../types/wallet';
+import { getRewardOverview } from '../services/rewards/reward-overview-service';
 
 const router = Router();
 
@@ -167,6 +169,19 @@ router.get('/wallet/transactions', async (req: AuthenticatedRequest, res: Respon
     })),
     next_cursor: page.next_cursor,
   });
+});
+
+/**
+ * GET /api/v1/wallet/reward-rules — VTID-04864
+ * The VTNA rules a member earns under (only rules something actually pays)
+ * and this member's progress. Read-only; labels are rendered by the app.
+ */
+router.get('/wallet/reward-rules', async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+  return res.json(await getRewardOverview(userId));
 });
 
 export default router;

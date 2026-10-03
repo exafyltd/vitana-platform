@@ -1,0 +1,18 @@
+PASS test/services/automation-handlers-onboarding-growth.test.ts
+PASS test/routes/autopilot-recommendations.test.ts
+PASS test/vtid-04510-community-autopilot-automation-proposals.test.ts
+PASS test/vtid-04809-vtna-reward-ledger.test.ts
+PASS test/diary-streak-celebrator.test.ts
+PASS test/save-diary-entry-shared.test.ts
+PASS test/routes/wallet-deposit-lookup.test.ts
+PASS test/vtid-04864-vtna-reward-rules.test.ts
+PASS test/vtid-04860-vtna-token-name.test.ts
+PASS test/vtid-04508-community-invites.test.ts
+PASS test/wallet-stripe-webhook.test.ts
+PASS test/vtid-04331-calendar-data-model.test.ts
+PASS test/scripts/conversation-flow-rule-satisfiable.test.ts
+PASS test/services/memory/diary.test.ts
+PASS test/milestone-service.test.ts
+PASS test/routes/autopilot-recommendations-complete.test.ts
+Test Suites: 16 passed, 16 total
+Tests:       261 passed, 261 total

@@ -137,7 +137,9 @@ describe('runOrbGuidedOnboarding (AP-1301)', () => {
     expect(notify).toHaveBeenCalledTimes(1);
     expect(supabase.rpc).toHaveBeenCalledWith('credit_wallet', expect.objectContaining({
       p_user_id: 'u1', p_amount: 50, p_type: 'reward', p_source: 'AP-1301',
-      p_source_event_id: 'onboarding_welcome_bonus:u1',
+      // VTID-04864: shares the onboarding_complete milestone key, so the
+      // milestone service and AP-1301 can never both pay it.
+      p_source_event_id: 'milestone_onboarding_complete_u1',
     }));
     expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('Credited welcome bonus'));
     expect(result.usersAffected).toBe(1);

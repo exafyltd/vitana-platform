@@ -11,11 +11,12 @@
  * caller must call this AFTER the diary entry has been written so the
  * streak length already reflects today's save.
  *
- * Reward tiers (mirror the autopilot onboarding pattern: 10 VTNA base):
- *   3-day streak  → 10 VTNA
- *   7-day streak  → 20 VTNA
- *  14-day streak  → 40 VTNA
- *  30-day streak  → 80 VTNA
+ * Rewards (VTID-04864): the amounts and the idempotency key come from the
+ * VTNA rule table (rewards/vtna-reward-rules.ts) — diary_streak_3/7/30, paid
+ * once each. This used to pay its own 10/20/40/80 on top of the milestone
+ * service's 20/50/100 for the same streak; now whichever path notices first
+ * pays and the other lands as a credit_wallet duplicate. The 14-day tier is
+ * celebrated but is not a reward rule, so it pays nothing.
  *
  * Returns the celebration payload (or null when nothing fired) so the
  * caller can include it in the response and surface it in the toast /
@@ -26,6 +27,8 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
 import { notifyUserAsync } from './notification-service';
 import * as repo from './diary-streak-celebrator-repository';
+import { rewardAmount, rewardEventId } from './rewards/vtna-reward-rules';
+import { creditWalletSucceeded } from './wallet/vtna-reward-keys';
 
 export interface StreakCelebration {
   current_streak_days: number;
@@ -34,12 +37,17 @@ export interface StreakCelebration {
   message: string;          // human-friendly celebration ("3-day diary streak — keep it!")
 }
 
-const STREAK_TIERS: ReadonlyArray<{ days: number; reward: number; message: string }> = [
-  { days: 3,  reward: 10, message: '3-day diary streak — keep it.' },
-  { days: 7,  reward: 20, message: '7-day diary streak — a real habit is forming.' },
-  { days: 14, reward: 40, message: '14-day diary streak — two solid weeks.' },
-  { days: 30, reward: 80, message: '30-day diary streak — this is your practice now.' },
+const STREAK_TIERS: ReadonlyArray<{ days: number; message: string }> = [
+  { days: 3,  message: '3-day diary streak — keep it.' },
+  { days: 7,  message: '7-day diary streak — a real habit is forming.' },
+  { days: 14, message: '14-day diary streak — two solid weeks.' },
+  { days: 30, message: '30-day diary streak — this is your practice now.' },
 ];
+
+/** VTNA for reaching a streak tier — from the rule table; 0 = not a reward. */
+export function streakTierReward(days: number): number {
+  return rewardAmount(`diary_streak_${days}`);
+}
 
 /**
  * Check the user's current diary streak. If today's save crossed into a
@@ -90,22 +98,33 @@ export async function celebrateDiaryStreak(
     // credit_wallet not existing, and the failure was completely invisible
     // in logs. Checking `error` explicitly makes it loud, per this
     // codebase's own "never silence errors" rule.
-    try {
-      const { error: walletErr } = await repo.creditWallet(admin, {
-        p_tenant_id: tenantId,
-        p_user_id: userId,
-        p_amount: tier.reward,
-        p_type: 'reward',
-        p_source: 'diary_streak',
-        p_source_event_id: `diary_streak_${userId}_${tier.days}_${new Date().toISOString().slice(0, 10)}`,
-        p_description: `Diary ${tier.days}-day streak`,
-      });
-      if (walletErr) {
-        console.error(`[diary-streak] credit_wallet RPC returned an error: ${walletErr.message}`);
+    // `credited` is what actually landed: 0 when the tier is not a reward
+    // rule, when the milestone service already paid it (duplicate), or when
+    // the credit failed — the push below never claims a credit that did not
+    // happen.
+    const ruleId = `diary_streak_${tier.days}`;
+    const reward = streakTierReward(tier.days);
+    let credited = 0;
+    if (reward > 0) {
+      try {
+        const { data: walletData, error: walletErr } = await repo.creditWallet(admin, {
+          p_tenant_id: tenantId,
+          p_user_id: userId,
+          p_amount: reward,
+          p_type: 'reward',
+          p_source: 'diary_streak',
+          p_source_event_id: rewardEventId(ruleId, userId),
+          p_description: `Diary ${tier.days}-day streak`,
+        });
+        if (walletErr) {
+          console.error(`[diary-streak] credit_wallet RPC returned an error: ${walletErr.message}`);
+        } else if (creditWalletSucceeded(walletData, walletErr) && !(walletData as { duplicate?: boolean }).duplicate) {
+          credited = reward;
+        }
+      } catch (walletErr: any) {
+        // Network-layer failure (the only case .rpc() actually rejects for).
+        console.warn(`[diary-streak] credit_wallet failed: ${walletErr?.message ?? walletErr}`);
       }
-    } catch (walletErr: any) {
-      // Network-layer failure (the only case .rpc() actually rejects for).
-      console.warn(`[diary-streak] credit_wallet failed: ${walletErr?.message ?? walletErr}`);
     }
 
     // OASIS event so the morning brief + autopilot popup can pick it up.
@@ -120,7 +139,7 @@ export async function celebrateDiaryStreak(
           user_id: userId,
           tenant_id: tenantId,
           streak_days: tier.days,
-          reward_vtn: tier.reward,
+          reward_vtn: credited,
         },
       });
     } catch (evErr: any) {
@@ -132,19 +151,19 @@ export async function celebrateDiaryStreak(
     // morning brief. Respects user_notification_preferences + DND.
     notifyUserAsync(userId, tenantId, 'diary_streak_milestone', {
       title: `${tier.days}-day diary streak!`,
-      body: `${tier.message} +${tier.reward} VTNA credited.`,
+      body: credited > 0 ? `${tier.message} +${credited} VTNA credited.` : tier.message,
       data: {
         url: '/diary',
         streak_days: String(tier.days),
-        reward_vtn: String(tier.reward),
+        reward_vtn: String(credited),
       },
     }, admin);
 
-    console.log(`[diary-streak] user=${userId.slice(0, 8)} hit ${tier.days}-day streak +${tier.reward} VTNA`);
+    console.log(`[diary-streak] user=${userId.slice(0, 8)} hit ${tier.days}-day streak +${credited} VTNA`);
     return {
       current_streak_days: streak,
       tier_days: tier.days,
-      wallet_credit: tier.reward,
+      wallet_credit: credited,
       message: tier.message,
     };
   } catch (err: any) {
