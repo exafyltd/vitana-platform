@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04794",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive", "expect_status": 200 },
+    { "kind": "existing", "ref": "npx jest test/vtid-04794-router-empty-truncated-fallback.test.ts test/llm-router.test.ts test/vtid-03820-llm-router-override.test.ts", "cwd": "services/gateway",
+      "reason": "the fallback only runs on a live LLM call that hits the output cap; staging writes to the production database, so planning is proven by the suites, not by a staging write" }
+  ]
+}
