@@ -47,6 +47,7 @@ import express, { Router, Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
 // VTID-04543: in-process cache for lookupPrimaryTenant.
 import { createPrimaryTenantCache } from '../orb/live/session/primary-tenant-cache';
+import { closeIfSessionGone } from '../orb/live/session/orphan-upstream-guard';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
@@ -10457,6 +10458,8 @@ async function attemptTransparentReconnect(
       onInterrupted
     );
 
+    // VTID-04865: the member may have left during the reconnect.
+    if (closeIfSessionGone(newWs, session, session.sessionId, liveSessions, 'transparent_reconnect')) return false;
     session.upstreamWs = newWs;
     if (isPersonaSwap) notePersonaSwapConnected(session);
     // Reset loop counter — fresh upstream connection starts clean
@@ -16716,6 +16719,8 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
 
     // Handle Live API connection result asynchronously
     liveApiPromise.then((ws) => {
+      // VTID-04865: the stream may have closed while the connect was in flight.
+      if (closeIfSessionGone(ws, session, sessionId, liveSessions, 'sse_connect')) return;
       session.upstreamWs = ws;
       console.log(`[VTID-01219] Live API WebSocket connected for session ${sessionId}`);
 

@@ -629,19 +629,19 @@ jobs:
           # an explicit env_overrides dispatch — never as an automatic side
           # effect of an unrelated deploy again.
 
-          # NOT pinned here, deliberately: FEATURE_ORB_NOVA_PREWARM_ENV and
-          # FEATURE_ORB_GREETING_PREBUFFER_ENV. Both only take effect on the
-          # WebSocket session path (`handleWsPrewarmMessage`, and the
-          # `greetingDeferred` branch), and production resolves SSE because
-          # FEATURE_ORB_WS_TRANSPORT_ENV is not enabled here. Turning them on
-          # in prod today would change nothing and would look like a fix.
+          # VTID-04866: WS transport on prod. SSE splits a session's requests
+          # across tasks during a deploy overlap; a WebSocket stays on one task.
+          # Off: env_overrides {"FEATURE_ORB_WS_TRANSPORT_ENV":"off"} (one
+          # dispatch); durable off = edit this line. NOVA_PREWARM/GREETING_
+          # PREBUFFER stay unpinned (WS-only, unmeasured on prod).
           NEW_DEF=$(echo "$NEW_DEF" | jq '
             .containerDefinitions[0].environment |=
-              ( [ .[] | select(.name | IN("FEATURE_ORB_FAST_START_ENV","FEATURE_ORB_BRAIN_CACHE_ENV","FEATURE_LATENCY_TELEMETRY_ENV","FEATURE_ORB_SAFE_FAST_GREETING_ENV") | not) ]
+              ( [ .[] | select(.name | IN("FEATURE_ORB_FAST_START_ENV","FEATURE_ORB_BRAIN_CACHE_ENV","FEATURE_LATENCY_TELEMETRY_ENV","FEATURE_ORB_SAFE_FAST_GREETING_ENV","FEATURE_ORB_WS_TRANSPORT_ENV") | not) ]
                 + [ {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"},
                     {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"},
                     {name:"FEATURE_LATENCY_TELEMETRY_ENV", value:"staging+prod"},
-                    {name:"FEATURE_ORB_SAFE_FAST_GREETING_ENV", value:"staging+prod"} ] )')
+                    {name:"FEATURE_ORB_SAFE_FAST_GREETING_ENV", value:"staging+prod"},
+                    {name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"staging+prod"} ] )')
 
           # VTID-04227 — the Dev Autopilot loop's five operating flags, DECLARED
           # here instead of living only in whatever the live task def happens
