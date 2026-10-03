@@ -142,6 +142,8 @@ export function maybeRunRememberBackstop(
       // VTID-04702: the held reply is replaced only when Nova was told the result.
       (session as any).rememberNoteSentAt = Date.now();
       (session as any).backstopNoteSentAt = Date.now();
+      // VTID-04862: the note asks the member which value is right.
+      if (results.some((r) => r.status === 'conflict')) (session as any).rememberConflictAskedAt = Date.now();
     }
     return results;
   })().catch((err: any) => {

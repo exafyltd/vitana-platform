@@ -1,0 +1,3 @@
+cd services/gateway && npx tsc --noEmit -p .        # clean
+npx jest test/services/memory/vtid-04861-04863-remember-save-fixes.test.ts test/orb/live/session/vtid-04862-04863-remember-confirm-gate.test.ts test/memory-verification-conformance.test.ts   # 3 suites, 153 tests passed
+npx jest --silent                                    # 1473 suites passed, 23446 tests passed, 0 failed

@@ -80,6 +80,7 @@ import {
   takeRememberHold,
 } from './remember-hold';
 import { endRecallTurn, evaluateRecallHold, maybeArmRecallHold, rearmRecallHoldAfterTool } from './recall-hold';
+import { gateConfirmReplace, isConflictResult, maybeHoldAlreadyKnownReply, noteConflictAsked, noteMemberSpoke } from './remember-confirm-gate';
 import { deduplicatedExtract } from '../../../services/extraction-dedup-manager';
 import {
   writeMemoryItemWithIdentity,
@@ -1877,6 +1878,8 @@ export function handleTranscript(
       writeSseEvent(session.sseResponse, { type: 'input_transcript', text: inputTranscription });
     }
     session.inputTranscriptBuffer += (session.inputTranscriptBuffer ? ' ' : '') + inputTranscription;
+    // VTID-04862: a replace waits for words the member said after the question.
+    noteMemberSpoke(session);
     session.consecutiveModelTurns = 0;
     session.consecutiveToolCalls = 0;
     // VTID-04702: the member asked Vitana to remember something — hold the
@@ -2138,7 +2141,10 @@ export function handleToolCall(
   for (const fc of event.calls) {
     const toolName = fc.name;
     noteNavigateToolCall(session, toolName);
-    const toolArgs = fc.args || {};
+    // VTID-04862: confirm_replace counts only once the member has answered.
+    const toolArgs = toolName === 'remember_fact'
+      ? gateConfirmReplace(session, fc.args || {}, ctx.deps.emitDiag)
+      : fc.args || {};
     const callId = fc.id || randomUUID();
 
     if (beforeFirstUserWord && isOpeningActionTool(toolName)) {
@@ -2161,6 +2167,8 @@ export function handleToolCall(
         if (toolName === 'remember_fact' && /^STATUS: already_known\b/.test(String(result.result || ''))) {
           (session as any).rememberFactAlreadyKnownThisTurn = true;
         }
+        // VTID-04862: the member is now being asked which value is right.
+        if (toolName === 'remember_fact' && isConflictResult(String(result.result || ''))) noteConflictAsked(session);
 
         // VTID-LINK: push title+URL pairs from tool results to the client.
         if (result.success && result.result) {
@@ -2218,6 +2226,9 @@ export function handleToolCall(
         if (toolName === 'remember_fact' || toolName === 'forget_fact' || toolName === 'forget_memory') {
           const preToolReply = takeRememberHold(session);
           if (preToolReply) dropRememberHold(ctx as any, preToolReply, result.success ? 'tool_result_sent' : 'tool_failed');
+          // VTID-04863: "already known" for a value the member did not say
+          // waits for the turn_complete re-check.
+          if (toolName === 'remember_fact') maybeHoldAlreadyKnownReply(ctx as any, String(result.result || ''));
         } else {
           // VTID-04753: "let me check" plays; the answer to the result is held.
           rearmRecallHoldAfterTool(ctx as any);
