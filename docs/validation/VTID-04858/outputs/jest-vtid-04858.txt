@@ -1,0 +1,36 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04858-agent-deploys-drop-dead-db-secret.test.ts
+  VTID-04858: AWS-PROD-DEPLOY-ORB-AGENT.yml
+    ✓ the register filter drops DB_PASSWORD, keeps every other secret, sets the image and strips read-only fields (13 ms)
+    ✓ works when the task definition has no secrets at all (9 ms)
+    ✓ services/agents/orb-agent never reads DB_PASSWORD (4 ms)
+  VTID-04858: AWS-PROD-DEPLOY-VERIFICATION-ENGINE.yml
+    ✓ the register filter drops DB_PASSWORD, keeps every other secret, sets the image and strips read-only fields (11 ms)
+    ✓ works when the task definition has no secrets at all (9 ms)
+    ✓ services/agents/vitana-orchestrator never reads DB_PASSWORD (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04849-prod-deploy-drops-dead-db-secret.test.ts
+  VTID-04849: prod gateway deploy drops the dead DB_PASSWORD secret
+    ✓ has a drop step that runs in every deploy mode, after the Jev step and before register/roll (1 ms)
+    ✓ removes DB_PASSWORD and keeps every other secret (runs the step's jq on a task def) (9 ms)
+    ✓ no workflow step adds a DB_PASSWORD secret back, and no step references the deleted rds!cluster secret (2 ms)
+    ✓ the gateway source never reads DB_PASSWORD (2187 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       10 passed, 10 total
+Snapshots:   0 total
+Time:        2.966 s
+Ran all test suites matching /test\/vtid-04858-agent-deploys-drop-dead-db-secret.test.ts|test\/vtid-04849-prod-deploy-drops-dead-db-secret.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

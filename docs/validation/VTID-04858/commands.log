@@ -1,0 +1,8 @@
+# VTID-04858 — commands (read-only AWS, account 472838866351 / eu-central-1)
+aws ecs describe-task-definition vitana-orb-agent:10 / vitana-vitana-verification-engine:7   # both: DB_PASSWORD -> rds!cluster-eba8a4f2-… (deleted)
+aws ecs describe-task-definition vitana-community-app:285                                    # no DB_PASSWORD (already clean)
+grep -rn DB_PASSWORD services/agents/orb-agent services/agents/vitana-orchestrator            # no hits
+<each workflow's register jq filter> on the live task def (jq-1.7)                           # orb-agent: 5 secrets left; verification-engine: 2 left
+aws secretsmanager describe-secret <each remaining secret>                                     # all exist
+npx jest test/vtid-04858-agent-deploys-drop-dead-db-secret.test.ts (services/gateway)          # 6 passed
+mutation: orb-agent filter drops a different name -> 1 failed, 5 passed; restored -> 6 passed
