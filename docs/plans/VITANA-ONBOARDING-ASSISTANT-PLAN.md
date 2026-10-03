@@ -279,11 +279,11 @@ but these points must be aligned before VOA code is written:
 **Order of execution:** Audiobook merges and is staging-verified first → VOA slice 0 (fix-first) can run in parallel
 (no file overlap) → VOA slices 1–7 build on the merged Audiobook.
 
-### 9.2 "User engagement rewards strategy" (VTN rewards)
-Session `session_01CJy9EepPdwUcjKtuUdb2sm`: a 6-phase plan (VTN earning per activity → redemption → reminders →
+### 9.2 "User engagement rewards strategy" (VTNA rewards)
+Session `session_01CJy9EepPdwUcjKtuUdb2sm`: a 6-phase plan (VTNA earning per activity → redemption → reminders →
 measurement), waiting on owner decisions; **no code pushed yet**, so no file conflict today. Points to settle
 before either is built:
-- R-1 **Inspiration posts and rewards:** posts drafted by Vitana must not become a way to farm VTN. Proposed: an inspiration
+- R-1 **Inspiration posts and rewards:** posts drafted by Vitana must not become a way to farm VTNA. Proposed: an inspiration
   post earns nothing (or only the reactions it receives), never the "create a post" reward.
 - R-2 **Reminders:** that plan adds its own reminders. All reminders to a member in the first 90 days share the VOA daily
   budget (1 touch/day) so a new member is not hit from three sides (VOA, Audiobook, rewards).

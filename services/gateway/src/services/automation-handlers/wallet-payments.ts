@@ -1,5 +1,5 @@
 /**
- * Payments, Wallet & VTN Handlers — AP-0700 series
+ * Payments, Wallet & VTNA Handlers — AP-0700 series
  *
  * VTID: VTID-01250
  * Automations for Stripe lifecycle, wallet credits, creator payouts.
@@ -279,7 +279,7 @@ async function runSubscriptionExpiryWarning(ctx: AutomationContext) {
 
 // ── AP-0712: Spending Insights for Users ────────────────────
 // wallet_transactions (from_user_id, to_currency dropped — from_currency/
-// amount/status; no tenant_id column) is the live VTN exchange ledger.
+// amount/status; no tenant_id column) is the live VTNA exchange ledger.
 // Summarizes the prior calendar month's completed outgoing spend per user.
 const SPENDING_INSIGHTS_MAX_USERS_PER_RUN = 1000;
 

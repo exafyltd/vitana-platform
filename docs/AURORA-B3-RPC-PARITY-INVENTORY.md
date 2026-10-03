@@ -578,7 +578,7 @@ The July "safe part" migration rescued the collision-free objects
 with its own stated reason: `wallet_transactions` (created by the later,
 independent VTID-03107/03200 chain) already exists with an **incompatible
 schema** — verified live here: `from_user_id`, `to_user_id`,
-`from_currency`, `to_currency`, `exchange_rate` — a VTN currency-exchange
+`from_currency`, `to_currency`, `exchange_rate` — a VTNA currency-exchange
 ledger, not the credit ledger `credit_wallet()`/`update_wallet_balance()`
 were designed against. The July migration's author called this "separate
 follow-up work, not a same-day copy-paste" and left it there.
@@ -802,13 +802,13 @@ unconditionally and regardless of the above:
 ```ts
 notifyUserAsync(userId, tenantId, 'diary_streak_milestone', {
   title: `${tier.days}-day diary streak!`,
-  body: `${tier.message} +${tier.reward} VTN credited.`,
+  body: `${tier.message} +${tier.reward} VTNA credited.`,
   ...
 }, admin);
 ```
 
 **Every user who hits a 3/7/14/30-day diary streak gets a push
-notification/toast claiming their VTN was credited — 10/20/40/80 VTN
+notification/toast claiming their VTNA was credited — 10/20/40/80 VTNA
 respectively — and it never is, with zero trace in any log.** This is
 worse than the Stripe webhook bug: that one at least fails loudly on the
 backend, even though the user isn't told. This one actively tells the

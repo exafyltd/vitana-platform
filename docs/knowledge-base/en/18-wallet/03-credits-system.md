@@ -89,5 +89,5 @@ I keep you informed about your credit balance and the opportunities available to
 ## Related Topics
 
 - [Your Wallet](kb-en-18-01) -- Overview of your financial hub in Vitanaland
-- [Credits, Cash, and VTN](kb-en-06-03) -- The three value layers in Maxina's economy
+- [Credits, Cash, and VTNA](kb-en-06-03) -- The three value layers in Maxina's economy
 - [Rewards Program](kb-en-18-05) -- How the broader rewards system incentivizes longevity behaviors

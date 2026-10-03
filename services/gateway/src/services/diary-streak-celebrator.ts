@@ -11,11 +11,11 @@
  * caller must call this AFTER the diary entry has been written so the
  * streak length already reflects today's save.
  *
- * Reward tiers (mirror the autopilot onboarding pattern: 10 VTN base):
- *   3-day streak  → 10 VTN
- *   7-day streak  → 20 VTN
- *  14-day streak  → 40 VTN
- *  30-day streak  → 80 VTN
+ * Reward tiers (mirror the autopilot onboarding pattern: 10 VTNA base):
+ *   3-day streak  → 10 VTNA
+ *   7-day streak  → 20 VTNA
+ *  14-day streak  → 40 VTNA
+ *  30-day streak  → 80 VTNA
  *
  * Returns the celebration payload (or null when nothing fired) so the
  * caller can include it in the response and surface it in the toast /
@@ -30,7 +30,7 @@ import * as repo from './diary-streak-celebrator-repository';
 export interface StreakCelebration {
   current_streak_days: number;
   tier_days: number;        // the tier just reached: 3 / 7 / 14 / 30
-  wallet_credit: number;    // VTN credited
+  wallet_credit: number;    // VTNA credited
   message: string;          // human-friendly celebration ("3-day diary streak — keep it!")
 }
 
@@ -132,7 +132,7 @@ export async function celebrateDiaryStreak(
     // morning brief. Respects user_notification_preferences + DND.
     notifyUserAsync(userId, tenantId, 'diary_streak_milestone', {
       title: `${tier.days}-day diary streak!`,
-      body: `${tier.message} +${tier.reward} VTN credited.`,
+      body: `${tier.message} +${tier.reward} VTNA credited.`,
       data: {
         url: '/diary',
         streak_days: String(tier.days),
@@ -140,7 +140,7 @@ export async function celebrateDiaryStreak(
       },
     }, admin);
 
-    console.log(`[diary-streak] user=${userId.slice(0, 8)} hit ${tier.days}-day streak +${tier.reward} VTN`);
+    console.log(`[diary-streak] user=${userId.slice(0, 8)} hit ${tier.days}-day streak +${tier.reward} VTNA`);
     return {
       current_streak_days: streak,
       tier_days: tier.days,

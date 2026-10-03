@@ -1,7 +1,7 @@
 /**
- * Vitana VTN Wallet Skill for OpenClaw
+ * Vitana VTNA Wallet Skill for OpenClaw
  *
- * Manages VTN token balances, transfers, reward distribution,
+ * Manages VTNA token balances, transfers, reward distribution,
  * and transaction history. All operations are tenant-scoped
  * with spending limits enforced per role.
  */
@@ -76,7 +76,7 @@ function getSupabase() {
 
 export const actions = {
   /**
-   * Get VTN balance for a user.
+   * Get VTNA balance for a user.
    */
   async get_balance(input: unknown) {
     const { tenant_id, user_id } = BalanceSchema.parse(input);
@@ -101,7 +101,7 @@ export const actions = {
   },
 
   /**
-   * Transfer VTN tokens between users within the same tenant.
+   * Transfer VTNA tokens between users within the same tenant.
    */
   async transfer(input: unknown) {
     const { tenant_id, from_user_id, to_user_id, amount, reason, idempotency_key } =
@@ -160,7 +160,7 @@ export const actions = {
   },
 
   /**
-   * Distribute VTN rewards to a user.
+   * Distribute VTNA rewards to a user.
    */
   async reward(input: unknown) {
     const { tenant_id, user_id, amount, reason, metadata } = RewardSchema.parse(input);
@@ -210,7 +210,7 @@ export const actions = {
   },
 
   /**
-   * Spend VTN tokens on a service or marketplace item.
+   * Spend VTNA tokens on a service or marketplace item.
    */
   async spend(input: unknown) {
     const { tenant_id, user_id, amount, item, item_type, metadata } = SpendSchema.parse(input);
@@ -241,6 +241,6 @@ export const actions = {
 
 export const SKILL_META = {
   name: 'vitana-vtn-wallet',
-  description: 'VTN token wallet: balances, transfers, rewards, spending, and transaction history',
+  description: 'VTNA token wallet: balances, transfers, rewards, spending, and transaction history',
   actions: Object.keys(actions),
 };
