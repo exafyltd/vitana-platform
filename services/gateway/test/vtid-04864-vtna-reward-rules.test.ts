@@ -129,17 +129,20 @@ describe('VTID-04864: the 10-friend invite bonus', () => {
   });
 });
 
-describe('VTID-04864: the invite reward is switched on in both deploy workflows', () => {
-  const wf = (n: string) => fs.readFileSync(path.join(__dirname, '../../../.github/workflows', n), 'utf8');
-  it('staging strips and pins COMMUNITY_INVITE_REWARD_ENABLED=true', () => {
-    const s = wf('AWS-STAGE-DEPLOY-GATEWAY.yml');
-    expect(s).toContain('"COMMUNITY_INVITE_REWARD_ENABLED") | not) ]');
-    expect(s).toContain('{name:"COMMUNITY_INVITE_REWARD_ENABLED", value:"true"}');
+describe('VTID-04864: the invite reward is on by default', () => {
+  it('pays unless COMMUNITY_INVITE_REWARD_ENABLED is exactly "false"', () => {
+    const inv = require('../src/services/community-autopilot/invites');
+    const prev = process.env.COMMUNITY_INVITE_REWARD_ENABLED;
+    delete process.env.COMMUNITY_INVITE_REWARD_ENABLED;
+    expect(inv.isInviteRewardEnabled()).toBe(true);
+    process.env.COMMUNITY_INVITE_REWARD_ENABLED = 'false';
+    expect(inv.isInviteRewardEnabled()).toBe(false);
+    if (prev === undefined) delete process.env.COMMUNITY_INVITE_REWARD_ENABLED; else process.env.COMMUNITY_INVITE_REWARD_ENABLED = prev;
   });
-  it('production pins it to true too (owner decision 2026-10-03)', () => {
-    const p = wf('AWS-PROD-DEPLOY-GATEWAY.yml');
-    expect(p).toContain('select(.name != "COMMUNITY_INVITE_REWARD_ENABLED")');
-    expect(p).toContain('{name:"COMMUNITY_INVITE_REWARD_ENABLED", value:"true"}');
+  it('the deploy workflows are untouched (no new pin needed)', () => {
+    const wf = (n: string) => fs.readFileSync(path.join(__dirname, '../../../.github/workflows', n), 'utf8');
+    expect(wf('AWS-STAGE-DEPLOY-GATEWAY.yml')).not.toContain('COMMUNITY_INVITE_REWARD_ENABLED');
+    expect(wf('AWS-PROD-DEPLOY-GATEWAY.yml')).not.toContain('COMMUNITY_INVITE_REWARD_ENABLED');
   });
 });
 
@@ -164,17 +167,18 @@ describe('VTID-04864: the Wallet → Rewards overview', () => {
     expect(o.eur_per_vtna).toBe(0.01);
   });
 
-  it('never shows a rule that does not pay: the invite rule is hidden while its switch is off', () => {
-    const off = buildRewardOverview(U, [], 0, now, {} as any);
+  it('never shows a rule that does not pay: the invite rules are hidden while their switch is off', () => {
+    const off = buildRewardOverview(U, [], 0, now, { COMMUNITY_INVITE_REWARD_ENABLED: 'false' } as any);
     expect(off.groups.map((g) => g.group)).toEqual(['first_steps', 'habits']);
-    expect(visibleRewardRules({} as any).some((r) => r.id === 'invite_friend_joined')).toBe(false);
+    expect(visibleRewardRules({ COMMUNITY_INVITE_REWARD_ENABLED: 'false' } as any).some((r) => r.id === 'invite_friend_joined')).toBe(false);
+    expect(visibleRewardRules({} as any).some((r) => r.id === 'invited_friends_10')).toBe(true);
   });
 
   it('maps ledger keys back to rules for the recent list, and returns no display text', () => {
     expect(ruleIdForKey(`milestone_first_group_${U}`, U)).toBe('first_group');
     expect(ruleIdForKey(`referral_reward:${U}:z`, U)).toBe('invite_friend_joined');
     expect(ruleIdForKey('rec_complete_abc', U)).toBeNull();
-    const o = buildRewardOverview(U, rows, 0, now, {} as any);
+    const o = buildRewardOverview(U, rows, 0, now, { COMMUNITY_INVITE_REWARD_ENABLED: 'false' } as any);
     expect(o.recent[0]).toEqual({ rule_id: 'profile_complete', amount: 20, created_at: '2026-10-02T10:00:00Z' });
     expect(JSON.stringify(o)).not.toMatch(/celebration|description|title/);
   });

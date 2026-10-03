@@ -18,7 +18,10 @@
  *   - one referral per claimant ever (unique index, migration 20260924200000);
  *   - at most INVITE_REWARD_MONTHLY_CAP rewarded invites per inviter / 30 days.
  * The credit runs once: the referral must move signed_up → rewarded first.
- * The reward is off unless COMMUNITY_INVITE_REWARD_ENABLED is exactly 'true';
+ * VTID-04864 (owner decision 2026-10-03): the reward is ON by default; set
+ * COMMUNITY_INVITE_REWARD_ENABLED to exactly 'false' to switch it off. (It
+ * used to be off unless the flag was exactly 'true', and no deploy set it.)
+ * Was:  off unless COMMUNITY_INVITE_REWARD_ENABLED is exactly 'true';
  * attribution is recorded either way. Vitanaland never contacts the invited
  * person — the member shares the link through their own channel.
  */
@@ -35,7 +38,7 @@ export const INVITE_REWARD_MONTHLY_CAP = getRewardRule('invite_friend_joined')?.
 export const DEFAULT_INVITE_REWARD_CREDITS = rewardAmount('invite_friend_joined') || 1000;
 
 export function isInviteRewardEnabled(): boolean {
-  return process.env.COMMUNITY_INVITE_REWARD_ENABLED === 'true';
+  return process.env.COMMUNITY_INVITE_REWARD_ENABLED !== 'false';
 }
 
 export function inviteRewardCredits(): number {

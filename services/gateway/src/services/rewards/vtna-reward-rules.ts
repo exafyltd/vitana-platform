@@ -63,7 +63,7 @@ export const VTNA_REWARD_RULES: ReadonlyArray<RewardRule> = [
     id: 'invite_friend_joined', group: 'community', amount: 1000, once: false,
     cap: { count: 10, days: 30 },
     // Paid by community-autopilot/invites.ts, which is switched on by
-    // COMMUNITY_INVITE_REWARD_ENABLED. isRuleLive() reports the real state.
+    // COMMUNITY_INVITE_REWARD_ENABLED (on unless exactly 'false').
     live: true,
   },
   {
@@ -109,7 +109,7 @@ export function rewardEventId(ruleId: string, userId: string): string {
 export function isRuleLive(rule: RewardRule, env: NodeJS.ProcessEnv = process.env): boolean {
   if (!rule.live) return false;
   if (rule.id === 'invite_friend_joined' || rule.id === 'invited_friends_10') {
-    return env.COMMUNITY_INVITE_REWARD_ENABLED === 'true';
+    return env.COMMUNITY_INVITE_REWARD_ENABLED !== 'false';
   }
   return true;
 }

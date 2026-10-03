@@ -123,7 +123,9 @@ describe('eligibility (anti-abuse)', () => {
 });
 
 describe('claim', () => {
-  it('attributes once; the reward stays off unless the flag is exactly true', async () => {
+  // VTID-04864: the reward is on by default; 'false' is the off switch.
+  it('attributes once; the reward is off when the flag is exactly false', async () => {
+    process.env.COMMUNITY_INVITE_REWARD_ENABLED = 'false';
     const sb = memSb({ links: [link] });
     const first = await claimInvite(sb, NEWBIE, 'abcd2345', deps());
     expect(first).toMatchObject({ status: 'attributed', rewarded: false, reward_reason: 'reward_disabled' });

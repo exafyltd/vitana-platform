@@ -28,7 +28,7 @@ CURL_PROOF: staging check in docs/validation/VTID-04864/staging-tests.json expec
 AC-5 Existing behaviour is unchanged elsewhere: all suites covering the touched files pass; typecheck and build are clean.
 TEST: services/gateway/test (16 suites, outputs/jest.txt)
 
-AC-6 Invites (owner decision 2026-10-03): 1,000 VTNA per invited friend who joins (10 per 30 days) and a one-time 10,000 VTNA bonus at 10 friends; the switch COMMUNITY_INVITE_REWARD_ENABLED is pinned true in AWS-STAGE-DEPLOY-GATEWAY.yml and AWS-PROD-DEPLOY-GATEWAY.yml; the old AP-0405 referral payout and the invite prompt copy use the same rule-table amount.
+AC-6 Invites (owner decision 2026-10-03): 1,000 VTNA per invited friend who joins (10 per 30 days) and a one-time 10,000 VTNA bonus at 10 friends; the reward is ON by default in code (COMMUNITY_INVITE_REWARD_ENABLED='false' is the off switch; deploy workflows untouched); the old AP-0405 referral payout and the invite prompt copy use the same rule-table amount.
 TEST: services/gateway/test/vtid-04864-vtna-reward-rules.test.ts
 TEST: services/gateway/test/vtid-04508-community-invites.test.ts
 TEST: services/gateway/test/services/automation-handlers-sharing-growth.test.ts
