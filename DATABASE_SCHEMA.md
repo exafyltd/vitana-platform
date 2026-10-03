@@ -713,6 +713,37 @@ blocks. Kill switch: `CONNECTED_APPS_CALENDAR_PUSH=false`.
 
 ---
 
+### founding_members — Founding 1000 (VTID-04859, 2026-10-03)
+
+The first 1,000 members get a free Premium year (owner decision 2026-10-01,
+`docs/business-model/BUSINESS-MODEL.md` §11).
+
+```sql
+CREATE TABLE public.founding_members (
+  user_id        uuid PRIMARY KEY,
+  tenant_id      uuid NOT NULL,
+  seat_number    integer NOT NULL UNIQUE CHECK (seat_number BETWEEN 1 AND 1000),  -- signup order
+  grant_source   text NOT NULL,   -- founding_1000 | launch_auto_grant_2026 | stripe_active
+  granted_until  timestamptz,
+  value_cents    integer NOT NULL DEFAULT 11988,   -- 12 x EUR 9.99
+  celebrated_at  timestamptz,     -- the app showed the celebration
+  created_at     timestamptz NOT NULL DEFAULT now()
+);
+```
+
+- RLS: a member reads only their own row; no client writes.
+- `claim_founding_seat(p_user_id, p_tenant_id)` (service role): idempotent seat
+  + Premium until `max(current end, now + 365 days)`; never for
+  `service_bot_accounts` / `notification_test_actors` / the system bot; a
+  Stripe subscription is never overwritten; the launch grant is not extended;
+  `SOLD_OUT` after seat 1,000. Seats are serialised by an advisory lock.
+- Trigger `founding_seat_on_primary_membership` (AFTER INSERT ON
+  `user_tenants`, primary membership) claims the seat at signup and never
+  blocks the insert.
+- `mark_founding_celebrated(p_user_id)` (service role) sets `celebrated_at`.
+- The `FOUNDING` code (`founding_500`, 90 days) is deactivated.
+- Migration `20261003100000_vtid_04859_founding_1000.sql`.
+
 ### Wallet System (USD / Credits / VTNA) — added 2026-07-17
 
 > **VTID-04809 (2026-10-01, owner decision): `user_wallets.CREDITS` is the
@@ -1333,6 +1364,7 @@ CREATE TABLE my_new_table (
 | 2026-09-29 | `reverse_recommendation_commission` also locks the `product_orders` row and reverses or reports only while the order is still `refunded`/`cancelled`/`chargeback`; otherwise it returns `order_not_reversing` and changes nothing. The caller's read can be stale if a later sync has moved the order back to `converted`. CREATE OR REPLACE only. Migration `20260929120500_vtid_04741_reverse_commission_order_recheck.sql`. | Claude | VTID-04741 |
 | 2026-09-29 | At payment, `confirm_recommendation_commission` refreshes `payout_amount_minor`, `currency` and `vitana_commission_cents` from the order's current `commission_cents` and `currency`, at the row's recorded `rate_applied` (never today's settings). A network can correct an order after the pending row was written. It returns `order_no_commission` when the order no longer carries a commission. CREATE OR REPLACE only. Migration `20260929120600_vtid_04741_confirm_commission_refresh_terms.sql`. | Claude | VTID-04741 |
 | 2026-10-01 | **VTID-04809 — `user_wallets.CREDITS` is the canonical VTNA ledger.** New `user_wallets.earned_balance` (CHECK `0 <= earned_balance <= balance`, CREDITS only); new `wallet_transactions.idempotency_key` (unique per member) and `credit_source` (`earned`/`purchased`). `credit_wallet()` re-created on this ledger with the signature its callers already used (it never existed live, so diary-streak, milestone, AP-0708, autopilot-completion and Stripe credit-pack credits were silently dropped). Closed two self-credit holes: dropped RLS policy `Users can update their own wallets` and revoked INSERT/UPDATE/DELETE/TRUNCATE on `user_wallets`/`wallet_transactions` from `anon`/`authenticated`; `update_user_balance` refuses `'add'` and is no longer executable by `anon`. EUR peg rows in `exchange_rates`. Migration `20261001180000_vtid_04809_vtna_reward_ledger.sql`. | Claude | VTID-04809 |
+| 2026-10-03 | **VTID-04859 — Founding 1000.** New table `founding_members` (seat 1..1000 in signup order, grant source, granted_until, value_cents 11988, celebrated_at; RLS own-row read). New functions `claim_founding_seat(uuid, uuid)` and `mark_founding_celebrated(uuid)` (service role). New trigger `founding_seat_on_primary_membership` on `user_tenants`. Backfill seats every existing primary member in signup order and grants a Premium year where no Stripe subscription or launch grant exists. `redemption_codes.FOUNDING` (founding_500) deactivated. Migration `20261003100000_vtid_04859_founding_1000.sql`. | Claude | VTID-04859 |
 
 ---
 
@@ -3250,7 +3282,11 @@ Functions: `jev_record_spend(tenant, plane, input_tokens, cost_usd)` (atomic
 increment, returns the tenant's month total), `jev_shadow_gate_stats(days)`
 (per-gate calls, decided, agreement rate, cost). Per-tenant control lives in
 `tenant_settings.feature_flags.jev = {enabled, planes[], monthly_budget_usd}`
-(no new column).
+(no new column). Since VTID-04857 the budget is compared with the sum of the
+tenant's `member`/`patient`/`partner_org` rows only (internal and
+system_autopilot are uncapped); member-content calls are counted under
+`member`. Budgets set by `data-fixups/20261003120000_vtid_04857_jev_community_budgets.sql`
+(maxina 50, alkalma 10).
 
 ## Account erasure — `erasure_registry`, `erase_user_data()` (VTID-04765, 2026-10-01) — NOT YET APPLIED
 

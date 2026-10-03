@@ -43,8 +43,9 @@ export async function fetchTenantFeatureFlags(sb: SupabaseClient, tenantId: stri
   return sb.from('tenant_settings').select('feature_flags').eq('tenant_id', tenantId).maybeSingle();
 }
 
-export async function fetchTenantMonthSpend(sb: SupabaseClient, tenantId: string, month: string) {
-  return sb.from('jev_spend_counters').select('cost_usd').eq('tenant_id', tenantId).eq('month', month);
+export async function fetchTenantMonthSpend(sb: SupabaseClient, tenantId: string, month: string, planes?: readonly string[]) {
+  const q = sb.from('jev_spend_counters').select('cost_usd').eq('tenant_id', tenantId).eq('month', month);
+  return planes ? q.in('plane', [...planes]) : q;
 }
 
 export async function fetchMonthSpendRows(sb: SupabaseClient, month: string) {
@@ -183,4 +184,9 @@ export async function fetchShadowRowsByGate(sb: SupabaseClient, gate: string, si
     .gte('created_at', sinceIso)
     .lt('created_at', untilIso)
     .limit(limit);
+}
+
+/** VTID-04857: has this budget alert (tenant × month × level) already been raised by any task? */
+export async function fetchBudgetAlertEvent(sb: SupabaseClient, alertKey: string) {
+  return sb.from('oasis_events').select('id').eq('topic', 'jev.budget.threshold_crossed').eq('metadata->>alert_key', alertKey).limit(1).maybeSingle();
 }
