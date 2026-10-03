@@ -25,14 +25,14 @@
 import { randomBytes } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { creditWalletSucceeded, referralRewardEventId } from '../wallet/vtna-reward-keys';
-import { getRewardRule, rewardAmount } from '../rewards/vtna-reward-rules';
+import { INVITE_MILESTONE_FRIENDS, getRewardRule, rewardAmount, rewardEventId } from '../rewards/vtna-reward-rules';
 
 export const INVITE_TARGET_TYPE = 'member_invite';
 export const INVITE_MAX_ACCOUNT_AGE_DAYS = 14;
 // VTID-04864: amount and cap come from the VTNA rule table.
 export const INVITE_REWARD_MONTHLY_CAP = getRewardRule('invite_friend_joined')?.cap?.count ?? 10;
 /** REWARD_TABLE.referral_completed (types/automations.ts). */
-export const DEFAULT_INVITE_REWARD_CREDITS = rewardAmount('invite_friend_joined') || 200;
+export const DEFAULT_INVITE_REWARD_CREDITS = rewardAmount('invite_friend_joined') || 1000;
 
 export function isInviteRewardEnabled(): boolean {
   return process.env.COMMUNITY_INVITE_REWARD_ENABLED === 'true';
@@ -212,5 +212,40 @@ async function maybeRewardInviter(
     await sb.from('referrals').update({ status: 'signed_up', rewarded_at: null, reward_amount: null }).eq('id', referralId).eq('status', 'rewarded');
     return { rewarded: false, reason: 'credit_failed' };
   }
+  await maybePayInviteMilestone(sb, inviterId, tenantId);
   return { rewarded: true, credits };
+}
+
+/**
+ * VTID-04864: the one-time invited_friends_10 bonus (10,000 VTNA) when the
+ * inviter's 10th invited friend has been rewarded. Keyed per member, so it
+ * can land at most once however often this runs. Never fails the invite
+ * reward that triggered it.
+ */
+export async function maybePayInviteMilestone(
+  sb: SupabaseClient, inviterId: string, tenantId: string | null,
+): Promise<{ paid: boolean; reason?: string }> {
+  try {
+    const { data: rewarded } = await sb.from('referrals').select('id')
+      .eq('referrer_id', inviterId).eq('status', 'rewarded').limit(1000);
+    if (((rewarded as unknown[] | null)?.length ?? 0) < INVITE_MILESTONE_FRIENDS) return { paid: false, reason: 'below_milestone' };
+    const amount = rewardAmount('invited_friends_10');
+    const { data, error } = await sb.rpc('credit_wallet', {
+      p_tenant_id: tenantId,
+      p_user_id: inviterId,
+      p_amount: amount,
+      p_type: 'reward',
+      p_source: 'member_invite_milestone',
+      p_source_event_id: rewardEventId('invited_friends_10', inviterId),
+      p_description: `${INVITE_MILESTONE_FRIENDS} invited friends joined`,
+    });
+    if (!creditWalletSucceeded(data, error)) {
+      console.error(`[invites] invite milestone credit failed for ${inviterId.slice(0, 8)}: ${error?.message ?? (data as { error?: string } | null)?.error ?? 'unknown'}`);
+      return { paid: false, reason: 'credit_failed' };
+    }
+    return { paid: !(data as { duplicate?: boolean }).duplicate, reason: (data as { duplicate?: boolean }).duplicate ? 'already_paid' : undefined };
+  } catch (err: any) {
+    console.warn(`[invites] invite milestone check failed: ${err?.message ?? err}`);
+    return { paid: false, reason: 'check_failed' };
+  }
 }

@@ -137,12 +137,13 @@ describe('claim', () => {
     process.env.COMMUNITY_INVITE_REWARD_ENABLED = 'true';
     const sb = memSb({ links: [link] });
     const r = await claimInvite(sb, NEWBIE, 'abcd2345', deps());
-    expect(r).toMatchObject({ status: 'attributed', rewarded: true, credits: 200 });
+    // VTID-04864: 1,000 VTNA per invited friend (owner decision 2026-10-03; was 200).
+    expect(r).toMatchObject({ status: 'attributed', rewarded: true, credits: 1000 });
     expect(sb.rpc).toHaveBeenCalledTimes(1);
     // VTID-04809: earned VTNA on the canonical ledger, keyed per referral so
     // AP-0405 paying the same referral cannot double it.
     expect(sb.rpc).toHaveBeenCalledWith('credit_wallet', expect.objectContaining({
-      p_user_id: INVITER, p_amount: 200, p_type: 'reward', p_source: 'member_invite',
+      p_user_id: INVITER, p_amount: 1000, p_type: 'reward', p_source: 'member_invite',
       p_source_event_id: `referral_reward:${INVITER}:${NEWBIE}`,
     }));
     expect(sb.t.referrals[0].status).toBe('rewarded');

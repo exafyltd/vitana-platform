@@ -23,6 +23,8 @@ import {
   INVITE_REWARD_MONTHLY_CAP,
 } from '../src/services/community-autopilot/invites';
 import { buildRewardOverview, ruleIdForKey } from '../src/services/rewards/reward-overview-service';
+import { maybePayInviteMilestone } from '../src/services/community-autopilot/invites';
+import { REWARD_TABLE } from '../src/types/automations';
 
 const U = '11111111-1111-4111-8111-111111111111';
 
@@ -55,9 +57,17 @@ describe('VTID-04864: one VTNA rule table', () => {
     expect([3, 7, 14, 30].map(streakTierReward)).toEqual([20, 50, 0, 100]);
   });
 
-  it('the invite reward amount and monthly cap come from the table', () => {
-    expect(DEFAULT_INVITE_REWARD_CREDITS).toBe(rewardAmount('invite_friend_joined'));
+  it('the invite reward amount and monthly cap come from the table: 1,000 per friend, 10 per 30 days', () => {
+    expect(rewardAmount('invite_friend_joined')).toBe(1000);
+    expect(DEFAULT_INVITE_REWARD_CREDITS).toBe(1000);
     expect(INVITE_REWARD_MONTHLY_CAP).toBe(10);
+    expect(REWARD_TABLE.referral_completed.amount).toBe(1000);
+    expect(REWARD_TABLE.complete_onboarding.amount).toBe(rewardAmount('onboarding_complete'));
+  });
+
+  it('a one-time 10,000 VTNA bonus at 10 invited friends', () => {
+    expect(rewardAmount('invited_friends_10')).toBe(10000);
+    expect(VTNA_REWARD_RULES.find((r) => r.id === 'invited_friends_10')?.once).toBe(true);
   });
 });
 
@@ -89,6 +99,47 @@ describe('VTID-04864: nothing is paid twice', () => {
     expect(sql).toContain('CREATE OR REPLACE FUNCTION public.complete_autopilot_recommendation(');
     expect(sql).not.toMatch(/v_reward := 10/);
     expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION public\.complete_autopilot_recommendation\(UUID, UUID\) TO authenticated/);
+  });
+});
+
+describe('VTID-04864: the 10-friend invite bonus', () => {
+  const rewarded = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `r${i}` }));
+  const sbWith = (rows: unknown[], rpcData: unknown = { ok: true }) => {
+    const q: any = { select: () => q, eq: () => q, limit: async () => ({ data: rows, error: null }) };
+    return { from: () => q, rpc: jest.fn(async () => ({ data: rpcData, error: null })) } as any;
+  };
+
+  it('pays nothing below 10 rewarded friends', async () => {
+    const sb = sbWith(rewarded(9));
+    expect(await maybePayInviteMilestone(sb, U, 't1')).toEqual({ paid: false, reason: 'below_milestone' });
+    expect(sb.rpc).not.toHaveBeenCalled();
+  });
+
+  it('pays 10,000 VTNA once at 10, under the per-member key', async () => {
+    const sb = sbWith(rewarded(10));
+    expect(await maybePayInviteMilestone(sb, U, 't1')).toEqual({ paid: true, reason: undefined });
+    expect(sb.rpc).toHaveBeenCalledWith('credit_wallet', expect.objectContaining({
+      p_user_id: U, p_amount: 10000, p_type: 'reward', p_source_event_id: `milestone_invited_friends_10_${U}`,
+    }));
+  });
+
+  it('a later friend lands as a duplicate, not a second bonus', async () => {
+    const sb = sbWith(rewarded(14), { ok: true, duplicate: true });
+    expect(await maybePayInviteMilestone(sb, U, 't1')).toEqual({ paid: false, reason: 'already_paid' });
+  });
+});
+
+describe('VTID-04864: the invite reward is switched on in both deploy workflows', () => {
+  const wf = (n: string) => fs.readFileSync(path.join(__dirname, '../../../.github/workflows', n), 'utf8');
+  it('staging strips and pins COMMUNITY_INVITE_REWARD_ENABLED=true', () => {
+    const s = wf('AWS-STAGE-DEPLOY-GATEWAY.yml');
+    expect(s).toContain('"COMMUNITY_INVITE_REWARD_ENABLED") | not) ]');
+    expect(s).toContain('{name:"COMMUNITY_INVITE_REWARD_ENABLED", value:"true"}');
+  });
+  it('production pins it to true too (owner decision 2026-10-03)', () => {
+    const p = wf('AWS-PROD-DEPLOY-GATEWAY.yml');
+    expect(p).toContain('select(.name != "COMMUNITY_INVITE_REWARD_ENABLED")');
+    expect(p).toContain('{name:"COMMUNITY_INVITE_REWARD_ENABLED", value:"true"}');
   });
 });
 

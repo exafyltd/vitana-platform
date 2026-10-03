@@ -1,18 +1,33 @@
-PASS test/services/automation-handlers-onboarding-growth.test.ts
-PASS test/routes/autopilot-recommendations.test.ts
-PASS test/vtid-04510-community-autopilot-automation-proposals.test.ts
-PASS test/vtid-04809-vtna-reward-ledger.test.ts
-PASS test/diary-streak-celebrator.test.ts
+PASS test/services/automation-handlers-sharing-growth.test.ts
 PASS test/save-diary-entry-shared.test.ts
-PASS test/routes/wallet-deposit-lookup.test.ts
-PASS test/vtid-04864-vtna-reward-rules.test.ts
+PASS test/routes/autopilot-recommendations.test.ts
+PASS test/services/automation-handlers-onboarding-growth.test.ts
+PASS test/vtid-04809-vtna-reward-ledger.test.ts
 PASS test/vtid-04860-vtna-token-name.test.ts
-PASS test/vtid-04508-community-invites.test.ts
+PASS test/vtid-04510-community-autopilot-automation-proposals.test.ts
+PASS test/services/automation-handlers-phase1-batch2.test.ts
+PASS test/routes/autopilot-recommendations-complete.test.ts
 PASS test/wallet-stripe-webhook.test.ts
+PASS test/services/automation-handlers-phase2.test.ts
+PASS test/routes/wallet-deposit-lookup.test.ts
+PASS test/services/automation-handlers-wallet-payments.test.ts
+PASS test/automation-role-targeting.test.ts
+PASS test/services/automation-handlers-community-groups.test.ts
+PASS test/services/automation-handlers-phase1-batch4.test.ts
+PASS test/vtid-04508-community-invites.test.ts
+PASS test/services/automation-handlers-memory-intelligence.test.ts
 PASS test/vtid-04331-calendar-data-model.test.ts
+PASS test/services/automation-handlers-event-meetup-initiative.test.ts
+PASS test/vtid-04864-vtna-reward-rules.test.ts
+PASS test/services/live-rooms-commerce-revenue-tips-error-logging.test.ts
+PASS test/services/business-marketplace-topic-matched-users-error-logging.test.ts
+PASS test/services/automation-handlers-connect-people.test.ts
+PASS test/services/automation-handlers-health-action-initiative.test.ts
+PASS test/services/automation-handlers-platform-operations.test.ts
+PASS test/services/automation-handlers-personalization-engines.test.ts
+PASS test/diary-streak-celebrator.test.ts
+PASS test/milestone-service.test.ts
 PASS test/scripts/conversation-flow-rule-satisfiable.test.ts
 PASS test/services/memory/diary.test.ts
-PASS test/milestone-service.test.ts
-PASS test/routes/autopilot-recommendations-complete.test.ts
-Test Suites: 16 passed, 16 total
-Tests:       261 passed, 261 total
+Test Suites: 31 passed, 31 total
+Tests:       509 passed, 509 total

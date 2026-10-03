@@ -9,8 +9,8 @@
  *
  *   1. First steps   — fixed amount, once each.
  *   2. Habits        — streak milestones only (3 / 7 / 30 days), once each.
- *   3. Community     — when OTHERS respond (a friend you invited joins),
- *                      capped.
+ *   3. Community     — when OTHERS respond: 1,000 per friend you invited who
+ *                      joins (10 per 30 days) + 10,000 once at 10 friends.
  *   4. Never earns   — anything Vitana does for you (incl. Vitana-drafted
  *                      posts), buying credits, self-reported actions.
  *
@@ -57,14 +57,24 @@ export const VTNA_REWARD_RULES: ReadonlyArray<RewardRule> = [
   { id: 'diary_streak_30', group: 'habits', amount: 100, once: true, live: true },
 
   // 3. Community — when others respond, capped
+  // Owner decision 2026-10-03: inviting must be worth it — 1,000 VTNA per
+  // friend who joins, and a one-time 10,000 VTNA bonus at 10 friends.
   {
-    id: 'invite_friend_joined', group: 'community', amount: 200, once: false,
+    id: 'invite_friend_joined', group: 'community', amount: 1000, once: false,
     cap: { count: 10, days: 30 },
     // Paid by community-autopilot/invites.ts, which is switched on by
     // COMMUNITY_INVITE_REWARD_ENABLED. isRuleLive() reports the real state.
     live: true,
   },
+  {
+    id: 'invited_friends_10', group: 'community', amount: 10000, once: true,
+    // Paid by invites.ts when the 10th invited friend's reward lands.
+    live: true,
+  },
 ];
+
+/** Invited friends (rewarded) needed for the invited_friends_10 bonus. */
+export const INVITE_MILESTONE_FRIENDS = 10;
 
 /** What never earns VTNA — shown on the screen so the rules are complete. */
 export const VTNA_NEVER_EARNS: ReadonlyArray<string> = [
@@ -98,7 +108,9 @@ export function rewardEventId(ruleId: string, userId: string): string {
 /** Whether a rule actually pays in this process right now. */
 export function isRuleLive(rule: RewardRule, env: NodeJS.ProcessEnv = process.env): boolean {
   if (!rule.live) return false;
-  if (rule.id === 'invite_friend_joined') return env.COMMUNITY_INVITE_REWARD_ENABLED === 'true';
+  if (rule.id === 'invite_friend_joined' || rule.id === 'invited_friends_10') {
+    return env.COMMUNITY_INVITE_REWARD_ENABLED === 'true';
+  }
   return true;
 }
 

@@ -119,7 +119,8 @@ describe('runReferralReward (AP-0405)', () => {
     const result = await handler(ctx);
     expect(notify).toHaveBeenCalledTimes(1);
     expect(supabase.rpc).toHaveBeenCalledWith('credit_wallet', expect.objectContaining({
-      p_user_id: 'u1', p_amount: 200, p_type: 'reward', p_source: 'AP-0405',
+      // VTID-04864: the referral reward is the rule-table invite amount (was 200).
+      p_user_id: 'u1', p_amount: 1000, p_type: 'reward', p_source: 'AP-0405',
       p_source_event_id: 'referral_reward:u1:u2',
     }));
     expect(ctx.log).not.toHaveBeenCalledWith(expect.stringContaining('credit_wallet failed'));
