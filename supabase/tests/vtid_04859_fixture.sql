@@ -14,6 +14,8 @@ GRANT USAGE ON SCHEMA auth, public TO anon, authenticated, service_role;
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS
 $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
 
+CREATE TABLE auth.users (id uuid PRIMARY KEY, email text, created_at timestamptz DEFAULT now());
+
 CREATE TABLE public.user_tenants (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid, user_id uuid, active_role text, is_primary boolean,
@@ -47,8 +49,14 @@ CREATE TABLE public.notification_test_actors (user_id uuid PRIMARY KEY, reason t
 
 \set t '''aaaaaaaa-0000-0000-0000-000000000000'''
 -- u1 launch grant · u2 no subscription · u3 paying (Stripe) · u4 service bot
--- u5 test actor · u6 redemption grant ending in 30 days. Signup order u1..u6.
+-- u5 test actor · u6 redemption grant ending in 30 days · u7 e2e address not
+-- in any allowlist. Signup order u1..u7.
+INSERT INTO auth.users (id, email) VALUES
+  ('00000000-0000-0000-0000-0000000000a1', 'one@example.com'),
+  ('00000000-0000-0000-0000-0000000000a2', 'two@example.com'),
+  ('00000000-0000-0000-0000-0000000000a7', 'e2e-1776584475@vitanatest.exafy.io');
 INSERT INTO public.app_users (user_id, tenant_id, created_at) VALUES
+  ('00000000-0000-0000-0000-0000000000a7', :t, now() - interval '40 days'),
   ('00000000-0000-0000-0000-0000000000a1', :t, now() - interval '200 days'),
   ('00000000-0000-0000-0000-0000000000a2', :t, now() - interval '150 days'),
   ('00000000-0000-0000-0000-0000000000a3', :t, now() - interval '120 days'),

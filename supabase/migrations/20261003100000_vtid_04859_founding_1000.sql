@@ -13,7 +13,8 @@
 --   2. claim_founding_seat(user, tenant) — assigns the next seat and grants
 --      the year, idempotently (a second call returns the same seat):
 --        * registered test/service accounts (service_bot_accounts,
---          notification_test_actors, the system bot) never get a seat
+--          notification_test_actors, e2e-%@% / @vitanatest.exafy.io
+--          addresses, the system bot) never get a seat
 --          (CLAUDE.md rules 43-45);
 --        * an active Stripe subscription is never overwritten: seat only
 --          (grant_source 'stripe_active');
@@ -96,7 +97,10 @@ BEGIN
 
   IF p_user_id = '00000000-0000-0000-0000-000000000001'::uuid
      OR EXISTS (SELECT 1 FROM public.service_bot_accounts WHERE user_id = p_user_id)
-     OR EXISTS (SELECT 1 FROM public.notification_test_actors WHERE user_id = p_user_id) THEN
+     OR EXISTS (SELECT 1 FROM public.notification_test_actors WHERE user_id = p_user_id)
+     -- Same e2e address patterns _notif_is_test_actor() treats as test accounts.
+     OR EXISTS (SELECT 1 FROM auth.users u WHERE u.id = p_user_id
+                AND (u.email ILIKE 'e2e-%@%' OR u.email ILIKE '%@vitanatest.exafy.io')) THEN
     RETURN jsonb_build_object('ok', false, 'error', 'NOT_ELIGIBLE');
   END IF;
 
@@ -280,7 +284,9 @@ BEGIN
   IF EXISTS (
     SELECT 1 FROM public.founding_members fm
     WHERE fm.user_id IN (SELECT user_id FROM public.service_bot_accounts
-                         UNION SELECT user_id FROM public.notification_test_actors)
+                         UNION SELECT user_id FROM public.notification_test_actors
+                         UNION SELECT id FROM auth.users
+                               WHERE email ILIKE 'e2e-%@%' OR email ILIKE '%@vitanatest.exafy.io')
   ) THEN
     RAISE EXCEPTION 'VTID-04859: a test/service account received a Founding seat';
   END IF;

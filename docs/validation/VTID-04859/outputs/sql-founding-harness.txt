@@ -1,5 +1,4 @@
-psql:/home/user/vitana-platform/supabase/migrations/20261003100000_vtid_04859_founding_1000.sql:57: NOTICE:  policy "founding_members_select_own" for relation "public.founding_members" does not exist, skipping
-psql:/home/user/vitana-platform/supabase/migrations/20261003100000_vtid_04859_founding_1000.sql:217: NOTICE:  trigger "founding_seat_on_primary_membership" for relation "public.user_tenants" does not exist, skipping
-psql:/home/user/vitana-platform/supabase/migrations/20261003100000_vtid_04859_founding_1000.sql:51: NOTICE:  relation "founding_members" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261003100000_vtid_04859_founding_1000.sql:58: NOTICE:  policy "founding_members_select_own" for relation "public.founding_members" does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261003100000_vtid_04859_founding_1000.sql:221: NOTICE:  trigger "founding_seat_on_primary_membership" for relation "public.user_tenants" does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261003100000_vtid_04859_founding_1000.sql:52: NOTICE:  relation "founding_members" already exists, skipping
 VTID-04859: all assertions passed
-exit 0

@@ -21,7 +21,8 @@ BEGIN
   ASSERT (SELECT seat_number FROM founding_members WHERE user_id = u2) = 2, 'u2 seat 2';
   ASSERT (SELECT seat_number FROM founding_members WHERE user_id = u3) = 3, 'u3 seat 3';
   ASSERT (SELECT seat_number FROM founding_members WHERE user_id = u6) = 4, 'u6 seat 4';
-  ASSERT NOT EXISTS (SELECT 1 FROM founding_members WHERE user_id IN (u4, u5)), 'no seat for test/service accounts';
+  ASSERT NOT EXISTS (SELECT 1 FROM founding_members WHERE user_id IN (u4, u5, '00000000-0000-0000-0000-0000000000a7')), 'no seat for test/service accounts';
+  ASSERT NOT EXISTS (SELECT 1 FROM user_subscriptions WHERE user_id = '00000000-0000-0000-0000-0000000000a7'), 'no grant for e2e address';
   ASSERT (SELECT count(*) FROM founding_members) = 4, 'four seats after two migration runs';
 
   -- 2. Launch-grant member keeps their year, not extended.
@@ -51,6 +52,7 @@ BEGIN
   ASSERT (r->>'already')::boolean AND (r->>'seat_number')::int = 2, 'idempotent: ' || r::text;
   ASSERT claim_founding_seat(u4, t)->>'error' = 'NOT_ELIGIBLE', 'bot refused';
   ASSERT claim_founding_seat('00000000-0000-0000-0000-000000000001', t)->>'error' = 'NOT_ELIGIBLE', 'system bot refused';
+  ASSERT claim_founding_seat('00000000-0000-0000-0000-0000000000a7', t)->>'error' = 'NOT_ELIGIBLE', 'e2e address refused';
 
   -- 7. A new signup gets the next seat through the trigger.
   INSERT INTO user_tenants (tenant_id, user_id, is_primary) VALUES (t, '00000000-0000-0000-0000-0000000000b7', true);

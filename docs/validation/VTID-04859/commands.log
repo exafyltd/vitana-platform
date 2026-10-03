@@ -9,3 +9,4 @@ npx jest test/vtid-04859-founding-1000.test.ts test/routes/billing-founding.test
   test/vtid-04456-customer-support-pipeline-regression.test.ts test/vtid-04465-operator-pipeline-regression.test.ts   # 7 suites, 242 tests
 npx tsc --noEmit -p .                                                 # clean
 (root) node scripts/ci/validate-pr-locally.cjs --title-file ... --body-file ... --base main
+2026-10-03T08:36:08Z bash scripts/ci/test-vtid-04859-founding.sh  # rerun after adding e2e-address exclusion (two unregistered e2e accounts are live primary members); mutation (clause -> false) caught by migration self-check
