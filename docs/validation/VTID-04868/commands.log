@@ -1,0 +1,5 @@
+cd services/gateway && npx jest test/vtid-04868-plan-sparring-session-layer.test.ts   # 7 passed (outputs/jest-session-layer.txt)
+cd services/gateway && npx jest test/command-hub/vtid-04869-overview-phase0.test.ts   # 26 passed (outputs/jest-vtid-04869-phase0.txt)
+cd services/gateway && npx jest test/command-hub <+03917 03925 04661 04662 04659 04696 backup-denylist>   # 35 suites, 504 tests passed (worktree run, VTID-04869 commit c5812907)
+node scripts/ci/command-hub-ownership-guard.js (PR title set)   # Guard check PASSED
+echo '{"tool_input":{"query":"select allocate_global_vtid(1,2,3)"}}' | bash .claude/hooks/pretooluse-plan-sparring-reminder.sh   # reminder JSON, exit 0
