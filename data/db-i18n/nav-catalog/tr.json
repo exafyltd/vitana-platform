@@ -2,7 +2,7 @@
   "surface": "nav-catalog",
   "locale": "tr",
   "source_locale": "de",
-  "generated_at": "2026-10-03T11:08:12.631Z",
+  "generated_at": "2026-10-04T11:53:12.399Z",
   "field_order": [
     "title",
     "description",
@@ -13,7 +13,7 @@
       "source_sha": "aeba7587fe4420ad",
       "fields": {
         "title": "Vitana İndeksi",
-        "description": "Vitana İndeks puanın — 5 sütunlu uzun yaşam göstergesi (Beslenme, Hidrasyon, Hareket, Uyku, Zihinsel).",
+        "description": "Vitana İndeks puanın — 5 sütunlu uzun yaşam metriği (Beslenme, Hidrasyon, Hareket, Uyku, Zihinsel).",
         "when_to_visit": "Vitana İndeksini, uzun yaşam puanını, sağlık puanını, 5 sütunu veya sağlık trendini sorduğunda."
       }
     },
@@ -21,23 +21,23 @@
       "source_sha": "905c7353539e9715",
       "fields": {
         "title": "Sağlık Takviyeleri",
-        "description": "Sağlık bölümündeki Takviyeler sekmesi — aldığın besin takviyeleri, vitaminler ve mineralleri takip et.",
-        "when_to_visit": "Kullanıcı Sağlık ekranındaki Takviyeler sekmesini, \"Sağlık bölümünde takviyeler\"i, \"Sağlık takviyeleri\"ni sorduğunda veya Sağlık bölümünde takviyeleri açmak istediğinde — ve KENDİ besin takviyelerini görüntülemek, takip etmek, kaydetmek veya yönetmek istediğinde, takviye listesini veya aldığı vitamin ve mineralleri. Bu, Sağlık ekranının takviye takipçisidir, pazar yeri alışverişi DEĞİL."
+        "description": "Sağlık bölümündeki Takviyeler sekmesi — aldığın besin takviyelerini, vitaminleri ve mineralleri takip et.",
+        "when_to_visit": "Kullanıcı Sağlık ekranındaki Takviyeler sekmesini, \"Sağlık bölümünde takviyeler\"i, \"Sağlık takviyeleri\"ni sorduğunda veya Sağlık bölümünde takviyeleri açmak istediğinde — ve KENDİ besin takviyelerini görüntülemek, takip etmek, kaydetmek veya yönetmek istediğinde, takviye listesini veya aldığı vitamin ve mineralleri görmek istediğinde. Bu, Sağlık ekranının takviye takipçisidir, pazar yeri alışverişi DEĞİL."
       }
     },
     "00e4f4b6-d501-4376-a6be-30cd840b9d10": {
       "source_sha": "c8c66260585988ea",
       "fields": {
-        "title": "Fırsatlar ve Kampanyalar",
-        "description": "Üyelere özel fırsatlar, indirimler ve özel kampanyalar.",
-        "when_to_visit": "Fırsatlar, indirimler, promosyonlar veya nelerin indirimde olduğunu sorduğunda."
+        "title": "Fırsatlar ve İndirimler",
+        "description": "Üyelere özel teklifler, indirimler ve özel kampanyalar.",
+        "when_to_visit": "Kullanıcı fırsatlar, indirimler, promosyonlar veya nelerin indirimde olduğunu sorduğunda."
       }
     },
     "00fa1b7e-ac50-48be-854d-94b53720fe03": {
       "source_sha": "9957c50850cdf7e5",
       "fields": {
         "title": "Hatırlatıcılar",
-        "description": "Planlanmış hatırlatıcıların — ekleme, düzenleme ve silme kontrolleriyle birlikte tam liste.",
+        "description": "Planlanmış hatırlatıcıların — ekleme, düzenleme ve silme kontrolleriyle tam liste.",
         "when_to_visit": "Hatırlatıcı listesini, tüm hatırlatıcıları, \"hatırlatıcılarımı göster\" dediğinde veya planlanmış hatırlatıcıları yönetmek istediğinde."
       }
     },
@@ -60,9 +60,9 @@
     "02ab328d-0751-42c5-9b72-875f1cad71d7": {
       "source_sha": "f5bd893f7b02fa27",
       "fields": {
-        "title": "Yapay Zeka Arkadaşı",
-        "description": "Odaklanmış bir arkadaş görünümünde Vitana ile konuş.",
-        "when_to_visit": "Kullanıcı yapay zeka arkadaşını, Vitana arkadaş görünümünü açmak, metin modunda Vitana ile konuşmak veya ORB dışında daha uzun bir sohbet yapmak istediğinde."
+        "title": "Yapay Zeka Eşlikçisi",
+        "description": "Odaklanmış bir eşlikçi görünümünde Vitana ile konuş.",
+        "when_to_visit": "Kullanıcı yapay zeka eşlikçisini, Vitana eşlikçi görünümünü açmak istediğinde, metin modunda Vitana ile konuşmak istediğinde veya ORB dışında daha uzun bir sohbet yapmak istediğinde."
       }
     },
     "03fa2849-a654-4561-8d7d-83b7ed2ed2f7": {
@@ -93,8 +93,8 @@
       "source_sha": "e782de321c9d2737",
       "fields": {
         "title": "Takviyeler",
-        "description": "Uzun yaşam ve sağlıklı yaşam için derlenmiş takviyeler.",
-        "when_to_visit": "Pazaryerinde takviyelere, vitaminlere, minerallere veya nutrasötiklere göz atmak, incelemek veya satın almak istediğinde — mevcut ürünleri, markaları veya fırsatları keşfetmek için. Kendi aldığı takviyeleri takip etmek için DEĞİL (o kişisel takip sekmesi, mağaza değil)."
+        "description": "Longevity ve wellness için derlenmiş takviyeler.",
+        "when_to_visit": "Kullanıcı pazaryerinde takviyelere, vitaminlere, minerallere veya nutrasötiklere göz atmak, incelemek veya satın almak istediğinde — mevcut ürünleri, markaları veya fırsatları keşfetmek için. Kendi aldığı takviyeleri takip etmek için DEĞİL (o kişisel takip sekmesidir, mağaza değil)."
       }
     },
     "0863af10-2be3-4f39-b358-7f2166e8e17b": {
@@ -102,7 +102,7 @@
       "fields": {
         "title": "Hesap Güvenliği",
         "description": "Şifreni ve hesap güvenliğini yönet.",
-        "when_to_visit": "Kullanıcı gizlilik ayarlarındaki güvenlik sekmesini sorduğunda — hesap güvenliği, şifre veya iki faktörlü doğrulama."
+        "when_to_visit": "Kullanıcı gizlilik ayarlarındaki güvenlik sekmesini sorduğunda — hesap güvenliği, şifre veya iki faktörlü kimlik doğrulama."
       }
     },
     "0aa38ad1-7d8a-4825-8d00-3941b595ef77": {
@@ -116,17 +116,17 @@
     "0d1917fb-789d-494e-bf0c-cc364f863cf2": {
       "source_sha": "961008b2873e4075",
       "fields": {
-        "title": "Sağlık Sütunları",
+        "title": "Sağlık Temelleri",
         "description": "Uzun yaşamının temel direkleri — beslenme, fitness, uyku, stres ve daha fazlası.",
-        "when_to_visit": "Kullanıcı sağlık sütunları, uzun yaşamın temel direkleri, temel sağlık alanları, beslenme sütunu, fitness sütunu, uyku sütunu veya stres yönetimi sorduğunda."
+        "when_to_visit": "Kullanıcı sağlık temelleri, uzun yaşamın temel direkleri, temel sağlık alanları, beslenme temeli, fitness temeli, uyku temeli veya stres yönetimini sorduğunda."
       }
     },
     "0db6ca96-a501-4e23-99e0-a74a1b3825ff": {
       "source_sha": "e7b3fa7b1e0082c1",
       "fields": {
         "title": "Paylaş",
-        "description": "Maxina Topluluğunu arkadaşlarınla paylaş ve ödüller kazan.",
-        "when_to_visit": "Paylaşmak, tavsiye etmek, arkadaşlarını davet etmek istediğinde veya topluluğu nasıl tavsiye edeceğini sormak istediğinde."
+        "description": "Maxina Topluluğu'nu arkadaşlarınla paylaş ve ödüller kazan.",
+        "when_to_visit": "Paylaşım, tavsiyeler, arkadaş davet etme veya topluluğu nasıl tavsiye edeceğini sormak istediğinde."
       }
     },
     "0e4de277-ff6b-472e-b5cb-6403d7028c43": {
@@ -134,7 +134,7 @@
       "fields": {
         "title": "Takviyelerim (Biyoloji)",
         "description": "Biyolojim'in takviyeler sekmesi — biyolojik profilindeki besin takviyeleri.",
-        "when_to_visit": "Biyolojim içindeki takviyelerini, Biyolojim'in takviyeler sekmesini veya biyolojisiyle ilgili takviyeleri sorduğunda."
+        "when_to_visit": "Biyolojim içindeki takviyelerini, Biyolojim'in takviyeler sekmesini veya biyolojine ait takviyeleri sorduğunda."
       }
     },
     "0f409079-24d4-4f79-a79b-e6697429efce": {
@@ -150,7 +150,7 @@
       "fields": {
         "title": "Eğitim Videoları",
         "description": "Sağlık Eğitimi ve Kaynaklar'ın videolar sekmesi.",
-        "when_to_visit": "Sağlık eğitim videolarını, eğitimin videolar sekmesini veya sağlık öğrenme videolarını sorduğunda."
+        "when_to_visit": "Sağlık eğitim videolarını, eğitimin videolar sekmesini veya sağlık öğretici videoları sorduğunda."
       }
     },
     "103610ef-eca7-4cd8-a9ef-496e3f151d98": {
@@ -164,17 +164,17 @@
     "11292ebb-491b-4e22-b6d0-8a2789b98750": {
       "source_sha": "d721102a1cad390b",
       "fields": {
-        "title": "Sağlıklı Yaşam Hizmetleri",
-        "description": "MAXINA topluluğu tarafından sunulan sağlıklı yaşam hizmetleri.",
-        "when_to_visit": "Sağlıklı yaşam hizmetleri, masaj, spa, toparlanma veya rezervasyon yapabileceği tedaviler sorduğunda."
+        "title": "Wellness Hizmetleri",
+        "description": "MAXINA topluluğu tarafından sunulan wellness hizmetleri.",
+        "when_to_visit": "Kullanıcı wellness hizmetleri, masaj, spa, toparlanma veya rezervasyon yapabileceği tedaviler sorduğunda."
       }
     },
     "1138c946-95cf-4d83-a49e-ac50adcb5aa7": {
       "source_sha": "bff8f56cbcb8ed83",
       "fields": {
         "title": "Satış Tavsiyeleri",
-        "description": "MAXINA Business bayi satışlarından kazandığın tavsiye komisyonları.",
-        "when_to_visit": "Kullanıcı Business Hub Satışları'ndaki \"Tavsiyeler\" sekmesini veya Business Hub Satış Tavsiyelerini sorduğunda — Business Hub'daki kendi bayi satışlarına ait tavsiye komisyonları."
+        "description": "MAXINA Business bayiliğinden kazandığın tavsiye komisyonları.",
+        "when_to_visit": "Kullanıcı Business Hub Satışları'nın \"Tavsiyeler\" sekmesini veya Business Hub Satışları tavsiyelerini sorduğunda — Business Hub'daki kendi bayi satışlarına ait tavsiyeler."
       }
     },
     "114e1143-7c6c-4398-a6c4-f2b80017e1d5": {
@@ -182,14 +182,14 @@
       "fields": {
         "title": "Pazar Yeri",
         "description": "MAXINA Pazar Yeri — topluluktan ticari intentleri al ve sat.",
-        "when_to_visit": "Pazar yerini açmak, ticari intentlere göz atmak, bir şey almak veya satmak ya da topluluğun neler sattığını görmek istediğinde."
+        "when_to_visit": "Pazar yerini açmak, ticari intentlere göz atmak, bir şey almak veya satmak ya da toplulukta neler satıldığını görmek istediğinde."
       }
     },
     "12298016-0a45-4b5e-9c51-4bd131256952": {
       "source_sha": "c9736d6d6c379351",
       "fields": {
         "title": "İş Fırsatları",
-        "description": "Hizmetlerine uyan yeni iş fırsatları ve potansiyel müşteriler.",
+        "description": "Hizmetlerinle eşleşen yeni iş fırsatları ve potansiyel müşteriler.",
         "when_to_visit": "İş fırsatlarını, potansiyel müşterileri, yeni müşterileri veya hangi işlerin geldiğini sorduğunda."
       }
     },
@@ -206,7 +206,7 @@
       "fields": {
         "title": "Planlarım",
         "description": "Hedeflerine yönelik kişiselleştirilmiş sağlık planları — beslenme, fitness, uyku, stres.",
-        "when_to_visit": "Kullanıcı sağlık planlarını, beslenme programını, fitness planını, kişisel programını veya hedefleri için ne yapması gerektiğini sorduğunda."
+        "when_to_visit": "Kullanıcı sağlık planlarını, beslenme planını, fitness planını, kişisel programını veya hedefleri için ne yapması gerektiğini sorduğunda."
       }
     },
     "16a08da1-9227-5415-858a-7db4703ae022": {
@@ -214,7 +214,7 @@
       "fields": {
         "title": "Abonelikler",
         "description": "Aktif aboneliklerin ve ödeme yaptığın hizmetler.",
-        "when_to_visit": "Kullanıcı aboneliklerini, düzenli ödemelerini, neye ödeme yaptığını sorduğunda veya bir aboneliği iptal etmek ya da yönetmek istediğinde."
+        "when_to_visit": "Kullanıcı aboneliklerini, tekrarlayan ödemelerini, neye ödeme yaptığını sorduğunda veya bir aboneliği iptal etmek ya da yönetmek istediğinde."
       }
     },
     "17100496-7f04-51d3-8932-b2f8584ce3f5": {
@@ -222,7 +222,7 @@
       "fields": {
         "title": "Wellness Hizmetleri",
         "description": "MAXINA topluluğu tarafından sunulan wellness hizmetleri.",
-        "when_to_visit": "Kullanıcı wellness hizmetleri, masaj, spa, recovery veya randevu alabileceği tedaviler hakkında sorduğunda."
+        "when_to_visit": "Kullanıcı wellness hizmetleri, masaj, spa, toparlanma veya randevu alabileceği tedaviler hakkında sorduğunda."
       }
     },
     "18bc8bcf-4fcb-406c-942a-d5d0ecc0f18f": {
@@ -230,7 +230,7 @@
       "fields": {
         "title": "Topluluk",
         "description": "MAXINA topluluk merkezi — etkinlikler, canlı odalar, medya ve gruplar.",
-        "when_to_visit": "Genel olarak topluluğu sorduğunda, topluluk özelliklerini keşfetmek istediğinde veya sosyal içeriklerin nerede olduğunu bilmediğinde."
+        "when_to_visit": "Genel olarak topluluğu sorduğunda, topluluk özelliklerini keşfetmek istediğinde veya sosyal içerikleri nerede bulacağını bilmediğinde."
       }
     },
     "18f0a112-95a7-4398-9cbd-c903a0a22e61": {
@@ -238,7 +238,7 @@
       "fields": {
         "title": "Dağılım",
         "description": "Paylaştığın içeriklerin nasıl dağıtıldığını ve alındığını takip et.",
-        "when_to_visit": "Dağılımı, içeriklerinin nasıl yayıldığını, erişimi veya paylaşım analizlerini sormak istediğinde."
+        "when_to_visit": "Dağılım, içeriklerinin nasıl yayıldığı, erişim veya paylaşım analizlerini sormak istediğinde."
       }
     },
     "1adb4c47-9c29-4139-8f0a-b9c5540248e0": {
@@ -246,7 +246,7 @@
       "fields": {
         "title": "Paylaş ve Kazan",
         "description": "Discover ürünlerini paylaş ve ödüller kazan.",
-        "when_to_visit": "Discover'ın \"Paylaş ve Kazan\" sekmesini, Discover paylaş ve kazan bölümünü veya ödül kazanmak için Discover pazar yeri ürünlerini paylaşmayı sorduğunda."
+        "when_to_visit": "Discover'ın \"Paylaş ve Kazan\" sekmesini, Discover Paylaş ve Kazan bölümünü veya ödül kazanmak için Discover pazar yeri ürünlerini paylaşmayı sorduğunda."
       }
     },
     "1b834543-4be4-42c8-a92d-26060faf9d6e": {
@@ -278,7 +278,7 @@
       "fields": {
         "title": "Profil Görünürlüğü",
         "description": "Profilin için bölüm bazlı görünürlük ayarları — kimin neyi göreceğini kontrol et.",
-        "when_to_visit": "Kullanıcı profil görünürlüğünü, profilini kimin görebileceğini, nelerin herkese açık gösterildiğini sorduğunda veya bir profil bölümünü gizlemek istediğinde."
+        "when_to_visit": "Kullanıcı profil görünürlüğünü, profilini kimin görebileceğini, neyin herkese açık gösterildiğini sorduğunda veya bir profil bölümünü gizlemek istediğinde."
       }
     },
     "1f13b910-4d0a-4ed8-96d5-04aba4574d27": {
@@ -286,7 +286,7 @@
       "fields": {
         "title": "Gelirler",
         "description": "İçgörüler sekmesindeki MAXINA Business gelir dökümün.",
-        "when_to_visit": "Kullanıcı Business Hub İçgörüleri'ndeki \"Gelirler\" sekmesini veya Business Hub İçgörüleri Gelirlerini sorduğunda — kendi işletmesinin gelir dökümü."
+        "when_to_visit": "Kullanıcı Business Hub İçgörüleri'nin \"Gelirler\" sekmesini veya Business Hub İçgörüleri kazançlarını sorduğunda — kendi işletmesinin gelir dökümü."
       }
     },
     "20673ca9-816e-4139-aa27-cc0497475bb7": {
@@ -301,24 +301,24 @@
       "source_sha": "6376eec5f938206b",
       "fields": {
         "title": "Etkinliklerim",
-        "description": "MAXINA Business'ında sunucu olarak düzenlediğin veya sunduğun etkinlikler, kurslar ve seanslar.",
-        "when_to_visit": "Kullanıcı Business Hub Hizmetleri'ndeki \"Etkinliklerim\" sekmesini, Business Hub Hizmetleri etkinliklerini veya kendi işletmesinde sunucu olarak düzenlediği ya da sunduğu etkinlikleri, kursları ve seansları sorduğunda."
+        "description": "MAXINA Business'ında sağlayıcı olarak düzenlediğin veya sunduğun etkinlikler, kurslar ve seanslar.",
+        "when_to_visit": "Kullanıcı Business Hub Hizmetleri'nin \"Etkinliklerim\" sekmesini, Business Hub Hizmetleri etkinliklerini veya kendi işletmesinde sağlayıcı olarak düzenlediği ya da sunduğu etkinlikleri, kursları ve seansları sorduğunda."
       }
     },
     "230e2278-a71d-4b1b-bebf-9988c3c45887": {
       "source_sha": "1048dbff42a2320f",
       "fields": {
         "title": "Keşfet",
-        "description": "Takviyeler, sağlıklı yaşam hizmetleri, doktorlar, fırsatlar ve daha fazlasını keşfet.",
-        "when_to_visit": "MAXINA pazaryerinde ürün ve hizmetleri keşfetmek, göz atmak veya satın almak istediğinde."
+        "description": "Takviyeler, wellness hizmetleri, doktorlar, fırsatlar ve daha fazlasına göz at.",
+        "when_to_visit": "Kullanıcı MAXINA pazaryerinde ürün ve hizmetlere göz atmak, keşfetmek veya satın almak istediğinde."
       }
     },
     "234fe8dd-d573-48b6-8658-d57c0a941cf8": {
       "source_sha": "74c9367ab8f6aa10",
       "fields": {
         "title": "Takip Ettiklerim Topluluk Akışı",
-        "description": "Etkinlikler ve Buluşmalar'ın \"Takip Ettiklerim\" sekmesi — takip ettiğin üyeler ve grupların etkinlikleri, gönderileri ve güncellemelerini içeren topluluk akışın.",
-        "when_to_visit": "Etkinlikler ve Buluşmalar'ın \"Takip Ettiklerim\" sekmesini, takip ettiklerini, takip ettiğin kişilerin etkinliklerini, takip ettiğin kişi veya grupları ya da topluluk gönderileri ve güncellemelerini içeren topluluk akışını sorduğunda."
+        "description": "Etkinlikler ve Buluşmalar'ın \"Takip Ettiklerim\" sekmesi — takip ettiğin üyelerin ve grupların etkinliklerini, gönderilerini ve güncellemelerini içeren topluluk akışın.",
+        "when_to_visit": "Etkinlikler ve Buluşmalar'ın \"Takip Ettiklerim\" sekmesini, takip ettiklerini, takip ettiğin kişilerin etkinliklerini, takip ettiğin kişi veya grupları ya da topluluk gönderileri ve güncellemeleri içeren topluluk akışını sorduğunda."
       }
     },
     "23ee8b4e-0de1-5a3e-9a33-b65894c091ce": {
@@ -326,7 +326,7 @@
       "fields": {
         "title": "Müşterilerim",
         "description": "MAXINA işinin müşterilerini yönet.",
-        "when_to_visit": "Müşterilerin, danışanların, kime hizmet verdiğin veya işte müşteri ilişkilerinin nasıl yönetileceği hakkında sorduğunda."
+        "when_to_visit": "Müşterilerini, danışanlarını, kime hizmet verdiğini veya işteki müşteri ilişkilerini nasıl yöneteceğini sorduğunda."
       }
     },
     "254742d3-1856-4b8b-b81a-b2691b2988fd": {
@@ -334,7 +334,7 @@
       "fields": {
         "title": "Sağlık Durumları",
         "description": "Sağlık durumlarını takip et ve yönet.",
-        "when_to_visit": "Kullanıcı sağlık durumları, kronik hastalıklar, teşhisler, sağlık riskleri veya yönettiği sağlık sorunları sorduğunda."
+        "when_to_visit": "Kullanıcı sağlık durumlarını, kronik rahatsızlıkları, teşhisleri, sağlık risklerini veya yönettiği sağlık sorunlarını sorduğunda."
       }
     },
     "28fb12d8-e817-4fe2-97df-720d971de839": {
@@ -350,7 +350,7 @@
       "fields": {
         "title": "Gizlilik Ayarları",
         "description": "Vitana'nın hangi verileri sakladığını ve toplulukla nelerin paylaşıldığını yönet.",
-        "when_to_visit": "Kullanıcı gizlilik ayarları, veri kontrolü, nelerin paylaşıldığı, onay hakkında sorduğunda veya gizlilik tercihlerini değiştirmek istediğinde."
+        "when_to_visit": "Kullanıcı gizlilik ayarlarını, veri kontrolünü, nelerin paylaşıldığını, onay ayarlarını sorduğunda veya gizlilik tercihlerini değiştirmek istediğinde."
       }
     },
     "2a1ca4d8-59b0-4b57-98d9-c979bcf0badf": {
@@ -358,7 +358,7 @@
       "fields": {
         "title": "Kullanım Koşulları",
         "description": "Kullanım koşulları ve yasal bilgiler.",
-        "when_to_visit": "Kullanım koşullarını, genel şartları, yasal koşulları veya kullanıcı sözleşmesini sorduğunda."
+        "when_to_visit": "Kullanım koşullarını, şartları, yasal koşulları veya kullanıcı sözleşmesini sorduğunda."
       }
     },
     "2b052733-4dff-4489-951b-5c9a4495c8e4": {
@@ -373,7 +373,7 @@
       "source_sha": "7811b32fe36b54dd",
       "fields": {
         "title": "Tek Günlük Kayıt Akışı",
-        "description": "Belirli bir tek gün için odaklanmış kayıt akışı.",
+        "description": "Belirli tek bir gün için odaklanmış kayıt akışı.",
         "when_to_visit": "Özellikle tek günlük kayıt adımını istediğinde (genel günlük görünümü değil)."
       }
     },
@@ -381,8 +381,8 @@
       "source_sha": "4d00fa2ca16a16a4",
       "fields": {
         "title": "Eşleşme Detayı",
-        "description": "Örtüşen ilgi alanlarına dayalı iki topluluk üyesi arasındaki belirli bir eşleşme.",
-        "when_to_visit": "Belirli bir eşleşmeyi görmek istediğinde, eşleşmelerinden birinin detaylarını sorduğunda veya bir eşleşmeyi ID ile açmak istediğinde."
+        "description": "Örtüşen talepler temelinde iki topluluk üyesi arasındaki belirli bir eşleşme.",
+        "when_to_visit": "Belirli bir eşleşmeyi görmek istediğinde, eşleşmelerinden birinin detaylarını sorduğunda veya ID ile bir eşleşme açmak istediğinde."
       }
     },
     "2e4538a5-d6a2-481b-9e46-64a4edc9b016": {
@@ -413,16 +413,16 @@
       "source_sha": "b38e82e237da5bde",
       "fields": {
         "title": "Veri Paylaşımı",
-        "description": "Hangi verilerin paylaşıldığını kontrol et.",
-        "when_to_visit": "Gizliliğin veri paylaşımı sekmesini sorduğunda — veri paylaşımı, hangi verilerin paylaşıldığı veya veri paylaşım izni."
+        "description": "Hangi verilerin paylaşılacağını kontrol et.",
+        "when_to_visit": "Gizliliğin veri paylaşımı sekmesini sorduğunda — veri paylaşımı, hangi verilerin paylaşıldığı veya veri paylaşımı izni."
       }
     },
     "338c566a-bec4-46e1-99c0-1576c5311b40": {
       "source_sha": "b0ebb8dc27b9695b",
       "fields": {
-        "title": "Ödül Analizleri",
-        "description": "Cüzdan ödüllerinin analiz sekmesi — daha fazla kazanmak için ipuçları.",
-        "when_to_visit": "Ödül analizlerini, ödüllerin analiz sekmesini veya daha fazla ödül kazanma ipuçlarını sorduğunda."
+        "title": "Ödül İçgörüleri",
+        "description": "Cüzdan ödüllerinin intelligence sekmesi — daha fazla kazanman için ipuçları.",
+        "when_to_visit": "Ödül içgörülerini, ödüllerin intelligence sekmesini veya daha fazla ödül kazanma ipuçlarını sorduğunda."
       }
     },
     "33c71456-fb59-4cf2-86a2-c2182ef5aafb": {
@@ -454,7 +454,7 @@
       "fields": {
         "title": "Paylaş",
         "description": "Maxina Community'yi arkadaşlarınla paylaş ve ödüller kazan.",
-        "when_to_visit": "Kullanıcı paylaşma, tavsiye, arkadaş davet etme veya topluluğu nasıl önerebileceğini sorduğunda."
+        "when_to_visit": "Kullanıcı paylaşma, tavsiye, arkadaş davet etme veya topluluğu nasıl önereceğini sorduğunda."
       }
     },
     "3483e0e8-770b-5021-8d5c-ccc559a4a65e": {
@@ -500,9 +500,9 @@
     "37fca1cb-daa9-4be7-88ba-5ddbba6a2095": {
       "source_sha": "f2646e774a37b1ca",
       "fields": {
-        "title": "Sağlık Bağlantıları",
+        "title": "Sağlık Bağlayıcıları",
         "description": "Sağlık ve laboratuvar uygulama entegrasyonlarını bağla.",
-        "when_to_visit": "Kullanıcı bağlı uygulamalardaki sağlık bağlantıları sekmesini veya bir sağlık ya da laboratuvar uygulamasını (Apple Health, Oura, bir laboratuvar sağlayıcısı) entegrasyon olarak bağlamak istediğinde."
+        "when_to_visit": "Kullanıcı bağlı uygulamalardaki sağlık bağlayıcıları sekmesini veya bir sağlık ya da laboratuvar uygulamasını (Apple Health, Oura, bir laboratuvar sağlayıcısı) entegrasyon olarak bağlamak istediğinde."
       }
     },
     "38fa0090-e7bb-513c-90e3-2e7756738db5": {
@@ -517,8 +517,8 @@
       "source_sha": "c8c66260585988ea",
       "fields": {
         "title": "Fırsatlar ve Kampanyalar",
-        "description": "Üyelere özel teklifler, indirimler ve özel kampanyalar.",
-        "when_to_visit": "Kullanıcı fırsatları, indirimleri, promosyonları veya nelerin indirimde olduğunu sorduğunda."
+        "description": "Üyelere özel fırsatlar, indirimler ve özel kampanyalar.",
+        "when_to_visit": "Kullanıcı fırsatları, indirimleri, kampanyaları veya nelerin indirimde olduğunu sorduğunda."
       }
     },
     "3ed08cd7-f9b8-40aa-b744-a324b469acbb": {
@@ -526,7 +526,7 @@
       "fields": {
         "title": "Yapay Zeka Seçimleri",
         "description": "Yapay zeka tarafından seçilmiş ürün ve hizmet önerileri — Discover'ın öneriler sekmesi.",
-        "when_to_visit": "Discover'daki yapay zeka seçimleri sekmesini, öneriler sekmesini, yapay zeka önerilerini, kişiselleştirilmiş önerileri, seçilmiş tavsiyeleri sormak istediğinde veya yapay zekanın senin için ne önerdiğini öğrenmek istediğinde."
+        "when_to_visit": "Discover'ın yapay zeka seçimleri sekmesini, öneriler sekmesini, yapay zeka önerilerini, kişiselleştirilmiş önerileri, seçilmiş ipuçlarını sormak istediğinde veya yapay zekanın senin için ne önerdiğini öğrenmek istediğinde."
       }
     },
     "3ed54bce-4705-4908-9b2d-ee010ae0686c": {
@@ -542,14 +542,14 @@
       "fields": {
         "title": "Canlı Odalar",
         "description": "Topluluk üyelerinin gerçek zamanlı buluştuğu canlı ses ve video odaları.",
-        "when_to_visit": "Canlı odalar, canlı ses, canlı video, gerçek zamanlı sohbetler, çevrimiçi topluluk görüşmeleri veya şu anda gerçekleşen sanal buluşmalar hakkında sorduğunda."
+        "when_to_visit": "Canlı odalar, canlı ses, canlı video, gerçek zamanlı sohbetler, çevrimiçi topluluk görüşmeleri veya şu anda gerçekleşen sanal buluşmalar sorduğunda."
       }
     },
     "3f67ec35-713d-4cbf-af28-42e569f05b3e": {
       "source_sha": "e4f85db4a2c69cb9",
       "fields": {
         "title": "Vitanaland Ana Sayfa",
-        "description": "Vitanaland ve Maxina Community'nin genel ana giriş sayfası.",
+        "description": "Vitanaland ve Maxina Community'nin genel ana giriş noktası.",
         "when_to_visit": "Kullanıcı başa dönmek, ana sayfaya gitmek, web sitesinin ana sayfasına gitmek istediğinde veya tanıtımı tekrar dinlemek istediğinde."
       }
     },
@@ -558,7 +558,7 @@
       "fields": {
         "title": "İlanlarım",
         "description": "MAXINA'daki aktif iş ilanların.",
-        "when_to_visit": "Kullanıcı ilanlarını, iş ilanlarını, yayınladığı hizmetleri, ticari olarak ne paylaştığını sorduğunda veya herkese açık iş gönderilerini yönetmek istediğinde."
+        "when_to_visit": "Kullanıcı ilanlarını, iş ilanlarını, yayınladığı hizmetleri, ticari olarak ne paylaştığını sorduğunda veya herkese açık iş paylaşımlarını yönetmek istediğinde."
       }
     },
     "42e23e9c-67fe-4917-b234-a2a586be9782": {
@@ -566,7 +566,7 @@
       "fields": {
         "title": "Müşterilerim",
         "description": "MAXINA Business müşterilerini yönet.",
-        "when_to_visit": "Kullanıcı Business Hub'ın İçgörüler bölümündeki \"Müşteriler\" sekmesini, müşterilerini, hizmet verdiği kişileri veya iş müşteri ilişkilerini nasıl yöneteceğini sorduğunda."
+        "when_to_visit": "Kullanıcı Business Hub'ın İçgörüler bölümündeki \"Müşteriler\" sekmesini, müşterilerini, danışanlarını, kime hizmet verdiğini veya iş ilişkilerini nasıl yöneteceğini sorduğunda."
       }
     },
     "4322284a-c083-45a6-a5a8-89b78dd399d3": {
@@ -601,6 +601,14 @@
         "when_to_visit": "Kullanıcı siparişlerini, siparişlerimi, sipariş durumunu, teslimatları veya ne satın aldığını sorduğunda."
       }
     },
+    "469ac396-8547-5ff9-b8ab-8b873eb0f969": {
+      "source_sha": "980817d902be78a6",
+      "fields": {
+        "title": "Anı Bahçesi",
+        "description": "Senin kişisel hafızan — Vitana'nın senin hakkında bildiği her şey.",
+        "when_to_visit": "Kullanıcı Anı Bahçesi'ni, Vitana'nın onun hakkında ne bildiğini, kişisel kayıtlarını sorduğunda veya hafızasını yönetmek istediğinde."
+      }
+    },
     "46a5d938-6cb7-48f5-b573-42e2e6c19cff": {
       "source_sha": "11a202318f43a8cc",
       "fields": {
@@ -614,7 +622,7 @@
       "fields": {
         "title": "Aktif Siparişler",
         "description": "Aktif ve devam eden siparişlerin.",
-        "when_to_visit": "Siparişlerim'deki \"Aktif\" sekmesini, aktif siparişlerini, devam eden siparişlerini, açık siparişlerini veya bekleyen teslimatlrını sormak istediğinde."
+        "when_to_visit": "Siparişlerim'deki \"Aktif\" sekmesini, aktif siparişlerini, devam eden siparişlerini, açık siparişlerini veya bekleyen teslimatlarnı sormak istediğinde."
       }
     },
     "4c336b51-3f7c-409a-8e48-9ba5e0229c29": {
@@ -622,7 +630,7 @@
       "fields": {
         "title": "Hata Raporları",
         "description": "Günlüğünden bir hata veya kullanıcı deneyimi iyileştirmesi bildir.",
-        "when_to_visit": "Kullanıcı Günlük'teki \"Hata Raporları\" sekmesini sorduğunda, bir hata bildirmek, bir uygulama sorununu kaydetmek veya Günlük'ten bir kullanıcı deneyimi iyileştirmesi önermek istediğinde."
+        "when_to_visit": "Kullanıcı Günlük'teki \"Hata Raporları\" sekmesini sorduğunda, bir hata bildirmek, uygulama sorunu kaydetmek veya Günlük'ten kullanıcı deneyimi iyileştirmesi önermek istediğinde."
       }
     },
     "4c773720-39e4-4a72-b6c1-4f8db722414b": {
@@ -654,7 +662,7 @@
       "fields": {
         "title": "Grup Detayı",
         "description": "Belirli bir topluluk grubu — üyeleri, gönderileri ve etkinlikleri.",
-        "when_to_visit": "Belirli bir grubu ID veya isimle açmak istediğinde, bir grubu görmek istediğinde veya grup detaylarını incelemek istediğinde."
+        "when_to_visit": "ID veya isimle belirli bir grubu açmak istediğinde, bir grubu görmek veya grup detaylarına bakmak istediğinde."
       }
     },
     "4dedb731-ac6e-4d8b-803c-7e032c44a0bd": {
@@ -662,15 +670,15 @@
       "fields": {
         "title": "Topluluk Yardımı",
         "description": "Diğer üyelerden yardım al — topluluk grupları ve forumlar.",
-        "when_to_visit": "Kullanıcı topluluk yardımı, diğer kullanıcılardan yardım, topluluk destek grupları veya kullanıcı forumları sorduğunda."
+        "when_to_visit": "Kullanıcı topluluk yardımı, diğer kullanıcılardan yardım, topluluk destek grupları veya kullanıcı forumlarını sorduğunda."
       }
     },
     "50a82263-eb3e-4c63-b58f-dd346905593b": {
       "source_sha": "2b2cff328d1c6b56",
       "fields": {
-        "title": "E-posta ve Takvim Bağlantıları",
+        "title": "E-posta ve Takvim Bağlayıcıları",
         "description": "E-posta ve takvim uygulamalarını bağla.",
-        "when_to_visit": "Kullanıcı e-posta ve takvim bağlantılarını, bağlı uygulamalardaki verimlilik sekmesini veya bir e-posta ya da takvim uygulaması entegrasyonu (Gmail, Google Takvim, Outlook) bağlamak istediğinde."
+        "when_to_visit": "Kullanıcı e-posta ve takvim bağlayıcılarını, bağlı uygulamalardaki verimlilik sekmesini veya bir e-posta ya da takvim uygulaması entegrasyonu (Gmail, Google Takvim, Outlook) bağlamak istediğinde."
       }
     },
     "50bfd44a-bd83-4952-9e8d-f45f8edfd62c": {
@@ -678,15 +686,15 @@
       "fields": {
         "title": "Bildirimler",
         "description": "Bildirim tercihlerini yönet.",
-        "when_to_visit": "Kullanıcı bildirim ayarlarını, anlık bildirimleri, e-posta uyarılarını sorduğunda veya bildirimleri açmak ya da kapatmak istediğinde."
+        "when_to_visit": "Kullanıcı bildirim ayarlarını, anlık bildirimleri, e-posta uyarılarını sorduğunda veya bildirimleri açıp kapatmak istediğinde."
       }
     },
     "52e8358b-0794-5cb2-ac33-d0ca17c12452": {
       "source_sha": "1316fac0d90ee9ab",
       "fields": {
-        "title": "Yapay Zeka Arkadaşı",
-        "description": "Vitana ile odaklanmış bir arkadaş görünümünde sohbet et.",
-        "when_to_visit": "Kullanıcı özel Vitana sohbetini, yapay zeka arkadaş görünümünü açmak veya ORB dışında daha uzun bir sohbet yapmak istediğinde."
+        "title": "Yapay Zeka Yol Arkadaşı",
+        "description": "Vitana ile odaklanmış bir yol arkadaşı görünümünde sohbet et.",
+        "when_to_visit": "Kullanıcı özel Vitana sohbetini, yapay zeka yol arkadaşı görünümünü açmak veya ORB dışında daha uzun bir sohbet yapmak istediğinde."
       }
     },
     "535d7082-6a0d-4173-b394-51852e172c27": {
@@ -702,7 +710,7 @@
       "fields": {
         "title": "Görünürlük",
         "description": "Profilini kimin görebileceğini kontrol et.",
-        "when_to_visit": "Kullanıcı gizlilik ayarlarındaki profil görünürlüğü sekmesini, profilini kimin görebileceğini veya profilini gizlemeyi sorduğunda."
+        "when_to_visit": "Kullanıcı gizlilik ayarlarındaki profil görünürlüğü sekmesini sorduğunda — profilini kimin görebileceği veya profilini gizleme."
       }
     },
     "538ad2e6-82b5-4243-9453-34e80f3b460e": {
@@ -717,15 +725,15 @@
       "source_sha": "93cc4ff1fb2559b6",
       "fields": {
         "title": "Belirli Canlı Oda Görüntüleyici",
-        "description": "Belirli bir canlı ses veya canlı video odasının roomId ile görüntüleyici sayfası.",
-        "when_to_visit": "Arayan kişinin belirli bir roomId'si varsa ve bir görüntüleyici sayfası açması gerektiğinde."
+        "description": "roomId ile belirli bir canlı ses veya canlı video odasının görüntüleyici sayfası.",
+        "when_to_visit": "Arayan kişinin belirli bir roomId'si varsa ve bunun için bir görüntüleyici sayfası açması gerektiğinde."
       }
     },
     "54626359-a8da-42cb-819f-d2e5c59e28d3": {
       "source_sha": "14a08c7e3aebc518",
       "fields": {
         "title": "Açık Talepler",
-        "description": "Eşleşmemiş, partner veya yardımcı arayan topluluk genelindeki paylaşımlar.",
+        "description": "Partner veya yardımcı arayan, henüz eşleşmemiş topluluk genelindeki paylaşımlar.",
         "when_to_visit": "\"Açık talepler\", \"topluluk ne arıyor\", \"eşleşmemiş paylaşımlar\" veya \"kimin yardıma ihtiyacı var\" diye sorduğunda."
       }
     },
@@ -741,7 +749,7 @@
       "source_sha": "b68d66fc1e5a866c",
       "fields": {
         "title": "Maxina Community'ye Katıl",
-        "description": "Vitanaland'deki Maxina Community için kayıt ve giriş.",
+        "description": "Vitanaland üzerinde Maxina Community için kayıt ve giriş.",
         "when_to_visit": "Kullanıcı kayıt olmak, giriş yapmak, topluluğa katılmak, hesap oluşturmak veya Maxina'ya giriş yapmak istediğinde."
       }
     },
@@ -750,15 +758,15 @@
       "fields": {
         "title": "Davet Ödülleri",
         "description": "Cüzdan ödüllerinin davet sekmesi — davetlerden kazanılan ödüller.",
-        "when_to_visit": "Davet ödüllerini, ödüllerin davet sekmesini veya arkadaş davetinden kazanılan ödülleri sorduğunda."
+        "when_to_visit": "Davet ödüllerini, ödüllerin davet sekmesini veya arkadaş davetinden kazanılan ödüllerini sorduğunda."
       }
     },
     "560efcf3-db9a-4533-8a48-044db3e9ea6d": {
       "source_sha": "aa413e69ed447620",
       "fields": {
         "title": "Podcast'ler",
-        "description": "Topluluğun podcast'leri ve ses bölümleri.",
-        "when_to_visit": "Media Hub'da podcast'leri, podcast sekmesini veya ses bölümlerini sorduğunda."
+        "description": "Topluluğun podcast'leri ve sesli bölümleri.",
+        "when_to_visit": "Media Hub'da podcast'leri, podcast sekmesini veya sesli bölümleri sorduğunda."
       }
     },
     "56a64360-8b5d-4f31-97cf-1a550ac0a1b2": {
@@ -766,7 +774,7 @@
       "fields": {
         "title": "Yapay Zeka Seçimleri",
         "description": "Yapay zeka tarafından derlenen ürün ve hizmet önerileri — Keşfet'in öneriler sekmesi.",
-        "when_to_visit": "Keşfet'in yapay zeka seçimleri sekmesini, öneriler sekmesini, yapay zeka tavsiyelerini, kişiselleştirilmiş önerileri, derlenmiş ipuçlarını sorduğunda veya yapay zekanın ona ne önerdiğini bilmek istediğinde."
+        "when_to_visit": "Kullanıcı Keşfet'in yapay zeka seçimleri sekmesini, öneriler sekmesini, yapay zeka tavsiyelerini, kişiselleştirilmiş önerileri, derlenmiş ipuçlarını sorduğunda veya yapay zekanın ona ne önerdiğini öğrenmek istediğinde."
       }
     },
     "57072d78-74af-466e-998d-2cbe72137e22": {
@@ -780,33 +788,33 @@
     "5829cc65-e496-41a8-9ff1-51014c8d39e1": {
       "source_sha": "df225106c20d13cc",
       "fields": {
-        "title": "Diğer Bağlantılar",
-        "description": "Diğer bağlantılar ve entegrasyonlar.",
-        "when_to_visit": "Kullanıcı bağlı uygulamalardaki \"Diğer\" bağlantılar sekmesini veya diğer entegrasyonları sorduğunda."
+        "title": "Diğer Bağlayıcılar",
+        "description": "Diğer bağlayıcılar ve entegrasyonlar.",
+        "when_to_visit": "Kullanıcı bağlı uygulamalardaki bağlayıcıların \"Diğer\" sekmesini veya diğer entegrasyonları sorduğunda."
       }
     },
     "594d38ab-b0f0-47ec-b83c-28bafee22eb4": {
       "source_sha": "3a2c1f139ad82533",
       "fields": {
         "title": "Yapay Zeka İçgörüleri",
-        "description": "Sağlık verilerinden ve aktivitelerinden kişiselleştirilmiş içgörüler.",
+        "description": "Sağlık verilerinden ve aktivitelerinden elde edilen kişiselleştirilmiş içgörüler.",
         "when_to_visit": "Kullanıcı içgörüleri, örüntüleri, trendleri sorduğunda veya yapay zekanın kendisi hakkında ne öğrendiğini bilmek istediğinde."
       }
     },
     "5dfd2c41-0fdb-4872-9a7a-8889ebac3714": {
       "source_sha": "14a08c7e3aebc518",
       "fields": {
-        "title": "Açık Talepler",
-        "description": "Eşleşmesi olmayan, partner veya yardımcı arayan topluluk çapındaki gönderiler.",
-        "when_to_visit": "\"Açık talepler\", \"topluluk ne arıyor\", \"eşleşmesi olmayan gönderiler\" veya \"kimin yardıma ihtiyacı var\" diye sorduğunda."
+        "title": "Açık İstekler",
+        "description": "Partner veya yardımcı arayan, eşleşmesi olmayan topluluk genelindeki gönderiler.",
+        "when_to_visit": "\"Açık istekler\", \"topluluk ne arıyor\", \"eşleşmesi olmayan gönderiler\" veya \"kimin yardıma ihtiyacı var\" diye sorduğunda."
       }
     },
     "5ea6de71-f8f0-475c-904e-8c0fc4f43636": {
       "source_sha": "84258a6d9786ad46",
       "fields": {
         "title": "Pazaryeri",
-        "description": "MAXINA Pazaryeri — topluluktan ticari intent'ler al ve sat.",
-        "when_to_visit": "Pazaryerini açmak, ticari intent'lere göz atmak, bir şey almak veya satmak ya da topluluğun ne sattığını görmek istediğinde."
+        "description": "MAXINA Pazaryeri — topluluktan ticari intent'leri al ve sat.",
+        "when_to_visit": "Kullanıcı pazaryerini açmak, ticari intent'lere göz atmak, bir şey almak veya satmak ya da topluluğun ne sattığını görmek istediğinde."
       }
     },
     "5fb32da5-0d15-4924-8e94-b4fe0143748a": {
@@ -822,7 +830,7 @@
       "fields": {
         "title": "Yaklaşan Etkinlikler",
         "description": "Katılabileceğin yaklaşan topluluk etkinlikleri ve buluşmaları.",
-        "when_to_visit": "Yaklaşan etkinlikleri, gelecek etkinlikleri, \"Yaklaşan\" sekmesini veya ilerideki etkinlik ve buluşmaları sorduğunda."
+        "when_to_visit": "Yaklaşan etkinlikleri, gelecek etkinlikleri, \"Yaklaşan\" sekmesini veya gelecekteki etkinlik ve buluşmaları sorduğunda."
       }
     },
     "61535fd3-0634-4e60-9f09-dc406ff4ff53": {
@@ -838,7 +846,7 @@
       "fields": {
         "title": "Gizlilik Ayarları",
         "description": "Vitana'nın hangi verileri sakladığını ve toplulukla nelerin paylaşıldığını yönet.",
-        "when_to_visit": "Kullanıcı gizlilik ayarlarını, veri kontrolünü, nelerin paylaşıldığını, onayı sorduğunda veya gizlilik tercihlerini değiştirmek istediğinde."
+        "when_to_visit": "Kullanıcı gizlilik ayarlarını, veri kontrolünü, nelerin paylaşıldığını, onay tercihlerini sorduğunda veya gizlilik tercihlerini değiştirmek istediğinde."
       }
     },
     "640746cc-7f0d-4219-b023-ee0912f0e237": {
@@ -854,7 +862,7 @@
       "fields": {
         "title": "Eğitim Podcastleri",
         "description": "Sağlık Eğitimi ve Kaynaklar'ın podcastler sekmesi.",
-        "when_to_visit": "Sağlık eğitim podcastlerini, eğitimin podcastler sekmesini veya sağlık öğrenme seslerini sorduğunda."
+        "when_to_visit": "Sağlık eğitim podcastlerini, eğitimin podcastler sekmesini veya sağlık öğretici sesleri sorduğunda."
       }
     },
     "65d24ad5-2d2a-4591-b73c-6e1ce42f8284": {
@@ -862,7 +870,7 @@
       "fields": {
         "title": "Ara",
         "description": "Tüm MAXINA uygulamasında genel arama — üyeler, içerikler, hizmetler, ürünler.",
-        "when_to_visit": "Uygulamada arama yapmak, belirli bir şey bulmak, bir üyeye bakmak, içerik bulmak veya genel aramayı açmak istediğinde."
+        "when_to_visit": "Kullanıcı uygulamada arama yapmak, belirli bir şey bulmak, bir üyeye bakmak, içerik bulmak veya genel aramayı açmak istediğinde."
       }
     },
     "66e568f7-c218-4c07-8c08-cad024cc2fb1": {
@@ -878,7 +886,7 @@
       "fields": {
         "title": "Analitik",
         "description": "Business Hub içgörülerin — MAXINA Business'ın için performans, müşteriler, rezervasyonlar, ciro, gelirler ve büyüme.",
-        "when_to_visit": "Kullanıcı Business Hub'daki \"İçgörüler\" sekmesini, Business Hub Insights'ı, Business Hub içgörüler bölümünü, iş içgörülerini, iş analitiğini, iş performansını, cirosunu, rezervasyonlarını veya hizmetlerinin performans metriklerini sorduğunda."
+        "when_to_visit": "Kullanıcı Business Hub'daki \"İçgörüler\" sekmesini, Business Hub analizlerini, Business Hub içgörüler bölümünü, iş içgörülerini, iş analizlerini, iş performansını, cirosunu, rezervasyonlarını veya hizmetlerinin performans metriklerini sorduğunda."
       }
     },
     "6735c423-5ab3-4ac8-b1fe-f80a60d574f3": {
@@ -894,14 +902,14 @@
       "fields": {
         "title": "Topluluk Üyeleri",
         "description": "Maxina topluluk üyeleri dizinini keşfet.",
-        "when_to_visit": "Üye dizinini, topluluk üyelerini, toplulukta kimlerin olduğunu sorduğunda veya üye profillerini incelemek istediğinde."
+        "when_to_visit": "Üye dizinini, topluluk üyelerini, toplulukta kimlerin olduğunu sorduğunda veya üye profillerine göz atmak istediğinde."
       }
     },
     "67ad5e75-0116-4bd2-9652-3f3b72b358a4": {
       "source_sha": "a7515c9de0ae2e65",
       "fields": {
         "title": "Partner Bul",
-        "description": "Birleşik dans ve fitness partner arama — sıralı eşleşmeler.",
+        "description": "Birleşik dans ve fitness partner arama — sıralanmış eşleşmeler.",
         "when_to_visit": "Dans partneri, fitness arkadaşı veya partner eşleşmesi istediğinde ya da partner aramayı açmak istediğinde."
       }
     },
@@ -910,7 +918,7 @@
       "fields": {
         "title": "Kampanyalar",
         "description": "MAXINA Business satışların için yürüttüğün kampanyalar ve özel teklifler.",
-        "when_to_visit": "Kullanıcı Business Hub Satışları'ndaki \"Kampanyalar\" sekmesini, Business Hub Satış Promosyonlarını veya kendi işletme satışları için yürüttüğü kampanya ve özel teklifleri sorduğunda."
+        "when_to_visit": "Kullanıcı Business Hub Satışları'nın \"Kampanyalar\" sekmesini, Business Hub Satışları promosyonlarını veya kendi işletme satışları için yürüttüğü kampanya ve özel teklifleri sorduğunda."
       }
     },
     "69329a51-8b9d-4886-907b-b88f0d3b3e09": {
@@ -934,14 +942,14 @@
       "fields": {
         "title": "Satışlar",
         "description": "Business Hub'daki satış alanın — hizmetlerini sat ve MAXINA topluluğunda yeni bir gelir kaynağı oluştur.",
-        "when_to_visit": "Kullanıcı \"Satışlar\" sekmesini, Business Hub satış bölümünü veya satışlarını sorduğunda ya da para kazanmak, gelir elde etmek, ek gelir oluşturmak, yeteneklerini paraya dönüştürmek, koçluktan para kazanmak, fitnesstan para kazanmak, uzmanlığını paraya dönüştürmek, hizmet satmak, ücretli içerik üreticisi olmak, yeni bir gelir kaynağı oluşturmak veya MAXINA topluluğuyla para kazanmak istediğinde."
+        "when_to_visit": "Kullanıcı \"Satışlar\" sekmesini, Business Hub satış bölümünü veya satışlarını sorduğunda ya da nasıl para kazanacağını, gelir elde edeceğini, ek gelir oluşturacağını, yeteneklerini paraya dönüştüreceğini, koçluk hizmetini paraya dönüştüreceğini, fitness hizmetini paraya dönüştüreceğini, uzmanlığını paraya dönüştüreceğini, hizmet satacağını, ücretli içerik üreticisi olacağını, yeni bir gelir kaynağı oluşturacağını veya MAXINA topluluğuyla para kazanmak istediğini söylediğinde."
       }
     },
     "6cc471df-ba41-5af2-a311-42c076f5c701": {
       "source_sha": "a8952c068a56e92f",
       "fields": {
         "title": "Cüzdan",
-        "description": "MAXINA Cüzdanın — bakiye, abonelikler ve ödüller.",
+        "description": "Senin MAXINA Cüzdanın — bakiye, abonelikler ve ödüller.",
         "when_to_visit": "Kullanıcı cüzdanını açmak, bakiyesini görmek, nesi olduğunu kontrol etmek veya cüzdan bölümünü keşfetmek istediğinde."
       }
     },
@@ -950,7 +958,7 @@
       "fields": {
         "title": "Veri Paylaşımı",
         "description": "Hangi verilerin paylaşılacağını kontrol et.",
-        "when_to_visit": "Kullanıcı gizlilik ayarlarındaki veri paylaşımı sekmesini sorduğunda — veri paylaşımı, hangi veriler paylaşılıyor veya veri paylaşım onayı."
+        "when_to_visit": "Kullanıcı gizlilik ayarlarındaki veri paylaşımı sekmesini sorduğunda — veri paylaşımı, hangi veriler paylaşılıyor veya veri paylaşım izni."
       }
     },
     "6f65b09e-f352-5420-8b54-014607826d84": {
@@ -989,7 +997,7 @@
       "source_sha": "183650a5bd506b94",
       "fields": {
         "title": "Sağlık",
-        "description": "Kişisel sağlık merkezin — biyoloji, planlar ve eğitim.",
+        "description": "Senin kişisel sağlık merkezin — biyoloji, planlar ve eğitim.",
         "when_to_visit": "Kullanıcı genel olarak sağlığını, uzun yaşamı, wellness'ı sorduğunda veya sağlık özelliklerini keşfetmek istediğinde."
       }
     },
@@ -998,7 +1006,7 @@
       "fields": {
         "title": "Tüm Haberler",
         "description": "Tüm kaynaklardan haber akışı — Longevity ve topluluk haberleri bir arada.",
-        "when_to_visit": "Kullanıcı \"Tüm Haberler\" sekmesini, tüm haberleri, her haber kaynağını veya Longevity ve topluluk haberlerini tek bir akışta görmek istediğinde."
+        "when_to_visit": "Kullanıcı \"Tüm Haberler\" sekmesini, tüm haberleri, her haber kaynağını veya Longevity ve topluluk haberlerini tek akışta görmek istediğinde."
       }
     },
     "73f1f5c6-bb8a-55e2-a175-e9e75e0cdbd7": {
@@ -1029,7 +1037,7 @@
       "source_sha": "4d00fa2ca16a16a4",
       "fields": {
         "title": "Eşleşme Detayı",
-        "description": "Örtüşen konulara dayalı iki topluluk üyesi arasındaki belirli bir eşleşme.",
+        "description": "Örtüşen konulara dayalı olarak iki topluluk üyesi arasındaki belirli bir eşleşme.",
         "when_to_visit": "Belirli bir eşleşmeyi görmek istediğinde, eşleşmelerinden birinin detaylarını sorduğunda veya ID ile bir eşleşme açmak istediğinde."
       }
     },
@@ -1038,15 +1046,15 @@
       "fields": {
         "title": "Destek",
         "description": "Yardım al, destekle iletişime geç veya bir sorun bildir.",
-        "when_to_visit": "Kullanıcı genel olarak yardım, destek, ekiple nasıl iletişime geçileceğini sorduğunda, bir hata bildirmek istediğinde veya belirli bir destek alanı belirtmeden yardıma ihtiyaç duyduğunda."
+        "when_to_visit": "Kullanıcı genel olarak yardım, destek, ekiple nasıl iletişime geçileceğini, bir hata bildirmeyi sorduğunda veya belirli bir destek alanı belirtmeden desteğe ihtiyaç duyduğunda."
       }
     },
     "7a61224a-810a-457a-997b-de887960e700": {
       "source_sha": "2d8d2e989e198e27",
       "fields": {
         "title": "Haber Makalesi",
-        "description": "Bir uzun yaşam haber makalesinin detay görünümü.",
-        "when_to_visit": "Belirli bir haber makalesini ID ile okumak, bir haber hikayesini açmak veya okuduğu makalenin tamamını görmek istediğinde."
+        "description": "Bir longevity haber makalesinin detay görünümü.",
+        "when_to_visit": "Kullanıcı belirli bir haber makalesini ID ile okumak, bir haber hikayesini açmak veya okuduğu makalenin tamamını görmek istediğinde."
       }
     },
     "7aaa590b-d3f9-4f9b-bd10-61dce21ee5de": {
@@ -1054,7 +1062,7 @@
       "fields": {
         "title": "Hatırlatıcılar",
         "description": "Planlanmış hatırlatıcıların — ekleme, düzenleme ve silme kontrolleriyle tam liste.",
-        "when_to_visit": "Hatırlatıcı listesini, tüm hatırlatıcılarını, \"hatırlatıcılarımı göster\" dediğinde veya planlanmış hatırlatıcıları yönetmek istediğinde."
+        "when_to_visit": "Hatırlatıcı listesini, tüm hatırlatıcıları, \"hatırlatıcılarımı göster\" dediğinde veya planlanmış hatırlatıcıları yönetmek istediğinde."
       }
     },
     "7ac28357-6ff3-4654-83ed-b7c2353ea3cf": {
@@ -1062,7 +1070,7 @@
       "fields": {
         "title": "Etkinlikler ve Buluşmalar",
         "description": "Yaklaşan MAXINA topluluk etkinlikleri, yüz yüze buluşmalar ve bir araya gelmeler.",
-        "when_to_visit": "Etkinlikler ve buluşmalar, etkinlikler ve buluşmalar ekranı, organizasyonlar, planlanmış buluşmalar, dans etkinlikleri, wellness atölyeleri veya katılabileceğin topluluk aktiviteleri hakkında sorduğunda. Varsayılan olarak Hot sekmesini açar."
+        "when_to_visit": "Etkinlikler ve buluşmalar, etkinlikler ve buluşmalar ekranı, organizasyonlar, planlı buluşmalar, dans etkinlikleri, wellness atölyeleri veya katılabileceğin topluluk aktiviteleri hakkında sorduğunda. Varsayılan olarak Hot sekmesini açar."
       }
     },
     "7bfe3b24-70dd-453d-8bbb-2256d3f20d1e": {
@@ -1110,7 +1118,7 @@
       "fields": {
         "title": "Eğitim ve Bilim",
         "description": "Vitana Bilgi Bankası'ndan sağlık eğitimi ve uzun yaşam bilimi.",
-        "when_to_visit": "Kullanıcı bir sağlık konusu öğrenmek, uzun yaşam bilimi hakkında okumak istediğinde veya wellness ile ilgili eğitim içerikleri aradığında."
+        "when_to_visit": "Kullanıcı bir sağlık konusu öğrenmek istediğinde, uzun yaşam bilimi hakkında okumak istediğinde veya wellness ile ilgili eğitim içerikleri aradığında."
       }
     },
     "80c0659a-9931-45fd-a9c0-8c2af2ad17b7": {
@@ -1118,7 +1126,7 @@
       "fields": {
         "title": "Paylaş ve Kazan",
         "description": "Discover ürünlerini paylaş ve ödüller kazan.",
-        "when_to_visit": "Discover'daki \"Paylaş ve Kazan\" sekmesini, Discover Paylaş ve Kazan bölümünü sormak istediğinde veya ödül kazanmak için Discover pazar yeri ürünlerini paylaşmak istediğinde."
+        "when_to_visit": "Discover'ın \"Paylaş ve Kazan\" sekmesini, Discover Paylaş ve Kazan bölümünü sormak istediğinde veya ödül kazanmak için Discover pazar yeri ürünlerini paylaşmak istediğinde."
       }
     },
     "81019d74-0860-5cee-a613-a9b59bba5561": {
@@ -1158,15 +1166,15 @@
       "fields": {
         "title": "Herkese Açık Profil",
         "description": "Bir topluluk üyesinin herkese açık profili.",
-        "when_to_visit": "Başka bir üyenin profilini açmak, bir topluluk üyesinin herkese açık sayfasını görmek, @vitana_id ile birini aramak veya bir kullanıcı adına bakmak istediğinde."
+        "when_to_visit": "Başka bir üyenin profilini açmak, bir topluluk üyesinin herkese açık sayfasını görmek, birini @vitana_id ile aramak veya bir kullanıcı adına bakmak istediğinde."
       }
     },
     "8343cc16-fb4e-4e9f-85d4-ea995af0ddba": {
       "source_sha": "0c166351b51b504d",
       "fields": {
-        "title": "Bağlayıcılar & Bağlı Uygulamalar",
-        "description": "Hesabınla bağlantılı üçüncü taraf uygulamalar ve entegrasyonlar için bağlayıcılar.",
-        "when_to_visit": "Kullanıcı bağlayıcıları, bir bağlayıcıyı, bağlı uygulamaları, uygulama entegrasyonlarını, üçüncü taraf bağlantılarını, bağlı hizmetleri veya harici bir uygulama bağlamayı sorduğunda."
+        "title": "Bağlantılar & Bağlı Uygulamalar",
+        "description": "Hesabınla bağlantılı üçüncü taraf uygulamalar ve entegrasyonlar için bağlantılar.",
+        "when_to_visit": "Kullanıcı bağlantıları, bir bağlantıyı, bağlı uygulamaları, uygulama entegrasyonlarını, üçüncü taraf bağlantılarını, bağlantılı hizmetleri veya harici bir uygulama bağlamayı sorduğunda."
       }
     },
     "85374691-c4b7-5bf4-9baf-7a4d70e0ef1c": {
@@ -1190,14 +1198,14 @@
       "fields": {
         "title": "Hatırla ve Ara",
         "description": "Anılarını ve geçmiş konuşmalarını ara.",
-        "when_to_visit": "Anılarını aramak, söylediği bir şeyi bulmak, geçmiş bir konuşmayı bulmak veya Vitana'nın hatırladığı bir şeyi aramak istediğinde."
+        "when_to_visit": "Anılarını aramak, söylediğin bir şeyi bulmak, geçmiş bir konuşmayı bulmak veya Vitana'nın hatırladığı bir şeyi aramak istediğinde."
       }
     },
     "87bf15e9-c5b6-4c2e-befc-3d52a1480eec": {
       "source_sha": "0d96bc9f0ebf682d",
       "fields": {
         "title": "Ses",
-        "description": "Yapay zeka asistanının ses sekmesi — ses ayarları ve sesle öncelikli ORB deneyimin.",
+        "description": "Yapay zeka asistanının ses sekmesi — ses ayarları ve sesli ORB deneyimin.",
         "when_to_visit": "Asistanın ses sekmesini, ses ayarlarını, sesli yapay zekayı sorduğunda veya ses asistanını yapılandırmak istediğinde."
       }
     },
@@ -1213,8 +1221,8 @@
       "source_sha": "93b1388fb4bf8055",
       "fields": {
         "title": "Destek SSS",
-        "description": "Sıkça sorulan sorular, yardım makaleleri ve bilgi bankası.",
-        "when_to_visit": "Kullanıcı SSS, sıkça sorulan sorular, yardım makaleleri, bilgi bankası, yaygın sorular veya nasıl yapılır rehberleri sorduğunda."
+        "description": "Sık sorulan sorular, yardım makaleleri ve bilgi bankası.",
+        "when_to_visit": "Kullanıcı SSS, sık sorulan sorular, yardım makaleleri, bilgi bankası, yaygın sorular veya nasıl yapılır rehberlerini sorduğunda."
       }
     },
     "89cbf8ca-952b-4d7a-a43f-c545bf3dd2f0": {
@@ -1230,7 +1238,7 @@
       "fields": {
         "title": "Veri ve Onay",
         "description": "Hangi verileri paylaştığını ve onay tercihlerini yönet.",
-        "when_to_visit": "Veri paylaşım onayını, hangi verilerin paylaşıldığını, veri izinlerini veya onay ayarlarını sormak istediğinde."
+        "when_to_visit": "Veri paylaşım onayı, hangi verilerin paylaşıldığı, veri izinleri veya onay ayarlarını sormak istediğinde."
       }
     },
     "8c779ec1-f2e1-42cb-923f-a4f4fe2bfcc1": {
@@ -1246,7 +1254,7 @@
       "fields": {
         "title": "Profilim",
         "description": "Kişisel profilin — ad, fotoğraf, biyografi ve hesap detayları.",
-        "when_to_visit": "Kullanıcı profilini açmak, profilini görmek, profilini düzenlemek, hesabını görüntülemek, kişisel bilgiler, hakkımda veya kullanıcı profili sorduğunda."
+        "when_to_visit": "Kullanıcı profilini açmak, profilini görmek, profilini düzenlemek, hesabını görüntülemek, kişisel bilgiler, hakkımda veya kullanıcı profilini sorduğunda."
       }
     },
     "8fe3651b-b81e-43d2-ac55-7eb5325ac6b4": {
@@ -1254,7 +1262,7 @@
       "fields": {
         "title": "Gelen Kutusu — Sohbet ve Mesajlar",
         "description": "Topluluk üyeleriyle mesajlar, sohbetler ve konuşmalar.",
-        "when_to_visit": "Kullanıcı gelen kutusu, mesajlar, sohbet, sohbetler, sohbet geçmişi, mesajlaşma, yazışmalar, konuşmalar, mesaj geçmişi, direkt mesajlar, üyelerle yazışmak, toplulukla iletişim kurmak, bildirimler sorduğunda veya mesajlarını okumak istediğinde."
+        "when_to_visit": "Kullanıcı gelen kutusu, mesajlar, sohbet, sohbetler, sohbet geçmişi, mesajlaşma, metin mesajları, konuşmalar, mesaj geçmişi, direkt mesajlar, üyelerle yazışma, toplulukla iletişim, bildirimler sorduğunda veya mesajlarını okumak istediğinde."
       }
     },
     "921f97cc-8147-44aa-90da-a24cd3825bac": {
@@ -1262,7 +1270,7 @@
       "fields": {
         "title": "Cüzdan",
         "description": "MAXINA Cüzdanın — bakiye, abonelikler ve ödüller.",
-        "when_to_visit": "Kullanıcı cüzdanını açmak, bakiyesini görmek, nesi olduğunu kontrol etmek veya cüzdan bölümünü keşfetmek istediğinde."
+        "when_to_visit": "Kullanıcı cüzdanını açmak, bakiyesini görmek, nesi olduğunu kontrol etmek istediğinde veya cüzdan bölümünü keşfetmek istediğinde."
       }
     },
     "93408376-a310-444c-a877-d1b91effcb45": {
@@ -1277,8 +1285,8 @@
       "source_sha": "215e6c0ab287fb44",
       "fields": {
         "title": "Intent'lerim",
-        "description": "Toplulukta kendi gönderilerin ve taleplerin.",
-        "when_to_visit": "\"Intent'lerim\", \"gönderilerim\", \"taleplerim\", \"ne paylaştım\" diye sorduğunda veya kendi topluluk gönderilerini görmek ya da yönetmek istediğinde."
+        "description": "Toplulukta kendi gönderilerin ve isteklerin.",
+        "when_to_visit": "\"Intent'lerim\", \"gönderilerim\", \"isteklerim\", \"ne paylaştım\" diye sorduğunda veya kendi topluluk gönderilerini görmek ya da yönetmek istediğinde."
       }
     },
     "94834c30-82fb-4fa6-a710-28f365de85e4": {
@@ -1293,7 +1301,7 @@
       "source_sha": "e7379c845ced71d6",
       "fields": {
         "title": "Popüler Etkinlikler",
-        "description": "Öne çıkan ve popüler Maxina topluluk etkinlikleri ve buluşmaları.",
+        "description": "Öne çıkan ve popüler MAXINA topluluk etkinlikleri ve buluşmaları.",
         "when_to_visit": "Etkinlikler ve Buluşmalar'ın \"Popüler\" sekmesini, popüler etkinlikleri, trend etkinlikleri, öne çıkan etkinlikleri veya en iyi topluluk etkinliklerini sorduğunda."
       }
     },
@@ -1318,7 +1326,7 @@
       "fields": {
         "title": "İş Analitiği",
         "description": "MAXINA işin için performans metrikleri — rezervasyonlar, gelir, büyüme.",
-        "when_to_visit": "İş performansın, gelirin, rezervasyonların, büyüme metriklerin veya hizmetlerin için analitikler hakkında sorduğunda."
+        "when_to_visit": "İş performansını, gelirini, rezervasyonlarını, büyüme metriklerini veya hizmetleri için analitiği sorduğunda."
       }
     },
     "9c44d06b-7caf-4317-a5fb-b5e9a73bd33c": {
@@ -1326,7 +1334,7 @@
       "fields": {
         "title": "Zaman Çizelgesi",
         "description": "Anılarının ve etkileşimlerinin kronolojik zaman çizelgesi.",
-        "when_to_visit": "Zaman çizelgeni, anı zaman çizelgeni, etkileşim geçmişini veya kronolojik hafıza görünümünü görmek istediğinde."
+        "when_to_visit": "Zaman çizelgeni, anı zaman çizelgeni, etkileşim geçmişi veya kronolojik hafıza görünümünü görmek istediğinde."
       }
     },
     "9c7147a1-c7a4-4a43-8380-6a50609c39c5": {
@@ -1358,7 +1366,7 @@
       "fields": {
         "title": "Gizlilik Politikası",
         "description": "Genel gizlilik politikası.",
-        "when_to_visit": "Kullanıcı gizlilik, veri işleme veya Vitana'nın hangi verileri topladığını sorduğunda."
+        "when_to_visit": "Kullanıcı gizliliği, veri işlemeyi veya Vitana'nın hangi verileri topladığını sorduğunda."
       }
     },
     "9f1f8d7a-8d26-4bfc-adcf-d50b256c5b64": {
@@ -1366,7 +1374,7 @@
       "fields": {
         "title": "Hatırla & Ara",
         "description": "Anılarını ve geçmiş konuşmalarını ara.",
-        "when_to_visit": "Kullanıcı anılarını aramak, daha önce söylediği bir şeyi bulmak, geçmiş bir konuşmayı bulmak veya Vitana'nın hatırladığı bir şeyi aramak istediğinde."
+        "when_to_visit": "Kullanıcı anılarını aramak, söylediği bir şeyi bulmak, geçmiş bir konuşmayı bulmak veya Vitana'nın hatırladığı bir şeyi aramak istediğinde."
       }
     },
     "9f340dc9-27c0-4e82-b8e6-986060866742": {
@@ -1381,16 +1389,16 @@
       "source_sha": "88a74453d190d378",
       "fields": {
         "title": "Siparişlerim",
-        "description": "Siparişlerin — aktif ve geçmiş.",
-        "when_to_visit": "Siparişlerini, siparişlerimi, sipariş durumunu, teslimatları veya ne satın aldığını sorduğunda."
+        "description": "Siparişlerin — aktif ve geçmiş olanlar.",
+        "when_to_visit": "Kullanıcı siparişlerini, siparişlerimi, sipariş durumunu, teslimatları veya ne satın aldığını sorduğunda."
       }
     },
     "a1b7c9d0-4e5f-4a6b-9c8d-1e2f3a4b5c6d": {
       "source_sha": "9e6d89f14f77ef95",
       "fields": {
         "title": "Yolculuğum",
-        "description": "Autopilot panelin — senin için hazırlanmış 90 günlük yolculuk: dalgalar, kilometre taşları ve takvimine uyarlanmış önerilen eylemler. Kullanıcının geçiş yapabileceği iki görünüm var: REHBERLI yolculuk (\"giriş\", adım adım, her seferinde bir oturum) ve TAM SÜRÜM (tüm uygulama, hepsi bir arada).",
-        "when_to_visit": "Kullanıcı yolculuğumu aç, yolculuğumu göster, Autopilot yolculuğu, 90 günlük yolculuğum, 90 günlük plan, Autopilot panosu, planım veya bugün yolculuğumda ne var diye sorduğunda. AYRICA kullanıcı yolculuğunun iki GÖRÜNÜMÜNDEN birini adıyla söylediğinde — REHBERLI yolculuk / rehberli journey / \"giriş\", VEYA TAM SÜRÜM / tam uygulama / tam versiyon — ya da rehberli ve tam görünüm arasında geçiş yapmak istediğinde. AYRICA kullanıcı KENDİ yolculuğunun OTURUMLARI hakkında sorduğunda — örneğin \"yolculuğumun sonraki oturumu\", \"journey oturumum\", \"rehberli yolculuğumun oturumlarının olduğu ekran\" — bunlar kendi 90 günlük yolculuğu İÇİNDEKİ adım adım görüşmeler, başkalarına sunduğu oturumlar/kurslar DEĞİL (o Business Hub). Bu kullanıcı profili DEĞİL — \"yolculuğum\" Autopilot panosu demek."
+        "description": "Autopilot panelin — senin için hazırlanmış 90 günlük yolculuk: dalgalar, kilometre taşları ve takvimine uyarlanmış önerilen eylemler. Kullanıcının geçiş yapabileceği iki görünüm var: REHBERLI yolculuk (\"giriş\", adım adım, her seferinde bir oturum) ve TAM SÜRÜM (uygulamanın tamamı, hepsi bir arada).",
+        "when_to_visit": "Kullanıcı yolculuğumu aç, yolculuğumu göster, Autopilot yolculuğu, 90 günlük yolculuğum, 90 günlük plan, Autopilot panosu, planım veya bugün yolculuğumda ne var diye sorduğunda. AYRICA kullanıcı yolculuğunun iki GÖRÜNÜMÜNDEN birini adıyla söylediğinde — REHBERLI yolculuk / rehberli journey / \"giriş\", YA DA TAM SÜRÜM / tam uygulama / tam versiyon — veya yolculuğunun rehberli ve tam görünümü arasında geçiş yapmak istediğinde. AYRICA kullanıcı KENDİ yolculuğunun OTURUMLARI hakkında sorduğunda — örneğin \"yolculuğumun bir sonraki oturumu\", \"journey oturumum\", \"rehberli yolculuğumun oturumlarının olduğu ekran\" — bunlar kendi 90 günlük yolculuğu İÇİNDEKİ adım adım konuşmalar, başkalarına sunucu olarak sunduğu oturumlar/kurslar DEĞİL (o Business Hub). Bu kullanıcı profili DEĞİL — \"yolculuğum\" Autopilot panosu demek."
       }
     },
     "a1bde34f-dd04-4446-ab69-1717a3d33233": {
@@ -1405,8 +1413,8 @@
       "source_sha": "992f2064e9c13db1",
       "fields": {
         "title": "Planlanan Odalar",
-        "description": "Daha sonrası için planlanmış yaklaşan canlı odalar.",
-        "when_to_visit": "Canlı odaların \"Planlanan\" sekmesini sorduğunda — yaklaşan odalar, planlanmış oturumlar veya daha sonrası için ayarlanmış canlı odalar."
+        "description": "Daha sonrası için planlanan yaklaşan canlı odalar.",
+        "when_to_visit": "Canlı odaların \"Planlanan\" sekmesini sorduğunda — yaklaşan odalar, planlanmış oturumlar veya ileri tarih için ayarlanmış canlı odalar."
       }
     },
     "a31fa534-90f5-4d5c-9ce8-8d5bc377c778": {
@@ -1421,15 +1429,15 @@
       "source_sha": "992f2064e9c13db1",
       "fields": {
         "title": "Planlanan Odalar",
-        "description": "Daha sonrası için planlanmış yaklaşan canlı odalar.",
-        "when_to_visit": "Kullanıcı canlı odaların \"Planlanan\" sekmesini sorduğunda — yaklaşan odalar, planlanmış oturumlar veya daha sonrası için ayarlanmış canlı odalar."
+        "description": "Daha sonrası için planlanan yaklaşan canlı odalar.",
+        "when_to_visit": "Kullanıcı canlı odaların \"Planlanan\" sekmesini sorduğunda — yaklaşan odalar, planlanmış oturumlar veya sonrası için ayarlanmış canlı odalar."
       }
     },
     "a34071ad-dc0a-43ea-a3d9-97fd18d3c805": {
       "source_sha": "9e0bd3b375526da4",
       "fields": {
         "title": "Yaklaşan Etkinlikler",
-        "description": "Katılabileceğin yaklaşan topluluk etkinlikleri ve buluşmalar.",
+        "description": "Katılabileceğin yaklaşan topluluk etkinlikleri ve buluşmaları.",
         "when_to_visit": "Kullanıcı yaklaşan etkinlikleri, gelecek etkinlikleri, \"Yaklaşan\" sekmesini veya ilerideki etkinlik ve buluşmaları sorduğunda."
       }
     },
@@ -1446,7 +1454,7 @@
       "fields": {
         "title": "Hizmet Paketleri",
         "description": "MAXINA Business'ında sunduğun paket hizmetler.",
-        "when_to_visit": "Kullanıcı Business Hub Hizmetleri'ndeki \"Paketler\" sekmesini, Business Hub Hizmetleri Paketlerini, hizmet paketlerini veya işletmesinde sattığı paket teklifleri sorduğunda."
+        "when_to_visit": "Kullanıcı Business Hub Hizmetleri'nin \"Paketler\" sekmesini, Business Hub Hizmetleri paketlerini, hizmet paketlerini veya işletmesinde sattığı paket teklifleri sorduğunda."
       }
     },
     "a4aadc19-fefd-44ed-982f-b235342ea867": {
@@ -1476,9 +1484,9 @@
     "a85569eb-0581-4222-a22c-37819c7a0f0c": {
       "source_sha": "9e37e89112323150",
       "fields": {
-        "title": "Sosyal Medya Bağlantıları",
+        "title": "Sosyal Medya Bağlayıcıları",
         "description": "Sosyal medya hesaplarını entegrasyon olarak bağla.",
-        "when_to_visit": "Kullanıcı bağlı uygulamalardaki sosyal medya bağlantıları sekmesini veya bir sosyal medya hesabını (LinkedIn, Instagram, X) uygulama entegrasyonu olarak bağlamak istediğinde."
+        "when_to_visit": "Kullanıcı bağlı uygulamalardaki sosyal medya bağlayıcıları sekmesini veya bir sosyal medya hesabını (LinkedIn, Instagram, X) uygulama entegrasyonu olarak bağlamak istediğinde."
       }
     },
     "ab1e6ddd-bff5-49a1-9587-fad7221fb065": {
@@ -1486,7 +1494,7 @@
       "fields": {
         "title": "Hidrasyon Planları",
         "description": "Sağlık Planları'nın hidrasyon sekmesi.",
-        "when_to_visit": "Hidrasyon planlarını, planların hidrasyon sekmesini veya su içme planını sorduğunda."
+        "when_to_visit": "Hidrasyon planlarını, planların hidrasyon sekmesini veya su/içecek planını sorduğunda."
       }
     },
     "acc0453e-f3e6-4263-b32f-92e0ee1a6158": {
@@ -1502,23 +1510,23 @@
       "fields": {
         "title": "Öneriler",
         "description": "Sağlık, topluluk ve içerik için kişiselleştirilmiş yapay zeka önerileri.",
-        "when_to_visit": "Kullanıcı öneriler, tavsiyeler, ne yapması gerektiği hakkında sorduğunda veya Vitana'nın senin için hazırladığı kişisel seçimleri görmek istediğinde."
+        "when_to_visit": "Kullanıcı öneriler, tavsiyeler istediğinde, ne yapması gerektiğini sorduğunda veya Vitana'nın kendisi için kişiselleştirilmiş seçimlerini görmek istediğinde."
       }
     },
     "b090d6cc-9110-4dd5-b9ab-abd40230f9ff": {
       "source_sha": "008ee6ae6669998e",
       "fields": {
         "title": "Longevity Haberleri",
-        "description": "Ana sayfa haber akışın — senin için derlenen güncel uzun yaşam haberleri, araştırmaları ve makaleleri.",
-        "when_to_visit": "Haberler, uzun yaşam haberleri, son haberler, haber akışı, uzun yaşam güncellemeleri, makaleler, araştırma güncellemeleri veya ana sayfayı görmek istediğinde."
+        "description": "Ana sayfandaki haber akışı — senin için derlenen güncel longevity haberleri, araştırmalar ve makaleler.",
+        "when_to_visit": "Kullanıcı haberler, longevity haberleri, son haberler, haber akışı, longevity ile ilgili yenilikler, makaleler, araştırma güncellemeleri veya sadece ana sayfayı istediğinde."
       }
     },
     "b3584c4b-2498-4220-8c34-08ceafd383c7": {
       "source_sha": "23bdc154e73b46fa",
       "fields": {
         "title": "Vitana Sohbet",
-        "description": "Özel sohbet arayüzü — ORB dışında Vitana ile odaklanmış bir konuşma penceresi.",
-        "when_to_visit": "Vitana ile metin penceresinde sohbet etmek, sohbet görünümünü açmak veya uzun yazılı bir konuşma yapmak istediğinde. Genel \"yapay zeka asistanı\" istekleri için AI.OVERVIEW tercih edilir."
+        "description": "Özel sohbet arayüzü — ORB dışında, Vitana ile odaklanmış bir konuşma penceresi.",
+        "when_to_visit": "Kullanıcı özellikle Vitana ile metin penceresinde sohbet etmek, sohbet görünümünü açmak veya daha uzun yazılı bir konuşma yapmak istediğinde. Genel \"yapay zeka asistanı\" talebi için AI.OVERVIEW tercih edilir."
       }
     },
     "b4c1e075-e37d-51b2-991e-0140cff26a04": {
@@ -1526,7 +1534,7 @@
       "fields": {
         "title": "Günlük",
         "description": "Günlük notların — düşüncelerini, ruh halini ve yansımalarını kaydet.",
-        "when_to_visit": "Kullanıcı günlük yazmak, nasıl hissettiğini kaydetmek, günü hakkında not tutmak veya günlüğünü açmak istediğinde."
+        "when_to_visit": "Kullanıcı günlük yazmak, nasıl hissettiğini kaydetmek, gününü not etmek veya günlüğünü açmak istediğinde."
       }
     },
     "b4e8c9f6-68a7-53c3-b1a0-45218ecfb159": {
@@ -1542,15 +1550,15 @@
       "fields": {
         "title": "Kategoriler",
         "description": "Discover'ı kategoriye göre keşfet.",
-        "when_to_visit": "Discover'ın kategoriler sekmesini sorduğunda, Discover'ı kategoriye göre keşfetmek veya tüm pazar yeri kategorilerini görmek istediğinde."
+        "when_to_visit": "Discover'ın kategoriler sekmesini sorduğunda, Discover'ı kategoriye göre keşfetmek istediğinde veya tüm pazar yeri kategorilerini görmek istediğinde."
       }
     },
     "b7265d29-3b4b-4ba1-91c1-a6c7968b2c68": {
       "source_sha": "42e4012bbd967677",
       "fields": {
         "title": "Doktorlar ve Koçlar",
-        "description": "Doktorlar, koçlar ve sağlık uzmanları bul.",
-        "when_to_visit": "Doktorlar, koçlar, uzmanlar, pratisyenler sorduğunda veya bir sağlık profesyoneli bulmak istediğinde."
+        "description": "Doktorlar, koçlar ve sağlık uygulayıcıları bul.",
+        "when_to_visit": "Kullanıcı doktorlar, koçlar, uygulayıcılar, uzmanlar sorduğunda veya bir sağlık profesyoneli bulmak istediğinde."
       }
     },
     "b8c8bff5-a40c-48c3-98e2-6fe3f00bd0f1": {
@@ -1558,7 +1566,7 @@
       "fields": {
         "title": "Biletlerim",
         "description": "Etkinlikler ve buluşmalar için satın aldığın biletler.",
-        "when_to_visit": "Biletlerini, etkinlik biletlerini veya satın aldığın biletleri sorduğunda."
+        "when_to_visit": "Biletlerini, etkinlik biletlerini, satın aldığın biletleri sorduğunda veya biletlerimi görmek istediğinde."
       }
     },
     "ba6087cd-eb63-462a-8437-9586da2005f4": {
@@ -1573,7 +1581,7 @@
       "source_sha": "57e05181acc53a38",
       "fields": {
         "title": "Bugünkü Etkinlikler",
-        "description": "Bugün gerçekleşen topluluk etkinlikleri ve buluşmalar.",
+        "description": "Bugün gerçekleşen topluluk etkinlikleri ve buluşmaları.",
         "when_to_visit": "Kullanıcı bugün hangi etkinliklerin olduğunu, bugünkü etkinlikleri veya \"Bugün\" sekmesini sorduğunda."
       }
     },
@@ -1582,7 +1590,7 @@
       "fields": {
         "title": "Canlı Odalar",
         "description": "Topluluk üyelerinin gerçek zamanlı buluştuğu canlı ses ve video odaları.",
-        "when_to_visit": "Canlı odalar, canlı ses, canlı video, gerçek zamanlı sohbetler, online topluluk görüşmeleri veya şu anda devam eden sanal buluşmalar hakkında sorduğunda."
+        "when_to_visit": "Canlı odalar, canlı ses, canlı video, gerçek zamanlı sohbetler, online topluluk görüşmeleri veya şu anda gerçekleşen sanal buluşmalar hakkında sorduğunda."
       }
     },
     "badcfb76-ec0d-4c88-a32c-4c8bfb9e2d3e": {
@@ -1606,7 +1614,7 @@
       "fields": {
         "title": "Vitana Sohbet",
         "description": "Özel sohbet arayüzü — ORB dışında Vitana ile odaklanmış bir konuşma penceresi.",
-        "when_to_visit": "Kullanıcı açıkça bir metin penceresinde Vitana ile sohbet etmek, sohbet görünümünü açmak veya daha uzun yazılı bir konuşma yapmak istediğinde. Genel \"yapay zeka asistanı\" sorguları için AI.OVERVIEW'u tercih et."
+        "when_to_visit": "Kullanıcı açıkça Vitana ile bir metin penceresinde sohbet etmek, sohbet görünümünü açmak veya daha uzun yazılı bir konuşma yapmak istediğinde. Genel \"yapay zeka asistanı\" talebi için AI.OVERVIEW tercih edilir."
       }
     },
     "be3a865a-0aad-5262-aeeb-28984a98a88c": {
@@ -1638,7 +1646,7 @@
       "fields": {
         "title": "Sepet",
         "description": "Sepetindeki ürünler, ödemeye hazır.",
-        "when_to_visit": "Sepeti açmak, sepette ne olduğunu görmek, ödemeye geçmek veya sepetini kontrol etmek istediğinde."
+        "when_to_visit": "Kullanıcı sepeti açmak, sepette ne olduğunu görmek, ödemeye geçmek veya sepetini kontrol etmek istediğinde."
       }
     },
     "c2b5e217-2f2c-4549-866c-ec88db206cc3": {
@@ -1676,9 +1684,9 @@
     "c7ca2b46-3c3e-40d0-b029-d05133597d8e": {
       "source_sha": "e7b19ba632121d4c",
       "fields": {
-        "title": "Fitness Bağlantıları",
+        "title": "Fitness Bağlayıcıları",
         "description": "Fitness uygulamalarını ve giyilebilir cihazları bağla.",
-        "when_to_visit": "Kullanıcı bağlı uygulamalardaki fitness bağlantıları sekmesini veya bir fitness uygulaması ya da giyilebilir cihaz entegrasyonu (Strava, Garmin, Fitbit) bağlamak istediğinde."
+        "when_to_visit": "Kullanıcı bağlı uygulamalardaki fitness bağlayıcıları sekmesini veya bir fitness uygulaması ya da giyilebilir cihaz entegrasyonu (Strava, Garmin, Fitbit) bağlamak istediğinde."
       }
     },
     "c854e253-48a4-4d5a-93c5-6fd356c6f06c": {
@@ -1686,7 +1694,7 @@
       "fields": {
         "title": "Faturalandırma",
         "description": "Faturalandırma bilgilerin ve abonelik maliyetlerin.",
-        "when_to_visit": "Kullanıcı ayarlardaki faturalandırma sekmesini, faturalandırmayı, maliyetleri veya fatura özetini sorduğunda."
+        "when_to_visit": "Kullanıcı ayarlardaki faturalandırma sekmesini, faturalandırmayı, maliyetleri veya faturalandırma özetini sorduğunda."
       }
     },
     "c875d8ac-0d7c-429f-a2fd-3af17f3b76f7": {
@@ -1702,22 +1710,22 @@
       "fields": {
         "title": "Ödüller ve Komisyonlar",
         "description": "Platformu paylaşarak ve müşterilere destek vererek kazandığın komisyonlar ve ödüller.",
-        "when_to_visit": "Kullanıcı komisyonlarını, tavsiye gelirlerini, ödüllerini, ödemelerini, ne kadar kazandığını veya toplulukta paylaşarak ya da satış yaparak ne kadar kazandığını sorduğunda."
+        "when_to_visit": "Kullanıcı komisyonlarını, tavsiye gelirlerini, ödüllerini, ödemelerini, ne kadar kazandığını veya paylaşarak ya da toplulukta satış yaparak ne kadar kazandığını sorduğunda."
       }
     },
     "cafc3d1f-3e03-45e8-a952-9cb1533605d0": {
       "source_sha": "c2db0a52d1338eaa",
       "fields": {
         "title": "Tüm Odalar",
-        "description": "Tüm canlı odalar — şu an yayında ve planlananlar — tek bir listede.",
-        "when_to_visit": "Canlı odaların \"Tüm Odalar\" sekmesini sorduğunda veya tüm canlı odaları (yayında ve planlanan) bir arada görmek istediğinde."
+        "description": "Tüm canlı odalar — şu an yayında olanlar ve planlanmış olanlar — tek bir listede.",
+        "when_to_visit": "Canlı odaların \"Tüm Odalar\" sekmesini sorduğunda veya tüm canlı odaları (yayında ve planlanmış) bir arada görmek istediğinde."
       }
     },
     "cb562477-782f-43fa-8bdb-2f1933f34d97": {
       "source_sha": "e7379c845ced71d6",
       "fields": {
         "title": "Popüler Etkinlikler",
-        "description": "Öne çıkan ve popüler MAXINA topluluk etkinlikleri ve buluşmalar.",
+        "description": "Öne çıkan ve popüler MAXINA topluluk etkinlikleri ve buluşmaları.",
         "when_to_visit": "Kullanıcı etkinlikler ve buluşmaların \"Popüler\" sekmesini, popüler etkinlikleri, trend etkinlikleri, öne çıkan etkinlikleri veya en iyi topluluk etkinliklerini sorduğunda."
       }
     },
@@ -1733,7 +1741,7 @@
       "source_sha": "c2db0a52d1338eaa",
       "fields": {
         "title": "Tüm Odalar",
-        "description": "Tüm canlı odalar — şu anda canlı ve planlanan — tek bir listede.",
+        "description": "Tüm canlı odalar — şu anda canlı ve planlanan — tek listede.",
         "when_to_visit": "Kullanıcı canlı odaların \"Tüm Odalar\" sekmesini sorduğunda veya tüm canlı odaları (canlı ve planlanan) bir arada görmek istediğinde."
       }
     },
@@ -1758,7 +1766,7 @@
       "fields": {
         "title": "Tüm Haberler",
         "description": "Tüm kaynaklardan haber akışı — Longevity ve topluluk haberleri bir arada.",
-        "when_to_visit": "\"Tüm Haberler\" sekmesini, tüm haberleri, her haber kaynağını veya Longevity ve topluluk haberlerini tek akışta istediğinde."
+        "when_to_visit": "\"Tüm Haberler\" sekmesini, tüm haberleri, her haber kaynağını veya Longevity ve topluluk haberlerini tek bir akışta görmek istediğinde."
       }
     },
     "d0bb74e0-8f8e-4c17-846e-31b43f0c6691": {
@@ -1766,7 +1774,7 @@
       "fields": {
         "title": "Podcast'ler",
         "description": "Topluluk podcast'leri ve sesli bölümler.",
-        "when_to_visit": "Kullanıcı Media Hub'da podcast'leri, podcast sekmesini veya sesli bölümleri sorduğunda."
+        "when_to_visit": "Kullanıcı podcast'leri, podcast sekmesini veya Media Hub'daki sesli bölümleri sorduğunda."
       }
     },
     "d2c8571b-2b82-5d2d-b270-0c93b8da09af": {
@@ -1790,15 +1798,15 @@
       "fields": {
         "title": "Medya Merkezi",
         "description": "Topluluğun videoları, podcastleri ve müzikleri.",
-        "when_to_visit": "Videolar, podcastler, müzik, kayıtlar hakkında sorduğunda veya topluluk medya içeriklerine göz atmak istediğinde."
+        "when_to_visit": "Videolar, podcastler, müzik, kayıtlar sorduğunda veya topluluk medya içeriklerine göz atmak istediğinde."
       }
     },
     "d56ab603-3033-4eee-8247-e192c67f5ff1": {
       "source_sha": "cd258c7cd7314294",
       "fields": {
-        "title": "Omik Verilerim",
-        "description": "Biyolojim'in omik sekmesi — genom ve omik verilerin.",
-        "when_to_visit": "Omik verilerini, genomik bilgilerini, DNA verilerini veya Biyolojim'deki omik sekmesini sorduğunda."
+        "title": "Omiklerim",
+        "description": "Biyolojim'in omikler sekmesi — genom ve omik verilerin.",
+        "when_to_visit": "Omiklerini, genomik verilerini, DNA verilerini veya Biyolojim'deki omikler sekmesini sorduğunda."
       }
     },
     "d68691c6-b257-43c8-b7a4-4c67cc8c2c65": {
@@ -1813,7 +1821,7 @@
       "source_sha": "1f06d33ed964eea2",
       "fields": {
         "title": "Bakiye ve Avantajlar",
-        "description": "Güncel MAXINA bakiyen ve seviyende açılan avantajlar.",
+        "description": "Senin güncel MAXINA bakiyen ve seviyende açılan avantajlar.",
         "when_to_visit": "Kullanıcı bakiyesini, hesap durumunu, avantajlarını, seviyesini veya neleri açtığını sorduğunda."
       }
     },
@@ -1836,9 +1844,9 @@
     "d7e9f4fe-8a66-4af5-8244-83a132de85c7": {
       "source_sha": "1fe22cf7ea0e4aa2",
       "fields": {
-        "title": "Popüler Fırsatlar",
+        "title": "Trend Fırsatlar",
         "description": "Fırsatlar ve Teklifler'in trend sekmesi.",
-        "when_to_visit": "Popüler fırsatları, trend teklifleri veya Fırsatlar ve Teklifler'in trend sekmesini sorduğunda."
+        "when_to_visit": "Trend fırsatları, popüler teklifleri veya Fırsatlar ve Teklifler'in trend sekmesini sorduğunda."
       }
     },
     "d912e70b-f633-4ed8-95e7-0f6509ba30ea": {
@@ -1870,7 +1878,7 @@
       "fields": {
         "title": "Ürün Detayı",
         "description": "Belirli bir ürünün detay sayfası.",
-        "when_to_visit": "Belirli bir ürünü ID ile açmak, ürün detaylarını görmek veya belirli bir ürün hakkında okumak istediğinde."
+        "when_to_visit": "Kullanıcı belirli bir ürünü ID ile açmak, ürün detaylarını görmek veya belirli bir ürün hakkında okumak istediğinde."
       }
     },
     "dcc8f661-6400-5ef1-83c5-42b7d722b504": {
@@ -1917,16 +1925,16 @@
       "source_sha": "577ed48d6e77a0ea",
       "fields": {
         "title": "Eşleşme Bağlantılı Profil",
-        "description": "Bir topluluk üyesinin herkese açık profili, belirli bir eşleşen intente bağlı olarak.",
+        "description": "Belirli bir eşleşen intente bağlı bir topluluk üyesinin herkese açık profili.",
         "when_to_visit": "Eşleştiğin birinin profilini açmak, eşleşme gönderisi vurgulanmış bir profili görmek veya eşleşme bildiriminden karşı tarafın profiline gitmek istediğinde."
       }
     },
     "e47bd312-00ab-46ac-a2e3-5d03f4b17ae5": {
       "source_sha": "461f11d5b277457c",
       "fields": {
-        "title": "Mevcut Tarife",
-        "description": "Mevcut tarifen ve üyelik seviyeni.",
-        "when_to_visit": "Kullanıcı faturalandırma bölümündeki mevcut tarife sekmesini sorduğunda — mevcut tarifesi, üyelik seviyesi veya tarife yükseltme."
+        "title": "Mevcut Plan",
+        "description": "Mevcut planın ve üyelik seviyeni.",
+        "when_to_visit": "Kullanıcı faturalandırma bölümündeki mevcut plan sekmesini sorduğunda — mevcut planı, üyelik seviyesi veya plan yükseltme."
       }
     },
     "e4c82121-6a26-469f-a167-f272e68ded49": {
@@ -1934,7 +1942,7 @@
       "fields": {
         "title": "Sağlayıcı Profili",
         "description": "Belirli bir hizmet sağlayıcının profil sayfası.",
-        "when_to_visit": "Belirli bir sağlayıcı profilini açmak, bir koç veya doktor profilini görmek ya da bir hizmet sağlayıcıyı ID ile aramak istediğinde."
+        "when_to_visit": "Kullanıcı belirli bir sağlayıcı profilini açmak, bir koç veya doktor profilini görmek ya da bir hizmet sağlayıcıyı ID ile aramak istediğinde."
       }
     },
     "e4fac5c5-d2df-4814-b3eb-e55465705fde": {
@@ -1949,7 +1957,7 @@
       "source_sha": "e4f85db4a2c69cb9",
       "fields": {
         "title": "Vitanaland Ana Sayfa",
-        "description": "Vitanaland ve MAXINA topluluğuna açık ana giriş noktası.",
+        "description": "Vitanaland ve MAXINA topluluğuna genel giriş noktası.",
         "when_to_visit": "Başa dönmek, ana sayfaya gitmek, sitenin giriş sayfasına ulaşmak veya tanıtımı tekrar dinlemek istediğinde."
       }
     },
@@ -1972,17 +1980,17 @@
     "eb219d3e-ad4e-429c-91df-854bf6ca0dd6": {
       "source_sha": "b820f825a7fc16b9",
       "fields": {
-        "title": "Autopilot Bağlantıları",
+        "title": "Autopilot Bağlayıcıları",
         "description": "Autopilot ajan entegrasyonlarını bağla.",
-        "when_to_visit": "Kullanıcı bağlı uygulamalardaki Autopilot bağlantıları sekmesini veya bir ajan ya da Autopilot uygulama entegrasyonu bağlamak istediğinde."
+        "when_to_visit": "Kullanıcı bağlı uygulamalardaki Autopilot bağlayıcıları sekmesini veya bir ajan ya da Autopilot uygulama entegrasyonu bağlamak istediğinde."
       }
     },
     "ebd49241-444a-4f43-b56c-f5a616f108f5": {
       "source_sha": "fd1240f038c0e8de",
       "fields": {
         "title": "Sağlık Takipçisi",
-        "description": "Günlük sağlık alışkanlıklarını ve Vitana İndeksi hareketlerini takip et.",
-        "when_to_visit": "Sağlık takipçisini açmak, bir sağlık alışkanlığı kaydetmek, su/uyku/hareket/adım takip etmek, adımlarını girmek veya bugünün takibini görmek istediğinde."
+        "description": "Günlük sağlık alışkanlıklarını ve Vitana Endeksi hareketlerini takip et.",
+        "when_to_visit": "Sağlık takipçisini açmak, bir sağlık alışkanlığı kaydetmek, su/uyku/hareket/adım takip etmek, adımlarını girmek veya bugünün takipçisini görmek istediğinde."
       }
     },
     "eda1671a-5dc0-435c-9ce6-d0f27dfa6b09": {
@@ -1990,7 +1998,7 @@
       "fields": {
         "title": "Eşleşmelerim",
         "description": "Mevcut dans ve fitness partner eşleşmelerin.",
-        "when_to_visit": "\"Eşleşmelerim\", \"eşleşmelerimi göster\", \"kimlerle eşleştim\" veya \"Vitana benim için kimi buldu\" diye sorduğunda."
+        "when_to_visit": "\"Eşleşmelerim\", \"eşleşmelerimi göster\", \"kiminle eşleştim\" veya \"Vitana benim için kimi buldu\" diye sorduğunda."
       }
     },
     "ef21b99b-c513-4475-a9f6-4bdaa4cf7fc5": {
@@ -1998,7 +2006,7 @@
       "fields": {
         "title": "Müzik",
         "description": "Topluluk müzikleri.",
-        "when_to_visit": "Kullanıcı Media Hub'da müzik, şarkılar veya parçaları sorduğunda."
+        "when_to_visit": "Kullanıcı Media Hub'daki müzikleri, şarkıları veya parçaları sorduğunda."
       }
     },
     "ef2662e6-04b9-48f5-b763-68439f3248bd": {
@@ -2006,7 +2014,7 @@
       "fields": {
         "title": "Autopilot ve Otomasyon",
         "description": "Asistanın Autopilot sekmesi — Vitana'nın senin için çalıştırdığı otomasyonlar.",
-        "when_to_visit": "Asistanın Autopilot sekmesini, otomasyon ayarlarını veya Vitana'nın neler otomatikleştirdiğini sorduğunda."
+        "when_to_visit": "Asistanın Autopilot sekmesini, otomasyon ayarlarını veya Vitana'nın senin için neleri otomatikleştirdiğini sorduğunda."
       }
     },
     "f0537830-762e-4ac4-a462-80b1e33202c1": {
@@ -2038,23 +2046,23 @@
       "fields": {
         "title": "Yapay Zeka",
         "description": "Asistanın yapay zeka sekmesi — metin tabanlı yapay zeka asistanın ve ayarları.",
-        "when_to_visit": "Asistanın yapay zeka sekmesini, metin asistanını veya yapay zeka asistanı ayarlarını sorduğunda."
+        "when_to_visit": "Asistanın yapay zeka sekmesini, metin asistanını veya yapay zeka asistan ayarlarını sorduğunda."
       }
     },
     "f49334db-c28b-40c8-bec5-77e4600334b6": {
       "source_sha": "215e6c0ab287fb44",
       "fields": {
-        "title": "Intent'lerim",
+        "title": "Intentlerim",
         "description": "Topluluktaki kendi paylaşımların ve taleplerin.",
-        "when_to_visit": "\"Intent'lerim\", \"paylaşımlarım\", \"taleplerim\", \"ne paylaştım\" diye sorduğunda veya kendi topluluk paylaşımlarını görüntülemek ya da yönetmek istediğinde."
+        "when_to_visit": "\"Intentlerim\", \"paylaşımlarım\", \"taleplerim\", \"ne paylaştım\" diye sorduğunda veya kendi topluluk paylaşımlarını görmek ya da yönetmek istediğinde."
       }
     },
     "f4e531c2-4b72-53c4-a051-1440d0ed11e0": {
       "source_sha": "6767592eaccca7fe",
       "fields": {
         "title": "Etkinlikler ve Buluşmalar",
-        "description": "Yaklaşan MAXINA topluluk etkinlikleri, yüz yüze buluşmalar ve bir araya gelmeler.",
-        "when_to_visit": "Yaklaşan etkinlikler, buluşmalar, organizasyonlar, planlı toplantılar, dans etkinlikleri, sağlıklı yaşam atölyeleri veya katılabileceğin topluluk aktiviteleri hakkında sorduğunda."
+        "description": "Yaklaşan MAXINA topluluk etkinlikleri, yüz yüze buluşmalar ve toplantılar.",
+        "when_to_visit": "Yaklaşan etkinlikler, buluşmalar, organizasyonlar, planlı toplantılar, dans etkinlikleri, sağlıklı yaşam atölyeleri veya katılabileceği topluluk aktiviteleri sorduğunda."
       }
     },
     "f522cb61-8bb5-4ad3-ac9d-7ccc78aabde0": {
@@ -2062,7 +2070,7 @@
       "fields": {
         "title": "Ödüller & Komisyonlar",
         "description": "Platformu paylaşarak ve müşterilere destek vererek kazandığın komisyonlar ve ödüller.",
-        "when_to_visit": "Kullanıcı komisyonlarını, tavsiye gelirlerini, ödüllerini, ödemelerini, ne kadar kazandığını veya toplulukta paylaşarak ya da satış yaparak ne kadar kazandığını sorduğunda."
+        "when_to_visit": "Kullanıcı komisyonlarını, tavsiye gelirlerini, ödüllerini, ödemelerini, ne kadar kazandığını veya toplulukta paylaşarak ya da satarak ne kadar kazandığını sorduğunda."
       }
     },
     "f5231603-9eaa-428f-931c-0192b62a79a2": {
@@ -2070,22 +2078,22 @@
       "fields": {
         "title": "Kategoriler",
         "description": "Discover'ı kategoriye göre keşfet.",
-        "when_to_visit": "Discover'daki kategoriler sekmesini sormak istediğinde, Discover'ı kategoriye göre keşfetmek istediğinde veya tüm pazar yeri kategorilerini görmek istediğinde."
+        "when_to_visit": "Discover'ın kategoriler sekmesini sormak istediğinde, Discover'ı kategoriye göre keşfetmek veya tüm pazar yeri kategorilerini görmek istediğinde."
       }
     },
     "f5c9144c-9aae-40fc-aaeb-be8cb320208a": {
       "source_sha": "9e6d89f14f77ef95",
       "fields": {
         "title": "Yolculuğum",
-        "description": "Autopilot panelin — senin için hazırlanmış 90 günlük yolculuk: dalgalar, kilometre taşları ve takvimine uyarlanmış önerilen eylemler. Kullanıcının geçiş yapabileceği iki görünüm var: REHBERLI yolculuk (\"giriş\", adım adım, her seferinde bir oturum) ve TAM SÜRÜM (tüm uygulama, hepsi bir arada).",
-        "when_to_visit": "Kullanıcı yolculuğumu aç, yolculuğumu göster, Autopilot yolculuğu, 90 günlük yolculuğum, 90 günlük plan, Autopilot panosu, planım veya bugün yolculuğumda ne var diye sorduğunda. AYRICA kullanıcı yolculuğunun iki GÖRÜNÜMÜNDEN birini adıyla söylediğinde — REHBERLI yolculuk / rehberli journey / \"giriş\", VEYA TAM SÜRÜM / tam uygulama / tam versiyon — ya da rehberli ve tam görünüm arasında geçiş yapmak istediğinde. AYRICA kullanıcı KENDİ yolculuğunun OTURUMLARI hakkında sorduğunda — örneğin \"yolculuğumun sonraki oturumu\", \"journey oturumum\", \"rehberli yolculuğumun oturumlarının olduğu ekran\" — bunlar kendi 90 günlük yolculuğu İÇİNDEKİ adım adım görüşmeler, başkalarına sunduğu oturumlar/kurslar DEĞİL (o Business Hub). Bu kullanıcı profili DEĞİL — \"yolculuğum\" Autopilot panosu demek."
+        "description": "Autopilot panelin — senin için hazırlanmış 90 günlük yolculuk: dalgalar, kilometre taşları ve takvimine uyarlanmış önerilen eylemler. Kullanıcının geçiş yapabileceği iki görünüm var: REHBERLI yolculuk (\"giriş\", adım adım, her seferinde bir oturum) ve TAM SÜRÜM (uygulamanın tamamı, hepsi bir arada).",
+        "when_to_visit": "Kullanıcı yolculuğumu aç, yolculuğumu göster, Autopilot yolculuğu, 90 günlük yolculuğum, 90 günlük plan, Autopilot panosu, planım veya bugün yolculuğumda ne var diye sorduğunda. AYRICA kullanıcı yolculuğunun iki GÖRÜNÜMÜNDEN birini adıyla söylediğinde — REHBERLI yolculuk / rehberli journey / \"giriş\", YA DA TAM SÜRÜM / tam uygulama / tam versiyon — veya yolculuğunun rehberli ve tam görünümü arasında geçiş yapmak istediğinde. AYRICA kullanıcı KENDİ yolculuğunun OTURUMLARI hakkında sorduğunda — örneğin \"yolculuğumun bir sonraki oturumu\", \"journey oturumum\", \"rehberli yolculuğumun oturumlarının olduğu ekran\" — bunlar kendi 90 günlük yolculuğu İÇİNDEKİ adım adım konuşmalar, başkalarına sunucu olarak sunduğu oturumlar/kurslar DEĞİL (o Business Hub). Bu kullanıcı profili DEĞİL — \"yolculuğum\" Autopilot panosu demek."
       }
     },
     "f6c0ecda-c145-41ff-a430-31bb73a4c5f6": {
       "source_sha": "2917eabc21ae7955",
       "fields": {
         "title": "Uyumlu Üyeler",
-        "description": "Eşleştirme sisteminin hedeflerine ve ilgi alanlarına göre önerdiği üyeler.",
+        "description": "Eşleştirme sisteminin hedeflerine ve ilgi alanlarına göre sana önerdiği üyeler.",
         "when_to_visit": "Kiminle uyumlu olduğunu, eşleşmelerini, önerilen kişileri, bağlantı kurabileceği insanları veya eşleştirme sonuçlarını sorduğunda."
       }
     },
@@ -2118,7 +2126,7 @@
       "fields": {
         "title": "Günlük Özet",
         "description": "Sağlık, aktivite ve topluluk öne çıkanlarının yapay zeka tarafından oluşturulan günlük özeti.",
-        "when_to_visit": "Kullanıcı günlük özetini, günlük raporunu veya bugün neler olduğunu sorduğunda."
+        "when_to_visit": "Kullanıcı günlük özetini, gün raporunu veya bugün neler olduğunu sorduğunda."
       }
     },
     "faa68542-60b7-4811-aba3-288cb4b593f1": {
@@ -2142,7 +2150,7 @@
       "fields": {
         "title": "Bildirimler",
         "description": "Bildirim tercihlerini yönet.",
-        "when_to_visit": "Kullanıcı bildirim ayarları, anlık bildirimler, e-posta uyarıları hakkında sorduğunda veya bildirimleri açıp kapatmak istediğinde."
+        "when_to_visit": "Kullanıcı bildirim ayarlarını, anlık bildirimleri, e-posta uyarılarını sorduğunda veya bildirimleri açıp kapatmak istediğinde."
       }
     },
     "fb786c84-121e-43a8-aa2c-af317c7038e0": {
@@ -2158,15 +2166,15 @@
       "fields": {
         "title": "Büyüme",
         "description": "İçgörüler sekmesindeki MAXINA Business büyüme metriklerin.",
-        "when_to_visit": "Kullanıcı Business Hub İçgörüleri'ndeki \"Büyüme\" sekmesini veya Business Hub İçgörüleri Büyümesini sorduğunda — kendi işletmesinin büyüme metrikleri ve trendleri."
+        "when_to_visit": "Kullanıcı Business Hub İçgörüleri'nin \"Büyüme\" sekmesini veya Business Hub İçgörüleri büyümesini sorduğunda — kendi işletmesinin büyüme metrikleri ve trendleri."
       }
     },
     "fcbe2cdd-4dc7-411f-ba9e-c574d002a141": {
       "source_sha": "221f4b6554f28f8f",
       "fields": {
-        "title": "Müzik ve Video Bağlantıları",
+        "title": "Müzik ve Video Bağlayıcıları",
         "description": "Müzik ve video uygulama entegrasyonlarını bağla.",
-        "when_to_visit": "Kullanıcı müzik ve video bağlantılarını, bağlı uygulamalardaki medya sekmesini veya bir müzik ya da video uygulaması entegrasyonu (Spotify, YouTube, Apple Music) bağlamak istediğinde."
+        "when_to_visit": "Kullanıcı müzik ve video bağlayıcılarını, bağlı uygulamalardaki medya sekmesini veya bir müzik ya da video uygulaması entegrasyonu (Spotify, YouTube, Apple Music) bağlamak istediğinde."
       }
     },
     "fce8cf77-23fe-5816-b881-b64dc8b36d85": {

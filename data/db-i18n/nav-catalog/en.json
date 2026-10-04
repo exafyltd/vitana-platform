@@ -2,7 +2,7 @@
   "surface": "nav-catalog",
   "locale": "en",
   "source_locale": "de",
-  "generated_at": "2026-10-03T10:28:33.786Z",
+  "generated_at": "2026-10-04T11:12:38.855Z",
   "field_order": [
     "title",
     "description",
@@ -60,7 +60,7 @@
     "03fa2849-a654-4561-8d7d-83b7ed2ed2f7": {
       "source_sha": "9f10942ca8a06a74",
       "fields": {
-        "title": "Account security",
+        "title": "Account Security",
         "description": "Manage your password and account security.",
         "when_to_visit": "When you ask about the security tab in privacy settings — account security, password, or two-factor authentication."
       }
@@ -86,7 +86,7 @@
       "fields": {
         "title": "Supplements",
         "description": "Curated supplements for longevity and wellness.",
-        "when_to_visit": "When you want to browse, view, or buy supplements, vitamins, minerals, or nutraceuticals in the marketplace — explore available products, brands, or deals. NOT for tracking supplements you take yourself (that's the personal tracker tab, not the shop)."
+        "when_to_visit": "When you want to browse, view, or buy supplements, vitamins, minerals, or nutraceuticals in the marketplace — explore available products, brands, or deals. NOT for tracking the supplements you take yourself (that's the personal tracker tab, not the shop)."
       }
     },
     "0863af10-2be3-4f39-b358-7f2166e8e17b": {
@@ -110,7 +110,7 @@
       "fields": {
         "title": "Health Pillars",
         "description": "The foundations of your longevity — nutrition, fitness, sleep, stress, and more.",
-        "when_to_visit": "When you ask about health pillars, the foundations of longevity, core health areas, nutrition pillar, fitness pillar, sleep pillar, or stress management."
+        "when_to_visit": "When you ask about health pillars, longevity foundations, core health areas, nutrition pillar, fitness pillar, sleep pillar, or stress management."
       }
     },
     "0db6ca96-a501-4e23-99e0-a74a1b3825ff": {
@@ -125,14 +125,14 @@
       "source_sha": "5953b2310bf06537",
       "fields": {
         "title": "My Supplements (Biology)",
-        "description": "The Supplements tab of My Biology — the supplements in your biological profile.",
-        "when_to_visit": "When you ask about your supplements within My Biology, the My Biology Supplements tab, or supplements related to your biology."
+        "description": "The supplements tab in My Biology — the supplements in your biological profile.",
+        "when_to_visit": "When you ask about your supplements within My Biology, the My Biology supplements tab, or supplements related to your biology."
       }
     },
     "0f409079-24d4-4f79-a79b-e6697429efce": {
       "source_sha": "9f1e56fdfdabe775",
       "fields": {
-        "title": "Latest Test Result Detail",
+        "title": "Latest test result detail",
         "description": "Detail panel for the most recent single test result.",
         "when_to_visit": "When you want the detail panel for ONE SPECIFIC most recent test result (not the trends view)."
       }
@@ -141,14 +141,14 @@
       "source_sha": "1d03631c3e970942",
       "fields": {
         "title": "Learning Videos",
-        "description": "The Videos tab of Health Education & Resources.",
-        "when_to_visit": "When you ask about health learning videos, the education Videos tab, or health tutorial videos."
+        "description": "The videos tab in health education & resources.",
+        "when_to_visit": "When you ask about health learning videos, the education videos tab, or health tutorial videos."
       }
     },
     "103610ef-eca7-4cd8-a9ef-496e3f151d98": {
       "source_sha": "d3a29583e0a700ca",
       "fields": {
-        "title": "Social Accounts",
+        "title": "Social accounts",
         "description": "Link and manage your social media accounts.",
         "when_to_visit": "When you ask about social accounts, social media links, connecting Instagram, Facebook, or other social platforms."
       }
@@ -182,7 +182,7 @@
       "fields": {
         "title": "Business opportunities",
         "description": "New business opportunities and leads that match your services.",
-        "when_to_visit": "When you ask about business opportunities, leads, new customers, or what business has come in."
+        "when_to_visit": "When you ask about business opportunities, leads, new clients, or what business has come in."
       }
     },
     "1266ee7a-e0bb-4351-a229-788516a27b07": {
@@ -190,7 +190,7 @@
       "fields": {
         "title": "Group Detail",
         "description": "A specific community group — its members, posts, and events.",
-        "when_to_visit": "When you want to open a specific group by ID or name, view a group, or see group details."
+        "when_to_visit": "When you want to open a specific group by ID or name, see a group, or view group details."
       }
     },
     "12eb827f-95f1-5fb0-bda9-d9ca2aba85cb": {
@@ -198,7 +198,7 @@
       "fields": {
         "title": "My Plans",
         "description": "Personalized health plans around your goals — nutrition, fitness, sleep, stress.",
-        "when_to_visit": "When you're asking about your health plans, nutrition plan, fitness plan, personal program, or what you should do for your goals."
+        "when_to_visit": "When you ask about your health plans, nutrition plan, fitness plan, personal program, or what you should do for your goals."
       }
     },
     "16a08da1-9227-5415-858a-7db4703ae022": {
@@ -206,7 +206,7 @@
       "fields": {
         "title": "Subscriptions",
         "description": "Your active subscriptions and the services you're paying for.",
-        "when_to_visit": "When you're asking about your subscriptions, recurring payments, what you're paying for, or want to cancel or manage a subscription."
+        "when_to_visit": "When you ask about your subscriptions, recurring payments, what you're paying for, or want to cancel or manage a subscription."
       }
     },
     "17100496-7f04-51d3-8932-b2f8584ce3f5": {
@@ -214,7 +214,7 @@
       "fields": {
         "title": "Wellness Services",
         "description": "Wellness services offered by the MAXINA community.",
-        "when_to_visit": "When you're asking about wellness services, massage, spa, recovery, or treatments you can book."
+        "when_to_visit": "When you ask about wellness services, massage, spa, recovery, or treatments you can book."
       }
     },
     "18f0a112-95a7-4398-9cbd-c903a0a22e61": {
@@ -254,7 +254,7 @@
       "fields": {
         "title": "Find a Partner",
         "description": "Unified dance and fitness partner search — ranked matches.",
-        "when_to_visit": "When you want a dance partner, fitness buddy, or partner match, or want to open the partner search."
+        "when_to_visit": "When you want a dance partner, fitness buddy, or partner match, or you want to open the partner search."
       }
     },
     "1e805a08-6100-4c20-ad24-2feb7481f7e2": {
@@ -334,7 +334,7 @@
       "fields": {
         "title": "Terms of Use",
         "description": "Terms of use and legal information.",
-        "when_to_visit": "When you ask about terms of use, terms and conditions, legal terms, or the user agreement."
+        "when_to_visit": "When you're asking about terms of use, terms and conditions, legal terms, or the user agreement."
       }
     },
     "2b052733-4dff-4489-951b-5c9a4495c8e4": {
@@ -372,9 +372,9 @@
     "30f828c1-daf5-5562-a0b9-9f18e1c53816": {
       "source_sha": "e02379bcaee68dcb",
       "fields": {
-        "title": "Sign In",
-        "description": "General sign-in and registration screen.",
-        "when_to_visit": "When you want a general sign-in screen without a specific tenant context."
+        "title": "Log In",
+        "description": "General log-in and sign-up screen.",
+        "when_to_visit": "When you want a general log-in screen without a specific tenant context."
       }
     },
     "328bec6a-8575-449f-9ec9-89ec70acf9a7": {
@@ -412,8 +412,8 @@
     "33f47c7e-d533-4a95-98fb-20bebe2ca981": {
       "source_sha": "f53262670e5daa2d",
       "fields": {
-        "title": "Autopilot Settings",
-        "description": "Configure Autopilot — recommendation frequency, which categories are shown, and quiet hours.",
+        "title": "Autopilot settings",
+        "description": "Configure Autopilot — recommendation frequency, which categories appear, and quiet hours.",
         "when_to_visit": "When you ask about Autopilot settings, Autopilot preferences, how to configure recommendations, or want to change Autopilot behavior."
       }
     },
@@ -421,7 +421,7 @@
       "source_sha": "e7b3fa7b1e0082c1",
       "fields": {
         "title": "Share",
-        "description": "Share the Maxina Community with friends and earn rewards.",
+        "description": "Share the MAXINA Community with friends and earn rewards.",
         "when_to_visit": "When you ask about sharing, referrals, inviting friends, or how to spread the word about the community."
       }
     },
@@ -430,7 +430,7 @@
       "fields": {
         "title": "Supplements",
         "description": "Curated supplements for longevity and wellness.",
-        "when_to_visit": "When you're asking about supplements, vitamins, minerals, nutraceuticals, or what you should take for your health."
+        "when_to_visit": "When you ask about supplements, vitamins, minerals, nutraceuticals, or what you should take for your health."
       }
     },
     "34f3cc0d-c4c2-4d1a-846c-e9de28c3335c": {
@@ -445,8 +445,8 @@
       "source_sha": "cdc73456d747d1e7",
       "fields": {
         "title": "Proactive Speaking",
-        "description": "The assistant's Proactive tab — control when Vitana speaks on its own.",
-        "when_to_visit": "When you ask about the assistant's Proactive tab, proactive speaking, or when Vitana should reach out on its own."
+        "description": "The assistant's proactive tab — control when Vitana speaks on its own.",
+        "when_to_visit": "When you ask about the assistant's proactive tab, proactive speaking, or when Vitana should reach out on its own."
       }
     },
     "35b811f8-ce5e-4d39-8e8c-d92cfec50135": {
@@ -478,7 +478,7 @@
       "fields": {
         "title": "Offers & Deals",
         "description": "Member offers, discounts, and special promotions.",
-        "when_to_visit": "When you're asking about offers, discounts, promotions, or what's on sale."
+        "when_to_visit": "When you ask about offers, discounts, promotions, or what's on sale."
       }
     },
     "3ed08cd7-f9b8-40aa-b744-a324b469acbb": {
@@ -494,14 +494,14 @@
       "fields": {
         "title": "Timeline",
         "description": "A chronological timeline of your memories and interactions.",
-        "when_to_visit": "When you want to see your timeline, memory history, interaction history, or a chronological view of your memories."
+        "when_to_visit": "When you want to see your timeline, memory timeline, interaction history, or chronological memory view."
       }
     },
     "3f0c369d-e6ed-59f3-8efe-bdeccb8d8c31": {
       "source_sha": "bac1ad3dc1dc61df",
       "fields": {
         "title": "Live Rooms",
-        "description": "Live audio and video rooms where community members connect in real time.",
+        "description": "Live audio and video rooms where community members meet in real time.",
         "when_to_visit": "When you ask about live rooms, live audio, live video, real-time conversations, online community calls, or virtual meetups happening right now."
       }
     },
@@ -509,7 +509,7 @@
       "source_sha": "e4f85db4a2c69cb9",
       "fields": {
         "title": "Vitanaland Home",
-        "description": "The main public entry point to Vitanaland and the Maxina Community.",
+        "description": "The main public entry point to Vitanaland and the MAXINA Community.",
         "when_to_visit": "When you want to go back to the start, the homepage, the main page of the website, or hear the introduction again."
       }
     },
@@ -525,8 +525,8 @@
       "source_sha": "7da536534d9822b3",
       "fields": {
         "title": "My Customers",
-        "description": "Manage the customers of your MAXINA business.",
-        "when_to_visit": "When you ask about the Customers tab in the insights area of your Business Hub, your customers, clients, who you serve, or how to manage customer relationships in your business."
+        "description": "Manage your MAXINA Business customers.",
+        "when_to_visit": "When you ask about the Customers tab in the Insights section of your Business Hub, your customers, clients, who you serve, or how to manage customer relationships in your business."
       }
     },
     "4322284a-c083-45a6-a5a8-89b78dd399d3": {
@@ -542,7 +542,7 @@
       "fields": {
         "title": "My Biology",
         "description": "Track your biomarkers, lab results, and personal health indicators with trends over time.",
-        "when_to_visit": "When you ask about your biology, biomarkers, lab results, blood work, health indicators, body composition, or want to track your personal health data and trends."
+        "when_to_visit": "When you ask about your biology, biomarkers, lab results, blood values, health indicators, body composition, or want to track your personal health data and trends."
       }
     },
     "44c33035-f42f-496b-8432-073382048b3d": {
@@ -596,9 +596,9 @@
     "4cc3a101-18fc-41b5-8326-085f5aa4ec1f": {
       "source_sha": "d7d2d3667235e74b",
       "fields": {
-        "title": "Workout Plans",
-        "description": "The Workout tab of Health Plans.",
-        "when_to_visit": "When you ask about workout plans, the Plans workout tab, or your exercise or training plan."
+        "title": "Exercise Plans",
+        "description": "The exercise tab in health plans.",
+        "when_to_visit": "When you ask about exercise plans, the plans exercise tab, or your workout or training plan."
       }
     },
     "4d3daadd-e091-462f-965f-8e5e5606c02a": {
@@ -606,7 +606,7 @@
       "fields": {
         "title": "Following Community Feed",
         "description": "The Following tab of Events & Meetups — your community feed with events, posts, and updates from members and groups you follow.",
-        "when_to_visit": "When you ask about the Following tab of Events & Meetups, following, events from people you follow, the people or groups you follow, or the community feed with community posts and updates."
+        "when_to_visit": "When you're asking about the Following tab of Events & Meetups, following, events from people you follow, the people or groups you follow, or the community feed with community posts and updates."
       }
     },
     "4d5ea1e5-fe38-4364-8cea-c7b7a8708960": {
@@ -646,7 +646,7 @@
       "fields": {
         "title": "AI Companion",
         "description": "Chat with Vitana in a focused companion view.",
-        "when_to_visit": "When you want to open the dedicated Vitana chat, the AI companion view, or have a longer conversation outside the ORB."
+        "when_to_visit": "When you want to open the dedicated Vitana chat, the AI companion view, or have a longer conversation outside of the ORB."
       }
     },
     "535d7082-6a0d-4173-b394-51852e172c27": {
@@ -654,7 +654,7 @@
       "fields": {
         "title": "Groups",
         "description": "Browse and join MAXINA community groups.",
-        "when_to_visit": "When you ask about community groups, joining a group, what groups are available, or want to see your groups."
+        "when_to_visit": "When you're asking about community groups, joining a group, what groups are available, or you want to see your groups."
       }
     },
     "5378f930-94c6-4cb7-9511-2d409ad50d06": {
@@ -700,9 +700,9 @@
     "55ff6402-2614-445d-a34b-834241ba1ca4": {
       "source_sha": "b68d66fc1e5a866c",
       "fields": {
-        "title": "Join the Maxina Community",
-        "description": "Registration and sign-in for the Maxina Community on Vitanaland.",
-        "when_to_visit": "When you want to register, sign in, join the community, create an account, or log in to Maxina."
+        "title": "Join the MAXINA Community",
+        "description": "Registration and sign-in for the MAXINA Community on Vitanaland.",
+        "when_to_visit": "When you want to register, sign in, join the community, create an account, or log into MAXINA."
       }
     },
     "560b693d-a20f-427e-a07d-6230404b8144": {
@@ -734,7 +734,7 @@
       "fields": {
         "title": "More Connectors",
         "description": "Additional connectors and integrations.",
-        "when_to_visit": "When you ask about the More tab in connectors under connected apps, or other integrations."
+        "when_to_visit": "When you ask about the more tab in connectors under connected apps, or other integrations."
       }
     },
     "594d38ab-b0f0-47ec-b83c-28bafee22eb4": {
@@ -750,7 +750,7 @@
       "fields": {
         "title": "Open Requests",
         "description": "Community-wide posts without a match that are looking for a partner or helper.",
-        "when_to_visit": "When you ask about open requests, what the community is looking for, posts without a match, or who needs help."
+        "when_to_visit": "When you're asking about open requests, what the community is looking for, posts without a match, or who needs help."
       }
     },
     "5ea6de71-f8f0-475c-904e-8c0fc4f43636": {
@@ -764,7 +764,7 @@
     "5fb32da5-0d15-4924-8e94-b4fe0143748a": {
       "source_sha": "57e05181acc53a38",
       "fields": {
-        "title": "Today's Events",
+        "title": "Today's events",
         "description": "Community events and meetups happening today.",
         "when_to_visit": "When you ask what events are happening today, today's events, or the Today tab."
       }
@@ -772,7 +772,7 @@
     "60cfc219-6486-400d-8579-39b67b458782": {
       "source_sha": "9e0bd3b375526da4",
       "fields": {
-        "title": "Upcoming Events",
+        "title": "Upcoming events",
         "description": "Upcoming community events and meetups you can join.",
         "when_to_visit": "When you ask about upcoming events, what's coming up, the Upcoming tab, or future events and meetups."
       }
@@ -781,15 +781,15 @@
       "source_sha": "1f06d33ed964eea2",
       "fields": {
         "title": "Balance & Benefits",
-        "description": "Your current MAXINA balance and the benefits unlocked at your tier.",
-        "when_to_visit": "When you ask about your balance, credits, benefits, tier, or what you've unlocked."
+        "description": "Your current MAXINA balance and the benefits unlocked in your tier.",
+        "when_to_visit": "When you ask about your balance, account balance, benefits, tier, or what you've unlocked."
       }
     },
     "62cf9915-c542-4e40-a4d4-d9077d1f8bc0": {
       "source_sha": "9bd8a76c8a7c160f",
       "fields": {
         "title": "Privacy Settings",
-        "description": "Manage what data Vitana stores and what gets shared with the community.",
+        "description": "Manage what data Vitana stores and what's shared with the community.",
         "when_to_visit": "When you ask about privacy settings, data control, what's being shared, consent, or want to change your privacy preferences."
       }
     },
@@ -805,8 +805,8 @@
       "source_sha": "ffa86195b6c72a26",
       "fields": {
         "title": "Learning Podcasts",
-        "description": "The Podcasts tab of Health Education & Resources.",
-        "when_to_visit": "When you ask about health learning podcasts, the education Podcasts tab, or health audio content."
+        "description": "The podcasts tab in health education & resources.",
+        "when_to_visit": "When you ask about health learning podcasts, the education podcasts tab, or health audio content."
       }
     },
     "65d24ad5-2d2a-4591-b73c-6e1ce42f8284": {
@@ -821,8 +821,8 @@
       "source_sha": "b4369583abde280b",
       "fields": {
         "title": "Creator Payouts",
-        "description": "Your creator payouts and earnings disbursements.",
-        "when_to_visit": "When you ask about the creator payouts tab in billing — creator payouts, earnings disbursements, or getting paid as a creator."
+        "description": "Your creator payouts and earnings withdrawals.",
+        "when_to_visit": "When you ask about the creator payouts tab in billing — creator payouts, earnings withdrawals, or getting paid as a creator."
       }
     },
     "6735c423-5ab3-4ac8-b1fe-f80a60d574f3": {
@@ -838,7 +838,7 @@
       "fields": {
         "title": "Community Members",
         "description": "Browse the MAXINA community member directory.",
-        "when_to_visit": "When you ask about the member directory, community members, who's in the community, or want to browse member profiles."
+        "when_to_visit": "When you're asking about the member directory, community members, who's in the community, or you want to browse member profiles."
       }
     },
     "67ad5e75-0116-4bd2-9652-3f3b72b358a4": {
@@ -846,7 +846,7 @@
       "fields": {
         "title": "Find a Partner",
         "description": "Unified dance and fitness partner search — ranked matches.",
-        "when_to_visit": "When you want a dance partner, fitness buddy, or partner match, or want to open the partner finder."
+        "when_to_visit": "When you want a dance partner, fitness buddy, or partner match, or want to open the partner search."
       }
     },
     "6907264f-78be-43d5-a138-18900a3facf6": {
@@ -878,7 +878,7 @@
       "fields": {
         "title": "Sales",
         "description": "Your sales area in the Business Hub — sell your services and build a new income stream in the MAXINA community.",
-        "when_to_visit": "When you ask about the Sales tab, the Business Hub sales area, or your sales, or how to make money, generate income, build a side income, monetize your skills, monetize coaching, monetize fitness, monetize your expertise, sell services, become a paid creator, build a new income stream, or earn money with the MAXINA community."
+        "when_to_visit": "When you ask about the Sales tab, the Business Hub sales section, or your sales, or how to make money, generate income, build a side income, monetize your skills, monetize coaching, monetize fitness, monetize your expertise, sell services, become a paid creator, build a new income stream, or earn money with the MAXINA community."
       }
     },
     "6d79a307-11eb-49c0-8f50-4ba8fd080e31": {
@@ -909,8 +909,8 @@
       "source_sha": "a0ef3e99c413967d",
       "fields": {
         "title": "Wellness Programs",
-        "description": "The Wellness Programs tab in the Health Services Hub.",
-        "when_to_visit": "When you ask about wellness programs, wellness offerings, or the Wellness Programs tab in the Health Services Hub."
+        "description": "The Wellness Programs tab in the health services hub.",
+        "when_to_visit": "When you ask about wellness programs, wellness offerings, or the Wellness Programs tab in the health services hub."
       }
     },
     "7096ae3d-9df9-41b8-a720-23a292d059d6": {
@@ -926,7 +926,7 @@
       "fields": {
         "title": "Health",
         "description": "Your personal health hub — biology, plans, and education.",
-        "when_to_visit": "When you're asking generally about your health, longevity, wellness, or want to explore health features."
+        "when_to_visit": "When you ask about your health in general, longevity, wellness, or want to explore health features."
       }
     },
     "71f6a06c-c574-4c93-a7dc-90c24f165fdf": {
@@ -942,7 +942,7 @@
       "fields": {
         "title": "My Biology",
         "description": "Track your biomarkers, lab results, and personal health indicators with trends over time.",
-        "when_to_visit": "When you're asking about your biology, biomarkers, lab results, blood work, health indicators, body composition, or want to track your personal health data and trends."
+        "when_to_visit": "When you ask about your biology, biomarkers, lab results, blood work, health indicators, body composition, or want to track your personal health data and trends."
       }
     },
     "75f8eed2-75a9-4ca8-9d78-23cf2a711cd4": {
@@ -957,8 +957,8 @@
       "source_sha": "0877683b6e19abce",
       "fields": {
         "title": "Medical Services",
-        "description": "The Medical Services tab in the Health Services Hub.",
-        "when_to_visit": "When you ask about medical services, doctor or clinic services, or the Medical Services tab in the Health Services Hub."
+        "description": "The Medical Services tab in the health services hub.",
+        "when_to_visit": "When you ask about medical services, doctor or clinic services, or the Medical Services tab in the health services hub."
       }
     },
     "7899350d-d02b-4466-821c-8766ad663578": {
@@ -1006,7 +1006,7 @@
       "fields": {
         "title": "Distribution",
         "description": "Track how your shared content is distributed and received.",
-        "when_to_visit": "When you ask about distribution, how your content is spreading, reach, or sharing analytics."
+        "when_to_visit": "When you ask about distribution, how your content spreads, reach, or sharing analytics."
       }
     },
     "7f53603a-2fc2-4298-80ec-9031725881a9": {
@@ -1054,31 +1054,31 @@
       "fields": {
         "title": "Archived Messages",
         "description": "Messages you've archived.",
-        "when_to_visit": "When you ask about archived messages, old messages, or messages you saved or dismissed."
+        "when_to_visit": "When you ask about archived messages, old messages, or messages you've saved or dismissed."
       }
     },
     "82413dad-62a5-4344-be99-f44e2d4ec8a2": {
       "source_sha": "6cb8b020d56ee50b",
       "fields": {
-        "title": "Public Profile",
-        "description": "A community member's public profile.",
-        "when_to_visit": "When you want to open someone's profile, view a community member's public page, look up someone by @vitana_id, or check out a username."
+        "title": "Public profile",
+        "description": "The public profile of a community member.",
+        "when_to_visit": "When you want to open another member's profile, view a community member's public page, look someone up by @vitana_id, or check out a username."
       }
     },
     "8343cc16-fb4e-4e9f-85d4-ea995af0ddba": {
       "source_sha": "0c166351b51b504d",
       "fields": {
-        "title": "Connectors & Linked Apps",
+        "title": "Connectors & Connected Apps",
         "description": "Connectors to third-party apps and integrations linked to your account.",
-        "when_to_visit": "When you ask about connectors, a connector, linked apps, app integrations, third-party connections, connected services, or connecting an external app."
+        "when_to_visit": "When you ask about connectors, a connector, connected apps, app integrations, third-party connections, linked services, or connecting an external app."
       }
     },
     "8702b903-8a2e-4e64-b073-61c497fdcf61": {
       "source_sha": "4401d661a459b886",
       "fields": {
         "title": "Cart",
-        "description": "Items in your cart, ready for checkout.",
-        "when_to_visit": "When you want to open the cart, see what's in your cart, go to checkout, or check your basket."
+        "description": "Items in your cart, ready to check out.",
+        "when_to_visit": "When you want to open the cart, see what's in your cart, go to checkout, or review your basket."
       }
     },
     "872fdc30-0202-4fc0-8fd8-19058b21c5cd": {
@@ -1094,14 +1094,14 @@
       "fields": {
         "title": "Voice",
         "description": "The Voice tab of the AI assistant — voice settings and your voice-first ORB experience.",
-        "when_to_visit": "When you're looking for the Voice tab in the assistant, voice settings, voice AI, or want to configure the voice assistant."
+        "when_to_visit": "When you're looking for the assistant's Voice tab, voice settings, voice AI, or want to configure the voice assistant."
       }
     },
     "8956df72-94de-4087-aa16-a50183e4d640": {
       "source_sha": "4b24806aa985ee54",
       "fields": {
         "title": "Accessibility",
-        "description": "The accessibility section of settings — accessibility settings.",
+        "description": "The accessibility section of settings — accessibility options.",
         "when_to_visit": "When you ask about accessibility settings, the accessibility section of settings, or want to adjust accessibility options."
       }
     },
@@ -1118,7 +1118,7 @@
       "fields": {
         "title": "Campaign Detail",
         "description": "The detail view of a single sharing campaign — reach, performance, and content.",
-        "when_to_visit": "When you want to open a specific sharing campaign, view campaign details, or see how a single campaign is performing."
+        "when_to_visit": "When you want to open a specific sharing campaign, view campaign details, or see the performance of a single campaign."
       }
     },
     "8a881371-8f59-431f-aac7-302c6fbc927e": {
@@ -1134,7 +1134,7 @@
       "fields": {
         "title": "My Plans",
         "description": "Personalized health plans around your goals — nutrition, fitness, sleep, stress.",
-        "when_to_visit": "When you ask about your health plans, nutrition plan, fitness plan, personal program, or what you should do for your goals."
+        "when_to_visit": "When you ask about your health plans, your nutrition plan, your fitness plan, your personal program, or what you should do for your goals."
       }
     },
     "8e332739-6e7f-47e7-84e1-8dd5d2f1b892": {
@@ -1142,7 +1142,7 @@
       "fields": {
         "title": "My Profile",
         "description": "Your personal profile — name, photo, bio, and account details.",
-        "when_to_visit": "When you want to open your profile, view your profile, edit your profile, see your account, personal information, about me, or user profile."
+        "when_to_visit": "When you want to open your profile, view your profile, edit your profile, see your account, personal info, about me, or user profile."
       }
     },
     "8fe3651b-b81e-43d2-ac55-7eb5325ac6b4": {
@@ -1166,7 +1166,7 @@
       "fields": {
         "title": "My Intents",
         "description": "Your own posts and requests in the community.",
-        "when_to_visit": "When you ask about my intents, my posts, my requests, what I posted, or want to view or manage your own community posts."
+        "when_to_visit": "When you're asking about my intents, my posts, my requests, what I've posted, or you want to view or manage your own community posts."
       }
     },
     "94834c30-82fb-4fa6-a710-28f365de85e4": {
@@ -1180,8 +1180,8 @@
     "965592fe-dbc0-4e35-8648-196711cc3766": {
       "source_sha": "e7379c845ced71d6",
       "fields": {
-        "title": "Trending Events",
-        "description": "Featured and trending Maxina community events and meetups.",
+        "title": "Trending events",
+        "description": "Featured and trending MAXINA community events and meetups.",
         "when_to_visit": "When you ask about the Hot tab for events & meetups, trending events, popular events, featured events, or top community events."
       }
     },
@@ -1268,8 +1268,8 @@
     "a1b7c9d0-4e5f-4a6b-9c8d-1e2f3a4b5c6d": {
       "source_sha": "9e6d89f14f77ef95",
       "fields": {
-        "title": "My journey",
-        "description": "Your Autopilot dashboard — the 90-day journey prepared for you: waves, milestones, and recommended actions synced to your calendar. There are two views you can switch between: the GUIDED journey (the \"intro,\" step by step, one session at a time) and the FULL VERSION (the full app, everything at once).",
+        "title": "My Journey",
+        "description": "Your Autopilot dashboard — the 90-day journey prepared for you: waves, milestones, and recommended actions, aligned with your calendar. There are two views you can switch between: the GUIDED journey (the \"intro,\" step by step, one session at a time) and the FULL VERSION (the full app, everything at once).",
         "when_to_visit": "When you want to open my journey, see my journey, the Autopilot journey, my 90-day journey, the 90-day plan, the Autopilot dashboard, my plan, or what's up today on your journey. ALSO when you mention either VIEW of your journey by name — the GUIDED journey / the guided path / the \"intro,\" OR the FULL VERSION / the full app / the complete version — or want to switch between guided and full view of your journey. ALSO when you ask about the SESSIONS OF YOUR OWN journey — e.g. \"the next session of my journey,\" \"my journey session,\" \"the screen with my guided journey sessions\" — these are the step-by-step conversations WITHIN your own 90-day journey, NOT sessions or courses you offer to others as a provider (that's the Business Hub). This is NOT your user profile — \"my journey\" means the Autopilot dashboard."
       }
     },
@@ -1318,7 +1318,7 @@
       "fields": {
         "title": "Medical",
         "description": "Your medical records — upload and view doctor's reports and medical documents.",
-        "when_to_visit": "When the user asks about the \"Medical\" tab on the Health screen, their medical records, doctor's reports, or uploading a medical report."
+        "when_to_visit": "When the user asks about the \"Medical\" tab on the Health screen, their medical records, doctor's reports, or uploading a doctor's report."
       }
     },
     "a4810a8c-b092-496e-b886-8c850e134820": {
@@ -1334,7 +1334,7 @@
       "fields": {
         "title": "Education & Science",
         "description": "Health education and longevity science from the Vitana knowledge base.",
-        "when_to_visit": "When you want to learn about a health topic, read about longevity science, or look for educational content on wellness."
+        "when_to_visit": "When you want to learn about a health topic, read about longevity science, or look for educational wellness content."
       }
     },
     "a6c2dd50-3830-4d5f-9ab9-32b24a3c857e": {
@@ -1365,8 +1365,8 @@
       "source_sha": "aabe5f13dc43ca6c",
       "fields": {
         "title": "Hydration Plans",
-        "description": "The Hydration tab of Health Plans.",
-        "when_to_visit": "When you ask about hydration plans, the Plans hydration tab, or your water or drinking plan."
+        "description": "The hydration tab in health plans.",
+        "when_to_visit": "When you ask about hydration plans, the plans hydration tab, or your water or drinking plan."
       }
     },
     "acc0453e-f3e6-4263-b32f-92e0ee1a6158": {
@@ -1390,7 +1390,7 @@
       "fields": {
         "title": "Daily Journal",
         "description": "Your daily journal entries — capture thoughts, moods, and reflections.",
-        "when_to_visit": "When you want to write a journal entry, record how you're feeling, journal your day, or open your diary."
+        "when_to_visit": "When you want to write a journal entry, record how you're feeling, journal about your day, or open your diary."
       }
     },
     "b574c1c8-076c-4a5a-8120-ddf51a83f10d": {
@@ -1421,8 +1421,8 @@
       "source_sha": "7f6a3d3ad4324d28",
       "fields": {
         "title": "Insurance Support",
-        "description": "The Insurance Support tab in the Health Services Hub.",
-        "when_to_visit": "When you ask about insurance support, health insurance help, or the Insurance Support tab in the Health Services Hub."
+        "description": "The Insurance Support tab in the health services hub.",
+        "when_to_visit": "When you ask about insurance support, health insurance help, or the Insurance Support tab in the health services hub."
       }
     },
     "ba6f5ec4-1ba3-46e2-8d1b-035ee87559f0": {
@@ -1460,7 +1460,7 @@
     "bf095b1b-0782-4f44-884c-8552007c4420": {
       "source_sha": "0c166351b51b504d",
       "fields": {
-        "title": "Connectors & Linked Apps",
+        "title": "Connectors & linked apps",
         "description": "Connectors to third-party apps and integrations linked to your account.",
         "when_to_visit": "When you ask about connectors, a connector, linked apps, app integrations, third-party connections, connected services, or linking an external app."
       }
@@ -1470,7 +1470,7 @@
       "fields": {
         "title": "Health Restrictions",
         "description": "Record health restrictions (allergies, injuries, conditions) so recommendations stay safe.",
-        "when_to_visit": "When you want to record health restrictions, add allergies, flag an injury, or note conditions that affect recommendations."
+        "when_to_visit": "When you want to record health restrictions, add allergies, flag an injury, or log conditions that affect recommendations."
       }
     },
     "c24c3a81-f3a3-4705-a1b1-081755dd09b5": {
@@ -1501,8 +1501,8 @@
       "source_sha": "93f5bd163695e61d",
       "fields": {
         "title": "My Marketplace",
-        "description": "The \"Mine\" view of the marketplace — your own requests, offers, and listings.",
-        "when_to_visit": "When you're looking for the Mine tab in the marketplace, your own marketplace requests, offers, or listings."
+        "description": "The \"My\" view of the marketplace — your own requests, offers, and listings.",
+        "when_to_visit": "When you're looking for the My tab in the marketplace, your own marketplace requests, offers, or listings."
       }
     },
     "c7ca2b46-3c3e-40d0-b029-d05133597d8e": {
@@ -1524,7 +1524,7 @@
     "c875d8ac-0d7c-429f-a2fd-3af17f3b76f7": {
       "source_sha": "d2fb3dff8306e887",
       "fields": {
-        "title": "Voice & AI Preferences",
+        "title": "Voice & AI preferences",
         "description": "Voice and AI preferences for the Vitana ORB.",
         "when_to_visit": "When you ask about ORB voice preferences or want to customize Vitana's voice (NOT general privacy/notification settings)."
       }
@@ -1542,7 +1542,7 @@
       "fields": {
         "title": "Rewards & Commissions",
         "description": "Commissions and rewards you've earned by sharing the platform and supporting customers.",
-        "when_to_visit": "When you're asking about commissions, referral earnings, rewards, payouts, how much you've made, or what you've earned from sharing or selling in the community."
+        "when_to_visit": "When you ask about commissions, referral earnings, rewards, payouts, how much you've earned, or what you've made from sharing or selling in the community."
       }
     },
     "cafc3d1f-3e03-45e8-a952-9cb1533605d0": {
@@ -1558,7 +1558,7 @@
       "fields": {
         "title": "Hot Events",
         "description": "Featured and trending MAXINA community events and meetups.",
-        "when_to_visit": "When you ask about the Hot tab for events and meetups, hot events, trending events, featured events, or top community events."
+        "when_to_visit": "When you ask about the Hot tab for events & meetups, hot events, trending events, featured events, or top community events."
       }
     },
     "cb93317e-9dda-505e-a177-0d8d5ee331e4": {
@@ -1566,7 +1566,7 @@
       "fields": {
         "title": "Discover",
         "description": "Browse supplements, wellness services, doctors, deals, and more.",
-        "when_to_visit": "When you want to browse, discover, or shop for products and services in the MAXINA marketplace."
+        "when_to_visit": "When you want to browse, discover, or shop for products and services on the MAXINA marketplace."
       }
     },
     "ce31ff4e-5af3-4816-9653-d83363ec5670": {
@@ -1581,7 +1581,7 @@
       "source_sha": "bc3752492d950ead",
       "fields": {
         "title": "Saved Deals",
-        "description": "The saved tab of Deals & Offers — deals you saved.",
+        "description": "The saved tab of Deals & Offers — deals you've saved.",
         "when_to_visit": "When you ask about your saved deals, bookmarked offers, or the saved tab of Deals & Offers."
       }
     },
@@ -1590,15 +1590,15 @@
       "fields": {
         "title": "All News",
         "description": "The news feed with all sources — longevity and community news together.",
-        "when_to_visit": "When you want the All News tab, all articles, every news source, or longevity and community news together in one feed."
+        "when_to_visit": "When you want the All News tab, all articles, every news source, or longevity and community news combined in one feed."
       }
     },
     "d2c8571b-2b82-5d2d-b270-0c93b8da09af": {
       "source_sha": "b68d66fc1e5a866c",
       "fields": {
         "title": "Join the MAXINA Community",
-        "description": "Registration and sign-in for the MAXINA community on Vitanaland.",
-        "when_to_visit": "When you want to register, sign in, join the community, create an account, or log in to MAXINA."
+        "description": "Sign up and log in for the MAXINA community on Vitanaland.",
+        "when_to_visit": "When you want to sign up, log in, join the community, create an account, or log into MAXINA."
       }
     },
     "d38d69c0-700c-43b5-b3e4-724800b43717": {
@@ -1613,8 +1613,8 @@
       "source_sha": "cd258c7cd7314294",
       "fields": {
         "title": "My Omics",
-        "description": "The Omics tab of My Biology — your genomic and omics data.",
-        "when_to_visit": "When you ask about your omics, genomics, DNA data, or the Omics tab in My Biology."
+        "description": "The omics tab in My Biology — your genomic and omics data.",
+        "when_to_visit": "When you ask about your omics, genomics, DNA data, or the omics tab in My Biology."
       }
     },
     "d68691c6-b257-43c8-b7a4-4c67cc8c2c65": {
@@ -1630,15 +1630,15 @@
       "fields": {
         "title": "Balance & Benefits",
         "description": "Your current MAXINA balance and the benefits unlocked at your tier.",
-        "when_to_visit": "When you're asking about your balance, credits, benefits, tier, or what you've unlocked."
+        "when_to_visit": "When you ask about your balance, credits, benefits, tier, or what you've unlocked."
       }
     },
     "d7a81e94-4763-4fdb-a904-f1681e1f4aaa": {
       "source_sha": "5f4f1548a85b061b",
       "fields": {
         "title": "Referrals",
-        "description": "The assistant's Referrals tab — referrals and rewards from the assistant.",
-        "when_to_visit": "When you ask about the assistant's Referrals tab, assistant referrals, or referral rewards in the assistant."
+        "description": "The assistant's referrals tab — referrals and rewards from the assistant.",
+        "when_to_visit": "When you ask about the assistant's referrals tab, assistant referrals, or referral rewards in the assistant."
       }
     },
     "d7c52b0c-3560-4df8-82b8-e173944a1d13": {
@@ -1662,7 +1662,7 @@
       "fields": {
         "title": "My Partner Posts",
         "description": "Your own dance and fitness partner posts.",
-        "when_to_visit": "When you ask about my partner posts, my dance posts, my fitness posts, or what I posted to find a partner."
+        "when_to_visit": "When you're asking about my partner posts, my dance posts, my fitness posts, or what I've posted to find a partner."
       }
     },
     "d9d5336a-c213-452d-bfd5-d05df86e5ae0": {
@@ -1670,7 +1670,7 @@
       "fields": {
         "title": "Optimization",
         "description": "The optimization tab of your wallet balance — ways to optimize your balance.",
-        "when_to_visit": "When you want to optimize your wallet, ask about the optimization tab of the wallet, or tips for balance optimization."
+        "when_to_visit": "When you want to optimize your wallet, ask about the optimization tab of the wallet, or tips for optimizing your balance."
       }
     },
     "da69c4da-ad69-470f-afdc-4640660bcaff": {
@@ -1694,7 +1694,7 @@
       "fields": {
         "title": "Doctors & Coaches",
         "description": "Find doctors, coaches, and health practitioners.",
-        "when_to_visit": "When you're asking about doctors, coaches, practitioners, specialists, or want to find a health professional."
+        "when_to_visit": "When you ask about doctors, coaches, practitioners, specialists, or want to find a health professional."
       }
     },
     "dd20f142-b081-4d4b-96f5-5a1418ed303a": {
@@ -1702,7 +1702,7 @@
       "fields": {
         "title": "Partner Board",
         "description": "The community board view of dance and fitness partner posts.",
-        "when_to_visit": "When you ask about the partner board, dance board, the community board for partner posts, or want to see who's looking."
+        "when_to_visit": "When you're asking about the partner board, dance board, the community board for partner posts, or you want to see who's looking."
       }
     },
     "dd66baa1-0107-45ee-83c1-8f24be427ccc": {
@@ -1717,8 +1717,8 @@
       "source_sha": "de8f2ab4699dc691",
       "fields": {
         "title": "My Services",
-        "description": "The My Services tab in the Health Services Hub — the health services you use.",
-        "when_to_visit": "When you ask about your own health services, My Services, or that tab in the Health Services Hub."
+        "description": "The My Services tab in the health services hub — the health services you use.",
+        "when_to_visit": "When you ask about your own health services, My Services, or that tab in the health services hub."
       }
     },
     "e0194c6c-9b04-5878-b93a-fa70acae988e": {
@@ -1742,7 +1742,7 @@
       "fields": {
         "title": "Profile with match anchor",
         "description": "The public profile of a community member, anchored to a specific matched intent.",
-        "when_to_visit": "When you want to open the profile of someone you matched with, see a profile with a highlighted match post, or jump from a match notification to the other person's profile."
+        "when_to_visit": "When you want to open the profile of someone you matched with, see a profile with the matched post highlighted, or jump from a match notification to the other person's profile."
       }
     },
     "e47bd312-00ab-46ac-a2e3-5d03f4b17ae5": {
@@ -1804,7 +1804,7 @@
     "ebd49241-444a-4f43-b56c-f5a616f108f5": {
       "source_sha": "fd1240f038c0e8de",
       "fields": {
-        "title": "Health Tracker",
+        "title": "Health tracker",
         "description": "Track your daily health habits and Vitana Index movements.",
         "when_to_visit": "When you want to open the health tracker, log a health habit, track water/sleep/exercise/steps, enter your steps, or see today's tracker."
       }
@@ -1814,7 +1814,7 @@
       "fields": {
         "title": "My Matches",
         "description": "Your current dance and fitness partner matches.",
-        "when_to_visit": "When you ask about my matches, show my matches, who matches with me, or who Vitana found for me."
+        "when_to_visit": "When you're asking about my matches, show my matches, who matches with me, or who Vitana found for me."
       }
     },
     "ef21b99b-c513-4475-a9f6-4bdaa4cf7fc5": {
@@ -1822,7 +1822,7 @@
       "fields": {
         "title": "Music",
         "description": "Community music.",
-        "when_to_visit": "When you ask about music, songs, or tracks in the media hub."
+        "when_to_visit": "When you ask about music, songs, or tracks in the Media Hub."
       }
     },
     "ef2662e6-04b9-48f5-b763-68439f3248bd": {
@@ -1845,8 +1845,8 @@
       "source_sha": "16a5fd497acfd6df",
       "fields": {
         "title": "Nutrition Plans",
-        "description": "The Nutrition tab of Health Plans.",
-        "when_to_visit": "When you ask about nutrition plans, the Plans nutrition tab, or your diet or meal plan."
+        "description": "The nutrition tab in health plans.",
+        "when_to_visit": "When you ask about nutrition plans, the plans nutrition tab, or your diet or eating plan."
       }
     },
     "f41a2860-6f1f-4917-ae0d-38f2858d03ae": {
@@ -1870,7 +1870,7 @@
       "fields": {
         "title": "Rewards & Commissions",
         "description": "Commissions and rewards you've earned by sharing the platform and supporting customers.",
-        "when_to_visit": "When you ask about commissions, referral earnings, rewards, payouts, how much you've earned, or what you've made from sharing or selling in the community."
+        "when_to_visit": "When you ask about commissions, referral earnings, rewards, payouts, how much you've earned, or how much you've made by sharing or selling in the community."
       }
     },
     "f5231603-9eaa-428f-931c-0192b62a79a2": {
@@ -1884,8 +1884,8 @@
     "f5c9144c-9aae-40fc-aaeb-be8cb320208a": {
       "source_sha": "9e6d89f14f77ef95",
       "fields": {
-        "title": "My journey",
-        "description": "Your Autopilot dashboard — the 90-day journey prepared for you: waves, milestones, and recommended actions synced to your calendar. There are two views you can switch between: the GUIDED journey (the \"intro,\" step by step, one session at a time) and the FULL VERSION (the full app, everything at once).",
+        "title": "My Journey",
+        "description": "Your Autopilot dashboard — the 90-day journey prepared for you: waves, milestones, and recommended actions, aligned with your calendar. There are two views you can switch between: the GUIDED journey (the \"intro,\" step by step, one session at a time) and the FULL VERSION (the full app, everything at once).",
         "when_to_visit": "When you want to open my journey, see my journey, the Autopilot journey, my 90-day journey, the 90-day plan, the Autopilot dashboard, my plan, or what's up today on your journey. ALSO when you mention either VIEW of your journey by name — the GUIDED journey / the guided path / the \"intro,\" OR the FULL VERSION / the full app / the complete version — or want to switch between guided and full view of your journey. ALSO when you ask about the SESSIONS OF YOUR OWN journey — e.g. \"the next session of my journey,\" \"my journey session,\" \"the screen with my guided journey sessions\" — these are the step-by-step conversations WITHIN your own 90-day journey, NOT sessions or courses you offer to others as a provider (that's the Business Hub). This is NOT your user profile — \"my journey\" means the Autopilot dashboard."
       }
     },
@@ -1894,7 +1894,7 @@
       "fields": {
         "title": "Matching Members",
         "description": "Members the matchmaker suggests for you based on your goals and interests.",
-        "when_to_visit": "When you're asking who's a good fit for you, about your matches, suggested people, folks to connect with, or matchmaker results."
+        "when_to_visit": "When you're asking who's a good fit for you, about your matches, suggested people, people to connect with, or matchmaker results."
       }
     },
     "f77d1927-c8fd-514b-b075-0bbf4b1023d6": {
@@ -1918,7 +1918,7 @@
       "fields": {
         "title": "Intent Board",
         "description": "Browse all open community intents and requests across all categories.",
-        "when_to_visit": "When you ask about the intent board, all community posts, what people are looking for, the dance board, or the open community board."
+        "when_to_visit": "When you're asking about the intent board, all community posts, what people are looking for, the dance board, or the open community board."
       }
     },
     "f8ab853a-5c0e-4fe7-9e8e-6a2fee2c6e53": {
