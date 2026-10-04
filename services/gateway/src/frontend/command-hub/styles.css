@@ -16097,17 +16097,9 @@ border-bottom: 1px solid var(--color-border, #333);
     color: #6b7280;
 }
 
-.overview-status-operational {
-    background: rgba(16, 185, 129, 0.08);
-    border-color: rgba(16, 185, 129, 0.3);
-    color: #10b981;
-}
 
-.overview-status-degraded {
-    background: rgba(245, 158, 11, 0.08);
-    border-color: rgba(245, 158, 11, 0.3);
-    color: #f59e0b;
-}
+
+
 
 .overview-status-critical {
     background: rgba(239, 68, 68, 0.1);
@@ -16116,57 +16108,26 @@ border-bottom: 1px solid var(--color-border, #333);
 }
 
 /* VTID-04869: health not measured / dashboard fetch failed — grey, never green. */
-.overview-status-unknown {
-    background: rgba(148, 163, 184, 0.08);
-    border-color: rgba(148, 163, 184, 0.35);
-    color: #94a3b8;
-}
 
-.status-banner-left {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-}
 
-.status-banner-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: currentColor;
-    flex-shrink: 0;
-}
 
-.status-banner-dot-pulse {
-    animation: pulse-dot 1.5s ease-in-out infinite;
-}
+
+
+
+
 
 @keyframes pulse-dot {
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.5; transform: scale(1.3); }
 }
 
-.status-banner-label {
-    font-weight: 700;
-    font-size: 0.85rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-}
 
-.status-banner-detail {
-    font-size: 0.8rem;
-    opacity: 0.8;
-}
 
-.status-banner-right {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-}
 
-.status-banner-time {
-    font-size: 0.75rem;
-    color: var(--text-tertiary, #64748b);
-}
+
+
+
+
 
 /* Key Metrics Grid */
 .overview-metrics-grid {
@@ -16443,7 +16404,6 @@ border-bottom: 1px solid var(--color-border, #333);
 .orb-config-value-muted { color: #94a3b8; }
 .orb-config-value-ok { color: #10b981; }
 .orb-config-value-fail { color: #ef4444; }
-
 .orb-alert {
     background: rgba(239, 68, 68, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.3);

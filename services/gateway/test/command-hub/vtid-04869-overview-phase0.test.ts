@@ -190,7 +190,10 @@ describe('VTID-04869 fix 5: UNKNOWN instead of a fabricated all-clear', () => {
   });
 
   it('the UNKNOWN banner has its own (grey) style', () => {
-    expect(readFileSync(STYLES_PATH, 'utf8')).toMatch(/\.overview-status-unknown\s*\{/);
+    // VTID-04876: the banner became the cockpit status bar; its UNKNOWN style
+    // is .ops-verdict-unknown (the old .overview-status-unknown rule is dead
+    // CSS now and was removed).
+    expect(readFileSync(STYLES_PATH, 'utf8')).toMatch(/\.ops-verdict-unknown\s*\{/);
   });
 
   it('computeSystemStatus treats failed / unavailable / misconfigured as failures', () => {
