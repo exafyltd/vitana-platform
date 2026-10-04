@@ -334,6 +334,8 @@ export interface MemoryPack {
     degraded: boolean;
     pack_size_bytes: number;
     block_count: number;
+    /** VTID-04877: time spent on the broker flag check before any stream started. */
+    gate_ms?: number;
   };
   error?: string;
 }
@@ -370,22 +372,53 @@ let cachedFlag: boolean | null = null;
 let cachedFlagAt = 0;
 const FLAG_TTL_MS = 30_000;
 
-async function isBrokerEnabled(): Promise<boolean> {
-  const now = Date.now();
-  if (cachedFlag !== null && now - cachedFlagAt < FLAG_TTL_MS) return cachedFlag;
-  try {
-    const c = await getSystemControl('memory_broker_enabled');
-    cachedFlag = !!(c && c.enabled);
-  } catch {
-    cachedFlag = false;
+let flagRefresh: Promise<boolean> | null = null;
+let flagGeneration = 0;
+
+function refreshBrokerFlag(): Promise<boolean> {
+  if (!flagRefresh) {
+    const generation = flagGeneration;
+    const refresh: Promise<boolean> = (async () => {
+      let enabled: boolean;
+      try {
+        const c = await getSystemControl('memory_broker_enabled');
+        enabled = !!(c && c.enabled);
+      } catch {
+        enabled = false;
+      }
+      // An invalidate while this was in flight wins: never write over it.
+      if (generation === flagGeneration) {
+        cachedFlag = enabled;
+        cachedFlagAt = Date.now();
+      }
+      return enabled;
+    })().finally(() => {
+      if (flagRefresh === refresh) flagRefresh = null;
+    });
+    flagRefresh = refresh;
   }
-  cachedFlagAt = now;
+  return flagRefresh;
+}
+
+/**
+ * VTID-04877: only the first read of a process waits for the flag. Once a
+ * value is known, an expired cache serves it and refreshes in the background:
+ * voice sessions are minutes apart, so a 30 s cache was cold on almost every
+ * session and put a database round trip in front of every memory read. After
+ * a flip, each gateway task serves one more read on the old value; a failed
+ * refresh caches false (fail closed), as before.
+ */
+async function isBrokerEnabled(): Promise<boolean> {
+  if (cachedFlag === null) return refreshBrokerFlag();
+  if (Date.now() - cachedFlagAt >= FLAG_TTL_MS) void refreshBrokerFlag();
   return cachedFlag;
 }
 
 export function invalidateBrokerFlagCache(): void {
   cachedFlag = null;
   cachedFlagAt = 0;
+  flagRefresh = null;
+  flagGeneration++;
 }
 
 // =============================================================================
@@ -973,6 +1006,7 @@ export async function getMemoryContext(input: MemoryReadInput): Promise<MemoryPa
         degraded: true,
         pack_size_bytes: 0,
         block_count: 0,
+        gate_ms: 0,
       },
       error: 'tenant_id and user_id are required',
     };
@@ -981,7 +1015,10 @@ export async function getMemoryContext(input: MemoryReadInput): Promise<MemoryPa
   // If broker is disabled by flag, return an empty pack. Callers with a
   // legacy fallback path will use it; the broker becoming a hard dep
   // happens in Phase 6c after the canary period.
-  if (!(await isBrokerEnabled())) {
+  const gateT0 = Date.now();
+  const brokerEnabled = await isBrokerEnabled();
+  const gateMs = Date.now() - gateT0;
+  if (!brokerEnabled) {
     return {
       ok: false,
       intent,
@@ -993,6 +1030,7 @@ export async function getMemoryContext(input: MemoryReadInput): Promise<MemoryPa
         degraded: true,
         pack_size_bytes: 0,
         block_count: 0,
+        gate_ms: gateMs,
       },
       error: 'memory_broker_disabled',
     };
@@ -1181,6 +1219,7 @@ export async function getMemoryContext(input: MemoryReadInput): Promise<MemoryPa
       degraded,
       pack_size_bytes: packSizeBytes,
       block_count: Object.keys(blocks).length,
+      gate_ms: gateMs,
     },
   };
 }
