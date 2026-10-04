@@ -231,30 +231,19 @@ DECLARE
     v_id TEXT;
     v_layer TEXT;
     v_module TEXT;
-    v_found BOOLEAN := false;
 BEGIN
     -- Normalize inputs
     v_layer := UPPER(COALESCE(p_layer, 'DEV'));
     v_module := UPPER(COALESCE(p_module, 'TASK'));
 
-    -- Step 1: Find the next FREE sequence number.
-    -- nextval() can hand back a value that already exists in vtid_ledger when
-    -- the sequence has drifted behind out-of-band writers (self-heal MAX+1,
-    -- VAEA migrations, etc.). Skip forward until we land on a free slot.
-    -- Bounded so we fail loudly rather than spin forever.
-    FOR i IN 1..1000 LOOP
-        v_num := nextval('global_vtid_seq');
-        v_vtid := 'VTID-' || LPAD(v_num::TEXT, 5, '0');
-        IF NOT EXISTS (SELECT 1 FROM vtid_ledger WHERE vtid_ledger.vtid = v_vtid) THEN
-            v_found := true;
-            EXIT;
-        END IF;
-    END LOOP;
+    -- Step 1: Get next sequence number atomically.
+    -- VTID-04868: body kept byte-for-byte equal to the LIVE allocator as of
+    -- 2026-10-04 (plain nextval). The free-slot loop in migration
+    -- 20260628120000 was never applied live and is NOT shipped here.
+    v_num := nextval('global_vtid_seq');
 
-    IF NOT v_found THEN
-        RAISE EXCEPTION 'allocate_global_vtid: no free VTID slot found in 1000 tries (sequence at %)', v_num
-            USING ERRCODE = 'unique_violation';
-    END IF;
+    -- Format as VTID-XXXXX (5-digit zero-padded)
+    v_vtid := 'VTID-' || LPAD(v_num::TEXT, 5, '0');
 
     -- Step 2: Generate UUID for the row
     v_id := gen_random_uuid()::TEXT;

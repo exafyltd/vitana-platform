@@ -11,7 +11,9 @@
 --   1. Drops the BEFORE INSERT gate on vtid_ledger and its functions.
 --   2. Drops the partial unique index on vtid_ledger((metadata->>'sparring_id')).
 --   3. Drops the 4-arg allocate_global_vtid and recreates the 3-arg one with
---      the body of 20260628120000_fix_allocate_global_vtid_seq_drift.sql.
+--      the body that was LIVE before VTID-04868 (read from production
+--      2026-10-04: plain nextval; the 20260628120000 free-slot loop was never
+--      applied live).
 --      Grants: EXECUTE to service_role; PUBLIC/anon/authenticated stay revoked
 --      (every known caller uses the service role — restoring a public grant
 --      would only widen access).
@@ -63,26 +65,14 @@ DECLARE
     v_id TEXT;
     v_layer TEXT;
     v_module TEXT;
-    v_found BOOLEAN := false;
 BEGIN
     -- Normalize inputs
     v_layer := UPPER(COALESCE(p_layer, 'DEV'));
     v_module := UPPER(COALESCE(p_module, 'TASK'));
 
-    -- Step 1: Find the next FREE sequence number.
-    FOR i IN 1..1000 LOOP
-        v_num := nextval('global_vtid_seq');
-        v_vtid := 'VTID-' || LPAD(v_num::TEXT, 5, '0');
-        IF NOT EXISTS (SELECT 1 FROM vtid_ledger WHERE vtid_ledger.vtid = v_vtid) THEN
-            v_found := true;
-            EXIT;
-        END IF;
-    END LOOP;
-
-    IF NOT v_found THEN
-        RAISE EXCEPTION 'allocate_global_vtid: no free VTID slot found in 1000 tries (sequence at %)', v_num
-            USING ERRCODE = 'unique_violation';
-    END IF;
+    -- Step 1: Get next sequence number atomically (live body, pre-VTID-04868)
+    v_num := nextval('global_vtid_seq');
+    v_vtid := 'VTID-' || LPAD(v_num::TEXT, 5, '0');
 
     -- Step 2: Generate UUID for the row
     v_id := gen_random_uuid()::TEXT;
@@ -110,7 +100,7 @@ REVOKE ALL ON FUNCTION public.allocate_global_vtid(TEXT, TEXT, TEXT) FROM PUBLIC
 GRANT EXECUTE ON FUNCTION public.allocate_global_vtid(TEXT, TEXT, TEXT) TO service_role;
 
 COMMENT ON FUNCTION public.allocate_global_vtid(TEXT, TEXT, TEXT) IS
-    'VTID-0542: Atomically allocates next FREE VTID and creates a shell entry in vtid_ledger. Uses a bounded skip-forward loop so it tolerates sequence drift caused by out-of-band VTID writers.';
+    'VTID-0542: Atomically allocates the next VTID and creates a shell entry in vtid_ledger (restored by the VTID-04868 rollback to the pre-VTID-04868 live body).';
 
 COMMIT;
 
