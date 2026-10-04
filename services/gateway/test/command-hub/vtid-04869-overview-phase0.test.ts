@@ -94,17 +94,20 @@ describe('VTID-04869 fix 1: Overview uses the real router keys', () => {
     expect(body).toContain("state.currentModuleKey === 'overview' && state.currentTab === 'system-overview'");
   });
 
-  it('the 30 s Action Required poll is gated on currentModuleKey/currentTab', () => {
-    const idx = SRC.indexOf('state._actionRequiredTimer = setInterval(function () {');
+  it('the 30 s Overview poll is gated on currentModuleKey/currentTab', () => {
+    // VTID-04876: the Action Required poll became the ops/attention cockpit poll.
+    const idx = SRC.indexOf('state._opsAttentionTimer = setInterval(function () {');
     expect(idx).toBeGreaterThan(-1);
-    const body = SRC.slice(idx, SRC.indexOf('}, 30000);', idx));
+    const body = SRC.slice(idx, SRC.indexOf('}, OPS_ATTENTION_POLL_MS);', idx));
     expect(body).toContain(
       "state.currentModuleKey === 'overview' && state.currentTab === 'system-overview' && !state.isOperatorOpen",
     );
   });
 
-  it('fetchActionRequired / fetchOverviewTimeseries re-render on the real keys', () => {
-    expect(fnBody('async function fetchActionRequired(silentRefresh) {')).toContain(
+  it('fetchOpsAttention / fetchOverviewTimeseries re-render on the real keys', () => {
+    // VTID-04876: fetchActionRequired was replaced by fetchOpsAttention.
+    expect(fnBody('async function fetchOpsAttention(silentRefresh) {')).toContain('if (opsAttentionIsOpen()) {');
+    expect(fnBody('function opsAttentionIsOpen() {')).toContain(
       "state.currentModuleKey === 'overview' && state.currentTab === 'system-overview'",
     );
     expect(fnBody('async function fetchOverviewTimeseries(silentRefresh) {')).toContain(
@@ -142,12 +145,15 @@ describe('VTID-04869 fix 3: no call to an undefined navigateTo()', () => {
   });
 
   it('navigateToScreen sets the router keys, pushes the tab path and renders once', () => {
-    const body = fnBody('function navigateToScreen(sectionKey, tabKey) {');
+    // VTID-04876: navigateToScreen takes an optional deep-link query.
+    const body = fnBody('function navigateToScreen(sectionKey, tabKey, query) {');
     expect(body).toContain('NAVIGATION_CONFIG.find(');
     expect(body).toContain('state.currentModuleKey = sectionKey;');
     expect(body).toContain("state.currentTab = tab ? tab.key : '';");
     expect(body).toContain('history.pushState(null, ');
     expect((body.match(/renderApp\(\)/g) || []).length).toBe(1);
+    expect(body).toContain('opsAttentionQueryString(query)');
+    expect(body).toContain('applyDeepLinkParams();');
   });
 
   it('the live-metrics attention card and the VTID attention card navigate through it', () => {
@@ -165,7 +171,7 @@ describe('VTID-04869 fix 4: no inline onclick strings in Overview renderers', ()
   });
 
   it('"View all" is a data-action link handled by a delegated listener', () => {
-    const body = fnBody('function renderOverviewSystemView() {');
+    const body = fnBody('function renderOverviewSystemPanels() {');
     expect(body).toContain('data-action="overview-view-all-events"');
     expect(body).toContain("livePanel.addEventListener('click', function (ev) {");
     expect(body).toContain("navigateToScreen('overview', 'recent-events');");
@@ -173,13 +179,14 @@ describe('VTID-04869 fix 4: no inline onclick strings in Overview renderers', ()
 });
 
 describe('VTID-04869 fix 5: UNKNOWN instead of a fabricated all-clear', () => {
-  it('the status banner starts at UNKNOWN, not OPERATIONAL', () => {
-    const body = fnBody('function renderOverviewSystemView() {');
-    expect(body).toContain("var statusClass = 'overview-status-unknown';");
-    expect(body).toContain("var statusLabel = 'UNKNOWN';");
-    expect(body).not.toContain("var statusLabel = 'OPERATIONAL';");
-    // OPERATIONAL only from a measured result, and a fetch error overrides it.
-    expect(body).toMatch(/if \(db\.error\) \{[\s\S]*?\} else if \(db\.systemStatus === 'operational'\)/);
+  it('the status bar starts at UNKNOWN, never OPERATIONAL (VTID-04876 cockpit)', () => {
+    // VTID-04876: the old banner was replaced by the ops/attention status bar,
+    // which is UNKNOWN on any fetch error or missing answer.
+    const body = fnBody('function computeOpsAttentionStatus(view, nowMs) {');
+    expect(body).toContain("verdict: 'UNKNOWN', blind: true");
+    expect(body).toContain("label: 'UNKNOWN'");
+    expect(body).not.toContain('OPERATIONAL');
+    expect(fnBody('function renderOverviewSystemPanels() {')).not.toContain("var statusLabel = 'OPERATIONAL';");
   });
 
   it('the UNKNOWN banner has its own (grey) style', () => {
@@ -214,7 +221,7 @@ describe('VTID-04869 fix 5: UNKNOWN instead of a fabricated all-clear', () => {
   });
 
   it('the health panel filters use the shared classification', () => {
-    const body = fnBody('function renderOverviewSystemView() {');
+    const body = fnBody('function renderOverviewSystemPanels() {');
     expect(body).toContain("var failedSvcs = sortedHealth.filter(function (s) { return overviewHealthClass(s) === 'failed'; });");
     expect(body).toContain("var tier2Failed = tier2Services.filter(function (s) { return overviewHealthClass(s) === 'failed'; });");
     expect(body).toContain("svcs.filter(function (s) { return overviewHealthClass(s) === 'failed'; })");
@@ -227,19 +234,19 @@ describe('VTID-04869 fix 5: UNKNOWN instead of a fabricated all-clear', () => {
       "fetchWT('/api/v1/oasis/events?status=error&limit=30').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })",
     );
     expect(fetchBody).toContain('state.overviewDashboard.recentFailuresUnavailable = recentFailuresUnavailable;');
-    const body = fnBody('function renderOverviewSystemView() {');
+    const body = fnBody('function renderOverviewSystemPanels() {');
     expect(body).not.toContain('No failures in the last 24h');
     expect(body).toContain('Could not load failure events');
   });
 
   it("a deployment without a service reads 'unknown', not 'gateway'", () => {
-    const body = fnBody('function renderOverviewSystemView() {');
+    const body = fnBody('function renderOverviewSystemPanels() {');
     expect(body).not.toContain("dep.service || dep.service_name || 'gateway'");
     expect(body).toContain("dep.service || dep.service_name || 'unknown'");
   });
 
   it('a missing pipeline summary is not "Pipeline running smoothly"', () => {
-    const body = fnBody('function renderOverviewSystemView() {');
+    const body = fnBody('function renderOverviewSystemPanels() {');
     const idx = body.indexOf('if (!summary) {');
     expect(idx).toBeGreaterThan(-1);
     expect(idx).toBeLessThan(body.indexOf('Pipeline running smoothly.'));
@@ -248,7 +255,7 @@ describe('VTID-04869 fix 5: UNKNOWN instead of a fabricated all-clear', () => {
 
 describe('VTID-04869 fix 6: provider-neutral ORB card', () => {
   it("no 'Vertex' label fallback and no Gemini/Vertex/Google badges", () => {
-    const body = stripLineComments(fnBody('function renderOverviewSystemView() {'));
+    const body = stripLineComments(fnBody('function renderOverviewSystemPanels() {'));
     expect(body).not.toContain("'LiveKit' : 'Vertex'");
     expect(body).not.toContain("(orbOk ? 'vertex' : null)");
     expect(body).not.toContain("label: 'Gemini Live'");
@@ -278,7 +285,7 @@ describe('VTID-04869 fix 6: provider-neutral ORB card', () => {
 
 describe('VTID-04869 fix 7: labels say what the data covers', () => {
   it('no claimed 24h / 7d window on data that has none', () => {
-    const body = stripLineComments(fnBody('function renderOverviewSystemView() {'));
+    const body = stripLineComments(fnBody('function renderOverviewSystemPanels() {'));
     expect(body).not.toContain("label: 'Errors (24h)'");
     expect(body).toContain("label: 'Errors (last 30)'");
     expect(body).not.toContain("' sessions (24h)'");
@@ -291,9 +298,12 @@ describe('VTID-04869 fix 7: labels say what the data covers', () => {
 });
 
 describe('VTID-04869: asset version bumped', () => {
-  it('index.html loads app.js and styles.css at the VTID-04869 version', () => {
+  it('index.html loads app.js and styles.css at (or after) the VTID-04869 version', () => {
+    // VTID-04876 bumped it again; the version only ever moves forward.
     const html = readFileSync(INDEX_HTML_PATH, 'utf8');
-    expect(html).toContain('/command-hub/app.js?v=20261026-vtid-04869');
-    expect(html).toContain('/command-hub/styles.css?v=20261026-vtid-04869');
+    const app = (html.match(/app\.js\?v=([^"']+)/) || [])[1] || '';
+    const css = (html.match(/styles\.css\?v=([^"']+)/) || [])[1] || '';
+    expect(app >= '20261026-vtid-04869').toBe(true);
+    expect(css >= '20261026-vtid-04869').toBe(true);
   });
 });
