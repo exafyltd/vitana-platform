@@ -319,6 +319,14 @@ aws dms describe-replication-tasks --region eu-central-1 \
 - If the pgvector/`products`/`knowledge_docs` gaps from Steps 1-2 weren't
   closed, confirm they're still the *only* known gaps.
 
+**Plan Sparring Gate (VTID-04868) — before Step 7/8:** only now, after the
+final load has finished, create the `vtid_ledger` gate on Aurora
+(`trg_plan_sparring_check` + `vtid_ledger_sparring_id_unique`, from
+`supabase/migrations/20261004100000_vtid_04868_plan_sparring_gate.sql`), confirm
+`pg_trigger.tgenabled = 'O'` and that `plan_sparring_config.mode` equals
+Supabase's. Never create it while DMS is still writing `vtid_ledger`. Details:
+`docs/AURORA-B3-RPC-PARITY-INVENTORY.md`, VTID-04868 addendum.
+
 ### Step 7 — Flip connection strings
 
 1. Gateway: `SUPABASE_URL` on the live ECS task definition(s) →

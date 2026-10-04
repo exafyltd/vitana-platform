@@ -43,6 +43,11 @@ CREATE TABLE vtid_ledger (
 - `GET /api/v1/vtid/list` - List VTIDs with filters
 - `GET /api/v1/tasks` - Get tasks for Task Board UI
 
+**Insert gate (VTID-04868):** every new row passes the BEFORE INSERT trigger
+`trg_plan_sparring_check` (Plan Sparring Gate, log mode — see
+`plan_sparring_sessions` below). `metadata.sparring_id` is unique across rows
+(partial index `vtid_ledger_sparring_id_unique`).
+
 **Status Values:**
 - `scheduled` - Planned work
 - `in_progress` - Active work
@@ -1007,6 +1012,88 @@ Every automation send carries `data.automation_id`.
 
 ---
 
+### plan_sparring_sessions / plan_sparring_config / plan_sparring_shadow_log — Plan Sparring Gate, LOG MODE (VTID-04868) — committed, NOT yet applied
+
+Every new plan is sparred by an independent partner before its VTID is
+allocated (owner decisions 2026-10-03/04). P1 ships the gate in **log mode**:
+nothing is blocked; each new VTID is recorded with what the gate would have
+decided. Migration `20261004100000_vtid_04868_plan_sparring_gate.sql`;
+rollback `docs/validation/VTID-04868/rollback.sql`; tested on a throwaway
+Postgres by `scripts/ci/test-vtid-04868-plan-sparring.sh`.
+
+```sql
+CREATE TABLE public.plan_sparring_sessions (
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id            uuid NOT NULL,          -- producer correlation id (incident_id for autonomous producers)
+  plan_hash          text NOT NULL,          -- sha256 hex of the canonical plan text
+  final_plan_hash    text,                   -- sha256 hex of the approved final plan
+  producer           text NOT NULL,          -- claude-code | operator-chat | task-intake | self-healing | ...
+  change_class       text NOT NULL,          -- light | standard | expedited
+  trust_tier         text NOT NULL,          -- gateway | attested
+  base_ref           text,                   -- commit SHA the partner read code at
+  rounds             jsonb NOT NULL DEFAULT '[]',  -- append-only (plan_sparring_append_round)
+  verdict            text NOT NULL DEFAULT 'in_progress',  -- in_progress | converged | escalated | pending_human_approval
+  escalation_reasons text[] DEFAULT '{}',
+  model_log          jsonb DEFAULT '[]',     -- [{round, provider, model, latency_ms, input_tokens, output_tokens}]
+  human_approved_by  uuid,                   -- verified exafy_admin (gateway approve endpoint only)
+  human_approved_at  timestamptz,
+  approval_evidence  jsonb,
+  vtid               text UNIQUE,            -- bound by the vtid_ledger gate
+  created_at, updated_at timestamptz
+);
+CREATE TABLE public.plan_sparring_config (     -- single row, id = 1
+  id int PRIMARY KEY CHECK (id = 1), mode text NOT NULL DEFAULT 'log',  -- off | log | enforce
+  updated_at timestamptz
+);
+CREATE TABLE public.plan_sparring_shadow_log (
+  id bigint identity PRIMARY KEY, vtid text, sparring_id uuid,
+  outcome text NOT NULL,                       -- missing | invalid | ok | exempt
+  detail jsonb,                                -- {mode, reason, actor, session_user, exempt_reason, source, raw_sparring_id}
+  created_at timestamptz
+);
+```
+
+- **RLS on all three; no anon/authenticated grants or policies.** service_role:
+  SELECT everything; INSERT/UPDATE on sessions for every column **except
+  `rounds`** (and identity columns on UPDATE); no DELETE; config and shadow
+  log are read-only. Rounds are written only by
+  `plan_sparring_append_round(p_session, p_round)` (refuses once the session is
+  approved or bound to a VTID).
+- `allocate_global_vtid(p_source, p_layer, p_module, p_sparring_id uuid DEFAULT NULL)`
+  replaces the 3-arg version (dropped in the same transaction; same body).
+  A non-null `p_sparring_id` lands in `vtid_ledger.metadata.sparring_id`.
+  EXECUTE: service_role only.
+- `submit_plan_sparring_record(p_plan_id, p_plan_hash, p_producer, p_change_class,
+  p_rounds, p_base_ref, p_final_plan_hash, p_model_log, p_escalation_reasons)`
+  — attested tier; always lands as `trust_tier='attested'`,
+  `verdict='pending_human_approval'`, no approval; idempotent on
+  (plan_id, plan_hash). service_role only.
+- **Trigger `trg_plan_sparring_check` BEFORE INSERT ON `vtid_ledger`** →
+  `plan_sparring_check()` (SECURITY INVOKER, so `current_user` is the inserting
+  role) → `_plan_sparring_gate_eval()` (SECURITY DEFINER). An existing VTID
+  (upsert) passes unlogged; mode `off` passes unlogged. A record is valid when
+  verdict is converged/escalated, `human_approved_by` and `final_plan_hash` are
+  set and it is unbound or bound to this VTID — it is locked `FOR UPDATE` and
+  bound (`ok`). `metadata.sparring_exempt_reason` counts only for
+  `vitana_governance_owner` (`exempt`, break-glass). Otherwise `missing` /
+  `invalid`. **Log mode never raises** (an internal error becomes a WARNING),
+  and a sparring_id that did not verify is moved to
+  `metadata.sparring_id_unverified`. Enforce mode raises
+  (`insufficient_privilege`) unless `ok`/`exempt`, and fails closed on an
+  internal error. Enforce-mode rejections roll back with the insert, so they
+  are not in the shadow log — the caller gets the error.
+- Partial unique index `vtid_ledger_sparring_id_unique` on
+  `vtid_ledger((metadata->>'sparring_id')) WHERE NOT NULL`.
+- Role `vitana_governance_owner` NOLOGIN, granted to no one; may INSERT into
+  `vtid_ledger` (policy `vtid_ledger_governance_owner_insert`), use
+  `global_vtid_seq`, and read/update the config row.
+- **Accepted residual on Supabase:** `postgres` can disable the trigger, change
+  the config or grant itself the role — detected (hourly reconciler →
+  `vtid.plan_sparring.tamper_detected`), not prevented. Mode changes only by a
+  reviewed migration.
+
+---
+
 ## ⚠️ DEPRECATED / DO NOT USE
 
 ### VtidLedger (PascalCase)
@@ -1284,6 +1371,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-10-04 | VTID-04868, **committed, NOT applied** (migration `20261004100000_vtid_04868_plan_sparring_gate.sql`, Plan Sparring Gate P1, LOG MODE): tables `plan_sparring_sessions`, `plan_sparring_config` (row mode='log'), `plan_sparring_shadow_log` (RLS on, no anon/authenticated access); role `vitana_governance_owner` (NOLOGIN); `allocate_global_vtid` 3-arg dropped → 4-arg with `p_sparring_id uuid DEFAULT NULL` (service_role only); `submit_plan_sparring_record()`, `plan_sparring_append_round()`; BEFORE INSERT trigger `trg_plan_sparring_check` on `vtid_ledger` (log mode never raises); partial unique index `vtid_ledger_sparring_id_unique`. Rollback `docs/validation/VTID-04868/rollback.sql`. Tested twice + rollback on a throwaway Postgres (`scripts/ci/test-vtid-04868-plan-sparring.sh`). See the section above. | Claude Code | VTID-04868 |
 | 2026-10-01 | VTID-04798, **applied live** 2026-10-01 with the owner's go (migration `20261001160000_vtid_04798_memory_sensitivity.sql`, RUN-MIGRATION run 36895020174; verified: 457 fact rows and 65 items special_category, both triggers and constraints present): `memory_facts.sensitivity` and `memory_items.sensitivity` (text NOT NULL DEFAULT 'standard', CHECK in ('standard','special_category')) mark GDPR Art. 9 data. One rule decides it: immutable function `memory_sensitivity_of(text)` on the fact key / category key, applied by BEFORE INSERT/UPDATE triggers `trg_memory_facts_sensitivity` / `trg_memory_items_sensitivity` (they only ever raise to special_category) and by a backfill (measured 2026-10-01: 95 of 392 current fact keys, 457 fact rows, 65 items). `memory_items.sensitivity_flag` (VTID-01116, never written) is left as is. Tested on a throwaway Postgres: `scripts/ci/sql-tests/run-memory-sensitivity-test.sh` (CI `SQL-MEMORY-SENSITIVITY.yml`). | Claude Code | VTID-04798 |
 | 2026-10-01 | VTID-04776, **committed, NOT applied** (migration `20261001120000_vtid_04776_voice_session_facts.sql`, additive): table `voice_session_facts` (one row per ORB voice session, PK `session_id`; RLS on, service_role only), view `voice_session_facts_hourly` (security_invoker), trigger `trg_voice_session_facts_touch`, function `voice_session_facts_backfill(p_since)` (service_role, max 30 days back, not run by the migration). Read by `/api/v1/voice/supervisor/*` (VTID-04776/04778/04780). The gateway writes it fire-and-forget and logs loudly while the table is missing, so apply before relying on the Supervisor; then run the backfill for the history you want. | Claude Code | VTID-04776 |
 | 2026-09-28 | VTID-04674, **applied live** (`vtid_04674_notification_type_controls`, starting list approved by the owner in session): the admin switch per notification type. It adds `notification_type_controls` (+ audit, + daily block counts), `notification_categories.member_can_disable`, the decision functions, the BEFORE INSERT guard on `user_notifications`, two read models, index `idx_user_notifications_tenant_time`, and member categories `posts_reactions` and `tips_updates`. Starting state: 13 types ON for every tenant (the ones delivered in the last 30 days plus `reminder_due`); everything else OFF and registered as OFF on first send. Idempotent; tested twice against a local Postgres (`docs/validation/VTID-04674/`). Verified live read-only: 26 rows ON (13 types × 2 tenants), trigger enabled, categories extended, 0 blocks at apply time. | Claude Code | VTID-04674 |
