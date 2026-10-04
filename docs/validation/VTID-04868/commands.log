@@ -3,3 +3,5 @@ cd services/gateway && npx jest test/command-hub/vtid-04869-overview-phase0.test
 cd services/gateway && npx jest test/command-hub <+03917 03925 04661 04662 04659 04696 backup-denylist>   # 35 suites, 504 tests passed (worktree run, VTID-04869 commit c5812907)
 node scripts/ci/command-hub-ownership-guard.js (PR title set)   # Guard check PASSED
 echo '{"tool_input":{"query":"select allocate_global_vtid(1,2,3)"}}' | bash .claude/hooks/pretooluse-plan-sparring-reminder.sh   # reminder JSON, exit 0
+bash scripts/ci/test-vtid-04868-plan-sparring.sh   # local Postgres 16: all assertions passed; rollback + re-apply passed (outputs/sql-harness.txt)
+cd services/gateway && npx jest test/vtid-04868-plan-sparring-migration.test.ts test/vtid-04465-operator-pipeline-regression.test.ts test/vtid-04456-customer-support-pipeline-regression.test.ts   # 3 suites, 66 tests passed (outputs/jest-db.txt)

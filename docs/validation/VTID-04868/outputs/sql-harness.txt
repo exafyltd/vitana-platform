@@ -1,0 +1,4 @@
+psql:/home/user/vitana-platform/supabase/migrations/20261004100000_vtid_04868_plan_sparring_gate.sql:141: NOTICE:  relation "idx_plan_sparring_shadow_log_outcome" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004100000_vtid_04868_plan_sparring_gate.sql:208: NOTICE:  policy "vtid_ledger_governance_owner_insert" for relation "public.vtid_ledger" does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004100000_vtid_04868_plan_sparring_gate.sql:610: NOTICE:  trigger "trg_plan_sparring_check" for relation "public.vtid_ledger" does not exist, skipping
+VTID-04868: rollback + re-apply passed
