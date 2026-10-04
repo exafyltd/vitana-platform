@@ -17,3 +17,8 @@ RUN-MIGRATION.yml (ref claude/command-hub-overview-redesign-saty3w, file supabas
 read-only verify: functions allocate_global_vtid(text,text,text,uuid), plan_sparring_append_round, plan_sparring_trigger_status, submit_plan_sparring_record present; plan_sparring_config.mode=log; trg_plan_sparring_check tgenabled=O; anon EXECUTE=false, service_role EXECUTE=true
 first live gate record: VTID-04875 allocation -> plan_sparring_shadow_log outcome=missing (log mode, nothing blocked)
 # 2026-10-04: file renamed 20261004100000_ -> 20261004110000_ (timestamp collision with VTID-04872 on main); content unchanged, already applied live by run 37188907901
+# 2026-10-04 — hardening (review findings on PR #3899; new migration 20261004120000, first migration untouched; no live DB or endpoint touched)
+bash scripts/ci/test-vtid-04868-plan-sparring.sh   # local Postgres 16, both migrations applied twice: all assertions passed; rollback + re-apply passed (outputs/hardening-sql-harness.txt)
+cd services/gateway && npx tsc --noEmit   # no errors (outputs/hardening-tsc.txt)
+cd services/gateway && npx jest test/vtid-04868 test/plans-spar.test.ts test/routes/vtid* test/vtid-04465-operator-pipeline-regression.test.ts test/vtid-04456-customer-support-pipeline-regression.test.ts   # 12 suites, 191 tests passed (outputs/hardening-jest.txt)
+cd services/gateway && npm run test:roles   # 1 suite, 105 tests passed (outputs/hardening-roles.txt)

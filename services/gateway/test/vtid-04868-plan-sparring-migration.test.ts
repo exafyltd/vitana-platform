@@ -1,9 +1,10 @@
 /**
  * VTID-04868 — Plan Sparring Gate, P1 database foundation (LOG MODE ONLY).
  *
- * Pins the migration's contract and, when a local PostgreSQL server is
- * available, applies it (twice) on top of the current 3-arg allocator in a
- * throwaway Postgres, runs the SQL assertions for log and enforce modes
+ * Pins the migration's contract (and the hardening migration's: plan-hash
+ * binding, collision-skipping 5-arg allocator, expected-round append) and,
+ * when a local PostgreSQL server is available, applies both (twice) on top
+ * of the current 3-arg allocator in a throwaway Postgres, runs the SQL assertions for log and enforce modes
  * (supabase/tests/vtid_04868_plan_sparring_gate.test.sql), then applies the
  * rollback (docs/validation/VTID-04868/rollback.sql) and re-applies.
  */
@@ -14,26 +15,31 @@ import * as path from 'path';
 const REPO = path.join(__dirname, '../../..');
 const MIGRATION_FILE = 'supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql';
 const MIGRATION = fs.readFileSync(path.join(REPO, MIGRATION_FILE), 'utf8');
+const HARDENING_FILE = 'supabase/migrations/20261004120000_vtid_04868_plan_sparring_hardening.sql';
+const HARDENING = fs.readFileSync(path.join(REPO, HARDENING_FILE), 'utf8');
 const ROLLBACK = fs.readFileSync(path.join(REPO, 'docs/validation/VTID-04868/rollback.sql'), 'utf8');
 
 /** SQL with comments removed, so prose can't satisfy an assertion. */
 const code = (sql: string) => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
 const SQL = code(MIGRATION);
+const HSQL = code(HARDENING);
 
 /** Body of one CREATE FUNCTION ... AS $$ ... $$ block. */
-function fnBody(name: string): string {
-  const start = SQL.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
+function fnBody(name: string, sql: string = SQL): string {
+  const start = sql.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
   expect(start).toBeGreaterThan(-1);
-  const open = SQL.indexOf('$$', start);
-  const close = SQL.indexOf('$$', open + 2);
-  return SQL.slice(open + 2, close);
+  const open = sql.indexOf('$$', start);
+  const close = sql.indexOf('$$', open + 2);
+  return sql.slice(open + 2, close);
 }
 
 describe('VTID-04868 Plan Sparring Gate migration', () => {
-  it('is the only migration with this timestamp and sorts after every existing one', () => {
+  it('both migrations own their timestamps and sort in order after the prior allocator', () => {
     const files = fs.readdirSync(path.join(REPO, 'supabase/migrations')).filter((f) => f.endsWith('.sql')).sort();
     expect(files.filter((f) => f.startsWith('20261004110000_'))).toEqual([path.basename(MIGRATION_FILE)]);
+    expect(files.filter((f) => f.startsWith('20261004120000_'))).toEqual([path.basename(HARDENING_FILE)]);
     expect(files.indexOf(path.basename(MIGRATION_FILE))).toBeGreaterThan(files.indexOf('20260628120000_fix_allocate_global_vtid_seq_drift.sql'));
+    expect(files.indexOf(path.basename(HARDENING_FILE))).toBeGreaterThan(files.indexOf(path.basename(MIGRATION_FILE)));
   });
 
   it('drops the 3-arg allocator and creates the 4-arg one in one transaction', () => {
@@ -49,15 +55,62 @@ describe('VTID-04868 Plan Sparring Gate migration', () => {
     expect(SQL).toMatch(/NOTIFY pgrst, 'reload schema';/);
   });
 
-  it('keeps the LIVE allocator body (plain nextval, no unapplied free-slot loop) and stores sparring_id in metadata', () => {
-    const body = fnBody('allocate_global_vtid');
-    // Production's body as of 2026-10-04 is plain nextval; the 20260628120000
-    // free-slot loop was never applied live and must not ride in with this gate.
-    expect(body).toContain("v_num := nextval('global_vtid_seq');");
-    expect(body).not.toContain('FOR i IN 1..1000 LOOP');
+  it('hardening: the 5-arg allocator restores the bounded collision-skipping loop and stores sparring_id + plan_hash', () => {
+    const body = fnBody('allocate_global_vtid', HSQL);
+    // The 20261004110000 allocator was plain nextval (409 on sequence drift);
+    // the hardening migration restores the 20260628120000 free-slot loop.
+    expect(body).toMatch(/FOR i IN 1\.\.1000 LOOP\s+v_num := nextval\('global_vtid_seq'\);/);
+    expect(body).toMatch(/IF NOT EXISTS \(SELECT 1 FROM vtid_ledger WHERE vtid_ledger\.vtid = v_vtid\) THEN\s+v_found := true;\s+EXIT;/);
+    expect(body).toMatch(/IF NOT v_found THEN\s+RAISE EXCEPTION[^;]*USING ERRCODE = 'unique_violation';/);
     expect(body).toContain("'Allocated - Pending Title'");
     expect(body).toContain("'allocator_version', 'VTID-0542'");
     expect(body).toMatch(/WHEN p_sparring_id IS NOT NULL\s+THEN jsonb_build_object\('sparring_id', p_sparring_id::TEXT\)/);
+    expect(body).toMatch(/WHEN p_plan_hash IS NOT NULL\s+THEN jsonb_build_object\('plan_hash', p_plan_hash\)/);
+    const sig = HSQL.slice(HSQL.indexOf('CREATE OR REPLACE FUNCTION public.allocate_global_vtid('), HSQL.indexOf('AS $$', HSQL.indexOf('CREATE OR REPLACE FUNCTION public.allocate_global_vtid(')));
+    expect(sig).toMatch(/p_sparring_id UUID DEFAULT NULL,\s+p_plan_hash TEXT DEFAULT NULL\s*\)/);
+    expect(sig).toContain('SECURITY DEFINER');
+    expect(sig).toContain('SET search_path = public, pg_temp');
+  });
+
+  it('hardening: one transaction; 4-arg allocator and 2-arg append dropped before the new ones; service_role-only grants', () => {
+    const begin = HSQL.indexOf('BEGIN;');
+    const drop4 = HSQL.indexOf('DROP FUNCTION IF EXISTS public.allocate_global_vtid(text, text, text, uuid);');
+    const create5 = HSQL.indexOf('CREATE OR REPLACE FUNCTION public.allocate_global_vtid(');
+    const dropAppend = HSQL.indexOf('DROP FUNCTION IF EXISTS public.plan_sparring_append_round(uuid, jsonb);');
+    const createAppend = HSQL.indexOf('CREATE OR REPLACE FUNCTION public.plan_sparring_append_round(');
+    const commit = HSQL.lastIndexOf('COMMIT;');
+    expect(begin).toBeGreaterThan(-1);
+    expect(begin).toBeLessThan(drop4);
+    expect(drop4).toBeLessThan(create5);
+    expect(dropAppend).toBeLessThan(createAppend);
+    expect(createAppend).toBeLessThan(commit);
+    expect(HSQL.slice(commit)).toMatch(/NOTIFY pgrst, 'reload schema';/);
+    for (const sig of ['allocate_global_vtid(TEXT, TEXT, TEXT, UUID, TEXT)', 'plan_sparring_append_round(uuid, jsonb, int)']) {
+      expect(HSQL).toContain(`REVOKE ALL ON FUNCTION public.${sig} FROM PUBLIC, anon, authenticated;`);
+      expect(HSQL).toContain(`GRANT EXECUTE ON FUNCTION public.${sig} TO service_role;`);
+    }
+    expect(HSQL).not.toMatch(/GRANT[^;]*\bTO\s+(anon|authenticated)\b/i);
+    // Never touches the gate mode.
+    expect(HSQL).not.toMatch(/plan_sparring_config/);
+  });
+
+  it('hardening: the gate binds only with the approved plan hash and still never raises', () => {
+    const ev = fnBody('_plan_sparring_gate_eval', HSQL);
+    expect(ev).toMatch(/v_hash\s+text\s+:= NULLIF\(btrim\(COALESCE\(p_metadata, '\{\}'::jsonb\)->>'plan_hash'\), ''\)/);
+    expect(ev).toMatch(/ELSIF v_hash IS NULL THEN\s+v_reason := 'plan_hash_missing';\s+ELSIF v_hash <> v_s\.final_plan_hash THEN\s+v_reason := 'plan_hash_mismatch';/);
+    // The hash check comes before the binding UPDATE.
+    expect(ev.indexOf('plan_hash_mismatch')).toBeLessThan(ev.indexOf('UPDATE public.plan_sparring_sessions SET vtid = p_vtid'));
+    expect(ev).not.toMatch(/RAISE/);
+    expect(ev).toContain("(v_meta - 'sparring_id') || jsonb_build_object('sparring_id_unverified', v_raw)");
+    expect(ev).toMatch(/FROM public\.plan_sparring_sessions WHERE id = v_sid FOR UPDATE/);
+  });
+
+  it('hardening: round appends are locked and checked against the expected round', () => {
+    const ap = fnBody('plan_sparring_append_round', HSQL);
+    expect(ap).toMatch(/FROM public\.plan_sparring_sessions WHERE id = p_session FOR UPDATE/);
+    expect(ap).toMatch(/IF v_s\.verdict <> 'in_progress' THEN\s+RAISE EXCEPTION 'round_conflict:[^;]*USING ERRCODE = 'PS409';/);
+    expect(ap).toMatch(/IF jsonb_array_length\(v_s\.rounds\) \+ 1 <> p_expected_round THEN\s+RAISE EXCEPTION 'round_conflict:[^;]*USING ERRCODE = 'PS409';/);
+    expect(ap.indexOf('FOR UPDATE')).toBeLessThan(ap.indexOf('UPDATE public.plan_sparring_sessions'));
   });
 
   it('grants the RPCs to service_role only', () => {
@@ -130,6 +183,10 @@ describe('VTID-04868 Plan Sparring Gate migration', () => {
     const rb = code(ROLLBACK);
     expect(rb).toContain('DROP TRIGGER IF EXISTS trg_plan_sparring_check ON public.vtid_ledger;');
     expect(rb).toContain('DROP FUNCTION IF EXISTS public.allocate_global_vtid(text, text, text, uuid);');
+    expect(rb).toContain('DROP FUNCTION IF EXISTS public.allocate_global_vtid(text, text, text, uuid, text);');
+    expect(rb).toContain('DROP FUNCTION IF EXISTS public.plan_sparring_append_round(uuid, jsonb, int);');
+    // The restored 3-arg body is the live pre-VTID-04868 one (plain nextval).
+    expect(rb).toContain("v_num := nextval('global_vtid_seq');");
     expect(rb).toMatch(/CREATE OR REPLACE FUNCTION public\.allocate_global_vtid\(\s+p_source TEXT DEFAULT 'api',\s+p_layer TEXT DEFAULT 'DEV',\s+p_module TEXT DEFAULT 'TASK'\s+\)/);
     expect(rb).toContain('GRANT EXECUTE ON FUNCTION public.allocate_global_vtid(TEXT, TEXT, TEXT) TO service_role;');
   });

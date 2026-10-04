@@ -49,7 +49,9 @@ gateway tier the binding approval is the exafy_admin click (`POST /api/v1/plans/
 ## 5. Then allocate
 A PreToolUse hook denies any allocation call (allocate_global_vtid, /vtid/allocate, a direct
 vtid_ledger insert) that references no sparring record; re-issue it with the reference.
-Allocate the VTID (`allocate_global_vtid(..., p_sparring_id)` once the gateway tier is live;
+Allocate the VTID (`allocate_global_vtid(..., p_sparring_id, p_plan_hash)` — or `sparring_id` +
+`plan_hash` on `/vtid/allocate` — once the gateway tier is live; `p_plan_hash` must be the
+record's approved `final_plan_hash` or the gate does not bind it;
 until then record the sparring session in the ledger row's metadata). In the PR, commit the
 record as `docs/validation/<VTID>/plan-sparring.md`: the final plan, the plan hash, every round,
 and the verdict.

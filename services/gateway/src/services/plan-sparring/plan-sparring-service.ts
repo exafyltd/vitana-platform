@@ -6,8 +6,9 @@
  *   approve → verified exafy_admin actor recorded (only path that sets it)
  *
  * The store keeps findings verbatim (rounds append-only via
- * plan_sparring_append_round). Verdicts: round 1 never converges (≥2 passes,
- * N5); from round 2 on, `converged` when no blocker/major finding is open or
+ * plan_sparring_append_round, which checks the expected round number under a
+ * row lock — a racing duplicate append surfaces as 409 `round_conflict`).
+ * Verdicts: round 1 never converges (≥2 passes, N5); from round 2 on, `converged` when no blocker/major finding is open or
  * disputed, `escalated` when the class's round cap is hit with items open.
  * A partner model failure escalates at once with `model_unavailable` and no
  * other provider is called. Missing code access escalates before any model
@@ -216,7 +217,11 @@ async function writeRound(
   round: SparringRound,
   state: Parameters<typeof repo.updateSessionState>[2],
 ): Promise<void> {
-  const a = await repo.appendRound(deps.sb, session.id, round);
+  // The expected round is this round's number (= current count + 1): the RPC
+  // refuses it under a row lock if another request appended first, or if the
+  // session is no longer in_progress.
+  const a = await repo.appendRound(deps.sb, session.id, round, round.round);
+  if (repo.isRoundConflict(a.error)) throw new SparringError(409, 'round_conflict', a.error!.message);
   if (a.error) throw new SparringError(502, 'store_error', `append_round: ${a.error.message}`);
   const u = await repo.updateSessionState(deps.sb, session.id, state);
   if (u.error) throw new SparringError(502, 'store_error', `update: ${u.error.message}`);

@@ -1,7 +1,10 @@
 -- =============================================================================
 -- VTID-04868 ROLLBACK — Plan Sparring Gate DB foundation
 -- =============================================================================
--- Reverses supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql.
+-- Reverses BOTH VTID-04868 migrations:
+--   supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql
+--   supabase/migrations/20261004120000_vtid_04868_plan_sparring_hardening.sql
+-- (works whether or not the hardening migration was applied).
 -- Kept here, NOT under supabase/migrations/, because every file in that folder
 -- is a forward migration (RUN-MIGRATION.yml applies whatever it is pointed at,
 -- and the drift/RLS scanners parse the whole folder). Apply only with the
@@ -10,19 +13,21 @@
 -- What it does (one transaction):
 --   1. Drops the BEFORE INSERT gate on vtid_ledger and its functions.
 --   2. Drops the partial unique index on vtid_ledger((metadata->>'sparring_id')).
---   3. Drops the 4-arg allocate_global_vtid and recreates the 3-arg one with
+--   3. Drops the 4-arg AND 5-arg allocate_global_vtid and recreates the 3-arg one with
 --      the body that was LIVE before VTID-04868 (read from production
 --      2026-10-04: plain nextval; the 20260628120000 free-slot loop was never
 --      applied live).
 --      Grants: EXECUTE to service_role; PUBLIC/anon/authenticated stay revoked
 --      (every known caller uses the service role — restoring a public grant
 --      would only widen access).
---   4. Drops submit_plan_sparring_record / plan_sparring_append_round and the
+--   4. Drops submit_plan_sparring_record / plan_sparring_append_round (both the
+--      2-arg and the hardening 3-arg signature) and the
 --      break-glass ledger policy + grants.
 --   5. KEEPS the three plan_sparring_* tables and the vitana_governance_owner
 --      role, so the sparring records and shadow log survive as evidence. To
 --      remove them too, run the optional block at the end.
--- Ledger rows keep any metadata.sparring_id / sparring_id_unverified keys;
+-- Ledger rows keep any metadata.sparring_id / sparring_id_unverified /
+-- plan_hash keys;
 -- they are inert without the gate.
 -- Tested on a throwaway Postgres by scripts/ci/test-vtid-04868-plan-sparring.sh.
 -- =============================================================================
@@ -38,6 +43,7 @@ DROP INDEX IF EXISTS public.vtid_ledger_sparring_id_unique;
 
 DROP FUNCTION IF EXISTS public.submit_plan_sparring_record(uuid, text, text, text, jsonb, text, text, jsonb, text[]);
 DROP FUNCTION IF EXISTS public.plan_sparring_append_round(uuid, jsonb);
+DROP FUNCTION IF EXISTS public.plan_sparring_append_round(uuid, jsonb, int);
 
 DROP POLICY IF EXISTS vtid_ledger_governance_owner_insert ON public.vtid_ledger;
 DO $$
@@ -49,6 +55,7 @@ BEGIN
 END $$;
 
 DROP FUNCTION IF EXISTS public.allocate_global_vtid(text, text, text, uuid);
+DROP FUNCTION IF EXISTS public.allocate_global_vtid(text, text, text, uuid, text);
 
 CREATE OR REPLACE FUNCTION public.allocate_global_vtid(
     p_source TEXT DEFAULT 'api',

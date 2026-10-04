@@ -8,9 +8,13 @@
  *      (pg_trigger.tgenabled = 'O'), via the read-only RPC
  *      plan_sparring_trigger_status() — an unreadable status is itself
  *      reported, never assumed fine;
- *   2. ledger rows created since the last run with no metadata.sparring_id
- *      (rows carrying metadata.sparring_exempt_reason are reported as
- *      break-glass instead);
+ *   2. ledger rows created in [last run, this run) with no
+ *      metadata.sparring_id (rows carrying metadata.sparring_exempt_reason
+ *      are reported as break-glass instead). The window is read page by page
+ *      (keyset on created_at, id) to exhaustion, so a burst of more than one
+ *      page of rows is never skipped; if the page cap is hit, the cursor only
+ *      advances to the last row actually read, and a failed read leaves the
+ *      cursor where it was so the next run re-reads the window;
  *   3. plan_sparring_config changed (or vanished) since the last run.
  * Every detection emits OASIS vtid.plan_sparring.tamper_detected (break-glass
  * rows emit vtid.plan_sparring.break_glass). Nothing is written to the
@@ -27,6 +31,8 @@ import { PLAN_SPARRING_VTID } from './plan-sparring-service';
 
 export const RECONCILER_INTERVAL_MS = 60 * 60 * 1000;
 const MAX_LISTED_VTIDS = 50;
+/** Safety bound per run: 100 pages × 200 rows. The rest is read next run. */
+export const MAX_LEDGER_PAGES = 100;
 
 export interface ReconcilerState {
   lastRunAt: number | null;
@@ -52,9 +58,39 @@ export function newReconcilerState(): ReconcilerState {
   return { lastRunAt: null, lastConfigSnapshot: null };
 }
 
+/**
+ * Read every ledger row without a sparring id created in [sinceIso, untilIso),
+ * page by page. Returns the rows plus where the next run must start:
+ * `untilIso` when the window was read to exhaustion, the last row's
+ * created_at when the page cap stopped it early (that row is re-read next
+ * run — duplicates are possible, skips are not).
+ */
+async function readLedgerWindow(
+  sb: SupabaseClient,
+  sinceIso: string,
+  untilIso: string,
+): Promise<{ rows: repo.LedgerRowWithoutSparring[]; nextSinceIso: string; truncated: boolean } | { error: string }> {
+  const rows: repo.LedgerRowWithoutSparring[] = [];
+  let after: repo.LedgerCursor | null = null;
+  for (let page = 0; page < MAX_LEDGER_PAGES; page++) {
+    const r = await repo.fetchLedgerRowsWithoutSparring(sb, sinceIso, { untilIso, after, limit: repo.LEDGER_PAGE_SIZE });
+    if (r.error) return { error: r.error.message };
+    const batch = r.data ?? [];
+    rows.push(...batch);
+    if (batch.length < repo.LEDGER_PAGE_SIZE) return { rows, nextSinceIso: untilIso, truncated: false };
+    const last = batch[batch.length - 1];
+    after = { created_at: last.created_at, id: last.id };
+  }
+  return { rows, nextSinceIso: after ? after.created_at : untilIso, truncated: true };
+}
+
 export async function runPlanSparringReconcile(deps: ReconcilerDeps, state: ReconcilerState): Promise<Detection[]> {
   const now = (deps.now ?? Date.now)();
   const since = new Date(state.lastRunAt ?? now - RECONCILER_INTERVAL_MS).toISOString();
+  const until = new Date(now).toISOString();
+  // Where the next run starts. Stays at `since` unless the ledger window was
+  // read successfully (a failed read is retried next run, window included).
+  let nextLastRunAt: number = Date.parse(since);
   const detections: Detection[] = [];
 
   // 1. Trigger enabled?
@@ -67,12 +103,14 @@ export async function runPlanSparringReconcile(deps: ReconcilerDeps, state: Reco
     else if (row.tgenabled !== 'O') detections.push({ check: 'trigger_disabled', detail: { tgenabled: row.tgenabled } });
   }
 
-  // 2. Ledger rows without a sparring id since the last run.
-  const rows = await repo.fetchLedgerRowsWithoutSparring(deps.sb, since);
-  if (rows.error) {
-    detections.push({ check: 'ledger_read_failed', detail: { error: rows.error.message } });
+  // 2. Ledger rows without a sparring id in [since, now), every page.
+  const window = await readLedgerWindow(deps.sb, since, until);
+  if ('error' in window) {
+    // Cursor stays put: the next run re-reads this window.
+    detections.push({ check: 'ledger_read_failed', detail: { error: window.error } });
   } else {
-    const all = rows.data ?? [];
+    nextLastRunAt = Date.parse(window.nextSinceIso);
+    const all = window.rows;
     const exempt = all.filter((r) => typeof r.metadata?.sparring_exempt_reason === 'string');
     const bare = all.filter((r) => typeof r.metadata?.sparring_exempt_reason !== 'string');
     for (const r of exempt) {
@@ -81,7 +119,13 @@ export async function runPlanSparringReconcile(deps: ReconcilerDeps, state: Reco
     if (bare.length > 0) {
       detections.push({
         check: 'ledger_rows_without_sparring',
-        detail: { since, count: bare.length, vtids: bare.slice(0, MAX_LISTED_VTIDS).map((r) => r.vtid) },
+        detail: {
+          since,
+          until: window.nextSinceIso,
+          count: bare.length,
+          vtids: bare.slice(0, MAX_LISTED_VTIDS).map((r) => r.vtid),
+          ...(window.truncated ? { truncated: true } : {}),
+        },
       });
     }
   }
@@ -101,7 +145,9 @@ export async function runPlanSparringReconcile(deps: ReconcilerDeps, state: Reco
     state.lastConfigSnapshot = snapshot;
   }
 
-  state.lastRunAt = now;
+  // Advance only as far as the ledger was actually read (now, unless the
+  // read failed or hit the page cap).
+  state.lastRunAt = nextLastRunAt;
 
   for (const d of detections) {
     const breakGlass = d.check === 'break_glass';

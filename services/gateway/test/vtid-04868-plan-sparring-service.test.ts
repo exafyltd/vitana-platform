@@ -14,8 +14,11 @@ process.env.NODE_ENV = 'test';
 // In-memory repository (the contract tables), mocked at the module seam.
 // ---------------------------------------------------------------------------
 type Row = Record<string, any>;
-const store: { sessions: Map<string, Row>; ledger: Row[]; config: Row | null; trigger: any; triggerError: any; calls: string[] } = {
+const store: { sessions: Map<string, Row>; ledger: Row[]; config: Row | null; trigger: any; triggerError: any; calls: string[]; appendArgs: number[]; ledgerPages: number; ledgerError: any } = {
   sessions: new Map(),
+  appendArgs: [],
+  ledgerPages: 0,
+  ledgerError: null,
   ledger: [],
   config: { id: 1, mode: 'log' },
   trigger: { present: true, tgenabled: 'O' },
@@ -44,11 +47,19 @@ jest.mock('../src/services/plan-sparring/plan-sparring-repository', () => ({
     const all = [...store.sessions.values()].filter((s) => s.producer === producer && s.plan_hash === hash);
     return { data: all.length ? clone(all[all.length - 1]) : null, error: null };
   },
-  appendRound: async (_sb: unknown, id: string, round: Row) => {
+  // Mirrors plan_sparring_append_round(p_session, p_round, p_expected_round)
+  // from the hardening migration: PS409 unless in_progress and expected = n+1.
+  appendRound: async (_sb: unknown, id: string, round: Row, expectedRound: number) => {
     store.calls.push('appendRound');
-    store.sessions.get(id)!.rounds.push(clone(round));
-    return { data: null, error: null };
+    store.appendArgs.push(expectedRound);
+    const s = store.sessions.get(id)!;
+    if (s.verdict !== 'in_progress' || s.rounds.length + 1 !== expectedRound) {
+      return { data: null, error: { code: 'PS409', message: `round_conflict: session ${id} has ${s.rounds.length} round(s), expected round ${expectedRound} cannot be appended` } };
+    }
+    s.rounds.push(clone(round));
+    return { data: { ok: true, round_count: s.rounds.length }, error: null };
   },
+  isRoundConflict: (e: any) => Boolean(e) && e.code === 'PS409',
   updateSessionState: async (_sb: unknown, id: string, patch: Row) => {
     store.calls.push('updateSessionState');
     if ('rounds' in patch) throw new Error('rounds must only grow through appendRound');
@@ -66,9 +77,20 @@ jest.mock('../src/services/plan-sparring/plan-sparring-repository', () => ({
     store.calls.push('fetchConfig');
     return { data: store.config ? clone(store.config) : null, error: null };
   },
-  fetchLedgerRowsWithoutSparring: async (_sb: unknown, since: string) => {
+  LEDGER_PAGE_SIZE: 200,
+  // Keyset pages over (created_at, id) in [since, until), like PostgREST.
+  fetchLedgerRowsWithoutSparring: async (_sb: unknown, since: string, opts: { untilIso?: string; after?: { created_at: string; id: string } | null; limit?: number } = {}) => {
     store.calls.push('fetchLedgerRowsWithoutSparring');
-    return { data: store.ledger.filter((r) => r.created_at >= since && !r.metadata?.sparring_id), error: null };
+    store.ledgerPages += 1;
+    if (store.ledgerError) return { data: null, error: store.ledgerError };
+    const key = (r: Row) => `${r.created_at}|${r.id ?? r.vtid}`;
+    const rows = store.ledger
+      .filter((r) => r.created_at >= since && (!opts.untilIso || r.created_at < opts.untilIso) && !r.metadata?.sparring_id)
+      .filter((r) => !opts.after || key(r) > `${opts.after.created_at}|${opts.after.id}`)
+      .sort((a, b) => (key(a) < key(b) ? -1 : 1))
+      .slice(0, opts.limit ?? 200)
+      .map((r) => ({ id: r.id ?? r.vtid, ...r }));
+    return { data: clone(rows), error: null };
   },
   fetchTriggerStatus: async () => {
     store.calls.push('fetchTriggerStatus');
@@ -205,6 +227,9 @@ beforeEach(() => {
   store.trigger = { present: true, tgenabled: 'O' };
   store.triggerError = null;
   store.calls = [];
+  store.appendArgs = [];
+  store.ledgerPages = 0;
+  store.ledgerError = null;
 });
 
 // ===========================================================================
@@ -463,6 +488,49 @@ describe('later rounds + verdict', () => {
     expect(unresolvedItems(prev, [{ finding_id: 'A', disposition: 'accepted', rationale: 'r' }], { findings: [], acknowledgements: [] })).toEqual({ open: [], disputed: [] });
   });
 
+  it('passes the expected round number to the append RPC (round 1, then 2)', async () => {
+    const s = await round1();
+    const r2 = review({ findings: [], premise_checks: [] });
+    const { deps } = makeDeps([submit(r2)]);
+    await submitPlannerRound(s.id, { responses: [{ finding_id: 'R1-F1', disposition: 'accepted', rationale: 'done' }], revised_plan_text: PLAN_V2 }, deps);
+    expect(store.appendArgs).toEqual([1, 2]);
+  });
+
+  it('two racing POST /:id/rounds for the same round: one lands, the other is 409 round_conflict', async () => {
+    const s = await round1();
+    const resp = [{ finding_id: 'R1-F1', disposition: 'rejected', rationale: 'Covered elsewhere.' }];
+    const open = review({ findings: [], premise_checks: [], acknowledgements: [{ finding_id: 'R1-F1', status: 'disputed' }] });
+    const a = makeDeps([submit(open, 'a')]);
+    const b = makeDeps([submit(open, 'b')]);
+    const results = await Promise.allSettled([
+      submitPlannerRound(s.id, { responses: resp, revised_plan_text: PLAN_V2 }, a.deps),
+      submitPlannerRound(s.id, { responses: resp, revised_plan_text: PLAN_V2 }, b.deps),
+    ]);
+    const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason).toBeInstanceOf(SparringError);
+    expect(rejected[0].reason).toMatchObject({ status: 409, code: 'round_conflict' });
+    // The duplicate never landed, and the loser did not touch session state.
+    expect(store.sessions.get(s.id)!.rounds).toHaveLength(2);
+    expect(store.calls.filter((c) => c === 'updateSessionState')).toHaveLength(2); // round 1 + the winner
+  });
+
+  it('a non-conflict append failure is a 502 store_error, not a conflict', async () => {
+    const s = await round1();
+    const repo = jest.requireMock('../src/services/plan-sparring/plan-sparring-repository');
+    const orig = repo.appendRound;
+    repo.appendRound = async () => ({ data: null, error: { code: 'SESSION_FROZEN', message: 'SESSION_FROZEN' } });
+    try {
+      const { deps } = makeDeps([submit(review({ findings: [], premise_checks: [] }))]);
+      await expect(
+        submitPlannerRound(s.id, { responses: [{ finding_id: 'R1-F1', disposition: 'accepted', rationale: 'ok' }], revised_plan_text: PLAN_V2 }, deps),
+      ).rejects.toMatchObject({ status: 502, code: 'store_error' });
+    } finally {
+      repo.appendRound = orig;
+    }
+  });
+
   it('model failure in a later round escalates; no rounds accepted after a terminal verdict', async () => {
     const s = await round1();
     const { deps, llmCalls } = makeDeps([() => ({ ok: false, error: 'throttled' })]);
@@ -675,6 +743,69 @@ describe('reconciler (hourly, read-only, off by default)', () => {
     expect(types).toEqual(['vtid.plan_sparring.break_glass', 'vtid.plan_sparring.tamper_detected', 'vtid.plan_sparring.tamper_detected', 'vtid.plan_sparring.tamper_detected']);
     // Read-only: only read functions of the repository were touched.
     expect(new Set(store.calls)).toEqual(new Set(['fetchTriggerStatus', 'fetchLedgerRowsWithoutSparring', 'fetchConfig']));
+  });
+
+  it('pages the ledger to exhaustion: 450 rows across 3 pages are all reported, none skipped, none re-reported', async () => {
+    const state = newReconcilerState();
+    const emit = jest.fn(async () => ({}));
+    await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 }, state); // baseline
+    // 450 rows in the hour, many sharing a created_at (keyset tie-break on id).
+    store.ledger = Array.from({ length: 450 }, (_, i) => ({
+      id: `row-${String(i).padStart(4, '0')}`,
+      vtid: `VTID-${String(20000 + i)}`,
+      created_at: new Date(T0 + 1000 + Math.floor(i / 3) * 1000).toISOString(),
+      metadata: {},
+    }));
+    store.ledgerPages = 0;
+    const d = await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 + 3_600_000 }, state);
+    const det = d.find((x) => x.check === 'ledger_rows_without_sparring')!;
+    expect(det.detail.count).toBe(450);
+    expect((det.detail.vtids as string[])).toHaveLength(50);
+    expect(det.detail.truncated).toBeUndefined();
+    expect(store.ledgerPages).toBe(3); // 200 + 200 + 50
+    expect(state.lastRunAt).toBe(T0 + 3_600_000);
+
+    // A row that lands after this run is reported next run — and only it.
+    store.ledger.push({ id: 'row-late', vtid: 'VTID-29999', created_at: new Date(T0 + 3_600_500).toISOString(), metadata: {} });
+    const d2 = await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 + 7_200_000 }, state);
+    expect(d2.find((x) => x.check === 'ledger_rows_without_sparring')!.detail).toEqual(expect.objectContaining({ count: 1, vtids: ['VTID-29999'] }));
+  });
+
+  it('a failed ledger read does not advance the cursor: the window is re-read next run', async () => {
+    const state = newReconcilerState();
+    const emit = jest.fn(async () => ({}));
+    await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 }, state);
+    store.ledger = [{ id: 'r1', vtid: 'VTID-30001', created_at: new Date(T0 + 60_000).toISOString(), metadata: {} }];
+    store.ledgerError = { message: 'statement timeout' };
+    const d = await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 + 3_600_000 }, state);
+    expect(d.map((x) => x.check)).toContain('ledger_read_failed');
+    expect(state.lastRunAt).toBe(T0);
+    store.ledgerError = null;
+    const d2 = await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 + 7_200_000 }, state);
+    expect(d2.find((x) => x.check === 'ledger_rows_without_sparring')!.detail).toEqual(expect.objectContaining({ count: 1, vtids: ['VTID-30001'] }));
+  });
+
+  it('hitting the page cap advances only to the last row read (never skips the rest)', async () => {
+    const recon = await import('../src/services/plan-sparring/reconciler');
+    const state = newReconcilerState();
+    const emit = jest.fn(async () => ({}));
+    await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 }, state);
+    const total = recon.MAX_LEDGER_PAGES * 200 + 5;
+    store.ledger = Array.from({ length: total }, (_, i) => ({
+      id: `cap-${String(i).padStart(6, '0')}`,
+      vtid: `VTID-${String(100000 + i)}`,
+      created_at: new Date(T0 + 1 + i * 100).toISOString(),
+      metadata: {},
+    }));
+    const d = await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 + 3_600_000 }, state);
+    const det = d.find((x) => x.check === 'ledger_rows_without_sparring')!;
+    expect(det.detail.count).toBe(recon.MAX_LEDGER_PAGES * 200);
+    expect(det.detail.truncated).toBe(true);
+    const lastRead = store.ledger[recon.MAX_LEDGER_PAGES * 200 - 1];
+    expect(state.lastRunAt).toBe(Date.parse(lastRead.created_at));
+    // Next run picks up from there: the last row read again (duplicate, not skip) + the 5 left.
+    const d2 = await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 + 7_200_000 }, state);
+    expect(d2.find((x) => x.check === 'ledger_rows_without_sparring')!.detail.count).toBe(6);
   });
 
   it('an unreadable trigger status or missing config is reported, never assumed fine', async () => {

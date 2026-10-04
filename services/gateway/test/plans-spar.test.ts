@@ -123,6 +123,13 @@ describe('handlers', () => {
     expect(svc.submitPlannerRound).toHaveBeenCalledWith(ID, { responses: [] }, deps);
   });
 
+  it('POST /:id/rounds returns 409 round_conflict when a racing append already took the round', async () => {
+    svc.submitPlannerRound.mockRejectedValueOnce(new SparringError(409, 'round_conflict', 'round_conflict: session x has 2 round(s), expected round 2 cannot be appended'));
+    const r = await request(app()).post(`/api/v1/plans/spar/${ID}/rounds`).set('Authorization', 'Bearer svc-token').send({ responses: [] });
+    expect(r.status).toBe(409);
+    expect(r.body).toEqual(expect.objectContaining({ ok: false, error: 'round_conflict' }));
+  });
+
   it('approve uses the verified identity, ignoring any actor in the body', async () => {
     svc.approveSparringSession.mockResolvedValue({ id: ID, human_approved_by: ADMIN_ID });
     const r = await request(app())

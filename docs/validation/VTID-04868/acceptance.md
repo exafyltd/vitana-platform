@@ -92,6 +92,61 @@ as `tgenabled='D'`.
 TEST: services/gateway/test/vtid-04868-plan-sparring-service.test.ts
 TEST: supabase/tests/vtid_04868_plan_sparring_gate.test.sql
 
+## Hardening (review findings on PR #3899, migration `20261004120000_vtid_04868_plan_sparring_hardening.sql`)
+
+The first migration is already applied live and is not edited; every DB change below is in the
+new migration, which the rollback also reverses.
+
+AC-17 (finding 1, P1): the gateway's session create sends no `rounds` key (service_role has no
+INSERT privilege on that column; the column default `[]` applies). Every key it does send is in the
+service_role INSERT column grant. In SQL, an insert without `rounds` succeeds as service_role and
+one naming `rounds` is refused.
+TEST: services/gateway/test/vtid-04868-plan-sparring-repository.test.ts
+TEST: supabase/tests/vtid_04868_plan_sparring_gate.test.sql
+
+AC-18 (finding 2, P1): plan-hash binding at allocation.
+- `allocate_global_vtid` is now 5-arg (`p_plan_hash text DEFAULT NULL` added; 4-arg dropped),
+  stores `metadata.plan_hash`, EXECUTE service_role only.
+- The gate binds a sparring id only when `metadata.plan_hash` equals the session's
+  `final_plan_hash`; missing → `invalid/plan_hash_missing`, different → `invalid/plan_hash_mismatch`.
+  Log mode never raises and moves the id to `metadata.sparring_id_unverified`; enforce mode raises.
+- `/vtid/allocate` and `/vtid/allocate-internal` accept `plan_hash`; `sparring_id` without it is
+  400 `plan_hash_required` (no RPC call); both are forwarded as `p_sparring_id`/`p_plan_hash`.
+  A body without `sparring_id` produces the byte-identical 3-arg RPC body as before.
+TEST: supabase/tests/vtid_04868_plan_sparring_gate.test.sql
+TEST: services/gateway/test/vtid-04868-plan-sparring-migration.test.ts
+TEST: services/gateway/test/routes/vtid-04868-allocate-plan-hash.test.ts
+
+AC-19 (finding 3, P1): the 5-arg allocator restores the bounded collision-skipping loop of
+`20260628120000` (`FOR i IN 1..1000 … nextval … IF NOT EXISTS … EXIT`, `unique_violation` when no
+slot is free), keeps the shell-row shape and `allocator_version 'VTID-0542'`, and pins
+`search_path = public, pg_temp`. On local Postgres: when the next sequence values are taken,
+allocation skips them; 1000 taken slots fail loudly and insert nothing.
+TEST: supabase/tests/vtid_04868_plan_sparring_gate.test.sql
+TEST: services/gateway/test/vtid-04868-plan-sparring-migration.test.ts
+
+AC-20 (finding 4, P2): `plan_sparring_append_round(p_session, p_round, p_expected_round)` replaces
+the 2-arg RPC. Under `SELECT … FOR UPDATE` it raises SQLSTATE `PS409` (`round_conflict`) unless the
+session is `in_progress` and the expected round is the current count + 1. The repository sends the
+expected round and treats an RPC error or an `{ ok: false }` reply as a failure; the service maps a
+conflict to 409 `round_conflict` on `POST /api/v1/plans/spar/:id/rounds`. Two racing round
+submissions: one lands, the other gets 409, the duplicate never lands.
+TEST: supabase/tests/vtid_04868_plan_sparring_gate.test.sql
+TEST: services/gateway/test/vtid-04868-plan-sparring-service.test.ts
+TEST: services/gateway/test/vtid-04868-plan-sparring-repository.test.ts
+TEST: services/gateway/test/plans-spar.test.ts
+
+AC-21 (finding 5, P2): the reconciler reads ledger rows without a sparring id in
+`[last run, now)` as keyset pages over `(created_at, id)` to exhaustion. 450 rows over 3 pages are
+all reported and none is re-reported next run. A failed read leaves the cursor in place. Hitting
+the page cap (100 × 200) advances only to the last row read, so the rest is reported next run.
+TEST: services/gateway/test/vtid-04868-plan-sparring-service.test.ts
+TEST: services/gateway/test/vtid-04868-plan-sparring-repository.test.ts
+
+AC-22: the rollback reverses both migrations (5-arg allocator and 3-arg append dropped, the live
+pre-VTID-04868 3-arg allocator restored), and both migrations re-apply cleanly afterwards.
+TEST: scripts/ci/test-vtid-04868-plan-sparring.sh
+
 ROUTE_MOUNT: `mountRouterSync(app, '/api/v1/plans/spar', plansSparRouter, { owner: 'plans-spar' })` in
 services/gateway/src/index.ts. It holds four routes in services/gateway/src/routes/plans-spar.ts:
 `POST /`, `POST /:id/rounds`, `GET /:id` (all `requireServiceOrAdmin`) and `POST /:id/approve`

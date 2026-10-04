@@ -72,6 +72,45 @@ export function parseSparringId(value: unknown): string | null {
   return typeof value === 'string' && SPARRING_ID_RE.test(value) ? value : null;
 }
 
+const PLAN_HASH_RE = /^[0-9a-f]{64}$/;
+
+/**
+ * VTID-04868 hardening: the optional Plan Sparring binding of an allocation
+ * request. `sparring_id` and `plan_hash` travel together — the gate binds a
+ * VTID to a sparring record only when `plan_hash` equals the record's
+ * approved final_plan_hash, so a `sparring_id` without a `plan_hash` is a
+ * 400. A body without `sparring_id` yields `rpcArgs: {}` — the
+ * byte-identical 3-arg request every existing caller already sends (a stray
+ * `plan_hash` alone is ignored, never validated or forwarded).
+ */
+export type SparringBinding =
+  | { ok: true; sparringId: string | null; planHash: string | null; rpcArgs: Record<string, string> }
+  | { ok: false; error: 'invalid_sparring_id' | 'invalid_plan_hash' | 'plan_hash_required'; message: string };
+
+export function parseSparringBinding(body: unknown): SparringBinding {
+  const b = (body ?? {}) as Record<string, unknown>;
+  if (b.sparring_id === undefined) {
+    return { ok: true, sparringId: null, planHash: null, rpcArgs: {} };
+  }
+  const sparringId = parseSparringId(b.sparring_id);
+  if (sparringId === null) {
+    return { ok: false, error: 'invalid_sparring_id', message: 'sparring_id must be a UUID' };
+  }
+  if (b.plan_hash === undefined || b.plan_hash === null || b.plan_hash === '') {
+    return { ok: false, error: 'plan_hash_required', message: "plan_hash (the sparring record's approved final_plan_hash) is required with sparring_id" };
+  }
+  if (typeof b.plan_hash !== 'string' || !PLAN_HASH_RE.test(b.plan_hash)) {
+    return { ok: false, error: 'invalid_plan_hash', message: 'plan_hash must be 64 lowercase hex characters (the approved final_plan_hash)' };
+  }
+  const planHash = b.plan_hash;
+  return {
+    ok: true,
+    sparringId,
+    planHash,
+    rpcArgs: { p_sparring_id: sparringId, p_plan_hash: planHash },
+  };
+}
+
 function deriveAllocationTitle(
   requestedTitle: string | undefined,
   source: string,
@@ -133,17 +172,14 @@ router.post("/allocate", requireLedgerWriteAuth, async (req: Request, res: Respo
     const requestedTitle: string | undefined = typeof req.body?.title === 'string'
       ? req.body.title.trim()
       : undefined;
-    // VTID-04868: optional Plan Sparring record id. Only forwarded to the RPC
-    // when present, so every existing caller sends the byte-identical 3-arg
-    // body (and keeps working against a database without the 4-arg function).
-    const sparringId = parseSparringId(req.body?.sparring_id);
-    if (req.body?.sparring_id !== undefined && sparringId === null) {
-      return res.status(400).json({
-        ok: false,
-        error: 'invalid_sparring_id',
-        message: 'sparring_id must be a UUID',
-      } as AllocatorResponse);
+    // VTID-04868: optional Plan Sparring record id + approved plan hash.
+    // Only forwarded to the RPC when present, so every existing caller sends
+    // the byte-identical 3-arg body.
+    const binding = parseSparringBinding(req.body);
+    if (!binding.ok) {
+      return res.status(400).json({ ok: false, error: binding.error, message: binding.message } as AllocatorResponse);
     }
+    const sparringId = binding.sparringId;
 
     // Call the atomic allocation function
     const resp = await fetch(supabaseUrl + "/rest/v1/rpc/allocate_global_vtid", {
@@ -157,7 +193,7 @@ router.post("/allocate", requireLedgerWriteAuth, async (req: Request, res: Respo
         p_source: source,
         p_layer: layer,
         p_module: module,
-        ...(sparringId ? { p_sparring_id: sparringId } : {}),
+        ...binding.rpcArgs,
       }),
     });
 
@@ -301,15 +337,13 @@ router.post("/allocate-internal", async (req: Request, res: Response) => { // pu
     const source = req.body?.source || 'automation';
     const layer = req.body?.layer || 'DEV';
     const module = req.body?.module || 'TASK';
-    // VTID-04868: optional sparring record id — forwarded only when present.
-    const sparringId = parseSparringId(req.body?.sparring_id);
-    if (req.body?.sparring_id !== undefined && sparringId === null) {
-      return res.status(400).json({
-        ok: false,
-        error: 'invalid_sparring_id',
-        message: 'sparring_id must be a UUID',
-      } as AllocatorResponse);
+    // VTID-04868: optional sparring record id + approved plan hash —
+    // forwarded only when present (same contract as /allocate).
+    const binding = parseSparringBinding(req.body);
+    if (!binding.ok) {
+      return res.status(400).json({ ok: false, error: binding.error, message: binding.message } as AllocatorResponse);
     }
+    const sparringId = binding.sparringId;
 
     const resp = await fetch(supabaseUrl + "/rest/v1/rpc/allocate_global_vtid", {
       method: "POST",
@@ -322,7 +356,7 @@ router.post("/allocate-internal", async (req: Request, res: Response) => { // pu
         p_source: source,
         p_layer: layer,
         p_module: module,
-        ...(sparringId ? { p_sparring_id: sparringId } : {}),
+        ...binding.rpcArgs,
       }),
     });
 
