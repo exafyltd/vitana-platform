@@ -4752,6 +4752,8 @@ const state = {
         controllerStatus: null,
         loopStatus: null,
         violationCount24h: 0,
+        // VTID-04869: true when the failures fetch itself failed.
+        recentFailuresUnavailable: false,
         lastRefreshed: null,
         loading: false,
         fetched: false,
@@ -12329,6 +12331,30 @@ function handleTabClick(tabKey) {
 
     // VTID-01002: Restore scroll positions for new route from persistent storage
     restoreScrollPositionsForRoute(getScrollRouteKey());
+}
+
+/**
+ * VTID-04869: go to one section + tab from anywhere (an Overview card, a
+ * "View all" link). Same steps as handleModuleClick + handleTabClick —
+ * router keys currentModuleKey/currentTab, pushState, one renderApp() —
+ * without rendering twice. An unknown tab falls back to the section's
+ * first tab; an unknown section does nothing and returns false.
+ */
+function navigateToScreen(sectionKey, tabKey) {
+    var section = NAVIGATION_CONFIG.find(function (s) { return s.section === sectionKey; });
+    if (!section) return false;
+    var tab = section.tabs.find(function (t) { return t.key === tabKey; }) || section.tabs[0];
+
+    captureAllScrollPositions();
+    if (state.currentModuleKey === 'models-evaluations' && sectionKey !== 'models-evaluations') {
+        stopModelsAutoRefresh();
+    }
+    state.currentModuleKey = sectionKey;
+    state.currentTab = tab ? tab.key : '';
+    history.pushState(null, '', tab ? tab.path : section.basePath);
+    renderApp();
+    restoreScrollPositionsForRoute(getScrollRouteKey());
+    return true;
 }
 
 // Router Logic
@@ -27642,7 +27668,10 @@ var overviewDashboardRefreshInterval = null;
 function startOverviewDashboardPolling() {
     if (overviewDashboardRefreshInterval) return;
     overviewDashboardRefreshInterval = setInterval(function () {
-        if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
+        // VTID-04869: the router keys are currentModuleKey/currentTab. This
+        // used to read state.activeModule/activeTab, which nothing ever sets,
+        // so the 60 s refresh never fired and the Overview went stale.
+        if (state.currentModuleKey === 'overview' && state.currentTab === 'system-overview') {
             // Silent refresh: state updated in-place, render fires once at end
             fetchOverviewDashboard();
             fetchPipelineSummary();
@@ -28824,23 +28853,56 @@ function renderOasisCommandLogView() {
 // VTID-01864: Supervisor Dashboard — Utility Functions
 // ---------------------------------------------------------------------------
 
+/**
+ * VTID-04869: one classification for every Overview health consumer (status
+ * banner, "Critical Issues" strip, group counts, flat grid). It used to be
+ * four hand-written status lists that each missed something — 'failed',
+ * 'unavailable' and 'misconfigured' counted as healthy in the banner, and
+ * the flat grid painted any unrecognised status green.
+ *   healthy  — svc.healthy, or ok / healthy / ok_governance_limited
+ *   unknown  — no_access / not_configured / no status (could not look)
+ *   degraded — degraded / warning
+ *   failed   — everything else (down, error, unhealthy, failed,
+ *              unavailable, misconfigured, any unrecognised status)
+ */
+var OVERVIEW_HEALTHY_STATUSES = ['ok', 'healthy', 'ok_governance_limited'];
+var OVERVIEW_UNMEASURED_STATUSES = ['no_access', 'not_configured', ''];
+var OVERVIEW_DEGRADED_STATUSES = ['degraded', 'warning'];
+function overviewHealthClass(svc) {
+    var st = String((svc && svc.status) || '').toLowerCase();
+    if (svc && svc.healthy === true) return 'healthy';
+    if (OVERVIEW_HEALTHY_STATUSES.indexOf(st) >= 0) return 'healthy';
+    if (OVERVIEW_UNMEASURED_STATUSES.indexOf(st) >= 0) return 'unknown';
+    if (OVERVIEW_DEGRADED_STATUSES.indexOf(st) >= 0) return 'degraded';
+    return 'failed';
+}
+
 function computeSystemStatus(healthChecks) {
     var criticalServices = ['Gateway', 'ORB Live', 'CI/CD', 'Autopilot', 'Execute Runner'];
     var downCount = 0;
     var degradedCount = 0;
+    var unmeasuredCount = 0;
+    var measuredCount = 0;
     var criticalDown = false;
     var downNames = [];
 
-    healthChecks.forEach(function (svc) {
-        if (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy') {
+    (healthChecks || []).forEach(function (svc) {
+        var cls = overviewHealthClass(svc);
+        if (cls === 'unknown') { unmeasuredCount++; return; }
+        measuredCount++;
+        if (cls === 'failed') {
             downCount++;
             downNames.push(svc.name);
             if (criticalServices.indexOf(svc.name) >= 0) criticalDown = true;
-        } else if (svc.status === 'degraded' || svc.status === 'warning') {
+        } else if (cls === 'degraded') {
             degradedCount++;
         }
     });
 
+    // VTID-04869: nothing measured is UNKNOWN, never "All systems operational".
+    if (measuredCount === 0) {
+        return { status: 'unknown', message: 'No health check could be measured' + (unmeasuredCount ? ' (' + unmeasuredCount + ' not visible to this session)' : '') };
+    }
     if (criticalDown || downCount >= 3) {
         return { status: 'critical', message: downCount + ' services down (' + downNames.slice(0, 3).join(', ') + ')' };
     }
@@ -28850,7 +28912,7 @@ function computeSystemStatus(healthChecks) {
     if (degradedCount > 0) {
         return { status: 'degraded', message: degradedCount + ' service' + (degradedCount > 1 ? 's' : '') + ' degraded' };
     }
-    return { status: 'operational', message: 'All systems operational' };
+    return { status: 'operational', message: 'All ' + measuredCount + ' measured checks healthy' + (unmeasuredCount ? ', ' + unmeasuredCount + ' not measured' : '') };
 }
 
 function computeDeploySuccessRate(deployEvents) {
@@ -28886,18 +28948,27 @@ function computeOrbSessionStats(orbEvents, orbHealthDetails) {
     });
     var gl = orbHealthDetails && orbHealthDetails.gemini_live;
     var vr = orbHealthDetails && orbHealthDetails.voice_runtime;
-    var successRate = starts > 0 ? Math.round(((starts - failures) / starts) * 100) : 0;
+    // VTID-04869: no session starts in the fetched events = no rate (null,
+    // rendered as a dash), not a red "0%".
+    var successRate = starts > 0 ? Math.max(0, Math.round(((starts - failures) / starts) * 100)) : null;
 
     // ORB-VOICE-HEALTH-PROBE: runtime truth = the actively-selected provider's
-    // readiness (voice_runtime.healthy / gemini_live.enabled), NOT a stale flag.
+    // readiness (voice_runtime.healthy), NOT a stale flag.
+    // VTID-04869: provider-neutral. The provider string is shown as the
+    // gateway reports it (nova_sonic, cascaded, livekit, ...); the old
+    // Gemini Live / Vertex Project / Google Auth flags are gone — GCP is
+    // decommissioned and those probes describe nothing that runs.
+    // gemini_live.* is read only as the older response shape's copy of the
+    // same voice_runtime fields.
     var runtimeProvider = (vr && vr.active_provider) || (gl && gl.active_provider) || null;
+    var runtimeKnown = !!(vr || gl);
     var runtimeHealthy = vr ? !!vr.healthy : (gl ? !!gl.enabled : false);
 
     // The 24h counter is independent positive evidence: you cannot complete
     // successful voice sessions unless the runtime (provider + project + auth)
     // is actually working. When the counter proves health, the config badges
     // must AGREE — never show "ORB BROKEN" over demonstrably-live sessions.
-    var counterProvenHealthy = starts > 0 && failures === 0 && successRate >= 80;
+    var counterProvenHealthy = starts > 0 && failures === 0 && successRate !== null && successRate >= 80;
 
     return {
         sessions_24h: starts,
@@ -28906,11 +28977,10 @@ function computeOrbSessionStats(orbEvents, orbHealthDetails) {
         success_rate: successRate,
         last_success: lastSuccess,
         runtime_provider: runtimeProvider,
+        runtime_provider_reason: (vr && vr.provider_reason) || (gl && gl.provider_reason) || null,
+        runtime_known: runtimeKnown,
         runtime_healthy: runtimeHealthy,
         counter_proven_healthy: counterProvenHealthy,
-        gemini_live_enabled: (gl ? !!gl.enabled : false) || counterProvenHealthy,
-        vertex_project_configured: (gl ? (gl.vertex_project_id && gl.vertex_project_id !== 'EMPTY') : false) || counterProvenHealthy,
-        google_auth_ready: (gl ? !!gl.google_auth_ready : false) || counterProvenHealthy,
         active_sessions: orbHealthDetails ? (orbHealthDetails.active_sessions || 0) : 0,
         active_live_sessions: gl ? (gl.active_live_sessions || 0) : 0
     };
@@ -28968,7 +29038,12 @@ async function fetchOverviewDashboard() {
 
     var healthCheckPromise;
     if (useSharedHealth) {
-        healthCheckPromise = Promise.resolve({ status: 'fulfilled', value: state.serviceHealth.items.map(function (s) { return { status: 'fulfilled', value: s }; }) });
+        // VTID-04869: resolve to the same array shape Promise.allSettled()
+        // gives the fresh path. This used to resolve to a {status, value}
+        // wrapper, so the outer allSettled wrapped it again and
+        // results[0].value.map threw — every refresh within 90 s of a
+        // Service Health poll ended in "Dashboard fetch failed".
+        healthCheckPromise = Promise.resolve(state.serviceHealth.items.map(function (s) { return { status: 'fulfilled', value: s }; }));
     } else {
         var healthEndpoints = state.serviceHealth.items.length > 0
             ? state.serviceHealth.items.map(function (s) { return { name: s.name, url: s.url, group: s.group }; })
@@ -29001,14 +29076,15 @@ async function fetchOverviewDashboard() {
             fetchWT('/api/v1/oasis/events?topic=cicd.deploy&limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
             // 3: ORB events (OASIS) — both vtid.live and voice.live
             fetchWT('/api/v1/oasis/events?topic=vtid.live&limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
-            // 4: Recent failures
-            fetchWT('/api/v1/oasis/events?status=error&limit=30').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
+            // 4: Recent failures — VTID-04869: null (not []) when the fetch
+            // fails, so "no errors" is never shown for "could not look".
+            fetchWT('/api/v1/oasis/events?status=error&limit=30').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
             // 5: Autopilot controller
             fetchWT('/api/v1/autopilot/controller/status').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
             // 6: Autopilot loop
             fetchWT('/api/v1/autopilot/loop/status').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
-            // 7: Governance violations
-            fetchWT('/api/v1/governance/violations?limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
+            // 7: Governance violations — VTID-04869: null when the fetch fails.
+            fetchWT('/api/v1/governance/violations?limit=50').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
             // 8: voice.live events (second ORB topic pattern)
             fetchWT('/api/v1/oasis/events?topic=voice.live&limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
             // 9: User stats (for overview cards)
@@ -29017,7 +29093,7 @@ async function fetchOverviewDashboard() {
 
         // Parse health checks
         var healthChecks = [];
-        if (results[0].status === 'fulfilled') {
+        if (results[0].status === 'fulfilled' && Array.isArray(results[0].value)) {
             healthChecks = results[0].value.map(function (r) {
                 return r.status === 'fulfilled' ? r.value : { name: 'Unknown', status: 'down', latency_ms: -1, details: null };
             });
@@ -29054,10 +29130,14 @@ async function fetchOverviewDashboard() {
         var orbHealthDetails = orbHealthCheck ? orbHealthCheck.details : null;
 
         // Parse recent failures
+        // VTID-04869: keep all fetched rows (limit=30) and remember whether
+        // the fetch worked at all.
         var recentFailures = [];
-        if (results[4].status === 'fulfilled') {
+        var recentFailuresUnavailable = true;
+        if (results[4].status === 'fulfilled' && results[4].value) {
             var fVal = results[4].value;
-            recentFailures = (Array.isArray(fVal) ? fVal : (fVal && fVal.data ? fVal.data : [])).slice(0, 20);
+            recentFailures = Array.isArray(fVal) ? fVal : (fVal && Array.isArray(fVal.data) ? fVal.data : []);
+            recentFailuresUnavailable = false;
         }
 
         // Parse controller + loop status
@@ -29065,8 +29145,8 @@ async function fetchOverviewDashboard() {
         var loopStatus = results[6].status === 'fulfilled' ? results[6].value : null;
 
         // Parse violations
-        var violationCount = 0;
-        if (results[7].status === 'fulfilled') {
+        var violationCount = null;
+        if (results[7].status === 'fulfilled' && results[7].value) {
             var vVal = results[7].value;
             var violations = Array.isArray(vVal) ? vVal : (vVal && vVal.data ? vVal.data : []);
             violationCount = violations.length;
@@ -29103,6 +29183,7 @@ async function fetchOverviewDashboard() {
         state.overviewDashboard.orbHealth = orbHealthDetails;
         state.overviewDashboard.orbSessionStats = orbSessionStats;
         state.overviewDashboard.recentFailures = recentFailures;
+        state.overviewDashboard.recentFailuresUnavailable = recentFailuresUnavailable;
         state.overviewDashboard.deployEvents = deployEvents;
         state.overviewDashboard.orbEvents = orbEvents;
         state.overviewDashboard.controllerStatus = controllerStatus;
@@ -29234,7 +29315,8 @@ function renderOverviewSystemView() {
     // user action. Skip the poll entirely while a popup covers the tab.
     if (!state._actionRequiredTimer) {
         state._actionRequiredTimer = setInterval(function () {
-            if (state.activeModule === 'overview' && state.activeTab === 'system-overview' && !state.isOperatorOpen) {
+            // VTID-04869: real router keys (currentModuleKey/currentTab).
+            if (state.currentModuleKey === 'overview' && state.currentTab === 'system-overview' && !state.isOperatorOpen) {
                 state.actionRequired.fetched = false;
                 fetchActionRequired(true);
             }
@@ -29299,10 +29381,25 @@ function renderOverviewSystemView() {
     // ═══════════════════════════════════════════════════════════════════════
     // SECTION 1: System Status Banner
     // ═══════════════════════════════════════════════════════════════════════
-    var statusClass = 'overview-status-operational';
-    var statusLabel = 'OPERATIONAL';
-    if (db.systemStatus === 'degraded') { statusClass = 'overview-status-degraded'; statusLabel = 'DEGRADED'; }
-    if (db.systemStatus === 'critical') { statusClass = 'overview-status-critical'; statusLabel = 'CRITICAL'; }
+    // VTID-04869: UNKNOWN is the default. The banner used to start at
+    // OPERATIONAL, so a dashboard that never loaded (or whose fetch threw)
+    // showed a green all-clear. OPERATIONAL now needs a measured result, and
+    // a failed fetch overrides any older result. The Overview is a triage
+    // surface; GChat (SNS) stays the paging channel.
+    var statusClass = 'overview-status-unknown';
+    var statusLabel = 'UNKNOWN';
+    var statusDetail = db.loading ? 'Measuring\u2026' : 'Status not measured \u2014 check GChat alerts';
+    if (db.error) {
+        statusDetail = 'Dashboard fetch failed (' + db.error + ') \u2014 status unknown, check GChat alerts';
+    } else if (db.systemStatus === 'operational') {
+        statusClass = 'overview-status-operational'; statusLabel = 'OPERATIONAL'; statusDetail = db.systemStatusMessage || '';
+    } else if (db.systemStatus === 'degraded') {
+        statusClass = 'overview-status-degraded'; statusLabel = 'DEGRADED'; statusDetail = db.systemStatusMessage || '';
+    } else if (db.systemStatus === 'critical') {
+        statusClass = 'overview-status-critical'; statusLabel = 'CRITICAL'; statusDetail = db.systemStatusMessage || '';
+    } else if (db.systemStatus === 'unknown') {
+        statusDetail = db.systemStatusMessage || statusDetail;
+    }
 
     var banner = document.createElement('div');
     banner.className = 'overview-status-banner ' + statusClass;
@@ -29312,7 +29409,7 @@ function renderOverviewSystemView() {
 
     var bannerDot = document.createElement('span');
     bannerDot.className = 'status-banner-dot';
-    if (db.systemStatus === 'critical') bannerDot.classList.add('status-banner-dot-pulse');
+    if (statusLabel === 'CRITICAL') bannerDot.classList.add('status-banner-dot-pulse');
 
     var bannerLabel = document.createElement('span');
     bannerLabel.className = 'status-banner-label';
@@ -29320,7 +29417,7 @@ function renderOverviewSystemView() {
 
     var bannerDetail = document.createElement('span');
     bannerDetail.className = 'status-banner-detail';
-    bannerDetail.textContent = db.systemStatusMessage || '';
+    bannerDetail.textContent = statusDetail;
 
     bannerLeft.appendChild(bannerDot);
     bannerLeft.appendChild(bannerLabel);
@@ -29381,24 +29478,30 @@ function renderOverviewSystemView() {
         {
             value: deployRate && deployRate.rate !== null ? deployRate.rate + '%' : '—',
             label: 'Deploy Success',
-            subtitle: deployRate ? deployRate.succeeded + '/' + deployRate.total + ' (7d)' : 'No data',
+            // VTID-04869: computed from the latest 50 cicd.deploy events, not 7 days.
+            subtitle: deployRate && deployRate.total > 0 ? deployRate.succeeded + '/' + deployRate.total + ' (last 50 deploy events)' : 'No data',
             color: deployRate && deployRate.rate !== null ? metricColor(deployRate.rate, 80, 50) : 'neutral'
         },
         {
-            value: String(db.recentFailures.length),
-            label: 'Errors (24h)',
-            subtitle: db.recentFailures.length > 0 ? 'Latest: ' + dashboardRelativeTime(db.recentFailures[0] && db.recentFailures[0].created_at) : 'No errors',
-            color: metricColorInverse(db.recentFailures.length, 0, 5),
+            // VTID-04869: this is the latest (at most 30) status=error events,
+            // not a 24h count — labelled as what it is. A failed fetch shows
+            // a dash, never "No errors".
+            value: db.recentFailuresUnavailable ? '\u2014' : (db.recentFailures.length >= 30 ? '30+' : String(db.recentFailures.length)),
+            label: 'Errors (last 30)',
+            subtitle: db.recentFailuresUnavailable ? 'Fetch failed \u2014 unknown'
+                : (db.recentFailures.length > 0 ? 'Latest: ' + dashboardRelativeTime(db.recentFailures[0] && db.recentFailures[0].created_at) : 'None in the latest 30 events'),
+            color: db.recentFailuresUnavailable ? 'neutral' : metricColorInverse(db.recentFailures.length, 0, 5),
             // DEV-COMHU-03404: hourly trend for the last 24h, same status=error
             // series the headline count above is drawn from — so "5 errors"
             // reads as either "falling" or "spiking" instead of a bare number.
             sparkline: state.overviewTimeseries.series ? state.overviewTimeseries.series.errors : null
         },
         {
-            value: String(db.violationCount24h),
+            // VTID-04869: latest 50 violations, no time window; dash on fetch failure.
+            value: db.violationCount24h === null ? '\u2014' : (db.violationCount24h >= 50 ? '50+' : String(db.violationCount24h)),
             label: 'Violations',
-            subtitle: 'Governance (recent)',
-            color: metricColorInverse(db.violationCount24h, 0, 3)
+            subtitle: db.violationCount24h === null ? 'Fetch failed \u2014 unknown' : 'Governance (last 50)',
+            color: db.violationCount24h === null ? 'neutral' : metricColorInverse(db.violationCount24h, 0, 3)
         },
         {
             value: loopSt && loopSt.is_running ? 'Running' : (loopSt ? 'Stopped' : '—'),
@@ -29419,10 +29522,12 @@ function renderOverviewSystemView() {
             color: summary ? metricColor(summary.success_rate, 80, 50) : 'neutral'
         },
         {
-            value: orbStats ? orbStats.success_rate + '%' : '—',
+            // VTID-04869: computed from the latest 50 vtid.live + 50 voice.live
+            // events, not 24h; no starts = dash, not a red 0%.
+            value: orbStats && orbStats.success_rate !== null ? orbStats.success_rate + '%' : '—',
             label: 'ORB Sessions',
-            subtitle: orbStats ? orbStats.sessions_24h + ' sessions (24h)' : 'No data',
-            color: orbStats && orbStats.sessions_24h > 0 ? metricColor(orbStats.success_rate, 80, 50) : (orbStats && orbStats.gemini_live_enabled ? 'neutral' : 'red')
+            subtitle: orbStats ? orbStats.sessions_24h + ' starts (last 100 events)' : 'No data',
+            color: orbStats && orbStats.success_rate !== null ? metricColor(orbStats.success_rate, 80, 50) : 'neutral'
         }
     ];
 
@@ -29449,7 +29554,8 @@ function renderOverviewSystemView() {
         {
             value: summary && summary.funnel ? String(summary.funnel.completed || 0) : '—',
             label: 'Tasks Completed',
-            subtitle: '7d total',
+            // VTID-04869: the funnel count is all-time (query capped at 500), not 7 days.
+            subtitle: 'All time (max 500)',
             color: summary && summary.funnel && summary.funnel.completed > 0 ? 'green' : 'neutral'
         },
         {
@@ -29501,7 +29607,7 @@ function renderOverviewSystemView() {
         'Registered Users': '<svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>',
         'Active Now': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
         'New Users (7d)': '<svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>',
-        'Errors (24h)': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#ef4444"/><line x1="12" y1="8" x2="12" y2="12" stroke="#ef4444"/><line x1="12" y1="16" x2="12.01" y2="16" stroke="#ef4444"/></svg>',
+        'Errors (last 30)': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#ef4444"/><line x1="12" y1="8" x2="12" y2="12" stroke="#ef4444"/><line x1="12" y1="16" x2="12.01" y2="16" stroke="#ef4444"/></svg>',
         'Violations': '<svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="#3b82f6"/><line x1="12" y1="8" x2="12" y2="12" stroke="#3b82f6"/><line x1="12" y1="16" x2="12.01" y2="16" stroke="#3b82f6"/></svg>',
         'New VTID Today': '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>',
         'Scheduled VTID': '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
@@ -29603,9 +29709,8 @@ function renderOverviewSystemView() {
         healthPanel.appendChild(noH);
     } else {
         // Failed services alert (if any)
-        var failedSvcs = sortedHealth.filter(function (s) {
-            return s.status === 'down' || s.status === 'error' || s.status === 'unhealthy' || s.status === 'failed';
-        });
+        // VTID-04869: shared classification (unavailable/misconfigured count too).
+        var failedSvcs = sortedHealth.filter(function (s) { return overviewHealthClass(s) === 'failed'; });
         if (failedSvcs.length > 0) {
             var failSection = document.createElement('div');
             failSection.className = 'overview-status-banner overview-status-critical overview-failed-services';
@@ -29640,7 +29745,7 @@ function renderOverviewSystemView() {
                 orderedGroups.forEach(function (groupName) {
                     var svcs = groupMap[groupName];
                     var gHealthy = svcs.filter(function (s) { return s.status === 'ok' || s.status === 'healthy' || s.healthy; }).length;
-                    var gFailed = svcs.filter(function (s) { return s.status === 'down' || s.status === 'error' || s.status === 'unhealthy'; }).length;
+                    var gFailed = svcs.filter(function (s) { return overviewHealthClass(s) === 'failed'; }).length;
                     var gColorClass = gFailed > 0 ? 'red' : (gHealthy < svcs.length ? 'yellow' : 'green');
 
                     var groupBox = document.createElement('div');
@@ -29684,9 +29789,11 @@ function renderOverviewSystemView() {
                         var hidx = hri * HEALTH_COLS + hci;
                         if (hidx < services.length) {
                             var hsvc = services[hidx];
-                            var hdot = 'green';
-                            if (hsvc.status === 'degraded' || hsvc.status === 'warning' || hsvc.status === 'ok_governance_limited') hdot = 'yellow';
-                            if (hsvc.status === 'down' || hsvc.status === 'error' || hsvc.status === 'unhealthy') hdot = 'red';
+                            // VTID-04869: green only when measured healthy — an
+                            // unrecognised status used to default to green.
+                            var hcls = overviewHealthClass(hsvc);
+                            var hdot = hcls === 'failed' ? 'red' : (hcls === 'unknown' ? 'grey' : 'green');
+                            if (hcls === 'degraded' || hsvc.status === 'ok_governance_limited') hdot = 'yellow';
                             var hlatency = hsvc.latency_ms >= 0 ? '<div class="health-grid-card-latency">' + hsvc.latency_ms + 'ms</div>' : '';
                             healthHTML += '<td style="padding:2px;vertical-align:top;">' +
                                 '<div class="health-grid-card" title="' + hsvc.name + ': ' + hsvc.status + '">' +
@@ -29728,9 +29835,7 @@ function renderOverviewSystemView() {
         }
 
         if (tier2Services.length > 0) {
-            var tier2Failed = tier2Services.filter(function (s) {
-                return s.status === 'down' || s.status === 'error' || s.status === 'unhealthy' || s.status === 'failed';
-            });
+            var tier2Failed = tier2Services.filter(function (s) { return overviewHealthClass(s) === 'failed'; });
             var tier2Healthy = tier2Services.filter(function (s) { return s.status === 'ok' || s.status === 'healthy' || s.healthy; }).length;
             var tier2Expanded = state.overviewHealthTier2Expanded || tier2Failed.length > 0;
 
@@ -29758,12 +29863,16 @@ function renderOverviewSystemView() {
     // ═══════════════════════════════════════════════════════════════════════
     var orbPanel = document.createElement('div');
     orbPanel.className = 'overview-orb-panel';
-    var orbOk = orbStats && orbStats.gemini_live_enabled && orbStats.vertex_project_configured && orbStats.google_auth_ready;
+    // VTID-04869: provider-neutral ORB card. Ready = the gateway's
+    // voice_runtime.healthy for the active provider (or the session counter
+    // proving it). No health block = UNKNOWN (grey), not "ORB BROKEN".
+    var orbKnown = !!(orbStats && (orbStats.runtime_known || orbStats.counter_proven_healthy));
+    var orbOk = !!(orbStats && (orbStats.runtime_healthy || orbStats.counter_proven_healthy));
 
     var orbHeader = document.createElement('div');
     orbHeader.className = 'overview-panel-title-row';
     var orbDot = document.createElement('span');
-    orbDot.className = 'health-dot health-dot-' + (orbOk ? 'green' : 'red');
+    orbDot.className = 'health-dot health-dot-' + (!orbKnown ? 'grey' : (orbOk ? 'green' : 'red'));
     var orbTitleEl = document.createElement('span');
     orbTitleEl.className = 'overview-panel-title';
     orbTitleEl.style.margin = '0';
@@ -29775,60 +29884,55 @@ function renderOverviewSystemView() {
     // ORB-VOICE-HEALTH-PROBE: surface the actively-selected upstream provider
     // (the same signal selectUpstreamProvider/resolveActiveProviderForCaller
     // resolve at session connect time) so the card reflects runtime reality.
-    var orbProvider = (orbStats && orbStats.runtime_provider) || (orbOk ? 'vertex' : null);
-    if (orbProvider) {
-        var provRow = document.createElement('div');
-        provRow.className = 'orb-config-row';
-        var provLabel = document.createElement('span');
-        provLabel.className = 'orb-config-label';
-        provLabel.textContent = 'Active provider';
-        var provVal = document.createElement('span');
-        provVal.className = 'orb-config-value';
-        provVal.style.color = '#94a3b8';
-        provVal.textContent = orbProvider === 'livekit' ? 'LiveKit' : 'Vertex';
-        provRow.appendChild(provLabel);
-        provRow.appendChild(provVal);
-        orbPanel.appendChild(provRow);
-    }
-
-    var configs = [
-        { label: 'Gemini Live', ok: orbStats && orbStats.gemini_live_enabled },
-        { label: 'Vertex Project', ok: orbStats && orbStats.vertex_project_configured },
-        { label: 'Google Auth', ok: orbStats && orbStats.google_auth_ready }
+    // VTID-04869: the provider string is shown exactly as the gateway
+    // reports it — never guessed, and never relabelled to a provider name
+    // the data does not carry.
+    var orbProvider = (orbStats && orbStats.runtime_provider) || 'unknown';
+    var orbRows = [
+        { label: 'Active provider', value: orbProvider, color: '#94a3b8' },
+        {
+            label: 'Runtime ready',
+            value: !orbKnown ? 'UNKNOWN' : (orbOk ? 'OK' : 'FAIL'),
+            color: !orbKnown ? '#94a3b8' : (orbOk ? '#10b981' : '#ef4444'),
+            dot: !orbKnown ? 'grey' : (orbOk ? 'green' : 'red')
+        }
     ];
-    configs.forEach(function (cfg) {
+    if (orbStats && orbStats.runtime_provider_reason) {
+        orbRows.push({ label: 'Selection reason', value: orbStats.runtime_provider_reason, color: '#94a3b8' });
+    }
+    orbRows.forEach(function (cfg) {
         var row = document.createElement('div');
         row.className = 'orb-config-row';
-        var cfgDot = document.createElement('span');
-        cfgDot.className = 'health-dot health-dot-' + (cfg.ok ? 'green' : 'red');
+        if (cfg.dot) {
+            var cfgDot = document.createElement('span');
+            cfgDot.className = 'health-dot health-dot-' + cfg.dot;
+            row.appendChild(cfgDot);
+        }
         var cfgLabel = document.createElement('span');
         cfgLabel.className = 'orb-config-label';
         cfgLabel.textContent = cfg.label;
         var cfgVal = document.createElement('span');
         cfgVal.className = 'orb-config-value';
-        cfgVal.style.color = cfg.ok ? '#10b981' : '#ef4444';
-        cfgVal.textContent = cfg.ok ? 'OK' : 'FAIL';
-        row.appendChild(cfgDot);
+        cfgVal.style.color = cfg.color;
+        cfgVal.textContent = cfg.value;
         row.appendChild(cfgLabel);
         row.appendChild(cfgVal);
         orbPanel.appendChild(row);
     });
 
-    if (!orbOk) {
+    if (orbKnown && !orbOk) {
         var alertBox = document.createElement('div');
         alertBox.className = 'orb-alert';
-        var issues = [];
-        if (!orbStats || !orbStats.gemini_live_enabled) issues.push('Gemini Live disabled');
-        if (!orbStats || !orbStats.vertex_project_configured) issues.push('VERTEX_PROJECT_ID empty');
-        if (!orbStats || !orbStats.google_auth_ready) issues.push('Google Auth not ready');
-        alertBox.textContent = 'ORB BROKEN: ' + issues.join(' \u2022 ');
+        alertBox.textContent = 'ORB voice runtime not ready (provider: ' + orbProvider + ')';
         orbPanel.appendChild(alertBox);
     }
 
+    // VTID-04869: counted from the latest 50 vtid.live + 50 voice.live
+    // events, not a 24h window — labelled as such.
     var orbMetrics = [
-        { label: 'Sessions (24h)', value: orbStats ? String(orbStats.sessions_24h) : '0' },
-        { label: 'Failures (24h)', value: orbStats ? String(orbStats.failures_24h) : '0', warn: orbStats && orbStats.failures_24h > 0 },
-        { label: 'Success Rate', value: orbStats ? orbStats.success_rate + '%' : '\u2014' }
+        { label: 'Starts (last 100 events)', value: orbStats ? String(orbStats.sessions_24h) : '\u2014' },
+        { label: 'Failures (last 100 events)', value: orbStats ? String(orbStats.failures_24h) : '\u2014', warn: orbStats && orbStats.failures_24h > 0 },
+        { label: 'Success Rate', value: orbStats && orbStats.success_rate !== null ? orbStats.success_rate + '%' : '\u2014' }
     ];
     orbMetrics.forEach(function (m) {
         var row = document.createElement('div');
@@ -29855,7 +29959,8 @@ function renderOverviewSystemView() {
     var failTitleEl = document.createElement('span');
     failTitleEl.className = 'overview-panel-title';
     failTitleEl.style.margin = '0';
-    failTitleEl.textContent = 'Recent Failures';
+    // VTID-04869: latest 30 status=error events — no time window.
+    failTitleEl.textContent = 'Recent Failures (last 30)';
     failHeader.appendChild(failTitleEl);
     if (db.recentFailures.length > 0) {
         var failBadge = document.createElement('span');
@@ -29865,10 +29970,21 @@ function renderOverviewSystemView() {
     }
     failPanel.appendChild(failHeader);
 
-    if (db.recentFailures.length === 0) {
+    if (db.recentFailuresUnavailable || (db.error && db.recentFailures.length === 0)) {
+        // VTID-04869: the fetch failed — say so instead of "no failures".
+        var failUnknown = document.createElement('div');
+        failUnknown.className = 'placeholder-content';
+        failUnknown.textContent = 'Could not load failure events \u2014 unknown, not zero.';
+        failPanel.appendChild(failUnknown);
+    } else if (!db.fetched) {
+        var failLoading = document.createElement('div');
+        failLoading.className = 'placeholder-content';
+        failLoading.textContent = 'Loading failure events\u2026';
+        failPanel.appendChild(failLoading);
+    } else if (db.recentFailures.length === 0) {
         var noFail = document.createElement('div');
         noFail.className = 'overview-no-failures';
-        noFail.textContent = 'No failures in the last 24h';
+        noFail.textContent = 'No error events in the latest 30 OASIS events fetched';
         failPanel.appendChild(noFail);
     } else {
         var failListWrap = document.createElement('div');
@@ -29932,7 +30048,8 @@ function renderOverviewSystemView() {
             depDot.className = 'deploy-status-dot ' + (isSuccess ? 'deploy-status-dot-success' : 'deploy-status-dot-failed');
             var depService = document.createElement('span');
             depService.className = 'deploy-service';
-            depService.textContent = dep.service || dep.service_name || 'gateway';
+            // VTID-04869: no service on the row = 'unknown', never a made-up 'gateway'.
+            depService.textContent = dep.service || dep.service_name || 'unknown';
             var depVersion = document.createElement('span');
             depVersion.className = 'deploy-swv';
             var ver = dep.version || dep.image_tag || dep.commit_sha || '';
@@ -29979,7 +30096,15 @@ function renderOverviewSystemView() {
 
     var severityColors = { BROKEN: '#ef4444', STUCK: '#f59e0b', BLOCKED: '#6b7280', NEW: '#3b82f6' };
 
-    if (attQueue.length === 0) {
+    if (!summary) {
+        // VTID-04869: no pipeline summary = unknown, not "running smoothly".
+        var attUnknown = document.createElement('div');
+        attUnknown.className = 'placeholder-content';
+        attUnknown.textContent = state.overviewPipelineSummary.error
+            ? 'Pipeline summary unavailable (' + state.overviewPipelineSummary.error + ') \u2014 attention queue unknown.'
+            : 'Pipeline summary not loaded \u2014 attention queue unknown.';
+        attSection.appendChild(attUnknown);
+    } else if (attQueue.length === 0) {
         var allClear = document.createElement('div');
         allClear.className = 'overview-no-failures';
         allClear.textContent = 'No tasks need immediate attention. Pipeline running smoothly.';
@@ -30205,9 +30330,19 @@ function renderOverviewSystemView() {
         liveHdr.className = 'overview-panel-title-row';
         liveHdr.innerHTML = '<span class="overview-panel-title">Live Activity</span>' +
             '<span class="overview-count-badge overview-count-badge-green">' + liveEvents.length + ' events</span>' +
-            '<a href="#" onclick="event.preventDefault();state.activeModule=\'overview\';state.activeTab=\'recent-events\';renderApp();" ' +
+            '<a href="/command-hub/overview/recent-events/" data-action="overview-view-all-events" ' +
             'style="margin-left:auto;font-size:0.75rem;color:#60a5fa;text-decoration:none;">View all \u2192</a>';
         livePanel.appendChild(liveHdr);
+        // VTID-04869: delegated listener instead of an inline onclick string
+        // (CSP — no inline JS). The inline handler also wrote
+        // state.activeModule/activeTab, which the router never reads, so the
+        // link did nothing.
+        livePanel.addEventListener('click', function (ev) {
+            var target = ev.target && ev.target.closest ? ev.target.closest('[data-action="overview-view-all-events"]') : null;
+            if (!target) return;
+            ev.preventDefault();
+            navigateToScreen('overview', 'recent-events');
+        });
 
         var liveTable = document.createElement('div');
         liveTable.style.cssText = 'display:flex;flex-direction:column;gap:2px;max-height:220px;overflow-y:auto;';
@@ -30285,7 +30420,8 @@ async function fetchActionRequired(silentRefresh) {
     state.actionRequired.lastRefreshed = new Date().toISOString();
     state.actionRequired.loading = false;
     state.actionRequired.fetched = true;
-    if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
+    // VTID-04869: real router keys (currentModuleKey/currentTab).
+    if (state.currentModuleKey === 'overview' && state.currentTab === 'system-overview') {
         // VTID-03917: this used to call the unconditional full renderApp()
         // below even when silentRefresh was requested (the 30s Overview
         // poll, app.js:~31713) — mirrors the exact bug fetchServiceHealth
@@ -30347,7 +30483,8 @@ async function fetchOverviewTimeseries(silentRefresh) {
     // does, it must not trigger a full-app renderApp() rebuild either.
     // State is already updated above; a silent caller picks it up on the
     // next natural render instead of forcing one.
-    if (state.activeModule === 'overview' && state.activeTab === 'system-overview' && !silentRefresh) {
+    // VTID-04869: real router keys (currentModuleKey/currentTab).
+    if (state.currentModuleKey === 'overview' && state.currentTab === 'system-overview' && !silentRefresh) {
         renderApp();
     }
 }
@@ -30587,8 +30724,9 @@ function renderVtidAttentionCard(item) {
     // inventing a new drilldown surface.
     card.onclick = function (e) {
         e.preventDefault();
-        state.activeModule = 'oasis';
-        state.activeTab = 'vtid-ledger';
+        // VTID-04869: real router keys via navigateToScreen (the old
+        // state.activeModule/activeTab writes never navigated anywhere).
+        navigateToScreen('oasis', 'vtid-ledger');
         fetchOasisVtidDetail(item.vtid);
     };
 
@@ -30998,8 +31136,9 @@ function renderOverviewLiveMetricsView() {
             card.appendChild(bottomRow);
 
             card.style.cursor = 'pointer';
+            // VTID-04869: navigateTo() was never defined — every click threw.
             card.onclick = function () {
-                navigateTo('command-hub', 'tasks');
+                navigateToScreen('command-hub', 'tasks');
             };
 
             attSection.appendChild(card);

@@ -6,7 +6,7 @@
       "kind": "http",
       "target": "gateway",
       "method": "GET",
-      "path": "/command-hub/app.js?v=20261025-vtid-04836",
+      "path": "/command-hub/app.js?v=20261026-vtid-04869",
       "expect_status": 200,
       "expect_body_contains": "function syncOrbRouteWithCommandHub()",
       "reason": "the Command Hub client served at the URL index.html loads reports every tab switch to the voice widget, so Vitana knows which Command Hub screen the developer is on"
@@ -15,7 +15,7 @@
       "kind": "http",
       "target": "gateway",
       "method": "GET",
-      "path": "/command-hub/app.js?v=20261025-vtid-04836",
+      "path": "/command-hub/app.js?v=20261026-vtid-04869",
       "expect_status": 200,
       "expect_body_contains": "status: 'refused', reason: 'not a Command Hub screen'",
       "reason": "the Command Hub reports whether a voice navigation opened (opened / refused / not_found) instead of always 'unknown'"
