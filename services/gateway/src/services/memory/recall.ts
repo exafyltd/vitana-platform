@@ -67,6 +67,27 @@ export function formatStreamMs(perStream: Record<string, number> | undefined | n
   return parts.length ? parts.join(',') : '-';
 }
 
+/** VTID-04877: a known millisecond value, or '-' when the pack does not carry one. */
+export function formatGateMs(gateMs: number | undefined | null): string {
+  return typeof gateMs === 'number' && Number.isFinite(gateMs) ? String(Math.round(gateMs)) : '-';
+}
+
+/**
+ * VTID-04877: the part of the total that neither the flag check nor the
+ * slowest stream explains (event-loop lag, pack assembly). '-' when the gate
+ * time is unknown; an empty stream map counts as 0.
+ */
+export function formatUnaccountedMs(
+  totalMs: number,
+  gateMs: number | undefined | null,
+  perStream: Record<string, number> | undefined | null,
+): string {
+  if (typeof gateMs !== 'number' || !Number.isFinite(gateMs)) return '-';
+  const streams = Object.values(perStream || {}).filter((ms) => Number.isFinite(ms));
+  const slowest = streams.length ? Math.max(...streams) : 0;
+  return String(Math.max(0, Math.round(totalMs - gateMs - slowest)));
+}
+
 /** Budget for the whole read. The legacy read used a 2 s hard timeout. */
 export const ORB_RECALL_BUDGET_MS = 1500;
 
@@ -169,7 +190,9 @@ export async function recallOrbMemoryItems(
     });
     const latency = Date.now() - t0;
     if (!pack.ok) {
-      console.warn(`[VTID-04452] orb recall unavailable in ${latency}ms: ${pack.error ?? 'unknown'}`);
+      console.warn(
+        `[VTID-04452] orb recall unavailable in ${latency}ms: ${pack.error ?? 'unknown'} gate_ms=${formatGateMs(pack.meta?.gate_ms)}`,
+      );
       return { ok: false, items: [], latency_ms: latency, degraded: true, sections: empty, error: pack.error ?? 'broker_not_ok' };
     }
     const { items, ...sections } = packToRecallItems(pack);
@@ -177,7 +200,8 @@ export async function recallOrbMemoryItems(
     console.log(
       `[VTID-04452] orb recall in ${latency}ms facts=${sections.facts} episodes=${sections.episodes} ` +
       `diary=${sections.diary} degraded=${pack.meta.degraded} streams=${pack.meta.streams_hit.join(',')} ` +
-      `stream_ms=${formatStreamMs(pack.meta.latency_ms_per_stream)}`,
+      `stream_ms=${formatStreamMs(pack.meta.latency_ms_per_stream)} gate_ms=${formatGateMs(pack.meta.gate_ms)} ` +
+      `unaccounted_ms=${formatUnaccountedMs(latency, pack.meta.gate_ms, pack.meta.latency_ms_per_stream)}`,
     );
     if (!gotAny) {
       return { ok: false, items: [], latency_ms: latency, degraded: true, sections, error: 'no_sections_loaded' };
