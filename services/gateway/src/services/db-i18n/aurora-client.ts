@@ -304,6 +304,7 @@ CREATE TABLE IF NOT EXISTS public.journey_checklist_translations (
 
 ALTER TABLE public.nav_catalog_i18n ADD COLUMN IF NOT EXISTS source_sha text;
 ALTER TABLE public.journey_checklist_translations ADD COLUMN IF NOT EXISTS source_sha text;
+ALTER TABLE public.journey_checklist_translations ADD COLUMN IF NOT EXISTS vitana_voice_script text;
 
 CREATE INDEX IF NOT EXISTS nav_catalog_i18n_lang_sha_idx
   ON public.nav_catalog_i18n (lang, source_sha);

@@ -132,6 +132,7 @@ export interface ChecklistTranslationRow {
   explanation_user_benefit: string | null;
   explanation_when_to_use: string | null;
   explanation_try_this: string | null;
+  vitana_voice_script?: string | null;
   source_version_id?: string | null;
   source_sha?: string | null;
 }
@@ -199,6 +200,7 @@ interface SnapshotTopic {
     whenToUse?: string;
     tryThis?: string;
   };
+  vitanaVoiceScript?: string | null;
 }
 
 /**
@@ -219,6 +221,7 @@ function snapshotToSourceUnits(snapshot: unknown[], versionId: string): SourceUn
         explanation_user_benefit: t.explanation?.userBenefit ?? '',
         explanation_when_to_use: t.explanation?.whenToUse ?? '',
         explanation_try_this: t.explanation?.tryThis ?? '',
+        vitana_voice_script: t.vitanaVoiceScript ?? '',
       },
       meta: { source_version_id: versionId },
     }));
@@ -481,14 +484,14 @@ class AuroraDbI18nRepository implements DbI18nRepository {
            (topic_id, locale, display_label, short_description,
             explanation_what_it_is, explanation_user_benefit,
             explanation_when_to_use, explanation_try_this,
-            source_version_id, source_sha, updated_at)
+            vitana_voice_script, source_version_id, source_sha, updated_at)
          SELECT t.*, now() FROM unnest(
            $1::text[], $2::text[], $3::text[], $4::text[], $5::text[],
-           $6::text[], $7::text[], $8::text[], $9::uuid[], $10::text[]
+           $6::text[], $7::text[], $8::text[], $9::text[], $10::uuid[], $11::text[]
          ) AS t(topic_id, locale, display_label, short_description,
                 explanation_what_it_is, explanation_user_benefit,
                 explanation_when_to_use, explanation_try_this,
-                source_version_id, source_sha)
+                vitana_voice_script, source_version_id, source_sha)
          ON CONFLICT (topic_id, locale) DO UPDATE SET
            display_label            = EXCLUDED.display_label,
            short_description        = EXCLUDED.short_description,
@@ -496,6 +499,7 @@ class AuroraDbI18nRepository implements DbI18nRepository {
            explanation_user_benefit = EXCLUDED.explanation_user_benefit,
            explanation_when_to_use  = EXCLUDED.explanation_when_to_use,
            explanation_try_this     = EXCLUDED.explanation_try_this,
+           vitana_voice_script      = EXCLUDED.vitana_voice_script,
            source_version_id        = EXCLUDED.source_version_id,
            source_sha               = EXCLUDED.source_sha,
            updated_at               = now()`,
@@ -508,6 +512,7 @@ class AuroraDbI18nRepository implements DbI18nRepository {
           batch.map((r) => r.explanation_user_benefit),
           batch.map((r) => r.explanation_when_to_use),
           batch.map((r) => r.explanation_try_this),
+          batch.map((r) => r.vitana_voice_script ?? null),
           batch.map((r) => r.source_version_id ?? null),
           batch.map((r) => r.source_sha ?? null),
         ],

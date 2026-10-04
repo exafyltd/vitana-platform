@@ -81,7 +81,7 @@ const APPLY = Boolean(args.apply);
 const CHECK_ONLY = Boolean(args.check);
 const FROM_ARTIFACT = Boolean(args['from-artifact']);
 const CURRICULUM = String(args.curriculum ?? 'v2');
-const BATCH = args.batch ? Number(args.batch) : 15;
+const BATCH_OVERRIDE = args.batch ? Number(args.batch) : null;
 
 function artifactPath(surface: string, locale: string): string {
   return join(ARTIFACT_ROOT, surface, `${locale}.json`);
@@ -358,7 +358,7 @@ async function main(): Promise<void> {
             brief: surface.translatorBrief,
           },
           surface.requiredFields,
-          BATCH,
+          BATCH_OVERRIDE ?? surface.batchSize ?? 15,
         );
         for (const u of todo) {
           const fields = translated.get(u.key);
