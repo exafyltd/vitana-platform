@@ -20,6 +20,13 @@ export interface ServiceHealthEndpoint {
   name: string;
   url: string;
   group: string;
+  /**
+   * VTID-04876: a check on the members' golden path (gateway, auth, ORB voice,
+   * the data stores, the production frontend). The Overview's /ops/attention
+   * service-health adapter ranks a golden-path check failing for >= 2 minutes
+   * as P1 (members impacted now); any other failing check is P2.
+   */
+  golden_path?: boolean;
 }
 
 /**
@@ -52,10 +59,15 @@ export const SERVICE_HEALTH_GROUPS: string[] = [
   'Business & Support',
 ];
 
+/**
+ * VTID-04876: golden-path entries (`golden_path: true`) — Gateway + Gateway
+ * Alive, Auth, ORB Live + Nova Sonic (ORB/Nova), Aurora Memory + Aurora RLS +
+ * Database Latency (the Supabase/Aurora data probes) and Frontend Prod.
+ */
 export const SERVICE_HEALTH_REGISTRY: ServiceHealthEndpoint[] = [
-  { name: 'Gateway', url: '/health', group: 'Core Infrastructure' },
-  { name: 'Gateway Alive', url: '/alive', group: 'Core Infrastructure' },
-  { name: 'Auth', url: '/api/v1/auth/health', group: 'Core Infrastructure' },
+  { name: 'Gateway', url: '/health', group: 'Core Infrastructure', golden_path: true },
+  { name: 'Gateway Alive', url: '/alive', group: 'Core Infrastructure', golden_path: true },
+  { name: 'Auth', url: '/api/v1/auth/health', group: 'Core Infrastructure', golden_path: true },
   { name: 'CI/CD', url: '/api/v1/cicd/health', group: 'Core Infrastructure' },
   { name: 'Execute Runner', url: '/api/v1/execute/health', group: 'Core Infrastructure' },
   { name: 'Operator', url: '/api/v1/operator/health', group: 'Core Infrastructure' },
@@ -65,7 +77,7 @@ export const SERVICE_HEALTH_REGISTRY: ServiceHealthEndpoint[] = [
   { name: 'Command Hub UI', url: '/command-hub/health', group: 'Core Infrastructure' },
   { name: 'Assistant', url: '/api/v1/assistant/health', group: 'AI & Assistant' },
   { name: 'Knowledge Hub', url: '/api/v1/assistant/knowledge/health', group: 'AI & Assistant' },
-  { name: 'ORB Live', url: '/api/v1/orb/health', group: 'AI & Assistant' },
+  { name: 'ORB Live', url: '/api/v1/orb/health', group: 'AI & Assistant', golden_path: true },
   { name: 'Voice Lab', url: '/api/v1/voice-lab/health', group: 'AI & Assistant' },
   { name: 'Conversation', url: '/api/v1/conversation/health', group: 'AI & Assistant' },
   { name: 'Conversation Tools', url: '/api/v1/conversation/tool-health', group: 'AI & Assistant' },
@@ -117,14 +129,14 @@ export const SERVICE_HEALTH_REGISTRY: ServiceHealthEndpoint[] = [
   // VTID-04662 (Phase 1): health routes that already existed but were never
   // registered. Admin-gated ones answer through the summary, which forwards the
   // caller's admin token.
-  { name: 'Nova Sonic', url: '/api/v1/orb/nova-sonic/health', group: 'AI & Assistant' },
+  { name: 'Nova Sonic', url: '/api/v1/orb/nova-sonic/health', group: 'AI & Assistant', golden_path: true },
   { name: 'LLM Providers', url: '/api/v1/llm/providers/health', group: 'AI & Assistant' },
   { name: 'Voice Tools Catalog', url: '/api/v1/voice-tools/health', group: 'AI & Assistant' },
   { name: 'Self-Healing', url: '/api/v1/self-healing/health', group: 'Self-Healing & Ops' },
   { name: 'Watcher', url: '/api/v1/watcher/health', group: 'Self-Healing & Ops' },
   { name: 'Worker Orchestrator', url: '/api/v1/worker/orchestrator/health', group: 'Self-Healing & Ops' },
-  { name: 'Aurora Memory', url: '/api/v1/admin/aurora-memory/health', group: 'Data & Memory' },
-  { name: 'Aurora RLS', url: '/api/v1/admin/aurora-rls-health', group: 'Data & Memory' },
+  { name: 'Aurora Memory', url: '/api/v1/admin/aurora-memory/health', group: 'Data & Memory', golden_path: true },
+  { name: 'Aurora RLS', url: '/api/v1/admin/aurora-rls-health', group: 'Data & Memory', golden_path: true },
   { name: 'ORB Session State', url: '/api/v1/admin/orb-session-state-health', group: 'Data & Memory' },
   { name: 'Reminders', url: '/api/v1/reminders/_health/check', group: 'Automation & Scheduling' },
   { name: 'Calendar', url: '/api/v1/calendar/health', group: 'Automation & Scheduling' },
@@ -151,7 +163,7 @@ export const SERVICE_HEALTH_REGISTRY: ServiceHealthEndpoint[] = [
   { name: 'Prod Deploy', url: '/api/v1/ops/runtime/deploy/prod-deploy', group: 'Deploy & Release' },
   { name: 'Prod Gateway Build', url: '/api/v1/ops/runtime/deploy/prod-gateway', group: 'Deploy & Release' },
   { name: 'Staging Gateway Build', url: '/api/v1/ops/runtime/deploy/staging-gateway', group: 'Deploy & Release' },
-  { name: 'Frontend Prod', url: '/api/v1/ops/runtime/deploy/frontend-prod', group: 'Deploy & Release' },
+  { name: 'Frontend Prod', url: '/api/v1/ops/runtime/deploy/frontend-prod', group: 'Deploy & Release', golden_path: true },
   { name: 'Frontend Staging', url: '/api/v1/ops/runtime/deploy/frontend-staging', group: 'Deploy & Release' },
   { name: 'ECS Gateway Prod', url: '/api/v1/ops/runtime/aws/ecs/vitana-gateway-awsdr', group: 'AWS Runtime' },
   { name: 'ECS Gateway Staging', url: '/api/v1/ops/runtime/aws/ecs/vitana-gateway', group: 'AWS Runtime' },
@@ -176,7 +188,7 @@ export const SERVICE_HEALTH_REGISTRY: ServiceHealthEndpoint[] = [
   { name: 'DeepSeek', url: '/api/v1/ops/runtime/ai/deepseek', group: 'Voice & Media' },
   { name: 'Titan Images', url: '/api/v1/ops/runtime/media/titan', group: 'Voice & Media' },
   { name: 'OASIS Write Lag', url: '/api/v1/ops/runtime/data/oasis-write-lag', group: 'Data & Scheduling' },
-  { name: 'Database Latency', url: '/api/v1/ops/runtime/data/db-latency', group: 'Data & Scheduling' },
+  { name: 'Database Latency', url: '/api/v1/ops/runtime/data/db-latency', group: 'Data & Scheduling', golden_path: true },
   { name: 'Redis', url: '/api/v1/ops/runtime/data/redis', group: 'Data & Scheduling' },
   { name: 'Code Index', url: '/api/v1/ops/runtime/data/code-index', group: 'Data & Scheduling' },
   { name: 'Scheduled Workflows', url: '/api/v1/ops/runtime/data/scheduled-workflows', group: 'Data & Scheduling' },

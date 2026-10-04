@@ -251,3 +251,25 @@ describe('GET /api/v1/admin/health/summary', () => {
     expect(res.body.groups).toEqual(SERVICE_HEALTH_GROUPS);
   });
 });
+
+describe('VTID-04876: golden-path registry entries', () => {
+  const GOLDEN = [
+    'Gateway', 'Gateway Alive', 'Auth', 'ORB Live', 'Nova Sonic',
+    'Aurora Memory', 'Aurora RLS', 'Database Latency', 'Frontend Prod',
+  ];
+  it('exactly the members\' golden path is flagged golden_path: true', () => {
+    const flagged = SERVICE_HEALTH_REGISTRY.filter((e) => e.golden_path === true).map((e) => e.name).sort();
+    expect(flagged).toEqual([...GOLDEN].sort());
+  });
+  it('golden_path is only ever true or absent', () => {
+    for (const e of SERVICE_HEALTH_REGISTRY) expect([true, undefined]).toContain(e.golden_path);
+  });
+  it('the golden-path entries are the gateway, auth, ORB/Nova, data and prod-frontend probes', () => {
+    const byName = new Map(SERVICE_HEALTH_REGISTRY.map((e) => [e.name, e]));
+    expect(byName.get('Gateway')!.url).toBe('/health');
+    expect(byName.get('Auth')!.url).toBe('/api/v1/auth/health');
+    expect(byName.get('Nova Sonic')!.url).toBe('/api/v1/orb/nova-sonic/health');
+    expect(byName.get('Database Latency')!.url).toBe('/api/v1/ops/runtime/data/db-latency');
+    expect(byName.get('Frontend Prod')!.url).toBe('/api/v1/ops/runtime/deploy/frontend-prod');
+  });
+});

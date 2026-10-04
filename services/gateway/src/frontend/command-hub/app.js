@@ -4760,15 +4760,17 @@ const state = {
         error: null
     },
 
-    // VTID-02031: Ops "Action Required" — pull surface mirroring Gchat pings
-    actionRequired: {
-        items: [],
-        countTotal: 0,
-        countCritical: 0,
-        lastRefreshed: null,
+    // VTID-04876: Overview cockpit — GET /api/v1/ops/attention (replaces the
+    // VTID-02031 /ops/action-required panel state).
+    opsAttention: {
+        data: null,
+        error: null,
         loading: false,
         fetched: false,
-        error: null
+        lastOkAt: null,
+        lastFetchAt: null,
+        domainFilter: 'all',
+        legacyOpen: false
     },
 
     // DEV-COMHU-03404: hourly oasis_events rollup for Overview sparklines
@@ -12340,7 +12342,9 @@ function handleTabClick(tabKey) {
  * without rendering twice. An unknown tab falls back to the section's
  * first tab; an unknown section does nothing and returns false.
  */
-function navigateToScreen(sectionKey, tabKey) {
+// VTID-04876: optional query (the deep-link contract below) is appended to the
+// tab path and read by the target screen right after it renders.
+function navigateToScreen(sectionKey, tabKey, query) {
     var section = NAVIGATION_CONFIG.find(function (s) { return s.section === sectionKey; });
     if (!section) return false;
     var tab = section.tabs.find(function (t) { return t.key === tabKey; }) || section.tabs[0];
@@ -12351,10 +12355,91 @@ function navigateToScreen(sectionKey, tabKey) {
     }
     state.currentModuleKey = sectionKey;
     state.currentTab = tab ? tab.key : '';
-    history.pushState(null, '', tab ? tab.path : section.basePath);
+    history.pushState(null, '', (tab ? tab.path : section.basePath) + opsAttentionQueryString(query));
     renderApp();
     restoreScrollPositionsForRoute(getScrollRouteKey());
+    applyDeepLinkParams();
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// VTID-04876: deep-link contract. A screen reads its query parameter when it
+// is navigated to (navigateToScreen, browser back/forward, page load):
+//   command-hub/tasks ?vtid=     → task drawer
+//   oasis/vtid-ledger ?vtid=     → ledger drawer
+//   voice/sessions    ?session=  → voice session drawer
+// services/ops-attention-adapters.ts DEEPLINK_QUERY_CONTRACT mirrors this
+// map (a unit test keeps them equal). An unresolvable value shows a toast
+// and falls back to the list (the parameter is dropped from the URL).
+// ---------------------------------------------------------------------------
+var OVERVIEW_DEEPLINK_QUERY_CONTRACT = {
+    'command-hub/tasks': ['vtid'],
+    'oasis/vtid-ledger': ['vtid'],
+    'voice/sessions': ['session']
+};
+
+function applyDeepLinkParams() {
+    var params;
+    try { params = new URLSearchParams(window.location.search); } catch (_e) { return; }
+    var screen = state.currentModuleKey + '/' + state.currentTab;
+    var allowed = OVERVIEW_DEEPLINK_QUERY_CONTRACT[screen];
+    if (!allowed) return;
+    var vtid = allowed.indexOf('vtid') >= 0 ? params.get('vtid') : null;
+    var session = allowed.indexOf('session') >= 0 ? params.get('session') : null;
+    if (vtid && screen === 'command-hub/tasks') {
+        openTaskDrawerFromDeepLink(vtid);
+    } else if (vtid && screen === 'oasis/vtid-ledger') {
+        openLedgerDrawerFromDeepLink(vtid);
+    } else if (session && screen === 'voice/sessions') {
+        openVoiceSessionFromDeepLink(session);
+    }
+}
+
+function deepLinkFallback(what, value) {
+    showToast(what + ' ' + value + ' could not be opened — showing the list instead', 'warning');
+    try { history.replaceState(null, '', window.location.pathname); } catch (_e) { /* keep URL */ }
+}
+
+async function openTaskDrawerFromDeepLink(vtid) {
+    try {
+        var r = await fetch('/api/v1/vtid/' + encodeURIComponent(vtid), { headers: buildContextHeaders() });
+        var body = r.ok ? await r.json() : null;
+        var d = body && body.ok && body.data ? body.data : null;
+        if (!d) { deepLinkFallback('Task', vtid); return; }
+        state.selectedTask = {
+            vtid: d.vtid || vtid, title: d.title || vtid, status: d.status || '',
+            spec_status: d.spec_status || '', summary: d.summary || '', oasisColumn: ''
+        };
+        state.selectedTaskDetail = d;
+        state.selectedTaskDetailLoading = false;
+        state.executionStatus = null;
+        state.executionStatusLoading = false;
+        renderApp();
+    } catch (_e) {
+        deepLinkFallback('Task', vtid);
+    }
+}
+
+async function openLedgerDrawerFromDeepLink(vtid) {
+    await fetchOasisVtidDetail(vtid);
+    if (oasisVtidDetail.error || !oasisVtidDetail.data) {
+        oasisVtidDetail.selectedVtid = null;
+        oasisVtidDetail.data = null;
+        oasisVtidDetail.error = null;
+        deepLinkFallback('VTID', vtid);
+        renderApp();
+    }
+}
+
+async function openVoiceSessionFromDeepLink(sessionId) {
+    try {
+        var r = await fetch('/api/v1/voice-lab/live/sessions/' + encodeURIComponent(sessionId), { headers: buildContextHeaders() });
+        var body = r.ok ? await r.json() : null;
+        if (!body || !body.ok || !body.session) { deepLinkFallback('Voice session', sessionId); return; }
+        window.openVoiceLabSessionDrawer(sessionId);
+    } catch (_e) {
+        deepLinkFallback('Voice session', sessionId);
+    }
 }
 
 // Router Logic
@@ -12491,6 +12576,8 @@ window.onpopstate = () => {
 
     // VTID-01002: Restore scroll positions for new route from persistent storage
     restoreScrollPositionsForRoute(getScrollRouteKey());
+    // VTID-04876: back/forward re-reads ?vtid= / ?session=.
+    applyDeepLinkParams();
 };
 
 /**
@@ -29278,12 +29365,342 @@ async function fetchOverviewHealth() {
 // ---------------------------------------------------------------------------
 // 2. VTID-01864: renderOverviewSystemView — Supervisor Dashboard
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// VTID-04876: Overview Phase 1 — the supervisor cockpit (GET /api/v1/ops/attention).
+//
+// The Command Hub is admin-facing and English by design: the strings below
+// are operator text, not member-facing copy, so they do not go through an
+// i18n catalog.
+//
+// Two parts: a status bar (verdict, P1/P2/P3 counts, sources fresh x/y,
+// generated_at, env label) and a ranked "Needs attention now" queue with
+// domain filters. Polled every 30 s, only while the Overview is open (real
+// router keys currentModuleKey/currentTab). The bar turns UNKNOWN ("Cockpit
+// blind — check GChat") on any fetch error or when the last good answer is
+// older than 2x the poll interval: the Overview is a triage surface and GChat
+// stays the paging channel. Severity is icon + text label + colour. No
+// inline handlers: one delegated listener reads data-action attributes.
+// ---------------------------------------------------------------------------
+var OPS_ATTENTION_POLL_MS = 30000;
+var OPS_ATTENTION_BLIND_MS = 2 * OPS_ATTENTION_POLL_MS;
+var OPS_ATTENTION_SEVERITY = {
+    P1: { icon: '⛔', label: 'P1 Critical', cls: 'ops-sev-p1' },
+    P2: { icon: '⚠', label: 'P2 High', cls: 'ops-sev-p2' },
+    P3: { icon: 'ℹ', label: 'P3 Watch', cls: 'ops-sev-p3' }
+};
+var OPS_ATTENTION_DOMAINS = [
+    { key: 'all', label: 'All' },
+    { key: 'platform', label: 'Platform' },
+    { key: 'release', label: 'Release' },
+    { key: 'voice', label: 'Voice' },
+    { key: 'autonomy', label: 'Autonomy' },
+    { key: 'operator', label: 'Operator' },
+    { key: 'governance', label: 'Governance' },
+    { key: 'decisions', label: 'Decisions' }
+];
+var OPS_ATTENTION_VERDICT_CLASS = {
+    CRITICAL: 'ops-verdict-critical',
+    UNKNOWN: 'ops-verdict-unknown',
+    ATTENTION: 'ops-verdict-attention',
+    OK: 'ops-verdict-ok'
+};
+
+function opsAttentionIsOpen() {
+    return state.currentModuleKey === 'overview' && state.currentTab === 'system-overview';
+}
+
+/**
+ * Pure: what the status bar shows for the current view state. Blind
+ * (UNKNOWN) on a fetch error, with no answer yet, or when the last good
+ * answer is older than OPS_ATTENTION_BLIND_MS. Never OK on missing data.
+ */
+function computeOpsAttentionStatus(view, nowMs) {
+    var data = view && view.data;
+    if (!view || view.error || !data || !view.lastOkAt || (nowMs - view.lastOkAt) > OPS_ATTENTION_BLIND_MS) {
+        return {
+            verdict: 'UNKNOWN', blind: true, cls: 'ops-verdict-unknown', label: 'UNKNOWN',
+            detail: 'Cockpit blind — check GChat' + (view && view.error ? ' (' + view.error + ')' : '')
+        };
+    }
+    var v = OPS_ATTENTION_VERDICT_CLASS[data.verdict] ? data.verdict : 'UNKNOWN';
+    var detail = v === 'CRITICAL' ? 'Members impacted now'
+        : v === 'ATTENTION' ? 'Items need attention'
+        : v === 'OK' ? 'All sources fresh, nothing needs attention'
+        : 'Some sources are unknown — this is not an all-clear';
+    return { verdict: v, blind: false, cls: OPS_ATTENTION_VERDICT_CLASS[v], label: v, detail: detail };
+}
+
+function opsAttentionEnvLabel(env) {
+    if (env === 'staging') return 'Staging build · production data';
+    if (env === 'production') return 'Production';
+    return 'Environment unknown';
+}
+
+/** '?a=1&b=2' from a deeplink query object; '' when empty. */
+function opsAttentionQueryString(query) {
+    if (!query || typeof query !== 'object') return '';
+    var keys = Object.keys(query).filter(function (k) {
+        return query[k] !== undefined && query[k] !== null && query[k] !== '';
+    });
+    if (!keys.length) return '';
+    return '?' + keys.map(function (k) {
+        return encodeURIComponent(k) + '=' + encodeURIComponent(String(query[k]));
+    }).join('&');
+}
+
+async function fetchOpsAttention(silentRefresh) {
+    var view = state.opsAttention;
+    if (view.loading) return;
+    var isInitialLoad = !view.fetched;
+    view.loading = true;
+    if (isInitialLoad && !silentRefresh) renderApp();
+    try {
+        // 15 s: the slowest source budget is 8 s server-side (service health).
+        var r = await fetchWT('/api/v1/ops/attention', {
+            headers: buildContextHeaders({ Accept: 'application/json' })
+        }, 15000);
+        var body = null;
+        try { body = await r.json(); } catch (_e) { body = null; }
+        if (!r.ok || !body || body.ok !== true || !body.data) {
+            view.error = 'HTTP ' + r.status + (body && body.error ? ' ' + body.error : '');
+        } else {
+            view.data = body.data;
+            view.error = null;
+            view.lastOkAt = Date.now();
+        }
+    } catch (err) {
+        view.error = (err && err.message) ? err.message : String(err);
+    }
+    view.lastFetchAt = Date.now();
+    view.loading = false;
+    view.fetched = true;
+    if (opsAttentionIsOpen()) {
+        // VTID-03917: the 30 s poll patches the cockpit in place, never a full renderApp().
+        if (silentRefresh) {
+            refreshOpsAttentionPanel();
+        } else {
+            renderApp();
+        }
+    }
+}
+
+/** Replace only the cockpit node (status bar + queue). */
+function refreshOpsAttentionPanel() {
+    var old = document.querySelector('.ops-attention');
+    if (!old) return;
+    old.replaceWith(renderOpsAttentionCockpit());
+}
+
+function renderOpsAttentionCockpit() {
+    var view = state.opsAttention;
+    var wrap = document.createElement('section');
+    wrap.className = 'ops-attention';
+    wrap.setAttribute('aria-label', 'Supervisor cockpit');
+    wrap.appendChild(renderOpsAttentionStatusBar(view, Date.now()));
+    wrap.appendChild(renderOpsAttentionQueue(view));
+    wrap.addEventListener('click', handleOpsAttentionClick);
+    return wrap;
+}
+
+function renderOpsAttentionStatusBar(view, nowMs) {
+    var st = computeOpsAttentionStatus(view, nowMs);
+    var data = view.data;
+    var counts = (data && data.counts) || { p1: 0, p2: 0, p3: 0 };
+    var sources = (data && Array.isArray(data.sources)) ? data.sources : [];
+    var fresh = sources.filter(function (s) { return s.status === 'ok'; }).length;
+    var unknown = sources.filter(function (s) { return s.status !== 'ok'; });
+    var env = data ? data.env : null;
+
+    var bar = document.createElement('div');
+    bar.className = 'ops-status-bar ' + st.cls;
+    bar.setAttribute('role', 'status');
+
+    function countChip(sev, n) {
+        var s = OPS_ATTENTION_SEVERITY[sev];
+        return '<span class="ops-count ' + s.cls + '">' +
+            '<span class="ops-sev-icon" aria-hidden="true">' + s.icon + '</span> ' +
+            escapeHtml(s.label) + ': <strong>' + (st.blind ? '?' : String(n)) + '</strong></span>';
+    }
+
+    var html =
+        '<div class="ops-status-main">' +
+            '<span class="ops-verdict-label">' + escapeHtml(st.label) + '</span>' +
+            '<span class="ops-verdict-detail">' + escapeHtml(st.detail) + '</span>' +
+        '</div>' +
+        '<div class="ops-status-meta">' +
+            countChip('P1', counts.p1) + countChip('P2', counts.p2) + countChip('P3', counts.p3) +
+            '<span class="ops-sources">Sources fresh ' + (st.blind ? '?' : String(fresh)) + '/' + (sources.length ? String(sources.length) : '?') + '</span>' +
+            '<span class="ops-generated">' + (data && data.generated_at
+                ? 'Generated ' + escapeHtml(dashboardRelativeTime(data.generated_at))
+                : 'Never loaded') + '</span>' +
+            '<span class="ops-env ' + (env === 'staging' ? 'ops-env-staging' : 'ops-env-production') + '">' +
+                escapeHtml(opsAttentionEnvLabel(env)) + '</span>' +
+            '<button type="button" class="btn btn-sm ops-refresh" data-action="ops-attention-refresh"' +
+                (view.loading ? ' disabled' : '') + '>' + (view.loading ? 'Loading…' : 'Refresh') + '</button>' +
+        '</div>';
+    if (unknown.length && !st.blind) {
+        html += '<div class="ops-unknown-sources">Unknown sources: ' + unknown.map(function (s) {
+            return '<span class="ops-unknown-source">' + escapeHtml(s.id) +
+                (s.error ? ' — ' + escapeHtml(String(s.error).slice(0, 140)) : '') + '</span>';
+        }).join('; ') + '</div>';
+    }
+    bar.innerHTML = html;
+    return bar;
+}
+
+function renderOpsAttentionQueue(view) {
+    var data = view.data;
+    var items = (data && Array.isArray(data.items)) ? data.items : [];
+    var filter = view.domainFilter || 'all';
+    var shown = filter === 'all' ? items : items.filter(function (i) { return i.domain === filter; });
+
+    var q = document.createElement('div');
+    q.className = 'ops-queue';
+
+    var head = '<h2 class="ops-queue-title">Needs attention now</h2>' +
+        '<div class="ops-filters" role="group" aria-label="Filter by domain">' +
+        OPS_ATTENTION_DOMAINS.map(function (d) {
+            var n = d.key === 'all' ? items.length : items.filter(function (i) { return i.domain === d.key; }).length;
+            return '<button type="button" class="ops-filter' + (filter === d.key ? ' ops-filter-active' : '') + '"' +
+                ' data-action="ops-attention-filter" data-domain="' + escapeHtml(d.key) + '"' +
+                ' aria-pressed="' + (filter === d.key ? 'true' : 'false') + '">' +
+                escapeHtml(d.label) + ' <span class="ops-filter-count">' + n + '</span></button>';
+        }).join('') +
+        '</div>';
+
+    var body;
+    if (!view.fetched || (view.loading && !data)) {
+        body = '<p class="ops-queue-empty">Loading the attention queue…</p>';
+    } else if (!data) {
+        body = '<p class="ops-queue-empty ops-queue-blind">Could not load the queue — cockpit blind, check GChat.</p>';
+    } else if (!shown.length) {
+        body = '<p class="ops-queue-empty">' + (data.verdict === 'OK' && filter === 'all'
+            ? 'Nothing needs attention right now.'
+            : (data.verdict === 'UNKNOWN'
+                ? 'No items shown, but some sources are unknown — this is not an all-clear.'
+                : 'No items in this domain.')) + '</p>';
+    } else {
+        body = '<ol class="ops-queue-list">' + shown.map(renderOpsAttentionItemHtml).join('') + '</ol>';
+    }
+
+    q.innerHTML = head + '<div class="ops-queue-body" aria-live="polite">' + body + '</div>';
+    return q;
+}
+
+function renderOpsAttentionItemHtml(item) {
+    var sev = OPS_ATTENTION_SEVERITY[item.severity] || OPS_ATTENTION_SEVERITY.P3;
+    var dl = item.deeplink || {};
+    var section = NAVIGATION_CONFIG.find(function (s) { return s.section === dl.section; });
+    var tab = section ? (section.tabs.find(function (t) { return t.key === dl.tab; }) || section.tabs[0]) : null;
+    var href = (tab ? tab.path : (section ? section.basePath : '#')) + opsAttentionQueryString(dl.query);
+    return '<li class="ops-item ' + sev.cls + '">' +
+        '<a class="ops-item-link" href="' + escapeHtml(href) + '" data-action="ops-attention-open"' +
+            ' data-section="' + escapeHtml(dl.section || '') + '" data-tab="' + escapeHtml(dl.tab || '') + '"' +
+            ' data-query="' + escapeHtml(JSON.stringify(dl.query || {})) + '">' +
+            '<span class="ops-sev ' + sev.cls + '"><span class="ops-sev-icon" aria-hidden="true">' + sev.icon + '</span> ' +
+                escapeHtml(sev.label) + '</span>' +
+            '<span class="ops-item-main">' +
+                '<span class="ops-item-title">' + escapeHtml(item.title) + '</span>' +
+                '<span class="ops-item-detail">' + escapeHtml(item.detail) + '</span>' +
+            '</span>' +
+            '<span class="ops-item-meta">' +
+                '<span class="ops-item-domain">' + escapeHtml(item.domain) + '</span>' +
+                (item.count > 1 ? '<span class="ops-item-count">×' + escapeHtml(String(item.count)) + '</span>' : '') +
+                '<span class="ops-item-since">since ' + escapeHtml(dashboardRelativeTime(item.since)) + '</span>' +
+            '</span>' +
+        '</a></li>';
+}
+
+function handleOpsAttentionClick(ev) {
+    var el = ev.target && ev.target.closest ? ev.target.closest('[data-action]') : null;
+    if (!el) return;
+    var action = el.getAttribute('data-action');
+    if (action === 'ops-attention-refresh') {
+        ev.preventDefault();
+        state.opsAttention.fetched = false;
+        fetchOpsAttention();
+    } else if (action === 'ops-attention-filter') {
+        ev.preventDefault();
+        state.opsAttention.domainFilter = el.getAttribute('data-domain') || 'all';
+        refreshOpsAttentionPanel();
+    } else if (action === 'ops-attention-open') {
+        // Modified clicks keep the browser's own open-in-new-tab behaviour (real href).
+        if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button === 1) return;
+        ev.preventDefault();
+        var query = {};
+        try { query = JSON.parse(el.getAttribute('data-query') || '{}'); } catch (_e) { query = {}; }
+        openOpsAttentionDeeplink(el.getAttribute('data-section'), el.getAttribute('data-tab'), query);
+    }
+}
+
+/**
+ * Same-screen items (the Service Health panel lives in the detailed panels
+ * below) open that disclosure; everything else goes through navigateToScreen.
+ */
+function openOpsAttentionDeeplink(section, tab, query) {
+    if (section === 'overview' && tab === 'system-overview') {
+        state.opsAttention.legacyOpen = true;
+        var details = document.querySelector('.ops-attention-legacy');
+        if (details) {
+            details.open = true;
+            details.scrollIntoView({ block: 'start' });
+        }
+        return;
+    }
+    if (!navigateToScreen(section, tab, query)) {
+        showToast('Screen not found: ' + section + '/' + tab, 'error');
+    }
+}
+
 function renderOverviewSystemView() {
     var container = document.createElement('div');
-    container.className = 'overview-dashboard';
+    container.className = 'overview-cockpit';
     // VTID-01002: retain scroll across renderApp() cycles
     container.setAttribute('data-scroll-retain', 'true');
     container.setAttribute('data-scroll-key', 'overview-dashboard');
+
+    if (!state.opsAttention.fetched && !state.opsAttention.loading) {
+        fetchOpsAttention();
+    }
+    // One 30 s timer. It polls only while the Overview is the routed screen
+    // (real router keys) and no Operator popup covers it (VTID-03906).
+    if (!state._opsAttentionTimer) {
+        state._opsAttentionTimer = setInterval(function () {
+            if (state.currentModuleKey === 'overview' && state.currentTab === 'system-overview' && !state.isOperatorOpen) {
+                fetchOpsAttention(true);
+            }
+        }, OPS_ATTENTION_POLL_MS);
+    }
+
+    container.appendChild(renderOpsAttentionCockpit());
+
+    // The pre-Phase-1 panels (service health, ORB, deployments, events) stay
+    // available below, collapsed and rendered only when opened, until the
+    // Phase 2 domain tiles replace them.
+    var details = document.createElement('details');
+    details.className = 'ops-attention-legacy';
+    var summary = document.createElement('summary');
+    summary.textContent = 'Detailed panels — service health, ORB, deployments, events';
+    details.appendChild(summary);
+    if (state.opsAttention.legacyOpen) {
+        details.open = true;
+        details.appendChild(renderOverviewSystemPanels());
+    }
+    details.addEventListener('toggle', function () {
+        state.opsAttention.legacyOpen = details.open;
+        if (details.open && !details.querySelector('.overview-dashboard')) {
+            details.appendChild(renderOverviewSystemPanels());
+        }
+    });
+    container.appendChild(details);
+    return container;
+}
+
+// VTID-04876: the pre-Phase-1 Overview panels, now rendered inside the
+// collapsed "Detailed panels" disclosure under the cockpit.
+function renderOverviewSystemPanels() {
+    var container = document.createElement('div');
+    container.className = 'overview-dashboard';
 
     // Auto-fetch dashboard data
     if (!state.overviewDashboard.fetched && !state.overviewDashboard.loading) {
@@ -29297,35 +29714,10 @@ function renderOverviewSystemView() {
     if (!state.serviceHealth.fetched && !state.serviceHealth.loading) {
         fetchServiceHealth();
     }
-    // VTID-02031: pull surface for human-in-the-loop items (mirrors Gchat pings)
-    if (!state.actionRequired.fetched && !state.actionRequired.loading) {
-        fetchActionRequired();
-    }
     // DEV-COMHU-03404: hourly rollup for the Operations tier sparklines
     if (!state.overviewTimeseries.fetched && !state.overviewTimeseries.loading) {
         fetchOverviewTimeseries();
     }
-    // Auto-refresh every 30s while the Overview is mounted. Use a single
-    // timer keyed on the state to avoid stacking duplicates across renders.
-    // VTID-03906: state.isOperatorOpen is an overlay flag independent of
-    // activeModule/activeTab, so with Overview mounted underneath, this timer
-    // used to keep calling fetchActionRequired(true) -> a full renderApp()
-    // every 30s while the Operator popup was open on top, tearing down and
-    // rebuilding the whole DOM (including the open popup) unprompted by any
-    // user action. Skip the poll entirely while a popup covers the tab.
-    if (!state._actionRequiredTimer) {
-        state._actionRequiredTimer = setInterval(function () {
-            // VTID-04869: real router keys (currentModuleKey/currentTab).
-            if (state.currentModuleKey === 'overview' && state.currentTab === 'system-overview' && !state.isOperatorOpen) {
-                state.actionRequired.fetched = false;
-                fetchActionRequired(true);
-            }
-        }, 30000);
-    }
-
-    // VTID-02031: Action Required panel — pinned at very top so the
-    // supervisor sees what needs human action before anything else.
-    container.appendChild(renderActionRequiredPanel());
 
     // DEV-COMHU-03403: VTID pipeline attention (broken/stuck/blocked/new-ready)
     // rendered as a second triage list directly under Action Required, instead
@@ -29377,74 +29769,6 @@ function renderOverviewSystemView() {
         container.appendChild(errorBanner);
         // Fall through — render the dashboard frame with whatever data exists
     }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // SECTION 1: System Status Banner
-    // ═══════════════════════════════════════════════════════════════════════
-    // VTID-04869: UNKNOWN is the default. The banner used to start at
-    // OPERATIONAL, so a dashboard that never loaded (or whose fetch threw)
-    // showed a green all-clear. OPERATIONAL now needs a measured result, and
-    // a failed fetch overrides any older result. The Overview is a triage
-    // surface; GChat (SNS) stays the paging channel.
-    var statusClass = 'overview-status-unknown';
-    var statusLabel = 'UNKNOWN';
-    var statusDetail = db.loading ? 'Measuring\u2026' : 'Status not measured \u2014 check GChat alerts';
-    if (db.error) {
-        statusDetail = 'Dashboard fetch failed (' + db.error + ') \u2014 status unknown, check GChat alerts';
-    } else if (db.systemStatus === 'operational') {
-        statusClass = 'overview-status-operational'; statusLabel = 'OPERATIONAL'; statusDetail = db.systemStatusMessage || '';
-    } else if (db.systemStatus === 'degraded') {
-        statusClass = 'overview-status-degraded'; statusLabel = 'DEGRADED'; statusDetail = db.systemStatusMessage || '';
-    } else if (db.systemStatus === 'critical') {
-        statusClass = 'overview-status-critical'; statusLabel = 'CRITICAL'; statusDetail = db.systemStatusMessage || '';
-    } else if (db.systemStatus === 'unknown') {
-        statusDetail = db.systemStatusMessage || statusDetail;
-    }
-
-    var banner = document.createElement('div');
-    banner.className = 'overview-status-banner ' + statusClass;
-
-    var bannerLeft = document.createElement('div');
-    bannerLeft.className = 'status-banner-left';
-
-    var bannerDot = document.createElement('span');
-    bannerDot.className = 'status-banner-dot';
-    if (statusLabel === 'CRITICAL') bannerDot.classList.add('status-banner-dot-pulse');
-
-    var bannerLabel = document.createElement('span');
-    bannerLabel.className = 'status-banner-label';
-    bannerLabel.textContent = statusLabel;
-
-    var bannerDetail = document.createElement('span');
-    bannerDetail.className = 'status-banner-detail';
-    bannerDetail.textContent = statusDetail;
-
-    bannerLeft.appendChild(bannerDot);
-    bannerLeft.appendChild(bannerLabel);
-    bannerLeft.appendChild(bannerDetail);
-
-    var bannerRight = document.createElement('div');
-    bannerRight.className = 'status-banner-right';
-
-    var bannerTime = document.createElement('span');
-    bannerTime.className = 'status-banner-time';
-    bannerTime.textContent = db.lastRefreshed ? dashboardRelativeTime(db.lastRefreshed) : '';
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn btn-sm';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function () {
-        state.overviewDashboard.fetched = false;
-        state.overviewPipelineSummary.fetched = false;
-        fetchOverviewDashboard();
-        fetchPipelineSummary();
-    };
-
-    bannerRight.appendChild(bannerTime);
-    bannerRight.appendChild(refreshBtn);
-    banner.appendChild(bannerLeft);
-    banner.appendChild(bannerRight);
-    container.appendChild(banner);
 
     // ═══════════════════════════════════════════════════════════════════════
     // SECTION 2: Key Metrics Grid
@@ -30389,71 +30713,6 @@ function renderOverviewSystemView() {
     return container;
 }
 
-// ---------------------------------------------------------------------------
-// VTID-02031: fetchActionRequired — GET /api/v1/ops/action-required
-// Pull surface mirroring the Gchat pings (VTID-02030). Polled every 30s
-// while the Overview view is mounted.
-// ---------------------------------------------------------------------------
-async function fetchActionRequired(silentRefresh) {
-    if (state.actionRequired.loading) return;
-    var isInitialLoad = !state.actionRequired.fetched;
-    state.actionRequired.loading = true;
-    state.actionRequired.error = null;
-    if (isInitialLoad && !silentRefresh) renderApp();
-
-    try {
-        var r = await fetchWT('/api/v1/ops/action-required', {
-            headers: (typeof buildContextHeaders === 'function') ? buildContextHeaders({ Accept: 'application/json' }) : { Accept: 'application/json' }
-        });
-        if (!r.ok) {
-            state.actionRequired.error = 'HTTP ' + r.status;
-        } else {
-            var body = await r.json();
-            state.actionRequired.items = Array.isArray(body.items) ? body.items : [];
-            state.actionRequired.countTotal = Number(body.count_total || 0);
-            state.actionRequired.countCritical = Number(body.count_critical || 0);
-            state.actionRequired.itemsReturned = Number(body.items_returned || state.actionRequired.items.length);
-        }
-    } catch (err) {
-        state.actionRequired.error = (err && err.message) ? err.message : String(err);
-    }
-    state.actionRequired.lastRefreshed = new Date().toISOString();
-    state.actionRequired.loading = false;
-    state.actionRequired.fetched = true;
-    // VTID-04869: real router keys (currentModuleKey/currentTab).
-    if (state.currentModuleKey === 'overview' && state.currentTab === 'system-overview') {
-        // VTID-03917: this used to call the unconditional full renderApp()
-        // below even when silentRefresh was requested (the 30s Overview
-        // poll, app.js:~31713) — mirrors the exact bug fetchServiceHealth
-        // already guards against a few hundred lines up. A full renderApp()
-        // does root.innerHTML='' and rebuilds the ENTIRE app (sidebar,
-        // header, every card) every 30s while sitting on this tab: visible
-        // as flicker, a window where a click can land on an element that's
-        // mid-teardown and never fire, and the sidebar's scroll-retention
-        // rAF racing the rebuild and visibly resetting-then-restoring.
-        // Silent refreshes now patch only the Action Required panel's own
-        // DOM node in place instead of tearing down the whole app.
-        if (silentRefresh) {
-            refreshActionRequiredPanel();
-        } else {
-            renderApp();
-        }
-    }
-}
-
-/**
- * VTID-03917: Refreshes only the Action Required panel's DOM in place,
- * without a full renderApp() rebuild. Used by the 30s Overview poll so a
- * silent background refresh doesn't tear down and rebuild the whole app
- * (see fetchActionRequired's silentRefresh branch above).
- */
-function refreshActionRequiredPanel() {
-    var oldPanel = document.querySelector('.action-required-panel');
-    if (!oldPanel) return;
-    var newPanel = renderActionRequiredPanel();
-    oldPanel.replaceWith(newPanel);
-}
-
 // DEV-COMHU-03404: hourly rollup backing the Overview sparklines.
 async function fetchOverviewTimeseries(silentRefresh) {
     if (state.overviewTimeseries.loading) return;
@@ -30506,158 +30765,6 @@ function sparklineSVG(values, color) {
         'style="display:block;width:100%;height:20px;margin-top:4px;">' +
         '<polyline points="' + points + '" fill="none" stroke="' + color + '" stroke-width="1.5" ' +
         'stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/></svg>';
-}
-
-// VTID-02031: Render "Action Required" panel — pinned at the top of the
-// Overview view, above the system status banner. Empty state is collapsed,
-// non-empty shows expanded card list ordered by severity then recency.
-function renderActionRequiredPanel() {
-    var ar = state.actionRequired;
-    var wrapper = document.createElement('div');
-    wrapper.className = 'action-required-panel';
-    wrapper.style.cssText = 'margin-bottom:0.85rem;border-radius:8px;overflow:hidden;border:1px solid;';
-
-    var hasItems = (ar.items || []).length > 0;
-    var bgColor = hasItems
-        ? (ar.countCritical > 0 ? 'rgba(239,68,68,0.10)' : 'rgba(245,158,11,0.10)')
-        : 'rgba(34,197,94,0.08)';
-    var borderColor = hasItems
-        ? (ar.countCritical > 0 ? 'rgba(239,68,68,0.45)' : 'rgba(245,158,11,0.45)')
-        : 'rgba(34,197,94,0.30)';
-    wrapper.style.background = bgColor;
-    wrapper.style.borderColor = borderColor;
-
-    // ── Header bar ──
-    var header = document.createElement('div');
-    header.style.cssText = 'display:flex;align-items:center;gap:0.65rem;padding:0.7rem 0.95rem;font-size:0.9rem;';
-
-    var icon = document.createElement('span');
-    icon.style.cssText = 'font-size:1.05rem;';
-    icon.textContent = hasItems ? (ar.countCritical > 0 ? '🚨' : '⚠️') : '✅';
-    header.appendChild(icon);
-
-    var title = document.createElement('strong');
-    title.style.cssText = 'color:' + (hasItems ? (ar.countCritical > 0 ? '#fca5a5' : '#fcd34d') : '#86efac');
-    title.textContent = hasItems
-        ? ('Action Required — ' + ar.countTotal + ' open' + (ar.countCritical > 0 ? ' (' + ar.countCritical + ' critical)' : ''))
-        : 'All clear — 0 items needing attention';
-    header.appendChild(title);
-
-    var spacer = document.createElement('span');
-    spacer.style.flex = '1';
-    header.appendChild(spacer);
-
-    if (ar.lastRefreshed) {
-        var refreshedAt = document.createElement('span');
-        refreshedAt.style.cssText = 'font-size:0.72rem;color:rgba(229,231,235,0.55);';
-        refreshedAt.textContent = 'updated ' + new Date(ar.lastRefreshed).toLocaleTimeString();
-        header.appendChild(refreshedAt);
-    }
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn btn-sm';
-    refreshBtn.style.cssText = 'padding:2px 8px;font-size:0.72rem;';
-    refreshBtn.textContent = ar.loading ? '…' : '↻';
-    refreshBtn.disabled = !!ar.loading;
-    refreshBtn.onclick = function () {
-        state.actionRequired.fetched = false;
-        fetchActionRequired();
-    };
-    header.appendChild(refreshBtn);
-    wrapper.appendChild(header);
-
-    if (ar.error) {
-        var errLine = document.createElement('div');
-        errLine.style.cssText = 'padding:0.5rem 0.95rem;font-size:0.78rem;color:#fca5a5;';
-        errLine.textContent = 'Error loading: ' + ar.error;
-        wrapper.appendChild(errLine);
-    }
-
-    if (hasItems) {
-        var list = document.createElement('div');
-        list.style.cssText = 'display:flex;flex-direction:column;gap:0.4rem;padding:0 0.95rem 0.85rem 0.95rem;';
-        ar.items.forEach(function (item) {
-            list.appendChild(renderActionRequiredCard(item));
-        });
-        // VTID-02031b: when the backend capped the list, surface the residual
-        // count so the supervisor knows there's more if they want to drill in.
-        var returned = ar.itemsReturned || ar.items.length;
-        if (ar.countTotal > returned) {
-            var moreLine = document.createElement('div');
-            moreLine.style.cssText = 'padding:0.45rem 0.55rem;font-size:0.74rem;color:rgba(229,231,235,0.65);text-align:center;font-style:italic;';
-            moreLine.textContent = 'Showing top ' + returned + ' of ' + ar.countTotal +
-                ' open items — see Self-Healing screen for the full list';
-            list.appendChild(moreLine);
-        }
-        wrapper.appendChild(list);
-    }
-
-    return wrapper;
-}
-
-function renderActionRequiredCard(item) {
-    var card = document.createElement('a');
-    card.href = item.deeplink || '#';
-    card.style.cssText = 'display:flex;flex-direction:column;gap:0.2rem;padding:0.65rem 0.85rem;' +
-        'background:rgba(15,23,42,0.55);border:1px solid rgba(255,255,255,0.08);border-radius:6px;' +
-        'text-decoration:none;color:inherit;cursor:pointer;transition:background 120ms ease;';
-    card.onmouseenter = function () { card.style.background = 'rgba(15,23,42,0.85)'; };
-    card.onmouseleave = function () { card.style.background = 'rgba(15,23,42,0.55)'; };
-
-    var topRow = document.createElement('div');
-    topRow.style.cssText = 'display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;';
-
-    var sevBadge = document.createElement('span');
-    sevBadge.style.cssText = 'display:inline-block;padding:1px 7px;border-radius:3px;font-size:0.7rem;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;';
-    if (item.severity === 'critical') {
-        sevBadge.style.background = 'rgba(239,68,68,0.25)';
-        sevBadge.style.color = '#fca5a5';
-        sevBadge.textContent = 'critical';
-    } else {
-        sevBadge.style.background = 'rgba(245,158,11,0.22)';
-        sevBadge.style.color = '#fcd34d';
-        sevBadge.textContent = 'warning';
-    }
-    topRow.appendChild(sevBadge);
-
-    var catBadge = document.createElement('span');
-    catBadge.style.cssText = 'display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.68rem;font-weight:500;background:rgba(255,255,255,0.06);color:rgba(229,231,235,0.75);';
-    catBadge.textContent = item.category;
-    topRow.appendChild(catBadge);
-
-    var titleEl = document.createElement('strong');
-    titleEl.style.cssText = 'flex:1;color:#f3f4f6;font-weight:600;';
-    titleEl.textContent = item.title;
-    topRow.appendChild(titleEl);
-
-    // VTID-02031c: related_count surfaces collapsed siblings so the
-    // supervisor knows multiple linked rows feed this card.
-    if (item.related_count && item.related_count > 0) {
-        var relBadge = document.createElement('span');
-        relBadge.style.cssText = 'display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.66rem;font-weight:500;background:rgba(99,102,241,0.18);color:#a5b4fc;';
-        relBadge.textContent = '+' + item.related_count + ' related';
-        topRow.appendChild(relBadge);
-    }
-
-    if (item.detected_at) {
-        var time = document.createElement('span');
-        time.style.cssText = 'font-size:0.7rem;color:rgba(229,231,235,0.55);';
-        try {
-            time.textContent = new Date(item.detected_at).toLocaleString();
-        } catch (e) {
-            time.textContent = item.detected_at;
-        }
-        topRow.appendChild(time);
-    }
-    card.appendChild(topRow);
-
-    if (item.summary) {
-        var summary = document.createElement('div');
-        summary.style.cssText = 'font-size:0.78rem;color:rgba(229,231,235,0.78);line-height:1.4;';
-        summary.textContent = item.summary;
-        card.appendChild(summary);
-    }
-    return card;
 }
 
 // DEV-COMHU-03403: renders the same VTID pipeline attention_queue that used to
@@ -40033,6 +40140,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 openOperatorConsole();
             }
         } catch (e) { /* no-op */ }
+
+        // VTID-04876: a page loaded on a deep link (?vtid= / ?session=) opens its drawer.
+        applyDeepLinkParams();
 
         // Load data in parallel after auth is established
         Promise.all([
