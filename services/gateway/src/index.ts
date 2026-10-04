@@ -68,6 +68,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const boardAdapter = require('./routes/board-adapter').default;
   const { commandhub } = require('./routes/commandhub');
   const { vtidRouter } = require('./routes/vtid');
+  // VTID-04868: Plan Sparring Gate routes (/api/v1/plans/spar)
+  const { plansSparRouter } = require('./routes/plans-spar');
   // VTID-03177 (PROFILE): RUM beacon receiver from vitana-v1 frontend
   const { rumBeaconRouter } = require('./routes/rum-beacon');
   // VTID-SCREEN-LOAD-01: synthetic screen-load-time basic test — ingest +
@@ -735,6 +737,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
     owner: 'presence-did-you-know',
   });
   mountRouterSync(app, '/api/v1/vtid', vtidRouter, { owner: 'vtid' });
+  // VTID-04868: Plan Sparring Gate (gateway tier) — partner rounds + verified approval.
+  mountRouterSync(app, '/api/v1/plans/spar', plansSparRouter, { owner: 'plans-spar' });
   // VTID-03177 (PROFILE): RUM beacon — POST /api/v1/rum/beacon
   mountRouterSync(app, '/api/v1/rum', rumBeaconRouter, { owner: 'rum-beacon' });
   // VTID-SCREEN-LOAD-01: POST /api/v1/frontend/screen-load/report, GET /api/v1/frontend/screen-load/health
@@ -1914,6 +1918,19 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ Self-healing reconciler initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04868: Plan Sparring Gate tamper reconciler — hourly, read-only,
+      // off unless PLAN_SPARRING_RECONCILER_ENABLED=true.
+      try {
+        const { startPlanSparringReconciler } = require('./services/plan-sparring/reconciler');
+        if (startPlanSparringReconciler()) {
+          console.log('🛡️ Plan Sparring reconciler started (hourly, read-only)');
+        } else {
+          console.log('⏸️ Plan Sparring reconciler disabled — set PLAN_SPARRING_RECONCILER_ENABLED=true to enable');
+        }
+      } catch (error) {
+        console.warn('⚠️ Plan Sparring reconciler initialization failed (non-fatal):', error);
       }
 
       // VTID-01990: Idle session closer — writes user_session_summaries rows

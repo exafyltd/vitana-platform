@@ -5,6 +5,9 @@ import { requireLedgerWriteAuth } from "../middleware/ledger-write-auth";
 import { buildStageTimeline, defaultStageTimeline, type TimelineEvent, type StageTimelineEntry } from '../lib/stage-mapping';
 // VTID-01181: Import system controls service for DB-backed allocator toggle
 import { isVtidAllocatorEnabled, getSystemControl } from '../services/system-controls-service';
+// VTID-04868: Plan Sparring Gate — attached/missing OASIS events at allocation (log mode).
+import { emitAllocationSparringEvent } from '../services/plan-sparring/plan-sparring-service';
+import { emitOasisEvent } from '../services/oasis-event-service';
 
 const router = Router();
 
@@ -62,6 +65,13 @@ interface AllocatorResponse {
  * meaningful source slug is available, fall back to `${module} — ${vtid}`,
  * which is always at least as identifying as the VTID number alone.
  */
+const SPARRING_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** VTID-04868: a well-formed sparring record id, or null. */
+export function parseSparringId(value: unknown): string | null {
+  return typeof value === 'string' && SPARRING_ID_RE.test(value) ? value : null;
+}
+
 function deriveAllocationTitle(
   requestedTitle: string | undefined,
   source: string,
@@ -123,6 +133,17 @@ router.post("/allocate", requireLedgerWriteAuth, async (req: Request, res: Respo
     const requestedTitle: string | undefined = typeof req.body?.title === 'string'
       ? req.body.title.trim()
       : undefined;
+    // VTID-04868: optional Plan Sparring record id. Only forwarded to the RPC
+    // when present, so every existing caller sends the byte-identical 3-arg
+    // body (and keeps working against a database without the 4-arg function).
+    const sparringId = parseSparringId(req.body?.sparring_id);
+    if (req.body?.sparring_id !== undefined && sparringId === null) {
+      return res.status(400).json({
+        ok: false,
+        error: 'invalid_sparring_id',
+        message: 'sparring_id must be a UUID',
+      } as AllocatorResponse);
+    }
 
     // Call the atomic allocation function
     const resp = await fetch(supabaseUrl + "/rest/v1/rpc/allocate_global_vtid", {
@@ -135,7 +156,8 @@ router.post("/allocate", requireLedgerWriteAuth, async (req: Request, res: Respo
       body: JSON.stringify({
         p_source: source,
         p_layer: layer,
-        p_module: module
+        p_module: module,
+        ...(sparringId ? { p_sparring_id: sparringId } : {}),
       }),
     });
 
@@ -192,6 +214,10 @@ router.post("/allocate", requireLedgerWriteAuth, async (req: Request, res: Respo
     } catch (titleErr) {
       console.warn(`[VTID-03818] Title backfill exception for ${allocated.vtid}:`, titleErr);
     }
+
+    // VTID-04868: shadow-mode OASIS signal — fire-and-forget, never fails
+    // or delays the allocation.
+    void emitAllocationSparringEvent({ vtid: allocated.vtid, sparringId, source }, emitOasisEvent);
 
     return res.status(201).json({
       ok: true,
@@ -275,6 +301,15 @@ router.post("/allocate-internal", async (req: Request, res: Response) => { // pu
     const source = req.body?.source || 'automation';
     const layer = req.body?.layer || 'DEV';
     const module = req.body?.module || 'TASK';
+    // VTID-04868: optional sparring record id — forwarded only when present.
+    const sparringId = parseSparringId(req.body?.sparring_id);
+    if (req.body?.sparring_id !== undefined && sparringId === null) {
+      return res.status(400).json({
+        ok: false,
+        error: 'invalid_sparring_id',
+        message: 'sparring_id must be a UUID',
+      } as AllocatorResponse);
+    }
 
     const resp = await fetch(supabaseUrl + "/rest/v1/rpc/allocate_global_vtid", {
       method: "POST",
@@ -283,7 +318,12 @@ router.post("/allocate-internal", async (req: Request, res: Response) => { // pu
         apikey: svcKey,
         Authorization: "Bearer " + svcKey,
       },
-      body: JSON.stringify({ p_source: source, p_layer: layer, p_module: module }),
+      body: JSON.stringify({
+        p_source: source,
+        p_layer: layer,
+        p_module: module,
+        ...(sparringId ? { p_sparring_id: sparringId } : {}),
+      }),
     });
 
     if (!resp.ok) {
@@ -335,6 +375,9 @@ router.post("/allocate-internal", async (req: Request, res: Response) => { // pu
     } catch (titleErr) {
       console.warn(`[VTID-03818] Title backfill exception for ${allocated.vtid}:`, titleErr);
     }
+
+    // VTID-04868: shadow-mode OASIS signal (fire-and-forget).
+    void emitAllocationSparringEvent({ vtid: allocated.vtid, sparringId, source }, emitOasisEvent);
 
     return res.status(201).json({
       ok: true,
