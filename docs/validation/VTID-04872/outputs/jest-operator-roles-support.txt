@@ -1,0 +1,12 @@
+PASS test/vtid-04465-operator-pipeline-regression.test.ts (6.042 s)
+Test Suites: 1 passed, 1 total
+Tests:       30 passed, 30 total
+PASS test/vtid-04560-role-separation-regression.test.ts
+Test Suites: 1 passed, 1 total
+Tests:       105 passed, 105 total
+PASS test/vtid-04456-customer-support-pipeline-regression.test.ts
+PASS test/feedback-pipeline.test.ts
+PASS test/vtid-04445-persona-voice-gender.test.ts
+PASS test/vtid-04332-report-to-specialist-status-contract.test.ts
+Test Suites: 4 passed, 4 total
+Tests:       84 passed, 84 total

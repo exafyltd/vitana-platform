@@ -17,6 +17,8 @@ import type { JevPiiPolicy } from './jev-pii';
 import type { JevPlane } from './jev-access';
 import type { JevDataClass } from './jev-policy';
 
+export type JevCommunityClass = 'A' | 'B' | 'C';
+
 const text = (max: number) => z.string().trim().min(1).max(max);
 const optText = (max: number) => z.string().trim().max(max).optional();
 
@@ -36,6 +38,15 @@ export interface JevDecisionDef<I = any> {
   planes: readonly JevPlane[];
   /** VTID-04754: the class of data the state carries to TypeSafe. */
   data: JevDataClass;
+  /**
+   * VTID-04872: community cost class, for calls counted as member spend
+   * (approved 2026-10-03). A = always-on community use, no per-member quota;
+   * B = per-member daily quota (ranking, personalisation); C = off on the
+   * member plane. Unset on a member-spend call counts as B.
+   */
+  community_class?: JevCommunityClass;
+  /** VTID-04872: a safety decision (moderation, abuse, crisis) — never quota-limited. */
+  safety?: boolean;
   buildState: (input: I) => Record<string, unknown>;
 }
 
@@ -503,6 +514,9 @@ const defs: JevDecisionDef[] = [
     planes: INTERNAL_AND_AUTOPILOT,
     // content a member posted for other members: member rules apply
     data: 'member_content',
+    // VTID-04872: moderation protects members — never stopped by a quota
+    community_class: 'B',
+    safety: true,
     pii: 'redact',
     buildState: (i) => ({ reported_content: i.content, report_reason: i.report_reason ?? null }),
   },

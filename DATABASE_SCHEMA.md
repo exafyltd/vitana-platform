@@ -3289,6 +3289,16 @@ system_autopilot are uncapped); member-content calls are counted under
 `member`. Budgets set by `data-fixups/20261003120000_vtid_04857_jev_community_budgets.sql`
 (maxina 50, alkalma 10).
 
+### Jev member daily quota (VTID-04872)
+Table: `jev_member_daily_counters` (PK `tenant_id, user_id, day`; `calls`,
+`updated_at`) — Class B community Jev calls per member per UTC day. Function
+`jev_member_quota_bump(tenant, user)` increments atomically and returns
+today's count. Service role only; RLS on with no client policies. `user_id`
+is the member's auth uuid, so `erase_user_data()` deletes the rows with the
+account. Limit `JEV_MEMBER_DAILY_QUOTA` (default 300), mode
+`JEV_MEMBER_QUOTA_MODE` (shadow by default; enforce refuses with a 429
+fallback). Rows older than a week carry no meaning.
+
 ## Account erasure — `erasure_registry`, `erase_user_data()` (VTID-04765, 2026-10-01) — NOT YET APPLIED
 
 `request-account-deletion` (vitana-v1 edge function) deleted 20 hand-listed tables, then the auth user. On 2026-10-01 the live schema had ~200 more public tables whose `user_id` does not cascade from `auth.users` — memory, diary, health, notifications among them — so their rows outlived the account.
