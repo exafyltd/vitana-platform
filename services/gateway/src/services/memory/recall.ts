@@ -52,6 +52,21 @@ export interface OrbRecallResult {
   error?: string;
 }
 
+/**
+ * VTID-04870: per-stream latency for the recall log line, e.g.
+ * `memory_facts:120,memory_items:640`. recall() was 2-3x slower than the
+ * legacy read on both gateways (VTID-04784 shadow) with tiny tables, so the
+ * line names the slow stream instead of leaving it to guesswork.
+ */
+export function formatStreamMs(perStream: Record<string, number> | undefined | null): string {
+  if (!perStream) return '-';
+  const parts = Object.entries(perStream)
+    .filter(([, ms]) => Number.isFinite(ms))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, ms]) => `${k}:${Math.round(ms)}`);
+  return parts.length ? parts.join(',') : '-';
+}
+
 /** Budget for the whole read. The legacy read used a 2 s hard timeout. */
 export const ORB_RECALL_BUDGET_MS = 1500;
 
@@ -161,7 +176,8 @@ export async function recallOrbMemoryItems(
     const gotAny = Object.keys(pack.blocks).length > 0;
     console.log(
       `[VTID-04452] orb recall in ${latency}ms facts=${sections.facts} episodes=${sections.episodes} ` +
-      `diary=${sections.diary} degraded=${pack.meta.degraded} streams=${pack.meta.streams_hit.join(',')}`,
+      `diary=${sections.diary} degraded=${pack.meta.degraded} streams=${pack.meta.streams_hit.join(',')} ` +
+      `stream_ms=${formatStreamMs(pack.meta.latency_ms_per_stream)}`,
     );
     if (!gotAny) {
       return { ok: false, items: [], latency_ms: latency, degraded: true, sections, error: 'no_sections_loaded' };
