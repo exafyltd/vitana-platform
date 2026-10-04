@@ -30,6 +30,7 @@ import { getJevDecision, JevDecisionDef } from './jev-decisions';
 import { emitJevDecisionEvent, jevCostUsd, JevOutcome } from './jev-telemetry';
 import { evaluateJevPolicy, isTenantScoped, isJevBudgetedPlane, jevSpendPlane, JEV_BUDGETED_PLANES, JEV_DEFAULT_TENANT_FLAG, JEV_PLATFORM_TENANT } from './jev-policy';
 import { maybeRaiseBudgetAlerts } from './jev-budget-alerts';
+import { CommunityRateLimiter, getDefaultCommunityRateLimiter } from './jev-community-rate';
 import { checkMemberQuota, getDefaultMemberQuotaStore, isQuotaLimited, MemberQuotaStore } from './jev-member-quota';
 import { getDefaultJevControl, JevControl } from './jev-tenant-control';
 
@@ -86,6 +87,8 @@ export interface DecideOptions {
   member_id?: string;
   /** VTID-04872: per-member daily counter. Defaults to the Supabase-backed store. */
   quota?: MemberQuotaStore;
+  /** VTID-04874: community share of the Jev rate limit. Defaults to the per-task bucket. */
+  communityRate?: CommunityRateLimiter;
 }
 
 export function interpretAnswer(q: JevQuestion, a: JevAnswer): InterpretedAnswer {
@@ -186,6 +189,10 @@ export async function decide(name: string, input: unknown, caller: JevCaller, op
   if (memberId && isQuotaLimited(def, spendPlane)) {
     const q = await checkMemberQuota({ decision: name, tenantId: tenantKey, memberId, store: opts.quota ?? getDefaultMemberQuotaStore(), env });
     if (!q.allowed) return fallback(q.reason, { status: q.reason === 'member_daily_quota_exhausted' ? 429 : 503 });
+  }
+  // VTID-04874: member spend takes a token from the community share of the account rate limit.
+  if (spendPlane === 'member' && !(opts.communityRate ?? getDefaultCommunityRateLimiter()).admit(name)) {
+    return fallback('community_rate_limited', { status: 429 });
   }
 
   const pii = applyPiiPolicy(def.buildState(parsed.data), def.pii);

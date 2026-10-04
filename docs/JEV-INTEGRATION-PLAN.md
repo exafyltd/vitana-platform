@@ -974,7 +974,14 @@ dev/ops/backoffice; member ranking priced per tenant budget.
    count per member per UTC day (`jev_member_daily_counters`, 300),
    `JEV_MEMBER_QUOTA_MODE` shadow by default (`jev.member_quota.would_refuse`
    on the first call over), enforce → 429 fallback; safety decisions never
-   limited; Class C refused on the member plane.
+   limited; Class C refused on the member plane. Slice 3 is VTID-04874:
+   member-spend calls take a token from a per-gateway-task bucket holding the
+   community share of the account rate limit (`JEV_COMMUNITY_RPM_PER_TASK`,
+   default 180 = 360/min = 30% of 1,200 over 2 tasks; set it when the task
+   count changes); internal and Dev Autopilot never take a token.
+   `JEV_COMMUNITY_RATE_MODE` shadow by default (`jev.community_rate.would_limit`,
+   at most one per task per 10 min), enforce → `community_rate_limited` 429.
+   A second TypeSafe key was not used: the limit is per account.
 4. Whether Community Autopilot on member data counts as the member plane
    (implemented as yes).
 
