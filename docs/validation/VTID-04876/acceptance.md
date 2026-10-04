@@ -5,7 +5,7 @@ Plan A (Command Hub Overview), Phase 1. Sparring record: `plan-sparring.md` (poi
 Phase 0 (VTID-04869) and Phase 1a (VTID-04875, in-process builders).
 
 What changed: a new admin-only aggregator `GET /api/v1/ops/attention` (seven in-process adapters,
-numeric rubric, time-based hysteresis, 3 s per-adapter timeout, single-flight + 25 s cache), the
+numeric rubric, time-based hysteresis, per-adapter time budgets (3 s default; service health 8 s, autonomy 6 s), single-flight + 25 s cache), the
 `ops_attention_state` table, `golden_path` on the service-health registry, `/ops/action-required`
 behind `requireAdminAuth`, and the Overview rewritten into a status bar + ranked "Needs attention
 now" queue with a `?vtid=` / `?session=` deep-link contract. No live endpoint or database was
@@ -34,9 +34,11 @@ CURL: GET https://preview-aws-gateway.vitanaland.com/api/v1/ops/action-required 
 
 ## Aggregator
 
-AC-4: Every adapter runs with a 3 s timeout. A timeout or a throw makes that source `unknown`
-with its error. A partial read makes it `unknown` and still shows what was found.
-TEST: services/gateway/test/vtid-04876-ops-attention-aggregator.test.ts ("exceeds the 3 s timeout", "throwing adapter", "partial adapter")
+AC-4: Every adapter runs within its own time budget: 3 s by default, 8 s for service health and
+6 s for autonomy (owner decision 2026-10-04: the planner sets the budgets). The client waits 15 s.
+A timeout or a throw makes that source `unknown` with its error. A partial read makes it `unknown`
+and still shows what was found.
+TEST: services/gateway/test/vtid-04876-ops-attention-aggregator.test.ts ("exceeds the 3 s timeout", "per-source budgets", "throwing adapter", "partial adapter")
 
 AC-5: Verdict: CRITICAL when any P1 is shown; else UNKNOWN whenever any source is unknown; else
 ATTENTION (P2/P3); else OK. It is never OK on missing data, and an unmeasured golden-path health
@@ -205,11 +207,11 @@ All seven adapters are wired to real in-process sources. None is `not_wired`.
 
 ## Known gaps (honest limits, tracked for later phases)
 
-- The Service Health adapter's builder probes about 117 endpoints with a 5 s probe timeout. The
-  first call after its 30 s cache expires can exceed the 3 s adapter budget, and the source then
-  reads unknown until the in-flight run lands in the shared cache.
-- `buildSupervisorSnapshot` is heavy (many reads) and can also exceed 3 s, giving unknown rather
-  than a guess.
+- The Service Health adapter's builder probes about 117 endpoints in parallel with a 5 s probe
+  timeout, so it gets an 8 s budget; if a run still exceeds it, the source reads unknown until the
+  in-flight run lands in the shared 30 s cache.
+- `buildSupervisorSnapshot` is heavy (many reads) and gets a 6 s budget; beyond that it reads
+  unknown rather than a guess.
 - Self-heal escalations are not live re-probed (`/ops/action-required` re-probed with a 4 s probe,
   which does not fit the 3 s budget).
 - "Broken" operator tasks use the pipeline summary's own heuristic (in progress, more than 2 h

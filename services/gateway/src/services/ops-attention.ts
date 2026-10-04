@@ -2,7 +2,8 @@
  * VTID-04876 — Command Hub Overview Phase 1: the /ops/attention aggregator.
  *
  * Runs the seven adapters (services/ops-attention-adapters.ts) in parallel,
- * each bounded by ADAPTER_TIMEOUT_MS (3 s); a source that throws or times out
+ * each bounded by its own budget (AdapterSpec.timeoutMs, else ADAPTER_TIMEOUT_MS,
+ * 3 s; service health 8 s, autonomy 6 s); a source that throws or times out
  * is UNKNOWN. Candidates become ranked items with env-scoped fingerprints and
  * time-based hysteresis:
  *
@@ -129,13 +130,12 @@ export function computeVerdict(counts: AttentionData['counts'], sources: Attenti
 export async function buildOpsAttention(input: BuildAttentionInput): Promise<AttentionData> {
   const { env, now, reads, state } = input;
   const adapters = input.adapters ?? ATTENTION_ADAPTERS;
-  const timeoutMs = input.adapterTimeoutMs ?? ADAPTER_TIMEOUT_MS;
   const nowIso = new Date(now).toISOString();
 
   const runs = await Promise.all(
     adapters.map(async (a) => {
       try {
-        const out = await withTimeout(a.run(reads, { now }), timeoutMs);
+        const out = await withTimeout(a.run(reads, { now }), input.adapterTimeoutMs ?? a.timeoutMs ?? ADAPTER_TIMEOUT_MS);
         return { id: a.id, out, error: out.partial_error, fetched_at: new Date().toISOString() };
       } catch (err) {
         return { id: a.id, out: null, error: errMessage(err), fetched_at: new Date().toISOString() };

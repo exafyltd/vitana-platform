@@ -29455,9 +29455,10 @@ async function fetchOpsAttention(silentRefresh) {
     view.loading = true;
     if (isInitialLoad && !silentRefresh) renderApp();
     try {
+        // 15 s: the slowest source budget is 8 s server-side (service health).
         var r = await fetchWT('/api/v1/ops/attention', {
             headers: buildContextHeaders({ Accept: 'application/json' })
-        });
+        }, 15000);
         var body = null;
         try { body = await r.json(); } catch (_e) { body = null; }
         if (!r.ok || !body || body.ok !== true || !body.data) {

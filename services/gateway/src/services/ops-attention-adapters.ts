@@ -808,13 +808,18 @@ export async function decisionsWaitingAdapter(reads: AttentionReads, ctx: Adapte
 export interface AdapterSpec {
   id: AttentionSourceId;
   run: (reads: AttentionReads, ctx: AdapterContext) => Promise<AdapterOutput>;
+  /** Time budget for this source; defaults to ADAPTER_TIMEOUT_MS (3 s). */
+  timeoutMs?: number;
 }
 
 export const ATTENTION_ADAPTERS: AdapterSpec[] = [
-  { id: 'service_health', run: (r) => serviceHealthAdapter(r) },
+  // service_health probes the whole registry (5 s per probe, in parallel) and
+  // the autonomy snapshot is a heavy read; both get a longer budget so a slow
+  // but healthy source does not read UNKNOWN (owner decision 2026-10-04).
+  { id: 'service_health', run: (r) => serviceHealthAdapter(r), timeoutMs: 8_000 },
   { id: 'release', run: releaseAdapter },
   { id: 'voice_supervisor', run: (r) => voiceSupervisorAdapter(r) },
-  { id: 'autonomy', run: autonomyAdapter },
+  { id: 'autonomy', run: autonomyAdapter, timeoutMs: 6_000 },
   { id: 'operator_pipeline', run: operatorPipelineAdapter },
   { id: 'governance', run: governanceAdapter },
   { id: 'decisions_waiting', run: decisionsWaitingAdapter },

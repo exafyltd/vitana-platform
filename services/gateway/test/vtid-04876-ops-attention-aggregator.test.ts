@@ -18,7 +18,7 @@ import {
   type AttentionStateStore,
   type StateRow,
 } from '../src/services/ops-attention';
-import type { AdapterSpec, Candidate } from '../src/services/ops-attention-adapters';
+import { ATTENTION_ADAPTERS, type AdapterSpec, type Candidate } from '../src/services/ops-attention-adapters';
 import { fakeReads } from './fixtures/ops-attention-fakes';
 
 const NOW = Date.parse('2026-10-04T12:00:00.000Z');
@@ -96,6 +96,26 @@ describe('buildOpsAttention', () => {
       expect(s.status).toBe('unknown');
       expect(s.error).toMatch(/timeout after 3000 ms/);
       expect(data.verdict).toBe('UNKNOWN');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('per-source budgets: service health 8 s, autonomy 6 s, every other source 3 s', async () => {
+    const budgets = Object.fromEntries(ATTENTION_ADAPTERS.map((a) => [a.id, a.timeoutMs ?? 3_000]));
+    expect(budgets).toEqual({
+      service_health: 8_000, release: 3_000, voice_supervisor: 3_000, autonomy: 6_000,
+      operator_pipeline: 3_000, governance: 3_000, decisions_waiting: 3_000,
+    });
+    jest.useFakeTimers();
+    try {
+      let resolveSlow: (v: { candidates: never[] }) => void = () => {};
+      const slowHealthy: AdapterSpec = { id: 'service_health', timeoutMs: 8_000, run: () => new Promise((r) => { resolveSlow = r; }) };
+      const p = buildOpsAttention({ env: 'production', now: NOW, reads: fakeReads(), state: memStore(), adapters: [slowHealthy] });
+      await jest.advanceTimersByTimeAsync(5_000); // past 3 s, inside its own 8 s budget
+      resolveSlow({ candidates: [] });
+      const data = await p;
+      expect(data.sources.find((x) => x.id === 'service_health')!.status).toBe('ok');
     } finally {
       jest.useRealTimers();
     }
