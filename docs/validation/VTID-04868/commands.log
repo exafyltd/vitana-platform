@@ -11,3 +11,8 @@ cd services/gateway && npm run test:operator   # 30 passed ; npm run test:suppor
 bash scripts/ci/test-vtid-04868-plan-sparring.sh   # all assertions passed (incl. plan_sparring_trigger_status O/D); rollback + re-apply passed
 curl -s -o /dev/null -w '%{http_code} %{content_type}' https://preview-aws-gateway.vitanaland.com/alive   # 200 application/json (read-only, staging)
 curl -s -o /dev/null -w '%{http_code} %{content_type}' https://preview-aws-gateway.vitanaland.com/api/v1/plans/spar/00000000-0000-0000-0000-000000000000   # 404 text/html (route not deployed yet; read-only, staging)
+# 2026-10-04 08:26 UTC — owner go-ahead ("Go ahead, continue")
+read-only: pg_get_functiondef(allocate_global_vtid(text,text,text)) on live   # plain nextval body; 20260628120000 loop never applied live -> migration aligned to live body (commit 66b342ce)
+RUN-MIGRATION.yml (ref claude/command-hub-overview-redesign-saty3w, file supabase/migrations/20261004100000_vtid_04868_plan_sparring_gate.sql)   # run 37188907901: success
+read-only verify: functions allocate_global_vtid(text,text,text,uuid), plan_sparring_append_round, plan_sparring_trigger_status, submit_plan_sparring_record present; plan_sparring_config.mode=log; trg_plan_sparring_check tgenabled=O; anon EXECUTE=false, service_role EXECUTE=true
+first live gate record: VTID-04875 allocation -> plan_sparring_shadow_log outcome=missing (log mode, nothing blocked)
