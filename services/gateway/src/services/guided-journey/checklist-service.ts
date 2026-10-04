@@ -291,6 +291,7 @@ interface ChecklistTranslationRow {
   explanation_user_benefit: string | null;
   explanation_when_to_use: string | null;
   explanation_try_this: string | null;
+  vitana_voice_script?: string | null;
 }
 
 /**
@@ -397,23 +398,43 @@ export async function getPublishedChecklist(
  *  column in `journey_checklist_translations` (VTID-03515 schema) and stays
  *  the German source — the spoken-lesson builders already carry an explicit
  *  "translate this faithfully into {language}" instruction for that field. */
-function applyTranslationToSeed(
+export function applyTranslationToSeed(
   seed: OrbTopicSeed,
   translations: ChecklistTranslationRow[],
+  locale: ChecklistLocale,
 ): OrbTopicSeed {
+  const has = (v: string | null | undefined): v is string => v != null && v.trim() !== '';
   const tr = translations.find((t) => t.topic_id === seed.topicId);
-  if (!tr) return seed;
+  // VTID-04873: the German script is never handed on for another language.
+  // It used to survive the overlay untouched, and narration prefers the
+  // script, so every non-German listener heard German read by their own
+  // language's voice.
+  if (!tr) return { ...seed, vitanaVoiceScript: null, narrationLocale: 'de' };
   const pick = (translated: string | null | undefined, source: string | null) =>
     translated != null && translated !== '' ? translated : source;
+  const translatedScript = has(tr.vitana_voice_script) ? tr.vitana_voice_script.trim() : null;
+  // Without a translated script, narration falls back to the explanation, so
+  // the narration is in `locale` only if every German explanation field that
+  // has text also has its translation (a per-field German fallback would put
+  // German sentences into the narration).
+  const sourceFields: Array<[string | null, string | null | undefined]> = [
+    [seed.explanation.whatItIs, tr.explanation_what_it_is],
+    [seed.explanation.userBenefit, tr.explanation_user_benefit],
+    [seed.explanation.whenToUse, tr.explanation_when_to_use],
+    [seed.explanation.tryThis, tr.explanation_try_this],
+  ];
+  const explanationTranslated = sourceFields.every(([src, t]) => !has(src) || has(t));
   return {
     ...seed,
     displayLabel: pick(tr.display_label, seed.displayLabel) ?? seed.displayLabel,
+    vitanaVoiceScript: translatedScript,
     explanation: {
       whatItIs: pick(tr.explanation_what_it_is, seed.explanation.whatItIs),
       userBenefit: pick(tr.explanation_user_benefit, seed.explanation.userBenefit),
       whenToUse: pick(tr.explanation_when_to_use, seed.explanation.whenToUse),
       tryThis: pick(tr.explanation_try_this, seed.explanation.tryThis),
     },
+    narrationLocale: translatedScript || explanationTranslated ? locale : 'de',
   };
 }
 
@@ -457,6 +478,7 @@ export async function getOrbTopicSeed(
         explanation: hit.explanation,
         guidedPracticeTarget: hit.guidedPracticeTarget ?? null,
         source: 'published',
+        narrationLocale: 'de',
       };
     }
   } else {
@@ -470,6 +492,7 @@ export async function getOrbTopicSeed(
         explanation: draft.explanation,
         guidedPracticeTarget: draft.guidedPracticeTarget,
         source: 'draft_fallback',
+        narrationLocale: 'de',
       };
     }
   }
@@ -478,5 +501,5 @@ export async function getOrbTopicSeed(
   if (locale === 'de') return seed;
 
   const translations = await fetchChecklistTranslations(client, locale, [topicId]);
-  return applyTranslationToSeed(seed, translations);
+  return applyTranslationToSeed(seed, translations, locale);
 }

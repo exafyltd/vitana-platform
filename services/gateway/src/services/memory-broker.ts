@@ -550,7 +550,9 @@ async function fetchEpisodicLegacyRest(
   // case (the keyword boost was bounded to 0.2 and only fired on
   // term overlap — when no overlap, the blender ordering collapsed
   // to importance+recency anyway).
-  const fetchLimit = limit * 3;
+  // VTID-04870: the 3x overfetch fed a ranker that no longer exists; the rows
+  // are already ordered importance, then recency, and only `limit` are kept.
+  const fetchLimit = limit;
   const cutoff = maxAgeHours && maxAgeHours > 0
     ? new Date(Date.now() - maxAgeHours * 3600 * 1000).toISOString()
     : null;

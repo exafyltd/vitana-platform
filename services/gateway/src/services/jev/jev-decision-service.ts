@@ -30,6 +30,8 @@ import { getJevDecision, JevDecisionDef } from './jev-decisions';
 import { emitJevDecisionEvent, jevCostUsd, JevOutcome } from './jev-telemetry';
 import { evaluateJevPolicy, isTenantScoped, isJevBudgetedPlane, jevSpendPlane, JEV_BUDGETED_PLANES, JEV_DEFAULT_TENANT_FLAG, JEV_PLATFORM_TENANT } from './jev-policy';
 import { maybeRaiseBudgetAlerts } from './jev-budget-alerts';
+import { CommunityRateLimiter, getDefaultCommunityRateLimiter } from './jev-community-rate';
+import { checkMemberQuota, getDefaultMemberQuotaStore, isQuotaLimited, MemberQuotaStore } from './jev-member-quota';
 import { getDefaultJevControl, JevControl } from './jev-tenant-control';
 
 /** Jev allows 64k tokens per request; stay far below it without a tokenizer. */
@@ -77,6 +79,16 @@ export interface DecideOptions {
   env?: NodeJS.ProcessEnv;
   /** Tenant flag + spend store. Defaults to the Supabase-backed control. */
   control?: JevControl;
+  /**
+   * VTID-04872: the member a community decision is for. A system caller
+   * ranking for a member names them here; on the member plane the caller is
+   * the member. Without one, a quota-limited call is not counted.
+   */
+  member_id?: string;
+  /** VTID-04872: per-member daily counter. Defaults to the Supabase-backed store. */
+  quota?: MemberQuotaStore;
+  /** VTID-04874: community share of the Jev rate limit. Defaults to the per-task bucket. */
+  communityRate?: CommunityRateLimiter;
 }
 
 export function interpretAnswer(q: JevQuestion, a: JevAnswer): InterpretedAnswer {
@@ -169,6 +181,18 @@ export async function decide(name: string, input: unknown, caller: JevCaller, op
     if (spent === null) return fallback('budget_check_failed', { status: 503 });
     if (spent >= budget) return fallback('tenant_budget_exhausted', { status: 429 });
     budgetedSpent = spent;
+  }
+
+  // VTID-04872: Class C is off on the member plane; Class B is quota-limited per member per day.
+  if (spendPlane === 'member' && def.community_class === 'C') return denied('community_class_c_off');
+  const memberId = opts.member_id ?? (access.plane === 'member' ? caller.actor_id : undefined);
+  if (memberId && isQuotaLimited(def, spendPlane)) {
+    const q = await checkMemberQuota({ decision: name, tenantId: tenantKey, memberId, store: opts.quota ?? getDefaultMemberQuotaStore(), env });
+    if (!q.allowed) return fallback(q.reason, { status: q.reason === 'member_daily_quota_exhausted' ? 429 : 503 });
+  }
+  // VTID-04874: member spend takes a token from the community share of the account rate limit.
+  if (spendPlane === 'member' && !(opts.communityRate ?? getDefaultCommunityRateLimiter()).admit(name)) {
+    return fallback('community_rate_limited', { status: 429 });
   }
 
   const pii = applyPiiPolicy(def.buildState(parsed.data), def.pii);

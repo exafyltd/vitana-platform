@@ -264,7 +264,10 @@ router.post('/audiobook/reminder', requireAuth, async (req: AuthenticatedRequest
 // <audio>, no live voice session, no microphone).
 // GET /api/v1/journey/audiobook/topics/:topicId/audio?lang=de
 //   200 audio/mpeg | 404 topic_not_live | 422 narration_unavailable (no Polly
-//   voice for the language, e.g. sr — the player offers Vitana live instead).
+//   voice for the language, e.g. sr — the player offers Vitana live instead)
+//   | 422 narration_not_translated (VTID-04873: this topic has no narration in
+//   the requested language yet — never read the German text in another
+//   language's voice).
 const AUDIOBOOK_VTID = 'VTID-04761';
 const TOPIC_ID_RE = /^T\d{3,4}$/;
 
@@ -290,6 +293,9 @@ router.get('/audiobook/topics/:topicId/audio', requireAuth, async (req: Authenti
     if (!seed) {
       return res.status(404).json({ ok: false, error: 'topic_not_live', vtid: AUDIOBOOK_VTID });
     }
+    if (seed.narrationLocale !== lang) {
+      return res.status(422).json({ ok: false, error: 'narration_not_translated', lang, vtid: AUDIOBOOK_VTID });
+    }
     const audio = await synthesizeAudiobookTopicMp3(
       {
         topic_id: seed.topicId,
@@ -311,6 +317,9 @@ router.get('/audiobook/topics/:topicId/audio', requireAuth, async (req: Authenti
     // member's own browser keep it, never a shared cache.
     res.setHeader('Cache-Control', 'private, max-age=86400');
     res.setHeader('X-Audiobook-Cache', audio.cached ? 'hit' : 'miss');
+    // VTID-04873: the language the narrated text is written in. Always equal
+    // to `lang` here; exposed so staging verification can prove it.
+    res.setHeader('X-Audiobook-Narration-Locale', seed.narrationLocale);
     return res.status(200).end(audio.mp3);
   } catch (err: any) {
     console.error(`[${AUDIOBOOK_VTID}] audiobook audio failed for ${topicId}/${lang}: ${err?.message}`);
