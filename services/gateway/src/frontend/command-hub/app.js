@@ -29889,16 +29889,16 @@ function renderOverviewSystemView() {
     // the data does not carry.
     var orbProvider = (orbStats && orbStats.runtime_provider) || 'unknown';
     var orbRows = [
-        { label: 'Active provider', value: orbProvider, color: '#94a3b8' },
+        { label: 'Active provider', value: orbProvider, tone: 'muted' },
         {
             label: 'Runtime ready',
             value: !orbKnown ? 'UNKNOWN' : (orbOk ? 'OK' : 'FAIL'),
-            color: !orbKnown ? '#94a3b8' : (orbOk ? '#10b981' : '#ef4444'),
+            tone: !orbKnown ? 'muted' : (orbOk ? 'ok' : 'fail'),
             dot: !orbKnown ? 'grey' : (orbOk ? 'green' : 'red')
         }
     ];
     if (orbStats && orbStats.runtime_provider_reason) {
-        orbRows.push({ label: 'Selection reason', value: orbStats.runtime_provider_reason, color: '#94a3b8' });
+        orbRows.push({ label: 'Selection reason', value: orbStats.runtime_provider_reason, tone: 'muted' });
     }
     orbRows.forEach(function (cfg) {
         var row = document.createElement('div');
@@ -29912,8 +29912,8 @@ function renderOverviewSystemView() {
         cfgLabel.className = 'orb-config-label';
         cfgLabel.textContent = cfg.label;
         var cfgVal = document.createElement('span');
-        cfgVal.className = 'orb-config-value';
-        cfgVal.style.color = cfg.color;
+        // VTID-04869: tone via class, never an inline style (CSP gate).
+        cfgVal.className = 'orb-config-value orb-config-value-' + cfg.tone;
         cfgVal.textContent = cfg.value;
         row.appendChild(cfgLabel);
         row.appendChild(cfgVal);
