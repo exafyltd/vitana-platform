@@ -190,3 +190,8 @@ export async function fetchShadowRowsByGate(sb: SupabaseClient, gate: string, si
 export async function fetchBudgetAlertEvent(sb: SupabaseClient, alertKey: string) {
   return sb.from('oasis_events').select('id').eq('topic', 'jev.budget.threshold_crossed').eq('metadata->>alert_key', alertKey).limit(1).maybeSingle();
 }
+
+/** VTID-04872: count one Class B member call today; returns today's count. */
+export async function bumpMemberQuotaRpc(sb: SupabaseClient, tenantId: string, memberId: string) {
+  return sb.rpc('jev_member_quota_bump', { p_tenant_id: tenantId, p_user_id: memberId });
+}

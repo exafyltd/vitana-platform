@@ -969,7 +969,12 @@ dev/ops/backoffice; member ranking priced per tenant budget.
    Alkalma $10/month, 80% page, rules at 100%; Class A community uses on;
    Class B (incl. D1–D8 ranking) shadow first, 300/member/day, safety exempt;
    Class C off; community rate share ≈30% of 1,200 rpm. Slice 1 is
-   VTID-04857 (budget scope + alerts + tenant flags).
+   VTID-04857 (budget scope + alerts + tenant flags). Slice 2 is VTID-04872: decisions
+   carry `community_class` A/B/C and `safety`; member-spend Class B calls
+   count per member per UTC day (`jev_member_daily_counters`, 300),
+   `JEV_MEMBER_QUOTA_MODE` shadow by default (`jev.member_quota.would_refuse`
+   on the first call over), enforce → 429 fallback; safety decisions never
+   limited; Class C refused on the member plane.
 4. Whether Community Autopilot on member data counts as the member plane
    (implemented as yes).
 
