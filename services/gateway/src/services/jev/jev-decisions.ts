@@ -1096,6 +1096,118 @@ const defs: JevDecisionDef[] = [
     data: 'telemetry',
     buildState: (i) => ({ candidate: { category: i.category, title: i.title, content: i.content }, stored: i.existing }),
   },
+  // VTID-04879: community Class A decisions (docs/JEV-INTEGRATION-PLAN.md §8.3 C1, C3, C10, C19).
+  // Member content run by a system caller on the system_autopilot plane: member rules apply,
+  // spend counts as member, no per-member quota (Class A). Shadow only beside the existing logic.
+  {
+    name: 'community_intent_kind',
+    description: 'What a member wants to post or find, for the intent matcher (shadow of classifyIntentKind).',
+    roles: ENGINEERING,
+    input: z.object({ utterance: text(1000) }),
+    questions: {
+      kind: {
+        type: 'choice',
+        instructions: 'What is the member asking for?',
+        criteria: {
+          commercial_buy: 'They want to buy something.',
+          commercial_sell: 'They want to sell something.',
+          activity_seek: 'They want a partner or group for an activity.',
+          partner_seek: 'They are looking for a romantic or life partner.',
+          social_seek: 'They want to meet people or make friends.',
+          mutual_aid: 'They want to borrow, lend or exchange help.',
+          learning_seek: 'They want to learn something or find a teacher.',
+          mentor_seek: 'They want a mentor or want to mentor someone.',
+          none: 'None of these; the request is unclear or something else.',
+        },
+      },
+    },
+    primary: 'kind',
+    threshold: 0.7,
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'member_content',
+    community_class: 'A',
+    pii: 'redact',
+    buildState: (i) => ({ member_utterance: i.utterance }),
+  },
+  {
+    name: 'community_marketplace_intent',
+    description: 'Which part of the marketplace a member need belongs to (shadow of the classify_marketplace_intent heuristic).',
+    roles: ENGINEERING,
+    input: z.object({ need: text(1000) }),
+    questions: {
+      intent: {
+        type: 'choice',
+        instructions: 'Which kind of marketplace offer would meet this need?',
+        criteria: {
+          product: 'A physical or digital product to buy.',
+          service: 'A service, course, class, session or treatment.',
+          practitioner: 'A doctor, coach, therapist or other practitioner.',
+          diagnostic_test: 'A lab or diagnostic test.',
+          combination: 'A diagnostic test together with a practitioner or service.',
+        },
+      },
+    },
+    primary: 'intent',
+    threshold: 0.6,
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'member_content',
+    community_class: 'A',
+    pii: 'redact',
+    buildState: (i) => ({ member_need: i.need }),
+  },
+  {
+    name: 'community_worth_remembering',
+    description: 'Whether a conversation stretch holds a durable personal fact, before the memory extractor runs (shadow).',
+    roles: ENGINEERING,
+    input: z.object({ conversation: text(2000) }),
+    questions: {
+      worth: {
+        type: 'noul',
+        instructions:
+          'Does this conversation contain a durable personal fact about the member (a name, preference, relationship, plan, routine) worth remembering in a later, unrelated session?',
+      },
+    },
+    primary: 'worth',
+    threshold: 0.7,
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'member_content',
+    community_class: 'A',
+    pii: 'redact',
+    buildState: (i) => ({ conversation: i.conversation }),
+  },
+  {
+    name: 'community_ticket_triage',
+    description: 'Whether a member report needs a ticket or an inline answer, and its kind (shadow of pick_specialist_for_text).',
+    roles: ENGINEERING,
+    input: z.object({ summary: text(1500) }),
+    questions: {
+      route: {
+        type: 'choice',
+        instructions: 'Does this need a support ticket, or can it be answered right away in the conversation?',
+        criteria: {
+          answer_inline: 'A question that can be answered now; nothing is broken and nobody needs to act.',
+          file_ticket: 'Something is broken, blocked or needs a person to act.',
+        },
+      },
+      kind: {
+        type: 'choice',
+        instructions: 'If a ticket were filed, which kind would it be?',
+        criteria: {
+          bug: 'Something in the app is broken or behaves wrongly.',
+          support_question: 'A question or request for help.',
+          marketplace_claim: 'A problem with a marketplace order, product or seller.',
+          account_issue: 'Login, profile, membership or access problem.',
+        },
+      },
+    },
+    primary: 'route',
+    threshold: 0.7,
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'member_content',
+    community_class: 'A',
+    pii: 'redact',
+    buildState: (i) => ({ member_report: i.summary }),
+  },
 ];
 
 export const JEV_DECISIONS: ReadonlyMap<string, JevDecisionDef> = new Map(defs.map((d) => [d.name, d]));

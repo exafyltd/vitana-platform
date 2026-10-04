@@ -117,6 +117,12 @@ jest.mock('../src/middleware/auth-supabase-jwt', () => ({
   ...jest.requireActual('../src/middleware/auth-supabase-jwt'),
   resolveVitanaId: jest.fn(async () => '@member1'),
 }));
+// VTID-04879: the community ticket-triage shadow gate is observed, never real here.
+const ticketShadow = jest.fn((_a: any): Promise<string | null> => Promise.resolve(null));
+jest.mock('../src/services/jev/gates/community-class-a-gates', () => ({
+  ...jest.requireActual('../src/services/jev/gates/community-class-a-gates'),
+  shadowTicketTriage: (a: any) => ticketShadow(a),
+}));
 
 // ---------------------------------------------------------------------------
 // The real pipeline
@@ -485,6 +491,23 @@ describe('Scenario 2: a member reports a bug to Vitana by voice', () => {
     const r = await reportToVitana();
     const { executionId } = await driveTicketToExecution(r.ticket.id);
     await expectResolved(r.ticket.id, executionId);
+  });
+
+  it('the Jev ticket-triage shadow (VTID-04879) sees the report but never changes or delays the result', async () => {
+    const strip = (r: any) => JSON.parse(JSON.stringify(r, (k, v) => (['id', 'ticket_id', 'ticket_number', 'ticket'].includes(k) ? undefined : v)));
+    ticketShadow.mockImplementation(() => Promise.resolve(null));
+    const plain = await reportToVitana();
+    // A shadow that never settles (and one that rejects) must leave the result identical.
+    ticketShadow.mockImplementation(() => new Promise<string | null>(() => undefined));
+    const hanging = await reportToVitana();
+    ticketShadow.mockImplementation(() => Promise.reject(new Error('jev down')));
+    const failing = await reportToVitana();
+    expect(strip(hanging)).toEqual(strip(plain));
+    expect(strip(failing)).toEqual(strip(plain));
+    expect(ticketShadow).toHaveBeenLastCalledWith(
+      expect.objectContaining({ summary: VOICE_SUMMARY, tenantId: TENANT, userId: MEMBER, sessionId: 'live-session-1' }),
+    );
+    ticketShadow.mockImplementation(() => Promise.resolve(null));
   });
 
   it('a vague report files nothing and asks the member for detail', async () => {

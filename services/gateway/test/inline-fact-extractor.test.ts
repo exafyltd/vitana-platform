@@ -298,7 +298,7 @@ describe('VTID-01225: Inline Fact Extractor', () => {
           user_id: 'user-456',
           session_id: 'session-789',
         })
-      ).resolves.toBeUndefined();
+      ).resolves.toEqual({ persisted: 0 }); // VTID-04879: returns what it stored; still never throws
     });
 
     it('should handle write_fact RPC failure gracefully', async () => {
@@ -329,7 +329,7 @@ describe('VTID-01225: Inline Fact Extractor', () => {
           user_id: 'user-456',
           session_id: 'session-789',
         })
-      ).resolves.toBeUndefined();
+      ).resolves.toEqual({ persisted: 0 }); // VTID-04879: returns what it stored; still never throws
     });
   });
 
