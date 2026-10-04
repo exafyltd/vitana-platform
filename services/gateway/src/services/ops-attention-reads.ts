@@ -2,7 +2,7 @@
  * VTID-04876 — production data access for the /ops/attention adapters.
  *
  * Every read is in-process (plan REVISION 2 F3): the Phase 1a builders
- * (buildHealthSummary, buildPipelineSummary, buildVoiceOverview), the Dev
+ * (buildHealthSummary, buildVoiceOverview), the Dev
  * Autopilot supervisor snapshot, the system-controls service, the approvals
  * helpers, the ops-runtime build-info checks, and small bounded
  * service-role reads (supabase-js) with a LIMIT and an indexed filter
@@ -17,7 +17,6 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { VitanaEnv } from '../env';
 import { getSupabase } from '../lib/supabase';
 import { buildHealthSummary } from './health-summary-builder';
-import { buildPipelineSummary } from './pipeline-summary-builder';
 import { buildVoiceOverview } from './voice-supervisor-overview';
 import { buildSupervisorSnapshot } from './dev-autopilot-supervisor';
 import { getAllSystemControls } from './system-controls-service';
@@ -26,6 +25,9 @@ import { fetchApprovalEligibleVtids, fetchPrInfoForVtids } from '../routes/appro
 import { runRuntimeCheckCached } from '../routes/ops-runtime-health';
 import type { AttentionReads, ControlRow, LedgerRow, WaitingRow } from './ops-attention-adapters';
 import type { AttentionStateStore, StateRow } from './ops-attention';
+
+/** Same threshold as the pipeline summary's BROKEN classification. */
+const PIPELINE_BROKEN_AFTER_MS = 2 * 60 * 60_000;
 
 function sb(): SupabaseClient {
   const client = getSupabase();
@@ -65,7 +67,7 @@ export function createAttentionReads(opts: { authHeader?: string } = {}): Attent
 
     async voiceOverview() {
       const o = await buildVoiceOverview({ window: '1h', scope: { is_platform_admin: true } });
-      return { verdict_summary: o.verdict_summary, verdicts: o.verdicts as any, window: o.window, generated_at: o.generated_at };
+      return { verdict_summary: o.verdict_summary, verdicts: o.verdicts as any, window: o.window, generated_at: o.generated_at, truncated: o.truncated === true };
     },
 
     async voiceQuarantines() {
@@ -96,8 +98,12 @@ export function createAttentionReads(opts: { authHeader?: string } = {}): Attent
     },
 
     async supervisorAlerts() {
-      const snap: any = await buildSupervisorSnapshot();
+      const readErrors: string[] = [];
+      const snap: any = await buildSupervisorSnapshot(Date.now(), { readErrors });
       if (!snap || snap.ok === false) throw new Error(`dev_autopilot_supervisor: ${snap?.error || 'unavailable'}`);
+      // The snapshot substitutes [] for a failed subordinate read; its alerts
+      // would then look clear. Any failed read makes the source UNKNOWN.
+      if (readErrors.length) throw new Error(`dev_autopilot_supervisor: failed reads: ${[...new Set(readErrors)].join(', ')}`);
       return Array.isArray(snap.alerts) ? snap.alerts : [];
     },
 
@@ -115,9 +121,22 @@ export function createAttentionReads(opts: { authHeader?: string } = {}): Attent
     },
 
     async pipelineBrokenVtids() {
-      const r = await buildPipelineSummary();
-      if (r.status !== 200) throw new Error(`pipeline_summary: ${(r.body as any).error || r.status}`);
-      return r.body.attention_queue.filter((t: any) => t.severity === 'BROKEN').map((t: any) => String(t.vtid));
+      // The pipeline summary's BROKEN heuristic (in progress, no ledger update
+      // for more than 2 h), read directly: buildPipelineSummary() swallows a
+      // failed stuck query and returns an empty set with status 200, which
+      // would read as "nothing broken". This read throws instead.
+      const cutoff = new Date(Date.now() - PIPELINE_BROKEN_AFTER_MS).toISOString();
+      const rows = check(
+        await sb()
+          .from('vtid_ledger')
+          .select('vtid')
+          .like('vtid', 'VTID-%')
+          .eq('status', 'in_progress')
+          .lt('updated_at', cutoff)
+          .limit(200),
+        'vtid_ledger',
+      ) as Array<{ vtid: string }>;
+      return rows.map((r) => String(r.vtid));
     },
 
     async inProgressLedger() {
@@ -175,7 +194,7 @@ export function createAttentionReads(opts: { authHeader?: string } = {}): Attent
           .from('governance_violations')
           .select('id,severity,status,created_at,governance_rules(logic)')
           .eq('tenant_id', 'SYSTEM')
-          .neq('status', 'RESOLVED')
+          .eq('status', 'OPEN')
           .order('created_at', { ascending: false })
           .limit(200),
         'governance_violations',

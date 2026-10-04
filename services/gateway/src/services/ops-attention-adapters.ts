@@ -229,7 +229,7 @@ export interface AttentionReads {
   /** Newest event among `topics` created at/after `sinceIso`, or null. */
   latestEvent(topics: string[], sinceIso: string): Promise<OasisEventRow | null>;
   buildInfo(which: 'prod' | 'staging'): Promise<BuildInfoCheck>;
-  voiceOverview(): Promise<{ verdict_summary: string; verdicts: VoiceVerdictLite[]; window: string; generated_at: string }>;
+  voiceOverview(): Promise<{ verdict_summary: string; verdicts: VoiceVerdictLite[]; window: string; generated_at: string; truncated?: boolean }>;
   voiceQuarantines(): Promise<Array<{ class: string; quarantined_at: string; reason: string | null }>>;
   voiceArchitectureReports(): Promise<Array<{ id: string; class: string; generated_at: string; track: string }>>;
   supervisorAlerts(): Promise<SupervisorAlertLite[]>;
@@ -457,6 +457,9 @@ export async function voiceSupervisorAdapter(reads: AttentionReads): Promise<Ada
   ]);
   const candidates: Candidate[] = [];
   const errors: string[] = [];
+  // Verdicts over a row-capped read are incomplete: keep what was found (a P1
+  // stays visible) but the source is UNKNOWN, never a clean OK.
+  if (overview.truncated) errors.push('voice_overview: fact read truncated at the row cap');
 
   for (const v of overview.verdicts || []) {
     const system = v.scope === 'system';

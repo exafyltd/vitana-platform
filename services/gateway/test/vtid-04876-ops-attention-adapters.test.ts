@@ -161,6 +161,22 @@ describe('voice_supervisor adapter', () => {
     ]);
   });
 
+  it('a truncated overview keeps its verdicts (a P1 stays visible) but the source is partial (→ UNKNOWN)', async () => {
+    const out = await voiceSupervisorAdapter(
+      fakeReads({
+        voiceOverview: async () => ({
+          verdict_summary: 'system_wide',
+          window: '1h',
+          generated_at: ago(0),
+          truncated: true,
+          verdicts: [v({ scope: 'system', key: 'silent', severity: 'critical' })],
+        }),
+      }),
+    );
+    expect(out.candidates.map((c) => c.severity)).toEqual(['P1']);
+    expect(out.partial_error).toMatch(/truncated at the row cap/);
+  });
+
   it('insufficient_data is no item; a failing overview read throws (→ UNKNOWN)', async () => {
     expect((await voiceSupervisorAdapter(fakeReads())).candidates).toEqual([]);
     await expect(voiceSupervisorAdapter(fakeReads({ voiceOverview: async () => { throw new Error('boom'); } }))).rejects.toThrow('boom');

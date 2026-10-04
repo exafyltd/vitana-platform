@@ -8,6 +8,7 @@
 
 const calls: Array<{ table: string; ops: Array<[string, unknown[]]> }> = [];
 let tableResult: Record<string, { data: unknown; error: unknown }> = {};
+let supervisorFailedReads: string[] = [];
 
 function chain(table: string) {
   const rec = { table, ops: [] as Array<[string, unknown[]]> };
@@ -24,14 +25,14 @@ jest.mock('../src/lib/supabase', () => ({ getSupabase: () => ({ from: (t: string
 jest.mock('../src/services/health-summary-builder', () => ({
   buildHealthSummary: jest.fn(async () => ({ checked_at: 'T', items: [{ name: 'Gateway', golden_path: true }] })),
 }));
-jest.mock('../src/services/pipeline-summary-builder', () => ({
-  buildPipelineSummary: jest.fn(async () => ({ status: 200, body: { attention_queue: [{ vtid: 'VTID-1', severity: 'BROKEN' }, { vtid: 'VTID-2', severity: 'STUCK' }] } })),
-}));
 jest.mock('../src/services/voice-supervisor-overview', () => ({
   buildVoiceOverview: jest.fn(async () => ({ verdict_summary: 'healthy', verdicts: [], window: '1h', generated_at: 'T' })),
 }));
 jest.mock('../src/services/dev-autopilot-supervisor', () => ({
-  buildSupervisorSnapshot: jest.fn(async () => ({ ok: true, alerts: [{ severity: 'warning', text: 'x', tab: 'runs' }] })),
+  buildSupervisorSnapshot: jest.fn(async (_now: number, opts?: { readErrors?: string[] }) => {
+    if (supervisorFailedReads.length) opts?.readErrors?.push(...supervisorFailedReads);
+    return { ok: true, alerts: [{ severity: 'warning', text: 'x', tab: 'runs' }] };
+  }),
 }));
 jest.mock('../src/services/system-controls-service', () => ({ getAllSystemControls: jest.fn(async () => []) }));
 jest.mock('../src/routes/worker-orchestrator', () => ({
@@ -54,6 +55,7 @@ import { runRuntimeCheckCached } from '../src/routes/ops-runtime-health';
 beforeEach(() => {
   calls.length = 0;
   tableResult = {};
+  supervisorFailedReads = [];
   process.env.SUPABASE_URL = 'https://supabase.test';
   process.env.SUPABASE_SERVICE_ROLE = 'svc';
   delete process.env.VTID_ALLOCATOR_ENABLED;
@@ -81,15 +83,43 @@ describe('in-process wiring (no HTTP self-calls)', () => {
     expect(runRuntimeCheckCached).toHaveBeenCalledTimes(2);
   });
 
-  it('operator → buildPipelineSummary BROKEN vtids + isAutonomousExecutionTask', async () => {
+  it('operator → BROKEN vtids (in progress, no update for 2 h) read directly + isAutonomousExecutionTask', async () => {
+    tableResult.vtid_ledger = { data: [{ vtid: 'VTID-1' }], error: null };
     const r = createAttentionReads();
     expect(await r.pipelineBrokenVtids()).toEqual(['VTID-1']);
+    const ops = calls.find((c) => c.table === 'vtid_ledger')!.ops;
+    expect(ops).toContainEqual(['eq', ['status', 'in_progress']]);
+    const lt = ops.find(([m]) => m === 'lt')!;
+    expect(lt[1][0]).toBe('updated_at');
+    expect(Date.now() - Date.parse(String(lt[1][1]))).toBeGreaterThanOrEqual(2 * 60 * 60_000 - 1000);
     expect(r.isAutonomous({ metadata: { autonomous_execution: true } } as any)).toBe(true);
     expect(r.isAutonomous({ metadata: { source: 'claude-code' } } as any)).toBe(false);
   });
 
   it('autonomy → buildSupervisorSnapshot alerts', async () => {
     expect(await createAttentionReads().supervisorAlerts()).toEqual([{ severity: 'warning', text: 'x', tab: 'runs' }]);
+  });
+
+  it('autonomy: a failed subordinate supervisor read throws (UNKNOWN), never an empty alert list', async () => {
+    supervisorFailedReads = ['dev_autopilot_runs', 'dev_autopilot_runs'];
+    await expect(createAttentionReads().supervisorAlerts()).rejects.toThrow(/failed reads: dev_autopilot_runs$/);
+  });
+
+  it('operator: a failed broken-task read throws, never an empty broken set', async () => {
+    tableResult.vtid_ledger = { data: null, error: { message: 'boom' } };
+    await expect(createAttentionReads().pipelineBrokenVtids()).rejects.toThrow(/vtid_ledger: boom/);
+  });
+
+  it('voice: the overview truncation flag is passed through', async () => {
+    (buildVoiceOverview as jest.Mock).mockResolvedValueOnce({ verdict_summary: 'healthy', verdicts: [], window: '1h', generated_at: 'T', truncated: true });
+    expect((await createAttentionReads().voiceOverview()).truncated).toBe(true);
+  });
+
+  it('governance: only OPEN violations (IGNORED and RESOLVED are not open)', async () => {
+    await createAttentionReads().openViolations();
+    const ops = calls.find((c) => c.table === 'governance_violations')!.ops;
+    expect(ops).toContainEqual(['eq', ['status', 'OPEN']]);
+    expect(ops.some(([m]) => m === 'neq')).toBe(false);
   });
 
   it('PR approvals → the /approvals/pending helpers, only rows with a PR or branch', async () => {
