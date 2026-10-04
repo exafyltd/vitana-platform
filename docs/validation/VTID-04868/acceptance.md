@@ -13,7 +13,7 @@ AC-2: The `plan-sparring-partner` agent is read-only (Read/Grep/Glob) and pinned
 `plan-sparring` skill defines at least two passes, the round caps and the record location.
 TEST: services/gateway/test/vtid-04868-plan-sparring-session-layer.test.ts
 
-AC-3: The PreToolUse hook injects a reminder on an allocation without a sparring id. It is silent
+AC-3: The PreToolUse hook DENIES an allocation that references no sparring record (multi-line SQL included). It is silent
 when a sparring id is present and on unrelated commands, and it never blocks.
 TEST: services/gateway/test/vtid-04868-plan-sparring-session-layer.test.ts
 

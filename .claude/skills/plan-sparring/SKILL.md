@@ -47,6 +47,8 @@ light-class plan still needs the owner's yes. A "yes" in chat is recorded as con
 gateway tier the binding approval is the exafy_admin click (`POST /api/v1/plans/spar/:id/approve`).
 
 ## 5. Then allocate
+A PreToolUse hook denies any allocation call (allocate_global_vtid, /vtid/allocate, a direct
+vtid_ledger insert) that references no sparring record; re-issue it with the reference.
 Allocate the VTID (`allocate_global_vtid(..., p_sparring_id)` once the gateway tier is live;
 until then record the sparring session in the ledger row's metadata). In the PR, commit the
 record as `docs/validation/<VTID>/plan-sparring.md`: the final plan, the plan hash, every round,

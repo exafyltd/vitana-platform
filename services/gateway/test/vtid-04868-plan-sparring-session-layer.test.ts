@@ -2,8 +2,9 @@
  * VTID-04868 — Plan Sparring Gate, session layer.
  *
  * Pins the standing rule (CLAUDE.md rules 51-55), the partner agent, the skill,
- * and the PreToolUse reminder hook in both shapes it must take: a reminder on an
- * allocation without a sparring id, silence otherwise, and never a block.
+ * and the PreToolUse hook: it DENIES an allocation that references no sparring
+ * record (a context reminder would only arrive after the VTID exists), and is
+ * silent when a record is referenced or the command is unrelated.
  */
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
@@ -49,22 +50,28 @@ describe('VTID-04868 Plan Sparring Gate — session layer', () => {
     expect(skill).toContain('docs/validation/<VTID>/plan-sparring.md');
   });
 
-  it('hook reminds on an allocation without a sparring id', () => {
-    const r = runHook({ query: "select allocate_global_vtid('claude-code','DEV','X')" });
+  const denies = (r: { out: string; code: number }) => {
     expect(r.code).toBe(0);
     const parsed = JSON.parse(r.out);
     expect(parsed.hookSpecificOutput.hookEventName).toBe('PreToolUse');
-    expect(parsed.hookSpecificOutput.additionalContext).toContain('PLAN SPARRING GATE');
-    expect(parsed.hookSpecificOutput.permissionDecision).toBeUndefined();
+    expect(parsed.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain('PLAN SPARRING GATE');
+  };
+
+  it('hook DENIES an allocation that references no sparring record (before it runs)', () => {
+    denies(runHook({ query: "select allocate_global_vtid('claude-code','DEV','X')" }));
   });
 
-  it('hook also catches /vtid/allocate and direct ledger inserts', () => {
-    expect(runHook({ command: 'curl -X POST $GW/api/v1/vtid/allocate' }).out).toContain('PLAN SPARRING GATE');
-    expect(runHook({ query: 'INSERT INTO public.vtid_ledger (vtid) values (1)' }).out).toContain('PLAN SPARRING GATE');
+  it('hook also denies /vtid/allocate and direct ledger inserts, including multi-line SQL', () => {
+    denies(runHook({ command: 'curl -X POST $GW/api/v1/vtid/allocate' }));
+    denies(runHook({ query: 'INSERT INTO public.vtid_ledger (vtid) values (1)' }));
+    denies(runHook({ query: 'INSERT\nINTO public.vtid_ledger (vtid)\nvalues (1)' }));
+    denies(runHook({ query: 'insert into "vtid_ledger" (vtid) values (1)' }));
   });
 
-  it('hook is silent when a sparring id is passed, and on unrelated commands', () => {
+  it('hook allows the call when a sparring record is referenced, and ignores unrelated commands', () => {
     expect(runHook({ query: 'select allocate_global_vtid(a,b,c,p_sparring_id=>x)' })).toEqual({ out: '', code: 0 });
+    expect(runHook({ query: "-- sparring_record: docs/validation/VTID-1/plan-sparring.md\nselect allocate_global_vtid('a','b','c')" })).toEqual({ out: '', code: 0 });
     expect(runHook({ command: 'ls -la' })).toEqual({ out: '', code: 0 });
   });
 
