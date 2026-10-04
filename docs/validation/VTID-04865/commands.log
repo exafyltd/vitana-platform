@@ -1,0 +1,3 @@
+cd services/gateway && npx tsc --noEmit -p .        # clean (outputs/tsc.txt)
+npx jest test/orb/live/session/vtid-04865-orphan-upstream-guard.test.ts   # 6 tests passed (outputs/jest-targeted.txt)
+npx jest test/orb/live/session <suites inspecting liveApiPromise / attemptTransparentReconnect / session.upstreamWs>   # 49 suites, 728 tests passed (outputs/jest-orb-session.txt)
