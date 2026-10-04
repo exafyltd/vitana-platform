@@ -63,7 +63,10 @@ Claude must **always** do the following:
     IS the approval (see IF-THEN rule "task moved to in_progress manually
     → explicit consent"). Multiple distinct fixes in one conversation get
     multiple distinct VTIDs, not one VTID shared across unrelated changes.
-    (VTID-03448)
+    (VTID-03448) **Since VTID-04868 the allocation comes right AFTER the
+    plan has been sparred and the owner has approved it** — see rules
+    51–55 (Plan Sparring Gate). "First step" now means first step after
+    an approved, sparred plan; it never means skipping the sparring.
 3. **Always check memory first** before proposing changes, fixes, or new systems.
 4. **Always respect existing governance rules** over new ideas or optimizations.
 5. **Always require `spec_status=approved`** before execution.
@@ -376,6 +379,40 @@ Applies to both repos.
     STAGING-VERIFY fails → **THEN** no ready message and no PUBLISH: fix
     forward and re-verify; never skip, disable or loosen a test to get green.
 
+### Plan Sparring Gate (STANDING RULE — VTID-04868)
+
+Owner decision 2026-10-03: *"Every new plan must have a ping pong sparring
+agent to support improvement of the plan … before a new VTID is generated,
+and it must be a standard process no matter how many new plans we create."*
+Applies to both repos and to every plan producer — Claude Code sessions,
+Operator Chat/Console, task intake, Dev Autopilot, self-healing, voice,
+email intake, routines. Procedure: skill `.claude/skills/plan-sparring/`.
+
+51. **Plan → sparring → owner approval → VTID → code.** No VTID is
+    allocated for a plan that has not been sparred, and no VTID is ever
+    allocated for the sparring itself.
+52. **The partner is independent and adversarial.** It sees the plan and the
+    code, never the planner's reasoning; it verifies the plan's premises
+    against the code (`file:line`) and its findings are kept verbatim. Every
+    finding gets an answer — accepted (plan changed), rejected (reason) or
+    deferred (where tracked) — and goes back to the same partner. At least
+    two passes for every change class; cap 3 rounds (standard). A rejection
+    the partner still disputes is unresolved and goes to the owner.
+53. **Partner model: Claude Opus 4.6 on AWS Bedrock** (owner decision
+    2026-10-04), one config value (`PLAN_SPARRING_MODEL`). **No fallback** —
+    a failed partner call escalates to the owner; never Sonnet, DeepSeek or
+    Google silently.
+54. **The gate is the database**, not this text: a `vtid_ledger` trigger
+    checks every new VTID for a converged-or-escalated, owner-approved
+    sparring record with a matching plan hash. It runs in log mode first,
+    then enforce. While sessions can run `execute_sql` as `postgres`, a
+    disabled trigger or changed mode is **detected (hourly reconciler → P1),
+    not prevented** — an accepted residual (owner decision 2026-10-04) until
+    the Aurora cutover gives full role control.
+55. **Break-glass** (P1 incident with gateway or Bedrock down): only the
+    owner allocates through the exemption role, logged as
+    `vtid.plan_sparring.break_glass`; a full sparring follows within 24h.
+
 ---
 
 ## 🔁 IF–THEN RULES
@@ -661,6 +698,11 @@ seeing them at all.
 **This question is permanently settled. Do not re-ask the user "should this
 have a VTID" or "do you have a VTID for this" ever again.** Every task gets
 one, Claude allocates it itself, first step, no exceptions.
+
+**Step 0 (VTID-04868): spar the plan first.** Run the `plan-sparring` skill
+and get the owner's approval of the sparred plan; then allocate, passing the
+sparring id (`p_sparring_id`) once the gateway tier is live. See Part 1 rules
+51–55.
 
 Procedure, in order of preference:
 

@@ -131,6 +131,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Bash|mcp__Supabase__execute_sql",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pretooluse-plan-sparring-reminder.sh\"",
+            "timeout": 10
+          }
+        ]
       }
     ]
   }
