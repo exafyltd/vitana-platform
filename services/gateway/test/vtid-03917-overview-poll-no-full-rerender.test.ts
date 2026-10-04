@@ -79,7 +79,9 @@ describe('VTID-03917: fetchActionRequired() silent refresh no longer forces a fu
 describe('VTID-03917: fetchOverviewTimeseries() parity fix (defensive — no live silentRefresh caller today)', () => {
   it('does not call renderApp() when silentRefresh is true', () => {
     const body = functionBody(SOURCE, 'async function fetchOverviewTimeseries(silentRefresh) {');
-    expect(body).toMatch(/state\.activeTab === 'system-overview' && !silentRefresh\)\s*\{\s*renderApp\(\);/);
+    // VTID-04869: the guard reads the router's real key (currentTab); the
+    // old state.activeTab was never set, so this render never happened.
+    expect(body).toMatch(/state\.currentTab === 'system-overview' && !silentRefresh\)\s*\{\s*renderApp\(\);/);
   });
 });
 

@@ -93,7 +93,10 @@ describe('VTID-03906: Operator chat scroll-jump + flicker fix', () => {
     expect(idx).toBeGreaterThan(-1);
     const end = SOURCE.indexOf('}, 30000);', idx);
     const body = SOURCE.slice(idx, end);
-    expect(body).toContain("state.activeModule === 'overview' && state.activeTab === 'system-overview' && !state.isOperatorOpen");
+    // VTID-04869: the guard reads the router's real keys (currentModuleKey/
+    // currentTab); the old activeModule/activeTab were never set, so the
+    // poll never ran at all.
+    expect(body).toContain("state.currentModuleKey === 'overview' && state.currentTab === 'system-overview' && !state.isOperatorOpen");
   });
 });
 

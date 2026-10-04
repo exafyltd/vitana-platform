@@ -28,7 +28,11 @@ export type LLMStage =
   | 'memory'
   | 'triage'
   | 'vision'
-  | 'classifier';
+  | 'classifier'
+  // VTID-04868: Plan Sparring Gate partner. Bedrock only, NO fallback — a
+  // failed partner call escalates the sparring session to a human
+  // (model_unavailable) instead of being served by a different model.
+  | 'plan_sparring';
 
 /**
  * LLM Provider types
@@ -79,7 +83,48 @@ export interface LLMRoutingPolicy {
    */
   vision?: StageRoutingConfig;
   classifier?: StageRoutingConfig;
+  /**
+   * VTID-04868: optional for the same reason as vision/classifier — no stored
+   * policy row carries it yet. `callViaRouter` resolves a missing
+   * `plan_sparring` entry to `LLM_SAFE_DEFAULTS.plan_sparring` (and never
+   * falls back), see NO_FALLBACK_STAGES.
+   */
+  plan_sparring?: StageRoutingConfig;
 }
+
+/**
+ * VTID-04868 — Plan Sparring partner model (owner decision 2026-10-04:
+ * Claude Opus 4.6 on AWS Bedrock, every producer, "for now").
+ *
+ * !!! UNVERIFIED PLACEHOLDER — DO NOT TRUST UNTIL THE IF-THEN 31 INVOKE TEST
+ * !!! HAS PASSED. The exact eu.* inference-profile id for Opus 4.6 in
+ * !!! eu-central-1 has NOT been resolved (`aws bedrock list-inference-profiles`)
+ * !!! and has NOT been invoked for real. The 2026-08-10 sweep found every Opus
+ * !!! profile except opus-4-5 unsubscribed (AccessDenied). Before any producer
+ * !!! relies on the gate: resolve the real id, invoke it for real including one
+ * !!! tool round-trip with thinking {type:'adaptive'} + output_config.effort,
+ * !!! then set PLAN_SPARRING_MODEL (or replace this constant) with the verified
+ * !!! id. If AccessDenied → Marketplace subscription first; if Bedrock rejects
+ * !!! output_config.effort → escalate to the owner, never drop it silently.
+ *
+ * Because the stage has NO fallback, a wrong id fails LOUDLY (every session
+ * escalates with model_unavailable) — it can never be silently served by
+ * another model, which is the failure mode the subscribed-models guard tests
+ * exist for.
+ */
+export const PLAN_SPARRING_DEFAULT_MODEL = 'eu.anthropic.claude-opus-4-6-v1';
+
+/** Resolved partner model: PLAN_SPARRING_MODEL env, else the placeholder above. */
+export function resolvePlanSparringModel(): string {
+  return process.env.PLAN_SPARRING_MODEL || PLAN_SPARRING_DEFAULT_MODEL;
+}
+
+/**
+ * VTID-04868: stages that must never be served by a fallback provider/model,
+ * whatever the stored policy or the caller's `allowFallback` says. Enforced in
+ * `callViaRouter` and in policy validation (a non-null fallback is rejected).
+ */
+export const NO_FALLBACK_STAGES: LLMStage[] = ['plan_sparring'];
 
 /**
  * Flagship-only safe defaults per the BOOTSTRAP-LLM-ROUTER plan.
@@ -170,6 +215,15 @@ export const LLM_SAFE_DEFAULTS: Required<LLMRoutingPolicy> = {
     fallback_provider: 'deepseek',
     fallback_model: 'deepseek-flash',
   },
+  // VTID-04868: Bedrock Opus 4.6 partner, NO fallback (owner decision
+  // 2026-10-04 — never Sonnet/DeepSeek/Google). Model id is an UNVERIFIED
+  // placeholder unless PLAN_SPARRING_MODEL is set — see PLAN_SPARRING_DEFAULT_MODEL.
+  plan_sparring: {
+    primary_provider: 'bedrock',
+    primary_model: resolvePlanSparringModel(),
+    fallback_provider: null,
+    fallback_model: null,
+  },
 };
 
 /**
@@ -186,6 +240,8 @@ export const MODEL_COSTS: Record<string, { input: number; output: number }> = {
   // had no row, so every Bedrock call on them was reported as $0.
   'claude-opus-4-5': { input: 5.00, output: 25.00 },
   'claude-sonnet-4-5': { input: 3.00, output: 15.00 },
+  // VTID-04868: Plan Sparring partner (Opus 4.6 on Bedrock).
+  'claude-opus-4-6': { input: 5.00, output: 25.00 },
   'claude-3-5-sonnet-20241022': { input: 3.00, output: 15.00 },
   'claude-3-opus-20240229': { input: 15.00, output: 75.00 },
   'claude-3-haiku-20240307': { input: 0.25, output: 1.25 },
@@ -239,7 +295,9 @@ export function modelCostKey(model: string | undefined | null): string | null {
     .replace(/^(?:eu|us|apac|global|jp|au|ca)\.anthropic\./, '')
     .replace(/^anthropic\./, '')
     .replace(/-\d{8}-v\d+:\d+$/, '')
-    .replace(/-v\d+:\d+$/, '');
+    .replace(/-v\d+:\d+$/, '')
+    // VTID-04868: profile ids shaped `…-v1` (no `:0`), e.g. the Opus 4.6 placeholder.
+    .replace(/-v\d+$/, '');
   return MODEL_COSTS[bare] ? bare : null;
 }
 
@@ -272,6 +330,7 @@ export const VALID_STAGES: LLMStage[] = [
   'triage',
   'vision',
   'classifier',
+  'plan_sparring',
 ];
 
 /**
@@ -285,7 +344,7 @@ export const VALID_STAGES: LLMStage[] = [
  * the service with "Missing configuration for stage: vision". Caught in review
  * on #3073. The list lives here so neither gate can drift from the other.
  */
-export const OPTIONAL_STAGES: LLMStage[] = ['vision', 'classifier'];
+export const OPTIONAL_STAGES: LLMStage[] = ['vision', 'classifier', 'plan_sparring'];
 
 /**
  * Valid providers
@@ -345,6 +404,9 @@ export const RECOMMENDED_MODELS: Record<LLMStage, string[]> = {
   triage: [BEDROCK_SONNET, 'deepseek-flash'],
   vision: [BEDROCK_SONNET],
   classifier: [BEDROCK_SONNET, 'deepseek-flash'],
+  // VTID-04868: only the partner model itself — unverified placeholder until
+  // the IF-THEN 31 invoke test passes (see PLAN_SPARRING_DEFAULT_MODEL).
+  plan_sparring: [resolvePlanSparringModel()],
 };
 
 /**

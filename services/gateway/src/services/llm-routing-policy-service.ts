@@ -10,7 +10,7 @@
 
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
-import { LLM_SAFE_DEFAULTS, VALID_STAGES, VALID_PROVIDERS, OPTIONAL_STAGES } from '../constants/llm-defaults';
+import { LLM_SAFE_DEFAULTS, VALID_STAGES, VALID_PROVIDERS, OPTIONAL_STAGES, NO_FALLBACK_STAGES } from '../constants/llm-defaults';
 import {
   LLMStage,
   LLMProvider,
@@ -196,6 +196,20 @@ export async function validatePolicy(
       errors.push(`Invalid primary model for ${stage}: ${primaryKey}`);
     } else if (!primaryModel.applicable_stages.includes(stage)) {
       errors.push(`Model ${primaryKey} not applicable for stage ${stage}`);
+    }
+
+    // VTID-04868: a no-fallback stage (plan_sparring) must store a NULL
+    // fallback and a Bedrock primary. A configured fallback would let a
+    // partner outage be served silently by a different model — the gate's
+    // owner decision is "escalate, never substitute".
+    if (NO_FALLBACK_STAGES.includes(stage)) {
+      if (config.primary_provider !== 'bedrock') {
+        errors.push(`Stage ${stage} must use provider bedrock (got ${config.primary_provider})`);
+      }
+      if (config.fallback_provider !== null || config.fallback_model !== null) {
+        errors.push(`Stage ${stage} must not have a fallback (got ${config.fallback_provider}/${config.fallback_model})`);
+      }
+      continue;
     }
 
     // Validate fallback

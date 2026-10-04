@@ -1428,3 +1428,49 @@ static — nobody has added or removed any of these 106 functions in the
 intervening two weeks. That's consistent with the closing paragraph
 above: what's left is a human product decision, not ongoing code churn,
 so a flat count here is the expected signal, not a surprising one.
+
+## Addendum, 2026-10-04 (VTID-04868) — Plan Sparring Gate objects added to RPC parity and the cutover checklist
+
+New objects created on **Supabase** by
+`supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql` and
+changed by its hardening migration
+`supabase/migrations/20261004120000_vtid_04868_plan_sparring_hardening.sql`
+(the gate is built where `vtid_ledger` is written today — contract R4). The
+table lists the **post-hardening** signatures; Aurora must be built from both
+files, in that order. All are
+plain Postgres with no GoTrue dependency (**portable**), but the trigger has a
+cutover ordering rule of its own, so they are listed here explicitly rather
+than left to a future re-scan:
+
+| Object | Kind | Callers | Parity class | Cutover rule |
+|---|---|---|---|---|
+| `allocate_global_vtid(text, text, text, uuid, text)` | RPC (SECURITY DEFINER) — **signature changed twice**: 3-arg dropped (20261004110000), 4-arg dropped (20261004120000) | every `/rest/v1/rpc/allocate_global_vtid` call site in the gateway (named args `p_source/p_layer/p_module`, optional `p_sparring_id` + `p_plan_hash` together) | portable | Aurora must carry the **5-arg** version only (with the bounded collision-skipping loop); a leftover 3- or 4-arg copy makes the PostgREST call ambiguous. |
+| `submit_plan_sparring_record(uuid, text, text, text, jsonb, text, text, jsonb, text[])` | RPC (SECURITY DEFINER) | gateway `/api/v1/plans/spar` (attested tier) | portable | service_role-only grant must be carried over. |
+| `plan_sparring_append_round(uuid, jsonb, int)` | RPC (SECURITY DEFINER) — 2-arg dropped by 20261004120000 | gateway sparring service | portable | same; raises custom SQLSTATE `PS409` on a round conflict (PostgREST passes it through as the error `code`). No 2-arg copy may remain. |
+| `_plan_sparring_gate_eval(text, jsonb, text)`, `_plan_sparring_mode()` | internal (SECURITY DEFINER) | the trigger only | portable | EXECUTE to service_role + vitana_governance_owner only; the eval body must be the 20261004120000 one (plan-hash binding). |
+| `plan_sparring_check()` + trigger `trg_plan_sparring_check` BEFORE INSERT ON `vtid_ledger` | trigger | every ledger insert | portable | **Create on Aurora only after the final full load / CDC has stopped** (see below). |
+| `plan_sparring_sessions`, `plan_sparring_config`, `plan_sparring_shadow_log` | tables (RLS on, service_role policies) | gateway | portable | include in the final load; `plan_sparring_config` must arrive with the **same** `mode` as Supabase. |
+| index `vtid_ledger_sparring_id_unique` | partial unique index | — | portable | create with the trigger. |
+| role `vitana_governance_owner` (NOLOGIN) | role | break-glass only | portable | create on Aurora NOLOGIN and **grant it to no application role** — on Aurora this closes the Supabase residual (owner decision 3). |
+
+**Cutover checklist items (add to `docs/AURORA-CUTOVER-RUNBOOK-2026-09-20.md` Step 6/9):**
+
+1. **Do not create `trg_plan_sparring_check` on Aurora while DMS (full load or
+   CDC) is still writing `vtid_ledger`.** Replicated rows are not new
+   allocations; the trigger would log every replicated row as `missing` (log
+   mode) or reject it (enforce mode). DMS uses `TRUNCATE_BEFORE_LOAD` here, so
+   the trigger must be created **after** the final load completes, before
+   writes are unfrozen (between runbook Steps 6 and 8).
+2. Enforce mode applies only on the **write store** — at any moment exactly
+   one of Supabase/Aurora has the trigger enabled and the gateway writing to
+   it.
+3. Post-cutover check: `SELECT tgenabled FROM pg_trigger WHERE tgname =
+   'trg_plan_sparring_check'` returns `'O'` on Aurora, and
+   `plan_sparring_config.mode` matches what Supabase had.
+4. The gateway reconciler (`PLAN_SPARRING_RECONCILER_ENABLED`) queries the
+   live store resolved from config (`SUPABASE_URL` → PostgREST-Aurora proxy
+   after Step 7), never a hardcoded host.
+5. `scripts/aws/aurora-cutover-restore-grants.sql` is a snapshot of Supabase
+   grants — **regenerate it after both VTID-04868 migrations are applied**, or the
+   column-level grants on `plan_sparring_sessions` (no `rounds` UPDATE) and
+   the service_role-only function grants are lost on unfreeze.

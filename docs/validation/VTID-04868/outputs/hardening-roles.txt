@@ -1,0 +1,3 @@
+PASS test/vtid-04560-role-separation-regression.test.ts
+Test Suites: 1 passed, 1 total
+Tests:       105 passed, 105 total

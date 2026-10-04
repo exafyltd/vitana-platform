@@ -143,6 +143,14 @@ export type CicdEventType =
   // needs an auditable answer.
   | 'vtid.decision.watcher.lesson_muted'
   | 'vtid.decision.watcher.backfill'
+  // VTID-04868: Plan Sparring Gate. attached/missing are emitted at VTID
+  // allocation (log mode — shadow, never blocks); break_glass when an exempt
+  // insert is seen; tamper_detected by the hourly read-only reconciler
+  // (trigger disabled, ledger rows without sparring_id, config change).
+  | 'vtid.plan_sparring.attached'
+  | 'vtid.plan_sparring.missing'
+  | 'vtid.plan_sparring.break_glass'
+  | 'vtid.plan_sparring.tamper_detected'
   | 'cicd.github.create_pr.requested'
   | 'cicd.github.create_pr.succeeded'
   | 'cicd.github.create_pr.failed'
