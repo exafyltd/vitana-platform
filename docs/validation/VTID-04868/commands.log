@@ -22,3 +22,5 @@ bash scripts/ci/test-vtid-04868-plan-sparring.sh   # local Postgres 16, both mig
 cd services/gateway && npx tsc --noEmit   # no errors (outputs/hardening-tsc.txt)
 cd services/gateway && npx jest test/vtid-04868 test/plans-spar.test.ts test/routes/vtid* test/vtid-04465-operator-pipeline-regression.test.ts test/vtid-04456-customer-support-pipeline-regression.test.ts   # 12 suites, 191 tests passed (outputs/hardening-jest.txt)
 cd services/gateway && npm run test:roles   # 1 suite, 105 tests passed (outputs/hardening-roles.txt)
+RUN-MIGRATION.yml (file supabase/migrations/20261004120000_vtid_04868_plan_sparring_hardening.sql)   # run 37191054602: success (2026-10-04 09:06 UTC)
+read-only verify: allocate_global_vtid(text,text,text,uuid,text) with FOR i IN 1..1000 loop; plan_sparring_append_round(uuid,jsonb,integer); mode=log; trg_plan_sparring_check tgenabled=O; anon EXECUTE=false
