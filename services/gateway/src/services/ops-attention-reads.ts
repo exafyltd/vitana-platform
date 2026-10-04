@@ -152,7 +152,7 @@ export function createAttentionReads(opts: { authHeader?: string } = {}): Attent
       // Same effective semantics as isVtidAllocatorEnabled(): the env var
       // wins, and a missing control row means disabled.
       const alloc = out.find((c) => c.key === 'vtid_allocator_enabled');
-      if (process.env.VTID_ALLOCATOR_ENABLED === 'true') {
+      if ((process.env.VTID_ALLOCATOR_ENABLED ?? 'false') === 'true') {
         if (alloc) alloc.enabled = true;
       } else if (!alloc) {
         out.push({ key: 'vtid_allocator_enabled', enabled: false, reason: 'control row missing', updated_by: null, updated_at: null });
