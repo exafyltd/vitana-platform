@@ -323,4 +323,16 @@ GRANT EXECUTE ON FUNCTION public._plan_sparring_gate_eval(text, jsonb, text) TO 
 
 UPDATE plan_sparring_config SET mode = 'log';
 
+-- Reconciler status RPC: present + enabled ('O'); flips when the trigger is disabled.
+DO $$
+DECLARE r record;
+BEGIN
+  SELECT * INTO r FROM public.plan_sparring_trigger_status();
+  ASSERT r.present AND r.tgenabled = 'O', 'trigger_status: present and enabled';
+  ALTER TABLE vtid_ledger DISABLE TRIGGER trg_plan_sparring_check;
+  SELECT * INTO r FROM public.plan_sparring_trigger_status();
+  ASSERT r.present AND r.tgenabled = 'D', 'trigger_status: disabled is visible';
+  ALTER TABLE vtid_ledger ENABLE TRIGGER trg_plan_sparring_check;
+END $$;
+
 \echo 'VTID-04868: all assertions passed'

@@ -619,6 +619,34 @@ CREATE UNIQUE INDEX IF NOT EXISTS vtid_ledger_sparring_id_unique
   ON public.vtid_ledger ((metadata->>'sparring_id'))
   WHERE metadata->>'sparring_id' IS NOT NULL;
 
+-- ---------------------------------------------------------------------------
+-- 7. Read-only trigger status for the gateway reconciler (tamper detection)
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.plan_sparring_trigger_status()
+RETURNS TABLE (present boolean, tgenabled text)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_catalog
+AS $$
+  SELECT true, t.tgenabled::text
+    FROM pg_trigger t
+   WHERE t.tgrelid = 'public.vtid_ledger'::regclass
+     AND t.tgname = 'trg_plan_sparring_check'
+  UNION ALL
+  SELECT false, NULL::text
+   WHERE NOT EXISTS (
+     SELECT 1 FROM pg_trigger t
+      WHERE t.tgrelid = 'public.vtid_ledger'::regclass
+        AND t.tgname = 'trg_plan_sparring_check');
+$$;
+
+REVOKE ALL ON FUNCTION public.plan_sparring_trigger_status() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.plan_sparring_trigger_status() TO service_role;
+
+COMMENT ON FUNCTION public.plan_sparring_trigger_status() IS
+  'VTID-04868: read-only status of trg_plan_sparring_check (present, tgenabled) for the gateway reconciler; tgenabled <> ''O'' means the gate was disabled.';
+
 COMMIT;
 
 NOTIFY pgrst, 'reload schema';

@@ -5,3 +5,9 @@ node scripts/ci/command-hub-ownership-guard.js (PR title set)   # Guard check PA
 echo '{"tool_input":{"query":"select allocate_global_vtid(1,2,3)"}}' | bash .claude/hooks/pretooluse-plan-sparring-reminder.sh   # reminder JSON, exit 0
 bash scripts/ci/test-vtid-04868-plan-sparring.sh   # local Postgres 16: all assertions passed; rollback + re-apply passed (outputs/sql-harness.txt)
 cd services/gateway && npx jest test/vtid-04868-plan-sparring-migration.test.ts test/vtid-04465-operator-pipeline-regression.test.ts test/vtid-04456-customer-support-pipeline-regression.test.ts   # 3 suites, 66 tests passed (outputs/jest-db.txt)
+cd services/gateway && npx tsc --noEmit   # no errors
+cd services/gateway && npx jest test/vtid-04868 test/plans-spar.test.ts test/llm-router.test.ts test/llm-safe-defaults-no-google.test.ts test/bedrock-vision-tools.test.ts   # 7 suites, 131 tests passed (outputs/jest-gateway.txt)
+cd services/gateway && npm run test:operator   # 30 passed ; npm run test:support  # 84 passed ; npm run test:roles  # 105 passed
+bash scripts/ci/test-vtid-04868-plan-sparring.sh   # all assertions passed (incl. plan_sparring_trigger_status O/D); rollback + re-apply passed
+curl -s -o /dev/null -w '%{http_code} %{content_type}' https://preview-aws-gateway.vitanaland.com/alive   # 200 application/json (read-only, staging)
+curl -s -o /dev/null -w '%{http_code} %{content_type}' https://preview-aws-gateway.vitanaland.com/api/v1/plans/spar/00000000-0000-0000-0000-000000000000   # 404 text/html (route not deployed yet; read-only, staging)

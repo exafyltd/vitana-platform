@@ -28,6 +28,7 @@
 BEGIN;
 
 DROP TRIGGER IF EXISTS trg_plan_sparring_check ON public.vtid_ledger;
+DROP FUNCTION IF EXISTS public.plan_sparring_trigger_status();
 DROP FUNCTION IF EXISTS public.plan_sparring_check();
 DROP FUNCTION IF EXISTS public._plan_sparring_gate_eval(text, jsonb, text);
 DROP FUNCTION IF EXISTS public._plan_sparring_mode();

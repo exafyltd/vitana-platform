@@ -53,5 +53,62 @@ AC-10: The operator (VTID-04465) and support (VTID-04456) regression suites stay
 allocator signature.
 TEST: services/gateway/test/vtid-04465-operator-pipeline-regression.test.ts
 
-OASIS_PROOF: none in this push. The session layer and Phase 0 emit no events. The gateway commit
-for this VTID adds `vtid.plan_sparring.*` types and will update this line.
+AC-11: Stage `plan_sparring` is wired in every stage enumeration. It is Bedrock only, uses
+`PLAN_SPARRING_MODEL` (default Opus 4.6 eu profile), and has no fallback. Policy validation
+rejects a fallback for this stage, and the router refuses to run it on anything but Bedrock.
+TEST: services/gateway/test/vtid-04868-plan-sparring-stage.test.ts
+
+AC-12: Bedrock adapter and router history keep `thinking`/`redacted_thinking` blocks unchanged
+across tool turns, and pass through `thinking: {type:'adaptive'}` and `output_config.effort`.
+Other stages are unchanged.
+TEST: services/gateway/test/vtid-04868-plan-sparring-stage.test.ts
+TEST: services/gateway/test/bedrock-vision-tools.test.ts
+
+AC-13: Partner loop:
+- every call runs through the router with `allowFallback:false`;
+- GitHub reads use `PLAN_SPARRING_GITHUB_TOKEN` only (never the merge token), pinned to `base_ref`,
+  with a cap on tool calls;
+- the canonical plan hash is enforced;
+- the round-1 evidence floor is enforced;
+- findings are stored verbatim;
+- a model failure escalates as `model_unavailable` with zero calls to other providers.
+TEST: services/gateway/test/vtid-04868-plan-sparring-service.test.ts
+
+AC-14: `/api/v1/plans/spar`:
+- create, round and read need the service token or an admin;
+- approve needs an exafy_admin and must echo `final_plan_hash`;
+- an escalated session needs `acknowledge_escalation`;
+- an attested record is refused with `gateway_pass_required`.
+TEST: services/gateway/test/plans-spar.test.ts
+
+AC-15: The operator (VTID-04465), support (VTID-04456) and roles (VTID-04560, atlas claims the new
+route file) regression suites pass.
+TEST: services/gateway/test/vtid-04560-role-separation-regression.test.ts
+
+AC-16: The hourly reconciler (behind `PLAN_SPARRING_RECONCILER_ENABLED`, default off) reads
+`plan_sparring_trigger_status()`. A disabled or missing trigger, a config change or a ledger row
+without a sparring record emits `vtid.plan_sparring.tamper_detected`. A disabled trigger is visible
+as `tgenabled='D'`.
+TEST: services/gateway/test/vtid-04868-plan-sparring-service.test.ts
+TEST: supabase/tests/vtid_04868_plan_sparring_gate.test.sql
+
+ROUTE_MOUNT: `mountRouterSync(app, '/api/v1/plans/spar', plansSparRouter, { owner: 'plans-spar' })` in
+services/gateway/src/index.ts. It holds four routes in services/gateway/src/routes/plans-spar.ts:
+`POST /`, `POST /:id/rounds`, `GET /:id` (all `requireServiceOrAdmin`) and `POST /:id/approve`
+(`requireAdminAuth`).
+FINAL_URL: GET https://preview-aws-gateway.vitanaland.com/api/v1/plans/spar/<session-id>
+CURL_PROOF:
+- Before merge, on staging: `/alive` → `200 application/json`, so the gateway is up. The new route
+  `/api/v1/plans/spar/00000000-0000-0000-0000-000000000000` → `404 text/html`, because it is not
+  deployed yet.
+- After deploy, the same unauthenticated GET must answer `401 application/json`. This is checked by
+  staging-tests.json, read-only.
+
+OASIS_PROOF: four new event types in the `CicdEventType` union (services/gateway/src/types/cicd.ts):
+- `vtid.plan_sparring.attached` / `vtid.plan_sparring.missing`: emitted once per allocation by
+  `/vtid/allocate` and `/vtid/allocate-internal`, carrying `vtid` and `sparring_id` when present.
+- `vtid.plan_sparring.break_glass` / `vtid.plan_sparring.tamper_detected`: emitted by the reconciler
+  per detection, a state transition and never a heartbeat.
+
+Sparring rounds and approval are stored only on `plan_sparring_sessions`, not in OASIS (design
+F3: there is no VTID yet).
