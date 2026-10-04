@@ -18,7 +18,7 @@ AC-4: Each gate records one `jev_shadow_decisions` row with `plane: 'member'`, a
 AC-5: Every call site is fire-and-forget with its own `.catch`; a gate never throws, never delays and never changes the existing result. `executeReportToSpecialist` returns the same result with a shadow that resolves, never settles, or rejects.
   TEST: services/gateway/test/vtid-04879-community-class-a.test.ts
   TEST: services/gateway/test/vtid-04456-customer-support-pipeline-regression.test.ts
-AC-6: `extractAndPersistFacts` returns `{ persisted }` (0 on skip/none/error); `deduplicatedExtract` still never throws.
+AC-6: `extractAndPersistFacts` returns `{ persisted }` (0 on skip/none/error); `deduplicatedExtract` still never throws. Contract change on purpose: two assertions in `test/inline-fact-extractor.test.ts` that expected `undefined` now expect `{ persisted: 0 }`; both still prove the extractor never throws.
   TEST: services/gateway/test/vtid-04879-community-class-a.test.ts
 AC-7: The four modes are pinned to shadow in `AWS-STAGE-DEPLOY-GATEWAY.yml` only; production sets none of them; nothing opens the member plane.
   TEST: services/gateway/test/vtid-04879-community-class-a.test.ts
@@ -36,7 +36,7 @@ SCOPE_ALLOWLIST:
 - services/gateway/src/services/extraction-dedup-manager.ts, services/gateway/src/services/inline-fact-extractor.ts (C10)
 - services/gateway/src/services/report-to-specialist-core.ts (C19 call site)
 - .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml (staging shadow pins), services/gateway/src/services/conversation/conversation-flag-pins.generated.ts
-- services/gateway/test/vtid-04879-community-class-a.test.ts (new), services/gateway/test/vtid-04456-customer-support-pipeline-regression.test.ts (one scenario)
+- services/gateway/test/vtid-04879-community-class-a.test.ts (new), services/gateway/test/vtid-04456-customer-support-pipeline-regression.test.ts (one scenario), services/gateway/test/inline-fact-extractor.test.ts (two return-shape assertions)
 - DATABASE_SCHEMA.md, docs/JEV-INTEGRATION-PLAN.md, docs/validation/VTID-04879/**
 
 ## OASIS

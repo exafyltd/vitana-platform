@@ -12,3 +12,8 @@ $ node scripts/conversation/generate-flag-pins.mjs
 wrote conversation-flag-pins.generated.ts
 $ curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/intents ; .../jev/decisions/community_intent_kind
 401 application/json (both)
+$ npx jest (full gateway suite, local)
+Test Suites: 1500 passed, 1 skipped, 1 failed — the one failure was test/inline-fact-extractor.test.ts asserting the
+old Promise<void> return; updated on purpose to { persisted: 0 } (still "never throws"), then:
+$ npx jest test/inline-fact-extractor.test.ts test/extraction-dedup-manager.test.ts test/vtid-04540-dedup-force-short-text.test.ts test/vtid-04879
+Tests: 55 passed
