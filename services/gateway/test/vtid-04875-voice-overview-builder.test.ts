@@ -294,4 +294,31 @@ describe('VTID-04875 buildVoiceOverview() — in-process, no req', () => {
     expect(body.scope).toEqual({ is_platform_admin: false, tenant_id: T_OWN });
     expect(mockFetchFactRows.mock.calls[0][0].tenant_id).toBe(T_OWN);
   });
+
+  it('a non-platform scope cannot widen its reads through filters.tenant_id', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { buildVoiceOverview } = require('../src/services/voice-supervisor-overview');
+    const base = { surface: null, role: null, provider: null, lang: null, assistant: null };
+    for (const tenant_id of [T_OTHER, null]) {
+      SCENARIOS[0].setup();
+      mockFetchFactRows.mockClear();
+      mockFetchOpenFactRows.mockClear();
+      const body = await buildVoiceOverview({
+        scope: { is_platform_admin: false, tenant_id: T_OWN },
+        filters: { ...base, tenant_id },
+      });
+      expect(body.scope.tenant_id).toBe(T_OWN);
+      expect(mockFetchFactRows.mock.calls[0][0].tenant_id).toBe(T_OWN);
+      expect(mockFetchOpenFactRows.mock.calls[0][0].tenant_id).toBe(T_OWN);
+    }
+  });
+
+  it('a non-platform scope without tenant_id is refused, never read unscoped', async () => {
+    SCENARIOS[0].setup();
+    mockFetchFactRows.mockClear();
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { buildVoiceOverview } = require('../src/services/voice-supervisor-overview');
+    await expect(buildVoiceOverview({ scope: { is_platform_admin: false, tenant_id: null } })).rejects.toThrow(/requires tenant_id/);
+    expect(mockFetchFactRows).not.toHaveBeenCalled();
+  });
 });

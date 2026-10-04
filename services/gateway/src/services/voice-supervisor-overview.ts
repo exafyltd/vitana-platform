@@ -8,10 +8,10 @@
  * Scope semantics are unchanged (VTID-04780):
  *   - `{ is_platform_admin: true }` → unscoped (all tenants); `filters.tenant_id`
  *     may narrow it, exactly like an exafy_admin passing `?tenant_id=`.
- *   - `{ is_platform_admin: false, tenant_id }` → a tenant admin; when the
- *     caller passes no `filters`, the reads are confined to that tenant.
- *     The route always passes `scopedFilters(scope, req.query)`, which forces
- *     the tenant whatever the query said.
+ *   - `{ is_platform_admin: false, tenant_id }` → a tenant admin; the reads
+ *     are confined to that tenant whatever `filters.tenant_id` says (the
+ *     builder overrides it), and a missing tenant_id throws. The route's
+ *     `scopedFilters(scope, req.query)` already forces the same tenant.
  *
  * Errors are thrown unchanged — the route maps SupervisorDataError → 502 and
  * anything else → 500, as before. The route's response is pinned
@@ -99,7 +99,14 @@ export interface BuildVoiceOverviewInput {
 export async function buildVoiceOverview(input: BuildVoiceOverviewInput) {
   const { scope } = input;
   const win = typeof input.window === 'object' && input.window !== null ? input.window : parseWindow(input.window);
-  const filters = input.filters ?? defaultFilters(scope);
+  // The builder enforces tenant confinement itself rather than trusting the
+  // caller's filters: a non-platform scope always reads its own tenant, and a
+  // non-platform scope without a tenant is refused (never an unscoped read).
+  if (!scope.is_platform_admin && !scope.tenant_id) {
+    throw new Error('voice overview: a non-platform scope requires tenant_id');
+  }
+  const base = input.filters ?? defaultFilters(scope);
+  const filters: FactFilters = scope.is_platform_admin ? base : { ...base, tenant_id: scope.tenant_id ?? null };
   const nowMs = Date.now();
   const sinceMs = nowMs - win.ms;
   const [both, open] = await Promise.all([
