@@ -14,7 +14,7 @@ AC-2: The `plan-sparring-partner` agent is read-only (Read/Grep/Glob) and pinned
 TEST: services/gateway/test/vtid-04868-plan-sparring-session-layer.test.ts
 
 AC-3: The PreToolUse hook DENIES an allocation that references no sparring record (multi-line SQL included). It is silent
-when a sparring id is present and on unrelated commands, and it never blocks.
+when a sparring record is referenced and on unrelated commands.
 TEST: services/gateway/test/vtid-04868-plan-sparring-session-layer.test.ts
 
 AC-4 (VTID-04869): the Overview uses the router's real state keys, so its polls run. The
