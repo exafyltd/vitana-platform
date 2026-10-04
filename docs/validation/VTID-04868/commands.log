@@ -16,3 +16,4 @@ read-only: pg_get_functiondef(allocate_global_vtid(text,text,text)) on live   # 
 RUN-MIGRATION.yml (ref claude/command-hub-overview-redesign-saty3w, file supabase/migrations/20261004100000_vtid_04868_plan_sparring_gate.sql)   # run 37188907901: success
 read-only verify: functions allocate_global_vtid(text,text,text,uuid), plan_sparring_append_round, plan_sparring_trigger_status, submit_plan_sparring_record present; plan_sparring_config.mode=log; trg_plan_sparring_check tgenabled=O; anon EXECUTE=false, service_role EXECUTE=true
 first live gate record: VTID-04875 allocation -> plan_sparring_shadow_log outcome=missing (log mode, nothing blocked)
+# 2026-10-04: file renamed 20261004100000_ -> 20261004110000_ (timestamp collision with VTID-04872 on main); content unchanged, already applied live by run 37188907901

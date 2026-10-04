@@ -9,7 +9,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PRIOR="$ROOT/supabase/migrations/20260628120000_fix_allocate_global_vtid_seq_drift.sql"
-MIGRATION="$ROOT/supabase/migrations/20261004100000_vtid_04868_plan_sparring_gate.sql"
+MIGRATION="$ROOT/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql"
 FIXTURE="$ROOT/supabase/tests/vtid_04868_fixture.sql"
 TESTS="$ROOT/supabase/tests/vtid_04868_plan_sparring_gate.test.sql"
 ROLLBACK="$ROOT/docs/validation/VTID-04868/rollback.sql"

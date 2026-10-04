@@ -1,7 +1,7 @@
 -- =============================================================================
 -- VTID-04868 ROLLBACK — Plan Sparring Gate DB foundation
 -- =============================================================================
--- Reverses supabase/migrations/20261004100000_vtid_04868_plan_sparring_gate.sql.
+-- Reverses supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql.
 -- Kept here, NOT under supabase/migrations/, because every file in that folder
 -- is a forward migration (RUN-MIGRATION.yml applies whatever it is pointed at,
 -- and the drift/RLS scanners parse the whole folder). Apply only with the

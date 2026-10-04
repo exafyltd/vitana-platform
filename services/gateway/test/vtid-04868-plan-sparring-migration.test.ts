@@ -12,7 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const REPO = path.join(__dirname, '../../..');
-const MIGRATION_FILE = 'supabase/migrations/20261004100000_vtid_04868_plan_sparring_gate.sql';
+const MIGRATION_FILE = 'supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql';
 const MIGRATION = fs.readFileSync(path.join(REPO, MIGRATION_FILE), 'utf8');
 const ROLLBACK = fs.readFileSync(path.join(REPO, 'docs/validation/VTID-04868/rollback.sql'), 'utf8');
 
@@ -32,7 +32,7 @@ function fnBody(name: string): string {
 describe('VTID-04868 Plan Sparring Gate migration', () => {
   it('is the only migration with this timestamp and sorts after every existing one', () => {
     const files = fs.readdirSync(path.join(REPO, 'supabase/migrations')).filter((f) => f.endsWith('.sql')).sort();
-    expect(files.filter((f) => f.startsWith('20261004100000_'))).toEqual([path.basename(MIGRATION_FILE)]);
+    expect(files.filter((f) => f.startsWith('20261004110000_'))).toEqual([path.basename(MIGRATION_FILE)]);
     expect(files.indexOf(path.basename(MIGRATION_FILE))).toBeGreaterThan(files.indexOf('20260628120000_fix_allocate_global_vtid_seq_drift.sql'));
   });
 

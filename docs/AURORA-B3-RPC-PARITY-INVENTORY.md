@@ -1432,7 +1432,7 @@ so a flat count here is the expected signal, not a surprising one.
 ## Addendum, 2026-10-04 (VTID-04868) — Plan Sparring Gate objects added to RPC parity and the cutover checklist
 
 New objects created on **Supabase** by
-`supabase/migrations/20261004100000_vtid_04868_plan_sparring_gate.sql` (the
+`supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql` (the
 gate is built where `vtid_ledger` is written today — contract R4). All are
 plain Postgres with no GoTrue dependency (**portable**), but the trigger has a
 cutover ordering rule of its own, so they are listed here explicitly rather

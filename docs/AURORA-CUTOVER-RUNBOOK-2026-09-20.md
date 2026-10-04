@@ -322,7 +322,7 @@ aws dms describe-replication-tasks --region eu-central-1 \
 **Plan Sparring Gate (VTID-04868) — before Step 7/8:** only now, after the
 final load has finished, create the `vtid_ledger` gate on Aurora
 (`trg_plan_sparring_check` + `vtid_ledger_sparring_id_unique`, from
-`supabase/migrations/20261004100000_vtid_04868_plan_sparring_gate.sql`), confirm
+`supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql`), confirm
 `pg_trigger.tgenabled = 'O'` and that `plan_sparring_config.mode` equals
 Supabase's. Never create it while DMS is still writing `vtid_ledger`. Details:
 `docs/AURORA-B3-RPC-PARITY-INVENTORY.md`, VTID-04868 addendum.
