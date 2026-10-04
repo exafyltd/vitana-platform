@@ -49,9 +49,12 @@ describe('VTID-04868 Plan Sparring Gate migration', () => {
     expect(SQL).toMatch(/NOTIFY pgrst, 'reload schema';/);
   });
 
-  it('keeps the allocator body (skip-forward loop, shell row) and stores sparring_id in metadata', () => {
+  it('keeps the LIVE allocator body (plain nextval, no unapplied free-slot loop) and stores sparring_id in metadata', () => {
     const body = fnBody('allocate_global_vtid');
-    expect(body).toContain("FOR i IN 1..1000 LOOP");
+    // Production's body as of 2026-10-04 is plain nextval; the 20260628120000
+    // free-slot loop was never applied live and must not ride in with this gate.
+    expect(body).toContain("v_num := nextval('global_vtid_seq');");
+    expect(body).not.toContain('FOR i IN 1..1000 LOOP');
     expect(body).toContain("'Allocated - Pending Title'");
     expect(body).toContain("'allocator_version', 'VTID-0542'");
     expect(body).toMatch(/WHEN p_sparring_id IS NOT NULL\s+THEN jsonb_build_object\('sparring_id', p_sparring_id::TEXT\)/);
