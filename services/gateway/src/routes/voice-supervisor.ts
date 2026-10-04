@@ -28,14 +28,12 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { requireAuth, type AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import {
   computeKpis,
-  computeVerdicts,
   buildSegmentMatrix,
   compareImpact,
   targetFailureRate,
   kpiDelta,
   filterSegment,
   defaultLabel,
-  isLive,
   effectiveOutcome,
   MIN_SAMPLE,
   type Dimension,
@@ -43,7 +41,6 @@ import {
 } from '../services/voice-supervisor-analysis';
 import {
   fetchFactRows,
-  fetchOpenFactRows,
   fetchSessionsPage,
   fetchTenants,
   fetchDistinctDims,
@@ -55,12 +52,19 @@ import {
   type FactFilters,
   type FixRecord,
 } from '../services/voice-supervisor-data';
+import {
+  buildVoiceOverview,
+  parseWindow as parseOverviewWindow,
+  tenantNameMap,
+  VOICE_SUPERVISOR_WINDOWS,
+} from '../services/voice-supervisor-overview';
 
 const router = Router();
 const VTID = 'VTID-04776';
 
 export const SURFACES = ['vitanaland', 'admin', 'backoffice', 'commerce', 'command-hub'] as const;
-const WINDOWS: Record<string, number> = { '1h': 3600_000, '24h': 86_400_000, '7d': 7 * 86_400_000, '30d': 30 * 86_400_000 };
+// VTID-04875: the window table and parser live with the overview builder.
+const WINDOWS: Record<string, number> = VOICE_SUPERVISOR_WINDOWS;
 const DIMENSIONS: readonly Dimension[] = ['tenant', 'surface', 'role', 'provider', 'lang', 'assistant'];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -125,8 +129,7 @@ function str(v: unknown): string | null {
 }
 
 export function parseWindow(v: unknown): { key: string; ms: number } {
-  const k = str(v) ?? '24h';
-  return WINDOWS[k] ? { key: k, ms: WINDOWS[k] } : { key: '24h', ms: WINDOWS['24h'] };
+  return parseOverviewWindow(v);
 }
 
 /**
@@ -147,13 +150,6 @@ export function scopedFilters(scope: SupervisorScope, query: Record<string, unkn
 
 function scopeOf(req: Request): SupervisorScope {
   return (req as ScopedRequest).supervisorScope ?? { is_platform_admin: false, tenant_id: '__none__' };
-}
-
-async function tenantNameMap(ids: Array<string | null | undefined>): Promise<Record<string, string>> {
-  const list = [...new Set(ids.filter((x): x is string => !!x && UUID_RE.test(x)))];
-  if (!list.length) return {};
-  const tenants = await fetchTenants(list);
-  return Object.fromEntries(tenants.map((t) => [t.tenant_id, t.name]));
 }
 
 function fail(res: Response, err: unknown, what: string): Response {
@@ -200,44 +196,9 @@ router.get('/overview', async (req: Request, res: Response) => {
   const win = parseWindow(req.query.window);
   const filters = scopedFilters(scope, req.query as Record<string, unknown>);
   try {
-    const nowMs = Date.now();
-    const sinceMs = nowMs - win.ms;
-    const [both, open] = await Promise.all([
-      fetchFactRows({ ...filters, since_iso: new Date(sinceMs - win.ms).toISOString() }),
-      fetchOpenFactRows(filters, nowMs),
-    ]);
-    const current = both.rows.filter((r) => Date.parse(r.started_at) >= sinceMs);
-    const previous = both.rows.filter((r) => Date.parse(r.started_at) < sinceMs);
-    const live = open.filter((r) => isLive(r, nowMs));
-    const bySurface: Record<string, number> = {};
-    const byProvider: Record<string, number> = {};
-    for (const r of live) {
-      const s = r.surface || 'unknown';
-      const p = r.provider || 'unknown';
-      bySurface[s] = (bySurface[s] || 0) + 1;
-      byProvider[p] = (byProvider[p] || 0) + 1;
-    }
-    const names = await tenantNameMap(current.map((r) => r.tenant_id));
-    const { verdicts, verdict_summary } = computeVerdicts(current, nowMs, (d, k) => defaultLabel(d, k, names));
-    const strip = ({ finished: _f, ...k }: ReturnType<typeof computeKpis>) => k;
-    return res.json({
-      ok: true,
-      window: win.key,
-      generated_at: new Date(nowMs).toISOString(),
-      scope: { is_platform_admin: scope.is_platform_admin, tenant_id: filters.tenant_id ?? null },
-      live: {
-        active_sessions: live.length,
-        by_surface: bySurface,
-        by_provider: byProvider,
-        source: 'voice_session_facts',
-      },
-      kpis: strip(computeKpis(current, nowMs)),
-      previous_kpis: strip(computeKpis(previous, nowMs)),
-      verdicts,
-      verdict_summary,
-      truncated: both.truncated,
-      row_cap: MAX_FACT_ROWS,
-    });
+    // VTID-04875: logic lives in services/voice-supervisor-overview.ts so the
+    // Overview can build it in-process; this route only binds req → input.
+    return res.json(await buildVoiceOverview({ window: win, scope, filters }));
   } catch (err) {
     return fail(res, err, 'overview');
   }

@@ -1,0 +1,905 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`VTID-04875 GET /admin/health/summary — characterization (old handler == new wrapper) route: PORT env overrides the loopback port; a different admin token is forwarded verbatim 1`] = `
+{
+  "body_text": "{"ok":true,"checked_at":"2026-10-04T12:00:00.000Z","total":117,"healthy":87,"failing":20,"no_access":10,"groups":["Core Infrastructure","AI & Assistant","Autopilot","Automation & Scheduling","Community & Social","Domain & Context","Visual & VTID","Frontend & Performance","Self-Healing & Ops","Data & Memory","Commerce","Governance & Integrity","Deploy & Release","AWS Runtime","Dev Autopilot","Voice & Media","Data & Scheduling","Business & Support"],"items":[{"name":"Gateway","url":"/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Gateway Alive","url":"/alive","group":"Core Infrastructure","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Auth","url":"/api/v1/auth/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"CI/CD","url":"/api/v1/cicd/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Execute Runner","url":"/api/v1/execute/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Operator","url":"/api/v1/operator/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Operator Deploys","url":"/api/v1/operator/deployments/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Telemetry","url":"/api/v1/telemetry/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Events","url":"/events/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Command Hub UI","url":"/command-hub/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Assistant","url":"/api/v1/assistant/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Knowledge Hub","url":"/api/v1/assistant/knowledge/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"ORB Live","url":"/api/v1/orb/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Voice Lab","url":"/api/v1/voice-lab/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Conversation","url":"/api/v1/conversation/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Conversation Tools","url":"/api/v1/conversation/tool-health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot","url":"/api/v1/autopilot/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Pipeline","url":"/api/v1/autopilot/pipeline/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Prompts","url":"/api/v1/autopilot/prompts/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Recommendations","url":"/api/v1/autopilot/recommendations/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Automations","url":"/api/v1/automations/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Rec. Inbox","url":"/api/v1/recommendations/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Memory","url":"/api/v1/memory/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Semantic Memory","url":"/api/v1/memory/semantic/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Diary","url":"/api/v1/diary/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Health Capacity","url":"/api/v1/capacity/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Scheduler","url":"/api/v1/scheduler/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Sched. Notifications","url":"/api/v1/scheduled-notifications/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Email Intake","url":"/api/v1/intake/email/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Community","url":"/api/v1/community/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Relationships","url":"/api/v1/relationships/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Matchmaking","url":"/api/v1/match/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Personalization","url":"/api/v1/personalization/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Live Rooms","url":"/api/v1/live/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Social Context","url":"/api/v1/social/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Social Connect","url":"/api/v1/social-accounts/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Social Alignment","url":"/api/v1/alignment/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Topics","url":"/api/v1/topics/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Domain Routing","url":"/api/v1/routing/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Locations","url":"/api/v1/locations/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Offers","url":"/api/v1/offers/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Feedback","url":"/api/v1/feedback/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Voice Feedback","url":"/api/v1/voice-feedback/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Situational","url":"/api/v1/situational/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Availability","url":"/api/v1/availability/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Env. Mobility","url":"/api/v1/context/mobility/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"User Preferences","url":"/api/v1/user-preferences/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Taste Alignment","url":"/api/v1/taste-alignment/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Overload Detection","url":"/api/v1/overload/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Risk Mitigation","url":"/api/v1/mitigation/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Opportunities","url":"/api/v1/opportunities/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Visual Interactive","url":"/api/v1/visual/health","group":"Visual & VTID","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"VTID Terminalize","url":"/api/v1/oasis/vtid/terminalize/health","group":"Visual & VTID","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"VTID","url":"/api/v1/vtid/health","group":"Visual & VTID","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Screen Load Time","url":"/api/v1/frontend/screen-load/health","group":"Frontend & Performance","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Nova Sonic","url":"/api/v1/orb/nova-sonic/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"LLM Providers","url":"/api/v1/llm/providers/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Voice Tools Catalog","url":"/api/v1/voice-tools/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Self-Healing","url":"/api/v1/self-healing/health","group":"Self-Healing & Ops","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Watcher","url":"/api/v1/watcher/health","group":"Self-Healing & Ops","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Worker Orchestrator","url":"/api/v1/worker/orchestrator/health","group":"Self-Healing & Ops","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Aurora Memory","url":"/api/v1/admin/aurora-memory/health","group":"Data & Memory","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Aurora RLS","url":"/api/v1/admin/aurora-rls-health","group":"Data & Memory","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ORB Session State","url":"/api/v1/admin/orb-session-state-health","group":"Data & Memory","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Reminders","url":"/api/v1/reminders/_health/check","group":"Automation & Scheduling","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Calendar","url":"/api/v1/calendar/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Integrations","url":"/api/v1/integrations/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Pillar Agents","url":"/api/v1/pillar-agents/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Catalog Ingest","url":"/api/v1/catalog/ingest/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Shop Feed","url":"/api/v1/shop-feed/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Shopping Agent","url":"/api/v1/shopping-agent/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Universal Cart","url":"/api/v1/universal-cart/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"LLM Routing Policy","url":"/api/v1/ops/health/llm-routing","group":"AI & Assistant","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Anthropic Credit Failures","url":"/api/v1/ops/health/anthropic-credit","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Google LLM Fallback","url":"/api/v1/ops/health/google-fallback","group":"AI & Assistant","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Locale Coverage","url":"/api/v1/ops/health/locale-coverage","group":"Governance & Integrity","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Test-Account Guard","url":"/api/v1/ops/health/test-actor-guard","group":"Governance & Integrity","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"VTID Ledger Integrity","url":"/api/v1/ops/health/vtid-ledger","group":"Governance & Integrity","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ORB Session Ledger","url":"/api/v1/ops/health/orb-session-ledger","group":"Data & Memory","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Push Dispatch","url":"/api/v1/ops/health/push-dispatch","group":"Automation & Scheduling","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"STAGING-VERIFY","url":"/api/v1/ops/runtime/deploy/staging-verify","group":"Deploy & Release","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Staging Deploy","url":"/api/v1/ops/runtime/deploy/staging-deploy","group":"Deploy & Release","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Prod Deploy","url":"/api/v1/ops/runtime/deploy/prod-deploy","group":"Deploy & Release","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Prod Gateway Build","url":"/api/v1/ops/runtime/deploy/prod-gateway","group":"Deploy & Release","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Staging Gateway Build","url":"/api/v1/ops/runtime/deploy/staging-gateway","group":"Deploy & Release","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Frontend Prod","url":"/api/v1/ops/runtime/deploy/frontend-prod","group":"Deploy & Release","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Frontend Staging","url":"/api/v1/ops/runtime/deploy/frontend-staging","group":"Deploy & Release","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"ECS Gateway Prod","url":"/api/v1/ops/runtime/aws/ecs/vitana-gateway-awsdr","group":"AWS Runtime","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ECS Gateway Staging","url":"/api/v1/ops/runtime/aws/ecs/vitana-gateway","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"ECS Community App Prod","url":"/api/v1/ops/runtime/aws/ecs/vitana-community-app-awsdr","group":"AWS Runtime","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"ECS Community App Staging","url":"/api/v1/ops/runtime/aws/ecs/vitana-community-app-staging","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"ECS OASIS Operator","url":"/api/v1/ops/runtime/aws/ecs/vitana-oasis-operator-awsdr","group":"AWS Runtime","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"ECS OASIS Projector","url":"/api/v1/ops/runtime/aws/ecs/vitana-oasis-projector","group":"AWS Runtime","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ECS Worker Runner","url":"/api/v1/ops/runtime/aws/ecs/vitana-worker-runner","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"ECS Verification Engine","url":"/api/v1/ops/runtime/aws/ecs/vitana-vitana-verification-engine","group":"AWS Runtime","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"ECS ORB Agent","url":"/api/v1/ops/runtime/aws/ecs/vitana-orb-agent","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Kill Switch","url":"/api/v1/ops/runtime/autopilot/kill-switch","group":"Dev Autopilot","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Autopilot Stuck Runs","url":"/api/v1/ops/runtime/autopilot/stuck-runs","group":"Dev Autopilot","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Autopilot Approval Backlog","url":"/api/v1/ops/runtime/autopilot/approval-backlog","group":"Dev Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Autopilot Success Rate","url":"/api/v1/ops/runtime/autopilot/success-rate","group":"Dev Autopilot","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Autopilot Scan Freshness","url":"/api/v1/ops/runtime/autopilot/scan-freshness","group":"Dev Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Dispatch","url":"/api/v1/ops/runtime/autopilot/dispatch-failures","group":"Dev Autopilot","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Polly TTS","url":"/api/v1/ops/runtime/voice/polly","group":"Voice & Media","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Fish TTS","url":"/api/v1/ops/runtime/voice/fish","group":"Voice & Media","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Serbian Voice Bridge","url":"/api/v1/ops/runtime/voice/serbian-bridge","group":"Voice & Media","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Voice Session Errors","url":"/api/v1/ops/runtime/voice/session-errors","group":"Voice & Media","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Bedrock","url":"/api/v1/ops/runtime/ai/bedrock","group":"Voice & Media","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"DeepSeek","url":"/api/v1/ops/runtime/ai/deepseek","group":"Voice & Media","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Titan Images","url":"/api/v1/ops/runtime/media/titan","group":"Voice & Media","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"OASIS Write Lag","url":"/api/v1/ops/runtime/data/oasis-write-lag","group":"Data & Scheduling","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Database Latency","url":"/api/v1/ops/runtime/data/db-latency","group":"Data & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Redis","url":"/api/v1/ops/runtime/data/redis","group":"Data & Scheduling","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Code Index","url":"/api/v1/ops/runtime/data/code-index","group":"Data & Scheduling","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Scheduled Workflows","url":"/api/v1/ops/runtime/data/scheduled-workflows","group":"Data & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Support Tickets","url":"/api/v1/ops/runtime/support/stuck-tickets","group":"Business & Support","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"ERP Bridge","url":"/api/v1/ops/runtime/business/erp-bridge","group":"Business & Support","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Jev Decisions","url":"/api/v1/ops/runtime/business/jev","group":"Business & Support","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}}],"cached":false}",
+  "content_type": "application/json; charset=utf-8",
+  "first_probe": {
+    "headers": {
+      "Accept": "application/json",
+      "Authorization": "Bearer admin2",
+    },
+    "url": "http://127.0.0.1:9191/health",
+  },
+  "probe_count": 117,
+  "status": 200,
+}
+`;
+
+exports[`VTID-04875 GET /admin/health/summary — characterization (old handler == new wrapper) route: a probe run that rejects → 500 summary_failed, and the next call retries 1`] = `
+{
+  "console_error": [
+    [
+      "[health-summary] probe run failed:",
+      "Error: probe engine down",
+    ],
+  ],
+  "r1": {
+    "body_text": "{"ok":false,"error":"summary_failed"}",
+    "content_type": "application/json; charset=utf-8",
+    "status": 500,
+  },
+  "r2_cached": false,
+  "r2_status": 200,
+}
+`;
+
+exports[`VTID-04875 GET /admin/health/summary — characterization (old handler == new wrapper) route: concurrent callers share one run; a later call within 30s is served from cache; after 30s re-probes 1`] = `
+{
+  "probes_after_cache_hit": 117,
+  "probes_after_expiry": 234,
+  "probes_after_first": 117,
+  "r1": {
+    "body_text": "{"ok":true,"checked_at":"2026-10-04T12:00:00.000Z","total":117,"healthy":87,"failing":20,"no_access":10,"groups":["Core Infrastructure","AI & Assistant","Autopilot","Automation & Scheduling","Community & Social","Domain & Context","Visual & VTID","Frontend & Performance","Self-Healing & Ops","Data & Memory","Commerce","Governance & Integrity","Deploy & Release","AWS Runtime","Dev Autopilot","Voice & Media","Data & Scheduling","Business & Support"],"items":[{"name":"Gateway","url":"/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Gateway Alive","url":"/alive","group":"Core Infrastructure","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Auth","url":"/api/v1/auth/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"CI/CD","url":"/api/v1/cicd/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Execute Runner","url":"/api/v1/execute/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Operator","url":"/api/v1/operator/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Operator Deploys","url":"/api/v1/operator/deployments/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Telemetry","url":"/api/v1/telemetry/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Events","url":"/events/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Command Hub UI","url":"/command-hub/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Assistant","url":"/api/v1/assistant/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Knowledge Hub","url":"/api/v1/assistant/knowledge/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"ORB Live","url":"/api/v1/orb/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Voice Lab","url":"/api/v1/voice-lab/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Conversation","url":"/api/v1/conversation/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Conversation Tools","url":"/api/v1/conversation/tool-health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot","url":"/api/v1/autopilot/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Pipeline","url":"/api/v1/autopilot/pipeline/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Prompts","url":"/api/v1/autopilot/prompts/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Recommendations","url":"/api/v1/autopilot/recommendations/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Automations","url":"/api/v1/automations/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Rec. Inbox","url":"/api/v1/recommendations/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Memory","url":"/api/v1/memory/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Semantic Memory","url":"/api/v1/memory/semantic/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Diary","url":"/api/v1/diary/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Health Capacity","url":"/api/v1/capacity/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Scheduler","url":"/api/v1/scheduler/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Sched. Notifications","url":"/api/v1/scheduled-notifications/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Email Intake","url":"/api/v1/intake/email/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Community","url":"/api/v1/community/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Relationships","url":"/api/v1/relationships/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Matchmaking","url":"/api/v1/match/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Personalization","url":"/api/v1/personalization/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Live Rooms","url":"/api/v1/live/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Social Context","url":"/api/v1/social/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Social Connect","url":"/api/v1/social-accounts/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Social Alignment","url":"/api/v1/alignment/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Topics","url":"/api/v1/topics/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Domain Routing","url":"/api/v1/routing/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Locations","url":"/api/v1/locations/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Offers","url":"/api/v1/offers/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Feedback","url":"/api/v1/feedback/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Voice Feedback","url":"/api/v1/voice-feedback/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Situational","url":"/api/v1/situational/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Availability","url":"/api/v1/availability/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Env. Mobility","url":"/api/v1/context/mobility/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"User Preferences","url":"/api/v1/user-preferences/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Taste Alignment","url":"/api/v1/taste-alignment/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Overload Detection","url":"/api/v1/overload/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Risk Mitigation","url":"/api/v1/mitigation/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Opportunities","url":"/api/v1/opportunities/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Visual Interactive","url":"/api/v1/visual/health","group":"Visual & VTID","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"VTID Terminalize","url":"/api/v1/oasis/vtid/terminalize/health","group":"Visual & VTID","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"VTID","url":"/api/v1/vtid/health","group":"Visual & VTID","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Screen Load Time","url":"/api/v1/frontend/screen-load/health","group":"Frontend & Performance","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Nova Sonic","url":"/api/v1/orb/nova-sonic/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"LLM Providers","url":"/api/v1/llm/providers/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Voice Tools Catalog","url":"/api/v1/voice-tools/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Self-Healing","url":"/api/v1/self-healing/health","group":"Self-Healing & Ops","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Watcher","url":"/api/v1/watcher/health","group":"Self-Healing & Ops","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Worker Orchestrator","url":"/api/v1/worker/orchestrator/health","group":"Self-Healing & Ops","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Aurora Memory","url":"/api/v1/admin/aurora-memory/health","group":"Data & Memory","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Aurora RLS","url":"/api/v1/admin/aurora-rls-health","group":"Data & Memory","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ORB Session State","url":"/api/v1/admin/orb-session-state-health","group":"Data & Memory","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Reminders","url":"/api/v1/reminders/_health/check","group":"Automation & Scheduling","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Calendar","url":"/api/v1/calendar/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Integrations","url":"/api/v1/integrations/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Pillar Agents","url":"/api/v1/pillar-agents/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Catalog Ingest","url":"/api/v1/catalog/ingest/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Shop Feed","url":"/api/v1/shop-feed/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Shopping Agent","url":"/api/v1/shopping-agent/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Universal Cart","url":"/api/v1/universal-cart/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"LLM Routing Policy","url":"/api/v1/ops/health/llm-routing","group":"AI & Assistant","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Anthropic Credit Failures","url":"/api/v1/ops/health/anthropic-credit","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Google LLM Fallback","url":"/api/v1/ops/health/google-fallback","group":"AI & Assistant","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Locale Coverage","url":"/api/v1/ops/health/locale-coverage","group":"Governance & Integrity","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Test-Account Guard","url":"/api/v1/ops/health/test-actor-guard","group":"Governance & Integrity","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"VTID Ledger Integrity","url":"/api/v1/ops/health/vtid-ledger","group":"Governance & Integrity","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ORB Session Ledger","url":"/api/v1/ops/health/orb-session-ledger","group":"Data & Memory","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Push Dispatch","url":"/api/v1/ops/health/push-dispatch","group":"Automation & Scheduling","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"STAGING-VERIFY","url":"/api/v1/ops/runtime/deploy/staging-verify","group":"Deploy & Release","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Staging Deploy","url":"/api/v1/ops/runtime/deploy/staging-deploy","group":"Deploy & Release","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Prod Deploy","url":"/api/v1/ops/runtime/deploy/prod-deploy","group":"Deploy & Release","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Prod Gateway Build","url":"/api/v1/ops/runtime/deploy/prod-gateway","group":"Deploy & Release","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Staging Gateway Build","url":"/api/v1/ops/runtime/deploy/staging-gateway","group":"Deploy & Release","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Frontend Prod","url":"/api/v1/ops/runtime/deploy/frontend-prod","group":"Deploy & Release","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Frontend Staging","url":"/api/v1/ops/runtime/deploy/frontend-staging","group":"Deploy & Release","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"ECS Gateway Prod","url":"/api/v1/ops/runtime/aws/ecs/vitana-gateway-awsdr","group":"AWS Runtime","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ECS Gateway Staging","url":"/api/v1/ops/runtime/aws/ecs/vitana-gateway","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"ECS Community App Prod","url":"/api/v1/ops/runtime/aws/ecs/vitana-community-app-awsdr","group":"AWS Runtime","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"ECS Community App Staging","url":"/api/v1/ops/runtime/aws/ecs/vitana-community-app-staging","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"ECS OASIS Operator","url":"/api/v1/ops/runtime/aws/ecs/vitana-oasis-operator-awsdr","group":"AWS Runtime","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"ECS OASIS Projector","url":"/api/v1/ops/runtime/aws/ecs/vitana-oasis-projector","group":"AWS Runtime","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ECS Worker Runner","url":"/api/v1/ops/runtime/aws/ecs/vitana-worker-runner","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"ECS Verification Engine","url":"/api/v1/ops/runtime/aws/ecs/vitana-vitana-verification-engine","group":"AWS Runtime","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"ECS ORB Agent","url":"/api/v1/ops/runtime/aws/ecs/vitana-orb-agent","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Kill Switch","url":"/api/v1/ops/runtime/autopilot/kill-switch","group":"Dev Autopilot","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Autopilot Stuck Runs","url":"/api/v1/ops/runtime/autopilot/stuck-runs","group":"Dev Autopilot","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Autopilot Approval Backlog","url":"/api/v1/ops/runtime/autopilot/approval-backlog","group":"Dev Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Autopilot Success Rate","url":"/api/v1/ops/runtime/autopilot/success-rate","group":"Dev Autopilot","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Autopilot Scan Freshness","url":"/api/v1/ops/runtime/autopilot/scan-freshness","group":"Dev Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Dispatch","url":"/api/v1/ops/runtime/autopilot/dispatch-failures","group":"Dev Autopilot","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Polly TTS","url":"/api/v1/ops/runtime/voice/polly","group":"Voice & Media","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Fish TTS","url":"/api/v1/ops/runtime/voice/fish","group":"Voice & Media","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Serbian Voice Bridge","url":"/api/v1/ops/runtime/voice/serbian-bridge","group":"Voice & Media","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Voice Session Errors","url":"/api/v1/ops/runtime/voice/session-errors","group":"Voice & Media","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Bedrock","url":"/api/v1/ops/runtime/ai/bedrock","group":"Voice & Media","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"DeepSeek","url":"/api/v1/ops/runtime/ai/deepseek","group":"Voice & Media","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Titan Images","url":"/api/v1/ops/runtime/media/titan","group":"Voice & Media","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"OASIS Write Lag","url":"/api/v1/ops/runtime/data/oasis-write-lag","group":"Data & Scheduling","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Database Latency","url":"/api/v1/ops/runtime/data/db-latency","group":"Data & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Redis","url":"/api/v1/ops/runtime/data/redis","group":"Data & Scheduling","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Code Index","url":"/api/v1/ops/runtime/data/code-index","group":"Data & Scheduling","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Scheduled Workflows","url":"/api/v1/ops/runtime/data/scheduled-workflows","group":"Data & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Support Tickets","url":"/api/v1/ops/runtime/support/stuck-tickets","group":"Business & Support","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"ERP Bridge","url":"/api/v1/ops/runtime/business/erp-bridge","group":"Business & Support","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Jev Decisions","url":"/api/v1/ops/runtime/business/jev","group":"Business & Support","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}}],"cached":false}",
+    "content_type": "application/json; charset=utf-8",
+    "status": 200,
+  },
+  "r2": {
+    "body_text": "{"ok":true,"checked_at":"2026-10-04T12:00:00.000Z","total":117,"healthy":87,"failing":20,"no_access":10,"groups":["Core Infrastructure","AI & Assistant","Autopilot","Automation & Scheduling","Community & Social","Domain & Context","Visual & VTID","Frontend & Performance","Self-Healing & Ops","Data & Memory","Commerce","Governance & Integrity","Deploy & Release","AWS Runtime","Dev Autopilot","Voice & Media","Data & Scheduling","Business & Support"],"items":[{"name":"Gateway","url":"/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Gateway Alive","url":"/alive","group":"Core Infrastructure","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Auth","url":"/api/v1/auth/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"CI/CD","url":"/api/v1/cicd/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Execute Runner","url":"/api/v1/execute/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Operator","url":"/api/v1/operator/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Operator Deploys","url":"/api/v1/operator/deployments/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Telemetry","url":"/api/v1/telemetry/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Events","url":"/events/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Command Hub UI","url":"/command-hub/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Assistant","url":"/api/v1/assistant/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Knowledge Hub","url":"/api/v1/assistant/knowledge/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"ORB Live","url":"/api/v1/orb/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Voice Lab","url":"/api/v1/voice-lab/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Conversation","url":"/api/v1/conversation/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Conversation Tools","url":"/api/v1/conversation/tool-health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot","url":"/api/v1/autopilot/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Pipeline","url":"/api/v1/autopilot/pipeline/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Prompts","url":"/api/v1/autopilot/prompts/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Recommendations","url":"/api/v1/autopilot/recommendations/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Automations","url":"/api/v1/automations/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Rec. Inbox","url":"/api/v1/recommendations/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Memory","url":"/api/v1/memory/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Semantic Memory","url":"/api/v1/memory/semantic/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Diary","url":"/api/v1/diary/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Health Capacity","url":"/api/v1/capacity/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Scheduler","url":"/api/v1/scheduler/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Sched. Notifications","url":"/api/v1/scheduled-notifications/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Email Intake","url":"/api/v1/intake/email/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Community","url":"/api/v1/community/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Relationships","url":"/api/v1/relationships/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Matchmaking","url":"/api/v1/match/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Personalization","url":"/api/v1/personalization/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Live Rooms","url":"/api/v1/live/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Social Context","url":"/api/v1/social/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Social Connect","url":"/api/v1/social-accounts/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Social Alignment","url":"/api/v1/alignment/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Topics","url":"/api/v1/topics/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Domain Routing","url":"/api/v1/routing/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Locations","url":"/api/v1/locations/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Offers","url":"/api/v1/offers/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Feedback","url":"/api/v1/feedback/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Voice Feedback","url":"/api/v1/voice-feedback/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Situational","url":"/api/v1/situational/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Availability","url":"/api/v1/availability/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Env. Mobility","url":"/api/v1/context/mobility/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"User Preferences","url":"/api/v1/user-preferences/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Taste Alignment","url":"/api/v1/taste-alignment/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Overload Detection","url":"/api/v1/overload/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Risk Mitigation","url":"/api/v1/mitigation/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Opportunities","url":"/api/v1/opportunities/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Visual Interactive","url":"/api/v1/visual/health","group":"Visual & VTID","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"VTID Terminalize","url":"/api/v1/oasis/vtid/terminalize/health","group":"Visual & VTID","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"VTID","url":"/api/v1/vtid/health","group":"Visual & VTID","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Screen Load Time","url":"/api/v1/frontend/screen-load/health","group":"Frontend & Performance","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Nova Sonic","url":"/api/v1/orb/nova-sonic/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"LLM Providers","url":"/api/v1/llm/providers/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Voice Tools Catalog","url":"/api/v1/voice-tools/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Self-Healing","url":"/api/v1/self-healing/health","group":"Self-Healing & Ops","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Watcher","url":"/api/v1/watcher/health","group":"Self-Healing & Ops","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Worker Orchestrator","url":"/api/v1/worker/orchestrator/health","group":"Self-Healing & Ops","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Aurora Memory","url":"/api/v1/admin/aurora-memory/health","group":"Data & Memory","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Aurora RLS","url":"/api/v1/admin/aurora-rls-health","group":"Data & Memory","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ORB Session State","url":"/api/v1/admin/orb-session-state-health","group":"Data & Memory","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Reminders","url":"/api/v1/reminders/_health/check","group":"Automation & Scheduling","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Calendar","url":"/api/v1/calendar/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Integrations","url":"/api/v1/integrations/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Pillar Agents","url":"/api/v1/pillar-agents/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Catalog Ingest","url":"/api/v1/catalog/ingest/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Shop Feed","url":"/api/v1/shop-feed/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Shopping Agent","url":"/api/v1/shopping-agent/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Universal Cart","url":"/api/v1/universal-cart/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"LLM Routing Policy","url":"/api/v1/ops/health/llm-routing","group":"AI & Assistant","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Anthropic Credit Failures","url":"/api/v1/ops/health/anthropic-credit","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Google LLM Fallback","url":"/api/v1/ops/health/google-fallback","group":"AI & Assistant","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Locale Coverage","url":"/api/v1/ops/health/locale-coverage","group":"Governance & Integrity","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Test-Account Guard","url":"/api/v1/ops/health/test-actor-guard","group":"Governance & Integrity","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"VTID Ledger Integrity","url":"/api/v1/ops/health/vtid-ledger","group":"Governance & Integrity","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ORB Session Ledger","url":"/api/v1/ops/health/orb-session-ledger","group":"Data & Memory","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Push Dispatch","url":"/api/v1/ops/health/push-dispatch","group":"Automation & Scheduling","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"STAGING-VERIFY","url":"/api/v1/ops/runtime/deploy/staging-verify","group":"Deploy & Release","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Staging Deploy","url":"/api/v1/ops/runtime/deploy/staging-deploy","group":"Deploy & Release","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Prod Deploy","url":"/api/v1/ops/runtime/deploy/prod-deploy","group":"Deploy & Release","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Prod Gateway Build","url":"/api/v1/ops/runtime/deploy/prod-gateway","group":"Deploy & Release","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Staging Gateway Build","url":"/api/v1/ops/runtime/deploy/staging-gateway","group":"Deploy & Release","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Frontend Prod","url":"/api/v1/ops/runtime/deploy/frontend-prod","group":"Deploy & Release","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Frontend Staging","url":"/api/v1/ops/runtime/deploy/frontend-staging","group":"Deploy & Release","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"ECS Gateway Prod","url":"/api/v1/ops/runtime/aws/ecs/vitana-gateway-awsdr","group":"AWS Runtime","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ECS Gateway Staging","url":"/api/v1/ops/runtime/aws/ecs/vitana-gateway","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"ECS Community App Prod","url":"/api/v1/ops/runtime/aws/ecs/vitana-community-app-awsdr","group":"AWS Runtime","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"ECS Community App Staging","url":"/api/v1/ops/runtime/aws/ecs/vitana-community-app-staging","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"ECS OASIS Operator","url":"/api/v1/ops/runtime/aws/ecs/vitana-oasis-operator-awsdr","group":"AWS Runtime","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"ECS OASIS Projector","url":"/api/v1/ops/runtime/aws/ecs/vitana-oasis-projector","group":"AWS Runtime","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ECS Worker Runner","url":"/api/v1/ops/runtime/aws/ecs/vitana-worker-runner","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"ECS Verification Engine","url":"/api/v1/ops/runtime/aws/ecs/vitana-vitana-verification-engine","group":"AWS Runtime","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"ECS ORB Agent","url":"/api/v1/ops/runtime/aws/ecs/vitana-orb-agent","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Kill Switch","url":"/api/v1/ops/runtime/autopilot/kill-switch","group":"Dev Autopilot","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Autopilot Stuck Runs","url":"/api/v1/ops/runtime/autopilot/stuck-runs","group":"Dev Autopilot","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Autopilot Approval Backlog","url":"/api/v1/ops/runtime/autopilot/approval-backlog","group":"Dev Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Autopilot Success Rate","url":"/api/v1/ops/runtime/autopilot/success-rate","group":"Dev Autopilot","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Autopilot Scan Freshness","url":"/api/v1/ops/runtime/autopilot/scan-freshness","group":"Dev Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Dispatch","url":"/api/v1/ops/runtime/autopilot/dispatch-failures","group":"Dev Autopilot","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Polly TTS","url":"/api/v1/ops/runtime/voice/polly","group":"Voice & Media","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Fish TTS","url":"/api/v1/ops/runtime/voice/fish","group":"Voice & Media","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Serbian Voice Bridge","url":"/api/v1/ops/runtime/voice/serbian-bridge","group":"Voice & Media","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Voice Session Errors","url":"/api/v1/ops/runtime/voice/session-errors","group":"Voice & Media","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Bedrock","url":"/api/v1/ops/runtime/ai/bedrock","group":"Voice & Media","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"DeepSeek","url":"/api/v1/ops/runtime/ai/deepseek","group":"Voice & Media","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Titan Images","url":"/api/v1/ops/runtime/media/titan","group":"Voice & Media","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"OASIS Write Lag","url":"/api/v1/ops/runtime/data/oasis-write-lag","group":"Data & Scheduling","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Database Latency","url":"/api/v1/ops/runtime/data/db-latency","group":"Data & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Redis","url":"/api/v1/ops/runtime/data/redis","group":"Data & Scheduling","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Code Index","url":"/api/v1/ops/runtime/data/code-index","group":"Data & Scheduling","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Scheduled Workflows","url":"/api/v1/ops/runtime/data/scheduled-workflows","group":"Data & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Support Tickets","url":"/api/v1/ops/runtime/support/stuck-tickets","group":"Business & Support","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"ERP Bridge","url":"/api/v1/ops/runtime/business/erp-bridge","group":"Business & Support","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Jev Decisions","url":"/api/v1/ops/runtime/business/jev","group":"Business & Support","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}}],"cached":false}",
+    "content_type": "application/json; charset=utf-8",
+    "status": 200,
+  },
+  "r3": {
+    "body_text": "{"ok":true,"checked_at":"2026-10-04T12:00:00.000Z","total":117,"healthy":87,"failing":20,"no_access":10,"groups":["Core Infrastructure","AI & Assistant","Autopilot","Automation & Scheduling","Community & Social","Domain & Context","Visual & VTID","Frontend & Performance","Self-Healing & Ops","Data & Memory","Commerce","Governance & Integrity","Deploy & Release","AWS Runtime","Dev Autopilot","Voice & Media","Data & Scheduling","Business & Support"],"items":[{"name":"Gateway","url":"/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Gateway Alive","url":"/alive","group":"Core Infrastructure","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Auth","url":"/api/v1/auth/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"CI/CD","url":"/api/v1/cicd/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Execute Runner","url":"/api/v1/execute/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Operator","url":"/api/v1/operator/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Operator Deploys","url":"/api/v1/operator/deployments/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Telemetry","url":"/api/v1/telemetry/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Events","url":"/events/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Command Hub UI","url":"/command-hub/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Assistant","url":"/api/v1/assistant/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Knowledge Hub","url":"/api/v1/assistant/knowledge/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"ORB Live","url":"/api/v1/orb/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Voice Lab","url":"/api/v1/voice-lab/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Conversation","url":"/api/v1/conversation/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Conversation Tools","url":"/api/v1/conversation/tool-health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot","url":"/api/v1/autopilot/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Pipeline","url":"/api/v1/autopilot/pipeline/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Prompts","url":"/api/v1/autopilot/prompts/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Recommendations","url":"/api/v1/autopilot/recommendations/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Automations","url":"/api/v1/automations/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Rec. Inbox","url":"/api/v1/recommendations/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Memory","url":"/api/v1/memory/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Semantic Memory","url":"/api/v1/memory/semantic/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Diary","url":"/api/v1/diary/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Health Capacity","url":"/api/v1/capacity/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Scheduler","url":"/api/v1/scheduler/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Sched. Notifications","url":"/api/v1/scheduled-notifications/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Email Intake","url":"/api/v1/intake/email/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Community","url":"/api/v1/community/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Relationships","url":"/api/v1/relationships/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Matchmaking","url":"/api/v1/match/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Personalization","url":"/api/v1/personalization/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Live Rooms","url":"/api/v1/live/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Social Context","url":"/api/v1/social/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Social Connect","url":"/api/v1/social-accounts/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Social Alignment","url":"/api/v1/alignment/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Topics","url":"/api/v1/topics/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Domain Routing","url":"/api/v1/routing/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Locations","url":"/api/v1/locations/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Offers","url":"/api/v1/offers/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Feedback","url":"/api/v1/feedback/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Voice Feedback","url":"/api/v1/voice-feedback/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Situational","url":"/api/v1/situational/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Availability","url":"/api/v1/availability/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Env. Mobility","url":"/api/v1/context/mobility/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"User Preferences","url":"/api/v1/user-preferences/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Taste Alignment","url":"/api/v1/taste-alignment/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Overload Detection","url":"/api/v1/overload/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Risk Mitigation","url":"/api/v1/mitigation/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Opportunities","url":"/api/v1/opportunities/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Visual Interactive","url":"/api/v1/visual/health","group":"Visual & VTID","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"VTID Terminalize","url":"/api/v1/oasis/vtid/terminalize/health","group":"Visual & VTID","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"VTID","url":"/api/v1/vtid/health","group":"Visual & VTID","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Screen Load Time","url":"/api/v1/frontend/screen-load/health","group":"Frontend & Performance","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Nova Sonic","url":"/api/v1/orb/nova-sonic/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"LLM Providers","url":"/api/v1/llm/providers/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Voice Tools Catalog","url":"/api/v1/voice-tools/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Self-Healing","url":"/api/v1/self-healing/health","group":"Self-Healing & Ops","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Watcher","url":"/api/v1/watcher/health","group":"Self-Healing & Ops","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Worker Orchestrator","url":"/api/v1/worker/orchestrator/health","group":"Self-Healing & Ops","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Aurora Memory","url":"/api/v1/admin/aurora-memory/health","group":"Data & Memory","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Aurora RLS","url":"/api/v1/admin/aurora-rls-health","group":"Data & Memory","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ORB Session State","url":"/api/v1/admin/orb-session-state-health","group":"Data & Memory","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Reminders","url":"/api/v1/reminders/_health/check","group":"Automation & Scheduling","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Calendar","url":"/api/v1/calendar/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Integrations","url":"/api/v1/integrations/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Pillar Agents","url":"/api/v1/pillar-agents/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Catalog Ingest","url":"/api/v1/catalog/ingest/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Shop Feed","url":"/api/v1/shop-feed/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Shopping Agent","url":"/api/v1/shopping-agent/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Universal Cart","url":"/api/v1/universal-cart/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"LLM Routing Policy","url":"/api/v1/ops/health/llm-routing","group":"AI & Assistant","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Anthropic Credit Failures","url":"/api/v1/ops/health/anthropic-credit","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Google LLM Fallback","url":"/api/v1/ops/health/google-fallback","group":"AI & Assistant","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Locale Coverage","url":"/api/v1/ops/health/locale-coverage","group":"Governance & Integrity","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Test-Account Guard","url":"/api/v1/ops/health/test-actor-guard","group":"Governance & Integrity","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"VTID Ledger Integrity","url":"/api/v1/ops/health/vtid-ledger","group":"Governance & Integrity","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ORB Session Ledger","url":"/api/v1/ops/health/orb-session-ledger","group":"Data & Memory","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Push Dispatch","url":"/api/v1/ops/health/push-dispatch","group":"Automation & Scheduling","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"STAGING-VERIFY","url":"/api/v1/ops/runtime/deploy/staging-verify","group":"Deploy & Release","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Staging Deploy","url":"/api/v1/ops/runtime/deploy/staging-deploy","group":"Deploy & Release","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Prod Deploy","url":"/api/v1/ops/runtime/deploy/prod-deploy","group":"Deploy & Release","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Prod Gateway Build","url":"/api/v1/ops/runtime/deploy/prod-gateway","group":"Deploy & Release","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Staging Gateway Build","url":"/api/v1/ops/runtime/deploy/staging-gateway","group":"Deploy & Release","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Frontend Prod","url":"/api/v1/ops/runtime/deploy/frontend-prod","group":"Deploy & Release","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Frontend Staging","url":"/api/v1/ops/runtime/deploy/frontend-staging","group":"Deploy & Release","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"ECS Gateway Prod","url":"/api/v1/ops/runtime/aws/ecs/vitana-gateway-awsdr","group":"AWS Runtime","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ECS Gateway Staging","url":"/api/v1/ops/runtime/aws/ecs/vitana-gateway","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"ECS Community App Prod","url":"/api/v1/ops/runtime/aws/ecs/vitana-community-app-awsdr","group":"AWS Runtime","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"ECS Community App Staging","url":"/api/v1/ops/runtime/aws/ecs/vitana-community-app-staging","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"ECS OASIS Operator","url":"/api/v1/ops/runtime/aws/ecs/vitana-oasis-operator-awsdr","group":"AWS Runtime","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"ECS OASIS Projector","url":"/api/v1/ops/runtime/aws/ecs/vitana-oasis-projector","group":"AWS Runtime","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ECS Worker Runner","url":"/api/v1/ops/runtime/aws/ecs/vitana-worker-runner","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"ECS Verification Engine","url":"/api/v1/ops/runtime/aws/ecs/vitana-vitana-verification-engine","group":"AWS Runtime","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"ECS ORB Agent","url":"/api/v1/ops/runtime/aws/ecs/vitana-orb-agent","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Kill Switch","url":"/api/v1/ops/runtime/autopilot/kill-switch","group":"Dev Autopilot","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Autopilot Stuck Runs","url":"/api/v1/ops/runtime/autopilot/stuck-runs","group":"Dev Autopilot","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Autopilot Approval Backlog","url":"/api/v1/ops/runtime/autopilot/approval-backlog","group":"Dev Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Autopilot Success Rate","url":"/api/v1/ops/runtime/autopilot/success-rate","group":"Dev Autopilot","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Autopilot Scan Freshness","url":"/api/v1/ops/runtime/autopilot/scan-freshness","group":"Dev Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Dispatch","url":"/api/v1/ops/runtime/autopilot/dispatch-failures","group":"Dev Autopilot","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Polly TTS","url":"/api/v1/ops/runtime/voice/polly","group":"Voice & Media","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Fish TTS","url":"/api/v1/ops/runtime/voice/fish","group":"Voice & Media","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Serbian Voice Bridge","url":"/api/v1/ops/runtime/voice/serbian-bridge","group":"Voice & Media","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Voice Session Errors","url":"/api/v1/ops/runtime/voice/session-errors","group":"Voice & Media","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Bedrock","url":"/api/v1/ops/runtime/ai/bedrock","group":"Voice & Media","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"DeepSeek","url":"/api/v1/ops/runtime/ai/deepseek","group":"Voice & Media","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Titan Images","url":"/api/v1/ops/runtime/media/titan","group":"Voice & Media","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"OASIS Write Lag","url":"/api/v1/ops/runtime/data/oasis-write-lag","group":"Data & Scheduling","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Database Latency","url":"/api/v1/ops/runtime/data/db-latency","group":"Data & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Redis","url":"/api/v1/ops/runtime/data/redis","group":"Data & Scheduling","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Code Index","url":"/api/v1/ops/runtime/data/code-index","group":"Data & Scheduling","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Scheduled Workflows","url":"/api/v1/ops/runtime/data/scheduled-workflows","group":"Data & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Support Tickets","url":"/api/v1/ops/runtime/support/stuck-tickets","group":"Business & Support","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"ERP Bridge","url":"/api/v1/ops/runtime/business/erp-bridge","group":"Business & Support","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Jev Decisions","url":"/api/v1/ops/runtime/business/jev","group":"Business & Support","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}}],"cached":true}",
+    "content_type": "application/json; charset=utf-8",
+    "status": 200,
+  },
+  "r4": {
+    "body_text": "{"ok":true,"checked_at":"2026-10-04T12:00:30.000Z","total":117,"healthy":87,"failing":20,"no_access":10,"groups":["Core Infrastructure","AI & Assistant","Autopilot","Automation & Scheduling","Community & Social","Domain & Context","Visual & VTID","Frontend & Performance","Self-Healing & Ops","Data & Memory","Commerce","Governance & Integrity","Deploy & Release","AWS Runtime","Dev Autopilot","Voice & Media","Data & Scheduling","Business & Support"],"items":[{"name":"Gateway","url":"/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Gateway Alive","url":"/alive","group":"Core Infrastructure","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Auth","url":"/api/v1/auth/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"CI/CD","url":"/api/v1/cicd/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Execute Runner","url":"/api/v1/execute/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Operator","url":"/api/v1/operator/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Operator Deploys","url":"/api/v1/operator/deployments/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Telemetry","url":"/api/v1/telemetry/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Events","url":"/events/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Command Hub UI","url":"/command-hub/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Assistant","url":"/api/v1/assistant/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Knowledge Hub","url":"/api/v1/assistant/knowledge/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"ORB Live","url":"/api/v1/orb/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Voice Lab","url":"/api/v1/voice-lab/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Conversation","url":"/api/v1/conversation/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Conversation Tools","url":"/api/v1/conversation/tool-health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot","url":"/api/v1/autopilot/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Pipeline","url":"/api/v1/autopilot/pipeline/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Prompts","url":"/api/v1/autopilot/prompts/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Recommendations","url":"/api/v1/autopilot/recommendations/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Automations","url":"/api/v1/automations/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Rec. Inbox","url":"/api/v1/recommendations/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Memory","url":"/api/v1/memory/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Semantic Memory","url":"/api/v1/memory/semantic/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Diary","url":"/api/v1/diary/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Health Capacity","url":"/api/v1/capacity/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Scheduler","url":"/api/v1/scheduler/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Sched. Notifications","url":"/api/v1/scheduled-notifications/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Email Intake","url":"/api/v1/intake/email/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Community","url":"/api/v1/community/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Relationships","url":"/api/v1/relationships/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Matchmaking","url":"/api/v1/match/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Personalization","url":"/api/v1/personalization/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Live Rooms","url":"/api/v1/live/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Social Context","url":"/api/v1/social/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Social Connect","url":"/api/v1/social-accounts/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Social Alignment","url":"/api/v1/alignment/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Topics","url":"/api/v1/topics/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Domain Routing","url":"/api/v1/routing/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Locations","url":"/api/v1/locations/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Offers","url":"/api/v1/offers/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Feedback","url":"/api/v1/feedback/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Voice Feedback","url":"/api/v1/voice-feedback/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Situational","url":"/api/v1/situational/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Availability","url":"/api/v1/availability/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Env. Mobility","url":"/api/v1/context/mobility/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"User Preferences","url":"/api/v1/user-preferences/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Taste Alignment","url":"/api/v1/taste-alignment/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Overload Detection","url":"/api/v1/overload/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Risk Mitigation","url":"/api/v1/mitigation/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Opportunities","url":"/api/v1/opportunities/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Visual Interactive","url":"/api/v1/visual/health","group":"Visual & VTID","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"VTID Terminalize","url":"/api/v1/oasis/vtid/terminalize/health","group":"Visual & VTID","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"VTID","url":"/api/v1/vtid/health","group":"Visual & VTID","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Screen Load Time","url":"/api/v1/frontend/screen-load/health","group":"Frontend & Performance","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Nova Sonic","url":"/api/v1/orb/nova-sonic/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"LLM Providers","url":"/api/v1/llm/providers/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Voice Tools Catalog","url":"/api/v1/voice-tools/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Self-Healing","url":"/api/v1/self-healing/health","group":"Self-Healing & Ops","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Watcher","url":"/api/v1/watcher/health","group":"Self-Healing & Ops","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Worker Orchestrator","url":"/api/v1/worker/orchestrator/health","group":"Self-Healing & Ops","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Aurora Memory","url":"/api/v1/admin/aurora-memory/health","group":"Data & Memory","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Aurora RLS","url":"/api/v1/admin/aurora-rls-health","group":"Data & Memory","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ORB Session State","url":"/api/v1/admin/orb-session-state-health","group":"Data & Memory","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Reminders","url":"/api/v1/reminders/_health/check","group":"Automation & Scheduling","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Calendar","url":"/api/v1/calendar/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Integrations","url":"/api/v1/integrations/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Pillar Agents","url":"/api/v1/pillar-agents/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Catalog Ingest","url":"/api/v1/catalog/ingest/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Shop Feed","url":"/api/v1/shop-feed/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Shopping Agent","url":"/api/v1/shopping-agent/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Universal Cart","url":"/api/v1/universal-cart/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"LLM Routing Policy","url":"/api/v1/ops/health/llm-routing","group":"AI & Assistant","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Anthropic Credit Failures","url":"/api/v1/ops/health/anthropic-credit","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Google LLM Fallback","url":"/api/v1/ops/health/google-fallback","group":"AI & Assistant","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Locale Coverage","url":"/api/v1/ops/health/locale-coverage","group":"Governance & Integrity","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Test-Account Guard","url":"/api/v1/ops/health/test-actor-guard","group":"Governance & Integrity","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"VTID Ledger Integrity","url":"/api/v1/ops/health/vtid-ledger","group":"Governance & Integrity","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ORB Session Ledger","url":"/api/v1/ops/health/orb-session-ledger","group":"Data & Memory","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Push Dispatch","url":"/api/v1/ops/health/push-dispatch","group":"Automation & Scheduling","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"STAGING-VERIFY","url":"/api/v1/ops/runtime/deploy/staging-verify","group":"Deploy & Release","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Staging Deploy","url":"/api/v1/ops/runtime/deploy/staging-deploy","group":"Deploy & Release","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Prod Deploy","url":"/api/v1/ops/runtime/deploy/prod-deploy","group":"Deploy & Release","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Prod Gateway Build","url":"/api/v1/ops/runtime/deploy/prod-gateway","group":"Deploy & Release","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Staging Gateway Build","url":"/api/v1/ops/runtime/deploy/staging-gateway","group":"Deploy & Release","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Frontend Prod","url":"/api/v1/ops/runtime/deploy/frontend-prod","group":"Deploy & Release","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Frontend Staging","url":"/api/v1/ops/runtime/deploy/frontend-staging","group":"Deploy & Release","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"ECS Gateway Prod","url":"/api/v1/ops/runtime/aws/ecs/vitana-gateway-awsdr","group":"AWS Runtime","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ECS Gateway Staging","url":"/api/v1/ops/runtime/aws/ecs/vitana-gateway","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"ECS Community App Prod","url":"/api/v1/ops/runtime/aws/ecs/vitana-community-app-awsdr","group":"AWS Runtime","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"ECS Community App Staging","url":"/api/v1/ops/runtime/aws/ecs/vitana-community-app-staging","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"ECS OASIS Operator","url":"/api/v1/ops/runtime/aws/ecs/vitana-oasis-operator-awsdr","group":"AWS Runtime","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"ECS OASIS Projector","url":"/api/v1/ops/runtime/aws/ecs/vitana-oasis-projector","group":"AWS Runtime","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ECS Worker Runner","url":"/api/v1/ops/runtime/aws/ecs/vitana-worker-runner","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"ECS Verification Engine","url":"/api/v1/ops/runtime/aws/ecs/vitana-vitana-verification-engine","group":"AWS Runtime","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"ECS ORB Agent","url":"/api/v1/ops/runtime/aws/ecs/vitana-orb-agent","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Kill Switch","url":"/api/v1/ops/runtime/autopilot/kill-switch","group":"Dev Autopilot","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Autopilot Stuck Runs","url":"/api/v1/ops/runtime/autopilot/stuck-runs","group":"Dev Autopilot","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Autopilot Approval Backlog","url":"/api/v1/ops/runtime/autopilot/approval-backlog","group":"Dev Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Autopilot Success Rate","url":"/api/v1/ops/runtime/autopilot/success-rate","group":"Dev Autopilot","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Autopilot Scan Freshness","url":"/api/v1/ops/runtime/autopilot/scan-freshness","group":"Dev Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Dispatch","url":"/api/v1/ops/runtime/autopilot/dispatch-failures","group":"Dev Autopilot","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Polly TTS","url":"/api/v1/ops/runtime/voice/polly","group":"Voice & Media","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Fish TTS","url":"/api/v1/ops/runtime/voice/fish","group":"Voice & Media","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Serbian Voice Bridge","url":"/api/v1/ops/runtime/voice/serbian-bridge","group":"Voice & Media","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Voice Session Errors","url":"/api/v1/ops/runtime/voice/session-errors","group":"Voice & Media","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Bedrock","url":"/api/v1/ops/runtime/ai/bedrock","group":"Voice & Media","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"DeepSeek","url":"/api/v1/ops/runtime/ai/deepseek","group":"Voice & Media","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Titan Images","url":"/api/v1/ops/runtime/media/titan","group":"Voice & Media","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"OASIS Write Lag","url":"/api/v1/ops/runtime/data/oasis-write-lag","group":"Data & Scheduling","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Database Latency","url":"/api/v1/ops/runtime/data/db-latency","group":"Data & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Redis","url":"/api/v1/ops/runtime/data/redis","group":"Data & Scheduling","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Code Index","url":"/api/v1/ops/runtime/data/code-index","group":"Data & Scheduling","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Scheduled Workflows","url":"/api/v1/ops/runtime/data/scheduled-workflows","group":"Data & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Support Tickets","url":"/api/v1/ops/runtime/support/stuck-tickets","group":"Business & Support","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"ERP Bridge","url":"/api/v1/ops/runtime/business/erp-bridge","group":"Business & Support","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Jev Decisions","url":"/api/v1/ops/runtime/business/jev","group":"Business & Support","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}}],"cached":false}",
+    "content_type": "application/json; charset=utf-8",
+    "status": 200,
+  },
+  "r4_first_probe_headers": {
+    "Accept": "application/json",
+    "Authorization": "Bearer admin2",
+  },
+}
+`;
+
+exports[`VTID-04875 GET /admin/health/summary — characterization (old handler == new wrapper) route: first call probes over loopback with the caller token, mixed outcomes 1`] = `
+{
+  "body_text": "{"ok":true,"checked_at":"2026-10-04T12:00:00.000Z","total":117,"healthy":87,"failing":20,"no_access":10,"groups":["Core Infrastructure","AI & Assistant","Autopilot","Automation & Scheduling","Community & Social","Domain & Context","Visual & VTID","Frontend & Performance","Self-Healing & Ops","Data & Memory","Commerce","Governance & Integrity","Deploy & Release","AWS Runtime","Dev Autopilot","Voice & Media","Data & Scheduling","Business & Support"],"items":[{"name":"Gateway","url":"/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Gateway Alive","url":"/alive","group":"Core Infrastructure","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Auth","url":"/api/v1/auth/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"CI/CD","url":"/api/v1/cicd/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Execute Runner","url":"/api/v1/execute/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Operator","url":"/api/v1/operator/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Operator Deploys","url":"/api/v1/operator/deployments/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Telemetry","url":"/api/v1/telemetry/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Events","url":"/events/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Command Hub UI","url":"/command-hub/health","group":"Core Infrastructure","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Assistant","url":"/api/v1/assistant/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Knowledge Hub","url":"/api/v1/assistant/knowledge/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"ORB Live","url":"/api/v1/orb/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Voice Lab","url":"/api/v1/voice-lab/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Conversation","url":"/api/v1/conversation/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Conversation Tools","url":"/api/v1/conversation/tool-health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot","url":"/api/v1/autopilot/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Pipeline","url":"/api/v1/autopilot/pipeline/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Prompts","url":"/api/v1/autopilot/prompts/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Recommendations","url":"/api/v1/autopilot/recommendations/health","group":"Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Automations","url":"/api/v1/automations/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Rec. Inbox","url":"/api/v1/recommendations/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Memory","url":"/api/v1/memory/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Semantic Memory","url":"/api/v1/memory/semantic/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Diary","url":"/api/v1/diary/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Health Capacity","url":"/api/v1/capacity/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Scheduler","url":"/api/v1/scheduler/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Sched. Notifications","url":"/api/v1/scheduled-notifications/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Email Intake","url":"/api/v1/intake/email/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Community","url":"/api/v1/community/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Relationships","url":"/api/v1/relationships/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Matchmaking","url":"/api/v1/match/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Personalization","url":"/api/v1/personalization/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Live Rooms","url":"/api/v1/live/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Social Context","url":"/api/v1/social/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Social Connect","url":"/api/v1/social-accounts/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Social Alignment","url":"/api/v1/alignment/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Topics","url":"/api/v1/topics/health","group":"Community & Social","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Domain Routing","url":"/api/v1/routing/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Locations","url":"/api/v1/locations/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Offers","url":"/api/v1/offers/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Feedback","url":"/api/v1/feedback/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Voice Feedback","url":"/api/v1/voice-feedback/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Situational","url":"/api/v1/situational/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Availability","url":"/api/v1/availability/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Env. Mobility","url":"/api/v1/context/mobility/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"User Preferences","url":"/api/v1/user-preferences/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Taste Alignment","url":"/api/v1/taste-alignment/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Overload Detection","url":"/api/v1/overload/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Risk Mitigation","url":"/api/v1/mitigation/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Opportunities","url":"/api/v1/opportunities/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Visual Interactive","url":"/api/v1/visual/health","group":"Visual & VTID","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"VTID Terminalize","url":"/api/v1/oasis/vtid/terminalize/health","group":"Visual & VTID","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"VTID","url":"/api/v1/vtid/health","group":"Visual & VTID","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Screen Load Time","url":"/api/v1/frontend/screen-load/health","group":"Frontend & Performance","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Nova Sonic","url":"/api/v1/orb/nova-sonic/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"LLM Providers","url":"/api/v1/llm/providers/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Voice Tools Catalog","url":"/api/v1/voice-tools/health","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Self-Healing","url":"/api/v1/self-healing/health","group":"Self-Healing & Ops","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Watcher","url":"/api/v1/watcher/health","group":"Self-Healing & Ops","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Worker Orchestrator","url":"/api/v1/worker/orchestrator/health","group":"Self-Healing & Ops","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Aurora Memory","url":"/api/v1/admin/aurora-memory/health","group":"Data & Memory","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Aurora RLS","url":"/api/v1/admin/aurora-rls-health","group":"Data & Memory","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ORB Session State","url":"/api/v1/admin/orb-session-state-health","group":"Data & Memory","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Reminders","url":"/api/v1/reminders/_health/check","group":"Automation & Scheduling","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Calendar","url":"/api/v1/calendar/health","group":"Automation & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Integrations","url":"/api/v1/integrations/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Pillar Agents","url":"/api/v1/pillar-agents/health","group":"Domain & Context","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Catalog Ingest","url":"/api/v1/catalog/ingest/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Shop Feed","url":"/api/v1/shop-feed/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Shopping Agent","url":"/api/v1/shopping-agent/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Universal Cart","url":"/api/v1/universal-cart/health","group":"Commerce","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"LLM Routing Policy","url":"/api/v1/ops/health/llm-routing","group":"AI & Assistant","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Anthropic Credit Failures","url":"/api/v1/ops/health/anthropic-credit","group":"AI & Assistant","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Google LLM Fallback","url":"/api/v1/ops/health/google-fallback","group":"AI & Assistant","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Locale Coverage","url":"/api/v1/ops/health/locale-coverage","group":"Governance & Integrity","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Test-Account Guard","url":"/api/v1/ops/health/test-actor-guard","group":"Governance & Integrity","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"VTID Ledger Integrity","url":"/api/v1/ops/health/vtid-ledger","group":"Governance & Integrity","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ORB Session Ledger","url":"/api/v1/ops/health/orb-session-ledger","group":"Data & Memory","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Push Dispatch","url":"/api/v1/ops/health/push-dispatch","group":"Automation & Scheduling","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"STAGING-VERIFY","url":"/api/v1/ops/runtime/deploy/staging-verify","group":"Deploy & Release","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Staging Deploy","url":"/api/v1/ops/runtime/deploy/staging-deploy","group":"Deploy & Release","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Prod Deploy","url":"/api/v1/ops/runtime/deploy/prod-deploy","group":"Deploy & Release","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Prod Gateway Build","url":"/api/v1/ops/runtime/deploy/prod-gateway","group":"Deploy & Release","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Staging Gateway Build","url":"/api/v1/ops/runtime/deploy/staging-gateway","group":"Deploy & Release","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Frontend Prod","url":"/api/v1/ops/runtime/deploy/frontend-prod","group":"Deploy & Release","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Frontend Staging","url":"/api/v1/ops/runtime/deploy/frontend-staging","group":"Deploy & Release","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"ECS Gateway Prod","url":"/api/v1/ops/runtime/aws/ecs/vitana-gateway-awsdr","group":"AWS Runtime","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ECS Gateway Staging","url":"/api/v1/ops/runtime/aws/ecs/vitana-gateway","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"ECS Community App Prod","url":"/api/v1/ops/runtime/aws/ecs/vitana-community-app-awsdr","group":"AWS Runtime","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"ECS Community App Staging","url":"/api/v1/ops/runtime/aws/ecs/vitana-community-app-staging","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"ECS OASIS Operator","url":"/api/v1/ops/runtime/aws/ecs/vitana-oasis-operator-awsdr","group":"AWS Runtime","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"ECS OASIS Projector","url":"/api/v1/ops/runtime/aws/ecs/vitana-oasis-projector","group":"AWS Runtime","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"ECS Worker Runner","url":"/api/v1/ops/runtime/aws/ecs/vitana-worker-runner","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"ECS Verification Engine","url":"/api/v1/ops/runtime/aws/ecs/vitana-vitana-verification-engine","group":"AWS Runtime","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"ECS ORB Agent","url":"/api/v1/ops/runtime/aws/ecs/vitana-orb-agent","group":"AWS Runtime","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Kill Switch","url":"/api/v1/ops/runtime/autopilot/kill-switch","group":"Dev Autopilot","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Autopilot Stuck Runs","url":"/api/v1/ops/runtime/autopilot/stuck-runs","group":"Dev Autopilot","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Autopilot Approval Backlog","url":"/api/v1/ops/runtime/autopilot/approval-backlog","group":"Dev Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Autopilot Success Rate","url":"/api/v1/ops/runtime/autopilot/success-rate","group":"Dev Autopilot","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Autopilot Scan Freshness","url":"/api/v1/ops/runtime/autopilot/scan-freshness","group":"Dev Autopilot","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Autopilot Dispatch","url":"/api/v1/ops/runtime/autopilot/dispatch-failures","group":"Dev Autopilot","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Polly TTS","url":"/api/v1/ops/runtime/voice/polly","group":"Voice & Media","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Fish TTS","url":"/api/v1/ops/runtime/voice/fish","group":"Voice & Media","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Serbian Voice Bridge","url":"/api/v1/ops/runtime/voice/serbian-bridge","group":"Voice & Media","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Voice Session Errors","url":"/api/v1/ops/runtime/voice/session-errors","group":"Voice & Media","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Bedrock","url":"/api/v1/ops/runtime/ai/bedrock","group":"Voice & Media","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"DeepSeek","url":"/api/v1/ops/runtime/ai/deepseek","group":"Voice & Media","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Titan Images","url":"/api/v1/ops/runtime/media/titan","group":"Voice & Media","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"OASIS Write Lag","url":"/api/v1/ops/runtime/data/oasis-write-lag","group":"Data & Scheduling","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"Database Latency","url":"/api/v1/ops/runtime/data/db-latency","group":"Data & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Redis","url":"/api/v1/ops/runtime/data/redis","group":"Data & Scheduling","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}},{"name":"Code Index","url":"/api/v1/ops/runtime/data/code-index","group":"Data & Scheduling","status":"no_access","healthy":false,"http_status":401,"latency_ms":0,"details":{"ok":false,"error":"UNAUTHENTICATED"}},{"name":"Scheduled Workflows","url":"/api/v1/ops/runtime/data/scheduled-workflows","group":"Data & Scheduling","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":null},{"name":"Support Tickets","url":"/api/v1/ops/runtime/support/stuck-tickets","group":"Business & Support","status":"down","healthy":false,"http_status":null,"latency_ms":-1,"details":null},{"name":"ERP Bridge","url":"/api/v1/ops/runtime/business/erp-bridge","group":"Business & Support","status":"healthy","healthy":true,"http_status":200,"latency_ms":0,"details":{"ok":true,"status":"healthy"}},{"name":"Jev Decisions","url":"/api/v1/ops/runtime/business/jev","group":"Business & Support","status":"down","healthy":false,"http_status":503,"latency_ms":0,"details":{"ok":false,"error":"db down"}}],"cached":false}",
+  "content_type": "application/json; charset=utf-8",
+  "probes": [
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/alive",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/auth/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/cicd/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/execute/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/operator/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/operator/deployments/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/telemetry/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/events/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/command-hub/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/assistant/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/assistant/knowledge/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/orb/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/voice-lab/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/conversation/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/conversation/tool-health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/autopilot/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/autopilot/pipeline/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/autopilot/prompts/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/autopilot/recommendations/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/automations/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/recommendations/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/memory/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/memory/semantic/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/diary/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/capacity/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/scheduler/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/scheduled-notifications/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/intake/email/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/community/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/relationships/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/match/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/personalization/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/live/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/social/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/social-accounts/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/alignment/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/topics/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/routing/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/locations/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/offers/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/feedback/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/voice-feedback/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/situational/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/availability/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/context/mobility/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/user-preferences/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/taste-alignment/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/overload/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/mitigation/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/opportunities/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/visual/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/oasis/vtid/terminalize/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/vtid/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/frontend/screen-load/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/orb/nova-sonic/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/llm/providers/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/voice-tools/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/self-healing/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/watcher/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/worker/orchestrator/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/admin/aurora-memory/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/admin/aurora-rls-health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/admin/orb-session-state-health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/reminders/_health/check",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/calendar/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/integrations/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/pillar-agents/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/catalog/ingest/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/shop-feed/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/shopping-agent/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/universal-cart/health",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/health/llm-routing",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/health/anthropic-credit",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/health/google-fallback",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/health/locale-coverage",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/health/test-actor-guard",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/health/vtid-ledger",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/health/orb-session-ledger",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/health/push-dispatch",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/deploy/staging-verify",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/deploy/staging-deploy",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/deploy/prod-deploy",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/deploy/prod-gateway",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/deploy/staging-gateway",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/deploy/frontend-prod",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/deploy/frontend-staging",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/aws/ecs/vitana-gateway-awsdr",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/aws/ecs/vitana-gateway",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/aws/ecs/vitana-community-app-awsdr",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/aws/ecs/vitana-community-app-staging",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/aws/ecs/vitana-oasis-operator-awsdr",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/aws/ecs/vitana-oasis-projector",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/aws/ecs/vitana-worker-runner",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/aws/ecs/vitana-vitana-verification-engine",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/aws/ecs/vitana-orb-agent",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/autopilot/kill-switch",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/autopilot/stuck-runs",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/autopilot/approval-backlog",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/autopilot/success-rate",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/autopilot/scan-freshness",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/autopilot/dispatch-failures",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/voice/polly",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/voice/fish",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/voice/serbian-bridge",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/voice/session-errors",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/ai/bedrock",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/ai/deepseek",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/media/titan",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/data/oasis-write-lag",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/data/db-latency",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/data/redis",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/data/code-index",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/data/scheduled-workflows",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/support/stuck-tickets",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/business/erp-bridge",
+    },
+    {
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin",
+      },
+      "url": "http://127.0.0.1:8080/api/v1/ops/runtime/business/jev",
+    },
+  ],
+  "status": 200,
+}
+`;
+
+exports[`VTID-04875 GET /admin/health/summary — characterization (old handler == new wrapper) route: unauthenticated caller → 401, nothing probed 1`] = `
+{
+  "body_text": "{"ok":false,"error":"UNAUTHENTICATED"}",
+  "content_type": "application/json; charset=utf-8",
+  "probes": 0,
+  "status": 401,
+}
+`;
