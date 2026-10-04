@@ -3428,3 +3428,25 @@ Seeded with the financial ledgers and order/payment records (HGB §257, AO §147
 - Retries foreign-key failures for up to 5 passes and sweeps again after delete triggers.
 - Returns `{deleted, retained, errors, passes}`. The edge function deletes the auth user only when `errors` is empty.
 - SECURITY DEFINER, `service_role` only. Tested on a throwaway Postgres: `scripts/ci/sql-tests/run-erase-user-data-test.sh` (CI: `SQL-ERASE-USER-DATA.yml`).
+
+## Command Hub Overview attention state — `ops_attention_state` (VTID-04876, 2026-10-04) — NOT YET APPLIED
+
+Migration `supabase/migrations/20261004130000_vtid_04876_ops_attention_state.sql`.
+Time-based hysteresis for `GET /api/v1/ops/attention` (Command Hub Overview,
+plan A Phase 1) for attention candidates whose source has no timestamp of its
+own. Written only by the gateway (`services/ops-attention.ts` via
+`services/ops-attention-reads.ts`, service role). RLS on with no client
+policies: service role only. Idempotent (`IF NOT EXISTS`).
+
+| Column | Type | Notes |
+|---|---|---|
+| `env` | text | PK part. `production` or `staging` (VITANA_ENV); CHECK constrained |
+| `fingerprint` | text | PK part. `<env>:<source>:<entity key>` |
+| `first_seen` | timestamptz | kept while observed; reset after 90 s unseen |
+| `last_seen` | timestamptz | latest observation |
+
+Index: `(env, last_seen)`. Staging writes `env='staging'` rows (owner
+decision 2026-10-04). A failed read or write never fails the response: the
+request falls back to "first seen at this request" and the response's
+`attention_state` source reports it. Rows unseen for more than a day carry
+no meaning and may be deleted.

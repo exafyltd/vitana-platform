@@ -540,6 +540,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const canaryTargetRouter = require('./routes/canary-target').default;
   // VTID-02031: Ops "Action Required" — pull surface mirroring Gchat pings
   const opsActionRequiredRouter = require('./routes/ops-action-required').default;
+  // VTID-04876: Command Hub Overview cockpit feed (exafy_admin only)
+  const opsAttentionRouter = require('./routes/ops-attention').default;
   // DEV-COMHU-03404: Overview trend data — hourly oasis_events rollup for sparklines
   const opsOverviewTimeseriesRouter = require('./routes/ops-overview-timeseries').default;
   // VTID-04663: Service Health checks for signals the database already computes.
@@ -1411,6 +1413,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-02031: Ops Action Required — pull surface for Command Hub Overview
   mountRouterSync(app, '/api/v1/ops/action-required', opsActionRequiredRouter, { owner: 'ops-action-required' });
+  // VTID-04876: GET /api/v1/ops/attention — ranked "needs attention now" queue (exafy_admin only)
+  mountRouterSync(app, '/api/v1/ops/attention', opsAttentionRouter, { owner: 'ops-attention' });
 
   // DEV-COMHU-03404: Overview trend data — hourly oasis_events rollup for sparklines
   mountRouterSync(app, '/api/v1/ops/overview-timeseries', opsOverviewTimeseriesRouter, { owner: 'ops-overview-timeseries' });

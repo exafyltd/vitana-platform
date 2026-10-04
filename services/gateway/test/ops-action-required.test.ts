@@ -12,6 +12,16 @@
 import express from 'express';
 import request from 'supertest';
 
+// VTID-04876: the route is exafy_admin only now (requireAdminAuth). The
+// gate is mocked here (admin = "Bearer admin"); the real middleware's 401 is
+// exercised in the last block below.
+jest.mock('../src/middleware/auth-supabase-jwt', () => ({
+  requireAdminAuth: (req: any, res: any, next: any) =>
+    req.headers.authorization === 'Bearer admin'
+      ? next()
+      : res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' }),
+}));
+
 const ORIGINAL_FETCH = global.fetch;
 
 function freshRouter(): any {
@@ -66,7 +76,7 @@ describe('GET /api/v1/ops/action-required — self-heal live re-probe', () => {
     }) as unknown as typeof fetch;
 
     const app = buildApp(freshRouter());
-    const res = await request(app).get('/api/v1/ops/action-required');
+    const res = await request(app).get('/api/v1/ops/action-required').set('Authorization', 'Bearer admin');
 
     expect(res.status).toBe(200);
     expect(res.body.items).toEqual([]);
@@ -93,10 +103,40 @@ describe('GET /api/v1/ops/action-required — self-heal live re-probe', () => {
     }) as unknown as typeof fetch;
 
     const app = buildApp(freshRouter());
-    const res = await request(app).get('/api/v1/ops/action-required');
+    const res = await request(app).get('/api/v1/ops/action-required').set('Authorization', 'Bearer admin');
 
     expect(res.status).toBe(200);
     expect(res.body.items).toHaveLength(1);
     expect(res.body.items[0].source_id).toBe('SH-FALLBACK-1');
+  });
+});
+
+describe('VTID-04876: GET /api/v1/ops/action-required is exafy_admin only', () => {
+  it('the route file wires requireAdminAuth on GET /', () => {
+    const src = require('fs').readFileSync(require('path').join(__dirname, '../src/routes/ops-action-required.ts'), 'utf8');
+    expect(src).toContain("import { requireAdminAuth } from '../middleware/auth-supabase-jwt';");
+    expect(src).toContain("router.get('/', requireAdminAuth, async");
+  });
+
+  it('401 JSON without an admin token, before any Supabase read', async () => {
+    process.env.SUPABASE_URL = 'https://supabase.test';
+    process.env.SUPABASE_SERVICE_ROLE = 'svc-role';
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const app = buildApp(freshRouter());
+    const res = await request(app).get('/api/v1/ops/action-required');
+    expect(res.status).toBe(401);
+    expect(res.body).toMatchObject({ ok: false, error: 'UNAUTHENTICATED' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('401 from the real requireAdminAuth when no Authorization header is sent', async () => {
+    jest.resetModules();
+    const real = jest.requireActual('../src/middleware/auth-supabase-jwt');
+    const app = express();
+    app.get('/x', real.requireAdminAuth, (_req, res) => res.json({ ok: true }));
+    const res = await request(app).get('/x');
+    expect(res.status).toBe(401);
+    expect(res.headers['content-type']).toMatch(/application\/json/);
   });
 });
