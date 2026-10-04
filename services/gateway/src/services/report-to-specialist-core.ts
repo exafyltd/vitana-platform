@@ -32,6 +32,7 @@ import {
   pickPersonaForKindForTenant as registryPickPersonaForKindForTenant,
 } from './persona-registry';
 import { emitOasisEvent } from './oasis-event-service';
+import { shadowTicketTriage } from './jev/gates/community-class-a-gates';
 import * as repo from './report-to-specialist-core-repository';
 
 export interface ReportToSpecialistArgs {
@@ -316,6 +317,9 @@ export async function executeReportToSpecialist(
       /* keep empty hint, fall through to kind-based fallback */
     }
   }
+
+  // VTID-04879: Jev in shadow beside the two-gate RPC; never awaited, never changes the result.
+  void shadowTicketTriage({ summary, existingDecision: rpcDecision, personaPicked: Boolean(pickedPersona), tenantId, userId: identity.user_id, sessionId: options.session_id ?? null }).catch(() => undefined);
 
   // Gate A says stay-inline → don't file a ticket, don't swap. Vitana
   // keeps the user. Return the LLM the instruction string Vertex used.

@@ -1,0 +1,14 @@
+$ cd services/gateway && npx tsc --noEmit -p .
+(clean)
+$ npx jest test/vtid-04879
+Tests: 18 passed (outputs/jest-class-a.txt)
+$ npx jest test/vtid-04456 (support pipeline, with the new shadow scenario)
+Tests: 25 passed
+$ npx jest test/vtid-04857 test/vtid-04872 test/vtid-04874
+all passed
+$ npm run test:operator && npm run test:roles
+30 passed; 105 passed
+$ node scripts/conversation/generate-flag-pins.mjs
+wrote conversation-flag-pins.generated.ts
+$ curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/intents ; .../jev/decisions/community_intent_kind
+401 application/json (both)

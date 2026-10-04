@@ -1,0 +1,6 @@
+{"vtid":"VTID-04879","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"intents API still auth-gated (C1 call site)","path":"/api/v1/intents","method":"POST","expect_status":401,"rejected_probe":true},
+{"kind":"http","name":"jev decision route still auth-gated","path":"/api/v1/jev/decisions/community_intent_kind","method":"POST","expect_status":401,"rejected_probe":true},
+{"kind":"existing","ref":"npx jest test/vtid-04879-community-class-a.test.ts test/vtid-04456-customer-support-pipeline-regression.test.ts","cwd":"services/gateway","reason":"The gates are inert on staging until JEV_COMMUNITY_ENABLED opens the member plane (held until the TypeSafe DPA), and reaching them needs a member write (posting an intent, filing a ticket), which a read-only staging probe must not do. Decisions, gating, policy, rows without text, agreement, the C10 outcome, fire-and-forget call sites and the staging-only pins are proven by these suites."}
+]}

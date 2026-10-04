@@ -981,7 +981,14 @@ dev/ops/backoffice; member ranking priced per tenant budget.
    count changes); internal and Dev Autopilot never take a token.
    `JEV_COMMUNITY_RATE_MODE` shadow by default (`jev.community_rate.would_limit`,
    at most one per task per 10 min), enforce → `community_rate_limited` 429.
-   A second TypeSafe key was not used: the limit is per account.
+   A second TypeSafe key was not used: the limit is per account. Class A
+   community decisions are VTID-04879: C1 `community_intent_kind` (beside
+   `classifyIntentKind`), C3 `community_marketplace_intent` (beside the
+   keyword heuristic), C10 `community_worth_remembering` (before the per-turn
+   extractor, settled from facts stored), C19 `community_ticket_triage`
+   (beside `pick_specialist_for_text`) — shadow, staging-only pins, inert until
+   the member plane opens on staging, which is held until the TypeSafe DPA
+   (owner 2026-10-04). C2 deferred: no LLM selection exists to replace.
 4. Whether Community Autopilot on member data counts as the member plane
    (implemented as yes).
 
