@@ -253,6 +253,7 @@ describeIfDb('AuroraDbI18nRepository against a live PostgreSQL', () => {
         explanation_user_benefit: 'b',
         explanation_when_to_use: 'c',
         explanation_try_this: 'd',
+        vitana_voice_script: 'Narration fr',
         source_version_id: versionId,
         source_sha: 'chk-sha',
       },
@@ -262,7 +263,7 @@ describeIfDb('AuroraDbI18nRepository against a live PostgreSQL', () => {
         (await c.query(
           `SELECT display_label, short_description, explanation_what_it_is,
                   explanation_user_benefit, explanation_when_to_use, explanation_try_this,
-                  source_version_id::text, source_sha
+                  vitana_voice_script, source_version_id::text, source_sha
              FROM public.journey_checklist_translations WHERE topic_id='T1' AND locale='fr'`,
         )).rows as Record<string, string>[],
       writeEnv,
@@ -271,6 +272,7 @@ describeIfDb('AuroraDbI18nRepository against a live PostgreSQL', () => {
       display_label: 'Ta premiere semaine', short_description: 'sd',
       explanation_what_it_is: 'a', explanation_user_benefit: 'b',
       explanation_when_to_use: 'c', explanation_try_this: 'd',
+      vitana_voice_script: 'Narration fr', // VTID-04873
       source_version_id: versionId, source_sha: 'chk-sha',
     });
   });
@@ -354,6 +356,7 @@ describeIfDb('AuroraDbI18nRepository against a live PostgreSQL', () => {
             {
               topicId: 'T1', displayLabel: 'Deine erste Woche', shortDescription: 'kurz',
               explanation: { whatItIs: 'w', userBenefit: 'u', whenToUse: 'wu', tryThis: 'tt' },
+              vitanaVoiceScript: 'vs',
             },
             { topicId: 'T2', displayLabel: 'Zweite' },
             { notATopic: true },
@@ -369,6 +372,7 @@ describeIfDb('AuroraDbI18nRepository against a live PostgreSQL', () => {
         display_label: 'Deine erste Woche', short_description: 'kurz',
         explanation_what_it_is: 'w', explanation_user_benefit: 'u',
         explanation_when_to_use: 'wu', explanation_try_this: 'tt',
+        vitana_voice_script: 'vs', // VTID-04873: the narration script is translated too
       });
       expect(t1?.meta?.source_version_id).toBe(versionId);
     });
