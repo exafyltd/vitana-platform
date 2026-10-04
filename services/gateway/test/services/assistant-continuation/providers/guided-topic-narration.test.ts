@@ -58,6 +58,7 @@ const SEED = {
   explanation: { whatItIs: 'Eine Community', userBenefit: 'Du lernst', whenToUse: 'Täglich', tryThis: 'Schau rein' },
   guidedPracticeTarget: 'community',
   source: 'published' as const,
+  narrationLocale: 'de',
 };
 
 beforeEach(() => {
@@ -149,6 +150,21 @@ describe('guided-topic-narration provider', () => {
     const p = makeGuidedTopicNarrationProvider();
     await p.produce(makeCtx({ lang: 'pt' }));
     expect(mockGetOrbTopicSeed).toHaveBeenCalledWith(FAKE_SB, 'T001', 'v2', 'pt');
+  });
+
+  it('VTID-04873: never pre-renders German narration for a member in another language', async () => {
+    mockGetOrbTopicSeed.mockResolvedValue(SEED); // narrationLocale 'de'
+    const p = makeGuidedTopicNarrationProvider();
+    await p.produce(makeCtx({ lang: 'en' }));
+    expect(mockSynthesizeGuidedTopicNarrationAudio).not.toHaveBeenCalled();
+  });
+
+  it('VTID-04873: pre-renders when the narration is in the member\'s language', async () => {
+    mockGetOrbTopicSeed.mockResolvedValue({ ...SEED, narrationLocale: 'en' });
+    const p = makeGuidedTopicNarrationProvider();
+    await p.produce(makeCtx({ lang: 'en' }));
+    expect(mockSynthesizeGuidedTopicNarrationAudio).toHaveBeenCalledTimes(1);
+    expect(mockSynthesizeGuidedTopicNarrationAudio.mock.calls[0][1]).toBe('en');
   });
 
   it('greets by name when firstName is provided', async () => {
