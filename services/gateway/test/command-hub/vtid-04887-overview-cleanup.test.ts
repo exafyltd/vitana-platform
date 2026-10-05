@@ -261,15 +261,15 @@ describe('VTID-04887 (3): browser callers of the pipeline summary use the admin 
     expect(code).not.toContain('/api/v1/autopilot/pipeline/summary');
     // Operator Dashboard + Runbook (fetch) and Vitana Recommends (fetchWT).
     expect((code.match(/fetch\('\/api\/v1\/ops\/pipeline-summary', \{/g) || []).length).toBe(2);
-    expect((code.match(/fetchWT\('\/api\/v1\/ops\/pipeline-summary', \{/g) || []).length).toBe(1);
+    expect((code.match(/fetchWT\('\/api\/v1\/ops\/pipeline-summary'/g) || []).length).toBe(1);
   });
 
   describe('Vitana Recommends', () => {
     const panel = fnBody('function renderOverviewRecommendsPanel() {');
-    const fetcher = fnBody('async function fetchOverviewRecommendations() {');
+    const fetcher = fnBody('async function fetchOverviewRecommendations(fresh) {');
 
     it('reads the admin route with the bearer token and keeps only the recommendations', () => {
-      expect(fetcher).toContain("var r = await fetchWT('/api/v1/ops/pipeline-summary', {");
+      expect(fetcher).toContain("var r = await fetchWT('/api/v1/ops/pipeline-summary' + (fresh ? '?fresh=1' : ''), {");
       expect(fetcher).toContain("headers: buildContextHeaders({ Accept: 'application/json' })");
       expect(fetcher).toContain('view.recommendations = Array.isArray(body.recommendations) ? body.recommendations : [];');
     });
