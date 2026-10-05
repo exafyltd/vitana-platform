@@ -1,5 +1,14 @@
 # Supabase → Aurora Cutover Runbook — 2026-09-21 14:00 CEST
 
+> **VTID-04880 (2026-10-05):** `nav_catalog`, `nav_catalog_audit` and
+> `nav_catalog_i18n` no longer live in Supabase `public`. They were archived
+> into the `legacy_archive` schema with the legacy voice navigator
+> (migration `20261005090000_vtid_04880_archive_nav_catalog.sql`), so they are
+> not part of a `public` load. The restore scripts under
+> `services/postgrest-aurora-proxy/` and `scripts/aws/` guard every statement
+> on them with `to_regclass(...)`, so a fresh load without the tables runs
+> clean. Aurora copies that already exist are left as they are.
+
 **UPDATED 2026-09-20 (second update, supersedes the one below it): the
 freeze window was postponed again — from tonight's midnight-CET window to
 Monday 2026-09-21 14:00 CET/CEST (12:00 UTC) — per explicit platform-owner

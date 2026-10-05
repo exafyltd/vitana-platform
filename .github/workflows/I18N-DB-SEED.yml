@@ -2,7 +2,9 @@ name: I18N-DB-SEED
 run-name: 'Seed DB content i18n [VTID: VTID-03515] locale=${{ inputs.locale || ''scheduled-check'' }} (${{ github.ref_name }})'
 
 # VTID-03515 — bring a language to full parity on DB-backed user-visible content
-# (`nav_catalog_i18n`, `journey_checklist_translations`).
+# (`journey_checklist_translations`). VTID-04880 removed the Navigator catalog
+# surface (`nav_catalog_i18n`): the voice navigator reads the screen registry,
+# whose per-locale titles live in vitana-v1, and the table was archived.
 #
 # The whole "add language N+1" procedure is:
 #   1. INSERT the locale into `supported_locales` (status 'beta').
@@ -22,10 +24,6 @@ on:
         description: 'Comma-separated locale codes (must exist in supported_locales), or "all-ga" / "all"'
         required: true
         default: 'all'
-      surface:
-        description: 'Surface(s): nav-catalog, journey-checklist (blank = both)'
-        required: false
-        default: ''
       apply:
         description: 'Write the result to the database (false = artifacts only)'
         required: true
@@ -45,15 +43,13 @@ on:
   repository_dispatch:
     # NO LANGUAGE LEFT BEHIND, for content that does not live in git.
     #
-    # The curriculum (254 topics) and the Navigator catalog are edited in the
-    # admin UI and published to the database, so no push event ever fires and
-    # git-based propagation is blind to them.
+    # The curriculum (254 topics) is edited in the admin UI and published to
+    # the database, so no push event ever fires and git-based propagation is
+    # blind to it.
     #
     # WIRED FROM THE GATEWAY (VTID-03522) —
     # services/gateway/src/services/db-i18n/notify-source-changed.ts, called
-    # from publishChecklist()/rollbackChecklist() and from
-    # invalidateNavCatalogCache() (the choke point all four nav_catalog admin
-    # writes already pass through).
+    # from publishChecklist()/rollbackChecklist().
     #
     # The emitter coalesces bursts into one dispatch per 30s window and is
     # fire-and-forget: it can never fail the publish that triggered it. When it
@@ -174,7 +170,6 @@ jobs:
             all)    ARGS="--all" ;;
             *)      ARGS="--locale=${{ inputs.locale }}" ;;
           esac
-          [ -n "${{ inputs.surface }}" ] && ARGS="$ARGS --surface=${{ inputs.surface }}"
           [ "${{ inputs.apply }}" = "true" ] && ARGS="$ARGS --apply"
           [ "${{ inputs.from_artifact }}" = "true" ] && ARGS="$ARGS --from-artifact"
           ARGS="$ARGS --curriculum=${{ inputs.curriculum }}"

@@ -1114,6 +1114,19 @@ CREATE TABLE public.plan_sparring_shadow_log (
 
 ## ⚠️ DEPRECATED / DO NOT USE
 
+### nav_catalog / nav_catalog_audit / nav_catalog_i18n — ARCHIVED to `legacy_archive` (VTID-04880)
+
+The legacy voice navigator's screen catalog. Nothing reads or writes these
+any more: the voice navigator reads the screen registry (vitana-v1
+`src/navigation/registry/`, published as `/nav-registry.json`) since
+VTID-04846, and the admin Catalog/Coverage/History pages were removed in
+VTID-04853. Migration `20261005090000_vtid_04880_archive_nav_catalog.sql`
+moves all three tables and their trigger function
+`nav_catalog_touch_updated_at()` into the `legacy_archive` schema. No rows are
+deleted; PostgREST no longer exposes them. The `nav_catalog_i18n.lang` FK to
+`supported_locales` is dropped so archived rows never block removing a locale.
+The rollback is in the migration header. Do not build anything new on them.
+
 ### VtidLedger (PascalCase)
 **Status:** ❌ DO NOT USE - Empty table, deprecated  
 **Reason:** Naming convention mismatch. Use `vtid_ledger` instead.

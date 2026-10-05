@@ -5,7 +5,14 @@
 
 ---
 
-## The two surfaces
+## The surfaces
+
+> **VTID-04880:** `nav_catalog_i18n` is no longer a surface. The voice navigator
+> reads the screen registry (vitana-v1 `src/navigation/registry/`, per-locale
+> titles checked by that repo's `npm test` and `i18n:gate`), and the table was
+> archived into `legacy_archive`. The rest of this page describes the pipeline as
+> built; only `journey_checklist_translations` is still seeded.
+
 
 Most user-visible strings come from `vitana-v1/src/i18n/<locale>/**` and are
 covered by that repo's ESLint rules, audit script and parity gate. Two are not:

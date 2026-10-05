@@ -1,4 +1,6 @@
 -- RLS enablement (idempotent as-is)
+-- VTID-04880: nav_catalog* statements below are guarded with to_regclass -- those
+-- tables were archived to legacy_archive in Supabase and may be absent.
 ALTER TABLE public."OasisEvent" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.access_audit_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.account_deletion_requests ENABLE ROW LEVEL SECURITY;
@@ -321,9 +323,9 @@ ALTER TABLE public.monetization_cooldowns ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.monetization_signals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.mood_pattern_aggregates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.music_metadata ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.nav_catalog ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.nav_catalog_audit ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.nav_catalog_i18n ENABLE ROW LEVEL SECURITY;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE public.nav_catalog ENABLE ROW LEVEL SECURITY$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_audit') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE public.nav_catalog_audit ENABLE ROW LEVEL SECURITY$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_i18n') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE public.nav_catalog_i18n ENABLE ROW LEVEL SECURITY$SQL04880$; END IF; END $NAV04880$;
 ALTER TABLE public.news_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.normalized_event ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notification_categories ENABLE ROW LEVEL SECURITY;

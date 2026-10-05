@@ -3,12 +3,14 @@
 // NO LANGUAGE LEFT BEHIND, for the content that does not live in git.
 //
 // `src/i18n/**` propagation is driven by push events: edit the German shard,
-// I18N-PROPAGATE runs, every other language follows. Two user-visible surfaces
-// have no push event to hang that on, because they are edited in the admin UI
-// and published straight to the database:
+// I18N-PROPAGATE runs, every other language follows. One user-visible surface
+// has no push event to hang that on, because it is edited in the admin UI and
+// published straight to the database:
 //
 //   * the Guided Journey curriculum  (journey_checklist_translations, 254 topics)
-//   * the Navigator catalog          (nav_catalog_i18n)
+//
+// (The Navigator catalog, nav_catalog_i18n, was the second until VTID-04880
+// retired it with the legacy voice navigator.)
 //
 // I18N-DB-SEED.yml already subscribes to `repository_dispatch: db-i18n-source-changed`
 // and to a nightly cron. Until this module existed, only the cron ever fired, so
@@ -28,7 +30,7 @@
 //    bounded (the cron still catches it), which is exactly why this can afford
 //    to be fire-and-forget in the first place.
 //
-// 3. Rapid edits must COALESCE. An admin fixing twenty Navigator entries fires
+// 3. Rapid edits must COALESCE. An admin fixing twenty curriculum topics fires
 //    twenty writes. Twenty dispatches would be twenty workflow runs; the seeder
 //    itself is cheap on a no-op (only units whose source_sha moved are
 //    re-translated) but the Actions minutes are not free, and the runs would
@@ -48,7 +50,7 @@ export const DB_I18N_EVENT_TYPE = 'db-i18n-source-changed';
 /** Coalesce burst edits into one dispatch. */
 const WINDOW_MS = 30_000;
 
-export type DbI18nSurface = 'journey-checklist' | 'nav-catalog';
+export type DbI18nSurface = 'journey-checklist';
 
 export interface NotifyResult {
   /** Whether a dispatch was actually sent to GitHub. */

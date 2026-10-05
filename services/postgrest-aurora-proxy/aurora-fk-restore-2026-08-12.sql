@@ -1,4 +1,6 @@
 -- FK constraints dropped from Aurora public schema on 2026-08-12 to unblock DMS full-load
+-- VTID-04880: nav_catalog* statements below are guarded with to_regclass -- those
+-- tables were archived to legacy_archive in Supabase and may be absent.
 -- table-prep (TRUNCATE/DROP kept failing with "other objects depend on it" across 245 FKs).
 -- Restore these ONLY once Aurora has real write traffic that needs referential integrity
 -- enforced locally -- until then Supabase (the DMS source) is the integrity-enforcing system.
@@ -134,7 +136,7 @@ ALTER TABLE messages ADD CONSTRAINT messages_parent_message_id_fkey FOREIGN KEY 
 ALTER TABLE messages ADD CONSTRAINT messages_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE;
 ALTER TABLE messages ADD CONSTRAINT messages_thread_id_fkey FOREIGN KEY (thread_id) REFERENCES message_threads(id);
 ALTER TABLE music_metadata ADD CONSTRAINT music_metadata_media_id_fkey FOREIGN KEY (media_id) REFERENCES media_uploads(id) ON DELETE CASCADE;
-ALTER TABLE nav_catalog_i18n ADD CONSTRAINT nav_catalog_i18n_catalog_id_fkey FOREIGN KEY (catalog_id) REFERENCES nav_catalog(id) ON DELETE CASCADE;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_i18n') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE nav_catalog_i18n ADD CONSTRAINT nav_catalog_i18n_catalog_id_fkey FOREIGN KEY (catalog_id) REFERENCES nav_catalog(id) ON DELETE CASCADE$SQL04880$; END IF; END $NAV04880$;
 ALTER TABLE oasis_spec_approvals ADD CONSTRAINT oasis_spec_approvals_spec_id_fkey FOREIGN KEY (spec_id) REFERENCES oasis_specs(id) ON DELETE CASCADE;
 ALTER TABLE oasis_spec_validations ADD CONSTRAINT oasis_spec_validations_spec_id_fkey FOREIGN KEY (spec_id) REFERENCES oasis_specs(id) ON DELETE CASCADE;
 ALTER TABLE onboarding_invitations ADD CONSTRAINT onboarding_invitations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id);

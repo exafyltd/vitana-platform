@@ -25,11 +25,7 @@ const count = (text: string, needle: string | RegExp): number =>
 describe('VTID-04653 fixed voice rules, stated once', () => {
   let text = '';
   beforeAll(() => {
-    process.env.NAV_V2_ENABLED = 'true'; // the navigator production runs
     text = instruction();
-  });
-  afterAll(() => {
-    delete process.env.NAV_V2_ENABLED;
   });
 
   it('keeps the how-to vs. hand-off rule in TOOLS, with one short copy in the persona block', () => {

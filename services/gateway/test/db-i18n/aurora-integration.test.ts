@@ -49,7 +49,6 @@ const readOnlyEnv = { ...writeEnv, AURORA_I18N_WRITES: '' } as NodeJS.ProcessEnv
 
 describeIfDb('AuroraDbI18nRepository against a live PostgreSQL', () => {
   let repo: DbI18nRepository & { ensureSchema(): Promise<void> };
-  const catalogId = randomUUID();
   const versionId = randomUUID();
 
   beforeAll(async () => {
@@ -59,10 +58,8 @@ describeIfDb('AuroraDbI18nRepository against a live PostgreSQL', () => {
 
     // Platform tables the SOURCE reads need. `ensureSchema` deliberately does
     // not create these — they are owned by the wider migration, and a stub
-    // would produce an empty catalog that looks real.
+    // would produce an empty curriculum that looks real.
     await withAuroraClient(async (c) => {
-      await c.query(`CREATE TABLE IF NOT EXISTS public.nav_catalog (
-        id uuid PRIMARY KEY, screen_id text NOT NULL, is_active boolean NOT NULL DEFAULT true)`);
       await c.query(`CREATE TABLE IF NOT EXISTS public.journey_checklist_versions (
         id uuid PRIMARY KEY, curriculum_version text NOT NULL,
         is_current boolean NOT NULL DEFAULT false, snapshot jsonb)`);
@@ -70,11 +67,6 @@ describeIfDb('AuroraDbI18nRepository against a live PostgreSQL', () => {
         `INSERT INTO public.supported_locales (code, english_name, status)
          VALUES ('de','German','ga'),('en','English','ga'),('fr','French','ga')
          ON CONFLICT (code) DO NOTHING`,
-      );
-      await c.query(
-        `INSERT INTO public.nav_catalog (id, screen_id) VALUES ($1,'PUBLIC.LANDING')
-         ON CONFLICT (id) DO NOTHING`,
-        [catalogId],
       );
     }, writeEnv);
   }, 60_000);
@@ -173,73 +165,61 @@ describeIfDb('AuroraDbI18nRepository against a live PostgreSQL', () => {
     });
   });
 
-  it('upserts nav rows and is idempotent on the natural key', async () => {
-    const rows = [
-      {
-        catalog_id: catalogId, lang: 'fr', title: 'Accueil',
-        description: 'La page d entree', when_to_visit: 'retour au debut',
-        source_sha: 'sha-v1',
-      },
-    ];
-    expect(await repo.upsertNavCatalogI18n(rows)).toBe(1);
-    expect(await repo.upsertNavCatalogI18n(rows)).toBe(1);
+  const chk = (topic_id: string, display_label: string, source_sha: string | null = null) => ({
+    topic_id, locale: 'fr', display_label, short_description: null,
+    explanation_what_it_is: null, explanation_user_benefit: null,
+    explanation_when_to_use: null, explanation_try_this: null, source_sha,
+  });
 
-    const cov = await repo.navCatalogCoverage('fr');
+  it('upserts checklist rows and is idempotent on the natural key', async () => {
+    const rows = [chk('IDEM', 'Accueil', 'sha-v1')];
+    expect(await repo.upsertChecklistTranslations(rows)).toBe(1);
+    expect(await repo.upsertChecklistTranslations(rows)).toBe(1);
+
+    const cov = await repo.checklistCoverage('fr');
     // Two identical upserts must leave ONE row, not two — proof the conflict
     // target actually matches the primary key.
-    expect(cov.filter((c) => c.key === catalogId)).toHaveLength(1);
-    expect(cov.find((c) => c.key === catalogId)?.source_sha).toBe('sha-v1');
+    expect(cov.filter((c) => c.key === 'IDEM')).toHaveLength(1);
+    expect(cov.find((c) => c.key === 'IDEM')?.source_sha).toBe('sha-v1');
   });
 
   it('ON CONFLICT updates content and re-stamps, rather than ignoring', async () => {
-    await repo.upsertNavCatalogI18n([
-      {
-        catalog_id: catalogId, lang: 'fr', title: 'Accueil v2',
-        description: 'd2', when_to_visit: 'w2', source_sha: 'sha-v2',
-      },
-    ]);
-    const cov = await repo.navCatalogCoverage('fr');
-    expect(cov.find((c) => c.key === catalogId)?.source_sha).toBe('sha-v2');
+    await repo.upsertChecklistTranslations([chk('IDEM', 'Accueil v2', 'sha-v2')]);
+    const cov = await repo.checklistCoverage('fr');
+    expect(cov.find((c) => c.key === 'IDEM')?.source_sha).toBe('sha-v2');
     const [row] = await withAuroraClient(
       async (c) =>
-        (await c.query('SELECT title FROM public.nav_catalog_i18n WHERE catalog_id=$1 AND lang=$2',
-          [catalogId, 'fr'])).rows,
+        (await c.query('SELECT display_label FROM public.journey_checklist_translations WHERE topic_id=$1 AND locale=$2',
+          ['IDEM', 'fr'])).rows,
       writeEnv,
     );
-    expect((row as { title: string }).title).toBe('Accueil v2');
+    expect((row as { display_label: string }).display_label).toBe('Accueil v2');
   });
 
   it('binds a multi-row batch column-for-column', async () => {
     // A transposed array binding still inserts N rows and still "succeeds" —
     // the only way to catch it is to read the values back per key.
-    const ids = [randomUUID(), randomUUID(), randomUUID()];
-    await withAuroraClient(async (c) => {
-      for (const [i, id] of ids.entries()) {
-        await c.query(`INSERT INTO public.nav_catalog (id, screen_id) VALUES ($1,$2)`, [id, `S${i}`]);
-      }
-    }, writeEnv);
-    await repo.upsertNavCatalogI18n(
-      ids.map((id, i) => ({
-        catalog_id: id, lang: 'fr', title: `T${i}`, description: `D${i}`,
-        when_to_visit: `W${i}`, source_sha: `SHA${i}`,
-      })),
+    const ids = ['B0', 'B1', 'B2'];
+    await repo.upsertChecklistTranslations(
+      ids.map((id, i) => ({ ...chk(id, `T${i}`, `SHA${i}`), short_description: `D${i}`, explanation_try_this: `W${i}` })),
     );
     const rows = await withAuroraClient(
       async (c) =>
         (await c.query(
-          `SELECT catalog_id::text, title, description, when_to_visit, source_sha
-             FROM public.nav_catalog_i18n WHERE catalog_id = ANY($1::uuid[]) ORDER BY title`,
+          `SELECT topic_id, display_label, short_description, explanation_try_this, source_sha
+             FROM public.journey_checklist_translations
+            WHERE locale = 'fr' AND topic_id = ANY($1::text[]) ORDER BY display_label`,
           [ids],
-        )).rows as { catalog_id: string; title: string; description: string; when_to_visit: string; source_sha: string }[],
+        )).rows as { topic_id: string; display_label: string; short_description: string; explanation_try_this: string; source_sha: string }[],
       writeEnv,
     );
     expect(rows).toHaveLength(3);
     rows.forEach((r, i) => {
-      expect(r.title).toBe(`T${i}`);
-      expect(r.description).toBe(`D${i}`);
-      expect(r.when_to_visit).toBe(`W${i}`);
+      expect(r.display_label).toBe(`T${i}`);
+      expect(r.short_description).toBe(`D${i}`);
+      expect(r.explanation_try_this).toBe(`W${i}`);
       expect(r.source_sha).toBe(`SHA${i}`);
-      expect(r.catalog_id).toBe(ids[i]);
+      expect(r.topic_id).toBe(ids[i]);
     });
   });
 
@@ -297,55 +277,6 @@ describeIfDb('AuroraDbI18nRepository against a live PostgreSQL', () => {
     expect(row.source_sha).toBeNull();
   });
 
-  describe('navCatalogSource prefers German over English', () => {
-    it('uses the de row when both exist', async () => {
-      await repo.upsertNavCatalogI18n([
-        { catalog_id: catalogId, lang: 'de', title: 'Startseite', description: 'DE-d', when_to_visit: 'DE-w' },
-        { catalog_id: catalogId, lang: 'en', title: 'Landing', description: 'EN-d', when_to_visit: 'EN-w' },
-      ]);
-      const units = await repo.navCatalogSource();
-      const u = units.find((x) => x.key === catalogId);
-      expect(u?.fields.title).toBe('Startseite');
-      expect(u?.meta?.source_lang).toBe('de');
-    });
-
-    it('falls back to en when there is no de row, and says so', async () => {
-      const enOnly = randomUUID();
-      await withAuroraClient(
-        async (c) => { await c.query(`INSERT INTO public.nav_catalog (id, screen_id) VALUES ($1,'EN.ONLY')`, [enOnly]); },
-        writeEnv,
-      );
-      await repo.upsertNavCatalogI18n([
-        { catalog_id: enOnly, lang: 'en', title: 'English Only', description: '', when_to_visit: '' },
-      ]);
-      const u = (await repo.navCatalogSource()).find((x) => x.key === enOnly);
-      expect(u?.fields.title).toBe('English Only');
-      // Reported, not hidden: translating from an English pivot is a quality
-      // caveat the audit needs to be able to count.
-      expect(u?.meta?.source_lang).toBe('en');
-    });
-
-    it('omits an entry with no source text at all', async () => {
-      const bare = randomUUID();
-      await withAuroraClient(
-        async (c) => { await c.query(`INSERT INTO public.nav_catalog (id, screen_id) VALUES ($1,'BARE')`, [bare]); },
-        writeEnv,
-      );
-      expect((await repo.navCatalogSource()).find((x) => x.key === bare)).toBeUndefined();
-    });
-
-    it('excludes inactive catalog entries', async () => {
-      const dead = randomUUID();
-      await withAuroraClient(async (c) => {
-        await c.query(`INSERT INTO public.nav_catalog (id, screen_id, is_active) VALUES ($1,'DEAD',false)`, [dead]);
-      }, writeEnv);
-      await repo.upsertNavCatalogI18n([
-        { catalog_id: dead, lang: 'de', title: 'Tot', description: '', when_to_visit: '' },
-      ]);
-      expect((await repo.navCatalogSource()).find((x) => x.key === dead)).toBeUndefined();
-    });
-  });
-
   describe('checklistSource reads the published snapshot', () => {
     beforeAll(async () => {
       await withAuroraClient(async (c) => {
@@ -397,13 +328,11 @@ describeIfDb('AuroraDbI18nRepository against a live PostgreSQL', () => {
     __resetAuroraPoolForTests();
     const ro = createDbI18nRepository(null, readOnlyEnv);
     await expect(
-      ro.upsertNavCatalogI18n([
-        { catalog_id: catalogId, lang: 'fr', title: 'nope', description: '', when_to_visit: '' },
-      ]),
+      ro.upsertChecklistTranslations([chk('RO', 'nope')]),
     ).rejects.toThrow(/AURORA_I18N_WRITES is not 'enabled'/);
 
     // ...and the read path still works on the same connection settings.
-    await expect(ro.navCatalogCoverage('fr')).resolves.toEqual(expect.any(Array));
+    await expect(ro.checklistCoverage('fr')).resolves.toEqual(expect.any(Array));
     __resetAuroraPoolForTests();
   });
 

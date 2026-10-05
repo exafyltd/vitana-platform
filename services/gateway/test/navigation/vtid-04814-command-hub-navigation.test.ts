@@ -132,8 +132,6 @@ beforeAll(async () => {
   f = await loadRegistryFixture();
   __setNavServiceForTests({ index: f.index, embedder: f.embedder });
 });
-beforeEach(() => { process.env.NAV_V2_ENABLED = 'true'; });
-afterAll(() => { delete process.env.NAV_V2_ENABLED; });
 
 describe('the Command Hub screen list matches the Command Hub', () => {
   const screens = loadCommandHubScreens();

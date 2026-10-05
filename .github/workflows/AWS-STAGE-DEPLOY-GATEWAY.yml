@@ -786,10 +786,11 @@ jobs:
 # VTID-04226 EventBridge test-contract crons send as X-Gateway-Internal).
 # None of the three is added to AWS-PROD-DEPLOY-GATEWAY.yml here.
 #
-# VTID-04517 -- NAV_V2_ENABLED=true + NAV_REGISTRY_URL, STAGING ONLY: voice
-# navigation answered by the screen registry the frontend publishes
-# (/nav-registry.json on the staging frontend). Falls back to the legacy
-# navigator when the registry resolver cannot run. Rollback: "false".
+# VTID-04517 -- NAV_REGISTRY_URL: voice navigation is answered by the screen
+# registry the frontend publishes (/nav-registry.json on the staging frontend).
+# VTID-04880: NAV_V2_ENABLED is no longer set -- the legacy navigator is gone
+# and no code reads the flag. It stays in the strip list so the next deploy
+# removes it from the task definition.
 #
 # VTID-04727 -- LEDGER_WRITE_AUTH_MODE=enforce, STAGING ONLY: the VTID
 # ledger's write routes require GATEWAY_SERVICE_TOKEN or an exafy_admin JWT.
@@ -1061,7 +1062,7 @@ jobs:
                           {name:"ORB_DAY_CLOSE_RUNG_ENABLED", value:"true"},
                           {name:"ORB_LOG_NOVA_INSTRUCTION_DEBUG", value:"true"},
                           {name:"NAV_CONTINUATION_BIND", value:"true"},
-                          {name:"NAV_V2_ENABLED", value:"true"}, {name:"NAV_REGISTRY_URL", value:"https://preview-aws.vitanaland.com/nav-registry.json"},
+                          {name:"NAV_REGISTRY_URL", value:"https://preview-aws.vitanaland.com/nav-registry.json"},
                           {name:"VITANA_ENV", value:"staging"},
                           {name:"GATEWAY_URL", value:"https://preview-aws-gateway.vitanaland.com"},
                           {name:"AUTOMATIONS_DELIVERY_MODE", value:"shadow"},

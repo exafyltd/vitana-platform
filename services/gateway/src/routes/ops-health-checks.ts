@@ -66,7 +66,6 @@ export interface VitalSystems {
   llm_vertex_completions_24h?: number;
   locales_ga?: number;
   journey_checklist_incomplete_ga_locales?: unknown[];
-  nav_catalog_incomplete_ga_locales?: unknown[];
   notif_test_actor_guard_present?: boolean;
   notif_test_actor_trigger_enabled?: boolean;
 }
@@ -102,12 +101,15 @@ export function evalGoogleFallback(v: VitalSystems): OpsCheck {
     : { status: 'degraded', reason: 'llm_served_by_google', vertex_completions_24h: n };
 }
 
+// VTID-04880: judged on the Guided Journey curriculum only. The Navigator
+// catalog (nav_catalog_i18n) was retired with the legacy voice navigator — the
+// screen registry's per-locale titles are checked by the vitana-v1 build — so
+// its coverage is no longer a reason to call a locale degraded.
 export function evalLocaleCoverage(v: VitalSystems): OpsCheck {
   const journey = v.journey_checklist_incomplete_ga_locales ?? [];
-  const nav = v.nav_catalog_incomplete_ga_locales ?? [];
-  return journey.length === 0 && nav.length === 0
+  return journey.length === 0
     ? { status: 'ok', ga_locales: v.locales_ga ?? null }
-    : { status: 'degraded', reason: 'incomplete_ga_locale', journey_incomplete: journey, nav_incomplete: nav };
+    : { status: 'degraded', reason: 'incomplete_ga_locale', journey_incomplete: journey };
 }
 
 export function evalTestActorGuard(v: VitalSystems): OpsCheck {

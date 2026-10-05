@@ -3,10 +3,12 @@
  *
  * WHY THIS EXISTS
  * ---------------
- * Two tables hold user-visible text that never passes through `src/i18n/`:
- * `nav_catalog_i18n` (Navigator screen titles/descriptions) and
- * `journey_checklist_translations` (My Journey curriculum). Seeding them for a
- * new language is the last manual step in adding a locale.
+ * User-visible text that never passes through `src/i18n/` lives in
+ * `journey_checklist_translations` (My Journey curriculum). Seeding it for a
+ * new language is the last manual step in adding a locale. (The Navigator
+ * catalog's `nav_catalog_i18n` was the second surface until VTID-04880: the
+ * voice navigator now reads the screen registry, which carries its own
+ * per-locale titles, and the table was archived.)
  *
  * The obvious implementation — a script that calls `supabase.from().upsert()` —
  * would be a fourth thing to rewrite at the Aurora cutover, on top of the 2,480
@@ -113,16 +115,6 @@ export const AURORA_READINESS_NOTE = [
 // Row shapes — mirror the DB columns exactly (snake_case), no mapping layer.
 // -----------------------------------------------------------------------------
 
-export interface NavCatalogI18nRow {
-  catalog_id: string;
-  lang: string;
-  title: string;
-  description: string;
-  when_to_visit: string;
-  /** VTID-03515 — hash of the source text this was translated from. */
-  source_sha?: string | null;
-}
-
 export interface ChecklistTranslationRow {
   topic_id: string;
   locale: string;
@@ -153,9 +145,9 @@ export interface CoverageEntry {
 /**
  * One unit of translatable source content, surface-agnostic.
  *
- * `key` is the natural key within its surface (a nav `catalog_id`, a checklist
- * `topic_id`). `fields` maps DB column → source text. Keeping this generic is
- * what lets one pipeline serve both surfaces and any third one added later.
+ * `key` is the natural key within its surface (a checklist `topic_id`).
+ * `fields` maps DB column → source text. Keeping this generic is what lets
+ * one pipeline serve any surface added later.
  */
 export interface SourceUnit {
   key: string;
@@ -167,19 +159,15 @@ export interface SourceUnit {
 export interface DbI18nRepository {
   readonly target: DbI18nTarget;
   listSupportedLocales(): Promise<SupportedLocaleRow[]>;
-  upsertNavCatalogI18n(rows: NavCatalogI18nRow[]): Promise<number>;
   upsertChecklistTranslations(rows: ChecklistTranslationRow[]): Promise<number>;
-  navCatalogCoverage(lang: string): Promise<CoverageEntry[]>;
   checklistCoverage(locale: string): Promise<CoverageEntry[]>;
-  /** German source rows for the Navigator catalog (active entries only). */
-  navCatalogSource(): Promise<SourceUnit[]>;
   /** German source rows from the CURRENT PUBLISHED curriculum snapshot. */
   checklistSource(curriculumVersion: string): Promise<SourceUnit[]>;
 }
 
 /**
- * Upserts are chunked. PostgREST rejects very large request bodies, and a
- * 291-row nav catalog times 8 locales is well past a comfortable single
+ * Upserts are chunked. PostgREST rejects very large request bodies, and 254
+ * curriculum topics times 8 locales is well past a comfortable single
  * statement. 200 keeps each request small enough to retry cheaply.
  */
 const CHUNK = 200;
@@ -241,18 +229,6 @@ class SupabaseDbI18nRepository implements DbI18nRepository {
     return (data ?? []) as SupportedLocaleRow[];
   }
 
-  async upsertNavCatalogI18n(rows: NavCatalogI18nRow[]): Promise<number> {
-    let written = 0;
-    for (const batch of chunked(rows)) {
-      const { error } = await this.client
-        .from('nav_catalog_i18n')
-        .upsert(batch, { onConflict: 'catalog_id,lang' });
-      if (error) throw new DbI18nRepositoryError(error.message, 'upsertNavCatalogI18n');
-      written += batch.length;
-    }
-    return written;
-  }
-
   async upsertChecklistTranslations(rows: ChecklistTranslationRow[]): Promise<number> {
     let written = 0;
     for (const batch of chunked(rows)) {
@@ -265,18 +241,6 @@ class SupabaseDbI18nRepository implements DbI18nRepository {
     return written;
   }
 
-  async navCatalogCoverage(lang: string): Promise<CoverageEntry[]> {
-    const { data, error } = await this.client
-      .from('nav_catalog_i18n')
-      .select('catalog_id, source_sha')
-      .eq('lang', lang);
-    if (error) throw new DbI18nRepositoryError(error.message, 'navCatalogCoverage');
-    return (data ?? []).map((r: { catalog_id: string; source_sha: string | null }) => ({
-      key: r.catalog_id,
-      source_sha: r.source_sha ?? null,
-    }));
-  }
-
   async checklistCoverage(locale: string): Promise<CoverageEntry[]> {
     const { data, error } = await this.client
       .from('journey_checklist_translations')
@@ -287,49 +251,6 @@ class SupabaseDbI18nRepository implements DbI18nRepository {
       key: r.topic_id,
       source_sha: r.source_sha ?? null,
     }));
-  }
-
-  async navCatalogSource(): Promise<SourceUnit[]> {
-    const { data: cat, error: catErr } = await this.client
-      .from('nav_catalog')
-      .select('id, screen_id')
-      .eq('is_active', true);
-    if (catErr) throw new DbI18nRepositoryError(catErr.message, 'navCatalogSource:catalog');
-    const active = (cat ?? []) as { id: string; screen_id: string }[];
-    if (active.length === 0) return [];
-
-    // German is the source of truth. English is read too — solely as a fallback
-    // for entries added through the admin UI in English with no German row yet.
-    // Translating those from English is a pivot, not ideal, but it is strictly
-    // better than emitting an empty title, and the audit reports the count.
-    const { data: i18n, error: i18nErr } = await this.client
-      .from('nav_catalog_i18n')
-      .select('catalog_id, lang, title, description, when_to_visit')
-      .in('lang', ['de', 'en']);
-    if (i18nErr) throw new DbI18nRepositoryError(i18nErr.message, 'navCatalogSource:i18n');
-
-    const byId = new Map<string, Record<string, NavCatalogI18nRow>>();
-    for (const r of (i18n ?? []) as NavCatalogI18nRow[]) {
-      if (!byId.has(r.catalog_id)) byId.set(r.catalog_id, {});
-      byId.get(r.catalog_id)![r.lang] = r;
-    }
-
-    const out: SourceUnit[] = [];
-    for (const entry of active) {
-      const langs = byId.get(entry.id);
-      const src = langs?.de ?? langs?.en;
-      if (!src) continue; // no source text at all — nothing to translate from
-      out.push({
-        key: entry.id,
-        fields: {
-          title: src.title ?? '',
-          description: src.description ?? '',
-          when_to_visit: src.when_to_visit ?? '',
-        },
-        meta: { screen_id: entry.screen_id, source_lang: langs?.de ? 'de' : 'en' },
-      });
-    }
-    return out;
   }
 
   async checklistSource(curriculumVersion: string): Promise<SourceUnit[]> {
@@ -438,42 +359,6 @@ class AuroraDbI18nRepository implements DbI18nRepository {
     return rows.length;
   }
 
-  /**
-   * One statement per batch via `unnest`, not one per row. 291 nav entries x 8
-   * locales is 2,328 round trips otherwise, and a partially-applied locale is
-   * exactly the half-written state the pipeline is built to avoid.
-   */
-  async upsertNavCatalogI18n(rows: NavCatalogI18nRow[]): Promise<number> {
-    assertAuroraWritesAllowed('upsert nav_catalog_i18n', this.env);
-    let written = 0;
-    for (const batch of chunked(rows)) {
-      await this.query(
-        'upsertNavCatalogI18n',
-        `INSERT INTO public.nav_catalog_i18n
-           (catalog_id, lang, title, description, when_to_visit, source_sha, updated_at)
-         SELECT t.*, now() FROM unnest(
-           $1::uuid[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[]
-         ) AS t(catalog_id, lang, title, description, when_to_visit, source_sha)
-         ON CONFLICT (catalog_id, lang) DO UPDATE SET
-           title         = EXCLUDED.title,
-           description   = EXCLUDED.description,
-           when_to_visit = EXCLUDED.when_to_visit,
-           source_sha    = EXCLUDED.source_sha,
-           updated_at    = now()`,
-        [
-          batch.map((r) => r.catalog_id),
-          batch.map((r) => r.lang),
-          batch.map((r) => r.title),
-          batch.map((r) => r.description),
-          batch.map((r) => r.when_to_visit),
-          batch.map((r) => r.source_sha ?? null),
-        ],
-      );
-      written += batch.length;
-    }
-    return written;
-  }
-
   async upsertChecklistTranslations(rows: ChecklistTranslationRow[]): Promise<number> {
     assertAuroraWritesAllowed('upsert journey_checklist_translations', this.env);
     let written = 0;
@@ -522,16 +407,6 @@ class AuroraDbI18nRepository implements DbI18nRepository {
     return written;
   }
 
-  async navCatalogCoverage(lang: string): Promise<CoverageEntry[]> {
-    const rows = await this.query<{ catalog_id: string; source_sha: string | null }>(
-      'navCatalogCoverage',
-      `SELECT catalog_id::text AS catalog_id, source_sha
-         FROM public.nav_catalog_i18n WHERE lang = $1`,
-      [lang],
-    );
-    return rows.map((r) => ({ key: r.catalog_id, source_sha: r.source_sha ?? null }));
-  }
-
   async checklistCoverage(locale: string): Promise<CoverageEntry[]> {
     const rows = await this.query<{ topic_id: string; source_sha: string | null }>(
       'checklistCoverage',
@@ -540,41 +415,6 @@ class AuroraDbI18nRepository implements DbI18nRepository {
       [locale],
     );
     return rows.map((r) => ({ key: r.topic_id, source_sha: r.source_sha ?? null }));
-  }
-
-  async navCatalogSource(): Promise<SourceUnit[]> {
-    // COALESCE picks German, falling back to English only where no German row
-    // exists — same rule as the Supabase adapter, expressed as a join so it is
-    // one query rather than two plus a merge.
-    const rows = await this.query<{
-      catalog_id: string;
-      screen_id: string;
-      source_lang: string;
-      title: string;
-      description: string;
-      when_to_visit: string;
-    }>(
-      'navCatalogSource',
-      `SELECT c.id::text        AS catalog_id,
-              c.screen_id,
-              COALESCE(de.lang, en.lang)                   AS source_lang,
-              COALESCE(de.title, en.title, '')             AS title,
-              COALESCE(de.description, en.description, '') AS description,
-              COALESCE(de.when_to_visit, en.when_to_visit, '') AS when_to_visit
-         FROM public.nav_catalog c
-         LEFT JOIN public.nav_catalog_i18n de ON de.catalog_id = c.id AND de.lang = 'de'
-         LEFT JOIN public.nav_catalog_i18n en ON en.catalog_id = c.id AND en.lang = 'en'
-        WHERE c.is_active AND (de.catalog_id IS NOT NULL OR en.catalog_id IS NOT NULL)`,
-    );
-    return rows.map((r) => ({
-      key: r.catalog_id,
-      fields: {
-        title: r.title,
-        description: r.description,
-        when_to_visit: r.when_to_visit,
-      },
-      meta: { screen_id: r.screen_id, source_lang: r.source_lang },
-    }));
   }
 
   async checklistSource(curriculumVersion: string): Promise<SourceUnit[]> {

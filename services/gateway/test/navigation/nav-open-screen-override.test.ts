@@ -17,12 +17,8 @@ function instruction(): string {
 }
 
 describe('VTID-04607 open-screen override', () => {
-  afterEach(() => {
-    delete process.env.NAV_V2_ENABLED;
-  });
 
   it('follows the end-conversation override when the registry navigator is on', () => {
-    process.env.NAV_V2_ENABLED = 'true';
     const text = instruction();
     const end = text.indexOf('ENDING THE CONVERSATION — OVERRIDES RULE 0');
     const open = text.indexOf(OPEN_SCREEN_OVERRIDE);
