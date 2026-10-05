@@ -1,7 +1,16 @@
-# Vitana Onboarding Assistant (VOA) — Plan v1
+# Vitana Onboarding Assistant (VOA) — Plan v3
 
-Status: DRAFT for owner review · updated 2026-10-01 · VTID: VTID-04744
-Repos: `vitana-platform` (engine, ORB, notifications) + `vitana-v1` (Home card, permission priming, i18n)
+Status: v3 FINAL — sparred (3 rounds, CONVERGED) · awaiting owner approval · 2026-10-05 · plan document VTID-04744 (each build slice gets its own VTID after owner approval, Plan Sparring Gate)
+Repos: `vitana-platform` (coach engine, ORB, notifications, coach tables) + `vitana-v1` (Home card, permission priming, i18n, `profile_posts` migration)
+
+## 0. What changed since v1 (2026-10-01 → 2026-10-05)
+
+- **Audiobook is merged** (VTID-04760…04763: app `b230482` #1192, platform `b1116c0b` #3836). VOA now builds on it, not around a pending branch (§9.1).
+- **VTNA reward rules are live** (VTID-04864/04878): one rule table `services/gateway/src/services/rewards/vtna-reward-rules.ts`; done-by-Vitana never earns VTNA (`VTNA_NEVER_EARNS`); invite reward 1,000 VTNA per friend (cap 10 / 30 days) plus a one-time 10,000 at 10 friends; `onboarding_complete` pays **at signup** (owner decision, VTID-04878). Former R-1 is decided.
+- **Milestones already exist**: `milestone-service.ts` (VTID-01250) detects profile_complete, first_diary, first_group, first_event_rsvp, first_connection, first_referral and more, emits `user.milestone.reached` and is the VTNA payer. VOA extends it instead of building its own (§4.3).
+- Founding 1000 (VTID-04859) seats new members with a celebration modal at signup — VOA's day-0 must not collide with it (§4.4).
+- Scheduled-notification routes require the internal token (VTID-04677, `requireScheduledNotificationsAuth`).
+- What's New has entries (`src/whats-new/entries/`, 5 today); VOA adds its own when a member-visible slice ships.
 
 ## 1. Problem
 
@@ -14,68 +23,78 @@ Goal: for the first 90 days, a proactive, tenure-aware assistant that (a) teache
 talk to Vitana within day 0–1, (c) does the socially scary steps *for* the member, with consent, and (d) never
 nags. Established members are untouched.
 
-## 2. What already exists (research findings)
+## 2. What already exists (verified against main 2026-10-05)
 
 Most parts are built. What's missing is an **owner that decides "what's the next best step for this member today"**
 and drives every channel from that one decision.
 
 | Building block | Where | State |
 |---|---|---|
-| Tenure model day0…day180plus, `active_usage_days` | `gateway/services/guide/journey-experience.ts`, `types.ts` | live, unused for onboarding |
-| First-time-welcome ORB rung (prio 95, fires once) | `assistant-continuation/providers/first-time-welcome/` | live; depends on lazily-created `user_journey` row |
-| Journey guide / guided-topic narration providers | `assistant-continuation/providers/journey-guide.ts`, `guided-topic-narration.ts` | live |
-| 254 topics / 94 sessions (T001–T254); T251–T254 = opening onboarding sessions | `journey_checklist_topics`, `routes/journey-checklist.ts`, tool `narrate_guided_session` | live (German scripts, translated en/es/sr) |
-| Guided vs Full mode, `onboarding_status` | `user_guided_journey_state`, `routes/guided-journey.ts`; FE `GuidedModeProvider` (mobile only) | live |
-| Journey Foundation steps (life compass, diary, index, calendar…) | `services/journey-foundation/`, `user_journey_foundation` | live |
+| Tenure model day0…day180plus, `active_usage_days` | `services/guide/journey-experience.ts`, `types.ts` | live, unused for onboarding |
+| First-time-welcome ORB rung (prio 95, fires once) | `assistant-continuation/providers/first-time-welcome/` (now points at Audiobook Episode 1) | live; depends on lazily-created `user_journey` row (`ensureUserJourneyRow` only from the live session) |
+| Greeting decision | `services/conversation/compute-greeting-decision.ts` (+ references in `orb-live.ts`) | live; covered by `test:roles` (rule 42h) |
+| Audiobook (Season 0 T255–T260, 1 episode/day, opt-in daily reminder via `reminder_due`, `/analytics/audiobook`) | merged VTID-04760…04763 | live |
+| Milestones + `user.milestone.reached` + VTNA payout | `services/milestone-service.ts`, `rewards/vtna-reward-rules.ts` | live — VOA extends these |
+| Guided vs Full mode, `onboarding_status` | `user_guided_journey_state`, `routes/guided-journey.ts` | live |
+| Journey Foundation steps | `services/journey-foundation/`, `user_journey_foundation` | live |
 | 8-row `onboarding_*` Autopilot seed on signup | trigger `seed_onboarding_autopilot_on_primary_membership` | live; old rows carry "Maxina" copy |
-| Welcome-chat DM fan-out (DB trigger) | `fire_welcome_chat_on_membership()` | live, **regressed** (see §3) |
-| Presence pacer (2 touches/day cap, per-surface) + pause tool | `services/guide/presence-pacer.ts` | live — the mandatory gate |
-| Notifications: push (FCM+Appilix), in-app, prefs, quiet hours, admin type controls | `notification-service.ts`, `notification-controls/` | live |
-| Connection proposals with consent (`proposeToMember`), chat-on-behalf tool with read-back | `community-autopilot/automation-proposals.ts`, `orb-tools-shared.ts` | live |
-| Matches / intents / groups / "Alle Beisammen" | `routes/matchmaking.ts`, intent engine (flag), `chat-groups.ts` | live but parallel systems |
-| FE wizard (video + speech + name/handle) | `OnboardingWelcome.tsx`, `OnboardingSpeech.tsx` | live; speech hardcoded English; completion = localStorage + name/handle |
-| FE Home card slots, `DidYouKnowCard`, Journey ring | `Home.tsx renderInterleavedFeedItems` | live — natural home for a VOA card |
-| What's New pipeline | `src/whats-new/entries/` | empty |
+| Welcome-chat DM fan-out (DB trigger) | `fire_welcome_chat_on_membership()` | live, **regressed** (§3.1) |
+| Presence pacer (cap by `proactive_presence_level`: quiet 1 / balanced 2 / engaged 3; one touch per surface per day) | `services/guide/presence-pacer.ts` | live — the mandatory gate; no onboarding surface yet |
+| Notifications: push (FCM+Appilix), in-app, prefs, quiet hours, catalog `unverified→ready` | `notification-service.ts`, `notification-controls/notification-catalog.ts` | live |
+| Test/service-account exclusion | `lib/excluded-test-service-accounts.ts` (`…Strict` variant fails closed) | live |
+| Connection proposals (`proposeToMember`), chat-on-behalf with read-back | `community-autopilot/automation-proposals.ts`, `orb-tools-shared.ts` | live (queue 93% rejected/expired — storage only for VOA, §4.5) |
+| New-member card (hides after messaging, PR #1170), `NewsFeedItemCard`, `Inspiration.tsx` | vitana-v1 | live |
+| Home feed with `cardSlots` (slot *n* renders after feed item *n*) | `src/pages/Home.tsx` | live |
+| `profile_posts` (`is_public`), `trg_notify_community_post` (fires on INSERT when `is_public`, tenant-wide) | **vitana-v1** `supabase/migrations` | live; no `post_kind` column |
+| Scheduled ticks via EventBridge + internal token | `scripts/aws/setup-eventbridge-daily-feature-tip.sh`, `requireScheduledNotificationsAuth` | live |
+| Feature flags `off | staging-only | staging+prod` | `services/feature-flags.ts` (`isFeatureLive`) | live |
 
-Dead / disconnected (do not build on):
-- `/auth/login` hooks (welcome notification, first_login recs, TS welcome-chat) — community app never calls it.
-- AP-1301…1307 onboarding automations — need `user.signup.completed` + `DEFAULT_TENANT_ID` (staging only); AP engine dark since ~Aug.
-- Community Autopilot: 93% rejected/expired, 0 activations in 30 days (2026-09-24 plan) — suggestions aren't landing.
-- `user_journey` (FE types) `onboarding_stage`, `welcome_to_vitana` notification: never reach members.
-- Welcome reply rate: **not measured anywhere.**
+Dead / disconnected (do not build on): `/auth/login` hooks; AP-1301…1307 onboarding automations (AP engine dark);
+`user_journey.onboarding_stage`, `welcome_to_vitana` notification. Welcome reply rate: **not measured anywhere.**
 
 ## 3. Fix-first list (small, independent PRs, before VOA)
 
-1. **Welcome trigger regression.** `20260917084341_vtid_03990` re-created `fire_welcome_chat_on_membership()` from the old body and
-   overwrote the "Alle Beisammen" fix (uncapped group enrollment before early-return). New migration must merge both
-   (service-bot guard + metadata cap + enrollment first). Read the live function definition first.
-2. **Guarantee `user_journey` row at signup** (trigger on `user_tenants`, or call `ensureUserJourneyRow` in the seed
-   trigger) so `is_first_session` and tenure are reliable.
-3. **Server-side `onboarding_completed_at`** (profiles/app_users) — today completion is per-browser localStorage.
-4. **Measure the baseline**: SQL report of reply rate for `metadata->>'source'='welcome_chat'`, D1/D7 return, and
-   time-to-first-ORB-conversation for the last 60 days of signups. Read-only. This is the number VOA must beat.
+1. **Welcome trigger regression.** `20260917084341_vtid_03990` re-created `fire_welcome_chat_on_membership()` from the old body:
+   "Alle Beisammen" enrollment sits after the `>1000` early return and under a hard `<100` cap, so it stops at 100. New migration
+   merges both (service-bot guard + enrollment first, uncapped for that group). Read the live definition first.
+2. **Guarantee `user_journey` row at signup** (in the existing seed trigger) so `is_first_session` and tenure are reliable.
+3. **Coach-only `onboarding_completed_at`** server-side marker for the coach. It does **not** change the `onboarding_complete`
+   VTNA trigger, which pays at signup (VTID-04878).
+4. **Measure the baseline** (read-only SQL): welcome-DM reply rate, D1/D7 return, time-to-first-ORB-conversation for the last 60 days of signups.
 
 ## 4. Design
 
 ### 4.1 Principle
-One brain, many mouths. A new **Onboarding Coach service** computes per-member *state* and the *single next best
-action*; existing channels (ORB, Home card, push, in-app, Vitana DM, feed post) only render it. Every outbound touch goes
-through the presence pacer. Nothing existing is deleted; the hello DM stays.
+One brain, many mouths. A new **Onboarding Coach service** computes per-member state and the *single next best
+action*; existing channels (ORB, Home card, push, in-app, Vitana DM, feed post) only render it. Every outbound touch
+goes through the presence pacer and the touch ledger (§4.7). Nothing existing is deleted; the hello DM stays.
 
-### 4.2 Cohort & gating
-- Cohort (owner decision 2026-09-29): registrations after `VOA_ROLLOUT_DATE` **plus members who joined in the last 30 days at rollout** (they enter at their real tenure stage, not day 0). Tenure < 90 days. Everyone else never sees VOA.
-- **Pilot allowlist (hard-enforced in code):** during the live pilot the coach may only act for Mariia Maksina, Jovana, Alex Red and Alex Blue (`VOA_PILOT_USER_IDS`, resolved read-only). Any other user stays in shadow mode. Removing the allowlist is a separate, explicit owner step.
-- Flag `FEATURE_ONBOARDING_ASSISTANT_ENV` via `isFeatureLive` (`off | staging-only | staging+prod`), plus modes
-  `shadow` (compute + log, send nothing) and `live`.
+### 4.2 Cohort, pilot and gating
+- Cohort (owner decision): registrations after `VOA_ROLLOUT_DATE` **plus members who joined in the last 30 days at rollout** (enter at their real tenure stage). Tenure < 90 days. Everyone else never sees VOA.
+- **Pilot is closed on both sides.** During the pilot the coach acts only for `VOA_PILOT_USER_IDS` (Mariia Maksina, Jovana, Alex Red, Alex Blue) **and every counterparty must also be in that list**: intro candidates, DM recipients, group-post audience, feed cards and the new-member card. Concretely in pilot mode: intros only between pilot accounts; the Alle Beisammen "new faces" thread and the new-member-card enrichment are **off**; inspiration posts are author-only (owner decision). Lifting the pilot is a separate owner step.
+- Pilot accounts are existing members, so they enter the ladder through a `pilot_stage_override` on their coach row (e.g. `d0`), removed when the pilot ends.
+- Flag `FEATURE_ONBOARDING_ASSISTANT_ENV` via `isFeatureLive`, plus mode `shadow | live`. **The coach runs only on the production gateway**: staging and production share the production Supabase, so the staging gateway refuses the tick entirely (no shadow, no live — it would write coach rows into the production database) and the EventBridge schedule targets production only.
+- **The tick enforces its own token.** The global `SCHEDULED_NOTIFICATIONS_AUTH_MODE` is `log` in both environments today (it lets untokened calls through), so the coach-tick handler checks `X-Gateway-Internal` itself regardless of that mode: 401 without a valid token, 503 if `GATEWAY_INTERNAL_TOKEN` is unset. Proven in Jest.
+- Exclusion uses `fetchExcludedTestServiceAccountIdsStrict`; if it (or the pilot allowlist lookup) fails, the whole tick is skipped — "could not tell" never means "not excluded" (rules 43–45).
 - Off-ramps: member says "stop" (existing `dismissal-tool`), completes the ladder, or day 90.
-- Exclude `service_bot_accounts` / `fetchExcludedTestServiceAccountIds` everywhere (rules 43–45).
+- Surfaces: the coach runs only on the community Assistant Profile (rule 42g) — never on work surfaces.
 
-### 4.3 State: `onboarding_coach_state` (per user)
-`user_id, tenant_id, stage (d0,d1,d2_3,d4_7,d8_30,d31_60,d61_90,done), milestones jsonb, last_touch_at, next_action_key,
-snoozed_until, shy_score, opted_out_at`. Milestones are **derived from live tables** (like Journey Foundation), not
-self-reported: first ORB conversation, profile complete, avatar, interests ≥3, first diary entry, life compass set,
-Index baseline, push permission granted, Audiobook Season 0 (T255–T260) and T251–T254 heard (by topic id), first group joined, first DM sent, first DM *reply received*,
-first event RSVP, first invite.
+### 4.3 State and milestones
+`onboarding_coach_state` (platform migration, gateway service-role only, RLS on, member can read own row):
+`user_id, tenant_id, stage (d0,d1,d2_3,d4_7,d8_30,d31_60,d61_90,done), pilot_stage_override, last_touch_at, next_action_key,
+snoozed_until, ignored_streak, opted_out_at`. (The Mariia welcome's state lives only in its own claim row, §4.5.5.)
+
+**Milestones come from `milestone-service.ts`**, not a second detector. VOA adds the missing ones there — first ORB conversation,
+push permission granted, Audiobook topics heard (by topic id: T255–T260, T251–T254), first DM *reply received* — with reward
+amount 0 unless the owner adds them to the VTNA rule table (`awardMilestone` already skips `credit_wallet` at reward 0). The coach
+reads the milestone **rows** (`source_type='milestone'`), not `oasis_events`; there is no `onboarding.coach.milestone_reached` event.
+Slice 1 confirms that member-facing Autopilot lists filter out `source_type='milestone'` rows (reward-0 milestones add completed rows there).
+
+**Done-by-Vitana never earns VTNA — by construction.** VOA never writes to any table a paid milestone checker counts
+(`relationship_edges`, group memberships, event participants, matches, referrals, topic profile, Index scores). Any connection,
+group join or RSVP is made by the member's own action afterwards. VOA writes only `chat_messages` (tagged
+`metadata.source='voa_*'`, `metadata.done_by_vitana=true`) and `profile_posts` (`post_kind='inspiration'`), which no paid checker
+counts. The simulation asserts zero VTNA from every VOA flow.
 
 ### 4.4 The activation ladder (what it teaches, in order)
 Each rung = one tiny action with an immediate benefit. Wording is composed by the model from an *intent* (rule 41),
@@ -83,215 +102,163 @@ never hardcoded; push/in-app titles are `tt()` catalog keys in all 11 locales.
 
 | Days | Theme | Rung → benefit |
 |---|---|---|
-| 0 | Meet Vitana | Wizard → "Play Episode 1" (Audiobook, T255) → ORB says hi and asks ONE question ("what brought you here?"). Benefit: she now knows you. |
-| 0–1 | First value | Set a goal (Life Compass) or answer a 3-question Index baseline → member sees a first Vitana Index number. Ask push permission *after* this moment of value, not at signup. |
-| 1–3 | Talk to Vitana | "Try asking me: …" (3 contextual sample asks, tied to interests). Diary voice note (30 s). T252–T254. |
+| 0 | Meet Vitana | After the Founding celebration and the wizard: the Audiobook's "Play Episode 1" (T255) is the first step — VOA does not repeat it. ORB asks ONE question ("what brought you here?") after the first episode. |
+| 0–1 | First value | Set a goal (Life Compass) or a 3-question Index baseline → first Vitana Index number. Ask push permission *after* this moment of value. |
+| 1–3 | Talk to Vitana | "Try asking me: …" (3 contextual sample asks). Diary voice note (30 s). |
 | 3–7 | First people | Vitana-hosted intros (§4.5); join 1–2 groups incl. Alle Beisammen; see 1 event. |
-| 8–30 | Habit | Daily/weekly rhythm: morning brief opt-in, reminders, Autopilot slots, Did-You-Know tour (existing 30-usage-day curriculum). First inspiration post on the first Friday (§4.6). One new feature per week, max. |
-| 31–60 | Deepen | One Audiobook episode a day, events/meetups in real life, first invite of a friend. |
+| 8–30 | Habit | Morning brief opt-in, reminders, Did-You-Know tour. First inspiration post offer on the first Friday (§4.6). One new feature per week, max. |
+| 31–60 | Deepen | Audiobook episode a day (1/day pace), events in real life, first invite of a friend. |
 | 61–90 | Own it | Recap ("your 60 days"), switch to Full mode, graduate; hand over to normal Autopilot. |
 
-Cadence: at most 1 proactive onboarding touch/day (pacer default cap is 2 — VOA takes 1 of them), quiet hours respected,
-backs off (×2 gap) after each ignored touch, and stops after 3 consecutive ignores until the member re-engages.
-Push is a nudge to open the app/ORB, not content.
+Back-off: ×2 gap after each ignored touch; stop after 3 consecutive ignores until the member re-engages. Push is a nudge to open the app/ORB, not content.
 
 ### 4.5 Shy-member social bridge ("let me do it for you")
-Problem with today's hello: sender is a stranger, no reason to answer. Keep it; add a warm layer:
-1. **Vitana-brokered intro (consent both ways).** Vitana proposes to the new member: "Anna also loves trail running and is
-   in Berlin — want me to say hi for you?" On yes → drafted DM shown/read back → sent (existing confirm flow),
-   framed with the *shared reason*. Replies land in the normal inbox with a push.
-2. **Reason-rich prompt to the existing member**, not a bare DM: the existing in-app card ("New here: Sam — also into sleep optimisation. Say hi?"). **In-app card only — no push, no new surface (owner decision).** Reuse the existing new-member card; only enrich its copy with the shared reason.
-3. **Mariia Maksina is the communication centre (owner decision).** Instead of a pool of hosts, Vitana routes onboarding communication through Mariia: when a member reaches a milestone Vitana offers "Shall I tell Mariia you're onboarded and happy to join the Longevity Journey?" and, on yes, sends that chat message (read-back + confirm flow). Mariia is the human welcome point; her inbox is capped at **5 onboarding messages per day**; anything beyond is grouped into one daily digest (owner decision 2026-10-01). Welcome Hosts pool is dropped for v1.
-4. **Alle Beisammen welcome thread**: weekly "new faces" post by Vitana that names the week's newcomers (with their consent) and asks one easy question.
-5. **Welcome message from Mariia Maksina to every new member (owner decision).** In addition to the member→everyone hello, each new member
-   in the cohort receives a personal welcome DM *from Mariia*. Owner's wording, used as the seed: "So nice to see you with us. Welcome, and I'm looking
-   forward to many beautiful moments together on our joint Longevity Journey!" — final copy may vary slightly per language.
-   - Sent once per member, on membership creation (DB-trigger/tick path, not `/auth/login`), idempotent via a `voa_mariia_welcome_sent_at` marker.
-   - Text is a `tt()` catalog entry in all 11 locales, du-form (it is a written chat message from a person, not a spoken Vitana line, so rule 41 does not apply; the catalog rule does).
-   - Lands in the normal inbox with the normal chat push, `metadata.source='voa_mariia_welcome'` for filtering.
-   - Sender is Mariia's real account, so: Mariia approves the wording and the automation once (recorded in the VTID), the sender user_id is config
-     (`VOA_WELCOME_SENDER_USER_ID`, not hardcoded), and the message is capped/idempotent. Replies from members go to Mariia's inbox → covered by the daily digest/cap in §4.5.3.
-   - Pilot: only the allowlisted test members (Jovana, Alex Red, Alex Blue) receive it; Mariia does not message herself.
-   - Milestone loop stays: later Vitana can also tell Mariia when a member has joined the Longevity Journey (§4.5.3).
-6. Low-risk first: react to a post, join a group, RSVP — before DMs. Ladder order reflects shyness.
-Consolidate on one match source (see risk R3): use `daily_matches`/intent matches whichever is live per query of the live schema.
+1. **Vitana-brokered intro (consent both ways).** Vitana proposes: "Anna also loves trail running and is in Berlin — want me to say hi for you?" On yes → drafted DM read back → sent, framed with the shared reason. Proposals are stored via `proposeToMember` but **surfaced through the VOA card and ORB rung**, not the Community Autopilot queue; acceptance is measured separately.
+2. **Reason-rich prompt to the existing member**: enrich the existing new-member card copy with the shared reason. **In-app card only — no push, no new surface (owner decision).** Off during the pilot.
+3. **Mariia Maksina is the communication centre (owner decision).** At a milestone Vitana offers "Shall I tell Mariia you're onboarded and happy to join the Longevity Journey?" → on yes, read-back + send. Mariia receives max **5 onboarding messages per day**; the rest go into one daily digest (owner decision).
+4. **Alle Beisammen welcome thread**: weekly "new faces" post naming the week's newcomers (with their consent) and one easy question. Off during the pilot.
+5. **Welcome DM from Mariia (owner decision)** — seed wording: "So nice to see you with us. Welcome, and I'm looking forward to many beautiful moments together on our joint Longevity Journey!"
+   - Sent **only by the gateway tick** (never a DB trigger): cohort + pilot allowlist + strict exclusion. It is **not** a touch and does not use the touch ledger; it has its own claim (`claim_mariia_welcome` RPC: unique per member, `status pending|sent|failed`, one bounded retry on `failed`), so a failed send is retried once and never lost silently or sent twice.
+   - `tt()` catalog entry in all 11 locales, du-form (a written message from a person; rule 41 does not apply, the catalog rule does).
+   - `metadata.source='voa_mariia_welcome'`, `done_by_vitana=true`; sender `VOA_WELCOME_SENDER_USER_ID` (config); Mariia approves the wording and the automation once (recorded in the VTID).
+   - Pilot: only Jovana, Alex Red, Alex Blue receive it; Mariia never messages herself.
+6. Low-risk first: react to a post, join a group, RSVP — before DMs.
+Match source: whichever of `daily_matches`/intent matches is live (verify the live schema first; no new match system).
 
-### 4.6 Inspiration posts — Autopilot posts on the member's behalf (owner request 2026-10-01)
+### 4.6 Inspiration posts — Autopilot prepares posts on the member's behalf (owner request 2026-10-01)
 
-**Why.** Shy new members don't post. If their first post is prepared for them, they see that a post gets likes and
-replies, and the community sees them as someone who brings good energy. The teaching goal: "a positive post is
-easy and people respond to it."
+**Why.** Shy new members don't post. A prepared first post shows that a positive post is easy and people respond.
 
-**What a post looks like.** A quote card in the feed: a short quote, who said it, an optional line from the member
-("Have a wonderful weekend, everyone! ☀️"), on a calm branded background. Always positive, warm and inspiring.
+**What.** A quote card in the feed: a short quote, who said it, an optional line from the member ("Have a wonderful weekend, everyone! ☀️"), calm branded background. Always positive.
 
-**Occasions (rotating, max 1 post per member per week):**
-| When | Theme | Example intent |
-|---|---|---|
-| Friday afternoon (member's local time) | Weekend wish | wish everyone a lovely weekend + a light quote |
-| Monday morning | Fresh start | motivation for the week |
-| Member's milestone (e.g. finished T251–T254, first goal set) | Celebration | "I started my Longevity Journey" + a quote about beginnings |
-| Seasonal moments (spring, summer start, New Year) | Season | a matching positive quote |
+**Occasions (max 1 offer per member per week):** Friday afternoon (weekend wish), Monday morning (fresh start), a milestone (celebration), seasonal moments.
 
-**Quote sources — a curated library, never invented.** Quotes come from `onboarding_quote_library`, a reviewed
-list. The model picks one and writes the member's personal line around it. It never writes or "remembers" a quote
-itself, because made-up or wrongly attributed quotes are common and would embarrass the member (NEVER rule 31).
-- **Historical figures:** short, positive quotes in the public domain (e.g. Seneca, Marcus Aurelius, Goethe, Laozi,
-  Helen Keller, Mark Twain), each with a verified source and checked translations in the member's language.
-- **Happy songs:** song lyrics are copyrighted, so the library holds the **song title and artist** with a one-line
-  feeling in our own words ("Today feels like 'Here Comes the Sun' — The Beatles ☀️"), not quoted lyric lines.
-  Short lyric quotes only after a legal check.
-- Each entry has: text per locale, author, source, theme tags (weekend, start, gratitude, movement, friendship,
-  longevity), mood check = positive, `status` draft → approved. The owner (admin) approves entries; only approved ones are used.
-- Seed: ~150 entries (≥ 30 per theme) so a member never sees a repeat within 90 days; feed-wide, the same quote is
-  not reused by anyone within 4 weeks.
+**Quote library — curated, never invented.** `onboarding_quote_library`; the model picks an entry and writes the member's line around it; it never writes or "remembers" a quote (NEVER rule 31).
+- Historical figures: public-domain originals; **each locale's translation stores its source and licence** (modern translations can be copyrighted).
+- Happy songs: **title + artist** with a one-line feeling in our own words, never lyric lines (lyrics only after a legal check).
+- Fields: text per locale, author, source, licence, theme tags, `status draft → approved`; the **owner (admin)** approves.
+- **First seed is small:** ~30 approved entries in de + en (enough for the 90-day window at ≤1 post/week). A member whose locale has no approved entry gets **no offer** rather than an untranslated quote; more locales follow.
 
-**Flow ("let me do it for you", with consent):**
-1. Vitana (ORB or Home card) offers: "It's Friday — shall I post a weekend wish for you? Here's a draft." The member
-   sees the card preview.
-2. The member taps **Post**, **Change** (another quote / edit the line) or **Not now**. Nothing is posted without that
-   tap. After 3 posts the member can switch on "post for me automatically on Fridays" in Autopilot settings, and
-   switch it off again any time.
-3. After posting, Vitana reports back the next day: "5 people liked your weekend wish, Anna replied." That turns
-   into the next social step (reply to Anna, §4.5).
-4. A small "created with Vitana" label on the card keeps it honest.
+**Flow (consent per post).** Vitana offers a draft (ORB or Home card) → the member taps **Post**, **Change** or **Not now**; nothing is posted without that tap. Next day Vitana reports likes/replies, which becomes the next social step. A "created with Vitana" label keeps it honest.
+**Automatic Friday posts (owner decision O2, 2026-10-05).** After **3 posts the member approved themselves**, Vitana offers a
+"post for me automatically on Fridays" switch (Autopilot settings, off by default; the member switches it on, and off again any time).
+When on: one weekend-wish post per Friday from the approved library, same guardrails as above (label, no push, feed cap, ≤1/week, no
+VTNA); the automatic post is that day's touch. Vitana shows what it posted, with a one-tap delete, on the Home card and in the next ORB
+conversation (not a second touch). Automatic posts pause when the member has not opened the app for 7 days, says "stop", opts out, or
+leaves the 90-day window; the switch ends with VOA unless the member keeps it in Autopilot settings. A post deleted within 24 h counts
+as an ignore (back-off); 2 deletions in a row switch the automation off, and Vitana asks again once, not before 30 days. During the pilot automatic posts are
+author-only like every pilot post.
 
 **Guardrails.**
-- **No tenant-wide push for these posts.** Today every public post pushes to every member of the tenant
-  (`trg_notify_community_post`). Inspiration posts carry `post_kind='inspiration'` and the trigger skips
-  them: they appear in the feed only, with no push. Otherwise 20 new members posting weekly would send thousands of
-  pushes a week to everyone.
-- **Feed cap:** max N inspiration posts per tenant per day (proposed 3), spread out in time, so the feed is never flooded.
-- Max 1 inspiration post per member per week; counts toward the 1-touch-per-day onboarding cap.
-- Language: the post is written in the member's language; readers see it as written (same as any post).
-- Never health claims, politics, religion-specific or sad content; tone checked against the library tags.
-- Service/test accounts never post (rules 43–45); during the pilot only the allowlisted accounts.
-- Reuse what exists: the `Inspiration` templates screen (`vitana-v1/src/pages/messages/Inspiration.tsx`) and
-  `profile_posts`; the card is a new post type rendered by the existing feed (`NewsFeedItemCard`).
+- `profile_posts.post_kind` column added by a **vitana-v1** migration; only the service role may set `post_kind='inspiration'` (a trigger rejects it from `authenticated`), and `trg_notify_community_post` skips that kind: feed only, no tenant push (owner decision).
+- Going public later uses an `is_public` false→true UPDATE, which does not fire the INSERT trigger — so no push either way.
+- Tenant feed cap (proposed 3/day, spread out); max 1 post per member per week; counts as the day's onboarding touch.
+- Never health claims, politics, religion-specific or sad content.
+- Service/test accounts never post; pilot posts are author-only (owner decision).
+- Reuse `Inspiration.tsx` templates, `profile_posts`, `NewsFeedItemCard`.
 
-**Pilot (owner decision 2026-10-01).** Pilot posts are created non-public, visible to the author only, so the whole
-flow is tested without any other member seeing them. Going public is a separate owner step after the pilot.
-
-### 4.7 Channels
-- **ORB**: new greeting rung `onboarding_coach` between `first_time_welcome` and `journey_guide` for cohort members; also a `onboarding_coach`
-  context provider so any conversation can mention the next step once, naturally. Kill-switch like the newday rungs.
-- **Home (FE)**: new "Dein Start / Your start" card in `cardSlots` (top, above Vitana Index): progress ring, the ONE next action, "later" + "stop".
-- **Push/in-app**: new catalog types (`onboarding_nudge`, `onboarding_intro_proposal`, `onboarding_recap`) registered in
-  `notification-catalog.ts` (unverified→ready after locale check; DB guard otherwise leaves them OFF).
-- **Email: out of scope (owner decision: outdated).**
-- **Scheduler**: HTTP tick `POST /api/v1/scheduled-notifications/onboarding-coach-tick` + EventBridge script (pattern of
-  `setup-eventbridge-daily-feature-tip.sh`). *Not* the AP engine (dark), *not* an in-process loop (double-fire with >1 instance).
-  Signup-time kick-off uses a DB trigger on `user_tenants` (bypass-proof, precedent exists).
+### 4.7 Channels, budget and scheduling
+- **One touch budget.** New table `onboarding_touch_ledger (user_id, local_day, action_key, channel, status pending|sent|failed, unique(user_id, local_day))`, claimed through one SECURITY DEFINER RPC `claim_onboarding_touch` (service role only; same pattern as `claim_due_audiobook_reminders`). A unique violation means "already touched today" and nothing is sent. A `failed` send may be retried once the same day; otherwise the slot stays used. DB-enforced and race-proof (two instances or schedulers cannot double-send).
+- **"Day" is the member's local date** (from their timezone, as the Audiobook reminder uses), everywhere in VOA: the ledger, Friday/Monday occasions, quiet hours. The pacer keeps its own UTC day; VOA must pass both.
+- **Pacer:** add `onboarding_coach` to `ProactiveSurface` **and** a migration that reads the live `user_proactive_touches.surface` CHECK and widens it to the full TypeScript union plus `onboarding_coach` (the repo constraint lists 7 of today's 11). The list is built from the union **and** a read-only `SELECT DISTINCT surface` of the live table, added `NOT VALID` and then `VALIDATE`d, so live rows can never abort the migration. VOA treats a failed `recordTouch` as a failed touch: the ledger row is marked `failed` and nothing is sent. For a quiet member (cap 1) VOA's touch *is* their one touch that day.
+- **Audiobook reminder gives way:** on a day the member has the Audiobook reminder enabled and today's episode is not finished — **or the reminder was already sent today** (`metadata.audiobook_reminder.last_sent_local_date = today`) — the day belongs to the reminder — VOA sends no push and no in-app nudge (the Home card and the ORB rung inside a member-opened conversation still work). No change to `claim_due_audiobook_reminders`.
+- **Rewards reminders:** the rewards plan does not send reminders today; when it does, writing to `onboarding_touch_ledger` for members in the 90-day window is a dependency recorded for that plan, not built by VOA.
+- **What counts as a touch:** VOA push, VOA in-app nudge, Vitana DM sent on the member's behalf (on their yes), inspiration-post offer, an automatic Friday post. Not a touch: Home card render, ORB rung inside a conversation the member opened, replies from real people, the Mariia welcome DM (one-time, own claim §4.5.5).
+- **ORB**: `onboarding_coach` greeting rung after `first_time_welcome` for cohort members on the community profile + a context provider (mentions the next step once). Never talks over an Audiobook episode. Kill switch like the newday rungs.
+- **Home (FE)**: "Dein Start / Your start" card inserted **before the first feed item**, rendered only for cohort members (established members' feeds unchanged). When the next step is "listen", it points at the Longevity Journey card instead of showing its own player.
+- **Push/in-app**: catalog types `onboarding_nudge`, `onboarding_intro_proposal`, `onboarding_recap` in `notification-controls/notification-catalog.ts` (`unverified → ready` after the locale check).
+- **Email: out of scope (owner decision).**
+- **Scheduler**: `POST /api/v1/scheduled-notifications/onboarding-coach-tick` behind `requireScheduledNotificationsAuth` (VTID-04677); EventBridge script following `setup-eventbridge-daily-feature-tip.sh`, reading `vitana/gateway/prod/internal-token`, targeting production only. No DB trigger on `user_tenants` (that table already carries the welcome and seed triggers).
 
 ### 4.8 Observability
-OASIS events (`onboarding.coach.stage_changed`, `.touch_sent`, `.touch_skipped{reason}`, `.milestone_reached`, `.intro_proposed/accepted/replied`, `.inspiration_post_offered/posted/declined`)
-+ admin funnel view. Success metrics vs the §3.4 baseline: D1/D7/D30 return, % who talk to Vitana in 24 h, % with push on,
-% with ≥1 reply in 7 days (target: >3× baseline), % in ≥1 group, churn-before-day-7,
-% who accept an inspiration-post draft, likes/replies per inspiration post, % who post on their own afterwards.
+OASIS events for real state transitions only: `onboarding.coach.stage_changed`, `.touch_sent`, `.intro_proposed/accepted/replied`,
+`.inspiration_post_offered/posted/declined`, plus **one aggregate `onboarding.coach.tick_completed`** per tick with counts. Per-member
+skip reasons go to the coach's own decision log, never as one OASIS event per member per tick (NEVER rule 10). Milestones come from the milestone rows. Funnel reads `/analytics/audiobook`
+for listen-through and day-7 return and adds the social metrics: % talking to Vitana in 24 h, % with push on, % with ≥1 reply in
+7 days (target >3× baseline), % in ≥1 group, churn before day 7, inspiration-post acceptance and responses.
 
-## 5. Delivery slices (each = own VTID + PR, each shippable behind the flag)
+## 5. Delivery slices (each = own VTID + PR after the owner approves this plan)
 
-| # | Slice | Repo | Notes |
+| # | Slice | Repo | Done criteria (besides CI) |
 |---|---|---|---|
-| 0 | Fix-first list §3 | platform + v1 | independent |
-| 1 | Coach engine + state table + milestone derivation + `tt()` keys + pacer integration + **shadow mode** + tick endpoint | platform | Jest incl. simulation harness (§6) |
-| 2 | FE: "Your start" card (defers to the Audiobook Journey card, §9 C4), push-permission priming after the first episode, nav-registry/What's New entry | v1 | RTL + du-form; screenshots desktop+mobile |
-| 3 | ORB rung + context provider + sample-ask prompts | platform | only after the Audiobook is merged (§9 C8); kill switch |
-| 4 | Mariia welcome DM + Social bridge: intro proposals, veteran prompt, Alle Beisammen thread; Mariia-centred flow | both | consent + rate limits; test-account exclusion |
-| 5 | Inspiration posts: quote library + admin review, post draft/offer flow, quote card post type, trigger skip for `post_kind='inspiration'`, feed cap | both | legal check for song lines; no tenant push |
-| 6 | Day 8–90 cadence, recap, EventBridge script | platform | no email |
+| 0 | Fix-first §3 | platform + v1 | each its own staging test |
+| 1 | Coach engine, `onboarding_coach_state` + `onboarding_touch_ledger` + claim RPCs, milestone extensions, pacer surface + CHECK migration, strict exclusion, **shadow mode**, tick endpoint (own token check, refused on staging), read-only `GET /api/v1/onboarding-coach/status` | platform | regression suite `test:onboarding` (simulation §6.1); Jest: tick 401 without token / 503 without configured token / refused on staging; **read-only** staging spec: `GET …/onboarding-coach/status` reports `mode: disabled-on-staging` (never a POST), `/alive` |
+| 2 | FE "Your start" card, push priming after the first episode, What's New entry | v1 | RTL + du-form; screenshots desktop+mobile; read-only staging spec: the card does not render for the (non-cohort) test account |
+| 3 | ORB rung + context provider + sample asks | platform | `npm run test:roles` green (rule 42h); community profile only |
+| 4 | Mariia welcome DM + social bridge (both-sides pilot allowlist) | both | simulation: zero rows to anyone outside the allowlist; zero VTNA from VOA flows |
+| 5 | Inspiration posts: library + admin review, offer flow, `post_kind` (vitana-v1 migration), trigger skip, feed cap | both | simulation: no tenant push, cap, no repeat, `authenticated` cannot set `post_kind` |
+| 6 | Day 8–90 cadence, recap, EventBridge script (prod only) | platform | |
 | 7 | Funnel dashboard + weekly report | platform | |
 
-Regression rule to add with slice 1 (like 04456/04465): `test/vtid-XXXXX-onboarding-assistant-regression.test.ts`, `npm run test:onboarding`.
+Every slice that deploys carries `docs/validation/<VTID>/staging-tests.json` with **read-only** specs (Staging Verification Gate, rules 46–48); anything needing a write is proven by the CI simulation.
 
-## 6. Test run — how we do it without violating the no-production-writes rule
+## 6. Test run — without violating the no-production-writes rule
 
-Constraint (CLAUDE.md): staging and previews share the **production Supabase**; a test signup + sends would reach real people.
-So the "test run with a new registered user" is done in three safe layers:
+Staging and previews share the **production Supabase**, so:
 
-1. **Simulation (CI, in-memory DB + fake clock).** Golden scenarios: (a) eager user, (b) shy user who ignores 3 nudges,
-   (c) user who accepts an intro and gets a reply, (d) user who says "stop", (e) veteran (must get nothing), (f) service-bot account (must get nothing),
-   (g) Friday weekend-wish offer → accepted → post created with no tenant push, feed cap respected, no repeated quote.
-   Fast-forwards 90 days; asserts touches/day cap, quiet hours, back-off, milestone progression, text keys in all locales.
-2. **Shadow mode on real signups (read-only).** Flag `shadow`: the coach runs for each real new registration, writes only its own
-   decision log, sends nothing. We review "what would Vitana have said/done" for the next real signups and compare to their actual behaviour.
-3. **Live pilot on four named accounts (owner decision 2026-09-29):** Mariia Maksina, Jovana, Alex Red, Alex Blue.
-   Real sends (Vitana DMs, push, in-app) are enabled **only** for these four via the code-level allowlist; Jovana and the two Alexes act as the test
-   "new members", Mariia as the receiving centre. They are known to the owner and are not registered in the service-bot lists on purpose (they must receive
-   real messages) — so the allowlist, not the bot lists, is the guard. Sends carry `metadata.source='voa_pilot'` for filtering/cleanup.
-   Pre-flight (read-only): resolve their `user_id`s, confirm tenure/primary tenant, confirm push tokens. **Before the first live send I will show the exact
-   recipients + message intents and wait for a go**, because this writes to the shared production Supabase. Rows are only created for these four users;
-   nothing fans out to other members (the welcome trigger is untouched and the coach never calls it).
-   A dedicated isolated Supabase remains the long-term fix for synthetic end-to-end runs.
+1. **Simulation (CI, in-memory DB + fake clock).** Golden scenarios: eager user; shy user ignoring 3 nudges; intro accepted + reply;
+   "stop"; veteran (nothing); service-bot (nothing); exclusion lookup fails (tick skipped); two ticks racing (one send); Friday offer →
+   post with no tenant push; pilot mode with a non-allowlisted counterparty (nothing reaches them); VOA-caused connection (no VTNA).
+   Fast-forwards 90 days; asserts the touch ledger, pacer, quiet hours, back-off, milestone progression, locale keys.
+2. **Shadow mode on real signups (production gateway only).** The coach writes only its own tables (`onboarding_coach_state`, decision
+   log) in the production database and **sends nothing**. We compare "what Vitana would have done" with real behaviour. This is stated in the slice-1 VTID.
+3. **Live pilot on four named accounts (owner decision):** Mariia, Jovana, Alex Red, Alex Blue — from the production gateway, both sides
+   allowlisted, `metadata.source='voa_pilot'`. Pre-flight (read-only): user_ids, tenure, tenant, push tokens. **Before the first live send the
+   owner sees the exact recipients and message intents and says go.**
 
 ## 7. Risks
+- R1 Over-nudging → churn: DB-enforced 1 touch/day, pacer, back-off, stop, shadow first.
+- R2 Social trust: both-side consent; pilot closed on both sides; never expose test/service accounts.
+- R3 Parallel match systems: verify the live schema; no new one.
+- R4 Push infra: FCM project `lovable-vitana-vers1` is hardcoded while GCP is decommissioned — verify delivery before promising push.
+- R5 Topic content is German-first; check en/es/sr/ar coverage; du-form; RTL.
+- R6 Lazy `user_journey` row and stale "Maxina" seed copy — §3.
+- R7 Greeting files are high-risk: minimal rung change, `test:roles`, characterization tests.
+- R8 Inspiration posts: no push (trigger skip), curated quotes with per-locale licence, titles not lyrics, feed cap, per-post consent + label.
+- R9 Staging and production share one database: live only from the production gateway; DB-enforced idempotency.
 
-- R1 Over-nudging → churn. Mitigated by cap 1/day, back-off, hard stop, opt-out, shadow-first.
-- R2 Social spam / trust: intros only with both-side consent; veteran prompts opt-in and capped; never expose test/service accounts.
-- R3 Parallel match systems (`matches_daily` route vs live `daily_matches`; intent engine flag): verify live schema first; do not add a fifth.
-- R4 Push infra: FCM project `lovable-vitana-vers1` is hardcoded while GCP is decommissioned — verify push actually delivers before promising it.
-- R5 Journey/T-topic content is German-first scripts; check en/es/sr/ar coverage; du-form; RTL for Arabic.
-- R6 `first_time_welcome` lazy row and stale seed copy ("Maxina") — handled in §3.
-- R7 Greeting ladder still inline in `orb-live.ts` (high-risk file): keep the rung change minimal and characterization-tested.
-- R8 Inspiration posts: notification storm (handled by trigger skip), misattributed quotes (curated library only), song-lyric copyright (titles, not lyrics), feed flooding (tenant cap), posts feeling fake (consent per post + "created with Vitana" label).
+## 8. Decisions
 
-## 8. Decisions (owner, 2026-09-29 / 2026-10-01)
-
+Owner (2026-09-29 / 2026-10-01):
 1. Cohort: new registrations **and** members who joined in the last 30 days.
-2. Mariia Maksina is the communication centre ("tell Mariia you're onboarded and happy to join the Longevity Journey"); Jovana, Alex Blue, Alex Red are the test accounts. No Welcome Hosts pool.
-3. Veteran-side prompt: existing in-app card only, not extended.
+2. Mariia Maksina is the communication centre; Jovana, Alex Blue, Alex Red are the pilot accounts (real members, see 13). No Welcome Hosts pool.
+3. Veteran-side prompt: existing in-app card only.
 4. Live pilot with real messages to Mariia, Jovana, Alex Red, Alex Blue (allowlist-enforced).
 5. Email dropped.
-6. Inspiration posts: Autopilot prepares positive quote-card posts on the member's behalf (weekend wishes, quotes from happy songs and historical figures).
-
-7. Mariia's inbox: max **5 onboarding messages per day**; anything beyond is grouped into one daily digest.
+6. Inspiration posts: Autopilot prepares positive quote-card posts on the member's behalf.
+7. Mariia's inbox: max 5 onboarding messages per day; the rest in one daily digest.
 8. Pilot roles: Jovana, Alex Red, Alex Blue = new members; Mariia = receiver.
-9. Pilot inspiration posts are **visible to the author only**.
-10. Inspiration posts send **no push** to the community (feed only).
-11. Quote-library entries are approved by the **owner (admin)**.
+9. Pilot inspiration posts are visible to the author only.
+10. Inspiration posts send no push to the community.
+11. Quote-library entries are approved by the owner (admin).
+12. (VTID-04864/04878) Done-by-Vitana never earns VTNA; `onboarding_complete` pays at signup.
 
-Open: none — plan ready for build once the owner says the plan is complete.
+13. **(O1, 2026-10-05)** Jovana, Alex Red and Alex Blue are **real members**, used as pilot accounts. They are not registered in the test-account lists; the both-sides pilot allowlist is the guard.
+14. **(O2, 2026-10-05)** The automatic "post for me on Fridays" switch is wanted (§4.6: offered after 3 self-approved posts, member opts in, off any time).
 
-## 9. Coordination with parallel sessions (checked 2026-10-01)
+Open for the owner: none.
 
-### 9.1 "First-time user onboarding in Vitana Land" — the Audiobook (VTID-04760…04763)
-Session `session_01LRqEtGSPKaEEJPnJDjm3ZB`, branch `claude/modest-meitner-9qkwd1` in both repos, **not merged yet**
-(6 platform + 12 app commits). It turns the Guided Journey into an **Audiobook**: the welcome ends on "Play Episode 1",
-a listening player, Season 0 "Prolog" (6 new story episodes T255–T260 before everything else), one episode a day,
-an opt-in daily reminder push, and audiobook analytics.
+## 9. Coordination with parallel work
 
-It is the "learn by listening" half of onboarding. VOA is the "do it / meet people" half. They fit together,
-but these points must be aligned before VOA code is written:
+### 9.1 Audiobook (VTID-04760…04763) — merged
+| # | Overlap | VOA rule |
+|---|---|---|
+| C1 | Season 0 prepends T255–T260 | Milestones use **topic ids**, never session numbers; day 0 = Episode 1 (T255). |
+| C2 | First-time welcome points at Episode 1 | VOA's rung comes after it and never repeats that invitation. |
+| C3 | Wizard i18n + "Play Episode 1 / Later" done | VOA does not touch the wizard; push priming after the first episode. |
+| C4 | `LongevityJourneyCard` plays today's episode | One onboarding card: VOA points at it when the step is "listen". |
+| C5 | Daily episode reminder via `reminder_due` | Counts as that day's touch (§4.7). |
+| C6 | 1 episode/day | Ladder pace = 1 episode/day. |
+| C7 | ORB stays closed while an episode plays | VOA never talks over an episode. |
+| C8 | Greeting code (`compute-greeting-decision.ts`, `first-time-welcome/*`) | Slice 3 rebases on merged code; `test:roles`. |
+| C9 | `/analytics/audiobook` | VOA funnel reads it. |
+| C10 | Naming: Audiobook / Hörbuch, episodes | VOA copy uses the same words. |
 
-| # | Overlap | Audiobook does | VOA adjustment |
-|---|---|---|---|
-| C1 | Opening episodes | Prepends T255–T260 and **shifts all session numbers +6** | Milestones use **topic ids, never session numbers**. Day-0 step = "Episode 1" (T255), not T251. |
-| C2 | First-time welcome (ORB) | Rewrites the provider: an intent that points at Episode 1 | VOA's ORB rung sits *after* it and builds on the new version; it never repeats the Episode-1 invitation. |
-| C3 | Signup wizard | Already moved the speech bubbles to i18n and added a "Play Episode 1 / Later" final step | **Drop** "i18n'd wizard speech" from VOA slice 2 — done there. Push-permission ask comes after the first episode, not inside the wizard. |
-| C4 | Home | Longevity Journey card now plays today's episode in one tap | One onboarding card, not two: when the next step is "listen", the VOA "Your start" card points at the Journey card instead of showing its own player. |
-| C5 | Daily push | Opt-in daily "your episode for today" push via the `reminder_due` gate — **not** through the presence pacer | Shared budget: the audiobook reminder counts as that day's onboarding touch; VOA sends no other push on a day it fires and never nudges "listen" when the member has the reminder on. |
-| C6 | Daily goal | 1 episode/day (was 5) | Ladder text "guided sessions pace" now means 1 episode/day. |
-| C7 | Voice overlay | ORB front door stays closed while the player is playing | VOA's ORB rung and nudges respect the same rule — never talk over an episode. |
-| C8 | Greeting code | Edits `compute-greeting-decision.ts`, `first-time-welcome/*`, greeting snapshots | VOA slice 3 starts only after the Audiobook is merged and rebases on it (same high-risk files). |
-| C9 | Measurement | `/analytics/audiobook`: listen-through, Season 0 completion, day-7 return | VOA funnel reads these instead of computing its own day-7 return; adds social metrics only. |
-| C10 | Naming | Guided Journey → Audiobook / Hörbuch, sessions → episodes | VOA copy and plan use the same words. |
-
-**Order of execution:** Audiobook merges and is staging-verified first → VOA slice 0 (fix-first) can run in parallel
-(no file overlap) → VOA slices 1–7 build on the merged Audiobook.
-
-### 9.2 "User engagement rewards strategy" (VTNA rewards)
-Session `session_01CJy9EepPdwUcjKtuUdb2sm`: a 6-phase plan (VTNA earning per activity → redemption → reminders →
-measurement), waiting on owner decisions; **no code pushed yet**, so no file conflict today. Points to settle
-before either is built:
-- R-1 **Inspiration posts and rewards:** posts drafted by Vitana must not become a way to farm VTNA. Proposed: an inspiration
-  post earns nothing (or only the reactions it receives), never the "create a post" reward.
-- R-2 **Reminders:** that plan adds its own reminders. All reminders to a member in the first 90 days share the VOA daily
-  budget (1 touch/day) so a new member is not hit from three sides (VOA, Audiobook, rewards).
-- R-3 **Milestones = earning events:** VOA milestones (first DM, first reply, first group…) are natural reward triggers;
-  both should read the same milestone events (§4.8) instead of detecting them twice.
+### 9.2 VTNA rewards (VTID-04809/04864/04878) — live
+- Inspiration posts and every done-by-Vitana action earn nothing (decided; enforced by `done_by_vitana` tagging, §4.3).
+- Reward reminders write to the same touch ledger (§4.7).
+- Milestones are shared: one detector (`milestone-service.ts`), one event (`user.milestone.reached`).
 
 ### 9.3 Already merged, no conflict
-- What's New card automation (VTID-04733/04739) — VOA adds a What's New entry when its first slice ships.
-- New-member card hides after messaging (PR #1170) — VOA §4.5.2 enriches that same card.
-- Community Autopilot v2 (VTID-047xx, live) — VOA proposals go through its `proposeToMember`, no new queue.
+What's New automation (VTID-04733/04739); new-member card (PR #1170); Community Autopilot v2 (`proposeToMember` used for storage only).
 
