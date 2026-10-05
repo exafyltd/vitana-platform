@@ -113,13 +113,11 @@ describe('VTID-04644 explicit open request — detection', () => {
 
 describe('VTID-04644 explicit open backstop — through the registry', () => {
   beforeAll(async () => {
-    process.env.NAV_V2_ENABLED = 'true';
     const f = await loadRegistryFixture();
     __setNavServiceForTests({ index: f.index, embedder: f.embedder });
   });
 
   afterAll(() => {
-    delete process.env.NAV_V2_ENABLED;
     delete process.env.ORB_NAV_OPEN_BACKSTOP_ENABLED;
   });
 

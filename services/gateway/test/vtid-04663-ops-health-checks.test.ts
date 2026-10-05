@@ -54,7 +54,6 @@ const HEALTHY_VITALS = {
   llm_vertex_completions_24h: 0,
   locales_ga: 11,
   journey_checklist_incomplete_ga_locales: [],
-  nav_catalog_incomplete_ga_locales: [],
   notif_test_actor_guard_present: true,
   notif_test_actor_trigger_enabled: true,
 };
@@ -92,8 +91,12 @@ describe('evaluators', () => {
     expect(evalGoogleFallback(HEALTHY_VITALS).status).toBe('ok');
   });
   it('locale coverage and the test-account guard', () => {
-    expect(evalLocaleCoverage({ nav_catalog_incomplete_ga_locales: [{ locale: 'tr' }] }).status).toBe('degraded');
+    expect(evalLocaleCoverage({ journey_checklist_incomplete_ga_locales: [{ locale: 'tr' }] }).status).toBe('degraded');
     expect(evalLocaleCoverage(HEALTHY_VITALS).status).toBe('ok');
+    // VTID-04880: the retired Navigator catalog no longer degrades a locale.
+    const navOnly = evalLocaleCoverage({ nav_catalog_incomplete_ga_locales: [{ locale: 'tr' }] } as any);
+    expect(navOnly.status).toBe('ok');
+    expect(navOnly).not.toHaveProperty('nav_incomplete');
     expect(evalTestActorGuard({ notif_test_actor_guard_present: false }).reason).toBe('guard_function_missing');
     expect(evalTestActorGuard({ notif_test_actor_guard_present: true, notif_test_actor_trigger_enabled: false }).reason).toBe(
       'guard_trigger_disabled',

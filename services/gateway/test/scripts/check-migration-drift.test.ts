@@ -68,4 +68,23 @@ describe('parseMigrationSql — removals', () => {
     expect([...dropped]).toEqual(['old_name']);
     expect([...created]).toEqual(['new_name']);
   });
+
+  // VTID-04880: archiving a table into another schema removes it from public.
+  it('treats SET SCHEMA out of public as a removal, and into public as a declaration', () => {
+    const out = parseMigrationSql(
+      'ALTER TABLE public.nav_catalog SET SCHEMA legacy_archive;\n' +
+        'ALTER TABLE IF EXISTS nav_catalog_i18n SET SCHEMA legacy_archive;',
+    );
+    expect([...out.dropped].sort()).toEqual(['nav_catalog', 'nav_catalog_i18n']);
+    expect([...out.created]).toEqual([]);
+
+    const back = parseMigrationSql('ALTER TABLE legacy_archive.nav_catalog SET SCHEMA public;');
+    expect([...back.created]).toEqual(['nav_catalog']);
+    expect([...back.dropped]).toEqual([]);
+  });
+
+  it('ignores a SET SCHEMA in a comment (the rollback lives in the header)', () => {
+    const out = parseMigrationSql('-- ALTER TABLE legacy_archive.x SET SCHEMA public;\nSELECT 1;');
+    expect([...out.created]).toEqual([]);
+  });
 });

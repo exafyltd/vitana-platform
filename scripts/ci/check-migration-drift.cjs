@@ -88,6 +88,13 @@ function parseMigrationSql(sql) {
     `(?:^|;)\\s*alter\\s+table\\s+(?:if\\s+exists\\s+)?(?:(${ident})\\s*\\.\\s*)?(${ident})\\s+rename\\s+to\\s+(${ident})`,
     'gi',
   );
+  // VTID-04880: `ALTER TABLE public.x SET SCHEMA archive` moves a table out of
+  // public, so for this public-only inventory it is a removal (and a move INTO
+  // public is a declaration).
+  const setSchemaRe = new RegExp(
+    `(?:^|;)\\s*alter\\s+table\\s+(?:if\\s+exists\\s+)?(?:(${ident})\\s*\\.\\s*)?(${ident})\\s+set\\s+schema\\s+(${ident})`,
+    'gi',
+  );
 
   for (const m of clean.matchAll(createRe)) {
     const schema = m[1] ? unquote(m[1]) : 'public';
@@ -106,6 +113,13 @@ function parseMigrationSql(sql) {
     if (schema !== 'public') continue;
     dropped.add(unquote(m[2]));
     created.add(unquote(m[3]));
+  }
+  for (const m of clean.matchAll(setSchemaRe)) {
+    const from = m[1] ? unquote(m[1]) : 'public';
+    const to = unquote(m[3]);
+    if (from === to) continue;
+    if (from === 'public') dropped.add(unquote(m[2]));
+    else if (to === 'public') created.add(unquote(m[2]));
   }
 
   return { created, dropped };

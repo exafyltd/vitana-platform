@@ -67,9 +67,9 @@ describe('dispatching', () => {
   });
 
   it('coalesces a burst of edits into a single dispatch', async () => {
-    const first = notifyDbI18nSourceChanged('nav-catalog', 'admin-write', ENV_ON);
+    const first = notifyDbI18nSourceChanged('journey-checklist', 'admin-write', ENV_ON);
     const rest = Array.from({ length: 19 }, () =>
-      notifyDbI18nSourceChanged('nav-catalog', 'admin-write', ENV_ON),
+      notifyDbI18nSourceChanged('journey-checklist', 'admin-write', ENV_ON),
     );
 
     // The 19 followers resolve immediately as coalesced, not as dispatches.
@@ -82,22 +82,23 @@ describe('dispatching', () => {
     expect(dispatch).toHaveBeenCalledTimes(1);
   });
 
-  it('merges distinct surfaces touched within one window', async () => {
+  it('merges the reasons of every edit within one window, surface listed once', async () => {
     const p = notifyDbI18nSourceChanged('journey-checklist', 'publish:a', ENV_ON);
-    await notifyDbI18nSourceChanged('nav-catalog', 'admin-write', ENV_ON);
+    await notifyDbI18nSourceChanged('journey-checklist', 'admin-write', ENV_ON);
     await flushWindow();
     await p;
 
     const payload = dispatch.mock.calls[0][2];
-    expect(payload.surfaces.sort()).toEqual(['journey-checklist', 'nav-catalog']);
+    expect(payload.surfaces).toEqual(['journey-checklist']);
+    expect(payload.reasons.sort()).toEqual(['admin-write', 'publish:a']);
   });
 
   it('opens a fresh window after the previous one fired', async () => {
-    const a = notifyDbI18nSourceChanged('nav-catalog', 'admin-write', ENV_ON);
+    const a = notifyDbI18nSourceChanged('journey-checklist', 'admin-write', ENV_ON);
     await flushWindow();
     await a;
 
-    const b = notifyDbI18nSourceChanged('nav-catalog', 'admin-write', ENV_ON);
+    const b = notifyDbI18nSourceChanged('journey-checklist', 'admin-write', ENV_ON);
     await flushWindow();
     await b;
 
@@ -125,7 +126,7 @@ describe('failure isolation — the property that protects the publish path', ()
     dispatch.mockRejectedValue(new Error('502 Bad Gateway'));
     const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-    const p = notifyDbI18nSourceChanged('nav-catalog', 'admin-write', ENV_ON);
+    const p = notifyDbI18nSourceChanged('journey-checklist', 'admin-write', ENV_ON);
     await flushWindow();
     await p;
 
@@ -138,7 +139,7 @@ describe('failure isolation — the property that protects the publish path', ()
   it('does not dispatch, and says why, when the token is unset', async () => {
     const spy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     await expect(
-      notifyDbI18nSourceChanged('nav-catalog', 'admin-write', {} as NodeJS.ProcessEnv),
+      notifyDbI18nSourceChanged('journey-checklist', 'admin-write', {} as NodeJS.ProcessEnv),
     ).resolves.toEqual({ dispatched: false, reason: 'no_token' });
 
     // Checked here rather than letting github-service throw, so an unset token
@@ -150,14 +151,14 @@ describe('failure isolation — the property that protects the publish path', ()
 
 describe('kill switch', () => {
   it('is ON by default — an opt-in flag would reintroduce the manual step', async () => {
-    const p = notifyDbI18nSourceChanged('nav-catalog', 'admin-write', ENV_ON);
+    const p = notifyDbI18nSourceChanged('journey-checklist', 'admin-write', ENV_ON);
     await flushWindow();
     await expect(p).resolves.toEqual({ dispatched: true });
   });
 
   it('honours DB_I18N_AUTO_PROPAGATE=off', async () => {
     await expect(
-      notifyDbI18nSourceChanged('nav-catalog', 'admin-write', {
+      notifyDbI18nSourceChanged('journey-checklist', 'admin-write', {
         ...ENV_ON,
         DB_I18N_AUTO_PROPAGATE: 'off',
       } as unknown as NodeJS.ProcessEnv),
@@ -168,7 +169,7 @@ describe('kill switch', () => {
   it('treats any other value as enabled, rather than failing closed', async () => {
     // A typo'd flag must not silently disable propagation — the failure mode
     // would be "every language quietly stops updating".
-    const p = notifyDbI18nSourceChanged('nav-catalog', 'admin-write', {
+    const p = notifyDbI18nSourceChanged('journey-checklist', 'admin-write', {
       ...ENV_ON,
       DB_I18N_AUTO_PROPAGATE: 'yes-please',
     } as unknown as NodeJS.ProcessEnv);

@@ -182,7 +182,7 @@ export const DOMAIN_ATLAS: readonly AtlasDomain[] = [
       'Platform and tenant administration: users, tenants, roles (role_preferences and user_active_roles stay in step since VTID-04561), signups, i18n ops, navigator catalog, notifications admin, auth and the member profile endpoints.',
     routes: [/^admin-/, /^tenant-admin\//, /^role-admin/, /^me/, /^auth/, /^user-/, /^landing-route/, /^profile-prefs/, /^product-analytics/, /^analytics-celebrate/, /^storage-bridge$/, /^specialists-admin$/, /^journey-checklist-admin$/],
     code: ['routes/admin-*.ts', 'routes/tenant-admin/', 'orb/profile/role-registry.ts', 'constants/vitana-roles.ts', 'i18n/'],
-    tables: ['app_users', 'user_tenants', 'tenants', 'role_preferences', 'user_active_roles', 'nav_catalog', 'nav_catalog_i18n', 'supported_locales'],
+    tables: ['app_users', 'user_tenants', 'tenants', 'role_preferences', 'user_active_roles', 'supported_locales'],
     flags: [],
     docs: ['CLAUDE.md §13b', 'docs/DB-CONTENT-I18N.md'],
     aliases: ['admin', 'tenants', 'roles', 'role switch', 'role preferences', 'users', 'auth', 'signup', 'i18n', 'navigator'],

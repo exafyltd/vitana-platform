@@ -42,11 +42,7 @@ beforeAll(async () => {
   __setNavServiceForTests({ index: f.index, embedder: f.embedder });
 });
 beforeEach(() => {
-  process.env.NAV_V2_ENABLED = 'true';
   (emitOasisEvent as jest.Mock).mockClear();
-});
-afterAll(() => {
-  delete process.env.NAV_V2_ENABLED;
 });
 
 describe('openScreen — every gate in one place', () => {

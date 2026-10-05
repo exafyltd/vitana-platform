@@ -119,7 +119,8 @@ describe('VTID-04525 B7 — conversation flag registry', () => {
   // reading production's own screen list — never the staging one.
   test('registers the production navigator switch on its own registry', () => {
     const { GATEWAY_WORKFLOW_PINS } = require('../../../src/services/conversation/conversation-flag-pins.generated');
-    expect(GATEWAY_WORKFLOW_PINS.NAV_V2_ENABLED).toEqual({ staging: 'true', prod: 'true' });
+    // VTID-04880: the retired NAV_V2_ENABLED flag is no longer pinned anywhere.
+    expect(GATEWAY_WORKFLOW_PINS.NAV_V2_ENABLED).toBeUndefined();
     expect(GATEWAY_WORKFLOW_PINS.NAV_REGISTRY_URL).toEqual({
       staging: 'https://preview-aws.vitanaland.com/nav-registry.json',
       prod: 'https://vitanaland.com/nav-registry.json',

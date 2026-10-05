@@ -1,4 +1,6 @@
 -- RLS policies (idempotent: DROP POLICY IF EXISTS then CREATE, one pair per policy)
+-- VTID-04880: nav_catalog* statements below are guarded with to_regclass -- those
+-- tables were archived to legacy_archive in Supabase and may be absent.
 DROP POLICY IF EXISTS audit_admin_read ON public.access_audit_log;
 CREATE POLICY audit_admin_read ON public.access_audit_log AS PERMISSIVE FOR SELECT TO public
   USING (((tenant_id = current_tenant_id()) AND is_platform_admin()));
@@ -2740,17 +2742,17 @@ CREATE POLICY "Users can view music metadata" ON public.music_metadata AS PERMIS
            FROM memberships mb
           WHERE ((mb.user_id = auth.uid()) AND (mb.role = ANY (ARRAY['staff'::tenant_role, 'admin'::tenant_role])) AND (mb.status = 'active'::text)))))))));
 
-DROP POLICY IF EXISTS admin_read_nav_catalog ON public.nav_catalog;
-CREATE POLICY admin_read_nav_catalog ON public.nav_catalog AS PERMISSIVE FOR SELECT TO authenticated
-  USING (((((auth.jwt() -> 'app_metadata'::text) ->> 'exafy_admin'::text))::boolean IS TRUE));
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$DROP POLICY IF EXISTS admin_read_nav_catalog ON public.nav_catalog$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$CREATE POLICY admin_read_nav_catalog ON public.nav_catalog AS PERMISSIVE FOR SELECT TO authenticated
+  USING (((((auth.jwt() -> 'app_metadata'::text) ->> 'exafy_admin'::text))::boolean IS TRUE))$SQL04880$; END IF; END $NAV04880$;
 
-DROP POLICY IF EXISTS admin_read_nav_catalog_audit ON public.nav_catalog_audit;
-CREATE POLICY admin_read_nav_catalog_audit ON public.nav_catalog_audit AS PERMISSIVE FOR SELECT TO authenticated
-  USING (((((auth.jwt() -> 'app_metadata'::text) ->> 'exafy_admin'::text))::boolean IS TRUE));
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_audit') IS NOT NULL THEN EXECUTE $SQL04880$DROP POLICY IF EXISTS admin_read_nav_catalog_audit ON public.nav_catalog_audit$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_audit') IS NOT NULL THEN EXECUTE $SQL04880$CREATE POLICY admin_read_nav_catalog_audit ON public.nav_catalog_audit AS PERMISSIVE FOR SELECT TO authenticated
+  USING (((((auth.jwt() -> 'app_metadata'::text) ->> 'exafy_admin'::text))::boolean IS TRUE))$SQL04880$; END IF; END $NAV04880$;
 
-DROP POLICY IF EXISTS admin_read_nav_catalog_i18n ON public.nav_catalog_i18n;
-CREATE POLICY admin_read_nav_catalog_i18n ON public.nav_catalog_i18n AS PERMISSIVE FOR SELECT TO authenticated
-  USING (((((auth.jwt() -> 'app_metadata'::text) ->> 'exafy_admin'::text))::boolean IS TRUE));
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_i18n') IS NOT NULL THEN EXECUTE $SQL04880$DROP POLICY IF EXISTS admin_read_nav_catalog_i18n ON public.nav_catalog_i18n$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_i18n') IS NOT NULL THEN EXECUTE $SQL04880$CREATE POLICY admin_read_nav_catalog_i18n ON public.nav_catalog_i18n AS PERMISSIVE FOR SELECT TO authenticated
+  USING (((((auth.jwt() -> 'app_metadata'::text) ->> 'exafy_admin'::text))::boolean IS TRUE))$SQL04880$; END IF; END $NAV04880$;
 
 DROP POLICY IF EXISTS authenticated_read_active_categories ON public.notification_categories;
 CREATE POLICY authenticated_read_active_categories ON public.notification_categories AS PERMISSIVE FOR SELECT TO authenticated

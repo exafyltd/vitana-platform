@@ -88,10 +88,6 @@ describe('aurora adapter (VTID-03517)', () => {
     const configured = auroraEnv({ AURORA_DATABASE_URL: 'postgres://u:p@h:5432/d' });
 
     it.each([
-      ['upsertNavCatalogI18n', (r: ReturnType<typeof createDbI18nRepository>) =>
-        r.upsertNavCatalogI18n([
-          { catalog_id: 'c', lang: 'fr', title: 't', description: '', when_to_visit: '' },
-        ])],
       ['upsertChecklistTranslations', (r: ReturnType<typeof createDbI18nRepository>) =>
         r.upsertChecklistTranslations([
           {
@@ -109,8 +105,8 @@ describe('aurora adapter (VTID-03517)', () => {
     it('explains WHY, so the flag is not set reflexively', async () => {
       const repo = createDbI18nRepository(null, configured);
       // The text is hard-wrapped, so match across the line break.
-      await expect(repo.upsertNavCatalogI18n([])).rejects.toThrow(/DMS\s+replication targets/);
-      await expect(repo.upsertNavCatalogI18n([])).rejects.toThrow(/Option C/);
+      await expect(repo.upsertChecklistTranslations([])).rejects.toThrow(/DMS\s+replication targets/);
+      await expect(repo.upsertChecklistTranslations([])).rejects.toThrow(/Option C/);
     });
 
     it('does not gate reads behind the write flag', () => {
@@ -124,7 +120,7 @@ describe('aurora adapter (VTID-03517)', () => {
     // A fallback would resolve rather than reject, and the caller would believe
     // Aurora was written. This is the VTID-03480 failure shape.
     const repo = createDbI18nRepository(null, auroraEnv());
-    await expect(repo.upsertNavCatalogI18n([])).rejects.toBeInstanceOf(Error);
+    await expect(repo.upsertChecklistTranslations([])).rejects.toBeInstanceOf(Error);
   });
 
   it('keeps naming the remaining risk rather than decaying to "not implemented"', () => {
@@ -499,8 +495,12 @@ describe('translateUnits batch splitting', () => {
 });
 
 describe('surface registry', () => {
-  it('exposes both content surfaces', () => {
-    expect(SURFACES.map((s) => s.id).sort()).toEqual(['journey-checklist', 'nav-catalog']);
+  it('exposes the journey checklist surface only (VTID-04880 retired nav-catalog)', () => {
+    expect(SURFACES.map((s) => s.id)).toEqual(['journey-checklist']);
+  });
+
+  it('rejects the retired nav-catalog surface by name', () => {
+    expect(() => getSurface('nav-catalog')).toThrow(/Unknown surface "nav-catalog"/);
   });
 
   it('rejects an unknown surface by name, listing the known ones', () => {
@@ -509,16 +509,6 @@ describe('surface registry', () => {
 
   it('never treats German as a translation target', () => {
     expect(SOURCE_LOCALE).toBe('de');
-  });
-
-  it('builds a nav_catalog_i18n row with the natural key and stamp', () => {
-    const row = getSurface('nav-catalog').buildRow({
-      unit: { key: 'cat-1', fields: {} },
-      locale: 'fr',
-      translated: { title: 'Mon parcours', description: 'd', when_to_visit: 'w' },
-      sha: 'abc123',
-    }) as Record<string, unknown>;
-    expect(row).toMatchObject({ catalog_id: 'cat-1', lang: 'fr', title: 'Mon parcours', source_sha: 'abc123' });
   });
 
   /**
@@ -539,8 +529,7 @@ describe('surface registry', () => {
     expect(row.source_sha).toBe('deadbeef');
   });
 
-  it('requires a non-empty label on both surfaces', () => {
-    expect(getSurface('nav-catalog').requiredFields).toContain('title');
+  it('requires a non-empty label', () => {
     expect(getSurface('journey-checklist').requiredFields).toContain('display_label');
   });
 });
