@@ -366,6 +366,7 @@ import { writeFact, getCurrentFacts } from '../services/memory-facts-service';
 // VTID-01222: WebSocket server for client connections
 import WebSocket, { WebSocketServer } from 'ws';
 import { GoogleAuth } from 'google-auth-library';
+import { isGoogleAwsSupplierEnabled, getGoogleAccessTokenViaAwsSupplier } from '../lib/google-access-token';
 import { Server as HttpServer, IncomingMessage } from 'http';
 import { startLiveSessionForWs } from '../orb/live/session/ws-start-adapter';
 import type { IncomingHttpHeaders } from 'http';
@@ -2257,6 +2258,15 @@ const TOKEN_REFRESH_SKEW_MS = 5 * 60 * 1000;
 const TOKEN_DEFAULT_TTL_MS = 55 * 60 * 1000;
 
 async function fetchFreshAccessToken(): Promise<string> {
+  // VTID-04893: on ECS the Workload Identity config's own credential source
+  // (the EC2 metadata endpoint) is unreachable, so with the flag on the token
+  // comes from the shared module, which supplies the task role's credentials.
+  // Flag off = the GoogleAuth path below, unchanged.
+  if (isGoogleAwsSupplierEnabled()) {
+    const { token, expiresAt } = await getGoogleAccessTokenViaAwsSupplier();
+    cachedAccessToken = { token, expiresAt: expiresAt ?? Date.now() + TOKEN_DEFAULT_TTL_MS };
+    return token;
+  }
   if (!googleAuth) {
     throw new Error('Google Auth client not initialized');
   }
@@ -2311,7 +2321,7 @@ async function getAccessToken(): Promise<string> {
 // first use.
 if (googleAuth && VERTEX_PROJECT_ID) {
   void getAccessToken()
-    .then(() => console.log('[VTID-01219] ORB Voice access token prewarmed'))
+    .then(() => console.log(`[VTID-01219] ORB Voice access token prewarmed (auth=${isGoogleAwsSupplierEnabled() ? 'aws_supplier' : 'adc'})`))
     .catch((err: any) =>
       console.warn('[VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily):', err?.message));
 }
