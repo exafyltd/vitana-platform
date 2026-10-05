@@ -267,6 +267,33 @@ ON CONFLICT (user_id) DO NOTHING;
 
 ---
 
+### Rule-45 exclusion in the database (VTID-04888)
+Accounts in `service_bot_accounts` ∪ `notification_test_actors` never reach a real member through Find-a-Match
+or the member profile lists. Migration `20261005120000_vtid_04888_rule45_intents_profiles.sql`:
+
+- **Intent RPCs** `search_intent_catalog_v2`, `compute_intent_matches_v2` and the uncalled v1
+  `search_intent_catalog`, `compute_intent_matches`: candidate pool and pool-size count carry
+  `NOT EXISTS (service_bot_accounts) AND NOT EXISTS (notification_test_actors)` on `ui.requester_user_id`;
+  `search_*` return no rows when `p_user_id` is excluded, `compute_*` return 0 when the source intent's
+  requester is excluded. All other lines are the live bodies captured in
+  `docs/validation/VTID-04888/live-functions-before.sql`.
+- **`is_excluded_account(uuid) → boolean`** (STABLE, SECURITY DEFINER). EXECUTE for `service_role` only, so a
+  client cannot probe which accounts are service/test accounts. Used by the triggers below.
+- **`trg_gcp_hide_excluded_accounts`** (BEFORE INSERT OR UPDATE on `global_community_profiles`): forces
+  `is_visible = false` for an excluded account. The vitana-v1 member list and the "new members" cards read
+  this table directly through RLS (`is_visible = true`), so this is what keeps them out.
+- **`trg_service_bot_hide_profile`** / **`trg_test_actor_hide_profile`** (AFTER INSERT on each allowlist): listing
+  an account hides its profile. Independent of the existing `trg_*_refresh_listings` triggers.
+- **`trg_intent_matches_skip_excluded`** (BEFORE INSERT on `intent_matches`): skips (RETURN NULL) any row whose
+  `intent_a_id`/`intent_b_id` requester or `external_target_id` (matchmaker profile fallback) is excluded.
+
+Data fix-up `data-fixups/20261005120100_vtid_04888_rule45_cleanup.sql` hid the excluded profiles, closed their open
+intents, removed their matchmaker rows and their candidates from real members' rows, and deleted the matches
+involving them (aborts if any `intent_events`/`intent_disputes`/`user_ratings`/`service_payments`/
+`match_notifications`/`autopilot_prompts` row points at one).
+
+---
+
 ### dev_agent_memory — handoffs + author — APPLIED 2026-09-23 (VTID-04407)
 **Purpose:** Phase 3 of `docs/MEMORY-SYSTEM-PLAN.md`. This gives each developer their own
 working state next to the repo-wide knowledge.

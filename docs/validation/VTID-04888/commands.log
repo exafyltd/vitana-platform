@@ -1,0 +1,31 @@
+# VTID-04888 commands (2026-10-05)
+
+## Live capture (read-only, production Supabase)
+SELECT md5(replace(pg_get_functiondef(oid), E'\r\n', E'\n')) for the four intent RPCs
+  search_intent_catalog_v2   f36258851643cd0a2add3e584f612221
+  compute_intent_matches_v2  ab69be4997e8fc689efec0ca977e2534
+  search_intent_catalog      d920b178a9730f26a54313c291a170aa
+  compute_intent_matches     2bcf828f4866e2eeb4a2bc7eb479154e
+md5 of each block in live-functions-before.sql (+ "\n"): identical for all four.
+
+## SQL harness (throwaway local Postgres 16)
+$ bash scripts/ci/test-vtid-04888-rule45.sh
+VTID-04888 rule-45 assertions passed
+fix-up guard aborts on dependent rows: ok
+rollback: ok
+VTID-04888 harness: all checks passed
+
+Mutation check: removing the pool-count predicate from search_intent_catalog_v2 fails the harness
+("ERROR:  search_v2 pool_size: 2"); restored.
+
+## Gateway
+$ cd services/gateway && npx jest test/vtid-04888-rule45-exclusion.test.ts test/services/matchmaker-agent-repository.test.ts
+Tests: 32 passed
+$ npx tsc --noEmit -p .        (clean)
+$ npm run test:operator         Tests: 30 passed
+$ npm run test:roles            Tests: 105 passed
+$ npm run test:support          Tests: 85 passed (4 suites)
+
+## Staging manifest
+$ node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(require('./docs/validation/VTID-04888/staging-tests.json'))"
+{"ok":true,"errors":[]}
