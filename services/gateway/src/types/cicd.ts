@@ -1071,6 +1071,8 @@ export type CicdEventType =
   // VTID-04478: Commerce partner onboarding engine
   | 'partner_org.onboarding_started'
   | 'partner_org.company_updated'
+  // VTID-04890: a typeless draft gets its business type, once
+  | 'partner_org.partner_type_set'
   | 'partner_org.terms_accepted'
   | 'partner_org.lifecycle_changed'
   // VTID-04481: website platform detection during onboarding

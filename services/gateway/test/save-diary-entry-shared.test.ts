@@ -66,9 +66,16 @@ function makeStubSupabase(opts: {
     from(table: string) {
       if (table === 'diary_entries') {
         return {
-          insert: async (row: Record<string, unknown>) => {
+          // VTID-04884: supabase-js shape — insert() is awaitable and also
+          // chains .select().single() to return the new row.
+          insert: (row: Record<string, unknown>) => {
             calls.push({ table, op: 'insert', payload: row });
-            return { error: opts.diaryInsertError ?? null };
+            const result = opts.diaryInsertError
+              ? { data: null, error: opts.diaryInsertError }
+              : { data: { id: 'diary-stub', created_at: '2026-10-05T00:00:00Z' }, error: null };
+            return Object.assign(Promise.resolve({ error: result.error }), {
+              select: (_cols: string) => ({ single: async () => result }),
+            });
           },
           select: (_cols: string) => ({
             eq: (_c1: string, _v1: unknown) => ({

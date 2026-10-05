@@ -25,12 +25,13 @@
  * the terms text in front of the supplier.
  */
 import { emitOasisEvent } from './oasis-event-service';
-import { PARTNER_TYPES } from './partner-lifecycle';
+import { PARTNER_TYPES, parseCompanyFacts } from './partner-lifecycle';
 import {
   changeVoidsVerification,
   getOnboardingStatus,
   listCatalogue,
   listMyOrgs,
+  setMissingPartnerType,
   startOnboarding,
   submitForVerification,
   updateCompany,
@@ -61,6 +62,12 @@ const INSTRUCTIONS = [
 // ==================== Tool catalogue ====================
 
 const ORG_ID = { type: 'string', description: 'The business id from get_onboarding_status or create_business.' };
+const BUSINESS_TYPE = {
+  type: 'string',
+  enum: [...PARTNER_TYPES],
+  description:
+    'lab = diagnostic lab; practitioner_clinic = doctor, therapist or clinic; supplier_shop = sells products; service_provider = sells services; affiliate_brand = a brand selling through affiliate links.',
+};
 const CONFIRMED = {
   type: 'boolean',
   description: 'true only after the supplier explicitly agreed to this action in the conversation.',
@@ -84,12 +91,7 @@ export const COMMERCE_MCP_TOOLS = [
       type: 'object',
       properties: {
         name: { type: 'string', description: 'The business name as customers know it.' },
-        business_type: {
-          type: 'string',
-          enum: [...PARTNER_TYPES],
-          description:
-            'lab = diagnostic lab; practitioner_clinic = doctor, therapist or clinic; supplier_shop = sells products; service_provider = sells services; affiliate_brand = a brand selling through affiliate links.',
-        },
+        business_type: BUSINESS_TYPE,
       },
       required: ['name', 'business_type'],
       additionalProperties: false,
@@ -100,7 +102,7 @@ export const COMMERCE_MCP_TOOLS = [
     name: 'update_business',
     title: 'Update company details',
     description:
-      'Sets the company details: legal name, country (ISO 3166-1 alpha-2), website and, for EU countries, the VAT ID. Only while the business is being set up. Changing website, country or VAT ID after verification passed means verification runs again: ask the supplier first and pass confirmed=true.',
+      'Sets the company details: legal name, country (ISO 3166-1 alpha-2), website and, for EU countries, the VAT ID. Only while the business is being set up. Changing website, country or VAT ID after verification passed means verification runs again: ask the supplier first and pass confirmed=true. business_type only when the status lists it as missing; once set it cannot be changed here.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -109,6 +111,7 @@ export const COMMERCE_MCP_TOOLS = [
         country: { type: 'string', description: 'Two letters, e.g. DE.' },
         website: { type: 'string', description: 'https://…' },
         vat_id: { type: 'string' },
+        business_type: BUSINESS_TYPE,
         confirmed: CONFIRMED,
       },
       required: ['organization_id'],
@@ -245,15 +248,17 @@ export function shapeStatus(body: Record<string, any>, portalUrl: string): Recor
   const org = body.organization ?? {};
   const checklist = body.checklist ?? null;
   const steps = Array.isArray(checklist?.steps) ? checklist.steps : [];
+  // VTID-04890: a business without a type has no checklist; say what is missing.
+  const typeless = !checklist && org.partner_type == null;
   return {
     organization_id: org.id,
     name: org.display_name,
     business_type: org.partner_type,
     state: org.lifecycle_state,
     company: { legal_name: org.legal_name ?? null, country: org.country ?? null, website: org.website ?? null, vat_id: org.vat_id ?? null },
-    next_step: checklist?.next_step ?? null,
+    next_step: typeless ? 'business_type' : checklist?.next_step ?? null,
     ready_to_submit: checklist?.submit_ready ?? false,
-    missing_to_submit: checklist?.submit_missing ?? [],
+    missing_to_submit: typeless ? ['business_type'] : checklist?.submit_missing ?? [],
     steps: steps.map((st: any) => ({
       step: st.key,
       required: st.required,
@@ -262,6 +267,12 @@ export function shapeStatus(body: Record<string, any>, portalUrl: string): Recor
       ...(ON_SCREEN_STEPS.has(st.key) ? { done_on_vitanaland: true, link: `${portalUrl}/commerce?org=${org.id}` } : {}),
     })),
     portal_link: `${portalUrl}/commerce?org=${org.id}`,
+    ...(typeless
+      ? {
+          hint: 'This business has no type yet. Ask the supplier what kind of business it is, then call update_business with business_type. Do not call create_business: that would create a second business.',
+          business_types: [...PARTNER_TYPES],
+        }
+      : {}),
     ...(body.created !== undefined ? { created: body.created } : {}),
     ...(body.transitions ? { transitions: body.transitions, open_steps: body.open_steps ?? [] } : {}),
   };
@@ -394,6 +405,18 @@ export async function callCommerceTool(ctx: McpCallContext, name: string, rawArg
       if (!orgId) return toolError('invalid_input', 'organization_id is required');
       const facts: Record<string, unknown> = {};
       for (const k of ['legal_name', 'country', 'website', 'vat_id']) if (args[k] !== undefined) facts[k] = args[k];
+      const hasFacts = Object.keys(facts).length > 0;
+      // VTID-04890: everything that can refuse runs before anything is written.
+      if (hasFacts) {
+        const parsed = parseCompanyFacts(facts);
+        if (!parsed.ok) return toolError('invalid_input', parsed.error);
+      }
+      if (args.business_type !== undefined && !hasFacts) {
+        return fromService(
+          await setMissingPartnerType(s, ctx.caller, orgId, args.business_type, { source: 'commerce-mcp' }),
+          (b) => shapeStatus(b, ctx.portalUrl),
+        );
+      }
       if (args.confirmed !== true) {
         const status = await getOnboardingStatus(s, ctx.caller, orgId);
         if (status.status >= 400) return fromService(status);
@@ -403,6 +426,10 @@ export async function callCommerceTool(ctx: McpCallContext, name: string, rawArg
             'Verification already passed: changing website, country or VAT ID means it runs again. Ask the supplier, then call again with confirmed=true.',
           );
         }
+      }
+      if (args.business_type !== undefined) {
+        const typed = await setMissingPartnerType(s, ctx.caller, orgId, args.business_type, { source: 'commerce-mcp' });
+        if (typed.status >= 400) return fromService(typed);
       }
       return fromService(await updateCompany(s, ctx.caller, orgId, facts, { source: 'commerce-mcp' }), (b) => shapeStatus(b, ctx.portalUrl));
     }
