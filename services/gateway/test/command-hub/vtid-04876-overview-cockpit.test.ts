@@ -39,7 +39,8 @@ function fnBody(signature: string): string {
 /** The Overview code region (same bounds as the Phase 0 test). */
 function overviewRegion(): string {
   const start = SRC.indexOf('// VTID-01864: Supervisor Dashboard — Utility Functions');
-  const end = SRC.indexOf('async function fetchOverviewReleasesSilent(');
+  // VTID-04887: the release feed (the old end marker) was deleted with its tab.
+  const end = SRC.indexOf('async function fetchOperatorTaskQueue(');
   expect(start).toBeGreaterThan(-1);
   expect(end).toBeGreaterThan(start);
   return SRC.slice(start, end);

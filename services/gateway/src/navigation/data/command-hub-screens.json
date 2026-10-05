@@ -24,83 +24,6 @@
    }
   },
   {
-   "id": "DEVHUB.OVERVIEW.LIVE_METRICS",
-   "route": "/command-hub/overview/live-metrics/",
-   "category": "developer",
-   "access": "member",
-   "surface": "command-hub",
-   "i18n": {
-    "en": {
-     "title": "Live Metrics",
-     "shows": "Real-time performance metrics and statistics.",
-     "phrasings": [
-      "open Live Metrics",
-      "show me Live Metrics",
-      "go to the Live Metrics tab in Overview"
-     ],
-     "hint": "When asking for metrics, performance, stats, live data, or real-time monitoring."
-    }
-   }
-  },
-  {
-   "id": "DEVHUB.OVERVIEW.RECENT_EVENTS",
-   "route": "/command-hub/overview/recent-events/",
-   "category": "developer",
-   "access": "member",
-   "surface": "command-hub",
-   "i18n": {
-    "en": {
-     "title": "Recent Events",
-     "shows": "Latest system events and activity feed.",
-     "phrasings": [
-      "open Recent Events",
-      "show me Recent Events",
-      "go to the Recent Events tab in Overview"
-     ],
-     "hint": "When asking for recent events, activity feed, or what happened recently."
-    }
-   }
-  },
-  {
-   "id": "DEVHUB.OVERVIEW.ERRORS_VIOLATIONS",
-   "route": "/command-hub/overview/errors-violations/",
-   "category": "developer",
-   "access": "member",
-   "surface": "command-hub",
-   "i18n": {
-    "en": {
-     "title": "Errors & Violations",
-     "shows": "Error dashboard and governance violations.",
-     "phrasings": [
-      "open Errors & Violations",
-      "show me Errors & Violations",
-      "go to the Errors Violations tab in Overview",
-      "open Errors Violations in Overview"
-     ],
-     "hint": "When asking about errors, violations, failures, or issues."
-    }
-   }
-  },
-  {
-   "id": "DEVHUB.OVERVIEW.RELEASE_FEED",
-   "route": "/command-hub/overview/release-feed/",
-   "category": "developer",
-   "access": "member",
-   "surface": "command-hub",
-   "i18n": {
-    "en": {
-     "title": "Release Feed",
-     "shows": "Recent releases and version history.",
-     "phrasings": [
-      "open Release Feed",
-      "show me Release Feed",
-      "go to the Release Feed tab in Overview"
-     ],
-     "hint": "When asking about releases, versions, changelog, or release feed."
-    }
-   }
-  },
-  {
    "id": "DEVHUB.ADMIN.USERS",
    "route": "/command-hub/admin/users/",
    "category": "developer",
@@ -874,11 +797,16 @@
       "open Operator Dashboard",
       "show me Operator Dashboard",
       "go to the Dashboard tab in Operator",
-      "open Dashboard in Operator"
+      "open Dashboard in Operator",
+      "open Live Metrics",
+      "show me Live Metrics"
      ],
      "hint": "When asking for operator dashboard, operator console, or operator view."
     }
-   }
+   },
+   "formerIds": [
+    "DEVHUB.OVERVIEW.LIVE_METRICS"
+   ]
   },
   {
    "id": "DEVHUB.OPERATOR.TASK_QUEUE",
@@ -932,11 +860,16 @@
       "open Operator Deployments",
       "show me Operator Deployments",
       "go to the Deployments tab in Operator",
-      "open Deployments in Operator"
+      "open Deployments in Operator",
+      "open Release Feed",
+      "show me Release Feed"
      ],
      "hint": "When asking about operator deployments or deployment control."
     }
-   }
+   },
+   "formerIds": [
+    "DEVHUB.OVERVIEW.RELEASE_FEED"
+   ]
   },
   {
    "id": "DEVHUB.OPERATOR.RUNBOOK",
@@ -1145,11 +1078,16 @@
       "open Governance Violations",
       "show me Governance Violations",
       "go to the Violations tab in Governance",
-      "open Violations in Governance"
+      "open Violations in Governance",
+      "open Errors & Violations",
+      "show me Errors & Violations"
      ],
      "hint": "When asking about violations, breaches, compliance issues, or rule violations."
     }
-   }
+   },
+   "formerIds": [
+    "DEVHUB.OVERVIEW.ERRORS_VIOLATIONS"
+   ]
   },
   {
    "id": "DEVHUB.GOVERNANCE.HISTORY",
@@ -1521,11 +1459,16 @@
       "open OASIS Events",
       "show me OASIS Events",
       "go to the Events tab in OASIS",
-      "open Events in OASIS"
+      "open Events in OASIS",
+      "open Recent Events",
+      "show me Recent Events"
      ],
      "hint": "When asking about OASIS, OASIS events, event log, audit log, event stream, or system events."
     }
-   }
+   },
+   "formerIds": [
+    "DEVHUB.OVERVIEW.RECENT_EVENTS"
+   ]
   },
   {
    "id": "DEVHUB.OASIS.VTID_LEDGER",

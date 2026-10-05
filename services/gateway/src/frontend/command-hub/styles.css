@@ -14699,7 +14699,7 @@ border-bottom: 1px solid var(--color-border, #333);
 .module-header .section-subtitle { margin: 0; font-size: 0.85rem; color: var(--color-text-secondary); }
 
 /* ── Metrics Grid ── */
-.metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+
 .metrics-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
 .metrics-grid.cols-5 { grid-template-columns: repeat(5, 1fr); }
 .metric-card {
@@ -15703,7 +15703,7 @@ border-bottom: 1px solid var(--color-border, #333);
 
 /* ── Responsive ── */
 @media (max-width: 900px) {
-  .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+  
   .overview-services-grid, .infra-services-grid, .infra-card-grid, .infra-card-grid--3col, .config-cards-grid, .llm-providers-grid, .controls-grid { grid-template-columns: 1fr; }
   
   .personality-field-group { grid-template-columns: 1fr; }
@@ -15727,9 +15727,7 @@ border-bottom: 1px solid var(--color-border, #333);
  * ========================================================================= */
 
 /* -- Pipeline Funnel -- */
-.pipeline-dashboard-container {
-    padding: 1rem;
-}
+
 
 .pipeline-funnel {
     display: flex;
@@ -15803,53 +15801,20 @@ border-bottom: 1px solid var(--color-border, #333);
 
 
 
-.entry-point-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    gap: 0.75rem;
-}
 
-.entry-point-card {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 1rem;
-    background: var(--bg-tertiary, #16213e);
-    border-radius: 8px;
-    border: 1px solid var(--border-color, #2d3748);
-}
 
-.ep-icon {
-    font-size: 1.5rem;
-    margin-bottom: 4px;
-}
 
-.ep-count {
-    font-size: 1.75rem;
-    font-weight: 700;
-    color: var(--text-primary, #e2e8f0);
-}
 
-.ep-label {
-    font-size: 0.75rem;
-    color: var(--text-secondary, #94a3b8);
-    text-align: center;
-}
+
+
+
+
+
 
 /* -- Pipeline Health Strip -- */
-.pipeline-health-strip {
-    padding: 1rem;
-    background: var(--bg-tertiary, #16213e);
-    border-radius: 8px;
-    border: 1px solid var(--border-color, #2d3748);
-}
 
-.health-strip-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 0;
-}
+
+
 
 .health-dot {
     width: 10px;
@@ -15863,30 +15828,14 @@ border-bottom: 1px solid var(--color-border, #333);
 .health-dot-red { background-color: #ef4444; }
 
 
-.health-strip-label {
-    font-size: 0.85rem;
-    color: var(--text-secondary, #94a3b8);
-}
 
-.success-rate-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 0;
-    margin-top: 8px;
-    border-top: 1px solid var(--border-color, #2d3748);
-}
 
-.success-rate-value {
-    font-size: 1.25rem;
-    font-weight: 700;
-}
+
+
+
 
 /* -- Attention Items -- */
-.pipeline-attention-section,
-.attention-priority-section {
-    margin-bottom: 1.5rem;
-}
+
 
 .attention-all-clear {
     padding: 2rem;
@@ -15978,6 +15927,14 @@ border-bottom: 1px solid var(--color-border, #333);
     margin-bottom: 4px;
 }
 
+
+
+
+
+
+
+
+
 .rec-title {
     font-size: 0.9rem;
     font-weight: 600;
@@ -16028,6 +15985,36 @@ border-bottom: 1px solid var(--color-border, #333);
     display: flex;
     gap: 8px;
 }
+
+/* VTID-04887: Vitana Recommends, kept in the Overview disclosure. */
+.overview-recommends-panel {
+    background: var(--bg-tertiary, #16213e);
+    border: 1px solid var(--border-color, #2d3748);
+    border-radius: 8px;
+    padding: 0.5rem;
+    /* Full width like the Service Health panel; the dashboard grid is 1fr 1fr. */
+    grid-column: 1 / -1;
+    min-width: 0;
+}
+
+.overview-recommends-panel .rec-title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.overview-recs-title {
+    margin: 0;
+}
+
+.overview-recs-empty {
+    font-size: 0.85rem;
+}
+
+
+
+
+
+
 
 /* -- Compact Health -- */
 
@@ -16083,14 +16070,7 @@ border-bottom: 1px solid var(--color-border, #333);
     display: block;
 }
 
-.overview-list-wrap {
-    overflow-y: auto;
-    overflow-x: hidden;
-    max-height: 360px;
-    min-width: 0;
-    width: 100%;
-    box-sizing: border-box;
-}
+
 
 .overview-refreshing-tag {
     font-size: 0.72rem;
@@ -16130,45 +16110,15 @@ border-bottom: 1px solid var(--color-border, #333);
 
 
 /* Key Metrics Grid */
-.overview-metrics-grid {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    grid-auto-rows: var(--metric-card-min-height, 108px);
-    align-items: stretch;
-    gap: var(--overview-grid-gap, 0.45rem);
-    width: 100%;
-    box-sizing: border-box;
-    align-self: start;
-}
 
-@media (max-width: 1400px) {
-    .overview-metrics-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-}
-@media (max-width: 1100px) {
-    .overview-metrics-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
+
+
+
 /* The existing @media (max-width: 768px) block below collapses to 2 columns. */
 
-.overview-metric-card {
-    background: var(--bg-tertiary, #16213e);
-    border: 1px solid var(--border-color, #2d3748);
-    border-radius: 6px;
-    padding: var(--metric-card-padding, 0.6rem 0.4rem);
-    min-height: var(--metric-card-min-height, 88px);
-    text-align: center;
-    transition: border-color 0.2s;
-    min-width: 0;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    box-sizing: border-box;
-}
 
-.overview-metric-card:hover {
-    border-color: rgba(255, 255, 255, 0.15);
-}
+
+
 
 .metric-value {
     font-size: var(--metric-value-size, 1.15rem);
@@ -16195,15 +16145,7 @@ border-bottom: 1px solid var(--color-border, #333);
     max-width: 100%;
 }
 
-.metric-subtitle {
-    font-size: var(--metric-subtitle-size, 0.55rem);
-    color: var(--text-tertiary, #64748b);
-    margin-top: 0.15rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
-}
+
 
 /* Panel Shared Styles — see compact versions below */
 
@@ -16214,18 +16156,20 @@ border-bottom: 1px solid var(--color-border, #333);
     border-radius: 10px;
     line-height: 1.4;
 }
-
-.overview-count-badge-red {
-    background: rgba(239, 68, 68, 0.2);
-    color: #ef4444;
-}
-
-
-
 .overview-count-badge-green {
     background: rgba(16, 185, 129, 0.2);
     color: #10b981;
 }
+.overview-count-badge-amber {
+    background: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+}
+
+
+
+
+
+
 
 /* Service Health Grid — compact 3-col */
 .overview-health-grid {
@@ -16253,7 +16197,7 @@ border-bottom: 1px solid var(--color-border, #333);
 
 
 /* Metric card icon */
-.metric-icon { display:flex; justify-content:center; margin-bottom:3px; color: var(--text-secondary, #94a3b8); }
+
 .metric-icon svg { width:24px; height:24px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
 
 /* Health grid card — small box with name + latency (4x4 grid) */
@@ -16375,35 +16319,18 @@ border-bottom: 1px solid var(--color-border, #333);
 }
 
 /* ORB Communication Panel */
-.overview-orb-panel {
-    background: var(--bg-tertiary, #16213e);
-    border: 1px solid var(--border-color, #2d3748);
-    border-radius: 8px;
-    padding: 0.5rem;
-}
 
-.orb-config-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.2rem 0;
-    font-size: 0.8rem;
-}
 
-.orb-config-label {
-    flex: 1;
-    color: var(--text-secondary, #94a3b8);
-}
 
-.orb-config-value {
-    font-weight: 600;
-    font-size: 0.8rem;
-}
+
+
+
+
 
 /* VTID-04869: ORB card value tones (class-based, CSP-safe) */
-.orb-config-value-muted { color: #94a3b8; }
-.orb-config-value-ok { color: #10b981; }
-.orb-config-value-fail { color: #ef4444; }
+
+
+
 .orb-alert {
     background: rgba(239, 68, 68, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.3);
@@ -16417,82 +16344,27 @@ border-bottom: 1px solid var(--color-border, #333);
 
 
 
-.orb-metric-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 0.2rem 0;
-    font-size: 0.8rem;
-    color: var(--text-secondary, #94a3b8);
-}
 
-.orb-metric-value {
-    font-weight: 600;
-    color: var(--text-primary, #e2e8f0);
-}
+
+
 
 /* Recent Failures Panel */
-.overview-failures-panel {
-    background: var(--bg-tertiary, #16213e);
-    border: 1px solid var(--border-color, #2d3748);
-    border-radius: 8px;
-    padding: 0.5rem;
-}
 
-.failure-row {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.2rem 0;
-    font-size: 0.72rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-    min-width: 0;
-    width: 100%;
-}
 
-.failure-row:last-child {
-    border-bottom: none;
-}
 
-.failure-time {
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
-    font-size: 0.7rem;
-    color: var(--text-tertiary, #64748b);
-    min-width: 50px;
-    flex-shrink: 0;
-}
 
-.failure-topic {
-    color: #fca5a5;
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
-    font-size: 0.7rem;
-    max-width: 180px;
-    flex-shrink: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
 
-.failure-message {
-    flex: 1 1 0;
-    min-width: 0;
-    color: var(--text-secondary, #94a3b8);
-    font-size: 0.73rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
 
-.overview-failures-panel {
-    min-width: 0;
-}
+
+
+
+
+
+
+
 
 /* Deploy History Panel */
-.overview-deploy-panel {
-    background: var(--bg-tertiary, #16213e);
-    border: 1px solid var(--border-color, #2d3748);
-    border-radius: 8px;
-    padding: 0.5rem;
-}
+
 
 .deploy-row {
     display: flex;
@@ -16544,38 +16416,15 @@ border-bottom: 1px solid var(--color-border, #333);
 }
 
 /* No Failures / All Clear */
-.overview-no-failures {
-    padding: 0.4rem;
-    text-align: center;
-    color: #10b981;
-    font-size: 0.72rem;
-    background: rgba(16, 185, 129, 0.05);
-    border-radius: 6px;
-    border: 1px solid rgba(16, 185, 129, 0.12);
-}
+
 
 /* Attention Center panel */
-.overview-attention-center {
-    background: var(--bg-tertiary, #16213e);
-    border: 1px solid var(--border-color, #2d3748);
-    border-radius: 8px;
-    padding: 0.5rem;
-}
+
 
 /* Bottom row: Attention + Recommends side by side */
-.overview-bottom-row {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.5rem;
-}
 
-.overview-recommends-panel {
-    background: var(--bg-tertiary, #16213e);
-    border: 1px solid var(--border-color, #2d3748);
-    border-radius: 8px;
-    padding: 0.5rem;
-}
+
+
 
 /* Panel titles — compact */
 .overview-panel-title {
@@ -16597,28 +16446,14 @@ border-bottom: 1px solid var(--color-border, #333);
     .overview-dashboard {
         grid-template-columns: 1fr;
     }
-    .overview-metrics-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .overview-bottom-row {
-        grid-template-columns: 1fr;
-    }
+    
+    
 }
 
 /* -- Event Filter -- */
-.event-filter-select {
-    background: var(--bg-tertiary, #16213e);
-    color: var(--text-primary, #e2e8f0);
-    border: 1px solid var(--border-color, #2d3748);
-    border-radius: 4px;
-    padding: 4px 8px;
-    font-size: 0.85rem;
-    margin-right: 8px;
-}
 
-.event-row-error {
-    background: #ef444415 !important;
-}
+
+
 
 .event-row-error td {
     color: #fca5a5 !important;
@@ -16669,9 +16504,7 @@ border-bottom: 1px solid var(--color-border, #333);
         grid-template-columns: 1fr;
     }
 
-    .entry-point-grid {
-        grid-template-columns: repeat(3, 1fr);
-    }
+    
 
     .funnel-stage {
         min-width: auto;
