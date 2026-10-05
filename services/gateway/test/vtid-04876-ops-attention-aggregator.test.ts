@@ -106,6 +106,9 @@ describe('buildOpsAttention', () => {
     expect(budgets).toEqual({
       service_health: 8_000, release: 3_000, voice_supervisor: 3_000, autonomy: 6_000,
       operator_pipeline: 3_000, governance: 3_000, decisions_waiting: 3_000,
+      // VTID-04885 (Phase 2): the spend read pages through today's events.
+      cost_budgets: 8_000, tests_contracts: 3_000, routines: 3_000, support_tickets: 3_000,
+      llm_google_fallback: 3_000, stuck_vtids: 3_000,
     });
     jest.useFakeTimers();
     try {
@@ -141,13 +144,13 @@ describe('buildOpsAttention', () => {
     expect(data.verdict).toBe('UNKNOWN');
   });
 
-  it('the full default registry runs over all-healthy fakes: OK with 8 fresh sources', async () => {
+  it('the full default registry runs over all-healthy fakes: OK with 14 fresh sources (13 adapters + state, VTID-04885)', async () => {
     const data = await buildOpsAttention({
       env: 'production', now: NOW,
       reads: fakeReads({ latestEvent: async (t) => (t[0] === 'staging.verify.passed' ? { topic: 'staging.verify.passed', created_at: iso(NOW - MIN) } : null) }),
       state: memStore(),
     });
-    expect(data.sources).toHaveLength(8);
+    expect(data.sources).toHaveLength(14);
     expect(data.sources.every((s) => s.status === 'ok')).toBe(true);
     expect(data.verdict).toBe('OK');
     expect(data.items).toEqual([]);

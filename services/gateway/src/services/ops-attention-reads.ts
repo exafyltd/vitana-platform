@@ -23,7 +23,17 @@ import { getAllSystemControls } from './system-controls-service';
 import { isAutonomousExecutionTask } from '../routes/worker-orchestrator';
 import { fetchApprovalEligibleVtids, fetchPrInfoForVtids } from '../routes/approvals';
 import { runRuntimeCheckCached } from '../routes/ops-runtime-health';
-import type { AttentionReads, ControlRow, LedgerRow, WaitingRow } from './ops-attention-adapters';
+import { aggregateSpend, budgetLines, loadSpendToday } from './orchestrator/budgets';
+import {
+  GOOGLE_LLM_PROVIDERS,
+  JEV_BUDGET_TOPIC,
+  LEDGER_READ_LIMIT,
+  TICKET_CLOSED_STATUSES,
+  type AttentionReads,
+  type ControlRow,
+  type LedgerRow,
+  type WaitingRow,
+} from './ops-attention-adapters';
 import type { AttentionStateStore, StateRow } from './ops-attention';
 
 /** Same threshold as the pipeline summary's BROKEN classification. */
@@ -41,6 +51,9 @@ function check<T>(res: { data: T | null; error: { message: string } | null }, ta
 }
 
 export function createAttentionReads(opts: { authHeader?: string } = {}): AttentionReads {
+  // VTID-04885: operator_pipeline and stuck_vtids read the same in-progress
+  // ledger page; one read per computation serves both.
+  let ledger: Promise<LedgerRow[]> | null = null;
   return {
     async healthSummary() {
       const s = await buildHealthSummary({ authHeader: opts.authHeader });
@@ -139,17 +152,23 @@ export function createAttentionReads(opts: { authHeader?: string } = {}): Attent
       return rows.map((r) => String(r.vtid));
     },
 
-    async inProgressLedger() {
-      return check(
-        await sb()
-          .from('vtid_ledger')
-          .select('vtid,title,metadata,claimed_by,claim_started_at,claim_expires_at,updated_at')
-          .like('vtid', 'VTID-%')
-          .eq('status', 'in_progress')
-          .or('is_terminal.is.null,is_terminal.eq.false')
-          .limit(500),
-        'vtid_ledger',
-      ) as LedgerRow[];
+    inProgressLedger() {
+      if (!ledger) {
+        ledger = (async () =>
+          check(
+            await sb()
+              .from('vtid_ledger')
+              .select('vtid,title,metadata,claimed_by,claim_started_at,claim_expires_at,updated_at')
+              .like('vtid', 'VTID-%')
+              .eq('status', 'in_progress')
+              .or('is_terminal.is.null,is_terminal.eq.false')
+              .limit(LEDGER_READ_LIMIT),
+            'vtid_ledger',
+          ) as LedgerRow[])();
+        // A failed read is not cached: the next caller retries.
+        ledger.catch(() => { ledger = null; });
+      }
+      return ledger;
     },
 
     isAutonomous(row: LedgerRow) {
@@ -258,6 +277,109 @@ export function createAttentionReads(opts: { authHeader?: string } = {}): Attent
           title: (r as any).title || r.description || r.vtid,
           waiting_since: r.updated_at,
         }));
+    },
+
+    // ── VTID-04885 (Phase 2) ──
+
+    async llmBudgetLines() {
+      // The same read and arithmetic as GET /api/v1/orchestrator/budgets.
+      const { rows, since, truncated, error } = await loadSpendToday(sb());
+      if (error) throw new Error(`oasis_events (llm.call.completed): ${error}`);
+      return { since, truncated, lines: budgetLines(aggregateSpend(rows)) };
+    },
+
+    async jevBudgetAlerts(sinceIso) {
+      return check(
+        await sb()
+          .from('oasis_events')
+          .select('topic,created_at,metadata')
+          .eq('topic', JEV_BUDGET_TOPIC)
+          .gte('created_at', sinceIso)
+          .order('created_at', { ascending: false })
+          .limit(200),
+        'oasis_events',
+      ) as any[];
+    },
+
+    async ciTestRuns(sinceIso) {
+      const [runs, syncState] = await Promise.all([
+        sb()
+          .from('ci_test_runs')
+          .select('repo,workflow_file,workflow_name,branch,conclusion,html_url,run_created_at')
+          .eq('branch', 'main')
+          .gte('run_created_at', sinceIso)
+          .order('run_created_at', { ascending: false })
+          .limit(1000),
+        sb().from('ci_test_sync_state').select('repo,last_synced_at').limit(10),
+      ]);
+      const rows = check(runs, 'ci_test_runs') as any[];
+      const state = check(syncState, 'ci_test_sync_state') as Array<{ last_synced_at: string | null }>;
+      // The OLDEST repository sync is the freshness of the whole read.
+      const synced = state.map((r) => r.last_synced_at).filter((x): x is string => !!x).sort();
+      return { rows, last_synced_at: state.length && synced.length === state.length ? synced[0] : null };
+    },
+
+    async failingTestContracts() {
+      return check(
+        await sb()
+          .from('test_contracts')
+          .select('id,capability,service,status,last_run_at,last_failure_signature')
+          .eq('status', 'fail')
+          .order('last_run_at', { ascending: false, nullsFirst: false })
+          .limit(100),
+        'test_contracts',
+      ) as any[];
+    },
+
+    async routines() {
+      return check(
+        await sb()
+          .from('routines')
+          .select('name,display_name,cron_schedule,last_run_at,last_run_status,consecutive_failures,created_at')
+          .eq('enabled', true)
+          .limit(200),
+        'routines',
+      ) as any[];
+    },
+
+    async openSupportTickets(agedBeforeIso) {
+      // Uses idx_feedback_tickets_priority_status (partial: open tickets only).
+      const closed = `(${TICKET_CLOSED_STATUSES.join(',')})`;
+      return check(
+        await sb()
+          .from('feedback_tickets')
+          .select('id,ticket_number,kind,status,priority,created_at')
+          .not('status', 'in', closed)
+          .or(`priority.in.(p0,p1),created_at.lt.${agedBeforeIso}`)
+          .order('created_at', { ascending: true })
+          .limit(300),
+        'feedback_tickets',
+      ) as any[];
+    },
+
+    async llmGoogleCalls(sinceIso) {
+      const rows = check(
+        await sb()
+          .from('oasis_events')
+          .select('created_at,metadata')
+          .eq('topic', 'llm.call.completed')
+          .gte('created_at', sinceIso)
+          .in('metadata->>provider', GOOGLE_LLM_PROVIDERS)
+          .order('created_at', { ascending: false })
+          .limit(500),
+        'oasis_events',
+      ) as Array<{ created_at: string; metadata: Record<string, unknown> | null }>;
+      return rows.map((r) => {
+        const m = r.metadata || {};
+        return {
+          created_at: r.created_at,
+          provider: typeof m.provider === 'string' ? m.provider : null,
+          model: typeof m.model === 'string' ? m.model : null,
+          stage: typeof m.stage === 'string' ? m.stage : null,
+          service: typeof m.service === 'string' ? m.service : null,
+          fallback_used: m.fallback_used === true || m.fallback_used === 'true',
+        };
+      });
     },
   };
 }

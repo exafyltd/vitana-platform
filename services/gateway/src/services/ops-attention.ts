@@ -33,7 +33,10 @@
 import { VITANA_ENV, type VitanaEnv } from '../env';
 import {
   ATTENTION_ADAPTERS,
+  NOT_WIRED_SOURCES,
+  TILE_DOMAINS,
   type AdapterSpec,
+  type TileDomainKey,
   type AttentionReads,
   type AttentionSourceId,
   type Candidate,
@@ -69,6 +72,28 @@ export interface AttentionItem {
   evidence: Record<string, unknown>;
 }
 
+/**
+ * VTID-04885: one tile per plan domain, computed from the same sources and
+ * items as the queue. A domain with no adapter is `not_monitored` — never
+ * unknown and never OK.
+ */
+export interface DomainSummary {
+  key: TileDomainKey;
+  label: string;
+  monitored: boolean;
+  status: 'ok' | 'unknown' | 'not_monitored';
+  worst_severity: Severity | null;
+  open: number;
+  sources_fresh: number;
+  sources_total: number;
+  /** The oldest fetch among the domain's sources (its freshness), or null. */
+  fetched_at: string | null;
+  source_ids: string[];
+  errors: string[];
+  not_wired: Array<{ id: string; reason: string }>;
+  deeplink: Deeplink;
+}
+
 export interface AttentionData {
   generated_at: string;
   env: VitanaEnv;
@@ -76,6 +101,7 @@ export interface AttentionData {
   counts: { p1: number; p2: number; p3: number };
   sources: AttentionSource[];
   items: AttentionItem[];
+  domains: DomainSummary[];
 }
 
 export interface StateRow {
@@ -124,6 +150,38 @@ export function computeVerdict(counts: AttentionData['counts'], sources: Attenti
   if (sources.some((s) => s.status === 'unknown')) return 'UNKNOWN';
   if (counts.p2 + counts.p3 > 0) return 'ATTENTION';
   return 'OK';
+}
+
+const SEVERITIES: Severity[] = ['P1', 'P2', 'P3'];
+
+/** VTID-04885: the 13 domain tiles from the sources and the (unsliced) items. */
+export function buildDomainSummary(sources: AttentionSource[], items: AttentionItem[]): DomainSummary[] {
+  return TILE_DOMAINS.map((d) => {
+    const own = sources.filter((s) => (d.sources as string[]).includes(s.id));
+    const notWired = NOT_WIRED_SOURCES.filter((n) => n.domain === d.key).map((n) => ({ id: n.id, reason: n.reason }));
+    const its = items.filter((i) => (d.sources as string[]).includes(i.source));
+    const monitored = d.sources.length > 0;
+    // A monitored domain whose adapter did not run at all (not in `sources`)
+    // is unknown, exactly like one whose adapter failed.
+    const missing = monitored && own.length < d.sources.length;
+    const unknown = missing || own.some((s) => s.status !== 'ok');
+    const fetched = own.map((s) => s.fetched_at).sort();
+    return {
+      key: d.key,
+      label: d.label,
+      monitored,
+      status: !monitored ? 'not_monitored' : unknown ? 'unknown' : 'ok',
+      worst_severity: SEVERITIES.find((sev) => its.some((i) => i.severity === sev)) ?? null,
+      open: its.length,
+      sources_fresh: own.filter((s) => s.status === 'ok').length,
+      sources_total: d.sources.length,
+      fetched_at: fetched[0] ?? null,
+      source_ids: [...d.sources],
+      errors: own.filter((s) => s.error).map((s) => `${s.id}: ${s.error}`),
+      not_wired: notWired,
+      deeplink: d.deeplink,
+    };
+  });
 }
 
 /** One full computation, uncached. Never throws for an adapter or state failure. */
@@ -220,6 +278,7 @@ export async function buildOpsAttention(input: BuildAttentionInput): Promise<Att
     counts,
     sources,
     items: items.slice(0, MAX_ITEMS),
+    domains: buildDomainSummary(sources, items),
   };
 }
 

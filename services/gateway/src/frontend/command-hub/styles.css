@@ -17967,3 +17967,35 @@ button.fb-chip:focus-visible,
     .ops-status-bar { padding: 0.6rem 0.7rem; }
     .ops-sev { min-width: 0; }
 }
+
+/* ==========================================================================
+   VTID-04885: Overview Phase 2 — domain tiles (one per plan domain).
+   Worst severity is icon + text label + colour; a domain without an adapter
+   says "Not yet monitored" (never green). Logical properties only.
+   ========================================================================== */
+.ops-tiles { display: flex; flex-direction: column; gap: 0.5rem; }
+.ops-tiles-title { margin: 0; font-size: 1rem; font-weight: 700; color: #f3f4f6; }
+.ops-tile-grid {
+    list-style: none; margin: 0; padding: 0;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr)); gap: 0.5rem;
+}
+.ops-tile { border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08); border-block-start-width: 3px; background: rgba(15, 23, 42, 0.55); min-width: 0; }
+.ops-tile.ops-sev-p1 { border-block-start-color: #ef4444; background: rgba(15, 23, 42, 0.55); color: inherit; }
+.ops-tile.ops-sev-p2 { border-block-start-color: #f59e0b; background: rgba(15, 23, 42, 0.55); color: inherit; }
+.ops-tile.ops-sev-p3 { border-block-start-color: #3b82f6; background: rgba(15, 23, 42, 0.55); color: inherit; }
+.ops-tile.ops-tile-ok { border-block-start-color: #22c55e; }
+.ops-tile.ops-tile-unknown { border-block-start-color: #94a3b8; }
+.ops-tile.ops-tile-unmonitored { border-style: dashed; opacity: 0.8; }
+.ops-tile-body {
+    display: flex; flex-direction: column; gap: 0.2rem; min-height: 44px; height: 100%;
+    padding: 0.55rem 0.7rem; color: inherit; text-decoration: none; text-align: start; box-sizing: border-box;
+}
+.ops-tile-link:hover { background: rgba(255, 255, 255, 0.04); }
+.ops-tile-link:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
+.ops-tile-label { font-weight: 700; color: #f3f4f6; font-size: 0.88rem; overflow-wrap: anywhere; }
+.ops-tile-state { display: inline-flex; align-self: flex-start; align-items: center; gap: 0.25rem; padding: 0.1rem 0.45rem; border-radius: 4px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+.ops-tile-state.ops-tile-ok { background: rgba(34, 197, 94, 0.18); color: #bbf7d0; }
+.ops-tile-state.ops-tile-unknown { background: rgba(148, 163, 184, 0.2); color: #e2e8f0; }
+.ops-tile-state.ops-tile-unmonitored { background: rgba(148, 163, 184, 0.1); color: #cbd5e1; }
+.ops-tile-count { font-size: 0.82rem; color: #e5e7eb; }
+.ops-tile-fresh, .ops-tile-note { font-size: 0.72rem; color: #94a3b8; overflow-wrap: anywhere; }

@@ -21,7 +21,7 @@ import {
   DEEPLINK_QUERY_CONTRACT,
   type Deeplink,
 } from '../../src/services/ops-attention-adapters';
-import { fakeReads } from '../fixtures/ops-attention-fakes';
+import { fakeReads, phase2Everything } from '../fixtures/ops-attention-fakes';
 
 const APP_JS_PATH = join(__dirname, '../../src/frontend/command-hub/app.js');
 const STYLES_PATH = join(__dirname, '../../src/frontend/command-hub/styles.css');
@@ -251,6 +251,8 @@ describe('VTID-04876: deep-link contract (?vtid= / ?session=)', () => {
       'command-hub/tasks': ['vtid'],
       'oasis/vtid-ledger': ['vtid'],
       'voice/sessions': ['session'],
+      // VTID-04885: the routable Feedback module.
+      'feedback/inbox': ['ticket'],
     });
   });
 
@@ -378,7 +380,11 @@ describe('VTID-04876: every adapter deeplink resolves against NAVIGATION_CONFIG'
       severity: i % 2 ? 'warning' : 'critical', text: `alert ${tab}`, tab,
     })) as any,
     selfHealOutcomes: async () => [{ vtid: 'VTID-01000', endpoint: '/api/v1/a/health', failure_class: 'x', outcome: 'rolled_back', created_at: ago(H) }],
-    inProgressLedger: async () => [{ vtid: 'VTID-02000', title: 't', metadata: { autonomous_execution: true }, claimed_by: 'w', claim_started_at: ago(3 * H), claim_expires_at: null, updated_at: ago(0) }],
+    inProgressLedger: async () => [
+      { vtid: 'VTID-02000', title: 't', metadata: { autonomous_execution: true }, claimed_by: 'w', claim_started_at: ago(3 * H), claim_expires_at: null, updated_at: ago(0) },
+      // VTID-04885: a stale session-plane VTID (stuck_vtids).
+      { vtid: 'VTID-02001', title: 's', metadata: { source: 'claude-code' }, claimed_by: null, claim_started_at: null, claim_expires_at: null, updated_at: ago(100 * H) },
+    ],
     systemControls: async () => [
       { key: 'autopilot_execution_enabled', enabled: false, updated_by: 'x', updated_at: ago(H) },
       { key: 'vtid_allocator_enabled', enabled: false, updated_by: 'x', updated_at: ago(H) },
@@ -388,6 +394,8 @@ describe('VTID-04876: every adapter deeplink resolves against NAVIGATION_CONFIG'
     devAutopilotAwaitingApproval: async () => [{ id: 'e1', waiting_since: ago(5 * H) }, { id: 'e2', waiting_since: ago(5 * H) }],
     selfHealPendingApproval: async () => [{ id: 's1', vtid: 'VTID-03000', waiting_since: ago(2 * H) }],
     prApprovalsPending: async () => [{ id: 'VTID-04000', vtid: 'VTID-04000', waiting_since: ago(2 * H) }],
+    // VTID-04885: every Phase 2 adapter reports too.
+    ...phase2Everything(NOW),
   });
 
   async function allDeeplinks(): Promise<Array<{ source: string; dl: Deeplink }>> {
@@ -403,7 +411,7 @@ describe('VTID-04876: every adapter deeplink resolves against NAVIGATION_CONFIG'
   it('every section/tab exists, every query key is one its screen reads, every screen is dispatched', async () => {
     const nav = navigationConfig();
     const links = await allDeeplinks();
-    expect(new Set(links.map((l) => l.source)).size).toBe(7);
+    expect(new Set(links.map((l) => l.source)).size).toBe(13);
     const problems: string[] = [];
     for (const { source, dl } of links) {
       const section = nav.find((s) => s.section === dl.section);
@@ -441,9 +449,12 @@ describe('VTID-04876: styles and asset version', () => {
     expect(block).not.toMatch(/margin-left|margin-right|padding-left|padding-right|border-left|text-align:\s*left/);
   });
 
-  it('index.html loads app.js and styles.css at the VTID-04876 version', () => {
+  it('index.html loads app.js and styles.css at (or after) the VTID-04876 version', () => {
+    // VTID-04885 bumped it again; the version only ever moves forward.
     const html = readFileSync(INDEX_HTML_PATH, 'utf8');
-    expect(html).toContain('/command-hub/app.js?v=20261027-vtid-04876');
-    expect(html).toContain('/command-hub/styles.css?v=20261027-vtid-04876');
+    const app = (html.match(/app\.js\?v=([^"']+)/) || [])[1] || '';
+    const css = (html.match(/styles\.css\?v=([^"']+)/) || [])[1] || '';
+    expect(app >= '20261027-vtid-04876').toBe(true);
+    expect(css >= '20261027-vtid-04876').toBe(true);
   });
 });

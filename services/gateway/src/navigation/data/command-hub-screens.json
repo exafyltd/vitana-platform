@@ -2590,6 +2590,82 @@
      ]
     }
    }
+  },
+  {
+   "id": "DEVHUB.FEEDBACK.INBOX",
+   "route": "/command-hub/feedback/inbox/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "disabled": "VTID-04885: routable for Overview deep links; its voice phrasings have no stored Titan vectors yet (adding them needs an embedding run), so voice does not open it",
+   "i18n": {
+    "en": {
+     "title": "Feedback Inbox",
+     "shows": "Member feedback and support tickets with priority, status and resolver.",
+     "phrasings": [
+      "open the Feedback Inbox",
+      "show me the support tickets",
+      "go to the Inbox tab in Feedback"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.FEEDBACK.HANDOFFS",
+   "route": "/command-hub/feedback/handoffs/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "disabled": "VTID-04885: routable for Overview deep links; its voice phrasings have no stored Titan vectors yet (adding them needs an embedding run), so voice does not open it",
+   "i18n": {
+    "en": {
+     "title": "Feedback Live Handoffs",
+     "shows": "Recent live hand-offs between Vitana and the specialist personas.",
+     "phrasings": [
+      "open the feedback live handoffs",
+      "show me recent specialist handoffs",
+      "go to the Live Handoffs tab in Feedback"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.FEEDBACK.KPIS",
+   "route": "/command-hub/feedback/kpis/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "disabled": "VTID-04885: routable for Overview deep links; its voice phrasings have no stored Titan vectors yet (adding them needs an embedding run), so voice does not open it",
+   "i18n": {
+    "en": {
+     "title": "Feedback KPIs",
+     "shows": "Support ticket KPIs: volume, resolution time and backlog.",
+     "phrasings": [
+      "open the feedback KPIs",
+      "show me the support ticket KPIs",
+      "go to the KPIs tab in Feedback"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.FEEDBACK.AUDIT",
+   "route": "/command-hub/feedback/audit/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "disabled": "VTID-04885: routable for Overview deep links; its voice phrasings have no stored Titan vectors yet (adding them needs an embedding run), so voice does not open it",
+   "i18n": {
+    "en": {
+     "title": "Feedback Audit Log",
+     "shows": "Audit log of actions taken on feedback tickets.",
+     "phrasings": [
+      "open the feedback audit log",
+      "show me the ticket audit log",
+      "go to the Audit Log tab in Feedback"
+     ]
+    }
+   }
   }
  ]
 }

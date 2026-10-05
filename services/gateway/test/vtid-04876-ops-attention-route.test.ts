@@ -56,7 +56,8 @@ describe('GET /api/v1/ops/attention — admin (middleware mocked)', () => {
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
     const d = res.body.data;
-    expect(Object.keys(d).sort()).toEqual(['counts', 'env', 'generated_at', 'items', 'sources', 'verdict']);
+    // VTID-04885 added the domain tiles summary.
+    expect(Object.keys(d).sort()).toEqual(['counts', 'domains', 'env', 'generated_at', 'items', 'sources', 'verdict']);
     expect(d.env).toBe('production');
     expect(d.counts).toEqual({ p1: 0, p2: 1, p3: 1 });
     expect(d.items[0]).toMatchObject({ severity: 'P2', domain: 'autonomy', source: 'autonomy', deeplink: { section: 'autopilot', tab: 'live', query: {} } });

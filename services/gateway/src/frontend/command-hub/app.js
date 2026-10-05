@@ -3841,6 +3841,21 @@ const NAVIGATION_CONFIG = [
             { "key": "catalog", "path": "/command-hub/routines/catalog/" },
             { "key": "history", "path": "/command-hub/routines/history/" }
         ]
+    },
+    {
+        // VTID-04885: the Feedback module (VTID-02605) is routable so the
+        // Overview's support-ticket items land on a real screen (?ticket=
+        // opens the ticket drawer). It has no sidebar entry: the sidebar is
+        // unchanged (renderSidebar skips "sidebar": false sections).
+        "section": "feedback",
+        "basePath": "/command-hub/feedback/",
+        "sidebar": false,
+        "tabs": [
+            { "key": "inbox", "path": "/command-hub/feedback/inbox/" },
+            { "key": "handoffs", "path": "/command-hub/feedback/handoffs/" },
+            { "key": "kpis", "path": "/command-hub/feedback/kpis/" },
+            { "key": "audit", "path": "/command-hub/feedback/audit/" }
+        ]
     }
 ];
 
@@ -3868,7 +3883,8 @@ const SECTION_LABELS = {
     'testing-qa': 'Testing & QA',
     'intelligence-memory-dev': 'Intelligence & Memory (Dev)',
     'docs': 'Docs',
-    'routines': 'Routines'
+    'routines': 'Routines',
+    'feedback': 'Feedback'
 };
 
 const splitScreenCombos = [
@@ -6185,6 +6201,8 @@ function renderSidebar() {
     navSection.dataset.scrollKey = 'sidebar-nav';
 
     NAVIGATION_CONFIG.forEach(mod => {
+        // VTID-04885: routable-only sections (Feedback) keep the sidebar unchanged.
+        if (mod.sidebar === false) return;
         const label = SECTION_LABELS[mod.section] || mod.section;
         const item = document.createElement('div');
         item.className = `nav-item ${state.currentModuleKey === mod.section ? 'active' : ''}`;
@@ -12368,6 +12386,7 @@ function navigateToScreen(sectionKey, tabKey, query) {
 //   command-hub/tasks ?vtid=     → task drawer
 //   oasis/vtid-ledger ?vtid=     → ledger drawer
 //   voice/sessions    ?session=  → voice session drawer
+//   feedback/inbox    ?ticket=   → feedback ticket drawer (VTID-04885)
 // services/ops-attention-adapters.ts DEEPLINK_QUERY_CONTRACT mirrors this
 // map (a unit test keeps them equal). An unresolvable value shows a toast
 // and falls back to the list (the parameter is dropped from the URL).
@@ -12375,7 +12394,8 @@ function navigateToScreen(sectionKey, tabKey, query) {
 var OVERVIEW_DEEPLINK_QUERY_CONTRACT = {
     'command-hub/tasks': ['vtid'],
     'oasis/vtid-ledger': ['vtid'],
-    'voice/sessions': ['session']
+    'voice/sessions': ['session'],
+    'feedback/inbox': ['ticket']
 };
 
 function applyDeepLinkParams() {
@@ -12386,7 +12406,10 @@ function applyDeepLinkParams() {
     if (!allowed) return;
     var vtid = allowed.indexOf('vtid') >= 0 ? params.get('vtid') : null;
     var session = allowed.indexOf('session') >= 0 ? params.get('session') : null;
-    if (vtid && screen === 'command-hub/tasks') {
+    var ticket = allowed.indexOf('ticket') >= 0 ? params.get('ticket') : null;
+    if (ticket && screen === 'feedback/inbox') {
+        openTicketDrawerFromDeepLink(ticket);
+    } else if (vtid && screen === 'command-hub/tasks') {
         openTaskDrawerFromDeepLink(vtid);
     } else if (vtid && screen === 'oasis/vtid-ledger') {
         openLedgerDrawerFromDeepLink(vtid);
@@ -12428,6 +12451,18 @@ async function openLedgerDrawerFromDeepLink(vtid) {
         oasisVtidDetail.error = null;
         deepLinkFallback('VTID', vtid);
         renderApp();
+    }
+}
+
+// VTID-04885: ?ticket= on feedback/inbox opens the ticket drawer; an id the
+// admin feedback API does not know falls back to the inbox with a toast.
+async function openTicketDrawerFromDeepLink(ticketId) {
+    try {
+        var data = await fetchFeedbackJSON('/api/v1/admin/feedback/tickets/' + encodeURIComponent(ticketId));
+        if (!data || !data.ticket) { deepLinkFallback('Ticket', ticketId); return; }
+        openFeedbackTicketDrawer(ticketId);
+    } catch (_e) {
+        deepLinkFallback('Ticket', ticketId);
     }
 }
 
@@ -29396,7 +29431,13 @@ var OPS_ATTENTION_DOMAINS = [
     { key: 'autonomy', label: 'Autonomy' },
     { key: 'operator', label: 'Operator' },
     { key: 'governance', label: 'Governance' },
-    { key: 'decisions', label: 'Decisions' }
+    { key: 'decisions', label: 'Decisions' },
+    // VTID-04885 (Phase 2 adapters)
+    { key: 'llm', label: 'AI & LLM' },
+    { key: 'quality', label: 'Quality' },
+    { key: 'cost', label: 'Cost' },
+    { key: 'support', label: 'Support' },
+    { key: 'jobs', label: 'Jobs' }
 ];
 var OPS_ATTENTION_VERDICT_CLASS = {
     CRITICAL: 'ops-verdict-critical',
@@ -29428,6 +29469,21 @@ function computeOpsAttentionStatus(view, nowMs) {
         : v === 'OK' ? 'All sources fresh, nothing needs attention'
         : 'Some sources are unknown — this is not an all-clear';
     return { verdict: v, blind: false, cls: OPS_ATTENTION_VERDICT_CLASS[v], label: v, detail: detail };
+}
+
+/**
+ * VTID-04885: pure — what one domain tile shows. Blind cockpit → UNKNOWN; a
+ * domain with no adapter → "Not yet monitored" (never OK); a monitored domain
+ * shows its worst open severity, else UNKNOWN when a source is unknown, else OK.
+ */
+function opsAttentionTileView(domain, blind) {
+    if (blind || !domain) return { cls: 'ops-tile-unknown', icon: '?', label: 'UNKNOWN', note: 'Cockpit blind' };
+    if (!domain.monitored) return { cls: 'ops-tile-unmonitored', icon: '–', label: 'Not yet monitored', note: '' };
+    var unknownNote = domain.status === 'unknown' ? 'Some sources unknown — not an all-clear' : '';
+    var sev = domain.worst_severity && OPS_ATTENTION_SEVERITY[domain.worst_severity];
+    if (sev) return { cls: sev.cls, icon: sev.icon, label: sev.label, note: unknownNote };
+    if (domain.status === 'unknown') return { cls: 'ops-tile-unknown', icon: '?', label: 'UNKNOWN', note: unknownNote };
+    return { cls: 'ops-tile-ok', icon: '✓', label: 'OK', note: 'Nothing open' };
 }
 
 function opsAttentionEnvLabel(env) {
@@ -29498,8 +29554,57 @@ function renderOpsAttentionCockpit() {
     wrap.setAttribute('aria-label', 'Supervisor cockpit');
     wrap.appendChild(renderOpsAttentionStatusBar(view, Date.now()));
     wrap.appendChild(renderOpsAttentionQueue(view));
+    wrap.appendChild(renderOpsAttentionTiles(view, Date.now()));
     wrap.addEventListener('click', handleOpsAttentionClick);
     return wrap;
+}
+
+/**
+ * VTID-04885: one tile per plan domain (data.domains, computed server-side
+ * from the same response as the queue): worst severity, open count, source
+ * freshness and a click-through to the domain's screen. A domain without an
+ * adapter says "Not yet monitored" and is not a link.
+ */
+function renderOpsAttentionTiles(view, nowMs) {
+    var st = computeOpsAttentionStatus(view, nowMs);
+    var data = view.data;
+    var domains = (data && Array.isArray(data.domains)) ? data.domains : [];
+    var sec = document.createElement('section');
+    sec.className = 'ops-tiles';
+    sec.setAttribute('aria-label', 'Domains');
+    var html = '<h2 class="ops-tiles-title">Domains</h2>';
+    if (!domains.length) {
+        html += '<p class="ops-queue-empty">' + (view.fetched ? 'No domain summary in this response — cockpit blind for domains.' : 'Loading domains…') + '</p>';
+        sec.innerHTML = html;
+        return sec;
+    }
+    html += '<ul class="ops-tile-grid">' + domains.map(function (d) {
+        var tv = opsAttentionTileView(d, st.blind);
+        var body =
+            '<span class="ops-tile-label">' + escapeHtml(d.label) + '</span>' +
+            '<span class="ops-tile-state ' + tv.cls + '"><span class="ops-sev-icon" aria-hidden="true">' + escapeHtml(tv.icon) + '</span> ' + escapeHtml(tv.label) + '</span>';
+        if (d.monitored) {
+            body +=
+                '<span class="ops-tile-count">' + (st.blind ? '?' : String(d.open)) + ' open</span>' +
+                '<span class="ops-tile-fresh">Sources fresh ' + (st.blind ? '?' : String(d.sources_fresh)) + '/' + String(d.sources_total) +
+                    (d.fetched_at && !st.blind ? ' · ' + escapeHtml(dashboardRelativeTime(d.fetched_at)) : '') + '</span>';
+        }
+        if (tv.note) body += '<span class="ops-tile-note">' + escapeHtml(tv.note) + '</span>';
+        if (d.not_wired && d.not_wired.length) {
+            body += '<span class="ops-tile-note">Not yet monitored: ' + d.not_wired.map(function (n) { return escapeHtml(n.id); }).join(', ') + '</span>';
+        }
+        if (!d.monitored) return '<li class="ops-tile ' + tv.cls + '"><div class="ops-tile-body">' + body + '</div></li>';
+        var dl = d.deeplink || {};
+        var section = NAVIGATION_CONFIG.find(function (s) { return s.section === dl.section; });
+        var tab = section ? (section.tabs.find(function (t) { return t.key === dl.tab; }) || section.tabs[0]) : null;
+        var href = (tab ? tab.path : (section ? section.basePath : '#')) + opsAttentionQueryString(dl.query);
+        return '<li class="ops-tile ' + tv.cls + '">' +
+            '<a class="ops-tile-body ops-tile-link" href="' + escapeHtml(href) + '" data-action="ops-attention-open"' +
+                ' data-section="' + escapeHtml(dl.section || '') + '" data-tab="' + escapeHtml(dl.tab || '') + '"' +
+                ' data-query="' + escapeHtml(JSON.stringify(dl.query || {})) + '">' + body + '</a></li>';
+    }).join('') + '</ul>';
+    sec.innerHTML = html;
+    return sec;
 }
 
 function renderOpsAttentionStatusBar(view, nowMs) {
