@@ -190,7 +190,8 @@ describe('rule table — owner decision 2026-10-05', () => {
   });
 
   test('the Wallet overview reports each capped rule with its window and count', () => {
-    const o = buildRewardOverview(U, { earnedKeys: [], windowCounts: { autopilot_action_done: 1 }, recent: [] }, 0, {} as any);
+    // VTID-04899: autopilot_action_done is listed only while its switch is exactly 'true'.
+    const o = buildRewardOverview(U, { earnedKeys: [], windowCounts: { autopilot_action_done: 1 }, recent: [] }, 0, { AUTOPILOT_ACTION_REWARD_ENABLED: 'true' } as any);
     const all = o.groups.flatMap((g) => g.rules);
     expect(all.find((r) => r.id === 'autopilot_action_done')).toMatchObject({ amount: 5, window: 'day', cap: { count: 2, days: 1 }, used_in_window: 1 });
     expect(all.find((r) => r.id === 'live_room_15min')).toMatchObject({ window: 'week', used_in_window: 0 });
@@ -214,7 +215,7 @@ describe('claimCappedReward', () => {
 
   test('amount, cap and window come from the rule table, never the caller', async () => {
     const { client, rpc } = rpcClient({ data: { ok: true, claimed: true, amount: 5 }, error: null });
-    const r = await claimCappedReward(client, { tenantId: T, userId: U, ruleId: 'autopilot_action_done', ref: 'rec-1' });
+    const r = await claimCappedReward(client, { tenantId: T, userId: U, ruleId: 'autopilot_action_done', ref: 'rec-1' }, { AUTOPILOT_ACTION_REWARD_ENABLED: 'true' } as any);
     expect(rpc).toHaveBeenCalledWith('claim_capped_reward', {
       p_tenant_id: T, p_user_id: U, p_rule: 'autopilot_action_done', p_ref: 'rec-1',
       p_amount: 5, p_cap: 2, p_window: 'day',

@@ -161,11 +161,29 @@ export function capWindowStart(window: CapWindow, now: Date = new Date()): Date 
   return d;
 }
 
-/** Whether a rule actually pays in this process right now. */
+/**
+ * Whether a rule actually pays in this process right now. Wallet → Rewards
+ * lists exactly these rules (visibleRewardRules), so a switched-off reward is
+ * never advertised. Three independent switches (VTID-04899):
+ *  - invite rules: COMMUNITY_INVITE_REWARD_ENABLED, on unless exactly 'false';
+ *  - autopilot_action_done (paid at completion): AUTOPILOT_ACTION_REWARD_ENABLED,
+ *    fail closed — pays only when exactly 'true' (owner decision 2026-10-05;
+ *    production pins 'false', staging 'true');
+ *  - live_room_15min and index_new_best: REWARD_SWEEP_ENABLED, on unless
+ *    exactly 'false'. Deliberate coupling: the sweep is their only payer, so
+ *    the sweep switch decides both payout and visibility. If the sweep is ever
+ *    split (e.g. milestones only), these two rules get their own switch.
+ */
 export function isRuleLive(rule: RewardRule, env: NodeJS.ProcessEnv = process.env): boolean {
   if (!rule.live) return false;
   if (rule.id === 'invite_friend_joined' || rule.id === 'invited_friends_10') {
     return env.COMMUNITY_INVITE_REWARD_ENABLED !== 'false';
+  }
+  if (rule.id === 'autopilot_action_done') {
+    return env.AUTOPILOT_ACTION_REWARD_ENABLED === 'true';
+  }
+  if (rule.id === 'live_room_15min' || rule.id === 'index_new_best') {
+    return env.REWARD_SWEEP_ENABLED !== 'false';
   }
   return true;
 }
