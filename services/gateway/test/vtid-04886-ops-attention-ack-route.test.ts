@@ -203,8 +203,8 @@ describe('POST /ack, /snooze — admin (middleware mocked)', () => {
     const src = require('fs').readFileSync(require('path').join(__dirname, '../src/index.ts'), 'utf8');
     expect(src.indexOf("mountRouterSync(app, '/api/v1/ops/attention', opsAttentionRouter")).toBeGreaterThan(src.indexOf("app.use(express.json({ limit: '2mb' }))"));
     const route = require('fs').readFileSync(require('path').join(__dirname, '../src/routes/ops-attention.ts'), 'utf8');
-    expect(route).toContain("router.post('/ack', requireAdminAuth, handler('ack'));");
-    expect(route).toContain("router.post('/snooze', requireAdminAuth, handler('snooze'));");
+    expect(route).toMatch(/router\.post\('\/ack', requireAdminAuth, [^{]*\{[^}]*handler\('ack'\)\(req, res\)/);
+    expect(route).toMatch(/router\.post\('\/snooze', requireAdminAuth, [^{]*\{[^}]*handler\('snooze'\)\(req, res\)/);
   });
 
   it('the OASIS event types are in the CicdEventType union', () => {

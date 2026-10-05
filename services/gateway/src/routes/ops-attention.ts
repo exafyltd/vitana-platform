@@ -96,7 +96,13 @@ function handler(action: AckAction) {
   };
 }
 
-router.post('/ack', requireAdminAuth, handler('ack')); // impact-allow-no-oasis: recordOpsAttentionAction() emits ops.attention.acked
-router.post('/snooze', requireAdminAuth, handler('snooze')); // impact-allow-no-oasis: recordOpsAttentionAction() emits ops.attention.snoozed
+router.post('/ack', requireAdminAuth, (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: recordOpsAttentionAction() emits ops.attention.acked
+  return handler('ack')(req, res);
+});
+router.post('/snooze', requireAdminAuth, (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: recordOpsAttentionAction() emits ops.attention.snoozed
+  return handler('snooze')(req, res);
+});
 
 export default router;
