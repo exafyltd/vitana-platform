@@ -47,3 +47,9 @@ first every day (Aurora stopped, then rebuilt, then Data API off, then IAM; all 
 
 ## Round 3 partner verdict
 F1–F4 closed. F5 acknowledged, not closable by planner or partner: VTID-04891 was allocated before the sparring (gate exception for the owner). No new findings. ESCALATED.
+
+## Owner decision
+2026-10-05: owner approved the sparred plan in the Claude Code session ("Yes") and accepted
+VTID-04891 as this change's VTID, recorded as a gate exception: it was allocated before the
+sparring (rule 51). The ledger-row update (title, spec_status=approved) was cancelled outside
+the session twice; the row still reads "Allocated - Pending Title".
