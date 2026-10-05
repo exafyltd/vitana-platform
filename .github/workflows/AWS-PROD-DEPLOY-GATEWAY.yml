@@ -965,6 +965,23 @@ jobs:
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Reward sweep pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "REWARD_SWEEP_ENABLED")]')"
 
+      - name: Build task-definition (Commerce MCP)
+        # VTID-04897: Commerce MCP (VTID-04847) on in production, after the
+        # first production release with the reward sweep off was verified
+        # (VTID-04896). The resource URL comes from the request host
+        # (gateway.vitanaland.com), the authorization server is the shared
+        # Supabase project's /auth/v1, portal links map to vitanaland.com and
+        # the OAuth consent page has been in the production frontend since
+        # VTID-04848. Rollback = "false".
+        run: |
+          set -e
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name != "COMMERCE_MCP_ENABLED") ]
+                + [ {name:"COMMERCE_MCP_ENABLED", value:"true"} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Commerce MCP pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "COMMERCE_MCP_ENABLED")]')"
+
       - name: Build task-definition (2/2 — optional overrides) + register + roll the service
         id: roll
         env:
