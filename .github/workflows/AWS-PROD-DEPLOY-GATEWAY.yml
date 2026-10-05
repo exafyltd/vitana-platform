@@ -964,6 +964,15 @@ jobs:
                 + [ {name:"REWARD_SWEEP_ENABLED", value:"false"} ] )' /tmp/vitana-new-task-def.json)
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Reward sweep pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "REWARD_SWEEP_ENABLED")]')"
+          # VTID-04899: the immediate Autopilot completion reward
+          # (autopilot_action_done) is off in production too; it pays only when
+          # exactly "true". Enable it with env_overrides or by changing this pin.
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name != "AUTOPILOT_ACTION_REWARD_ENABLED") ]
+                + [ {name:"AUTOPILOT_ACTION_REWARD_ENABLED", value:"false"} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Autopilot reward pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "AUTOPILOT_ACTION_REWARD_ENABLED")]')"
 
       - name: Build task-definition (Commerce MCP)
         # VTID-04897: Commerce MCP (VTID-04847) on in production, after the
@@ -1389,6 +1398,19 @@ jobs:
           echo "REWARD_SWEEP_ENABLED=$LIVE (expected $EXPECTED)"
           if [ "$LIVE" != "$EXPECTED" ]; then
             echo "::error::REWARD_SWEEP_ENABLED is '$LIVE' on the live task definition, expected '$EXPECTED'"
+            exit 1
+          fi
+          # VTID-04899: same check for the immediate Autopilot completion reward.
+          EXPECTED_AP=false
+          if [ -n "$ENV_OVERRIDES_INPUT" ] && echo "$ENV_OVERRIDES_INPUT" | jq -e 'has("AUTOPILOT_ACTION_REWARD_ENABLED")' >/dev/null 2>&1; then
+            EXPECTED_AP=$(echo "$ENV_OVERRIDES_INPUT" | jq -r '.AUTOPILOT_ACTION_REWARD_ENABLED | tostring')
+            echo "::warning::env_overrides sets AUTOPILOT_ACTION_REWARD_ENABLED=$EXPECTED_AP for this deploy"
+          fi
+          LIVE_AP=$(aws ecs describe-task-definition --task-definition "$TD" \
+            --query 'taskDefinition.containerDefinitions[0].environment[?name==`AUTOPILOT_ACTION_REWARD_ENABLED`].value | [0]' --output text)
+          echo "AUTOPILOT_ACTION_REWARD_ENABLED=$LIVE_AP (expected $EXPECTED_AP)"
+          if [ "$LIVE_AP" != "$EXPECTED_AP" ]; then
+            echo "::error::AUTOPILOT_ACTION_REWARD_ENABLED is '$LIVE_AP' on the live task definition, expected '$EXPECTED_AP'"
             exit 1
           fi
 

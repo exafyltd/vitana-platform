@@ -11,6 +11,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   APP_URL: { staging: "https://preview-aws.vitanaland.com", prod: null },
   AURORA_CA_BUNDLE_PATH: { staging: "/app/certs/rds-combined-ca-bundle.pem", prod: null },
   AUTOMATIONS_DELIVERY_MODE: { staging: "shadow", prod: null },
+  AUTOPILOT_ACTION_REWARD_ENABLED: { staging: "true", prod: "false" },
   AUTOPILOT_HEARTBEAT_ENABLED: { staging: "true", prod: null },
   AWS_BEDROCK_REGION: { staging: "eu-central-1", prod: "dynamic" },
   AWS_TRANSCRIBE_REGION: { staging: null, prod: "dynamic" },
