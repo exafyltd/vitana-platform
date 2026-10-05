@@ -1,0 +1,11 @@
+# VTID-04892 commands (2026-10-05)
+# read-only, production (allowed: reads only): live pacer surfaces and constraint before writing the CHECK migration
+#   select surface, count(*) from user_proactive_touches group by surface;      -> priority_card 3980, welcome_banner 323
+#   select conname, convalidated, pg_get_constraintdef(oid) ... user_proactive_touches -> 7-value CHECK, validated
+#   information_schema lookups for user_tenants / profiles / user_guided_journey_state columns
+cd services/gateway && npx tsc --noEmit -p tsconfig.json                     # clean
+npx jest test/vtid-04892-onboarding-coach.test.ts                             # 23 passed (outputs/jest-onboarding.txt)
+# mutation: drop the tick's own token check -> 2 tests fail; drop the Audiobook give-way -> 1 test fails (restored)
+npm run test:roles                                                            # 105 passed
+npx jest test/scheduled-notifications-*.test.ts test/vtid-04677-scheduled-notifications-auth.test.ts   # 53 passed
+node docs/validation/VTID-04892/pglite-onboarding-coach-check.mjs supabase/migrations/20261005130000_vtid_04892_onboarding_coach.sql   # 27 PASS (outputs/pglite-onboarding-coach.txt)

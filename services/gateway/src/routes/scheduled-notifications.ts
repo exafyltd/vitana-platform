@@ -41,7 +41,9 @@ import { runRemindersTick, runRemindersSweeper } from '../services/reminders-dis
 import { wideTodayWindow, pickFirstEventTodayPerUser } from '../services/calendar-today';
 
 import { withDependencyHealth } from '../services/dependency-probe';
-import { requireScheduledNotificationsAuth, scheduledNotificationsAuthStatus } from '../middleware/scheduled-notifications-auth';
+import { requireScheduledNotificationsAuth, scheduledNotificationsAuthStatus, evaluateScheduledNotificationsAuth } from '../middleware/scheduled-notifications-auth';
+import { runCoachTick } from '../services/onboarding-coach/coach-service';
+import { resolveCoachConfig } from '../services/onboarding-coach/config';
 const router = Router();
 
 // VTID-04677: every route below fans out notifications to members, so each
@@ -1623,6 +1625,38 @@ router.get('/health', async (_req: Request, res: Response) => {
     service: 'scheduled-notifications',
     ...scheduledNotificationsAuthStatus(),
   }));
+});
+
+// =============================================================================
+// VTID-04892: Vitana Onboarding Assistant — coach tick (slice 1: shadow only)
+// =============================================================================
+// Decides, for every new member in the cohort, the next best onboarding step
+// and records it in coach-owned tables. Sends nothing in slice 1.
+//
+// The token is enforced HERE, whatever SCHEDULED_NOTIFICATIONS_AUTH_MODE says:
+// that global mode is `log` in both environments today and would let an
+// untokened call through (plan v3 §4.2, sparring N1). The staging gateway
+// refuses the tick outright — staging shares the production database.
+// auth: scheduled-notifications-auth (VTID-04677) + own enforcement (VTID-04892)
+router.post('/onboarding-coach-tick', async (req: Request, res: Response) => {
+  const auth = evaluateScheduledNotificationsAuth(req);
+  if (!auth.ok) return res.status(auth.status ?? 401).json({ ok: false, error: auth.error });
+
+  const config = resolveCoachConfig();
+  if (config.mode === 'disabled-on-staging') {
+    return res.status(409).json({ ok: false, mode: config.mode, error: 'onboarding coach does not run on staging' });
+  }
+  if (config.mode !== 'shadow') return res.json({ ok: true, mode: config.mode, reason: config.reason });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+  try {
+    const result = await runCoachTick({ sb: supa as any, config });
+    return res.status(result.ok ? 200 : 503).json(result);
+  } catch (err: any) {
+    console.error('[onboarding-coach] tick failed:', err?.message || err);
+    return res.status(500).json({ ok: false, error: 'onboarding coach tick failed' });
+  }
 });
 
 export default router;

@@ -151,6 +151,10 @@ export type CicdEventType =
   | 'vtid.plan_sparring.missing'
   | 'vtid.plan_sparring.break_glass'
   | 'vtid.plan_sparring.tamper_detected'
+  // VTID-04892: Vitana Onboarding Assistant. One aggregate event per coach
+  // tick (never one per member per tick), plus a member's real stage changes.
+  | 'onboarding.coach.tick_completed'
+  | 'onboarding.coach.stage_changed'
   | 'cicd.github.create_pr.requested'
   | 'cicd.github.create_pr.succeeded'
   | 'cicd.github.create_pr.failed'

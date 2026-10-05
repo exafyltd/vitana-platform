@@ -1,0 +1,37 @@
+{
+ "vtid": "VTID-04892",
+ "service": "gateway",
+ "tests": [
+  {
+   "kind": "http",
+   "name": "gateway alive after the change",
+   "path": "/alive",
+   "expect_status": 200
+  },
+  {
+   "kind": "http",
+   "name": "onboarding coach reports it is disabled on staging (read-only GET, no member data)",
+   "path": "/api/v1/onboarding-coach/status",
+   "expect_status": 200,
+   "expect_json": {
+    "ok": true,
+    "mode": "disabled-on-staging",
+    "env": "staging"
+   }
+  },
+  {
+   "kind": "http",
+   "name": "the coach tick refuses an untokened call (rejected probe, no write)",
+   "method": "POST",
+   "path": "/api/v1/scheduled-notifications/onboarding-coach-tick",
+   "rejected_probe": true,
+   "expect_status": 401
+  },
+  {
+   "kind": "existing",
+   "ref": "npx jest test/vtid-04892-onboarding-coach.test.ts test/vtid-04560-role-separation-regression.test.ts",
+   "cwd": "services/gateway",
+   "reason": "The coach writes rows and staging shares the production database, so the tick never runs on staging (409 disabled-on-staging, proven in the suite). Its rules, the shadow-only tick (writes only coach tables, sends nothing, strict exclusion), a 90-day simulation and the tick's own token enforcement are proven in vtid-04892-onboarding-coach; the migration (one touch per local day, one retry, service-role only, pacer CHECK widening) is proven over a throwaway Postgres by docs/validation/VTID-04892/pglite-onboarding-coach-check.mjs (outputs/pglite-onboarding-coach.txt). test:roles covers the new route file's atlas domain."
+  }
+ ]
+}
