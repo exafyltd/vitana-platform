@@ -102,9 +102,13 @@ describe('switch and discovery', () => {
       expect(res.body).toMatchObject({
         resource: 'https://gateway.vitanaland.com/mcp',
         authorization_servers: ['https://proj.supabase.example/auth/v1'],
+        scopes_supported: ['email', 'profile'],
         bearer_methods_supported: ['header'],
         resource_documentation: 'https://vitanaland.com/commerce',
       });
+      // VTID-04882: never `openid` — it makes Supabase mint an ID token (HS256 cannot sign it).
+      expect(res.body.scopes_supported).toEqual(['email', 'profile']);
+      expect(res.body.scopes_supported).not.toContain('openid');
     }
   });
 
@@ -120,6 +124,9 @@ describe('sign-in', () => {
     expect(res.headers['www-authenticate']).toContain(
       'resource_metadata="https://gateway.vitanaland.com/.well-known/oauth-protected-resource/mcp"',
     );
+    // VTID-04882: the challenge names the scopes to request, without `openid`.
+    expect(res.headers['www-authenticate']).toContain('scope="email profile"');
+    expect(res.headers['www-authenticate']).not.toMatch(/openid/);
   });
 
   test('an invalid or expired token → 401', async () => {
