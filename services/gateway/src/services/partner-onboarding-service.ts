@@ -236,6 +236,81 @@ export async function updateCompany(
   return orgState(s, orgId);
 }
 
+/**
+ * VTID-04890 — give a typeless draft its business type, once.
+ *
+ * /partner-orgs/register may create an org without partner_type; such an org
+ * has no checklist and can never be submitted (PARTNER_TYPE_MISSING). Only a
+ * draft whose type is still null can get one here; a type already set is never
+ * changed by this path.
+ *
+ * Draft only, narrower than COMPANY_EDITABLE_STATES on purpose: a typeless org
+ * cannot reach needs_action. submitForVerification refuses it before
+ * draft -> submitted, needs_action is entered only from verifying/exception,
+ * and a legacy status-only write never lands on needs_action
+ * (trg_partner_organizations_sync).
+ */
+export async function setMissingPartnerType(
+  s: Supa,
+  caller: Caller,
+  orgId: string,
+  partnerType: unknown,
+  meta: { source?: string } = {},
+): Promise<ServiceResult> {
+  const denied = await authorize(s, caller, orgId);
+  if (denied) return denied;
+  if (!isPartnerType(partnerType)) {
+    return fail(400, { error: `partner_type must be one of: ${PARTNER_TYPES.join(', ')}` });
+  }
+  const { org, error } = await loadOrg(s, orgId);
+  if (error) return fail(500, { error });
+  if (!org) return fail(404, { error: 'ORG_NOT_FOUND' });
+
+  const answer = (current: OrgRow): ServiceResult | null => {
+    if (current.lifecycle_state !== 'draft') {
+      return fail(409, { error: 'PARTNER_TYPE_LOCKED', lifecycle_state: current.lifecycle_state });
+    }
+    if (current.partner_type === partnerType) return { status: 200, body: {} };
+    if (current.partner_type !== null) {
+      return fail(409, { error: 'PARTNER_TYPE_ALREADY_SET', partner_type: current.partner_type });
+    }
+    return null;
+  };
+  const early = answer(org);
+  if (early) return early.status === 200 ? orgState(s, orgId) : early;
+
+  // Conditional write: never overwrite a type set concurrently, never touch a
+  // business that left draft in between. The DB trigger derives
+  // commerce_vertical from the new type.
+  const { data: updated, error: updErr } = await s
+    .from('partner_organizations')
+    .update({ partner_type: partnerType, updated_at: new Date().toISOString() })
+    .eq('id', orgId)
+    .is('partner_type', null)
+    .eq('lifecycle_state', 'draft')
+    .select('id');
+  if (updErr) return fail(500, { error: updErr.message });
+  if (!Array.isArray(updated) || updated.length === 0) {
+    const again = await loadOrg(s, orgId);
+    if (again.error) return fail(500, { error: again.error });
+    if (!again.org) return fail(404, { error: 'ORG_NOT_FOUND' });
+    const late = answer(again.org);
+    if (late && late.status !== 200) return late;
+    return orgState(s, orgId);
+  }
+
+  await emitOasisEvent({
+    vtid: 'VTID-04890',
+    type: 'partner_org.partner_type_set',
+    source: meta.source ?? 'partner-onboarding',
+    status: 'success',
+    message: `Partner organization ${orgId} set its business type to ${partnerType}.`,
+    payload: { partner_organization_id: orgId, partner_type: partnerType },
+    actor_id: caller.userId,
+  });
+  return orgState(s, orgId);
+}
+
 /** Submit for verification: the rules decide live / needs_action. */
 export async function submitForVerification(
   s: Supa,
