@@ -16,3 +16,7 @@ TEST: services/gateway/test/vtid-04904-live-daily-rooms.test.ts — "RoomSession
 
 AC-5 /api/v1/live/health reports daily_configured (presence only).
 TEST: services/gateway/test/vtid-04904-live-daily-rooms.test.ts — "GET /health"
+
+ROUTE_MOUNT: `router.post('/rooms/:id/enter', requireAuth, ...)` and `router.post('/rooms/:id/exit', requireAuth, ...)` added in `services/gateway/src/routes/live.ts`, on the pre-existing liveRouter mounted at `/api/v1/live` (`mountRouterSync(app, '/api/v1/live', liveRouter, { owner: 'live' })`, services/gateway/src/index.ts:1261). `/rooms/:id/daily`, `/sessions`, `/purchase`, `/health` keep their existing paths.
+FINAL_URL: `POST /api/v1/live/rooms/:id/enter`, `POST /api/v1/live/rooms/:id/exit` (and the existing `GET /api/v1/live/health`).
+CURL_PROOF: pre-merge, the new routes are not deployed on staging (expected `404`). Post-merge expectation, checked read-only by STAGING-VERIFY: unauthenticated `POST /api/v1/live/rooms/<uuid>/enter` → `401 application/json` (router mounted, auth gate live); `GET /api/v1/live/health` → `200 application/json` with `daily_configured`. Route tests: services/gateway/test/vtid-04905-live-enter-exit.test.ts mounts the real router under `/api/v1/live`.
