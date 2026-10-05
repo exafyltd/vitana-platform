@@ -633,6 +633,25 @@ binding, not hand-constructed, but the real signal is still the next real
 `oasis_events` and actually producing audio. Full detail: `docs/validation/
 VTID-04000/acceptance.md`.
 
+**⚠️ The WIF config's credential source does not work on ECS (VTID-04893).**
+`create-cred-config` generated an EC2-style `credential_source` (the EC2
+instance metadata endpoint). ECS Fargate does not serve that endpoint, so
+every `GoogleAuth` token request fails with `connect EINVAL`: CloudWatch
+shows the bridge's own token prewarm failing on staging (2026-10-02) and
+production (2026-09-28). `services/gateway/src/lib/google-access-token.ts`
+supplies the AWS credentials programmatically instead
+(`AwsSecurityCredentialsSupplier` on the AWS SDK default provider chain,
+which on ECS reads the task role), behind
+`GOOGLE_AUTH_AWS_SUPPLIER_ENABLED` (exact `true`; on for staging, prod
+still off). Proven 2026-10-05 from a Claude Code session with the
+`claude-code-aws-agent` IAM user's keys: token exchange succeeded and
+`texttospeech.googleapis.com` answered `voices.list`. **For ECS the Google
+side must also trust the task role** — the binding recorded above names one
+principal; the task role is an assumed-role session whose suffix changes per
+task, so bind it by attribute (`principalSet://…/attribute.aws_role/
+arn:aws:sts::472838866351:assumed-role/vitana-ecs-task-role`). Until that
+binding exists, the flag changes the error, not the outcome.
+
 **⚠️ Pre-existing parity gap, surfaced by this PR's own CI, not caused by
 it — read before flipping the flag.** This repo's `voice-pipeline-parity`
 scanner (report-only, runs on every gateway PR) flagged 13 `high`-severity

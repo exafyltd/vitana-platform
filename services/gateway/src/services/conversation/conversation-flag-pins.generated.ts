@@ -48,6 +48,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   GATEWAY_URL: { staging: "https://preview-aws-gateway.vitanaland.com", prod: null },
   GCP_SERVICE_ACCOUNT_JSON: { staging: "dynamic", prod: "dynamic" },
   GIT_COMMIT_SHA: { staging: "dynamic", prod: "dynamic" },
+  GOOGLE_AUTH_AWS_SUPPLIER_ENABLED: { staging: "true", prod: null },
   GOOGLE_CLOUD_PROJECT: { staging: "project-da3eb05a-c86e-47cb-85f", prod: "project-da3eb05a-c86e-47cb-85f" },
   IMAGE_PROVIDER: { staging: null, prod: "dynamic" },
   JEV_AGENT_PROGRESS_MODE: { staging: "shadow", prod: "shadow" },
