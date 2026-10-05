@@ -56,10 +56,10 @@ describe('GET /api/v1/ops/attention — admin (middleware mocked)', () => {
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
     const d = res.body.data;
-    // VTID-04885 added the domain tiles summary.
-    expect(Object.keys(d).sort()).toEqual(['counts', 'domains', 'env', 'generated_at', 'items', 'sources', 'verdict']);
+    // VTID-04885 added the domain tiles summary; VTID-04886 hidden, acks_error, timeline, sparklines.
+    expect(Object.keys(d).sort()).toEqual(['acks_error', 'counts', 'domains', 'env', 'generated_at', 'hidden', 'items', 'sources', 'sparklines', 'timeline', 'verdict']);
     expect(d.env).toBe('production');
-    expect(d.counts).toEqual({ p1: 0, p2: 1, p3: 1 });
+    expect(d.counts).toEqual({ p1: 0, p2: 1, p3: 1, acked: 0, hidden: 0 });
     expect(d.items[0]).toMatchObject({ severity: 'P2', domain: 'autonomy', source: 'autonomy', deeplink: { section: 'autopilot', tab: 'live', query: {} } });
     expect(d.sources.map((s: any) => s.id)).toContain('decisions_waiting');
     expect(res.headers['cache-control']).toBe('no-store');

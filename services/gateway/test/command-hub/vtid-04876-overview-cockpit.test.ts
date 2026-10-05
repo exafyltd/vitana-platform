@@ -154,7 +154,8 @@ describe('VTID-04876: ranked queue', () => {
     const item = fnBody('function renderOpsAttentionItemHtml(item) {');
     expect(item).toContain('sev.icon');
     expect(item).toContain('escapeHtml(sev.label)');
-    expect(item).toContain("'<li class=\"ops-item ' + sev.cls + '\">'");
+    // VTID-04886 appends ' ops-item-acked' to the class list for acked items.
+    expect(item).toContain("'<li class=\"ops-item ' + sev.cls + (ack && ack.action === 'ack' ? ' ops-item-acked' : '') + '\">'");
   });
 
   it('the queue body is aria-live="polite" and has a "Needs attention now" heading', () => {

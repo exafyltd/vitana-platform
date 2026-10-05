@@ -3468,3 +3468,35 @@ decision 2026-10-04). A failed read or write never fails the response: the
 request falls back to "first seen at this request" and the response's
 `attention_state` source reports it. Rows unseen for more than a day carry
 no meaning and may be deleted.
+
+## Command Hub Overview Ack / Snooze — `ops_attention_acks` (VTID-04886, 2026-10-05) — NOT YET APPLIED
+
+Migration `supabase/migrations/20261005100000_vtid_04886_ops_attention_acks.sql`.
+One row per exafy_admin action on a `GET /api/v1/ops/attention` item (Command
+Hub Overview, plan A Phase 3, plan F5), keyed by the item's env-scoped
+fingerprint. Written only by the gateway (`POST /api/v1/ops/attention/ack` and
+`/snooze` → `services/ops-attention.ts` → `services/ops-attention-reads.ts`,
+service role). RLS on with no client policies: service role only. Idempotent
+(`IF NOT EXISTS`). Each write also emits OASIS `ops.attention.acked` /
+`ops.attention.snoozed`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid | PK, `gen_random_uuid()` |
+| `env` | text | `production` or `staging` (VITANA_ENV); CHECK constrained |
+| `fingerprint` | text | `<env>:<source>:<entity key>` (3–300 chars) |
+| `action` | text | `ack` (shown, de-emphasised) or `snooze` (hidden until expiry, counted) |
+| `reason` | text | NOT NULL, 3–500 chars after trimming |
+| `severity` | text | the item's severity when acted on (`P1`/`P2`/`P3`) |
+| `actor_user_id` | uuid | the exafy_admin's user id |
+| `actor_email` | text | the exafy_admin's email |
+| `vtid` | text | optional linked VTID (`VTID-\d{4,5}`) |
+| `created_at` | timestamptz | default `now()` |
+| `expires_at` | timestamptz | NOT NULL; CHECK `created_at < expires_at <= created_at + 24 h` |
+
+CHECK `ops_attention_acks_p1_never_snoozed`: no `snooze` row with severity
+`P1` (the route refuses it first with 400 `p1_not_snoozable`; a fingerprint
+snoozed at P2 that later reaches P1 is shown again). Indexes:
+`(env, expires_at DESC)` for the active read, `(env, fingerprint, created_at
+DESC)`. The latest unexpired row per fingerprint wins. Tested on a throwaway
+Postgres: `scripts/ci/sql-tests/run-ops-attention-acks-test.sh`.

@@ -1,4 +1,4 @@
 {"vtid":"VTID-04836","service":"gateway","tests":[
-{"kind":"http","name":"Command Hub loads the app.js that drops the retired earthlinks tenant","path":"/command-hub/","expect_status":200,"expect_content_type":"text/html","expect_body_contains":"app.js?v=20261028-vtid-04885"},
+{"kind":"http","name":"Command Hub loads the app.js that drops the retired earthlinks tenant","path":"/command-hub/","expect_status":200,"expect_content_type":"text/html","expect_body_contains":"app.js?v=20261029-vtid-04886"},
 {"kind":"existing","ref":"npx jest test/navigation-catalog.test.ts","cwd":"services/gateway","reason":"AUTH.EARTHLINKS_PORTAL is gone from the voice navigation catalog (Earthlinks was merged into Maxina, VTID-01985; the community app now redirects /earthlinks to /maxina — vitana-v1 VTID-04836). The catalog suite proves every remaining screen resolves and nothing points at the retired portal; the staging probe is read-only and anonymous."}
 ]}

@@ -295,7 +295,26 @@ export interface AttentionReads {
   openSupportTickets(agedBeforeIso: string): Promise<TicketRow[]>;
   /** llm.call.completed events at/after `sinceIso` served by a Google provider. */
   llmGoogleCalls(sinceIso: string): Promise<LlmCallRow[]>;
+  // ── VTID-04886 (Phase 3) ──
+  /** The 24 h timeline: events among TIMELINE_TOPICS at/after `sinceIso`, newest first. */
+  timelineEvents(sinceIso: string): Promise<OasisEventRow[]>;
 }
+
+/**
+ * VTID-04886: the topics the 24 h change & incident timeline shows — the
+ * deploy, verify, rollback and kill-switch topics the adapters already read,
+ * plus governance control changes. Self-heal rows come from self_healing_log.
+ */
+export const TIMELINE_TOPICS = [
+  'prod.deploy.completed', 'prod.deploy.failed', 'prod.deploy.rolled_back',
+  'staging.deploy.completed', 'staging.deploy.failed',
+  'staging.verify.passed', 'staging.verify.failed',
+  'deploy.gateway.failed', 'cicd.deploy.service.failed',
+  'dev_autopilot.kill_switch.activated', 'dev_autopilot.kill_switch.deactivated',
+  'governance.control.updated',
+];
+/** timelineEvents() reads at most this many rows. */
+export const TIMELINE_READ_LIMIT = 200;
 
 export interface BudgetLineLite {
   scope: 'platform' | 'agent' | 'run';

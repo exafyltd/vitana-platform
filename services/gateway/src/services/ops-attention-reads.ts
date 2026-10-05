@@ -29,12 +29,14 @@ import {
   JEV_BUDGET_TOPIC,
   LEDGER_READ_LIMIT,
   TICKET_CLOSED_STATUSES,
+  TIMELINE_READ_LIMIT,
+  TIMELINE_TOPICS,
   type AttentionReads,
   type ControlRow,
   type LedgerRow,
   type WaitingRow,
 } from './ops-attention-adapters';
-import type { AttentionStateStore, StateRow } from './ops-attention';
+import type { AckRow, AttentionAckStore, AttentionStateStore, StateRow } from './ops-attention';
 
 /** Same threshold as the pipeline summary's BROKEN classification. */
 const PIPELINE_BROKEN_AFTER_MS = 2 * 60 * 60_000;
@@ -54,6 +56,9 @@ export function createAttentionReads(opts: { authHeader?: string } = {}): Attent
   // VTID-04885: operator_pipeline and stuck_vtids read the same in-progress
   // ledger page; one read per computation serves both.
   let ledger: Promise<LedgerRow[]> | null = null;
+  // VTID-04886: the autonomy adapter and the timeline read the same 24 h of
+  // self_healing_log; one read per window per computation serves both.
+  const heals = new Map<string, Promise<any[]>>();
   return {
     async healthSummary() {
       const s = await buildHealthSummary({ authHeader: opts.authHeader });
@@ -120,17 +125,24 @@ export function createAttentionReads(opts: { authHeader?: string } = {}): Attent
       return Array.isArray(snap.alerts) ? snap.alerts : [];
     },
 
-    async selfHealOutcomes(sinceIso) {
-      return check(
-        await sb()
-          .from('self_healing_log')
-          .select('vtid,endpoint,failure_class,outcome,created_at')
-          .in('outcome', ['escalated', 'rolled_back'])
-          .gte('created_at', sinceIso)
-          .order('created_at', { ascending: false })
-          .limit(100),
-        'self_healing_log',
-      ) as any[];
+    selfHealOutcomes(sinceIso) {
+      let p = heals.get(sinceIso);
+      if (!p) {
+        p = (async () =>
+          check(
+            await sb()
+              .from('self_healing_log')
+              .select('vtid,endpoint,failure_class,outcome,created_at')
+              .in('outcome', ['escalated', 'rolled_back'])
+              .gte('created_at', sinceIso)
+              .order('created_at', { ascending: false })
+              .limit(100),
+            'self_healing_log',
+          ) as any[])();
+        heals.set(sinceIso, p);
+        p.catch(() => heals.delete(sinceIso));
+      }
+      return p;
     },
 
     async pipelineBrokenVtids() {
@@ -380,6 +392,46 @@ export function createAttentionReads(opts: { authHeader?: string } = {}): Attent
           fallback_used: m.fallback_used === true || m.fallback_used === 'true',
         };
       });
+    },
+
+    // ── VTID-04886 (Phase 3) ──
+
+    async timelineEvents(sinceIso) {
+      return check(
+        await sb()
+          .from('oasis_events')
+          .select('topic,created_at,metadata')
+          .in('topic', TIMELINE_TOPICS)
+          .gte('created_at', sinceIso)
+          .order('created_at', { ascending: false })
+          .limit(TIMELINE_READ_LIMIT),
+        'oasis_events',
+      ) as any[];
+    },
+  };
+}
+
+const ACK_COLUMNS = 'id,env,fingerprint,action,reason,severity,actor_user_id,actor_email,vtid,created_at,expires_at';
+
+/** VTID-04886: ops_attention_acks via the service role (migration 20261005100000). */
+export function supabaseAckStore(): AttentionAckStore {
+  return {
+    async active(env, nowIso): Promise<AckRow[]> {
+      return check(
+        await sb()
+          .from('ops_attention_acks')
+          .select(ACK_COLUMNS)
+          .eq('env', env)
+          .gt('expires_at', nowIso)
+          .order('created_at', { ascending: false })
+          .limit(500),
+        'ops_attention_acks',
+      ) as AckRow[];
+    },
+    async insert(row): Promise<AckRow> {
+      const { data, error } = await sb().from('ops_attention_acks').insert(row).select(ACK_COLUMNS).single();
+      if (error || !data) throw new Error(`ops_attention_acks: ${error ? error.message : 'no row returned'}`);
+      return data as AckRow;
     },
   };
 }

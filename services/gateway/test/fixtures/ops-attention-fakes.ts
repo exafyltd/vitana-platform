@@ -38,6 +38,8 @@ export function fakeReads(over: Partial<AttentionReads> = {}): AttentionReads {
     routines: async () => [],
     openSupportTickets: async () => [],
     llmGoogleCalls: async () => [],
+    // VTID-04886 (Phase 3)
+    timelineEvents: async () => [],
     ...over,
   };
 }

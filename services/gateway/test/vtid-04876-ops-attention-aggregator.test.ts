@@ -74,7 +74,7 @@ describe('buildOpsAttention', () => {
     expect(data.generated_at).toBe(iso(NOW));
     expect(data.items.map((i) => i.id)).toEqual(['governance:c', 'governance:b', 'release:a']);
     expect(data.items[0].fingerprint).toBe('staging:governance:c');
-    expect(data.counts).toEqual({ p1: 0, p2: 2, p3: 1 });
+    expect(data.counts).toEqual({ p1: 0, p2: 2, p3: 1, acked: 0, hidden: 0 }); // acked/hidden: VTID-04886
     expect(data.verdict).toBe('ATTENTION');
     expect(data.sources.map((s) => [s.id, s.status])).toEqual([
       ['release', 'ok'], ['governance', 'ok'], ['attention_state', 'ok'],

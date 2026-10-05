@@ -4786,7 +4786,12 @@ const state = {
         lastOkAt: null,
         lastFetchAt: null,
         domainFilter: 'all',
-        legacyOpen: false
+        legacyOpen: false,
+        // VTID-04886: the open Ack/Snooze form ({ fingerprint, action, error, busy }),
+        // a poll that arrived while it was open, and the P1 fingerprints already seen.
+        actionForm: null,
+        pendingRefresh: false,
+        seenP1: null
     },
 
     // DEV-COMHU-03404: hourly oasis_events rollup for Overview sparklines
@@ -29504,6 +29509,94 @@ function opsAttentionQueryString(query) {
     }).join('&');
 }
 
+// ---------------------------------------------------------------------------
+// VTID-04886: Overview Phase 3 — Ack / Snooze, timeline, sparklines and the
+// opt-in P1 browser notification. Admin-facing, English by design.
+// ---------------------------------------------------------------------------
+var OPS_ATTENTION_NOTIFY_KEY = 'vitana.opsAttention.p1Notify';
+var OPS_ATTENTION_DURATIONS = [
+    { minutes: 15, label: '15 min' },
+    { minutes: 60, label: '1 hour' },
+    { minutes: 240, label: '4 hours' },
+    { minutes: 480, label: '8 hours' },
+    { minutes: 1440, label: '24 hours (max)' }
+];
+
+/** Off by default; storage can be unavailable (private mode) — then it is off. */
+function opsAttentionNotifyEnabled() {
+    try { return window.localStorage.getItem(OPS_ATTENTION_NOTIFY_KEY) === 'on'; } catch (_e) { return false; }
+}
+
+function opsAttentionSetNotify(on) {
+    try {
+        if (on) window.localStorage.setItem(OPS_ATTENTION_NOTIFY_KEY, 'on');
+        else window.localStorage.removeItem(OPS_ATTENTION_NOTIFY_KEY);
+        return true;
+    } catch (_e) { return false; }
+}
+
+/**
+ * Pure: P1 fingerprints in `items` that are not in `seen` (an object used as
+ * a set). `seen === null` means nothing was seen yet (first load): nothing is
+ * new, so opening the Overview never fires a burst of notifications.
+ */
+function opsAttentionNewP1(seen, items) {
+    var p1 = (items || []).filter(function (i) { return i && i.severity === 'P1'; });
+    if (seen === null || seen === undefined) return [];
+    return p1.filter(function (i) { return !seen[i.fingerprint]; });
+}
+
+function opsAttentionP1Set(items) {
+    var out = {};
+    (items || []).forEach(function (i) { if (i && i.severity === 'P1') out[i.fingerprint] = true; });
+    return out;
+}
+
+/** Fires one browser notification per NEW P1 fingerprint, only when opted in and permitted. */
+function opsAttentionMaybeNotify(data) {
+    var view = state.opsAttention;
+    var items = (data && data.items) || [];
+    var fresh = opsAttentionNewP1(view.seenP1, items);
+    view.seenP1 = opsAttentionP1Set(items);
+    if (!fresh.length || !opsAttentionNotifyEnabled()) return 0;
+    if (typeof window.Notification !== 'function' || window.Notification.permission !== 'granted') return 0;
+    fresh.forEach(function (i) {
+        try {
+            new window.Notification('P1 — ' + i.title, { body: i.detail || '', tag: i.fingerprint });
+        } catch (_e) { /* a blocked notification never breaks the cockpit */ }
+    });
+    return fresh.length;
+}
+
+/** Pure: a 24-bucket sparkline as inline SVG (attributes only, CSP-safe). */
+function opsAttentionSparkSvg(buckets, label) {
+    var b = Array.isArray(buckets) ? buckets : [];
+    var max = b.reduce(function (m, x) { return x > m ? x : m; }, 0);
+    var w = 3, h = 16;
+    var bars = b.map(function (x, i) {
+        var bh = max > 0 ? Math.max(x > 0 ? 2 : 0, Math.round((x / max) * h)) : 0;
+        return '<rect x="' + (i * w) + '" y="' + (h - bh) + '" width="' + (w - 1) + '" height="' + bh + '"></rect>';
+    }).join('');
+    return '<svg class="ops-spark-svg" viewBox="0 0 ' + (b.length * w) + ' ' + h + '" width="' + (b.length * w) + '" height="' + h + '"' +
+        ' role="img" aria-label="' + escapeHtml(label) + '">' + bars + '</svg>';
+}
+
+async function postOpsAttentionAction(action, body) {
+    var r = await fetch('/api/v1/ops/attention/' + action, {
+        method: 'POST',
+        headers: buildContextHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
+        body: JSON.stringify(body)
+    });
+    var json = null;
+    try { json = await r.json(); } catch (_e) { json = null; }
+    if (!r.ok || !json || json.ok !== true) {
+        var msg = json && json.error ? json.error : 'HTTP ' + r.status;
+        if (json && json.data && json.data.issues && json.data.issues.length) msg += ': ' + json.data.issues[0].message;
+        throw new Error(msg);
+    }
+    return json.data;
+}
+
 async function fetchOpsAttention(silentRefresh) {
     var view = state.opsAttention;
     if (view.loading) return;
@@ -29523,6 +29616,7 @@ async function fetchOpsAttention(silentRefresh) {
             view.data = body.data;
             view.error = null;
             view.lastOkAt = Date.now();
+            opsAttentionMaybeNotify(body.data); // VTID-04886
         }
     } catch (err) {
         view.error = (err && err.message) ? err.message : String(err);
@@ -29544,6 +29638,11 @@ async function fetchOpsAttention(silentRefresh) {
 function refreshOpsAttentionPanel() {
     var old = document.querySelector('.ops-attention');
     if (!old) return;
+    // VTID-04886: never wipe a reason the admin is typing; apply the poll on close.
+    if (state.opsAttention.actionForm) {
+        state.opsAttention.pendingRefresh = true;
+        return;
+    }
     old.replaceWith(renderOpsAttentionCockpit());
 }
 
@@ -29555,8 +29654,37 @@ function renderOpsAttentionCockpit() {
     wrap.appendChild(renderOpsAttentionStatusBar(view, Date.now()));
     wrap.appendChild(renderOpsAttentionQueue(view));
     wrap.appendChild(renderOpsAttentionTiles(view, Date.now()));
+    wrap.appendChild(renderOpsAttentionTimeline(view)); // VTID-04886
     wrap.addEventListener('click', handleOpsAttentionClick);
+    wrap.addEventListener('submit', handleOpsAttentionSubmit); // VTID-04886
     return wrap;
+}
+
+/** VTID-04886: the 24 h change & incident timeline (newest first). */
+function renderOpsAttentionTimeline(view) {
+    var data = view.data;
+    var tl = data && data.timeline;
+    var sec = document.createElement('section');
+    sec.className = 'ops-timeline';
+    sec.setAttribute('aria-label', 'Last 24 hours');
+    var html = '<h2 class="ops-tiles-title">Last 24 hours — changes &amp; incidents</h2>';
+    if (!tl) {
+        html += '<p class="ops-queue-empty">' + (view.fetched ? 'No timeline in this response.' : 'Loading the timeline…') + '</p>';
+    } else if (tl.error) {
+        html += '<p class="ops-queue-empty ops-queue-blind">Timeline unavailable (' + escapeHtml(tl.error) + ') — this is not a quiet day.</p>';
+    } else if (!tl.events.length) {
+        html += '<p class="ops-queue-empty">No deploys, verifications, rollbacks, self-heal escalations or kill-switch changes in 24 h.</p>';
+    } else {
+        html += '<ol class="ops-timeline-list">' + tl.events.map(function (e) {
+            return '<li class="ops-timeline-item ops-tone-' + escapeHtml(e.tone) + '">' +
+                '<span class="ops-timeline-at">' + escapeHtml(dashboardRelativeTime(e.at)) + '</span>' +
+                '<span class="ops-timeline-kind">' + escapeHtml(String(e.kind).replace('_', ' ')) + '</span>' +
+                '<span class="ops-timeline-title">' + escapeHtml(e.title) + '</span></li>';
+        }).join('') + '</ol>' +
+        (tl.truncated ? '<p class="ops-queue-empty">Showing the newest ' + tl.events.length + ' events.</p>' : '');
+    }
+    sec.innerHTML = html;
+    return sec;
 }
 
 /**
@@ -29634,6 +29762,7 @@ function renderOpsAttentionStatusBar(view, nowMs) {
         '</div>' +
         '<div class="ops-status-meta">' +
             countChip('P1', counts.p1) + countChip('P2', counts.p2) + countChip('P3', counts.p3) +
+            (counts.hidden ? '<span class="ops-count ops-count-hidden">' + escapeHtml(String(counts.hidden)) + ' snoozed (hidden)</span>' : '') +
             '<span class="ops-sources">Sources fresh ' + (st.blind ? '?' : String(fresh)) + '/' + (sources.length ? String(sources.length) : '?') + '</span>' +
             '<span class="ops-generated">' + (data && data.generated_at
                 ? 'Generated ' + escapeHtml(dashboardRelativeTime(data.generated_at))
@@ -29642,7 +29771,23 @@ function renderOpsAttentionStatusBar(view, nowMs) {
                 escapeHtml(opsAttentionEnvLabel(env)) + '</span>' +
             '<button type="button" class="btn btn-sm ops-refresh" data-action="ops-attention-refresh"' +
                 (view.loading ? ' disabled' : '') + '>' + (view.loading ? 'Loading…' : 'Refresh') + '</button>' +
+            // VTID-04886: opt-in P1 browser notifications (off by default).
+            '<button type="button" class="btn btn-sm ops-refresh ops-notify" data-action="ops-attention-notify"' +
+                ' aria-pressed="' + (opsAttentionNotifyEnabled() ? 'true' : 'false') + '"' +
+                ' title="Browser notification when a new item reaches P1 (this browser only)">' +
+                'P1 alerts: ' + (opsAttentionNotifyEnabled() ? 'on' : 'off') + '</button>' +
         '</div>';
+    // VTID-04886: SLI sparklines derived from the 24 h timeline (only cheap series exist).
+    var sp = data && data.sparklines;
+    if (sp && Array.isArray(sp.series) && !st.blind) {
+        html += '<div class="ops-sparks">' + sp.series.map(function (x) {
+            return '<span class="ops-spark">' + escapeHtml(x.label) + ' ' +
+                opsAttentionSparkSvg(x.buckets, x.label + ' over 24 h, ' + x.total + ' in total') +
+                ' <strong>' + escapeHtml(String(x.total)) + '</strong> in 24 h</span>';
+        }).join('') + '</div>';
+    } else if (data && data.sparklines === null && !st.blind) {
+        html += '<div class="ops-sparks ops-unknown-sources">Sparklines unavailable — the timeline could not be read.</div>';
+    }
     if (unknown.length && !st.blind) {
         html += '<div class="ops-unknown-sources">Unknown sources: ' + unknown.map(function (s) {
             return '<span class="ops-unknown-source">' + escapeHtml(s.id) +
@@ -29688,8 +29833,56 @@ function renderOpsAttentionQueue(view) {
         body = '<ol class="ops-queue-list">' + shown.map(renderOpsAttentionItemHtml).join('') + '</ol>';
     }
 
-    q.innerHTML = head + '<div class="ops-queue-body" aria-live="polite">' + body + '</div>';
+    // VTID-04886: snoozed items are listed (never silently dropped); an ack read failure is said.
+    var hidden = (data && Array.isArray(data.hidden)) ? data.hidden : [];
+    var extra = '';
+    if (data && data.acks_error) {
+        extra += '<p class="ops-queue-empty ops-queue-blind">Ack/snooze state unavailable (' + escapeHtml(data.acks_error) + ') — every item is shown.</p>';
+    }
+    if (hidden.length) {
+        extra += '<details class="ops-hidden"><summary>' + hidden.length + ' snoozed item(s) hidden until they expire</summary>' +
+            '<ul class="ops-hidden-list">' + hidden.map(function (h) {
+                var sev = OPS_ATTENTION_SEVERITY[h.severity] || OPS_ATTENTION_SEVERITY.P3;
+                return '<li class="ops-hidden-item"><span class="ops-sev ' + sev.cls + '"><span class="ops-sev-icon" aria-hidden="true">' + sev.icon + '</span> ' + escapeHtml(sev.label) + '</span> ' +
+                    '<span class="ops-item-title">' + escapeHtml(h.title) + '</span> ' +
+                    '<span class="ops-item-detail">until ' + escapeHtml(h.snoozed_until) + ' · ' + escapeHtml(h.reason) +
+                    (h.actor_email ? ' · by ' + escapeHtml(h.actor_email) : '') + '</span></li>';
+            }).join('') + '</ul></details>';
+    }
+    q.innerHTML = head + '<div class="ops-queue-body" aria-live="polite">' + body + '</div>' + extra;
     return q;
+}
+
+/** VTID-04886: Ack / Snooze controls and the inline reason form for one item. */
+function renderOpsAttentionItemActions(item) {
+    var form = state.opsAttention.actionForm;
+    var fp = escapeHtml(item.fingerprint || '');
+    if (form && form.fingerprint === item.fingerprint) {
+        var verb = form.action === 'snooze' ? 'Snooze' : 'Ack';
+        return '<form class="ops-action-form" data-fingerprint="' + fp + '" data-kind="' + escapeHtml(form.action) + '">' +
+            '<label class="ops-action-label">' + verb + ' reason (required)' +
+                '<textarea name="reason" required minlength="3" maxlength="500" rows="2"></textarea></label>' +
+            '<label class="ops-action-label">For' +
+                '<select name="duration_minutes">' + OPS_ATTENTION_DURATIONS.map(function (d) {
+                    return '<option value="' + d.minutes + '"' + (d.minutes === 60 ? ' selected' : '') + '>' + escapeHtml(d.label) + '</option>';
+                }).join('') + '</select></label>' +
+            '<label class="ops-action-label">VTID (optional)' +
+                '<input name="vtid" type="text" inputmode="text" pattern="VTID-[0-9]{4,5}" placeholder="VTID-01234"></label>' +
+            '<div class="ops-action-buttons">' +
+                '<button type="submit" class="btn btn-sm ops-action-btn"' + (form.busy ? ' disabled' : '') + '>' + (form.busy ? 'Saving…' : verb) + '</button>' +
+                '<button type="button" class="btn btn-sm ops-action-btn" data-action="ops-attention-cancel">Cancel</button>' +
+            '</div>' +
+            (form.error ? '<p class="ops-action-error" role="alert">' + escapeHtml(form.error) + '</p>' : '') +
+            '</form>';
+    }
+    var html = '<div class="ops-item-actions">' +
+        '<button type="button" class="btn btn-sm ops-action-btn" data-action="ops-attention-ack" data-fingerprint="' + fp + '">Ack</button>';
+    if (item.severity !== 'P1') {
+        html += '<button type="button" class="btn btn-sm ops-action-btn" data-action="ops-attention-snooze" data-fingerprint="' + fp + '">Snooze</button>';
+    } else {
+        html += '<span class="ops-action-note">P1 cannot be snoozed</span>';
+    }
+    return html + '</div>';
 }
 
 function renderOpsAttentionItemHtml(item) {
@@ -29698,7 +29891,12 @@ function renderOpsAttentionItemHtml(item) {
     var section = NAVIGATION_CONFIG.find(function (s) { return s.section === dl.section; });
     var tab = section ? (section.tabs.find(function (t) { return t.key === dl.tab; }) || section.tabs[0]) : null;
     var href = (tab ? tab.path : (section ? section.basePath : '#')) + opsAttentionQueryString(dl.query);
-    return '<li class="ops-item ' + sev.cls + '">' +
+    var ack = item.ack;
+    var ackNote = ack ? '<span class="ops-item-ack">' +
+        (item.snooze_overridden ? 'Snoozed, but it is P1 now — shown again' : 'Acked') +
+        (ack.actor_email ? ' by ' + escapeHtml(ack.actor_email) : '') + ' · ' + escapeHtml(ack.reason) +
+        (ack.vtid ? ' · ' + escapeHtml(ack.vtid) : '') + ' · until ' + escapeHtml(ack.expires_at) + '</span>' : '';
+    return '<li class="ops-item ' + sev.cls + (ack && ack.action === 'ack' ? ' ops-item-acked' : '') + '">' +
         '<a class="ops-item-link" href="' + escapeHtml(href) + '" data-action="ops-attention-open"' +
             ' data-section="' + escapeHtml(dl.section || '') + '" data-tab="' + escapeHtml(dl.tab || '') + '"' +
             ' data-query="' + escapeHtml(JSON.stringify(dl.query || {})) + '">' +
@@ -29713,7 +29911,7 @@ function renderOpsAttentionItemHtml(item) {
                 (item.count > 1 ? '<span class="ops-item-count">×' + escapeHtml(String(item.count)) + '</span>' : '') +
                 '<span class="ops-item-since">since ' + escapeHtml(dashboardRelativeTime(item.since)) + '</span>' +
             '</span>' +
-        '</a></li>';
+        '</a>' + ackNote + renderOpsAttentionItemActions(item) + '</li>';
 }
 
 function handleOpsAttentionClick(ev) {
@@ -29728,6 +29926,22 @@ function handleOpsAttentionClick(ev) {
         ev.preventDefault();
         state.opsAttention.domainFilter = el.getAttribute('data-domain') || 'all';
         refreshOpsAttentionPanel();
+    } else if (action === 'ops-attention-ack' || action === 'ops-attention-snooze') {
+        ev.preventDefault();
+        state.opsAttention.actionForm = {
+            fingerprint: el.getAttribute('data-fingerprint') || '',
+            action: action === 'ops-attention-snooze' ? 'snooze' : 'ack',
+            error: null, busy: false
+        };
+        rerenderOpsAttentionNow();
+        var ta = document.querySelector('.ops-action-form textarea');
+        if (ta) ta.focus();
+    } else if (action === 'ops-attention-cancel') {
+        ev.preventDefault();
+        closeOpsAttentionForm();
+    } else if (action === 'ops-attention-notify') {
+        ev.preventDefault();
+        toggleOpsAttentionNotify();
     } else if (action === 'ops-attention-open') {
         // Modified clicks keep the browser's own open-in-new-tab behaviour (real href).
         if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button === 1) return;
@@ -29735,6 +29949,67 @@ function handleOpsAttentionClick(ev) {
         var query = {};
         try { query = JSON.parse(el.getAttribute('data-query') || '{}'); } catch (_e) { query = {}; }
         openOpsAttentionDeeplink(el.getAttribute('data-section'), el.getAttribute('data-tab'), query);
+    }
+}
+
+/** VTID-04886: re-render the cockpit even while a form is open (the form's own changes). */
+function rerenderOpsAttentionNow() {
+    var old = document.querySelector('.ops-attention');
+    if (old) old.replaceWith(renderOpsAttentionCockpit());
+}
+
+function closeOpsAttentionForm() {
+    var view = state.opsAttention;
+    view.actionForm = null;
+    view.pendingRefresh = false;
+    rerenderOpsAttentionNow();
+}
+
+async function toggleOpsAttentionNotify() {
+    var on = !opsAttentionNotifyEnabled();
+    if (on) {
+        if (typeof window.Notification !== 'function') { showToast('This browser has no notifications', 'warning'); return; }
+        var perm = window.Notification.permission;
+        if (perm === 'default') {
+            try { perm = await window.Notification.requestPermission(); } catch (_e) { perm = 'denied'; }
+        }
+        if (perm !== 'granted') { showToast('Notifications are blocked for this site', 'warning'); return; }
+    }
+    if (!opsAttentionSetNotify(on)) { showToast('Cannot store the setting in this browser', 'warning'); return; }
+    // Only fingerprints that reach P1 AFTER this moment notify.
+    state.opsAttention.seenP1 = opsAttentionP1Set(state.opsAttention.data && state.opsAttention.data.items);
+    rerenderOpsAttentionNow();
+}
+
+async function handleOpsAttentionSubmit(ev) {
+    var formEl = ev.target && ev.target.closest ? ev.target.closest('.ops-action-form') : null;
+    if (!formEl) return;
+    ev.preventDefault();
+    var view = state.opsAttention;
+    var form = view.actionForm;
+    if (!form || form.busy) return;
+    var reason = (formEl.querySelector('[name="reason"]').value || '').trim();
+    var minutes = parseInt(formEl.querySelector('[name="duration_minutes"]').value, 10);
+    var vtid = (formEl.querySelector('[name="vtid"]').value || '').trim();
+    if (reason.length < 3) { form.error = 'A reason of at least 3 characters is required.'; rerenderOpsAttentionNow(); return; }
+    form.busy = true;
+    form.error = null;
+    var body = { fingerprint: form.fingerprint, reason: reason, duration_minutes: minutes };
+    if (vtid) body.vtid = vtid;
+    try {
+        var out = await postOpsAttentionAction(form.action, body);
+        showToast((form.action === 'snooze' ? 'Snoozed' : 'Acked') + ' until ' + out.expires_at, 'success');
+        view.actionForm = null;
+        view.pendingRefresh = false;
+        rerenderOpsAttentionNow();
+        fetchOpsAttention(true); // the server invalidated its cache: the next answer shows the ack
+    } catch (err) {
+        form.busy = false;
+        form.error = 'Not saved: ' + ((err && err.message) ? err.message : String(err));
+        var keep = reason;
+        rerenderOpsAttentionNow();
+        var ta = document.querySelector('.ops-action-form textarea');
+        if (ta) ta.value = keep;
     }
 }
 
