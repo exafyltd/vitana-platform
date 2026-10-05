@@ -90,6 +90,9 @@ export type GatewayI18nKey =
   | 'notif.signal_expired.title'
   | 'notif.signal_expired.body'
   | 'notif.reminder.title'
+  // VTID-04763: Audiobook daily "your episode for today" push
+  | 'notif.audiobook_daily.title'
+  | 'notif.audiobook_daily.body'
   // VTID-04338: calendar entry reminders ({title} already carries the entry's emoji)
   | 'notif.calendar_reminder.in_minutes'
   | 'notif.calendar_reminder.in_hours'

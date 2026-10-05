@@ -47,8 +47,10 @@ import {
   type WalletBucket,
 } from '../services/entitlement-service';
 import * as repo from './billing-repository';
+import { emitOasisEvent } from '../services/oasis-event-service';
 
 const VTID = 'VTID-03107';
+const FOUNDING_VTID = 'VTID-04859';
 const LOG_PREFIX = '[billing]';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://community-app.vitanaland.com';
@@ -665,55 +667,109 @@ router.post('/redeem', requireAuth, async (req: AuthenticatedRequest, res: Respo
 // GET /founding-status  — public Founding-campaign progress for the launch banner
 // =============================================================================
 //
-// Returns the active Founding campaign's uses_count + max_uses + code so the
-// frontend marketing banner can render real-time scarcity ("X of N spots
-// remaining"). Public — no auth required. Returns the code ONLY when the
-// campaign is still public (is_active=true AND has_spots).
-//
-// When the campaign is exhausted or deactivated, we still return shape but
-// `code` is null so the frontend banner can hide cleanly.
+// VTID-04859: the first 1,000 members are seated automatically at signup
+// (founding_members), so there is no code to show any more: `code` is always
+// null. Public — no auth required. Returns how many seats are taken so a
+// pre-signup surface can render "X of 1,000 spots left".
 // =============================================================================
 
 router.get('/founding-status', async (_req: Request, res: Response) => {
   try {
-    const { data, error } = await repo.fetchLatestFoundingCampaignCode(sb());
-
+    const { count, error } = await repo.countFoundingSeats(sb());
     if (error) {
       console.warn(`${LOG_PREFIX} /founding-status query error: ${error.message}`);
-      return res.json({ ok: true, active: false, vtid: VTID });
+      return res.json({ ok: true, active: false, vtid: FOUNDING_VTID });
     }
-    if (!data) {
-      return res.json({ ok: true, active: false, vtid: VTID });
-    }
-
-    const row = data as {
-      code: string;
-      max_uses: number;
-      uses_count: number;
-      is_active: boolean;
-      expires_at: string | null;
-      campaign: string;
-      metadata: Record<string, unknown> | null;
-    };
-    const expired = row.expires_at ? new Date(row.expires_at).getTime() < Date.now() : false;
-    const hasSpots = row.uses_count < row.max_uses;
-    const active = row.is_active && hasSpots && !expired;
-
+    const taken = count ?? 0;
+    const remaining = Math.max(0, repo.FOUNDING_MAX_SEATS - taken);
     return res.json({
       ok: true,
-      active,
-      uses_count: row.uses_count,
-      max_uses: row.max_uses,
-      remaining: Math.max(0, row.max_uses - row.uses_count),
-      code: active ? row.code : null,
-      campaign: row.campaign,
-      vtid: VTID,
+      active: remaining > 0,
+      uses_count: taken,
+      max_uses: repo.FOUNDING_MAX_SEATS,
+      remaining,
+      code: null,
+      campaign: 'founding_1000',
+      vtid: FOUNDING_VTID,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(`${LOG_PREFIX} /founding-status crash: ${message}`);
-    return res.json({ ok: true, active: false, vtid: VTID });
+    return res.json({ ok: true, active: false, vtid: FOUNDING_VTID });
   }
+});
+
+// =============================================================================
+// GET /founding/me  — the signed-in member's Founding seat (VTID-04859)
+// =============================================================================
+//
+// Read-only. The seat and the free year are granted by the database at signup
+// (claim_founding_seat via the user_tenants trigger); this only reports them,
+// so the app can show the celebration once (`celebrated: false`).
+// =============================================================================
+
+router.get('/founding/me', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const identity = req.identity;
+  if (!identity?.user_id) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+  const { data, error } = await repo.fetchFoundingMember(sb(), identity.user_id);
+  if (error) {
+    console.error(`${LOG_PREFIX} /founding/me query error: ${error.message}`);
+    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR', vtid: FOUNDING_VTID });
+  }
+  if (!data) {
+    return res.json({ ok: true, founding: false, max_seats: repo.FOUNDING_MAX_SEATS, vtid: FOUNDING_VTID });
+  }
+  const row = data as {
+    seat_number: number;
+    grant_source: string;
+    granted_until: string | null;
+    value_cents: number;
+    celebrated_at: string | null;
+  };
+  return res.json({
+    ok: true,
+    founding: true,
+    seat_number: row.seat_number,
+    max_seats: repo.FOUNDING_MAX_SEATS,
+    grant_source: row.grant_source,
+    granted_until: row.granted_until,
+    value_cents: row.value_cents,
+    currency: 'eur',
+    celebrated: !!row.celebrated_at,
+    vtid: FOUNDING_VTID,
+  });
+});
+
+// =============================================================================
+// POST /founding/celebrated  — the member closed the celebration (VTID-04859)
+// =============================================================================
+
+router.post('/founding/celebrated', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const identity = req.identity;
+  if (!identity?.user_id) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+  const { data, error } = await repo.rpcMarkFoundingCelebrated(sb(), identity.user_id);
+  if (error) {
+    console.error(`${LOG_PREFIX} mark_founding_celebrated RPC error: ${error.message}`);
+    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR', vtid: FOUNDING_VTID });
+  }
+  const result = data as { ok?: boolean; error?: string; celebrated_at?: string } | null;
+  if (!result?.ok) {
+    return res.status(404).json({ ok: false, error: result?.error ?? 'NOT_A_FOUNDING_MEMBER', vtid: FOUNDING_VTID });
+  }
+  await emitOasisEvent({
+    vtid: FOUNDING_VTID,
+    type: 'billing.founding.celebrated',
+    source: 'billing',
+    status: 'success',
+    message: 'Founding Member celebration shown',
+    payload: { celebrated_at: result.celebrated_at },
+    actor_id: identity.user_id,
+  }).catch((e: unknown) => console.warn(`${LOG_PREFIX} founding celebrated event not recorded: ${e instanceof Error ? e.message : String(e)}`));
+  return res.json({ ok: true, celebrated_at: result.celebrated_at, vtid: FOUNDING_VTID });
 });
 
 // =============================================================================

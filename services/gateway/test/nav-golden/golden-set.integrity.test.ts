@@ -1,16 +1,18 @@
 /**
  * VTID-04496 — the golden set itself must stay honest.
  *
- * Fails when a case names a screen the catalog does not have (a screen was
+ * Fails when a case names a screen the registry does not have (a screen was
  * renamed or removed without updating the set), when ids collide, when a case
  * both expects and forbids a screen, or when a shipped locale has no coverage.
  */
 process.env.NODE_ENV = 'test';
 
 import { GOLDEN_SET } from './golden-set';
-import { NAVIGATION_CATALOG } from '../../src/lib/navigation-catalog';
+import { getNavRegistry } from '../../src/navigation/nav-registry';
 
-const KNOWN = new Set(NAVIGATION_CATALOG.map((e) => e.screen_id));
+// VTID-04846: the screen registry (ids and the retired ids it still answers
+// to) is the list of screens; the legacy catalog is gone.
+const KNOWN = new Set(getNavRegistry().registry.screens.flatMap((s) => [s.id, ...(s.formerIds || [])]));
 const SHIPPED_LOCALES = ['en', 'de', 'es', 'fr', 'sr', 'pl', 'pt', 'ru', 'tr', 'ar', 'zh'];
 
 describe('VTID-04496 golden navigation set — integrity', () => {
@@ -20,7 +22,7 @@ describe('VTID-04496 golden navigation set — integrity', () => {
     expect(dupes).toEqual([]);
   });
 
-  it('only names screens that exist in the catalog', () => {
+  it('only names screens that exist in the screen registry', () => {
     const unknown = GOLDEN_SET.flatMap((c) =>
       [...c.expect, ...(c.forbid || [])].filter((id) => !KNOWN.has(id)).map((id) => `${c.id} → ${id}`),
     );

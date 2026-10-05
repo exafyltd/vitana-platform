@@ -342,6 +342,29 @@ describe('GET /verticals', () => {
     expect(res.body.data.verticals[0].fields).toHaveLength(1);
   });
 
+  test('VTID-04783: each vertical carries the subcategories of its Discover category', async () => {
+    asSupplier();
+    db({
+      catalog_verticals: tableStub({ data: [
+        { key: 'beauty_care', display_label: 'Beauty', discover_category: 'skincare' },
+        { key: 'services', display_label: 'Services', discover_category: null },
+      ] }),
+      catalog_vertical_fields: tableStub({ data: [] }),
+      discover_subcategories: tableStub({ data: [
+        { category_key: 'skincare', key: 'face-care', label_key: 'discover.subcategories.faceCare', sort_order: 10 },
+        { category_key: 'supplements', key: 'vitamins', label_key: 'discover.subcategories.vitamins', sort_order: 30 },
+      ] }),
+    });
+
+    const res = await request(app).get('/api/v1/vcaop/portal/my/verticals');
+
+    expect(res.status).toBe(200);
+    const [beauty, services] = res.body.data.verticals;
+    expect(beauty.discover_category).toBe('skincare');
+    expect(beauty.subcategories).toEqual([{ key: 'face-care', label_key: 'discover.subcategories.faceCare' }]);
+    expect(services.subcategories).toEqual([]);
+  });
+
   test('a read failure is 500, not a silently empty form', async () => {
     asSupplier();
     db({

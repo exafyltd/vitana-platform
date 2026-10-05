@@ -57,6 +57,7 @@ import { buildReminders, remindersEnabled, renderRemindersBlock } from './watche
 import { isPlannerMemoryRecallEnabled, buildFileScopedMemoryBlock } from './dev-agent-memory-file-recall';
 import { recordShown } from './watcher/feedback';
 import { devPlannerModel } from './dev-pipeline-models';
+import { isPlannabilityOn, recordPlannabilityOutcome, runPlannabilityCheck } from './jev/gates/plannability-gate';
 
 const LOG_PREFIX = '[dev-autopilot-planning]';
 const PLAN_VTID = 'VTID-DEV-AUTOPILOT';
@@ -1090,9 +1091,14 @@ export async function generatePlanVersion(
     scope = { allow: cfgR.data[0].allow_scope, deny: cfgR.data[0].deny_scope };
   }
 
+  // VTID-04806 (Jev A3, shadow): on a first-time plan, ask whether the finding
+  // is plannable at all, in parallel with the planner — never awaited before it.
+  const plannability = !opts.feedback_note && isPlannabilityOn() ? runPlannabilityCheck({ finding }) : null;
+
   // 4. Run the planning session
   const initialSession = await runPlanningSession(finding, previousPlan, opts.feedback_note, scope, supa);
   if (!initialSession.ok || !initialSession.plan_markdown) {
+    void recordPlannabilityOutcome(plannability, { ok: false, error: initialSession.error || 'planning failed' });
     await emitOasisEvent({
       vtid: PLAN_VTID,
       type: 'dev_autopilot.plan.failed',
@@ -1180,8 +1186,10 @@ export async function generatePlanVersion(
     }),
   });
   if (!insertR.ok) {
+    void recordPlannabilityOutcome(plannability, { ok: false, error: 'plan insert failed' });
     return { ok: false, error: `plan insert failed: ${insertR.error}` };
   }
+  void recordPlannabilityOutcome(plannability, { ok: true, files: files_referenced.length });
 
   await emitOasisEvent({
     vtid: PLAN_VTID,

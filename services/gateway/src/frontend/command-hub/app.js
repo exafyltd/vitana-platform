@@ -3626,20 +3626,23 @@ const NAVIGATION_CONFIG = [
         ]
     },
     // VTID-02856: Unified Voice section — owns every voice-management surface.
-    // VTID-02865: Improve cockpit is tab #1 — operators land on the
-    // diagnose-and-repair surface; Orb LIVE moves to #2.
+    // VTID-04777..04780: rebuilt as a supervisor cockpit. Overview answers "is
+    // it system-wide or one segment?", Tenants & Roles is the tenant x
+    // assistant matrix, Sessions is the one live+historical list (replaces Orb
+    // LIVE), Issues & Healing merges Improve + Self-Healing + Fix Impact, and
+    // Test Bench puts LiveKit and Nova side by side with the voice test suite.
+    // Old tab URLs redirect (AUTONOMY_REDIRECTS); Test Contracts moved to
+    // Testing & QA.
     {
         "section": "voice",
         "basePath": "/command-hub/voice/",
         "tabs": [
-            { "key": "improve",         "label": "Improve",            "path": "/command-hub/voice/improve/" },
-            { "key": "orb-live",        "label": "Orb LIVE",           "path": "/command-hub/voice/orb-live/" },
-            { "key": "providers",       "label": "Providers & Voice",  "path": "/command-hub/voice/providers/" },
-            { "key": "self-healing",    "label": "Self-Healing",       "path": "/command-hub/voice/self-healing/" },
-            { "key": "test-contracts",  "label": "Test Contracts",     "path": "/command-hub/voice/test-contracts/" },
-            { "key": "livekit-test",    "label": "LiveKit Test Bench", "path": "/command-hub/voice/livekit-test/" },
-            { "key": "nova-sonic-test", "label": "Nova Sonic Test Bench", "path": "/command-hub/voice/nova-sonic-test/" },
-            { "key": "orb-ui-monitor",  "label": "Orb UI Monitor",     "path": "/command-hub/voice/orb-ui-monitor/" }
+            { "key": "overview",        "label": "Overview",            "path": "/command-hub/voice/overview/" },
+            { "key": "segments",        "label": "Tenants & Roles",     "path": "/command-hub/voice/segments/" },
+            { "key": "sessions",        "label": "Sessions",            "path": "/command-hub/voice/sessions/" },
+            { "key": "issues-healing",  "label": "Issues & Healing",    "path": "/command-hub/voice/issues-healing/" },
+            { "key": "test-bench",      "label": "Test Bench",          "path": "/command-hub/voice/test-bench/" },
+            { "key": "providers",       "label": "Providers & Config",  "path": "/command-hub/voice/providers/" }
         ]
     },
     {
@@ -3803,7 +3806,8 @@ const NAVIGATION_CONFIG = [
             { "key": "catalog", "path": "/command-hub/testing-qa/catalog/" },
             { "key": "runs", "path": "/command-hub/testing-qa/runs/" },
             { "key": "run-tests", "path": "/command-hub/testing-qa/run-tests/" },
-            { "key": "e2e", "path": "/command-hub/testing-qa/e2e/" }
+            { "key": "e2e", "path": "/command-hub/testing-qa/e2e/" },
+            { "key": "test-contracts", "path": "/command-hub/testing-qa/test-contracts/" }
         ]
     },
     {
@@ -4748,21 +4752,25 @@ const state = {
         controllerStatus: null,
         loopStatus: null,
         violationCount24h: 0,
+        // VTID-04869: true when the failures fetch itself failed.
+        recentFailuresUnavailable: false,
         lastRefreshed: null,
         loading: false,
         fetched: false,
         error: null
     },
 
-    // VTID-02031: Ops "Action Required" — pull surface mirroring Gchat pings
-    actionRequired: {
-        items: [],
-        countTotal: 0,
-        countCritical: 0,
-        lastRefreshed: null,
+    // VTID-04876: Overview cockpit — GET /api/v1/ops/attention (replaces the
+    // VTID-02031 /ops/action-required panel state).
+    opsAttention: {
+        data: null,
+        error: null,
         loading: false,
         fetched: false,
-        error: null
+        lastOkAt: null,
+        lastFetchAt: null,
+        domainFilter: 'all',
+        legacyOpen: false
     },
 
     // DEV-COMHU-03404: hourly oasis_events rollup for Overview sparklines
@@ -8426,42 +8434,28 @@ function renderModuleContent(moduleKey, tab) {
         // so it does not collide with Conversation's existing 'tools' (Tool Health).
         container.appendChild(renderVoiceToolsCatalogView());
 
-    // ──── VTID-02856: Voice section · VTID-02865: Improve cockpit ────
-    } else if (moduleKey === 'voice' && tab === 'improve') {
-        // VTID-02865: Diagnose-and-repair cockpit. Default landing for /voice/.
-        container.appendChild(renderVoiceImproveView());
-    } else if (moduleKey === 'voice' && tab === 'orb-live') {
-        // Rich Voice Lab content (sessions list + detail drawer).
-        // Reset the internal Voice-Lab sub-tab so a stale value (e.g. from a
-        // previous visit to "Experiments") doesn't leak into the new home.
-        state.voiceLab.activeSubTab = 'orb-live';
-        container.appendChild(renderVoiceLabView());
+    // ──── VTID-02856: Voice section · VTID-04777..04780: supervisor cockpit ────
+    } else if (moduleKey === 'voice' && tab === 'overview') {
+        // VTID-04777: supervisor cockpit (voice-supervisor.js).
+        container.appendChild(renderVoiceSupervisorScreen('renderVoiceSupervisorOverview', 'Voice Overview'));
+    } else if (moduleKey === 'voice' && tab === 'segments') {
+        // VTID-04777: tenant x assistant matrix (voice-supervisor.js).
+        container.appendChild(renderVoiceSupervisorScreen('renderVoiceSupervisorSegments', 'Tenants & Roles'));
+    } else if (moduleKey === 'voice' && tab === 'sessions') {
+        // VTID-04777: unified live + historical session list (voice-supervisor.js).
+        // A row opens the existing session drawer (openVoiceLabSessionDrawer).
+        container.appendChild(renderVoiceSupervisorScreen('renderVoiceSupervisorSessions', 'Voice Sessions'));
+        mountVoiceLabSessionDrawer();
+    } else if (moduleKey === 'voice' && tab === 'issues-healing') {
+        // VTID-04778: Action Queue (Improve) + Self-Healing Pipeline + Fix Impact.
+        container.appendChild(renderVoiceIssuesHealingView());
+    } else if (moduleKey === 'voice' && tab === 'test-bench') {
+        // VTID-04779: LiveKit + Nova Sonic benches side by side + voice test suite.
+        container.appendChild(renderVoiceTestBenchView());
     } else if (moduleKey === 'voice' && tab === 'providers') {
-        // VTID-02857: Providers & Voice — V2V (Vertex/LiveKit) + STT + TTS
-        // provider switches + TTS voice/language/speed.
+        // VTID-02857: Providers & Config — V2V + STT + TTS provider switches,
+        // TTS voice/language/speed, provider registry and per-agent config.
         container.appendChild(renderVoiceProvidersView());
-    } else if (moduleKey === 'voice' && tab === 'self-healing') {
-        // VTID-04626: rebuilt screen, lives in voice-self-healing.js.
-        if (typeof window.renderVoiceSelfHealingScreen === 'function') {
-            container.appendChild(window.renderVoiceSelfHealingScreen());
-        } else {
-            var vshMissing = document.createElement('p');
-            vshMissing.textContent = 'Voice Self-Healing failed to load (voice-self-healing.js). Reload the page.';
-            container.appendChild(vshMissing);
-        }
-    } else if (moduleKey === 'voice' && tab === 'test-contracts') {
-        // VTID-02954 (PR-L1): Test Contract Registry — read-only status panel
-        container.appendChild(renderTestContractsPanel());
-    } else if (moduleKey === 'voice' && tab === 'livekit-test') {
-        container.appendChild(renderLivekitTestView());
-    } else if (moduleKey === 'voice' && tab === 'nova-sonic-test') {
-        // DEV-COMHU-0514 / BOOTSTRAP-NOVA-SONIC-VOICE: Nova 2 Sonic test bench
-        container.appendChild(renderNovaSonicTestView());
-    } else if (moduleKey === 'voice' && tab === 'orb-ui-monitor') {
-        // Migrated from testing-qa/e2e — scheduled UI E2E test runs
-        container.appendChild(renderOrbMonitorSection());
-        // VTID-03025 (Slice 1c): LiveKit hourly dry-run test grid.
-        container.appendChild(renderLivekitHourlyTestsPanel());
 
     } else if (moduleKey === 'oasis' && tab === 'events') {
         // VTID-0600: OASIS Events View
@@ -8682,6 +8676,9 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderTestingRunTestsView());
     } else if (moduleKey === 'testing-qa' && tab === 'e2e') {
         container.appendChild(renderTestingE2eView());
+    } else if (moduleKey === 'testing-qa' && tab === 'test-contracts') {
+        // VTID-04779: moved from Voice — platform-wide capability contracts, not voice-only.
+        container.appendChild(renderTestContractsPanel());
 
     // ──── Admin: Analytics ────
     } else if (moduleKey === 'admin' && tab === 'analytics') {
@@ -12338,6 +12335,113 @@ function handleTabClick(tabKey) {
     restoreScrollPositionsForRoute(getScrollRouteKey());
 }
 
+/**
+ * VTID-04869: go to one section + tab from anywhere (an Overview card, a
+ * "View all" link). Same steps as handleModuleClick + handleTabClick —
+ * router keys currentModuleKey/currentTab, pushState, one renderApp() —
+ * without rendering twice. An unknown tab falls back to the section's
+ * first tab; an unknown section does nothing and returns false.
+ */
+// VTID-04876: optional query (the deep-link contract below) is appended to the
+// tab path and read by the target screen right after it renders.
+function navigateToScreen(sectionKey, tabKey, query) {
+    var section = NAVIGATION_CONFIG.find(function (s) { return s.section === sectionKey; });
+    if (!section) return false;
+    var tab = section.tabs.find(function (t) { return t.key === tabKey; }) || section.tabs[0];
+
+    captureAllScrollPositions();
+    if (state.currentModuleKey === 'models-evaluations' && sectionKey !== 'models-evaluations') {
+        stopModelsAutoRefresh();
+    }
+    state.currentModuleKey = sectionKey;
+    state.currentTab = tab ? tab.key : '';
+    history.pushState(null, '', (tab ? tab.path : section.basePath) + opsAttentionQueryString(query));
+    renderApp();
+    restoreScrollPositionsForRoute(getScrollRouteKey());
+    applyDeepLinkParams();
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// VTID-04876: deep-link contract. A screen reads its query parameter when it
+// is navigated to (navigateToScreen, browser back/forward, page load):
+//   command-hub/tasks ?vtid=     → task drawer
+//   oasis/vtid-ledger ?vtid=     → ledger drawer
+//   voice/sessions    ?session=  → voice session drawer
+// services/ops-attention-adapters.ts DEEPLINK_QUERY_CONTRACT mirrors this
+// map (a unit test keeps them equal). An unresolvable value shows a toast
+// and falls back to the list (the parameter is dropped from the URL).
+// ---------------------------------------------------------------------------
+var OVERVIEW_DEEPLINK_QUERY_CONTRACT = {
+    'command-hub/tasks': ['vtid'],
+    'oasis/vtid-ledger': ['vtid'],
+    'voice/sessions': ['session']
+};
+
+function applyDeepLinkParams() {
+    var params;
+    try { params = new URLSearchParams(window.location.search); } catch (_e) { return; }
+    var screen = state.currentModuleKey + '/' + state.currentTab;
+    var allowed = OVERVIEW_DEEPLINK_QUERY_CONTRACT[screen];
+    if (!allowed) return;
+    var vtid = allowed.indexOf('vtid') >= 0 ? params.get('vtid') : null;
+    var session = allowed.indexOf('session') >= 0 ? params.get('session') : null;
+    if (vtid && screen === 'command-hub/tasks') {
+        openTaskDrawerFromDeepLink(vtid);
+    } else if (vtid && screen === 'oasis/vtid-ledger') {
+        openLedgerDrawerFromDeepLink(vtid);
+    } else if (session && screen === 'voice/sessions') {
+        openVoiceSessionFromDeepLink(session);
+    }
+}
+
+function deepLinkFallback(what, value) {
+    showToast(what + ' ' + value + ' could not be opened — showing the list instead', 'warning');
+    try { history.replaceState(null, '', window.location.pathname); } catch (_e) { /* keep URL */ }
+}
+
+async function openTaskDrawerFromDeepLink(vtid) {
+    try {
+        var r = await fetch('/api/v1/vtid/' + encodeURIComponent(vtid), { headers: buildContextHeaders() });
+        var body = r.ok ? await r.json() : null;
+        var d = body && body.ok && body.data ? body.data : null;
+        if (!d) { deepLinkFallback('Task', vtid); return; }
+        state.selectedTask = {
+            vtid: d.vtid || vtid, title: d.title || vtid, status: d.status || '',
+            spec_status: d.spec_status || '', summary: d.summary || '', oasisColumn: ''
+        };
+        state.selectedTaskDetail = d;
+        state.selectedTaskDetailLoading = false;
+        state.executionStatus = null;
+        state.executionStatusLoading = false;
+        renderApp();
+    } catch (_e) {
+        deepLinkFallback('Task', vtid);
+    }
+}
+
+async function openLedgerDrawerFromDeepLink(vtid) {
+    await fetchOasisVtidDetail(vtid);
+    if (oasisVtidDetail.error || !oasisVtidDetail.data) {
+        oasisVtidDetail.selectedVtid = null;
+        oasisVtidDetail.data = null;
+        oasisVtidDetail.error = null;
+        deepLinkFallback('VTID', vtid);
+        renderApp();
+    }
+}
+
+async function openVoiceSessionFromDeepLink(sessionId) {
+    try {
+        var r = await fetch('/api/v1/voice-lab/live/sessions/' + encodeURIComponent(sessionId), { headers: buildContextHeaders() });
+        var body = r.ok ? await r.json() : null;
+        if (!body || !body.ok || !body.session) { deepLinkFallback('Voice session', sessionId); return; }
+        window.openVoiceLabSessionDrawer(sessionId);
+    } catch (_e) {
+        deepLinkFallback('Voice session', sessionId);
+    }
+}
+
 // Router Logic
 
 // BOOTSTRAP-AUTONOMY-SECTION-NAV + BOOTSTRAP-ASSISTANT-SECTION-NAV:
@@ -12363,17 +12467,27 @@ const AUTONOMY_REDIRECTS = {
     '/command-hub/voice/journey-context/':            { section: 'conversation', tab: 'journey-context' },
     '/command-hub/voice/tools/':                      { section: 'conversation', tab: 'tool-catalog' },
     // VTID-02856: Voice section consolidation. Old paths now resolve to the unified Voice tabs.
-    '/command-hub/diagnostics/voice-lab/':            { section: 'voice', tab: 'orb-live' },
+    // VTID-04777..04779: Orb LIVE became Sessions; the benches and ORB UI checks became Test Bench.
+    '/command-hub/diagnostics/voice-lab/':            { section: 'voice', tab: 'sessions' },
     '/command-hub/diagnostics/voice-lab/experiments/':{ section: 'assistant', tab: 'experiments' },
     '/command-hub/diagnostics/voice-lab/personality/':{ section: 'assistant', tab: 'personality' },
     '/command-hub/diagnostics/voice-lab/sessions/':   { section: 'assistant', tab: 'sessions' },
     '/command-hub/diagnostics/voice-lab/metrics/':    { section: 'assistant', tab: 'metrics' },
-    '/command-hub/assistant/orb-live/':                { section: 'voice', tab: 'orb-live' },
+    '/command-hub/assistant/orb-live/':                { section: 'voice', tab: 'sessions' },
     '/command-hub/assistant/voice-tools/':             { section: 'conversation', tab: 'tool-catalog' },
     '/command-hub/assistant/awareness-registry/':      { section: 'conversation', tab: 'awareness', subtab: 'registry' },
     '/command-hub/assistant/awareness-test/':          { section: 'conversation', tab: 'awareness', subtab: 'test' },
-    '/command-hub/testing-qa/livekit-test/':           { section: 'voice', tab: 'livekit-test' },
-    '/command-hub/testing-qa/e2e/orb-monitor/':        { section: 'voice', tab: 'orb-ui-monitor' },
+    '/command-hub/testing-qa/livekit-test/':           { section: 'voice', tab: 'test-bench' },
+    '/command-hub/testing-qa/e2e/orb-monitor/':        { section: 'voice', tab: 'test-bench' },
+    // VTID-04777..04779: the old Voice tabs, kept working for bookmarks and
+    // backend deep links (autonomy-pulse / autonomy-trace link test-contracts).
+    '/command-hub/voice/improve/':                     { section: 'voice', tab: 'issues-healing', subtab: 'action-queue' },
+    '/command-hub/voice/orb-live/':                    { section: 'voice', tab: 'sessions' },
+    '/command-hub/voice/self-healing/':                { section: 'voice', tab: 'issues-healing', subtab: 'pipeline' },
+    '/command-hub/voice/livekit-test/':                { section: 'voice', tab: 'test-bench' },
+    '/command-hub/voice/nova-sonic-test/':             { section: 'voice', tab: 'test-bench' },
+    '/command-hub/voice/orb-ui-monitor/':              { section: 'voice', tab: 'test-bench' },
+    '/command-hub/voice/test-contracts/':              { section: 'testing-qa', tab: 'test-contracts' },
     // VTID-04642: the Testing & QA rebuild replaced four stale tabs; old links land on the new ones.
     '/command-hub/testing-qa/unit-tests/':        { section: 'testing-qa', tab: 'catalog' },
     '/command-hub/testing-qa/integration-tests/': { section: 'testing-qa', tab: 'catalog' },
@@ -12387,6 +12501,12 @@ const AUTONOMY_REDIRECTS = {
 // section. renderVoiceAwarenessView still reads state.voiceAwareness.
 function applyRouteSubtab(route) {
     if (!route || !route.subtab) return;
+    // VTID-04778: Issues & Healing sub-tab (action-queue | pipeline | fix-impact).
+    if (route.section === 'voice' && route.tab === 'issues-healing') {
+        if (!state.voiceIssues) state.voiceIssues = { subTab: 'action-queue' };
+        state.voiceIssues.subTab = route.subtab;
+        return;
+    }
     if (route.section === 'conversation' && route.tab === 'awareness') {
         if (!state.voiceAwareness) state.voiceAwareness = { activeSubTab: 'registry' };
         state.voiceAwareness.activeSubTab = route.subtab;
@@ -12456,6 +12576,8 @@ window.onpopstate = () => {
 
     // VTID-01002: Restore scroll positions for new route from persistent storage
     restoreScrollPositionsForRoute(getScrollRouteKey());
+    // VTID-04876: back/forward re-reads ?vtid= / ?session=.
+    applyDeepLinkParams();
 };
 
 /**
@@ -17374,188 +17496,6 @@ function formatModelName(model) {
 // ===========================================================================
 
 /**
- * VTID-01218E: Voice LAB sub-tabs configuration
- */
-var VOICE_LAB_TABS = [
-    { key: 'orb-live', label: 'ORB Live', path: '/command-hub/diagnostics/voice-lab/' },
-    { key: 'experiments', label: 'Experiments', path: '/command-hub/diagnostics/voice-lab/experiments/' },
-    { key: 'personality', label: 'AI Personality', path: '/command-hub/diagnostics/voice-lab/personality/' },
-    { key: 'providers', label: 'Providers', path: '/command-hub/diagnostics/voice-lab/providers/' },
-    // VTID-LIVEKIT-FOUNDATION: per-agent STT/LLM/TTS dropdowns (companion to PR #1156 + #1157).
-    { key: 'agent-config', label: 'Agent Config', path: '/command-hub/diagnostics/voice-lab/agent-config/' },
-    { key: 'sessions', label: 'Sessions', path: '/command-hub/diagnostics/voice-lab/sessions/' },
-    { key: 'metrics', label: 'Metrics', path: '/command-hub/diagnostics/voice-lab/metrics/' },
-    { key: 'governance', label: 'Governance', path: '/command-hub/diagnostics/voice-lab/governance/' }
-];
-
-/**
- * VTID-01218E: Render Voice LAB view with 6 sub-tabs
- */
-function renderVoiceLabView() {
-    var container = document.createElement('div');
-    container.className = 'voice-lab-container';
-
-    // Header
-    var header = document.createElement('div');
-    header.className = 'voice-lab-header';
-
-    var title = document.createElement('h2');
-    title.className = 'voice-lab-title';
-    title.textContent = 'Voice LAB';
-    header.appendChild(title);
-
-    var subtitle = document.createElement('span');
-    subtitle.className = 'voice-lab-subtitle';
-    subtitle.textContent = 'ORB Live Observability & Debugging';
-    header.appendChild(subtitle);
-
-    container.appendChild(header);
-
-    // VTID-LIVEKIT-FOUNDATION: Active Provider banner — shows which voice
-    // pipeline is currently serving traffic + a flip button. Always visible.
-    container.appendChild(renderActiveProviderBanner());
-
-    // Sub-tab navigation
-    var tabBar = document.createElement('div');
-    tabBar.className = 'voice-lab-tab-bar';
-
-    VOICE_LAB_TABS.forEach(function (tab) {
-        var btn = document.createElement('button');
-        btn.className = 'voice-lab-tab-btn' + (state.voiceLab.activeSubTab === tab.key ? ' active' : '');
-        btn.textContent = tab.label;
-        btn.setAttribute('data-tab', tab.key);
-        btn.addEventListener('click', function () {
-            state.voiceLab.activeSubTab = tab.key;
-            history.pushState(null, '', tab.path);
-            renderApp();
-        });
-        tabBar.appendChild(btn);
-    });
-
-    container.appendChild(tabBar);
-
-    // Content area
-    var content = document.createElement('div');
-    content.className = 'voice-lab-content';
-    content.setAttribute('data-scroll-retain', 'true');
-    content.setAttribute('data-scroll-key', 'voiceLab-content');
-
-    // VTID-01218B: Stop auto-refresh when leaving ORB Live tab
-    if (state.voiceLab.activeSubTab !== 'orb-live') {
-        stopVoiceLabAutoRefresh();
-    }
-
-    switch (state.voiceLab.activeSubTab) {
-        case 'orb-live':
-            content.appendChild(renderVoiceLabOrbLivePanel());
-            break;
-        case 'experiments':
-            // VTID-01218B: Runtime controls panel
-            content.appendChild(renderVoiceLabExperimentsPanel());
-            break;
-        case 'providers':
-            content.appendChild(renderVoiceLabProvidersPanel());
-            break;
-        case 'agent-config':
-            content.appendChild(renderVoiceLabAgentConfigPanel());
-            break;
-        case 'sessions':
-            content.appendChild(renderVoiceLabPlaceholderPanel('Sessions', 'VTID-01218C'));
-            break;
-        case 'metrics':
-            content.appendChild(renderAssistantLearningHealthView()); // VTID-04371
-            break;
-        case 'personality':
-            content.appendChild(renderVoiceLabPersonalityPanel());
-            break;
-        case 'governance':
-            content.appendChild(renderVoiceLabPlaceholderPanel('Governance', 'VTID-01218D'));
-            break;
-        default:
-            content.appendChild(renderVoiceLabOrbLivePanel());
-    }
-
-    container.appendChild(content);
-
-    return container;
-}
-
-/**
- * VTID-LIVEKIT-FOUNDATION: Active Provider banner.
- *
- * Shows which voice pipeline is currently serving traffic (vertex|livekit)
- * with a flip button. The flip itself is a 501 stub today (gateway PR #1157)
- * — UI is wired so the operator surface lands first.
- */
-function renderActiveProviderBanner() {
-    var banner = document.createElement('div');
-    banner.className = 'voice-lab-active-provider-banner';
-    banner.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 16px;margin:8px 0;background:#1a2332;border:1px solid #2d3748;border-radius:8px;font-family:monospace;';
-
-    var label = document.createElement('div');
-    label.style.cssText = 'flex:1;';
-    label.innerHTML = '<span style="color:#94a3b8;font-size:12px;">ACTIVE VOICE PROVIDER</span><br>'
-        + '<span class="active-provider-value" style="color:#facc15;font-size:18px;font-weight:bold;">loading…</span>';
-
-    var btn = document.createElement('button');
-    btn.className = 'btn btn-secondary';
-    btn.textContent = 'Flip';
-    btn.disabled = true;
-    btn.style.cssText = 'padding:8px 16px;';
-    btn.addEventListener('click', function () {
-        if (!confirm('Flip the active voice provider? In-flight sessions on the current pipeline will drain naturally.')) {
-            return;
-        }
-        var current = banner.querySelector('.active-provider-value');
-        var next = (current && current.textContent === 'livekit') ? 'vertex' : 'livekit';
-        fetchActivePost(next);
-    });
-
-    banner.appendChild(label);
-    banner.appendChild(btn);
-
-    // Async load.
-    fetchActiveProvider().then(function (info) {
-        var span = banner.querySelector('.active-provider-value');
-        if (span) {
-            span.textContent = info.active_provider || 'vertex';
-            span.style.color = info.active_provider === 'livekit' ? '#22c55e' : '#facc15';
-        }
-        btn.disabled = false;
-        btn.textContent = info.active_provider === 'livekit' ? 'Flip to Vertex' : 'Flip to LiveKit';
-    }).catch(function () {
-        var span = banner.querySelector('.active-provider-value');
-        if (span) span.textContent = '(unreachable)';
-    });
-
-    return banner;
-}
-
-function fetchActiveProvider() {
-    var url = (window.GATEWAY_URL || '') + '/api/v1/orb/active-provider';
-    return fetch(url).then(function (r) { return r.json(); });
-}
-
-function fetchActivePost(provider) {
-    var url = (window.GATEWAY_URL || '') + '/api/v1/orb/active-provider';
-    return fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: provider, reason: 'voice-lab manual flip' })
-    }).then(function (r) {
-        if (r.status === 501) {
-            showToast('Flip endpoint stubbed pending follow-up PR (gateway #1157).', 'warning');
-        } else if (!r.ok) {
-            showToast('Flip failed: HTTP ' + r.status, 'error');
-        } else {
-            showToast('Active provider flipped.', 'success');
-        }
-    }).catch(function (e) {
-        showToast('Flip network error: ' + e.message, 'error');
-    });
-}
-
-/**
  * VTID-LIVEKIT-FOUNDATION: Voice Lab Providers panel.
  *
  * Lists every provider in `voice_providers` (STT/LLM/TTS/transport) with
@@ -18616,216 +18556,37 @@ function showPersonalityToast(message, type) {
 }
 
 /**
- * VTID-01218E: Render ORB Live panel - active sessions and turn timeline
- * VTID-01218B: Enhanced with auto-refresh, visual alerts
+ * VTID-04777: the Voice / Sessions tab (voice-supervisor.js) reuses this
+ * drawer. openVoiceLabSessionDrawer(id) selects a session and loads its
+ * details/turns/diagnostics; the dispatcher calls mountVoiceLabSessionDrawer()
+ * after every render of the Sessions tab so the drawer survives renderApp().
  */
-function renderVoiceLabOrbLivePanel() {
-    var panel = document.createElement('div');
-    panel.className = 'voice-lab-orb-live-panel';
-
-    // VTID-01218B: Start auto-refresh when entering this panel
-    startVoiceLabAutoRefresh();
-
-    // Auto-fetch sessions (only on first render)
-    if (!state.voiceLab.sessionsLoading && !state.voiceLab.sessionsFetched) {
-        fetchVoiceLabSessions();
-    }
-
-    // Active Sessions Section
-    var sessionsSection = document.createElement('div');
-    sessionsSection.className = 'voice-lab-sessions-section';
-
-    var sessionsHeader = document.createElement('div');
-    sessionsHeader.className = 'voice-lab-section-header';
-
-    var sessionsTitle = document.createElement('h3');
-    sessionsTitle.textContent = 'Active Sessions';
-    sessionsHeader.appendChild(sessionsTitle);
-
-    // VTID-01218B: Header controls (auto-refresh toggle + refresh button)
-    var headerControls = document.createElement('div');
-    headerControls.className = 'voice-lab-header-controls';
-
-    // Auto-refresh toggle
-    var autoRefreshLabel = document.createElement('label');
-    autoRefreshLabel.className = 'voice-lab-auto-refresh-label';
-    var autoRefreshCheckbox = document.createElement('input');
-    autoRefreshCheckbox.type = 'checkbox';
-    autoRefreshCheckbox.checked = state.voiceLab.autoRefreshEnabled;
-    autoRefreshCheckbox.addEventListener('change', function () {
-        state.voiceLab.autoRefreshEnabled = autoRefreshCheckbox.checked;
-        if (autoRefreshCheckbox.checked) {
-            startVoiceLabAutoRefresh();
-        } else {
-            stopVoiceLabAutoRefresh();
-        }
-    });
-    autoRefreshLabel.appendChild(autoRefreshCheckbox);
-    autoRefreshLabel.appendChild(document.createTextNode(' Auto-refresh (2s)'));
-    headerControls.appendChild(autoRefreshLabel);
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'voice-lab-refresh-btn';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.addEventListener('click', function () {
-        state.voiceLab.sessionsFetched = false;
-        fetchVoiceLabSessions();
-    });
-    headerControls.appendChild(refreshBtn);
-
-    sessionsHeader.appendChild(headerControls);
-    sessionsSection.appendChild(sessionsHeader);
-
-    // Sessions table or loading state
-    if (state.voiceLab.sessionsLoading) {
-        var loadingDiv = document.createElement('div');
-        loadingDiv.className = 'voice-lab-loading';
-        loadingDiv.textContent = 'Loading sessions...';
-        sessionsSection.appendChild(loadingDiv);
-    } else if (state.voiceLab.sessions.length === 0) {
-        var emptyDiv = document.createElement('div');
-        emptyDiv.className = 'voice-lab-empty';
-        emptyDiv.textContent = 'No active voice sessions';
-        sessionsSection.appendChild(emptyDiv);
-    } else {
-        var table = document.createElement('table');
-        table.className = 'voice-lab-sessions-table';
-
-        var thead = document.createElement('thead');
-        thead.innerHTML = '<tr>' +
-            '<th>Session ID</th>' +
-            '<th>User</th>' +
-            '<th>Platform</th>' +
-            '<th>Started</th>' +
-            '<th>Duration</th>' +
-            '<th>Status</th>' +
-            '<th>Turns</th>' +
-            '<th>Class</th>' +  // VTID-02868
-            '<th>Alerts</th>' +
-            '<th>Actions</th>' +
-            '</tr>';
-        table.appendChild(thead);
-
-        var tbody = document.createElement('tbody');
-        state.voiceLab.sessions.forEach(function (session) {
-            var row = document.createElement('tr');
-            row.className = session.connected ? 'session-active' : 'session-ended';
-
-            var startedAt = session.startedAt ? new Date(session.startedAt).toLocaleTimeString() : '-';
-
-            // User display
-            var userDisplay = session.userDisplayName || session.userEmail || (session.userId ? session.userId.substring(0, 8) : 'Anonymous');
-            var userTitle = session.userEmail || session.userId || 'Anonymous';
-
-            // Platform badge
-            var platformDisplay = session.platform || 'unknown';
-            var platformClass = 'platform-badge platform-' + platformDisplay.toLowerCase();
-
-            // VTID-01218B: Visual alerts
-            var alerts = [];
-            var alertClass = '';
-            if (session.turnCount === 0 && !session.connected) {
-                alerts.push('No turns');
-                alertClass = 'alert-red';
-            }
-            if (session.interruptedCount > 0) {
-                alerts.push(session.interruptedCount + ' interrupts');
-                if (!alertClass) alertClass = 'alert-orange';
-            }
-            if (session.errorCount > 0) {
-                alerts.push(session.errorCount + ' errors');
-                if (!alertClass) alertClass = 'alert-red';
-            }
-
-            var alertsHtml = alerts.length > 0
-                ? '<span class="voice-lab-alert ' + alertClass + '">' + alerts.join(', ') + '</span>'
-                : '<span class="voice-lab-ok">OK</span>';
-
-            // VTID-01218B: Turns with color coding
-            var turnsClass = '';
-            if (session.turnCount === 0 && !session.connected) {
-                turnsClass = 'turns-zero';
-            }
-
-            // Duration
-            var durationMs = session.durationMs;
-            if (!durationMs && session.startedAt && session.endedAt) {
-                durationMs = new Date(session.endedAt).getTime() - new Date(session.startedAt).getTime();
-            }
-            var durationStr = durationMs ? formatDuration(durationMs) : (session.connected ? 'Live' : '-');
-
-            // VTID-02868: failure-class badge (server-side classifier).
-            // Empty when session is active OR metrics don't match a quality
-            // class — that's the healthy default.
-            var classHtml = '<span style="color:var(--color-text-secondary);font-size:0.7rem;">—</span>';
-            if (session.failureClass) {
-                var fcLabel = session.failureClass.replace(/^voice\./, '');
-                var fcColor = '#dc2626';
-                if (session.failureClass === 'voice.low_turn_progression') fcColor = '#a16207';
-                else if (session.failureClass === 'voice.no_engagement') fcColor = '#f59e0b';
-                else if (session.failureClass === 'voice.model_under_responds') fcColor = '#f59e0b';
-                classHtml = '<span title="' + escapeHtml(session.failureSignature || '') + '" style="font-size:0.65rem;padding:.1rem .35rem;border-radius:4px;color:' + fcColor + ';background:rgba(220,38,38,.08);">' + escapeHtml(fcLabel) + '</span>';
-            }
-
-            row.innerHTML = '<td class="session-id">' + (session.sessionId || '-').substring(0, 8) + '...</td>' +
-                '<td class="session-user" title="' + userTitle + '">' + userDisplay + '</td>' +
-                '<td><span class="' + platformClass + '">' + platformDisplay + '</span></td>' +
-                '<td>' + startedAt + '</td>' +
-                '<td>' + durationStr + '</td>' +
-                '<td class="session-status">' + (session.connected ? '<span class="status-active">Active</span>' : '<span class="status-ended">Ended</span>') + '</td>' +
-                '<td class="' + turnsClass + '">' + (session.turnCount || 0) + '</td>' +
-                '<td>' + classHtml + '</td>' +
-                '<td>' + alertsHtml + '</td>' +
-                '<td></td>';
-
-            // Add view details button in the Actions cell
-            var actionsCell = row.querySelector('td:last-child');
-            var viewBtn = document.createElement('button');
-            viewBtn.className = 'voice-lab-view-btn';
-            viewBtn.textContent = 'Details';
-            viewBtn.setAttribute('data-session-id', session.sessionId);
-            viewBtn.addEventListener('click', function () {
-                state.voiceLab.selectedSession = session.sessionId;
-                fetchVoiceLabSessionDetails(session.sessionId);
-            });
-            actionsCell.appendChild(viewBtn);
-
-            tbody.appendChild(row);
-        });
-        table.appendChild(tbody);
-        sessionsSection.appendChild(table);
-
-        // Load More button
-        if (state.voiceLab.sessionsHasMore) {
-            var loadMoreDiv = document.createElement('div');
-            loadMoreDiv.className = 'voice-lab-load-more';
-            var loadMoreBtn = document.createElement('button');
-            loadMoreBtn.className = 'voice-lab-load-more-btn';
-            loadMoreBtn.textContent = state.voiceLab.sessionsLoadingMore ? 'Loading...' : 'Load More Sessions';
-            loadMoreBtn.disabled = state.voiceLab.sessionsLoadingMore;
-            loadMoreBtn.addEventListener('click', function () {
-                fetchVoiceLabSessions(true);
-            });
-            loadMoreDiv.appendChild(loadMoreBtn);
-            sessionsSection.appendChild(loadMoreDiv);
-        }
-    }
-
-    panel.appendChild(sessionsSection);
-
-    // Session Details Side Drawer (fixed overlay, appended to body)
+function mountVoiceLabSessionDrawer() {
+    var existing = document.querySelector('.voice-lab-drawer-overlay');
+    if (existing) existing.remove();
     if (state.voiceLab.selectedSession) {
-        // Remove any existing drawer first
-        var existingOverlay = document.querySelector('.voice-lab-drawer-overlay');
-        if (existingOverlay) existingOverlay.remove();
         document.body.appendChild(renderVoiceLabSessionDrawer());
-    } else {
-        // Clean up overlay if session deselected
-        var staleOverlay = document.querySelector('.voice-lab-drawer-overlay');
-        if (staleOverlay) staleOverlay.remove();
     }
+}
+window.openVoiceLabSessionDrawer = function (sessionId) {
+    if (!sessionId) return;
+    state.voiceLab.selectedSession = sessionId;
+    fetchVoiceLabSessionDetails(sessionId);
+};
 
-    return panel;
+/**
+ * VTID-04777: mount one of the voice-supervisor.js screens, with a visible
+ * fallback when that file failed to load (same pattern as Self-Healing).
+ */
+function renderVoiceSupervisorScreen(fnName, label) {
+    if (typeof window[fnName] === 'function') {
+        return window[fnName]();
+    }
+    var missing = document.createElement('p');
+    missing.className = 'vsup-load-error';
+    missing.setAttribute('role', 'alert');
+    missing.textContent = label + ' failed to load (voice-supervisor.js). Reload the page.';
+    return missing;
 }
 
 /**
@@ -19510,72 +19271,6 @@ function renderVoiceLabPipelineDiagnostics() {
 }
 
 /**
- * VTID-01218E: Fetch Voice LAB sessions from API
- */
-function fetchVoiceLabSessions(append) {
-    if (!append) {
-        state.voiceLab.sessionsLoading = true;
-        renderApp();
-    } else {
-        state.voiceLab.sessionsLoadingMore = true;
-        renderApp();
-    }
-
-    var offset = append ? state.voiceLab.sessions.length : 0;
-    // VTID-02983: requireAuth on /voice-lab/* reads Bearer-only — without
-    // buildContextHeaders the request 401s and the catch silently empties
-    // the list. Same fix applies to /:id, /:id/turns, /:id/diagnostics below.
-    fetch('/api/v1/voice-lab/live/sessions?offset=' + offset, { headers: buildContextHeaders() })
-        .then(function (resp) {
-            if (!resp.ok) throw new Error('Failed to fetch sessions');
-            return resp.json();
-        })
-        .then(function (data) {
-            // VTID-01218E: Map API response (snake_case) to frontend format (camelCase)
-            var sessions = (data.sessions || []).map(function (s) {
-                return {
-                    sessionId: s.session_id,
-                    connected: s.status === 'active',
-                    startedAt: s.started_at,
-                    endedAt: s.ended_at,
-                    lastActivity: s.ended_at || s.started_at,
-                    turnCount: s.turn_count,
-                    durationMs: s.duration_ms,
-                    lang: s.lang,
-                    errorCount: s.error_count,
-                    interruptedCount: s.interrupted_count,
-                    userId: s.user_id,
-                    userEmail: s.user_email,
-                    userDisplayName: s.user_display_name,
-                    userRole: s.user_role,
-                    platform: s.platform,
-                    // VTID-02868: per-session quality classification from server.
-                    failureClass: s.failure_class || null,
-                    failureSignature: s.failure_signature || null,
-                };
-            });
-            if (append) {
-                state.voiceLab.sessions = state.voiceLab.sessions.concat(sessions);
-            } else {
-                state.voiceLab.sessions = sessions;
-            }
-            state.voiceLab.sessionsHasMore = data.has_more || false;
-            state.voiceLab.sessionsLoading = false;
-            state.voiceLab.sessionsLoadingMore = false;
-            state.voiceLab.sessionsFetched = true;
-            renderApp();
-        })
-        .catch(function (err) {
-            console.error('[VTID-01218E] Error fetching sessions:', err);
-            if (!append) state.voiceLab.sessions = [];
-            state.voiceLab.sessionsLoading = false;
-            state.voiceLab.sessionsLoadingMore = false;
-            state.voiceLab.sessionsFetched = true;
-            renderApp();
-        });
-}
-
-/**
  * VTID-01218B: Fetch session details and turns from API
  */
 function fetchVoiceLabSessionDetails(sessionId) {
@@ -19587,7 +19282,7 @@ function fetchVoiceLabSessionDetails(sessionId) {
     renderApp();
 
     // Fetch session details, turns, and pipeline diagnostics in parallel
-    // VTID-02983: same auth requirement as fetchVoiceLabSessions above.
+    // VTID-02983: the voice-lab live routes require the signed-in bearer.
     var vlHeaders = { headers: buildContextHeaders() };
     Promise.all([
         fetch('/api/v1/voice-lab/live/sessions/' + sessionId, vlHeaders).then(function (r) { return r.json(); }),
@@ -19616,138 +19311,6 @@ function fetchVoiceLabSessionDetails(sessionId) {
             state.voiceLab.sessionDetailsLoading = false;
             renderApp();
         });
-}
-
-/**
- * VTID-01218B: Start auto-refresh polling for Voice LAB sessions
- */
-function startVoiceLabAutoRefresh() {
-    if (state.voiceLab.autoRefreshIntervalId) {
-        return; // Already running
-    }
-    console.log('[VTID-01218B] Starting auto-refresh (2s interval)');
-    state.voiceLab.autoRefreshIntervalId = setInterval(function () {
-        // BOOTSTRAP-SIDEBAR-FLICKER-FIX: ORB Live is reachable from two paths
-        // (Diagnostics → Voice Lab AND Assistant → ORB Live). The Diagnostics
-        // path's renderVoiceLabView fires stopVoiceLabAutoRefresh when its
-        // activeSubTab changes, but the Assistant path doesn't — so the
-        // interval was orphaned and fetchVoiceLabSessionsSilent →
-        // updateVoiceLabSessionsTable → renderApp() fired every 2s on every
-        // other screen, resetting sidebar scroll and causing flicker.
-        //
-        // Now: only fetch when the ORB Live panel is actually in view. If
-        // not, self-cancel so we don't keep firing.
-        var onOrbLive =
-            (state.currentModuleKey === 'diagnostics' && state.currentTab === 'voice-lab'
-             && state.voiceLab.activeSubTab === 'orb-live')
-            || (state.currentModuleKey === 'assistant' && state.currentTab === 'orb-live')
-            // VTID-02856: Voice section's Orb LIVE tab uses the same auto-refresh.
-            || (state.currentModuleKey === 'voice' && state.currentTab === 'orb-live'
-                && state.voiceLab.activeSubTab === 'orb-live');
-
-        if (onOrbLive && state.voiceLab.autoRefreshEnabled) {
-            fetchVoiceLabSessionsSilent();
-        } else if (!onOrbLive) {
-            stopVoiceLabAutoRefresh();
-        }
-    }, 2000);
-}
-
-/**
- * VTID-01218B: Stop auto-refresh polling
- */
-function stopVoiceLabAutoRefresh() {
-    if (state.voiceLab.autoRefreshIntervalId) {
-        console.log('[VTID-01218B] Stopping auto-refresh');
-        clearInterval(state.voiceLab.autoRefreshIntervalId);
-        state.voiceLab.autoRefreshIntervalId = null;
-    }
-}
-
-/**
- * VTID-01218B: Silent fetch (no loading state, for auto-refresh)
- */
-function fetchVoiceLabSessionsSilent() {
-    // VTID-02983: auth headers required — see fetchVoiceLabSessions.
-    fetch('/api/v1/voice-lab/live/sessions', { headers: buildContextHeaders() })
-        .then(function (resp) {
-            if (!resp.ok) throw new Error('Failed to fetch sessions');
-            return resp.json();
-        })
-        .then(function (data) {
-            var freshSessions = (data.sessions || []).map(function (s) {
-                return {
-                    sessionId: s.session_id,
-                    connected: s.status === 'active',
-                    startedAt: s.started_at,
-                    endedAt: s.ended_at,
-                    lastActivity: s.ended_at || s.started_at,
-                    turnCount: s.turn_count,
-                    durationMs: s.duration_ms,
-                    lang: s.lang,
-                    errorCount: s.error_count,
-                    interruptedCount: s.interrupted_count,
-                    userId: s.user_id,
-                    userEmail: s.user_email,
-                    userDisplayName: s.user_display_name,
-                    userRole: s.user_role,
-                    platform: s.platform,
-                    // VTID-02868: per-session quality classification from server.
-                    failureClass: s.failure_class || null,
-                    failureSignature: s.failure_signature || null,
-                };
-            });
-            // If user has loaded more pages, keep those and only replace the first page
-            if (state.voiceLab.sessions.length > freshSessions.length) {
-                var extra = state.voiceLab.sessions.slice(freshSessions.length);
-                state.voiceLab.sessions = freshSessions.concat(extra);
-            } else {
-                state.voiceLab.sessions = freshSessions;
-            }
-            // Update DOM without full re-render to preserve scroll/focus
-            updateVoiceLabSessionsTable();
-        })
-        .catch(function (err) {
-            console.error('[VTID-01218B] Silent fetch error:', err);
-        });
-}
-
-/**
- * VTID-01218B: Update sessions table without full re-render
- */
-function updateVoiceLabSessionsTable() {
-    // VTID-01218B: Don't re-render if a modal is open (login, etc.) - preserves input focus
-    var modalOpen = document.querySelector('.auth-modal, .login-modal, .modal-overlay, .modal-backdrop');
-    if (modalOpen) {
-        return;
-    }
-
-    // Don't re-render if there's an active input focus
-    var activeElement = document.activeElement;
-    if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
-        return;
-    }
-
-    var tbody = document.querySelector('.voice-lab-sessions-table tbody');
-    if (!tbody) {
-        // BOOTSTRAP-SIDEBAR-FLICKER-FIX: if the table isn't in the DOM we are
-        // NOT on the ORB Live panel — just bail. The previous behaviour of
-        // calling renderApp() here turned every orphaned interval tick into
-        // a full re-render (sidebar scroll reset, flicker). If the user is
-        // on the ORB Live panel and the table is genuinely still mounting,
-        // the next tick (2s later) will find it.
-        return;
-    }
-
-    // Only re-render if data actually changed (prevents scroll jump)
-    var newFingerprint = state.voiceLab.sessions.map(function (s) {
-        return s.sessionId + ':' + s.connected + ':' + s.turnCount + ':' + s.errorCount;
-    }).join('|');
-    if (newFingerprint === state.voiceLab._lastSessionsFingerprint) {
-        return; // No change, skip re-render
-    }
-    state.voiceLab._lastSessionsFingerprint = newFingerprint;
-    renderApp();
 }
 
 /**
@@ -28192,7 +27755,10 @@ var overviewDashboardRefreshInterval = null;
 function startOverviewDashboardPolling() {
     if (overviewDashboardRefreshInterval) return;
     overviewDashboardRefreshInterval = setInterval(function () {
-        if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
+        // VTID-04869: the router keys are currentModuleKey/currentTab. This
+        // used to read state.activeModule/activeTab, which nothing ever sets,
+        // so the 60 s refresh never fired and the Overview went stale.
+        if (state.currentModuleKey === 'overview' && state.currentTab === 'system-overview') {
             // Silent refresh: state updated in-place, render fires once at end
             fetchOverviewDashboard();
             fetchPipelineSummary();
@@ -29374,23 +28940,56 @@ function renderOasisCommandLogView() {
 // VTID-01864: Supervisor Dashboard — Utility Functions
 // ---------------------------------------------------------------------------
 
+/**
+ * VTID-04869: one classification for every Overview health consumer (status
+ * banner, "Critical Issues" strip, group counts, flat grid). It used to be
+ * four hand-written status lists that each missed something — 'failed',
+ * 'unavailable' and 'misconfigured' counted as healthy in the banner, and
+ * the flat grid painted any unrecognised status green.
+ *   healthy  — svc.healthy, or ok / healthy / ok_governance_limited
+ *   unknown  — no_access / not_configured / no status (could not look)
+ *   degraded — degraded / warning
+ *   failed   — everything else (down, error, unhealthy, failed,
+ *              unavailable, misconfigured, any unrecognised status)
+ */
+var OVERVIEW_HEALTHY_STATUSES = ['ok', 'healthy', 'ok_governance_limited'];
+var OVERVIEW_UNMEASURED_STATUSES = ['no_access', 'not_configured', ''];
+var OVERVIEW_DEGRADED_STATUSES = ['degraded', 'warning'];
+function overviewHealthClass(svc) {
+    var st = String((svc && svc.status) || '').toLowerCase();
+    if (svc && svc.healthy === true) return 'healthy';
+    if (OVERVIEW_HEALTHY_STATUSES.indexOf(st) >= 0) return 'healthy';
+    if (OVERVIEW_UNMEASURED_STATUSES.indexOf(st) >= 0) return 'unknown';
+    if (OVERVIEW_DEGRADED_STATUSES.indexOf(st) >= 0) return 'degraded';
+    return 'failed';
+}
+
 function computeSystemStatus(healthChecks) {
     var criticalServices = ['Gateway', 'ORB Live', 'CI/CD', 'Autopilot', 'Execute Runner'];
     var downCount = 0;
     var degradedCount = 0;
+    var unmeasuredCount = 0;
+    var measuredCount = 0;
     var criticalDown = false;
     var downNames = [];
 
-    healthChecks.forEach(function (svc) {
-        if (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy') {
+    (healthChecks || []).forEach(function (svc) {
+        var cls = overviewHealthClass(svc);
+        if (cls === 'unknown') { unmeasuredCount++; return; }
+        measuredCount++;
+        if (cls === 'failed') {
             downCount++;
             downNames.push(svc.name);
             if (criticalServices.indexOf(svc.name) >= 0) criticalDown = true;
-        } else if (svc.status === 'degraded' || svc.status === 'warning') {
+        } else if (cls === 'degraded') {
             degradedCount++;
         }
     });
 
+    // VTID-04869: nothing measured is UNKNOWN, never "All systems operational".
+    if (measuredCount === 0) {
+        return { status: 'unknown', message: 'No health check could be measured' + (unmeasuredCount ? ' (' + unmeasuredCount + ' not visible to this session)' : '') };
+    }
     if (criticalDown || downCount >= 3) {
         return { status: 'critical', message: downCount + ' services down (' + downNames.slice(0, 3).join(', ') + ')' };
     }
@@ -29400,7 +28999,7 @@ function computeSystemStatus(healthChecks) {
     if (degradedCount > 0) {
         return { status: 'degraded', message: degradedCount + ' service' + (degradedCount > 1 ? 's' : '') + ' degraded' };
     }
-    return { status: 'operational', message: 'All systems operational' };
+    return { status: 'operational', message: 'All ' + measuredCount + ' measured checks healthy' + (unmeasuredCount ? ', ' + unmeasuredCount + ' not measured' : '') };
 }
 
 function computeDeploySuccessRate(deployEvents) {
@@ -29436,18 +29035,27 @@ function computeOrbSessionStats(orbEvents, orbHealthDetails) {
     });
     var gl = orbHealthDetails && orbHealthDetails.gemini_live;
     var vr = orbHealthDetails && orbHealthDetails.voice_runtime;
-    var successRate = starts > 0 ? Math.round(((starts - failures) / starts) * 100) : 0;
+    // VTID-04869: no session starts in the fetched events = no rate (null,
+    // rendered as a dash), not a red "0%".
+    var successRate = starts > 0 ? Math.max(0, Math.round(((starts - failures) / starts) * 100)) : null;
 
     // ORB-VOICE-HEALTH-PROBE: runtime truth = the actively-selected provider's
-    // readiness (voice_runtime.healthy / gemini_live.enabled), NOT a stale flag.
+    // readiness (voice_runtime.healthy), NOT a stale flag.
+    // VTID-04869: provider-neutral. The provider string is shown as the
+    // gateway reports it (nova_sonic, cascaded, livekit, ...); the old
+    // Gemini Live / Vertex Project / Google Auth flags are gone — GCP is
+    // decommissioned and those probes describe nothing that runs.
+    // gemini_live.* is read only as the older response shape's copy of the
+    // same voice_runtime fields.
     var runtimeProvider = (vr && vr.active_provider) || (gl && gl.active_provider) || null;
+    var runtimeKnown = !!(vr || gl);
     var runtimeHealthy = vr ? !!vr.healthy : (gl ? !!gl.enabled : false);
 
     // The 24h counter is independent positive evidence: you cannot complete
     // successful voice sessions unless the runtime (provider + project + auth)
     // is actually working. When the counter proves health, the config badges
     // must AGREE — never show "ORB BROKEN" over demonstrably-live sessions.
-    var counterProvenHealthy = starts > 0 && failures === 0 && successRate >= 80;
+    var counterProvenHealthy = starts > 0 && failures === 0 && successRate !== null && successRate >= 80;
 
     return {
         sessions_24h: starts,
@@ -29456,11 +29064,10 @@ function computeOrbSessionStats(orbEvents, orbHealthDetails) {
         success_rate: successRate,
         last_success: lastSuccess,
         runtime_provider: runtimeProvider,
+        runtime_provider_reason: (vr && vr.provider_reason) || (gl && gl.provider_reason) || null,
+        runtime_known: runtimeKnown,
         runtime_healthy: runtimeHealthy,
         counter_proven_healthy: counterProvenHealthy,
-        gemini_live_enabled: (gl ? !!gl.enabled : false) || counterProvenHealthy,
-        vertex_project_configured: (gl ? (gl.vertex_project_id && gl.vertex_project_id !== 'EMPTY') : false) || counterProvenHealthy,
-        google_auth_ready: (gl ? !!gl.google_auth_ready : false) || counterProvenHealthy,
         active_sessions: orbHealthDetails ? (orbHealthDetails.active_sessions || 0) : 0,
         active_live_sessions: gl ? (gl.active_live_sessions || 0) : 0
     };
@@ -29518,7 +29125,12 @@ async function fetchOverviewDashboard() {
 
     var healthCheckPromise;
     if (useSharedHealth) {
-        healthCheckPromise = Promise.resolve({ status: 'fulfilled', value: state.serviceHealth.items.map(function (s) { return { status: 'fulfilled', value: s }; }) });
+        // VTID-04869: resolve to the same array shape Promise.allSettled()
+        // gives the fresh path. This used to resolve to a {status, value}
+        // wrapper, so the outer allSettled wrapped it again and
+        // results[0].value.map threw — every refresh within 90 s of a
+        // Service Health poll ended in "Dashboard fetch failed".
+        healthCheckPromise = Promise.resolve(state.serviceHealth.items.map(function (s) { return { status: 'fulfilled', value: s }; }));
     } else {
         var healthEndpoints = state.serviceHealth.items.length > 0
             ? state.serviceHealth.items.map(function (s) { return { name: s.name, url: s.url, group: s.group }; })
@@ -29551,14 +29163,15 @@ async function fetchOverviewDashboard() {
             fetchWT('/api/v1/oasis/events?topic=cicd.deploy&limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
             // 3: ORB events (OASIS) — both vtid.live and voice.live
             fetchWT('/api/v1/oasis/events?topic=vtid.live&limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
-            // 4: Recent failures
-            fetchWT('/api/v1/oasis/events?status=error&limit=30').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
+            // 4: Recent failures — VTID-04869: null (not []) when the fetch
+            // fails, so "no errors" is never shown for "could not look".
+            fetchWT('/api/v1/oasis/events?status=error&limit=30').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
             // 5: Autopilot controller
             fetchWT('/api/v1/autopilot/controller/status').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
             // 6: Autopilot loop
             fetchWT('/api/v1/autopilot/loop/status').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
-            // 7: Governance violations
-            fetchWT('/api/v1/governance/violations?limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
+            // 7: Governance violations — VTID-04869: null when the fetch fails.
+            fetchWT('/api/v1/governance/violations?limit=50').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
             // 8: voice.live events (second ORB topic pattern)
             fetchWT('/api/v1/oasis/events?topic=voice.live&limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
             // 9: User stats (for overview cards)
@@ -29567,7 +29180,7 @@ async function fetchOverviewDashboard() {
 
         // Parse health checks
         var healthChecks = [];
-        if (results[0].status === 'fulfilled') {
+        if (results[0].status === 'fulfilled' && Array.isArray(results[0].value)) {
             healthChecks = results[0].value.map(function (r) {
                 return r.status === 'fulfilled' ? r.value : { name: 'Unknown', status: 'down', latency_ms: -1, details: null };
             });
@@ -29604,10 +29217,14 @@ async function fetchOverviewDashboard() {
         var orbHealthDetails = orbHealthCheck ? orbHealthCheck.details : null;
 
         // Parse recent failures
+        // VTID-04869: keep all fetched rows (limit=30) and remember whether
+        // the fetch worked at all.
         var recentFailures = [];
-        if (results[4].status === 'fulfilled') {
+        var recentFailuresUnavailable = true;
+        if (results[4].status === 'fulfilled' && results[4].value) {
             var fVal = results[4].value;
-            recentFailures = (Array.isArray(fVal) ? fVal : (fVal && fVal.data ? fVal.data : [])).slice(0, 20);
+            recentFailures = Array.isArray(fVal) ? fVal : (fVal && Array.isArray(fVal.data) ? fVal.data : []);
+            recentFailuresUnavailable = false;
         }
 
         // Parse controller + loop status
@@ -29615,8 +29232,8 @@ async function fetchOverviewDashboard() {
         var loopStatus = results[6].status === 'fulfilled' ? results[6].value : null;
 
         // Parse violations
-        var violationCount = 0;
-        if (results[7].status === 'fulfilled') {
+        var violationCount = null;
+        if (results[7].status === 'fulfilled' && results[7].value) {
             var vVal = results[7].value;
             var violations = Array.isArray(vVal) ? vVal : (vVal && vVal.data ? vVal.data : []);
             violationCount = violations.length;
@@ -29653,6 +29270,7 @@ async function fetchOverviewDashboard() {
         state.overviewDashboard.orbHealth = orbHealthDetails;
         state.overviewDashboard.orbSessionStats = orbSessionStats;
         state.overviewDashboard.recentFailures = recentFailures;
+        state.overviewDashboard.recentFailuresUnavailable = recentFailuresUnavailable;
         state.overviewDashboard.deployEvents = deployEvents;
         state.overviewDashboard.orbEvents = orbEvents;
         state.overviewDashboard.controllerStatus = controllerStatus;
@@ -29747,12 +29365,342 @@ async function fetchOverviewHealth() {
 // ---------------------------------------------------------------------------
 // 2. VTID-01864: renderOverviewSystemView — Supervisor Dashboard
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// VTID-04876: Overview Phase 1 — the supervisor cockpit (GET /api/v1/ops/attention).
+//
+// The Command Hub is admin-facing and English by design: the strings below
+// are operator text, not member-facing copy, so they do not go through an
+// i18n catalog.
+//
+// Two parts: a status bar (verdict, P1/P2/P3 counts, sources fresh x/y,
+// generated_at, env label) and a ranked "Needs attention now" queue with
+// domain filters. Polled every 30 s, only while the Overview is open (real
+// router keys currentModuleKey/currentTab). The bar turns UNKNOWN ("Cockpit
+// blind — check GChat") on any fetch error or when the last good answer is
+// older than 2x the poll interval: the Overview is a triage surface and GChat
+// stays the paging channel. Severity is icon + text label + colour. No
+// inline handlers: one delegated listener reads data-action attributes.
+// ---------------------------------------------------------------------------
+var OPS_ATTENTION_POLL_MS = 30000;
+var OPS_ATTENTION_BLIND_MS = 2 * OPS_ATTENTION_POLL_MS;
+var OPS_ATTENTION_SEVERITY = {
+    P1: { icon: '⛔', label: 'P1 Critical', cls: 'ops-sev-p1' },
+    P2: { icon: '⚠', label: 'P2 High', cls: 'ops-sev-p2' },
+    P3: { icon: 'ℹ', label: 'P3 Watch', cls: 'ops-sev-p3' }
+};
+var OPS_ATTENTION_DOMAINS = [
+    { key: 'all', label: 'All' },
+    { key: 'platform', label: 'Platform' },
+    { key: 'release', label: 'Release' },
+    { key: 'voice', label: 'Voice' },
+    { key: 'autonomy', label: 'Autonomy' },
+    { key: 'operator', label: 'Operator' },
+    { key: 'governance', label: 'Governance' },
+    { key: 'decisions', label: 'Decisions' }
+];
+var OPS_ATTENTION_VERDICT_CLASS = {
+    CRITICAL: 'ops-verdict-critical',
+    UNKNOWN: 'ops-verdict-unknown',
+    ATTENTION: 'ops-verdict-attention',
+    OK: 'ops-verdict-ok'
+};
+
+function opsAttentionIsOpen() {
+    return state.currentModuleKey === 'overview' && state.currentTab === 'system-overview';
+}
+
+/**
+ * Pure: what the status bar shows for the current view state. Blind
+ * (UNKNOWN) on a fetch error, with no answer yet, or when the last good
+ * answer is older than OPS_ATTENTION_BLIND_MS. Never OK on missing data.
+ */
+function computeOpsAttentionStatus(view, nowMs) {
+    var data = view && view.data;
+    if (!view || view.error || !data || !view.lastOkAt || (nowMs - view.lastOkAt) > OPS_ATTENTION_BLIND_MS) {
+        return {
+            verdict: 'UNKNOWN', blind: true, cls: 'ops-verdict-unknown', label: 'UNKNOWN',
+            detail: 'Cockpit blind — check GChat' + (view && view.error ? ' (' + view.error + ')' : '')
+        };
+    }
+    var v = OPS_ATTENTION_VERDICT_CLASS[data.verdict] ? data.verdict : 'UNKNOWN';
+    var detail = v === 'CRITICAL' ? 'Members impacted now'
+        : v === 'ATTENTION' ? 'Items need attention'
+        : v === 'OK' ? 'All sources fresh, nothing needs attention'
+        : 'Some sources are unknown — this is not an all-clear';
+    return { verdict: v, blind: false, cls: OPS_ATTENTION_VERDICT_CLASS[v], label: v, detail: detail };
+}
+
+function opsAttentionEnvLabel(env) {
+    if (env === 'staging') return 'Staging build · production data';
+    if (env === 'production') return 'Production';
+    return 'Environment unknown';
+}
+
+/** '?a=1&b=2' from a deeplink query object; '' when empty. */
+function opsAttentionQueryString(query) {
+    if (!query || typeof query !== 'object') return '';
+    var keys = Object.keys(query).filter(function (k) {
+        return query[k] !== undefined && query[k] !== null && query[k] !== '';
+    });
+    if (!keys.length) return '';
+    return '?' + keys.map(function (k) {
+        return encodeURIComponent(k) + '=' + encodeURIComponent(String(query[k]));
+    }).join('&');
+}
+
+async function fetchOpsAttention(silentRefresh) {
+    var view = state.opsAttention;
+    if (view.loading) return;
+    var isInitialLoad = !view.fetched;
+    view.loading = true;
+    if (isInitialLoad && !silentRefresh) renderApp();
+    try {
+        // 15 s: the slowest source budget is 8 s server-side (service health).
+        var r = await fetchWT('/api/v1/ops/attention', {
+            headers: buildContextHeaders({ Accept: 'application/json' })
+        }, 15000);
+        var body = null;
+        try { body = await r.json(); } catch (_e) { body = null; }
+        if (!r.ok || !body || body.ok !== true || !body.data) {
+            view.error = 'HTTP ' + r.status + (body && body.error ? ' ' + body.error : '');
+        } else {
+            view.data = body.data;
+            view.error = null;
+            view.lastOkAt = Date.now();
+        }
+    } catch (err) {
+        view.error = (err && err.message) ? err.message : String(err);
+    }
+    view.lastFetchAt = Date.now();
+    view.loading = false;
+    view.fetched = true;
+    if (opsAttentionIsOpen()) {
+        // VTID-03917: the 30 s poll patches the cockpit in place, never a full renderApp().
+        if (silentRefresh) {
+            refreshOpsAttentionPanel();
+        } else {
+            renderApp();
+        }
+    }
+}
+
+/** Replace only the cockpit node (status bar + queue). */
+function refreshOpsAttentionPanel() {
+    var old = document.querySelector('.ops-attention');
+    if (!old) return;
+    old.replaceWith(renderOpsAttentionCockpit());
+}
+
+function renderOpsAttentionCockpit() {
+    var view = state.opsAttention;
+    var wrap = document.createElement('section');
+    wrap.className = 'ops-attention';
+    wrap.setAttribute('aria-label', 'Supervisor cockpit');
+    wrap.appendChild(renderOpsAttentionStatusBar(view, Date.now()));
+    wrap.appendChild(renderOpsAttentionQueue(view));
+    wrap.addEventListener('click', handleOpsAttentionClick);
+    return wrap;
+}
+
+function renderOpsAttentionStatusBar(view, nowMs) {
+    var st = computeOpsAttentionStatus(view, nowMs);
+    var data = view.data;
+    var counts = (data && data.counts) || { p1: 0, p2: 0, p3: 0 };
+    var sources = (data && Array.isArray(data.sources)) ? data.sources : [];
+    var fresh = sources.filter(function (s) { return s.status === 'ok'; }).length;
+    var unknown = sources.filter(function (s) { return s.status !== 'ok'; });
+    var env = data ? data.env : null;
+
+    var bar = document.createElement('div');
+    bar.className = 'ops-status-bar ' + st.cls;
+    bar.setAttribute('role', 'status');
+
+    function countChip(sev, n) {
+        var s = OPS_ATTENTION_SEVERITY[sev];
+        return '<span class="ops-count ' + s.cls + '">' +
+            '<span class="ops-sev-icon" aria-hidden="true">' + s.icon + '</span> ' +
+            escapeHtml(s.label) + ': <strong>' + (st.blind ? '?' : String(n)) + '</strong></span>';
+    }
+
+    var html =
+        '<div class="ops-status-main">' +
+            '<span class="ops-verdict-label">' + escapeHtml(st.label) + '</span>' +
+            '<span class="ops-verdict-detail">' + escapeHtml(st.detail) + '</span>' +
+        '</div>' +
+        '<div class="ops-status-meta">' +
+            countChip('P1', counts.p1) + countChip('P2', counts.p2) + countChip('P3', counts.p3) +
+            '<span class="ops-sources">Sources fresh ' + (st.blind ? '?' : String(fresh)) + '/' + (sources.length ? String(sources.length) : '?') + '</span>' +
+            '<span class="ops-generated">' + (data && data.generated_at
+                ? 'Generated ' + escapeHtml(dashboardRelativeTime(data.generated_at))
+                : 'Never loaded') + '</span>' +
+            '<span class="ops-env ' + (env === 'staging' ? 'ops-env-staging' : 'ops-env-production') + '">' +
+                escapeHtml(opsAttentionEnvLabel(env)) + '</span>' +
+            '<button type="button" class="btn btn-sm ops-refresh" data-action="ops-attention-refresh"' +
+                (view.loading ? ' disabled' : '') + '>' + (view.loading ? 'Loading…' : 'Refresh') + '</button>' +
+        '</div>';
+    if (unknown.length && !st.blind) {
+        html += '<div class="ops-unknown-sources">Unknown sources: ' + unknown.map(function (s) {
+            return '<span class="ops-unknown-source">' + escapeHtml(s.id) +
+                (s.error ? ' — ' + escapeHtml(String(s.error).slice(0, 140)) : '') + '</span>';
+        }).join('; ') + '</div>';
+    }
+    bar.innerHTML = html;
+    return bar;
+}
+
+function renderOpsAttentionQueue(view) {
+    var data = view.data;
+    var items = (data && Array.isArray(data.items)) ? data.items : [];
+    var filter = view.domainFilter || 'all';
+    var shown = filter === 'all' ? items : items.filter(function (i) { return i.domain === filter; });
+
+    var q = document.createElement('div');
+    q.className = 'ops-queue';
+
+    var head = '<h2 class="ops-queue-title">Needs attention now</h2>' +
+        '<div class="ops-filters" role="group" aria-label="Filter by domain">' +
+        OPS_ATTENTION_DOMAINS.map(function (d) {
+            var n = d.key === 'all' ? items.length : items.filter(function (i) { return i.domain === d.key; }).length;
+            return '<button type="button" class="ops-filter' + (filter === d.key ? ' ops-filter-active' : '') + '"' +
+                ' data-action="ops-attention-filter" data-domain="' + escapeHtml(d.key) + '"' +
+                ' aria-pressed="' + (filter === d.key ? 'true' : 'false') + '">' +
+                escapeHtml(d.label) + ' <span class="ops-filter-count">' + n + '</span></button>';
+        }).join('') +
+        '</div>';
+
+    var body;
+    if (!view.fetched || (view.loading && !data)) {
+        body = '<p class="ops-queue-empty">Loading the attention queue…</p>';
+    } else if (!data) {
+        body = '<p class="ops-queue-empty ops-queue-blind">Could not load the queue — cockpit blind, check GChat.</p>';
+    } else if (!shown.length) {
+        body = '<p class="ops-queue-empty">' + (data.verdict === 'OK' && filter === 'all'
+            ? 'Nothing needs attention right now.'
+            : (data.verdict === 'UNKNOWN'
+                ? 'No items shown, but some sources are unknown — this is not an all-clear.'
+                : 'No items in this domain.')) + '</p>';
+    } else {
+        body = '<ol class="ops-queue-list">' + shown.map(renderOpsAttentionItemHtml).join('') + '</ol>';
+    }
+
+    q.innerHTML = head + '<div class="ops-queue-body" aria-live="polite">' + body + '</div>';
+    return q;
+}
+
+function renderOpsAttentionItemHtml(item) {
+    var sev = OPS_ATTENTION_SEVERITY[item.severity] || OPS_ATTENTION_SEVERITY.P3;
+    var dl = item.deeplink || {};
+    var section = NAVIGATION_CONFIG.find(function (s) { return s.section === dl.section; });
+    var tab = section ? (section.tabs.find(function (t) { return t.key === dl.tab; }) || section.tabs[0]) : null;
+    var href = (tab ? tab.path : (section ? section.basePath : '#')) + opsAttentionQueryString(dl.query);
+    return '<li class="ops-item ' + sev.cls + '">' +
+        '<a class="ops-item-link" href="' + escapeHtml(href) + '" data-action="ops-attention-open"' +
+            ' data-section="' + escapeHtml(dl.section || '') + '" data-tab="' + escapeHtml(dl.tab || '') + '"' +
+            ' data-query="' + escapeHtml(JSON.stringify(dl.query || {})) + '">' +
+            '<span class="ops-sev ' + sev.cls + '"><span class="ops-sev-icon" aria-hidden="true">' + sev.icon + '</span> ' +
+                escapeHtml(sev.label) + '</span>' +
+            '<span class="ops-item-main">' +
+                '<span class="ops-item-title">' + escapeHtml(item.title) + '</span>' +
+                '<span class="ops-item-detail">' + escapeHtml(item.detail) + '</span>' +
+            '</span>' +
+            '<span class="ops-item-meta">' +
+                '<span class="ops-item-domain">' + escapeHtml(item.domain) + '</span>' +
+                (item.count > 1 ? '<span class="ops-item-count">×' + escapeHtml(String(item.count)) + '</span>' : '') +
+                '<span class="ops-item-since">since ' + escapeHtml(dashboardRelativeTime(item.since)) + '</span>' +
+            '</span>' +
+        '</a></li>';
+}
+
+function handleOpsAttentionClick(ev) {
+    var el = ev.target && ev.target.closest ? ev.target.closest('[data-action]') : null;
+    if (!el) return;
+    var action = el.getAttribute('data-action');
+    if (action === 'ops-attention-refresh') {
+        ev.preventDefault();
+        state.opsAttention.fetched = false;
+        fetchOpsAttention();
+    } else if (action === 'ops-attention-filter') {
+        ev.preventDefault();
+        state.opsAttention.domainFilter = el.getAttribute('data-domain') || 'all';
+        refreshOpsAttentionPanel();
+    } else if (action === 'ops-attention-open') {
+        // Modified clicks keep the browser's own open-in-new-tab behaviour (real href).
+        if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button === 1) return;
+        ev.preventDefault();
+        var query = {};
+        try { query = JSON.parse(el.getAttribute('data-query') || '{}'); } catch (_e) { query = {}; }
+        openOpsAttentionDeeplink(el.getAttribute('data-section'), el.getAttribute('data-tab'), query);
+    }
+}
+
+/**
+ * Same-screen items (the Service Health panel lives in the detailed panels
+ * below) open that disclosure; everything else goes through navigateToScreen.
+ */
+function openOpsAttentionDeeplink(section, tab, query) {
+    if (section === 'overview' && tab === 'system-overview') {
+        state.opsAttention.legacyOpen = true;
+        var details = document.querySelector('.ops-attention-legacy');
+        if (details) {
+            details.open = true;
+            details.scrollIntoView({ block: 'start' });
+        }
+        return;
+    }
+    if (!navigateToScreen(section, tab, query)) {
+        showToast('Screen not found: ' + section + '/' + tab, 'error');
+    }
+}
+
 function renderOverviewSystemView() {
     var container = document.createElement('div');
-    container.className = 'overview-dashboard';
+    container.className = 'overview-cockpit';
     // VTID-01002: retain scroll across renderApp() cycles
     container.setAttribute('data-scroll-retain', 'true');
     container.setAttribute('data-scroll-key', 'overview-dashboard');
+
+    if (!state.opsAttention.fetched && !state.opsAttention.loading) {
+        fetchOpsAttention();
+    }
+    // One 30 s timer. It polls only while the Overview is the routed screen
+    // (real router keys) and no Operator popup covers it (VTID-03906).
+    if (!state._opsAttentionTimer) {
+        state._opsAttentionTimer = setInterval(function () {
+            if (state.currentModuleKey === 'overview' && state.currentTab === 'system-overview' && !state.isOperatorOpen) {
+                fetchOpsAttention(true);
+            }
+        }, OPS_ATTENTION_POLL_MS);
+    }
+
+    container.appendChild(renderOpsAttentionCockpit());
+
+    // The pre-Phase-1 panels (service health, ORB, deployments, events) stay
+    // available below, collapsed and rendered only when opened, until the
+    // Phase 2 domain tiles replace them.
+    var details = document.createElement('details');
+    details.className = 'ops-attention-legacy';
+    var summary = document.createElement('summary');
+    summary.textContent = 'Detailed panels — service health, ORB, deployments, events';
+    details.appendChild(summary);
+    if (state.opsAttention.legacyOpen) {
+        details.open = true;
+        details.appendChild(renderOverviewSystemPanels());
+    }
+    details.addEventListener('toggle', function () {
+        state.opsAttention.legacyOpen = details.open;
+        if (details.open && !details.querySelector('.overview-dashboard')) {
+            details.appendChild(renderOverviewSystemPanels());
+        }
+    });
+    container.appendChild(details);
+    return container;
+}
+
+// VTID-04876: the pre-Phase-1 Overview panels, now rendered inside the
+// collapsed "Detailed panels" disclosure under the cockpit.
+function renderOverviewSystemPanels() {
+    var container = document.createElement('div');
+    container.className = 'overview-dashboard';
 
     // Auto-fetch dashboard data
     if (!state.overviewDashboard.fetched && !state.overviewDashboard.loading) {
@@ -29766,34 +29714,10 @@ function renderOverviewSystemView() {
     if (!state.serviceHealth.fetched && !state.serviceHealth.loading) {
         fetchServiceHealth();
     }
-    // VTID-02031: pull surface for human-in-the-loop items (mirrors Gchat pings)
-    if (!state.actionRequired.fetched && !state.actionRequired.loading) {
-        fetchActionRequired();
-    }
     // DEV-COMHU-03404: hourly rollup for the Operations tier sparklines
     if (!state.overviewTimeseries.fetched && !state.overviewTimeseries.loading) {
         fetchOverviewTimeseries();
     }
-    // Auto-refresh every 30s while the Overview is mounted. Use a single
-    // timer keyed on the state to avoid stacking duplicates across renders.
-    // VTID-03906: state.isOperatorOpen is an overlay flag independent of
-    // activeModule/activeTab, so with Overview mounted underneath, this timer
-    // used to keep calling fetchActionRequired(true) -> a full renderApp()
-    // every 30s while the Operator popup was open on top, tearing down and
-    // rebuilding the whole DOM (including the open popup) unprompted by any
-    // user action. Skip the poll entirely while a popup covers the tab.
-    if (!state._actionRequiredTimer) {
-        state._actionRequiredTimer = setInterval(function () {
-            if (state.activeModule === 'overview' && state.activeTab === 'system-overview' && !state.isOperatorOpen) {
-                state.actionRequired.fetched = false;
-                fetchActionRequired(true);
-            }
-        }, 30000);
-    }
-
-    // VTID-02031: Action Required panel — pinned at very top so the
-    // supervisor sees what needs human action before anything else.
-    container.appendChild(renderActionRequiredPanel());
 
     // DEV-COMHU-03403: VTID pipeline attention (broken/stuck/blocked/new-ready)
     // rendered as a second triage list directly under Action Required, instead
@@ -29847,59 +29771,6 @@ function renderOverviewSystemView() {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // SECTION 1: System Status Banner
-    // ═══════════════════════════════════════════════════════════════════════
-    var statusClass = 'overview-status-operational';
-    var statusLabel = 'OPERATIONAL';
-    if (db.systemStatus === 'degraded') { statusClass = 'overview-status-degraded'; statusLabel = 'DEGRADED'; }
-    if (db.systemStatus === 'critical') { statusClass = 'overview-status-critical'; statusLabel = 'CRITICAL'; }
-
-    var banner = document.createElement('div');
-    banner.className = 'overview-status-banner ' + statusClass;
-
-    var bannerLeft = document.createElement('div');
-    bannerLeft.className = 'status-banner-left';
-
-    var bannerDot = document.createElement('span');
-    bannerDot.className = 'status-banner-dot';
-    if (db.systemStatus === 'critical') bannerDot.classList.add('status-banner-dot-pulse');
-
-    var bannerLabel = document.createElement('span');
-    bannerLabel.className = 'status-banner-label';
-    bannerLabel.textContent = statusLabel;
-
-    var bannerDetail = document.createElement('span');
-    bannerDetail.className = 'status-banner-detail';
-    bannerDetail.textContent = db.systemStatusMessage || '';
-
-    bannerLeft.appendChild(bannerDot);
-    bannerLeft.appendChild(bannerLabel);
-    bannerLeft.appendChild(bannerDetail);
-
-    var bannerRight = document.createElement('div');
-    bannerRight.className = 'status-banner-right';
-
-    var bannerTime = document.createElement('span');
-    bannerTime.className = 'status-banner-time';
-    bannerTime.textContent = db.lastRefreshed ? dashboardRelativeTime(db.lastRefreshed) : '';
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn btn-sm';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function () {
-        state.overviewDashboard.fetched = false;
-        state.overviewPipelineSummary.fetched = false;
-        fetchOverviewDashboard();
-        fetchPipelineSummary();
-    };
-
-    bannerRight.appendChild(bannerTime);
-    bannerRight.appendChild(refreshBtn);
-    banner.appendChild(bannerLeft);
-    banner.appendChild(bannerRight);
-    container.appendChild(banner);
-
-    // ═══════════════════════════════════════════════════════════════════════
     // SECTION 2: Key Metrics Grid
     // Layout owned by .overview-metrics-grid in styles.css.
     // ═══════════════════════════════════════════════════════════════════════
@@ -29931,24 +29802,30 @@ function renderOverviewSystemView() {
         {
             value: deployRate && deployRate.rate !== null ? deployRate.rate + '%' : '—',
             label: 'Deploy Success',
-            subtitle: deployRate ? deployRate.succeeded + '/' + deployRate.total + ' (7d)' : 'No data',
+            // VTID-04869: computed from the latest 50 cicd.deploy events, not 7 days.
+            subtitle: deployRate && deployRate.total > 0 ? deployRate.succeeded + '/' + deployRate.total + ' (last 50 deploy events)' : 'No data',
             color: deployRate && deployRate.rate !== null ? metricColor(deployRate.rate, 80, 50) : 'neutral'
         },
         {
-            value: String(db.recentFailures.length),
-            label: 'Errors (24h)',
-            subtitle: db.recentFailures.length > 0 ? 'Latest: ' + dashboardRelativeTime(db.recentFailures[0] && db.recentFailures[0].created_at) : 'No errors',
-            color: metricColorInverse(db.recentFailures.length, 0, 5),
+            // VTID-04869: this is the latest (at most 30) status=error events,
+            // not a 24h count — labelled as what it is. A failed fetch shows
+            // a dash, never "No errors".
+            value: db.recentFailuresUnavailable ? '\u2014' : (db.recentFailures.length >= 30 ? '30+' : String(db.recentFailures.length)),
+            label: 'Errors (last 30)',
+            subtitle: db.recentFailuresUnavailable ? 'Fetch failed \u2014 unknown'
+                : (db.recentFailures.length > 0 ? 'Latest: ' + dashboardRelativeTime(db.recentFailures[0] && db.recentFailures[0].created_at) : 'None in the latest 30 events'),
+            color: db.recentFailuresUnavailable ? 'neutral' : metricColorInverse(db.recentFailures.length, 0, 5),
             // DEV-COMHU-03404: hourly trend for the last 24h, same status=error
             // series the headline count above is drawn from — so "5 errors"
             // reads as either "falling" or "spiking" instead of a bare number.
             sparkline: state.overviewTimeseries.series ? state.overviewTimeseries.series.errors : null
         },
         {
-            value: String(db.violationCount24h),
+            // VTID-04869: latest 50 violations, no time window; dash on fetch failure.
+            value: db.violationCount24h === null ? '\u2014' : (db.violationCount24h >= 50 ? '50+' : String(db.violationCount24h)),
             label: 'Violations',
-            subtitle: 'Governance (recent)',
-            color: metricColorInverse(db.violationCount24h, 0, 3)
+            subtitle: db.violationCount24h === null ? 'Fetch failed \u2014 unknown' : 'Governance (last 50)',
+            color: db.violationCount24h === null ? 'neutral' : metricColorInverse(db.violationCount24h, 0, 3)
         },
         {
             value: loopSt && loopSt.is_running ? 'Running' : (loopSt ? 'Stopped' : '—'),
@@ -29969,10 +29846,12 @@ function renderOverviewSystemView() {
             color: summary ? metricColor(summary.success_rate, 80, 50) : 'neutral'
         },
         {
-            value: orbStats ? orbStats.success_rate + '%' : '—',
+            // VTID-04869: computed from the latest 50 vtid.live + 50 voice.live
+            // events, not 24h; no starts = dash, not a red 0%.
+            value: orbStats && orbStats.success_rate !== null ? orbStats.success_rate + '%' : '—',
             label: 'ORB Sessions',
-            subtitle: orbStats ? orbStats.sessions_24h + ' sessions (24h)' : 'No data',
-            color: orbStats && orbStats.sessions_24h > 0 ? metricColor(orbStats.success_rate, 80, 50) : (orbStats && orbStats.gemini_live_enabled ? 'neutral' : 'red')
+            subtitle: orbStats ? orbStats.sessions_24h + ' starts (last 100 events)' : 'No data',
+            color: orbStats && orbStats.success_rate !== null ? metricColor(orbStats.success_rate, 80, 50) : 'neutral'
         }
     ];
 
@@ -29999,7 +29878,8 @@ function renderOverviewSystemView() {
         {
             value: summary && summary.funnel ? String(summary.funnel.completed || 0) : '—',
             label: 'Tasks Completed',
-            subtitle: '7d total',
+            // VTID-04869: the funnel count is all-time (query capped at 500), not 7 days.
+            subtitle: 'All time (max 500)',
             color: summary && summary.funnel && summary.funnel.completed > 0 ? 'green' : 'neutral'
         },
         {
@@ -30051,7 +29931,7 @@ function renderOverviewSystemView() {
         'Registered Users': '<svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>',
         'Active Now': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
         'New Users (7d)': '<svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>',
-        'Errors (24h)': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#ef4444"/><line x1="12" y1="8" x2="12" y2="12" stroke="#ef4444"/><line x1="12" y1="16" x2="12.01" y2="16" stroke="#ef4444"/></svg>',
+        'Errors (last 30)': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#ef4444"/><line x1="12" y1="8" x2="12" y2="12" stroke="#ef4444"/><line x1="12" y1="16" x2="12.01" y2="16" stroke="#ef4444"/></svg>',
         'Violations': '<svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="#3b82f6"/><line x1="12" y1="8" x2="12" y2="12" stroke="#3b82f6"/><line x1="12" y1="16" x2="12.01" y2="16" stroke="#3b82f6"/></svg>',
         'New VTID Today': '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>',
         'Scheduled VTID': '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
@@ -30153,9 +30033,8 @@ function renderOverviewSystemView() {
         healthPanel.appendChild(noH);
     } else {
         // Failed services alert (if any)
-        var failedSvcs = sortedHealth.filter(function (s) {
-            return s.status === 'down' || s.status === 'error' || s.status === 'unhealthy' || s.status === 'failed';
-        });
+        // VTID-04869: shared classification (unavailable/misconfigured count too).
+        var failedSvcs = sortedHealth.filter(function (s) { return overviewHealthClass(s) === 'failed'; });
         if (failedSvcs.length > 0) {
             var failSection = document.createElement('div');
             failSection.className = 'overview-status-banner overview-status-critical overview-failed-services';
@@ -30190,7 +30069,7 @@ function renderOverviewSystemView() {
                 orderedGroups.forEach(function (groupName) {
                     var svcs = groupMap[groupName];
                     var gHealthy = svcs.filter(function (s) { return s.status === 'ok' || s.status === 'healthy' || s.healthy; }).length;
-                    var gFailed = svcs.filter(function (s) { return s.status === 'down' || s.status === 'error' || s.status === 'unhealthy'; }).length;
+                    var gFailed = svcs.filter(function (s) { return overviewHealthClass(s) === 'failed'; }).length;
                     var gColorClass = gFailed > 0 ? 'red' : (gHealthy < svcs.length ? 'yellow' : 'green');
 
                     var groupBox = document.createElement('div');
@@ -30234,9 +30113,11 @@ function renderOverviewSystemView() {
                         var hidx = hri * HEALTH_COLS + hci;
                         if (hidx < services.length) {
                             var hsvc = services[hidx];
-                            var hdot = 'green';
-                            if (hsvc.status === 'degraded' || hsvc.status === 'warning' || hsvc.status === 'ok_governance_limited') hdot = 'yellow';
-                            if (hsvc.status === 'down' || hsvc.status === 'error' || hsvc.status === 'unhealthy') hdot = 'red';
+                            // VTID-04869: green only when measured healthy — an
+                            // unrecognised status used to default to green.
+                            var hcls = overviewHealthClass(hsvc);
+                            var hdot = hcls === 'failed' ? 'red' : (hcls === 'unknown' ? 'grey' : 'green');
+                            if (hcls === 'degraded' || hsvc.status === 'ok_governance_limited') hdot = 'yellow';
                             var hlatency = hsvc.latency_ms >= 0 ? '<div class="health-grid-card-latency">' + hsvc.latency_ms + 'ms</div>' : '';
                             healthHTML += '<td style="padding:2px;vertical-align:top;">' +
                                 '<div class="health-grid-card" title="' + hsvc.name + ': ' + hsvc.status + '">' +
@@ -30278,9 +30159,7 @@ function renderOverviewSystemView() {
         }
 
         if (tier2Services.length > 0) {
-            var tier2Failed = tier2Services.filter(function (s) {
-                return s.status === 'down' || s.status === 'error' || s.status === 'unhealthy' || s.status === 'failed';
-            });
+            var tier2Failed = tier2Services.filter(function (s) { return overviewHealthClass(s) === 'failed'; });
             var tier2Healthy = tier2Services.filter(function (s) { return s.status === 'ok' || s.status === 'healthy' || s.healthy; }).length;
             var tier2Expanded = state.overviewHealthTier2Expanded || tier2Failed.length > 0;
 
@@ -30308,12 +30187,16 @@ function renderOverviewSystemView() {
     // ═══════════════════════════════════════════════════════════════════════
     var orbPanel = document.createElement('div');
     orbPanel.className = 'overview-orb-panel';
-    var orbOk = orbStats && orbStats.gemini_live_enabled && orbStats.vertex_project_configured && orbStats.google_auth_ready;
+    // VTID-04869: provider-neutral ORB card. Ready = the gateway's
+    // voice_runtime.healthy for the active provider (or the session counter
+    // proving it). No health block = UNKNOWN (grey), not "ORB BROKEN".
+    var orbKnown = !!(orbStats && (orbStats.runtime_known || orbStats.counter_proven_healthy));
+    var orbOk = !!(orbStats && (orbStats.runtime_healthy || orbStats.counter_proven_healthy));
 
     var orbHeader = document.createElement('div');
     orbHeader.className = 'overview-panel-title-row';
     var orbDot = document.createElement('span');
-    orbDot.className = 'health-dot health-dot-' + (orbOk ? 'green' : 'red');
+    orbDot.className = 'health-dot health-dot-' + (!orbKnown ? 'grey' : (orbOk ? 'green' : 'red'));
     var orbTitleEl = document.createElement('span');
     orbTitleEl.className = 'overview-panel-title';
     orbTitleEl.style.margin = '0';
@@ -30325,60 +30208,55 @@ function renderOverviewSystemView() {
     // ORB-VOICE-HEALTH-PROBE: surface the actively-selected upstream provider
     // (the same signal selectUpstreamProvider/resolveActiveProviderForCaller
     // resolve at session connect time) so the card reflects runtime reality.
-    var orbProvider = (orbStats && orbStats.runtime_provider) || (orbOk ? 'vertex' : null);
-    if (orbProvider) {
-        var provRow = document.createElement('div');
-        provRow.className = 'orb-config-row';
-        var provLabel = document.createElement('span');
-        provLabel.className = 'orb-config-label';
-        provLabel.textContent = 'Active provider';
-        var provVal = document.createElement('span');
-        provVal.className = 'orb-config-value';
-        provVal.style.color = '#94a3b8';
-        provVal.textContent = orbProvider === 'livekit' ? 'LiveKit' : 'Vertex';
-        provRow.appendChild(provLabel);
-        provRow.appendChild(provVal);
-        orbPanel.appendChild(provRow);
-    }
-
-    var configs = [
-        { label: 'Gemini Live', ok: orbStats && orbStats.gemini_live_enabled },
-        { label: 'Vertex Project', ok: orbStats && orbStats.vertex_project_configured },
-        { label: 'Google Auth', ok: orbStats && orbStats.google_auth_ready }
+    // VTID-04869: the provider string is shown exactly as the gateway
+    // reports it — never guessed, and never relabelled to a provider name
+    // the data does not carry.
+    var orbProvider = (orbStats && orbStats.runtime_provider) || 'unknown';
+    var orbRows = [
+        { label: 'Active provider', value: orbProvider, tone: 'muted' },
+        {
+            label: 'Runtime ready',
+            value: !orbKnown ? 'UNKNOWN' : (orbOk ? 'OK' : 'FAIL'),
+            tone: !orbKnown ? 'muted' : (orbOk ? 'ok' : 'fail'),
+            dot: !orbKnown ? 'grey' : (orbOk ? 'green' : 'red')
+        }
     ];
-    configs.forEach(function (cfg) {
+    if (orbStats && orbStats.runtime_provider_reason) {
+        orbRows.push({ label: 'Selection reason', value: orbStats.runtime_provider_reason, tone: 'muted' });
+    }
+    orbRows.forEach(function (cfg) {
         var row = document.createElement('div');
         row.className = 'orb-config-row';
-        var cfgDot = document.createElement('span');
-        cfgDot.className = 'health-dot health-dot-' + (cfg.ok ? 'green' : 'red');
+        if (cfg.dot) {
+            var cfgDot = document.createElement('span');
+            cfgDot.className = 'health-dot health-dot-' + cfg.dot;
+            row.appendChild(cfgDot);
+        }
         var cfgLabel = document.createElement('span');
         cfgLabel.className = 'orb-config-label';
         cfgLabel.textContent = cfg.label;
         var cfgVal = document.createElement('span');
-        cfgVal.className = 'orb-config-value';
-        cfgVal.style.color = cfg.ok ? '#10b981' : '#ef4444';
-        cfgVal.textContent = cfg.ok ? 'OK' : 'FAIL';
-        row.appendChild(cfgDot);
+        // VTID-04869: tone via class, never an inline style (CSP gate).
+        cfgVal.className = 'orb-config-value orb-config-value-' + cfg.tone;
+        cfgVal.textContent = cfg.value;
         row.appendChild(cfgLabel);
         row.appendChild(cfgVal);
         orbPanel.appendChild(row);
     });
 
-    if (!orbOk) {
+    if (orbKnown && !orbOk) {
         var alertBox = document.createElement('div');
         alertBox.className = 'orb-alert';
-        var issues = [];
-        if (!orbStats || !orbStats.gemini_live_enabled) issues.push('Gemini Live disabled');
-        if (!orbStats || !orbStats.vertex_project_configured) issues.push('VERTEX_PROJECT_ID empty');
-        if (!orbStats || !orbStats.google_auth_ready) issues.push('Google Auth not ready');
-        alertBox.textContent = 'ORB BROKEN: ' + issues.join(' \u2022 ');
+        alertBox.textContent = 'ORB voice runtime not ready (provider: ' + orbProvider + ')';
         orbPanel.appendChild(alertBox);
     }
 
+    // VTID-04869: counted from the latest 50 vtid.live + 50 voice.live
+    // events, not a 24h window — labelled as such.
     var orbMetrics = [
-        { label: 'Sessions (24h)', value: orbStats ? String(orbStats.sessions_24h) : '0' },
-        { label: 'Failures (24h)', value: orbStats ? String(orbStats.failures_24h) : '0', warn: orbStats && orbStats.failures_24h > 0 },
-        { label: 'Success Rate', value: orbStats ? orbStats.success_rate + '%' : '\u2014' }
+        { label: 'Starts (last 100 events)', value: orbStats ? String(orbStats.sessions_24h) : '\u2014' },
+        { label: 'Failures (last 100 events)', value: orbStats ? String(orbStats.failures_24h) : '\u2014', warn: orbStats && orbStats.failures_24h > 0 },
+        { label: 'Success Rate', value: orbStats && orbStats.success_rate !== null ? orbStats.success_rate + '%' : '\u2014' }
     ];
     orbMetrics.forEach(function (m) {
         var row = document.createElement('div');
@@ -30405,7 +30283,8 @@ function renderOverviewSystemView() {
     var failTitleEl = document.createElement('span');
     failTitleEl.className = 'overview-panel-title';
     failTitleEl.style.margin = '0';
-    failTitleEl.textContent = 'Recent Failures';
+    // VTID-04869: latest 30 status=error events — no time window.
+    failTitleEl.textContent = 'Recent Failures (last 30)';
     failHeader.appendChild(failTitleEl);
     if (db.recentFailures.length > 0) {
         var failBadge = document.createElement('span');
@@ -30415,10 +30294,21 @@ function renderOverviewSystemView() {
     }
     failPanel.appendChild(failHeader);
 
-    if (db.recentFailures.length === 0) {
+    if (db.recentFailuresUnavailable || (db.error && db.recentFailures.length === 0)) {
+        // VTID-04869: the fetch failed — say so instead of "no failures".
+        var failUnknown = document.createElement('div');
+        failUnknown.className = 'placeholder-content';
+        failUnknown.textContent = 'Could not load failure events \u2014 unknown, not zero.';
+        failPanel.appendChild(failUnknown);
+    } else if (!db.fetched) {
+        var failLoading = document.createElement('div');
+        failLoading.className = 'placeholder-content';
+        failLoading.textContent = 'Loading failure events\u2026';
+        failPanel.appendChild(failLoading);
+    } else if (db.recentFailures.length === 0) {
         var noFail = document.createElement('div');
         noFail.className = 'overview-no-failures';
-        noFail.textContent = 'No failures in the last 24h';
+        noFail.textContent = 'No error events in the latest 30 OASIS events fetched';
         failPanel.appendChild(noFail);
     } else {
         var failListWrap = document.createElement('div');
@@ -30482,7 +30372,8 @@ function renderOverviewSystemView() {
             depDot.className = 'deploy-status-dot ' + (isSuccess ? 'deploy-status-dot-success' : 'deploy-status-dot-failed');
             var depService = document.createElement('span');
             depService.className = 'deploy-service';
-            depService.textContent = dep.service || dep.service_name || 'gateway';
+            // VTID-04869: no service on the row = 'unknown', never a made-up 'gateway'.
+            depService.textContent = dep.service || dep.service_name || 'unknown';
             var depVersion = document.createElement('span');
             depVersion.className = 'deploy-swv';
             var ver = dep.version || dep.image_tag || dep.commit_sha || '';
@@ -30529,7 +30420,15 @@ function renderOverviewSystemView() {
 
     var severityColors = { BROKEN: '#ef4444', STUCK: '#f59e0b', BLOCKED: '#6b7280', NEW: '#3b82f6' };
 
-    if (attQueue.length === 0) {
+    if (!summary) {
+        // VTID-04869: no pipeline summary = unknown, not "running smoothly".
+        var attUnknown = document.createElement('div');
+        attUnknown.className = 'placeholder-content';
+        attUnknown.textContent = state.overviewPipelineSummary.error
+            ? 'Pipeline summary unavailable (' + state.overviewPipelineSummary.error + ') \u2014 attention queue unknown.'
+            : 'Pipeline summary not loaded \u2014 attention queue unknown.';
+        attSection.appendChild(attUnknown);
+    } else if (attQueue.length === 0) {
         var allClear = document.createElement('div');
         allClear.className = 'overview-no-failures';
         allClear.textContent = 'No tasks need immediate attention. Pipeline running smoothly.';
@@ -30755,9 +30654,19 @@ function renderOverviewSystemView() {
         liveHdr.className = 'overview-panel-title-row';
         liveHdr.innerHTML = '<span class="overview-panel-title">Live Activity</span>' +
             '<span class="overview-count-badge overview-count-badge-green">' + liveEvents.length + ' events</span>' +
-            '<a href="#" onclick="event.preventDefault();state.activeModule=\'overview\';state.activeTab=\'recent-events\';renderApp();" ' +
+            '<a href="/command-hub/overview/recent-events/" data-action="overview-view-all-events" ' +
             'style="margin-left:auto;font-size:0.75rem;color:#60a5fa;text-decoration:none;">View all \u2192</a>';
         livePanel.appendChild(liveHdr);
+        // VTID-04869: delegated listener instead of an inline onclick string
+        // (CSP — no inline JS). The inline handler also wrote
+        // state.activeModule/activeTab, which the router never reads, so the
+        // link did nothing.
+        livePanel.addEventListener('click', function (ev) {
+            var target = ev.target && ev.target.closest ? ev.target.closest('[data-action="overview-view-all-events"]') : null;
+            if (!target) return;
+            ev.preventDefault();
+            navigateToScreen('overview', 'recent-events');
+        });
 
         var liveTable = document.createElement('div');
         liveTable.style.cssText = 'display:flex;flex-direction:column;gap:2px;max-height:220px;overflow-y:auto;';
@@ -30804,70 +30713,6 @@ function renderOverviewSystemView() {
     return container;
 }
 
-// ---------------------------------------------------------------------------
-// VTID-02031: fetchActionRequired — GET /api/v1/ops/action-required
-// Pull surface mirroring the Gchat pings (VTID-02030). Polled every 30s
-// while the Overview view is mounted.
-// ---------------------------------------------------------------------------
-async function fetchActionRequired(silentRefresh) {
-    if (state.actionRequired.loading) return;
-    var isInitialLoad = !state.actionRequired.fetched;
-    state.actionRequired.loading = true;
-    state.actionRequired.error = null;
-    if (isInitialLoad && !silentRefresh) renderApp();
-
-    try {
-        var r = await fetchWT('/api/v1/ops/action-required', {
-            headers: (typeof buildContextHeaders === 'function') ? buildContextHeaders({ Accept: 'application/json' }) : { Accept: 'application/json' }
-        });
-        if (!r.ok) {
-            state.actionRequired.error = 'HTTP ' + r.status;
-        } else {
-            var body = await r.json();
-            state.actionRequired.items = Array.isArray(body.items) ? body.items : [];
-            state.actionRequired.countTotal = Number(body.count_total || 0);
-            state.actionRequired.countCritical = Number(body.count_critical || 0);
-            state.actionRequired.itemsReturned = Number(body.items_returned || state.actionRequired.items.length);
-        }
-    } catch (err) {
-        state.actionRequired.error = (err && err.message) ? err.message : String(err);
-    }
-    state.actionRequired.lastRefreshed = new Date().toISOString();
-    state.actionRequired.loading = false;
-    state.actionRequired.fetched = true;
-    if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
-        // VTID-03917: this used to call the unconditional full renderApp()
-        // below even when silentRefresh was requested (the 30s Overview
-        // poll, app.js:~31713) — mirrors the exact bug fetchServiceHealth
-        // already guards against a few hundred lines up. A full renderApp()
-        // does root.innerHTML='' and rebuilds the ENTIRE app (sidebar,
-        // header, every card) every 30s while sitting on this tab: visible
-        // as flicker, a window where a click can land on an element that's
-        // mid-teardown and never fire, and the sidebar's scroll-retention
-        // rAF racing the rebuild and visibly resetting-then-restoring.
-        // Silent refreshes now patch only the Action Required panel's own
-        // DOM node in place instead of tearing down the whole app.
-        if (silentRefresh) {
-            refreshActionRequiredPanel();
-        } else {
-            renderApp();
-        }
-    }
-}
-
-/**
- * VTID-03917: Refreshes only the Action Required panel's DOM in place,
- * without a full renderApp() rebuild. Used by the 30s Overview poll so a
- * silent background refresh doesn't tear down and rebuild the whole app
- * (see fetchActionRequired's silentRefresh branch above).
- */
-function refreshActionRequiredPanel() {
-    var oldPanel = document.querySelector('.action-required-panel');
-    if (!oldPanel) return;
-    var newPanel = renderActionRequiredPanel();
-    oldPanel.replaceWith(newPanel);
-}
-
 // DEV-COMHU-03404: hourly rollup backing the Overview sparklines.
 async function fetchOverviewTimeseries(silentRefresh) {
     if (state.overviewTimeseries.loading) return;
@@ -30897,7 +30742,8 @@ async function fetchOverviewTimeseries(silentRefresh) {
     // does, it must not trigger a full-app renderApp() rebuild either.
     // State is already updated above; a silent caller picks it up on the
     // next natural render instead of forcing one.
-    if (state.activeModule === 'overview' && state.activeTab === 'system-overview' && !silentRefresh) {
+    // VTID-04869: real router keys (currentModuleKey/currentTab).
+    if (state.currentModuleKey === 'overview' && state.currentTab === 'system-overview' && !silentRefresh) {
         renderApp();
     }
 }
@@ -30919,158 +30765,6 @@ function sparklineSVG(values, color) {
         'style="display:block;width:100%;height:20px;margin-top:4px;">' +
         '<polyline points="' + points + '" fill="none" stroke="' + color + '" stroke-width="1.5" ' +
         'stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/></svg>';
-}
-
-// VTID-02031: Render "Action Required" panel — pinned at the top of the
-// Overview view, above the system status banner. Empty state is collapsed,
-// non-empty shows expanded card list ordered by severity then recency.
-function renderActionRequiredPanel() {
-    var ar = state.actionRequired;
-    var wrapper = document.createElement('div');
-    wrapper.className = 'action-required-panel';
-    wrapper.style.cssText = 'margin-bottom:0.85rem;border-radius:8px;overflow:hidden;border:1px solid;';
-
-    var hasItems = (ar.items || []).length > 0;
-    var bgColor = hasItems
-        ? (ar.countCritical > 0 ? 'rgba(239,68,68,0.10)' : 'rgba(245,158,11,0.10)')
-        : 'rgba(34,197,94,0.08)';
-    var borderColor = hasItems
-        ? (ar.countCritical > 0 ? 'rgba(239,68,68,0.45)' : 'rgba(245,158,11,0.45)')
-        : 'rgba(34,197,94,0.30)';
-    wrapper.style.background = bgColor;
-    wrapper.style.borderColor = borderColor;
-
-    // ── Header bar ──
-    var header = document.createElement('div');
-    header.style.cssText = 'display:flex;align-items:center;gap:0.65rem;padding:0.7rem 0.95rem;font-size:0.9rem;';
-
-    var icon = document.createElement('span');
-    icon.style.cssText = 'font-size:1.05rem;';
-    icon.textContent = hasItems ? (ar.countCritical > 0 ? '🚨' : '⚠️') : '✅';
-    header.appendChild(icon);
-
-    var title = document.createElement('strong');
-    title.style.cssText = 'color:' + (hasItems ? (ar.countCritical > 0 ? '#fca5a5' : '#fcd34d') : '#86efac');
-    title.textContent = hasItems
-        ? ('Action Required — ' + ar.countTotal + ' open' + (ar.countCritical > 0 ? ' (' + ar.countCritical + ' critical)' : ''))
-        : 'All clear — 0 items needing attention';
-    header.appendChild(title);
-
-    var spacer = document.createElement('span');
-    spacer.style.flex = '1';
-    header.appendChild(spacer);
-
-    if (ar.lastRefreshed) {
-        var refreshedAt = document.createElement('span');
-        refreshedAt.style.cssText = 'font-size:0.72rem;color:rgba(229,231,235,0.55);';
-        refreshedAt.textContent = 'updated ' + new Date(ar.lastRefreshed).toLocaleTimeString();
-        header.appendChild(refreshedAt);
-    }
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn btn-sm';
-    refreshBtn.style.cssText = 'padding:2px 8px;font-size:0.72rem;';
-    refreshBtn.textContent = ar.loading ? '…' : '↻';
-    refreshBtn.disabled = !!ar.loading;
-    refreshBtn.onclick = function () {
-        state.actionRequired.fetched = false;
-        fetchActionRequired();
-    };
-    header.appendChild(refreshBtn);
-    wrapper.appendChild(header);
-
-    if (ar.error) {
-        var errLine = document.createElement('div');
-        errLine.style.cssText = 'padding:0.5rem 0.95rem;font-size:0.78rem;color:#fca5a5;';
-        errLine.textContent = 'Error loading: ' + ar.error;
-        wrapper.appendChild(errLine);
-    }
-
-    if (hasItems) {
-        var list = document.createElement('div');
-        list.style.cssText = 'display:flex;flex-direction:column;gap:0.4rem;padding:0 0.95rem 0.85rem 0.95rem;';
-        ar.items.forEach(function (item) {
-            list.appendChild(renderActionRequiredCard(item));
-        });
-        // VTID-02031b: when the backend capped the list, surface the residual
-        // count so the supervisor knows there's more if they want to drill in.
-        var returned = ar.itemsReturned || ar.items.length;
-        if (ar.countTotal > returned) {
-            var moreLine = document.createElement('div');
-            moreLine.style.cssText = 'padding:0.45rem 0.55rem;font-size:0.74rem;color:rgba(229,231,235,0.65);text-align:center;font-style:italic;';
-            moreLine.textContent = 'Showing top ' + returned + ' of ' + ar.countTotal +
-                ' open items — see Self-Healing screen for the full list';
-            list.appendChild(moreLine);
-        }
-        wrapper.appendChild(list);
-    }
-
-    return wrapper;
-}
-
-function renderActionRequiredCard(item) {
-    var card = document.createElement('a');
-    card.href = item.deeplink || '#';
-    card.style.cssText = 'display:flex;flex-direction:column;gap:0.2rem;padding:0.65rem 0.85rem;' +
-        'background:rgba(15,23,42,0.55);border:1px solid rgba(255,255,255,0.08);border-radius:6px;' +
-        'text-decoration:none;color:inherit;cursor:pointer;transition:background 120ms ease;';
-    card.onmouseenter = function () { card.style.background = 'rgba(15,23,42,0.85)'; };
-    card.onmouseleave = function () { card.style.background = 'rgba(15,23,42,0.55)'; };
-
-    var topRow = document.createElement('div');
-    topRow.style.cssText = 'display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;';
-
-    var sevBadge = document.createElement('span');
-    sevBadge.style.cssText = 'display:inline-block;padding:1px 7px;border-radius:3px;font-size:0.7rem;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;';
-    if (item.severity === 'critical') {
-        sevBadge.style.background = 'rgba(239,68,68,0.25)';
-        sevBadge.style.color = '#fca5a5';
-        sevBadge.textContent = 'critical';
-    } else {
-        sevBadge.style.background = 'rgba(245,158,11,0.22)';
-        sevBadge.style.color = '#fcd34d';
-        sevBadge.textContent = 'warning';
-    }
-    topRow.appendChild(sevBadge);
-
-    var catBadge = document.createElement('span');
-    catBadge.style.cssText = 'display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.68rem;font-weight:500;background:rgba(255,255,255,0.06);color:rgba(229,231,235,0.75);';
-    catBadge.textContent = item.category;
-    topRow.appendChild(catBadge);
-
-    var titleEl = document.createElement('strong');
-    titleEl.style.cssText = 'flex:1;color:#f3f4f6;font-weight:600;';
-    titleEl.textContent = item.title;
-    topRow.appendChild(titleEl);
-
-    // VTID-02031c: related_count surfaces collapsed siblings so the
-    // supervisor knows multiple linked rows feed this card.
-    if (item.related_count && item.related_count > 0) {
-        var relBadge = document.createElement('span');
-        relBadge.style.cssText = 'display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.66rem;font-weight:500;background:rgba(99,102,241,0.18);color:#a5b4fc;';
-        relBadge.textContent = '+' + item.related_count + ' related';
-        topRow.appendChild(relBadge);
-    }
-
-    if (item.detected_at) {
-        var time = document.createElement('span');
-        time.style.cssText = 'font-size:0.7rem;color:rgba(229,231,235,0.55);';
-        try {
-            time.textContent = new Date(item.detected_at).toLocaleString();
-        } catch (e) {
-            time.textContent = item.detected_at;
-        }
-        topRow.appendChild(time);
-    }
-    card.appendChild(topRow);
-
-    if (item.summary) {
-        var summary = document.createElement('div');
-        summary.style.cssText = 'font-size:0.78rem;color:rgba(229,231,235,0.78);line-height:1.4;';
-        summary.textContent = item.summary;
-        card.appendChild(summary);
-    }
-    return card;
 }
 
 // DEV-COMHU-03403: renders the same VTID pipeline attention_queue that used to
@@ -31137,8 +30831,9 @@ function renderVtidAttentionCard(item) {
     // inventing a new drilldown surface.
     card.onclick = function (e) {
         e.preventDefault();
-        state.activeModule = 'oasis';
-        state.activeTab = 'vtid-ledger';
+        // VTID-04869: real router keys via navigateToScreen (the old
+        // state.activeModule/activeTab writes never navigated anywhere).
+        navigateToScreen('oasis', 'vtid-ledger');
         fetchOasisVtidDetail(item.vtid);
     };
 
@@ -31548,8 +31243,9 @@ function renderOverviewLiveMetricsView() {
             card.appendChild(bottomRow);
 
             card.style.cursor = 'pointer';
+            // VTID-04869: navigateTo() was never defined — every click threw.
             card.onclick = function () {
-                navigateTo('command-hub', 'tasks');
+                navigateToScreen('command-hub', 'tasks');
             };
 
             attSection.appendChild(card);
@@ -36703,8 +36399,8 @@ function renderTestingE2eView() {
         container.appendChild(cyclesGrid);
     }
 
-    // VTID-02856: ORB Monitor relocated to Voice / Orb UI Monitor.
-    container.appendChild(renderMovedToVoiceBreadcrumb('Orb UI Monitor', 'orb-ui-monitor'));
+    // VTID-02856: ORB Monitor relocated to Voice; VTID-04779: now Voice / Test Bench.
+    container.appendChild(renderMovedToVoiceBreadcrumb('Test Bench · ORB UI checks', 'test-bench'));
 
     // Runs history table
     var runsTitle = document.createElement('h3');
@@ -36946,9 +36642,11 @@ function renderLivekitHourlyTestsPanel() {
 
     var titleRow = document.createElement('div');
     titleRow.style.cssText = 'display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;';
-    titleRow.innerHTML = '<h3 style="margin:0;">LiveKit Hourly Tests</h3>' +
+    // VTID-04779: retitled — this is a gateway tool-routing dry run (no
+    // LiveKit media involved), and there is no hourly schedule.
+    titleRow.innerHTML = '<h3 class="vsup-flush-title">Tool-routing dry run (gateway)</h3>' +
         '<span style="font-size:0.75rem;color:var(--color-text-secondary);">' +
-        'Layer-A dry-run via gateway tool-routing · VTID-03025</span>';
+        'Layer-A dry-run: each case checks which tool the gateway routes a voice request to · VTID-03025</span>';
     section.appendChild(titleRow);
 
     // Lazy-fetch latest run + cases + coverage on first render.
@@ -36991,7 +36689,7 @@ function renderLivekitHourlyTestsPanel() {
     if (state.livekitTests.loading && !state.livekitTests.fetched) {
         var loader = document.createElement('div');
         loader.className = 'placeholder-content';
-        loader.textContent = 'Loading LiveKit hourly test grid...';
+        loader.textContent = 'Loading tool-routing dry-run results...';
         section.appendChild(loader);
         return section;
     }
@@ -37000,7 +36698,7 @@ function renderLivekitHourlyTestsPanel() {
         var errDiv = document.createElement('div');
         errDiv.className = 'placeholder-content';
         errDiv.style.color = 'var(--color-text-secondary)';
-        errDiv.textContent = 'Could not load LiveKit hourly tests: ' + state.livekitTests.error;
+        errDiv.textContent = 'Could not load tool-routing dry-run results: ' + state.livekitTests.error;
         section.appendChild(errDiv);
         return section;
     }
@@ -37217,7 +36915,7 @@ function renderLivekitHourlyTestsPanel() {
 
     var casesInfo = document.createElement('span');
     casesInfo.style.cssText = 'font-size:0.72rem;color:var(--color-text-secondary);margin-left:auto;align-self:center;';
-    casesInfo.textContent = cases.length + ' case(s) enabled · hourly cron lands in Slice 1b';
+    casesInfo.textContent = cases.length + ' case(s) enabled · runs on demand (Trigger Run) — no scheduled run';
     btnRow.appendChild(casesInfo);
 
     card.appendChild(btnRow);
@@ -37247,14 +36945,14 @@ async function triggerLivekitHourlyTests(btn) {
             state.livekitTests.loading = false;
             state.livekitTests.latestRun = null;
             renderApp();
-            showToast('LiveKit hourly tests triggered (run ' +
+            showToast('Tool-routing dry run triggered (run ' +
                 (result.summary && result.summary.run_id ? result.summary.run_id.substring(0, 8) : '?') +
                 ')', 'success');
         } else {
             state.livekitTests.triggering = false;
             btn.disabled = false;
             btn.textContent = 'Trigger Run';
-            showToast('LiveKit tests failed: ' + (result && result.error ? result.error : 'unknown'), 'error');
+            showToast('Tool-routing dry run failed: ' + (result && result.error ? result.error : 'unknown'), 'error');
         }
     } catch (e) {
         state.livekitTests.triggering = false;
@@ -37806,11 +37504,11 @@ function renderLivekitTestView() {
     controls.innerHTML =
           '<button class="lkt-connect" style="padding:10px 20px;background:#22c55e;color:#0f172a;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">▶ Connect &amp; Talk</button>'
         + '<button class="lkt-disconnect" style="padding:10px 20px;background:#475569;color:#e5e7eb;border:none;border-radius:6px;cursor:pointer;" disabled>■ Disconnect</button>'
-        + '<button class="lkt-diagnose" style="padding:10px 20px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">⚙ Run Diagnostics</button>'
+        + '<button class="lkt-diagnose" title="Read-only: reads your session, bootstrap and tool lookups; creates nothing">⚙ Run Diagnostics (read-only)</button>'
         + '<input type="hidden" class="lkt-mode" value="test-session" />'
         + langSelectHtml
         + '<input class="lkt-agent" placeholder="agent_id" value="orb-agent" style="padding:8px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:4px;width:160px;" />'
-        + '<a href="/command-hub/voice/orb-live/" style="color:#60a5fa;font-size:12px;align-self:center;">→ Orb LIVE</a>';
+        + '<a href="/command-hub/voice/sessions/" class="lkt-sessions-link">→ Voice Sessions</a>';
     container.appendChild(controls);
     var langSelect = controls.querySelector('.lkt-lang');
     langSelect.addEventListener('change', function () {
@@ -38100,8 +37798,8 @@ function renderLivekitTestView() {
     emailInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') passwordInput.focus(); });
     refreshAuthUI();
 
-    // Diagnostics — runs every tool against the user's signed-in JWT and
-    // prints pass/fail. Mirrors the Python harness at /tmp/test_livekit_e2e.py
+    // Diagnostics — runs the READ-ONLY tool probes against the user's
+    // signed-in JWT and prints pass/fail (VTID-04779: no write probes). Mirrors the Python harness at /tmp/test_livekit_e2e.py
     // so we can prove from the browser what the agent sees against THIS
     // user's account specifically.
     function diagAppend(line) {
@@ -38263,8 +37961,15 @@ function renderLivekitTestView() {
             String((bs.body && bs.body.voice_config && bs.body.voice_config.llm_model) || ''),
         );
 
-        // Phase 3: direct-route tools
-        diagAppend('<br><strong style="color:#facc15;">Direct-route tools (18):</strong>');
+        // Phase 3: direct-route tools — READ-ONLY (VTID-04779).
+        // This bench runs as the signed-in operator against the shared
+        // production database, so diagnostics only read. The write probes it
+        // used to run (create_calendar_event, add_to_calendar,
+        // activate_recommendation, save_diary_entry, set_reminder /
+        // delete_reminder, post_intent / mark_intent_fulfilled) and the
+        // dispatcher tools that send, share, persist or call paid external
+        // services are covered by the gateway's CI tests instead.
+        diagAppend('<br><strong class="lkt-diag-heading">Direct-route tools (read-only):</strong>');
         var k = await diagFetch('POST', '/api/v1/assistant/knowledge/search', { query: 'autopilot' });
         diagRow('tool', 'search_knowledge', k.ok, k.status + '');
 
@@ -38274,36 +37979,8 @@ function renderLivekitTestView() {
         var st = await diagFetch('GET', '/api/v1/calendar/events/today');
         diagRow('tool', 'get_schedule', st.ok, st.status + '');
 
-        var ce = await diagFetch('POST', '/api/v1/calendar/events', {
-            title: '[TEST] diagnostics probe',
-            start_time: '2026-12-31T15:00:00Z',
-            end_time: '2026-12-31T15:30:00Z',
-        });
-        diagRow('tool', 'create_calendar_event', ce.ok, ce.status + '');
-        var ceId = ce.body && ((ce.body.data && ce.body.data.id) || ce.body.id);
-        if (ceId) await diagFetch('DELETE', '/api/v1/calendar/events/' + ceId);
-
-        var ca = await diagFetch('POST', '/api/v1/calendar/events', {
-            title: '[TEST] add_to_calendar probe',
-            start_time: '2026-12-31T17:00:00Z',
-            end_time: '2026-12-31T17:15:00Z',
-        });
-        diagRow('tool', 'add_to_calendar', ca.ok, ca.status + '');
-        var caId = ca.body && ((ca.body.data && ca.body.data.id) || ca.body.id);
-        if (caId) await diagFetch('DELETE', '/api/v1/calendar/events/' + caId);
-
         var rec = await diagFetch('GET', '/api/v1/autopilot/recommendations');
         diagRow('tool', 'get_recommendations', rec.ok, rec.status + '');
-        var recId = null;
-        if (rec.ok && rec.body && Array.isArray(rec.body.recommendations) && rec.body.recommendations[0]) {
-            recId = rec.body.recommendations[0].id;
-        }
-        if (recId) {
-            var act = await diagFetch('POST', '/api/v1/autopilot/recommendations/' + recId + '/activate', {});
-            diagRow('tool', 'activate_recommendation', act.ok, act.status + '');
-        } else {
-            diagRow('tool', 'activate_recommendation', true, 'skipped (no rec_id)');
-        }
 
         var idx = await diagFetch('GET', '/api/v1/vitana-index');
         diagRow('tool', 'get_vitana_index', idx.ok, idx.status + ' total=' + (idx.body && idx.body.snapshot && idx.body.snapshot.total));
@@ -38311,32 +37988,8 @@ function renderLivekitTestView() {
         var sug = await diagFetch('GET', '/api/v1/vitana-index/suggestions');
         diagRow('tool', 'get_index_improvement_suggestions', sug.ok, sug.status + '');
 
-        var dy = await diagFetch('POST', '/api/v1/memory/diary/sync-index', { raw_text: '[TEST] diagnostics probe — drank water and walked' });
-        diagRow('tool', 'save_diary_entry', dy.ok, dy.status + '');
-
-        var sr = await diagFetch('POST', '/api/v1/reminders', {
-            action_text: '[TEST] probe',
-            spoken_message: '[TEST]',
-            scheduled_for_iso: '2026-08-01T08:00:00Z',
-        });
-        diagRow('tool', 'set_reminder', sr.ok, sr.status + '');
-        var rId = sr.body && ((sr.body.data && sr.body.data.id) || sr.body.id);
-
         var fr = await diagFetch('GET', '/api/v1/reminders');
         diagRow('tool', 'find_reminders', fr.ok, fr.status + '');
-        if (rId) {
-            var dr = await diagFetch('DELETE', '/api/v1/reminders/' + rId);
-            diagRow('tool', 'delete_reminder', dr.ok, dr.status + '');
-        }
-
-        var pi = await diagFetch('POST', '/api/v1/intents', {
-            intent_kind: 'social_seek',
-            title: '[TEST] diagnostics probe — coffee buddy',
-            scope: 'Looking for someone to grab coffee with one afternoon next week. Casual, talk about longevity. (harness probe — safe to ignore)',
-        });
-        diagRow('tool', 'post_intent', pi.ok || pi.status === 200, pi.status + '');
-        var intentId =
-            pi.body && (pi.body.intent_id || (pi.body.intent && pi.body.intent.intent_id) || (pi.body.data && pi.body.data.id));
 
         var li = await diagFetch('GET', '/api/v1/intents');
         diagRow('tool', 'list_my_intents', li.ok, li.status + '');
@@ -38344,40 +37997,17 @@ function renderLivekitTestView() {
         var vm = await diagFetch('GET', '/api/v1/intent-matches/incoming');
         diagRow('tool', 'view_intent_matches', vm.ok, vm.status + '');
 
-        if (intentId) {
-            var mm = await diagFetch('GET', '/api/v1/intents/' + intentId + '/matchmaker');
-            diagRow('tool', 'get_matchmaker_result', mm.ok || mm.status === 202, mm.status + '');
-            var mf = await diagFetch('POST', '/api/v1/intents/' + intentId + '/close', {});
-            diagRow('tool', 'mark_intent_fulfilled', mf.ok, mf.status + '');
-        }
-
-        // Phase 4: dispatcher tools (22)
-        diagAppend('<br><strong style="color:#facc15;">Dispatcher tools (22):</strong>');
+        // Phase 4: dispatcher tools — read-only lookups only (VTID-04779).
+        diagAppend('<br><strong class="lkt-diag-heading">Dispatcher tools (read-only):</strong>');
         await diagDispatch('search_memory', { query: 'vitana', limit: 5 });
-        await diagDispatch('search_web', { query: 'longevity' });
         await diagDispatch('recall_conversation_at_time', { when: 'yesterday' });
-        await diagDispatch('switch_persona', { persona: 'warm' });
-        await diagDispatch('report_to_specialist', { specialist: 'devon', reason: 'probe', context_summary: 'probe' });
         await diagDispatch('search_events', { query: '' });
         await diagDispatch('search_community', { query: '' });
-        await diagDispatch('play_music', { query: 'calm' });
-        await diagDispatch('set_capability_preference', { capability: 'music.play', provider: 'spotify' });
-        await diagDispatch('read_email', {});
         await diagDispatch('find_contact', { query: 'test' });
-        await diagDispatch('consult_external_ai', { prompt: 'test' });
-        await diagDispatch('create_index_improvement_plan', { target_pillar: 'nutrition' });
-        await diagDispatch('ask_pillar_agent', { pillar: 'nutrition', question: 'what should I eat?' });
         await diagDispatch('explain_feature', { feature: 'diary' });
         await diagDispatch('resolve_recipient', { name: 'test' });
-        var meId = me.body && me.body.identity && me.body.identity.user_id;
-        if (meId) {
-            await diagDispatch('send_chat_message', { recipient_id: meId, body_text: '[TEST] diag probe' });
-            await diagDispatch('share_link', { url: 'https://vitana.app/test', with_recipient: meId });
-            await diagDispatch('share_intent_post', { intent_id: '00000000-0000-0000-0000-000000000000', with_recipient: meId });
-        }
-        await diagDispatch('scan_existing_matches', {});
-        await diagDispatch('respond_to_match', { match_id: '00000000-0000-0000-0000-000000000000', response: 'interested' });
         await diagDispatch('navigate_to_screen', { target: 'diary' });
+        diagAppend('<div class="vtb-diag-note">Write paths (calendar, reminders, diary, intents, chat, sharing, matches, preferences, specialist reports) are not exercised here — they are covered by the gateway CI test suites. No data is created under your account.</div>');
 
         // Phase 5 — agent-JWT round-trip. The voice agent does NOT use the
         // browser's bearer; it uses the agent_user_jwt minted by /orb/livekit/token
@@ -39984,7 +39614,8 @@ function renderDocsSystemKnowledgeView() {
 // right. Reads from /api/v1/admin/system-kb/docs?path_prefix=kb/instruction-manual/.
 // Edits route to the System Knowledge tab where the existing editor lives.
 
-const TENANT_MANUAL_TENANTS = ['maxina', 'alkalma', 'earthlinks', 'community'];
+// VTID-04836: earthlinks retired (merged into Maxina, VTID-01985).
+const TENANT_MANUAL_TENANTS = ['maxina', 'alkalma', 'community'];
 const MANUAL_MODULE_LABELS = {
     '00-concepts': '0. Mission, Voice & Core Concepts',
     '01-public': '1. Public & Onboarding',
@@ -40407,7 +40038,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const section = NAVIGATION_CONFIG.find(s => s.section === route.section);
         const tab = section ? section.tabs.find(t => t.key === route.tab) : null;
         if (tab && window.location.pathname !== tab.path) {
-            history.replaceState(null, '', tab.path);
+            // VTID-04777: keep the query string — Voice supervisor filters live there.
+            history.replaceState(null, '', tab.path + (window.location.search || ''));
         }
 
         // VTID-01230: If no auth token, show auth gate immediately — do NOT load any data
@@ -40508,6 +40140,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 openOperatorConsole();
             }
         } catch (e) { /* no-op */ }
+
+        // VTID-04876: a page loaded on a deep link (?vtid= / ?session=) opens its drawer.
+        applyDeepLinkParams();
 
         // Load data in parallel after auth is established
         Promise.all([
@@ -40641,7 +40276,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     var pathOnly = route ? route.split('?')[0] : '';
                     if (!pathOnly || pathOnly.indexOf('/command-hub') !== 0) {
                         console.warn('[VTOrb-Nav] Refused cross-surface route (Command Hub is developer-only): ' + route);
-                        return;
+                        // VTID-04814: say so, so Vitana does not claim it opened.
+                        return { status: 'refused', reason: 'not a Command Hub screen' };
                     }
                     var parsed = getRouteFromPath(route);
                     if (parsed) {
@@ -40650,9 +40286,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                             handleTabClick(parsed.tab);
                         }
                         console.log('[VTOrb-Nav] SPA navigated to ' + parsed.section + '/' + parsed.tab);
+                        return { status: 'opened', route: window.location.pathname };
                     }
+                    return { status: 'not_found', reason: 'no Command Hub tab for ' + pathOnly };
                 }
             });
+            syncOrbRouteWithCommandHub();
         }
 
         // VTID-0520: Start Background Polling
@@ -40665,6 +40304,35 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.body.innerHTML = `<div class="critical-error"><h1>Critical Error</h1><pre>${e.stack}</pre></div>`;
     }
 });
+// VTID-04814: the voice widget reads current_route once at init, and the
+// Command Hub switches tabs with history.pushState without telling it — so
+// Vitana believed the developer was still on the first tab ("already there"
+// checks and get_current_screen were wrong). Report every route change.
+function syncOrbRouteWithCommandHub() {
+    if (window.__vitanaOrbRouteSync) return;
+    window.__vitanaOrbRouteSync = true;
+    var last = window.location.pathname;
+    function report() {
+        var now = window.location.pathname;
+        if (now === last) return;
+        last = now;
+        try {
+            if (window.VitanaOrb && typeof window.VitanaOrb.updateContext === 'function') {
+                window.VitanaOrb.updateContext({ current_route: now });
+            }
+        } catch (e) { /* the widget is optional */ }
+    }
+    ['pushState', 'replaceState'].forEach(function (m) {
+        var original = history[m];
+        history[m] = function () {
+            var out = original.apply(this, arguments);
+            report();
+            return out;
+        };
+    });
+    window.addEventListener('popstate', report);
+}
+
 // VTID-01226 Command Hub stability fix
 
 // ===========================================================================
@@ -44147,7 +43815,7 @@ function renderVoiceImproveView() {
 
     var title = document.createElement('h2');
     title.style.margin = '0 0 0.25rem 0';
-    title.textContent = 'Voice Improve';
+    title.textContent = 'Action Queue';
     container.appendChild(title);
 
     var subtitle = document.createElement('p');
@@ -44341,14 +44009,18 @@ function verbLabel(verb) {
 function handleVoiceImproveAction(item, verb) {
     var vi = state.voiceImprove;
     if (verb === 'investigate' || verb === 'open_in_self_healing') {
-        var target = '/command-hub/voice/orb-live/';
+        // VTID-04778: retargeted to the rebuilt Voice tabs.
+        var target = '/command-hub/voice/sessions/';
         if (item.source === 'awareness_not_wired' || item.source.startsWith('watchdog_')) target = '/command-hub/conversation/awareness/';
         else if (item.source === 'healing_quarantine' || item.source === 'self_healing_escalation' || item.source === 'architecture_report' || item.source === 'failure_class_no_rule') target = '/command-hub/voice/self-healing/';
         else if (item.source === 'provider_drift') target = '/command-hub/voice/providers/';
-        history.pushState(null, '', target);
         var route = getRouteFromPath(target);
+        var section = NAVIGATION_CONFIG.find(function (s) { return s.section === route.section; });
+        var tabDef = section ? section.tabs.find(function (t) { return t.key === route.tab; }) : null;
+        history.pushState(null, '', tabDef ? tabDef.path : target);
         state.currentModuleKey = route.section;
         state.currentTab = route.tab;
+        applyRouteSubtab(route);
         renderApp();
         return;
     }
@@ -44490,7 +44162,7 @@ function handleVoiceImproveAction(item, verb) {
 
 // Small inline breadcrumb shown where a voice surface used to live.
 // Lets operators with old bookmarks one-click jump to the new home.
-function renderMovedToVoiceBreadcrumb(label, voiceTab) {
+function renderMovedToVoiceBreadcrumb(label, voiceTab, subtab) {
     var box = document.createElement('div');
     box.style.cssText = 'margin:0 0 16px 0;padding:10px 14px;background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.25);border-radius:8px;font-size:0.85rem;color:var(--color-text-secondary);';
     var link = document.createElement('a');
@@ -44502,6 +44174,7 @@ function renderMovedToVoiceBreadcrumb(label, voiceTab) {
         history.pushState(null, '', link.getAttribute('href'));
         state.currentModuleKey = 'voice';
         state.currentTab = voiceTab;
+        applyRouteSubtab({ section: 'voice', tab: voiceTab, subtab: subtab });
         renderApp();
     };
     box.appendChild(document.createTextNode('Moved to '));
@@ -44525,7 +44198,7 @@ function renderVoiceProvidersView() {
 
     var title = document.createElement('h2');
     title.style.margin = '0 0 0.25rem 0';
-    title.textContent = 'Providers & Voice';
+    title.textContent = 'Providers & Config';
     container.appendChild(title);
 
     var subtitle = document.createElement('p');
@@ -44969,7 +44642,206 @@ function renderVoiceProvidersView() {
 
     container.appendChild(saveBar);
 
+    // VTID-04777: the provider registry and per-agent STT/LLM/TTS config used
+    // to sit behind the Orb LIVE screen's sub-tab strip (which the Voice
+    // router reset, so they were unreachable). They live here now, collapsed
+    // until opened so they only fetch when someone looks.
+    container.appendChild(renderVoiceConfigDisclosure('registry', 'Voice provider registry', renderVoiceLabProvidersPanel));
+    container.appendChild(renderVoiceConfigDisclosure('agents', 'Agent voice configuration (STT / LLM / TTS per agent)', renderVoiceLabAgentConfigPanel));
+
     return container;
+}
+
+function renderVoiceConfigDisclosure(key, label, renderPanel) {
+    if (!state.voiceConfigDisclosure) state.voiceConfigDisclosure = {};
+    var details = document.createElement('details');
+    details.className = 'vsup-disclosure';
+    var summary = document.createElement('summary');
+    summary.textContent = label;
+    details.appendChild(summary);
+    var mounted = false;
+    function mount() {
+        if (mounted) return;
+        mounted = true;
+        details.appendChild(renderPanel());
+    }
+    if (state.voiceConfigDisclosure[key]) {
+        details.open = true;
+        mount();
+    }
+    details.addEventListener('toggle', function () {
+        state.voiceConfigDisclosure[key] = details.open;
+        if (details.open) mount();
+    });
+    return details;
+}
+
+// ─── VTID-04778: Voice / Issues & Healing ──────────────────────────────
+// One tab for "what is wrong and is it getting fixed": the Action Queue
+// (the former Improve cockpit), the Self-Healing Pipeline
+// (voice-self-healing.js) and Fix Impact (voice-supervisor.js, before/after
+// per shipped fix). Sub-tab lives in state.voiceIssues.subTab and in the
+// ?sub= query parameter so links can point at one of them.
+var VOICE_ISSUES_SUBTABS = [
+    { key: 'action-queue', label: 'Action Queue' },
+    { key: 'pipeline', label: 'Self-Healing Pipeline' },
+    { key: 'fix-impact', label: 'Fix Impact' }
+];
+
+function renderVoiceIssuesHealingView() {
+    if (!state.voiceIssues) state.voiceIssues = { subTab: 'action-queue' };
+    try {
+        var qsSub = new URLSearchParams(window.location.search).get('sub');
+        if (qsSub && VOICE_ISSUES_SUBTABS.some(function (t) { return t.key === qsSub; })) {
+            state.voiceIssues.subTab = qsSub;
+        }
+    } catch (_e) { /* no URLSearchParams — keep state */ }
+    var active = state.voiceIssues.subTab || 'action-queue';
+
+    var wrap = document.createElement('div');
+    wrap.className = 'vsup-subtabs-wrap';
+
+    var bar = document.createElement('div');
+    bar.className = 'vsup-subtabs';
+    bar.setAttribute('role', 'tablist');
+    bar.setAttribute('aria-label', 'Issues & Healing views');
+    VOICE_ISSUES_SUBTABS.forEach(function (t) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'vsup-subtab' + (t.key === active ? ' is-active' : '');
+        b.setAttribute('role', 'tab');
+        b.setAttribute('aria-selected', t.key === active ? 'true' : 'false');
+        b.textContent = t.label;
+        b.addEventListener('click', function () {
+            state.voiceIssues.subTab = t.key;
+            history.pushState(null, '', '/command-hub/voice/issues-healing/?sub=' + t.key);
+            renderApp();
+        });
+        bar.appendChild(b);
+    });
+    wrap.appendChild(bar);
+
+    var panel = document.createElement('div');
+    panel.className = 'vsup-subtab-panel';
+    panel.setAttribute('role', 'tabpanel');
+    if (active === 'pipeline') {
+        if (typeof window.renderVoiceSelfHealingScreen === 'function') {
+            panel.appendChild(window.renderVoiceSelfHealingScreen());
+        } else {
+            var vshMissing = document.createElement('p');
+            vshMissing.className = 'vsup-load-error';
+            vshMissing.setAttribute('role', 'alert');
+            vshMissing.textContent = 'Voice Self-Healing failed to load (voice-self-healing.js). Reload the page.';
+            panel.appendChild(vshMissing);
+        }
+    } else if (active === 'fix-impact') {
+        panel.appendChild(renderVoiceSupervisorScreen('renderVoiceFixImpact', 'Fix Impact'));
+    } else {
+        panel.appendChild(renderVoiceImproveView());
+    }
+    wrap.appendChild(panel);
+    return wrap;
+}
+
+// ─── VTID-04779: Voice / Test Bench ────────────────────────────────────
+// Top: the LiveKit bench (left) and the Nova Sonic bench (right) side by
+// side (two columns >= 1200px, stacked below). Both benches use class-scoped
+// selectors (lkt-* / nst-*), never element ids, so mounting them together has
+// no id collisions; the Nova session poller stops itself once its node is
+// detached, and the LiveKit view survives re-renders while a call is live.
+// Below: the voice test suite — tool-routing dry run, ORB UI checks and the
+// TTS sweep / echo-barge-in gate (orb-voice-bench.html, same-origin iframe:
+// the Command Hub CSP's default-src 'self' covers frame-src).
+function renderVoiceTestBenchView() {
+    if (!state.voiceTestBench) state.voiceTestBench = { audioBenchOpen: false };
+    var tb = state.voiceTestBench;
+
+    var root = document.createElement('div');
+    root.className = 'vtb';
+
+    var head = document.createElement('div');
+    head.className = 'vtb-head';
+    var h2 = document.createElement('h2');
+    h2.textContent = 'Voice Test Bench';
+    head.appendChild(h2);
+    var sub = document.createElement('p');
+    sub.className = 'vtb-sub';
+    sub.textContent = 'Talk to each voice pipeline yourself, side by side, then check the automated voice suite below. Diagnostics here only read — nothing is written under your account.';
+    head.appendChild(sub);
+    root.appendChild(head);
+
+    var split = document.createElement('div');
+    split.className = 'vtb-split';
+    var left = document.createElement('section');
+    left.className = 'vtb-col';
+    left.setAttribute('aria-label', 'LiveKit test bench');
+    left.appendChild(renderLivekitTestView());
+    var right = document.createElement('section');
+    right.className = 'vtb-col';
+    right.setAttribute('aria-label', 'Nova Sonic test bench');
+    right.appendChild(renderNovaSonicTestView());
+    split.appendChild(left);
+    split.appendChild(right);
+    root.appendChild(split);
+
+    var suite = document.createElement('section');
+    suite.className = 'vtb-suite';
+    suite.setAttribute('aria-labelledby', 'vtb-suite-title');
+    var suiteTitle = document.createElement('h2');
+    suiteTitle.id = 'vtb-suite-title';
+    suiteTitle.textContent = 'Voice test suite';
+    suite.appendChild(suiteTitle);
+
+    var routing = document.createElement('div');
+    routing.className = 'vtb-suite-block';
+    routing.appendChild(renderLivekitHourlyTestsPanel());
+    suite.appendChild(routing);
+
+    var orbUi = document.createElement('div');
+    orbUi.className = 'vtb-suite-block';
+    orbUi.appendChild(renderOrbMonitorSection());
+    suite.appendChild(orbUi);
+
+    var audio = document.createElement('details');
+    audio.className = 'vtb-suite-block vtb-audio';
+    var audioSummary = document.createElement('summary');
+    audioSummary.textContent = 'TTS sweep & echo / barge-in gate';
+    audio.appendChild(audioSummary);
+    var audioNote = document.createElement('p');
+    audioNote.className = 'vtb-sub';
+    audioNote.textContent = 'Plays real gateway TTS for every language and measures it, and checks whether this device\'s speaker echo opens the mic gate. Needs your speakers and microphone. The embedded copy reloads whenever the Command Hub redraws (for example after a toast) — for a long run, open it in its own tab.';
+    audio.appendChild(audioNote);
+    var openLink = document.createElement('a');
+    openLink.className = 'vtb-open-link';
+    openLink.href = '/command-hub/orb-voice-bench.html';
+    openLink.target = '_blank';
+    openLink.rel = 'noopener';
+    openLink.textContent = 'Open the voice bench in a new tab';
+    audio.appendChild(openLink);
+    var frameMounted = false;
+    function mountFrame() {
+        if (frameMounted) return;
+        frameMounted = true;
+        var frame = document.createElement('iframe');
+        frame.className = 'vtb-frame';
+        frame.src = '/command-hub/orb-voice-bench.html';
+        frame.title = 'ORB voice bench: TTS sweep and echo / barge-in gate';
+        frame.setAttribute('allow', 'microphone; autoplay');
+        frame.setAttribute('loading', 'lazy');
+        audio.appendChild(frame);
+    }
+    if (tb.audioBenchOpen) {
+        audio.open = true;
+        mountFrame();
+    }
+    audio.addEventListener('toggle', function () {
+        tb.audioBenchOpen = audio.open;
+        if (audio.open) mountFrame();
+    });
+    suite.appendChild(audio);
+
+    root.appendChild(suite);
+    return root;
 }
 
 function fetchTtsVoicesForLanguage(lang) {
@@ -47052,9 +46924,9 @@ function renderSelfHealingView() {
         fetchSelfHealingData();
     }
 
-    // VTID-02856: Voice Self-Healing relocated to Voice / Self-Healing.
+    // VTID-02856: Voice Self-Healing relocated to Voice; VTID-04778: now Voice / Issues & Healing.
     // A small breadcrumb stays here so operators with old bookmarks find it.
-    container.appendChild(renderMovedToVoiceBreadcrumb('Voice Self-Healing', 'self-healing'));
+    container.appendChild(renderMovedToVoiceBreadcrumb('Issues & Healing · Self-Healing Pipeline', 'issues-healing', 'pipeline'));
 
     // ── HEADER with Kill Switch ──
     var header = document.createElement('div');
@@ -52065,7 +51937,7 @@ function renderAssistantOverviewView() {
         };
         return b;
     };
-    toolbar.appendChild(quickBtn('Open Orb LIVE', 'voice', 'orb-live'));
+    toolbar.appendChild(quickBtn('Open Voice Sessions', 'voice', 'sessions'));
     toolbar.appendChild(quickBtn('Awareness', 'voice', 'awareness'));
     toolbar.appendChild(quickBtn('Personality', 'assistant', 'personality'));
     container.appendChild(toolbar);

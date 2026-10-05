@@ -3,7 +3,7 @@
  *
  * Manages the user financial wallet (credit/debit operations),
  * referral tracking, and sharing link generation.
- * Distinct from VTN token wallet — this handles fiat/credit operations.
+ * Distinct from VTNA token wallet — this handles fiat/credit operations.
  */
 
 import { z } from 'zod';

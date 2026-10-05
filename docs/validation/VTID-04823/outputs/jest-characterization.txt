@@ -1,0 +1,1735 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-9b93c521-4e86-4a45-8e57-3936316d3b2c: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-9b93c521-4e86-4a45-8e57-3936316d3b2c user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.vad.silence_duration_ms" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getVadSilenceDurationMs (src/orb/upstream/constants.ts:113:30)
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1843:63)
+      at runStart (test/orb/live/session/vtid-04545-session-start-characterization.test.ts:286:3)
+      at test/orb/live/session/vtid-04545-session-start-characterization.test.ts:390:25
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-9b93c521-4e86-4a45-8e57-3936316d3b2c (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-9b93c521-4e86-4a45-8e57-3936316d3b2c: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+
+  console.log
+    [GREETING-FACTS-PREFETCH] session live-9b93c521-4e86-4a45-8e57-3936316d3b2c resolved firstName=<set> lastSession=yes proactive=<set>
+
+      at src/orb/live/session/live-session-controller.ts:1790:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-9b93c521-4e86-4a45-8e57-3936316d3b2c in 22ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-9b93c521-4e86-4a45-8e57-3936316d3b2c: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+
+  console.log
+    [VTID-ORBC] Live session created: live-9b93c521-4e86-4a45-8e57-3936316d3b2c (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-61f6c35f-637a-48f4-b547-5d66b4d77d2c: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-61f6c35f-637a-48f4-b547-5d66b4d77d2c user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-61f6c35f-637a-48f4-b547-5d66b4d77d2c (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-61f6c35f-637a-48f4-b547-5d66b4d77d2c: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+
+  console.log
+    [GREETING-FACTS-PREFETCH] session live-61f6c35f-637a-48f4-b547-5d66b4d77d2c resolved firstName=<set> lastSession=yes proactive=<set>
+
+      at src/orb/live/session/live-session-controller.ts:1790:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-61f6c35f-637a-48f4-b547-5d66b4d77d2c in 2ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-61f6c35f-637a-48f4-b547-5d66b4d77d2c: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+
+  console.log
+    [VTID-ORBC] Live session created: live-61f6c35f-637a-48f4-b547-5d66b4d77d2c (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-48ff7b10-22fc-4889-ab0f-5418e63da7a8: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-48ff7b10-22fc-4889-ab0f-5418e63da7a8 user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [ORB-FAST-START] session live-48ff7b10-22fc-4889-ab0f-5418e63da7a8: wake-brief + journey deferred onto contextReadyPromise (fast session/start)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2510:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-48ff7b10-22fc-4889-ab0f-5418e63da7a8 (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-48ff7b10-22fc-4889-ab0f-5418e63da7a8 (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+          at async Promise.allSettled (index 0)
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-48ff7b10-22fc-4889-ab0f-5418e63da7a8: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+          at async Promise.allSettled (index 0)
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+          at async Promise.allSettled (index 0)
+
+  console.log
+    [GREETING-FACTS-PREFETCH] session live-48ff7b10-22fc-4889-ab0f-5418e63da7a8 resolved firstName=<set> lastSession=yes proactive=<set>
+
+      at src/orb/live/session/live-session-controller.ts:1790:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+          at async Promise.allSettled (index 1)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-48ff7b10-22fc-4889-ab0f-5418e63da7a8 in 3ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+          at async Promise.allSettled (index 0)
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-48ff7b10-22fc-4889-ab0f-5418e63da7a8: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+          at async Promise.allSettled (index 1)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-6bc1436b-5ef3-4685-af35-848897e0ceea: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-6bc1436b-5ef3-4685-af35-848897e0ceea user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-6bc1436b-5ef3-4685-af35-848897e0ceea (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-6bc1436b-5ef3-4685-af35-848897e0ceea: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-6bc1436b-5ef3-4685-af35-848897e0ceea in 1ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-6bc1436b-5ef3-4685-af35-848897e0ceea: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+
+  console.log
+    [VTID-ORBC] Live session created: live-6bc1436b-5ef3-4685-af35-848897e0ceea (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-1e571cae-82a0-4b0c-8cc3-0c911acffae4: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-1e571cae-82a0-4b0c-8cc3-0c911acffae4 user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-1e571cae-82a0-4b0c-8cc3-0c911acffae4 (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-1e571cae-82a0-4b0c-8cc3-0c911acffae4: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+
+  console.log
+    [GREETING-FACTS-PREFETCH] session live-1e571cae-82a0-4b0c-8cc3-0c911acffae4 resolved firstName=<set> lastSession=yes proactive=<set>
+
+      at src/orb/live/session/live-session-controller.ts:1790:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-1e571cae-82a0-4b0c-8cc3-0c911acffae4 in 2ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-1e571cae-82a0-4b0c-8cc3-0c911acffae4: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+
+  console.log
+    [VTID-ORBC] Live session created: live-1e571cae-82a0-4b0c-8cc3-0c911acffae4 (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-ff0598ca-b200-461f-bd9f-886a3ae3765d: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-ff0598ca-b200-461f-bd9f-886a3ae3765d user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-ff0598ca-b200-461f-bd9f-886a3ae3765d (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-ff0598ca-b200-461f-bd9f-886a3ae3765d: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+
+  console.log
+    [GREETING-FACTS-PREFETCH] session live-ff0598ca-b200-461f-bd9f-886a3ae3765d resolved firstName=<set> lastSession=yes proactive=<set>
+
+      at src/orb/live/session/live-session-controller.ts:1790:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-ff0598ca-b200-461f-bd9f-886a3ae3765d in 2ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-ff0598ca-b200-461f-bd9f-886a3ae3765d: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+
+  console.log
+    [VTID-ORBC] Live session created: live-ff0598ca-b200-461f-bd9f-886a3ae3765d (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-31b05bfe-7f2c-4a9e-80a1-bd2ed416999a: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-31b05bfe-7f2c-4a9e-80a1-bd2ed416999a user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [ORB-FAST-START] session live-31b05bfe-7f2c-4a9e-80a1-bd2ed416999a: wake-brief + journey deferred onto contextReadyPromise (fast session/start)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2510:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-31b05bfe-7f2c-4a9e-80a1-bd2ed416999a (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-31b05bfe-7f2c-4a9e-80a1-bd2ed416999a (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+          at async Promise.allSettled (index 0)
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-31b05bfe-7f2c-4a9e-80a1-bd2ed416999a: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+          at async Promise.allSettled (index 0)
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+          at async Promise.allSettled (index 0)
+
+  console.log
+    [GREETING-FACTS-PREFETCH] session live-31b05bfe-7f2c-4a9e-80a1-bd2ed416999a resolved firstName=<set> lastSession=yes proactive=<set>
+
+      at src/orb/live/session/live-session-controller.ts:1790:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+          at async Promise.allSettled (index 1)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-31b05bfe-7f2c-4a9e-80a1-bd2ed416999a in 3ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+          at async Promise.allSettled (index 0)
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-31b05bfe-7f2c-4a9e-80a1-bd2ed416999a: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+          at async Promise.allSettled (index 1)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-4fc1f5e3-6f19-439c-a88f-729f754eecf0: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-4fc1f5e3-6f19-439c-a88f-729f754eecf0 user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-4fc1f5e3-6f19-439c-a88f-729f754eecf0 (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-4fc1f5e3-6f19-439c-a88f-729f754eecf0: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-4fc1f5e3-6f19-439c-a88f-729f754eecf0 in 1ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-4fc1f5e3-6f19-439c-a88f-729f754eecf0: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+
+  console.log
+    [VTID-ORBC] Live session created: live-4fc1f5e3-6f19-439c-a88f-729f754eecf0 (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-30b139a5-e6ef-431c-9d80-e8b95f18f912: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-30b139a5-e6ef-431c-9d80-e8b95f18f912 user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-30b139a5-e6ef-431c-9d80-e8b95f18f912 (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-30b139a5-e6ef-431c-9d80-e8b95f18f912: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+
+  console.log
+    [GREETING-FACTS-PREFETCH] session live-30b139a5-e6ef-431c-9d80-e8b95f18f912 resolved firstName=<set> lastSession=yes proactive=<set>
+
+      at src/orb/live/session/live-session-controller.ts:1790:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-30b139a5-e6ef-431c-9d80-e8b95f18f912 in 2ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-30b139a5-e6ef-431c-9d80-e8b95f18f912: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+
+  console.log
+    [VTID-ORBC] Live session created: live-30b139a5-e6ef-431c-9d80-e8b95f18f912 (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-c2930ec8-3e96-4e23-8031-0049753b27d8: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-c2930ec8-3e96-4e23-8031-0049753b27d8 user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-c2930ec8-3e96-4e23-8031-0049753b27d8 (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-c2930ec8-3e96-4e23-8031-0049753b27d8: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+
+  console.log
+    [GREETING-FACTS-PREFETCH] session live-c2930ec8-3e96-4e23-8031-0049753b27d8 resolved firstName=<set> lastSession=yes proactive=<set>
+
+      at src/orb/live/session/live-session-controller.ts:1790:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-c2930ec8-3e96-4e23-8031-0049753b27d8 in 2ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-c2930ec8-3e96-4e23-8031-0049753b27d8: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+
+  console.log
+    [VTID-ORBC] Live session created: live-c2930ec8-3e96-4e23-8031-0049753b27d8 (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-92692038-3bec-46c2-9891-a119b3fcf433: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-92692038-3bec-46c2-9891-a119b3fcf433 user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [ORB-FAST-START] session live-92692038-3bec-46c2-9891-a119b3fcf433: wake-brief + journey deferred onto contextReadyPromise (fast session/start)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2510:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-92692038-3bec-46c2-9891-a119b3fcf433 (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-92692038-3bec-46c2-9891-a119b3fcf433 (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+          at async Promise.allSettled (index 0)
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-92692038-3bec-46c2-9891-a119b3fcf433: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+          at async Promise.allSettled (index 0)
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+          at async Promise.allSettled (index 0)
+
+  console.log
+    [GREETING-FACTS-PREFETCH] session live-92692038-3bec-46c2-9891-a119b3fcf433 resolved firstName=<set> lastSession=yes proactive=<set>
+
+      at src/orb/live/session/live-session-controller.ts:1790:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+          at async Promise.allSettled (index 1)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-92692038-3bec-46c2-9891-a119b3fcf433 in 3ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+          at async Promise.allSettled (index 0)
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-92692038-3bec-46c2-9891-a119b3fcf433: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+          at async Promise.allSettled (index 1)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-fd62401e-94b1-4864-91ff-30808b8cdfcf: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-fd62401e-94b1-4864-91ff-30808b8cdfcf user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-fd62401e-94b1-4864-91ff-30808b8cdfcf (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-fd62401e-94b1-4864-91ff-30808b8cdfcf: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-fd62401e-94b1-4864-91ff-30808b8cdfcf in 1ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-fd62401e-94b1-4864-91ff-30808b8cdfcf: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+
+  console.log
+    [VTID-ORBC] Live session created: live-fd62401e-94b1-4864-91ff-30808b8cdfcf (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-1dc9a457-16ee-4423-b598-f48525c31832: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-1dc9a457-16ee-4423-b598-f48525c31832 user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-1dc9a457-16ee-4423-b598-f48525c31832 (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-1dc9a457-16ee-4423-b598-f48525c31832: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+
+  console.log
+    [GREETING-FACTS-PREFETCH] session live-1dc9a457-16ee-4423-b598-f48525c31832 resolved firstName=<set> lastSession=yes proactive=<set>
+
+      at src/orb/live/session/live-session-controller.ts:1790:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-1dc9a457-16ee-4423-b598-f48525c31832 in 2ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-1dc9a457-16ee-4423-b598-f48525c31832: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+
+  console.log
+    [VTID-ORBC] Live session created: live-1dc9a457-16ee-4423-b598-f48525c31832 (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-0bab815b-5d51-4e72-94d4-cad671364c51: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-0bab815b-5d51-4e72-94d4-cad671364c51 user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-0bab815b-5d51-4e72-94d4-cad671364c51 (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-0bab815b-5d51-4e72-94d4-cad671364c51: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+
+  console.log
+    [GREETING-FACTS-PREFETCH] session live-0bab815b-5d51-4e72-94d4-cad671364c51 resolved firstName=<set> lastSession=yes proactive=<set>
+
+      at src/orb/live/session/live-session-controller.ts:1790:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-0bab815b-5d51-4e72-94d4-cad671364c51 in 1ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-0bab815b-5d51-4e72-94d4-cad671364c51: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+
+  console.log
+    [VTID-ORBC] Live session created: live-0bab815b-5d51-4e72-94d4-cad671364c51 (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-83b7ca3c-fd4f-467c-9cba-7faa8119ecf3: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-83b7ca3c-fd4f-467c-9cba-7faa8119ecf3 user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [ORB-FAST-START] session live-83b7ca3c-fd4f-467c-9cba-7faa8119ecf3: wake-brief + journey deferred onto contextReadyPromise (fast session/start)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2510:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-83b7ca3c-fd4f-467c-9cba-7faa8119ecf3 (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-83b7ca3c-fd4f-467c-9cba-7faa8119ecf3 (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+          at async Promise.allSettled (index 0)
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-83b7ca3c-fd4f-467c-9cba-7faa8119ecf3: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+          at async Promise.allSettled (index 0)
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+          at async Promise.allSettled (index 0)
+
+  console.log
+    [GREETING-FACTS-PREFETCH] session live-83b7ca3c-fd4f-467c-9cba-7faa8119ecf3 resolved firstName=<set> lastSession=yes proactive=<set>
+
+      at src/orb/live/session/live-session-controller.ts:1790:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+          at async Promise.allSettled (index 1)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-83b7ca3c-fd4f-467c-9cba-7faa8119ecf3 in 3ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+          at async Promise.allSettled (index 0)
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-83b7ca3c-fd4f-467c-9cba-7faa8119ecf3: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+          at async Promise.allSettled (index 1)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-c4aed9e8-1bec-4f38-953c-dfbd8cb12542: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-c4aed9e8-1bec-4f38-953c-dfbd8cb12542 user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-c4aed9e8-1bec-4f38-953c-dfbd8cb12542 (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-c4aed9e8-1bec-4f38-953c-dfbd8cb12542: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-c4aed9e8-1bec-4f38-953c-dfbd8cb12542 in 2ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-c4aed9e8-1bec-4f38-953c-dfbd8cb12542: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+
+  console.log
+    [VTID-ORBC] Live session created: live-c4aed9e8-1bec-4f38-953c-dfbd8cb12542 (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-51be8e08-4794-494c-b9f1-a185334af544: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-51be8e08-4794-494c-b9f1-a185334af544 user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-51be8e08-4794-494c-b9f1-a185334af544 (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-51be8e08-4794-494c-b9f1-a185334af544: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+
+  console.log
+    [GREETING-FACTS-PREFETCH] session live-51be8e08-4794-494c-b9f1-a185334af544 resolved firstName=<set> lastSession=yes proactive=<set>
+
+      at src/orb/live/session/live-session-controller.ts:1790:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-51be8e08-4794-494c-b9f1-a185334af544 in 1ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-51be8e08-4794-494c-b9f1-a185334af544: kind=first_session day=1/90 phase=none
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+
+  console.log
+    [VTID-ORBC] Live session created: live-51be8e08-4794-494c-b9f1-a185334af544 (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-c52d5a74-5673-40ca-89ff-35365ac9cb79: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-c52d5a74-5673-40ca-89ff-35365ac9cb79 user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-c52d5a74-5673-40ca-89ff-35365ac9cb79 (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-c52d5a74-5673-40ca-89ff-35365ac9cb79: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+
+  console.log
+    [GREETING-FACTS-PREFETCH] session live-c52d5a74-5673-40ca-89ff-35365ac9cb79 resolved firstName=<set> lastSession=yes proactive=<set>
+
+      at src/orb/live/session/live-session-controller.ts:1790:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-c52d5a74-5673-40ca-89ff-35365ac9cb79 in 2ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+
+  console.log
+    [VTID-ORBC] Live session created: live-c52d5a74-5673-40ca-89ff-35365ac9cb79 (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.warn
+    [VTID-03107] voice quota reservation failed (failing open): db down
+
+      929 |       );
+      930 |     } catch (err: unknown) {
+    > 931 |       console.warn(
+          |               ^
+      932 |         `[VTID-03107] voice quota reservation failed (failing open): ${err instanceof Error ? err.message : String(err)}`
+      933 |       );
+      934 |     }
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:931:15)
+      at runStart (test/orb/live/session/vtid-04545-session-start-characterization.test.ts:286:3)
+      at Object.<anonymous> (test/orb/live/session/vtid-04545-session-start-characterization.test.ts:545:30)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-3ac71a73-38bf-434b-a99c-bd4c80cba258: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-3ac71a73-38bf-434b-a99c-bd4c80cba258 user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-3ac71a73-38bf-434b-a99c-bd4c80cba258 (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-3ac71a73-38bf-434b-a99c-bd4c80cba258: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+
+  console.log
+    [GREETING-FACTS-PREFETCH] session live-3ac71a73-38bf-434b-a99c-bd4c80cba258 resolved firstName=<set> lastSession=yes proactive=<set>
+
+      at src/orb/live/session/live-session-controller.ts:1790:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-3ac71a73-38bf-434b-a99c-bd4c80cba258 in 2ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-3ac71a73-38bf-434b-a99c-bd4c80cba258: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+
+  console.log
+    [VTID-ORBC] Live session created: live-3ac71a73-38bf-434b-a99c-bd4c80cba258 (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-030799a0-30a7-4407-83a7-e9f53ec82629: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-030799a0-30a7-4407-83a7-e9f53ec82629 user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-030799a0-30a7-4407-83a7-e9f53ec82629 (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-030799a0-30a7-4407-83a7-e9f53ec82629: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-030799a0-30a7-4407-83a7-e9f53ec82629 in 2ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-030799a0-30a7-4407-83a7-e9f53ec82629: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+
+  console.log
+    [VTID-ORBC] Live session created: live-030799a0-30a7-4407-83a7-e9f53ec82629 (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-0961e729-aff1-491b-a8c6-ba4d0f2c8c2a: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-0961e729-aff1-491b-a8c6-ba4d0f2c8c2a user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-0961e729-aff1-491b-a8c6-ba4d0f2c8c2a (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-0961e729-aff1-491b-a8c6-ba4d0f2c8c2a: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+
+  console.log
+    [GREETING-FACTS-PREFETCH] session live-0961e729-aff1-491b-a8c6-ba4d0f2c8c2a resolved firstName=<set> lastSession=yes proactive=<set>
+
+      at src/orb/live/session/live-session-controller.ts:1790:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-0961e729-aff1-491b-a8c6-ba4d0f2c8c2a in 2ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-0961e729-aff1-491b-a8c6-ba4d0f2c8c2a: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+
+  console.log
+    [VTID-ORBC] Live session created: live-0961e729-aff1-491b-a8c6-ba4d0f2c8c2a (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-07e28b2d-0756-497f-8de6-f317838e75d3: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-07e28b2d-0756-497f-8de6-f317838e75d3 user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [ORB-FAST-START] session live-07e28b2d-0756-497f-8de6-f317838e75d3: wake-brief + journey deferred onto contextReadyPromise (fast session/start)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2510:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-07e28b2d-0756-497f-8de6-f317838e75d3 (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-07e28b2d-0756-497f-8de6-f317838e75d3 (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+          at async Promise.allSettled (index 0)
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-07e28b2d-0756-497f-8de6-f317838e75d3: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+          at async Promise.allSettled (index 0)
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+          at async Promise.allSettled (index 0)
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+          at async Promise.allSettled (index 1)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-07e28b2d-0756-497f-8de6-f317838e75d3 in 2ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+          at async Promise.allSettled (index 0)
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-07e28b2d-0756-497f-8de6-f317838e75d3: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+          at async Promise.allSettled (index 1)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-0b2cf4e6-7daa-4f3e-9c57-196a6e099539: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-0b2cf4e6-7daa-4f3e-9c57-196a6e099539 user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-0b2cf4e6-7daa-4f3e-9c57-196a6e099539 (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-0b2cf4e6-7daa-4f3e-9c57-196a6e099539: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+
+  console.log
+    [GREETING-FACTS-PREFETCH] session live-0b2cf4e6-7daa-4f3e-9c57-196a6e099539 resolved firstName=<set> lastSession=yes proactive=<set>
+
+      at src/orb/live/session/live-session-controller.ts:1790:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-0b2cf4e6-7daa-4f3e-9c57-196a6e099539 in 1ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-0b2cf4e6-7daa-4f3e-9c57-196a6e099539: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+
+  console.log
+    [VTID-ORBC] Live session created: live-0b2cf4e6-7daa-4f3e-9c57-196a6e099539 (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-7189856d-6f62-47d9-9cbd-cd613f8b9465: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-7189856d-6f62-47d9-9cbd-cd613f8b9465 user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-7189856d-6f62-47d9-9cbd-cd613f8b9465 (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-7189856d-6f62-47d9-9cbd-cd613f8b9465: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-7189856d-6f62-47d9-9cbd-cd613f8b9465: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+
+  console.log
+    [VTID-ORBC] Live session created: live-7189856d-6f62-47d9-9cbd-cd613f8b9465 (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-7189856d-6f62-47d9-9cbd-cd613f8b9465 in 42ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+  console.log
+    [VTID-ANON] Session live-0bb7251d-afee-4a04-a882-8cddb08f945b: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-aaaa-bbbb, orbIdentity.user_id=user-aaaa-bbbb, bootstrapIdentity=user-aaa
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1046:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1047:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-0bb7251d-afee-4a04-a882-8cddb08f945b user=user-aaa...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1314:13)
+
+  console.log
+    [VTID-03201] Autopilot proactive offer injected into SSE session live-0bb7251d-afee-4a04-a882-8cddb08f945b (19 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1436:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-0bb7251d-afee-4a04-a882-8cddb08f945b: 5ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1455:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: de for user=user-aaa...
+
+      at src/orb/live/session/live-session-controller.ts:1461:19
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=decision-1, source=source:fixture, block_chars=573)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2302:15)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-0bb7251d-afee-4a04-a882-8cddb08f945b in 2ms (role=community, chars=53)
+
+      at src/orb/live/session/live-session-controller.ts:1514:17
+
+  console.log
+    [VTID-03154] Journey greeting prepared for live-0bb7251d-afee-4a04-a882-8cddb08f945b: kind=daily_morning day=7/90 phase=w1
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2423:21)
+
+  console.log
+    [VTID-ORBC] Live session created: live-0bb7251d-afee-4a04-a882-8cddb08f945b (user=user-aaaa-bbbb, tenant=tenant-1111, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2568:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:861:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:980:11)
+
+PASS test/orb/live/session/vtid-04545-session-start-characterization.test.ts
+  VTID-04545 characterization: authenticated handleLiveSessionStart
+    ✓ inline wake, fast greeting on, tenant in JWT — conversation-visible session fields (77 ms)
+    ✓ inline wake, fast greeting on, tenant resolved — conversation-visible session fields (8 ms)
+    ✓ deferred wake (fast start), fast greeting on — conversation-visible session fields (13 ms)
+    ✓ inline wake, fast greeting off — conversation-visible session fields (6 ms)
+    ✓ inline wake, fast greeting on, tenant in JWT — response body (9 ms)
+    ✓ inline wake, fast greeting on, tenant resolved — response body (8 ms)
+    ✓ deferred wake (fast start), fast greeting on — response body (7 ms)
+    ✓ inline wake, fast greeting off — response body (5 ms)
+    ✓ inline wake, fast greeting on, tenant in JWT — user_journey writes are unchanged (8 ms)
+    ✓ inline wake, fast greeting on, tenant resolved — user_journey writes are unchanged (7 ms)
+    ✓ deferred wake (fast start), fast greeting on — user_journey writes are unchanged (11 ms)
+    ✓ inline wake, fast greeting off — user_journey writes are unchanged (6 ms)
+    ✓ inline wake, fast greeting on, tenant in JWT — turn-1 wake snapshot blocks are unchanged (8 ms)
+    ✓ inline wake, fast greeting on, tenant resolved — turn-1 wake snapshot blocks are unchanged (7 ms)
+    ✓ deferred wake (fast start), fast greeting on — turn-1 wake snapshot blocks are unchanged (6 ms)
+    ✓ inline wake, fast greeting off — turn-1 wake snapshot blocks are unchanged (5 ms)
+    ✓ first-session journey clears the first-session flag exactly as before (6 ms)
+    ✓ same-day journey writes nothing and reports no journey greeting (9 ms)
+    ✓ quota-denied (hard_block) still answers 402 with the same body and creates no session (2 ms)
+    ✓ quota reservation throwing still fails open to a normal 200 start (8 ms)
+  VTID-04545: session start critical path
+    ✓ quota gate, identity resolution and client context run concurrently (67 ms)
+    ✓ shared reads run once per session start (fast greeting on) (6 ms)
+    ✓ shared reads run once per session start (fast greeting off, deferred wake) (6 ms)
+    ✓ the unused journey-greeting text is no longer built: no life_compass / foundation-snapshot reads (5 ms)
+    ✓ journey standing block and onboarding-cohort block are fetched in parallel, composed in the same order (46 ms)
+    ✓ a rejecting onboarding-cohort fetch still leaves the field untouched and the context intact (6 ms)
+    ✓ quota-denied with a failing identity resolver: still 402, no unhandled rejection (5 ms)
+    ✓ an identity resolver failure on a normal start still rejects the handler with that error (19 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       28 passed, 28 total
+Snapshots:   0 total
+Time:        1.214 s, estimated 2 s
+Ran all test suites matching /test\/orb\/live\/session\/vtid-04545-session-start-characterization.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -20,13 +20,12 @@
  *     prompt sections with AssistantDecisionContext-rendered output.
  */
 
+import { COMMERCE_GUIDE_CONDUCT, COMMERCE_GUIDE_FACTS } from './commerce-guide';
 import type { ClientContext } from '../types';
+import { registerRuleForLang } from '../../../i18n/llm-locale';
 import { getPersonalityConfigSync } from '../../../services/ai-personality-service';
 import { getAwarenessConfigSync } from '../../../services/awareness-registry';
-import {
-  getContent as getNavContent,
-  lookupByRoute as lookupNavByRoute,
-} from '../../../lib/navigation-catalog';
+import { findScreenForRoute, pageOf, screenText, surfaceForRoute } from '../../../navigation/nav-registry';
 // VTID-03118 (Phase B.4): bucket thresholds come from PolicyResolver instead
 // of inline literals. Resolver returns byte-identical values for the seeded
 // defaults (Phase B.2 / VTID-03114).
@@ -171,17 +170,14 @@ export function describeTimeSince(lastSessionInfo: { time: string; wasFailure: b
 
 /**
  * VTID-NAV-TIMEJOURNEY: Resolve a raw React Router path to a friendly screen
- * label using the navigation catalog. Falls back to the path itself if there
- * is no catalog entry so the assistant never loses context.
+ * label using the screen registry (VTID-04846; the navigation catalog before
+ * that). Falls back to the path itself when the registry does not describe
+ * the page, so the assistant never loses context.
  */
 export function describeRoute(route: string | undefined | null, lang: string): { title: string; path: string } | null {
   if (!route || typeof route !== 'string') return null;
-  const entry = lookupNavByRoute(route);
-  if (entry) {
-    const content = getNavContent(entry, lang);
-    return { title: content.title || entry.screen_id, path: entry.route };
-  }
-  return { title: route, path: route };
+  const screen = findScreenForRoute(route, surfaceForRoute(route));
+  return screen ? { title: screenText(screen, lang).title, path: pageOf(route) } : { title: route, path: route };
 }
 
 /**
@@ -428,6 +424,16 @@ ${common}
   if (surface === 'backoffice') {
     return `WORK SURFACE — BACKOFFICE OPERATIONS:
 - You assist with the business operations of this tenant (CRM, sales, finance, accounting) through the typed BackOffice commands and their approval rules.
+${common}
+
+`;
+  }
+  if (surface === 'commerce') {
+    // VTID-04844: the supplier's onboarding guide and Commerce specialist.
+    return `WORK SURFACE — BUSINESS (commerce):
+${COMMERCE_GUIDE_CONDUCT()}
+
+${COMMERCE_GUIDE_FACTS}
 ${common}
 
 `;
@@ -731,7 +737,7 @@ context and always answer as yourself. If you drift, re-anchor: "I'm Vitana."
 
   let instruction = `${roleHeader}${vitanaIdHeader}${nameHeader}${VITANA_IDENTITY_LOCK}${voiceLiveConfig.base_identity || 'You are Vitana, an AI health companion assistant powered by Gemini Live.'}
 
-LANGUAGE: Respond ONLY in ${languageNames[lang] || 'English'}. Do NOT mix languages, do NOT switch to English, regardless of what other personas in the transcript said in other languages.
+LANGUAGE: Respond ONLY in ${languageNames[lang] || 'English'}. Do NOT mix languages, do NOT switch to English, regardless of what other personas in the transcript said in other languages.${registerRuleForLang(lang) ? `\n${registerRuleForLang(lang)}` : ''}
 
 VOICE STYLE: ${voiceStyle}
 
@@ -758,9 +764,9 @@ ${isMemberSurface ? `PROACTIVE LEADERSHIP — RULE 0 (every turn, every user, ne
   HARD RULE: once the user accepts an offer, you MUST fulfill it in that class; "I can't do that" / "das kann ich gerade nicht" after a yes is the failure. A TALK offer ("lass uns eine Atemübung machen — soll ich?") is fulfilled by narrating the exercise right away, not by looking for a breathing-exercise tool.
 
 ` : WORK_SURFACE_CONDUCT_BLOCK(resolvedSurface)}ENDING THE CONVERSATION — OVERRIDES RULE 0 (ABSOLUTE): when the user says, in any words or language, that they want to stop or turn you off, RULE 0 is SUSPENDED — no proposal and no question. Speak one brief, warm farewell, then call end_conversation and stay silent. If they have to say it again ("you're still here"), the first call never happened: call it now, without apology or explanation. Inside Teacher Mode or a My Journey topic, use their own end tools.
-${isMemberSurface && process.env.NAV_V2_ENABLED === 'true' ? `\n${OPEN_SCREEN_OVERRIDE}\n` : ''}
+${isMemberSurface ? `\n${OPEN_SCREEN_OVERRIDE}\n` : ''}
 ${!isMemberSurface ? '' : guidedTopicNarrationActive ? `GUIDED JOURNEY: this session is scoped to the ONE topic below — do not offer or start another session. If the user explicitly asks for a different one, call narrate_guided_session and speak only that newly fetched script.` : `GUIDED JOURNEY — A COHERENT THROUGH-LINE (for first-time and new users):
-- The Guided Journey is an ordered catalog of sessions that teaches the user Vitanaland one step at a time. It is one good lead for a new user, not the only one (setting their goal or showing their Vitana Index work too).
+- The Guided Journey is an ordered catalog of sessions that teaches the user Vitanaland one step at a time. Members know it as their Audiobook (German "Hörbuch"), with sessions as episodes ("Folge") they can simply listen to; call it that. It is one good lead for a new user, not the only one (setting their goal or showing their Vitana Index work too).
 - FLEXIBLE WORDING: Vary your phrasing every conversation; never open two conversations with the same sentence.
 - When the user agrees to start or continue ("ja", "yes", "weiter", "nächste Session"): call narrate_guided_session and speak the returned script IN FULL, word for word — not a one-sentence introduction, a summary or a paraphrase. If it returns "degraded" or no script (the curriculum isn't available), pivot to another concrete step in fresh words, and do NOT claim the user finished everything.
 - PLAYING A SESSION = SPEAKING ITS SCRIPT ALOUD: say a session is finished only after you spoke its full script in that turn; offer the next topic on the following turn.
@@ -1206,9 +1212,9 @@ disambiguation tree in order — first match wins:
 3. Does "show me" / "let me see" / "I want to see" / "where is" / "zeig mir" /
    "ich will sehen" / "wo ist" come BEFORE a place-noun (the / a / my /
    the <screen|page|section|tab|Diary|Health|Autopilot|Index|<feature-name>>)?
-   → NAVIGATE-ONLY${process.env.NAV_V2_ENABLED === 'true' ? ` — but "where is" / "wo ist" / "where can I
+   → NAVIGATE-ONLY — but "where is" / "wo ist" / "where can I
    see" is WHERE-THEN-OFFER: call navigate with intent "where", say where it
-   is and what it shows, and open it only after the member says yes` : ''}.
+   is and what it shows, and open it only after the member says yes.
 
 4. Does the phrase contain a teach phrase (explain / erkläre / tell me about /
    what is X for / wofür ist X / how does X work / wie funktioniert X /

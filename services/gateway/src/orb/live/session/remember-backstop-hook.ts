@@ -40,6 +40,13 @@ export interface RememberBackstopSession {
   /** VTID-04690: a remember_fact call this turn answered STATUS: already_known. */
   rememberFactAlreadyKnownThisTurn?: boolean;
   openRememberConflicts?: OpenConflict[];
+  /** VTID-04798: a work-surface session never reads or writes personal facts. */
+  assistantProfile?: { isWorkSurface?: boolean } | null;
+}
+
+/** VTID-04798: the backstops serve the member's own memory, member surfaces only. */
+function onWorkSurface(session: RememberBackstopSession): boolean {
+  return session.assistantProfile?.isWorkSurface === true;
 }
 
 type EmitDiag = (session: any, stage: string, extra?: Record<string, unknown>) => void;
@@ -84,7 +91,7 @@ export function maybeRunRememberBackstop(
     session.openRememberConflicts = [];
     return null;
   }
-  if (!isRememberBackstopEnabled() || session.upstreamProvider !== 'nova_sonic') return null;
+  if (!isRememberBackstopEnabled() || session.upstreamProvider !== 'nova_sonic' || onWorkSurface(session)) return null;
   const userId = session.identity?.user_id;
   const tenantId = session.identity?.tenant_id;
   if (!userId || !tenantId || !session.upstreamClient) return null;
@@ -135,6 +142,8 @@ export function maybeRunRememberBackstop(
       // VTID-04702: the held reply is replaced only when Nova was told the result.
       (session as any).rememberNoteSentAt = Date.now();
       (session as any).backstopNoteSentAt = Date.now();
+      // VTID-04862: the note asks the member which value is right.
+      if (results.some((r) => r.status === 'conflict')) (session as any).rememberConflictAskedAt = Date.now();
     }
     return results;
   })().catch((err: any) => {
@@ -169,15 +178,16 @@ export function maybeRunForgetBackstop(
   const toolCalled = session.forgetFactCalledThisTurn === true;
   session.forgetFactCalledThisTurn = false;
   if (toolCalled) return null;
-  if (!isRememberBackstopEnabled() || session.upstreamProvider !== 'nova_sonic') return null;
+  if (!isRememberBackstopEnabled() || session.upstreamProvider !== 'nova_sonic' || onWorkSurface(session)) return null;
   const userId = session.identity?.user_id;
   const tenantId = session.identity?.tenant_id;
   if (!userId || !tenantId || !session.upstreamClient) return null;
   if (!userText || userText.startsWith(REMEMBER_BACKSTOP_MARKER)) return null;
 
   const run = (async () => {
-    const { detectForgetIntent } = await import('../../../services/memory/memory-intent');
-    if (!detectForgetIntent(userText)) return null;
+    const { detectForgetIntent, detectLooseForgetIntent } = await import('../../../services/memory/memory-intent');
+    const strict = detectForgetIntent(userText);
+    if (!strict && !detectLooseForgetIntent(userText)) return null;
     const { runForgetFact, formatForgetFactResult } = await import('../../../services/memory/forget-fact');
     let deps = depsOverride;
     if (!deps) {
@@ -188,6 +198,9 @@ export function maybeRunForgetBackstop(
       deps = await buildForgetFactDeps(sb);
     }
     const result = await runForgetFact({ tenant_id: tenantId, user_id: userId, request: userText }, deps);
+    // VTID-04748: a loose "lösch…" that names no stored fact is someone else's
+    // business (a calendar entry, a message) — say nothing.
+    if (!strict && result.status === 'not_found') return null;
     ctx.deps.emitDiag(session, 'forget_backstop', {
       status: result.status,
       keys: result.forgotten.map((f) => f.fact_key),
@@ -242,13 +255,16 @@ export function maybeRunRecallBackstop(
   const toolCalled = session.memoryWriteToolCalledThisTurn === true;
   session.memoryWriteToolCalledThisTurn = false;
   if (toolCalled) return null;
-  if (!isRecallBackstopEnabled() || session.upstreamProvider !== 'nova_sonic') return null;
+  if (!isRecallBackstopEnabled() || session.upstreamProvider !== 'nova_sonic' || onWorkSurface(session)) return null;
   const userId = session.identity?.user_id;
   const tenantId = session.identity?.tenant_id;
   if (!userId || !tenantId || !session.upstreamClient) return null;
   if (!userText || userText.startsWith(REMEMBER_BACKSTOP_MARKER)) return null;
   // A remember request belongs to the remember backstop, never both.
   if (detectRememberIntent(userText)) return null;
+  // VTID-04753: the recall hold kept the reply back — the member heard none of
+  // it. Read now: the next turn_complete resets it.
+  const held = (session as any).recallReplyHeld === true;
 
   const run = (async () => {
     const {
@@ -306,18 +322,19 @@ export function maybeRunRecallBackstop(
     // With nothing usable stored, "not stored" was the honest answer — only a
     // privacy refusal or a guessed date needs correcting (VTID-04704).
     const note =
-      buildRecallBackstopNote(facts, userText, trigger) ??
+      buildRecallBackstopNote(facts, userText, trigger, held) ??
       (trigger === 'unstored_date'
-        ? buildNothingStoredNote('unstored_date')
+        ? buildNothingStoredNote('unstored_date', held)
         : trigger === 'denied' && privacy
-          ? buildNothingStoredNote('privacy_refusal')
+          ? buildNothingStoredNote('privacy_refusal', held)
           : trigger === 'denied' && deflected
-            ? buildNothingStoredNote('deflected')
+            ? buildNothingStoredNote('deflected', held)
             : null);
     ctx.deps.emitDiag(session, 'recall_backstop', {
       trigger: trigger === 'denied' && privacy ? 'privacy_refusal' : trigger === 'denied' && deflected ? 'deflected' : trigger,
       facts_offered: note ? facts.length : 0,
       injected: Boolean(note && session.active),
+      reply_held: held,
     });
     console.log(`[VTID-04692] recall backstop ${session.sessionId}: ${note ? `${facts.length} facts offered` : 'nothing stored'}`);
     if (note && session.active && session.upstreamClient) {

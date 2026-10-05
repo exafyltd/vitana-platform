@@ -197,7 +197,8 @@ ALLOW-SCOPE (autopilot can edit these):
 
 DENY-SCOPE (autopilot is FORBIDDEN here — propose alternatives in the allow-scope):
   supabase/migrations/**     ← schema work is human-only
-  **/auth*                   ← auth code requires manual review
+  **/*auth*                  ← any file whose name contains "auth" requires manual review
+                               (a NEW test file may carry it, e.g. foo-auth.test.ts)
   **/orb-live.ts             ← live voice runtime is too sensitive for autopilot
   .github/workflows/**       ← CI config human-only
   **/.env*                   ← secrets

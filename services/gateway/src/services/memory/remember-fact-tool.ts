@@ -21,6 +21,7 @@
 
 import { isIdentityLockedKey, getRedirectTarget, type IdentityLockedKey } from '../memory-identity-lock';
 import { rememberFact } from './remember';
+import { relationKey, sameRelative } from './people';
 
 export type RememberFactStatus = 'profile_owned' | 'already_known' | 'conflict' | 'saved' | 'failed';
 
@@ -220,6 +221,43 @@ export function normalizeDate(value: string): string | null {
   return year ? `${year}-${mm}-${dd}` : `--${mm}-${dd}`;
 }
 
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/**
+ * VTID-04863: a stored date as words the model cannot misread. Live B-CONF-06:
+ * the conflict note said the stored value was "1997-11-04" while the member
+ * had just said 1999, and Nova spoke the stored year as "neunzehnhundert-
+ * neunundneunzig" twice — the ISO digits lost against the member's words.
+ * "1997-11-04" → "4 November 1997"; anything but an all-digit date is unchanged.
+ */
+export function readableValue(value: string): string {
+  const raw = String(value ?? '').trim();
+  // Only all-digit dates are misread; "May 5" or "4. November" stay as written.
+  if (!/^(\d{4}-\d{1,2}-\d{1,2}|--\d{1,2}-\d{1,2}|\d{1,2}[./]\d{1,2}[./]\d{4})$/.test(raw)) return raw;
+  const d = normalizeDate(raw);
+  // normalizeDate gives "YYYY-MM-DD" or "--MM-DD" (day and month only).
+  const m = d?.match(/^(\d{4})?-{1,2}(\d{2})-(\d{2})$/);
+  const name = m ? MONTH_NAMES[Number(m[2]) - 1] : undefined;
+  if (!m || !name || Number(m[3]) < 1 || Number(m[3]) > 31) return raw;
+  return `${Number(m[3])} ${name}${m[1] ? ` ${m[1]}` : ''}`;
+}
+
+/** VTID-04863: which part of two dates differs, so the model names the right one. */
+export function describeDifference(stored: string, said: string): string {
+  const a = normalizeDate(String(stored ?? ''));
+  const b = normalizeDate(String(said ?? ''));
+  if (!a || !b || a.startsWith('--') || b.startsWith('--')) return '';
+  const [ay, am, ad] = a.split('-');
+  const [by, bm, bd] = b.split('-');
+  if (am === bm && ad === bd && ay !== by) {
+    return `They differ only in the year: the stored year is ${ay}, the member said ${by}. `;
+  }
+  if (ay === by && (am !== bm || ad !== bd)) {
+    return `They have the same year (${ay}) and differ in the day or month. `;
+  }
+  return '';
+}
+
 export function valuesMatch(a: string, b: string): boolean {
   const da = normalizeDate(a);
   const db = normalizeDate(b);
@@ -249,6 +287,10 @@ const KEY_SYNONYMS: Record<string, string> = {
   mutter: 'mother', mama: 'mother', mom: 'mother', vater: 'father', papa: 'father', dad: 'father',
   sohn: 'son', tochter: 'daughter', kind: 'child', kids: 'child', children: 'child',
   hund: 'dog', katze: 'cat', haustier: 'pet',
+  // VTID-04748: inflected forms the member used live ("den Namen meines
+  // Hundes"), and the company words of VTID-04749.
+  hunde: 'dog', hundes: 'dog', katzen: 'cat', haustiers: 'pet', namen: 'name', vorname: 'first_name',
+  firma: 'company', firmenname: 'company_name', unternehmen: 'company', employer: 'company',
   lieblingsessen: 'favorite_food', lieblingsfarbe: 'favorite_color', lieblings: 'favorite', favourite: 'favorite',
   // VTID-04639: German key words the voice model used live for facts the
   // extractor stored under English keys.
@@ -262,7 +304,7 @@ const KEY_SYNONYMS: Record<string, string> = {
 // the English key (rewriting "work_address" to "job_address" would change it).
 const ENGLISH_SYNONYM_SOURCES = new Set([
   'bday', 'birth', 'dob', 'sibling', 'wife', 'husband', 'partner', 'fiancee', 'mom', 'dad',
-  'kids', 'children', 'favourite', 'allergies', 'allergic', 'work', 'occupation',
+  'kids', 'children', 'favourite', 'allergies', 'allergic', 'work', 'occupation', 'employer',
 ]);
 
 /**
@@ -306,6 +348,16 @@ export function findRelatedFact(factKey: string, facts: StoredKeyedFact[]): Stor
   if (want.size === 0) return null;
   let best: { fact: StoredKeyedFact; shared: number } | null = null;
   for (const f of facts) {
+    // VTID-04766: keys about relatives match only when they name the same
+    // relative — "spouse_father_name" shares two words with "father_name"
+    // but is never the member's own father.
+    const relative = sameRelative(factKey, f.fact_key, facts);
+    if (relative === false) continue;
+    if (relative === true) {
+      const newer = best && best.shared === Infinity && String(f.extracted_at ?? '') > String(best.fact.extracted_at ?? '');
+      if (!best || best.shared !== Infinity || newer) best = { fact: f, shared: Infinity };
+      continue;
+    }
     const have = keyTokens(f.fact_key);
     let shared = 0;
     for (const t of have) if (want.has(t)) shared++;
@@ -350,7 +402,7 @@ export async function runRememberFact(
   // VTID-04694: the English form of the key. The profile lock is checked on
   // both forms — "geburtstag" is the member's birthday exactly as "birthday"
   // is, and must never be written as an ordinary fact (Codex review, #3791).
-  const canonicalKey = canonicalFactKey(factKey);
+  let canonicalKey = canonicalFactKey(factKey);
   const profileKey =
     resolveProfileKey(factKey, input.about) ??
     (canonicalKey !== factKey ? resolveProfileKey(canonicalKey, input.about) : null);
@@ -376,6 +428,20 @@ export async function runRememberFact(
 
   const pendingConflicts = deps.pendingConflicts ?? defaultPendingConflicts;
   const now = (deps.now ?? Date.now)();
+  let listed: StoredKeyedFact[] | null = null;
+  const listFacts = async (): Promise<StoredKeyedFact[]> => {
+    if (listed === null) {
+      listed = deps.listCurrentFacts
+        ? await deps.listCurrentFacts(input.tenant_id, input.user_id).catch(() => [] as StoredKeyedFact[])
+        : [];
+    }
+    return listed;
+  };
+  // VTID-04766: a relative is stored under one key per relation
+  // ("maria_maksina_father" and "schwiegervater_name" are both
+  // "spouse_father_name" once Maria Maksina is known as the spouse).
+  const relation = relationKey(canonicalKey, await listFacts());
+  if (relation) canonicalKey = relation;
   let stored = await deps.readCurrentFact(input.tenant_id, input.user_id, factKey).catch(() => null);
   // An exact read of the English key before the fact counts as new: the
   // related-fact listing is capped and may miss an older `favorite_food`,
@@ -388,7 +454,7 @@ export async function runRememberFact(
     }
   }
   if (!stored && deps.listCurrentFacts) {
-    const facts = await deps.listCurrentFacts(input.tenant_id, input.user_id).catch(() => [] as StoredKeyedFact[]);
+    const facts = await listFacts();
     const related = findRelatedFact(factKey, facts);
     if (related) {
       // Keep one fact per thing: compare against, and replace, the stored key.
@@ -406,7 +472,7 @@ export async function runRememberFact(
       status: 'already_known',
       stored_value: stored.fact_value,
       stored_at: stored.extracted_at,
-      instruction: `Nothing new to save: you already have ${factKey} = "${stored.fact_value}". Tell the member you already knew that.`,
+      instruction: `Nothing new to save: you already have ${factKey} = "${readableValue(stored.fact_value)}". Tell the member you already knew that.`,
     };
   }
   const replaceConfirmed =
@@ -419,8 +485,9 @@ export async function runRememberFact(
       stored_value: stored.fact_value,
       stored_at: stored.extracted_at,
       instruction:
-        `Nothing was saved. You already have a DIFFERENT value for ${factKey}: "${stored.fact_value}". ` +
-        `The member just said "${newValue}". Tell them you have the other value stored, name both, and ask which one is correct. ` +
+        `Nothing was saved. You already have a DIFFERENT value for ${factKey}: "${readableValue(stored.fact_value)}". ` +
+        `The member just said "${readableValue(newValue)}". ${describeDifference(stored.fact_value, newValue)}` +
+        `Tell them you have the other value stored, name both exactly as written here, and ask which one is correct. ` +
         `When they answer, call remember_fact again with the correct value and confirm_replace=true. Do not say it is saved before that call returns status=saved.`,
     };
   }

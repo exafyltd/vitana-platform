@@ -1,0 +1,4 @@
+{"vtid":"VTID-04858","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"existing","ref":"npx jest test/vtid-04858-agent-deploys-drop-dead-db-secret.test.ts","cwd":"services/gateway","reason":"Production-workflow-only change for orb-agent and verification-engine (manual-dispatch-only, no staging twin). The register filter, its no-secrets edge case and the absence of any DB_PASSWORD reader are proven by this suite; each workflow's own services-stable wait and health probe prove it live."}
+]}

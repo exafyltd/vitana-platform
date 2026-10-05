@@ -40,7 +40,12 @@ import {
 } from '../services/recommendation-commissions/referral-validation';
 import * as repo from './click-redirect-repository';
 
-type ClickReferralOutcome = { recommendationId: string | null; rejected: ReferralRejection | 'unverified' | null };
+type ClickReferralOutcome = {
+  recommendationId: string | null;
+  /** VTID-04740: the recommender, stored on the click so a later referral change cannot re-attribute it. */
+  referrerUserId: string | null;
+  rejected: ReferralRejection | 'unverified' | null;
+};
 
 /**
  * Resolves the click's `?rec_id=` against the database (VTID-04735).
@@ -56,23 +61,26 @@ export async function resolveClickReferral(
   productId: string,
   clickerUserId: string | null,
 ): Promise<ClickReferralOutcome> {
-  if (!rawRecId) return { recommendationId: null, rejected: null };
-  if (!isReferralId(rawRecId)) return { recommendationId: null, rejected: 'malformed_id' };
+  if (!rawRecId) return { recommendationId: null, referrerUserId: null, rejected: null };
+  if (!isReferralId(rawRecId)) return { recommendationId: null, referrerUserId: null, rejected: 'malformed_id' };
   try {
     const [{ data, error }, excluded] = await Promise.all([
       repo.fetchRecommendationForReferral(supabase, rawRecId),
       fetchExcludedTestServiceAccountIds(supabase),
     ]);
-    if (error) return { recommendationId: rawRecId, rejected: 'unverified' };
+    if (error) return { recommendationId: rawRecId, referrerUserId: null, rejected: 'unverified' };
+    const rec = (data as { id: string; user_id: string; product_id: string; status: string } | null) ?? null;
     const verdict = validateReferral({
-      recommendation: (data as { id: string; user_id: string; product_id: string; status: string } | null) ?? null,
+      recommendation: rec,
       productId,
       buyerUserId: clickerUserId,
       excludedUserIds: excluded,
     });
-    return verdict.ok ? { recommendationId: rawRecId, rejected: null } : { recommendationId: null, rejected: verdict.reason };
+    return verdict.ok
+      ? { recommendationId: rawRecId, referrerUserId: rec?.user_id ?? null, rejected: null }
+      : { recommendationId: null, referrerUserId: null, rejected: verdict.reason };
   } catch {
-    return { recommendationId: rawRecId, rejected: 'unverified' };
+    return { recommendationId: rawRecId, referrerUserId: null, rejected: 'unverified' };
   }
 }
 
@@ -354,6 +362,8 @@ router.get('/:product_id', async (req: Request, res: Response) => {
       merchant_id: product.merchant_id,
       attribution_surface,
       attribution_recommendation_id,
+      referrer_user_id: referral.referrerUserId,
+      attribution_rejected_reason: referral.rejected,
       user_country: userCountry,
       user_region: userRegion,
       product_origin_country: product.origin_country,

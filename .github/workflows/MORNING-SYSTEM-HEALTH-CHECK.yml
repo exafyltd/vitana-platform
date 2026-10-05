@@ -37,7 +37,7 @@ name: Morning System Health Check
 # 4. The 8-language DB-content release (VTID-03515/03580) went live
 #    18 Aug 2026 — the same day this rebuild happened. `supported_locales`
 #    can say a language is `status='ga'` while its rows in
-#    `journey_checklist_translations` / `nav_catalog_i18n` are partial or
+#    `journey_checklist_translations` are partial or
 #    zero, which renders as German content inside an otherwise fully
 #    translated UI with no error anywhere (this exact failure already
 #    happened once, silently, to es/sr/fr — VTID-03519's own finding).
@@ -259,22 +259,22 @@ jobs:
 
           # 11 — DB-content locale coverage (VTID-03515/03580 8-language
           # release, live 18 Aug 2026). A locale can be `status='ga'` in the
-          # picker while its journey_checklist_translations / nav_catalog_i18n
+          # picker while its journey_checklist_translations
           # rows are partial or zero — that renders German inside an
           # otherwise translated UI with no error anywhere (already happened
-          # once to es/sr/fr — VTID-03519).
+          # once to es/sr/fr — VTID-03519). VTID-04880: the Navigator catalog
+          # (nav_catalog_i18n) is no longer checked — the voice navigator reads
+          # the screen registry, whose titles the vitana-v1 build checks.
           if [ "$VITAL_HTTP" != "200" ]; then
             echo "| 11 | DB-content locale coverage (GA languages) | FAIL | RPC HTTP $VITAL_HTTP |" >> "$REPORT"
           else
             GA_N=$(jq -r '.locales_ga' vital.json 2>/dev/null)
             JCT_BAD=$(jq -c '.journey_checklist_incomplete_ga_locales' vital.json 2>/dev/null)
-            NAV_BAD=$(jq -c '.nav_catalog_incomplete_ga_locales' vital.json 2>/dev/null)
             JCT_BAD_N=$(echo "$JCT_BAD" | jq 'length' 2>/dev/null)
-            NAV_BAD_N=$(echo "$NAV_BAD" | jq 'length' 2>/dev/null)
-            if [ "$JCT_BAD_N" = "0" ] && [ "$NAV_BAD_N" = "0" ]; then
-              echo "| 11 | DB-content locale coverage (GA languages) | PASS | $GA_N GA locale(s), My Journey + Navigator at full parity |" >> "$REPORT"
+            if [ "$JCT_BAD_N" = "0" ]; then
+              echo "| 11 | DB-content locale coverage (GA languages) | PASS | $GA_N GA locale(s), My Journey at full parity |" >> "$REPORT"
             else
-              echo "| 11 | DB-content locale coverage (GA languages) | FAIL | My Journey short: $JCT_BAD; Navigator short: $NAV_BAD |" >> "$REPORT"
+              echo "| 11 | DB-content locale coverage (GA languages) | FAIL | My Journey short: $JCT_BAD |" >> "$REPORT"
             fi
           fi
 
@@ -545,12 +545,17 @@ jobs:
           )
           BAD=""
           for WF in "${WATCHLIST[@]}"; do
-            CONCLUSION=$(curl -sS --max-time 10 \
+            # VTID-04787: the filtered endpoint (?branch=main&status=completed)
+            # returns stale runs — on 2026-10-01 it answered with a 05-22 failure
+            # for DAILY-STATUS-UPDATE and a 09-22 run for MARKETPLACE-SYNC-CRON
+            # while both had succeeded that morning. List unfiltered, filter here.
+            LATEST=$(curl -sS --max-time 10 \
               -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
-              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/$WF/runs?branch=main&status=completed&per_page=1" \
-              | jq -r '.workflow_runs[0].conclusion // "unknown"')
+              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/$WF/runs?per_page=30" \
+              | jq -r '[.workflow_runs[] | select(.head_branch=="main" and .status=="completed")][0] | "\(.conclusion // "unknown") \(.created_at // "")"')
+            CONCLUSION="${LATEST%% *}"
             if [ "$CONCLUSION" = "failure" ]; then
-              BAD="$BAD $WF"
+              BAD="$BAD $WF(${LATEST#* })"
             fi
           done
           # Self: judged from THIS run's own checks 1-21, not a past run.

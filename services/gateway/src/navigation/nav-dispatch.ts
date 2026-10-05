@@ -1,7 +1,7 @@
 /**
- * VTID-04517 — the navigation dispatcher behind NAV_V2_ENABLED.
+ * VTID-04517 — the navigation dispatcher.
  *
- * With the flag on, the two existing voice tools keep their names (every
+ * The two existing voice tools keep their names (every
  * prompt and tool description refers to them) but run here:
  *
  *   navigate(question, intent)   → the registry resolver (nav-resolver.ts).
@@ -19,26 +19,36 @@
  * (`orb_directive` / `navigate`, overlays as `?open=<marker>`), so the
  * WS/SSE post-processing in routes/orb-live.ts is unchanged.
  *
- * Out of scope here, falling back to the legacy tools: role surfaces the
- * registry does not cover yet (/admin, /backoffice, …), screens that need an
- * entity id (a member profile, one meetup), and a resolver that cannot run
- * (Bedrock unavailable).
+ * VTID-04846: nothing falls back to the legacy navigator any more. Screens
+ * about one item open with the id a prior tool result handed the model; the
+ * admin area refuses voice navigation (it has no registry screens); and when
+ * the resolver cannot run (Titan unavailable) an exact screen name still
+ * works and anything else is answered honestly instead of guessed.
  */
 import type { OrbToolResult } from '../services/orb-tools-shared';
-import { getNavRegistry, isVoiceTarget, NavScreen, pageOf } from './nav-registry';
-import { candidateFor, isReachable, NavCandidate, NavResolveContext, routeFor } from './nav-resolver';
+import { findScreenForRoute, getNavRegistry, isVoiceTarget, NavScreen, NavSurface, pageOf, screenSurface, screenText, surfaceForRoute } from './nav-registry';
+
+export { findScreenForRoute, screenText };
+import { candidateFor, isOpenableFor, isReachable, NavCandidate, NavResolveContext, routeFor } from './nav-resolver';
 import { resolveScreenRequest } from './nav-service';
 
-export function isNavV2Enabled(): boolean {
-  return process.env.NAV_V2_ENABLED === 'true';
+/**
+ * VTID-04846 — the admin area has no screens Vitana can open by voice (the
+ * registry describes the member app and the Command Hub). The legacy
+ * navigator refused every screen there too; this says so up front. Every
+ * other role area (BackOffice, professional, staff, …) is served by the
+ * member app's screens, as it always was.
+ */
+export function isNavigationOffSurface(currentRoute: string | null | undefined): boolean {
+  if (!currentRoute) return false;
+  return currentRoute === '/admin' || currentRoute.startsWith('/admin/');
 }
 
-/** Route prefixes whose screens the registry does not describe yet. */
-const LEGACY_SURFACE_PREFIXES = ['/admin', '/backoffice', '/staff', '/professional', '/patient', '/commerce', '/partner', '/dev', '/exafy-admin'];
-
-export function isLegacySurface(currentRoute: string | null | undefined): boolean {
-  if (!currentRoute) return false;
-  return LEGACY_SURFACE_PREFIXES.some((p) => currentRoute === p || currentRoute.startsWith(`${p}/`) || currentRoute.startsWith(`${p}-`));
+export function navigationOffResult(): OrbToolResult {
+  return {
+    ok: false,
+    error: 'Screens cannot be opened by voice in the admin area. Tell the admin where to find what they asked for in the admin menu instead.',
+  };
 }
 
 export interface NavCallContext {
@@ -62,6 +72,16 @@ export interface NavCallContext {
    * exactly the words that pick a popup over a page or one tab over another.
    */
   memberWords?: string;
+  /**
+   * VTID-04814: the surface the session is on, when the caller knows it
+   * (the widget declares it). Falls back to the current route.
+   */
+  surface?: NavSurface;
+}
+
+/** The surface a call is on: declared first, then the route. */
+export function callSurface(c: Pick<NavCallContext, 'surface' | 'currentRoute'>): NavSurface {
+  return c.surface ?? surfaceForRoute(c.currentRoute);
 }
 
 /** The member's words, when they add something to the model's question. */
@@ -80,6 +100,7 @@ function resolveContext(c: NavCallContext): NavResolveContext {
     // gets mobile routes and mobile-only screens.
     viewport: c.isMobile ? 'mobile' : undefined,
     excluded: c.excluded,
+    surface: callSurface(c),
   };
 }
 
@@ -88,11 +109,16 @@ async function emit(type: 'orb.navigator.resolved' | 'orb.navigator.requested' |
   emitOasisEvent({ vtid: 'VTID-04517', type, source: 'nav-dispatch', status, message, payload: { resolver: 'registry-v2', ...payload } }).catch(() => {});
 }
 
-/** Look a screen up by id, retired id or alias (case-insensitive). */
-export function findRegistryScreen(idOrAlias: string): NavScreen | null {
+/**
+ * Look a screen up by id, retired id or alias (case-insensitive). With a
+ * surface, aliases and invented ids only match that surface's screens, so
+ * "DEVHUB.OASIS.EVENTS" never lands on the community Events page.
+ */
+export function findRegistryScreen(idOrAlias: string, surface?: NavSurface): NavScreen | null {
   const key = idOrAlias.trim();
   if (!key) return null;
-  const screens = getNavRegistry().registry.screens;
+  const all = getNavRegistry().registry.screens;
+  const screens = surface ? all.filter((s) => screenSurface(s) === surface) : all;
   const upper = key.toUpperCase();
   const lower = key.toLowerCase();
   return (
@@ -134,18 +160,60 @@ export function findRegistryScreenByRoute(route: string | null | undefined): Nav
   return screens.find((s) => s.route === page) || screens.find((s) => pageOf(s.route) === page) || null;
 }
 
-/** Screens that need an entity id go through the legacy handler, which resolves entities. */
+/** Screens that need an entity id (a member profile, one group) to open. */
 export function needsEntity(s: NavScreen): boolean {
   return !!(s.params && s.params.length) || !!s.overlay?.param;
+}
+
+/**
+ * VTID-04846 — the navigate_to_screen argument names that carry each
+ * screen's route parameter. The tool schema predates the registry and names
+ * some parameters after the old catalog's routes (groupId, match_id,
+ * vitana_id); the registry param name itself always works too.
+ */
+const ENTITY_ARG_ALIASES: Record<string, Record<string, string[]>> = {
+  'COMM.GROUP_DETAIL': { id: ['groupId', 'group_id'] },
+  'INTENTS.MATCH_DETAIL': { id: ['match_id'] },
+  'PROFILE.PUBLIC': { identifier: ['vitana_id'] },
+  'PROFILE.WITH_MATCH': { identifier: ['vitana_id'] },
+};
+
+export type NavEntityArgs = Record<string, unknown>;
+
+function entityArg(screen: NavScreen, param: string, args: NavEntityArgs): string | null {
+  for (const name of [param, ...(ENTITY_ARG_ALIASES[screen.id]?.[param] || [])]) {
+    const v = args[name];
+    if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim().replace(/^@/, '');
+  }
+  return null;
+}
+
+/** Fill a route template from the call's arguments; lists what is missing. */
+export function fillEntityRoute(screen: NavScreen, template: string, args: NavEntityArgs): { route: string; missing: string[] } {
+  const missing: string[] = [];
+  const route = template.replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, (m, name: string) => {
+    const v = entityArg(screen, name, args);
+    if (v === null) {
+      missing.push(name);
+      return m;
+    }
+    return encodeURIComponent(v);
+  });
+  return { route, missing };
 }
 
 /**
  * Open one screen — every gate in one place. Returns the same result shape
  * as the legacy tool_navigate_to_screen so orb-live's dispatch is unchanged.
  */
-export async function openScreen(screenId: string, reason: string, c: NavCallContext, opts: { keepOrbOpen?: boolean } = {}): Promise<OrbToolResult> {
-  const screen = findRegistryScreen(screenId);
+export async function openScreen(
+  screenId: string,
+  reason: string,
+  c: NavCallContext,
+  opts: { keepOrbOpen?: boolean; entityArgs?: NavEntityArgs } = {},
+): Promise<OrbToolResult> {
   const ctx = resolveContext(c);
+  const screen = findRegistryScreen(screenId, ctx.surface) || findRegistryScreen(screenId);
   const block = async (kind: string, error: string): Promise<OrbToolResult> => {
     await emit('orb.navigator.blocked', 'warning', `open ${screenId}: ${kind}`, { session_id: c.sessionId, attempted_screen_id: screenId, error_kind: kind });
     return { ok: false, error };
@@ -156,10 +224,13 @@ export async function openScreen(screenId: string, reason: string, c: NavCallCon
   if (screen.disabled) {
     return block('disabled', `The ${screen.i18n.en.title} screen cannot be opened by voice right now. Tell the member where to find it instead.`);
   }
-  if (!isVoiceTarget(screen)) {
-    return block('needs_entity', `${screen.id} needs a specific item to open.`);
+  const entity = needsEntity(screen);
+  if (screenSurface(screen) !== ctx.surface) {
+    return block('wrong_surface', ctx.surface === 'command-hub'
+      ? `${screen.i18n.en.title} is in the member app, not the Command Hub. Call navigate with what the developer asked for to find the Command Hub screen.`
+      : `${screen.i18n.en.title} is a Command Hub screen and cannot be opened in the member app. Answer in voice instead.`);
   }
-  if (!isReachable(screen, ctx)) {
+  if (!(entity ? isOpenableFor(screen, ctx) : isReachable(screen, ctx))) {
     const kind = !ctx.authenticated && screen.access !== 'public' ? 'anonymous_blocked' : ctx.excluded?.has(screen.id) ? 'tenant_excluded' : 'viewport_blocked';
     const why = kind === 'anonymous_blocked'
       ? 'The visitor is not signed in; this screen is for members. Offer to help them sign up instead.'
@@ -169,11 +240,24 @@ export async function openScreen(screenId: string, reason: string, c: NavCallCon
     return block(kind, why);
   }
 
-  const baseRoute = routeFor(screen, ctx.viewport);
+  // VTID-04846: screens about one item get its id from the call's arguments
+  // (a prior tool result handed it to the model). Never guessed.
+  let baseRoute = routeFor(screen, ctx.viewport);
+  if (entity) {
+    const filled = fillEntityRoute(screen, baseRoute, opts.entityArgs || {});
+    const missingOverlay = screen.overlay?.param && entityArg(screen, screen.overlay.param, opts.entityArgs || {}) === null ? [screen.overlay.param] : [];
+    const missing = [...filled.missing, ...missingOverlay];
+    if (missing.length) {
+      return block('missing_param', `${screen.i18n.en.title} is about one specific item and needs ${missing.join(', ')} from a prior tool result. Get it first (never invent one), then call navigate_to_screen again.`);
+    }
+    baseRoute = filled.route;
+  }
   const isOverlay = !!screen.overlay;
   let route = baseRoute;
   if (isOverlay && screen.overlay?.marker) {
-    route = `${baseRoute}${baseRoute.includes('?') ? '&' : '?'}open=${encodeURIComponent(screen.overlay.marker)}`;
+    const q = new URLSearchParams({ open: screen.overlay.marker });
+    if (screen.overlay.param) q.set(screen.overlay.param, entityArg(screen, screen.overlay.param, opts.entityArgs || {}) as string);
+    route = `${baseRoute}${baseRoute.includes('?') ? '&' : '?'}${q.toString()}`;
   }
   const basePath = pageOf(baseRoute);
   const title = candidateFor(screen, 1, ctx).title;
@@ -219,7 +303,7 @@ export async function openScreen(screenId: string, reason: string, c: NavCallCon
 /** Record the offered screen so the continuation bind can open it on "yes". */
 async function holdOffer(c: NavCallContext, screenId: string | undefined): Promise<void> {
   if (!c.recordOffer || !screenId) return;
-  const screen = findRegistryScreen(screenId);
+  const screen = findRegistryScreen(screenId, callSurface(c));
   if (!screen || !isVoiceTarget(screen)) return;
   const ctx = resolveContext(c);
   try {
@@ -235,15 +319,38 @@ function describe(cands: NavCandidate[]): string {
 
 export type NavIntent = 'open' | 'where';
 
+function normName(text: string): string {
+  return text.toLowerCase().replace(/[-_]+/g, ' ').replace(/[^\p{L}\p{N} ]+/gu, ' ').replace(/\s+/g, ' ').trim();
+}
+
 /**
- * The free-text path. Returns null when the registry resolver cannot answer
- * (the caller falls back to the legacy navigator).
+ * VTID-04846 — when the embedding resolver cannot run, a request that is
+ * exactly one screen's name (title, alias or phrasing, in the member's
+ * language or English) still finds it. Anything looser is not guessed.
  */
+export function exactNameMatch(text: string, ctx: NavResolveContext): NavScreen | null {
+  const q = normName(text);
+  if (q.length < 3) return null;
+  const lang = (ctx.lang || 'en').split('-')[0].toLowerCase();
+  const hits = new Set<NavScreen>();
+  for (const s of getNavRegistry().registry.screens) {
+    if (!isReachable(s, ctx)) continue;
+    const names = [...(s.aliases || [])];
+    for (const l of new Set([lang, 'en'])) {
+      const t = s.i18n[l];
+      if (t) names.push(t.title, ...(t.phrasings || []));
+    }
+    if (names.some((n) => n && normName(n) === q)) hits.add(s);
+  }
+  return hits.size === 1 ? [...hits][0] : null;
+}
+
+/** The free-text path: the registry resolver, every time. */
 export async function navigateByRequest(
   question: string,
   intent: NavIntent,
   c: NavCallContext,
-): Promise<OrbToolResult | null> {
+): Promise<OrbToolResult> {
   const started = Date.now();
   // VTID-04607: the member's own words first; the model's question only
   // when those match nothing (a bare "yes, open it" carries no screen).
@@ -260,8 +367,20 @@ export async function navigateByRequest(
     query_source: querySource, ...(words ? { member_words: words } : {}),
   };
   if (r.kind === 'unavailable') {
-    await emit('orb.navigator.resolved', 'warning', `resolver unavailable: ${r.reason}`, { ...base, kind: 'unavailable', reason: r.reason });
-    return null;
+    const ctx = resolveContext(c);
+    const named = (words ? exactNameMatch(words, ctx) : null) || exactNameMatch(question, ctx);
+    await emit('orb.navigator.resolved', 'warning', `resolver unavailable: ${r.reason}`, {
+      ...base, kind: 'unavailable', reason: r.reason, exact_name_match: named?.id ?? null,
+    });
+    if (!named) {
+      return {
+        ok: true,
+        result: { decision: 'unavailable', candidates: [] },
+        text: 'SCREEN LOOKUP UNAVAILABLE: finding screens is not working at this moment. Do not navigate and do not guess a screen_id. Tell the member briefly, answer in voice, and suggest they ask again in a moment.',
+      };
+    }
+    const cand = candidateFor(named, 1, ctx);
+    r = { kind: 'match', screen: cand, candidates: [cand], top_score: 1, page_gap: 1 };
   }
   await emit('orb.navigator.resolved', 'info', `${r.kind}${r.kind === 'match' ? ` ${r.screen.screen_id}` : ''} (${intent})`, {
     ...base, kind: r.kind, top_score: r.top_score, page_gap: r.page_gap,

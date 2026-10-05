@@ -211,7 +211,13 @@ export function makeGuidedTopicNarrationProvider(): ContinuationProvider {
       // replay. `content.narrationAudio` stays null, which the bridge
       // already treats as "nothing to send" (a pre-existing, safe no-op
       // path — see that function's own null-audio branch).
-      if (!inputs.isResume) {
+      // VTID-04873: only pre-render the lesson when its text is in the
+      // member's language. An untranslated topic carries German text, and
+      // Polly would read it in the member's own voice; leaving
+      // `narrationAudio` null takes the existing no-audio path instead.
+      const narrationMatchesLang =
+        seed.narrationLocale === String(inputs.lang || 'de').toLowerCase().slice(0, 2);
+      if (!inputs.isResume && narrationMatchesLang) {
         // VTID-03650: try Polly FIRST — deterministic TTS has no
         // content-safety judgment to reject legitimate curriculum text
         // with, unlike the two conversational models VTID-03647/03648

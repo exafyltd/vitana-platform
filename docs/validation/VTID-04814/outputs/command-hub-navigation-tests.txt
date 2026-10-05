@@ -1,0 +1,58 @@
+    ✓ has exactly one screen per tab of NAVIGATION_CONFIG
+    ✓ marks every screen as a Command Hub screen a signed-in developer can open
+    ✓ keeps every legacy DEVHUB id working
+    ✓ is merged into the registry the gateway uses, after every member screen
+    ✓ reads the surface from the route
+    ✓ only reaches screens of the session's own surface
+    ✓ never matches an invented Command Hub id to a member screen
+    ✓ open autopilot live
+    ✓ show me what the autopilot is running right now
+    ✓ take me to the VTID ledger
+    ✓ open the OASIS events
+    ✓ show me the infrastructure logs
+    ✓ open the deployments in infrastructure
+    ✓ where can I see the governance rules
+    ✓ open the governance violations
+    ✓ show me the system overview
+    ✓ open the live metrics
+    ✓ show me errors and violations on the overview
+    ✓ open the release feed
+    ✓ go to the user management
+    ✓ open the tenants admin screen
+    ✓ open the approvals queue
+    ✓ show me the task board
+    ✓ open the operator event stream
+    ✓ open the runbook
+    ✓ show me the registered agents
+    ✓ open the LLM providers
+    ✓ open model routing
+    ✓ show me the test runs
+    ✓ open the end to end tests
+    ✓ open the RLS and access policies
+    ✓ show me the audit log
+    ✓ open the API inventory
+    ✓ show me the database schemas in the docs
+    ✓ open voice self-healing
+    ✓ show me the live voice sessions
+    ✓ open the nova sonic test bench
+    ✓ open the voice supervisor overview
+    ✓ show me voice health per tenant
+    ✓ open the test contracts
+    ✓ show me the autonomy pulse
+    ✓ open the conversation tool health
+    ✓ open the commerce overview
+    ✓ show me the marketplace review queue
+    ✓ open the routines catalog
+    ✓ öffne Autopilot Live
+    ✓ zeig mir die Infrastruktur-Logs
+    ✓ öffne das VTID-Ledger
+    ✓ zeig mir die Governance-Regeln
+    ✓ never sends a member request on the Command Hub to a member screen
+    ✓ never offers a Command Hub screen to a member
+    ✓ opens it on the Command Hub with a /command-hub route
+    ✓ refuses a member screen on the Command Hub and a Command Hub screen in the app
+    ✓ opens a legacy redirect id at the tab it moved to
+    ✓ declares navigate_to_screen next to navigate, so its answers can be acted on
+    ✓ routes dev_open_hub_panel through the navigation handler on the Command Hub
+    ✓ reports the outcome and keeps the widget's route current in the Command Hub client
+Tests:       57 passed, 57 total

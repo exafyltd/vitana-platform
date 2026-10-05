@@ -436,11 +436,12 @@
     {
       "name": "navigate_to_screen",
       "implementations": [
-        "vertex"
+        "vertex",
+        "livekit"
       ],
       "safety_critical": true,
       "owner_vtid": "VTID-02770",
-      "notes": "INTENTIONALLY ONE-SIDED (Vertex-only): catalog-aware navigation taking a screen_id/alias, preserving parameterized routes (intent_id, match_id) and overlay support that the free-text `navigate` tool does not. LiveKit exposes only `navigate`. Cross-surface routes MUST be rejected per feedback_navigator_surface_scoping memory rule."
+      "notes": "Registry navigation by exact screen_id (legacy `target`), with the entity ids that fill parameterized routes and overlays (recipient_id, groupId, match_id, vitana_id, intent_id, id, event_id, meetup_id, user_id, ...). LiveKit declares it as @function_tool navigate_to_screen and forwards those ids under the gateway's own names (VTID-04881). Cross-surface routes MUST be rejected per feedback_navigator_surface_scoping memory rule."
     },
     {
       "name": "navigator_consult",

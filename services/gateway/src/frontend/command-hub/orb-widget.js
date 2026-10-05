@@ -2519,6 +2519,12 @@
         startPayload.support_report = true;
         _s.supportReport = false;
       }
+      // VTID-04840: opened from the commerce AI setup sheet ("Talk to
+      // Vitana"). One-shot, same as support_report.
+      if (_s.commerceSetup) {
+        startPayload.commerce_setup = true;
+        _s.commerceSetup = false;
+      }
 
       // VTID-03291 / DEV-COMHU-0507: Guided Journey catalog topic tap. When the
       // host opened the orb via VitanaOrb.focusGuidedTopic(topicId), the topicId
@@ -3942,6 +3948,48 @@
           if (typeof _cfg.onConversationEnd === 'function') {
             try { _cfg.onConversationEnd(msg.reason || null); }
             catch (e) { console.error('[VTOrb] onConversationEnd handler failed:', e); }
+          }
+        } else if (msg.directive === 'commerce_setup_reading' || msg.directive === 'commerce_setup_draft' || msg.directive === 'commerce_setup_draft_failed') {
+          // VTID-04840: Vitana is drafting the supplier's business. Hand it to
+          // the host page (the commerce portal opens its review card); the
+          // orb keeps talking. The draft is data only — nothing was saved.
+          var _csEvent = msg.directive === 'commerce_setup_reading' ? 'vitana:commerce-setup-reading'
+            : msg.directive === 'commerce_setup_draft' ? 'vitana:commerce-setup-draft'
+            : 'vitana:commerce-setup-failed';
+          console.log('[VTOrb] orb_directive ' + msg.directive);
+          try {
+            window.dispatchEvent(new CustomEvent(_csEvent, {
+              detail: { draft: msg.draft || null, error: msg.error || null, website: msg.website || null },
+            }));
+          } catch (e) {
+            console.error('[VTOrb] commerce setup event dispatch failed:', e);
+          }
+          // The review card is on the host page, under this full-screen
+          // overlay: once the draft is there, let the current sentence finish
+          // and close the orb so the supplier sees it (same drain as
+          // end_conversation). The supplier confirms it on the screen.
+          if (msg.directive === 'commerce_setup_draft') {
+            _s.conversationEnding = true;
+            var _csAttempts = 0;
+            (function (myGen) {
+              (function _waitForCsSpeechEnd() {
+                setTimeout(function () {
+                  if (_s._sessionGeneration !== myGen) return;
+                  var stillPlaying = _s.audioPlaying ||
+                    (_s.scheduledSources && _s.scheduledSources.length > 0) ||
+                    (_s.audioQueue && _s.audioQueue.length > 0);
+                  if (stillPlaying && _csAttempts++ < 100) {
+                    _waitForCsSpeechEnd();
+                    return;
+                  }
+                  setTimeout(function () {
+                    if (_s._sessionGeneration !== myGen) return;
+                    try { _hide(); }
+                    catch (e) { console.error('[VTOrb] _hide on commerce_setup_draft failed:', e); }
+                  }, 200);
+                }, 300);
+              })();
+            })(_s._sessionGeneration);
           }
         } else {
           console.warn('[VTOrb] Unknown orb_directive: ' + msg.directive);
@@ -5416,6 +5464,7 @@
     // VTID-04395: a support-report open that never started does not leak
     // into the next, unrelated open.
     _s.supportReport = false;
+    _s.commerceSetup = false; // VTID-04840: same for a commerce setup open.
     // VTID-03293 (#3 fix-2): kill the reconnect/disconnect machinery so a STALLED
     // session (e.g. stuck "connecting" with no audio) can ALWAYS be closed. The
     // recovery watchdog is a setInterval that re-fires _resetAndReconnect; without
@@ -6164,6 +6213,16 @@
     startSupportReport: function () {
       try { _sessionStop(); } catch (e) { /* best-effort */ }
       _s.supportReport = true;
+      _show();
+    },
+
+    // VTID-04840: open the orb to set up a business in the commerce portal.
+    // Vitana asks for the website and drafts the business; the draft arrives
+    // as the 'vitana:commerce-setup-draft' window event and the host opens
+    // its review card. Nothing is saved by voice. One-shot, like above.
+    startCommerceSetup: function () {
+      try { _sessionStop(); } catch (e) { /* best-effort */ }
+      _s.commerceSetup = true;
       _show();
     },
 

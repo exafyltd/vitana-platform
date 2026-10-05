@@ -52,7 +52,7 @@ Balances are stored as simple numeric values in a PostgreSQL table:
 Table: user_wallets
 - id (UUID)
 - user_id (UUID, references auth.users)
-- currency_type (TEXT: 'USD', 'VTN', 'CREDITS')
+- currency_type (TEXT: 'USD', 'VTNA', 'CREDITS')
 - balance (NUMERIC, default 1000.00)
 - updated_at (TIMESTAMP)
 ```

@@ -15,6 +15,9 @@ describe('buildJourneyModesSection', () => {
     expect(s).toMatch(/Vollversion/);
     expect(s).toMatch(/same journey/i);          // it's one journey, two views
     expect(s).toMatch(/NEVER say you don't know/i);
+    // VTID-04760: the guided view is the Audiobook / Hörbuch.
+    expect(s).toMatch(/AUDIOBOOK/);
+    expect(s).toMatch(/Hörbuch/);
   });
 
   test('DE block is German and carries the same facts', () => {
@@ -24,6 +27,7 @@ describe('buildJourneyModesSection', () => {
     expect(s).toMatch(/Einführung/);
     expect(s).toMatch(/dieselbe Journey/i);
     expect(s).toMatch(/NIEMALS/);
+    expect(s).toMatch(/HÖRBUCH/);
     // no obviously English instruction text leaking into the DE block
     expect(s).not.toMatch(/the difference between/i);
   });

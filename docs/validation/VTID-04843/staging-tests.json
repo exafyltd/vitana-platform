@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-04843",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/command-hub/orb-widget.js?v=20261002-vtid-04843-widget-rebust",
+      "expect_status": 200,
+      "expect_body_contains": ["startCommerceSetup", "vitana:commerce-setup-draft"],
+      "reason": "the freshly busted widget URL serves the widget with the commerce setup entry point, not a stale CDN copy"
+    }
+  ]
+}

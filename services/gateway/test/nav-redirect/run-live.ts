@@ -25,7 +25,6 @@
 process.env.SUPABASE_URL = 'http://127.0.0.1:9';
 process.env.SUPABASE_SERVICE_ROLE = 'local-redirect-suite-no-writes';
 process.env.SUPABASE_ANON_KEY = 'local-redirect-suite-no-writes';
-process.env.NAV_V2_ENABLED = 'true';
 delete process.env.NAV_CONTINUATION_BIND;
 process.env.NAV_REGISTRY_URL = process.env.REGISTRY_URL || 'https://preview-aws.vitanaland.com/nav-registry.json';
 process.env.AWS_REGION = process.env.AWS_REGION || 'eu-central-1';

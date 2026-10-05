@@ -25,6 +25,11 @@ export interface JevDecisionTelemetry {
   role: string;
   actor_id: string;
   tenant_id?: string | null;
+  /** VTID-04754: data class the decision sent. */
+  data?: string;
+  /** VTID-04754: exafy_admin acting on a tenant they named. */
+  cross_tenant?: boolean;
+  identity_gaps?: string[];
   source: string;
   model?: string;
   latency_ms: number;
@@ -103,10 +108,10 @@ export function emitJevDecisionEvent(t: JevDecisionTelemetry): void {
     type,
     source: `jev:${t.source}`,
     status,
-    message: `jev ${t.decision} ${t.outcome}${t.reason ? ` (${t.reason})` : ''} plane=${t.plane} role=${t.role}`,
+    message: `jev ${t.decision} ${t.outcome}${t.reason ? ` (${t.reason})` : ''} plane=${t.plane} role=${t.role}${t.cross_tenant ? ` cross_tenant tenant=${t.tenant_id}` : ''}`,
     payload: { ...t },
     actor_id: t.actor_id,
-    actor_role: t.role === 'system' ? 'system' : t.plane === 'internal' ? 'operator' : 'user',
+    actor_role: t.role === 'system' ? 'system' : t.plane === 'internal' || t.plane === 'partner_org' ? 'operator' : 'user',
     surface: 'api',
   }).catch((err) => {
     console.warn('[jev] telemetry emit failed:', err?.message || err);

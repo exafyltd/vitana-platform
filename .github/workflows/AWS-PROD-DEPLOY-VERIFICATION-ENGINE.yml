@@ -109,6 +109,9 @@ jobs:
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
             | jq --arg IMG "$IMAGE" '
                 .containerDefinitions[0].image = $IMG
+                # VTID-04858: DB_PASSWORD pointed at the deleted Aurora managed
+                # secret (rds!cluster-…); no new task could start. Never read.
+                | .containerDefinitions[0].secrets |= [ (. // [])[] | select(.name != "DB_PASSWORD") ]
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" --query 'taskDefinition.taskDefinitionArn' --output text)

@@ -94,11 +94,13 @@ describe('VTID-03496 parseBedrockContent', () => {
     // when nothing was requested. Asserted explicitly rather than loosened to
     // toMatchObject: a caller that iterates the list must never get `undefined`
     // back on the no-tools path, which is precisely the case this test covers.
-    expect(parseBedrockContent({})).toEqual({ text: '', toolCall: undefined, toolCalls: [] });
+    // VTID-04868: `thinkingBlocks` follows the same rule — always an array.
+    expect(parseBedrockContent({})).toEqual({ text: '', toolCall: undefined, toolCalls: [], thinkingBlocks: [] });
     expect(parseBedrockContent({ content: undefined })).toEqual({
       text: '',
       toolCall: undefined,
       toolCalls: [],
+      thinkingBlocks: [],
     });
   });
 

@@ -143,6 +143,14 @@ export type CicdEventType =
   // needs an auditable answer.
   | 'vtid.decision.watcher.lesson_muted'
   | 'vtid.decision.watcher.backfill'
+  // VTID-04868: Plan Sparring Gate. attached/missing are emitted at VTID
+  // allocation (log mode — shadow, never blocks); break_glass when an exempt
+  // insert is seen; tamper_detected by the hourly read-only reconciler
+  // (trigger disabled, ledger rows without sparring_id, config change).
+  | 'vtid.plan_sparring.attached'
+  | 'vtid.plan_sparring.missing'
+  | 'vtid.plan_sparring.break_glass'
+  | 'vtid.plan_sparring.tamper_detected'
   | 'cicd.github.create_pr.requested'
   | 'cicd.github.create_pr.succeeded'
   | 'cicd.github.create_pr.failed'
@@ -625,6 +633,9 @@ export type CicdEventType =
   | 'orb.livekit.agent.room_join_succeeded'
   | 'orb.livekit.agent.room_join_failed'
   | 'orb.livekit.agent.disconnected'
+  // VTID-04776: the gateway minted a LiveKit session token (tenant, surface,
+  // role, lang — previously only inside the token metadata).
+  | 'orb.livekit.session.minted'
   // L2.2b.2 (VTID-02990): Gemini-via-Vertex text/model loop — proves the
   // agent can reach a model from canary room context using Cloud Run's
   // default service account (ADC, no API key). Emitted by the orb-agent's
@@ -1067,7 +1078,12 @@ export type CicdEventType =
   | 'partner_org.catalogue_imported'
   // VTID-04499: onboarding connections and mapping step
   | 'partner_org.connection_started'
-  | 'partner_org.mapping_step_changed';
+  | 'partner_org.mapping_step_changed'
+  // VTID-04838: a supplier's confirmed AI-setup draft created a business and/or draft products.
+  | 'commerce.ai_setup.applied'
+  | 'commerce.mcp.tool_called'
+  // VTID-04859: a Founding Member saw (and closed) their free-year celebration.
+  | 'billing.founding.celebrated';
 
 export interface CicdOasisEvent {
   vtid: string;

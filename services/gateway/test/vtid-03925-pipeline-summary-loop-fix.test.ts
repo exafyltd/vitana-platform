@@ -87,7 +87,8 @@ describe('VTID-03925: fetchPipelineSummary() cannot loop forever on a persistent
 
 describe('VTID-03925: renderOverviewSystemView() guard this fix protects against', () => {
   it('still only calls fetchPipelineSummary() when not already fetched/loading (guard unchanged)', () => {
-    const idx = SOURCE.indexOf('function renderOverviewSystemView() {');
+    // VTID-04876: the pre-Phase-1 panels moved into renderOverviewSystemPanels().
+    const idx = SOURCE.indexOf('function renderOverviewSystemPanels() {');
     expect(idx).toBeGreaterThan(-1);
     const nearby = SOURCE.slice(idx, idx + 1500);
     expect(nearby).toContain('if (!state.overviewPipelineSummary.fetched && !state.overviewPipelineSummary.loading) {');

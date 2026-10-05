@@ -71,7 +71,6 @@ describe('VTID-04607 redirect suite — through the navigate tool', () => {
   let results: RedirectResult[];
 
   beforeAll(async () => {
-    process.env.NAV_V2_ENABLED = 'true';
     const f = await loadRegistryFixture();
     __setNavServiceForTests({ index: f.index, embedder: f.embedder });
     results = [];
@@ -85,9 +84,6 @@ describe('VTID-04607 redirect suite — through the navigate tool', () => {
     }
   }, 120_000);
 
-  afterAll(() => {
-    delete process.env.NAV_V2_ENABLED;
-  });
 
   it.each(REDIRECT_CASES.map((c) => [c.id, c.say, c] as const))('%s "%s" reaches the right screen', (id) => {
     const r = results.find((x) => x.id === id)!;
@@ -107,14 +103,10 @@ describe('VTID-04607 redirect suite — through the navigate tool', () => {
 
 describe('VTID-04607 redirect suite — when the voice model shortens the request', () => {
   beforeAll(async () => {
-    process.env.NAV_V2_ENABLED = 'true';
     const f = await loadRegistryFixture();
     __setNavServiceForTests({ index: f.index, embedder: f.embedder });
   });
 
-  afterAll(() => {
-    delete process.env.NAV_V2_ENABLED;
-  });
 
   it.each(PARAPHRASE_CASES.map((p) => [p.id, p.modelQuestion, p.say, p] as const))(
     '%s question "%s" with the member saying "%s" reaches the right screen',
@@ -131,14 +123,10 @@ describe('VTID-04607 redirect suite — when the voice model shortens the reques
 
 describe('VTID-04629 redirect suite — screen ids the voice model invented', () => {
   beforeAll(async () => {
-    process.env.NAV_V2_ENABLED = 'true';
     const f = await loadRegistryFixture();
     __setNavServiceForTests({ index: f.index, embedder: f.embedder });
   });
 
-  afterAll(() => {
-    delete process.env.NAV_V2_ENABLED;
-  });
 
   it.each(INVENTED_ID_CASES.map((c) => [c.id, c.screenId, c] as const))('%s navigate_to_screen("%s") still opens the right screen', async (_id, _sid, c) => {
     const r = await runInventedIdCase(c.screenId);

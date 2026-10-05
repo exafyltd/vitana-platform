@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-04742",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/i18n/vtid-04742-voice-register-rule.test.ts test/orb/live/instruction/vtid-04742-guided-register-instruction.test.ts test/orb/latency/vtid-04542-voice-payload-identity.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the rule is in the prompt text, pinned by unit and snapshot tests; a read-only staging suite cannot speak to the voice model"
+    }
+  ]
+}

@@ -113,28 +113,31 @@ beforeEach(() => {
 });
 
 describe('extractCascadeTools', () => {
-  it('keeps only the hand-off tools from a Vertex-style catalog', () => {
+  // VTID-04846: the navigation tools are always cascade tools now (they were
+  // under NAV_V2_ENABLED, which production ran with).
+  it('keeps only the hand-off and navigation tools from a Vertex-style catalog', () => {
     const tools = extractCascadeTools(CATALOG as Array<Record<string, unknown>>);
-    expect(tools.map((t) => t.name)).toEqual(['report_to_specialist', 'switch_persona']);
-    expect(tools[1].inputSchema).toEqual({ type: 'object', properties: { to: { type: 'string' } } });
+    expect(tools.map((t) => t.name)).toEqual(['navigate', 'report_to_specialist', 'switch_persona']);
+    expect(tools.find((t) => t.name === 'switch_persona')?.inputSchema).toEqual({ type: 'object', properties: { to: { type: 'string' } } });
   });
 
-  it('returns nothing for an empty or anonymous catalog', () => {
+  it('returns nothing for an empty catalog or one with no cascade tools', () => {
     expect(extractCascadeTools(undefined)).toEqual([]);
-    expect(extractCascadeTools([{ function_declarations: [{ name: 'navigate' }] }])).toEqual([]);
+    expect(extractCascadeTools([{ function_declarations: [{ name: 'log_water' }] }])).toEqual([]);
   });
 });
 
 describe.each(['ru', 'sr'] as const)('VTID-04336 cascade persona swap — lang=%s', (lang) => {
   beforeEach(() => setUpVoices(lang));
 
-  it('declares only the hand-off tools to the model', async () => {
+  it('declares only the hand-off and navigation tools to the model', async () => {
     const client = await connected(lang);
-    expect(client.getPersonaState().toolNames).toEqual(['report_to_specialist', 'switch_persona']);
+    expect(client.getPersonaState().toolNames).toEqual(['navigate', 'report_to_specialist', 'switch_persona']);
     mockRouter.mockResolvedValueOnce({ ok: true, text: 'Zdravo' });
     client.sendTextTurn('hi', true);
     await flush();
     expect(mockRouter.mock.calls[0][2].tools.map((t: { name: string }) => t.name)).toEqual([
+      'navigate',
       'report_to_specialist',
       'switch_persona',
     ]);
@@ -273,7 +276,7 @@ describe.each(['ru', 'sr'] as const)('VTID-04336 cascade persona swap — lang=%
     const handler = jest.fn();
     client.onToolCall(handler);
     mockRouter
-      .mockResolvedValueOnce({ ok: true, text: '', toolCalls: [{ name: 'navigate', arguments: {}, id: 'x' }] })
+      .mockResolvedValueOnce({ ok: true, text: '', toolCalls: [{ name: 'log_water', arguments: {}, id: 'x' }] })
       .mockResolvedValueOnce({ ok: true, text: 'ok' });
     client.sendTextTurn('go home', true);
     await flush();

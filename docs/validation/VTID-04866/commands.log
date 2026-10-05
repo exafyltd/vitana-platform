@@ -1,0 +1,5 @@
+node scripts/conversation/generate-flag-pins.mjs     # regenerated conversation-flag-pins.generated.ts (prod: "staging+prod")
+cd services/gateway && npx jest test/orb/live/upstream/staging-ws-transport-flag-pinned.test.ts test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts test/services/conversation/vtid-04525-conversation-flag-registry.test.ts --verbose   # 24 tests passed (outputs/jest-targeted.txt)
+npx jest test/orb/live/upstream test/services/conversation <every suite reading AWS-PROD-DEPLOY-GATEWAY.yml>   # 151 suites, 2161 tests passed (outputs/jest-workflow-guards.txt)
+curl -s https://preview-aws-gateway.vitanaland.com/api/v1/orb/live/transport   # {"ok":true,"transport":"ws"}  (read-only, staging)
+curl -s https://gateway.vitanaland.com/api/v1/orb/live/transport               # {"ok":true,"transport":"sse"} (read-only, prod, before this change)

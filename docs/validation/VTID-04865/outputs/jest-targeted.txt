@@ -1,0 +1,23 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/orb/live/session/vtid-04865-orphan-upstream-guard.test.ts
+  VTID-04865 orphan upstream guard
+    ✓ keeps the upstream when the session is still the live one (4 ms)
+    ✓ closes the upstream when the SSE close handler already cleaned up (the production case) (2 ms)
+    ✓ treats a deactivated session as gone even while still registered (1 ms)
+    ✓ treats a session replaced under the same id as gone (1 ms)
+    ✓ survives an upstream whose close throws, and a null upstream
+    ✓ is wired at both places orb-live.ts attaches an upstream after an await (4 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+Snapshots:   0 total
+Time:        0.532 s, estimated 1 s
+Ran all test suites matching /test\/orb\/live\/session\/vtid-04865-orphan-upstream-guard.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

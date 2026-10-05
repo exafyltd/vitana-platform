@@ -72,6 +72,13 @@ class GatewayClient:
         # gate, and the mobile_route override.
         self.is_mobile: bool = False
         self.is_anonymous: bool = False
+        # VTID-04881: the member's language (session.py sets it from the
+        # resolved Identity) is sent with every /orb/tool call, and the last
+        # FINAL user transcript travels with navigation calls as
+        # transcript_excerpt — the same signals orb-live.ts injects for Vertex.
+        self.identity_lang: str | None = None
+        self.orb_session_id: str | None = None
+        self.last_user_text: str | None = None
         # BOOTSTRAP-VOICE-DATASET-EMITTER: last tool dispatched this turn, set by
         # tools._dispatch / _dispatch_with_directive and read+cleared by
         # session.py's orb.turn.responded emit to carry the tool-routing signal.

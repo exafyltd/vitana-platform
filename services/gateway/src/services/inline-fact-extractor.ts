@@ -62,6 +62,7 @@ Common fact keys:
 - user_preference_*, user_goal_*, user_hobby_*, user_language, user_pet_name
 - spouse_name, fiancee_name, partner_name, mother_name, father_name, child_name, friend_name_*
 - sibling_name, colleague_name, grandchild_name (people the user mentions by role)
+- spouse_father_name, spouse_mother_name, child_spouse_name, spouse_sibling_name (a relative of one of the user's people: chain the relations from the user)
 - <person>_birthday, <person>_health_condition (dates/conditions of people the user discloses, e.g. spouse_birthday)
 - upcoming_event_* (a concrete planned event with its date, e.g. upcoming_event_wedding)
 
@@ -78,6 +79,8 @@ Rules:
 - A hypothetical, wish or "what if" is NOT a fact ("if I had a dog it would be called Max", "wenn ich einen Hund hätte, würde er Max heißen") — return nothing for it
 - A request to FORGET something is not a statement of it ("forget that my dog is called Bello") — return nothing for it
 - For preferences, use "user_favorite_X" or "user_preference_X" as the key
+- father_name, mother_name and the other plain relation keys are ONLY for the user's OWN relatives ("mein Vater", "my mother"). A relative of someone else gets the chained key: the wife's father is spouse_father_name, never father_name
+- "her father", "ihr Vater", "sein Vater", "deren Mutter": if the text does not say whose father or mother it is, return nothing for it — never guess that it is the user's own
 
 Example input:
 User: My name is Dusan and I live in Amsterdam. My favorite tea is Earl Grey. Ugh, barely slept, the deadline is killing me.
@@ -349,12 +352,12 @@ export async function extractAndPersistFacts(input: {
   tenant_id: string;
   user_id: string;
   session_id: string;
-}): Promise<void> {
+}): Promise<{ persisted: number }> {
   const startTime = Date.now();
 
   try {
     // Skip very short messages (unlikely to contain facts)
-    if (input.conversationText.length < 30) return;
+    if (input.conversationText.length < 30) return { persisted: 0 };
 
     // BOOTSTRAP-VOICE-DEMO: emit a real heartbeat so the agents dashboard
     // shows inline-fact-extractor as healthy whenever it's actually called.
@@ -373,7 +376,7 @@ export async function extractAndPersistFacts(input: {
 
     if (facts.length === 0) {
       console.debug(`[VTID-01225-inline] No facts extracted from turn (${input.session_id})`);
-      return;
+      return { persisted: 0 };
     }
 
     let persisted = 0;
@@ -390,8 +393,11 @@ export async function extractAndPersistFacts(input: {
       `[VTID-01225-inline] Extraction complete: ${facts.length} facts found, ` +
       `${persisted} persisted, ${failed} failed (${durationMs}ms)`
     );
+    // VTID-04879: the count lets the worth-remembering shadow compare against what was stored.
+    return { persisted };
   } catch (err: any) {
     console.warn(`[VTID-01225-inline] Extraction failed (non-blocking): ${err.message}`);
+    return { persisted: 0 };
   }
 }
 

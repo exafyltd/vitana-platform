@@ -48,3 +48,18 @@ export async function fetchProductAnalyticsEventsList(
 
   return query;
 }
+
+/** VTID-04763 — one page of Audiobook events (feature_key 'audiobook'), oldest first. */
+export async function fetchFeatureEventsPage(
+  sb: any,
+  args: { tenantId: string; featureKey: string; sinceIso: string; from: number; to: number },
+) {
+  return sb
+    .from('product_analytics_events')
+    .select('event_name, user_id_hash, properties, occurred_at')
+    .eq('tenant_id', args.tenantId)
+    .eq('feature_key', args.featureKey)
+    .gte('occurred_at', args.sinceIso)
+    .order('occurred_at', { ascending: true })
+    .range(args.from, args.to);
+}

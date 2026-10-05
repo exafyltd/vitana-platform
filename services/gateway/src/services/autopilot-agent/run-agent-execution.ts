@@ -34,6 +34,8 @@ import { buildAgentSystemPrompt, buildAgentTaskPrompt, buildFixModeTaskPrompt, b
 import { isWorkerMemoryRecallEnabled, buildFileScopedMemoryBlock } from '../dev-agent-memory-file-recall';
 import { checkChangedFilesScope, hasTestCoverage } from './agent-scope';
 import { makeCheckRunner, runJest, runTsc, selectRunnerJestTargets } from './agent-validate';
+import { collectTestSelectionInput, isTestSelectionOn, runTestSelectionCheck } from '../jev/gates/test-selection-gate';
+import { changeRiskInput, isChangeRiskOn, runChangeRiskCheck } from '../jev/gates/change-risk-gate';
 import { cleanupWorkspace, commitAndPush, findFilesWithConflictMarkers, gitDiffAgainstBase, linkNodeModules, listChangedFiles, listChangedFilesSince, mergeBaseIntoBranch, prepareWorkspace, pullCodeIndex, scrubSecret, type MergeBaseResult, type Workspace } from './agent-workspace';
 import { approvalRequired } from '../dev-autopilot-approval';
 import { startExecutionHeartbeat } from './agent-heartbeat';
@@ -41,6 +43,7 @@ import { RepeatedCheckGuard } from './agent-check-guard';
 import { buildAgentMemoryContext, recordAgentRunMemory } from './agent-memory-context';
 import type { FinishArgs } from './agent-tools';
 import { devWorkerModel } from '../dev-pipeline-models';
+import { createAgentProgressGate } from '../jev/gates/agent-progress-gate';
 
 const LOG_PREFIX = '[autopilot-agent]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
@@ -168,6 +171,14 @@ export async function runAgentExecutionSession(
   if (!token) return { ok: false, error: 'GITHUB_SAFE_MERGE_TOKEN not set — the agent executor cannot clone or push', session_id: sessionId, branch };
 
   const onStep = stepEmitter(executionId, telemetryVtid);
+  // VTID-04764 (Jev P1 A1): every-N-turns progress check, observe-only
+  // (JEV_AGENT_PROGRESS_MODE; off = a no-op object). The task summary is the
+  // plan's opening, never file contents.
+  const progressGate = createAgentProgressGate({
+    executionId,
+    findingId: exec.finding_id,
+    task: (plan.plan_markdown || '').slice(0, 1500),
+  });
   // VTID-04017: per-run usage/cost, appended to the finding's outcome row
   // in `finally` whatever happens (best-effort, never throws).
   const run: AgentRunUsage = {
@@ -321,6 +332,7 @@ export async function runAgentExecutionSession(
         // VTID-04466: first round of a non-fix run only — a fix round starts
         // from a diff that already exists.
         exploration: explorationEnabled && round === 0 ? explorationThresholds(AGENT_MAX_TURNS) : null,
+        onTurnSnapshot: progressGate.onTurn,
       });
       history = loop.history; totalTurns += loop.turns;
       memHistory = history; memFinished = loop.finished || memFinished;
@@ -393,6 +405,18 @@ export async function runAgentExecutionSession(
     }
     if (!finished) return finish({ ok: false, error: 'agent did not finish', session_id: sessionId, branch });
 
+    // VTID-04807 (Jev A5, shadow): the suites that import a changed module but
+    // were not run above. Listed now, while the clone exists; judged without
+    // being awaited. Nothing here changes what runs or what the PR contains.
+    if (isTestSelectionOn()) {
+      try {
+        const selInput = collectTestSelectionInput(repoDir, changed.map((c) => c.path));
+        if (selInput) void runTestSelectionCheck({ executionId, title: finished.pr_title, input: selInput });
+      } catch (err: any) {
+        console.warn(`${LOG_PREFIX} [${short}] jev test_selection skipped: ${err?.message || err}`);
+      }
+    }
+
     // --- PR contract + evidence pack (VTID-04002), written into the tree ---
     // VTID-04333: a feedback-ticket finding carries its FB-… number on the PR.
     const ticketRef = await resolveFeedbackTicketRef(s, findR.ok && findR.data ? findR.data[0] : null);
@@ -426,6 +450,17 @@ export async function runAgentExecutionSession(
       // Same PR, new head — the watcher tracks this row on the parent's PR number.
       return finish({ ok: true, pr_url: fixMode.pr_url, pr_number: fixMode.pr_number, branch, session_id: sessionId });
     }
+    // VTID-04815 (Jev A9, shadow): score the pushed change from its own diff,
+    // read now while the clone exists. Never awaited; nothing here changes the PR.
+    if (isChangeRiskOn()) {
+      try {
+        const riskDiff = await gitDiffAgainstBase(repoDir, baseSha);
+        const riskClass = (findR.ok && findR.data && findR.data[0]?.spec_snapshot?.risk_class) as string | undefined;
+        void runChangeRiskCheck({ executionId, input: changeRiskInput({ findingTitle: contract.title, findingRiskClass: riskClass, diff: riskDiff, fixRounds }) });
+      } catch (err: any) {
+        console.warn(`${LOG_PREFIX} [${short}] jev change_risk skipped: ${err?.message || err}`);
+      }
+    }
     // VTID-04029: hold for a human Approve/Reject on the diff before any PR
     // exists. The branch is already pushed (the scratch dir dies with this
     // task); the preview is what the reviewer sees in the Command Hub.
@@ -456,6 +491,7 @@ export async function runAgentExecutionSession(
     run.recorded_at = new Date().toISOString();
     run.cost_usd = estimateCost(run.model || '', run.input_tokens, run.output_tokens);
     await recordAgentRunUsage(exec.finding_id, run).catch(() => undefined);
+    await progressGate.finish(run.outcome);
     // VTID-04223: engineering memory OUT — ≤3 durable facts from the run's
     // transcript via the `memory` routing stage. The task_outcome / failure
     // row is the gateway's (applyExecutionResult), not written here.

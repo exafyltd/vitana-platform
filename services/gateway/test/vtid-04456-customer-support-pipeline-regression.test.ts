@@ -63,9 +63,13 @@ jest.mock('../src/services/persona-registry', () => ({
 }));
 
 jest.mock('../src/services/dev-autopilot-execute', () => {
-  const { isUuidString } = jest.requireActual('../src/services/dev-autopilot-execute');
+  const { isUuidString, confirmNewFiles } = jest.requireActual('../src/services/dev-autopilot-execute');
   return {
   isUuidString,
+  // VTID-04790: the real function, asked against the fake repository below
+  // instead of GitHub (a file in mockRepoFiles exists on main).
+  confirmNewFiles: (paths: string[], deny: string[]) =>
+    confirmNewFiles(paths, deny, async (p: string) => ({ exists: mockRepoFiles.has(p) })),
   bridgeActivationToExecution: jest.fn(async (findingId: string, approvedBy: string | null = null) => {
     // VTID-04649: the real approveAutoExecute refuses a non-UUID approver
     // (dev_autopilot_executions.approved_by is uuid, VTID-03839). The stub
@@ -112,6 +116,12 @@ jest.mock('../src/lib/supabase-user', () => ({
 jest.mock('../src/middleware/auth-supabase-jwt', () => ({
   ...jest.requireActual('../src/middleware/auth-supabase-jwt'),
   resolveVitanaId: jest.fn(async () => '@member1'),
+}));
+// VTID-04879: the community ticket-triage shadow gate is observed, never real here.
+const ticketShadow = jest.fn((_a: any): Promise<string | null> => Promise.resolve(null));
+jest.mock('../src/services/jev/gates/community-class-a-gates', () => ({
+  ...jest.requireActual('../src/services/jev/gates/community-class-a-gates'),
+  shadowTicketTriage: (a: any) => ticketShadow(a),
 }));
 
 // ---------------------------------------------------------------------------
@@ -171,6 +181,9 @@ function devonSpec(t: { ticket_number: string | null }, headline = 'Diary save b
   ].join('\n');
 }
 
+/** VTID-04790: files that already exist on main in the fake repository. */
+const mockRepoFiles = new Set<string>();
+
 const draftCalls: Array<Record<string, any>> = [];
 const goodDraft = jest.fn(async (t: any) => {
   draftCalls.push(t);
@@ -194,7 +207,8 @@ function newPlatform(): FakePlatform {
     id: 1,
     kill_switch: false,
     allow_scope: ['services/gateway/src/**', 'services/gateway/test/**'],
-    deny_scope: ['supabase/migrations/**', '**/orb-live.ts', '.github/workflows/**', '**/.env*'],
+    // Mirrors the live rules (VTID-04790: name-only rules spelled as "contains").
+    deny_scope: ['supabase/migrations/**', '**/*auth*', '**/*orb-live.ts', '.github/workflows/**', '**/*.env*'],
   });
   return p;
 }
@@ -299,6 +313,7 @@ let app: express.Express;
 beforeEach(() => {
   mockPlatform = newPlatform();
   mockOasis.length = 0;
+  mockRepoFiles.clear();
   draftCalls.length = 0;
   goodDraft.mockClear();
   (global as any).fetch = mockPlatform.fetch;
@@ -478,6 +493,23 @@ describe('Scenario 2: a member reports a bug to Vitana by voice', () => {
     await expectResolved(r.ticket.id, executionId);
   });
 
+  it('the Jev ticket-triage shadow (VTID-04879) sees the report but never changes or delays the result', async () => {
+    const strip = (r: any) => JSON.parse(JSON.stringify(r, (k, v) => (['id', 'ticket_id', 'ticket_number', 'ticket'].includes(k) ? undefined : v)));
+    ticketShadow.mockImplementation(() => Promise.resolve(null));
+    const plain = await reportToVitana();
+    // A shadow that never settles (and one that rejects) must leave the result identical.
+    ticketShadow.mockImplementation(() => new Promise<string | null>(() => undefined));
+    const hanging = await reportToVitana();
+    ticketShadow.mockImplementation(() => Promise.reject(new Error('jev down')));
+    const failing = await reportToVitana();
+    expect(strip(hanging)).toEqual(strip(plain));
+    expect(strip(failing)).toEqual(strip(plain));
+    expect(ticketShadow).toHaveBeenLastCalledWith(
+      expect.objectContaining({ summary: VOICE_SUMMARY, tenantId: TENANT, userId: MEMBER, sessionId: 'live-session-1' }),
+    );
+    ticketShadow.mockImplementation(() => Promise.resolve(null));
+  });
+
   it('a vague report files nothing and asks the member for detail', async () => {
     const r = await executeReportToSpecialist(
       { kind: 'bug', summary: 'user wants to report a bug' },
@@ -633,6 +665,46 @@ describe('Safety rails', () => {
     expect(tick).toEqual(expect.objectContaining({ drafted: 1, dispatched: 0 }));
     expect(mockPlatform.ticket(r.ticket.id).linked_vtid).toBeNull();
     expect(mockPlatform.table('autopilot_recommendations')).toHaveLength(0);
+  });
+
+  // VTID-04790: live on staging (FB-2026-10-000143) Devon named a NEW test
+  // ".../get-current-screen-auth-transition.test.ts"; the matcher read the
+  // auth deny rule as "auth anywhere", dropped the test, and the safety gate
+  // refused the plan as tests_missing.
+  const authNamedTestSpec = (t: { ticket_number: string | null }) => [
+    `# ${t.ticket_number} — get_current_screen reports the pre-login screen`,
+    '',
+    '## Files to touch (best guess)',
+    '- services/gateway/src/services/screen-context.ts',
+    '- services/gateway/test/get-current-screen-auth-transition.test.ts',
+    '',
+    '## Risk + rollback',
+    'Low. Revert the PR.',
+  ].join('\n');
+
+  it('a NEW test file with "auth" in its name is kept and the ticket is dispatched', async () => {
+    const r = await reportToVitana();
+    mockPlatform.classify(r.ticket.id);
+    mockPlatform.runAutoTriage();
+    const draft = jest.fn(async (t: any) => ({ markdown: authNamedTestSpec(t), provider: 'llm' as const }));
+    const tick = await draftPlaceholderSpecsTick(S, { draft: draft as any, env: AUTO_ON, force: true });
+    expect(tick).toEqual(expect.objectContaining({ drafted: 1, dispatched: 1, dispatch_failed: 0 }));
+    const rec = mockPlatform.table('autopilot_recommendations')[0];
+    expect(rec.spec_snapshot.proposed_files).toEqual([
+      'services/gateway/src/services/screen-context.ts',
+      'services/gateway/test/get-current-screen-auth-transition.test.ts',
+    ]);
+  });
+
+  it('an EXISTING test with "auth" in its name stays locked', async () => {
+    mockRepoFiles.add('services/gateway/test/get-current-screen-auth-transition.test.ts');
+    const r = await reportToVitana();
+    mockPlatform.classify(r.ticket.id);
+    mockPlatform.runAutoTriage();
+    const draft = jest.fn(async (t: any) => ({ markdown: authNamedTestSpec(t), provider: 'llm' as const }));
+    await draftPlaceholderSpecsTick(S, { draft: draft as any, env: AUTO_ON, force: true });
+    const rec = mockPlatform.table('autopilot_recommendations')[0];
+    expect(rec.spec_snapshot.proposed_files).toEqual(['services/gateway/src/services/screen-context.ts']);
   });
 
   it('auto-dispatch is off unless FEEDBACK_AUTO_DISPATCH_ENABLED is exactly "true"', async () => {

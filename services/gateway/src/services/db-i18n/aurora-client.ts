@@ -7,7 +7,7 @@
  * app at Aurora" was never a config change: the gateway **has no Postgres
  * driver at all**. It speaks HTTP to PostgREST, so there was no connection to
  * repoint. This module is that missing piece, scoped deliberately to the
- * DB-content i18n surfaces (`nav_catalog_i18n`, `journey_checklist_translations`)
+ * DB-content i18n surface (`journey_checklist_translations`)
  * rather than the whole 2,480-call-site estate — B1 of that plan says the seam
  * comes first or the call sites get rewritten twice.
  *
@@ -173,7 +173,7 @@ export function resolveAuroraConfig(env: NodeJS.ProcessEnv = process.env): Auror
  * Writes are gated on their OWN flag, separate from connectivity.
  *
  * Being able to reach Aurora is not permission to write to it. Aurora receives
- * `nav_catalog_i18n` and `journey_checklist_translations` from Supabase over
+ * `journey_checklist_translations` from Supabase over
  * DMS; a second writer against a replicated table is the hazard that got
  * `oasis-projector` excluded from the VTID-03419 cutover and that the
  * migration plan names as "Option C — the one to argue against". Reads and
@@ -253,7 +253,7 @@ export async function withAuroraClient<T>(
 }
 
 /**
- * The schema these two surfaces need, as Aurora must have it.
+ * The schema the DB-content i18n surface needs, as Aurora must have it.
  *
  * Kept here rather than reusing the Supabase migration file verbatim because
  * the two are NOT the same artifact: the Supabase migration ALTERs tables that
@@ -262,9 +262,9 @@ export async function withAuroraClient<T>(
  * grant to. Sharing one file would mean one of the two paths silently doing
  * the wrong thing.
  *
- * `nav_catalog` is referenced but deliberately NOT created here — it is a
- * platform table owned by the wider migration, and creating a stub would
- * produce an empty catalog that looks real. The FK is added only if it exists.
+ * VTID-04880: `nav_catalog_i18n` is no longer created here. The voice
+ * navigator reads the screen registry, and the Supabase table was archived
+ * into `legacy_archive`. An Aurora copy that already exists is left alone.
  */
 export const AURORA_DB_I18N_SCHEMA = `
 CREATE TABLE IF NOT EXISTS public.supported_locales (
@@ -274,17 +274,6 @@ CREATE TABLE IF NOT EXISTS public.supported_locales (
   status          text NOT NULL DEFAULT 'draft'
                   CHECK (status IN ('ga', 'beta', 'draft', 'legacy')),
   created_at      timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.nav_catalog_i18n (
-  catalog_id     uuid NOT NULL,
-  lang           text NOT NULL,
-  title          text NOT NULL,
-  description    text NOT NULL DEFAULT '',
-  when_to_visit  text NOT NULL DEFAULT '',
-  source_sha     text,
-  updated_at     timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (catalog_id, lang)
 );
 
 CREATE TABLE IF NOT EXISTS public.journey_checklist_translations (
@@ -302,24 +291,14 @@ CREATE TABLE IF NOT EXISTS public.journey_checklist_translations (
   PRIMARY KEY (topic_id, locale)
 );
 
-ALTER TABLE public.nav_catalog_i18n ADD COLUMN IF NOT EXISTS source_sha text;
 ALTER TABLE public.journey_checklist_translations ADD COLUMN IF NOT EXISTS source_sha text;
+ALTER TABLE public.journey_checklist_translations ADD COLUMN IF NOT EXISTS vitana_voice_script text;
 
-CREATE INDEX IF NOT EXISTS nav_catalog_i18n_lang_sha_idx
-  ON public.nav_catalog_i18n (lang, source_sha);
 CREATE INDEX IF NOT EXISTS journey_checklist_translations_locale_sha_idx
   ON public.journey_checklist_translations (locale, source_sha);
 
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'nav_catalog_i18n_lang_fkey'
-  ) THEN
-    ALTER TABLE public.nav_catalog_i18n
-      ADD CONSTRAINT nav_catalog_i18n_lang_fkey
-      FOREIGN KEY (lang) REFERENCES public.supported_locales(code) ON UPDATE CASCADE
-      NOT VALID;
-  END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'journey_checklist_translations_locale_fkey'
   ) THEN

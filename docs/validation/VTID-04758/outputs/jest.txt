@@ -1,0 +1,49 @@
+    ✓ packages the index self-contained, without the committed decisions file or the export (6 ms)
+    ✓ builds the seed with editor files off and a consistent config fingerprint (1 ms)
+    ✓ re-stamps with RepoWise’s own fingerprint functions (1 ms)
+    ✓ records the seed in the manifest with the build root the session rewrites
+    ✓ uploads the seed under <sha>/ before latest/manifest.json is moved (1 ms)
+    ✓ keeps the existing bundle contract (consumers only need sha + files.graph/risk) (2 ms)
+    ✓ is valid bash (12 ms)
+    ✓ indexes in a detached, lock-guarded worker so the hook never times out mid-build (1 ms)
+    ✓ seeds from the CI index, re-points it at this checkout, then updates incrementally (10 ms)
+    ✓ judges an index by pages for THIS checkout, not by the committed .repowise/ directory
+    ✓ never writes tracked editor files from a session, and edits the seed config only when it must (1 ms)
+    ✓ puts the tools on the default PATH (the committed .mcp.json runs bare "repowise")
+    ✓ registers user-scope MCP servers on request, for multi-repo sessions
+    ✓ keeps graphify's merge driver out of the working tree (.git/info/attributes, not .gitattributes) (1 ms)
+    ✓ reports never-run status without installing or touching anything (11 ms)
+    ✓ runs only in remote sessions and delegates to the script (1 ms)
+    ✓ is still registered as a SessionStart hook
+    ✓ keeps a single concurrency group so two runs never race on latest/ (9 ms)
+    ✓ does NOT cancel the in-flight build on a new push (queues instead) (1 ms)
+    ✓ records why, next to the setting (6 ms)
+    ✓ writes manifest + gzipped graph and risk indexes with counts (6 ms)
+    ✓ compacts nodes to [id,label,kind,file,loc,fileType] and edges to index triples (5 ms)
+    ✓ parses RepoWise file-page prose into per-file risk facts (history, owner, bug fixes, hotspot, layer, neighbours) (3 ms)
+    ✓ resolves latest/manifest.json → <sha>/ bundle and assembles adjacency + label/file indexes (5 ms)
+    ✓ serves from cache within the TTL and re-validates the sha after it (same sha → still cached) (2 ms)
+    ✓ reports a plain reason when the index was never published, and refuses an unknown repo (34 ms)
+    ✓ picks the local dir over S3 when CODE_INDEX_LOCAL_DIR is set, else the bucket in the resolved region
+    ✓ tokenize drops stop words and short tokens, keeps identifiers and their parts (5 ms)
+    ✓ indexQuery finds the symbol, its container, callers, importing tests and referencing docs (2 ms)
+    ✓ indexQuery honours the budget and says so; an empty/no-match query is reported not invented (2 ms)
+    ✓ graphPath resolves by file path, label or suffix and walks the undirected graph (2 ms)
+    ✓ getRisk merges RepoWise facts with the graph import fan-in, and names closest paths on a miss (3 ms)
+    ✓ runCodeIndexTool dispatches the three names and rejects an unknown one (1 ms)
+    ✓ declares the three tools only when a bundle is present; names are shared with the operator (1 ms)
+    ✓ pullCodeIndex loads through the shared loader, reports stats, and fails open with the loader reason (2 ms)
+    ✓ executeAgentTool answers the index tools from the bundle and refuses honestly without one (2 ms)
+    ✓ the system prompt tells the model to use the index first, only when one loaded (1 ms)
+    ✓ the runner wires the pull before the prompt and passes the per-run tool list to every router call (source contract) (1 ms)
+    ✓ refuses all three when OPERATOR_CODEINTEL_ENABLED is not "true" (53 ms)
+    ✓ answers from the published bundle with the sha and the index description (8 ms)
+    ✓ reports the loader reason when nothing is published, and rejects an unknown repo before loading (4 ms)
+    ✓ dev_repowise / dev_graphify fall back to the index when the CLI is not installed (not_configured) (12 ms)
+    ✓ is declared on the wire schema for developers and gated off for everyone else (7 ms)
+    ✓ runs on merge to main (and by hand), indexes both repos, never on a deploy path (1 ms)
+    ✓ builds with the same commands the bundle expects and derives via the tracked script
+    ✓ publishes via OIDC to <repo>/<sha>/ and writes latest/manifest.json LAST
+    ✓ the setup script is dry-run by default, refuses the wrong account, and grants read to the task role / publish to the CI role
+Test Suites: 3 passed, 3 total
+Tests:       47 passed, 47 total

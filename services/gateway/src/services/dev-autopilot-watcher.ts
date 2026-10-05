@@ -27,6 +27,11 @@ import { probeEndpoint, isJsonHealthy, resolveProbeTarget } from './self-healing
 import { applyExecTerminalSideEffects, terminalizeVtidLedgerForExecution } from './dev-autopilot-execute';
 import { filterOwnedExecutions } from './dev-autopilot-env-ownership';
 import { collectCiFailureEvidence, renderCiEvidence } from './dev-autopilot-ci-logs';
+import { isCiFailureRoutingOn, runCiFailureRouting } from './jev/gates/ci-failure-gate';
+import { isTestSelectionOn, recordTestSelectionOutcome } from './jev/gates/test-selection-gate';
+import { isPrClashOn, recordPrClashOutcome, runPrClashCheck, type OpenChange } from './jev/gates/pr-clash-gate';
+import { isChangeRiskOn, recordChangeRiskOutcome } from './jev/gates/change-risk-gate';
+import { isFixVerificationOn, runFixVerificationCheck, type FixContext, type FixVerdict } from './jev/gates/fix-verification-gate';
 import { isLlmMergeReviewEnabled, runLlmMergeReview } from './dev-autopilot-llm-review';
 import { deployTopicsInFilter, normalizeDeployEvent } from './dev-autopilot-deploy-topics';
 import { currentEnv } from './dev-autopilot-env-ownership';
@@ -191,6 +196,58 @@ async function loadFindingProbeTarget(s: SupaConfig, findingId: string): Promise
 }
 
 /** VTID-04377: the finding's own ledger VTID (VTID-04246), excluded from blast radius. */
+/**
+ * VTID-04803 (Jev B6): a second opinion on the verification verdict. Off
+ * unless JEV_FIX_VERIFICATION_MODE is set; never awaited; changes nothing.
+ */
+function secondOpinionOnFix(s: SupaConfig, exec: { id: string; finding_id: string }, verdict: FixVerdict): void {
+  // VTID-04815 (Jev A9): how the change landed, for its risk score.
+  if (isChangeRiskOn()) void recordChangeRiskOutcome(exec.id, verdict.state === 'pass' ? 'verification_passed' : 'verification_failed');
+  if (!isFixVerificationOn()) return;
+  void runFixVerificationCheck({ executionId: exec.id, verdict, load: () => loadFixContext(s, exec.finding_id) });
+}
+
+async function loadFixContext(s: SupaConfig, findingId: string): Promise<FixContext | null> {
+  const [recR, planR] = await Promise.all([
+    supa<Array<{ title?: string | null; summary?: string | null; source_type?: string | null }>>(
+      s, `/rest/v1/autopilot_recommendations?id=eq.${findingId}&select=title,summary,source_type&limit=1`,
+    ),
+    supa<Array<{ files_referenced?: string[] | null }>>(
+      s, `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${findingId}&select=files_referenced&order=version.desc&limit=1`,
+    ),
+  ]);
+  const rec = recR.ok && recR.data && recR.data[0] ? recR.data[0] : null;
+  if (!rec) return null;
+  const plan = planR.ok && planR.data && planR.data[0] ? planR.data[0] : null;
+  return { title: rec.title || '', summary: rec.summary || '', source_type: rec.source_type ?? null, files: plan?.files_referenced || [] };
+}
+
+/**
+ * VTID-04808 (Jev A7, shadow): before a green PR merges, would merging it now
+ * make another open Dev Autopilot PR conflict or break? Never awaited.
+ */
+function clashCheckBeforeMerge(s: SupaConfig, exec: { id: string; finding_id: string }): void {
+  if (!isPrClashOn()) return;
+  const asChange = async (id: string, findingId: string): Promise<OpenChange | null> => {
+    const ctx = await loadFixContext(s, findingId);
+    return ctx ? { execution_id: id, title: ctx.title, files: ctx.files } : null;
+  };
+  void runPrClashCheck({
+    executionId: exec.id,
+    deps: {
+      loadMerging: () => asChange(exec.id, exec.finding_id),
+      loadOthers: async () => {
+        const r = await supa<Array<{ id: string; finding_id: string }>>(
+          s, `/rest/v1/dev_autopilot_executions?status=in.(ci,merging)&pr_number=not.is.null&id=neq.${exec.id}&select=id,finding_id&order=created_at.desc&limit=10`,
+        );
+        if (!r.ok || !r.data) return [];
+        const all = await Promise.all(r.data.map((o) => asChange(o.id, o.finding_id)));
+        return all.filter((c): c is OpenChange => !!c);
+      },
+    },
+  });
+}
+
 async function loadFindingVtid(s: SupaConfig, findingId: string): Promise<string | null> {
   if (!findingId) return null;
   const r = await supa<Array<{ activated_vtid: string | null }>>(
@@ -750,6 +807,14 @@ export async function ciWatcherTick(): Promise<void> {
         message: `Execution ${exec.id.slice(0, 8)} CI failed: ${failureReason}`,
         payload: { execution_id: exec.id, pr_url: exec.pr_url, failed_checks: analysis.failedNames, mergeable_state: mState, gate_reason: failureReason, ci_log_jobs: evidence.map((e) => e.job_id) },
       });
+      // VTID-04800 (Jev A6): bucket each failing check (test / type / lint /
+      // governance / dependency / infrastructure). Off unless
+      // JEV_CI_FAILURE_ROUTING_MODE is set; never awaited, routing unchanged.
+      if (isCiFailureRoutingOn()) void runCiFailureRouting({ executionId: exec.id, failedChecks: analysis.failedNames, evidence });
+      // VTID-04807 (Jev A5): did a failing suite match one Jev would have run?
+      if (isTestSelectionOn()) void recordTestSelectionOutcome(exec.id, { passed: false, evidence });
+      if (isPrClashOn() && mState === 'dirty') void recordPrClashOutcome(exec.id, true);
+      if (isChangeRiskOn() && mState !== 'dirty') void recordChangeRiskOutcome(exec.id, 'ci_failed');
       await bridgeFailure(exec.id, 'ci', failureReasonWithEvidence);
       continue;
     }
@@ -789,11 +854,14 @@ export async function ciWatcherTick(): Promise<void> {
         message: `Execution ${exec.id.slice(0, 8)} CI failed (recheck): ${reason}`,
         payload: { execution_id: exec.id, pr_url: exec.pr_url, failed_checks: recheckAnalysis.failedNames, mergeable_state: recheckMState, gate_reason: reason },
       });
+      if (isPrClashOn() && recheckMState === 'dirty') void recordPrClashOutcome(exec.id, true);
       await bridgeFailure(exec.id, 'ci', reason);
       continue;
     }
 
     // Both gate evaluations passed. Proceed with merge.
+    // VTID-04808 (Jev A7): shadow clash check against the other open PRs.
+    clashCheckBeforeMerge(s, exec);
     // VTID-04218: the merge is irreversible; the bookkeeping must land
     // first. If the ci→merging transition did not move the row (another
     // tick took it, or the database refused the write), do NOT merge —
@@ -817,6 +885,8 @@ export async function ciWatcherTick(): Promise<void> {
         non_blocking_failures: analysis.failedNames,
       },
     });
+    if (isTestSelectionOn()) void recordTestSelectionOutcome(exec.id, { passed: true });
+    if (isPrClashOn()) void recordPrClashOutcome(exec.id, false);
 
     // Defense-in-depth: check risk class one more time before auto-merging.
     // The approve safety-gate already rejected high-risk, but an execution
@@ -1070,6 +1140,7 @@ export async function verificationWatcherTick(): Promise<void> {
         message: `Execution ${exec.id.slice(0, 8)} verification failed: ${verdict.reason}`,
         payload: { execution_id: exec.id, pr_url: exec.pr_url, blast_radius: verdict.blastRadiusEvents },
       });
+      secondOpinionOnFix(s, exec, { state: 'fail', reason: verdict.reason || 'blast_radius', blast_radius: verdict.blastRadiusEvents.length, probe: null });
       await bridgeFailure(exec.id, 'verification', verdict.reason || 'verification window saw error events', {
         blast_radius: verdict.blastRadiusEvents,
         verification_result: { state: 'fail', reason: verdict.reason },
@@ -1106,6 +1177,7 @@ export async function verificationWatcherTick(): Promise<void> {
           message: `Execution ${exec.id.slice(0, 8)} verification failed: ${reason}`,
           payload: { execution_id: exec.id, pr_url: exec.pr_url, reprobe: { endpoint: probeTarget, http_status: probe.http_status } },
         });
+        secondOpinionOnFix(s, exec, { state: 'fail', reason: 'reprobe_unhealthy', blast_radius: 0, probe: { endpoint: probeTarget, healthy: false, http_status: probe.http_status ?? null } });
         await bridgeFailure(exec.id, 'verification', reason, {
           verification_result: { state: 'fail', reason: 'reprobe_unhealthy', endpoint: probeTarget, http_status: probe.http_status },
         });
@@ -1114,6 +1186,7 @@ export async function verificationWatcherTick(): Promise<void> {
     }
 
     // pass — blast radius clean AND (re-probe healthy OR no probeable endpoint)
+    secondOpinionOnFix(s, exec, { state: 'pass', reason: null, blast_radius: 0, probe: probeTarget ? { endpoint: probeTarget, healthy: true, http_status: 200 } : null });
     await transitionStatus(s, exec.id, 'verifying', 'completed', {
       completed_at: new Date().toISOString(),
     });

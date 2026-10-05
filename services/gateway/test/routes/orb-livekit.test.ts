@@ -787,7 +787,10 @@ describe('orb-livekit routes', () => {
       expect(metadataArg.user_jwt).toBeNull();
     });
 
-    it('coerces an admin caller on a mobile user-agent down to the community role', async () => {
+    // VTID-04776: the device no longer decides the role (CLAUDE.md 42g) —
+    // the screen does, through the same Assistant Profile resolver orb-live
+    // uses. A phone with no declaration is the member surface → community.
+    it('a mobile caller that declares no surface gets the member (community) role', async () => {
       const uid = freshUserId();
       const token = await signToken({ sub: uid });
       mockActiveProviderRow('livekit');
@@ -801,6 +804,64 @@ describe('orb-livekit routes', () => {
       const metadataArg = JSON.parse(mockAccessTokenCtor.mock.calls[0][2].metadata);
       expect(metadataArg.is_mobile).toBe(true);
       expect(metadataArg.role).toBe('community');
+      expect(metadataArg.surface).toBe('vitanaland');
+    });
+
+    it('VTID-04776: a phone showing the admin screens gets the admin Vitana — the device does not decide', async () => {
+      const uid = freshUserId();
+      const token = await signToken({ sub: uid });
+      mockActiveProviderRow('livekit');
+      setLiveKitEnv();
+      const res = await request(app)
+        .post('/api/v1/orb/livekit/token')
+        .set('Authorization', `Bearer ${token}`)
+        .set('User-Agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) AppleWebKit/605.1')
+        .send({ surface: 'admin', view_role: 'admin' });
+      expect(res.status).toBe(200);
+      const metadataArg = JSON.parse(mockAccessTokenCtor.mock.calls[0][2].metadata);
+      expect(metadataArg.is_mobile).toBe(true);
+      expect(metadataArg.role).toBe('admin');
+      expect(metadataArg.surface).toBe('admin');
+    });
+
+    it('VTID-04776: the same declaration resolves the same role on desktop and mobile', async () => {
+      const roles: string[] = [];
+      for (const ua of ['Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)', 'Mozilla/5.0 (Linux; Android 14) Mobile']) {
+        mockAccessTokenCtor.mockClear();
+        const token = await signToken({ sub: freshUserId() });
+        mockActiveProviderRow('livekit');
+        setLiveKitEnv();
+        const res = await request(app)
+          .post('/api/v1/orb/livekit/token')
+          .set('Authorization', `Bearer ${token}`)
+          .set('User-Agent', ua)
+          .send({ surface: 'backoffice' });
+        expect(res.status).toBe(200);
+        roles.push(JSON.parse(mockAccessTokenCtor.mock.calls[0][2].metadata).role);
+      }
+      expect(roles).toEqual(['backoffice', 'backoffice']);
+    });
+
+    it('VTID-04776: emits orb.livekit.session.minted with tenant, surface, role and lang', async () => {
+      const uid = freshUserId();
+      const token = await signToken({ sub: uid, tenantId: TENANT_A });
+      mockActiveProviderRow('livekit');
+      setLiveKitEnv();
+      const res = await request(app)
+        .post('/api/v1/orb/livekit/token')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ lang: 'de', surface: 'commerce' });
+      expect(res.status).toBe(200);
+      const minted = mockEmitOasisEvent.mock.calls.map((c) => c[0]).find((e: any) => e.type === 'orb.livekit.session.minted');
+      expect(minted).toBeDefined();
+      expect(minted.payload).toMatchObject({
+        session_id: res.body.orb_session_id,
+        tenant_id: TENANT_A,
+        user_id: uid,
+        surface: 'commerce',
+        role: 'commerce',
+        lang: 'de',
+      });
     });
 
     it('defaults lang to "en" and agent_id to "vitana" when omitted', async () => {

@@ -1,0 +1,4 @@
+{"vtid":"VTID-04824","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"existing","ref":"npx jest test/vtid-04754-jev-prod-workflow.test.ts test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts","cwd":"services/gateway","reason":"Production-workflow-only change; staging deploys through AWS-STAGE-DEPLOY-GATEWAY.yml, which is untouched. The step layout, the unchanged Jev block and the per-step size limit are proven by these suites; the next production deploy's own smoke and post-deploy verification (automatic rollback, VTID-04647) prove it live."}
+]}

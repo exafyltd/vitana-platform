@@ -12,6 +12,7 @@
  */
 import { resolveOrbSurface, type OrbSurface } from '../live/surface';
 import { clampRoleToProfile, type AssistantProfile } from './assistant-profile';
+import { isCommerceAiSetupEnabled } from '../../services/commerce-ai-setup-flag';
 
 export interface ProfiledSessionLike {
   assistantProfile?: AssistantProfile;
@@ -91,8 +92,10 @@ export function workSurfaceGreetingFields(
   session: ProfiledSessionLike & {
     workSurfaceBriefing?: string | null;
     workSurfaceKnowledge?: { pulse?: { highlights?: string[] } | null } | null;
+    commerce_setup?: boolean;
+    turn_count?: number;
   },
-): { surface?: string; workSurfaceRole?: string | null; workSurfaceHighlights?: string[] } {
+): { surface?: string; workSurfaceRole?: string | null; workSurfaceHighlights?: string[]; workSurfaceTask?: 'commerce_setup' } {
   const profile = session.assistantProfile;
   if (!profile || !profile.isWorkSurface) return {};
   const highlights: string[] = [];
@@ -101,7 +104,17 @@ export function workSurfaceGreetingFields(
   if (highlights.length === 0 && typeof session.workSurfaceBriefing === 'string') {
     highlights.push(...briefingHighlights(session.workSurfaceBriefing));
   }
-  return { surface: profile.surface, workSurfaceRole: profile.role, workSurfaceHighlights: highlights };
+  // VTID-04840: opened from the commerce AI setup sheet — only before the
+  // first turn, so a later transparent reconnect does not ask again.
+  const commerceSetup =
+    session.commerce_setup === true && (session.turn_count || 0) === 0 &&
+    profile.surface === 'commerce' && isCommerceAiSetupEnabled();
+  return {
+    surface: profile.surface,
+    workSurfaceRole: profile.role,
+    workSurfaceHighlights: highlights,
+    ...(commerceSetup ? { workSurfaceTask: 'commerce_setup' as const } : {}),
+  };
 }
 
 /**

@@ -35,7 +35,24 @@ export type BedrockContentBlock =
   // and the model's follow-up — and Anthropic pairs them by `id`/`tool_use_id`.
   // Without these the operator's tool round-trip cannot be expressed at all.
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
-  | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean };
+  | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean }
+  // VTID-04868: extended-thinking blocks. Opaque — they must be echoed back
+  // unchanged (signature / data included) on the assistant turn they came from.
+  | BedrockThinkingBlock;
+
+/**
+ * VTID-04868: a thinking block as returned by the Messages API. Kept as an
+ * open record on purpose: any field the API adds later is carried back
+ * verbatim instead of being stripped by a narrower type.
+ */
+export type BedrockThinkingBlock =
+  | ({ type: 'thinking'; thinking: string; signature: string } & Record<string, unknown>)
+  | ({ type: 'redacted_thinking'; data: string } & Record<string, unknown>);
+
+/** VTID-04868: adaptive thinking (Claude 4.6+). */
+export type BedrockThinkingConfig = { type: 'adaptive' };
+/** VTID-04868: output_config.effort levels accepted by Opus 4.6. */
+export type BedrockEffort = 'low' | 'medium' | 'high' | 'max';
 
 export interface BedrockTool {
   name: string;
@@ -69,6 +86,14 @@ export interface BedrockInvokeRequest {
    */
   tools?: BedrockTool[];
   tool_choice?: BedrockToolChoice;
+  /**
+   * VTID-04868: extended thinking. Omitted ⇒ not sent (default, unchanged
+   * request body). When set, `temperature` is NOT sent — the Messages API
+   * rejects a non-default temperature alongside thinking.
+   */
+  thinking?: BedrockThinkingConfig;
+  /** VTID-04868: passed through as `output_config` (e.g. `{ effort: 'high' }`). Omitted ⇒ not sent. */
+  output_config?: { effort?: BedrockEffort };
 }
 
 export interface BedrockToolCall {
@@ -96,6 +121,11 @@ export interface BedrockInvokeResponse {
   toolCalls?: BedrockToolCall[];
   /** Anthropic stop reason, e.g. 'tool_use' | 'end_turn' | 'max_tokens'. */
   stopReason?: string;
+  /**
+   * VTID-04868: thinking / redacted_thinking blocks, VERBATIM and in response
+   * order. Empty unless the request enabled thinking.
+   */
+  thinkingBlocks?: BedrockThinkingBlock[];
   model: string;
   upstream_ms: number;
   usage?: { input_tokens?: number; output_tokens?: number };
@@ -133,8 +163,9 @@ export function parseBedrockContent(payload: {
     name?: string;
     id?: string;
     input?: Record<string, unknown>;
+    [k: string]: unknown;
   }>;
-}): { text: string; toolCall?: BedrockToolCall; toolCalls: BedrockToolCall[] } {
+}): { text: string; toolCall?: BedrockToolCall; toolCalls: BedrockToolCall[]; thinkingBlocks: BedrockThinkingBlock[] } {
   const blocks = Array.isArray(payload?.content) ? payload.content : [];
   const text = blocks
     .filter((b) => b?.type === 'text' && typeof b.text === 'string')
@@ -157,7 +188,13 @@ export function parseBedrockContent(payload: {
       arguments: b.input as Record<string, unknown>,
       id: typeof b.id === 'string' ? b.id : undefined,
     }));
-  return { text, toolCall: toolCalls[0], toolCalls };
+  // VTID-04868: thinking blocks are kept exactly as received (a shallow copy of
+  // the whole block, every field) — re-serialising them from a narrower shape
+  // would drop the signature and the next tool turn would be rejected.
+  const thinkingBlocks = blocks
+    .filter((b) => b?.type === 'thinking' || b?.type === 'redacted_thinking')
+    .map((b) => ({ ...b }) as BedrockThinkingBlock);
+  return { text, toolCall: toolCalls[0], toolCalls, thinkingBlocks };
 }
 
 export async function invokeBedrock(
@@ -181,18 +218,7 @@ export async function invokeBedrock(
       region: bedrockRegion(),
       requestHandler: new NodeHttpHandler(),
     });
-    const body = JSON.stringify({
-      anthropic_version: 'bedrock-2023-05-31',
-      max_tokens: req.max_tokens ?? 2048,
-      temperature: req.temperature ?? 0.5,
-      ...(req.system ? { system: req.system } : {}),
-      messages: req.messages,
-      // VTID-03496: tools/tool_choice are now serialized. Omitted entirely
-      // when absent — Bedrock rejects a null/empty `tools` key rather than
-      // treating it as "no tools".
-      ...(req.tools && req.tools.length > 0 ? { tools: req.tools } : {}),
-      ...(req.tool_choice ? { tool_choice: req.tool_choice } : {}),
-    });
+    const body = JSON.stringify(buildBedrockRequestBody(req));
     const command = new InvokeModelCommand({
       modelId: req.model,
       contentType: 'application/json',
@@ -201,12 +227,13 @@ export async function invokeBedrock(
     });
     const resp = await client.send(command);
     const payload = JSON.parse(new TextDecoder().decode(resp.body));
-    const { text, toolCall, toolCalls } = parseBedrockContent(payload);
+    const { text, toolCall, toolCalls, thinkingBlocks } = parseBedrockContent(payload);
     return {
       ok: true,
       text,
       toolCall,
       toolCalls,
+      ...(thinkingBlocks.length > 0 ? { thinkingBlocks } : {}),
       stopReason: typeof payload?.stop_reason === 'string' ? payload.stop_reason : undefined,
       model: req.model,
       upstream_ms: Date.now() - start,
@@ -222,4 +249,27 @@ export async function invokeBedrock(
       message: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+/**
+ * Build the InvokeModel JSON body. Pure; exported for tests (VTID-04868).
+ * Without `thinking`/`output_config` the body is exactly what shipped before.
+ */
+export function buildBedrockRequestBody(req: BedrockInvokeRequest): Record<string, unknown> {
+  return {
+    anthropic_version: 'bedrock-2023-05-31',
+    max_tokens: req.max_tokens ?? 2048,
+    // VTID-04868: temperature is omitted when thinking is on (the API only
+    // accepts the default with extended thinking).
+    ...(req.thinking ? {} : { temperature: req.temperature ?? 0.5 }),
+    ...(req.system ? { system: req.system } : {}),
+    messages: req.messages,
+    // VTID-03496: tools/tool_choice are now serialized. Omitted entirely
+    // when absent — Bedrock rejects a null/empty `tools` key rather than
+    // treating it as "no tools".
+    ...(req.tools && req.tools.length > 0 ? { tools: req.tools } : {}),
+    ...(req.tool_choice ? { tool_choice: req.tool_choice } : {}),
+    ...(req.thinking ? { thinking: req.thinking } : {}),
+    ...(req.output_config ? { output_config: req.output_config } : {}),
+  };
 }

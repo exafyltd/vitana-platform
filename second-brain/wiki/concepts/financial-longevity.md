@@ -1,6 +1,6 @@
 # Financial Longevity Model
 
-> Maxina's three-layer economic system -- credits, cash, and VTN tokens -- that aligns financial incentives with health outcomes, treating financial stability as a core longevity pillar.
+> Maxina's three-layer economic system -- credits, cash, and VTNA tokens -- that aligns financial incentives with health outcomes, treating financial stability as a core longevity pillar.
 
 ## Why Money and Longevity Are Inseparable
 
@@ -52,13 +52,13 @@ Credits keep value circulating within the ecosystem, reinforcing the cycle of he
 - Regular payout schedule
 - Full transaction history transparency
 
-### 3. VTN (Vitana Tokens) -- The Long-Term Layer
+### 3. VTNA (Vitana Tokens) -- The Long-Term Layer
 
 **Status:** Coming soon (not yet live as of the knowledge base date).
 
-**Concept:** Token-based system for long-term value accrual. Holding VTN signals long-term commitment to the ecosystem. As the ecosystem grows, VTN value grows with it. Based on staking -- aligning the holder's financial interest with the long-term health of the ecosystem.
+**Concept:** Token-based system for long-term value accrual. Holding VTNA signals long-term commitment to the ecosystem. As the ecosystem grows, VTNA value grows with it. Based on staking -- aligning the holder's financial interest with the long-term health of the ecosystem.
 
-VTN is designed to serve the "long game" of longevity economics: credits for daily engagement, cash for current financial needs, VTN for long-term ecosystem participation.
+VTNA is designed to serve the "long game" of longevity economics: credits for daily engagement, cash for current financial needs, VTNA for long-term ecosystem participation.
 
 ## Earning Through Wellness -- Key Mechanisms
 
@@ -84,7 +84,7 @@ The system maintains recommendation quality through:
 The wallet is described as a "financial health dashboard" showing all three layers:
 - Credit balance (engagement consistency indicator)
 - Cash earnings (recommendation impact indicator)
-- VTN holdings (long-term commitment indicator, when available)
+- VTNA holdings (long-term commitment indicator, when available)
 
 Full earning history, transaction records, and payout tracking.
 

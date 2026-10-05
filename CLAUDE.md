@@ -13,8 +13,14 @@ This file contains critical information for AI assistants working on the Vitana 
 > the platform owner opened a brand-new, dedicated GCP project (90-day free
 > credit window) and asked to revive the Vertex Live API — never deleted,
 > only made structurally unreachable, see `upstream-provider-selector.ts`'s
-> own VTID-03723 header — for **Serbian voice sessions only**, behind
-> `VERTEX_SERBIAN_BRIDGE_ENABLED=true`. Every other Vitana process still
+> own VTID-03723 header — for **Serbian voice sessions** behind
+> `VERTEX_SERBIAN_BRIDGE_ENABLED=true`, and since VTID-04813 for **Russian
+> voice sessions** behind its own separate `VERTEX_RUSSIAN_BRIDGE_ENABLED=true`
+> (Polly has no neural or generative Russian voice at all — only
+> standard-engine `Tatyana`/`Maxim` — so the Russian voice quality is not
+> fixable inside Polly; owner decision 2026-10-01). Two languages, two
+> independent switches, two `ru`/`sr`-only predicates — never one widened
+> language list. Every other Vitana process still
 > runs on AWS exclusively: no OASIS, no autopilot, no other agent, no Cloud
 > Run, no Cloud Scheduler on GCP anywhere else. Before touching any
 > `gcloud`/Cloud Run/Artifact Registry/GCP-project reference below, check
@@ -57,7 +63,10 @@ Claude must **always** do the following:
     IS the approval (see IF-THEN rule "task moved to in_progress manually
     → explicit consent"). Multiple distinct fixes in one conversation get
     multiple distinct VTIDs, not one VTID shared across unrelated changes.
-    (VTID-03448)
+    (VTID-03448) **Since VTID-04868 the allocation comes right AFTER the
+    plan has been sparred and the owner has approved it** — see rules
+    51–55 (Plan Sparring Gate). "First step" now means first step after
+    an approved, sparred plan; it never means skipping the sparring.
 3. **Always check memory first** before proposing changes, fixes, or new systems.
 4. **Always respect existing governance rules** over new ideas or optimizations.
 5. **Always require `spec_status=approved`** before execution.
@@ -370,6 +379,40 @@ Applies to both repos.
     STAGING-VERIFY fails → **THEN** no ready message and no PUBLISH: fix
     forward and re-verify; never skip, disable or loosen a test to get green.
 
+### Plan Sparring Gate (STANDING RULE — VTID-04868)
+
+Owner decision 2026-10-03: *"Every new plan must have a ping pong sparring
+agent to support improvement of the plan … before a new VTID is generated,
+and it must be a standard process no matter how many new plans we create."*
+Applies to both repos and to every plan producer — Claude Code sessions,
+Operator Chat/Console, task intake, Dev Autopilot, self-healing, voice,
+email intake, routines. Procedure: skill `.claude/skills/plan-sparring/`.
+
+51. **Plan → sparring → owner approval → VTID → code.** No VTID is
+    allocated for a plan that has not been sparred, and no VTID is ever
+    allocated for the sparring itself.
+52. **The partner is independent and adversarial.** It sees the plan and the
+    code, never the planner's reasoning; it verifies the plan's premises
+    against the code (`file:line`) and its findings are kept verbatim. Every
+    finding gets an answer — accepted (plan changed), rejected (reason) or
+    deferred (where tracked) — and goes back to the same partner. At least
+    two passes for every change class; cap 3 rounds (standard). A rejection
+    the partner still disputes is unresolved and goes to the owner.
+53. **Partner model: Claude Opus 4.6 on AWS Bedrock** (owner decision
+    2026-10-04), one config value (`PLAN_SPARRING_MODEL`). **No fallback** —
+    a failed partner call escalates to the owner; never Sonnet, DeepSeek or
+    Google silently.
+54. **The gate is the database**, not this text: a `vtid_ledger` trigger
+    checks every new VTID for a converged-or-escalated, owner-approved
+    sparring record with a matching plan hash. It runs in log mode first,
+    then enforce. While sessions can run `execute_sql` as `postgres`, a
+    disabled trigger or changed mode is **detected (hourly reconciler → P1),
+    not prevented** — an accepted residual (owner decision 2026-10-04) until
+    the Aurora cutover gives full role control.
+55. **Break-glass** (P1 incident with gateway or Bedrock down): only the
+    owner allocates through the exemption role, logged as
+    `vtid.plan_sparring.break_glass`; a full sparring follows within 24h.
+
 ---
 
 ## 🔁 IF–THEN RULES
@@ -596,14 +639,19 @@ await page.reload();
     for every language; that general fallback is still permanently dead
     (GCP billing disabled 2026-08-16, VTID-03649) and voice runs on Amazon
     Nova Sonic (+ the Transcribe/Bedrock/Fish or Polly cascade for
-    languages Nova can't speak) for every language except one. **Serbian
-    is the sole, deliberate exception (VTID-04000, §2e-vertex-serbian-bridge):**
-    a NEW, dedicated GCP project (never `lovable-vitana-vers1`) behind
-    `VERTEX_SERBIAN_BRIDGE_ENABLED=true`, narrowly gated in
+    languages Nova can't speak) for every language except two.
+    **`sr` (VTID-04000, §2e-vertex-serbian-bridge) and `ru` (VTID-04813)
+    are the deliberate exceptions:** a NEW, dedicated GCP project (never
+    `lovable-vitana-vers1`), each behind its OWN switch —
+    `VERTEX_SERBIAN_BRIDGE_ENABLED=true` and
+    `VERTEX_RUSSIAN_BRIDGE_ENABLED=true` — each with its own
+    single-language predicate, both narrowly gated in
     `upstream-provider-selector.ts` so no other language or session can
-    ever reach it. Do not reintroduce a Google call ANYWHERE else — this
-    carve-out is one language, one flag, one narrow selector gate, not a
-    general reopening.
+    ever reach it. Do not reintroduce a Google call ANYWHERE else, and do
+    NOT add a third language by widening either predicate into a list: a
+    new bridge language is a new switch, a new predicate and a new VTID,
+    so turning one off never turns another off and deleting one stays a
+    one-file operation.
 28. **IF** validation is needed → **THEN use Claude (via Bedrock).**
 29. **IF** model fallback occurs → **THEN log explicitly.** A fallback that
     lands on Google must be treated as an incident, not as normal operation.
@@ -650,6 +698,11 @@ seeing them at all.
 **This question is permanently settled. Do not re-ask the user "should this
 have a VTID" or "do you have a VTID for this" ever again.** Every task gets
 one, Claude allocates it itself, first step, no exceptions.
+
+**Step 0 (VTID-04868): spar the plan first.** Run the `plan-sparring` skill
+and get the owner's approval of the sparred plan; then allocate, passing the
+sparring id (`p_sparring_id`) once the gateway tier is live. See Part 1 rules
+51–55.
 
 Procedure, in order of preference:
 

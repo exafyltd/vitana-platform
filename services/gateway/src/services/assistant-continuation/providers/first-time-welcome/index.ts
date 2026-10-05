@@ -5,8 +5,9 @@
  * `user_journey.is_first_session === true`. Wins priority 95, above every
  * other turn-1 producer (goal-completion-inquiry 92, new-day-return 90,
  * Teacher 85, voice-wake-brief 80). This is the one-time onboarding moment:
- * Vitana introduces herself, names the 90-day default starter plan, and
- * invites the user to set their first goal.
+ * Vitana introduces herself and invites the member to press play on
+ * Episode 1 of their Audiobook (VTID-04760 — was: the 90-day starter plan
+ * and a first goal, recited from a hardcoded script).
  *
  * Trigger contract (plan §2.2 — "First-ever session"):
  *   user_journey.is_first_session === true
@@ -26,9 +27,10 @@
  * cleared at session-end by user-journey-service.updateSessionEndState
  * (clear_first_session) — this is defense-in-depth, not the sole writer.
  *
- * Architecture note: returns a server-composed `userFacingLine` for the
- * wake-brief Say-exactly pattern, identical to voice-wake-brief /
- * new-day-return. No new prompt block, no system-instruction concat. The
+ * Architecture note: `userFacingLine` carries the welcome INTENT (VTID-04760),
+ * which buildVertexWakeBriefBlock renders as a compositional opener (keyed on
+ * the `first-time-welcome:` dedupe prefix), never the Say-exactly block. The
+ * LiveKit bootstrap withholds it from the agent's deterministic session.say(). No new prompt block, no system-instruction concat. The
  * ranker picks this at 95 and the controller speaks the line. Transport-
  * agnostic: the ranker is shared by Vertex (live-session-controller) and
  * LiveKit (orb-livekit), so both transports get the welcome for free.
@@ -42,7 +44,7 @@ import type {
   ProviderResult,
   AssistantContinuation,
 } from '../../types';
-import { renderFirstTimeWelcomeLine } from './content';
+import { buildFirstTimeWelcomeIntent, FIRST_TIME_WELCOME_DEDUPE_PREFIX } from './content';
 import * as repo from './index-repository';
 
 export const FIRST_TIME_WELCOME_PROVIDER_KEY = 'first_time_welcome' as const;
@@ -170,10 +172,10 @@ export function makeFirstTimeWelcomeProvider(
         };
       }
 
-      const line = renderFirstTimeWelcomeLine({
-        lang: inputs.lang,
-        firstName: inputs.firstName,
-      });
+      // VTID-04760: an INTENT, not a sentence (NEVER-rule 41). The wake-brief
+      // block builder renders it compositionally (dedupe prefix below), so the
+      // model writes the welcome itself in the member's language.
+      const line = buildFirstTimeWelcomeIntent({ firstName: inputs.firstName });
       if (!line || line.trim().length === 0) {
         return {
           providerKey: FIRST_TIME_WELCOME_PROVIDER_KEY,
@@ -195,24 +197,23 @@ export function makeFirstTimeWelcomeProvider(
         kind: 'wake_brief',
         priority,
         userFacingLine: line,
-        // Invites the user to set their first goal — confirming routes
-        // into the Life Compass setup flow. Same flow goal-completion-
-        // inquiry uses on confirmation. The model interprets a "yes" /
-        // a stated goal and proceeds conversationally; the navigate CTA
-        // is the deterministic fallback target.
+        // VTID-04760: invites the member to start Episode 1 of their
+        // Audiobook. A "yes" opens My Journey with the Audiobook player
+        // started (`?audiobook=play`); the model may equally start the
+        // first episode conversationally via narrate_guided_session.
         cta: {
           type: 'navigate',
-          route: '/life-compass',
-          payload: { intent: 'first_goal' },
+          route: '/autopilot?audiobook=play',
+          payload: { intent: 'audiobook_episode_1' },
         },
         evidence: [
           { kind: 'first_time_welcome', detail: 'is_first_session_true' },
-          { kind: 'default_plan', detail: '90_day_starter' },
+          { kind: 'starting_point', detail: 'audiobook_episode_1' },
         ],
         // Dedupe: one welcome per user, ever. The is_first_session flip is
         // the real one-time guard; this key keeps the same logical
         // continuation stable across re-renders of the same session.
-        dedupeKey: `first-time-welcome:${inputs.userId}`,
+        dedupeKey: `${FIRST_TIME_WELCOME_DEDUPE_PREFIX}${inputs.userId}`,
         privacyMode: 'safe_to_speak',
       };
 

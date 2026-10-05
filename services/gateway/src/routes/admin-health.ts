@@ -25,7 +25,7 @@ import type { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getOrbSessionStateHealth } from '../services/orb/orb-session-state';
 import { getAuroraPool, withAuroraRlsContext } from '../services/aurora-client';
 import { SERVICE_HEALTH_REGISTRY, SERVICE_HEALTH_GROUPS } from '../constants/service-health-registry';
-import { probeAllHealthEndpoints, summarize, type HealthSummary } from '../services/service-health-probe';
+import { buildHealthSummary, resetHealthSummaryCacheForTests } from '../services/health-summary-builder';
 
 const router = Router();
 
@@ -128,45 +128,24 @@ router.get('/health-registry', (_req: Request, res: Response) => {
  * Admin-only: one call fans out to every health route, so an anonymous
  * caller must not be able to trigger it. The caller's bearer token is
  * forwarded to the probes, so admin-gated health routes answer instead of
- * reporting no_access. Results are cached for SUMMARY_CACHE_MS and
- * concurrent callers share one in-flight run.
+ * reporting no_access. Results are cached for SUMMARY_CACHE_MS (30s) and
+ * concurrent callers share one in-flight run. The probe is a loopback
+ * self-probe: health as seen from the serving task.
  */
-const SUMMARY_CACHE_MS = 30_000;
-const SUMMARY_PROBE_TIMEOUT_MS = 5_000;
-let summaryCache: { at: number; value: Omit<HealthSummary, 'cached'> } | null = null;
-let summaryInFlight: Promise<Omit<HealthSummary, 'cached'>> | null = null;
-
-export function resetHealthSummaryCacheForTests(): void {
-  summaryCache = null;
-  summaryInFlight = null;
-}
+//
+// VTID-04875: the probe run, the loopback target and the 30s cache /
+// single-flight now live in services/health-summary-builder.ts
+// (buildHealthSummary) so the Overview can build the summary in-process; this
+// route only gates, forwards the caller's Authorization header and maps a
+// failed run to 500, exactly as before.
+export { resetHealthSummaryCacheForTests };
 
 router.get('/health/summary', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
-  const now = Date.now();
-  if (summaryCache && now - summaryCache.at < SUMMARY_CACHE_MS) {
-    return res.status(200).json({ ...summaryCache.value, cached: true });
-  }
-  if (!summaryInFlight) {
-    const headers: Record<string, string> = {};
-    if (typeof req.headers.authorization === 'string') headers.Authorization = req.headers.authorization;
-    const port = process.env.PORT || '8080';
-    summaryInFlight = probeAllHealthEndpoints(SERVICE_HEALTH_REGISTRY, {
-      baseUrl: `http://127.0.0.1:${port}`,
-      headers,
-      timeoutMs: SUMMARY_PROBE_TIMEOUT_MS,
-    })
-      .then((items) => {
-        const value = summarize(items, SERVICE_HEALTH_GROUPS, new Date().toISOString());
-        summaryCache = { at: Date.now(), value };
-        return value;
-      })
-      .finally(() => {
-        summaryInFlight = null;
-      });
-  }
   try {
-    const value = await summaryInFlight;
-    return res.status(200).json({ ...value, cached: false });
+    const value = await buildHealthSummary({
+      authHeader: typeof req.headers.authorization === 'string' ? req.headers.authorization : undefined,
+    });
+    return res.status(200).json(value);
   } catch (err) {
     console.error('[health-summary] probe run failed:', err);
     return res.status(500).json({ ok: false, error: 'summary_failed' });

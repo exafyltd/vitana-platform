@@ -26,6 +26,7 @@
 
 import { randomUUID, createHash } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+import { registerRuleForLang } from '../i18n/llm-locale';
 import {
   ContextPack,
   MemoryHit,
@@ -72,6 +73,15 @@ import { getUserHealthContext } from './user-health-context';
 // FEATURE_VOICE_RANKING_SHADOW_ENV shadow-compare log. See memory-ranker.ts.
 import { isFeatureLive } from './feature-flags';
 import { rankMemoryHits, shadowCompareHits } from './memory-hit-ranking';
+import { formatPeopleBlock, type KeyedFact } from './memory/people';
+
+/** A structured fact hit's content is "fact_key: fact_value". */
+function factFromHitContent(hit: { content: string }): KeyedFact {
+  const i = hit.content.indexOf(': ');
+  return i < 0
+    ? { fact_key: '', fact_value: '' }
+    : { fact_key: hit.content.slice(0, i), fact_value: hit.content.slice(i + 2) };
+}
 
 // =============================================================================
 // Identity Core — fact keys that are ALWAYS loaded regardless of limits
@@ -1447,6 +1457,9 @@ export function formatContextPackForLLM(pack: ContextPack, opts?: { userTimezone
       context += `- ${hit.content}\n`;
     }
     context += `</structured_facts>\n\n`;
+    // VTID-04766: who is who, so a wife's father is never read as the
+    // member's own father.
+    context += formatPeopleBlock(structuredFactHits.map(factFromHitContent));
   }
 
   // Relationship graph section (from relationship graph)
@@ -1464,7 +1477,10 @@ export function formatContextPackForLLM(pack: ContextPack, opts?: { userTimezone
     const nonFactHits = pack.memory_hits.filter(h => !h.category_key.startsWith('fact:'));
     if (nonFactHits.length > 0) {
       context += `<memory_context>\n`;
-      context += `The following information is from the user's personal memory:\n\n`;
+      // VTID-04750: these are notes and conversation excerpts, some of them
+      // old. Production 2026-09-29: the wife's birthday was stored as 1999
+      // (1997 replaced on 09-25), and Vitana said 1997 from an old excerpt.
+      context += `The following are notes and excerpts from earlier conversations with the user. They can be out of date: when one disagrees with a structured fact above, the structured fact is correct — use it and never the older note.\n\n`;
       for (const hit of nonFactHits) {
         context += `[${hit.category_key}] ${hit.content}\n`;
       }
@@ -1681,5 +1697,6 @@ export function extractLanguageFromContextPack(pack: ContextPack): string | null
  */
 export function buildLanguageDirective(languageName: string | null): string {
   if (!languageName) return '';
-  return `\nLANGUAGE: Respond ONLY in ${languageName}. Do NOT mix languages or switch to English unless the user explicitly asks.\n`;
+  const register = registerRuleForLang(languageName);
+  return `\nLANGUAGE: Respond ONLY in ${languageName}. Do NOT mix languages or switch to English unless the user explicitly asks.${register ? `\n${register}` : ''}\n`;
 }

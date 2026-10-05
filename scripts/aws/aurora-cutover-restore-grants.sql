@@ -1,4 +1,6 @@
 -- Aurora cutover write-freeze RESTORE script (VTID-04084)
+-- VTID-04880: nav_catalog* statements below are guarded with to_regclass -- those
+-- tables were archived to legacy_archive in Supabase and may be absent.
 -- Generated 2026-09-18 from a live snapshot of Supabase's actual
 -- information_schema.role_table_grants for anon/authenticated/service_role
 -- on schema public. Run this AFTER the freeze window ends, immediately
@@ -790,12 +792,12 @@ GRANT DELETE ON TABLE public.mood_pattern_aggregates TO authenticated;
 GRANT DELETE ON TABLE public.mood_pattern_aggregates TO service_role;
 GRANT DELETE ON TABLE public.music_metadata TO authenticated;
 GRANT DELETE ON TABLE public.music_metadata TO service_role;
-GRANT DELETE ON TABLE public.nav_catalog TO authenticated;
-GRANT DELETE ON TABLE public.nav_catalog TO service_role;
-GRANT DELETE ON TABLE public.nav_catalog_audit TO authenticated;
-GRANT DELETE ON TABLE public.nav_catalog_audit TO service_role;
-GRANT DELETE ON TABLE public.nav_catalog_i18n TO authenticated;
-GRANT DELETE ON TABLE public.nav_catalog_i18n TO service_role;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$GRANT DELETE ON TABLE public.nav_catalog TO authenticated$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$GRANT DELETE ON TABLE public.nav_catalog TO service_role$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_audit') IS NOT NULL THEN EXECUTE $SQL04880$GRANT DELETE ON TABLE public.nav_catalog_audit TO authenticated$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_audit') IS NOT NULL THEN EXECUTE $SQL04880$GRANT DELETE ON TABLE public.nav_catalog_audit TO service_role$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_i18n') IS NOT NULL THEN EXECUTE $SQL04880$GRANT DELETE ON TABLE public.nav_catalog_i18n TO authenticated$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_i18n') IS NOT NULL THEN EXECUTE $SQL04880$GRANT DELETE ON TABLE public.nav_catalog_i18n TO service_role$SQL04880$; END IF; END $NAV04880$;
 GRANT DELETE ON TABLE public.news_items TO authenticated;
 GRANT DELETE ON TABLE public.news_items TO service_role;
 GRANT DELETE ON TABLE public.normalized_event TO anon;
@@ -2183,12 +2185,12 @@ GRANT INSERT ON TABLE public.mood_pattern_aggregates TO authenticated;
 GRANT INSERT ON TABLE public.mood_pattern_aggregates TO service_role;
 GRANT INSERT ON TABLE public.music_metadata TO authenticated;
 GRANT INSERT ON TABLE public.music_metadata TO service_role;
-GRANT INSERT ON TABLE public.nav_catalog TO authenticated;
-GRANT INSERT ON TABLE public.nav_catalog TO service_role;
-GRANT INSERT ON TABLE public.nav_catalog_audit TO authenticated;
-GRANT INSERT ON TABLE public.nav_catalog_audit TO service_role;
-GRANT INSERT ON TABLE public.nav_catalog_i18n TO authenticated;
-GRANT INSERT ON TABLE public.nav_catalog_i18n TO service_role;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$GRANT INSERT ON TABLE public.nav_catalog TO authenticated$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$GRANT INSERT ON TABLE public.nav_catalog TO service_role$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_audit') IS NOT NULL THEN EXECUTE $SQL04880$GRANT INSERT ON TABLE public.nav_catalog_audit TO authenticated$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_audit') IS NOT NULL THEN EXECUTE $SQL04880$GRANT INSERT ON TABLE public.nav_catalog_audit TO service_role$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_i18n') IS NOT NULL THEN EXECUTE $SQL04880$GRANT INSERT ON TABLE public.nav_catalog_i18n TO authenticated$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_i18n') IS NOT NULL THEN EXECUTE $SQL04880$GRANT INSERT ON TABLE public.nav_catalog_i18n TO service_role$SQL04880$; END IF; END $NAV04880$;
 GRANT INSERT ON TABLE public.news_items TO authenticated;
 GRANT INSERT ON TABLE public.news_items TO service_role;
 GRANT INSERT ON TABLE public.normalized_event TO anon;
@@ -3574,12 +3576,12 @@ GRANT UPDATE ON TABLE public.mood_pattern_aggregates TO authenticated;
 GRANT UPDATE ON TABLE public.mood_pattern_aggregates TO service_role;
 GRANT UPDATE ON TABLE public.music_metadata TO authenticated;
 GRANT UPDATE ON TABLE public.music_metadata TO service_role;
-GRANT UPDATE ON TABLE public.nav_catalog TO authenticated;
-GRANT UPDATE ON TABLE public.nav_catalog TO service_role;
-GRANT UPDATE ON TABLE public.nav_catalog_audit TO authenticated;
-GRANT UPDATE ON TABLE public.nav_catalog_audit TO service_role;
-GRANT UPDATE ON TABLE public.nav_catalog_i18n TO authenticated;
-GRANT UPDATE ON TABLE public.nav_catalog_i18n TO service_role;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$GRANT UPDATE ON TABLE public.nav_catalog TO authenticated$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$GRANT UPDATE ON TABLE public.nav_catalog TO service_role$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_audit') IS NOT NULL THEN EXECUTE $SQL04880$GRANT UPDATE ON TABLE public.nav_catalog_audit TO authenticated$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_audit') IS NOT NULL THEN EXECUTE $SQL04880$GRANT UPDATE ON TABLE public.nav_catalog_audit TO service_role$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_i18n') IS NOT NULL THEN EXECUTE $SQL04880$GRANT UPDATE ON TABLE public.nav_catalog_i18n TO authenticated$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_i18n') IS NOT NULL THEN EXECUTE $SQL04880$GRANT UPDATE ON TABLE public.nav_catalog_i18n TO service_role$SQL04880$; END IF; END $NAV04880$;
 GRANT UPDATE ON TABLE public.news_items TO authenticated;
 GRANT UPDATE ON TABLE public.news_items TO service_role;
 GRANT UPDATE ON TABLE public.normalized_event TO anon;

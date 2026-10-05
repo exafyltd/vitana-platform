@@ -25,6 +25,7 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { classifyIntentKind, type IntentKind } from '../services/intent-classifier';
+import { shadowIntentKind } from '../services/jev/gates/community-class-a-gates';
 import { extractIntent } from '../services/intent-extractor';
 import { enrichDancePayload } from '../services/intent-dance-helper';
 import { embedIntent } from '../services/intent-embedding';
@@ -79,6 +80,8 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     const utterance = String(body.utterance);
     if (!intentKind) {
       const cls = await classifyIntentKind(utterance);
+      // VTID-04879: Jev in shadow beside the classifier; never awaited, never changes the response.
+      void shadowIntentKind({ utterance, existingKind: cls.intent_kind, existingConfidence: cls.confidence, tenantId: identity.tenant_id, userId: identity.user_id, source: 'intents_api' }).catch(() => undefined);
       if (!cls.intent_kind || cls.confidence < 0.7) {
         return res.status(400).json({
           ok: false,

@@ -239,21 +239,91 @@ function sanitizeControlCharsInStrings(text: string): string {
   return out;
 }
 
+/**
+ * VTID-04845 — live evidence (I18N-DB-SEED runs 36984616124 and
+ * 36997779127, journey-checklist): the Audiobook Prolog topic T257 failed
+ * in pl/pt/sr/tr/zh on BOTH runs, at the same field, every time. Its German
+ * source quotes a question — `Frag Vitana irgendwann: „Was weißt du über
+ * mich?“` — and in those languages the model renders the closing quote as a
+ * plain ASCII `"` inside the JSON string value, without escaping it. Like
+ * the control-character case above, splitting the batch reproduces the same
+ * character, so the unit failed all the way down to a batch of one.
+ *
+ * The repair decides, for each unescaped `"` inside a string, whether it can
+ * be the string's end: only if the next non-blank character is JSON
+ * structure — `:`, `}`, `]`, end of text, or a `,` followed by the next key
+ * or value. Any other `"` is text and gets escaped. Applied only after both
+ * the plain parse and the control-character repair have failed, so a
+ * well-formed reply is never touched. Whatever it yields still goes through
+ * `validateUnit` like any other reply.
+ */
+function escapeInnerQuotesInStrings(text: string): string {
+  const closesString = (from: number): boolean => {
+    let j = from;
+    while (j < text.length && /\s/.test(text[j])) j++;
+    if (j >= text.length) return true;
+    const next = text[j];
+    if (next === ':' || next === '}' || next === ']') return true;
+    if (next !== ',') return false;
+    j++;
+    while (j < text.length && /\s/.test(text[j])) j++;
+    return j >= text.length || text[j] === '"' || text[j] === '{' || text[j] === '[';
+  };
+  let out = '';
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (!inString) {
+      if (ch === '"') inString = true;
+      out += ch;
+      continue;
+    }
+    if (escaped) {
+      out += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      out += ch;
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      if (closesString(i + 1)) {
+        inString = false;
+        out += ch;
+      } else {
+        out += '\\"';
+      }
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
 function parseJsonObject(text: string): Record<string, Record<string, string>> {
   const trimmed = text.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
   let parsed: unknown;
   try {
     parsed = JSON.parse(trimmed);
   } catch (err) {
-    // Retry once against a sanitized copy — see sanitizeControlCharsInStrings
-    // for why this is the one repair worth attempting rather than a general
-    // malformed-JSON parser. If the sanitized copy still fails, surface the
-    // ORIGINAL error: it names the original text's position, which is what
-    // a human debugging a real truncation/refusal case needs to see.
+    // Retry against repaired copies — see sanitizeControlCharsInStrings and
+    // escapeInnerQuotesInStrings for why these are the only repairs worth
+    // attempting rather than a general malformed-JSON parser. If no repaired
+    // copy parses, surface the ORIGINAL error: it names the original text's
+    // position, which is what a human debugging a real truncation/refusal
+    // case needs to see.
+    const sanitized = sanitizeControlCharsInStrings(trimmed);
     try {
-      parsed = JSON.parse(sanitizeControlCharsInStrings(trimmed));
+      parsed = JSON.parse(sanitized);
     } catch {
-      throw err instanceof Error ? err : new Error(String(err));
+      try {
+        parsed = JSON.parse(escapeInnerQuotesInStrings(sanitized));
+      } catch {
+        throw err instanceof Error ? err : new Error(String(err));
+      }
     }
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {

@@ -92,7 +92,7 @@ export async function fetchChecklistTranslationRows(
   return client
     .from('journey_checklist_translations')
     .select(
-      'topic_id, display_label, short_description, explanation_what_it_is, explanation_user_benefit, explanation_when_to_use, explanation_try_this',
+      'topic_id, display_label, short_description, explanation_what_it_is, explanation_user_benefit, explanation_when_to_use, explanation_try_this, vitana_voice_script',
     )
     .eq('locale', locale)
     .in('topic_id', topicIds);

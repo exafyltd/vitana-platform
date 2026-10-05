@@ -1,0 +1,17 @@
+# full gateway jest run — summary lines (the full log was 2118957 bytes)
+  ●  Cannot log after tests are done. Did you forget to wait for something async in your test?
+  ● VTID-04545 characterization: authenticated handleLiveSessionStart › deferred wake (fast start), fast greeting on — turn-1 wake snapshot blocks are unchanged
+  ● VTID-04545 characterization: authenticated handleLiveSessionStart › deferred wake (fast start), fast greeting on — user_journey writes are unchanged
+  ● VTID-04545 characterization: authenticated handleLiveSessionStart › inline wake, fast greeting off — turn-1 wake snapshot blocks are unchanged
+  ● VTID-04545 characterization: authenticated handleLiveSessionStart › inline wake, fast greeting off — user_journey writes are unchanged
+  ● VTID-04545 characterization: authenticated handleLiveSessionStart › inline wake, fast greeting on, tenant in JWT — turn-1 wake snapshot blocks are unchanged
+  ● VTID-04545 characterization: authenticated handleLiveSessionStart › inline wake, fast greeting on, tenant in JWT — user_journey writes are unchanged
+  ● VTID-04545 characterization: authenticated handleLiveSessionStart › inline wake, fast greeting on, tenant resolved — turn-1 wake snapshot blocks are unchanged
+  ● VTID-04545 characterization: authenticated handleLiveSessionStart › inline wake, fast greeting on, tenant resolved — user_journey writes are unchanged
+  ● VTID-04545: session start critical path › the unused journey-greeting text is no longer built: no life_compass / foundation-snapshot reads
+  ● foo › returns the right value
+FAIL test/orb/live/session/vtid-04545-session-start-characterization.test.ts
+Snapshots:   109 passed, 109 total
+Test Suites: 1 failed, 1 skipped, 1462 passed, 1463 of 1464 total
+Tests:       9 failed, 29 skipped, 6 todo, 23484 passed, 23528 total
+Time:        164.467 s, estimated 201 s

@@ -35,10 +35,22 @@ import { writeSseEvent } from '../transport/sse-handler';
 import { detectRememberClaim, detectRememberIntent, REMEMBER_BACKSTOP_MARKER } from '../../../services/memory/remember-backstop';
 
 export interface RememberHold {
-  reason: 'remember_request' | 'save_claim';
+  /**
+   * VTID-04753: `recall_question` — see recall-hold.ts.
+   * VTID-04863: `already_known_check` — see remember-confirm-gate.ts.
+   */
+  reason: 'remember_request' | 'save_claim' | 'recall_question' | 'already_known_check';
   armedAt: number;
   audio: Array<{ dataB64: string; mimeType?: string }>;
   text: string[];
+  /** VTID-04753 (recall_question only): the member's question. */
+  question?: string;
+  /** VTID-04753 (recall_question only): the member's stored facts, null until loaded. */
+  facts?: Array<{ fact_key: string; fact_value: string; provenance_source?: string | null }> | null;
+  /** VTID-04753 (recall_question only): the reply refused, deflected or guessed — held to turn_complete. */
+  suspect?: boolean;
+  /** VTID-04753 (recall_question only): where this hold's part of the reply starts. */
+  replyOffset?: number;
   /** Releases the reply at REMEMBER_HOLD_MAX_MS even if no further event arrives. */
   timer?: NodeJS.Timeout;
 }
@@ -75,8 +87,13 @@ function eligible(session: any): boolean {
 }
 
 function arm(ctx: RememberHoldCtx, reason: RememberHold['reason']): void {
+  armReplyHold(ctx, reason);
+}
+
+/** Arm a hold (no-op when one is armed already). Returns the armed hold, or undefined. */
+export function armReplyHold(ctx: RememberHoldCtx, reason: RememberHold['reason']): RememberHold | undefined {
   const { session } = ctx;
-  if (session.rememberHold) return;
+  if (session.rememberHold) return undefined;
   const hold: RememberHold = { reason, armedAt: Date.now(), audio: [], text: [] };
   // Codex review on #3800: the maximum must hold even when Nova stalls and no
   // further chunk or turn_complete arrives.
@@ -86,6 +103,7 @@ function arm(ctx: RememberHoldCtx, reason: RememberHold['reason']): void {
   hold.timer.unref?.();
   session.rememberHold = hold;
   ctx.deps.emitDiag(session, 'remember_hold_armed', { reason });
+  return hold;
 }
 
 /** Member speech arrived: arm when the turn so far asks Vitana to remember something. */
@@ -169,14 +187,16 @@ export function takeRememberHold(session: any): RememberHold | undefined {
   session.rememberHold = undefined;
   if (hold) clearTimer(hold);
   // Read by the backstop note built during this same turn_complete.
-  session.rememberReplyHeld = Boolean(hold);
+  session.rememberReplyHeld = Boolean(hold) && hold?.reason !== 'recall_question';
+  // VTID-04753: read by the recall backstop's note the same way.
+  session.recallReplyHeld = hold?.reason === 'recall_question';
   return hold;
 }
 
 export async function settleRememberHold(
   ctx: RememberHoldCtx,
   hold: RememberHold | undefined,
-  backstop: Promise<unknown[]> | null,
+  backstop: Promise<unknown> | null,
   waitMs = REMEMBER_HOLD_BACKSTOP_WAIT_MS,
 ): Promise<'dropped' | 'released' | 'none'> {
   if (!hold) return 'none';
@@ -195,9 +215,12 @@ export async function settleRememberHold(
   const timeout = new Promise<'timeout'>((resolve) => {
     timer = setTimeout(() => resolve('timeout'), waitMs);
   });
-  const results = await Promise.race([backstop.catch(() => [] as unknown[]), timeout]);
+  const results = await Promise.race([backstop.catch(() => null), timeout]);
   if (timer) clearTimeout(timer);
-  const noteSentAt = Number(ctx.session.rememberNoteSentAt || 0);
+  // VTID-04753: a recall hold is answered by the recall backstop's note.
+  const noteSentAt = Number(
+    (hold.reason === 'recall_question' ? ctx.session.backstopNoteSentAt : ctx.session.rememberNoteSentAt) || 0,
+  );
   if (results !== 'timeout' && noteSentAt >= hold.armedAt) {
     // The backstop saved (or refused) and told Nova; the next reply says so.
     dropRememberHold(ctx, hold, 'backstop_answered');

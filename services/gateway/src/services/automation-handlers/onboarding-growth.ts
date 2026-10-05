@@ -12,6 +12,7 @@ import { randomUUID } from 'crypto';
 import { AutomationContext, REWARD_TABLE } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
 import * as repo from './onboarding-growth-repository';
+import { creditWalletSucceeded, welcomeBonusEventId } from '../wallet/vtna-reward-keys';
 import { proposeToMember, tallyOutcomes, type ProposalOutcome } from '../community-autopilot/automation-proposals';
 
 const APP_URL = process.env.APP_URL || 'https://vitana.app';
@@ -89,23 +90,30 @@ async function runOrbGuidedOnboarding(ctx: AutomationContext) {
     ctx.log(`Warning: Failed to generate initial recommendations: ${err.message}`);
   }
 
-  // Credit onboarding welcome bonus (small amount to introduce wallet).
-  // credit_wallet() RPC does not exist live; increment_wallet_balance()
-  // does (writes to user_wallets, no idempotency key of its own).
+  // Credit onboarding welcome bonus (small amount to introduce wallet) as
+  // earned VTNA via credit_wallet() (VTID-04809). The key is per member, so
+  // a re-run of this automation can never pay the bonus twice.
   //
   // supabase-js's .rpc() resolves normally with an {error} field on a
   // Postgres-level failure rather than throwing — the catch below only
-  // ever sees a network-layer rejection — so the error field must be
-  // checked explicitly, and actionsTaken/the success log must not fire
-  // unless the credit actually happened.
+  // ever sees a network-layer rejection — and credit_wallet reports business
+  // failures as data.ok=false, so both are checked explicitly, and
+  // actionsTaken/the success log must not fire unless the credit happened.
   try {
-    const { error: walletErr } = await repo.creditWalletBalance(supabase, {
+    const { data: walletData, error: walletErr } = await repo.creditRewardWallet(supabase, {
+      p_tenant_id: tenantId,
       p_user_id: userId,
-      p_currency_type: 'CREDITS',
       p_amount: REWARD_TABLE['complete_onboarding'].amount,
+      p_type: 'reward',
+      p_source: 'AP-1301',
+      p_source_event_id: welcomeBonusEventId(userId),
+      p_description: REWARD_TABLE['complete_onboarding'].description,
     });
-    if (walletErr) {
-      ctx.log(`Wallet credit failed for user ${userId.slice(0, 8)}…: ${walletErr.message}`);
+    if (!creditWalletSucceeded(walletData, walletErr)) {
+      const reason = walletErr?.message ?? (walletData as { error?: string } | null)?.error ?? 'unknown';
+      ctx.log(`Wallet credit failed for user ${userId.slice(0, 8)}…: ${reason}`);
+    } else if ((walletData as { duplicate?: boolean }).duplicate) {
+      ctx.log(`Welcome bonus already credited to user ${userId.slice(0, 8)}…`);
     } else {
       actionsTaken++;
       ctx.log(`Credited welcome bonus to user ${userId.slice(0, 8)}…`);

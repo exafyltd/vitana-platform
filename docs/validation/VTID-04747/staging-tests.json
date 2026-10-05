@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04747",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
+    { "kind": "existing", "ref": "npx jest test/orb/live/session/vtid-04747-soft-turn-end.test.ts test/orb/live/upstream/vtid-04747-client-turn-latch.test.ts test/orb/live/upstream/nova-sonic-protocol.test.ts", "cwd": "services/gateway",
+      "reason": "pinned by unit tests built from production session live-11ec418b; a read-only staging suite cannot speak to the voice model" }
+  ]
+}

@@ -166,7 +166,12 @@ describe('VTID-04517 registry loading', () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => reg }) as unknown as typeof fetch;
     const r = await refreshNavRegistry();
     expect(r.source).toBe('remote');
-    expect(r.registry.screens.map((s) => s.id)).toEqual(['A.B']);
+    // VTID-04814: the member screens come from the live file; the Command
+    // Hub's own screens are always merged in after them.
+    const ids = r.registry.screens.map((s) => s.id);
+    expect(ids[0]).toBe('A.B');
+    expect(ids.slice(1).length).toBeGreaterThan(100);
+    expect(ids.slice(1).every((id) => id.startsWith('DEVHUB.'))).toBe(true);
   });
 
   it('keeps the snapshot when the live registry is unreachable or invalid', async () => {

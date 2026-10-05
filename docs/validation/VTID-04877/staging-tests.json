@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-04877",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
+    { "kind": "existing", "ref": "npx jest test/services/memory-broker.test.ts", "cwd": "services/gateway",
+      "reason": "the flag cache is in-process state inside the broker; STAGING-VERIFY's http tests carry no admin credentials (scripts/ci/staging-verify/run.mjs), so the behaviour is proven against the real broker code; staging CloudWatch gate_ms/unaccounted_ms on the [VTID-04452] orb recall lines is supporting evidence (read-only)" },
+    { "kind": "existing", "ref": "npx jest test/services/memory/vtid-04877-recall-gate-latency.test.ts", "cwd": "services/gateway",
+      "reason": "the log fields are written inside a voice session's memory read" }
+  ]
+}

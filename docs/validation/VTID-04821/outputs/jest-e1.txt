@@ -1,0 +1,369 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [jev] JEV_COMPANY_DOC_RELEVANCE_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isCompanyDocRelevanceOn (src/services/jev/gates/company-doc-relevance-gate.ts:32:21)
+      at Object.<anonymous> (test/vtid-04821-company-doc-search.test.ts:175:37)
+
+  console.warn
+    [jev] company_doc_relevance failed: Cannot read properties of null (reading 'name')
+
+      106 |     );
+      107 |   } catch (err: any) {
+    > 108 |     console.warn(`[jev] ${COMPANY_DOC_RELEVANCE_GATE} failed: ${err?.message || err}`);
+          |             ^
+      109 |     return null;
+      110 |   }
+      111 | }
+
+      at runCompanyDocRelevance (src/services/jev/gates/company-doc-relevance-gate.ts:108:13)
+      at Object.<anonymous> (test/vtid-04821-company-doc-search.test.ts:195:40)
+
+PASS test/vtid-04821-company-doc-search.test.ts
+  VTID-04821 company accounts only
+    ✓ default domain is exafy.io; COMPANY_DOCS_DOMAINS overrides (20 ms)
+    ✓ d.stevanovic@exafy.io → true (1 ms)
+    ✓ J.Tadic@EXAFY.IO → true
+    ✓ someone@gmail.com → false (1 ms)
+    ✓ x@mail.exafy.io → false (1 ms)
+    ✓ x@exafy.io.evil.com → false
+    ✓ exafy.io → false
+    ✓ null → false (1 ms)
+    ✓ read-only files scopes; the granted list must cover them (1 ms)
+    ✓ search terms are escaped for Drive and Graph (1 ms)
+  VTID-04821 search
+    ✓ searches the Exafy Drive and OneDrive; names, kinds, dates and links only (2 ms)
+    ✓ a private account, a missing scope or no connection is never searched (1 ms)
+    ✓ one provider failing never hides the other (1 ms)
+    ✓ connect keeps the scopes the connection already has (1 ms)
+  VTID-04821 Jev relevance gate
+    ✓ company_doc_relevance: business data, internal plane, redacted, one choice question (1 ms)
+    ✓ input: numbered in provider order, short kinds, dates; never ids or links (1 ms)
+    ✓ off (default, typo), no tenant or no results: nothing asked or written (13 ms)
+    ✓ Jev picks d1 → agreed with provider rank 1: true (5 ms)
+    ✓ Jev picks d2 → agreed with provider rank 1: false (1 ms)
+    ✓ Jev picks none → agreed with provider rank 1: false (1 ms)
+    ✓ Jev down → fallback row; never throws (2 ms)
+  VTID-04821 wiring and pins
+    ✓ both tools are declared, dispatched, staff-only and in a router lane (2 ms)
+    ✓ never on the member Connected Apps screen
+    ✓ both gateways pin shadow, never enforce (4 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+  VTID-03788: every run: step in the gateway deploy workflows is valid bash
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: YAML parses and has at least one bash run: step (18 ms)
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: every run: step passes bash -n (95 ms)
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: no single run: step exceeds 20,000 characters (GitHub Actions workflow-file size limit) (3 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml: YAML parses and has at least one bash run: step (4 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml: every run: step passes bash -n (67 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml: no single run: step exceeds 20,000 characters (GitHub Actions workflow-file size limit) (4 ms)
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: the task-definition update step has no apostrophe inside its jq program (VTID-03787/VTID-03788 regression) (5 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [jev] JEV_OPERATOR_ROUTE_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isOperatorRouteOn (src/services/jev/gates/operator-route-gate.ts:63:21)
+      at Object.<anonymous> (test/vtid-04816-operator-route.test.ts:69:31)
+
+  console.warn
+    [jev] operator_route outcome not recorded: x
+
+      123 |     await recordJevShadowOutcome(c.shadow_id, `turn_lane:${lane ?? 'unknown'}`, agreed, sb);
+      124 |   } catch (err: any) {
+    > 125 |     console.warn(`[jev] ${OPERATOR_ROUTE_GATE} outcome not recorded: ${err?.message || err}`);
+          |             ^
+      126 |   }
+      127 | }
+      128 |
+
+      at recordOperatorRouteOutcome (src/services/jev/gates/operator-route-gate.ts:125:13)
+      at Object.<anonymous> (test/vtid-04816-operator-route.test.ts:95:5)
+
+PASS test/vtid-04816-operator-route.test.ts
+  VTID-04816 decision and lanes
+    ✓ operator_route: internal plane, redacted, six lanes (3 ms)
+    ✓ every operator tool has a lane that the decision knows (2 ms)
+    ✓ the lane a turn took: none → answer only; most frequent; tie → first; unknown only → null (2 ms)
+  VTID-04816 gate
+    ✓ off (default, typo): nothing asked or written (3 ms)
+    ✓ Jev ops_diagnostics, tools ["dev_cicd_health","dev_cloudwatch_logs"] → agreed true (2 ms)
+    ✓ Jev ops_diagnostics, tools [] → agreed false (1 ms)
+    ✓ Jev answer_only, tools [] → agreed true (1 ms)
+    ✓ Jev code_lookup, tools ["autopilot_run_task"] → agreed false
+    ✓ abstained, unavailable, unknown tools → agreed null; off → no outcome; never throws (3 ms)
+  VTID-04816 wiring and pins
+    ✓ started before the turn, never awaited; outcome after the (possibly retried) turn (1 ms)
+    ✓ both gateways pin shadow, never enforce (2 ms)
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2169:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2176:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2200:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:2225:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:2419:11)
+
+PASS test/vtid-04560-role-separation-regression.test.ts
+  resolveAssistantProfile — the screen decides, the token verifies
+    ✓ work surface command-hub serves role /command-hub/autopilot/live/ from the first byte (6 ms)
+    ✓ work surface admin serves role /admin/dashboard from the first byte (1 ms)
+    ✓ work surface backoffice serves role /backoffice/dashboard from the first byte (1 ms)
+    ✓ work surface commerce serves role /commerce/org from the first byte (1 ms)
+    ✓ the device never changes the surface: a phone on the Command Hub is still the Command Hub (1 ms)
+    ✓ community screens serve the declared member role; a work role there is narrowed to community (1 ms)
+    ✓ a declared surface wins over the route (the host knows what it renders)
+    ✓ an unknown declared surface falls back to the route, never to a crash or undefined
+    ✓ Command Hub without an exafy_admin claim is unverified — still the developer persona, never community (1 ms)
+    ✓ anonymous sessions stay on the member surface with no role
+    ✓ clampRoleToProfile: stored roles never leak across surfaces (1 ms)
+    ✓ session helpers read the profile; sessions without one keep the legacy derivation
+  greeting ladder — a work surface never reaches a member rung
+    ✓ developer on the Command Hub opens with work_surface_open — normal ladder (context resolved) (4 ms)
+    ✓ developer on the Command Hub opens with work_surface_open — safe-fast ladder (context NOT resolved — the 300 ms gate case) (3 ms)
+    ✓ admin surface opens with its own role opener (2 ms)
+    ✓ backoffice surface opens with its own role opener (1 ms)
+    ✓ commerce surface opens with its own role opener (1 ms)
+    ✓ no facts loaded → the opener offers to check, it does not invent (1 ms)
+    ✓ VTID-04586: a work surface skips the member payload gathers — normal ladder (context resolved)
+    ✓ VTID-04586: a work surface skips the member payload gathers — safe-fast ladder (context NOT resolved — the 300 ms gate case)
+    ✓ VTID-04586: the member surface still gathers — normal ladder (context resolved) (1 ms)
+    ✓ VTID-04586: the member surface still gathers — safe-fast ladder (context NOT resolved — the 300 ms gate case)
+    ✓ VTID-04586: the opener speaks from the loaded facts and calls no tool first (1 ms)
+    ✓ VTID-04586: the developer conduct rule no longer demands a tool call for facts the snapshot covers (1 ms)
+    ✓ a genuine transport reconnect stays silent on a work surface too (1 ms)
+    ✓ the member surface is untouched: no surface field, or vitanaland, never takes the work rung (2 ms)
+    ✓ workSurfaceGreetingFields feeds the rung from the session; member sessions add nothing
+  system instruction — each surface carries only its own Vitana
+    ✓ Command Hub: developer supervisor conduct, the work context, and no member content even when it is concatenated in (12 ms)
+    ✓ Command Hub with no work context carries no bootstrap at all (never the member brain) (2 ms)
+    ✓ admin: work conduct block, no member content (2 ms)
+    ✓ backoffice: work conduct block, no member content (1 ms)
+    ✓ commerce: work conduct block, no member content (1 ms)
+    ✓ member surface keeps the member Vitana exactly as before (2 ms)
+    ✓ every surface keeps the stop-and-farewell rule (3 ms)
+    ✓ extractWorkSurfaceContext keeps only the marked section
+  text path — engineering context only for the console and developer/admin callers
+    ✓ the Operator Console itself (no custom instruction) keeps it
+    ✓ developer caller with a custom instruction keeps it
+    ✓ admin caller with a custom instruction keeps it
+    ✓ infra caller with a custom instruction keeps it
+    ✓ exafy_admin caller with a custom instruction keeps it
+    ✓ member caller community never receives it (1 ms)
+    ✓ member caller patient never receives it
+    ✓ member caller professional never receives it
+    ✓ member caller staff never receives it
+    ✓ member caller undefined never receives it
+  source contracts — the wiring cannot silently disappear
+    ✓ the controller resolves the profile from the declared surface/view_role and stores it on the session (1 ms)
+    ✓ work surfaces skip the member brain and the member wake-brief
+    ✓ the old route override and phone-means-community rule are gone (1 ms)
+    ✓ the setup envelope reads role, surface and tools from the profile (1 ms)
+    ✓ every greeting context carries the work-surface fields (1 ms)
+    ✓ the Nova prewarm resolves the same profile and member role as the session start (1 ms)
+    ✓ the widget declares surface + view_role and restarts on a role switch (1 ms)
+    ✓ the Command Hub declares the developer surface (1 ms)
+  VTID-04561 role registry — one declarative answer per role
+    ✓ every Vitana role has an entry (1 ms)
+    ✓ member-plane roles are served on the member surface by the member ladder; work roles on their surface
+    ✓ privileged voice tools follow the registry, never a member role (1 ms)
+    ✓ the profile persona comes from the registry
+    ✓ the tool catalog has no hard-coded privileged-role list left (2 ms)
+  VTID-04561 one role truth — both switchers write both tables
+    ✓ set_role_preference (community app) also writes user_active_roles
+    ✓ me_set_active_role (Command Hub) also writes role_preferences
+    ✓ the Command Hub switches into the community app of its own environment (12 ms)
+  VTID-04562 domain atlas — a map that cannot silently fall behind the code
+    ✓ every gateway route file is claimed by at least one domain (drift guard) (9 ms)
+    ✓ keys are unique and every domain names code, tables and docs or flags (3 ms)
+    ✓ the developer's words find the right domain (1 ms)
+    ✓ the prompt index is one line per domain and names the lookup tool
+  VTID-04562 live system snapshot — facts with a timestamp, never a throw
+    ✓ critical facts lead the highlights (kill switch, provider outage, error spike) (1 ms)
+    ✓ a clean system says so instead of inventing a problem (1 ms)
+    ✓ a failed source renders as unavailable, the rest still renders (1 ms)
+    ✓ snapshots are cached and concurrent builds coalesce into one
+  VTID-04562 developer knowledge loader — fails open, never member memory
+    ✓ snapshot, atlas and engineering memory all reach the session
+    ✓ failing sources degrade to null, the atlas stays (1 ms)
+    ✓ the Command Hub loader is registered and the member surface gets nothing (3 ms)
+    ✓ the developer loader reads dev_agent_memory, never the member memory tables
+  VTID-04562 developer knowledge tools
+    ✓ both tools are declared for developers and registered with a handler (6 ms)
+    ✓ a community caller is refused
+    ✓ dev_domain_atlas answers a topic with code, tables and docs (1 ms)
+    ✓ the developer conduct block names both tools
+  VTID-04562 text path — the tool-result turn is gated like the main turn
+    ✓ sendToolResultsToVertex only loads the pack for engineering callers (2 ms)
+  VTID-04563 deep dive — read-only tools with guard rails
+    ✓ the probe only GETs /alive and /api/v1/* on the two known hosts
+    ✓ file windows are numbered and bounded (1 ms)
+    ✓ a screen resolves by id, route or title to its App.tsx mount (1 ms)
+    ✓ the executor routes every tool and never throws (5 ms)
+  VTID-04563 deep dive — only developers, on the planner stage, with telemetry
+    ✓ member and admin-surface callers are refused before any model call (1 ms)
+    ✓ a developer question runs bounded on the planner stage and reports findings with telemetry (2 ms)
+    ✓ a loop failure is reported as failed, never as findings (1 ms)
+    ✓ the target is registered for the Command Hub only, read tier
+    ✓ the Command Hub catalog declares dev_deep_dive; the member and admin catalogs never do (2 ms)
+    ✓ a delegation caller carries the served role from the profile
+    ✓ orb-live dispatches dev_deep_dive to the async runner (4 ms)
+  VTID-04564 the Operator Console shares the developer knowledge and deep dive
+    ✓ the console declares the same three developer tools the voice assistant has (1 ms)
+    ✓ engineering callers get the atlas in the prompt; the snapshot stays one tool call away
+    ✓ the console deep dive requires the verified caller on the thread (1 ms)
+  VTID-04565 developer-assistant evaluation set
+    ✓ 60+ questions, every domain covered, every expected tool declared (5 ms)
+    ✓ the atlas routes at least 90% of the questions to the right domain (2 ms)
+    ✓ the live eval script refuses any host but staging and uses the machine credential
+  VTID-04565 telemetry — which Vitana served, and how deep dives went
+    ✓ profiles are counted per surface and resolution (1 ms)
+    ✓ the snapshot reports them and reads them in its one events query
+  VTID-04654 admin opener — facts are the insights, and the briefing is not fetched twice
+    ✓ each numbered insight becomes one fact with its detail; the instruction text is never a fact (3 ms)
+    ✓ a block without numbered items still yields plain lines, minus headings
+    ✓ the admin opener carries the insights as its facts
+    ✓ the admin instruction says the briefing is already loaded, so the no-tool opener has no conflict (1 ms)
+  VTID-04655 me_set_active_role writes role_preferences for a real Supabase token
+    ✓ the preference tenant falls back to the token claim, then the primary membership, members only
+    ✓ the backfill only repairs single-membership users (user_active_roles carries no tenant) (1 ms)
+    ✓ authorization is unchanged: still current_tenant_id() + check_role_permitted, exafy-admin otherwise
+  VTID-04656 the live eval sends thread ids the chat route accepts
+    ✓ the eval script sends a UUID, which is what the route validates
+
+  console.warn
+    [VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily): Could not load the default credentials. Browse to https://cloud.google.com/docs/authentication/getting-started for more information.
+
+      2310 |     .then(() => console.log('[VTID-01219] ORB Voice access token prewarmed'))
+      2311 |     .catch((err: any) =>
+    > 2312 |       console.warn('[VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily):', err?.message));
+           |               ^
+      2313 | }
+      2314 |
+      2315 | // BOOTSTRAP-NOVA-SONIC-VOICE: same latency treatment for Nova — when Nova is
+
+      at src/routes/orb-live.ts:2312:15
+
+(node:1035) MetadataLookupWarning: received unexpected error = Request failed with status code 502 code = UNKNOWN
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS test/vtid-04465-operator-pipeline-regression.test.ts (6.23 s)
+  Golden path: an operator request becomes a merged, deployed, verified change
+    ✓ console turn → VTID → execution → agent → held PR → approve → CI → merge → deploy → verify → ledger closed (639 ms)
+  Safety: only a verified exafy_admin (or the machine credential) can queue an execution
+    ✓ an anonymous console request is refused before any VTID, finding or execution exists (80 ms)
+    ✓ a signed-in member who is not an exafy admin is refused (autopilot_run_task and autopilot_execute_task) (127 ms)
+    ✓ an anonymous request that reuses an admin's thread does not inherit the admin marker (125 ms)
+    ✓ a wrong machine token is not a credential (79 ms)
+    ✓ a verified exafy_admin JWT queues the same execution the machine credential does (94 ms)
+  Safety: an LLM provider outage stops the loop instead of feeding it
+    ✓ both providers failing on the first call fails the execution with the outage error (147 ms)
+    ✓ after one outage failure the next tick claims at most one execution (a probe) (279 ms)
+    ✓ three outage failures in a row: the next tick claims nothing — no retry storm (298 ms)
+  Safety: a run that exhausts the turn cap is snoozed, not re-approved
+    ✓ auto-approve → agent reads until the cap → failure → the next auto-approve pass snoozes the finding (228 ms)
+  CI failure on an agent PR: the fix continues on the same PR
+    ✓ red CI → triage → fix-mode child on the SAME branch → no second PR → green → merged → parent self_healed (373 ms)
+    ✓ VTID-04472 — the VTID of a fix-mode lineage closes as success when the fix lands (it used to close as failed at the first red CI) (352 ms)
+  VTID-04636 — the self-healing reconciler judges a fix-mode VTID by its lineage
+    ✓ leaves the VTID open while the child is in CI, then closes it success (live: VTID-04608/04614 closed failed) (369 ms)
+  Safety: an execution claimed by one environment is left alone by the other
+    ✓ staging's CI watcher ignores a production-claimed PR; production's merges it (116 ms)
+    ✓ a legacy row with no claim stamp stays visible to every environment (77 ms)
+    ✓ staging's running-watchdog does not reclaim a stale run production owns; it does reclaim its own (83 ms)
+    ✓ the production gateway does not claim a queued execution; staging does (171 ms)
+    ✓ production claims only with DEV_AUTOPILOT_PROD_CLAIM_ENABLED=true (exact) (38 ms)
+  Safety: cancelling a running execution stops it — nothing pushed, nothing retried
+    ✓ the operator cancels from the console mid-run; the agent stops at its next boundary (209 ms)
+  Safety: a prior PR the bridge closed unmerged does not block the finding's retry
+    ✓ red CI on a single-shot PR → bridge closes it and stamps pr_closed_unmerged_at → the retry runs and opens a new PR (133 ms)
+  Safety: the kill switch stops claiming and the watchers
+    ✓ an armed kill switch: a queued execution is not claimed and a green PR is not merged (154 ms)
+  Merge: a green PR while main keeps moving (VTID-04612)
+    ✓ main moved but touched none of the PR files → merged on its green CI, no branch update (79 ms)
+    ✓ main touched a file the PR changes → the branch is updated and the PR waits for CI on the new head (76 ms)
+  Console turn: several rounds of tools until the model answers (VTID-04628)
+    ✓ a failed tool call is corrected in the next round and the answer comes from the second result (131 ms)
+    ✓ OPERATOR_MAX_TOOL_ROUNDS=1 keeps the single round: tools once, then the tool-less final call (78 ms)
+    ✓ the round budget ends a model that keeps calling tools: the tool-less final call answers (81 ms)
+  Verification: sporadic unrelated errors do not revert a deployed change (VTID-04625)
+    ✓ the 2026-09-26 revert case: telemetry and two stray errors → completed, not reverted (156 ms)
+    ✓ a new error type firing 3 times after the deploy still fails verification (154 ms)
+  Runner checks: a Command Hub frontend change runs the suites that read the asset (VTID-04617)
+    ✓ the runner jest targets include every suite that names app.js, not only the paired ones (139 ms)
+  Contract: the emulated one-in-flight-execution index matches the migration
+    ✓ the fake refuses a second in-flight execution for a finding with the same statuses the real index covers (61 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 5 passed, 5 total
+Tests:       177 passed, 177 total
+Snapshots:   0 total
+Time:        7.4 s, estimated 10 s
+Ran all test suites matching /test\/vtid-04821|test\/vtid-04816|test\/vtid-04465-operator-pipeline-regression|test\/vtid-04560-role-separation-regression|test\/orb\/live\/upstream\/staging-deploy-workflow-bash-syntax/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,9 @@
+PASS test/vtid-04456-customer-support-pipeline-regression.test.ts
+PASS test/vtid-04560-role-separation-regression.test.ts
+PASS test/orb-tools/admin-oversight-billing-tools.test.ts
+PASS test/vtid-04859-founding-1000.test.ts
+PASS test/routes/billing-founding.test.ts
+PASS test/routes/billing-repository.test.ts
+PASS test/vtid-04465-operator-pipeline-regression.test.ts (7.336 s)
+Test Suites: 7 passed, 7 total
+Tests:       242 passed, 242 total
