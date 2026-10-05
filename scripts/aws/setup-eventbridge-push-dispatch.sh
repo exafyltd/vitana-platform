@@ -73,6 +73,8 @@ export AWS_PAGER=""
 REGION="${VITANA_AWS_REGION:-eu-central-1}"           # matches the rest of this repo's AWS estate (CLAUDE.md §2b)
 ACCOUNT_ID="${AWS_ACCOUNT_ID:-472838866351}"          # this repo's documented AWS account (CLAUDE.md §1b)
 GATEWAY_URL="${GATEWAY_URL:-https://gateway.vitanaland.com}"
+# VTID-04677: secret holding the X-Gateway-Internal token for GATEWAY_URL.
+INTERNAL_TOKEN_SECRET_ID="${GATEWAY_INTERNAL_TOKEN_SECRET_ID:-vitana/gateway/prod/internal-token}"
 TARGET_PATH="/api/v1/scheduled-notifications/push-dispatch"
 
 LAMBDA_NAME="vitana-push-dispatch"
@@ -93,6 +95,7 @@ done
 echo "Region:       $REGION"
 echo "Account:      $ACCOUNT_ID"
 echo "Gateway:      $GATEWAY_URL$TARGET_PATH"
+echo "Token secret: $INTERNAL_TOKEN_SECRET_ID"
 echo "Delete:       $DELETE"
 echo "Dry run:      $DRY_RUN"
 echo ""
@@ -104,6 +107,7 @@ if $DELETE; then
   aws iam delete-role-policy --role-name "$SCHEDULER_ROLE_NAME" --policy-name "invoke-lambda-target" 2>/dev/null || true
   aws iam delete-role-policy --role-name "$SCHEDULER_ROLE_NAME" --policy-name "invoke-api-destination" 2>/dev/null || true
   aws iam delete-role --role-name "$SCHEDULER_ROLE_NAME" 2>/dev/null || true
+  aws iam delete-role-policy --role-name "$LAMBDA_EXEC_ROLE_NAME" --policy-name "read-gateway-internal-token" 2>/dev/null || true
   aws iam detach-role-policy --role-name "$LAMBDA_EXEC_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole" 2>/dev/null || true
   aws iam delete-role --role-name "$LAMBDA_EXEC_ROLE_NAME" 2>/dev/null || true
   echo "Done. (Any orphaned EventBridge connection/API destination from an earlier attempt are unaffected — see script header for their cleanup commands.)"
@@ -137,6 +141,11 @@ aws iam attach-role-policy \
   --role-name "$LAMBDA_EXEC_ROLE_NAME" \
   --policy-arn "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 LAMBDA_EXEC_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${LAMBDA_EXEC_ROLE_NAME}"
+# VTID-04677: read-only access to exactly the one internal-token secret.
+aws iam put-role-policy \
+  --role-name "$LAMBDA_EXEC_ROLE_NAME" \
+  --policy-name "read-gateway-internal-token" \
+  --policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"secretsmanager:GetSecretValue\",\"Resource\":\"arn:aws:secretsmanager:${REGION}:${ACCOUNT_ID}:secret:${INTERNAL_TOKEN_SECRET_ID}-*\"}]}"
 
 echo "Waiting 10s for IAM role propagation..."
 sleep 10
@@ -146,6 +155,31 @@ echo "── Packaging Lambda function"
 WORKDIR=$(mktemp -d)
 cat > "$WORKDIR/index.js" <<'JS'
 const https = require('https');
+// VTID-04677: the scheduled-notifications routes require X-Gateway-Internal.
+// The token is read from Secrets Manager (never an env var or the schedule
+// Input) and cached for 5 minutes, so a rotation reaches a warm container
+// within minutes. If the read fails, the call still goes out without the
+// header and the error is logged: in the gateway's default log mode the
+// notification still flows; in enforce mode the 401 makes the Lambda fail
+// loudly instead of silently skipping a run.
+const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
+let tokenCache = { value: null, at: 0 };
+async function internalToken() {
+  const id = process.env.GATEWAY_INTERNAL_TOKEN_SECRET_ID;
+  if (!id) { console.error('GATEWAY_INTERNAL_TOKEN_SECRET_ID is unset — calling without X-Gateway-Internal'); return null; }
+  if (tokenCache.value && Date.now() - tokenCache.at < 5 * 60 * 1000) return tokenCache.value;
+  try {
+    const out = await new SecretsManagerClient({}).send(new GetSecretValueCommand({ SecretId: id }));
+    let t = String(out.SecretString || '').trim();
+    if (t.startsWith('{')) { try { t = String(JSON.parse(t).token || '').trim(); } catch (_) { t = ''; } }
+    if (!t) throw new Error('secret is empty');
+    tokenCache = { value: t, at: Date.now() };
+    return t;
+  } catch (e) {
+    console.error(`could not read ${id}: ${e.message} — calling without X-Gateway-Internal`);
+    return null;
+  }
+}
 
 // VTID-03676 / P1 review finding: the route processes up to 100 rows
 // sequentially, marking push_sent_at only after each row's delivery
@@ -167,13 +201,14 @@ exports.handler = async () => {
     (process.env.GATEWAY_URL || 'https://gateway.vitanaland.com') +
     '/api/v1/scheduled-notifications/push-dispatch'
   );
+  const token = await internalToken();
   return new Promise((resolve, reject) => {
     const req = https.request(
       {
         hostname: url.hostname,
         path: url.pathname,
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': 0 },
+        headers: { 'Content-Type': 'application/json', 'Content-Length': 0, ...(token ? { 'X-Gateway-Internal': token } : {}) },
         timeout: 170000,
       },
       (res) => {
@@ -210,7 +245,7 @@ if aws lambda create-function \
   --handler index.handler \
   --zip-file "fileb://$WORKDIR/function.zip" \
   --timeout 180 \
-  --environment "Variables={GATEWAY_URL=$GATEWAY_URL}" \
+  --environment "Variables={GATEWAY_URL=$GATEWAY_URL,GATEWAY_INTERNAL_TOKEN_SECRET_ID=$INTERNAL_TOKEN_SECRET_ID}" \
   --description "Vitana push-dispatch cron trigger (VTID-03676) — replaces the GCP Cloud Scheduler job of the same purpose" 2>&1; then
   echo "Function created."
 else
@@ -231,7 +266,7 @@ else
     --function-name "$LAMBDA_NAME" \
     --region "$REGION" \
     --timeout 180 \
-    --environment "Variables={GATEWAY_URL=$GATEWAY_URL}"
+    --environment "Variables={GATEWAY_URL=$GATEWAY_URL,GATEWAY_INTERNAL_TOKEN_SECRET_ID=$INTERNAL_TOKEN_SECRET_ID}"
   echo "Function code and configuration updated."
 fi
 LAMBDA_ARN="arn:aws:lambda:${REGION}:${ACCOUNT_ID}:function:${LAMBDA_NAME}"

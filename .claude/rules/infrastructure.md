@@ -251,6 +251,11 @@ ORCHESTRATOR_RUN_LEASE_TTL_MS=300000
 # skips the check; anything else (the default) is 'log': allowed, and every
 # call that would be rejected is logged. Staging pins 'enforce'.
 LEDGER_WRITE_AUTH_MODE=log
+# /api/v1/scheduled-notifications/* (VTID-04677) need X-Gateway-Internal ==
+# GATEWAY_INTERNAL_TOKEN (Secrets Manager vitana/gateway/<env>/internal-token).
+# Same three modes; default 'log'. Staging pins 'log'; enforce is a separate,
+# owner-approved change. GET /health stays open and reports the mode.
+SCHEDULED_NOTIFICATIONS_AUTH_MODE=log
 ```
 
 `GOOGLE_CLOUD_PROJECT`, `GCP_PROJECT`, `VERTEX_LOCATION`, `VERTEX_MODEL`,

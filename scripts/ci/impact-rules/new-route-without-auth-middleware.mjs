@@ -75,6 +75,10 @@ const AUTH_NAMES = [
   // requireAuth, then exafy_admin (all tenants) or a tenant admin forced to
   // their own tenant; everyone else 403. It IS auth.
   'requireSupervisorAccess',
+  // requireScheduledNotificationsAuth (middleware/scheduled-notifications-auth,
+  // VTID-04677): the scheduler's X-Gateway-Internal token, timing-safe compare,
+  // with a log-only rollout mode like requireLedgerWriteAuth. It IS auth.
+  'requireScheduledNotificationsAuth',
 ];
 const ROUTE_PREFIX_RE = /^\s*router\.(get|post|put|patch|delete)\s*\(/;
 

@@ -41,7 +41,15 @@ import { runRemindersTick, runRemindersSweeper } from '../services/reminders-dis
 import { wideTodayWindow, pickFirstEventTodayPerUser } from '../services/calendar-today';
 
 import { withDependencyHealth } from '../services/dependency-probe';
+import { requireScheduledNotificationsAuth, scheduledNotificationsAuthStatus } from '../middleware/scheduled-notifications-auth';
 const router = Router();
+
+// VTID-04677: every route below fans out notifications to members, so each
+// caller must present X-Gateway-Internal (the EventBridge Lambdas and the
+// gateway's own automation handlers). GET /health stays open; the middleware
+// passes it through itself. SCHEDULED_NOTIFICATIONS_AUTH_MODE decides whether a
+// missing/wrong token is logged (default) or rejected (enforce).
+router.use(requireScheduledNotificationsAuth);
 
 // ── Helper: get service-role Supabase client ─────────────────
 async function getServiceClient() {
@@ -549,8 +557,7 @@ router.post('/morning-briefing', async (req: Request, res: Response) => {
 // fractional offsets like Asia/Kathmandu UTC+5:45).
 // =============================================================================
 router.post('/daily-pace-notifications', async (req: Request, res: Response) => {
-  // public-route — called by Cloud Scheduler (no JWT); protected by GCP IAM
-  // at the scheduler layer, same pattern as the other entries in this file.
+  // auth: scheduled-notifications-auth (VTID-04677)
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
@@ -766,8 +773,7 @@ function pickTipLocale(text: { en: string; de: string; [k: string]: string }, lo
   return text[locale] ?? text.en;
 }
 
-// public-route — called by Cloud Scheduler (no JWT); protected by GCP IAM
-// at the scheduler layer, same pattern as the other entries in this file.
+// auth: scheduled-notifications-auth (VTID-04677)
 router.post('/daily-feature-tip', async (req: Request, res: Response) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
@@ -882,8 +888,8 @@ router.post('/daily-feature-tip', async (req: Request, res: Response) => {
 // is published once per tenant (recorded in created_by). Kill switch:
 // WHATS_NEW_AUTOPUBLISH=false. Same fan-out shape as /daily-feature-tip.
 // =============================================================================
-// public-route — called by EventBridge/Lambda (no JWT), same as the entries above.
-router.post('/whats-new', async (req: Request, res: Response) => { // public-route
+// auth: scheduled-notifications-auth (VTID-04677)
+router.post('/whats-new', async (req: Request, res: Response) => {
   if ((process.env.WHATS_NEW_AUTOPUBLISH ?? 'true') === 'false') {
     return res.status(200).json({ ok: true, skipped: 'disabled' });
   }
@@ -1083,7 +1089,8 @@ router.post('/weekly-reflection', async (req: Request, res: Response) => {
 // calendar's own reminders (VTID-04338). Kept as a no-op so an old caller
 // gets a clear answer instead of a 404.
 // Retired no-op: it reads and writes nothing, so there is nothing to protect.
-router.post('/meetup-reminders', (_req: Request, res: Response) => { // public-route
+// auth: scheduled-notifications-auth (VTID-04677)
+router.post('/meetup-reminders', (_req: Request, res: Response) => {
   // impact-allow-no-oasis — retired: no state change at all (VTID-04374)
   return res.status(200).json({ ok: true, dispatched: 0, retired: true, replaced_by: 'calendar-reminders' });
 });
@@ -1094,7 +1101,7 @@ router.post('/meetup-reminders', (_req: Request, res: Response) => { // public-r
 // today. Push-only (channel='push' in TYPE_META) so it doesn't clutter the
 // in-app inbox.
 // =============================================================================
-// public-route
+// auth: scheduled-notifications-auth (VTID-04677)
 router.post('/upcoming-events', async (req: Request, res: Response) => {
   // impact-allow-no-oasis
   // Fan-out only — reads calendar_events and dispatches push notifications.
@@ -1489,8 +1496,7 @@ router.post('/reminders-sweeper', async (_req: Request, res: Response) => {
 // =============================================================================
 const NIGHT_PUSH_LOCAL_HOUR = 22;
 
-// public-route — called by Cloud Scheduler (no JWT); protected by GCP IAM at
-// the scheduler layer, same pattern as every other entry in this file.
+// auth: scheduled-notifications-auth (VTID-04677)
 router.post('/night-push', async (req: Request, res: Response) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
@@ -1610,7 +1616,13 @@ router.post('/night-push', async (req: Request, res: Response) => {
 // =============================================================================
 router.get('/health', async (_req: Request, res: Response) => {
   // VTID-04665: report whether the dependency answers, not just that the route exists.
-  return res.status(200).json(await withDependencyHealth([{ table: 'user_notifications' }], { ok: true, service: 'scheduled-notifications' }));
+  // VTID-04677: also report the auth mode (and only whether a token is set),
+  // so the staging suite can prove what is deployed without sending a POST.
+  return res.status(200).json(await withDependencyHealth([{ table: 'user_notifications' }], {
+    ok: true,
+    service: 'scheduled-notifications',
+    ...scheduledNotificationsAuthStatus(),
+  }));
 });
 
 export default router;
