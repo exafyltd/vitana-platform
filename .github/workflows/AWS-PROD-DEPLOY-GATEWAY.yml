@@ -947,6 +947,24 @@ jobs:
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Internal token wired: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].secrets[] | select(.name == "GATEWAY_INTERNAL_TOKEN") | .name]')"
 
+      - name: Build task-definition (reward sweep off)
+        # VTID-04896: the VTNA reward sweep (VTID-04878) pays real wallets every
+        # 6 h from inside the production gateway and has never run anywhere —
+        # staging is excluded by VITANA_ENV. Owner decision 2026-10-05: it stays
+        # OFF in production until the owner explicitly approves it. Enabling is
+        # that approval, made visible: dispatch with
+        # env_overrides={"REWARD_SWEEP_ENABLED":"true"} (applied in 2/2) or
+        # change this pin. "Verify reward sweep setting" below checks the live
+        # task definition after the roll.
+        run: |
+          set -e
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name != "REWARD_SWEEP_ENABLED") ]
+                + [ {name:"REWARD_SWEEP_ENABLED", value:"false"} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Reward sweep pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "REWARD_SWEEP_ENABLED")]')"
+
       - name: Build task-definition (2/2 — optional overrides) + register + roll the service
         id: roll
         env:
@@ -1330,6 +1348,32 @@ jobs:
           done
           echo "::error::Smoke failed — health/build-info/alive did not report env=production with the deployed commit"
           exit 1
+
+      # VTID-04896: read-only. The live service's task definition must carry
+      # REWARD_SWEEP_ENABLED=false, unless this dispatch's env_overrides set
+      # the key explicitly (the owner's approval to enable). A mismatch fails
+      # the job, which rolls the service back (VTID-04647).
+      - name: Verify reward sweep setting (live task definition)
+        id: sweepcheck
+        env:
+          ENV_OVERRIDES_INPUT: ${{ inputs.env_overrides }}
+        run: |
+          set -e
+          EXPECTED=false
+          if [ -n "$ENV_OVERRIDES_INPUT" ] && echo "$ENV_OVERRIDES_INPUT" | jq -e 'has("REWARD_SWEEP_ENABLED")' >/dev/null 2>&1; then
+            EXPECTED=$(echo "$ENV_OVERRIDES_INPUT" | jq -r '.REWARD_SWEEP_ENABLED | tostring')
+            echo "::warning::env_overrides sets REWARD_SWEEP_ENABLED=$EXPECTED for this deploy"
+          fi
+          TD=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].taskDefinition' --output text)
+          LIVE=$(aws ecs describe-task-definition --task-definition "$TD" \
+            --query 'taskDefinition.containerDefinitions[0].environment[?name==`REWARD_SWEEP_ENABLED`].value | [0]' --output text)
+          echo "Live task definition: $TD"
+          echo "REWARD_SWEEP_ENABLED=$LIVE (expected $EXPECTED)"
+          if [ "$LIVE" != "$EXPECTED" ]; then
+            echo "::error::REWARD_SWEEP_ENABLED is '$LIVE' on the live task definition, expected '$EXPECTED'"
+            exit 1
+          fi
 
       # VTID-04647: read-only post-deploy verification. GET requests only, no
       # auth, nothing written — production gets read-only checks (owner rule

@@ -134,6 +134,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   ORCHESTRATOR_DELEGATION_PERSIST_ENABLED: { staging: "true", prod: "true" },
   ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED: { staging: "true", prod: "true" },
   REMINDERS_INPROCESS_DISPATCH_ENABLED: { staging: "true", prod: null },
+  REWARD_SWEEP_ENABLED: { staging: null, prod: "false" },
   TTS_FISH_FALLBACK_ENABLED: { staging: "true", prod: null },
   TTS_POLLY_STRICT: { staging: "true", prod: "dynamic" },
   TTS_PROVIDER: { staging: "polly", prod: "dynamic" },
