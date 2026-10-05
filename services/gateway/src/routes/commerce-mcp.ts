@@ -49,6 +49,14 @@ export function portalUrlFor(origin: string, env: NodeJS.ProcessEnv = process.en
   return origin.replace('://preview-aws-gateway.', '://preview-aws.').replace('://gateway.', '://');
 }
 
+/**
+ * VTID-04882: the scopes an assistant should request. Without them Claude asked
+ * for Supabase's full list, including `openid`; Supabase then mints an ID token,
+ * which it cannot sign with this project's HS256 key, and the token exchange
+ * failed (500). The gateway only needs the access token, so no `openid`.
+ */
+export const MCP_SCOPES = ['email', 'profile'] as const;
+
 function protectedResourceMetadata(req: Request) {
   const origin = publicOrigin(req);
   const as = authorizationServer();
@@ -56,6 +64,7 @@ function protectedResourceMetadata(req: Request) {
     resource: `${origin}/mcp`,
     resource_name: 'Vitanaland Commerce',
     authorization_servers: as ? [as] : [],
+    scopes_supported: [...MCP_SCOPES],
     bearer_methods_supported: ['header'],
     resource_documentation: `${portalUrlFor(origin)}/commerce`,
   };
@@ -93,7 +102,7 @@ function unauthorized(req: Request, res: Response, description: string) {
   const metadata = `${publicOrigin(req)}/.well-known/oauth-protected-resource/mcp`;
   res
     .status(401)
-    .set('WWW-Authenticate', `Bearer resource_metadata="${metadata}", error="invalid_token", error_description="${description}"`)
+    .set('WWW-Authenticate', `Bearer resource_metadata="${metadata}", scope="${MCP_SCOPES.join(' ')}", error="invalid_token", error_description="${description}"`)
     .json({ jsonrpc: '2.0', id: null, error: { code: -32001, message: description } });
 }
 
