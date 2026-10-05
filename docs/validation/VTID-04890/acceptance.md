@@ -1,17 +1,32 @@
 # VTID-04890 — Commerce MCP sets a missing business type
 
-## Acceptance
+A business registered through `/partner-orgs/register` may have no `partner_type`:
+it then has no checklist, can never be submitted (`PARTNER_TYPE_MISSING`), and nothing
+could give it a type. Through the Commerce MCP its status read "not ready" with no
+steps and no next step. Owner rule (2026-10-05): `update_business` may set
+`business_type` only on a draft whose type is null, never change it once set, and
+the status of a typeless business names the missing step.
 
-- **AC-1** `update_business` accepts `business_type` (the five partner types) and sets it only when the business is a `draft` whose type is null. A type already set is refused with `PARTNER_TYPE_ALREADY_SET` (same type again is a no-op); any other lifecycle state is refused with `PARTNER_TYPE_LOCKED`. The write is conditional on `partner_type IS NULL AND lifecycle_state = 'draft'`, so a concurrent change is never overwritten.
-- **AC-2** The status of a business without a type reports `next_step: "business_type"`, `missing_to_submit: ["business_type"]`, the allowed `business_types` and a hint telling the assistant to ask the supplier and not to call `create_business`. Typed businesses read exactly as before.
-- **AC-3** `update_business` validates the facts and runs the verification-confirmation check before writing anything, sets the type before the facts, and never creates a business.
+VALIDATION_PROFILE: gateway_backend
+
+CURL_PROOF: no route added or changed. After the staging deploy STAGING-VERIFY runs docs/validation/VTID-04890/staging-tests.json — an unsigned `POST https://preview-aws-gateway.vitanaland.com/mcp` answers 401 (rejected probe; nothing is written), plus the Jest suite below at the deployed commit.
+
+OASIS_PROOF: `setMissingPartnerType` emits `partner_org.partner_type_set` (payload: partner_organization_id, partner_type; source commerce-mcp) only when the type was actually written; asserted in services/gateway/test/vtid-04890-commerce-business-type.test.ts (emitted on a real write, not emitted on a no-op or a refused/concurrent write).
+
+## Acceptance criteria
+
+AC-1: `update_business` sets `business_type` only on a `draft` whose type is null (conditional write on `partner_type IS NULL AND lifecycle_state = 'draft'`); a different existing type → `PARTNER_TYPE_ALREADY_SET`, the same type → no-op, any other lifecycle state → `PARTNER_TYPE_LOCKED`; a concurrent write is never overwritten.
+  TEST: services/gateway/test/vtid-04890-commerce-business-type.test.ts
+AC-2: The status of a business without a type reports `next_step: "business_type"`, `missing_to_submit: ["business_type"]`, the allowed `business_types` and an assistant hint (ask the supplier; do not call create_business). Typed businesses read exactly as before.
+  TEST: services/gateway/test/vtid-04890-commerce-business-type.test.ts
+AC-3: `update_business` exposes `business_type` in its schema, validates facts and runs the verification-confirmation check before any write, sets the type before the facts, and never creates a business.
+  TEST: services/gateway/test/vtid-04890-commerce-business-type.test.ts
+  TEST: services/gateway/test/commerce-mcp.test.ts
 
 ## Out of scope
 
 No migration, no data change (the existing typeless draft is repaired by its owner through the assistant after deploy), no new route, no frontend, no flag change. The REST `PATCH …/company` route is unchanged.
 
-## Proof
+## Owner check on staging
 
-- Jest: `services/gateway/test/vtid-04890-commerce-business-type.test.ts` (+ `commerce-mcp.test.ts` unchanged).
-- Staging (read-only): unsigned `POST /mcp` → 401; the Jest suite at the deployed commit.
-- Owner on staging, through Claude: set the business type on the typeless draft; the status then lists real steps.
+Through Claude: set the business type on the typeless draft; the status then lists real steps.
