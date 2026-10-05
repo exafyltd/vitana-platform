@@ -39,6 +39,7 @@ import {
   type Caller,
 } from '../services/partner-onboarding-service';
 import { detectPlatform } from '../services/platform-detect';
+import { loadBaselineVersions, loadCurrentTerms, requestDelegation, termsForDisplay } from '../services/partner-terms';
 import { VERIFICATION_LEVEL_REQUIRED } from '../services/partner-onboarding-checklist';
 import {
   computeVerification,
@@ -91,11 +92,6 @@ export interface OrgRow {
   created_at: string;
 }
 
-/** The partner terms version in force. Unset means no terms are published yet. */
-export function currentTermsVersion(env: NodeJS.ProcessEnv = process.env): string | null {
-  const v = env.PARTNER_TERMS_VERSION?.trim();
-  return v ? v : null;
-}
 
 export function makeOrgKey(displayName: string, suffix: string = randomBytes(3).toString('hex')): string {
   const slug = displayName
@@ -118,6 +114,11 @@ export async function loadOrg(supabase: Supa, orgId: string): Promise<{ org: Org
 export async function loadChecklist(supabase: Supa, org: OrgRow): Promise<{ checklist: Checklist | null; error: string | null }> {
   if (!isPartnerType(org.partner_type)) return { checklist: null, error: null };
 
+  // VTID-04895: the terms in force come from partner_terms_versions (fails
+  // closed to "not published"), and any version sharing its baseline counts.
+  const currentTerms = await loadCurrentTerms(supabase);
+  const termsBaselineVersions = currentTerms ? await loadBaselineVersions(supabase, currentTerms) : undefined;
+
   const [steps, terms, members] = await Promise.all([
     supabase.from('partner_onboarding_steps').select('step_key, status, detail, updated_at').eq('partner_organization_id', org.id),
     supabase.from('partner_terms_acceptances').select('terms_version').eq('partner_organization_id', org.id),
@@ -139,7 +140,8 @@ export async function loadChecklist(supabase: Supa, org: OrgRow): Promise<{ chec
     },
     storedSteps: (steps.data ?? []) as Array<{ step_key: string; status: string; detail?: Record<string, unknown> | null }>,
     acceptedTermsVersions: ((terms.data ?? []) as Array<{ terms_version: string }>).map((t) => t.terms_version),
-    currentTermsVersion: currentTermsVersion(),
+    currentTermsVersion: currentTerms?.version ?? null,
+    termsBaselineVersions,
     memberCount: typeof members.count === 'number' ? members.count : 1,
   });
   return { checklist, error: null };
@@ -424,16 +426,72 @@ router.post('/:orgId/verification/check', requireAuth, requireOrgAdmin(), async 
 
 // ==================== Terms ====================
 
+/**
+ * VTID-04895: the terms in force, as the supplier reads them before accepting:
+ * the English (binding) text, the caller's language alongside when a
+ * translation exists, the version, its content hash and whether this org has
+ * already accepted (under the re-acceptance baseline).
+ */
+router.get('/:orgId/terms', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const current = await loadCurrentTerms(supabase);
+  if (!current) return res.status(200).json({ ok: true, published: false, terms: null, accepted: false });
+
+  const baseline = await loadBaselineVersions(supabase, current);
+  const { data, error } = await supabase
+    .from('partner_terms_acceptances')
+    .select('terms_version, accepted_at')
+    .eq('partner_organization_id', req.params.orgId);
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+  const rows = (data ?? []) as Array<{ terms_version: string; accepted_at: string }>;
+  const accepted = rows.find((r) => baseline.includes(r.terms_version)) ?? null;
+  const locale = typeof req.query.locale === 'string' ? req.query.locale : null;
+
+  return res.status(200).json({
+    ok: true,
+    published: true,
+    terms: termsForDisplay(current, locale),
+    accepted: Boolean(accepted),
+    accepted_at: accepted?.accepted_at ?? null,
+    // Accepted an earlier baseline, not this one: a material update needs re-acceptance.
+    reacceptance_required: !accepted && rows.length > 0,
+  });
+});
+
+const SHOWN_LOCALE = /^en(\+[a-z]{2})?$/;
+
 router.post('/:orgId/terms/accept', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const orgId = req.params.orgId;
   const callerId = getCallerId(req);
 
-  const current = currentTermsVersion();
+  // VTID-04895: only the supplier's own session accepts. An AI assistant's
+  // delegated OAuth token — or a token whose origin cannot be established —
+  // is refused before anything else is looked at.
+  const delegation = await requestDelegation(supabase, (req as AuthenticatedRequest).auth_raw_claims as Record<string, unknown> | undefined);
+  if (delegation !== 'direct') {
+    console.warn(`[VTID-04895] terms acceptance refused for org ${orgId}: ${delegation} session`);
+    return res.status(403).json({
+      ok: false,
+      error: 'TERMS_ACCEPTANCE_REQUIRES_SUPPLIER',
+      message: 'The partner terms are accepted by the supplier on Vitanaland itself, never by an assistant.',
+    });
+  }
+
+  const current = await loadCurrentTerms(supabase);
   if (!current) return res.status(503).json({ ok: false, error: 'TERMS_NOT_PUBLISHED' });
-  if (req.body?.terms_version !== current) {
-    return res.status(409).json({ ok: false, error: 'TERMS_VERSION_MISMATCH', current_version: current });
+  if (req.body?.terms_version !== current.version) {
+    return res.status(409).json({ ok: false, error: 'TERMS_VERSION_MISMATCH', current_version: current.version });
+  }
+  // The text accepted is exactly the text shown.
+  if (req.body?.content_sha256 !== current.content_sha256) {
+    return res.status(409).json({ ok: false, error: 'TERMS_CONTENT_MISMATCH', current_version: current.version });
+  }
+  const shownLocale = typeof req.body?.shown_locale === 'string' ? req.body.shown_locale : '';
+  if (!SHOWN_LOCALE.test(shownLocale)) {
+    return res.status(400).json({ ok: false, error: 'shown_locale must be "en" or "en+<language>"' });
   }
 
   const { org, error } = await loadOrg(supabase, orgId);
@@ -443,22 +501,39 @@ router.post('/:orgId/terms/accept', requireAuth, requireOrgAdmin(), async (req: 
   const userAgent = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'].slice(0, 500) : null;
   const { error: insErr } = await supabase.from('partner_terms_acceptances').insert({
     partner_organization_id: orgId,
-    terms_version: current,
+    terms_version: current.version,
+    terms_version_id: current.id,
+    content_sha256: current.content_sha256,
+    shown_locale: shownLocale,
     accepted_by: callerId,
     ip_address: req.ip ?? null,
     user_agent: userAgent,
   });
   const alreadyAccepted = insErr?.code === '23505';
-  if (insErr && !alreadyAccepted) return res.status(500).json({ ok: false, error: insErr.message });
+  if (insErr && !alreadyAccepted) {
+    // A new version was published between the read and the insert: the
+    // database trigger refuses the stale version/hash.
+    if (/PARTNER_TERMS_(VERSION_NOT_CURRENT|CONTENT_MISMATCH)/.test(insErr.message ?? '')) {
+      return res.status(409).json({ ok: false, error: 'TERMS_CONTENT_MISMATCH' });
+    }
+    return res.status(500).json({ ok: false, error: insErr.message });
+  }
 
   if (!alreadyAccepted) {
     await emitOasisEvent({
-      vtid: 'VTID-04478',
+      vtid: 'VTID-04895',
       type: 'partner_org.terms_accepted',
       source: 'partner-onboarding',
       status: 'success',
-      message: `Partner organization ${orgId} accepted the partner terms ${current}.`,
-      payload: { partner_organization_id: orgId, terms_version: current },
+      message: `Partner organization ${orgId} accepted the partner terms ${current.version}.`,
+      // IP and user agent stay in the acceptance row only.
+      payload: {
+        partner_organization_id: orgId,
+        terms_version: current.version,
+        terms_version_id: current.id,
+        content_sha256: current.content_sha256,
+        shown_locale: shownLocale,
+      },
       actor_id: callerId ?? undefined,
     });
   }

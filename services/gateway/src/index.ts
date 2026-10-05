@@ -193,6 +193,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminMarketplaceRouter = require('./routes/admin-marketplace').default;
   // VTID-03885: Partner Health Test Integration — admin portal (orders/inbox/confirm-match)
   const adminPartnerHealthRouter = require('./routes/admin-partner-health').default;
+  // VTID-04895: partner terms lifecycle — exafy_admin publishing API
+  const adminPartnerTermsRouter = require('./routes/admin-partner-terms').default;
   // VTID-03885: Partner Health Test Integration — self-service consent (grant/revoke/check)
   const partnerHealthConsentRouter = require('./routes/partner-health-consent').default;
   // VTID-03932: Commerce Partner Onboarding — self-service partner org registration + roster
@@ -1164,6 +1166,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/marketplace', adminMarketplaceRouter, { owner: 'admin-marketplace' });
   // VTID-03885: Partner Health Test Integration admin portal
   mountRouterSync(app, '/api/v1/admin/partner-health', adminPartnerHealthRouter, { owner: 'admin-partner-health' });
+  // VTID-04895: partner terms lifecycle — exafy_admin publishing API
+  mountRouterSync(app, '/api/v1/admin/partner-terms', adminPartnerTermsRouter, { owner: 'admin-partner-terms' });
   // VTID-03885: Partner Health Test Integration self-service consent
   mountRouterSync(app, '/api/v1/partner-health/consent', partnerHealthConsentRouter, { owner: 'partner-health-consent' });
   // VTID-03932: Commerce Partner Onboarding — self-service partner org registration + roster

@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-04895",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/admin/partner-terms",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "the publishing API is mounted and refuses an unsigned caller (exafy_admin only; nothing is read or written)"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/partner-onboarding/00000000-0000-0000-0000-000000000000/terms",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "the supplier terms view is mounted and needs the supplier's session"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04895-partner-terms.test.ts test/partner-onboarding.test.ts test/vtid-04478-partner-onboarding-checklist.test.ts",
+      "cwd": "services/gateway",
+      "reason": "publishing, drafts-only edits, the admin and own-session gates, acceptance with exact version + hash + language, refusal of assistant (OAuth-delegated) tokens by claim and by session, fail-closed reads and the re-acceptance baseline are proven here; staging shares the production Supabase project, so nothing is published or accepted during verification. The database rules are proven on a throwaway Postgres (CI SQL-PARTNER-TERMS)."
+    }
+  ]
+}
