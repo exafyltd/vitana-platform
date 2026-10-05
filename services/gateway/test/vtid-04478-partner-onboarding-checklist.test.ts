@@ -75,6 +75,11 @@ describe('buildChecklist', () => {
     expect(current.steps.find((s) => s.key === 'terms')!.status).toBe('done');
     const unpublished = buildChecklist(input({ currentTermsVersion: null, acceptedTermsVersions: ['2026-09'] }));
     expect(unpublished.steps.find((s) => s.key === 'terms')!).toMatchObject({ status: 'todo', missing: ['terms_not_published'] });
+    // VTID-04895: an earlier version sharing the current baseline (editorial update) counts; another baseline does not.
+    const editorial = buildChecklist(input({ acceptedTermsVersions: ['2026-08'], termsBaselineVersions: ['2026-08', '2026-09'] }));
+    expect(editorial.steps.find((s) => s.key === 'terms')!.status).toBe('done');
+    const material = buildChecklist(input({ acceptedTermsVersions: ['2026-01'], termsBaselineVersions: ['2026-09'] }));
+    expect(material.steps.find((s) => s.key === 'terms')!).toMatchObject({ status: 'todo', detail: { current_version: '2026-09' } });
   });
 
   it('reads stored rows only for non-derived steps', () => {

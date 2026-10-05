@@ -1074,6 +1074,10 @@ export type CicdEventType =
   // VTID-04890: a typeless draft gets its business type, once
   | 'partner_org.partner_type_set'
   | 'partner_org.terms_accepted'
+  // VTID-04895: partner terms lifecycle
+  | 'partner_terms.draft_saved'
+  | 'partner_terms.version_published'
+  | 'partner_terms.reacceptance_required'
   | 'partner_org.lifecycle_changed'
   // VTID-04481: website platform detection during onboarding
   | 'partner_org.platform_detected'

@@ -182,10 +182,9 @@ BEDROCK_ROLE_ARN=xxx
 PARTNER_INVITE_EMAIL_ENABLED=true
 RESEND_API_KEY=xxx
 EMAIL_FROM="Vitanaland <noreply@vitanaland.com>"
-# Partner terms version in force for the onboarding engine (VTID-04478). Unset =
-# no terms published: POST /partner-onboarding/:orgId/terms/accept answers 503
-# and no org can submit. Set it only once the terms text is published.
-PARTNER_TERMS_VERSION=2026-09
+# Partner terms: no env var any more (VTID-04895). The version in force is the
+# published row of partner_terms_versions, published through the exafy_admin
+# API /api/v1/admin/partner-terms. None published = no org can submit.
 # Jev (TypeSafe System One) typed decisions (VTID-04473). Both must be set;
 # unset = every decision answers 503 not_configured. Staging wires them when
 # vitana/gateway/staging/typesafe-api-key exists. JEV_COMMUNITY_ENABLED stays

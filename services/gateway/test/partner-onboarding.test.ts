@@ -6,6 +6,11 @@
  * (locked once submitted), POST /:orgId/terms/accept (current version only,
  * recorded once), POST /:orgId/submit (prerequisites, guarded transitions,
  * one OASIS event per move).
+ *
+ * VTID-04895: the terms in force are the published partner_terms_versions row
+ * (no env var). Acceptance needs the exact version, its content hash and the
+ * language shown, and only the supplier's own session — an assistant's
+ * delegated OAuth token is refused.
  */
 
 import express from 'express';
@@ -20,9 +25,18 @@ jest.mock('../src/middleware/auth-supabase-jwt', () => ({
       'Bearer other-1': { user_id: 'other-1', email: 'x@example.com', exafy_admin: false },
       'Bearer no-email': { user_id: 'no-email-1', email: null, exafy_admin: false },
     };
-    const id = byToken[req.headers.authorization];
+    // VTID-04895: the verified token's claims, as requireAuth exposes them.
+    const claimsByToken: Record<string, any> = {
+      'Bearer owner-1': { sub: 'owner-1', session_id: 'sess-owner' },
+      'Bearer owner-oauth-claim': { sub: 'owner-1', session_id: 'sess-owner', client_id: 'claude-client' },
+      'Bearer owner-oauth-session': { sub: 'owner-1', session_id: 'sess-oauth' },
+      'Bearer owner-no-session': { sub: 'owner-1' },
+    };
+    const auth = req.headers.authorization;
+    const id = byToken[auth] ?? (claimsByToken[auth] ? byToken['Bearer owner-1'] : undefined);
     if (!id) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
     req.identity = id;
+    req.auth_raw_claims = claimsByToken[auth] ?? { sub: id.user_id, session_id: `sess-${id.user_id}` };
     return next();
   },
   optionalAuth: (_req: any, _res: any, next: any) => next(),
@@ -68,6 +82,13 @@ function makeFakeSupabase() {
       chain.then = (res: any, rej: any) => run('then').then(res, rej);
       return chain;
     },
+    // VTID-04895: auth_session_is_delegated — sess-oauth belongs to an OAuth client.
+    rpc(name: string, args: any) {
+      calls.push({ table: `rpc:${name}`, op: 'rpc', args: [args], filters: [], terminal: 'rpc' });
+      if (name !== 'auth_session_is_delegated') return Promise.resolve({ data: null, error: { message: `unexpected rpc ${name}` } });
+      const verdict = args.p_session_id === 'sess-oauth' ? 'delegated' : String(args.p_session_id).startsWith('sess-') ? 'direct' : 'unknown';
+      return Promise.resolve({ data: verdict, error: null });
+    },
   };
 }
 jest.mock('../src/lib/supabase', () => ({ getSupabase: () => makeFakeSupabase() }));
@@ -112,11 +133,24 @@ function wireOrg(state: Record<string, any>, extra: { steps?: any[]; terms?: str
 
 const COMPANY = { legal_name: 'Acme GmbH', country: 'DE', vat_id: 'DE123456789', website: 'https://acme.example/' };
 
+/** VTID-04895: the published terms version (null = none published). */
+const TERMS_V = {
+  id: 'tv-2026-09', version: '2026-09', baseline_version_id: 'tv-2026-09', content_sha256: 'hash-2026-09',
+  requires_reacceptance: true, published_at: '2026-10-05T00:00:00Z',
+  content: { en: { title: 'Partner Terms', body_md: 'Binding text' }, de: { title: 'Partnerbedingungen', body_md: 'Übersetzung' } },
+};
+let publishedTerms: typeof TERMS_V | null;
+const ACCEPT = { terms_version: '2026-09', content_sha256: 'hash-2026-09', shown_locale: 'en' };
+
 beforeEach(() => {
   jest.clearAllMocks();
   handlers = {};
   calls = [];
-  process.env.PARTNER_TERMS_VERSION = '2026-09';
+  publishedTerms = TERMS_V;
+  handlers.partner_terms_versions = (c) =>
+    c.terminal === 'maybeSingle'
+      ? { data: publishedTerms, error: null }
+      : { data: publishedTerms ? [{ version: publishedTerms.version }] : [], error: null };
 });
 
 describe('mount', () => {
@@ -228,17 +262,64 @@ describe('PATCH /:orgId/company', () => {
 
 describe('POST /:orgId/terms/accept', () => {
   it('503 when no terms are published', async () => {
-    delete process.env.PARTNER_TERMS_VERSION;
+    publishedTerms = null;
     wireOrg(org());
     const r = await request(app()).post('/api/v1/partner-onboarding/org-1/terms/accept').set('Authorization', 'Bearer owner-1')
-      .send({ terms_version: '2026-09' });
+      .send(ACCEPT);
     expect(r.status).toBe(503);
+  });
+
+  it('the terms table missing (migration not applied yet) reads as not published, never an error', async () => {
+    delete handlers.partner_terms_versions; // the fake throws for an unknown table
+    wireOrg(org());
+    const r = await request(app()).get('/api/v1/partner-onboarding/org-1').set('Authorization', 'Bearer owner-1');
+    expect(r.status).toBe(200);
+    expect(r.body.checklist.steps.find((s: any) => s.key === 'terms')).toMatchObject({ status: 'todo', missing: ['terms_not_published'] });
+  });
+
+  it.each([
+    ['an OAuth client_id claim (assistant token)', 'Bearer owner-oauth-claim'],
+    ['a session created for an OAuth client', 'Bearer owner-oauth-session'],
+    ['a token without a session', 'Bearer owner-no-session'],
+  ])('refuses %s: only the supplier accepts, never an assistant', async (_label, token) => {
+    let inserted = false;
+    wireOrg(org());
+    handlers.partner_terms_acceptances = (c) => { if (c.op === 'insert') inserted = true; return { data: [], error: null }; };
+    const r = await request(app()).post('/api/v1/partner-onboarding/org-1/terms/accept').set('Authorization', token).send(ACCEPT);
+    expect(r.status).toBe(403);
+    expect(r.body.error).toBe('TERMS_ACCEPTANCE_REQUIRES_SUPPLIER');
+    expect(inserted).toBe(false);
+    expect(emitOasisEventMock).not.toHaveBeenCalled();
+  });
+
+  it('409 when the text accepted is not the text published (content hash)', async () => {
+    wireOrg(org());
+    const r = await request(app()).post('/api/v1/partner-onboarding/org-1/terms/accept').set('Authorization', 'Bearer owner-1')
+      .send({ ...ACCEPT, content_sha256: 'hash-of-an-older-text' });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe('TERMS_CONTENT_MISMATCH');
+  });
+
+  it('400 for a shown_locale that is not en or en+<language>', async () => {
+    wireOrg(org());
+    const r = await request(app()).post('/api/v1/partner-onboarding/org-1/terms/accept').set('Authorization', 'Bearer owner-1')
+      .send({ ...ACCEPT, shown_locale: 'de' });
+    expect(r.status).toBe(400);
+  });
+
+  it('a version published between reading and accepting is refused by the database as stale (409)', async () => {
+    wireOrg(org());
+    handlers.partner_terms_acceptances = (c) =>
+      c.op === 'insert' ? { data: null, error: { code: 'P0001', message: 'PARTNER_TERMS_VERSION_NOT_CURRENT' } } : { data: [], error: null };
+    const r = await request(app()).post('/api/v1/partner-onboarding/org-1/terms/accept').set('Authorization', 'Bearer owner-1').send(ACCEPT);
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe('TERMS_CONTENT_MISMATCH');
   });
 
   it('409 when accepting a version other than the one in force', async () => {
     wireOrg(org());
     const r = await request(app()).post('/api/v1/partner-onboarding/org-1/terms/accept').set('Authorization', 'Bearer owner-1')
-      .send({ terms_version: '2026-01' });
+      .send({ ...ACCEPT, terms_version: '2026-01' });
     expect(r.status).toBe(409);
     expect(r.body.current_version).toBe('2026-09');
   });
@@ -251,12 +332,21 @@ describe('POST /:orgId/terms/accept', () => {
       return { data: [{ terms_version: '2026-09' }], error: null };
     };
     const r = await request(app()).post('/api/v1/partner-onboarding/org-1/terms/accept').set('Authorization', 'Bearer owner-1')
-      .set('User-Agent', 'jest-agent').send({ terms_version: '2026-09' });
+      .set('User-Agent', 'jest-agent').send({ ...ACCEPT, shown_locale: 'en+de' });
     expect(r.status).toBe(200);
-    expect(row).toMatchObject({ partner_organization_id: 'org-1', terms_version: '2026-09', accepted_by: OWNER, user_agent: 'jest-agent' });
+    // VTID-04895: business, user, exact version (string + id), content hash, language shown; time by default.
+    expect(row).toMatchObject({
+      partner_organization_id: 'org-1', terms_version: '2026-09', terms_version_id: 'tv-2026-09', content_sha256: 'hash-2026-09',
+      shown_locale: 'en+de', accepted_by: OWNER, user_agent: 'jest-agent',
+    });
     expect(typeof row.ip_address).toBe('string');
     expect(r.body.checklist.steps.find((s: any) => s.key === 'terms').status).toBe('done');
-    expect(emitOasisEventMock).toHaveBeenCalledWith(expect.objectContaining({ type: 'partner_org.terms_accepted' }));
+    expect(emitOasisEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'partner_org.terms_accepted',
+      payload: expect.objectContaining({ terms_version_id: 'tv-2026-09', content_sha256: 'hash-2026-09', shown_locale: 'en+de' }),
+    }));
+    // The assistant check ran on the caller's own session.
+    expect(calls.find((c) => c.table === 'rpc:auth_session_is_delegated')?.args[0]).toEqual({ p_session_id: 'sess-owner' });
   });
 
   it('treats a second acceptance of the same version as already done', async () => {
@@ -264,10 +354,63 @@ describe('POST /:orgId/terms/accept', () => {
     handlers.partner_terms_acceptances = (c) =>
       c.op === 'insert' ? { data: null, error: { code: '23505', message: 'dup' } } : { data: [{ terms_version: '2026-09' }], error: null };
     const r = await request(app()).post('/api/v1/partner-onboarding/org-1/terms/accept').set('Authorization', 'Bearer owner-1')
-      .send({ terms_version: '2026-09' });
+      .send(ACCEPT);
     expect(r.status).toBe(200);
     expect(r.body.already_accepted).toBe(true);
     expect(emitOasisEventMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /:orgId/terms (VTID-04895)', () => {
+  const read = (locale?: string) =>
+    request(app()).get(`/api/v1/partner-onboarding/org-1/terms${locale ? `?locale=${locale}` : ''}`).set('Authorization', 'Bearer owner-1');
+
+  it('nothing published', async () => {
+    publishedTerms = null;
+    wireOrg(org());
+    const r = await read();
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ published: false, terms: null, accepted: false });
+  });
+
+  it('shows the English binding text, the German translation alongside, the version and its hash', async () => {
+    wireOrg(org());
+    const r = await read('de');
+    expect(r.body.terms).toMatchObject({
+      version: '2026-09', content_sha256: 'hash-2026-09', binding_locale: 'en',
+      binding: { title: 'Partner Terms', body_md: 'Binding text' },
+      translation: { locale: 'de', title: 'Partnerbedingungen' },
+      shown_locale: 'en+de',
+    });
+    expect(r.body.accepted).toBe(false);
+    expect(r.body.reacceptance_required).toBe(false);
+  });
+
+  it('English only when the caller language has no translation', async () => {
+    wireOrg(org());
+    const r = await read('fr');
+    expect(r.body.terms.translation).toBeNull();
+    expect(r.body.terms.shown_locale).toBe('en');
+  });
+
+  it('an acceptance of an earlier version with the same baseline (editorial update) still counts', async () => {
+    wireOrg(org(), { terms: ['2026-08'] });
+    handlers.partner_terms_versions = (c) =>
+      c.terminal === 'maybeSingle' ? { data: TERMS_V, error: null } : { data: [{ version: '2026-08' }, { version: '2026-09' }], error: null };
+    const r = await read();
+    expect(r.body.accepted).toBe(true);
+    const state = await request(app()).get('/api/v1/partner-onboarding/org-1').set('Authorization', 'Bearer owner-1');
+    expect(state.body.checklist.steps.find((s: any) => s.key === 'terms').status).toBe('done');
+  });
+
+  it('an acceptance of an older baseline (material update) needs re-acceptance; the org stays as it is', async () => {
+    const state = org({ ...COMPANY, lifecycle_state: 'live' });
+    wireOrg(state, { terms: ['2026-01'] });
+    const r = await read();
+    expect(r.body).toMatchObject({ accepted: false, reacceptance_required: true });
+    const s = await request(app()).get('/api/v1/partner-onboarding/org-1').set('Authorization', 'Bearer owner-1');
+    expect(s.body.checklist.steps.find((x: any) => x.key === 'terms')).toMatchObject({ status: 'todo', detail: { current_version: '2026-09' } });
+    expect(state.lifecycle_state).toBe('live'); // owner decision O-1: no pause, no suspension
   });
 });
 
