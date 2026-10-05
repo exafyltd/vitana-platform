@@ -12,7 +12,7 @@
 -- NOT included: auth.users is not in Aurora.
 --
 -- Regenerate right before the window if Supabase's schema changed since.
-BEGIN;
+-- One statement per line: run with scripts/aws/aurora-run-sql.sh.
 ALTER TABLE access_audit_log ADD CONSTRAINT access_audit_log_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id) ON DELETE RESTRICT NOT VALID;
 ALTER TABLE account_health_snapshot ADD CONSTRAINT account_health_snapshot_provider_account_id_fkey FOREIGN KEY (provider_account_id) REFERENCES provider_account(id) ON UPDATE CASCADE ON DELETE CASCADE NOT VALID;
 ALTER TABLE action_ledger ADD CONSTRAINT action_ledger_action_id_fkey FOREIGN KEY (action_id) REFERENCES pending_connector_actions(id) NOT VALID;
@@ -368,5 +368,4 @@ ALTER TABLE wearable_waitlist ADD CONSTRAINT wearable_waitlist_user_id_fkey FORE
 ALTER TABLE wearable_workouts ADD CONSTRAINT wearable_workouts_user_connection_id_fkey FOREIGN KEY (user_connection_id) REFERENCES user_connections(id) ON DELETE CASCADE NOT VALID;
 ALTER TABLE workflow_step ADD CONSTRAINT workflow_step_run_id_fkey FOREIGN KEY (run_id) REFERENCES workflow_run(id) ON UPDATE CASCADE ON DELETE CASCADE NOT VALID;
 ALTER TABLE workflow_version ADD CONSTRAINT workflow_version_definition_id_fkey FOREIGN KEY (definition_id) REFERENCES workflow_definition(id) ON UPDATE CASCADE ON DELETE CASCADE NOT VALID;
-COMMIT;
 NOTIFY pgrst, 'reload schema';

@@ -1,5 +1,26 @@
 # Supabase → Aurora Cutover Runbook — 2026-09-21 14:00 CEST
 
+
+> **UPDATE 2026-10-05 (VTID-04755) — read before the 2026-10-10 00:00 CEST window.**
+> - The Aurora cluster was restored from backup (2026-10-01) after a KMS key-access
+>   loss; endpoints are unchanged. New RDS-managed master secret:
+>   `rds!cluster-4dab93b8…` — the old `rds!cluster-eba8a4f2…` ARNs below are dead.
+> - The freeze (Step 4) and restore-grants (Step 8) scripts run on **Supabase**,
+>   not Aurora (their own headers say so); the psql lines below are corrected.
+> - Aurora-side SQL runs through the RDS Data API with
+>   `scripts/aws/aurora-run-sql.sh <file>` (needs `aws rds enable-http-endpoint`).
+> - **Step 1 is superseded** by `aurora-cutover-vector-preload.sql` (before the
+>   load: calendar_events `valid_source_type` synced to Supabase, vector indexes
+>   dropped, 13 vector columns staged as text) and
+>   `aurora-cutover-vector-postload.sql` (after the load: cast back, recreate
+>   indexes). The 2026-10-05 rehearsal failed exactly these tables without it.
+> - **New Step 5b**, after the final load: `aurora-cutover-vector-postload.sql`,
+>   then `aurora-cutover-recreate-foreign-keys.sql` (355 FKs; Aurora had 0, so
+>   PostgREST embedded selects would fail). Must run AFTER the load — TRUNCATE
+>   fails on FK-referenced tables.
+> - The final load uses task `vitana-fullload-final-catchup`
+>   (`arn:aws:dms:eu-central-1:472838866351:task:HBS7QKNHKFFT5GK6WDMK5236CA`).
+
 **UPDATED 2026-09-20 (second update, supersedes the one below it): the
 freeze window was postponed again — from tonight's midnight-CET window to
 Monday 2026-09-21 14:00 CET/CEST (12:00 UTC) — per explicit platform-owner
@@ -248,7 +269,7 @@ took 15.5-16 min for the whole dataset.
 ### Step 4 — Freeze writes
 
 ```bash
-psql "$AURORA_ADMIN_URL"   # or via RDS Data API, statement-by-statement
+psql "$SUPABASE_ADMIN_URL"   # SUPABASE (the source), not Aurora -- see the script header
 \i scripts/aws/aurora-cutover-freeze-writes.sql
 ```
 
@@ -335,7 +356,7 @@ aws dms describe-replication-tasks --region eu-central-1 \
 ### Step 8 — Unfreeze
 
 ```bash
-psql "$AURORA_ADMIN_URL"
+psql "$SUPABASE_ADMIN_URL"   # SUPABASE, not Aurora
 \i scripts/aws/aurora-cutover-restore-grants.sql
 ```
 
