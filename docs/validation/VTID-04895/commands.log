@@ -19,3 +19,4 @@ node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . 
 
 # Jest: local npm install is refused by the registry policy in this container (403),
 # so the suites run in the gateway Jest CI job.
+# Applied 2026-10-05 ~11:50 UTC via RUN-MIGRATION.yml run 37305520159 (owner go-ahead); post-check: table+RLS, 3 cols, 3 triggers, 2 RPCs, privileges ok, 0 versions, 0 acceptances
