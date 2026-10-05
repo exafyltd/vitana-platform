@@ -23,6 +23,7 @@
 import { Router, Request, Response } from 'express';
 import { createHash } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { claimCappedReward } from '../services/rewards/capped-reward';
 import { generateRecommendations, generatePersonalRecommendations, regenerateCommunityRecommendations, SourceType } from '../services/recommendation-engine';
 import { notifyUserAsync } from '../services/notification-service';
 import { DEFAULT_WAVE_CONFIG, buildTemplateToWaveMap } from '../services/wave-defaults';
@@ -2672,27 +2673,6 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
       completeCalendarEntriesForSource(userId, 'autopilot_recommendation', recId).catch(() => 0);
     }
 
-    // OASIS event — visibility only, never block the response on this.
-    try {
-      await emitOasisEvent({
-        vtid: 'VTID-01180',
-        type: 'autopilot.recommendation.completed' as any,
-        source: 'autopilot-recommendations',
-        status: 'info',
-        message: `Community recommendation completed: ${response.title}`,
-        payload: {
-          recommendation_id: recId,
-          user_id: userId,
-          source_ref: sourceRef,
-          title: response.title,
-          reward: response.reward ?? 0,
-          already_completed: alreadyCompleted,
-        },
-      });
-    } catch (e) {
-      console.warn(`${LOG_PREFIX} Failed to emit completion event:`, e);
-    }
-
     // Look up tenant once; reused by the milestone fan-out and the
     // post-complete regenerate call below. The pre-rebase milestone block
     // scoped `tenantRow` inside its own try, which broke the VTID-03301
@@ -2727,6 +2707,46 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
       console.warn(`${LOG_PREFIX} Tenant lookup / milestone check failed (non-fatal):`, e);
     }
 
+    // VTID-04878 (owner decision 2026-10-05): a first-time completion earns
+    // autopilot_action_done — 5 VTNA, at most 2 per UTC day — paid by the
+    // gateway through claim_capped_reward(), never by the RPC (which pays 0
+    // since VTID-04864). A failed claim never fails the completion.
+    let credited = 0;
+    if (!alreadyCompleted) {
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const sb = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
+        const claim = await claimCappedReward(sb, {
+          tenantId, userId, ruleId: 'autopilot_action_done', ref: recId,
+        });
+        credited = claim.credited;
+      } catch (e: any) {
+        console.warn(`${LOG_PREFIX} autopilot_action_done claim failed (non-fatal): ${e?.message ?? e}`);
+      }
+    }
+
+    // OASIS event — visibility only, never block the response on this.
+    try {
+      await emitOasisEvent({
+        vtid: 'VTID-01180',
+        type: 'autopilot.recommendation.completed' as any,
+        source: 'autopilot-recommendations',
+        status: 'info',
+        message: `Community recommendation completed: ${response.title}`,
+        payload: {
+          recommendation_id: recId,
+          user_id: userId,
+          source_ref: sourceRef,
+          title: response.title,
+          reward: credited,
+          already_completed: alreadyCompleted,
+        },
+      });
+    } catch (e) {
+      console.warn(`${LOG_PREFIX} Failed to emit completion event:`, e);
+    }
+
+
     // VTID-03301: queue-empty → regenerate immediately. Fire-and-forget so
     // Complete returns fast; the guard re-checks the active (new + activated)
     // count and only generates when it has actually hit 0 (and honors the
@@ -2744,7 +2764,7 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
       title: response.title,
       status: 'completed',
       completed_at: response.completed_at,
-      reward: response.reward ?? 0,
+      reward: credited,
       already_completed: alreadyCompleted,
     });
 

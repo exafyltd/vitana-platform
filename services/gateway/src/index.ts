@@ -398,6 +398,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const billingRouter = require('./routes/billing').default;
   // VTID-03201: Stripe-funded wallet deposits (EUR + USD fiat ledger, ships in parallel with Billing v1)
   const walletRouter = require('./routes/wallet').default;
+  // VTID-04878: VTNA reward sweep trigger (internal / exafy_admin, production only)
+  const rewardsSweepRouter = require('./routes/rewards-sweep').default;
   const walletStripeWebhookRouter = require('./routes/wallet-stripe-webhook').default;
   // VTID-03249: Wallet spend + earning admin endpoints (cart / marketplace integration contract)
   const walletAdminRouter = require('./routes/wallet-admin').default;
@@ -1261,6 +1263,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/stripe', walletStripeWebhookRouter, { owner: 'wallet-stripe-webhook' });
   // VTID-03201: Wallet user-facing routes (EUR + USD fiat). Path-scoped requireAuth inside router.
   mountRouterSync(app, '/api/v1', walletRouter, { owner: 'wallet' });
+  // VTID-04878: POST /api/v1/rewards/sweep — requireInternalOrAdmin inside router.
+  mountRouterSync(app, '/api/v1', rewardsSweepRouter, { owner: 'rewards-sweep' });
   // VTID-03249: Wallet admin spend/credit routes (cart / marketplace integration).
   // Path-scoped requireAuth + requireExafyAdmin inside router.
   mountRouterSync(app, '/api/v1', walletAdminRouter, { owner: 'wallet-admin' });
@@ -1784,6 +1788,20 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ Calendar default-reminders loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04878: VTNA reward sweep — pays earned rewards every 6 hours.
+      // Production inside AWS ECS only; staging (VITANA_ENV=staging) never pays.
+      try {
+        const { startRewardSweepLoop } = require('./services/rewards/reward-sweep-runner');
+        const { getSupabase } = require('./lib/supabase');
+        if (startRewardSweepLoop(getSupabase)) {
+          console.log('🪙 VTNA reward sweep loop started (VTID-04878)');
+        } else {
+          console.log('⏸️ VTNA reward sweep loop not started (staging, outside ECS, or REWARD_SWEEP_ENABLED=false)');
+        }
+      } catch (error) {
+        console.warn('⚠️ VTNA reward sweep loop initialization failed (non-fatal):', error);
       }
 
       // VTID-04374: calendar maintenance — moves Autopilot/journey suggestions

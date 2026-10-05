@@ -49,6 +49,11 @@ import express from 'express';
 // Module mocks
 // ---------------------------------------------------------------------------
 
+// VTID-04878: the reward is what the gateway's capped claim credited
+// (autopilot_action_done, 5 VTNA), not the RPC's `reward` (0 since VTID-04864).
+jest.mock('../../src/services/rewards/capped-reward', () => ({
+  claimCappedReward: jest.fn().mockResolvedValue({ outcome: 'claimed', credited: 5 }),
+}));
 jest.mock('../../src/services/oasis-event-service', () => ({
   emitOasisEvent: jest.fn().mockResolvedValue(undefined),
 }));
@@ -1312,7 +1317,8 @@ describe('POST /api/v1/autopilot/recommendations/:id/complete', () => {
       .send({});
 
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ ok: true, recommendation_id: REC_ID, status: 'completed', reward: 10 });
+    // VTID-04878 (contract changed on purpose): reward = the capped claim's credit.
+    expect(res.body).toMatchObject({ ok: true, recommendation_id: REC_ID, status: 'completed', reward: 5 });
     expect(mockEmitOasisEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'autopilot.recommendation.completed' }));
   });
 

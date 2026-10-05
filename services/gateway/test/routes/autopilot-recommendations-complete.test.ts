@@ -25,6 +25,11 @@ import express from 'express';
 
 // Stub out modules with import-time side effects so the router can load in
 // isolation without hitting Supabase, the recommendation engine, or OASIS.
+// VTID-04878: the reward is what the gateway's capped claim credited
+// (autopilot_action_done, 5 VTNA), not the RPC's `reward` (0 since VTID-04864).
+jest.mock('../../src/services/rewards/capped-reward', () => ({
+  claimCappedReward: jest.fn().mockResolvedValue({ outcome: 'claimed', credited: 5 }),
+}));
 jest.mock('../../src/services/oasis-event-service', () => ({
   emitOasisEvent: jest.fn().mockResolvedValue(undefined),
 }));
@@ -146,7 +151,9 @@ describe('VTID-03180 — POST /:id/complete', () => {
       ok: true,
       recommendation_id: REC_ID,
       status: 'completed',
-      reward: 10,
+      // VTID-04878 (contract changed on purpose): reward = the capped claim's
+      // credit, not the RPC's `reward` field.
+      reward: 5,
       already_completed: false,
     });
 
@@ -191,7 +198,10 @@ describe('VTID-03180 — POST /:id/complete', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
-    expect(res.body.reward).toBe(0);
+    // VTID-04878 (owner decision 2026-10-05): every first-time completion earns
+    // autopilot_action_done through the capped claim (mocked at 5), not only
+    // onboarding recommendations.
+    expect(res.body.reward).toBe(5);
   });
 
   test('idempotent: already_completed RPC response passes through as 200', async () => {

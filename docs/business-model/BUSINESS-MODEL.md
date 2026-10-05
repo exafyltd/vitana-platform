@@ -365,3 +365,29 @@ their own VTIDs. These supersede anything above that conflicts with them.
    EUR/USD equivalent per the member's currency setting. Wine: the member
    confirms their age and pays shipping. The Rewards screen lives in the
    Wallet as the existing `/wallet/rewards` subscreen.
+
+### 11a. How members earn VTNA — owner decisions (2026-10-03, amended 2026-10-05)
+
+The rule table is `services/gateway/src/services/rewards/vtna-reward-rules.ts`
+(VTID-04864); every payer reads its amounts from there.
+
+- **2026-10-03 (VTID-04864):** "You earn VTNA for real things you do
+  yourself, once per milestone, and for staying consistent." First steps
+  (once each), diary streaks 3/7/30 (once each), invites (1,000 per friend
+  who joins, max 10 per 30 days; 10,000 once at 10 friends). Never earns:
+  anything Vitana does for you, purchases, self-reported actions.
+- **2026-10-05 (VTID-04878) amends it:**
+  - *Onboarding complete* (50 VTNA) pays **at signup** — nothing records the
+    guided onboarding as finished.
+  - *Autopilot action done* pays again: **5 VTNA, max 2 per day** (UTC).
+    Completion is self-reported, so the amount stays small and capped.
+  - *Live room* with someone else present for **15 full minutes: 20 VTNA,
+    max 3 per week** (server-verified join/leave). In-person meetups earn
+    once event check-in exists; RSVPs pay only the one-time first-RSVP step.
+  - *New Vitana Index personal best*, **at least 10 points above the
+    previous best: 50 VTNA, max once a week**. The first reading is the
+    baseline.
+  - Members are paid for first steps they already took before the ledger
+    existed (one silent back-pay, no notifications).
+  - Ceiling from the new rules: ≈ 775 VTNA (≈ €7.75) per member per month at
+    the caps.

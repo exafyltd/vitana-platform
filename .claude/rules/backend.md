@@ -1037,7 +1037,12 @@ Standing rules for any Commerce change:
    (`p_type 'reward'`, a stable `p_source_event_id`), lands in
    `earned_balance`, and only rewards (shop, subscription conversion) may
    spend it. Never credit VTNA with `increment_wallet_balance()` or from the
-   client.
+   client. **Repeatable, capped rewards (VTID-04878)** go through
+   `claim_capped_reward()` with the amount/cap/window from
+   `services/rewards/vtna-reward-rules.ts`, never through a bare
+   `credit_wallet()` call with a home-made counter. The reward sweep
+   (`services/rewards/reward-sweep.ts`) pays only on production
+   (`VITANA_ENV` must not be `staging`; staging shares the database).
 
 ---
 

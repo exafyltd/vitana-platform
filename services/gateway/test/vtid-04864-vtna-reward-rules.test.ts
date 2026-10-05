@@ -36,9 +36,15 @@ describe('VTID-04864: one VTNA rule table', () => {
   });
 
   it('first steps and habits are once-only; habits are the 3/7/30-day streaks only', () => {
-    for (const r of VTNA_REWARD_RULES.filter((x) => x.group !== 'community')) expect(r.once).toBe(true);
-    expect(VTNA_REWARD_RULES.filter((r) => r.group === 'habits').map((r) => r.id)).toEqual([
+    // Contract changed on purpose by VTID-04878 (owner decision 2026-10-05):
+    // the capped, repeatable rules (with a calendar `window`) join the habits
+    // and community groups; every other first-step / habit rule stays once-only.
+    for (const r of VTNA_REWARD_RULES.filter((x) => x.group !== 'community' && !x.window)) expect(r.once).toBe(true);
+    expect(VTNA_REWARD_RULES.filter((r) => r.group === 'habits' && r.once).map((r) => r.id)).toEqual([
       'diary_streak_3', 'diary_streak_7', 'diary_streak_30',
+    ]);
+    expect(VTNA_REWARD_RULES.filter((r) => r.window).map((r) => r.id).sort()).toEqual([
+      'autopilot_action_done', 'index_new_best', 'live_room_15min',
     ]);
   });
 
@@ -47,8 +53,9 @@ describe('VTID-04864: one VTNA rule table', () => {
       expect({ id, reward: def.reward }).toEqual({ id, reward: rewardAmount(id) });
     }
     expect(MILESTONES.first_referral.reward).toBe(0);
-    // every first-step / habit rule is a real milestone the service detects
-    for (const r of VTNA_REWARD_RULES.filter((x) => x.group !== 'community')) {
+    // every once-only first-step / habit rule is a real milestone the service
+    // detects (VTID-04878: the capped rules are paid by claim_capped_reward)
+    for (const r of VTNA_REWARD_RULES.filter((x) => x.group !== 'community' && x.once)) {
       expect(MILESTONES[r.id]).toBeDefined();
     }
   });
@@ -82,7 +89,9 @@ describe('VTID-04864: nothing is paid twice', () => {
     expect(src).toContain('rewardEventId(ruleId, userId)');
     expect(src).not.toMatch(/p_source_event_id:\s*`diary_streak_/);
     const ms = fs.readFileSync(path.join(__dirname, '../src/services/milestone-service.ts'), 'utf8');
-    expect(ms.match(/p_source_event_id: rewardEventId\(milestoneId, userId\)/g)?.length).toBe(2);
+    // VTID-04878: the scan and the inline check now share one payer
+    // (awardMilestone), so the key appears once instead of twice.
+    expect(ms.match(/p_source_event_id: rewardEventId\(milestoneId, userId\)/g)?.length).toBe(1);
   });
 
   it('the streak push never claims a credit that did not land', () => {
@@ -179,7 +188,10 @@ describe('VTID-04864: the Wallet → Rewards overview', () => {
 
   it('never shows a rule that does not pay: the invite rules are hidden while their switch is off', () => {
     const off = buildRewardOverview(U, input, 0, { COMMUNITY_INVITE_REWARD_ENABLED: 'false' } as any);
-    expect(off.groups.map((g) => g.group)).toEqual(['first_steps', 'habits']);
+    // VTID-04878: live_room_15min keeps the community group visible; only the
+    // invite rules disappear while their switch is off.
+    expect(off.groups.map((g) => g.group)).toEqual(['first_steps', 'habits', 'community']);
+    expect(off.groups.find((g) => g.group === 'community')!.rules.map((r) => r.id)).toEqual(['live_room_15min']);
     expect(visibleRewardRules({ COMMUNITY_INVITE_REWARD_ENABLED: 'false' } as any).some((r) => r.id === 'invite_friend_joined')).toBe(false);
     expect(visibleRewardRules({} as any).some((r) => r.id === 'invited_friends_10')).toBe(true);
   });
