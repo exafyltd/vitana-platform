@@ -26,6 +26,8 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import { getSupabase } from '../lib/supabase';
+import { writeDiaryEpisode, updateDiaryEpisodeText, resolveTenantId } from './memory/diary';
 import { shouldBlockTool } from './intelligence/role-policy-enforcer';
 import { recordToolDecision } from './orchestrator/policy-shadow';
 // VTID-03255 — Journey Foundation voice tool: writes every answer + returns next move.
@@ -4065,6 +4067,16 @@ async function tool_get_pillar_subscores(
 const BARE_CONSENT_RX =
   /^(ja|okay?|klar|gerne|sicher|yes|sure|help me|hilf mir|ja,? hilf mir|yes,? help me|ja bitte|yes please)[.!,]*$/i;
 
+const VOICE_DIARY_TAGS = ['diary', 'voice', 'orb'];
+
+/** VTID-04884: the tenant for a diary episode; a voice identity may carry none. */
+async function diaryEpisodeIdentity(
+  admin: SupabaseClient,
+  identity: OrbToolIdentity,
+): Promise<{ user_id: string; tenant_id: string }> {
+  return { user_id: identity.user_id, tenant_id: await resolveTenantId(admin, identity.user_id, identity.tenant_id) };
+}
+
 export async function tool_save_diary_entry(
   args: OrbToolArgs,
   identity: OrbToolIdentity,
@@ -4144,19 +4156,51 @@ export async function tool_save_diary_entry(
         console.warn(
           `[save_diary_entry] diary_entries coalesce-update failed (non-fatal): ${updateErr.message}`,
         );
+      } else {
+        // VTID-04884: the row's episode follows the merged text.
+        const admin = getSupabase();
+        if (admin) {
+          await updateDiaryEpisodeText(admin, await diaryEpisodeIdentity(admin, identity), {
+            diary_entry_id: recentEntry.id,
+            text: mergedText,
+            source: 'voice',
+            tags: VOICE_DIARY_TAGS,
+            occurred_at: recentEntry.created_at,
+          });
+        }
       }
     } else {
-      const { error: insertErr } = await sb.from('diary_entries').insert({
-        user_id: identity.user_id,
-        text: rawText,
-        source: 'voice',
-        tags: ['diary', 'voice', 'orb'],
-      });
+      const { data: inserted, error: insertErr } = await sb
+        .from('diary_entries')
+        .insert({
+          user_id: identity.user_id,
+          text: rawText,
+          source: 'voice',
+          tags: VOICE_DIARY_TAGS,
+        })
+        .select('id, created_at')
+        .single();
       if (insertErr) {
         diary_entry_written = false;
         console.warn(
           `[save_diary_entry] diary_entries insert failed (non-fatal): ${insertErr.message}`,
         );
+      } else if (!inserted) {
+        console.warn('[VTID-04884] voice diary insert returned no row; episode skipped');
+      } else {
+        // VTID-04884: a voice diary entry becomes memory, as a typed one does
+        // (VTID-04390). It used to skip this, so voice diaries never reached memory.
+        const row = inserted as { id: string; created_at: string };
+        const admin = getSupabase();
+        if (admin) {
+          await writeDiaryEpisode(await diaryEpisodeIdentity(admin, identity), {
+            diary_entry_id: row.id,
+            text: rawText,
+            source: 'voice',
+            tags: VOICE_DIARY_TAGS,
+            occurred_at: row.created_at,
+          });
+        }
       }
     }
   } catch (insertErr) {
