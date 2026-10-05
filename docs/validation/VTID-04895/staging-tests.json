@@ -7,7 +7,6 @@
       "target": "gateway",
       "method": "GET",
       "path": "/api/v1/admin/partner-terms",
-      "rejected_probe": true,
       "expect_status": 401,
       "expect_content_type": "application/json",
       "reason": "the publishing API is mounted and refuses an unsigned caller (exafy_admin only; nothing is read or written)"
@@ -17,7 +16,6 @@
       "target": "gateway",
       "method": "GET",
       "path": "/api/v1/partner-onboarding/00000000-0000-0000-0000-000000000000/terms",
-      "rejected_probe": true,
       "expect_status": 401,
       "expect_content_type": "application/json",
       "reason": "the supplier terms view is mounted and needs the supplier's session"
