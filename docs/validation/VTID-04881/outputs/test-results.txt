@@ -1,0 +1,11 @@
+# Full gateway jest suite (npx jest --silent), 2026-10-05, on main d71bb2e + this change
+Tests:       1 failed, 200 passed
+Tests:       1 failed, 200 passed (1 ms)
+Test Suites: 1 skipped, 1503 passed, 1503 of 1504 total
+Tests:       25 skipped, 6 todo, 23924 passed, 23955 total
+
+(The two 'Tests: 1 failed, 200 passed' lines are text a test prints from a nested run it asserts on; no suite failed.)
+
+# orb-agent: python3 -m pytest tests/test_nav_tool_args.py -> 30 passed, 1 skipped (livekit schema check; livekit-agents not installed)
+# orb-agent full suite: the same 23 pre-existing failures before and after this change (environment lacks livekit-agents); diff of the failure sets is empty
+# npm run test:support -> 85 passed; npx tsc --noEmit -> clean
