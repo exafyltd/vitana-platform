@@ -35,7 +35,7 @@ AC-7: the three dedicated scheduler Lambdas (push-dispatch, daily-feature-tip, w
 AC-8: the shared cron Lambda lets a job name its token secret; the scheduled-notifications jobs use the production secret; `gateway-daily-feature-tip` is no longer duplicated in it (30 jobs).
   TEST: services/gateway/test/vtid-04677-scheduled-notifications-auth.test.ts
   TEST: services/gateway/test/vtid-04226-eventbridge-test-contract-schedules.test.ts
-AC-9: the production deploy wires `GATEWAY_INTERNAL_TOKEN` in every deploy mode and sets no auth mode; staging pins `log` and prints the secret lookup error instead of discarding it.
+AC-9: the production deploy wires `GATEWAY_INTERNAL_TOKEN` in every deploy mode and sets no auth mode; staging strips any set mode (so it runs the code default `log`; the step is at the 20,000-char run limit, so it is not pinned) and prints the secret lookup error instead of discarding it.
   TEST: services/gateway/test/vtid-04677-scheduled-notifications-auth.test.ts
 
 ## Route evidence

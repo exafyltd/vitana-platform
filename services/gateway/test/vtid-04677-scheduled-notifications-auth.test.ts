@@ -211,15 +211,15 @@ describe('deploy workflows', () => {
     expect(PROD).not.toMatch(/SCHEDULED_NOTIFICATIONS_AUTH_MODE", value/);
   });
 
-  it('staging pins log mode and strips the old value first', () => {
-    expect(STAGE).toContain('{name:"SCHEDULED_NOTIFICATIONS_AUTH_MODE", value:"log"}');
+  it('staging strips any set value, so it runs the code default (log)', () => {
     expect(STAGE).toContain('"LEDGER_WRITE_AUTH_MODE","SCHEDULED_NOTIFICATIONS_AUTH_MODE",');
+    expect(STAGE).not.toMatch(/SCHEDULED_NOTIFICATIONS_AUTH_MODE", value:"(enforce|off)"/);
   });
 
   it('staging prints the secret lookup error instead of discarding it', () => {
     const line = STAGE.split('\n').find((l) => l.includes('describe-secret --secret-id vitana/gateway/staging/internal-token'))!;
     expect(line).not.toContain('2>/dev/null');
-    expect(STAGE).toContain('internal-token secret not resolved (VTID-04226/04677) - not wired: $(head -c 300 "$SEC_IT_ERR"');
+    expect(STAGE).toContain('internal-token not resolved: $(head -c 300 /tmp/it.err)');
   });
 });
 
