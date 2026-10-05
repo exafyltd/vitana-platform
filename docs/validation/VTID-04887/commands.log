@@ -63,3 +63,5 @@ npx tsx scratchpad/mock-data.ts data4.json acks && node scratchpad/harness.js ou
                                                            #   disclosure closed by default; opened: Service Health + Vitana Recommends only,
                                                            #   recommendations fetched once from /api/v1/ops/pipeline-summary; blind -> every tile UNKNOWN
                                                            #   (outputs/11-offline-render.txt and outputs/p4-*.png)
+
+# 2026-10-05 after PR open: route test renamed to test/ops-pipeline-summary.test.ts (impact rule new-route-needs-test expects <route>.test.ts); outputs/ above record the run under its earlier name test/vtid-04887-ops-pipeline-summary-route.test.ts.

@@ -96,7 +96,7 @@ function handler(action: AckAction) {
   };
 }
 
-router.post('/ack', requireAdminAuth, handler('ack'));
-router.post('/snooze', requireAdminAuth, handler('snooze'));
+router.post('/ack', requireAdminAuth, handler('ack')); // impact-allow-no-oasis: recordOpsAttentionAction() emits ops.attention.acked
+router.post('/snooze', requireAdminAuth, handler('snooze')); // impact-allow-no-oasis: recordOpsAttentionAction() emits ops.attention.snoozed
 
 export default router;

@@ -92,7 +92,7 @@ never runs. For an admin it answers exactly `buildPipelineSummary()`'s status an
 snake_case JSON as the service-token route, in-process, with no HTTP self-call. Successful answers
 are cached for 15 s per task with single-flight; a builder 500 is passed through and never cached.
 `Cache-Control: no-store`. The service-token route is unchanged for machine callers.
-TEST: services/gateway/test/vtid-04887-ops-pipeline-summary-route.test.ts
+TEST: services/gateway/test/ops-pipeline-summary.test.ts
 TEST: services/gateway/test/vtid-04875-pipeline-summary-builder.test.ts (the service-token route, byte-for-byte)
 CURL: GET https://preview-aws-gateway.vitanaland.com/api/v1/ops/pipeline-summary (no token) -> 401 application/json (staging-tests.json)
 
@@ -100,7 +100,7 @@ AC-9: The new route file is claimed by the developer domain atlas (`/^ops-/`, do
 "OASIS, VTIDs and governance"). The atlas drift guard in `npm run test:roles` is green, and the route test asserts
 the claim.
 TEST: services/gateway/test/vtid-04560-role-separation-regression.test.ts ("every gateway route file is claimed by at least one domain")
-TEST: services/gateway/test/vtid-04887-ops-pipeline-summary-route.test.ts ("the developer domain atlas claims the new route file")
+TEST: services/gateway/test/ops-pipeline-summary.test.ts ("the developer domain atlas claims the new route file")
 
 ROUTE_MOUNT: `const opsPipelineSummaryRouter = require('./routes/ops-pipeline-summary').default;`
 and `mountRouterSync(app, '/api/v1/ops/pipeline-summary', opsPipelineSummaryRouter, { owner:

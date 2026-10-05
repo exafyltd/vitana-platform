@@ -14,7 +14,7 @@
  *      fetch they needed.
  *   3. The Operator Dashboard, the Runbook and Vitana Recommends read the
  *      pipeline summary from the admin-gated GET /api/v1/ops/pipeline-summary
- *      (route test: test/vtid-04887-ops-pipeline-summary-route.test.ts).
+ *      (route test: test/ops-pipeline-summary.test.ts).
  *
  * Source-level plus small evaluations of the real router code, the
  * established pattern for app.js (vanilla JS, no build step).
