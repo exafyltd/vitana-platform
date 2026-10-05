@@ -123,13 +123,16 @@ jobs:
           # count=exact + limit=0 (via Range) returns just the header, no rows —
           # cheapest possible way to ask PostgREST "how many rows total".
           HEADERS=$(curl -sS -D - -o /dev/null \
-            "${SUPABASE_URL%/}/rest/v1/app_users?select=id" \
+            "${SUPABASE_URL%/}/rest/v1/app_users?select=user_id" \
             -H "apikey: $SUPABASE_SERVICE_ROLE" \
             -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
             -H "Prefer: count=exact" \
             -H "Range: 0-0")
-          COUNT=$(echo "$HEADERS" | grep -i '^content-range:' | sed -E 's#.*/([0-9]+).*#\1#' | tr -d '\r')
-          if [ -z "$COUNT" ]; then
+          # VTID-04891: app_users is keyed by user_id (there is no id column), so
+          # select=id was a 400 with no Content-Range. "|| true": a missing header
+          # must reach the error below instead of dying silently under pipefail.
+          COUNT=$( (echo "$HEADERS" | grep -i '^content-range:' || true) | sed -E 's#.*/([0-9]+).*#\1#' | tr -d '\r')
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
             echo "::error::Could not parse Content-Range from PostgREST response:"
             echo "$HEADERS"
             exit 1
