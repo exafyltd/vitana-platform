@@ -3,7 +3,7 @@
  * orb-tool dispatcher in services/orb-tools-shared.ts.
  *
  * POST /api/v1/orb/tool
- *   Body: { name: string, args: object }
+ *   Body: { name: string, args: object, lang?: string }
  *   Returns: { ok: boolean, result?: any, error?: string, vtid: string }
  *
  * The actual tool logic lives in services/gateway/src/services/orb-tools-shared.ts
@@ -27,6 +27,23 @@ import { resolveEffectiveRole } from './orb-live';
 
 const router = Router();
 const VTID = 'VTID-LIVEKIT-TOOLS';
+
+/**
+ * VTID-04881: the member's language, sent by the LiveKit agent next to
+ * `name`/`args`, so the shared tools answer in it as they do on the Vertex
+ * path. It only chooses the output language: accepted as a short locale
+ * ("de", "pt-BR") and reduced to its base code, anything else is ignored.
+ * A client-supplied session id is never read — the shared tools key
+ * per-session state on it, so taking it from the body could reach another
+ * member's session.
+ */
+export function toolCallLang(body: unknown): string | undefined {
+  const raw = (body as { lang?: unknown } | null | undefined)?.lang;
+  if (typeof raw !== 'string') return undefined;
+  const v = raw.trim();
+  if (!/^[a-zA-Z]{2}(-[A-Za-z]{2,4})?$/.test(v)) return undefined;
+  return v.slice(0, 2).toLowerCase();
+}
 
 function adminClient(): SupabaseClient | null {
   const url = process.env.SUPABASE_URL;
@@ -63,6 +80,8 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
     role: effectiveRole ?? req.identity?.role ?? null,
     vitana_id: req.identity?.vitana_id ?? null,
   };
+  const lang = toolCallLang(req.body);
+  if (lang) identity.lang = lang;
   const sb = adminClient() || getSupabase();
   if (!sb) {
     return res.status(500).json({ ok: false, error: 'supabase_not_configured', vtid: VTID });
