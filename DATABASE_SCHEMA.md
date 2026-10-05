@@ -3408,6 +3408,10 @@ tenant's `member`/`patient`/`partner_org` rows only (internal and
 system_autopilot are uncapped); member-content calls are counted under
 `member`. Budgets set by `data-fixups/20261003120000_vtid_04857_jev_community_budgets.sql`
 (maxina 50, alkalma 10).
+Community Class A shadow rows (VTID-04879) use `plane = 'member'` and the
+subject types `community_utterance`, `community_marketplace_need`,
+`community_memory_turn` and `community_ticket`; `subject_ref` is a hash of
+session/turn ids, never member text or ids. No column change.
 
 ### Jev member daily quota (VTID-04872)
 Table: `jev_member_daily_counters` (PK `tenant_id, user_id, day`; `calls`,

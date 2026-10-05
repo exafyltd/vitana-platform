@@ -352,12 +352,12 @@ export async function extractAndPersistFacts(input: {
   tenant_id: string;
   user_id: string;
   session_id: string;
-}): Promise<void> {
+}): Promise<{ persisted: number }> {
   const startTime = Date.now();
 
   try {
     // Skip very short messages (unlikely to contain facts)
-    if (input.conversationText.length < 30) return;
+    if (input.conversationText.length < 30) return { persisted: 0 };
 
     // BOOTSTRAP-VOICE-DEMO: emit a real heartbeat so the agents dashboard
     // shows inline-fact-extractor as healthy whenever it's actually called.
@@ -376,7 +376,7 @@ export async function extractAndPersistFacts(input: {
 
     if (facts.length === 0) {
       console.debug(`[VTID-01225-inline] No facts extracted from turn (${input.session_id})`);
-      return;
+      return { persisted: 0 };
     }
 
     let persisted = 0;
@@ -393,8 +393,11 @@ export async function extractAndPersistFacts(input: {
       `[VTID-01225-inline] Extraction complete: ${facts.length} facts found, ` +
       `${persisted} persisted, ${failed} failed (${durationMs}ms)`
     );
+    // VTID-04879: the count lets the worth-remembering shadow compare against what was stored.
+    return { persisted };
   } catch (err: any) {
     console.warn(`[VTID-01225-inline] Extraction failed (non-blocking): ${err.message}`);
+    return { persisted: 0 };
   }
 }
 

@@ -22,6 +22,7 @@
 
 import { createHash } from 'crypto';
 import { extractAndPersistFacts, isInlineExtractionAvailable } from './inline-fact-extractor';
+import { shadowWorthRemembering } from './jev/gates/community-class-a-gates';
 import { addSessionFact } from './session-memory-buffer';
 import { mayWritePersonalFacts } from './memory/scope';
 
@@ -214,14 +215,25 @@ export function deduplicatedExtract(
     state.turn_count_at_last_extraction = input.turn_count;
   }
 
+  // VTID-04879: Jev in shadow before the extractor (all skip guards above have passed);
+  // agreement is settled from how many facts the extractor stored. Never awaited.
+  const memoryShadow = shadowWorthRemembering({
+    conversation: input.conversationText,
+    tenantId: input.tenant_id,
+    userId: input.user_id,
+    sessionId: input.session_id,
+  });
+
   extractAndPersistFacts({
     conversationText: input.conversationText,
     tenant_id: input.tenant_id,
     user_id: input.user_id,
     session_id: input.session_id,
-  }).catch(err => {
-    console.warn(`[VTID-01230-dedup] Extraction failed (non-blocking): ${err.message}`);
-  });
+  })
+    .then((r) => memoryShadow.settle(r?.persisted ?? 0))
+    .catch(err => {
+      console.warn(`[VTID-01230-dedup] Extraction failed (non-blocking): ${err.message}`);
+    });
 
   console.log(
     `[VTID-01230-dedup] Extraction triggered for session ${input.session_id.substring(0, 8)}... ` +

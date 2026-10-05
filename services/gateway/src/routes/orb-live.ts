@@ -6055,6 +6055,10 @@ async function executeLiveApiToolInner(
           let intentKind = kindHint as any;
           if (!intentKind) {
             const cls = await classifyIntentKind(utterance);
+            // VTID-04879: Jev in shadow beside the classifier; never awaited, never changes the result.
+            void import('../services/jev/gates/community-class-a-gates')
+              .then((g) => g.shadowIntentKind({ utterance, existingKind: cls.intent_kind, existingConfidence: cls.confidence, tenantId: session.identity?.tenant_id, userId: session.identity?.user_id, sessionId: session.sessionId, source: 'post_intent' }))
+              .catch(() => undefined);
             if (!cls.intent_kind || cls.confidence < 0.7) {
               return {
                 success: true,
