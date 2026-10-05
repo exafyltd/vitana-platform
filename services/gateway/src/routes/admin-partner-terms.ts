@@ -59,6 +59,19 @@ async function requireOwnSession(req: Request, res: Response, next: NextFunction
   return next();
 }
 
+/** Who drafted which terms text is part of the audit trail, not only who published it. */
+async function draftSaved(req: Request, row: { id: string; version: string }, action: 'created' | 'edited') {
+  await emitOasisEvent({
+    vtid: 'VTID-04895',
+    type: 'partner_terms.draft_saved',
+    source: 'admin-partner-terms',
+    status: 'info',
+    message: `Partner terms draft ${row.version} ${action}.`,
+    payload: { terms_version_id: row.id, version: row.version, action },
+    actor_id: actorOf(req) ?? undefined,
+  });
+}
+
 router.get('/', async (_req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
@@ -85,6 +98,7 @@ router.post('/', requireOwnSession, async (req: Request, res: Response) => {
     if (error.code === '23505') return res.status(409).json({ ok: false, error: 'VERSION_EXISTS' });
     return res.status(500).json({ ok: false, error: error.message });
   }
+  await draftSaved(req, data as { id: string; version: string }, 'created');
   return res.status(201).json({ ok: true, version: data });
 });
 
@@ -118,6 +132,7 @@ router.put('/:id', requireOwnSession, async (req: Request, res: Response) => {
     .maybeSingle();
   if (error) return res.status(error.code === '23505' ? 409 : 500).json({ ok: false, error: error.code === '23505' ? 'VERSION_EXISTS' : error.message });
   if (!data) return res.status(409).json({ ok: false, error: 'PARTNER_TERMS_IMMUTABLE' });
+  await draftSaved(req, data as { id: string; version: string }, 'edited');
   return res.json({ ok: true, version: data });
 });
 

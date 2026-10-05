@@ -119,6 +119,7 @@ describe('drafts', () => {
     expect(r.status).toBe(201);
     expect(row).toMatchObject({ version: '2026-10', binding_locale: 'en', requires_reacceptance: true, created_by: 'admin-1' });
     expect(row.content.de).toEqual({ title: 'T', body_md: 'B' });
+    expect(emitOasisEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'partner_terms.draft_saved', actor_id: 'admin-1', payload: expect.objectContaining({ action: 'created' }) }));
   });
 
   it('400 without the English text; 409 for an existing version', async () => {
@@ -146,6 +147,7 @@ describe('drafts', () => {
     const upd = calls.find((c) => c.op === 'update')!;
     expect(upd.filters).toEqual(expect.arrayContaining([['id', 'tv-1'], ['status', 'draft']]));
     expect(upd.args[0]).toMatchObject({ content: EN, requires_reacceptance: false });
+    expect(emitOasisEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'partner_terms.draft_saved', payload: expect.objectContaining({ action: 'edited' }) }));
   });
 });
 

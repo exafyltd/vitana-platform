@@ -1075,6 +1075,7 @@ export type CicdEventType =
   | 'partner_org.partner_type_set'
   | 'partner_org.terms_accepted'
   // VTID-04895: partner terms lifecycle
+  | 'partner_terms.draft_saved'
   | 'partner_terms.version_published'
   | 'partner_terms.reacceptance_required'
   | 'partner_org.lifecycle_changed'
