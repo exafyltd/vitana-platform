@@ -24,7 +24,15 @@
  *
  * Structural/source-level, the established pattern for app.js (vanilla JS,
  * no build step, no render harness) — see t5d-stale-gcp-labels-fixed.test.ts.
- * computeSystemStatus/overviewHealthClass are pure, so they are also run.
+ * overviewHealthClass is pure, so it is also run.
+ *
+ * VTID-04887 (Overview Phase 4, cleanup) deleted the code several of these
+ * fixes lived in: the four old Overview tabs, the pre-Phase-1 panels other
+ * than the grouped Service Health panel, fetchOverviewDashboard and its
+ * helpers (computeSystemStatus, computeOrbSessionStats, ...), the 60 s
+ * dashboard poll and the old pipeline-summary fetch. Where a fix's code is
+ * gone, its test now pins that the code — and the false signal — stays gone;
+ * everything that still exists is still checked as before.
  */
 
 import { readFileSync } from 'fs';
@@ -53,27 +61,29 @@ function fnBody(signature: string): string {
   return SRC.slice(start, end + 2);
 }
 
-/** The Overview code: helpers, fetchers and renderers, computeSystemStatus → end of release feed. */
+/**
+ * The Overview code: helpers, fetchers and renderers, from the utility
+ * header to the Operator task queue. VTID-04887: the old end marker (the
+ * release feed) was deleted with the tab.
+ */
 function overviewRegion(): string {
   const start = SRC.indexOf('// VTID-01864: Supervisor Dashboard — Utility Functions');
-  const end = SRC.indexOf('async function fetchOverviewReleasesSilent(');
+  const end = SRC.indexOf('async function fetchOperatorTaskQueue(');
   expect(start).toBeGreaterThan(-1);
   expect(end).toBeGreaterThan(start);
   return SRC.slice(start, end);
 }
 
-/** Evaluate the two pure helpers in isolation. */
+/** Evaluate the pure health classifier in isolation. */
 function loadHealthHelpers(): {
   overviewHealthClass: (svc: unknown) => string;
-  computeSystemStatus: (checks: unknown[]) => { status: string; message: string };
 } {
   const cls = SRC.slice(
     SRC.indexOf('var OVERVIEW_HEALTHY_STATUSES'),
     SRC.indexOf('\n}', SRC.indexOf('function overviewHealthClass(')) + 2,
   );
-  const sys = fnBody('function computeSystemStatus(healthChecks) {');
   // eslint-disable-next-line no-new-func
-  return new Function(`${cls}\n${sys}\nreturn { overviewHealthClass, computeSystemStatus };`)();
+  return new Function(`${cls}\nreturn { overviewHealthClass };`)();
 }
 
 describe('VTID-04869 fix 1: Overview uses the real router keys', () => {
@@ -89,9 +99,10 @@ describe('VTID-04869 fix 1: Overview uses the real router keys', () => {
     expect(code).not.toMatch(/state\.activeTab\b/);
   });
 
-  it('the 60 s dashboard poll is gated on currentModuleKey/currentTab', () => {
-    const body = fnBody('function startOverviewDashboardPolling() {');
-    expect(body).toContain("state.currentModuleKey === 'overview' && state.currentTab === 'system-overview'");
+  it('the 60 s dashboard poll is gone with the panels it refreshed (VTID-04887)', () => {
+    expect(SRC).not.toMatch(/function\s+startOverviewDashboardPolling\s*\(/);
+    expect(SRC).not.toMatch(/\bstartOverviewDashboardPolling\(/);
+    expect(SRC).not.toContain('overviewDashboardRefreshInterval');
   });
 
   it('the 30 s Overview poll is gated on currentModuleKey/currentTab', () => {
@@ -104,36 +115,26 @@ describe('VTID-04869 fix 1: Overview uses the real router keys', () => {
     );
   });
 
-  it('fetchOpsAttention / fetchOverviewTimeseries re-render on the real keys', () => {
+  it('fetchOpsAttention re-renders on the real keys', () => {
     // VTID-04876: fetchActionRequired was replaced by fetchOpsAttention.
     expect(fnBody('async function fetchOpsAttention(silentRefresh) {')).toContain('if (opsAttentionIsOpen()) {');
     expect(fnBody('function opsAttentionIsOpen() {')).toContain(
       "state.currentModuleKey === 'overview' && state.currentTab === 'system-overview'",
     );
-    expect(fnBody('async function fetchOverviewTimeseries(silentRefresh) {')).toContain(
-      "state.currentModuleKey === 'overview' && state.currentTab === 'system-overview' && !silentRefresh",
-    );
+    // VTID-04887: fetchOverviewTimeseries fed only the deleted metrics grid;
+    // the cockpit's sparklines come from /ops/attention (VTID-04886).
+    expect(SRC).not.toMatch(/function\s+fetchOverviewTimeseries\s*\(/);
   });
 });
 
 describe('VTID-04869 fix 2: shared and fresh health paths both yield an array', () => {
-  it('the shared branch resolves to the mapped array, not a {status, value} wrapper', () => {
-    const body = fnBody('async function fetchOverviewDashboard() {');
-    expect(body).toContain(
-      "healthCheckPromise = Promise.resolve(state.serviceHealth.items.map(function (s) { return { status: 'fulfilled', value: s }; }));",
-    );
-    expect(body).not.toContain("Promise.resolve({ status: 'fulfilled', value:");
-    expect(body).toContain("results[0].status === 'fulfilled' && Array.isArray(results[0].value)");
-  });
-
-  it('the parse step works for both shapes', async () => {
-    const item = { name: 'Gateway', status: 'healthy' };
-    const shared = (await Promise.allSettled([Promise.resolve([{ status: 'fulfilled', value: item }])]))[0];
-    const fresh = (await Promise.allSettled([Promise.allSettled([Promise.resolve(item)])]))[0];
-    for (const r of [shared, fresh]) {
-      expect(r.status).toBe('fulfilled');
-      expect(Array.isArray((r as PromiseFulfilledResult<unknown>).value)).toBe(true);
-    }
+  it('the dashboard fetch that double-wrapped the shared health result is gone (VTID-04887)', () => {
+    // The grouped Service Health panel reads state.serviceHealth directly;
+    // nothing re-wraps it any more.
+    expect(SRC).not.toMatch(/function\s+fetchOverviewDashboard\s*\(/);
+    expect(SRC).not.toMatch(/\bfetchOverviewDashboard\(/);
+    expect(SRC).not.toContain("Promise.resolve({ status: 'fulfilled', value:");
+    expect(fnBody('function renderOverviewSystemPanels() {')).toContain('var allHealthServices = state.serviceHealth.items || [];');
   });
 });
 
@@ -156,11 +157,10 @@ describe('VTID-04869 fix 3: no call to an undefined navigateTo()', () => {
     expect(body).toContain('applyDeepLinkParams();');
   });
 
-  it('the live-metrics attention card and the VTID attention card navigate through it', () => {
-    expect(SRC).toContain("navigateToScreen('command-hub', 'tasks');");
-    const card = fnBody('function renderVtidAttentionCard(item) {');
-    expect(card).toContain("navigateToScreen('oasis', 'vtid-ledger');");
-    expect(card).toContain('fetchOasisVtidDetail(item.vtid);');
+  it('the live-metrics and VTID attention cards are gone with their tab and panel (VTID-04887)', () => {
+    expect(SRC).not.toMatch(/function\s+renderOverviewLiveMetricsView\s*\(/);
+    expect(SRC).not.toMatch(/function\s+renderVtidAttentionCard\s*\(/);
+    expect(SRC).not.toMatch(/function\s+renderVtidAttentionSection\s*\(/);
   });
 });
 
@@ -170,11 +170,11 @@ describe('VTID-04869 fix 4: no inline onclick strings in Overview renderers', ()
     expect(overviewRegion()).not.toContain('onclick=');
   });
 
-  it('"View all" is a data-action link handled by a delegated listener', () => {
-    const body = fnBody('function renderOverviewSystemPanels() {');
-    expect(body).toContain('data-action="overview-view-all-events"');
-    expect(body).toContain("livePanel.addEventListener('click', function (ev) {");
-    expect(body).toContain("navigateToScreen('overview', 'recent-events');");
+  it('the live activity panel and its "View all" link are gone (VTID-04887)', () => {
+    // The panel linked to the Recent Events tab, which is a redirect now.
+    expect(SRC).not.toContain('overview-view-all-events');
+    expect(SRC).not.toContain("navigateToScreen('overview', 'recent-events')");
+    expect(fnBody('function renderOverviewSystemPanels() {')).not.toContain('livePanel');
   });
 });
 
@@ -186,7 +186,7 @@ describe('VTID-04869 fix 5: UNKNOWN instead of a fabricated all-clear', () => {
     expect(body).toContain("verdict: 'UNKNOWN', blind: true");
     expect(body).toContain("label: 'UNKNOWN'");
     expect(body).not.toContain('OPERATIONAL');
-    expect(fnBody('function renderOverviewSystemPanels() {')).not.toContain("var statusLabel = 'OPERATIONAL';");
+    expect(fnBody('function renderOverviewSystemPanels() {')).not.toContain('OPERATIONAL');
   });
 
   it('the UNKNOWN banner has its own (grey) style', () => {
@@ -196,23 +196,11 @@ describe('VTID-04869 fix 5: UNKNOWN instead of a fabricated all-clear', () => {
     expect(readFileSync(STYLES_PATH, 'utf8')).toMatch(/\.ops-verdict-unknown\s*\{/);
   });
 
-  it('computeSystemStatus treats failed / unavailable / misconfigured as failures', () => {
-    const { computeSystemStatus } = loadHealthHelpers();
-    for (const status of ['failed', 'unavailable', 'misconfigured', 'down', 'error', 'unhealthy']) {
-      const r = computeSystemStatus([
-        { name: 'Telemetry', status },
-        { name: 'Events', status: 'healthy' },
-      ]);
-      expect({ status, result: r.status }).toEqual({ status, result: 'degraded' });
-    }
-    expect(computeSystemStatus([{ name: 'Gateway', status: 'misconfigured' }]).status).toBe('critical');
-  });
-
-  it('computeSystemStatus returns unknown when nothing was measured', () => {
-    const { computeSystemStatus } = loadHealthHelpers();
-    expect(computeSystemStatus([]).status).toBe('unknown');
-    expect(computeSystemStatus([{ name: 'Auth', status: 'no_access' }]).status).toBe('unknown');
-    expect(computeSystemStatus([{ name: 'Gateway', status: 'healthy', healthy: true }]).status).toBe('operational');
+  it('computeSystemStatus is gone with the banner it fed (VTID-04887)', () => {
+    // The verdict is computed server-side by /ops/attention and rendered by
+    // computeOpsAttentionStatus (UNKNOWN when blind), pinned above.
+    expect(SRC).not.toMatch(/function\s+computeSystemStatus\s*\(/);
+    expect(SRC).not.toMatch(/\bcomputeSystemStatus\(/);
   });
 
   it('overviewHealthClass never calls an unrecognised status healthy', () => {
@@ -231,28 +219,13 @@ describe('VTID-04869 fix 5: UNKNOWN instead of a fabricated all-clear', () => {
     expect(body).not.toContain("var hdot = 'green';");
   });
 
-  it('a failed failures fetch is not "No failures"', () => {
-    const fetchBody = fnBody('async function fetchOverviewDashboard() {');
-    expect(fetchBody).toContain(
-      "fetchWT('/api/v1/oasis/events?status=error&limit=30').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })",
-    );
-    expect(fetchBody).toContain('state.overviewDashboard.recentFailuresUnavailable = recentFailuresUnavailable;');
-    const body = fnBody('function renderOverviewSystemPanels() {');
-    expect(body).not.toContain('No failures in the last 24h');
-    expect(body).toContain('Could not load failure events');
-  });
-
-  it("a deployment without a service reads 'unknown', not 'gateway'", () => {
-    const body = fnBody('function renderOverviewSystemPanels() {');
-    expect(body).not.toContain("dep.service || dep.service_name || 'gateway'");
-    expect(body).toContain("dep.service || dep.service_name || 'unknown'");
-  });
-
-  it('a missing pipeline summary is not "Pipeline running smoothly"', () => {
-    const body = fnBody('function renderOverviewSystemPanels() {');
-    const idx = body.indexOf('if (!summary) {');
-    expect(idx).toBeGreaterThan(-1);
-    expect(idx).toBeLessThan(body.indexOf('Pipeline running smoothly.'));
+  it('the failures, deployments and attention-center panels are gone, and with them their all-clear lines (VTID-04887)', () => {
+    const region = overviewRegion();
+    expect(region).not.toContain('No failures in the last 24h');
+    expect(region).not.toContain("dep.service || dep.service_name || 'gateway'");
+    expect(region).not.toContain('Pipeline running smoothly');
+    expect(SRC).not.toContain('state.overviewDashboard');
+    expect(SRC).not.toContain('state.overviewPipelineSummary');
   });
 });
 
@@ -266,18 +239,13 @@ describe('VTID-04869 fix 6: provider-neutral ORB card', () => {
     expect(body).not.toContain("label: 'Google Auth'");
     expect(body).not.toContain('VERTEX_PROJECT_ID');
     expect(body).not.toContain('ORB BROKEN');
-    expect(body).toContain("var orbProvider = (orbStats && orbStats.runtime_provider) || 'unknown';");
+    // VTID-04887: the ORB card itself is gone (the Voice tile covers it).
+    expect(body).not.toContain('orbProvider');
   });
 
-  it('computeOrbSessionStats no longer derives Vertex/Gemini/Google flags', () => {
-    const body = stripLineComments(fnBody('function computeOrbSessionStats(orbEvents, orbHealthDetails) {'));
-    expect(body).not.toContain('gemini_live_enabled');
-    expect(body).not.toContain('vertex_project_configured');
-    expect(body).not.toContain('google_auth_ready');
-    expect(body).toContain('runtime_known: runtimeKnown');
-    // No session starts = no rate, not a red 0%.
-    expect(body).toContain('var successRate = starts > 0 ?');
-    expect(body).toMatch(/: null;/);
+  it('computeOrbSessionStats is gone with the ORB card (VTID-04887)', () => {
+    expect(SRC).not.toMatch(/function\s+computeOrbSessionStats\s*\(/);
+    expect(stripLineComments(overviewRegion())).not.toMatch(/gemini_live_enabled|vertex_project_configured|google_auth_ready/);
   });
 
   it('nothing still reads the removed ORB flags', () => {
@@ -290,13 +258,13 @@ describe('VTID-04869 fix 7: labels say what the data covers', () => {
   it('no claimed 24h / 7d window on data that has none', () => {
     const body = stripLineComments(fnBody('function renderOverviewSystemPanels() {'));
     expect(body).not.toContain("label: 'Errors (24h)'");
-    expect(body).toContain("label: 'Errors (last 30)'");
     expect(body).not.toContain("' sessions (24h)'");
     expect(body).not.toContain("label: 'Sessions (24h)'");
     expect(body).not.toContain("label: 'Failures (24h)'");
     expect(body).not.toContain("' (7d)'");
     expect(body).not.toContain("subtitle: '7d total'");
-    expect(body).toContain("'Errors (last 30)': '<svg");
+    // VTID-04887: the metrics grid that carried these labels is gone.
+    expect(SRC).not.toMatch(/function\s+metricCardHTML\s*\(/);
   });
 });
 

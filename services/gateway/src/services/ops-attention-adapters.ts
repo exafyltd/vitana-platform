@@ -35,6 +35,28 @@
  *                      critical violation.  P3 other open violation
  *   decisions_waiting  P2 waiting > 4 h; P3 waiting > 1 h
  *
+ * Phase 2 (VTID-04885) adds six in-process adapters:
+ *
+ *   cost_budgets       P2 an LLM daily budget (orchestrator, shadow) is over,
+ *                         or a tenant's Jev community budget is exhausted
+ *                      P3 an LLM daily budget is at >= 80%, or a Jev
+ *                         community budget crossed 80% this month
+ *   tests_contracts    P2 a test workflow is failing on main for >= 2 runs
+ *                      P3 a test workflow's latest run on main failed; a
+ *                         capability contract is failing
+ *                         (STAGING-VERIFY stays with the release adapter)
+ *   routines           P2 a routine failed >= 3 times in a row
+ *                      P3 a routine's last run failed, is overdue, or has
+ *                         been running for > 6 h
+ *   support_tickets    P2 a p0 ticket is open, or a p1 ticket waits > 4 h
+ *                      P3 a p1 ticket waits > 1 h; any ticket open > 72 h
+ *   llm_google_fallback P2 any LLM call in 24 h that landed on Google
+ *                         (vertex/gemini) — a fallback, or a stage routed at it
+ *                         (CLAUDE.md §2b / IF-THEN 29: an incident)
+ *   stuck_vtids        P3 session-plane VTIDs in progress with no ledger
+ *                         update for > 72 h (autonomous tasks belong to
+ *                         operator_pipeline)
+ *
  * The Command Hub is admin-facing and English by design: titles and details
  * here are operator text, not member-facing copy (no i18n catalog).
  */
@@ -47,7 +69,13 @@ export type AttentionDomain =
   | 'autonomy'
   | 'operator'
   | 'governance'
-  | 'decisions';
+  | 'decisions'
+  // VTID-04885
+  | 'llm'
+  | 'quality'
+  | 'cost'
+  | 'support'
+  | 'jobs';
 
 export type AttentionSourceId =
   | 'service_health'
@@ -56,7 +84,14 @@ export type AttentionSourceId =
   | 'autonomy'
   | 'operator_pipeline'
   | 'governance'
-  | 'decisions_waiting';
+  | 'decisions_waiting'
+  // VTID-04885
+  | 'cost_budgets'
+  | 'tests_contracts'
+  | 'routines'
+  | 'support_tickets'
+  | 'llm_google_fallback'
+  | 'stuck_vtids';
 
 export interface Deeplink {
   section: string;
@@ -134,6 +169,8 @@ export const DEEPLINK_QUERY_CONTRACT: Record<string, string[]> = {
   'command-hub/tasks': ['vtid'],
   'oasis/vtid-ledger': ['vtid'],
   'voice/sessions': ['session'],
+  // VTID-04885: the Feedback module is routable; ?ticket= opens the ticket drawer.
+  'feedback/inbox': ['ticket'],
 };
 
 export function link(section: string, tab: string, query: Record<string, string> = {}): Deeplink {
@@ -243,6 +280,98 @@ export interface AttentionReads {
   devAutopilotAwaitingApproval(): Promise<WaitingRow[]>;
   selfHealPendingApproval(): Promise<WaitingRow[]>;
   prApprovalsPending(): Promise<WaitingRow[]>;
+  // ── VTID-04885 (Phase 2) ──
+  /** Today's (UTC) LLM budget lines (services/orchestrator/budgets.ts). */
+  llmBudgetLines(): Promise<{ since: string; lines: BudgetLineLite[]; truncated: boolean }>;
+  /** jev.budget.threshold_crossed events at/after `sinceIso`. */
+  jevBudgetAlerts(sinceIso: string): Promise<OasisEventRow[]>;
+  /** Completed CI test runs on main at/after `sinceIso` (ci_test_runs). */
+  ciTestRuns(sinceIso: string): Promise<{ rows: CiRunLite[]; last_synced_at: string | null }>;
+  /** Capability contracts whose status is 'fail' (test_contracts). */
+  failingTestContracts(): Promise<ContractRow[]>;
+  /** Enabled routines with their last-run columns (routines). */
+  routines(): Promise<RoutineRow[]>;
+  /** Open support tickets that are p0/p1 or older than `agedBeforeIso`. */
+  openSupportTickets(agedBeforeIso: string): Promise<TicketRow[]>;
+  /** llm.call.completed events at/after `sinceIso` served by a Google provider. */
+  llmGoogleCalls(sinceIso: string): Promise<LlmCallRow[]>;
+  // ── VTID-04886 (Phase 3) ──
+  /** The 24 h timeline: events among TIMELINE_TOPICS at/after `sinceIso`, newest first. */
+  timelineEvents(sinceIso: string): Promise<OasisEventRow[]>;
+}
+
+/**
+ * VTID-04886: the topics the 24 h change & incident timeline shows — the
+ * deploy, verify, rollback and kill-switch topics the adapters already read,
+ * plus governance control changes. Self-heal rows come from self_healing_log.
+ */
+export const TIMELINE_TOPICS = [
+  'prod.deploy.completed', 'prod.deploy.failed', 'prod.deploy.rolled_back',
+  'staging.deploy.completed', 'staging.deploy.failed',
+  'staging.verify.passed', 'staging.verify.failed',
+  'deploy.gateway.failed', 'cicd.deploy.service.failed',
+  'dev_autopilot.kill_switch.activated', 'dev_autopilot.kill_switch.deactivated',
+  'governance.control.updated',
+];
+/** timelineEvents() reads at most this many rows. */
+export const TIMELINE_READ_LIMIT = 200;
+/** Row cap of the self-heal outcome read (shared by the autonomy adapter and the timeline). */
+export const SELF_HEAL_READ_LIMIT = 100;
+
+export interface BudgetLineLite {
+  scope: 'platform' | 'agent' | 'run';
+  key: string;
+  spent_usd: number;
+  limit_usd: number;
+  used_pct: number;
+  over: boolean;
+}
+
+export interface CiRunLite {
+  repo: string;
+  workflow_file: string;
+  workflow_name: string | null;
+  branch: string | null;
+  conclusion: string | null;
+  html_url: string | null;
+  run_created_at: string;
+}
+
+export interface ContractRow {
+  id: string;
+  capability: string;
+  service: string | null;
+  status: string;
+  last_run_at: string | null;
+  last_failure_signature: string | null;
+}
+
+export interface RoutineRow {
+  name: string;
+  display_name: string | null;
+  cron_schedule: string;
+  last_run_at: string | null;
+  last_run_status: string | null;
+  consecutive_failures: number;
+  created_at: string | null;
+}
+
+export interface TicketRow {
+  id: string;
+  ticket_number: string | null;
+  kind: string | null;
+  status: string;
+  priority: string;
+  created_at: string;
+}
+
+export interface LlmCallRow {
+  created_at: string;
+  provider: string | null;
+  model: string | null;
+  stage: string | null;
+  service: string | null;
+  fallback_used: boolean;
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -806,6 +935,438 @@ export async function decisionsWaitingAdapter(reads: AttentionReads, ctx: Adapte
   return errors.length ? { candidates, partial_error: errors.join('; ') } : { candidates };
 }
 
+// ── 8. Cost & budgets (VTID-04885) ──────────────────────────────────────────
+
+/** "Trending past 80%" (plan Phase 2, cost & budgets). */
+export const BUDGET_TREND_PCT = 80;
+export const JEV_BUDGET_TOPIC = 'jev.budget.threshold_crossed';
+
+function monthStartUtc(now: number): string {
+  const d = new Date(now);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)).toISOString();
+}
+
+const usd = (n: number) => `$${(Math.round(n * 100) / 100).toFixed(2)}`;
+
+export async function costBudgetsAdapter(reads: AttentionReads, ctx: AdapterContext): Promise<AdapterOutput> {
+  const [spend, jev] = await Promise.all([
+    settle(reads.llmBudgetLines()),
+    settle(reads.jevBudgetAlerts(monthStartUtc(ctx.now))),
+  ]);
+  if (!spend.ok && !jev.ok) throw new Error(`llm_budgets: ${spend.error}; jev_budget: ${jev.error}`);
+  const candidates: Candidate[] = [];
+  const errors: string[] = [];
+  const orchestrator = link('autopilot', 'orchestrator');
+
+  if (spend.ok) {
+    if (spend.value.truncated) errors.push('llm_budgets: spend read truncated at the row cap');
+    const runsOver: BudgetLineLite[] = [];
+    const runsNear: BudgetLineLite[] = [];
+    for (const l of spend.value.lines) {
+      const near = !l.over && l.used_pct >= BUDGET_TREND_PCT;
+      if (!l.over && !near) continue;
+      if (l.scope === 'run') {
+        (l.over ? runsOver : runsNear).push(l);
+        continue;
+      }
+      const what = l.scope === 'platform' ? 'Platform LLM budget' : `LLM budget for ${l.key}`;
+      candidates.push({
+        // The budget resets every UTC day: one fingerprint per line per day.
+        key: `llm_budget:${l.scope}:${l.key}:${spend.value.since.slice(0, 10)}`,
+        domain: 'cost',
+        severity: l.over ? 'P2' : 'P3',
+        title: l.over ? `${what} crossed today` : `${what} at ${Math.round(l.used_pct)}% today`,
+        detail: `${usd(l.spent_usd)} of ${usd(l.limit_usd)} per day (shadow: not enforced yet)`,
+        since: null,
+        hold_ms: 0,
+        count: 1,
+        deeplink: orchestrator,
+        evidence: { ...l, since: spend.value.since },
+      });
+    }
+    for (const [rows, over] of [[runsOver, true], [runsNear, false]] as const) {
+      if (!rows.length) continue;
+      const worst = [...rows].sort((a, b) => b.used_pct - a.used_pct);
+      candidates.push({
+        key: `llm_budget:runs:${over ? 'over' : 'near'}:${spend.value.since.slice(0, 10)}`,
+        domain: 'cost',
+        severity: over ? 'P2' : 'P3',
+        title: over
+          ? `${rows.length} run(s) over the per-run LLM budget today`
+          : `${rows.length} run(s) past ${BUDGET_TREND_PCT}% of the per-run LLM budget today`,
+        detail: worst.slice(0, 3).map((l) => `${l.key} ${usd(l.spent_usd)}`).join(', ') +
+          ` (limit ${usd(worst[0].limit_usd)} per run per day)`,
+        since: null,
+        hold_ms: 0,
+        count: rows.length,
+        deeplink: orchestrator,
+        evidence: { runs: worst.slice(0, 20).map((l) => ({ vtid: l.key, spent_usd: l.spent_usd, used_pct: l.used_pct })) },
+      });
+    }
+  } else errors.push(`llm_budgets: ${spend.error}`);
+
+  if (jev.ok) {
+    // One item per tenant × month: the highest level crossed wins.
+    const byTenant = new Map<string, { level: number; ev: OasisEventRow }>();
+    for (const ev of jev.value) {
+      const m = (ev.metadata || {}) as Record<string, unknown>;
+      const tenant = String(m.tenant_id || 'unknown');
+      const level = Number(m.level_pct) || 0;
+      const prev = byTenant.get(tenant);
+      if (!prev || level > prev.level) byTenant.set(tenant, { level, ev });
+    }
+    for (const [tenant, { level, ev }] of byTenant) {
+      const m = (ev.metadata || {}) as Record<string, unknown>;
+      const exhausted = level >= 100;
+      candidates.push({
+        key: `jev_budget:${tenant}:${String(m.month || monthStartUtc(ctx.now).slice(0, 10))}`,
+        domain: 'cost',
+        severity: exhausted ? 'P2' : 'P3',
+        title: exhausted
+          ? `Jev community budget exhausted for tenant ${tenant}`
+          : `Jev community budget past ${level}% for tenant ${tenant}`,
+        detail: `${m.spent_usd !== undefined ? usd(Number(m.spent_usd)) : '?'} of ${m.budget_usd !== undefined ? usd(Number(m.budget_usd)) : '?'} this month` +
+          (exhausted ? ' — member decisions fall back to rules' : '') + ' (Jev card: /command-hub/jev.html)',
+        since: ev.created_at,
+        hold_ms: 0,
+        count: 1,
+        deeplink: orchestrator,
+        evidence: { topic: ev.topic, created_at: ev.created_at, level_pct: level, tenant_id: tenant, month: m.month ?? null },
+      });
+    }
+  } else errors.push(`jev_budget: ${jev.error}`);
+
+  return errors.length ? { candidates, partial_error: errors.join('; ') } : { candidates };
+}
+
+// ── 9. Tests & contracts (VTID-04885) ───────────────────────────────────────
+
+export const TESTS_LOOKBACK_MS = 7 * 24 * HOUR;
+/** ci_test_runs is synced lazily (on a Testing & QA read); older = unknown. */
+export const CI_SYNC_STALE_MS = 24 * HOUR;
+const CI_SUCCESS = 'success';
+const CI_VERDICTS = new Set(['success', 'failure', 'timed_out', 'startup_failure']);
+
+export async function testsContractsAdapter(reads: AttentionReads, ctx: AdapterContext): Promise<AdapterOutput> {
+  const now = ctx.now;
+  const [runs, contracts] = await Promise.all([
+    settle(reads.ciTestRuns(iso(now - TESTS_LOOKBACK_MS))),
+    settle(reads.failingTestContracts()),
+  ]);
+  if (!runs.ok && !contracts.ok) throw new Error(`ci_test_runs: ${runs.error}; test_contracts: ${contracts.error}`);
+  const candidates: Candidate[] = [];
+  const errors: string[] = [];
+
+  if (runs.ok) {
+    const synced = runs.value.last_synced_at;
+    if (!synced || now - Date.parse(synced) > CI_SYNC_STALE_MS) {
+      errors.push(`ci_test_runs: not synced for ${synced ? fmtAge(now - Date.parse(synced)) : 'ever'} (synced when Testing & QA is opened)`);
+    }
+    // Newest first per workflow; only runs on main with a pass/fail verdict.
+    const byWf = new Map<string, CiRunLite[]>();
+    for (const r of runs.value.rows) {
+      if (r.branch !== 'main' || !CI_VERDICTS.has(String(r.conclusion))) continue;
+      const k = `${r.repo}|${r.workflow_file}`;
+      const arr = byWf.get(k) || [];
+      arr.push(r);
+      byWf.set(k, arr);
+    }
+    for (const [k, list] of byWf) {
+      list.sort((a, b) => Date.parse(b.run_created_at) - Date.parse(a.run_created_at));
+      if (list[0].conclusion === CI_SUCCESS) continue;
+      let streak = 0;
+      for (const r of list) {
+        if (r.conclusion === CI_SUCCESS) break;
+        streak++;
+      }
+      const firstFail = list[streak - 1];
+      candidates.push({
+        key: `workflow:${k}`,
+        domain: 'quality',
+        severity: streak >= 2 ? 'P2' : 'P3',
+        title: `${list[0].workflow_name || list[0].workflow_file} failing on main`,
+        detail: `${list[0].repo} · ${streak} failed run(s) in a row · latest ${fmtAge(now - Date.parse(list[0].run_created_at))} ago`,
+        since: firstFail.run_created_at,
+        hold_ms: 0,
+        count: streak,
+        deeplink: link('testing-qa', 'runs'),
+        evidence: { repo: list[0].repo, workflow_file: list[0].workflow_file, latest_url: list[0].html_url, failing_streak: streak },
+      });
+    }
+  } else errors.push(`ci_test_runs: ${runs.error}`);
+
+  if (contracts.ok) {
+    const failing = contracts.value;
+    if (failing.length) {
+      const oldest = failing.map((c) => c.last_run_at).filter((x): x is string => !!x).sort()[0] ?? null;
+      candidates.push({
+        key: 'contracts:fail',
+        domain: 'quality',
+        severity: 'P3',
+        title: `${failing.length} capability contract(s) failing`,
+        detail: failing.slice(0, 3).map((c) => `${c.capability}${c.service ? ` (${c.service})` : ''}`).join(', '),
+        since: oldest,
+        hold_ms: 0,
+        count: failing.length,
+        deeplink: link('testing-qa', 'test-contracts'),
+        evidence: { ids: failing.slice(0, 20).map((c) => c.id) },
+      });
+    }
+  } else errors.push(`test_contracts: ${contracts.error}`);
+
+  return errors.length ? { candidates, partial_error: errors.join('; ') } : { candidates };
+}
+
+// ── 10. Routines / scheduled jobs (VTID-04885) ──────────────────────────────
+
+export const ROUTINE_FAILURE_STREAK_P2 = 3;
+export const ROUTINE_RUNNING_STUCK_MS = 6 * HOUR;
+/** A run is overdue once 1.5 schedule intervals passed without one. */
+export const ROUTINE_OVERDUE_FACTOR = 1.5;
+
+/**
+ * The interval between two runs of a 5-field cron, or null when the shape is
+ * not one of the simple ones the routines use (then overdue is not judged).
+ * Day-of-week set → weekly; day-of-month set → monthly; '*' or '* /N' hour →
+ * hourly (N h); fixed minute + hour → daily.
+ */
+export function cronIntervalMs(spec: string): number | null {
+  const f = String(spec || '').trim().split(/\s+/);
+  if (f.length !== 5) return null;
+  const [min, hour, dom, mon, dow] = f;
+  if (mon !== '*') return null;
+  if (dow !== '*') return dom === '*' ? 7 * 24 * HOUR : null;
+  if (dom !== '*') return /^\d+$/.test(dom) ? 31 * 24 * HOUR : null;
+  if (hour === '*') return /^\d+$/.test(min) ? HOUR : null;
+  const step = hour.match(/^\*\/(\d+)$/);
+  if (step) return Number(step[1]) * HOUR;
+  if (/^\d+$/.test(hour) && /^\d+$/.test(min)) return 24 * HOUR;
+  return null;
+}
+
+export async function routinesAdapter(reads: AttentionReads, ctx: AdapterContext): Promise<AdapterOutput> {
+  const now = ctx.now;
+  const rows = await reads.routines();
+  const candidates: Candidate[] = [];
+  const unjudged: string[] = [];
+  const catalog = link('routines', 'catalog');
+  const history = link('routines', 'history');
+
+  for (const r of rows) {
+    const name = r.display_name || r.name;
+    const status = String(r.last_run_status || '');
+    if (status === 'failure') {
+      const streak = Math.max(1, Number(r.consecutive_failures) || 0);
+      candidates.push({
+        key: `failed:${r.name}`,
+        domain: 'jobs',
+        severity: streak >= ROUTINE_FAILURE_STREAK_P2 ? 'P2' : 'P3',
+        title: `Routine failed: ${name}`,
+        detail: `${streak} failure(s) in a row · last run ${r.last_run_at ? fmtAge(now - Date.parse(r.last_run_at)) + ' ago' : 'unknown'}`,
+        since: r.last_run_at,
+        hold_ms: 0,
+        count: streak,
+        deeplink: history,
+        evidence: { name: r.name, consecutive_failures: r.consecutive_failures, last_run_at: r.last_run_at },
+      });
+      continue;
+    }
+    if (status === 'running' && r.last_run_at && now - Date.parse(r.last_run_at) > ROUTINE_RUNNING_STUCK_MS) {
+      candidates.push({
+        key: `running:${r.name}`,
+        domain: 'jobs',
+        severity: 'P3',
+        title: `Routine still running: ${name}`,
+        detail: `started ${fmtAge(now - Date.parse(r.last_run_at))} ago (threshold 6 h)`,
+        since: iso(Date.parse(r.last_run_at) + ROUTINE_RUNNING_STUCK_MS),
+        hold_ms: 0,
+        count: 1,
+        deeplink: history,
+        evidence: { name: r.name, last_run_at: r.last_run_at },
+      });
+      continue;
+    }
+    const interval = cronIntervalMs(r.cron_schedule);
+    if (interval === null) {
+      unjudged.push(r.name);
+      continue;
+    }
+    const lastAt = r.last_run_at || r.created_at;
+    if (!lastAt) continue;
+    const dueBy = Date.parse(lastAt) + interval * ROUTINE_OVERDUE_FACTOR;
+    if (now > dueBy) {
+      candidates.push({
+        key: `overdue:${r.name}`,
+        domain: 'jobs',
+        severity: 'P3',
+        title: `Routine overdue: ${name}`,
+        detail: r.last_run_at
+          ? `last run ${fmtAge(now - Date.parse(r.last_run_at))} ago (schedule ${r.cron_schedule})`
+          : `never ran (schedule ${r.cron_schedule})`,
+        since: iso(dueBy),
+        hold_ms: 0,
+        count: 1,
+        deeplink: catalog,
+        evidence: { name: r.name, cron_schedule: r.cron_schedule, last_run_at: r.last_run_at },
+      });
+    }
+  }
+  // An unparseable schedule cannot be judged overdue: say so, never "on time".
+  return unjudged.length
+    ? { candidates, partial_error: `routines: schedule not understood for ${unjudged.slice(0, 5).join(', ')}` }
+    : { candidates };
+}
+
+// ── 11. Support tickets (VTID-04885) ────────────────────────────────────────
+
+export const TICKET_AGED_MS = 72 * HOUR;
+export const TICKET_P1_WAIT_P3_MS = 1 * HOUR;
+export const TICKET_P1_WAIT_P2_MS = 4 * HOUR;
+/** Statuses that end a ticket (idx_feedback_tickets_priority_status excludes them). */
+export const TICKET_CLOSED_STATUSES = ['resolved', 'user_confirmed', 'rejected', 'wont_fix', 'duplicate'];
+
+function ticketLink(rows: TicketRow[]): Deeplink {
+  return rows.length === 1 ? link('feedback', 'inbox', { ticket: rows[0].id }) : link('feedback', 'inbox');
+}
+
+export async function supportTicketsAdapter(reads: AttentionReads, ctx: AdapterContext): Promise<AdapterOutput> {
+  const now = ctx.now;
+  const rows = (await reads.openSupportTickets(iso(now - TICKET_AGED_MS)))
+    .filter((t) => !TICKET_CLOSED_STATUSES.includes(t.status));
+  const oldestFirst = (a: TicketRow, b: TicketRow) => Date.parse(a.created_at) - Date.parse(b.created_at);
+  const candidates: Candidate[] = [];
+  const label = (t: TicketRow) => t.ticket_number || t.id;
+
+  const p0 = rows.filter((t) => t.priority === 'p0').sort(oldestFirst);
+  const p1 = rows.filter((t) => t.priority === 'p1' && now - Date.parse(t.created_at) > TICKET_P1_WAIT_P3_MS).sort(oldestFirst);
+  const urgentIds = new Set([...p0, ...p1].map((t) => t.id));
+  const aged = rows.filter((t) => !urgentIds.has(t.id) && now - Date.parse(t.created_at) > TICKET_AGED_MS).sort(oldestFirst);
+
+  if (p0.length) {
+    candidates.push({
+      key: 'tickets:p0',
+      domain: 'support',
+      severity: 'P2',
+      title: `${p0.length} urgent (p0) support ticket(s) open`,
+      detail: `oldest ${label(p0[0])} (${p0[0].kind || 'ticket'}) open ${fmtAge(now - Date.parse(p0[0].created_at))}`,
+      since: p0[0].created_at,
+      hold_ms: 0,
+      count: p0.length,
+      deeplink: ticketLink(p0),
+      evidence: { ids: p0.slice(0, 20).map((t) => t.id) },
+    });
+  }
+  if (p1.length) {
+    const oldestAge = now - Date.parse(p1[0].created_at);
+    candidates.push({
+      key: 'tickets:p1',
+      domain: 'support',
+      severity: oldestAge > TICKET_P1_WAIT_P2_MS ? 'P2' : 'P3',
+      title: `${p1.length} high-priority (p1) support ticket(s) waiting`,
+      detail: `oldest ${label(p1[0])} (${p1[0].kind || 'ticket'}) open ${fmtAge(oldestAge)}`,
+      since: p1[0].created_at,
+      hold_ms: 0,
+      count: p1.length,
+      deeplink: ticketLink(p1),
+      evidence: { ids: p1.slice(0, 20).map((t) => t.id) },
+    });
+  }
+  if (aged.length) {
+    candidates.push({
+      key: 'tickets:aged',
+      domain: 'support',
+      severity: 'P3',
+      title: `${aged.length} support ticket(s) open for more than 72 h`,
+      detail: `oldest ${label(aged[0])} (${aged[0].priority}, ${aged[0].status}) open ${fmtAge(now - Date.parse(aged[0].created_at))}`,
+      since: iso(Date.parse(aged[0].created_at) + TICKET_AGED_MS),
+      hold_ms: 0,
+      count: aged.length,
+      deeplink: ticketLink(aged),
+      evidence: { ids: aged.slice(0, 20).map((t) => t.id) },
+    });
+  }
+  return { candidates };
+}
+
+// ── 12. LLM Google fallback (VTID-04885) ────────────────────────────────────
+
+export const LLM_GOOGLE_WINDOW_MS = 24 * HOUR;
+/** Providers that are Google (CLAUDE.md §2b: never a sanctioned LLM-routing destination). */
+export const GOOGLE_LLM_PROVIDERS = ['vertex', 'google', 'gemini'];
+
+export function isGoogleLlmCall(row: Pick<LlmCallRow, 'provider' | 'model'>): boolean {
+  const p = String(row.provider || '').toLowerCase();
+  const m = String(row.model || '').toLowerCase();
+  return GOOGLE_LLM_PROVIDERS.includes(p) || m.startsWith('gemini');
+}
+
+export async function llmGoogleFallbackAdapter(reads: AttentionReads, ctx: AdapterContext): Promise<AdapterOutput> {
+  const now = ctx.now;
+  const rows = (await reads.llmGoogleCalls(iso(now - LLM_GOOGLE_WINDOW_MS))).filter(isGoogleLlmCall);
+  const candidates: Candidate[] = [];
+  for (const fallback of [true, false]) {
+    const set = rows
+      .filter((r) => r.fallback_used === fallback)
+      .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+    if (!set.length) continue;
+    const stages = [...new Set(set.map((r) => r.stage || r.service || 'unknown'))];
+    candidates.push({
+      key: fallback ? 'google_fallback' : 'google_routed',
+      domain: 'llm',
+      severity: 'P2',
+      title: fallback
+        ? `${set.length} LLM call(s) fell back to Google in 24 h`
+        : `${set.length} LLM call(s) routed at Google in 24 h`,
+      detail: `stages: ${stages.slice(0, 4).join(', ')} · latest ${fmtAge(now - Date.parse(set[set.length - 1].created_at))} ago — ` +
+        'a Google landing is an incident (CLAUDE.md §2b)',
+      since: set[0].created_at,
+      hold_ms: 0,
+      count: set.length,
+      deeplink: link('models-evaluations', 'routing'),
+      evidence: {
+        stages,
+        providers: [...new Set(set.map((r) => r.provider))],
+        models: [...new Set(set.map((r) => r.model))].slice(0, 5),
+        latest_at: set[set.length - 1].created_at,
+      },
+    });
+  }
+  return { candidates };
+}
+
+// ── 13. Stuck session VTIDs (VTID-04885) ────────────────────────────────────
+
+export const STUCK_VTID_MS = 72 * HOUR;
+/** inProgressLedger() reads at most this many rows; a full page is truncated. */
+export const LEDGER_READ_LIMIT = 500;
+
+export async function stuckVtidsAdapter(reads: AttentionReads, ctx: AdapterContext): Promise<AdapterOutput> {
+  const now = ctx.now;
+  const rows = await reads.inProgressLedger();
+  const stuck = rows
+    .filter((r) => !reads.isAutonomous(r))
+    .filter((r) => r.updated_at && now - Date.parse(r.updated_at) > STUCK_VTID_MS)
+    .sort((a, b) => Date.parse(a.updated_at!) - Date.parse(b.updated_at!));
+  const candidates: Candidate[] = [];
+  if (stuck.length) {
+    candidates.push({
+      key: 'session_vtids_stale',
+      domain: 'operator',
+      severity: 'P3',
+      title: `${stuck.length} session VTID(s) in progress with no update for more than 72 h`,
+      detail: stuck.slice(0, 3).map((r) => `${r.vtid}${r.title ? ` (${r.title.slice(0, 40)})` : ''}`).join(', '),
+      since: iso(Date.parse(stuck[0].updated_at!) + STUCK_VTID_MS),
+      hold_ms: 0,
+      count: stuck.length,
+      deeplink: stuck.length === 1 ? link('command-hub', 'tasks', { vtid: stuck[0].vtid }) : link('oasis', 'vtid-ledger'),
+      evidence: { vtids: stuck.slice(0, 20).map((r) => r.vtid), oldest_update: stuck[0].updated_at },
+    });
+  }
+  return rows.length >= LEDGER_READ_LIMIT
+    ? { candidates, partial_error: `vtid_ledger: in-progress read hit the ${LEDGER_READ_LIMIT}-row cap` }
+    : { candidates };
+}
+
 // ── Registry ────────────────────────────────────────────────────────────────
 
 export interface AdapterSpec {
@@ -826,4 +1387,60 @@ export const ATTENTION_ADAPTERS: AdapterSpec[] = [
   { id: 'operator_pipeline', run: operatorPipelineAdapter },
   { id: 'governance', run: governanceAdapter },
   { id: 'decisions_waiting', run: decisionsWaitingAdapter },
+  // VTID-04885 (Phase 2). The spend read pages through today's
+  // llm.call.completed events (up to 20 pages), so it gets the same 8 s budget
+  // as service health; every other new source is one bounded query (3 s).
+  { id: 'cost_budgets', run: costBudgetsAdapter, timeoutMs: 8_000 },
+  { id: 'tests_contracts', run: testsContractsAdapter },
+  { id: 'routines', run: routinesAdapter },
+  { id: 'support_tickets', run: supportTicketsAdapter },
+  { id: 'llm_google_fallback', run: llmGoogleFallbackAdapter },
+  { id: 'stuck_vtids', run: stuckVtidsAdapter },
+];
+
+/**
+ * VTID-04885: sources the plan names that have no in-process adapter yet.
+ * Their domain tile says "not yet monitored" for them — never unknown, never OK.
+ */
+export const NOT_WIRED_SOURCES: Array<{ id: string; domain: TileDomainKey; reason: string }> = [
+  {
+    id: 'cloudwatch_alarms',
+    domain: 'platform',
+    reason:
+      'CloudWatch DescribeAlarms needs @aws-sdk/client-cloudwatch, which the gateway does not depend on, ' +
+      'and a task-role IAM grant (its own infra VTID). Gate OPS_ATTENTION_CLOUDWATCH_ENABLED is reserved for it.',
+  },
+];
+
+// ── Domain tiles (VTID-04885) ───────────────────────────────────────────────
+
+export type TileDomainKey =
+  | 'platform' | 'release' | 'voice' | 'llm' | 'autonomy' | 'operator' | 'governance'
+  | 'quality' | 'cost' | 'support' | 'commerce' | 'data' | 'jobs';
+
+export interface TileDomain {
+  key: TileDomainKey;
+  label: string;
+  /** Adapters whose items roll up into this tile; [] = not yet monitored. */
+  sources: AttentionSourceId[];
+  /** Where the tile's click-through lands (a NAVIGATION_CONFIG screen). */
+  deeplink: Deeplink;
+}
+
+/** The plan's 13 domains, in display order. */
+export const TILE_DOMAINS: TileDomain[] = [
+  { key: 'platform', label: 'Platform & Services', sources: ['service_health'], deeplink: link('overview', 'system-overview') },
+  { key: 'release', label: 'Release Pipeline', sources: ['release'], deeplink: link('operator', 'deployments') },
+  { key: 'voice', label: 'Voice / ORB', sources: ['voice_supervisor'], deeplink: link('voice', 'overview') },
+  { key: 'llm', label: 'AI & LLM Routing', sources: ['llm_google_fallback'], deeplink: link('models-evaluations', 'routing') },
+  { key: 'autonomy', label: 'Autonomy', sources: ['autonomy'], deeplink: link('autopilot', 'live') },
+  // Decisions waiting (approvals of VTIDs, executions and self-heal fixes) roll up here.
+  { key: 'operator', label: 'Operator & VTIDs', sources: ['operator_pipeline', 'stuck_vtids', 'decisions_waiting'], deeplink: link('command-hub', 'tasks') },
+  { key: 'governance', label: 'Governance', sources: ['governance'], deeplink: link('governance', 'controls') },
+  { key: 'quality', label: 'Quality', sources: ['tests_contracts'], deeplink: link('testing-qa', 'overview') },
+  { key: 'cost', label: 'Cost & Budgets', sources: ['cost_budgets'], deeplink: link('autopilot', 'orchestrator') },
+  { key: 'support', label: 'Community & Support', sources: ['support_tickets'], deeplink: link('feedback', 'inbox') },
+  { key: 'commerce', label: 'Moderation & Commerce', sources: [], deeplink: link('commerce', 'overview') },
+  { key: 'data', label: 'Data & Memory', sources: [], deeplink: link('databases', 'supabase') },
+  { key: 'jobs', label: 'Scheduled Jobs', sources: ['routines'], deeplink: link('routines', 'catalog') },
 ];

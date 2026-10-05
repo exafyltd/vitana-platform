@@ -538,6 +538,11 @@ export type CicdEventType =
   // It is a governance DECISION (§6) — the evidence the "verify Bedrock FIRST,
   // then flip" ordering rule demands, and the record of who checked what.
   | 'llm.provider.verified'
+  // VTID-04886: Command Hub Overview Phase 3 — an exafy_admin acked or
+  // snoozed an /ops/attention item (reason + expiry <= 24 h; P1 is never
+  // snoozable). A human decision on the triage surface, not a poll (§6).
+  | 'ops.attention.acked'
+  | 'ops.attention.snoozed'
   | 'governance.llm_policy.updated'
   | 'governance.llm_policy.activated'
   | 'governance.llm_policy.reset'

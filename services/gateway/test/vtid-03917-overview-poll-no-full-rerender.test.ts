@@ -81,11 +81,11 @@ describe('VTID-03917 (via VTID-04876): fetchOpsAttention() silent refresh never 
 });
 
 describe('VTID-03917: fetchOverviewTimeseries() parity fix (defensive — no live silentRefresh caller today)', () => {
-  it('does not call renderApp() when silentRefresh is true', () => {
-    const body = functionBody(SOURCE, 'async function fetchOverviewTimeseries(silentRefresh) {');
-    // VTID-04869: the guard reads the router's real key (currentTab); the
-    // old state.activeTab was never set, so this render never happened.
-    expect(body).toMatch(/state\.currentTab === 'system-overview' && !silentRefresh\)\s*\{\s*renderApp\(\);/);
+  it('fetchOverviewTimeseries() is gone (VTID-04887): it fed only the deleted metrics grid', () => {
+    // The cockpit's sparklines come from /ops/attention (VTID-04886), whose
+    // poll is pinned silent above, so there is no second re-render path left.
+    expect(SOURCE).not.toMatch(/function\s+fetchOverviewTimeseries\s*\(/);
+    expect(SOURCE).not.toMatch(/\bfetchOverviewTimeseries\(/);
   });
 });
 

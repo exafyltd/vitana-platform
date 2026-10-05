@@ -1,0 +1,324 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-04885/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-04885/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-04885/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04876-overview-cockpit.test.ts
+  VTID-04876: status bar
+    ✓ polls every 30 s and goes blind after 2x the poll interval (13 ms)
+    ✓ any fetch error, or no answer yet, is UNKNOWN — never OK (5 ms)
+    ✓ shows the server verdict when fresh; an unknown or unrecognised verdict stays UNKNOWN (5 ms)
+    ✓ labels staging as "Staging build · production data" (4 ms)
+    ✓ renders verdict, P1/P2/P3 counts, sources fresh x/y, generated_at, env and refresh (3 ms)
+  VTID-04876: ranked queue
+    ✓ severity is icon + text label + colour class (7 ms)
+    ✓ the queue body is aria-live="polite" and has a "Needs attention now" heading (1 ms)
+    ✓ domain filters are data-action buttons with aria-pressed (3 ms)
+    ✓ an empty queue with unknown sources is explicitly not an all-clear (2 ms)
+    ✓ each item is a real link carrying its deeplink and navigates via navigateToScreen(section, tab, query) (2 ms)
+  VTID-04876: no inline handlers
+    ✓ no 'onclick=' anywhere in the Overview region (3 ms)
+    ✓ the cockpit assigns no on* handler properties; one delegated listener reads data-action (4 ms)
+    ✓ the cockpit block is CSP-clean (no inline style or eval) (2 ms)
+    ✓ says why its strings are English (admin-facing by design) (2 ms)
+  VTID-04876: polling and the /ops/attention migration
+    ✓ renderOverviewSystemView renders the cockpit and polls every 30 s on the real router keys only (3 ms)
+    ✓ the old panels are kept, collapsed, and rendered only when opened (1 ms)
+    ✓ fetches GET /api/v1/ops/attention with the signed-in headers; nothing reads /ops/action-required any more (2 ms)
+    ✓ keeps showing the last good answer on error but marks the cockpit blind (1 ms)
+  VTID-04876: deep-link contract (?vtid= / ?session=)
+    ✓ the frontend contract equals the backend DEEPLINK_QUERY_CONTRACT (1 ms)
+    ✓ params are read on navigation: navigateToScreen, back/forward and page load (3 ms)
+    ✓ applyDeepLinkParams keys on the real router state (1 ms)
+    ✓ ?vtid= on command-hub/tasks opens the task drawer (11 ms)
+    ✓ an unresolvable ?vtid= on the task list shows a toast and falls back to the list (7 ms)
+    ✓ ?vtid= on oasis/vtid-ledger opens the ledger drawer; unresolvable → toast + list (11 ms)
+    ✓ ?session= on voice/sessions opens the voice session drawer; unresolvable → toast + list (10 ms)
+    ✓ a param on a screen outside the contract is ignored (6 ms)
+  VTID-04876: every adapter deeplink resolves against NAVIGATION_CONFIG
+    ✓ every section/tab exists, every query key is one its screen reads, every screen is dispatched (12 ms)
+    ✓ the drawers are reachable: ?vtid= deeplinks are emitted for tasks and the ledger (2 ms)
+  VTID-04876: styles and asset version
+    ✓ the cockpit styles exist (UNKNOWN is grey) and use logical properties (2 ms)
+    ✓ index.html loads app.js and styles.css at (or after) the VTID-04876 version
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04885-ops-attention-phase2-adapters.test.ts
+  cost_budgets adapter
+    ✓ an LLM budget over its daily limit is P2; >= 80% is P3; runs are grouped (3 ms)
+    ✓ lines under 80% are not reported (1 ms)
+    ✓ Jev: one item per tenant, the highest level wins — 100% is P2 (exhausted), 80% is P3 (1 ms)
+    ✓ reads the Jev events from the start of the UTC month (1 ms)
+    ✓ a truncated spend read or one failed half is partial (UNKNOWN); both failing throws (57 ms)
+  tests_contracts adapter
+    ✓ a workflow failing on main >= 2 runs in a row is P2, since the first failure of the streak (1 ms)
+    ✓ a single latest failure is P3; a green latest run or a non-main branch is not reported (1 ms)
+    ✓ failing capability contracts are one P3 item (1 ms)
+    ✓ a stale or never-run results sync is UNKNOWN (never a clean OK) (1 ms)
+  routines adapter
+    ✓ cronIntervalMs understands the simple shapes and refuses the rest (1 ms)
+    ✓ a failed last run is P3; three in a row is P2 (2 ms)
+    ✓ overdue after 1.5 intervals without a run (P3, since = when it became overdue); never-run uses created_at (1 ms)
+    ✓ a run still "running" after 6 h is P3
+    ✓ a schedule it cannot judge makes the source UNKNOWN; an unreadable table throws (2 ms)
+  support_tickets adapter
+    ✓ an open p0 is P2 and deep-links to that ticket (?ticket=) (2 ms)
+    ✓ p1 waiting > 1 h is P3, > 4 h is P2; under 1 h is not reported
+    ✓ several tickets link to the inbox list; closed statuses never count
+    ✓ reads tickets older than 72 h as "aged"; an unreadable table throws (1 ms)
+  llm_google_fallback adapter
+    ✓ any fallback that landed on Google in 24 h is P2 (an incident) (1 ms)
+    ✓ a stage routed at Google without a fallback is its own P2; other providers are ignored (1 ms)
+    ✓ reads a 24 h window; an unreadable read throws (UNKNOWN, never "no fallbacks") (1 ms)
+  stuck_vtids adapter
+    ✓ session-plane VTIDs without an update for > 72 h are one P3 item; autonomous tasks are excluded (1 ms)
+    ✓ one stale VTID deep-links to its task drawer (?vtid=) (1 ms)
+    ✓ a full 500-row page is truncated (UNKNOWN) (2 ms)
+  registry, not-wired sources and domain tiles
+    ✓ the CloudWatch adapter is not wired (no @aws-sdk/client-cloudwatch dependency) and is listed as such (2 ms)
+    ✓ the plan's 13 domains, every adapter in exactly one tile (1 ms)
+    ✓ buildDomainSummary: worst severity, open count, freshness; unmonitored is never OK (5 ms)
+    ✓ the full registry over the Phase 2 fakes: every new source reports, the response carries 13 domains (4 ms)
+    ✓ a throwing Phase 2 read makes only its source and its tile UNKNOWN (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04876-ops-attention-adapters.test.ts
+  service_health adapter (N5 golden path)
+    ✓ golden-path failing → P1, other failing → P2, degraded → P3; all held 2 min via state (3 ms)
+    ✓ an unmeasured golden-path check (no_access) makes the source UNKNOWN, never green (1 ms)
+    ✓ an unmeasured non-golden check is skipped silently (1 ms)
+  release adapter
+    ✓ P1 when the newest prod deploy failed < 2 h ago; not after 2 h; not when completed (1 ms)
+    ✓ P2 when STAGING-VERIFY failed on the latest staging deploy, not when a newer deploy landed (1 ms)
+    ✓ P3 STAGING-VERIFY stale only beyond 72 h (1 ms)
+    ✓ commit drift is a P3 candidate held 48 h via state; unreadable build-info → source UNKNOWN (2 ms)
+    ✓ a legacy deploy-failure topic within 24 h is P3 (1 ms)
+  voice_supervisor adapter
+    ✓ system_wide → P1, segment critical → P2, warning → P3 (1 ms)
+    ✓ carries quarantines and open architecture reports over from /ops/action-required (P3) (1 ms)
+    ✓ a truncated overview keeps its verdicts (a P1 stays visible) but the source is partial (→ UNKNOWN) (1 ms)
+    ✓ insufficient_data is no item; a failing overview read throws (→ UNKNOWN) (54 ms)
+  autonomy adapter
+    ✓ critical alert → P2, warning → P3, info dropped, kill switch and approvals owned elsewhere (N7) (1 ms)
+    ✓ alert keys ignore the changing numbers in the text
+    ✓ self-heal rolled_back → P2, escalated → P3, grouped per endpoint, blocklist applied (7 ms)
+  operator_pipeline adapter (N4)
+    ✓ stuck = no heartbeat > 60 min by claim_expires_at - 60 min, never updated_at (1 ms)
+    ✓ only isAutonomousExecutionTask() rows count; session VTIDs are never flagged (1 ms)
+    ✓ broken (pipeline summary) autonomous task → P2 even when unclaimed; no 30–60 min band
+    ✓ pipeline summary failure → partial (UNKNOWN), heartbeat items still reported (1 ms)
+  governance adapter
+    ✓ a disarmed governance kill-switch control → P2 with who/when (6 ms)
+    ✓ Dev Autopilot kill switch engaged → one P2 fingerprint with the activation time (N7) (1 ms)
+    ✓ critical violations → one P2 item, others → one P3 item (grouped with count)
+    ✓ unreadable controls throw (→ UNKNOWN) (2 ms)
+  decisions_waiting adapter
+    ✓ waiting > 4 h → P2, > 1 h → P3, ≤ 1 h not shown; grouped per kind with count (1 ms)
+    ✓ one failing kind → partial (UNKNOWN); all failing → throws (1 ms)
+  registry
+    ✓ has the seven Phase 1 adapters, then the six Phase 2 adapters (VTID-04885)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04885-overview-tiles.test.ts
+  VTID-04885: domain tiles
+    ✓ a blind cockpit shows every tile UNKNOWN; an unmonitored domain says "Not yet monitored", never OK (2 ms)
+    ✓ worst severity wins (icon + text label + colour class); unknown with nothing open is UNKNOWN; clean is OK (1 ms)
+    ✓ the tiles render inside the cockpit from data.domains, with data-action links (no onclick) (9 ms)
+    ✓ every tile deep link is a NAVIGATION_CONFIG screen the dispatcher renders (3 ms)
+    ✓ the queue filters cover every domain a Phase 2 adapter emits (3 ms)
+  VTID-04885: the Feedback module is routable without a sidebar entry
+    ✓ NAVIGATION_CONFIG has a feedback section with the four dispatched tabs, flagged sidebar:false (2 ms)
+    ✓ renderSidebar skips sidebar:false sections, so the sidebar is unchanged (1 ms)
+    ✓ ?ticket= on feedback/inbox opens the ticket drawer; an unknown id falls back with a toast (2 ms)
+  VTID-04885: styles and asset version
+    ✓ the tile styles exist and use logical properties only (2 ms)
+    ✓ index.html loads app.js and styles.css at (or after) the VTID-04885 version
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04876-ops-attention-route.test.ts
+  GET /api/v1/ops/attention — real auth middleware
+    ✓ 401 JSON without an Authorization header (never reaches the aggregator) (166 ms)
+  GET /api/v1/ops/attention — admin (middleware mocked)
+    ✓ 200 {ok, data} with the contract shape for an exafy_admin (78 ms)
+    ✓ a non-admin is refused by the gate (49 ms)
+  index.ts mounts the route like its neighbours
+    ✓ mountRouterSync at /api/v1/ops/attention with owner ops-attention (3 ms)
+
+PASS test/vtid-04885-ops-attention-phase2-reads.test.ts
+  cost & budgets
+    ✓ LLM budget lines come from loadSpendToday + the budgets arithmetic (same as GET /orchestrator/budgets) (2 ms)
+    ✓ a failed spend read throws (never "no spend") (28 ms)
+    ✓ Jev budget alerts: oasis_events topic = jev.budget.threshold_crossed, since, LIMIT 200 (2 ms)
+  tests & contracts
+    ✓ ci_test_runs on main since the window (LIMIT 1000) + the oldest repository sync time (2 ms)
+    ✓ a repository that never synced makes last_synced_at null; a failed read throws (1 ms)
+    ✓ failing contracts: test_contracts status = fail, LIMIT 100 (1 ms)
+  routines, support tickets, Google fallback
+    ✓ routines: enabled only, LIMIT 200; an error throws
+    ✓ support tickets: open statuses only (the partial index), p0/p1 or aged, oldest first, LIMIT 300 (1 ms)
+    ✓ Google calls: llm.call.completed in the window with a Google provider; fallback_used parsed (1 ms)
+  the in-progress ledger is read once per computation (operator_pipeline + stuck_vtids)
+    ✓ two callers share one read; a failed read is retried by the next caller (2 ms)
+    ✓ nothing above used fetch
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04876-ops-attention-aggregator.test.ts
+  verdict
+    ✓ CRITICAL beats UNKNOWN; UNKNOWN beats ATTENTION/OK; OK only with all sources fresh and no items (7 ms)
+  buildOpsAttention
+    ✓ response shape, env-scoped fingerprints, ranking by severity then age (1 ms)
+    ✓ an adapter that exceeds the 3 s timeout is UNKNOWN; the verdict is UNKNOWN, not OK (3 ms)
+    ✓ per-source budgets: service health 8 s, autonomy 6 s, every other source 3 s (1 ms)
+    ✓ a throwing adapter is UNKNOWN; a P1 elsewhere still makes the verdict CRITICAL (1 ms)
+    ✓ a partial adapter is UNKNOWN but still shows its candidates
+    ✓ the full default registry runs over all-healthy fakes: OK with 14 fresh sources (13 adapters + state, VTID-04885) (1 ms)
+  hysteresis (time-based, N2/N5/N8)
+    ✓ a source-timestamped candidate is stateless: shown once held long enough, no state write (1 ms)
+    ✓ a stateless-source candidate opens only after 2 min of consecutive observation (4 ms)
+    ✓ a gap longer than the clear grace (90 s) resets first_seen; a shorter one keeps it (1 ms)
+    ✓ staging and production state never mix: the fingerprint and the store call carry env (1 ms)
+    ✓ a state READ failure never breaks the response: logged, first seen at this request, attention_state UNKNOWN (1 ms)
+    ✓ a state WRITE failure never breaks the response: logged, source stays ok with the error noted (1 ms)
+  getOpsAttention — single-flight + cache
+    ✓ concurrent callers share one computation; within 25 s the cache answers; after, it recomputes (2 ms)
+
+PASS test/vtid-04876-ops-attention-reads.test.ts
+  in-process wiring (no HTTP self-calls)
+    ✓ service health → buildHealthSummary with the caller auth header (3 ms)
+    ✓ voice → buildVoiceOverview({window:"1h", scope:{is_platform_admin:true}}) (1 ms)
+    ✓ release build-info → the cached ops-runtime checks (1 ms)
+    ✓ operator → BROKEN vtids (in progress, no update for 2 h) read directly + isAutonomousExecutionTask (3 ms)
+    ✓ autonomy → buildSupervisorSnapshot alerts (1 ms)
+    ✓ autonomy: a failed subordinate supervisor read throws (UNKNOWN), never an empty alert list (37 ms)
+    ✓ operator: a failed broken-task read throws, never an empty broken set (1 ms)
+    ✓ voice: the overview truncation flag is passed through
+    ✓ governance: only OPEN violations (IGNORED and RESOLVED are not open) (1 ms)
+    ✓ PR approvals → the /approvals/pending helpers, only rows with a PR or branch (1 ms)
+    ✓ nothing above used fetch
+  bounded supabase reads
+    ✓ oasis_events latestEvent: topic IN + created_at >= + newest first + LIMIT 1
+    ✓ a read error throws instead of returning an empty list (1 ms)
+    ✓ in-progress ledger: VTID-% in_progress non-terminal, LIMIT 500 (1 ms)
+    ✓ self-heal pending approval drops human-decided rows (1 ms)
+    ✓ system controls: an empty list is unreadable; a missing allocator row is disabled unless the env var is set (1 ms)
+    ✓ kill switch: row → engaged flag; no row → null (1 ms)
+  ops_attention_state store
+    ✓ loads by env + fingerprints and upserts (env, fingerprint) (1 ms)
+    ✓ a write error throws (the aggregator logs it and carries on) (1 ms)
+
+PASS test/navigation/vtid-04814-command-hub-navigation.test.ts
+  the Command Hub screen list matches the Command Hub
+    ✓ has exactly one screen per tab of NAVIGATION_CONFIG (11 ms)
+    ✓ marks every screen as a Command Hub screen a signed-in developer can open (61 ms)
+    ✓ keeps every legacy DEVHUB id working (4 ms)
+    ✓ is merged into the registry the gateway uses, after every member screen (1 ms)
+  surfaces
+    ✓ reads the surface from the route (1 ms)
+    ✓ only reaches screens of the session's own surface (2 ms)
+    ✓ never matches an invented Command Hub id to a member screen (1 ms)
+  what a developer says on the Command Hub
+    ✓ open autopilot live (10 ms)
+    ✓ show me what the autopilot is running right now (3 ms)
+    ✓ take me to the VTID ledger (3 ms)
+    ✓ open the OASIS events (3 ms)
+    ✓ show me the infrastructure logs (3 ms)
+    ✓ open the deployments in infrastructure (3 ms)
+    ✓ where can I see the governance rules (4 ms)
+    ✓ open the governance violations (3 ms)
+    ✓ show me the system overview (3 ms)
+    ✓ open the live metrics (2 ms)
+    ✓ show me errors and violations on the overview (2 ms)
+    ✓ open the release feed (2 ms)
+    ✓ go to the user management (3 ms)
+    ✓ open the tenants admin screen (2 ms)
+    ✓ open the approvals queue (2 ms)
+    ✓ show me the task board (2 ms)
+    ✓ open the operator event stream (1 ms)
+    ✓ open the runbook (1 ms)
+    ✓ show me the registered agents (1 ms)
+    ✓ open the LLM providers (1 ms)
+    ✓ open model routing (2 ms)
+    ✓ show me the test runs (1 ms)
+    ✓ open the end to end tests (2 ms)
+    ✓ open the RLS and access policies (1 ms)
+    ✓ show me the audit log (1 ms)
+    ✓ open the API inventory (3 ms)
+    ✓ show me the database schemas in the docs (1 ms)
+    ✓ open voice self-healing (2 ms)
+    ✓ show me the live voice sessions (1 ms)
+    ✓ open the nova sonic test bench (2 ms)
+    ✓ open the voice supervisor overview (1 ms)
+    ✓ show me voice health per tenant (2 ms)
+    ✓ open the test contracts (1 ms)
+    ✓ show me the autonomy pulse (2 ms)
+    ✓ open the conversation tool health (1 ms)
+    ✓ open the commerce overview (1 ms)
+    ✓ show me the marketplace review queue (1 ms)
+    ✓ open the routines catalog (1 ms)
+    ✓ öffne Autopilot Live (1 ms)
+    ✓ zeig mir die Infrastruktur-Logs (2 ms)
+    ✓ öffne das VTID-Ledger (1 ms)
+    ✓ zeig mir die Governance-Regeln (1 ms)
+    ✓ never sends a member request on the Command Hub to a member screen (134 ms)
+    ✓ never offers a Command Hub screen to a member (685 ms)
+  opening a Command Hub screen
+    ✓ opens it on the Command Hub with a /command-hub route (4 ms)
+    ✓ refuses a member screen on the Command Hub and a Command Hub screen in the app (1 ms)
+    ✓ opens a legacy redirect id at the tab it moved to
+  Command Hub tools
+    ✓ declares navigate_to_screen next to navigate, so its answers can be acted on (5 ms)
+    ✓ routes dev_open_hub_panel through the navigation handler on the Command Hub (5 ms)
+    ✓ reports the outcome and keeps the widget's route current in the Command Hub client (5 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 9 passed, 9 total
+Tests:       200 passed, 200 total
+Snapshots:   0 total
+Time:        4.328 s
+Ran all test suites matching /test\/vtid-04885-ops-attention-phase2-adapters.test.ts|test\/vtid-04885-ops-attention-phase2-reads.test.ts|test\/command-hub\/vtid-04885-overview-tiles.test.ts|test\/vtid-04876-ops-attention-adapters.test.ts|test\/vtid-04876-ops-attention-aggregator.test.ts|test\/vtid-04876-ops-attention-reads.test.ts|test\/vtid-04876-ops-attention-route.test.ts|test\/command-hub\/vtid-04876-overview-cockpit.test.ts|test\/navigation\/vtid-04814-command-hub-navigation.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit=0

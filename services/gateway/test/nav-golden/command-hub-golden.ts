@@ -29,9 +29,11 @@ export const COMMAND_HUB_CASES: CommandHubCase[] = [
   { say: 'where can I see the governance rules', lang: 'en', expect: ['DEVHUB.GOVERNANCE.RULES'] },
   { say: 'open the governance violations', lang: 'en', expect: ['DEVHUB.GOVERNANCE.VIOLATIONS'] },
   { say: 'show me the system overview', lang: 'en', expect: ['DEVHUB.OVERVIEW.SYSTEM_OVERVIEW'] },
-  { say: 'open the live metrics', lang: 'en', expect: ['DEVHUB.OVERVIEW.LIVE_METRICS'] },
-  { say: 'show me errors and violations on the overview', lang: 'en', expect: ['DEVHUB.OVERVIEW.ERRORS_VIOLATIONS'] },
-  { say: 'open the release feed', lang: 'en', expect: ['DEVHUB.OVERVIEW.RELEASE_FEED'] },
+  // VTID-04887: the four old Overview tabs are redirects now; their ids are
+  // formerIds of the screens they redirect to.
+  { say: 'open the live metrics', lang: 'en', expect: ['DEVHUB.OPERATOR.DASHBOARD'] },
+  { say: 'show me errors and violations on the overview', lang: 'en', expect: ['DEVHUB.GOVERNANCE.VIOLATIONS'] },
+  { say: 'open the release feed', lang: 'en', expect: ['DEVHUB.OPERATOR.DEPLOYMENTS', 'DEVHUB.INFRA.DEPLOYMENTS'] },
   { say: 'go to the user management', lang: 'en', expect: ['DEVHUB.ADMIN.USERS'] },
   { say: 'open the tenants admin screen', lang: 'en', expect: ['DEVHUB.ADMIN.TENANTS'] },
   { say: 'open the approvals queue', lang: 'en', expect: ['DEVHUB.COMMAND_HUB.APPROVALS'] },

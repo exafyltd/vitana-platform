@@ -11,19 +11,19 @@
     {
       "kind": "http",
       "name": "served app.js renders the card metrics (this change's versioned URL: Cloudflare caches assets per URL, VTID-04659; index.html is not pinned, so a later bump does not break this)",
-      "path": "/command-hub/app.js?v=20261027-vtid-04876",
+      "path": "/command-hub/app.js?v=20261030-vtid-04887",
       "expect_body_contains": "function renderRecQualityMetrics(rec)"
     },
     {
       "kind": "http",
       "name": "served app.js has the dismiss-reason picker",
-      "path": "/command-hub/app.js?v=20261027-vtid-04876",
+      "path": "/command-hub/app.js?v=20261030-vtid-04887",
       "expect_body_contains": "function renderRecDismissPicker(rec, onDismissed)"
     },
     {
       "kind": "http",
       "name": "served app.js has the Why section",
-      "path": "/command-hub/app.js?v=20261027-vtid-04876",
+      "path": "/command-hub/app.js?v=20261030-vtid-04887",
       "expect_body_contains": "function renderRecWhySection(rec)"
     },
     {

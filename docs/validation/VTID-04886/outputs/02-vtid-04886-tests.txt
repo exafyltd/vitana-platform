@@ -1,0 +1,244 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-04885/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.error
+    [ops-attention] OASIS ops.attention.acked not recorded: insert failed
+
+      678 |     const r = await emit(event);
+      679 |     oasisEmitted = !!(r && r.ok);
+    > 680 |     if (!oasisEmitted) console.error(`[ops-attention] OASIS ${event.type} not recorded:`, r && r.error);
+          |                                ^
+      681 |   } catch (err) {
+      682 |     console.error(`[ops-attention] OASIS ${event.type} failed:`, errMessage(err));
+      683 |   }
+
+      at recordOpsAttentionAction (src/services/ops-attention.ts:680:32)
+      at src/routes/ops-attention.ts:80:19
+
+PASS test/vtid-04886-ops-attention-ack-route.test.ts
+  POST /ack, /snooze — real auth middleware
+    ✓ 401 JSON without an Authorization header; nothing is written or emitted (155 ms)
+  POST /ack, /snooze — admin (middleware mocked)
+    ✓ a non-admin is refused by the gate (50 ms)
+    ✓ Zod: reason required, expiry <= 24 h, integer minutes, known keys only, vtid shape (91 ms)
+    ✓ P1 is ackable but NEVER snoozable (400 p1_not_snoozable); the severity is the server's (42 ms)
+    ✓ snooze a P2: one row (actor, reason, expiry <= 24 h), one OASIS event, and the next GET hides it and counts it (45 ms)
+    ✓ ack emits ops.attention.acked; an OASIS failure is reported, the action still stands (43 ms)
+    ✓ an item that is not open now is 404 not_open; another env's fingerprint is 400 wrong_env (37 ms)
+    ✓ the write-side cap holds even without the route (recordOpsAttentionAction refuses > 24 h) (26 ms)
+    ✓ index.ts: the ack/snooze routes ride the existing /api/v1/ops/attention mount after express.json() (2 ms)
+    ✓ the OASIS event types are in the CicdEventType union (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04876-ops-attention-route.test.ts
+  GET /api/v1/ops/attention — real auth middleware
+    ✓ 401 JSON without an Authorization header (never reaches the aggregator) (34 ms)
+  GET /api/v1/ops/attention — admin (middleware mocked)
+    ✓ 200 {ok, data} with the contract shape for an exafy_admin (35 ms)
+    ✓ a non-admin is refused by the gate (28 ms)
+  index.ts mounts the route like its neighbours
+    ✓ mountRouterSync at /api/v1/ops/attention with owner ops-attention (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.error
+    [ops-attention] ack read failed — nothing is hidden: acks table missing
+
+      424 |         .then((rows) => ({ rows, error: null }))
+      425 |         .catch((err) => {
+    > 426 |           console.error('[ops-attention] ack read failed — nothing is hidden:', errMessage(err));
+          |                   ^
+      427 |           return { rows: [] as AckRow[], error: errMessage(err) };
+      428 |         })
+      429 |     : Promise.resolve({ rows: [] as AckRow[], error: null });
+
+      at src/services/ops-attention.ts:426:19
+
+  console.error
+    [ops-attention] ack read failed — nothing is hidden: timeout after 3000 ms
+
+      424 |         .then((rows) => ({ rows, error: null }))
+      425 |         .catch((err) => {
+    > 426 |           console.error('[ops-attention] ack read failed — nothing is hidden:', errMessage(err));
+          |                   ^
+      427 |           return { rows: [] as AckRow[], error: errMessage(err) };
+      428 |         })
+      429 |     : Promise.resolve({ rows: [] as AckRow[], error: null });
+
+      at src/services/ops-attention.ts:426:19
+      at buildOpsAttention (src/services/ops-attention.ts:506:16)
+
+PASS test/vtid-04886-ops-attention-acks-timeline.test.ts
+  applyAcks
+    ✓ ack marks (still shown); snooze hides and lists; P1 is never hidden (snooze_overridden) (1 ms)
+    ✓ the latest unexpired row per fingerprint wins; expired rows are ignored
+  buildOpsAttention with acks
+    ✓ a snoozed P2 leaves the queue, counts.hidden says so, the domain tile counts it, the verdict follows what is shown (6 ms)
+    ✓ an ack read failure hides nothing and is reported in acks_error (not a source, so no false UNKNOWN) (2 ms)
+    ✓ an ack read that hangs is cut at 3 s (4 ms)
+  timeline + sparklines
+    ✓ timelineFrom: classified, newest first, unknown topics and blocklisted self-heal endpoints dropped
+    ✓ sparklinesFrom: 24 hourly buckets, oldest first; deploys exclude failures, incidents are the bad events
+    ✓ the response carries the timeline and sparklines; a failed timeline read is an error and null sparklines (1 ms)
+  production reads (VTID-04886)
+    ✓ timelineEvents: oasis_events topic IN TIMELINE_TOPICS, 24 h, newest first, LIMIT 200; throws on error (19 ms)
+    ✓ selfHealOutcomes is read once per window per computation (autonomy + timeline share it) (1 ms)
+    ✓ ack store: active rows by env and expires_at > now; insert returns the row; errors throw (1 ms)
+    ✓ the migration: table, CHECKs (24 h, reason, P1 never snoozed), RLS, service_role only, idempotent (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04886-overview-ack-timeline.test.ts
+  VTID-04886: opt-in P1 browser notifications
+    ✓ off by default; the toggle is stored in localStorage; a throwing storage reads as off and never throws (12 ms)
+    ✓ fires only when a NEW fingerprint reaches P1 — never on the first load, never twice, never for P2 (6 ms)
+    ✓ does nothing when opted out or when the browser has not granted permission (9 ms)
+    ✓ the toggle asks for permission only when turned on, and seeds the seen set (no burst) (2 ms)
+  VTID-04886: Ack / Snooze controls
+    ✓ every item has Ack; Snooze is not offered for P1 (1 ms)
+    ✓ the reason form: reason required (3–500), expiry choices capped at 24 h, optional VTID, submit + cancel (6 ms)
+    ✓ submit POSTs {fingerprint, reason, duration_minutes, vtid?} to /ack or /snooze and refetches; errors stay in the form (2 ms)
+    ✓ a poll never wipes an open form (deferred until it closes) (1 ms)
+    ✓ acked items are de-emphasised with who/why/until; snoozed items are listed, never silently dropped (2 ms)
+    ✓ delegated listeners only: no inline handler and no .style in the cockpit region (3 ms)
+  VTID-04886: timeline and sparklines
+    ✓ the sparkline is attribute-only SVG with an accessible label (10 ms)
+    ✓ the timeline renders newest first from data.timeline and says so when it could not be read (2 ms)
+  VTID-04886: styles and asset version
+    ✓ the Phase 3 styles exist and use logical properties only; targets >= 24px (1 ms)
+    ✓ index.html loads app.js and styles.css at (or after) the VTID-04886 version (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04876-overview-cockpit.test.ts
+  VTID-04876: status bar
+    ✓ polls every 30 s and goes blind after 2x the poll interval (4 ms)
+    ✓ any fetch error, or no answer yet, is UNKNOWN — never OK (3 ms)
+    ✓ shows the server verdict when fresh; an unknown or unrecognised verdict stays UNKNOWN (3 ms)
+    ✓ labels staging as "Staging build · production data" (3 ms)
+    ✓ renders verdict, P1/P2/P3 counts, sources fresh x/y, generated_at, env and refresh (2 ms)
+  VTID-04876: ranked queue
+    ✓ severity is icon + text label + colour class (4 ms)
+    ✓ the queue body is aria-live="polite" and has a "Needs attention now" heading
+    ✓ domain filters are data-action buttons with aria-pressed (1 ms)
+    ✓ an empty queue with unknown sources is explicitly not an all-clear (1 ms)
+    ✓ each item is a real link carrying its deeplink and navigates via navigateToScreen(section, tab, query) (2 ms)
+  VTID-04876: no inline handlers
+    ✓ no 'onclick=' anywhere in the Overview region (2 ms)
+    ✓ the cockpit assigns no on* handler properties; one delegated listener reads data-action (2 ms)
+    ✓ the cockpit block is CSP-clean (no inline style or eval) (2 ms)
+    ✓ says why its strings are English (admin-facing by design) (4 ms)
+  VTID-04876: polling and the /ops/attention migration
+    ✓ renderOverviewSystemView renders the cockpit and polls every 30 s on the real router keys only (2 ms)
+    ✓ the old panels are kept, collapsed, and rendered only when opened (1 ms)
+    ✓ fetches GET /api/v1/ops/attention with the signed-in headers; nothing reads /ops/action-required any more (2 ms)
+    ✓ keeps showing the last good answer on error but marks the cockpit blind (1 ms)
+  VTID-04876: deep-link contract (?vtid= / ?session=)
+    ✓ the frontend contract equals the backend DEEPLINK_QUERY_CONTRACT (1 ms)
+    ✓ params are read on navigation: navigateToScreen, back/forward and page load (2 ms)
+    ✓ applyDeepLinkParams keys on the real router state
+    ✓ ?vtid= on command-hub/tasks opens the task drawer (5 ms)
+    ✓ an unresolvable ?vtid= on the task list shows a toast and falls back to the list (5 ms)
+    ✓ ?vtid= on oasis/vtid-ledger opens the ledger drawer; unresolvable → toast + list (9 ms)
+    ✓ ?session= on voice/sessions opens the voice session drawer; unresolvable → toast + list (9 ms)
+    ✓ a param on a screen outside the contract is ignored (4 ms)
+  VTID-04876: every adapter deeplink resolves against NAVIGATION_CONFIG
+    ✓ every section/tab exists, every query key is one its screen reads, every screen is dispatched (8 ms)
+    ✓ the drawers are reachable: ?vtid= deeplinks are emitted for tasks and the ledger (2 ms)
+  VTID-04876: styles and asset version
+    ✓ the cockpit styles exist (UNKNOWN is grey) and use logical properties (2 ms)
+    ✓ index.html loads app.js and styles.css at (or after) the VTID-04876 version
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04885-ops-attention-phase2-adapters.test.ts
+  cost_budgets adapter
+    ✓ an LLM budget over its daily limit is P2; >= 80% is P3; runs are grouped (2 ms)
+    ✓ lines under 80% are not reported (1 ms)
+    ✓ Jev: one item per tenant, the highest level wins — 100% is P2 (exhausted), 80% is P3 (1 ms)
+    ✓ reads the Jev events from the start of the UTC month (1 ms)
+    ✓ a truncated spend read or one failed half is partial (UNKNOWN); both failing throws (48 ms)
+  tests_contracts adapter
+    ✓ a workflow failing on main >= 2 runs in a row is P2, since the first failure of the streak (1 ms)
+    ✓ a single latest failure is P3; a green latest run or a non-main branch is not reported (1 ms)
+    ✓ failing capability contracts are one P3 item (1 ms)
+    ✓ a stale or never-run results sync is UNKNOWN (never a clean OK) (1 ms)
+  routines adapter
+    ✓ cronIntervalMs understands the simple shapes and refuses the rest (1 ms)
+    ✓ a failed last run is P3; three in a row is P2
+    ✓ overdue after 1.5 intervals without a run (P3, since = when it became overdue); never-run uses created_at (1 ms)
+    ✓ a run still "running" after 6 h is P3
+    ✓ a schedule it cannot judge makes the source UNKNOWN; an unreadable table throws
+  support_tickets adapter
+    ✓ an open p0 is P2 and deep-links to that ticket (?ticket=)
+    ✓ p1 waiting > 1 h is P3, > 4 h is P2; under 1 h is not reported
+    ✓ several tickets link to the inbox list; closed statuses never count (1 ms)
+    ✓ reads tickets older than 72 h as "aged"; an unreadable table throws (1 ms)
+  llm_google_fallback adapter
+    ✓ any fallback that landed on Google in 24 h is P2 (an incident)
+    ✓ a stage routed at Google without a fallback is its own P2; other providers are ignored (1 ms)
+    ✓ reads a 24 h window; an unreadable read throws (UNKNOWN, never "no fallbacks") (1 ms)
+  stuck_vtids adapter
+    ✓ session-plane VTIDs without an update for > 72 h are one P3 item; autonomous tasks are excluded (1 ms)
+    ✓ one stale VTID deep-links to its task drawer (?vtid=) (1 ms)
+    ✓ a full 500-row page is truncated (UNKNOWN) (3 ms)
+  registry, not-wired sources and domain tiles
+    ✓ the CloudWatch adapter is not wired (no @aws-sdk/client-cloudwatch dependency) and is listed as such (2 ms)
+    ✓ the plan's 13 domains, every adapter in exactly one tile (1 ms)
+    ✓ buildDomainSummary: worst severity, open count, freshness; unmonitored is never OK (1 ms)
+    ✓ the full registry over the Phase 2 fakes: every new source reports, the response carries 13 domains (6 ms)
+    ✓ a throwing Phase 2 read makes only its source and its tile UNKNOWN (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04876-ops-attention-aggregator.test.ts
+  verdict
+    ✓ CRITICAL beats UNKNOWN; UNKNOWN beats ATTENTION/OK; OK only with all sources fresh and no items (1 ms)
+  buildOpsAttention
+    ✓ response shape, env-scoped fingerprints, ranking by severity then age (1 ms)
+    ✓ an adapter that exceeds the 3 s timeout is UNKNOWN; the verdict is UNKNOWN, not OK (2 ms)
+    ✓ per-source budgets: service health 8 s, autonomy 6 s, every other source 3 s (5 ms)
+    ✓ a throwing adapter is UNKNOWN; a P1 elsewhere still makes the verdict CRITICAL (1 ms)
+    ✓ a partial adapter is UNKNOWN but still shows its candidates (1 ms)
+    ✓ the full default registry runs over all-healthy fakes: OK with 14 fresh sources (13 adapters + state, VTID-04885) (1 ms)
+  hysteresis (time-based, N2/N5/N8)
+    ✓ a source-timestamped candidate is stateless: shown once held long enough, no state write (1 ms)
+    ✓ a stateless-source candidate opens only after 2 min of consecutive observation (1 ms)
+    ✓ a gap longer than the clear grace (90 s) resets first_seen; a shorter one keeps it (1 ms)
+    ✓ staging and production state never mix: the fingerprint and the store call carry env (1 ms)
+    ✓ a state READ failure never breaks the response: logged, first seen at this request, attention_state UNKNOWN (1 ms)
+    ✓ a state WRITE failure never breaks the response: logged, source stays ok with the error noted (1 ms)
+  getOpsAttention — single-flight + cache
+    ✓ concurrent callers share one computation; within 25 s the cache answers; after, it recomputes (1 ms)
+
+Test Suites: 7 passed, 7 total
+Tests:       113 passed, 113 total
+Snapshots:   0 total
+Time:        2.155 s
+Ran all test suites matching /test\/vtid-04886-ops-attention-ack-route.test.ts|test\/vtid-04886-ops-attention-acks-timeline.test.ts|test\/command-hub\/vtid-04886-overview-ack-timeline.test.ts|test\/vtid-04876-ops-attention-route.test.ts|test\/vtid-04876-ops-attention-aggregator.test.ts|test\/command-hub\/vtid-04876-overview-cockpit.test.ts|test\/vtid-04885-ops-attention-phase2-adapters.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit=0

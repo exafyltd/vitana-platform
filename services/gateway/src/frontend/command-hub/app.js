@@ -3558,11 +3558,9 @@ const NAVIGATION_CONFIG = [
         "section": "overview",
         "basePath": "/command-hub/overview/",
         "tabs": [
-            { "key": "system-overview", "path": "/command-hub/overview/system-overview/" },
-            { "key": "live-metrics", "path": "/command-hub/overview/live-metrics/" },
-            { "key": "recent-events", "path": "/command-hub/overview/recent-events/" },
-            { "key": "errors-violations", "path": "/command-hub/overview/errors-violations/" },
-            { "key": "release-feed", "path": "/command-hub/overview/release-feed/" }
+            // VTID-04887: the four other Overview tabs redirect to their
+            // specialised screens (OVERVIEW_TAB_REDIRECTS below the router).
+            { "key": "system-overview", "path": "/command-hub/overview/system-overview/" }
         ]
     },
     {
@@ -3841,6 +3839,21 @@ const NAVIGATION_CONFIG = [
             { "key": "catalog", "path": "/command-hub/routines/catalog/" },
             { "key": "history", "path": "/command-hub/routines/history/" }
         ]
+    },
+    {
+        // VTID-04885: the Feedback module (VTID-02605) is routable so the
+        // Overview's support-ticket items land on a real screen (?ticket=
+        // opens the ticket drawer). It has no sidebar entry: the sidebar is
+        // unchanged (renderSidebar skips "sidebar": false sections).
+        "section": "feedback",
+        "basePath": "/command-hub/feedback/",
+        "sidebar": false,
+        "tabs": [
+            { "key": "inbox", "path": "/command-hub/feedback/inbox/" },
+            { "key": "handoffs", "path": "/command-hub/feedback/handoffs/" },
+            { "key": "kpis", "path": "/command-hub/feedback/kpis/" },
+            { "key": "audit", "path": "/command-hub/feedback/audit/" }
+        ]
     }
 ];
 
@@ -3868,7 +3881,8 @@ const SECTION_LABELS = {
     'testing-qa': 'Testing & QA',
     'intelligence-memory-dev': 'Intelligence & Memory (Dev)',
     'docs': 'Docs',
-    'routines': 'Routines'
+    'routines': 'Routines',
+    'feedback': 'Feedback'
 };
 
 const splitScreenCombos = [
@@ -4724,41 +4738,16 @@ const state = {
     serviceHealth: { items: [], groups: null, source: null, loading: false, fetched: false, lastRefreshed: null },
 
     // Overview module
-    overviewHealth: { items: [], loading: false, error: null, fetched: false },
     // DEV-COMHU-03405: user's manual expand/collapse choice for the non-golden-
     // path service health tier. A failure in that tier force-expands it
-    // regardless of this flag (see renderOverviewSystemView) — this only
+    // regardless of this flag (see renderOverviewSystemPanels) — this only
     // controls the collapsed state when everything back there is healthy.
+    // VTID-04887: the old dashboard/metrics/events/errors/releases/pipeline
+    // states went with the panels and tabs that read them.
     overviewHealthTier2Expanded: false,
-    overviewMetrics: { snapshot: null, loading: false, error: null, fetched: false },
-    overviewRecentEvents: { items: [], loading: false, error: null, fetched: false },
-    overviewErrors: { items: [], loading: false, error: null, fetched: false },
-    overviewReleases: { items: [], loading: false, error: null, fetched: false, autoRefreshInterval: null },
-    overviewPipelineSummary: { snapshot: null, loading: false, error: null, fetched: false },
-    overviewRecentEventsFilter: 'pipeline',
-
-    // VTID-01864: Supervisor Dashboard — comprehensive system overview
-    overviewDashboard: {
-        systemStatus: null,
-        systemStatusMessage: '',
-        healthChecks: [],
-        deployments: [],
-        deploySuccessRate7d: null,
-        orbHealth: null,
-        orbSessionStats: null,
-        recentFailures: [],
-        deployEvents: [],
-        orbEvents: [],
-        controllerStatus: null,
-        loopStatus: null,
-        violationCount24h: 0,
-        // VTID-04869: true when the failures fetch itself failed.
-        recentFailuresUnavailable: false,
-        lastRefreshed: null,
-        loading: false,
-        fetched: false,
-        error: null
-    },
+    // VTID-04887: "Vitana Recommends" in the Overview disclosure, from
+    // GET /api/v1/ops/pipeline-summary (recommendations only).
+    overviewRecs: { recommendations: [], loading: false, error: null, fetched: false },
 
     // VTID-04876: Overview cockpit — GET /api/v1/ops/attention (replaces the
     // VTID-02031 /ops/action-required panel state).
@@ -4770,16 +4759,12 @@ const state = {
         lastOkAt: null,
         lastFetchAt: null,
         domainFilter: 'all',
-        legacyOpen: false
-    },
-
-    // DEV-COMHU-03404: hourly oasis_events rollup for Overview sparklines
-    overviewTimeseries: {
-        series: null,
-        lastRefreshed: null,
-        loading: false,
-        fetched: false,
-        error: null
+        legacyOpen: false,
+        // VTID-04886: the open Ack/Snooze form ({ fingerprint, action, error, busy }),
+        // a poll that arrived while it was open, and the P1 fingerprints already seen.
+        actionForm: null,
+        pendingRefresh: false,
+        seenP1: null
     },
 
     // Operator module — Supervision Dashboard
@@ -6185,6 +6170,8 @@ function renderSidebar() {
     navSection.dataset.scrollKey = 'sidebar-nav';
 
     NAVIGATION_CONFIG.forEach(mod => {
+        // VTID-04885: routable-only sections (Feedback) keep the sidebar unchanged.
+        if (mod.sidebar === false) return;
         const label = SECTION_LABELS[mod.section] || mod.section;
         const item = document.createElement('div');
         item.className = `nav-item ${state.currentModuleKey === mod.section ? 'active' : ''}`;
@@ -8545,14 +8532,8 @@ function renderModuleContent(moduleKey, tab) {
     // ──── Overview Module ────
     } else if (moduleKey === 'overview' && tab === 'system-overview') {
         container.appendChild(renderOverviewSystemView());
-    } else if (moduleKey === 'overview' && tab === 'live-metrics') {
-        container.appendChild(renderOverviewLiveMetricsView());
-    } else if (moduleKey === 'overview' && tab === 'recent-events') {
-        container.appendChild(renderOverviewRecentEventsView());
-    } else if (moduleKey === 'overview' && tab === 'errors-violations') {
-        container.appendChild(renderOverviewErrorsViolationsView());
-    } else if (moduleKey === 'overview' && tab === 'release-feed') {
-        container.appendChild(renderOverviewReleaseFeedView());
+    // VTID-04887: Live Metrics, Recent Events, Errors & Violations and Release
+    // Feed are router redirects now (OVERVIEW_TAB_REDIRECTS), not tabs.
 
     // ──── Operator Module — Supervision Dashboard ────
     } else if (moduleKey === 'operator' && tab === 'dashboard') {
@@ -12368,6 +12349,7 @@ function navigateToScreen(sectionKey, tabKey, query) {
 //   command-hub/tasks ?vtid=     → task drawer
 //   oasis/vtid-ledger ?vtid=     → ledger drawer
 //   voice/sessions    ?session=  → voice session drawer
+//   feedback/inbox    ?ticket=   → feedback ticket drawer (VTID-04885)
 // services/ops-attention-adapters.ts DEEPLINK_QUERY_CONTRACT mirrors this
 // map (a unit test keeps them equal). An unresolvable value shows a toast
 // and falls back to the list (the parameter is dropped from the URL).
@@ -12375,7 +12357,8 @@ function navigateToScreen(sectionKey, tabKey, query) {
 var OVERVIEW_DEEPLINK_QUERY_CONTRACT = {
     'command-hub/tasks': ['vtid'],
     'oasis/vtid-ledger': ['vtid'],
-    'voice/sessions': ['session']
+    'voice/sessions': ['session'],
+    'feedback/inbox': ['ticket']
 };
 
 function applyDeepLinkParams() {
@@ -12386,7 +12369,10 @@ function applyDeepLinkParams() {
     if (!allowed) return;
     var vtid = allowed.indexOf('vtid') >= 0 ? params.get('vtid') : null;
     var session = allowed.indexOf('session') >= 0 ? params.get('session') : null;
-    if (vtid && screen === 'command-hub/tasks') {
+    var ticket = allowed.indexOf('ticket') >= 0 ? params.get('ticket') : null;
+    if (ticket && screen === 'feedback/inbox') {
+        openTicketDrawerFromDeepLink(ticket);
+    } else if (vtid && screen === 'command-hub/tasks') {
         openTaskDrawerFromDeepLink(vtid);
     } else if (vtid && screen === 'oasis/vtid-ledger') {
         openLedgerDrawerFromDeepLink(vtid);
@@ -12428,6 +12414,18 @@ async function openLedgerDrawerFromDeepLink(vtid) {
         oasisVtidDetail.error = null;
         deepLinkFallback('VTID', vtid);
         renderApp();
+    }
+}
+
+// VTID-04885: ?ticket= on feedback/inbox opens the ticket drawer; an id the
+// admin feedback API does not know falls back to the inbox with a toast.
+async function openTicketDrawerFromDeepLink(ticketId) {
+    try {
+        var data = await fetchFeedbackJSON('/api/v1/admin/feedback/tickets/' + encodeURIComponent(ticketId));
+        if (!data || !data.ticket) { deepLinkFallback('Ticket', ticketId); return; }
+        openFeedbackTicketDrawer(ticketId);
+    } catch (_e) {
+        deepLinkFallback('Ticket', ticketId);
     }
 }
 
@@ -12495,11 +12493,24 @@ const AUTONOMY_REDIRECTS = {
     '/command-hub/testing-qa/ci-reports/':        { section: 'testing-qa', tab: 'runs' },
 };
 
+// VTID-04887: the Overview's four other tabs were thin copies of screens that
+// exist elsewhere; their old URLs (bookmarks, voice, Phase 0 links) redirect
+// to the specialised screen with a short note, instead of showing dead tabs.
+const OVERVIEW_TAB_REDIRECTS = {
+    '/command-hub/overview/live-metrics/':      { section: 'operator', tab: 'dashboard', note: 'Live Metrics moved: the pipeline dashboard is Operator › Dashboard.' },
+    '/command-hub/overview/recent-events/':     { section: 'oasis', tab: 'events', note: 'Recent Events moved: the event stream is OASIS › Events.' },
+    '/command-hub/overview/errors-violations/': { section: 'governance', tab: 'violations', note: 'Errors & Violations moved: Governance › Violations.' },
+    '/command-hub/overview/release-feed/':      { section: 'operator', tab: 'deployments', note: 'Release Feed moved: Operator › Deployments.' },
+};
+Object.keys(OVERVIEW_TAB_REDIRECTS).forEach(function (p) { AUTONOMY_REDIRECTS[p] = OVERVIEW_TAB_REDIRECTS[p]; });
+
 // VTID-02856: Apply optional `subtab` field from a redirect entry to the
 // matching tab state. DEV-COMHU: Awareness moved Voice → Conversation, so the
 // Awareness sub-tab (Registry/Test/Watchdogs) now lives under the Conversation
 // section. renderVoiceAwarenessView still reads state.voiceAwareness.
 function applyRouteSubtab(route) {
+    // VTID-04887: a redirect that carries a note says where the screen went.
+    if (route && route.note && typeof showToast === 'function') showToast(route.note, 'info');
     if (!route || !route.subtab) return;
     // VTID-04778: Issues & Healing sub-tab (action-queue | pipeline | fix-impact).
     if (route.section === 'voice' && route.tab === 'issues-healing') {
@@ -27747,26 +27758,6 @@ function startCicdHealthPolling() {
     console.log('[ServiceHealth] Polling started (30s interval, scroll-safe)');
 }
 
-// Overview dashboard auto-refresh (60 s) — only active while on overview tab.
-// We don't reset `fetched` so the loading banner never flickers on silent refresh.
-// fetchOverviewDashboard/fetchPipelineSummary guard on .loading, so concurrent
-// calls are no-ops — this is safe to call directly.
-var overviewDashboardRefreshInterval = null;
-function startOverviewDashboardPolling() {
-    if (overviewDashboardRefreshInterval) return;
-    overviewDashboardRefreshInterval = setInterval(function () {
-        // VTID-04869: the router keys are currentModuleKey/currentTab. This
-        // used to read state.activeModule/activeTab, which nothing ever sets,
-        // so the 60 s refresh never fired and the Overview went stale.
-        if (state.currentModuleKey === 'overview' && state.currentTab === 'system-overview') {
-            // Silent refresh: state updated in-place, render fires once at end
-            fetchOverviewDashboard();
-            fetchPipelineSummary();
-        }
-    }, 60000);
-    console.log('[Overview] Auto-refresh polling started (60 s)');
-}
-
 /**
  * VTID-0150-A: Formats timestamp for chat messages
  */
@@ -28964,115 +28955,6 @@ function overviewHealthClass(svc) {
     return 'failed';
 }
 
-function computeSystemStatus(healthChecks) {
-    var criticalServices = ['Gateway', 'ORB Live', 'CI/CD', 'Autopilot', 'Execute Runner'];
-    var downCount = 0;
-    var degradedCount = 0;
-    var unmeasuredCount = 0;
-    var measuredCount = 0;
-    var criticalDown = false;
-    var downNames = [];
-
-    (healthChecks || []).forEach(function (svc) {
-        var cls = overviewHealthClass(svc);
-        if (cls === 'unknown') { unmeasuredCount++; return; }
-        measuredCount++;
-        if (cls === 'failed') {
-            downCount++;
-            downNames.push(svc.name);
-            if (criticalServices.indexOf(svc.name) >= 0) criticalDown = true;
-        } else if (cls === 'degraded') {
-            degradedCount++;
-        }
-    });
-
-    // VTID-04869: nothing measured is UNKNOWN, never "All systems operational".
-    if (measuredCount === 0) {
-        return { status: 'unknown', message: 'No health check could be measured' + (unmeasuredCount ? ' (' + unmeasuredCount + ' not visible to this session)' : '') };
-    }
-    if (criticalDown || downCount >= 3) {
-        return { status: 'critical', message: downCount + ' services down (' + downNames.slice(0, 3).join(', ') + ')' };
-    }
-    if (downCount > 0 || degradedCount >= 2) {
-        return { status: 'degraded', message: downCount + ' down, ' + degradedCount + ' degraded' };
-    }
-    if (degradedCount > 0) {
-        return { status: 'degraded', message: degradedCount + ' service' + (degradedCount > 1 ? 's' : '') + ' degraded' };
-    }
-    return { status: 'operational', message: 'All ' + measuredCount + ' measured checks healthy' + (unmeasuredCount ? ', ' + unmeasuredCount + ' not measured' : '') };
-}
-
-function computeDeploySuccessRate(deployEvents) {
-    var succeeded = 0;
-    var failed = 0;
-    deployEvents.forEach(function (e) {
-        var t = (e.topic || '').toLowerCase();
-        if (t.includes('succeeded') || t.includes('success')) succeeded++;
-        else if (t.includes('failed') || t.includes('blocked') || t.includes('error')) failed++;
-    });
-    var total = succeeded + failed;
-    return {
-        succeeded: succeeded,
-        failed: failed,
-        total: total,
-        rate: total > 0 ? Math.round((succeeded / total) * 100) : null
-    };
-}
-
-function computeOrbSessionStats(orbEvents, orbHealthDetails) {
-    var starts = 0;
-    var stops = 0;
-    var failures = 0;
-    var lastSuccess = null;
-    orbEvents.forEach(function (e) {
-        var t = (e.topic || '').toLowerCase();
-        if (t.includes('session.start') || t.includes('session_start')) starts++;
-        else if (t.includes('session.stop') || t.includes('session_stop')) {
-            stops++;
-            if (!lastSuccess) lastSuccess = e.created_at;
-        }
-        if (t.includes('connection_failed') || t.includes('config_missing') || t.includes('error')) failures++;
-    });
-    var gl = orbHealthDetails && orbHealthDetails.gemini_live;
-    var vr = orbHealthDetails && orbHealthDetails.voice_runtime;
-    // VTID-04869: no session starts in the fetched events = no rate (null,
-    // rendered as a dash), not a red "0%".
-    var successRate = starts > 0 ? Math.max(0, Math.round(((starts - failures) / starts) * 100)) : null;
-
-    // ORB-VOICE-HEALTH-PROBE: runtime truth = the actively-selected provider's
-    // readiness (voice_runtime.healthy), NOT a stale flag.
-    // VTID-04869: provider-neutral. The provider string is shown as the
-    // gateway reports it (nova_sonic, cascaded, livekit, ...); the old
-    // Gemini Live / Vertex Project / Google Auth flags are gone — GCP is
-    // decommissioned and those probes describe nothing that runs.
-    // gemini_live.* is read only as the older response shape's copy of the
-    // same voice_runtime fields.
-    var runtimeProvider = (vr && vr.active_provider) || (gl && gl.active_provider) || null;
-    var runtimeKnown = !!(vr || gl);
-    var runtimeHealthy = vr ? !!vr.healthy : (gl ? !!gl.enabled : false);
-
-    // The 24h counter is independent positive evidence: you cannot complete
-    // successful voice sessions unless the runtime (provider + project + auth)
-    // is actually working. When the counter proves health, the config badges
-    // must AGREE — never show "ORB BROKEN" over demonstrably-live sessions.
-    var counterProvenHealthy = starts > 0 && failures === 0 && successRate !== null && successRate >= 80;
-
-    return {
-        sessions_24h: starts,
-        completions_24h: stops,
-        failures_24h: failures,
-        success_rate: successRate,
-        last_success: lastSuccess,
-        runtime_provider: runtimeProvider,
-        runtime_provider_reason: (vr && vr.provider_reason) || (gl && gl.provider_reason) || null,
-        runtime_known: runtimeKnown,
-        runtime_healthy: runtimeHealthy,
-        counter_proven_healthy: counterProvenHealthy,
-        active_sessions: orbHealthDetails ? (orbHealthDetails.active_sessions || 0) : 0,
-        active_live_sessions: gl ? (gl.active_live_sessions || 0) : 0
-    };
-}
-
 function dashboardRelativeTime(isoString) {
     if (!isoString) return 'N/A';
     var diff = Date.now() - new Date(isoString).getTime();
@@ -29081,20 +28963,6 @@ function dashboardRelativeTime(isoString) {
     if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
     if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
     return Math.floor(diff / 86400000) + 'd ago';
-}
-
-function metricColor(value, greenThreshold, amberThreshold) {
-    if (value === null || value === undefined) return 'neutral';
-    if (value >= greenThreshold) return 'green';
-    if (value >= amberThreshold) return 'amber';
-    return 'red';
-}
-
-function metricColorInverse(value, greenMax, amberMax) {
-    if (value === null || value === undefined) return 'neutral';
-    if (value <= greenMax) return 'green';
-    if (value <= amberMax) return 'amber';
-    return 'red';
 }
 
 // ---------------------------------------------------------------------------
@@ -29107,259 +28975,6 @@ function fetchWT(url, opts, timeoutMs) {
     var tid = setTimeout(function () { ctrl.abort(); }, ms);
     var options = Object.assign({}, opts || {}, { signal: ctrl.signal });
     return fetch(url, options).finally(function () { clearTimeout(tid); });
-}
-
-// ---------------------------------------------------------------------------
-// VTID-01864: fetchOverviewDashboard — comprehensive parallel fetch
-// ---------------------------------------------------------------------------
-async function fetchOverviewDashboard() {
-    if (state.overviewDashboard.loading) return;
-    var isInitialLoad = !state.overviewDashboard.fetched;
-    state.overviewDashboard.loading = true;
-    state.overviewDashboard.error = null;
-    if (isInitialLoad) renderApp();
-
-    // Reuse shared serviceHealth data if fresh (< 90s), otherwise fetch fresh
-    var useSharedHealth = state.serviceHealth.fetched && state.serviceHealth.lastRefreshed &&
-        (Date.now() - new Date(state.serviceHealth.lastRefreshed).getTime() < 90000);
-
-    var healthCheckPromise;
-    if (useSharedHealth) {
-        // VTID-04869: resolve to the same array shape Promise.allSettled()
-        // gives the fresh path. This used to resolve to a {status, value}
-        // wrapper, so the outer allSettled wrapped it again and
-        // results[0].value.map threw — every refresh within 90 s of a
-        // Service Health poll ended in "Dashboard fetch failed".
-        healthCheckPromise = Promise.resolve(state.serviceHealth.items.map(function (s) { return { status: 'fulfilled', value: s }; }));
-    } else {
-        var healthEndpoints = state.serviceHealth.items.length > 0
-            ? state.serviceHealth.items.map(function (s) { return { name: s.name, url: s.url, group: s.group }; })
-            : [
-                { name: 'Gateway', url: '/health' },
-                { name: 'CI/CD',   url: '/api/v1/cicd/health' },
-                { name: 'Operator', url: '/api/v1/operator/health' },
-                { name: 'Autopilot', url: '/api/v1/autopilot/health' },
-                { name: 'Assistant', url: '/api/v1/assistant/health' },
-                // ORB-VOICE-HEALTH-PROBE: include ORB Live so the ORB Voice card
-                // gets its health block on a cold System Overview load (without
-                // it, gl was null and every badge collapsed to FAIL).
-                { name: 'ORB Live', url: '/api/v1/orb/health' }
-            ];
-        // VTID-01982: pass the operator's bearer token to /health probes
-        var dashHeaders = (typeof buildContextHeaders === 'function') ? buildContextHeaders({ 'Accept': 'application/json' }) : {};
-        // VTID-04661: same classification as the Service Health panel.
-        healthCheckPromise = Promise.allSettled(healthEndpoints.map(function (ep) {
-            return probeHealthEndpointInBrowser(ep, dashHeaders);
-        }));
-    }
-
-    try {
-        var results = await Promise.allSettled([
-            // 0: Health checks (shared or fresh)
-            healthCheckPromise,
-            // 1: Deployments
-            fetchWT('/api/v1/operator/deployments?limit=10').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
-            // 2: Deploy events (OASIS)
-            fetchWT('/api/v1/oasis/events?topic=cicd.deploy&limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
-            // 3: ORB events (OASIS) — both vtid.live and voice.live
-            fetchWT('/api/v1/oasis/events?topic=vtid.live&limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
-            // 4: Recent failures — VTID-04869: null (not []) when the fetch
-            // fails, so "no errors" is never shown for "could not look".
-            fetchWT('/api/v1/oasis/events?status=error&limit=30').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
-            // 5: Autopilot controller
-            fetchWT('/api/v1/autopilot/controller/status').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
-            // 6: Autopilot loop
-            fetchWT('/api/v1/autopilot/loop/status').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
-            // 7: Governance violations — VTID-04869: null when the fetch fails.
-            fetchWT('/api/v1/governance/violations?limit=50').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
-            // 8: voice.live events (second ORB topic pattern)
-            fetchWT('/api/v1/oasis/events?topic=voice.live&limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
-            // 9: User stats (for overview cards)
-            fetchWT('/api/v1/admin/users?limit=200', { headers: buildContextHeaders() }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })
-        ]);
-
-        // Parse health checks
-        var healthChecks = [];
-        if (results[0].status === 'fulfilled' && Array.isArray(results[0].value)) {
-            healthChecks = results[0].value.map(function (r) {
-                return r.status === 'fulfilled' ? r.value : { name: 'Unknown', status: 'down', latency_ms: -1, details: null };
-            });
-        }
-
-        // Parse deployments
-        var deployments = [];
-        if (results[1].status === 'fulfilled') {
-            var dVal = results[1].value;
-            deployments = Array.isArray(dVal) ? dVal : (dVal && dVal.data ? dVal.data : []);
-        }
-
-        // Parse deploy events
-        var deployEvents = [];
-        if (results[2].status === 'fulfilled') {
-            var deVal = results[2].value;
-            deployEvents = Array.isArray(deVal) ? deVal : (deVal && deVal.data ? deVal.data : []);
-        }
-
-        // Parse ORB events (merge both topic patterns)
-        var orbEvents = [];
-        if (results[3].status === 'fulfilled') {
-            var oe1 = results[3].value;
-            orbEvents = Array.isArray(oe1) ? oe1 : (oe1 && oe1.data ? oe1.data : []);
-        }
-        if (results[8].status === 'fulfilled') {
-            var oe2 = results[8].value;
-            var orbEvents2 = Array.isArray(oe2) ? oe2 : (oe2 && oe2.data ? oe2.data : []);
-            orbEvents = orbEvents.concat(orbEvents2);
-        }
-
-        // ORB health details from health checks
-        var orbHealthCheck = healthChecks.find(function (h) { return h.name === 'ORB Live'; });
-        var orbHealthDetails = orbHealthCheck ? orbHealthCheck.details : null;
-
-        // Parse recent failures
-        // VTID-04869: keep all fetched rows (limit=30) and remember whether
-        // the fetch worked at all.
-        var recentFailures = [];
-        var recentFailuresUnavailable = true;
-        if (results[4].status === 'fulfilled' && results[4].value) {
-            var fVal = results[4].value;
-            recentFailures = Array.isArray(fVal) ? fVal : (fVal && Array.isArray(fVal.data) ? fVal.data : []);
-            recentFailuresUnavailable = false;
-        }
-
-        // Parse controller + loop status
-        var controllerStatus = results[5].status === 'fulfilled' ? results[5].value : null;
-        var loopStatus = results[6].status === 'fulfilled' ? results[6].value : null;
-
-        // Parse violations
-        var violationCount = null;
-        if (results[7].status === 'fulfilled' && results[7].value) {
-            var vVal = results[7].value;
-            var violations = Array.isArray(vVal) ? vVal : (vVal && vVal.data ? vVal.data : []);
-            violationCount = violations.length;
-        }
-
-        // Parse user stats (index 9)
-        var userStats = { total: 0, active_now: 0, new_7d: 0 };
-        if (results[9] && results[9].status === 'fulfilled' && results[9].value) {
-            var uData = results[9].value;
-            var userList = uData.users || [];
-            userStats.total = userList.length;
-            var sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
-            userStats.new_7d = userList.filter(function (u) {
-                return u.created_at && new Date(u.created_at) > sevenDaysAgo;
-            }).length;
-            // Active now: users with recent activity (updated_at within last hour)
-            var oneHourAgo = new Date(Date.now() - 3600000);
-            userStats.active_now = userList.filter(function (u) {
-                return u.updated_at && new Date(u.updated_at) > oneHourAgo;
-            }).length;
-        }
-
-        // Compute aggregates
-        var systemStatusResult = computeSystemStatus(healthChecks);
-        var deploySuccessRate = computeDeploySuccessRate(deployEvents);
-        var orbSessionStats = computeOrbSessionStats(orbEvents, orbHealthDetails);
-
-        // Update state
-        state.overviewDashboard.healthChecks = healthChecks;
-        state.overviewDashboard.systemStatus = systemStatusResult.status;
-        state.overviewDashboard.systemStatusMessage = systemStatusResult.message;
-        state.overviewDashboard.deployments = deployments;
-        state.overviewDashboard.deploySuccessRate7d = deploySuccessRate;
-        state.overviewDashboard.orbHealth = orbHealthDetails;
-        state.overviewDashboard.orbSessionStats = orbSessionStats;
-        state.overviewDashboard.recentFailures = recentFailures;
-        state.overviewDashboard.recentFailuresUnavailable = recentFailuresUnavailable;
-        state.overviewDashboard.deployEvents = deployEvents;
-        state.overviewDashboard.orbEvents = orbEvents;
-        state.overviewDashboard.controllerStatus = controllerStatus;
-        state.overviewDashboard.loopStatus = loopStatus;
-        state.overviewDashboard.violationCount24h = violationCount;
-        state.overviewDashboard.userStats = userStats;
-        state.overviewDashboard.lastRefreshed = new Date().toISOString();
-        state.overviewDashboard.fetched = true;
-
-        // Also update legacy overviewHealth for backward compat
-        state.overviewHealth.items = healthChecks.map(function (h) { return { name: h.name, status: h.status, latency_ms: h.latency_ms }; });
-        state.overviewHealth.fetched = true;
-
-        // NOTE: we deliberately do NOT write back to state.serviceHealth here.
-        // fetchServiceHealth() is the single source of truth for the 54-service
-        // grouped view; this dashboard fetcher only runs a 5-service mini probe
-        // for its own metric calculations. Writing that 5-item list into
-        // state.serviceHealth would clobber the full 54-item list and collapse
-        // the grouped view into the legacy 5-service fallback.
-
-        console.log('[VTID-01864] Dashboard loaded:', healthChecks.length, 'services,', deployEvents.length, 'deploy events,', orbEvents.length, 'ORB events,', recentFailures.length, 'failures');
-    } catch (error) {
-        console.error('[VTID-01864] Dashboard fetch failed:', error);
-        state.overviewDashboard.error = error.message;
-    } finally {
-        state.overviewDashboard.loading = false;
-        // Only full render on initial load; subsequent poll refreshes update
-        // state in place and the next user-driven renderApp() picks it up.
-        // This prevents DOM rebuilds every 60s that destroy scroll positions.
-        if (isInitialLoad) {
-            renderApp();
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// 1. fetchOverviewHealth — aggregate health from multiple service endpoints
-// ---------------------------------------------------------------------------
-async function fetchOverviewHealth() {
-    if (state.overviewHealth.loading) return;
-    state.overviewHealth.loading = true;
-    state.overviewHealth.error = null;
-    renderApp();
-
-    var endpoints = [
-        { name: 'Gateway', url: '/health' },
-        { name: 'CI/CD', url: '/api/v1/cicd/health' },
-        { name: 'Operator', url: '/api/v1/operator/health' },
-        { name: 'Autopilot', url: '/api/v1/autopilot/health' },
-        { name: 'Assistant', url: '/api/v1/assistant/health' }
-    ];
-
-    try {
-        var results = await Promise.allSettled(endpoints.map(function (ep) {
-            var start = Date.now();
-            return fetchWT(ep.url, {}, 6000)
-                .then(function (r) {
-                    var latency = Date.now() - start;
-                    var ok = r.ok;
-                    return r.json().then(function (body) {
-                        return {
-                            name: ep.name,
-                            status: ok ? (body.status || 'healthy') : 'degraded',
-                            latency_ms: latency
-                        };
-                    }).catch(function () {
-                        return { name: ep.name, status: ok ? 'healthy' : 'degraded', latency_ms: latency };
-                    });
-                })
-                .catch(function () {
-                    return { name: ep.name, status: 'down', latency_ms: -1 };
-                });
-        }));
-
-        var items = results.map(function (r) {
-            return r.status === 'fulfilled' ? r.value : { name: 'Unknown', status: 'down', latency_ms: -1 };
-        });
-
-        state.overviewHealth.items = items;
-        state.overviewHealth.fetched = true;
-        state.overviewHealth.error = null;
-        console.log('[VTID-01240] Overview health loaded:', items.length, 'services');
-    } catch (error) {
-        console.error('[VTID-01240] Failed to fetch overview health:', error);
-        state.overviewHealth.error = error.message;
-    } finally {
-        state.overviewHealth.loading = false;
-        renderApp();
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -29396,7 +29011,13 @@ var OPS_ATTENTION_DOMAINS = [
     { key: 'autonomy', label: 'Autonomy' },
     { key: 'operator', label: 'Operator' },
     { key: 'governance', label: 'Governance' },
-    { key: 'decisions', label: 'Decisions' }
+    { key: 'decisions', label: 'Decisions' },
+    // VTID-04885 (Phase 2 adapters)
+    { key: 'llm', label: 'AI & LLM' },
+    { key: 'quality', label: 'Quality' },
+    { key: 'cost', label: 'Cost' },
+    { key: 'support', label: 'Support' },
+    { key: 'jobs', label: 'Jobs' }
 ];
 var OPS_ATTENTION_VERDICT_CLASS = {
     CRITICAL: 'ops-verdict-critical',
@@ -29430,6 +29051,21 @@ function computeOpsAttentionStatus(view, nowMs) {
     return { verdict: v, blind: false, cls: OPS_ATTENTION_VERDICT_CLASS[v], label: v, detail: detail };
 }
 
+/**
+ * VTID-04885: pure — what one domain tile shows. Blind cockpit → UNKNOWN; a
+ * domain with no adapter → "Not yet monitored" (never OK); a monitored domain
+ * shows its worst open severity, else UNKNOWN when a source is unknown, else OK.
+ */
+function opsAttentionTileView(domain, blind) {
+    if (blind || !domain) return { cls: 'ops-tile-unknown', icon: '?', label: 'UNKNOWN', note: 'Cockpit blind' };
+    if (!domain.monitored) return { cls: 'ops-tile-unmonitored', icon: '–', label: 'Not yet monitored', note: '' };
+    var unknownNote = domain.status === 'unknown' ? 'Some sources unknown — not an all-clear' : '';
+    var sev = domain.worst_severity && OPS_ATTENTION_SEVERITY[domain.worst_severity];
+    if (sev) return { cls: sev.cls, icon: sev.icon, label: sev.label, note: unknownNote };
+    if (domain.status === 'unknown') return { cls: 'ops-tile-unknown', icon: '?', label: 'UNKNOWN', note: unknownNote };
+    return { cls: 'ops-tile-ok', icon: '✓', label: 'OK', note: 'Nothing open' };
+}
+
 function opsAttentionEnvLabel(env) {
     if (env === 'staging') return 'Staging build · production data';
     if (env === 'production') return 'Production';
@@ -29446,6 +29082,94 @@ function opsAttentionQueryString(query) {
     return '?' + keys.map(function (k) {
         return encodeURIComponent(k) + '=' + encodeURIComponent(String(query[k]));
     }).join('&');
+}
+
+// ---------------------------------------------------------------------------
+// VTID-04886: Overview Phase 3 — Ack / Snooze, timeline, sparklines and the
+// opt-in P1 browser notification. Admin-facing, English by design.
+// ---------------------------------------------------------------------------
+var OPS_ATTENTION_NOTIFY_KEY = 'vitana.opsAttention.p1Notify';
+var OPS_ATTENTION_DURATIONS = [
+    { minutes: 15, label: '15 min' },
+    { minutes: 60, label: '1 hour' },
+    { minutes: 240, label: '4 hours' },
+    { minutes: 480, label: '8 hours' },
+    { minutes: 1440, label: '24 hours (max)' }
+];
+
+/** Off by default; storage can be unavailable (private mode) — then it is off. */
+function opsAttentionNotifyEnabled() {
+    try { return window.localStorage.getItem(OPS_ATTENTION_NOTIFY_KEY) === 'on'; } catch (_e) { return false; }
+}
+
+function opsAttentionSetNotify(on) {
+    try {
+        if (on) window.localStorage.setItem(OPS_ATTENTION_NOTIFY_KEY, 'on');
+        else window.localStorage.removeItem(OPS_ATTENTION_NOTIFY_KEY);
+        return true;
+    } catch (_e) { return false; }
+}
+
+/**
+ * Pure: P1 fingerprints in `items` that are not in `seen` (an object used as
+ * a set). `seen === null` means nothing was seen yet (first load): nothing is
+ * new, so opening the Overview never fires a burst of notifications.
+ */
+function opsAttentionNewP1(seen, items) {
+    var p1 = (items || []).filter(function (i) { return i && i.severity === 'P1'; });
+    if (seen === null || seen === undefined) return [];
+    return p1.filter(function (i) { return !seen[i.fingerprint]; });
+}
+
+function opsAttentionP1Set(items) {
+    var out = {};
+    (items || []).forEach(function (i) { if (i && i.severity === 'P1') out[i.fingerprint] = true; });
+    return out;
+}
+
+/** Fires one browser notification per NEW P1 fingerprint, only when opted in and permitted. */
+function opsAttentionMaybeNotify(data) {
+    var view = state.opsAttention;
+    var items = (data && data.items) || [];
+    var fresh = opsAttentionNewP1(view.seenP1, items);
+    view.seenP1 = opsAttentionP1Set(items);
+    if (!fresh.length || !opsAttentionNotifyEnabled()) return 0;
+    if (typeof window.Notification !== 'function' || window.Notification.permission !== 'granted') return 0;
+    fresh.forEach(function (i) {
+        try {
+            new window.Notification('P1 — ' + i.title, { body: i.detail || '', tag: i.fingerprint });
+        } catch (_e) { /* a blocked notification never breaks the cockpit */ }
+    });
+    return fresh.length;
+}
+
+/** Pure: a 24-bucket sparkline as inline SVG (attributes only, CSP-safe). */
+function opsAttentionSparkSvg(buckets, label) {
+    var b = Array.isArray(buckets) ? buckets : [];
+    var max = b.reduce(function (m, x) { return x > m ? x : m; }, 0);
+    var w = 3, h = 16;
+    var bars = b.map(function (x, i) {
+        var bh = max > 0 ? Math.max(x > 0 ? 2 : 0, Math.round((x / max) * h)) : 0;
+        return '<rect x="' + (i * w) + '" y="' + (h - bh) + '" width="' + (w - 1) + '" height="' + bh + '"></rect>';
+    }).join('');
+    return '<svg class="ops-spark-svg" viewBox="0 0 ' + (b.length * w) + ' ' + h + '" width="' + (b.length * w) + '" height="' + h + '"' +
+        ' role="img" aria-label="' + escapeHtml(label) + '">' + bars + '</svg>';
+}
+
+async function postOpsAttentionAction(action, body) {
+    var r = await fetch('/api/v1/ops/attention/' + action, {
+        method: 'POST',
+        headers: buildContextHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
+        body: JSON.stringify(body)
+    });
+    var json = null;
+    try { json = await r.json(); } catch (_e) { json = null; }
+    if (!r.ok || !json || json.ok !== true) {
+        var msg = json && json.error ? json.error : 'HTTP ' + r.status;
+        if (json && json.data && json.data.issues && json.data.issues.length) msg += ': ' + json.data.issues[0].message;
+        throw new Error(msg);
+    }
+    return json.data;
 }
 
 async function fetchOpsAttention(silentRefresh) {
@@ -29467,6 +29191,7 @@ async function fetchOpsAttention(silentRefresh) {
             view.data = body.data;
             view.error = null;
             view.lastOkAt = Date.now();
+            opsAttentionMaybeNotify(body.data); // VTID-04886
         }
     } catch (err) {
         view.error = (err && err.message) ? err.message : String(err);
@@ -29488,6 +29213,11 @@ async function fetchOpsAttention(silentRefresh) {
 function refreshOpsAttentionPanel() {
     var old = document.querySelector('.ops-attention');
     if (!old) return;
+    // VTID-04886: never wipe a reason the admin is typing; apply the poll on close.
+    if (state.opsAttention.actionForm) {
+        state.opsAttention.pendingRefresh = true;
+        return;
+    }
     old.replaceWith(renderOpsAttentionCockpit());
 }
 
@@ -29498,8 +29228,86 @@ function renderOpsAttentionCockpit() {
     wrap.setAttribute('aria-label', 'Supervisor cockpit');
     wrap.appendChild(renderOpsAttentionStatusBar(view, Date.now()));
     wrap.appendChild(renderOpsAttentionQueue(view));
+    wrap.appendChild(renderOpsAttentionTiles(view, Date.now()));
+    wrap.appendChild(renderOpsAttentionTimeline(view)); // VTID-04886
     wrap.addEventListener('click', handleOpsAttentionClick);
+    wrap.addEventListener('submit', handleOpsAttentionSubmit); // VTID-04886
     return wrap;
+}
+
+/** VTID-04886: the 24 h change & incident timeline (newest first). */
+function renderOpsAttentionTimeline(view) {
+    var data = view.data;
+    var tl = data && data.timeline;
+    var sec = document.createElement('section');
+    sec.className = 'ops-timeline';
+    sec.setAttribute('aria-label', 'Last 24 hours');
+    var html = '<h2 class="ops-tiles-title">Last 24 hours — changes &amp; incidents</h2>';
+    if (!tl) {
+        html += '<p class="ops-queue-empty">' + (view.fetched ? 'No timeline in this response.' : 'Loading the timeline…') + '</p>';
+    } else if (tl.error) {
+        html += '<p class="ops-queue-empty ops-queue-blind">Timeline unavailable (' + escapeHtml(tl.error) + ') — this is not a quiet day.</p>';
+    } else if (!tl.events.length) {
+        html += '<p class="ops-queue-empty">No deploys, verifications, rollbacks, self-heal escalations or kill-switch changes in 24 h.</p>';
+    } else {
+        html += '<ol class="ops-timeline-list">' + tl.events.map(function (e) {
+            return '<li class="ops-timeline-item ops-tone-' + escapeHtml(e.tone) + '">' +
+                '<span class="ops-timeline-at">' + escapeHtml(dashboardRelativeTime(e.at)) + '</span>' +
+                '<span class="ops-timeline-kind">' + escapeHtml(String(e.kind).replace('_', ' ')) + '</span>' +
+                '<span class="ops-timeline-title">' + escapeHtml(e.title) + '</span></li>';
+        }).join('') + '</ol>' +
+        (tl.truncated ? '<p class="ops-queue-empty">Showing the newest ' + tl.events.length + ' events.</p>' : '');
+    }
+    sec.innerHTML = html;
+    return sec;
+}
+
+/**
+ * VTID-04885: one tile per plan domain (data.domains, computed server-side
+ * from the same response as the queue): worst severity, open count, source
+ * freshness and a click-through to the domain's screen. A domain without an
+ * adapter says "Not yet monitored" and is not a link.
+ */
+function renderOpsAttentionTiles(view, nowMs) {
+    var st = computeOpsAttentionStatus(view, nowMs);
+    var data = view.data;
+    var domains = (data && Array.isArray(data.domains)) ? data.domains : [];
+    var sec = document.createElement('section');
+    sec.className = 'ops-tiles';
+    sec.setAttribute('aria-label', 'Domains');
+    var html = '<h2 class="ops-tiles-title">Domains</h2>';
+    if (!domains.length) {
+        html += '<p class="ops-queue-empty">' + (view.fetched ? 'No domain summary in this response — cockpit blind for domains.' : 'Loading domains…') + '</p>';
+        sec.innerHTML = html;
+        return sec;
+    }
+    html += '<ul class="ops-tile-grid">' + domains.map(function (d) {
+        var tv = opsAttentionTileView(d, st.blind);
+        var body =
+            '<span class="ops-tile-label">' + escapeHtml(d.label) + '</span>' +
+            '<span class="ops-tile-state ' + tv.cls + '"><span class="ops-sev-icon" aria-hidden="true">' + escapeHtml(tv.icon) + '</span> ' + escapeHtml(tv.label) + '</span>';
+        if (d.monitored) {
+            body +=
+                '<span class="ops-tile-count">' + (st.blind ? '?' : String(d.open)) + ' open</span>' +
+                '<span class="ops-tile-fresh">Sources fresh ' + (st.blind ? '?' : String(d.sources_fresh)) + '/' + String(d.sources_total) +
+                    (d.fetched_at && !st.blind ? ' · ' + escapeHtml(dashboardRelativeTime(d.fetched_at)) : '') + '</span>';
+        }
+        if (tv.note) body += '<span class="ops-tile-note">' + escapeHtml(tv.note) + '</span>';
+        if (d.not_wired && d.not_wired.length) {
+            body += '<span class="ops-tile-note">Not yet monitored: ' + d.not_wired.map(function (n) { return escapeHtml(n.id); }).join(', ') + '</span>';
+        }
+        if (!d.monitored) return '<li class="ops-tile ' + tv.cls + '"><div class="ops-tile-body">' + body + '</div></li>';
+        var dl = d.deeplink || {};
+        var section = NAVIGATION_CONFIG.find(function (s) { return s.section === dl.section; });
+        var tab = section ? (section.tabs.find(function (t) { return t.key === dl.tab; }) || section.tabs[0]) : null;
+        var href = (tab ? tab.path : (section ? section.basePath : '#')) + opsAttentionQueryString(dl.query);
+        return '<li class="ops-tile ' + tv.cls + '">' +
+            '<a class="ops-tile-body ops-tile-link" href="' + escapeHtml(href) + '" data-action="ops-attention-open"' +
+                ' data-section="' + escapeHtml(dl.section || '') + '" data-tab="' + escapeHtml(dl.tab || '') + '"' +
+                ' data-query="' + escapeHtml(JSON.stringify(dl.query || {})) + '">' + body + '</a></li>';
+    }).join('') + '</ul>';
+    sec.innerHTML = html;
+    return sec;
 }
 
 function renderOpsAttentionStatusBar(view, nowMs) {
@@ -29529,6 +29337,7 @@ function renderOpsAttentionStatusBar(view, nowMs) {
         '</div>' +
         '<div class="ops-status-meta">' +
             countChip('P1', counts.p1) + countChip('P2', counts.p2) + countChip('P3', counts.p3) +
+            (counts.hidden ? '<span class="ops-count ops-count-hidden">' + escapeHtml(String(counts.hidden)) + ' snoozed (hidden)</span>' : '') +
             '<span class="ops-sources">Sources fresh ' + (st.blind ? '?' : String(fresh)) + '/' + (sources.length ? String(sources.length) : '?') + '</span>' +
             '<span class="ops-generated">' + (data && data.generated_at
                 ? 'Generated ' + escapeHtml(dashboardRelativeTime(data.generated_at))
@@ -29537,7 +29346,24 @@ function renderOpsAttentionStatusBar(view, nowMs) {
                 escapeHtml(opsAttentionEnvLabel(env)) + '</span>' +
             '<button type="button" class="btn btn-sm ops-refresh" data-action="ops-attention-refresh"' +
                 (view.loading ? ' disabled' : '') + '>' + (view.loading ? 'Loading…' : 'Refresh') + '</button>' +
+            // VTID-04886: opt-in P1 browser notifications (off by default).
+            '<button type="button" class="btn btn-sm ops-refresh ops-notify" data-action="ops-attention-notify"' +
+                ' aria-pressed="' + (opsAttentionNotifyEnabled() ? 'true' : 'false') + '"' +
+                ' title="Browser notification when a new item reaches P1 (this browser only)">' +
+                'P1 alerts: ' + (opsAttentionNotifyEnabled() ? 'on' : 'off') + '</button>' +
         '</div>';
+    // VTID-04886: SLI sparklines derived from the 24 h timeline (only cheap series exist).
+    var sp = data && data.sparklines;
+    if (sp && Array.isArray(sp.series) && !st.blind) {
+        html += '<div class="ops-sparks">' + sp.series.map(function (x) {
+            return '<span class="ops-spark">' + escapeHtml(x.label) + ' ' +
+                opsAttentionSparkSvg(x.buckets, x.label + ' over 24 h, ' + x.total + ' in total') +
+                ' <strong>' + (sp.partial ? '&ge; ' : '') + escapeHtml(String(x.total)) + '</strong> in 24 h' +
+                (sp.partial ? ' <em class="ops-spark-partial">(partial: the day hit the read cap)</em>' : '') + '</span>';
+        }).join('') + '</div>';
+    } else if (data && data.sparklines === null && !st.blind) {
+        html += '<div class="ops-sparks ops-unknown-sources">Sparklines unavailable — the timeline could not be read.</div>';
+    }
     if (unknown.length && !st.blind) {
         html += '<div class="ops-unknown-sources">Unknown sources: ' + unknown.map(function (s) {
             return '<span class="ops-unknown-source">' + escapeHtml(s.id) +
@@ -29583,8 +29409,56 @@ function renderOpsAttentionQueue(view) {
         body = '<ol class="ops-queue-list">' + shown.map(renderOpsAttentionItemHtml).join('') + '</ol>';
     }
 
-    q.innerHTML = head + '<div class="ops-queue-body" aria-live="polite">' + body + '</div>';
+    // VTID-04886: snoozed items are listed (never silently dropped); an ack read failure is said.
+    var hidden = (data && Array.isArray(data.hidden)) ? data.hidden : [];
+    var extra = '';
+    if (data && data.acks_error) {
+        extra += '<p class="ops-queue-empty ops-queue-blind">Ack/snooze state unavailable (' + escapeHtml(data.acks_error) + ') — every item is shown.</p>';
+    }
+    if (hidden.length) {
+        extra += '<details class="ops-hidden"><summary>' + hidden.length + ' snoozed item(s) hidden until they expire</summary>' +
+            '<ul class="ops-hidden-list">' + hidden.map(function (h) {
+                var sev = OPS_ATTENTION_SEVERITY[h.severity] || OPS_ATTENTION_SEVERITY.P3;
+                return '<li class="ops-hidden-item"><span class="ops-sev ' + sev.cls + '"><span class="ops-sev-icon" aria-hidden="true">' + sev.icon + '</span> ' + escapeHtml(sev.label) + '</span> ' +
+                    '<span class="ops-item-title">' + escapeHtml(h.title) + '</span> ' +
+                    '<span class="ops-item-detail">until ' + escapeHtml(h.snoozed_until) + ' · ' + escapeHtml(h.reason) +
+                    (h.actor_email ? ' · by ' + escapeHtml(h.actor_email) : '') + '</span></li>';
+            }).join('') + '</ul></details>';
+    }
+    q.innerHTML = head + '<div class="ops-queue-body" aria-live="polite">' + body + '</div>' + extra;
     return q;
+}
+
+/** VTID-04886: Ack / Snooze controls and the inline reason form for one item. */
+function renderOpsAttentionItemActions(item) {
+    var form = state.opsAttention.actionForm;
+    var fp = escapeHtml(item.fingerprint || '');
+    if (form && form.fingerprint === item.fingerprint) {
+        var verb = form.action === 'snooze' ? 'Snooze' : 'Ack';
+        return '<form class="ops-action-form" data-fingerprint="' + fp + '" data-kind="' + escapeHtml(form.action) + '">' +
+            '<label class="ops-action-label">' + verb + ' reason (required)' +
+                '<textarea name="reason" required minlength="3" maxlength="500" rows="2"></textarea></label>' +
+            '<label class="ops-action-label">For' +
+                '<select name="duration_minutes">' + OPS_ATTENTION_DURATIONS.map(function (d) {
+                    return '<option value="' + d.minutes + '"' + (d.minutes === 60 ? ' selected' : '') + '>' + escapeHtml(d.label) + '</option>';
+                }).join('') + '</select></label>' +
+            '<label class="ops-action-label">VTID (optional)' +
+                '<input name="vtid" type="text" inputmode="text" pattern="VTID-[0-9]{4,5}" placeholder="VTID-01234"></label>' +
+            '<div class="ops-action-buttons">' +
+                '<button type="submit" class="btn btn-sm ops-action-btn"' + (form.busy ? ' disabled' : '') + '>' + (form.busy ? 'Saving…' : verb) + '</button>' +
+                '<button type="button" class="btn btn-sm ops-action-btn" data-action="ops-attention-cancel">Cancel</button>' +
+            '</div>' +
+            (form.error ? '<p class="ops-action-error" role="alert">' + escapeHtml(form.error) + '</p>' : '') +
+            '</form>';
+    }
+    var html = '<div class="ops-item-actions">' +
+        '<button type="button" class="btn btn-sm ops-action-btn" data-action="ops-attention-ack" data-fingerprint="' + fp + '">Ack</button>';
+    if (item.severity !== 'P1') {
+        html += '<button type="button" class="btn btn-sm ops-action-btn" data-action="ops-attention-snooze" data-fingerprint="' + fp + '">Snooze</button>';
+    } else {
+        html += '<span class="ops-action-note">P1 cannot be snoozed</span>';
+    }
+    return html + '</div>';
 }
 
 function renderOpsAttentionItemHtml(item) {
@@ -29593,7 +29467,12 @@ function renderOpsAttentionItemHtml(item) {
     var section = NAVIGATION_CONFIG.find(function (s) { return s.section === dl.section; });
     var tab = section ? (section.tabs.find(function (t) { return t.key === dl.tab; }) || section.tabs[0]) : null;
     var href = (tab ? tab.path : (section ? section.basePath : '#')) + opsAttentionQueryString(dl.query);
-    return '<li class="ops-item ' + sev.cls + '">' +
+    var ack = item.ack;
+    var ackNote = ack ? '<span class="ops-item-ack">' +
+        (item.snooze_overridden ? 'Snoozed, but it is P1 now — shown again' : 'Acked') +
+        (ack.actor_email ? ' by ' + escapeHtml(ack.actor_email) : '') + ' · ' + escapeHtml(ack.reason) +
+        (ack.vtid ? ' · ' + escapeHtml(ack.vtid) : '') + ' · until ' + escapeHtml(ack.expires_at) + '</span>' : '';
+    return '<li class="ops-item ' + sev.cls + (ack && ack.action === 'ack' ? ' ops-item-acked' : '') + '">' +
         '<a class="ops-item-link" href="' + escapeHtml(href) + '" data-action="ops-attention-open"' +
             ' data-section="' + escapeHtml(dl.section || '') + '" data-tab="' + escapeHtml(dl.tab || '') + '"' +
             ' data-query="' + escapeHtml(JSON.stringify(dl.query || {})) + '">' +
@@ -29608,7 +29487,7 @@ function renderOpsAttentionItemHtml(item) {
                 (item.count > 1 ? '<span class="ops-item-count">×' + escapeHtml(String(item.count)) + '</span>' : '') +
                 '<span class="ops-item-since">since ' + escapeHtml(dashboardRelativeTime(item.since)) + '</span>' +
             '</span>' +
-        '</a></li>';
+        '</a>' + ackNote + renderOpsAttentionItemActions(item) + '</li>';
 }
 
 function handleOpsAttentionClick(ev) {
@@ -29623,6 +29502,22 @@ function handleOpsAttentionClick(ev) {
         ev.preventDefault();
         state.opsAttention.domainFilter = el.getAttribute('data-domain') || 'all';
         refreshOpsAttentionPanel();
+    } else if (action === 'ops-attention-ack' || action === 'ops-attention-snooze') {
+        ev.preventDefault();
+        state.opsAttention.actionForm = {
+            fingerprint: el.getAttribute('data-fingerprint') || '',
+            action: action === 'ops-attention-snooze' ? 'snooze' : 'ack',
+            error: null, busy: false
+        };
+        rerenderOpsAttentionNow();
+        var ta = document.querySelector('.ops-action-form textarea');
+        if (ta) ta.focus();
+    } else if (action === 'ops-attention-cancel') {
+        ev.preventDefault();
+        closeOpsAttentionForm();
+    } else if (action === 'ops-attention-notify') {
+        ev.preventDefault();
+        toggleOpsAttentionNotify();
     } else if (action === 'ops-attention-open') {
         // Modified clicks keep the browser's own open-in-new-tab behaviour (real href).
         if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button === 1) return;
@@ -29630,6 +29525,67 @@ function handleOpsAttentionClick(ev) {
         var query = {};
         try { query = JSON.parse(el.getAttribute('data-query') || '{}'); } catch (_e) { query = {}; }
         openOpsAttentionDeeplink(el.getAttribute('data-section'), el.getAttribute('data-tab'), query);
+    }
+}
+
+/** VTID-04886: re-render the cockpit even while a form is open (the form's own changes). */
+function rerenderOpsAttentionNow() {
+    var old = document.querySelector('.ops-attention');
+    if (old) old.replaceWith(renderOpsAttentionCockpit());
+}
+
+function closeOpsAttentionForm() {
+    var view = state.opsAttention;
+    view.actionForm = null;
+    view.pendingRefresh = false;
+    rerenderOpsAttentionNow();
+}
+
+async function toggleOpsAttentionNotify() {
+    var on = !opsAttentionNotifyEnabled();
+    if (on) {
+        if (typeof window.Notification !== 'function') { showToast('This browser has no notifications', 'warning'); return; }
+        var perm = window.Notification.permission;
+        if (perm === 'default') {
+            try { perm = await window.Notification.requestPermission(); } catch (_e) { perm = 'denied'; }
+        }
+        if (perm !== 'granted') { showToast('Notifications are blocked for this site', 'warning'); return; }
+    }
+    if (!opsAttentionSetNotify(on)) { showToast('Cannot store the setting in this browser', 'warning'); return; }
+    // Only fingerprints that reach P1 AFTER this moment notify.
+    state.opsAttention.seenP1 = opsAttentionP1Set(state.opsAttention.data && state.opsAttention.data.items);
+    rerenderOpsAttentionNow();
+}
+
+async function handleOpsAttentionSubmit(ev) {
+    var formEl = ev.target && ev.target.closest ? ev.target.closest('.ops-action-form') : null;
+    if (!formEl) return;
+    ev.preventDefault();
+    var view = state.opsAttention;
+    var form = view.actionForm;
+    if (!form || form.busy) return;
+    var reason = (formEl.querySelector('[name="reason"]').value || '').trim();
+    var minutes = parseInt(formEl.querySelector('[name="duration_minutes"]').value, 10);
+    var vtid = (formEl.querySelector('[name="vtid"]').value || '').trim();
+    if (reason.length < 3) { form.error = 'A reason of at least 3 characters is required.'; rerenderOpsAttentionNow(); return; }
+    form.busy = true;
+    form.error = null;
+    var body = { fingerprint: form.fingerprint, reason: reason, duration_minutes: minutes };
+    if (vtid) body.vtid = vtid;
+    try {
+        var out = await postOpsAttentionAction(form.action, body);
+        showToast((form.action === 'snooze' ? 'Snoozed' : 'Acked') + ' until ' + out.expires_at, 'success');
+        view.actionForm = null;
+        view.pendingRefresh = false;
+        rerenderOpsAttentionNow();
+        fetchOpsAttention(true); // the server invalidated its cache: the next answer shows the ack
+    } catch (err) {
+        form.busy = false;
+        form.error = 'Not saved: ' + ((err && err.message) ? err.message : String(err));
+        var keep = reason;
+        rerenderOpsAttentionNow();
+        var ta = document.querySelector('.ops-action-form textarea');
+        if (ta) ta.value = keep;
     }
 }
 
@@ -29674,13 +29630,15 @@ function renderOverviewSystemView() {
 
     container.appendChild(renderOpsAttentionCockpit());
 
-    // The pre-Phase-1 panels (service health, ORB, deployments, events) stay
-    // available below, collapsed and rendered only when opened, until the
-    // Phase 2 domain tiles replace them.
+    // VTID-04887: of the pre-Phase-1 panels only two are kept, the ones no
+    // tile or adapter covers: grouped Service Health (every check; the
+    // Platform tile only summarises it) and Vitana Recommends (generate,
+    // activate, dismiss). The disclosure stays collapsed and is rendered,
+    // and fetched, only when opened.
     var details = document.createElement('details');
     details.className = 'ops-attention-legacy';
     var summary = document.createElement('summary');
-    summary.textContent = 'Detailed panels — service health, ORB, deployments, events';
+    summary.textContent = 'Service health and recommendations';
     details.appendChild(summary);
     if (state.opsAttention.legacyOpen) {
         details.open = true;
@@ -29697,293 +29655,21 @@ function renderOverviewSystemView() {
 }
 
 // VTID-04876: the pre-Phase-1 Overview panels, now rendered inside the
-// collapsed "Detailed panels" disclosure under the cockpit.
+// collapsed disclosure under the cockpit. VTID-04887: reduced to the grouped
+// Service Health panel (every check) and Vitana Recommends.
 function renderOverviewSystemPanels() {
     var container = document.createElement('div');
     container.className = 'overview-dashboard';
 
-    // Auto-fetch dashboard data
-    if (!state.overviewDashboard.fetched && !state.overviewDashboard.loading) {
-        fetchOverviewDashboard();
-    }
-    // Also fetch pipeline summary (needed for attention queue + metrics)
-    if (!state.overviewPipelineSummary.fetched && !state.overviewPipelineSummary.loading) {
-        fetchPipelineSummary();
-    }
-    // Trigger full 54-service health fetch if not yet populated (for grouped view)
+    // VTID-04887: grouped Service Health and Vitana Recommends are left. The
+    // domain tiles (VTID-04885), the queue and the timeline (VTID-04886)
+    // cover what the other panels showed — metrics grid, VTID attention, ORB,
+    // failures, deployments, attention center, live activity — so those are
+    // deleted. Every individual check, grouped, is not summarised anywhere
+    // else, and recommendations are acted on only here.
     if (!state.serviceHealth.fetched && !state.serviceHealth.loading) {
         fetchServiceHealth();
     }
-    // DEV-COMHU-03404: hourly rollup for the Operations tier sparklines
-    if (!state.overviewTimeseries.fetched && !state.overviewTimeseries.loading) {
-        fetchOverviewTimeseries();
-    }
-
-    // DEV-COMHU-03403: VTID pipeline attention (broken/stuck/blocked/new-ready)
-    // rendered as a second triage list directly under Action Required, instead
-    // of as disconnected "Stuck VTID" / "Attention Queue" counts further down
-    // the page that the supervisor had to notice and reconcile separately.
-    var vtidAttentionSection = renderVtidAttentionSection();
-    if (vtidAttentionSection) container.appendChild(vtidAttentionSection);
-
-    var db = state.overviewDashboard;
-
-    // ── Loading / Error banner (inline, non-blocking) ──
-    // Never block the full render — show whatever data is available immediately
-    // and overlay a small status bar while a fresh fetch is in progress.
-    if (db.loading && !db.fetched) {
-        // First-load: show a slim progress bar at the top but still render the
-        // dashboard frame so the layout is visible rather than a blank spinner.
-        var progressBanner = document.createElement('div');
-        progressBanner.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;' +
-            'background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.3);border-radius:6px;' +
-            'margin-bottom:0.75rem;font-size:0.8rem;color:#93c5fd;';
-        var pbSpinner = document.createElement('div');
-        pbSpinner.className = 'attention-spinner';
-        pbSpinner.style.cssText = 'width:14px;height:14px;min-width:14px;border-width:2px;';
-        progressBanner.appendChild(pbSpinner);
-        var pbText = document.createElement('span');
-        pbText.textContent = 'Loading dashboard data\u2026';
-        progressBanner.appendChild(pbText);
-        container.appendChild(progressBanner);
-        // Fall through — render the rest of the dashboard with empty/default values
-    }
-
-    // ── Error state (inline, non-blocking) ──
-    if (db.error && !db.fetched) {
-        var errorBanner = document.createElement('div');
-        errorBanner.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;' +
-            'background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);border-radius:6px;' +
-            'margin-bottom:0.75rem;font-size:0.8rem;color:#fca5a5;';
-        errorBanner.innerHTML = '\u26a0\ufe0f Dashboard fetch error: ' + (db.error || 'Unknown') + ' \u2014 ';
-        var retryBtn = document.createElement('button');
-        retryBtn.className = 'btn btn-sm';
-        retryBtn.style.cssText = 'padding:1px 8px;font-size:0.75rem;';
-        retryBtn.textContent = 'Retry';
-        retryBtn.onclick = function () {
-            state.overviewDashboard.fetched = false;
-            state.overviewDashboard.error = null;
-            fetchOverviewDashboard();
-        };
-        errorBanner.appendChild(retryBtn);
-        container.appendChild(errorBanner);
-        // Fall through — render the dashboard frame with whatever data exists
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // SECTION 2: Key Metrics Grid
-    // Layout owned by .overview-metrics-grid in styles.css.
-    // ═══════════════════════════════════════════════════════════════════════
-    var summary = state.overviewPipelineSummary.snapshot;
-    var deployRate = db.deploySuccessRate7d;
-    var orbStats = db.orbSessionStats;
-    var loopSt = db.loopStatus;
-
-    var uStats = db.userStats || { total: 0, active_now: 0, new_7d: 0 };
-
-    // Compute VTID counts from pipeline summary and deployments
-    var todayStr = new Date().toISOString().slice(0, 10);
-    var deploymentsToday = db.deployments.filter(function (d) {
-        return d.created_at && d.created_at.slice(0, 10) === todayStr;
-    }).length;
-    var newVtidToday = state.tasks.filter(function (t) {
-        return t.createdAt && t.createdAt.slice(0, 10) === todayStr;
-    }).length;
-    var failedVtid = summary && summary.funnel ? (summary.funnel.rejected || 0) + (summary.funnel.broken || 0) : 0;
-
-    // DEV-COMHU-03403: three hierarchy tiers instead of one flat 18-card wall.
-    // "Stuck VTID" / "Attention Queue" were removed from here — that data now
-    // renders as an actual triage list in renderVtidAttentionSection() above,
-    // where it's actionable, instead of as a count you had to notice and
-    // cross-reference against the Action Required panel yourself.
-
-    // TIER 1 — Operations: is the platform itself healthy right now.
-    var opsRow = [
-        {
-            value: deployRate && deployRate.rate !== null ? deployRate.rate + '%' : '—',
-            label: 'Deploy Success',
-            // VTID-04869: computed from the latest 50 cicd.deploy events, not 7 days.
-            subtitle: deployRate && deployRate.total > 0 ? deployRate.succeeded + '/' + deployRate.total + ' (last 50 deploy events)' : 'No data',
-            color: deployRate && deployRate.rate !== null ? metricColor(deployRate.rate, 80, 50) : 'neutral'
-        },
-        {
-            // VTID-04869: this is the latest (at most 30) status=error events,
-            // not a 24h count — labelled as what it is. A failed fetch shows
-            // a dash, never "No errors".
-            value: db.recentFailuresUnavailable ? '\u2014' : (db.recentFailures.length >= 30 ? '30+' : String(db.recentFailures.length)),
-            label: 'Errors (last 30)',
-            subtitle: db.recentFailuresUnavailable ? 'Fetch failed \u2014 unknown'
-                : (db.recentFailures.length > 0 ? 'Latest: ' + dashboardRelativeTime(db.recentFailures[0] && db.recentFailures[0].created_at) : 'None in the latest 30 events'),
-            color: db.recentFailuresUnavailable ? 'neutral' : metricColorInverse(db.recentFailures.length, 0, 5),
-            // DEV-COMHU-03404: hourly trend for the last 24h, same status=error
-            // series the headline count above is drawn from — so "5 errors"
-            // reads as either "falling" or "spiking" instead of a bare number.
-            sparkline: state.overviewTimeseries.series ? state.overviewTimeseries.series.errors : null
-        },
-        {
-            // VTID-04869: latest 50 violations, no time window; dash on fetch failure.
-            value: db.violationCount24h === null ? '\u2014' : (db.violationCount24h >= 50 ? '50+' : String(db.violationCount24h)),
-            label: 'Violations',
-            subtitle: db.violationCount24h === null ? 'Fetch failed \u2014 unknown' : 'Governance (last 50)',
-            color: db.violationCount24h === null ? 'neutral' : metricColorInverse(db.violationCount24h, 0, 3)
-        },
-        {
-            value: loopSt && loopSt.is_running ? 'Running' : (loopSt ? 'Stopped' : '—'),
-            label: 'Autopilot Loop',
-            subtitle: loopSt && loopSt.processed_1h ? loopSt.processed_1h + ' processed/h' : '',
-            color: loopSt ? (loopSt.is_running ? 'green' : 'red') : 'neutral'
-        },
-        {
-            value: summary && summary.workers_active !== undefined ? (summary.workers_active ? 'Active' : 'Inactive') : '—',
-            label: 'Workers',
-            subtitle: summary && summary.execution_armed ? 'Execution armed' : 'Execution off',
-            color: summary ? (summary.workers_active ? 'green' : 'red') : 'neutral'
-        },
-        {
-            value: summary && summary.success_rate !== undefined ? Math.round(summary.success_rate) + '%' : '—',
-            label: 'Automation Rate',
-            subtitle: '7d success rate',
-            color: summary ? metricColor(summary.success_rate, 80, 50) : 'neutral'
-        },
-        {
-            // VTID-04869: computed from the latest 50 vtid.live + 50 voice.live
-            // events, not 24h; no starts = dash, not a red 0%.
-            value: orbStats && orbStats.success_rate !== null ? orbStats.success_rate + '%' : '—',
-            label: 'ORB Sessions',
-            subtitle: orbStats ? orbStats.sessions_24h + ' starts (last 100 events)' : 'No data',
-            color: orbStats && orbStats.success_rate !== null ? metricColor(orbStats.success_rate, 80, 50) : 'neutral'
-        }
-    ];
-
-    // TIER 2 — VTID Pipeline: is work moving through the funnel.
-    var vtidRow = [
-        {
-            value: String(newVtidToday),
-            label: 'New VTID Today',
-            subtitle: 'Created today',
-            color: newVtidToday > 0 ? 'green' : 'neutral'
-        },
-        {
-            value: summary && summary.funnel ? String(summary.funnel.scheduled || 0) : '—',
-            label: 'Scheduled VTID',
-            subtitle: 'Awaiting execution',
-            color: 'neutral'
-        },
-        {
-            value: summary && summary.funnel ? String(summary.funnel.in_progress || 0) : '—',
-            label: 'In Progress VTID',
-            subtitle: 'Currently running',
-            color: summary && summary.funnel && summary.funnel.in_progress > 0 ? 'amber' : 'neutral'
-        },
-        {
-            value: summary && summary.funnel ? String(summary.funnel.completed || 0) : '—',
-            label: 'Tasks Completed',
-            // VTID-04869: the funnel count is all-time (query capped at 500), not 7 days.
-            subtitle: 'All time (max 500)',
-            color: summary && summary.funnel && summary.funnel.completed > 0 ? 'green' : 'neutral'
-        },
-        {
-            value: String(deploymentsToday),
-            label: 'Deploys Today',
-            subtitle: 'Deployments',
-            color: deploymentsToday > 0 ? 'green' : 'neutral'
-        },
-        {
-            value: String(failedVtid),
-            label: 'Failed VTID',
-            subtitle: 'Rejected/broken',
-            color: metricColorInverse(failedVtid, 0, 3)
-        }
-    ];
-
-    // TIER 3 — Community: product/growth signal, not an ops health signal.
-    // Visually de-emphasized (smaller cards) so it doesn't compete for
-    // attention with the two rows above.
-    var communityRow = [
-        {
-            value: String(uStats.total),
-            label: 'Registered Users',
-            subtitle: 'Total accounts',
-            color: 'neutral'
-        },
-        {
-            value: String(uStats.active_now),
-            label: 'Active Now',
-            subtitle: 'Last hour',
-            color: 'neutral'
-        },
-        {
-            value: String(uStats.new_7d),
-            label: 'New Users (7d)',
-            subtitle: 'Last 7 days',
-            color: 'neutral'
-        }
-    ];
-
-    // SVG icons for metric cards (Lucide/Feather style)
-    var metricIcons = {
-        'Deploy Success': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-5"/></svg>',
-        'ORB Sessions': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 19.07a10 10 0 010-14.14"/></svg>',
-        'Tasks Completed': '<svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 12l2 2 4-4"/></svg>',
-        'Automation Rate': '<svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
-        'Autopilot Loop': '<svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>',
-        'Workers': '<svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
-        'Registered Users': '<svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>',
-        'Active Now': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
-        'New Users (7d)': '<svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>',
-        'Errors (last 30)': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#ef4444"/><line x1="12" y1="8" x2="12" y2="12" stroke="#ef4444"/><line x1="12" y1="16" x2="12.01" y2="16" stroke="#ef4444"/></svg>',
-        'Violations': '<svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="#3b82f6"/><line x1="12" y1="8" x2="12" y2="12" stroke="#3b82f6"/><line x1="12" y1="16" x2="12.01" y2="16" stroke="#3b82f6"/></svg>',
-        'New VTID Today': '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>',
-        'Scheduled VTID': '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
-        'In Progress VTID': '<svg viewBox="0 0 24 24"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>',
-        'Deploys Today': '<svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>',
-        'Failed VTID': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#ef4444"/><line x1="15" y1="9" x2="9" y2="15" stroke="#ef4444"/><line x1="9" y1="9" x2="15" y2="15" stroke="#ef4444"/></svg>'
-    };
-
-    var sparklineColors = { green: '#10b981', amber: '#f59e0b', red: '#ef4444', neutral: '#94a3b8' };
-
-    function metricCardHTML(m, compact) {
-        var icon = metricIcons[m.label] || '';
-        var cardStyle = compact ? ' style="padding:0.55rem 0.5rem;"' : '';
-        var valueStyle = compact ? ' style="font-size:1.2rem;"' : '';
-        // DEV-COMHU-03404: sparkline only renders when the caller supplied real
-        // hourly data (m.sparkline) — no fabricated trend when the rollup
-        // hasn't loaded yet or a metric has no backing timeseries.
-        var spark = (!compact && m.sparkline) ? sparklineSVG(m.sparkline, sparklineColors[m.color] || sparklineColors.neutral) : '';
-        return '<div class="overview-metric-card"' + cardStyle + '>' +
-            (icon && !compact ? '<div class="metric-icon">' + icon + '</div>' : '') +
-            '<div class="metric-value metric-value-' + m.color + '"' + valueStyle + '>' + m.value + '</div>' +
-            '<div class="metric-label">' + m.label + '</div>' +
-            (m.subtitle ? '<div class="metric-subtitle">' + m.subtitle + '</div>' : '') +
-            spark +
-            '</div>';
-    }
-
-    // DEV-COMHU-03403: each tier gets its own label + grid instead of one flat
-    // 18-card wall, so Operations (what's broken) reads first, VTID Pipeline
-    // (what's moving) second, and Community (growth, not ops health) last and
-    // visually quieter.
-    function renderMetricsGroup(groupTitle, metrics, compact) {
-        var section = document.createElement('div');
-        section.style.cssText = 'grid-column:1 / -1;margin-bottom:0.6rem;';
-
-        var groupLabel = document.createElement('div');
-        groupLabel.style.cssText = 'font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;' +
-            'color:rgba(148,163,184,0.75);margin:0 0 0.35rem 0.1rem;';
-        groupLabel.textContent = groupTitle;
-        section.appendChild(groupLabel);
-
-        var grid = document.createElement('div');
-        grid.className = 'overview-metrics-grid';
-        if (compact) grid.style.opacity = '0.85';
-        grid.innerHTML = metrics.map(function (m) { return metricCardHTML(m, compact); }).join('');
-        section.appendChild(grid);
-        return section;
-    }
-
-    container.appendChild(renderMetricsGroup('Operations', opsRow, false));
-    container.appendChild(renderMetricsGroup('VTID Pipeline', vtidRow, false));
-    container.appendChild(renderMetricsGroup('Community', communityRow, true));
 
     // ═══════════════════════════════════════════════════════════════════════
     // SECTION 3: Service Health — Full-width grouped view (all 54 services)
@@ -29995,9 +29681,9 @@ function renderOverviewSystemPanels() {
     healthPanel.style.gridColumn = '1 / -1';
 
     // Use the full 54-service poll result when available; it has .group field
-    var allHealthServices = state.serviceHealth.fetched && state.serviceHealth.items.length > 0
-        ? state.serviceHealth.items
-        : db.healthChecks;
+    // VTID-04887: the registry poll is the only source (the old dashboard
+    // fetch that supplied a fallback list is gone with the other panels).
+    var allHealthServices = state.serviceHealth.items || [];
 
     var criticalOrder = ['Gateway', 'ORB Live', 'CI/CD', 'Autopilot', 'Execute Runner', 'Operator'];
     var sortedHealth = allHealthServices.slice().sort(function (a, b) {
@@ -30022,7 +29708,8 @@ function renderOverviewSystemPanels() {
     healthHeaderEl.setAttribute('aria-live', 'polite');
     var hdrSuffix = state.serviceHealth.loading ? ' <span class="overview-refreshing-tag">(refreshing\u2026)</span>' : '';
     healthHeaderEl.innerHTML = '<span class="overview-panel-title">Service Health</span>' +
-        '<span class="overview-count-badge overview-count-badge-' + (healthyCount === sortedHealth.length ? 'green' : 'amber') + '">' +
+        // VTID-04887: full class names, so the dead-CSS matcher sees them.
+        '<span class="overview-count-badge ' + (healthyCount === sortedHealth.length ? 'overview-count-badge-green' : 'overview-count-badge-amber') + '">' +
         healthyCount + '/' + sortedHealth.length + ' healthy</span>' + hdrSuffix;
     healthPanel.appendChild(healthHeaderEl);
 
@@ -30182,324 +29869,29 @@ function renderOverviewSystemPanels() {
     }
     container.appendChild(healthPanel);
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // SECTION 4: ORB Communication Panel (right column)
-    // ═══════════════════════════════════════════════════════════════════════
-    var orbPanel = document.createElement('div');
-    orbPanel.className = 'overview-orb-panel';
-    // VTID-04869: provider-neutral ORB card. Ready = the gateway's
-    // voice_runtime.healthy for the active provider (or the session counter
-    // proving it). No health block = UNKNOWN (grey), not "ORB BROKEN".
-    var orbKnown = !!(orbStats && (orbStats.runtime_known || orbStats.counter_proven_healthy));
-    var orbOk = !!(orbStats && (orbStats.runtime_healthy || orbStats.counter_proven_healthy));
+    // VTID-04887: the recommendations panel (see renderOverviewRecommendsPanel).
+    container.appendChild(renderOverviewRecommendsPanel());
 
-    var orbHeader = document.createElement('div');
-    orbHeader.className = 'overview-panel-title-row';
-    var orbDot = document.createElement('span');
-    orbDot.className = 'health-dot health-dot-' + (!orbKnown ? 'grey' : (orbOk ? 'green' : 'red'));
-    var orbTitleEl = document.createElement('span');
-    orbTitleEl.className = 'overview-panel-title';
-    orbTitleEl.style.margin = '0';
-    orbTitleEl.textContent = 'ORB Voice Communication';
-    orbHeader.appendChild(orbDot);
-    orbHeader.appendChild(orbTitleEl);
-    orbPanel.appendChild(orbHeader);
+    return container;
+}
 
-    // ORB-VOICE-HEALTH-PROBE: surface the actively-selected upstream provider
-    // (the same signal selectUpstreamProvider/resolveActiveProviderForCaller
-    // resolve at session connect time) so the card reflects runtime reality.
-    // VTID-04869: the provider string is shown exactly as the gateway
-    // reports it — never guessed, and never relabelled to a provider name
-    // the data does not carry.
-    var orbProvider = (orbStats && orbStats.runtime_provider) || 'unknown';
-    var orbRows = [
-        { label: 'Active provider', value: orbProvider, tone: 'muted' },
-        {
-            label: 'Runtime ready',
-            value: !orbKnown ? 'UNKNOWN' : (orbOk ? 'OK' : 'FAIL'),
-            tone: !orbKnown ? 'muted' : (orbOk ? 'ok' : 'fail'),
-            dot: !orbKnown ? 'grey' : (orbOk ? 'green' : 'red')
-        }
-    ];
-    if (orbStats && orbStats.runtime_provider_reason) {
-        orbRows.push({ label: 'Selection reason', value: orbStats.runtime_provider_reason, tone: 'muted' });
-    }
-    orbRows.forEach(function (cfg) {
-        var row = document.createElement('div');
-        row.className = 'orb-config-row';
-        if (cfg.dot) {
-            var cfgDot = document.createElement('span');
-            cfgDot.className = 'health-dot health-dot-' + cfg.dot;
-            row.appendChild(cfgDot);
-        }
-        var cfgLabel = document.createElement('span');
-        cfgLabel.className = 'orb-config-label';
-        cfgLabel.textContent = cfg.label;
-        var cfgVal = document.createElement('span');
-        // VTID-04869: tone via class, never an inline style (CSP gate).
-        cfgVal.className = 'orb-config-value orb-config-value-' + cfg.tone;
-        cfgVal.textContent = cfg.value;
-        row.appendChild(cfgLabel);
-        row.appendChild(cfgVal);
-        orbPanel.appendChild(row);
-    });
-
-    if (orbKnown && !orbOk) {
-        var alertBox = document.createElement('div');
-        alertBox.className = 'orb-alert';
-        alertBox.textContent = 'ORB voice runtime not ready (provider: ' + orbProvider + ')';
-        orbPanel.appendChild(alertBox);
-    }
-
-    // VTID-04869: counted from the latest 50 vtid.live + 50 voice.live
-    // events, not a 24h window — labelled as such.
-    var orbMetrics = [
-        { label: 'Starts (last 100 events)', value: orbStats ? String(orbStats.sessions_24h) : '\u2014' },
-        { label: 'Failures (last 100 events)', value: orbStats ? String(orbStats.failures_24h) : '\u2014', warn: orbStats && orbStats.failures_24h > 0 },
-        { label: 'Success Rate', value: orbStats && orbStats.success_rate !== null ? orbStats.success_rate + '%' : '\u2014' }
-    ];
-    orbMetrics.forEach(function (m) {
-        var row = document.createElement('div');
-        row.className = 'orb-metric-row';
-        var lbl = document.createElement('span');
-        lbl.textContent = m.label;
-        var val = document.createElement('span');
-        val.className = 'orb-metric-value';
-        if (m.warn) val.style.color = '#ef4444';
-        val.textContent = m.value;
-        row.appendChild(lbl);
-        row.appendChild(val);
-        orbPanel.appendChild(row);
-    });
-    container.appendChild(orbPanel);
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // SECTION 5: Recent Failures (left column, bottom)
-    // ═══════════════════════════════════════════════════════════════════════
-    var failPanel = document.createElement('div');
-    failPanel.className = 'overview-failures-panel';
-    var failHeader = document.createElement('div');
-    failHeader.className = 'overview-panel-title-row';
-    var failTitleEl = document.createElement('span');
-    failTitleEl.className = 'overview-panel-title';
-    failTitleEl.style.margin = '0';
-    // VTID-04869: latest 30 status=error events — no time window.
-    failTitleEl.textContent = 'Recent Failures (last 30)';
-    failHeader.appendChild(failTitleEl);
-    if (db.recentFailures.length > 0) {
-        var failBadge = document.createElement('span');
-        failBadge.className = 'overview-count-badge overview-count-badge-red';
-        failBadge.textContent = db.recentFailures.length;
-        failHeader.appendChild(failBadge);
-    }
-    failPanel.appendChild(failHeader);
-
-    if (db.recentFailuresUnavailable || (db.error && db.recentFailures.length === 0)) {
-        // VTID-04869: the fetch failed — say so instead of "no failures".
-        var failUnknown = document.createElement('div');
-        failUnknown.className = 'placeholder-content';
-        failUnknown.textContent = 'Could not load failure events \u2014 unknown, not zero.';
-        failPanel.appendChild(failUnknown);
-    } else if (!db.fetched) {
-        var failLoading = document.createElement('div');
-        failLoading.className = 'placeholder-content';
-        failLoading.textContent = 'Loading failure events\u2026';
-        failPanel.appendChild(failLoading);
-    } else if (db.recentFailures.length === 0) {
-        var noFail = document.createElement('div');
-        noFail.className = 'overview-no-failures';
-        noFail.textContent = 'No error events in the latest 30 OASIS events fetched';
-        failPanel.appendChild(noFail);
-    } else {
-        var failListWrap = document.createElement('div');
-        failListWrap.className = 'overview-list-wrap';
-        db.recentFailures.slice(0, 20).forEach(function (evt) {
-            var row = document.createElement('div');
-            row.className = 'failure-row';
-            var time = document.createElement('span');
-            time.className = 'failure-time';
-            time.textContent = evt.created_at ? new Date(evt.created_at).toLocaleString('de-DE', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '\u2014';
-            var topic = document.createElement('span');
-            topic.className = 'failure-topic';
-            topic.textContent = (evt.topic || '').replace(/^vtid\./, '').replace(/^cicd\./, '');
-            topic.title = evt.topic || '';
-            var msg = document.createElement('span');
-            msg.className = 'failure-message';
-            msg.textContent = evt.message || (evt.metadata && evt.metadata.message) || evt.status || '';
-            row.appendChild(time);
-            row.appendChild(topic);
-            row.appendChild(msg);
-            failListWrap.appendChild(row);
-        });
-        failPanel.appendChild(failListWrap);
-    }
-    container.appendChild(failPanel);
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // SECTION 6: Deployment History (right column, bottom)
-    // ═══════════════════════════════════════════════════════════════════════
-    var deployPanel = document.createElement('div');
-    deployPanel.className = 'overview-deploy-panel';
-    var deployHeader = document.createElement('div');
-    deployHeader.className = 'overview-panel-title-row';
-    var deployTitleEl = document.createElement('span');
-    deployTitleEl.className = 'overview-panel-title';
-    deployTitleEl.style.margin = '0';
-    deployTitleEl.textContent = 'Recent Deployments';
-    deployHeader.appendChild(deployTitleEl);
-    if (deployRate && deployRate.total > 0) {
-        var rateBadge = document.createElement('span');
-        rateBadge.className = 'overview-count-badge overview-count-badge-' + (deployRate.rate >= 80 ? 'green' : (deployRate.rate >= 50 ? 'amber' : 'red'));
-        rateBadge.textContent = deployRate.rate + '%';
-        deployHeader.appendChild(rateBadge);
-    }
-    deployPanel.appendChild(deployHeader);
-
-    if (db.deployments.length === 0) {
-        var noDep = document.createElement('div');
-        noDep.className = 'placeholder-content';
-        noDep.textContent = 'No recent deployments';
-        deployPanel.appendChild(noDep);
-    } else {
-        var deployListWrap = document.createElement('div');
-        deployListWrap.className = 'overview-list-wrap';
-        db.deployments.slice(0, 20).forEach(function (dep) {
-            var row = document.createElement('div');
-            row.className = 'deploy-row';
-            var depStatus = (dep.status || '').toLowerCase();
-            var isSuccess = depStatus === 'succeeded' || depStatus === 'success' || depStatus === 'deployed';
-            var depDot = document.createElement('span');
-            depDot.className = 'deploy-status-dot ' + (isSuccess ? 'deploy-status-dot-success' : 'deploy-status-dot-failed');
-            var depService = document.createElement('span');
-            depService.className = 'deploy-service';
-            // VTID-04869: no service on the row = 'unknown', never a made-up 'gateway'.
-            depService.textContent = dep.service || dep.service_name || 'unknown';
-            var depVersion = document.createElement('span');
-            depVersion.className = 'deploy-swv';
-            var ver = dep.version || dep.image_tag || dep.commit_sha || '';
-            depVersion.textContent = ver.length > 12 ? ver.substring(0, 12) : ver;
-            var depStatusEl = document.createElement('span');
-            depStatusEl.className = 'deploy-status-text';
-            depStatusEl.style.color = isSuccess ? '#10b981' : '#ef4444';
-            depStatusEl.textContent = dep.status || 'unknown';
-            var depTime = document.createElement('span');
-            depTime.className = 'deploy-time';
-            var depTs = dep.created_at || dep.deployed_at || dep.timestamp;
-            depTime.textContent = depTs ? new Date(depTs).toLocaleString('de-DE', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '\u2014';
-            row.appendChild(depDot);
-            row.appendChild(depService);
-            row.appendChild(depVersion);
-            row.appendChild(depStatusEl);
-            row.appendChild(depTime);
-            deployListWrap.appendChild(row);
-        });
-        deployPanel.appendChild(deployListWrap);
-    }
-    container.appendChild(deployPanel);
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // SECTION 7: Attention Center (full width)
-    // ═══════════════════════════════════════════════════════════════════════
-    var attQueue = (summary && summary.attention_queue) || [];
-    var attSection = document.createElement('div');
-    attSection.className = 'overview-attention-center';
-    var attHeader = document.createElement('div');
-    attHeader.className = 'overview-panel-title-row';
-    var attTitleEl = document.createElement('span');
-    attTitleEl.className = 'overview-panel-title';
-    attTitleEl.style.margin = '0';
-    attTitleEl.textContent = 'Attention Center';
-    attHeader.appendChild(attTitleEl);
-    if (attQueue.length > 0) {
-        var attBadge = document.createElement('span');
-        attBadge.className = 'overview-count-badge overview-count-badge-red';
-        attBadge.textContent = attQueue.length;
-        attHeader.appendChild(attBadge);
-    }
-    attSection.appendChild(attHeader);
-
-    var severityColors = { BROKEN: '#ef4444', STUCK: '#f59e0b', BLOCKED: '#6b7280', NEW: '#3b82f6' };
-
-    if (!summary) {
-        // VTID-04869: no pipeline summary = unknown, not "running smoothly".
-        var attUnknown = document.createElement('div');
-        attUnknown.className = 'placeholder-content';
-        attUnknown.textContent = state.overviewPipelineSummary.error
-            ? 'Pipeline summary unavailable (' + state.overviewPipelineSummary.error + ') \u2014 attention queue unknown.'
-            : 'Pipeline summary not loaded \u2014 attention queue unknown.';
-        attSection.appendChild(attUnknown);
-    } else if (attQueue.length === 0) {
-        var allClear = document.createElement('div');
-        allClear.className = 'overview-no-failures';
-        allClear.textContent = 'No tasks need immediate attention. Pipeline running smoothly.';
-        attSection.appendChild(allClear);
-    } else {
-        attQueue.slice(0, 3).forEach(function (item) {
-            var card = document.createElement('div');
-            card.className = 'attention-item';
-            card.style.borderLeftColor = severityColors[item.severity] || '#6b7280';
-            var topRow = document.createElement('div');
-            topRow.className = 'attention-item-top';
-            var badge = document.createElement('span');
-            badge.className = 'severity-badge';
-            badge.style.backgroundColor = severityColors[item.severity] || '#6b7280';
-            badge.textContent = item.severity;
-            var vtidEl = document.createElement('span');
-            vtidEl.className = 'attention-vtid';
-            vtidEl.textContent = item.vtid;
-            var titleSpan = document.createElement('span');
-            titleSpan.className = 'attention-title';
-            titleSpan.textContent = item.title || '';
-            topRow.appendChild(badge);
-            topRow.appendChild(vtidEl);
-            topRow.appendChild(titleSpan);
-            var bottomRow = document.createElement('div');
-            bottomRow.className = 'attention-item-bottom';
-            var reasonEl = document.createElement('span');
-            reasonEl.textContent = item.reason || '';
-            bottomRow.appendChild(reasonEl);
-            if (item.stuck_minutes) {
-                var timeEl = document.createElement('span');
-                timeEl.className = 'attention-time';
-                var mins = item.stuck_minutes;
-                timeEl.textContent = mins >= 60 ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm ago' : mins + 'm ago';
-                bottomRow.appendChild(timeEl);
-            }
-            card.style.cursor = 'pointer';
-            card.onclick = function () {
-                state.selectedTask = {
-                    vtid: item.vtid, title: item.title, status: item.status || 'scheduled',
-                    spec_status: item.spec_status || 'missing', summary: item.reason || '', oasisColumn: '',
-                    _attentionContext: { severity: item.severity, reason: item.reason, stuck_minutes: item.stuck_minutes }
-                };
-                state.selectedTaskDetail = null;
-                state.selectedTaskDetailLoading = true;
-                state.executionStatus = null;
-                state.executionStatusLoading = false;
-                renderApp();
-                fetchVtidDetail(item.vtid);
-            };
-            card.appendChild(topRow);
-            card.appendChild(bottomRow);
-            attSection.appendChild(card);
-        });
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // BOTTOM ROW: Attention Center + Vitana Recommends side by side
-    // ═══════════════════════════════════════════════════════════════════════
-    var bottomRowWrap = document.createElement('div');
-    bottomRowWrap.className = 'overview-bottom-row';
-    bottomRowWrap.appendChild(attSection);
-
-    var recs = (summary && summary.recommendations) || [];
+// VTID-04887: "Vitana Recommends" is the one pre-Phase-1 panel besides grouped
+// Service Health that no tile or adapter covers: it is where a supervisor
+// generates, activates and dismisses autopilot recommendations. It read the
+// pipeline summary's recommendations through the service-token route, which
+// always answered 401 in the browser, so it only ever said "No pending". It
+// now reads GET /api/v1/ops/pipeline-summary (exafy_admin, in-process
+// buildPipelineSummary()) and is fetched only while the disclosure is open.
+function renderOverviewRecommendsPanel() {
+    var view = state.overviewRecs;
+    if (!view.fetched && !view.loading) fetchOverviewRecommendations();
+    var recs = view.recommendations || [];
     var recsSection = document.createElement('div');
     recsSection.className = 'overview-recommends-panel';
     var recsHeader = document.createElement('div');
     recsHeader.className = 'overview-panel-title-row';
     var recsTitleEl = document.createElement('span');
-    recsTitleEl.className = 'overview-panel-title';
-    recsTitleEl.style.margin = '0';
+    recsTitleEl.className = 'overview-panel-title overview-recs-title';
     recsTitleEl.textContent = 'Vitana Recommends (' + recs.length + ')';
     recsHeader.appendChild(recsTitleEl);
 
@@ -30511,8 +29903,7 @@ function renderOverviewSystemPanels() {
         genBtn.textContent = 'Generating...';
         try {
             await fetch('/api/v1/autopilot/recommendations/generate', { method: 'POST', headers: buildContextHeaders({}) });
-            state.overviewPipelineSummary.fetched = false;
-            fetchPipelineSummary();
+            refreshOverviewRecommendations();
         } catch (err) {
             console.error('Failed to generate recommendations:', err);
         } finally {
@@ -30524,10 +29915,14 @@ function renderOverviewSystemPanels() {
     recsSection.appendChild(recsHeader);
 
     if (recs.length === 0) {
+        // VTID-04887: loading and a failed read are said as such, never "No pending".
         var noRecs = document.createElement('div');
-        noRecs.className = 'placeholder-content';
-        noRecs.style.fontSize = '0.85rem';
-        noRecs.textContent = 'No pending recommendations. Click "Generate New" to analyze the platform.';
+        noRecs.className = 'placeholder-content overview-recs-empty';
+        noRecs.textContent = view.error
+            ? 'Could not load recommendations (' + view.error + ').'
+            : (!view.fetched || view.loading)
+                ? 'Loading recommendations…'
+                : 'No pending recommendations. Click "Generate New" to analyze the platform.';
         recsSection.appendChild(noRecs);
     } else {
         recs.slice(0, 3).forEach(function (rec) {
@@ -30583,8 +29978,7 @@ function renderOverviewSystemPanels() {
                     });
                     var data = await resp.json();
                     if (data.ok) {
-                        state.overviewPipelineSummary.fetched = false;
-                        fetchPipelineSummary();
+                        refreshOverviewRecommendations();
                         await fetchTasks();
                         showToast(describeActivationOutcome(data), activationToastLevel(data));
                     } else {
@@ -30611,1193 +30005,54 @@ function renderOverviewSystemPanels() {
             card.appendChild(cardActions);
             if (state.autopilotDismissPickerFor === rec.id) {
                 card.appendChild(renderRecDismissPicker(rec, function () {
-                    state.overviewPipelineSummary.fetched = false;
-                    fetchPipelineSummary();
+                    refreshOverviewRecommendations();
                     renderApp();
                 }));
             }
             recsSection.appendChild(card);
         });
     }
-    bottomRowWrap.appendChild(recsSection);
-    container.appendChild(bottomRowWrap);
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // SECTION 8: Live Activity Feed (full width) — recent OASIS events
-    // Shows a compact stream of what the platform is doing right now so
-    // operators get a true "live overview" beyond the static metric cards.
-    // ═══════════════════════════════════════════════════════════════════════
-    var liveEvents = [];
-    // Combine deploy events + ORB events + failures for a mixed activity feed
-    if (db.deployEvents && db.deployEvents.length) {
-        db.deployEvents.slice(0, 10).forEach(function (e) { liveEvents.push({ type: 'deploy', data: e }); });
-    }
-    if (db.orbEvents && db.orbEvents.length) {
-        db.orbEvents.slice(0, 8).forEach(function (e) { liveEvents.push({ type: 'orb', data: e }); });
-    }
-    if (db.recentFailures && db.recentFailures.length) {
-        db.recentFailures.slice(0, 6).forEach(function (e) { liveEvents.push({ type: 'error', data: e }); });
-    }
-    // Sort combined feed by time descending
-    liveEvents.sort(function (a, b) {
-        var ta = new Date((a.data.created_at || 0)).getTime();
-        var tb = new Date((b.data.created_at || 0)).getTime();
-        return tb - ta;
-    });
-
-    if (liveEvents.length > 0) {
-        var livePanel = document.createElement('div');
-        livePanel.style.cssText = 'grid-column:1/-1;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);' +
-            'border-radius:8px;padding:12px 14px;';
-
-        var liveHdr = document.createElement('div');
-        liveHdr.className = 'overview-panel-title-row';
-        liveHdr.innerHTML = '<span class="overview-panel-title">Live Activity</span>' +
-            '<span class="overview-count-badge overview-count-badge-green">' + liveEvents.length + ' events</span>' +
-            '<a href="/command-hub/overview/recent-events/" data-action="overview-view-all-events" ' +
-            'style="margin-left:auto;font-size:0.75rem;color:#60a5fa;text-decoration:none;">View all \u2192</a>';
-        livePanel.appendChild(liveHdr);
-        // VTID-04869: delegated listener instead of an inline onclick string
-        // (CSP — no inline JS). The inline handler also wrote
-        // state.activeModule/activeTab, which the router never reads, so the
-        // link did nothing.
-        livePanel.addEventListener('click', function (ev) {
-            var target = ev.target && ev.target.closest ? ev.target.closest('[data-action="overview-view-all-events"]') : null;
-            if (!target) return;
-            ev.preventDefault();
-            navigateToScreen('overview', 'recent-events');
-        });
-
-        var liveTable = document.createElement('div');
-        liveTable.style.cssText = 'display:flex;flex-direction:column;gap:2px;max-height:220px;overflow-y:auto;';
-
-        liveEvents.slice(0, 20).forEach(function (ev) {
-            var e = ev.data;
-            var typeColors = { deploy: '#3b82f6', orb: '#8b5cf6', error: '#ef4444' };
-            var typeLabels = { deploy: 'DEPLOY', orb: 'ORB', error: 'ERROR' };
-            var row = document.createElement('div');
-            row.style.cssText = 'display:grid;grid-template-columns:52px 80px 1fr auto;align-items:center;gap:8px;' +
-                'padding:3px 6px;border-radius:4px;font-size:0.75rem;';
-            row.style.background = ev.type === 'error' ? 'rgba(239,68,68,0.06)' : 'transparent';
-
-            var tsEl = document.createElement('span');
-            tsEl.style.cssText = 'color:#6b7280;font-size:0.68rem;white-space:nowrap;';
-            var ts = e.created_at ? new Date(e.created_at) : null;
-            tsEl.textContent = ts ? (String(ts.getHours()).padStart(2,'0') + ':' + String(ts.getMinutes()).padStart(2,'0')) : '';
-
-            var typeEl = document.createElement('span');
-            typeEl.style.cssText = 'font-size:0.65rem;font-weight:700;color:' + (typeColors[ev.type] || '#9ca3af') +
-                ';background:' + (typeColors[ev.type] || '#9ca3af') + '22;padding:1px 5px;border-radius:3px;text-align:center;';
-            typeEl.textContent = typeLabels[ev.type] || ev.type.toUpperCase();
-
-            var msgEl = document.createElement('span');
-            msgEl.style.cssText = 'color:#d1d5db;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-            var msgText = e.topic || e.message || (e.metadata && e.metadata.message) || e.status || '';
-            msgEl.textContent = msgText;
-            msgEl.title = msgText;
-
-            var srcEl = document.createElement('span');
-            srcEl.style.cssText = 'color:#6b7280;font-size:0.68rem;white-space:nowrap;';
-            srcEl.textContent = e.source || e.service || '';
-
-            row.appendChild(tsEl);
-            row.appendChild(typeEl);
-            row.appendChild(msgEl);
-            row.appendChild(srcEl);
-            liveTable.appendChild(row);
-        });
-        livePanel.appendChild(liveTable);
-        container.appendChild(livePanel);
-    }
-
-    return container;
+    return recsSection;
 }
 
-// DEV-COMHU-03404: hourly rollup backing the Overview sparklines.
-async function fetchOverviewTimeseries(silentRefresh) {
-    if (state.overviewTimeseries.loading) return;
-    var isInitialLoad = !state.overviewTimeseries.fetched;
-    state.overviewTimeseries.loading = true;
-    state.overviewTimeseries.error = null;
-    if (isInitialLoad && !silentRefresh) renderApp();
-
+async function fetchOverviewRecommendations(fresh) {
+    var view = state.overviewRecs;
+    if (view.loading) return;
+    view.loading = true;
     try {
-        var r = await fetchWT('/api/v1/ops/overview-timeseries', {
-            headers: (typeof buildContextHeaders === 'function') ? buildContextHeaders({ Accept: 'application/json' }) : { Accept: 'application/json' }
-        });
-        if (!r.ok) {
-            state.overviewTimeseries.error = 'HTTP ' + r.status;
+        var r = await fetchWT('/api/v1/ops/pipeline-summary' + (fresh ? '?fresh=1' : ''), {
+            headers: buildContextHeaders({ Accept: 'application/json' })
+        }, 15000);
+        var body = null;
+        try { body = await r.json(); } catch (_e) { body = null; }
+        if (!r.ok || !body || body.ok !== true) {
+            view.error = 'HTTP ' + r.status + (body && body.error ? ' ' + body.error : '');
         } else {
-            var body = await r.json();
-            state.overviewTimeseries.series = body.series || null;
+            view.recommendations = Array.isArray(body.recommendations) ? body.recommendations : [];
+            view.error = null;
         }
     } catch (err) {
-        state.overviewTimeseries.error = (err && err.message) ? err.message : String(err);
-    }
-    state.overviewTimeseries.lastRefreshed = new Date().toISOString();
-    state.overviewTimeseries.loading = false;
-    state.overviewTimeseries.fetched = true;
-    // VTID-03917: parity with fetchServiceHealth/fetchActionRequired — no
-    // caller currently passes silentRefresh=true here, but if one ever
-    // does, it must not trigger a full-app renderApp() rebuild either.
-    // State is already updated above; a silent caller picks it up on the
-    // next natural render instead of forcing one.
-    // VTID-04869: real router keys (currentModuleKey/currentTab).
-    if (state.currentModuleKey === 'overview' && state.currentTab === 'system-overview' && !silentRefresh) {
-        renderApp();
-    }
-}
-
-// DEV-COMHU-03404: tiny inline-SVG sparkline — no chart library, respects the
-// "bundle JS locally / no CDNs" rule for free since it's just a <polyline>.
-// Renders as an HTML string so it slots into metricCardHTML's innerHTML build.
-function sparklineSVG(values, color) {
-    if (!Array.isArray(values) || values.length < 2) return '';
-    var w = 100, h = 24;
-    var max = Math.max.apply(null, values.concat([1])); // avoid /0 on all-zero series
-    var step = w / (values.length - 1);
-    var points = values.map(function (v, i) {
-        var x = i * step;
-        var y = h - (v / max) * (h - 3) - 1.5;
-        return x.toFixed(1) + ',' + y.toFixed(1);
-    }).join(' ');
-    return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" ' +
-        'style="display:block;width:100%;height:20px;margin-top:4px;">' +
-        '<polyline points="' + points + '" fill="none" stroke="' + color + '" stroke-width="1.5" ' +
-        'stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/></svg>';
-}
-
-// DEV-COMHU-03403: renders the same VTID pipeline attention_queue that used to
-// power the standalone "Stuck VTID" / "Attention Queue" metric cards, as a
-// second triage list under renderActionRequiredPanel(). Distinct data source
-// (autopilot pipeline summary, not ops-action-required) so it gets its own
-// header rather than being silently merged into the panel above — but same
-// visual language, so the two read as one coherent "what needs me" surface
-// instead of a banner plus two disconnected numbers elsewhere on the page.
-function renderVtidAttentionSection() {
-    var summary = state.overviewPipelineSummary.snapshot;
-    var queue = summary && Array.isArray(summary.attention_queue) ? summary.attention_queue : [];
-    if (queue.length === 0) return null;
-
-    var wrapper = document.createElement('div');
-    wrapper.style.cssText = 'margin-bottom:0.85rem;border-radius:8px;overflow:hidden;border:1px solid rgba(245,158,11,0.35);' +
-        'background:rgba(15,23,42,0.35);';
-
-    var header = document.createElement('div');
-    header.style.cssText = 'display:flex;align-items:center;gap:0.65rem;padding:0.65rem 0.95rem;font-size:0.9rem;';
-    var icon = document.createElement('span');
-    icon.style.cssText = 'font-size:1.05rem;';
-    icon.textContent = '🔧';
-    var title = document.createElement('strong');
-    title.style.cssText = 'color:#fcd34d;';
-    title.textContent = 'VTID Pipeline — ' + queue.length + ' item' + (queue.length === 1 ? '' : 's') + ' need attention';
-    header.appendChild(icon);
-    header.appendChild(title);
-    wrapper.appendChild(header);
-
-    var list = document.createElement('div');
-    list.style.cssText = 'display:flex;flex-direction:column;gap:0.4rem;padding:0 0.95rem 0.85rem 0.95rem;';
-    queue.slice(0, 10).forEach(function (item) {
-        list.appendChild(renderVtidAttentionCard(item));
-    });
-    if (queue.length > 10) {
-        var moreLine = document.createElement('div');
-        moreLine.style.cssText = 'padding:0.45rem 0.55rem;font-size:0.74rem;color:rgba(229,231,235,0.65);text-align:center;font-style:italic;';
-        moreLine.textContent = 'Showing top 10 of ' + queue.length + ' items — see VTID Ledger for the full list';
-        list.appendChild(moreLine);
-    }
-    wrapper.appendChild(list);
-    return wrapper;
-}
-
-function renderVtidAttentionCard(item) {
-    var sevStyles = {
-        BROKEN: { bg: 'rgba(239,68,68,0.25)', fg: '#fca5a5' },
-        STUCK: { bg: 'rgba(245,158,11,0.22)', fg: '#fcd34d' },
-        BLOCKED: { bg: 'rgba(249,115,22,0.22)', fg: '#fdba74' },
-        NEW: { bg: 'rgba(99,102,241,0.20)', fg: '#a5b4fc' }
-    };
-    var sev = sevStyles[item.severity] || sevStyles.STUCK;
-
-    var card = document.createElement('a');
-    card.href = '#';
-    card.style.cssText = 'display:flex;flex-direction:column;gap:0.2rem;padding:0.55rem 0.85rem;' +
-        'background:rgba(15,23,42,0.55);border:1px solid rgba(255,255,255,0.08);border-radius:6px;' +
-        'text-decoration:none;color:inherit;cursor:pointer;transition:background 120ms ease;';
-    card.onmouseenter = function () { card.style.background = 'rgba(15,23,42,0.85)'; };
-    card.onmouseleave = function () { card.style.background = 'rgba(15,23,42,0.55)'; };
-    // DEV-COMHU-2025-0008's OASIS VTID Ledger view already owns the detail
-    // drawer for a single VTID (fetchOasisVtidDetail); reuse it instead of
-    // inventing a new drilldown surface.
-    card.onclick = function (e) {
-        e.preventDefault();
-        // VTID-04869: real router keys via navigateToScreen (the old
-        // state.activeModule/activeTab writes never navigated anywhere).
-        navigateToScreen('oasis', 'vtid-ledger');
-        fetchOasisVtidDetail(item.vtid);
-    };
-
-    var topRow = document.createElement('div');
-    topRow.style.cssText = 'display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;';
-
-    var sevBadge = document.createElement('span');
-    sevBadge.style.cssText = 'display:inline-block;padding:1px 7px;border-radius:3px;font-size:0.7rem;font-weight:600;' +
-        'letter-spacing:0.04em;text-transform:uppercase;background:' + sev.bg + ';color:' + sev.fg + ';';
-    sevBadge.textContent = (item.severity || 'stuck').toLowerCase();
-    topRow.appendChild(sevBadge);
-
-    var vtidBadge = document.createElement('span');
-    vtidBadge.style.cssText = 'display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.68rem;font-weight:500;' +
-        'background:rgba(255,255,255,0.06);color:rgba(229,231,235,0.75);font-family:monospace;';
-    vtidBadge.textContent = item.vtid || '';
-    topRow.appendChild(vtidBadge);
-
-    var titleEl = document.createElement('strong');
-    titleEl.style.cssText = 'flex:1;color:#f3f4f6;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-    titleEl.textContent = item.title || item.vtid || '';
-    topRow.appendChild(titleEl);
-
-    if (item.stuck_minutes !== undefined && item.stuck_minutes !== null) {
-        var age = document.createElement('span');
-        age.style.cssText = 'font-size:0.7rem;color:rgba(229,231,235,0.55);white-space:nowrap;';
-        age.textContent = item.stuck_minutes + 'm';
-        topRow.appendChild(age);
-    }
-    card.appendChild(topRow);
-
-    if (item.reason) {
-        var reason = document.createElement('div');
-        reason.style.cssText = 'font-size:0.78rem;color:rgba(229,231,235,0.78);line-height:1.4;';
-        reason.textContent = item.reason;
-        card.appendChild(reason);
-    }
-    return card;
-}
-
-// ---------------------------------------------------------------------------
-// 2b. fetchPipelineSummary — GET /api/v1/autopilot/pipeline/summary
-// ---------------------------------------------------------------------------
-async function fetchPipelineSummary() {
-    if (state.overviewPipelineSummary.loading) return;
-    var isInitialLoad = !state.overviewPipelineSummary.fetched;
-    state.overviewPipelineSummary.loading = true;
-    state.overviewPipelineSummary.error = null;
-    if (isInitialLoad) renderApp();
-
-    try {
-        // VTID-03925: attaching the user's bearer token for consistency with
-        // every sibling fetch in this file — but note this does NOT actually
-        // make the call succeed. /api/v1/autopilot/* is gated by
-        // requireServiceToken (routes/autopilot.ts), which checks the bearer
-        // token against process.env.GATEWAY_SERVICE_TOKEN, an internal
-        // service-to-service secret — never a user session token, by design
-        // (VTID-03598 locked this router down specifically because it used
-        // to have NO auth at all). The browser can never legitimately hold
-        // that secret, so this endpoint will keep 401ing for the Command Hub
-        // regardless of headers. That's a real backend routing gap (this
-        // read-only dashboard endpoint needs a user/admin-auth exemption
-        // similar to the existing /health path exemptions) — flagged, not
-        // fixed here, since it needs a deliberate, reviewed backend change,
-        // not a silent frontend workaround. The header is still attached
-        // (harmless, matches the established pattern) in case that gap is
-        // closed later.
-        var headers = (typeof buildContextHeaders === 'function') ? buildContextHeaders({ Accept: 'application/json' }) : { Accept: 'application/json' };
-        var response = await fetchWT('/api/v1/autopilot/pipeline/summary', { headers: headers }, 12000);
-        if (!response.ok) throw new Error('Pipeline summary fetch failed: ' + response.status);
-
-        var data = await response.json();
-        state.overviewPipelineSummary.snapshot = data;
-        state.overviewPipelineSummary.error = null;
-        console.log('[Pipeline] Summary loaded');
-    } catch (error) {
-        console.error('[Pipeline] Failed to fetch summary:', error);
-        state.overviewPipelineSummary.error = error.message;
+        view.error = (err && err.message) || String(err);
     } finally {
-        state.overviewPipelineSummary.loading = false;
-        // VTID-03925: `fetched` must be set unconditionally here, matching
-        // every sibling fetcher in this file (fetchActionRequired,
-        // fetchServiceHealth, ...). It used to be set ONLY inside the try
-        // block on success, so a failure (the 401 above, or any other
-        // transient error) left `fetched` false forever. renderOverviewSystemView()
-        // re-triggers this fetch on every render while `!fetched`, and this
-        // function's own isInitialLoad branch calls renderApp() on both
-        // entry and exit while `!fetched` — so a persistent failure produced
-        // a tight, self-sustaining fetch -> render -> fetch loop that pegged
-        // the browser (reported live as the whole Overview screen freezing,
-        // with hundreds of repeating 401s in the console within seconds).
-        state.overviewPipelineSummary.fetched = true;
-        if (isInitialLoad) {
-            renderApp();
-        }
+        // Always marked fetched (VTID-03925): a persistent failure must not
+        // re-trigger the fetch on every render.
+        view.loading = false;
+        view.fetched = true;
+        rerenderOverviewRecommends();
     }
 }
 
-// ---------------------------------------------------------------------------
-// 3. fetchOverviewMetrics — GET /api/v1/operator/heartbeat
-// ---------------------------------------------------------------------------
-async function fetchOverviewMetrics() {
-    if (state.overviewMetrics.loading) return;
-    var isInitialLoad = !state.overviewMetrics.fetched;
-    state.overviewMetrics.loading = true;
-    state.overviewMetrics.error = null;
-    if (isInitialLoad) renderApp();
-
-    try {
-        var response = await fetch('/api/v1/operator/heartbeat');
-        if (!response.ok) throw new Error('Heartbeat fetch failed: ' + response.status);
-
-        var data = await response.json();
-        state.overviewMetrics.snapshot = data.data || data;
-        state.overviewMetrics.fetched = true;
-        state.overviewMetrics.error = null;
-        console.log('[VTID-01240] Overview metrics loaded');
-    } catch (error) {
-        console.error('[VTID-01240] Failed to fetch overview metrics:', error);
-        state.overviewMetrics.error = error.message;
-    } finally {
-        state.overviewMetrics.loading = false;
-        if (isInitialLoad) {
-            renderApp();
-        }
-    }
+function refreshOverviewRecommendations() {
+    // Called after activate/dismiss/generate: bypass the 15 s server cache so
+    // the panel never shows the pre-mutation list.
+    state.overviewRecs.fetched = false;
+    fetchOverviewRecommendations(true);
 }
 
-// ---------------------------------------------------------------------------
-// 4. renderOverviewLiveMetricsView — Pipeline Dashboard (replaced heartbeat)
-// ---------------------------------------------------------------------------
-function renderOverviewLiveMetricsView() {
-    var container = document.createElement('div');
-    container.className = 'pipeline-dashboard-container';
-
-    // Auto-fetch pipeline summary
-    if (!state.overviewPipelineSummary.fetched && !state.overviewPipelineSummary.loading) {
-        fetchPipelineSummary();
-    }
-
-    // Loading — VTID-01239: animated spinner
-    if (state.overviewPipelineSummary.loading && !state.overviewPipelineSummary.snapshot) {
-        var spinnerWrap = document.createElement('div');
-        spinnerWrap.className = 'attention-spinner-container';
-        var spinner = document.createElement('div');
-        spinner.className = 'attention-spinner';
-        spinnerWrap.appendChild(spinner);
-        var spinText = document.createElement('div');
-        spinText.className = 'attention-spinner-text';
-        spinText.textContent = 'Loading pipeline dashboard\u2026';
-        spinnerWrap.appendChild(spinText);
-        container.appendChild(spinnerWrap);
-        return container;
-    }
-
-    // Error
-    if (state.overviewPipelineSummary.error) {
-        var errorDiv = document.createElement('div');
-        errorDiv.className = 'placeholder-content error-text';
-        errorDiv.textContent = 'Error: ' + state.overviewPipelineSummary.error;
-        container.appendChild(errorDiv);
-        return container;
-    }
-
-    var summary = state.overviewPipelineSummary.snapshot;
-    if (!summary || !summary.ok) {
-        var emptyDiv = document.createElement('div');
-        emptyDiv.className = 'placeholder-content';
-        emptyDiv.textContent = 'No pipeline data available.';
-        container.appendChild(emptyDiv);
-        return container;
-    }
-
-    // Header
-    var header = document.createElement('div');
-    header.className = 'list-toolbar';
-    var title = document.createElement('span');
-    title.className = 'toolbar-title';
-    title.textContent = 'Pipeline Dashboard';
-    header.appendChild(title);
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn btn-sm';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function () {
-        state.overviewPipelineSummary.fetched = false;
-        fetchPipelineSummary();
-    };
-    header.appendChild(refreshBtn);
-    container.appendChild(header);
-
-    var funnel = summary.funnel || {};
-
-    // ── A. Pipeline Funnel ──
-    var funnelSection = document.createElement('div');
-    funnelSection.className = 'pipeline-funnel';
-
-    var funnelStages = [
-        { key: 'scheduled', label: 'Scheduled', color: '#3b82f6' },
-        { key: 'in_progress', label: 'In Progress', color: '#f59e0b' },
-        { key: 'completed', label: 'Completed', color: '#10b981' }
-    ];
-
-    funnelStages.forEach(function (stage, idx) {
-        var stageEl = document.createElement('div');
-        stageEl.className = 'funnel-stage';
-        stageEl.style.borderTopColor = stage.color;
-
-        var countEl = document.createElement('div');
-        countEl.className = 'funnel-count';
-        countEl.textContent = String(funnel[stage.key] || 0);
-        countEl.style.color = stage.color;
-
-        var labelEl = document.createElement('div');
-        labelEl.className = 'funnel-label';
-        labelEl.textContent = stage.label;
-
-        stageEl.appendChild(countEl);
-        stageEl.appendChild(labelEl);
-        funnelSection.appendChild(stageEl);
-
-        // Arrow between stages
-        if (idx < funnelStages.length - 1) {
-            var arrow = document.createElement('div');
-            arrow.className = 'funnel-arrow';
-            arrow.textContent = '\u2192';
-            funnelSection.appendChild(arrow);
-        }
-    });
-
-    container.appendChild(funnelSection);
-
-    // Sub-counts: stuck, broken, rejected
-    var subCounts = document.createElement('div');
-    subCounts.className = 'funnel-sub-counts';
-
-    var subItems = [
-        { label: 'Broken', count: funnel.broken || 0, color: '#ef4444' },
-        { label: 'Stuck', count: funnel.stuck || 0, color: '#f59e0b' },
-        { label: 'Rejected', count: funnel.rejected || 0, color: '#6b7280' }
-    ];
-
-    subItems.forEach(function (item) {
-        var badge = document.createElement('span');
-        badge.className = 'funnel-sub-badge';
-        badge.style.color = item.color;
-        badge.style.borderColor = item.color;
-        badge.textContent = item.label + ': ' + item.count;
-        subCounts.appendChild(badge);
-    });
-
-    container.appendChild(subCounts);
-
-    // ── B. Entry Point Breakdown + Health Strip (side by side) ──
-    var middleRow = document.createElement('div');
-    middleRow.className = 'pipeline-middle-row';
-
-    // Entry points
-    var epSection = document.createElement('div');
-    epSection.className = 'pipeline-entry-points';
-
-    var epTitle = document.createElement('div');
-    epTitle.className = 'section-title';
-    epTitle.textContent = 'Task Sources (7 days)';
-    epSection.appendChild(epTitle);
-
-    var epGrid = document.createElement('div');
-    epGrid.className = 'entry-point-grid';
-
-    var entryPoints = summary.entry_points || {};
-    var epConfig = [
-        { key: 'command-hub', label: 'Command Hub', icon: '\u2318' },
-        { key: 'orb', label: 'ORB Voice', icon: '\u{1F399}' },
-        { key: 'operator', label: 'Operator Chat', icon: '\u{1F4AC}' },
-        { key: 'email-intake', label: 'Email', icon: '\u2709' },
-        { key: 'system', label: 'System', icon: '\u2699' }
-    ];
-
-    epConfig.forEach(function (ep) {
-        var card = document.createElement('div');
-        card.className = 'entry-point-card';
-
-        var iconEl = document.createElement('span');
-        iconEl.className = 'ep-icon';
-        iconEl.textContent = ep.icon;
-
-        var countEl = document.createElement('span');
-        countEl.className = 'ep-count';
-        countEl.textContent = String(entryPoints[ep.key] || 0);
-
-        var labelEl = document.createElement('span');
-        labelEl.className = 'ep-label';
-        labelEl.textContent = ep.label;
-
-        card.appendChild(iconEl);
-        card.appendChild(countEl);
-        card.appendChild(labelEl);
-        epGrid.appendChild(card);
-    });
-
-    epSection.appendChild(epGrid);
-    middleRow.appendChild(epSection);
-
-    // ── C. Pipeline Health Strip ──
-    var healthSection = document.createElement('div');
-    healthSection.className = 'pipeline-health-strip';
-
-    var healthTitle = document.createElement('div');
-    healthTitle.className = 'section-title';
-    healthTitle.textContent = 'Pipeline Health';
-    healthSection.appendChild(healthTitle);
-
-    var healthItems = [
-        { label: 'Loop Running', ok: summary.loop_running },
-        { label: 'Execution Armed', ok: summary.execution_armed },
-        { label: 'Workers Active', ok: summary.workers_active }
-    ];
-
-    healthItems.forEach(function (item) {
-        var row = document.createElement('div');
-        row.className = 'health-strip-item';
-
-        var dot = document.createElement('span');
-        dot.className = 'health-dot ' + (item.ok ? 'health-dot-green' : 'health-dot-red');
-
-        var label = document.createElement('span');
-        label.className = 'health-strip-label';
-        label.textContent = item.label;
-
-        row.appendChild(dot);
-        row.appendChild(label);
-        healthSection.appendChild(row);
-    });
-
-    // Success rate
-    var rateRow = document.createElement('div');
-    rateRow.className = 'success-rate-row';
-
-    var rateLabel = document.createElement('span');
-    rateLabel.className = 'health-strip-label';
-    rateLabel.textContent = 'Success Rate (7d)';
-
-    var rateValue = document.createElement('span');
-    rateValue.className = 'success-rate-value';
-    var rate = summary.success_rate || 0;
-    rateValue.textContent = rate + '%';
-    rateValue.style.color = rate >= 80 ? '#10b981' : (rate >= 50 ? '#f59e0b' : '#ef4444');
-
-    rateRow.appendChild(rateLabel);
-    rateRow.appendChild(rateValue);
-    healthSection.appendChild(rateRow);
-
-    middleRow.appendChild(healthSection);
-    container.appendChild(middleRow);
-
-    // ── D. Attention Required ──
-    var attQueue = summary.attention_queue || [];
-    if (attQueue.length > 0) {
-        var attSection = document.createElement('div');
-        attSection.className = 'pipeline-attention-section';
-
-        var attTitle = document.createElement('div');
-        attTitle.className = 'section-title';
-        attTitle.textContent = 'Needs Attention (' + attQueue.length + ')';
-        attSection.appendChild(attTitle);
-
-        var severityColors = { BROKEN: '#ef4444', STUCK: '#f59e0b', BLOCKED: '#6b7280', NEW: '#3b82f6' };
-
-        attQueue.slice(0, 8).forEach(function (item) {
-            var card = document.createElement('div');
-            card.className = 'attention-item';
-            card.style.borderLeftColor = severityColors[item.severity] || '#6b7280';
-
-            var topRow = document.createElement('div');
-            topRow.className = 'attention-item-top';
-
-            var badge = document.createElement('span');
-            badge.className = 'severity-badge';
-            badge.style.backgroundColor = severityColors[item.severity] || '#6b7280';
-            badge.textContent = item.severity;
-
-            var vtidEl = document.createElement('span');
-            vtidEl.className = 'attention-vtid';
-            vtidEl.textContent = item.vtid;
-
-            var titleEl = document.createElement('span');
-            titleEl.className = 'attention-title';
-            titleEl.textContent = item.title || '';
-
-            topRow.appendChild(badge);
-            topRow.appendChild(vtidEl);
-            topRow.appendChild(titleEl);
-
-            var bottomRow = document.createElement('div');
-            bottomRow.className = 'attention-item-bottom';
-            bottomRow.textContent = item.reason || '';
-
-            if (item.stuck_minutes) {
-                var timeEl = document.createElement('span');
-                timeEl.className = 'attention-time';
-                var mins = item.stuck_minutes;
-                timeEl.textContent = mins >= 60 ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm' : mins + 'm';
-                bottomRow.appendChild(timeEl);
-            }
-
-            card.appendChild(topRow);
-            card.appendChild(bottomRow);
-
-            card.style.cursor = 'pointer';
-            // VTID-04869: navigateTo() was never defined — every click threw.
-            card.onclick = function () {
-                navigateToScreen('command-hub', 'tasks');
-            };
-
-            attSection.appendChild(card);
-        });
-
-        container.appendChild(attSection);
-    }
-
-    // Timestamp
-    if (summary.timestamp) {
-        var tsDiv = document.createElement('div');
-        tsDiv.className = 'metrics-timestamp';
-        tsDiv.textContent = 'Last updated: ' + formatEventTimestamp(summary.timestamp);
-        container.appendChild(tsDiv);
-    }
-
-    return container;
-}
-
-// ---------------------------------------------------------------------------
-// 5. fetchOverviewRecentEvents — GET /api/v1/oasis/events?limit=100
-// ---------------------------------------------------------------------------
-var NOISE_TOPICS = [
-    'pending_served', 'heartbeat', 'health_check', 'health.check',
-    'vtid.stage.worker_orchestrator.heartbeat', 'autopilot.loop.tick'
-];
-
-var EVENT_FILTERS = {
-    'pipeline': function (ev) {
-        var topic = (ev.topic || ev.type || '').toLowerCase();
-        return !NOISE_TOPICS.some(function (n) { return topic.includes(n); });
-    },
-    'errors': function (ev) {
-        var status = (ev.status || '').toLowerCase();
-        var topic = (ev.topic || ev.type || '').toLowerCase();
-        return status === 'error' || status === 'failure' || status === 'failed'
-            || topic.includes('error') || topic.includes('fail') || topic.includes('violation');
-    },
-    'lifecycle': function (ev) {
-        var topic = (ev.topic || ev.type || '').toLowerCase();
-        return topic.includes('lifecycle') || topic.includes('task.scheduled')
-            || topic.includes('execution') || topic.includes('spec.');
-    },
-    'all': function () { return true; }
-};
-
-async function fetchOverviewRecentEvents() {
-    if (state.overviewRecentEvents.loading) return;
-    state.overviewRecentEvents.loading = true;
-    state.overviewRecentEvents.error = null;
-    renderApp();
-
-    try {
-        var response = await fetch('/api/v1/oasis/events?limit=100');
-        if (!response.ok) throw new Error('Recent events fetch failed: ' + response.status);
-
-        var data = await response.json();
-        var items = Array.isArray(data) ? data : (data.data || []);
-        state.overviewRecentEvents.items = items;
-        state.overviewRecentEvents.fetched = true;
-        state.overviewRecentEvents.error = null;
-        console.log('[Pipeline] Recent events loaded:', items.length);
-    } catch (error) {
-        console.error('[Pipeline] Failed to fetch recent events:', error);
-        state.overviewRecentEvents.error = error.message;
-    } finally {
-        state.overviewRecentEvents.loading = false;
-        renderApp();
-    }
-}
-
-// ---------------------------------------------------------------------------
-// 6. renderOverviewRecentEventsView — smart filtered OASIS events table
-// ---------------------------------------------------------------------------
-function renderOverviewRecentEventsView() {
-    var container = document.createElement('div');
-    container.className = 'overview-recent-events-container';
-
-    // Auto-fetch
-    if (!state.overviewRecentEvents.fetched && !state.overviewRecentEvents.loading) {
-        fetchOverviewRecentEvents();
-    }
-
-    // Loading
-    if (state.overviewRecentEvents.loading && state.overviewRecentEvents.items.length === 0) {
-        var loading = document.createElement('div');
-        loading.className = 'placeholder-content';
-        loading.textContent = 'Loading recent events...';
-        container.appendChild(loading);
-        return container;
-    }
-
-    // Error
-    if (state.overviewRecentEvents.error) {
-        var errorDiv = document.createElement('div');
-        errorDiv.className = 'placeholder-content error-text';
-        errorDiv.textContent = 'Error: ' + state.overviewRecentEvents.error;
-        container.appendChild(errorDiv);
-        return container;
-    }
-
-    // Apply filter
-    var currentFilter = state.overviewRecentEventsFilter || 'pipeline';
-    var filterFn = EVENT_FILTERS[currentFilter] || EVENT_FILTERS['pipeline'];
-    var filteredItems = state.overviewRecentEvents.items.filter(filterFn);
-
-    // Header
-    var header = document.createElement('div');
-    header.className = 'list-toolbar';
-    var title = document.createElement('span');
-    title.className = 'toolbar-title';
-    title.textContent = 'Recent Events (' + filteredItems.length + ')';
-    header.appendChild(title);
-
-    // Filter dropdown
-    var filterSelect = document.createElement('select');
-    filterSelect.className = 'event-filter-select';
-    var filterOptions = [
-        { value: 'pipeline', label: 'Pipeline Events' },
-        { value: 'lifecycle', label: 'Lifecycle Events' },
-        { value: 'errors', label: 'Errors Only' },
-        { value: 'all', label: 'All Events' }
-    ];
-
-    filterOptions.forEach(function (opt) {
-        var option = document.createElement('option');
-        option.value = opt.value;
-        option.textContent = opt.label;
-        if (opt.value === currentFilter) option.selected = true;
-        filterSelect.appendChild(option);
-    });
-
-    filterSelect.onchange = function () {
-        state.overviewRecentEventsFilter = filterSelect.value;
-        renderApp();
-    };
-    header.appendChild(filterSelect);
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn btn-sm';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function () {
-        state.overviewRecentEvents.fetched = false;
-        fetchOverviewRecentEvents();
-    };
-    header.appendChild(refreshBtn);
-    container.appendChild(header);
-
-    // Empty
-    if (filteredItems.length === 0) {
-        var emptyDiv = document.createElement('div');
-        emptyDiv.className = 'placeholder-content';
-        emptyDiv.textContent = 'No events match the current filter.';
-        container.appendChild(emptyDiv);
-        return container;
-    }
-
-    // Table
-    var table = document.createElement('table');
-    table.className = 'list-table oasis-events-table';
-
-    var thead = document.createElement('thead');
-    var headerRow = document.createElement('tr');
-    ['Time', 'Topic', 'VTID', 'Source', 'Status', 'Message'].forEach(function (h) {
-        var th = document.createElement('th');
-        th.textContent = h;
-        headerRow.appendChild(th);
-    });
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-
-    var tbody = document.createElement('tbody');
-    filteredItems.forEach(function (event) {
-        var row = document.createElement('tr');
-
-        // Highlight error rows
-        var evStatus = (event.status || '').toLowerCase();
-        if (evStatus === 'error' || evStatus === 'failure' || evStatus === 'failed') {
-            row.className = 'event-row-error';
-        }
-
-        var timeTd = document.createElement('td');
-        timeTd.className = 'event-timestamp';
-        timeTd.textContent = formatEventTimestamp(event.created_at || event.timestamp);
-        row.appendChild(timeTd);
-
-        var topicTd = document.createElement('td');
-        topicTd.className = 'event-topic';
-        topicTd.textContent = event.topic || event.type || '';
-        row.appendChild(topicTd);
-
-        var vtidTd = document.createElement('td');
-        vtidTd.className = 'event-vtid';
-        vtidTd.textContent = event.vtid || '';
-        row.appendChild(vtidTd);
-
-        var sourceTd = document.createElement('td');
-        sourceTd.className = 'event-surface';
-        sourceTd.textContent = event.source || '';
-        row.appendChild(sourceTd);
-
-        var statusTd = document.createElement('td');
-        var statusBadge = document.createElement('span');
-        statusBadge.className = 'status-badge status-' + (event.status || 'info');
-        statusBadge.textContent = event.status || 'info';
-        statusTd.appendChild(statusBadge);
-        row.appendChild(statusTd);
-
-        var msgTd = document.createElement('td');
-        msgTd.className = 'event-message';
-        var msgText = (event.message || '');
-        msgTd.textContent = msgText.length > 80 ? msgText.substring(0, 80) + '...' : msgText;
-        row.appendChild(msgTd);
-
-        tbody.appendChild(row);
-    });
-    table.appendChild(tbody);
-    container.appendChild(table);
-
-    autoAddLoadMore(container, 'overviewRecentEvents');
-
-    return container;
-}
-
-// ---------------------------------------------------------------------------
-// 7. fetchOverviewErrors — GET /api/v1/governance/violations?limit=50
-// ---------------------------------------------------------------------------
-async function fetchOverviewErrors() {
-    if (state.overviewErrors.loading) return;
-    state.overviewErrors.loading = true;
-    state.overviewErrors.error = null;
-    renderApp();
-
-    try {
-        var response = await fetch('/api/v1/governance/violations?limit=50');
-        if (!response.ok) throw new Error('Violations fetch failed: ' + response.status);
-
-        var data = await response.json();
-        var items = data.data || data.violations || (Array.isArray(data) ? data : []);
-        state.overviewErrors.items = items;
-        state.overviewErrors.fetched = true;
-        state.overviewErrors.error = null;
-        console.log('[VTID-01240] Overview errors/violations loaded:', items.length);
-    } catch (error) {
-        console.error('[VTID-01240] Failed to fetch overview errors:', error);
-        state.overviewErrors.error = error.message;
-    } finally {
-        state.overviewErrors.loading = false;
-        renderApp();
-    }
-}
-
-// ---------------------------------------------------------------------------
-// 8. renderOverviewErrorsViolationsView — table of errors/violations
-// ---------------------------------------------------------------------------
-function renderOverviewErrorsViolationsView() {
-    var container = document.createElement('div');
-    container.className = 'overview-errors-container';
-
-    // Auto-fetch
-    if (!state.overviewErrors.fetched && !state.overviewErrors.loading) {
-        fetchOverviewErrors();
-    }
-
-    // Loading
-    if (state.overviewErrors.loading && state.overviewErrors.items.length === 0) {
-        var loading = document.createElement('div');
-        loading.className = 'placeholder-content';
-        loading.textContent = 'Loading errors & violations...';
-        container.appendChild(loading);
-        return container;
-    }
-
-    // Error
-    if (state.overviewErrors.error) {
-        var errorDiv = document.createElement('div');
-        errorDiv.className = 'placeholder-content error-text';
-        errorDiv.textContent = 'Error: ' + state.overviewErrors.error;
-        container.appendChild(errorDiv);
-        return container;
-    }
-
-    // Empty
-    if (state.overviewErrors.items.length === 0) {
-        var emptyDiv = document.createElement('div');
-        emptyDiv.className = 'placeholder-content';
-        emptyDiv.textContent = 'No errors or violations found.';
-        container.appendChild(emptyDiv);
-        return container;
-    }
-
-    // Header
-    var header = document.createElement('div');
-    header.className = 'list-toolbar';
-    var title = document.createElement('span');
-    title.className = 'toolbar-title';
-    title.textContent = 'Errors & Violations (' + state.overviewErrors.items.length + ')';
-    header.appendChild(title);
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn btn-sm';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function () {
-        state.overviewErrors.fetched = false;
-        fetchOverviewErrors();
-    };
-    header.appendChild(refreshBtn);
-    container.appendChild(header);
-
-    // Table
-    var table = document.createElement('table');
-    table.className = 'list-table';
-
-    var thead = document.createElement('thead');
-    var headerRow = document.createElement('tr');
-    ['Time', 'Level', 'Rule', 'Service', 'Message'].forEach(function (h) {
-        var th = document.createElement('th');
-        th.textContent = h;
-        headerRow.appendChild(th);
-    });
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-
-    var tbody = document.createElement('tbody');
-    state.overviewErrors.items.forEach(function (item) {
-        var row = document.createElement('tr');
-
-        var timeTd = document.createElement('td');
-        timeTd.textContent = formatEventTimestamp(item.created_at || item.timestamp);
-        row.appendChild(timeTd);
-
-        var levelTd = document.createElement('td');
-        var levelVal = (item.level || item.severity || 'warning').toLowerCase();
-        var levelBadge = document.createElement('span');
-        levelBadge.className = 'status-badge status-' + levelVal;
-        levelBadge.textContent = levelVal;
-        levelTd.appendChild(levelBadge);
-        row.appendChild(levelTd);
-
-        var ruleTd = document.createElement('td');
-        ruleTd.textContent = item.rule || item.rule_id || '';
-        row.appendChild(ruleTd);
-
-        var serviceTd = document.createElement('td');
-        serviceTd.textContent = item.service || item.source || '';
-        row.appendChild(serviceTd);
-
-        var msgTd = document.createElement('td');
-        msgTd.className = 'message-cell';
-        msgTd.textContent = item.message || item.description || '';
-        row.appendChild(msgTd);
-
-        tbody.appendChild(row);
-    });
-    table.appendChild(tbody);
-    container.appendChild(table);
-
-    autoAddLoadMore(container, 'overviewErrors');
-
-    return container;
-}
-
-// ---------------------------------------------------------------------------
-// 9. fetchOverviewReleases — GET /api/v1/operator/deployments?limit=30
-// ---------------------------------------------------------------------------
-async function fetchOverviewReleases() {
-    if (state.overviewReleases.loading) return;
-    var isInitialLoad = !state.overviewReleases.fetched;
-    state.overviewReleases.loading = true;
-    state.overviewReleases.error = null;
-    if (isInitialLoad) renderApp();
-
-    try {
-        var response = await fetch('/api/v1/operator/deployments?limit=30');
-        if (!response.ok) throw new Error('Deployments fetch failed: ' + response.status);
-
-        var data = await response.json();
-        var items = data.data || data.deployments || (Array.isArray(data) ? data : []);
-        state.overviewReleases.items = items;
-        state.overviewReleases.fetched = true;
-        state.overviewReleases.error = null;
-        console.log('[VTID-01240] Overview releases loaded:', items.length);
-    } catch (error) {
-        console.error('[VTID-01240] Failed to fetch overview releases:', error);
-        state.overviewReleases.error = error.message;
-    } finally {
-        state.overviewReleases.loading = false;
-        if (isInitialLoad) {
-            renderApp();
-        }
-    }
-}
-
-// Silent heartbeat fetch — no loading flag, no full renderApp unless the list actually changed.
-async function fetchOverviewReleasesSilent() {
-    try {
-        var response = await fetch('/api/v1/operator/deployments?limit=30');
-        if (!response.ok) return;
-        var data = await response.json();
-        var items = data.data || data.deployments || (Array.isArray(data) ? data : []);
-        var prev = state.overviewReleases.items || [];
-        var changed = items.length !== prev.length ||
-            (items[0] && prev[0] && (items[0].swv_id || items[0].git_commit) !== (prev[0].swv_id || prev[0].git_commit));
-        if (changed) {
-            state.overviewReleases.items = items;
-            if (state.currentModuleKey === 'overview' && state.currentTab === 'release-feed') {
-                renderApp();
-            }
-        }
-    } catch (error) {
-        // Silent — heartbeat must not flash errors at the supervisor.
-        console.warn('[Release Feed] heartbeat fetch failed:', error && error.message);
-    }
-}
-
-function startOverviewReleasesAutoRefresh() {
-    if (state.overviewReleases.autoRefreshInterval) return;
-    state.overviewReleases.autoRefreshInterval = setInterval(function () {
-        // Self-terminate if the user has navigated away.
-        if (state.currentModuleKey !== 'overview' || state.currentTab !== 'release-feed') {
-            stopOverviewReleasesAutoRefresh();
-            return;
-        }
-        fetchOverviewReleasesSilent();
-    }, 30000);
-    console.log('[Release Feed] auto-refresh started (30s)');
-}
-
-function stopOverviewReleasesAutoRefresh() {
-    if (state.overviewReleases.autoRefreshInterval) {
-        clearInterval(state.overviewReleases.autoRefreshInterval);
-        state.overviewReleases.autoRefreshInterval = null;
-        console.log('[Release Feed] auto-refresh stopped');
-    }
-}
-
-// ---------------------------------------------------------------------------
-// 10. renderOverviewReleaseFeedView — table of deployments/releases
-// ---------------------------------------------------------------------------
-function renderOverviewReleaseFeedView() {
-    var container = document.createElement('div');
-    container.className = 'overview-releases-container';
-
-    // Auto-fetch
-    if (!state.overviewReleases.fetched && !state.overviewReleases.loading) {
-        fetchOverviewReleases();
-    }
-
-    // Start heartbeat so the supervisor always sees the latest deploys without clicking Refresh.
-    startOverviewReleasesAutoRefresh();
-
-    // Loading
-    if (state.overviewReleases.loading && state.overviewReleases.items.length === 0) {
-        var loading = document.createElement('div');
-        loading.className = 'placeholder-content';
-        loading.textContent = 'Loading release feed...';
-        container.appendChild(loading);
-        return container;
-    }
-
-    // Error
-    if (state.overviewReleases.error) {
-        var errorDiv = document.createElement('div');
-        errorDiv.className = 'placeholder-content error-text';
-        errorDiv.textContent = 'Error: ' + state.overviewReleases.error;
-        container.appendChild(errorDiv);
-        return container;
-    }
-
-    // Empty
-    if (state.overviewReleases.items.length === 0) {
-        var emptyDiv = document.createElement('div');
-        emptyDiv.className = 'placeholder-content';
-        emptyDiv.textContent = 'No releases found.';
-        container.appendChild(emptyDiv);
-        return container;
-    }
-
-    // Header
-    var header = document.createElement('div');
-    header.className = 'list-toolbar';
-    var title = document.createElement('span');
-    title.className = 'toolbar-title';
-    title.textContent = 'Release Feed (' + state.overviewReleases.items.length + ')';
-    header.appendChild(title);
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn btn-sm';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function () {
-        state.overviewReleases.fetched = false;
-        fetchOverviewReleases();
-    };
-    header.appendChild(refreshBtn);
-    container.appendChild(header);
-
-    // Table
-    var table = document.createElement('table');
-    table.className = 'list-table oasis-events-table';
-
-    var thead = document.createElement('thead');
-    var headerRow = document.createElement('tr');
-    ['Time', 'Service', 'Version / SHA', 'Status', 'Initiator'].forEach(function (h) {
-        var th = document.createElement('th');
-        th.textContent = h;
-        headerRow.appendChild(th);
-    });
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-
-    var tbody = document.createElement('tbody');
-    state.overviewReleases.items.forEach(function (item) {
-        var row = document.createElement('tr');
-
-        var timeTd = document.createElement('td');
-        timeTd.className = 'event-timestamp';
-        timeTd.textContent = formatEventTimestamp(item.created_at || item.deployed_at || item.timestamp);
-        row.appendChild(timeTd);
-
-        var serviceTd = document.createElement('td');
-        serviceTd.textContent = item.service || item.service_name || '';
-        row.appendChild(serviceTd);
-
-        var versionTd = document.createElement('td');
-        versionTd.className = 'event-vtid';
-        var ver = item.git_commit || item.version || item.image_tag || item.commit_sha || '';
-        var fullVer = ver;
-        if (ver.length > 12) ver = ver.substring(0, 12);
-        var swvId = item.swv_id || '';
-        versionTd.textContent = swvId ? swvId + ' · ' + ver : ver;
-        versionTd.title = fullVer;
-        row.appendChild(versionTd);
-
-        var statusTd = document.createElement('td');
-        var statusBadge = document.createElement('span');
-        statusBadge.className = 'status-badge status-' + (item.status || 'unknown').toLowerCase();
-        statusBadge.textContent = item.status || 'unknown';
-        statusTd.appendChild(statusBadge);
-        row.appendChild(statusTd);
-
-        var initiatorTd = document.createElement('td');
-        initiatorTd.textContent = item.initiator || item.triggered_by || item.actor || '';
-        row.appendChild(initiatorTd);
-
-        tbody.appendChild(row);
-    });
-    table.appendChild(tbody);
-    container.appendChild(table);
-
-    autoAddLoadMore(container, 'overviewReleases');
-
-    return container;
+/** Swap only the panel in place; the cockpit and its scroll position stay. */
+function rerenderOverviewRecommends() {
+    var old = document.querySelector('.overview-recommends-panel');
+    if (old) old.replaceWith(renderOverviewRecommendsPanel());
 }
 
 // ---------------------------------------------------------------------------
@@ -32009,7 +30264,11 @@ async function fetchOperatorDashboard() {
 
     try {
         var results = await Promise.allSettled([
-            fetch('/api/v1/autopilot/pipeline/summary').then(function (r) {
+            // VTID-04887: the admin-gated in-process route. The service-token
+            // /api/v1/autopilot/pipeline/summary always answered 401 here.
+            fetch('/api/v1/ops/pipeline-summary', {
+                headers: buildContextHeaders({ Accept: 'application/json' })
+            }).then(function (r) {
                 if (!r.ok) throw new Error('Pipeline summary: ' + r.status);
                 return r.json();
             }),
@@ -32833,7 +31092,11 @@ async function fetchOperatorRunbook() {
 
     try {
         var results = await Promise.allSettled([
-            fetch('/api/v1/autopilot/pipeline/summary').then(function (r) {
+            // VTID-04887: the admin-gated in-process route. The service-token
+            // /api/v1/autopilot/pipeline/summary always answered 401 here.
+            fetch('/api/v1/ops/pipeline-summary', {
+                headers: buildContextHeaders({ Accept: 'application/json' })
+            }).then(function (r) {
                 if (!r.ok) throw new Error('Pipeline summary: ' + r.status);
                 return r.json();
             }),
@@ -40297,7 +38560,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         // VTID-0520: Start Background Polling
         startCicdHealthPolling();
         startApprovalsBadgePolling();
-        startOverviewDashboardPolling();
 
     } catch (e) {
         console.error('Critical Render Error:', e);
