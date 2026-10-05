@@ -17,7 +17,7 @@
  */
 
 import { evaluateTransition } from './room-state-machine';
-import { DailyClient } from './daily-client';
+import { DailyClient, computeDailyRoomExpiry } from './daily-client';
 import { emitOasisEvent } from './oasis-event-service';
 import type {
   RoomStatus,
@@ -179,23 +179,31 @@ export class RoomSessionManager {
     const sessionData = result.data;
     let dailyRoomUrl: string | undefined;
 
-    // Create or reuse Daily.co room (permanent per room)
+    // Create or refresh the Daily.co room (permanent per room). VTID-04904:
+    // private room, expiry follows THIS session (not the first one ever).
     if (this.dailyClient) {
       try {
-        const roomResult = await this.dailyClient.createRoom({
-          roomId,
-          title: payload.session_title || 'Vitana Live Room',
+        const roomResult = await this.dailyClient.ensureRoom(roomId, {
+          expiresAt: computeDailyRoomExpiry({
+            startsAt: payload.starts_at,
+            endsAt: payload.ends_at || null,
+            durationMinutes: Number(payload.metadata?.duration_minutes) || null,
+          }),
         });
         dailyRoomUrl = roomResult.roomUrl;
 
-        // Persist Daily.co room info to database metadata
+        // Persist Daily.co room info to database metadata.
+        // VTID-04904 (B4): live_room_update_metadata replaces the whole
+        // column, so read the current metadata and send the merged object —
+        // otherwise price/description set elsewhere are wiped.
         const updateResult = await callRpc(token, 'live_room_update_metadata', {
           p_live_room_id: roomId,
-          p_metadata: {
+          p_metadata: await this.mergedRoomMetadata(roomId, token, {
             daily_room_url: roomResult.roomUrl,
             daily_room_name: roomResult.roomName,
+            daily_room_exp: roomResult.exp,
             video_provider: 'daily_co'
-          }
+          })
         });
 
         if (!updateResult.ok) {
@@ -708,6 +716,27 @@ export class RoomSessionManager {
   // ===========================================================================
   // Private Helpers
   // ===========================================================================
+
+  /**
+   * VTID-04904 (B4): current room metadata with `patch` applied on top.
+   * `live_room_update_metadata` replaces the column, so every writer must
+   * send the merged object. If the read fails, only the patch is returned
+   * (same as before this change) rather than blocking the session.
+   */
+  async mergedRoomMetadata(
+    roomId: string,
+    token: string,
+    patch: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const current = await callRpc(token, 'live_room_get', { p_live_room_id: roomId });
+    const existing = current.ok && current.data?.metadata && typeof current.data.metadata === 'object'
+      ? current.data.metadata as Record<string, unknown>
+      : {};
+    if (!current.ok) {
+      console.warn(`[VTID-04904] live_room_get failed before metadata merge for ${roomId}: ${current.error}`);
+    }
+    return { ...existing, ...patch };
+  }
 
   private async emitTransitionEvent(
     roomId: string,

@@ -12,7 +12,7 @@
  * - POST   /api/v1/live/rooms/:id/leave    - Leave a live room
  * - POST   /api/v1/live/rooms/:id/highlights - Add a highlight
  * - GET    /api/v1/live/rooms/:id/summary  - Get room summary
- * - POST   /api/v1/live/rooms/:id/daily    - Create Daily.co room (VTID-01228)
+ * - POST   /api/v1/live/rooms/:id/daily    - Create/refresh Daily.co room, host only (VTID-01228, VTID-04904)
  * - DELETE /api/v1/live/rooms/:id/daily    - Delete Daily.co room (VTID-01228)
  * - POST   /api/v1/community/meetups/:id/rsvp - RSVP to a meetup
  * - GET    /api/v1/live/health             - Health check
@@ -27,9 +27,9 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
-import { DailyClient } from '../services/daily-client';
+import { DailyClient, computeDailyRoomExpiry } from '../services/daily-client';
 // VTID-03107: Live Room hosting quota enforcement
-import { verifyAndExtractIdentity } from '../middleware/auth-supabase-jwt';
+import { verifyAndExtractIdentity, optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import {
   checkEntitlement,
   recordUsage,
@@ -37,7 +37,7 @@ import {
 } from '../services/entitlement-service';
 import { RoomSessionManager } from '../services/room-session-manager';
 import Stripe from 'stripe';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { notifyUserAsync, notifyUsersAsync } from '../services/notification-service';
 import * as repo from './live-repository';
 
@@ -45,15 +45,45 @@ const router = Router();
 
 // =============================================================================
 // VTID-01228: Rate Limiters
+// VTID-04904: keyed per verified user, not per IP
 // =============================================================================
 
 /**
- * Rate limiter for Daily.co room creation (expensive operation)
- * Limit: 5 requests per 15 minutes per IP
+ * VTID-04904 (B1): rate-limit key for the live-room limiters.
+ *
+ * Behind the ALB every member arrives with the same socket IP and the gateway
+ * sets no `trust proxy`, so a per-IP limiter is one bucket for the whole
+ * community. The key is therefore:
+ *   1. the user id `optionalAuth` VERIFIED from the JWT (req.identity), else
+ *   2. the first X-Forwarded-For hop, else
+ *   3. req.ip.
+ * A token that does not verify never sets req.identity, so a forged or
+ * expired token cannot mint its own bucket — it shares the IP bucket.
+ * optionalAuth must run before the limiter on every route that uses it.
+ */
+export function liveRateLimitKey(req: Request): string {
+  const userId = (req as AuthenticatedRequest).identity?.user_id;
+  if (userId) return `user:${userId}`;
+  const xff = req.headers['x-forwarded-for'];
+  const first = (Array.isArray(xff) ? xff[0] : xff || '').split(',')[0].trim();
+  if (first) return `ip:${ipKeyGenerator(first)}`;
+  return `ip:${ipKeyGenerator(req.ip || 'unknown')}`;
+}
+
+// The key generator reads X-Forwarded-For itself (see above); the library's
+// own "X-Forwarded-For without trust proxy" warning does not apply.
+const liveLimiterValidate = { xForwardedForHeader: false } as const;
+
+/**
+ * Rate limiter for the Daily.co room endpoint.
+ * VTID-04904: 30 requests per 15 minutes per user (was 5 per IP — every
+ * member behind the ALB shared those 5).
  */
 const dailyRoomLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5,
+  max: 30,
+  keyGenerator: liveRateLimitKey,
+  validate: liveLimiterValidate,
   message: { ok: false, error: 'RATE_LIMIT_EXCEEDED', message: 'Too many room creation requests' },
   standardHeaders: true,
   legacyHeaders: false
@@ -61,11 +91,13 @@ const dailyRoomLimiter = rateLimit({
 
 /**
  * Rate limiter for purchase requests (prevent abuse)
- * Limit: 10 requests per 15 minutes per IP
+ * Limit: 10 requests per 15 minutes per user (VTID-04904)
  */
 const purchaseLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10,
+  keyGenerator: liveRateLimitKey,
+  validate: liveLimiterValidate,
   message: { ok: false, error: 'RATE_LIMIT_EXCEEDED', message: 'Too many purchase requests' },
   standardHeaders: true,
   legacyHeaders: false
@@ -79,11 +111,13 @@ const sessionManager = new RoomSessionManager();
 
 /**
  * Rate limiter for session creation ("Go Live")
- * Limit: 5 requests per 15 minutes per IP
+ * Limit: 5 requests per 15 minutes per user (VTID-04904)
  */
 const sessionCreateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
+  keyGenerator: liveRateLimitKey,
+  validate: liveLimiterValidate,
   message: { ok: false, error: 'RATE_LIMIT_EXCEEDED', message: 'Too many session creation requests' },
   standardHeaders: true,
   legacyHeaders: false
@@ -910,15 +944,19 @@ router.post('/rooms/:id/leave', async (req: Request, res: Response) => {
  * POST /rooms/:id/daily -> POST /api/v1/live/rooms/:id/daily
  *
  * VTID-01228: Create a Daily.co video room for a live room.
- * Only the room host can create the Daily.co room.
- * Idempotent: Returns existing room URL if already created.
+ * VTID-04904: host-only, verified from the JWT (resolves the old TODO).
+ * Non-hosts get 403 — viewers enter through POST /rooms/:id/enter, which
+ * checks access and issues their meeting token; no token-less URL is handed
+ * out. Every host call refreshes the room's `exp`/privacy (ensureRoom) and
+ * returns an owner meeting token, because rooms are private now.
  */
-router.post('/rooms/:id/daily', dailyRoomLimiter, async (req: Request, res: Response) => {
+router.post('/rooms/:id/daily', optionalAuth, dailyRoomLimiter, async (req: Request, res: Response) => {
   const roomId = req.params.id;
   console.log(`[VTID-01228] POST /live/rooms/${roomId}/daily`);
 
   const token = getBearerToken(req);
-  if (!token) {
+  const identity = (req as AuthenticatedRequest).identity;
+  if (!token || !identity?.user_id) {
     return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   }
 
@@ -926,8 +964,13 @@ router.post('/rooms/:id/daily', dailyRoomLimiter, async (req: Request, res: Resp
     return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
   }
 
+  if (!process.env.DAILY_API_KEY) {
+    console.error('[VTID-04904] DAILY_API_KEY is not set on this gateway — Live Rooms video unavailable');
+    return res.status(503).json({ ok: false, error: 'DAILY_NOT_CONFIGURED' });
+  }
+
   try {
-    // Get room details to verify ownership and check if Daily.co room exists
+    // Get room details to verify ownership and read current metadata
     const roomResult = await callRpc(token, 'live_room_get', {
       p_live_room_id: roomId
     });
@@ -936,71 +979,77 @@ router.post('/rooms/:id/daily', dailyRoomLimiter, async (req: Request, res: Resp
       return res.status(404).json({ ok: false, error: 'ROOM_NOT_FOUND' });
     }
 
-    // Verify user is the host
     const room = roomResult.data;
-    if (room.host_user_id !== req.headers['x-user-id']) {
-      // For now, we'll trust the token - in production, decode JWT to get user_id
-      // TODO: Extract user_id from JWT token
-      console.warn('[VTID-01228] Cannot verify host ownership without user_id in headers');
+    if (room.host_user_id !== identity.user_id) {
+      return res.status(403).json({ ok: false, error: 'NOT_HOST' });
     }
 
-    // Check if Daily.co room already exists (idempotent)
-    if (room.metadata?.daily_room_url) {
-      console.log(`[VTID-01228] Daily.co room already exists: ${room.metadata.daily_room_url}`);
-      return res.json({
-        ok: true,
-        daily_room_url: room.metadata.daily_room_url,
-        daily_room_name: room.metadata.daily_room_name,
-        already_existed: true
-      });
-    }
+    const roomMetadata: Record<string, any> =
+      room.metadata && typeof room.metadata === 'object' ? room.metadata : {};
 
-    // Create Daily.co room
-    const dailyClient = new DailyClient();
-    const dailyRoom = await dailyClient.createRoom({
-      roomId,
-      title: room.title,
-      expiresInHours: 24  // 24 hours expiration
+    // Expiry follows the current session when there is one.
+    const stateResult = await callRpc(token, 'live_room_get_state', { p_room_id: roomId });
+    const session = stateResult.ok ? stateResult.data?.session : null;
+    const expiresAt = computeDailyRoomExpiry({
+      startsAt: session?.starts_at || null,
+      endsAt: session?.ends_at || null,
+      durationMinutes: Number(roomMetadata.duration_minutes) || null,
     });
 
-    // Update room metadata with Daily.co room URL
+    const dailyClient = new DailyClient();
+    const dailyRoom = await dailyClient.ensureRoom(roomId, { expiresAt });
+    const alreadyExisted = roomMetadata.daily_room_url === dailyRoom.roomUrl;
+
+    // VTID-04904 (B4): the RPC replaces the whole column — send the merged object.
     const updateResult = await callRpc(token, 'live_room_update_metadata', {
       p_live_room_id: roomId,
       p_metadata: {
-        ...room.metadata,
+        ...roomMetadata,
         daily_room_url: dailyRoom.roomUrl,
         daily_room_name: dailyRoom.roomName,
+        daily_room_exp: dailyRoom.exp,
         video_provider: 'daily_co'
       }
     });
 
     if (!updateResult.ok) {
-      // Try to clean up the Daily.co room if metadata update fails
-      try {
-        await dailyClient.deleteRoom(dailyRoom.roomName);
-      } catch (cleanupErr) {
-        console.error('[VTID-01228] Failed to cleanup Daily.co room:', cleanupErr);
+      // Only clean up a room this call created — never one an earlier session uses.
+      if (!alreadyExisted && !roomMetadata.daily_room_name) {
+        try {
+          await dailyClient.deleteRoom(dailyRoom.roomName);
+        } catch (cleanupErr) {
+          console.error('[VTID-01228] Failed to cleanup Daily.co room:', cleanupErr);
+        }
       }
       return res.status(502).json({ ok: false, error: 'Failed to update room metadata' });
     }
 
-    // Emit OASIS event
-    await emitOasisEvent({
-      vtid: 'VTID-01228',
-      type: 'live.daily.created' as any,
-      source: 'live-gateway',
-      status: 'success',
-      message: `Daily.co room created for live room ${roomId}`,
-      payload: { room_id: roomId, daily_room_url: dailyRoom.roomUrl, daily_room_name: dailyRoom.roomName }
+    const meetingToken = await dailyClient.createMeetingToken(dailyRoom.roomName, {
+      userId: identity.user_id,
+      isOwner: true,
+      exp: dailyRoom.exp,
     });
 
-    console.log(`[VTID-01228] Daily.co room created: ${dailyRoom.roomUrl}`);
+    if (!alreadyExisted) {
+      await emitOasisEvent({
+        vtid: 'VTID-01228',
+        type: 'live.daily.created' as any,
+        source: 'live-gateway',
+        status: 'success',
+        message: `Daily.co room created for live room ${roomId}`,
+        payload: { room_id: roomId, daily_room_url: dailyRoom.roomUrl, daily_room_name: dailyRoom.roomName }
+      });
+      console.log(`[VTID-01228] Daily.co room created: ${dailyRoom.roomUrl}`);
+    }
 
     return res.json({
       ok: true,
       daily_room_url: dailyRoom.roomUrl,
       daily_room_name: dailyRoom.roomName,
-      already_existed: false
+      token: meetingToken.token,
+      is_host: true,
+      expires_at: dailyRoom.exp,
+      already_existed: alreadyExisted
     });
   } catch (error: any) {
     console.error('[VTID-01228] Error creating Daily.co room:', error);
@@ -1092,7 +1141,7 @@ router.delete('/rooms/:id/daily', async (req: Request, res: Response) => {
  * VTID-01228: Purchase access to a paid live room via Stripe.
  * Creates a Payment Intent for the room price.
  */
-router.post('/rooms/:id/purchase', purchaseLimiter, async (req: Request, res: Response) => {
+router.post('/rooms/:id/purchase', optionalAuth, purchaseLimiter, async (req: Request, res: Response) => {
   const roomId = req.params.id;
   console.log(`[VTID-01228] POST /live/rooms/${roomId}/purchase`);
 
@@ -1345,6 +1394,10 @@ router.get('/health', (_req: Request, res: Response) => {
   const creds = getSupabaseCredentials();
   const status = creds ? 'ok' : 'degraded';
 
+  // VTID-04904: presence of the Daily.co key only (never its value). Without
+  // it no live room can open video — an owner prerequisite on the task def.
+  const dailyConfigured = !!process.env.DAILY_API_KEY;
+
   return res.status(200).json({
     ok: true,
     status,
@@ -1352,11 +1405,13 @@ router.get('/health', (_req: Request, res: Response) => {
     version: '1.0.0',
     vtid: 'VTID-01090',
     timestamp: new Date().toISOString(),
+    daily_configured: dailyConfigured,
     capabilities: {
       create_room: !!creds,
       join_room: !!creds,
       add_highlight: !!creds,
-      relationship_graph: true
+      relationship_graph: true,
+      video_rooms: dailyConfigured
     },
     strength_increments: STRENGTH_INCREMENTS,
     dependencies: {
@@ -1569,7 +1624,7 @@ router.get('/rooms/:id/state', async (req: Request, res: Response) => {
  * "Go Live" — create a new session on a permanent room.
  * Host-only. Room must be idle.
  */
-router.post('/rooms/:id/sessions', sessionCreateLimiter, async (req: Request, res: Response) => {
+router.post('/rooms/:id/sessions', optionalAuth, sessionCreateLimiter, async (req: Request, res: Response) => {
   const roomId = req.params.id;
   console.log(`[VTID-01228] POST /live/rooms/${roomId}/sessions`);
 

@@ -1,0 +1,30 @@
+{
+  "vtid": "VTID-04904",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "name": "live health reports the Daily.co key on the staging task definition",
+      "path": "/api/v1/live/health",
+      "expect_status": 200,
+      "expect_json": { "daily_configured": true }
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "POST",
+      "name": "the Daily room endpoint refuses an unsigned caller before any handler work",
+      "path": "/api/v1/live/rooms/00000000-0000-4000-8000-000000000000/daily",
+      "rejected_probe": true,
+      "expect_status": 401
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04904-live-daily-rooms.test.ts test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts",
+      "cwd": "services/gateway",
+      "reason": "per-user limiter key incl. forged-token fallback and the 30/15 min bucket, ensureRoom create and exists->update exp+privacy, expiry fallbacks, owner vs participant tokens, /daily 401/403/503/host, the health flag, the metadata merge, and the new read-only DAILY_API_KEY step keeps both deploy workflows valid bash; staging shares the production database, so no room is created during verification"
+    }
+  ]
+}
