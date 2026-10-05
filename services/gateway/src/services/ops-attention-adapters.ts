@@ -315,6 +315,8 @@ export const TIMELINE_TOPICS = [
 ];
 /** timelineEvents() reads at most this many rows. */
 export const TIMELINE_READ_LIMIT = 200;
+/** Row cap of the self-heal outcome read (shared by the autonomy adapter and the timeline). */
+export const SELF_HEAL_READ_LIMIT = 100;
 
 export interface BudgetLineLite {
   scope: 'platform' | 'agent' | 'run';

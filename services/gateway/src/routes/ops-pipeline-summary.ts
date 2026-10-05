@@ -35,9 +35,17 @@ export function resetOpsPipelineSummaryCacheForTests(): void {
   inFlight = null;
 }
 
-async function getSummary(nowMs: number): Promise<{ result: PipelineSummaryResult; cached: boolean }> {
-  if (cached && nowMs - cached.at < PIPELINE_SUMMARY_CACHE_MS) {
+async function getSummary(nowMs: number, fresh = false): Promise<{ result: PipelineSummaryResult; cached: boolean }> {
+  // `fresh` skips the cached answer (a refresh right after the caller changed
+  // something, e.g. activated a recommendation) and replaces it.
+  if (!fresh && cached && nowMs - cached.at < PIPELINE_SUMMARY_CACHE_MS) {
     return { result: cached.result, cached: true };
+  }
+  if (fresh) {
+    // Never join a computation that may have started before the change.
+    const result = await buildPipelineSummary();
+    if (result.status === 200) cached = { at: Date.now(), result };
+    return { result, cached: false };
   }
   if (!inFlight) {
     inFlight = buildPipelineSummary()
@@ -54,10 +62,11 @@ async function getSummary(nowMs: number): Promise<{ result: PipelineSummaryResul
 
 const router = Router();
 
-router.get('/', requireAdminAuth, async (_req: AuthenticatedRequest, res: Response) => {
+router.get('/', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
   res.setHeader('Cache-Control', 'no-store');
   try {
-    const { result, cached: fromCache } = await getSummary(Date.now());
+    const fresh = String(req.query?.fresh ?? '') === '1';
+    const { result, cached: fromCache } = await getSummary(Date.now(), fresh);
     res.setHeader('X-Pipeline-Summary-Cache', fromCache ? 'hit' : 'miss');
     return res.status(result.status).json(result.body);
   } catch (err) {

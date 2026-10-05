@@ -216,3 +216,36 @@ describe('production reads (VTID-04886)', () => {
     expect(schema).toContain('`ops_attention_acks` (VTID-04886');
   });
 });
+
+describe('sparklines are marked partial when a read hits its row cap (Codex review)', () => {
+  it('sparklinesFrom carries the partial flag; default false', () => {
+    const { sparklinesFrom } = require('../src/services/ops-attention');
+    expect(sparklinesFrom([], Date.now()).partial).toBe(false);
+    expect(sparklinesFrom([], Date.now(), true).partial).toBe(true);
+  });
+
+  it('buildTimeline: a capped timeline or self-heal read makes the totals a lower bound', async () => {
+    const { buildTimeline } = require('../src/services/ops-attention');
+    const { TIMELINE_READ_LIMIT, SELF_HEAL_READ_LIMIT } = require('../src/services/ops-attention-adapters');
+    const now = Date.now();
+    const ev = (i: number) => ({ topic: 'staging.deploy.completed', created_at: new Date(now - i * 60_000).toISOString(), metadata: {} });
+    const mk = (nEv: number, nHeal: number) => ({
+      timelineEvents: async () => Array.from({ length: nEv }, (_, i) => ev(i)),
+      selfHealOutcomes: async () => Array.from({ length: nHeal }, (_, i) => ({ vtid: 'V', endpoint: 'e', failure_class: 'f', outcome: 'escalated', created_at: new Date(now - i * 60_000).toISOString() })),
+    });
+    expect((await buildTimeline(mk(3, 2) as any, now)).sparklines.partial).toBe(false);
+    const a = await buildTimeline(mk(TIMELINE_READ_LIMIT, 0) as any, now);
+    expect(a.sparklines.partial).toBe(true);
+    expect(a.timeline.truncated).toBe(true);
+    const b = await buildTimeline(mk(1, SELF_HEAL_READ_LIMIT) as any, now);
+    expect(b.sparklines.partial).toBe(true);
+    expect(b.timeline.truncated).toBe(true);
+  });
+
+  it('the cockpit labels partial totals as a lower bound', () => {
+    const src = require('fs').readFileSync(require('path').join(__dirname, '../src/frontend/command-hub/app.js'), 'utf8');
+    expect(src).toContain("(sp.partial ? '&ge; ' : '')");
+    expect(src).toContain('ops-spark-partial');
+  });
+});
+

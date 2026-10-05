@@ -91,6 +91,28 @@ describe('GET /api/v1/ops/pipeline-summary — admin (middleware mocked)', () =>
     expect(build).toHaveBeenCalledTimes(1);
   });
 
+  it('?fresh=1 bypasses the cache (a refresh right after a mutation) and replaces it', async () => {
+    const build = jest
+      .fn()
+      .mockResolvedValueOnce({ status: 200, body: { ...SAMPLE_BODY, recommendations: [{ id: 'old' }] } })
+      .mockResolvedValueOnce({ status: 200, body: { ...SAMPLE_BODY, recommendations: [] } });
+    const { app } = appWith({ isAdmin: true, build });
+    await request(app).get('/api/v1/ops/pipeline-summary');
+    const fresh = await request(app).get('/api/v1/ops/pipeline-summary?fresh=1');
+    expect(fresh.headers['x-pipeline-summary-cache']).toBe('miss');
+    expect(fresh.body.recommendations).toEqual([]);
+    const next = await request(app).get('/api/v1/ops/pipeline-summary');
+    expect(next.headers['x-pipeline-summary-cache']).toBe('hit');
+    expect(next.body.recommendations).toEqual([]);
+    expect(build).toHaveBeenCalledTimes(2);
+  });
+
+  it('the cockpit refresh after activate/dismiss/generate asks for ?fresh=1', () => {
+    const src = require('fs').readFileSync(require('path').join(__dirname, '../src/frontend/command-hub/app.js'), 'utf8');
+    expect(src).toMatch(/function refreshOverviewRecommendations\(\) \{[\s\S]{0,300}fetchOverviewRecommendations\(true\)/);
+    expect(src).toContain("'/api/v1/ops/pipeline-summary' + (fresh ? '?fresh=1' : '')");
+  });
+
   it('concurrent requests share one builder run (single-flight)', async () => {
     let release: (v: unknown) => void = () => {};
     const gate = new Promise((r) => { release = r; });

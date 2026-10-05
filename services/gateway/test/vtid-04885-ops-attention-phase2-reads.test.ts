@@ -126,7 +126,7 @@ describe('routines, support tickets, Google fallback', () => {
     ]);
   });
 
-  it('Google calls: llm.call.completed in the window with a Google provider; fallback_used parsed', async () => {
+  it('Google calls: llm.call.completed in the window with a Google provider OR a Gemini model; fallback_used parsed', async () => {
     tableResult.oasis_events = {
       data: [{ created_at: 'C', metadata: { provider: 'vertex', model: 'gemini-x', stage: 'worker', service: 's', fallback_used: true } }],
       error: null,
@@ -134,7 +134,10 @@ describe('routines, support tickets, Google fallback', () => {
     const rows = await createAttentionReads().llmGoogleCalls('W');
     expect(rows).toEqual([{ created_at: 'C', provider: 'vertex', model: 'gemini-x', stage: 'worker', service: 's', fallback_used: true }]);
     expect(calls[0].ops).toContainEqual(['eq', ['topic', 'llm.call.completed']]);
-    expect(calls[0].ops).toContainEqual(['in', ['metadata->>provider', ['vertex', 'google', 'gemini']]]);
+    // A Google landing with a legacy/non-Google provider label is still read
+    // (the model is Gemini); isGoogleLlmCall() makes the final call.
+    expect(calls[0].ops).toContainEqual(['or', ['metadata->>provider.in.(vertex,google,gemini),metadata->>model.ilike.gemini*']]);
+    expect(calls[0].ops.some(([m]) => m === 'in')).toBe(false);
     expect(calls[0].ops).toContainEqual(['limit', [500]]);
   });
 });

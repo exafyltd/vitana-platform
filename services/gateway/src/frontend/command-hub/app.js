@@ -29358,7 +29358,8 @@ function renderOpsAttentionStatusBar(view, nowMs) {
         html += '<div class="ops-sparks">' + sp.series.map(function (x) {
             return '<span class="ops-spark">' + escapeHtml(x.label) + ' ' +
                 opsAttentionSparkSvg(x.buckets, x.label + ' over 24 h, ' + x.total + ' in total') +
-                ' <strong>' + escapeHtml(String(x.total)) + '</strong> in 24 h</span>';
+                ' <strong>' + (sp.partial ? '&ge; ' : '') + escapeHtml(String(x.total)) + '</strong> in 24 h' +
+                (sp.partial ? ' <em class="ops-spark-partial">(partial: the day hit the read cap)</em>' : '') + '</span>';
         }).join('') + '</div>';
     } else if (data && data.sparklines === null && !st.blind) {
         html += '<div class="ops-sparks ops-unknown-sources">Sparklines unavailable — the timeline could not be read.</div>';
@@ -30014,12 +30015,12 @@ function renderOverviewRecommendsPanel() {
     return recsSection;
 }
 
-async function fetchOverviewRecommendations() {
+async function fetchOverviewRecommendations(fresh) {
     var view = state.overviewRecs;
     if (view.loading) return;
     view.loading = true;
     try {
-        var r = await fetchWT('/api/v1/ops/pipeline-summary', {
+        var r = await fetchWT('/api/v1/ops/pipeline-summary' + (fresh ? '?fresh=1' : ''), {
             headers: buildContextHeaders({ Accept: 'application/json' })
         }, 15000);
         var body = null;
@@ -30042,8 +30043,10 @@ async function fetchOverviewRecommendations() {
 }
 
 function refreshOverviewRecommendations() {
+    // Called after activate/dismiss/generate: bypass the 15 s server cache so
+    // the panel never shows the pre-mutation list.
     state.overviewRecs.fetched = false;
-    fetchOverviewRecommendations();
+    fetchOverviewRecommendations(true);
 }
 
 /** Swap only the panel in place; the cockpit and its scroll position stay. */

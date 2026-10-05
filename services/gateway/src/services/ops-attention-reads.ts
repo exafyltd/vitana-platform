@@ -30,6 +30,7 @@ import {
   LEDGER_READ_LIMIT,
   TICKET_CLOSED_STATUSES,
   TIMELINE_READ_LIMIT,
+  SELF_HEAL_READ_LIMIT,
   TIMELINE_TOPICS,
   type AttentionReads,
   type ControlRow,
@@ -136,7 +137,7 @@ export function createAttentionReads(opts: { authHeader?: string } = {}): Attent
               .in('outcome', ['escalated', 'rolled_back'])
               .gte('created_at', sinceIso)
               .order('created_at', { ascending: false })
-              .limit(100),
+              .limit(SELF_HEAL_READ_LIMIT),
             'self_healing_log',
           ) as any[])();
         heals.set(sinceIso, p);
@@ -376,7 +377,9 @@ export function createAttentionReads(opts: { authHeader?: string } = {}): Attent
           .select('created_at,metadata')
           .eq('topic', 'llm.call.completed')
           .gte('created_at', sinceIso)
-          .in('metadata->>provider', GOOGLE_LLM_PROVIDERS)
+          // Provider OR a Gemini model: a Google landing can carry a legacy or
+          // non-Google provider label; isGoogleLlmCall() makes the final call.
+          .or(`metadata->>provider.in.(${GOOGLE_LLM_PROVIDERS.join(',')}),metadata->>model.ilike.gemini*`)
           .order('created_at', { ascending: false })
           .limit(500),
         'oasis_events',

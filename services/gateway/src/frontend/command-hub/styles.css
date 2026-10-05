@@ -17859,6 +17859,7 @@ button.fb-chip:focus-visible,
 .ops-sparks { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; font-size: 0.75rem; color: #cbd5e1; }
 .ops-spark { display: inline-flex; align-items: center; gap: 0.35rem; }
 .ops-spark-svg { fill: currentColor; opacity: 0.85; vertical-align: middle; }
+.ops-spark-partial { font-style: italic; opacity: 0.8; }
 .ops-timeline { display: flex; flex-direction: column; gap: 0.5rem; }
 .ops-timeline-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
 .ops-timeline-item {

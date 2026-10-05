@@ -55,6 +55,7 @@ import {
   SELF_HEAL_ENDPOINT_BLOCKLIST,
   TILE_DOMAINS,
   TIMELINE_READ_LIMIT,
+  SELF_HEAL_READ_LIMIT,
   type OasisEventRow,
   type SelfHealRow,
   type AdapterSpec,
@@ -171,6 +172,8 @@ export interface Sparklines {
   window_hours: number;
   bucket_minutes: number;
   series: Array<{ key: 'deploys' | 'incidents'; label: string; buckets: number[]; total: number }>;
+  /** True when a read hit its row cap: totals are a lower bound, not the day's count. */
+  partial: boolean;
 }
 
 /**
@@ -368,7 +371,7 @@ export function timelineFrom(events: OasisEventRow[], heals: SelfHealRow[]): Tim
 }
 
 /** Pure: hourly buckets (oldest first) over the window ending at `now`. */
-export function sparklinesFrom(events: TimelineEvent[], now: number): Sparklines {
+export function sparklinesFrom(events: TimelineEvent[], now: number, partial = false): Sparklines {
   const hours = TIMELINE_WINDOW_MS / 3_600_000;
   const bucket = (pred: (e: TimelineEvent) => boolean) => {
     const b = new Array(hours).fill(0) as number[];
@@ -389,6 +392,7 @@ export function sparklinesFrom(events: TimelineEvent[], now: number): Sparklines
       { key: 'deploys', label: 'Deploys / h', buckets: deploys, total: sum(deploys) },
       { key: 'incidents', label: 'Incidents / h', buckets: incidents, total: sum(incidents) },
     ],
+    partial,
   };
 }
 
@@ -401,9 +405,11 @@ export async function buildTimeline(reads: AttentionReads, now: number): Promise
       TIMELINE_TIMEOUT_MS,
     );
     const all = timelineFrom(events, heals);
+    // A read that hit its row cap is a newest-first sample, not the whole day.
+    const capped = events.length >= TIMELINE_READ_LIMIT || heals.length >= SELF_HEAL_READ_LIMIT;
     return {
-      timeline: { window_hours: 24, events: all.slice(0, TIMELINE_MAX_EVENTS), truncated: events.length >= TIMELINE_READ_LIMIT || all.length > TIMELINE_MAX_EVENTS, error: null },
-      sparklines: sparklinesFrom(all, now),
+      timeline: { window_hours: 24, events: all.slice(0, TIMELINE_MAX_EVENTS), truncated: capped || all.length > TIMELINE_MAX_EVENTS, error: null },
+      sparklines: sparklinesFrom(all, now, capped),
     };
   } catch (err) {
     return { timeline: { window_hours: 24, events: [], truncated: false, error: errMessage(err) }, sparklines: null };
