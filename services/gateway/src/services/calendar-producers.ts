@@ -35,6 +35,8 @@
 
 import { CalendarEvent, CreateCalendarEventInput, CALENDAR_SOURCE_TYPES } from '../types/calendar';
 import { getSupabaseConfig, headers } from './calendar-service';
+import { getSupabase } from '../lib/supabase';
+import { claimCappedReward } from './rewards/capped-reward';
 
 const LOG_PREFIX = '[CalendarProducers]';
 
@@ -340,7 +342,7 @@ export async function completeCalendarEntriesForSource(
 export async function completeSourceForCalendarEvent(
   event: Pick<CalendarEvent, 'source_ref_type' | 'source_ref_id'>,
   userId: string,
-): Promise<{ completed: boolean; source_ref_type: string | null; error?: string }> {
+): Promise<{ completed: boolean; source_ref_type: string | null; error?: string; reward?: number }> {
   const type = event.source_ref_type ?? null;
   if (!type || !event.source_ref_id) return { completed: false, source_ref_type: type };
   if (type !== 'autopilot_recommendation' && type !== 'goal_plan_step') {
@@ -381,8 +383,21 @@ export async function completeSourceForCalendarEvent(
       console.warn(`${LOG_PREFIX} completing recommendation ${event.source_ref_id} failed (${resp.status}): ${err}`);
       return { completed: false, source_ref_type: type, error: err };
     }
-    const body = (await resp.json()) as { ok?: boolean; error?: string } | null;
-    return { completed: body?.ok === true, source_ref_type: type, error: body?.ok ? undefined : body?.error };
+    const body = (await resp.json()) as { ok?: boolean; error?: string; already_completed?: boolean } | null;
+    // VTID-04878: a first-time completion earns autopilot_action_done (5 VTNA,
+    // at most 2 per UTC day), the same claim the /complete route makes; a
+    // failed claim never fails the completion.
+    let reward = 0;
+    if (body?.ok === true && body.already_completed !== true) {
+      const sb = getSupabase();
+      if (sb) {
+        const claim = await claimCappedReward(sb, {
+          tenantId: null, userId, ruleId: 'autopilot_action_done', ref: event.source_ref_id,
+        });
+        reward = claim.credited;
+      }
+    }
+    return { completed: body?.ok === true, source_ref_type: type, error: body?.ok ? undefined : body?.error, reward };
   } catch (err: any) {
     return { completed: false, source_ref_type: type, error: err?.message };
   }

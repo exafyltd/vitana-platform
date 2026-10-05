@@ -13,6 +13,9 @@ import {
   RewardRuleGroup,
   VTNA_NEVER_EARNS,
   VTNA_REWARD_RULES,
+  capRewardKey,
+  capWindowStart,
+  cappedRules,
   rewardEventId,
   visibleRewardRules,
 } from './vtna-reward-rules';
@@ -26,6 +29,8 @@ export interface RewardOverviewRule {
   amount: number;
   once: boolean;
   cap: { count: number; days: number } | null;
+  /** VTID-04878: calendar window (UTC) of a capped rule; null = rolling `cap.days`. */
+  window: 'day' | 'week' | null;
   /** once-rules: already paid to this member. */
   earned: boolean;
   /** capped rules: how many paid inside the current window. */
@@ -48,6 +53,10 @@ const GROUP_ORDER: RewardRuleGroup[] = ['first_steps', 'habits', 'community'];
 export function ruleIdForKey(key: string | null | undefined, userId: string): string | null {
   if (!key) return null;
   if (key.startsWith('referral_reward:')) return 'invite_friend_joined';
+  // VTID-04878: capped rules are keyed `<rule>:<ref>`.
+  for (const r of cappedRules()) {
+    if (key.startsWith(capRewardKey(r.id, ''))) return r.id;
+  }
   const prefix = 'milestone_';
   const suffix = `_${userId}`;
   if (key.startsWith(prefix) && key.endsWith(suffix)) {
@@ -81,6 +90,7 @@ export function buildRewardOverview(
         amount: r.id === 'invite_friend_joined' ? inviteRewardCredits() : r.amount,
         once: r.once,
         cap: r.cap ?? null,
+        window: r.window ?? null,
         earned: r.once ? keys.has(rewardEventId(r.id, userId)) : false,
         used_in_window: r.cap ? input.windowCounts[r.id] ?? 0 : null,
       })),
@@ -110,22 +120,33 @@ export async function getRewardOverview(userId: string, now: Date = new Date()):
   const invite = VTNA_REWARD_RULES.find((r) => r.id === 'invite_friend_joined');
   const since = new Date(now.getTime() - (invite?.cap?.days ?? 30) * 86_400_000).toISOString();
 
-  const [earned, windowRows, recent, wallet] = await Promise.all([
+  const capped = cappedRules();
+  const [earned, windowRows, recent, wallet, ...cappedRows] = await Promise.all([
     repo.fetchEarnedKeys(sb, userId, onceKeys),
     repo.fetchKeyPrefixSince(sb, userId, `referral_reward:${userId}:`, since),
     repo.fetchRecentRewards(sb, userId, RECENT_SHOWN),
     repo.fetchEarnedBalance(sb, userId),
+    // VTID-04878: each capped rule counts inside its own calendar window (UTC).
+    ...capped.map((r) =>
+      repo.fetchKeyPrefixSince(sb, userId, capRewardKey(r.id, ''), capWindowStart(r.window!, now).toISOString()),
+    ),
   ]);
   for (const [name, r] of [['earned keys', earned], ['invite window', windowRows], ['recent rewards', recent]] as const) {
     if ((r as { error?: { message: string } | null }).error) {
       console.error(`[reward-overview] reading ${name} failed for ${userId.slice(0, 8)}: ${(r as any).error.message}`);
     }
   }
+  const windowCounts: Record<string, number> = { invite_friend_joined: (windowRows.data ?? []).length };
+  capped.forEach((r, i) => {
+    const res = cappedRows[i] as { data?: unknown[] | null; error?: { message: string } | null };
+    if (res.error) console.error(`[reward-overview] reading ${r.id} window failed for ${userId.slice(0, 8)}: ${res.error.message}`);
+    windowCounts[r.id] = (res.data ?? []).length;
+  });
   return buildRewardOverview(
     userId,
     {
       earnedKeys: ((earned.data ?? []) as Array<{ idempotency_key: string }>).map((x) => x.idempotency_key),
-      windowCounts: { invite_friend_joined: (windowRows.data ?? []).length },
+      windowCounts,
       recent: (recent.data ?? []) as RewardOverviewInput['recent'],
     },
     Number((wallet.data as { earned_balance?: number } | null)?.earned_balance ?? 0),

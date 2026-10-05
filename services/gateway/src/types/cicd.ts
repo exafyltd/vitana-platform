@@ -1083,7 +1083,10 @@ export type CicdEventType =
   | 'commerce.ai_setup.applied'
   | 'commerce.mcp.tool_called'
   // VTID-04859: a Founding Member saw (and closed) their free-year celebration.
-  | 'billing.founding.celebrated';
+  | 'billing.founding.celebrated'
+  // VTID-04878: VTNA reward sweep runs
+  | 'rewards.milestone_sweep.completed'
+  | 'rewards.milestone_sweep.failed';
 
 export interface CicdOasisEvent {
   vtid: string;

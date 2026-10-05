@@ -1,0 +1,3 @@
+psql:/home/user/vitana-platform/supabase/migrations/20261001180000_vtid_04809_vtna_reward_ledger.sql:53: NOTICE:  constraint "user_wallets_earned_balance_check" of relation "user_wallets" does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261001180000_vtid_04809_vtna_reward_ledger.sql:69: NOTICE:  constraint "wallet_transactions_credit_source_check" of relation "wallet_transactions" does not exist, skipping
+VTID-04878: all assertions passed
