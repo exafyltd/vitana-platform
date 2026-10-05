@@ -1061,6 +1061,8 @@ router.post('/rooms/:id/enter', requireAuth, async (req: Request, res: Response)
   const identity = (req as AuthenticatedRequest).identity!;
   const token = getBearerToken(req)!;
   console.log(`[VTID-04905] POST /live/rooms/${roomId}/enter`);
+  // OASIS: emitted through emitLiveEvent() ('live.room.entered') on success.
+  // impact-allow-no-oasis
 
   if (!UUID_REGEX.test(roomId)) {
     return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
@@ -1208,6 +1210,8 @@ router.post('/rooms/:id/exit', requireAuth, async (req: Request, res: Response) 
   const identity = (req as AuthenticatedRequest).identity!;
   const token = getBearerToken(req)!;
   console.log(`[VTID-04905] POST /live/rooms/${roomId}/exit`);
+  // OASIS: emitted through emitLiveEvent() ('live.room.exited') when a leave is recorded.
+  // impact-allow-no-oasis
 
   if (!UUID_REGEX.test(roomId)) {
     return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
@@ -2121,6 +2125,15 @@ router.post('/rooms/:id/sessions', optionalAuth, sessionCreateLimiter, async (re
   } catch (err: any) {
     console.warn(`[VTID-01228] community_live_streams sync (create) exception: ${err.message}`);
   }
+
+  await emitOasisEvent({
+    vtid: 'VTID-04905',
+    type: 'live.session.created' as any,
+    source: 'live-gateway',
+    status: 'success',
+    message: `Live session ${result.idempotent ? 'reused' : 'created'} for room ${roomId} (${result.status})`,
+    payload: { room_id: roomId, session_id: result.sessionId, status: result.status, idempotent: result.idempotent },
+  });
 
   return res.status(201).json({
     ok: true,
