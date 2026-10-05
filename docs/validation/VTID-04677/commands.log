@@ -1,0 +1,25 @@
+# VTID-04677 — commands run in the session (2026-10-05)
+
+## Owner, CloudShell (eu-central-1), before this change
+scripts/aws/setup-gateway-internal-token.sh --env prod --apply      → created vitana/gateway/prod/internal-token (ARN …-tv24hp)
+scripts/aws/setup-gateway-internal-token.sh --env staging --apply   → existed since 2026-09-26; value rotated (staging never had it wired, so nothing broke)
+aws iam get-role-policy vitana-ecs-task-execution-role / vitana-ecs-execution-secrets → GetSecretValue on secret:vitana/* (prod can read the new secret)
+aws logs tail /aws/lambda/vitana-push-dispatch → 200 every minute (no token sent today)
+aws logs tail /aws/lambda/vitana-cron-dispatch → only automation jobs fire; the scheduled-notifications cron jobs were never created
+
+## Read-only checks from the session
+curl GET https://preview-aws-gateway.vitanaland.com/api/v1/scheduled-notifications/health → 200 application/json (no auth_mode yet)
+curl GET https://gateway.vitanaland.com/api/v1/scheduled-notifications/health            → 200 application/json
+staging deploy log (run 37266441078): "internal-token secret absent (VTID-04226) - not wired" although the secret exists
+
+## Plan sparring (VTID-04868 gate)
+plan-sparring-partner, round 1: 3 major + 4 minor, all accepted; round 2: all closed, 1 new minor accepted → converged
+owner approval in session: "yes, approved"
+
+## Build and tests
+bash -n scripts/aws/setup-eventbridge-{push-dispatch,daily-feature-tip,whats-new,cron-migration}.sh → ok
+node --check (embedded Lambda code of all four scripts)                                              → ok
+DEFAULT_TENANT_ID=t1 bash scripts/aws/setup-eventbridge-cron-migration.sh --dry-run                  → Jobs: 30, notification jobs carry the prod token secret
+npx tsc --noEmit -p services/gateway                                                                 → clean
+npx jest test/vtid-04677-scheduled-notifications-auth.test.ts test/vtid-04226-eventbridge-test-contract-schedules.test.ts → 40 passed
+node scripts/ci/staging-verify/lib.cjs validateManifest(docs/validation/VTID-04677/staging-tests.json) → ok

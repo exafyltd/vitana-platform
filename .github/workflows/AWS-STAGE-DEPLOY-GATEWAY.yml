@@ -797,6 +797,10 @@ jobs:
 # Production runs the code default (log) until its logs show no unknown
 # callers. Rollback: "log" (or "off" in an emergency).
 #
+# VTID-04677 -- SCHEDULED_NOTIFICATIONS_AUTH_MODE=log: /api/v1/scheduled-
+# notifications/* logs every call without X-Gateway-Internal and lets it
+# through. Flipping to "enforce" is a separate, owner-approved change.
+#
 # VTID-04333 -- FEEDBACK_AUTO_DISPATCH_ENABLED=true, STAGING ONLY (owner
 # decision 2026-09-23, docs/CUSTOMER-SUPPORT-REBUILD-BRIEF.md §3.5.1): a
 # spec_ready bug/ux_issue ticket with a real (non-placeholder) spec is
@@ -956,9 +960,12 @@ jobs:
           else
             echo "  resolved vitana/gateway/staging/operator-sql-readonly-url -> OPERATOR_SQL_READONLY_ENABLED=true"
           fi
-          SEC_INTERNAL_TOKEN=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/internal-token --query ARN --output text 2>/dev/null || true)
+          # VTID-04677: the secret exists (created 2026-09-26) yet this lookup
+          # kept reporting it absent, because the AWS error was discarded. Print it.
+          SEC_IT_ERR=$(mktemp)
+          SEC_INTERNAL_TOKEN=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/internal-token --query ARN --output text 2>"$SEC_IT_ERR" || true)
           [ "$SEC_INTERNAL_TOKEN" = "None" ] && SEC_INTERNAL_TOKEN=""
-          [ -n "$SEC_INTERNAL_TOKEN" ] && echo "  resolved internal-token" || echo "  internal-token secret absent (VTID-04226) - not wired"
+          [ -n "$SEC_INTERNAL_TOKEN" ] && echo "  resolved internal-token" || echo "  internal-token secret not resolved (VTID-04226/04677) - not wired: $(head -c 300 "$SEC_IT_ERR" | tr '\n' ' ')"
           SEC_MACHINE_AUTH=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/operator-machine-auth-token --query ARN --output text 2>/dev/null || true)
           if [ -z "$SEC_MACHINE_AUTH" ] || [ "$SEC_MACHINE_AUTH" = "None" ]; then
             SEC_MACHINE_AUTH=""
@@ -1025,7 +1032,7 @@ jobs:
                                                 "OPERATOR_VTID_SELF_ALLOCATE_ENABLED","OPERATOR_PR_APPROVAL_REQUIRED",
                                                 "OPERATOR_THREADS_ENABLED","OPERATOR_TURN_MEMORY_ENABLED",
                                                 "REMINDERS_INPROCESS_DISPATCH_ENABLED","CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","MEMORY_ORB_RECALL_ENABLED","MEMORY_ORB_RECALL_SHADOW",
-                                                "FEEDBACK_AUTO_DISPATCH_ENABLED","LEDGER_WRITE_AUTH_MODE",
+                                                "FEEDBACK_AUTO_DISPATCH_ENABLED","LEDGER_WRITE_AUTH_MODE","SCHEDULED_NOTIFICATIONS_AUTH_MODE",
                                                 "NAV_V2_ENABLED","NAV_REGISTRY_URL",
                                                 "OPERATOR_SQL_READONLY_ENABLED","OPERATOR_SQL_READONLY_BACKEND",
                                                 "OPERATOR_MACHINE_AUTH_ENABLED",
@@ -1096,6 +1103,7 @@ jobs:
                           {name:"CALENDAR_MAINTENANCE_ENABLED", value:"true"},
                           {name:"FEEDBACK_AUTO_DISPATCH_ENABLED", value:"true"},
                           {name:"LEDGER_WRITE_AUTH_MODE", value:"enforce"},
+                          {name:"SCHEDULED_NOTIFICATIONS_AUTH_MODE", value:"log"},
                           {name:"MEMORY_ORB_RECALL_ENABLED", value:"true"},
                           {name:"MEMORY_ORB_RECALL_SHADOW", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},

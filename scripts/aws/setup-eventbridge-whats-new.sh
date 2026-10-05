@@ -35,6 +35,8 @@ export AWS_PAGER=""
 REGION="${VITANA_AWS_REGION:-eu-central-1}"           # matches the rest of this repo's AWS estate (CLAUDE.md §2b)
 ACCOUNT_ID="${AWS_ACCOUNT_ID:-472838866351}"          # this repo's documented AWS account (CLAUDE.md §1b)
 GATEWAY_URL="${GATEWAY_URL:-https://gateway.vitanaland.com}"
+# VTID-04677: secret holding the X-Gateway-Internal token for GATEWAY_URL.
+INTERNAL_TOKEN_SECRET_ID="${GATEWAY_INTERNAL_TOKEN_SECRET_ID:-vitana/gateway/prod/internal-token}"
 TARGET_PATH="/api/v1/scheduled-notifications/whats-new"
 # Same tenant the earlier direct-DB test/publish rounds this session used.
 TENANT_ID="${DEFAULT_TENANT_ID:-2e7528b8-472a-4356-88da-0280d4639cce}"
@@ -57,6 +59,7 @@ done
 echo "Region:       $REGION"
 echo "Account:      $ACCOUNT_ID"
 echo "Gateway:      $GATEWAY_URL$TARGET_PATH"
+echo "Token secret: $INTERNAL_TOKEN_SECRET_ID"
 echo "Tenant:       $TENANT_ID"
 echo "Delete:       $DELETE"
 echo "Dry run:      $DRY_RUN"
@@ -68,6 +71,7 @@ if $DELETE; then
   aws lambda delete-function --function-name "$LAMBDA_NAME" --region "$REGION" 2>/dev/null || true
   aws iam delete-role-policy --role-name "$SCHEDULER_ROLE_NAME" --policy-name "invoke-lambda-target" 2>/dev/null || true
   aws iam delete-role --role-name "$SCHEDULER_ROLE_NAME" 2>/dev/null || true
+  aws iam delete-role-policy --role-name "$LAMBDA_EXEC_ROLE_NAME" --policy-name "read-gateway-internal-token" 2>/dev/null || true
   aws iam detach-role-policy --role-name "$LAMBDA_EXEC_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole" 2>/dev/null || true
   aws iam delete-role --role-name "$LAMBDA_EXEC_ROLE_NAME" 2>/dev/null || true
   echo "Done."
@@ -101,6 +105,11 @@ aws iam attach-role-policy \
   --role-name "$LAMBDA_EXEC_ROLE_NAME" \
   --policy-arn "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 LAMBDA_EXEC_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${LAMBDA_EXEC_ROLE_NAME}"
+# VTID-04677: read-only access to exactly the one internal-token secret.
+aws iam put-role-policy \
+  --role-name "$LAMBDA_EXEC_ROLE_NAME" \
+  --policy-name "read-gateway-internal-token" \
+  --policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"secretsmanager:GetSecretValue\",\"Resource\":\"arn:aws:secretsmanager:${REGION}:${ACCOUNT_ID}:secret:${INTERNAL_TOKEN_SECRET_ID}-*\"}]}"
 
 echo "Waiting 10s for IAM role propagation..."
 sleep 10
@@ -110,6 +119,31 @@ echo "── Packaging Lambda function"
 WORKDIR=$(mktemp -d)
 cat > "$WORKDIR/index.js" <<'JS'
 const https = require('https');
+// VTID-04677: the scheduled-notifications routes require X-Gateway-Internal.
+// The token is read from Secrets Manager (never an env var or the schedule
+// Input) and cached for 5 minutes, so a rotation reaches a warm container
+// within minutes. If the read fails, the call still goes out without the
+// header and the error is logged: in the gateway's default log mode the
+// notification still flows; in enforce mode the 401 makes the Lambda fail
+// loudly instead of silently skipping a run.
+const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
+let tokenCache = { value: null, at: 0 };
+async function internalToken() {
+  const id = process.env.GATEWAY_INTERNAL_TOKEN_SECRET_ID;
+  if (!id) { console.error('GATEWAY_INTERNAL_TOKEN_SECRET_ID is unset — calling without X-Gateway-Internal'); return null; }
+  if (tokenCache.value && Date.now() - tokenCache.at < 5 * 60 * 1000) return tokenCache.value;
+  try {
+    const out = await new SecretsManagerClient({}).send(new GetSecretValueCommand({ SecretId: id }));
+    let t = String(out.SecretString || '').trim();
+    if (t.startsWith('{')) { try { t = String(JSON.parse(t).token || '').trim(); } catch (_) { t = ''; } }
+    if (!t) throw new Error('secret is empty');
+    tokenCache = { value: t, at: Date.now() };
+    return t;
+  } catch (e) {
+    console.error(`could not read ${id}: ${e.message} — calling without X-Gateway-Internal`);
+    return null;
+  }
+}
 
 // No scheduler-level retry (see the schedule's RetryPolicy below). The
 // gateway dedupes by entry id and enforces a 20h gap, so a retry would be
@@ -122,6 +156,7 @@ exports.handler = async () => {
     '/api/v1/scheduled-notifications/whats-new'
   );
   const payload = JSON.stringify({ tenant_id: process.env.TENANT_ID });
+  const token = await internalToken();
   return new Promise((resolve, reject) => {
     const req = https.request(
       {
@@ -131,6 +166,7 @@ exports.handler = async () => {
         headers: {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(payload),
+          ...(token ? { 'X-Gateway-Internal': token } : {}),
         },
         timeout: 55000,
       },
@@ -165,7 +201,7 @@ if aws lambda create-function \
   --handler index.handler \
   --zip-file "fileb://$WORKDIR/function.zip" \
   --timeout 60 \
-  --environment "Variables={GATEWAY_URL=$GATEWAY_URL,TENANT_ID=$TENANT_ID}" \
+  --environment "Variables={GATEWAY_URL=$GATEWAY_URL,TENANT_ID=$TENANT_ID,GATEWAY_INTERNAL_TOKEN_SECRET_ID=$INTERNAL_TOKEN_SECRET_ID}" \
   --description "Vitana whats-new cron trigger (VTID-04733)" 2>&1; then
   echo "Function created."
 else
@@ -179,7 +215,7 @@ else
     --function-name "$LAMBDA_NAME" \
     --region "$REGION" \
     --timeout 60 \
-    --environment "Variables={GATEWAY_URL=$GATEWAY_URL,TENANT_ID=$TENANT_ID}"
+    --environment "Variables={GATEWAY_URL=$GATEWAY_URL,TENANT_ID=$TENANT_ID,GATEWAY_INTERNAL_TOKEN_SECRET_ID=$INTERNAL_TOKEN_SECRET_ID}"
   echo "Function code and configuration updated."
 fi
 LAMBDA_ARN="arn:aws:lambda:${REGION}:${ACCOUNT_ID}:function:${LAMBDA_NAME}"
