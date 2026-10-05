@@ -23,3 +23,8 @@ DEFAULT_TENANT_ID=t1 bash scripts/aws/setup-eventbridge-cron-migration.sh --dry-
 npx tsc --noEmit -p services/gateway                                                                 → clean
 npx jest test/vtid-04677-scheduled-notifications-auth.test.ts test/vtid-04226-eventbridge-test-contract-schedules.test.ts → 40 passed
 node scripts/ci/staging-verify/lib.cjs validateManifest(docs/validation/VTID-04677/staging-tests.json) → ok
+
+## CI follow-up (validate-pr exit 33, impact-scan warning)
+validate-pr Evidence Pack Gate: REJECTED exit 33 (no outputs/) → added outputs/jest.txt and outputs/cron-migration-dry-run.txt
+impact-scan new-route-without-auth-middleware: its allowlist did not know requireScheduledNotificationsAuth → added (same as requireLedgerWriteAuth); test runs the rule on the route diff, fails with the name removed
+node scripts/ci/validate-pr-locally.cjs --title-file … --body-file … --base main → APPROVED

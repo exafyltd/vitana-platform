@@ -259,3 +259,20 @@ describe('scheduler Lambda scripts', () => {
     expect(src).toContain('"arn:aws:secretsmanager:${REGION}:${ACCOUNT_ID}:secret:${PROD_INTERNAL_TOKEN_SECRET_ID}-*"');
   });
 });
+
+describe('route-auth CI rule', () => {
+  it('new-route-without-auth-middleware accepts the file-level router.use(requireScheduledNotificationsAuth)', () => {
+    const diff = [
+      'diff --git a/services/gateway/src/routes/scheduled-notifications.ts b/services/gateway/src/routes/scheduled-notifications.ts',
+      '+++ b/services/gateway/src/routes/scheduled-notifications.ts',
+      "+router.post('/whats-new', async (req: Request, res: Response) => { // auth: scheduled-notifications-auth (VTID-04677)",
+    ].join('\n');
+    const script = `
+      import { check } from './scripts/ci/impact-rules/new-route-without-auth-middleware.mjs';
+      const findings = await check({ diff: ${JSON.stringify(diff)}, repoRoot: process.cwd() });
+      process.stdout.write(JSON.stringify(findings));
+    `;
+    const out = execFileSync('node', ['--input-type=module', '-e', script], { cwd: ROOT }).toString();
+    expect(JSON.parse(out)).toEqual([]);
+  });
+});
