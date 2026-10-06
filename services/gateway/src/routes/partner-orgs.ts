@@ -23,7 +23,7 @@ import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { getUserLocale } from '../i18n/server-locale';
 import { buildInviteAcceptUrl, sendPartnerInviteEmail } from '../services/email/partner-invite-email';
-import { PARTNER_TYPES, isPartnerType, parseCompanyFacts, verticalForPartnerType } from '../services/partner-lifecycle';
+import { normalizeSetupKey, registerPartnerOrg, type CommerceVertical } from '../services/partner-setup';
 
 const router = Router();
 
@@ -39,15 +39,9 @@ export const ACTIVATABLE_STATUSES = ['pending_review', 'suspended', 'active'] as
 // VTID-03974 — the machine-readable routing signal that decides whether an
 // activated org gets a partner_registry bridge (see POST /:orgId/activate
 // below). Deliberately separate from org_type, which stays free-text.
-const COMMERCE_VERTICALS = ['health', 'general'] as const;
-type CommerceVertical = (typeof COMMERCE_VERTICALS)[number];
 
 function isOrgRole(value: unknown): value is OrgRole {
   return typeof value === 'string' && (ORG_ROLES as readonly string[]).includes(value);
-}
-
-function isCommerceVertical(value: unknown): value is CommerceVertical {
-  return typeof value === 'string' && (COMMERCE_VERTICALS as readonly string[]).includes(value);
 }
 
 export function getCallerId(req: Request): string | null {
@@ -118,82 +112,13 @@ router.post('/register', requireAuth, async (req: Request, res: Response) => {
   const callerId = getCallerId(req);
   if (!callerId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
 
-  const orgKey = typeof req.body?.org_key === 'string' ? req.body.org_key.trim().toLowerCase() : '';
-  const displayName = typeof req.body?.display_name === 'string' ? req.body.display_name.trim() : '';
-  const orgType = typeof req.body?.org_type === 'string' ? req.body.org_type.trim() : '';
-  const rawPartnerType = req.body?.partner_type;
-  let commerceVertical = req.body?.commerce_vertical;
-  const businessDetails = req.body?.business_details && typeof req.body.business_details === 'object' ? req.body.business_details : {};
-
-  if (!orgKey) return res.status(400).json({ ok: false, error: 'org_key is required' });
-  if (!displayName) return res.status(400).json({ ok: false, error: 'display_name is required' });
-  if (!orgType) return res.status(400).json({ ok: false, error: 'org_type is required' });
-  // VTID-04471 — partner_type is the enforced vocabulary; when given it
-  // decides commerce_vertical (the DB trigger derives it the same way).
-  // Without it, commerce_vertical stays required as before.
-  const partnerType = rawPartnerType === undefined || rawPartnerType === null || rawPartnerType === '' ? null : rawPartnerType;
-  if (partnerType !== null && !isPartnerType(partnerType)) {
-    return res.status(400).json({ ok: false, error: `partner_type must be one of: ${PARTNER_TYPES.join(', ')}` });
-  }
-  if (partnerType !== null) {
-    const derived = verticalForPartnerType(partnerType);
-    if (commerceVertical !== undefined && commerceVertical !== null && commerceVertical !== derived) {
-      return res.status(400).json({ ok: false, error: `commerce_vertical must be '${derived}' for partner_type '${partnerType}'` });
-    }
-    commerceVertical = derived;
-  }
-  if (!isCommerceVertical(commerceVertical)) {
-    return res.status(400).json({ ok: false, error: `commerce_vertical must be one of: ${COMMERCE_VERTICALS.join(', ')}` });
-  }
-  const companyFacts = parseCompanyFacts(req.body);
-  if (!companyFacts.ok) return res.status(400).json({ ok: false, error: companyFacts.error });
-
-  const { data: org, error: orgErr } = await supabase
-    .from('partner_organizations')
-    .insert({
-      org_key: orgKey,
-      display_name: displayName,
-      org_type: orgType,
-      commerce_vertical: commerceVertical,
-      status: 'pending_review',
-      owner_user_id: callerId,
-      business_details: businessDetails,
-      ...(partnerType !== null ? { partner_type: partnerType } : {}),
-      ...companyFacts.facts,
-    })
-    .select('id, org_key, display_name, org_type, partner_type, commerce_vertical, status, lifecycle_state, legal_name, country, vat_id, website')
-    .single();
-  if (orgErr || !org) {
-    if (orgErr?.code === '23505') return res.status(409).json({ ok: false, error: 'org_key already taken' });
-    return res.status(500).json({ ok: false, error: orgErr?.message ?? 'partner_organizations insert failed' });
-  }
-  const orgRow = org as {
-    id: string;
-    org_key: string;
-    display_name: string;
-    org_type: string;
-    partner_type: string | null;
-    commerce_vertical: CommerceVertical;
-    status: string;
-    lifecycle_state: string;
-  };
-
-  const { error: memberErr } = await supabase
-    .from('partner_organization_members')
-    .insert({ partner_organization_id: orgRow.id, user_id: callerId, role: 'org_admin', granted_by: callerId });
-  if (memberErr) return res.status(500).json({ ok: false, error: memberErr.message });
-
-  await emitOasisEvent({
-    vtid: 'VTID-03932',
-    type: 'partner_org.registered',
-    source: 'partner-orgs',
-    status: 'success',
-    message: `Partner organization "${orgRow.display_name}" (${orgRow.org_key}) self-registered by ${callerId}.`,
-    payload: { partner_organization_id: orgRow.id, org_key: orgRow.org_key, org_type: orgRow.org_type, partner_type: orgRow.partner_type ?? null },
-    actor_id: callerId,
+  // VTID-04837: the logic lives in services/partner-setup.ts (shared with the
+  // AI setup). An optional Idempotency-Key makes a retry return the same org.
+  const result = await registerPartnerOrg(supabase, callerId, (req.body ?? {}) as Record<string, unknown>, {
+    setupKey: normalizeSetupKey(req.get('Idempotency-Key')),
   });
-
-  return res.status(201).json({ ok: true, organization: orgRow });
+  if (!result.ok) return res.status(result.status).json(result.body);
+  return res.status(result.status).json({ ok: true, organization: result.data.organization });
 });
 
 // ==================== Mine ====================

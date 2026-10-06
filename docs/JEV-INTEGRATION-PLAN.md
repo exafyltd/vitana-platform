@@ -643,7 +643,12 @@ Community Autopilot may send telemetry; member data follows the member rules
 4. `tenant_settings.feature_flags.jev = {enabled, planes[], monthly_budget_usd}`.
    No flag = internal planes only, no cap. Malformed or unreadable = fail
    closed. Spend persisted per tenant × plane × month (`jev_spend_counters`).
-   Budget exhausted → fallback 429 + event.
+   Budget exhausted → fallback 429 + event. **VTID-04857:** the budget caps
+   community/customer spend only (`member`, `patient`, `partner_org`;
+   member content counts as `member` whoever runs it); internal and
+   system_autopilot are never capped. The owner is paged at 80% and 100%
+   (`jev.budget.threshold_crossed` + Command Hub chat, once per tenant ×
+   month × level).
 5. Shadow framework: `jev_shadow_decisions`, `JEV_<GATE>_MODE=off|shadow|enforce`
    (exact; anything else off), `runJevGate()`, `recordJevShadowOutcome()`.
    Command Hub card `/command-hub/jev.html`: calls, cost, month spend,
@@ -740,6 +745,212 @@ top classes become findings.
   explicitly a company; agreement against the kind the create implies. Both
   pinned shadow on both gateways.
 
+### 10.4b P2 progress
+P1 gates have no production data yet (production was not deployed after they
+merged), so P2 does not switch any P1 gate to enforce; the new P2 gates land
+in shadow first, and enforce is decided per gate once agreement data exists.
+
+- **A8 — VTID-04797 (shadow).** `jev/gates/finding-dedupe-gate.ts`, after a
+  new `dev_autopilot` finding is inserted: Jev `finding_duplicate` against up
+  to 3 live findings on the same file. One row per new finding naming the
+  closest; agreement from how that finding ends (join on its id).
+
+- **B3 — VTID-04799 (shadow).** In `jev/gates/selfheal-gates.ts`, for every
+  incident B2 does not own: Jev `ops_error_triage` names the cause class and
+  whether a human is needed before the triage LLM call. Agreement from
+  triage's own report ("transient" ↔ info severity). Enforce would skip only
+  a decided "transient"; not pinned.
+
+- **A6 — VTID-04800 (shadow).** `jev/gates/ci-failure-gate.ts`, in the
+  watcher's CI-failed branch: Jev `ci_failure_bucket` per failing check (log
+  excerpt), next to a rule bucket (governance checks by name; `error TS`,
+  Jest FAIL, npm ERR!, runner loss by log line). Agreement at once where the
+  rules knew. Every failure still goes to fix mode until enforce is decided.
+
+- **A4 — VTID-04801 (shadow).** `jev/gates/repeat-run-gate.ts`, at the claim
+  beside A2, only when the finding failed in the last 7 days: same plan
+  version → a rules row (repeat), otherwise Jev `execution_repeat` compares
+  the two plans and the previous failure. Outcome from the run's result.
+
+- **B5 + B4 — VTID-04802 (shadow).** `jev/gates/deploy-cause-gate.ts`, started
+  with triage: no deploy of this environment in 24 h → rules row "no deploy
+  seen"; otherwise the deploy's commits (previous deploy … this one, ≤5) are
+  scored by Jev `commit_cause_score` from subject + paths. Agreement when
+  triage's affected component is in the top commit's paths.
+
+- **B6 — VTID-04803 (shadow).** `jev/gates/fix-verification-gate.ts`, at each
+  verification verdict (pass / blast-radius fail / re-probe fail): Jev
+  `fix_verification` asks whether the finding's problem is resolved and
+  whether the evidence suffices. Agreement with the rules at once; the
+  interesting rows are passes Jev doubts on unprobed findings.
+
+- **C2 — VTID-04804 (shadow).** `jev/gates/backstop-cluster-gate.ts`, an
+  hourly tick that judges the previous UTC day once: this environment's
+  voice backstop firings (`orb.live.diag` remember/recall/forget backstops,
+  holds, tool-loop guard, refused opening actions, …) grouped by stage +
+  sub-cause; each cluster with ≥ 3 firings goes to Jev
+  `backstop_cluster_defect` (defect? which kind?), counts only. One row per
+  cluster per day, never repeated. Turning defect clusters into Dev
+  Autopilot findings comes after the data.
+
+- **C3 — VTID-04805 (shadow).** `jev/gates/slow-session-gate.ts`, an hourly
+  tick that judges the previous UTC day once: each stalled voice session
+  (`orb.live.stall_detected`) of this environment is summarised from its own
+  events (prewarm missed, context build time, tool calls/failures, upstream
+  close, reconnects, audio counters — never transcripts) and sent to Jev
+  `slow_session_cause`, next to a small rules mapping (e.g. prewarm missed +
+  forwarding_no_ack → upstream_connection; 22 of 24 such stalls in 14 days).
+  One row per session; agreement with the rules where they name a cause.
+
+- **A3 — VTID-04806 (shadow).** `jev/gates/plannability-gate.ts`, on a
+  first-time Dev Autopilot plan (never a human's continue-planning call):
+  Jev `finding_plannable` (plannable? blocker: vague / broad / needs a
+  decision / no location) runs beside the planner, never awaited. The row's
+  outcome is what the planner produced: a plan citing files, a plan without
+  files, a planner failure, or an infrastructure error (excluded from
+  agreement — most of the 30 days' plan failures are ~30-39 s "unknown
+  error", not the finding).
+
+- **A5 — VTID-04807 (shadow).** `jev/gates/test-selection-gate.ts`. The
+  agent runner re-runs only name-paired suites (+ asset readers); suites that
+  import a changed module under another name first run in CI. After the
+  runner's checks pass, those importer suites (max 8) are listed from the
+  clone and Jev `test_suite_relevance` judges each from its path, the changed
+  modules it imports and its test titles. When CI reports, the row records
+  whether a failing suite was one Jev picked (agreed) or skipped (disagreed).
+  Like A1, it runs where the agent runs; the ECS executor task needs the
+  TypeSafe secret before it produces rows there.
+
+- **A7 — VTID-04808 (shadow).** `jev/gates/pr-clash-gate.ts`. Right before
+  the watcher merges a green PR, the other open executions (CI or merging,
+  with a PR) that share a file or a directory with it — at most 3, shared
+  files first — go to Jev `pr_clash` in pairs: will merging this one now make
+  the other conflict or break? Never awaited; the merge is unchanged. When one
+  of those others next reports (a dirty CI failure, or CI passed) the row
+  records whether Jev's call for it was right. 18 dirty-merge CI failures in
+  60 days, 13 on one day of parallel runs.
+
+- **E5 — VTID-04810 (shadow).** `jev/gates/duplicate-account-gate.ts`, after
+  a `crm.company.create` or a company `sales.customer.create` executes (both
+  command paths). Entity resolution only matches names exactly, so "Acme
+  GmbH", "ACME" and "Acme Holding" become three accounts. The ERP is read
+  through the bridge's own list actions; up to 3 similar company records (never
+  a person's) go to Jev `account_duplicate` with business fields only. A rule
+  calls a pair the same when the names match once case, punctuation and
+  legal-form words are removed; agreement is written against that at once.
+  Leads and contacts (people) wait for the DPA.
+
+- **E7 — VTID-04811 (shadow).** `jev/gates/approval-risk-gate.ts`. When a
+  High-risk Backoffice command is queued for a second person, Jev
+  `approval_risk` scores it (routine / some risk / high risk / looks wrong)
+  from the type, action, escalations, an allow-list of business values
+  (amount, currency, kind, dates, references, line counts) and the other
+  payload fields by name only; payroll is never sent. The approver's verdict
+  is the outcome ("high risk" or worse agrees with a rejection). Showing the
+  hint to approvers is enforce, after the data.
+
+With E7 every P2 slice has landed in shadow (A3–A8, B3–B6, C2–C3, E5, E7).
+Enforcing any gate waits for agreement data, which needs a production deploy.
+
+### 10.4c P3 progress
+- **A9 — VTID-04815 (shadow, advisory).** `jev/gates/change-risk-gate.ts`.
+  The finding's `risk_class` is set before any code exists. After the agent
+  runner pushes a new change, Jev `change_risk` scores the diff itself (low /
+  moderate / high / very high) from the paths, diff stat, a bounded patch
+  excerpt, tests in the diff and fix rounds. The outcome is how it landed: a
+  CI failure that is not a dirty merge, or the post-deploy verification verdict
+  (first landing wins). Showing the score to the reviewer is enforce. Runs
+  where the agent runs (like A1/A5).
+
+- **A10 — VTID-04816 (shadow).** `jev/gates/operator-route-gate.ts`. Every
+  Operator Console turn sends the model the whole tool catalog (~60 tools).
+  Beside each turn (never awaited before it) Jev `operator_route` names the
+  lane — answer only / task management / code lookup / ops diagnostics /
+  delivery / community; the lane of the tools the turn actually called is the
+  outcome, known at once. Every operator tool is mapped to a lane (a test
+  fails when a new tool has none). Enforce — sending only the lane's tools —
+  after the data.
+
+- **C4 — VTID-04817 (shadow).** `jev/gates/opener-outcome-gate.ts`, an hourly
+  tick that judges the last 7 days once per UTC day: each voice opener
+  (`greeting_sent` wake_opener + next-step candidate kind) joined to its
+  sessions' finalized counts, grouped; groups with ≥ 10 sessions go to Jev
+  `opener_effectiveness` (working? keep / reword / reposition / drop), counts
+  only. A rule calls a group under-performing below 70% of the overall engaged
+  share. 14 days to 2026-10-01: conv_resume + wake_brief 436 sessions, 9%
+  engaged; resume_thread + wake_brief 63%; conv_resume + next_step 21%.
+
+- **F (first slice) — VTID-04818 (shadow).** `jev/gates/lesson-novelty-gate.ts`.
+  Before each lesson extracted from an Operator Console turn or a Dev
+  Autopilot run is written to `dev_agent_memory`, the three most similar
+  stored lessons are recalled and Jev `lesson_novelty` judges the candidate
+  (new and durable? new / duplicate / update / too specific / not a lesson).
+  The write is unchanged; agreement is written at once where the similarity
+  rule is certain (≥ 0.92 duplicate, < 0.75 new). Skipping duplicates and
+  superseding updates is enforce. The weekly root-cause roll-up into findings
+  is a later slice.
+
+- **E8 — VTID-04819 (shadow).** `jev/gates/payment-match-gate.ts`, after an
+  executed `finance.payment.allocate`: the payment and the invoice are read
+  through the bridge's own read actions; Jev `payment_invoice_match` sees
+  amounts, currencies, dates, references and whether the parties are the same
+  (compared here, names never sent). A rule is certain on a different party or
+  currency (no match) and on same party + currency + exact amount (match);
+  agreement at once there. The prod workflow's Jev comment is shortened in
+  this slice to keep the task-definition step under GitHub's 20,000-char limit
+  (19,759 now); the next few pins fit, after that the Jev pins need their own step.
+
+- **E10 — VTID-04820 (shadow, advisory).** `jev/gates/partner-triage-gate.ts`,
+  after a partner onboarding submit's state moves: Jev
+  `partner_onboarding_triage` (ready? main concern) from business facts
+  (type, vertical, legal name, country, website host, VAT id present) and the
+  checklist, next to the rules' live / needs_action outcome, under the
+  submitting user's tenant (business decisions are tenant-scoped). Never
+  contact persons; showing it to the reviewer is enforce; approval stays
+  human.
+
+- **E1 — VTID-04821 (shadow).** Owner decision 2026-10-01: company
+  documentation is on the Exafy corporate Google Drive (and OneDrive), reached
+  only through Exafy accounts (d.stevanovic@exafy.io, j.tadic@exafy.io today).
+  `services/company-docs/company-docs.ts` + Operator Console tools
+  `dev_company_docs_search` / `dev_company_docs_connect`, verified exafy_admin
+  only, never on the member Connected Apps screen. Each person connects their
+  own drive read-only (drive.readonly / Files.Read.All); a connection whose
+  account is not on `COMPANY_DOCS_DOMAINS` (default exafy.io) is never
+  searched. Names, kinds, dates and links only, never contents. After a
+  search, Jev `company_doc_relevance` (`jev/gates/company-doc-relevance-gate.ts`)
+  picks the result that answers it (or none) under the caller's tenant;
+  agreement with the provider's rank 1 at once. The search text is not
+  stored (hashed subject_ref).
+
+- **E2 — VTID-04822 (shadow).** `jev/gates/document-type-gate.ts`, after a
+  company document search: the top three results (folders skipped, each
+  document at most once a month) are typed by Jev `document_type` (contract,
+  invoice, quote/order, policy, specification, presentation, report,
+  corporate-legal, HR, marketing, other) from name, kind and source, and each
+  type maps to a route (clause review → E9, payment match → E8, knowledge
+  base → E11, sales, legal records, restricted). The rule next to it is a
+  keyword match on the file name in English, German and Serbian; agreement at
+  once where it names a type, open otherwise. Routing is enforce. With this
+  pin the prod task-definition step is at 19,964 of GitHub's 20,000 chars:
+  the next Jev gate first moves the Jev pins into their own step.
+
+- **F (second slice) — VTID-04825 (shadow).** `jev/gates/root-cause-rollup-gate.ts`.
+  Once per UTC day, each Dev Autopilot execution that ended badly the day
+  before (failed, reverted, escalated, cancelled) gets a root-cause class from
+  Jev `execution_root_cause` (status, stage and the failure texts, cut and
+  redacted) next to a keyword rule on the same text (quota/outage, scope
+  violation, turn cap via the retry breaker's own pattern, merge conflict,
+  deploy, verification, CI checks, cancelled). Every Monday the last seven
+  days' classes — these and B3's incident causes — are counted; each class
+  seen at least 3 times is recorded as `would_open_finding`. Opening the
+  finding is enforce. Evidence when built: of the last 12 bad endings, 3 were
+  a daily Bedrock token quota and 1 a scope-guard trip on the generated
+  `specs/command-hub-symbol-index.json`.
+
+P3 status: complete in shadow — A9, A10, C4, F (both slices), E8, E10, E1, E2.
+The Jev pins now have their own production deploy step (VTID-04824).
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,
@@ -754,8 +965,30 @@ dev/ops/backoffice; member ranking priced per tenant budget.
 ### 10.6 Owner decisions still open
 1. TypeSafe DPA / zero-retention (unlocks member_content and phi).
 2. Which Drive/OneDrive account(s) Backoffice search reads.
-3. Community cost control: per-tenant monthly budget, which tenants (maxina,
-   alkalma) get the member plane.
+3. ~~Community cost control~~ — approved 2026-10-03: Maxina $50/month,
+   Alkalma $10/month, 80% page, rules at 100%; Class A community uses on;
+   Class B (incl. D1–D8 ranking) shadow first, 300/member/day, safety exempt;
+   Class C off; community rate share ≈30% of 1,200 rpm. Slice 1 is
+   VTID-04857 (budget scope + alerts + tenant flags). Slice 2 is VTID-04872: decisions
+   carry `community_class` A/B/C and `safety`; member-spend Class B calls
+   count per member per UTC day (`jev_member_daily_counters`, 300),
+   `JEV_MEMBER_QUOTA_MODE` shadow by default (`jev.member_quota.would_refuse`
+   on the first call over), enforce → 429 fallback; safety decisions never
+   limited; Class C refused on the member plane. Slice 3 is VTID-04874:
+   member-spend calls take a token from a per-gateway-task bucket holding the
+   community share of the account rate limit (`JEV_COMMUNITY_RPM_PER_TASK`,
+   default 180 = 360/min = 30% of 1,200 over 2 tasks; set it when the task
+   count changes); internal and Dev Autopilot never take a token.
+   `JEV_COMMUNITY_RATE_MODE` shadow by default (`jev.community_rate.would_limit`,
+   at most one per task per 10 min), enforce → `community_rate_limited` 429.
+   A second TypeSafe key was not used: the limit is per account. Class A
+   community decisions are VTID-04879: C1 `community_intent_kind` (beside
+   `classifyIntentKind`), C3 `community_marketplace_intent` (beside the
+   keyword heuristic), C10 `community_worth_remembering` (before the per-turn
+   extractor, settled from facts stored), C19 `community_ticket_triage`
+   (beside `pick_specialist_for_text`) — shadow, staging-only pins, inert until
+   the member plane opens on staging, which is held until the TypeSafe DPA
+   (owner 2026-10-04). C2 deferred: no LLM selection exists to replace.
 4. Whether Community Autopilot on member data counts as the member plane
    (implemented as yes).
 

@@ -40,9 +40,16 @@ import {
   completeLLMCallDetached,
   failLLMCallDetached,
 } from './llm-telemetry-service';
-import { invokeBedrock, type BedrockContentBlock } from '../providers/bedrock';
+import {
+  invokeBedrock,
+  type BedrockContentBlock,
+  type BedrockThinkingBlock,
+  type BedrockThinkingConfig,
+  type BedrockEffort,
+} from '../providers/bedrock';
 import {
   LLM_SAFE_DEFAULTS,
+  NO_FALLBACK_STAGES,
   type LLMRoutingPolicy,
   type LLMStage,
   type LLMProvider,
@@ -131,7 +138,27 @@ export interface LLMRouterOpts {
    */
   providerOverride?: LLMProvider;
   modelOverride?: string;
+  /**
+   * VTID-04868: Anthropic-shaped request extensions. `thinking: {type:'adaptive'}`
+   * and `effort` (sent as `output_config.effort`) are honoured by the Bedrock
+   * adapter only; every other adapter ignores them. Both default OFF — omitted,
+   * the Bedrock request body is byte-identical to before this change.
+   */
+  thinking?: LLMRouterThinkingConfig;
+  effort?: LLMRouterEffort;
 }
+
+/** VTID-04868: see LLMRouterOpts.thinking. */
+export type LLMRouterThinkingConfig = BedrockThinkingConfig;
+/** VTID-04868: see LLMRouterOpts.effort. */
+export type LLMRouterEffort = BedrockEffort;
+/**
+ * VTID-04868: a thinking / redacted_thinking block returned by the model.
+ * OPAQUE: callers must hand it back byte-for-byte (signature/data included) on
+ * the assistant turn it came from — the API rejects a modified or reordered
+ * block when the turn carries tool_use.
+ */
+export type LLMRouterThinkingBlock = BedrockThinkingBlock;
 
 /** Returned when `forceTool` is set and the model emitted a tool call. */
 export interface LLMRouterToolCall {
@@ -158,8 +185,13 @@ export interface LLMRouterToolCall {
  */
 export type LLMRouterMessage =
   | { role: 'user' | 'assistant'; content: string }
-  /** The model asked to call tools. */
-  | { role: 'assistant'; toolCalls: LLMRouterToolCall[]; content?: string }
+  /**
+   * The model asked to call tools. VTID-04868: `thinking` carries the turn's
+   * thinking / redacted_thinking blocks VERBATIM, in the order the model
+   * emitted them; Anthropic-shaped adapters render them first in the turn,
+   * other adapters ignore them.
+   */
+  | { role: 'assistant'; toolCalls: LLMRouterToolCall[]; content?: string; thinking?: LLMRouterThinkingBlock[] }
   /** The caller ran them; these are the outcomes, in the same order. */
   | {
       role: 'user';
@@ -190,6 +222,12 @@ export interface LLMRouterResult {
    * agentic caller must not act on it as if the model had finished the turn.
    */
   truncated?: boolean;
+  /**
+   * VTID-04868: thinking / redacted_thinking blocks from this turn, verbatim
+   * and in order (Bedrock only, and only when thinking was requested). Pass
+   * them back on the assistant history entry for this turn.
+   */
+  thinkingBlocks?: LLMRouterThinkingBlock[];
 }
 
 interface AdapterCallArgs {
@@ -203,6 +241,9 @@ interface AdapterCallArgs {
   forceTool?: number;
   /** VTID-03579: prior turns; `prompt` is appended as the current user turn. */
   history?: LLMRouterMessage[];
+  /** VTID-04868: Bedrock-only request extensions (default off). */
+  thinking?: LLMRouterThinkingConfig;
+  effort?: LLMRouterEffort;
 }
 
 interface AdapterResult {
@@ -215,6 +256,8 @@ interface AdapterResult {
   error?: string;
   /** VTID-04381: provider stop reason, verbatim. */
   stopReason?: string;
+  /** VTID-04868: thinking blocks, verbatim (Bedrock only). */
+  thinkingBlocks?: LLMRouterThinkingBlock[];
 }
 
 /**
@@ -304,6 +347,10 @@ function renderAnthropicHistory(
   for (const m of history ?? []) {
     if ('toolCalls' in m && m.toolCalls) {
       const blocks: BedrockContentBlock[] = [];
+      // VTID-04868: thinking blocks lead the assistant turn, verbatim. A turn
+      // with tool_use whose thinking is dropped or edited is rejected by the
+      // API once thinking is on; spread-copying keeps signature/data intact.
+      for (const tb of m.thinking ?? []) blocks.push({ ...tb });
       if (m.content) blocks.push({ type: 'text', text: m.content });
       for (const tc of m.toolCalls) {
         blocks.push({ type: 'tool_use', id: tc.id ?? tc.name, name: tc.name, input: tc.arguments });
@@ -899,7 +946,7 @@ const claudeSubscriptionAdapter: ProviderAdapter = {
  */
 const bedrockAdapter: ProviderAdapter = {
   isAvailable: () => Boolean(process.env.BEDROCK_ROLE_ARN),
-  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool, history }): Promise<AdapterResult> {
+  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool, history, thinking, effort }): Promise<AdapterResult> {
     // VTID-03496: images and tools are now supported. Bedrock speaks the same
     // Anthropic Messages API shape as `anthropicAdapter` above, so the content
     // blocks, tool schema key (`input_schema`) and `tool_choice` are built
@@ -948,6 +995,9 @@ const bedrockAdapter: ProviderAdapter = {
       max_tokens: maxTokens,
       tools: bedrockTools,
       tool_choice: toolChoice,
+      // VTID-04868: only present when the caller asked — default off.
+      ...(thinking ? { thinking } : {}),
+      ...(effort ? { output_config: { effort } } : {}),
     });
 
     if (!result.ok) {
@@ -959,6 +1009,7 @@ const bedrockAdapter: ProviderAdapter = {
       toolCall: result.toolCall,
       toolCalls: result.toolCalls,
       stopReason: result.stopReason,
+      ...(result.thinkingBlocks && result.thinkingBlocks.length > 0 ? { thinkingBlocks: result.thinkingBlocks } : {}),
       usage: {
         inputTokens: result.usage?.input_tokens ?? 0,
         outputTokens: result.usage?.output_tokens ?? 0,
@@ -1076,7 +1127,12 @@ export async function callViaRouter(
   // stored row wholesale rather than merging per-stage defaults (unlike
   // `getStageRoutingConfig()`, which does merge). The guard below was already
   // correct; only the annotation claimed otherwise.
-  const policyStageConfig: StageRoutingConfig | undefined = policy[stage];
+  // VTID-04868: a no-fallback stage (plan_sparring) is absent from every
+  // stored policy today; resolve it to its compiled-in default (Bedrock, NULL
+  // fallback) rather than failing with "No policy configured".
+  const noFallbackStage = NO_FALLBACK_STAGES.includes(stage);
+  const policyStageConfig: StageRoutingConfig | undefined =
+    policy[stage] ?? (noFallbackStage ? LLM_SAFE_DEFAULTS[stage] : undefined);
   if (!policyStageConfig) {
     return { ok: false, error: `No policy configured for stage '${stage}'` };
   }
@@ -1092,7 +1148,18 @@ export async function callViaRouter(
       }
     : policyStageConfig;
 
-  const allowFallback = opts.allowFallback !== false;
+  // VTID-04868: a no-fallback stage never falls back, whatever the caller or
+  // the stored policy says, and only ever runs on Bedrock — a stored
+  // non-Bedrock primary is refused before any provider is called.
+  if (noFallbackStage && stageConfig.primary_provider !== 'bedrock') {
+    return {
+      ok: false,
+      error: `Stage '${stage}' must run on bedrock; refusing configured provider '${stageConfig.primary_provider}'`,
+      provider: stageConfig.primary_provider,
+      model: stageConfig.primary_model,
+    };
+  }
+  const allowFallback = opts.allowFallback !== false && !noFallbackStage;
 
   // === PRIMARY ===
   const primary = await runProviderCall(
@@ -1179,6 +1246,8 @@ async function runProviderCall(
     tools: opts.tools,
     forceTool: opts.forceTool,
     history: opts.history,
+    thinking: opts.thinking,
+    effort: opts.effort,
   });
 
   // VTID-04794: a reply cut off by the output cap with no text and no tool
@@ -1229,6 +1298,7 @@ async function runProviderCall(
       fallbackUsed,
       stopReason: result.stopReason,
       truncated: isTruncatedStop(result.stopReason),
+      ...(result.thinkingBlocks ? { thinkingBlocks: result.thinkingBlocks } : {}),
     };
   }
 

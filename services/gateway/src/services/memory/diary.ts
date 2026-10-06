@@ -141,6 +141,81 @@ export async function resolveTenantId(admin: SupabaseClient, userId: string, jwt
   return (data?.tenant_id as string | undefined) ?? NIL_TENANT;
 }
 
+export interface DiaryEpisodeInput {
+  diary_entry_id: string;
+  text: string;
+  source: string;
+  tags: string[];
+  occurred_at: string;
+}
+
+function diaryEpisodeFields(input: DiaryEpisodeInput) {
+  return {
+    category_key: diaryCategoryFromTags(input.tags),
+    content_json: { kind: 'diary', diary_entry_id: input.diary_entry_id, diary_source: input.source, tags: input.tags },
+  };
+}
+
+/**
+ * The memory episode for one diary row (VTID-04390). Every diary writer calls
+ * this or saveDiaryEntry(); VTID-04884 found the voice tool skipped it.
+ * Returns the memory_items id, or null. Never throws.
+ */
+export async function writeDiaryEpisode(
+  identity: { user_id: string; tenant_id: string },
+  input: DiaryEpisodeInput,
+): Promise<string | null> {
+  try {
+    const written = await writeMemoryItemWithIdentity(
+      { tenant_id: identity.tenant_id, user_id: identity.user_id, active_role: null },
+      {
+        source: 'diary',
+        content: input.text,
+        ...diaryEpisodeFields(input),
+        // <= 50: trg_notify_memory_garden notifies above 50 (VTID-04390).
+        importance: 50,
+        occurred_at: input.occurred_at,
+        skipFiltering: true,
+      },
+    );
+    if (!written.ok) console.warn(`[VTID-04390] diary episode write failed: ${written.error}`);
+    return written.ok ? written.id ?? null : null;
+  } catch (err: any) {
+    console.warn(`[VTID-04390] diary episode write threw: ${err?.message ?? err}`);
+    return null;
+  }
+}
+
+/**
+ * VTID-04884: a diary row's text changed (the voice tool appends dictation
+ * fragments to one row). Update its episode, or write it if there is none
+ * yet, which also repairs an earlier failed write. Never throws.
+ */
+export async function updateDiaryEpisodeText(
+  admin: SupabaseClient,
+  identity: { user_id: string; tenant_id: string },
+  input: DiaryEpisodeInput,
+): Promise<string | null> {
+  try {
+    const { data, error } = await admin
+      .from('memory_items')
+      .update({ content: input.text })
+      .eq('user_id', identity.user_id)
+      .eq('content_json->>diary_entry_id', input.diary_entry_id)
+      .select('id');
+    if (error) {
+      console.warn(`[VTID-04884] diary episode update failed: ${error.message}`);
+      return null;
+    }
+    const rows = (data as Array<{ id: string }> | null) ?? [];
+    if (rows.length > 0) return rows[0].id;
+    return await writeDiaryEpisode(identity, input);
+  } catch (err: any) {
+    console.warn(`[VTID-04884] diary episode update threw: ${err?.message ?? err}`);
+    return null;
+  }
+}
+
 /** Save one diary entry through every step. Never throws. */
 export async function saveDiaryEntry(
   admin: SupabaseClient,
@@ -165,28 +240,15 @@ export async function saveDiaryEntry(
   if (error || !row) return { ok: false, status: 502, error: error?.message ?? 'INSERT_FAILED' };
   const entry = row as { id: string; created_at: string };
 
-  let memoryItemId: string | null = null;
-  if (input.text) {
-    try {
-      const written = await writeMemoryItemWithIdentity(
-        { tenant_id: identity.tenant_id, user_id: identity.user_id, active_role: null },
-        {
-          source: 'diary',
-          content: input.text,
-          category_key: diaryCategoryFromTags(tags),
-          // <= 50: trg_notify_memory_garden notifies above 50 (VTID-04390).
-          importance: 50,
-          occurred_at: entry.created_at,
-          skipFiltering: true,
-          content_json: { kind: 'diary', diary_entry_id: entry.id, diary_source: input.source, tags },
-        },
-      );
-      memoryItemId = written.ok ? written.id ?? null : null;
-      if (!written.ok) console.warn(`[VTID-04390] diary episode write failed: ${written.error}`);
-    } catch (err: any) {
-      console.warn(`[VTID-04390] diary episode write threw: ${err?.message ?? err}`);
-    }
-  }
+  const memoryItemId = input.text
+    ? await writeDiaryEpisode(identity, {
+        diary_entry_id: entry.id,
+        text: input.text,
+        source: input.source,
+        tags,
+        occurred_at: entry.created_at,
+      })
+    : null;
 
   let index: DiaryIndexSync | null = null;
   if (input.text) {

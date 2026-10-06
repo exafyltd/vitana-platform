@@ -134,6 +134,12 @@ export type SelectionReason =
   // NEW, dedicated GCP project — never the decommissioned one. See
   // `vertex-serbian-bridge.ts` for the full rationale.
   | 'vertex_serbian_bridge'
+  // VTID-04813 — the SECOND narrow exception, same shape as the Serbian one
+  // above and deliberately its own reason so telemetry can tell the two
+  // apart. Fires only for `ru` sessions, only when
+  // `VERTEX_RUSSIAN_BRIDGE_ENABLED=true`, on the same new, dedicated GCP
+  // project. See `vertex-russian-bridge.ts`.
+  | 'vertex_russian_bridge'
   | 'provider_invalid';           // unknown provider string anywhere → vertex
 
 export interface CanarySelectorConfig {
@@ -245,6 +251,23 @@ export interface UpstreamSelectorContext {
    * satisfy this gate.
    */
   vertexSerbianBridge?: {
+    enabled: boolean;
+    languageSupported: boolean;
+  };
+
+  /**
+   * VTID-04813: the SECOND narrow exception, identical in shape and
+   * discipline to `vertexSerbianBridge` above and deliberately a SEPARATE
+   * field rather than a language list on that one — Russian turns on and
+   * off without touching Serbian, and neither predicate can be quietly
+   * appended to. Precomputed by the caller from
+   * `vertex-russian-bridge.ts`'s pure predicates; both fields must be
+   * explicit `true`, so a missing/undefined object can never satisfy the
+   * gate. See `vertex-russian-bridge.ts` for why Polly cannot fix the
+   * Russian voice and why this reuses the already-provisioned Serbian
+   * bridge infrastructure.
+   */
+  vertexRussianBridge?: {
     enabled: boolean;
     languageSupported: boolean;
   };
@@ -491,13 +514,19 @@ function tryCascadeRescue(
 }
 
 /**
- * VTID-04000 — the one narrow exception to "Vertex is not a destination"
- * (VTID-03723's own hard-won invariant, added after the pl/pt
- * English-speaking incident this file's header documents). Mirrors
- * `tryCascadeRescue`'s exact contract — same `languageBlocked` gate, same
- * "returns null when it does not apply" shape — and is checked BEFORE
- * `tryCascadeRescue` at every call site, so a Serbian session gets the
- * Vertex bridge instead of the cascade while the bridge is active.
+ * VTID-04000 (`sr`) and VTID-04813 (`ru`) — the narrow, explicit exceptions
+ * to "Vertex is not a destination" (VTID-03723's own hard-won invariant,
+ * added after the pl/pt English-speaking incident this file's header
+ * documents). Mirrors `tryCascadeRescue`'s exact contract — same
+ * `languageBlocked` gate, same "returns null when it does not apply"
+ * shape — and is checked BEFORE `tryCascadeRescue` at every call site, so a
+ * bridged session gets Vertex instead of the cascade while its own bridge
+ * is active.
+ *
+ * Each bridge is a separate, independently-switchable pair of flags rather
+ * than one flag over a language list (see `vertex-russian-bridge.ts`), so
+ * this stays "one language, one switch, one narrow gate" per bridge and
+ * neither can be quietly extended to a third language.
  *
  * Both `enabled` and `languageSupported` must be explicit `true`; either
  * absent/false and this returns null, falling through to the existing
@@ -509,12 +538,25 @@ function tryVertexBridgeRescue(
   languageBlocked: boolean,
 ): UpstreamSelectionDecision | null {
   if (!languageBlocked) return null;
-  if (ctx.vertexSerbianBridge?.enabled !== true) return null;
-  if (ctx.vertexSerbianBridge.languageSupported !== true) return null;
+
+  // VTID-04813: two independent bridges, checked in turn. Each needs BOTH
+  // of its own fields explicitly true, and each yields its own
+  // `SelectionReason` so a Russian session is never reported as a Serbian
+  // one. Serbian is evaluated first purely because it shipped first — the
+  // two predicates are mutually exclusive by language, so order cannot
+  // change which one fires.
+  const bridge =
+    ctx.vertexSerbianBridge?.enabled === true && ctx.vertexSerbianBridge.languageSupported === true
+      ? ('vertex_serbian_bridge' as const)
+      : ctx.vertexRussianBridge?.enabled === true && ctx.vertexRussianBridge.languageSupported === true
+        ? ('vertex_russian_bridge' as const)
+        : null;
+  if (!bridge) return null;
+
   return {
     provider: 'vertex',
     requested: 'nova_sonic',
-    reason: 'vertex_serbian_bridge',
+    reason: bridge,
     livekitReady: false,
     canary: false,
     novaReady: false,

@@ -1,614 +1,89 @@
 /**
- * VTID-NAV-02: Admin Navigator API
+ * VTID-NAV-02: Admin Navigator API — telemetry.
  *
- * CRUD + simulation + coverage + telemetry for the Vitana Navigator catalog.
- * Every endpoint is gated on exafy_admin. All writes emit an audit row so
- * admins can revert.
+ * Mounted at /api/v1/admin/navigator, gated on exafy_admin. The React admin
+ * UI in vitana-v1 (/admin/navigator/telemetry) is the only consumer.
  *
- * Mounted at /api/v1/admin/navigator. The React admin UI in vitana-v1 is
- * the only consumer.
+ *   GET /telemetry — 7/30/90-day aggregates of orb.navigator.* OASIS events
  *
- * Endpoints:
- *   GET    /catalog                     — list (optional ?tenant_id, ?category, ?q, ?lang)
- *   GET    /catalog/:id                 — one entry + recent audit history
- *   POST   /catalog                     — create (writes audit)
- *   PATCH  /catalog/:id                 — update (writes audit)
- *   DELETE /catalog/:id                 — soft delete (writes audit)
- *   POST   /catalog/:id/restore/:audit  — restore a prior version (writes audit)
- *   POST   /simulate                    — run the real consult pipeline against an utterance
- *   GET    /spa-routes                  — canonical list of React Router paths (cross-tenant)
- *   GET    /coverage                    — SPA routes ↔ catalog coverage diff
- *   GET    /telemetry                   — 7/30-day aggregates from oasis_events
- *   POST   /reload                      — force cache refresh (dev convenience)
- *
- * IMPORTANT: /spa-routes reads the build-time generated JSON shipped with
- * vitana-v1 (scripts/extract-routes.ts → src/generated/spa-routes.json). The
- * gateway does not yet bundle vitana-v1, so this endpoint currently returns
- * a hard-coded fallback derived from App.tsx; once the gateway picks up the
- * generated file at deploy time it will auto-upgrade.
+ * VTID-04846: the catalog CRUD, simulator, coverage, spa-routes and reload
+ * endpoints edited or read the nav_catalog table, which the voice navigator
+ * no longer uses (its screens come from the screen registry). They are gone,
+ * with their admin pages (vitana-v1 VTID-04853).
  */
 
-import { Router, Request, Response } from 'express';
-import { VITANA_ROLES } from '../constants/vitana-roles';
+import { Router, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { requireAdminAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
-import {
-  refreshNavCatalogCache,
-  invalidateNavCatalogCache,
-  getCatalogForTenant,
-  NavCatalogEntryWithRules,
-} from '../lib/nav-catalog-db';
-import { consultNavigator, type NavigatorConsultInput } from '../services/navigator-consult';
-import { SPA_ROUTES_FALLBACK } from '../lib/spa-routes-fallback';
 import * as repo from './admin-navigator-repository';
 
 const router = Router();
 const VTID = 'VTID-NAV-02';
 
-// VTID-NAV-02: Every admin-navigator endpoint accepts BOTH Platform and
-// Lovable JWTs via the dual-JWT requireAdminAuth middleware. The community
-// app (vitana-v1) uses Lovable Supabase, so this is required for admins
-// logged in through the community app to actually reach these endpoints.
-// requireAdminAuth enforces (a) valid JWT signature against either secret,
-// (b) non-expired, (c) app_metadata.exafy_admin === true — returning 401 or
-// 403 as appropriate. It attaches req.identity for downstream handlers.
+// Accepts both Platform and Lovable JWTs (dual-JWT requireAdminAuth):
+// valid signature, not expired, app_metadata.exafy_admin === true.
 router.use(requireAdminAuth);
 
-function actorFromReq(req: AuthenticatedRequest): { user_id: string; email: string } {
+type Pick = { screen_id?: string; score?: number };
+
+export interface NavigatorTelemetry {
+  event_count: number;
+  by_type: Record<string, number>;
+  top_screens: Array<{ screen_id: string; count: number }>;
+  failed_utterances: Array<{ utterance: string; confidence: string; top_picks?: Pick[] }>;
+  near_misses: Array<{ utterance: string; picked: Pick; runner_up: Pick; delta: number }>;
+}
+
+/**
+ * Aggregate navigator events. Reads both shapes in the window: the registry
+ * navigator's (`resolver: 'registry-v2'`: `kind`, `candidates`, scores 0..1)
+ * and the legacy consult's (`confidence`, `top_picks`, scores 0..100), so a
+ * window spanning the switch stays readable.
+ */
+export function aggregateNavigatorTelemetry(events: Array<{ type: string; payload?: unknown }>): NavigatorTelemetry {
+  const byType: Record<string, number> = {};
+  const byScreen: Record<string, number> = {};
+  const failed: NavigatorTelemetry['failed_utterances'] = [];
+  const nearMisses: NavigatorTelemetry['near_misses'] = [];
+
+  for (const ev of events) {
+    byType[ev.type] = (byType[ev.type] || 0) + 1;
+    const p = (ev.payload || {}) as Record<string, any>;
+    const registry = p.resolver === 'registry-v2';
+    const picks: Pick[] = registry
+      ? (Array.isArray(p.candidates) ? p.candidates : [])
+      : (p.top_picks || (p.primary ? [p.primary] : []));
+    const counted: Pick[] = registry && ev.type === 'orb.navigator.requested' && p.screen_id ? [{ screen_id: p.screen_id }] : picks;
+    if (!registry || ev.type === 'orb.navigator.requested') {
+      for (const pick of counted) if (pick?.screen_id) byScreen[pick.screen_id] = (byScreen[pick.screen_id] || 0) + 1;
+    }
+    const utterance = String(p.question || '');
+    if (registry && ev.type === 'orb.navigator.resolved') {
+      if ((p.kind === 'none' || p.kind === 'unavailable') && utterance) failed.push({ utterance, confidence: p.kind, top_picks: picks });
+      if (p.kind === 'ambiguous' && picks.length >= 2 && picks[0].score != null && picks[1].score != null) {
+        nearMisses.push({ utterance, picked: picks[0], runner_up: picks[1], delta: Math.round((picks[0].score - picks[1].score) * 1000) / 1000 });
+      }
+    } else if (!registry) {
+      if (p.confidence === 'low' && utterance) failed.push({ utterance, confidence: p.confidence, top_picks: picks });
+      const [a, b] = picks;
+      if (a?.score != null && b?.score != null) {
+        const delta = a.score - b.score;
+        if (delta >= 0 && delta <= 4) nearMisses.push({ utterance, picked: a, runner_up: b, delta });
+      }
+    }
+  }
+
   return {
-    user_id: req.identity?.user_id || 'unknown',
-    email: req.identity?.email || 'unknown',
+    event_count: events.length,
+    by_type: byType,
+    top_screens: Object.entries(byScreen)
+      .map(([screen_id, count]) => ({ screen_id, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 25),
+    failed_utterances: failed.slice(0, 50),
+    near_misses: nearMisses.slice(0, 50),
   };
 }
-
-// ── Validation helpers ──────────────────────────────────────────────────────
-
-const VALID_CATEGORIES = [
-  'public', 'auth', 'community', 'business', 'wallet', 'health',
-  'discover', 'home', 'memory', 'ai', 'inbox', 'settings',
-] as const;
-
-const VALID_ACCESS = ['public', 'authenticated'] as const;
-
-// BOOTSTRAP-NAV-ROLE: the role-surfaces a catalog entry can be scoped to. Mirror
-// of the app's getRoleNavigation cases (+ developer/infra, which fall through to
-// the community sidebar but are accepted for completeness). 'community' is the
-// default — every catalog entry today is the consumer surface.
-// VTID-03832: shared constant (adds 'backoffice'); re-exported so existing importers keep working.
-export const VALID_ROLES = VITANA_ROLES;
-const DEFAULT_ROLE = 'community';
-export function normalizeRole(r: unknown): string {
-  return typeof r === 'string' && (VALID_ROLES as readonly string[]).includes(r) ? r : DEFAULT_ROLE;
-}
-
-function validateCatalogPayload(body: any, { isPartial }: { isPartial: boolean }): string | null {
-  if (!body || typeof body !== 'object') return 'PAYLOAD_REQUIRED';
-
-  // BOOTSTRAP-NAV-PLATFORM: platform, when provided, must be a known surface.
-  if (body.platform != null && body.platform !== 'mobile' && body.platform !== 'desktop') {
-    return "platform must be 'mobile' or 'desktop'";
-  }
-
-  // BOOTSTRAP-NAV-ROLE: role, when provided, must be a known role-surface.
-  if (body.role != null && !VALID_ROLES.includes(body.role)) {
-    return `role must be one of: ${VALID_ROLES.join(', ')}`;
-  }
-
-  if (!isPartial) {
-    if (typeof body.screen_id !== 'string' || body.screen_id.trim() === '') {
-      return 'screen_id required';
-    }
-    if (typeof body.route !== 'string' || !body.route.startsWith('/')) {
-      return 'route must be a string starting with /';
-    }
-    if (!VALID_CATEGORIES.includes(body.category)) {
-      return 'category invalid';
-    }
-    if (!VALID_ACCESS.includes(body.access)) {
-      return 'access invalid';
-    }
-    if (!body.i18n || typeof body.i18n !== 'object' || !body.i18n.en) {
-      return 'i18n.en required (at least title + when_to_visit)';
-    }
-    if (!body.i18n.en.title || !body.i18n.en.when_to_visit) {
-      return 'i18n.en must include title and when_to_visit';
-    }
-  } else {
-    if (body.category && !VALID_CATEGORIES.includes(body.category)) return 'category invalid';
-    if (body.access && !VALID_ACCESS.includes(body.access)) return 'access invalid';
-    if (body.route && (typeof body.route !== 'string' || !body.route.startsWith('/'))) {
-      return 'route must start with /';
-    }
-  }
-
-  if (body.priority != null && (typeof body.priority !== 'number' || body.priority < 0 || body.priority > 10)) {
-    return 'priority must be a number 0..10';
-  }
-  if (body.related_kb_topics && !Array.isArray(body.related_kb_topics)) {
-    return 'related_kb_topics must be an array';
-  }
-  if (body.context_rules && typeof body.context_rules !== 'object') {
-    return 'context_rules must be an object';
-  }
-  if (body.override_triggers && !Array.isArray(body.override_triggers)) {
-    return 'override_triggers must be an array';
-  }
-  if (Array.isArray(body.override_triggers)) {
-    for (const trig of body.override_triggers) {
-      if (!trig || typeof trig !== 'object') return 'override_triggers entries must be objects';
-      if (typeof trig.phrase !== 'string' || typeof trig.lang !== 'string') {
-        return 'override_triggers entries require phrase + lang';
-      }
-    }
-  }
-  return null;
-}
-
-async function writeAudit(args: {
-  catalog_id: string | null;
-  screen_id: string | null;
-  tenant_id: string | null;
-  action: 'create' | 'update' | 'delete' | 'restore';
-  before: any;
-  after: any;
-  actor_user_id: string;
-  actor_email: string;
-}): Promise<void> {
-  const supabase = getSupabase();
-  if (!supabase) return;
-  const { error } = await repo.insertNavCatalogAudit(supabase, {
-    catalog_id: args.catalog_id,
-    screen_id: args.screen_id,
-    tenant_id: args.tenant_id,
-    action: args.action,
-    before: args.before,
-    after: args.after,
-    actor_user_id: args.actor_user_id,
-    actor_email: args.actor_email,
-  });
-  if (error) console.warn(`[${VTID}] audit insert failed: ${error.message}`);
-}
-
-// ── GET /catalog ────────────────────────────────────────────────────────────
-
-router.get('/catalog', async (req: AuthenticatedRequest, res: Response) => {
-  const supabase = getSupabase();
-  if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
-
-  const { tenant_id, category, q, lang: langQ, include_inactive, platform, role } = req.query;
-
-  try {
-    const { data: rows, error } = await repo.fetchNavCatalogList(supabase, {
-      // BOOTSTRAP-NAV-PLATFORM: scope to one MAXINA catalog (Mobile by default).
-      platform: platform === 'desktop' ? 'desktop' : 'mobile',
-      // BOOTSTRAP-NAV-ROLE: scope to one role-surface (community by default).
-      role: normalizeRole(role),
-      includeInactive: include_inactive === 'true',
-      category: category && typeof category === 'string' ? category : null,
-      tenantId: tenant_id && typeof tenant_id === 'string' ? tenant_id : null,
-    });
-    if (error) return res.status(500).json({ ok: false, error: error.message });
-
-    const catalogIds = (rows || []).map((r: any) => r.id);
-    let i18nByCatalog: Record<string, any[]> = {};
-    if (catalogIds.length > 0) {
-      const { data: i18nRows } = await repo.fetchNavCatalogI18nForCatalogIds(supabase, catalogIds);
-      for (const r of (i18nRows as any[]) || []) {
-        (i18nByCatalog[r.catalog_id] ||= []).push(r);
-      }
-    }
-
-    let merged = (rows || []).map((r: any) => ({ ...r, i18n: i18nByCatalog[r.id] || [] }));
-
-    // Optional free-text filter against english title + when_to_visit.
-    if (q && typeof q === 'string') {
-      const needle = q.toLowerCase();
-      merged = merged.filter((r: any) => {
-        const en = (r.i18n || []).find((x: any) => x.lang === 'en');
-        if (!en) return false;
-        return (en.title || '').toLowerCase().includes(needle) ||
-               (en.when_to_visit || '').toLowerCase().includes(needle);
-      });
-    }
-
-    return res.json({ ok: true, data: merged, count: merged.length });
-  } catch (err: any) {
-    console.error(`[${VTID}] GET /catalog:`, err.message);
-    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
-  }
-});
-
-// ── GET /catalog/:id ────────────────────────────────────────────────────────
-
-router.get('/catalog/:id', async (req: AuthenticatedRequest, res: Response) => {
-  const supabase = getSupabase();
-  if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
-
-  const { id } = req.params;
-  try {
-    const { data: row, error } = await repo.fetchNavCatalogEntryById(supabase, id);
-    if (error) return res.status(500).json({ ok: false, error: error.message });
-    if (!row) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
-
-    const { data: i18nRows } = await repo.fetchNavCatalogI18nRows(supabase, id);
-
-    const { data: auditRows } = await repo.fetchNavCatalogAuditHistory(supabase, id, 50);
-
-    return res.json({
-      ok: true,
-      data: { ...row, i18n: i18nRows || [] },
-      audit: auditRows || [],
-    });
-  } catch (err: any) {
-    console.error(`[${VTID}] GET /catalog/:id:`, err.message);
-    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
-  }
-});
-
-// ── POST /catalog ───────────────────────────────────────────────────────────
-
-router.post('/catalog', async (req: AuthenticatedRequest, res: Response) => {
-  const auth = actorFromReq(req as any);
-
-  const supabase = getSupabase();
-  if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
-
-  const err = validateCatalogPayload(req.body, { isPartial: false });
-  if (err) return res.status(400).json({ ok: false, error: 'INVALID_INPUT', message: err });
-
-  try {
-    const insertRow: any = {
-      screen_id: req.body.screen_id.trim(),
-      tenant_id: req.body.tenant_id || null,
-      route: req.body.route.trim(),
-      category: req.body.category,
-      access: req.body.access,
-      anonymous_safe: !!req.body.anonymous_safe,
-      priority: req.body.priority || 0,
-      // BOOTSTRAP-NAV-PLATFORM: which catalog this screen belongs to (Mobile default).
-      platform: req.body.platform === 'desktop' ? 'desktop' : 'mobile',
-      // BOOTSTRAP-NAV-ROLE: which role-surface this screen belongs to (community default).
-      role: normalizeRole(req.body.role),
-      related_kb_topics: req.body.related_kb_topics || [],
-      context_rules: req.body.context_rules || {},
-      override_triggers: req.body.override_triggers || [],
-      is_active: true,
-      updated_by: auth.user_id,
-    };
-
-    const { data: created, error: insertErr } = await repo.insertNavCatalogEntry(supabase, insertRow);
-
-    if (insertErr) {
-      // Unique index violation → friendly message for the admin UI.
-      if (insertErr.code === '23505') {
-        return res.status(409).json({ ok: false, error: 'SCREEN_ID_CONFLICT', message: insertErr.message });
-      }
-      return res.status(500).json({ ok: false, error: insertErr.message });
-    }
-
-    // i18n rows
-    const i18nRows = Object.entries(req.body.i18n || {}).map(([lang, c]: [string, any]) => ({
-      catalog_id: created.id,
-      lang,
-      title: c.title || '',
-      description: c.description || '',
-      when_to_visit: c.when_to_visit || '',
-    }));
-    if (i18nRows.length > 0) {
-      const { error: i18nErr } = await repo.insertNavCatalogI18nRows(supabase, i18nRows);
-      if (i18nErr) console.warn(`[${VTID}] i18n insert after create: ${i18nErr.message}`);
-    }
-
-    await writeAudit({
-      catalog_id: created.id,
-      screen_id: created.screen_id,
-      tenant_id: created.tenant_id,
-      action: 'create',
-      before: null,
-      after: { ...created, i18n: i18nRows },
-      actor_user_id: auth.user_id,
-      actor_email: auth.email,
-    });
-
-    invalidateNavCatalogCache();
-    return res.json({ ok: true, data: { ...created, i18n: i18nRows } });
-  } catch (err: any) {
-    console.error(`[${VTID}] POST /catalog:`, err.message);
-    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
-  }
-});
-
-// ── PATCH /catalog/:id ──────────────────────────────────────────────────────
-
-router.patch('/catalog/:id', async (req: AuthenticatedRequest, res: Response) => {
-  const auth = actorFromReq(req as any);
-
-  const supabase = getSupabase();
-  if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
-
-  const err = validateCatalogPayload(req.body, { isPartial: true });
-  if (err) return res.status(400).json({ ok: false, error: 'INVALID_INPUT', message: err });
-
-  const { id } = req.params;
-  try {
-    const { data: existing } = await repo.fetchNavCatalogEntryById(supabase, id);
-    if (!existing) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
-
-    const { data: existingI18n } = await repo.fetchNavCatalogI18nRows(supabase, id);
-
-    const patch: any = { updated_by: auth.user_id };
-    for (const key of ['route', 'category', 'access', 'anonymous_safe', 'priority', 'related_kb_topics', 'context_rules', 'override_triggers', 'is_active']) {
-      if (req.body[key] !== undefined) patch[key] = req.body[key];
-    }
-
-    const { data: updated, error: updErr } = await repo.updateNavCatalogEntry(supabase, id, patch);
-
-    if (updErr) return res.status(500).json({ ok: false, error: updErr.message });
-
-    // Upsert i18n rows if provided.
-    let newI18n = existingI18n || [];
-    if (req.body.i18n && typeof req.body.i18n === 'object') {
-      const upserts = Object.entries(req.body.i18n).map(([lang, c]: [string, any]) => ({
-        catalog_id: id,
-        lang,
-        title: c.title || '',
-        description: c.description || '',
-        when_to_visit: c.when_to_visit || '',
-      }));
-      if (upserts.length > 0) {
-        const { error: upErr } = await repo.upsertNavCatalogI18nRows(supabase, upserts);
-        if (upErr) console.warn(`[${VTID}] i18n upsert: ${upErr.message}`);
-      }
-      const { data: refreshed } = await repo.fetchNavCatalogI18nRows(supabase, id);
-      newI18n = refreshed || newI18n;
-    }
-
-    await writeAudit({
-      catalog_id: id,
-      screen_id: updated.screen_id,
-      tenant_id: updated.tenant_id,
-      action: 'update',
-      before: { ...existing, i18n: existingI18n },
-      after: { ...updated, i18n: newI18n },
-      actor_user_id: auth.user_id,
-      actor_email: auth.email,
-    });
-
-    invalidateNavCatalogCache();
-    return res.json({ ok: true, data: { ...updated, i18n: newI18n } });
-  } catch (err: any) {
-    console.error(`[${VTID}] PATCH /catalog/:id:`, err.message);
-    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
-  }
-});
-
-// ── DELETE /catalog/:id (soft) ──────────────────────────────────────────────
-
-router.delete('/catalog/:id', async (req: AuthenticatedRequest, res: Response) => {
-  const auth = actorFromReq(req as any);
-
-  const supabase = getSupabase();
-  if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
-
-  const { id } = req.params;
-  try {
-    const { data: existing } = await repo.fetchNavCatalogEntryById(supabase, id);
-    if (!existing) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
-
-    const { data: updated, error: updErr } = await repo.updateNavCatalogEntry(supabase, id, { is_active: false, updated_by: auth.user_id });
-    if (updErr) return res.status(500).json({ ok: false, error: updErr.message });
-
-    await writeAudit({
-      catalog_id: id,
-      screen_id: existing.screen_id,
-      tenant_id: existing.tenant_id,
-      action: 'delete',
-      before: existing,
-      after: updated,
-      actor_user_id: auth.user_id,
-      actor_email: auth.email,
-    });
-
-    invalidateNavCatalogCache();
-    return res.json({ ok: true });
-  } catch (err: any) {
-    console.error(`[${VTID}] DELETE /catalog/:id:`, err.message);
-    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
-  }
-});
-
-// ── POST /catalog/:id/restore/:audit_id ─────────────────────────────────────
-
-router.post('/catalog/:id/restore/:audit_id', async (req: AuthenticatedRequest, res: Response) => {
-  const auth = actorFromReq(req as any);
-
-  const supabase = getSupabase();
-  if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
-
-  const { id, audit_id } = req.params;
-  try {
-    const { data: audit } = await repo.fetchNavCatalogAuditById(supabase, audit_id, id);
-    if (!audit) return res.status(404).json({ ok: false, error: 'AUDIT_NOT_FOUND' });
-
-    // The snapshot we restore to depends on action:
-    //   - 'update' / 'delete': restore to audit.before (state pre-change)
-    //   - 'create': effectively re-activate with audit.after
-    const snapshot = audit.action === 'create' ? audit.after : audit.before;
-    if (!snapshot) return res.status(400).json({ ok: false, error: 'NO_SNAPSHOT' });
-
-    const patch: any = {
-      route: snapshot.route,
-      category: snapshot.category,
-      access: snapshot.access,
-      anonymous_safe: snapshot.anonymous_safe,
-      priority: snapshot.priority || 0,
-      related_kb_topics: snapshot.related_kb_topics || [],
-      context_rules: snapshot.context_rules || {},
-      override_triggers: snapshot.override_triggers || [],
-      is_active: true,
-      updated_by: auth.user_id,
-    };
-
-    const { data: existing } = await repo.fetchNavCatalogEntryById(supabase, id);
-
-    const { data: updated, error: updErr } = await repo.updateNavCatalogEntry(supabase, id, patch);
-    if (updErr) return res.status(500).json({ ok: false, error: updErr.message });
-
-    // Restore i18n too if snapshot has it.
-    if (Array.isArray(snapshot.i18n) && snapshot.i18n.length > 0) {
-      const upserts = snapshot.i18n.map((r: any) => ({
-        catalog_id: id,
-        lang: r.lang,
-        title: r.title || '',
-        description: r.description || '',
-        when_to_visit: r.when_to_visit || '',
-      }));
-      await repo.upsertNavCatalogI18nRows(supabase, upserts);
-    }
-
-    await writeAudit({
-      catalog_id: id,
-      screen_id: updated.screen_id,
-      tenant_id: updated.tenant_id,
-      action: 'restore',
-      before: existing,
-      after: updated,
-      actor_user_id: auth.user_id,
-      actor_email: auth.email,
-    });
-
-    invalidateNavCatalogCache();
-    return res.json({ ok: true, data: updated });
-  } catch (err: any) {
-    console.error(`[${VTID}] POST /catalog/:id/restore:`, err.message);
-    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
-  }
-});
-
-// ── POST /simulate ──────────────────────────────────────────────────────────
-
-router.post('/simulate', async (req: AuthenticatedRequest, res: Response) => {
-  const auth = actorFromReq(req as any);
-
-  const { utterance, lang, current_route, recent_routes, is_anonymous, tenant_id, user_id, platform } = req.body || {};
-  if (typeof utterance !== 'string' || utterance.trim().length === 0) {
-    return res.status(400).json({ ok: false, error: 'utterance required' });
-  }
-
-  try {
-    const input: NavigatorConsultInput = {
-      question: utterance,
-      lang: (lang as string) || 'en',
-      identity: tenant_id
-        ? { user_id: user_id || auth.user_id, tenant_id, role: 'admin' }
-        : null,
-      is_anonymous: !!is_anonymous,
-      current_route: typeof current_route === 'string' ? current_route : undefined,
-      recent_routes: Array.isArray(recent_routes) ? recent_routes : [],
-      // NAV-PHASE1: let the admin simulator exercise platform-aware resolution
-      // exactly as production will (matches the catalog tab the admin is on).
-      platform: platform === 'desktop' ? 'desktop' : platform === 'mobile' ? 'mobile' : undefined,
-      platform_source: 'admin_simulator',
-      session_id: `admin-sim-${Date.now()}`,
-      turn_number: 0,
-      conversation_start: new Date().toISOString(),
-    };
-
-    const result = await consultNavigator(input);
-    return res.json({ ok: true, input, result });
-  } catch (err: any) {
-    console.error(`[${VTID}] POST /simulate:`, err.message);
-    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR', message: err.message });
-  }
-});
-
-// ── GET /spa-routes ─────────────────────────────────────────────────────────
-
-router.get('/spa-routes', async (req: AuthenticatedRequest, res: Response) => {
-  // Static fallback shipped with the gateway. The build-time extract from
-  // vitana-v1 (scripts/extract-routes.ts) will replace this when CI wires it.
-  return res.json({ ok: true, source: 'gateway_fallback', routes: SPA_ROUTES_FALLBACK });
-});
-
-// ── GET /coverage ───────────────────────────────────────────────────────────
-
-router.get('/coverage', async (req: AuthenticatedRequest, res: Response) => {
-  const auth = actorFromReq(req as any);
-
-  const supabase = getSupabase();
-  if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
-
-  const tenantId = typeof req.query.tenant_id === 'string' ? req.query.tenant_id : null;
-  // BOOTSTRAP-NAV-PLATFORM: coverage is per-catalog (Mobile by default).
-  const platform: 'mobile' | 'desktop' = req.query.platform === 'desktop' ? 'desktop' : 'mobile';
-
-  try {
-    // BOOTSTRAP-NAV-PLATFORM: the admin manages the DB-backed catalog for this
-    // platform. getCatalogForTenant also returns TS gap-fills (entries with no
-    // DB `id`) which are a *runtime* ORB navigation fallback, not editable rows
-    // — counting them would always inflate CATALOG ENTRIES to the full TS
-    // catalog size regardless of what's seeded. Scope coverage to DB-backed rows
-    // so the count + analyses match the editable list (Mobile = seeded rows,
-    // Desktop = its own rows).
-    const navigable: NavCatalogEntryWithRules[] = getCatalogForTenant(tenantId, platform) as NavCatalogEntryWithRules[];
-    const catalog: NavCatalogEntryWithRules[] = navigable.filter((e) => !!(e as { id?: string }).id);
-    // BOOTSTRAP-NAV-PLATFORM: a catalog route may carry a query string or hash
-    // (mode-pills like /health?mode=supplements, /comm/events-meetups?tab=hot).
-    // The SPA route list stores base paths only, so compare on the base path —
-    // otherwise every parameterised pill is falsely flagged "broken" and leaves
-    // its base route looking "uncovered".
-    const baseRoute = (r: string) => r.split(/[?#]/)[0];
-    const catalogRoutes = new Set(catalog.map(e => baseRoute(e.route)));
-    const spaRoutes = SPA_ROUTES_FALLBACK.map(r => r.path);
-    const spaSet = new Set(spaRoutes);
-
-    const missing_in_catalog = spaRoutes
-      .filter(r => !catalogRoutes.has(r) && !r.includes(':') && r !== '*')
-      .map(r => {
-        const def = SPA_ROUTES_FALLBACK.find(x => x.path === r);
-        return { route: r, requires_auth: def?.requires_auth || false };
-      });
-
-    const broken_catalog_routes = catalog
-      .filter(e => !spaSet.has(baseRoute(e.route)))
-      .map(e => ({ screen_id: e.screen_id, route: e.route, title: e.i18n.en?.title || e.screen_id }));
-
-    // Dead triggers: screens that never produced a catalog match in the last
-    // 30 days. We detect those via OASIS navigator events.
-    const since = new Date(Date.now() - 30 * 86400000).toISOString();
-    const { data: events } = await repo.fetchNavigatorEventsSince(supabase, since, 10000);
-
-    const firedScreenIds = new Set<string>();
-    for (const ev of (events as any[]) || []) {
-      const payload = (ev.payload || {}) as any;
-      const picks: any[] = payload.top_picks || (payload.primary ? [payload.primary] : []);
-      for (const p of picks) if (p?.screen_id) firedScreenIds.add(p.screen_id);
-    }
-
-    const dead_triggers = catalog
-      .filter(e => !firedScreenIds.has(e.screen_id))
-      .map(e => ({ screen_id: e.screen_id, title: e.i18n.en?.title || e.screen_id, route: e.route }));
-
-    return res.json({
-      ok: true,
-      tenant_id: tenantId,
-      platform,
-      summary: {
-        catalog_size: catalog.length,
-        spa_route_count: spaRoutes.length,
-        missing_in_catalog: missing_in_catalog.length,
-        broken_catalog_routes: broken_catalog_routes.length,
-        dead_triggers: dead_triggers.length,
-      },
-      missing_in_catalog,
-      broken_catalog_routes,
-      dead_triggers,
-    });
-  } catch (err: any) {
-    console.error(`[${VTID}] GET /coverage:`, err.message);
-    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
-  }
-});
 
 // ── GET /telemetry ──────────────────────────────────────────────────────────
 
@@ -622,61 +97,10 @@ router.get('/telemetry', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { data: events, error } = await repo.fetchNavigatorTelemetryEvents(supabase, since, 5000);
     if (error) return res.status(500).json({ ok: false, error: error.message });
-
-    const byType: Record<string, number> = {};
-    const byScreen: Record<string, number> = {};
-    const failedUtterances: Array<{ utterance: string; confidence: string; top_picks?: any[] }> = [];
-    const nearMisses: Array<{ utterance: string; picked: any; runner_up: any; delta: number }> = [];
-
-    for (const ev of (events as any[]) || []) {
-      byType[ev.type] = (byType[ev.type] || 0) + 1;
-      const payload = (ev.payload || {}) as any;
-      const picks: any[] = payload.top_picks || (payload.primary ? [payload.primary] : []);
-      for (const p of picks) {
-        if (p?.screen_id) byScreen[p.screen_id] = (byScreen[p.screen_id] || 0) + 1;
-      }
-      if (payload.confidence === 'low' && payload.question) {
-        failedUtterances.push({ utterance: payload.question, confidence: payload.confidence, top_picks: picks });
-      }
-      if (Array.isArray(picks) && picks.length >= 2) {
-        const [a, b] = picks;
-        if (a?.score != null && b?.score != null) {
-          const delta = a.score - b.score;
-          if (delta >= 0 && delta <= 4) {
-            nearMisses.push({ utterance: payload.question || '', picked: a, runner_up: b, delta });
-          }
-        }
-      }
-    }
-
-    const topScreens = Object.entries(byScreen)
-      .map(([screen_id, count]) => ({ screen_id, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 25);
-
-    return res.json({
-      ok: true,
-      days,
-      event_count: (events || []).length,
-      by_type: byType,
-      top_screens: topScreens,
-      failed_utterances: failedUtterances.slice(0, 50),
-      near_misses: nearMisses.slice(0, 50),
-    });
+    return res.json({ ok: true, days, ...aggregateNavigatorTelemetry((events as any[]) || []) });
   } catch (err: any) {
     console.error(`[${VTID}] GET /telemetry:`, err.message);
     return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
-  }
-});
-
-// ── POST /reload ────────────────────────────────────────────────────────────
-
-router.post('/reload', async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    await refreshNavCatalogCache();
-    return res.json({ ok: true });
-  } catch (err: any) {
-    return res.status(500).json({ ok: false, error: err.message });
   }
 });
 

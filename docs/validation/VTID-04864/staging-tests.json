@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-04864",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive", "path": "/alive" },
+    { "kind": "http", "name": "reward-rules is mounted and requires auth", "path": "/api/v1/wallet/reward-rules", "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "existing", "ref": "npx jest test/vtid-04864-vtna-reward-rules.test.ts test/diary-streak-celebrator.test.ts", "cwd": "services/gateway",
+      "reason": "Rule-table parity with every payer, one key per reward (no double payouts), truthful streak push, overview shape. The autopilot-completion migration applies at the production step because staging shares the production database." }
+  ]
+}

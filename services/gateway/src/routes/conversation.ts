@@ -82,6 +82,7 @@ import { addTurn as addSessionTurn } from '../services/session-memory-buffer';
 // VTID-01955 Phase 1 — Tier 0 Memorystore Redis turn buffer (dual-write w/ in-process buffer)
 import { addTurnRedis } from '../services/redis-turn-buffer';
 import { deduplicatedExtract } from '../services/extraction-dedup-manager';
+import { conversationChannelRole } from '../services/conversation-client';
 // Supabase client for persistent message storage
 import { getSupabase } from '../lib/supabase';
 import * as repo from './conversation-repository';
@@ -695,7 +696,7 @@ ${channelInstructions}`;
     try {
       const category = classifyCategory(message.text);
       await writeMemoryItemWithIdentity(
-        { user_id, tenant_id },
+        { user_id, tenant_id, active_role: conversationChannelRole(channel) },
         {
           content: message.text,
           source: channel === 'orb' ? 'orb_text' : 'orb_text',
@@ -723,6 +724,7 @@ ${channelInstructions}`;
         user_id,
         session_id: thread.thread_id,
         turn_count: thread.turn_count,
+        served_role: conversationChannelRole(channel),
       });
       if (extractResult.extracted) {
         console.log(`[VTID-01230] Fact extraction triggered for: ${thread.thread_id}`);
@@ -983,6 +985,7 @@ Instructions:
           user_id: input.user_id,
           session_id: thread.thread_id,
           turn_count: thread.turn_count,
+          served_role: conversationChannelRole(input.channel),
         });
       }
 

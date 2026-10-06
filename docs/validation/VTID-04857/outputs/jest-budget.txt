@@ -1,0 +1,129 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  console.warn
+    [jev] permitted-role read failed user=u1 tenant=t1: boom
+      112 |   if (grants.error || memberships.error) {
+      113 |     // Without the permitted set no role can be validated: fail closed.
+    > 114 |     console.warn(`[jev] permitted-role read failed user=${id.user_id} tenant=${tenantId}: ${(grants.error || memberships.error)!.message}`);
+          |             ^
+      115 |     gaps.push('permitted_roles_unavailable');
+      116 |     return done();
+      117 |   }
+      at resolveJevCaller (src/services/jev/jev-caller.ts:114:13)
+      at Object.<anonymous> (test/vtid-04754-jev-foundation.test.ts:297:15)
+  console.warn
+    [jev] JEV_AGENT_PROGRESS_MODE="Enforce" is not off|shadow|enforce — gate stays off
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at Object.<anonymous> (test/vtid-04754-jev-foundation.test.ts:320:23)
+PASS test/vtid-04754-jev-foundation.test.ts
+  VTID-04754 every decision declares planes and a data class
+    ✓ support_ticket_triage (3 ms)
+    ✓ ops_error_triage (1 ms)
+    ✓ ci_failure_bucket
+    ✓ finding_duplicate
+    ✓ document_relevance (1 ms)
+    ✓ account_classification
+    ✓ account_duplicate
+    ✓ payment_invoice_match
+    ✓ company_doc_relevance (1 ms)
+    ✓ execution_root_cause
+    ✓ document_type
+    ✓ partner_onboarding_triage
+    ✓ approval_risk (1 ms)
+    ✓ contract_clause_flag
+    ✓ lead_score
+    ✓ moderation_severity
+    ✓ professional_lead_fit (1 ms)
+    ✓ agent_progress_check
+    ✓ execution_feasibility
+    ✓ backstop_cluster_defect
+    ✓ fix_verification
+    ✓ commit_cause_score
+    ✓ execution_repeat (1 ms)
+    ✓ voice_session_outcome
+    ✓ slow_session_cause
+    ✓ finding_plannable (1 ms)
+    ✓ test_suite_relevance
+    ✓ pr_clash
+    ✓ change_risk (1 ms)
+    ✓ operator_route (3 ms)
+    ✓ opener_effectiveness
+    ✓ lesson_novelty
+    ✓ no decision sends phi today (1 ms)
+    ✓ moderation reads member content; ops/CI/findings are telemetry (1 ms)
+  VTID-04754 plane × data policy
+    ✓ internal may send telemetry and business
+    ✓ phi is refused on every plane, whatever the flags say (1 ms)
+    ✓ patient plane is off
+    ✓ member content needs the env flag, the tenant plane and a budget — in that order (1 ms)
+    ✓ Community Autopilot: telemetry yes, business no, member content by member rules
+    ✓ partner_org needs the tenant flag to list it (1 ms)
+    ✓ a decision only runs on the planes it declares
+    ✓ enabled:false switches a tenant off, internal included
+  VTID-04754 tenant flag parsing
+    ✓ absent → internal default; malformed → null (fail closed) (2 ms)
+    ✓ month key is UTC first-of-month
+  VTID-04754 decide() enforces tenant control before any token is spent
+    ✓ a decided call records spend per tenant and plane (2 ms)
+    ✓ platform telemetry without a tenant is counted under the platform id (1 ms)
+    ✓ business data without a tenant is refused
+    ✓ exafy_admin must name a target tenant for tenant data; the call is marked cross_tenant (1 ms)
+    ✓ a tenant switched off is refused; an exhausted budget falls back with 429 and an event (1 ms)
+    ✓ an unreadable tenant flag or spend fails closed
+    ✓ moderation (member content) stays off for internal callers until the member plane is opened
+    ✓ Community Autopilot may run telemetry decisions only (1 ms)
+  VTID-04754 resolveJevCaller
+    ✓ permitted set mirrors get_my_permitted_roles: grants ∪ memberships ∪ community, switcher order
+    ✓ role_preferences wins over user_tenants.active_role (pickEffectiveRole) (1 ms)
+    ✓ falls back to user_tenants.active_role (1 ms)
+    ✓ a role that is not permitted in the tenant is refused (1 ms)
+    ✓ acting role is accepted only when permitted
+    ✓ no tenant in the JWT → user_tenants primary tenant (requireTenant fallback) (1 ms)
+    ✓ a Cognito token is reported as an identity gap, not papered over
+    ✓ permitted-role read failure fails closed (no role) (11 ms)
+    ✓ a normal user cannot name another tenant
+    ✓ exafy_admin: no tenant unless named; a named tenant (slug) is resolved and marked cross_tenant
+  VTID-04754 shadow framework
+    ✓ mode env var name and exact values; anything else is off (3 ms)
+    ✓ off: no call, no row (1 ms)
+    ✓ shadow: Jev asked, row recorded next to the system action, never enforced (1 ms)
+    ✓ enforce: enforce=true only on a confident decision (1 ms)
+  console.warn
+    [jev] budget alert t2:2026-10-01:80 failed: down
+      78 |       out.push(level);
+      79 |     } catch (err: any) {
+    > 80 |       console.warn(`[jev] budget alert ${alertKey} failed: ${err?.message || err}`);
+         |               ^
+      81 |     }
+      82 |   }
+      83 |   return out;
+      at maybeRaiseBudgetAlerts (src/services/jev/jev-budget-alerts.ts:80:15)
+      at Object.<anonymous> (test/vtid-04857-jev-community-budget.test.ts:162:20)
+PASS test/vtid-04857-jev-community-budget.test.ts
+  VTID-04857 which spend a tenant budget caps
+    ✓ member, patient and partner_org are budgeted; internal and system_autopilot never are (1 ms)
+    ✓ member content counts as member spend whoever runs it
+  VTID-04857 decide()
+    ✓ an exhausted community budget does not stop internal calls (1 ms)
+    ✓ internal spend does not use up the community budget (1 ms)
+    ✓ at 100% member decisions fall back to rules with 429 and no Jev call
+    ✓ the call that crosses 80% pages the owner once, with an OASIS event (1 ms)
+    ✓ internal calls never page about a budget
+  VTID-04857 alert levels
+    ✓ crossings are reported only on the step that crosses (1 ms)
+    ✓ 100% is an error-level page saying member decisions fall back to rules (1 ms)
+    ✓ an alert another gateway task already raised is not raised again (1 ms)
+    ✓ a failing page never throws (2 ms)
+Test Suites: 2 passed, 2 total
+Tests:       77 passed, 77 total
+Snapshots:   0 total
+Time:        0.581 s, estimated 1 s
+Ran all test suites matching /test\/vtid-04857|test\/vtid-04754-jev-foundation/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

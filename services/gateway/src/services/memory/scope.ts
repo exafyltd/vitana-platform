@@ -47,6 +47,28 @@ export function memoryRoleForRead(role: string | null | undefined): string {
   return PERSONAL_ROLES.has(r) ? 'community' : r;
 }
 
+/**
+ * VTID-04798: the roles a work surface serves (orb/profile/assistant-profile.ts
+ * WORK_SURFACE_ROLE; a test keeps the two lists equal). Kept here so the
+ * memory layer does not import the ORB profile.
+ */
+export const WORK_ROLES: readonly string[] = ['developer', 'admin', 'backoffice', 'commerce'];
+
+export function isWorkRole(role: string | null | undefined): boolean {
+  return WORK_ROLES.includes(normalize(role));
+}
+
+/**
+ * VTID-04798: may this conversation write the member's personal facts?
+ * `memory_facts` holds personal memory only (no role column yet, plan §8.4
+ * phase 3b), so a conversation on a work surface — Command Hub, admin,
+ * BackOffice, commerce — never writes there: a developer's "my project is
+ * due Friday" must not become something the community Vitana knows.
+ */
+export function mayWritePersonalFacts(ctx: { workSurface?: boolean | null; role?: string | null }): boolean {
+  return ctx.workSurface !== true && !isWorkRole(ctx.role);
+}
+
 /** PostgREST `or=` filter matching {@link memoryRoleForRead}. */
 export function memoryRoleOrFilter(role: string | null | undefined): string {
   const r = memoryRoleForRead(role);

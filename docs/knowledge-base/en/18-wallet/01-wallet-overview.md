@@ -20,7 +20,7 @@ I want you to think about it this way. Longevity is not just about your body. Re
 
 Your wallet is your central hub for everything financial inside Vitanaland. Here is what you will find there:
 
-**Your balance.** A clear view of how much you have available, broken down by type -- credits, cash, and eventually VTN tokens. No hidden amounts, no confusing categories. You see exactly what you have and what form it is in.
+**Your balance.** A clear view of how much you have available, broken down by type -- credits, cash, and eventually VTNA tokens. No hidden amounts, no confusing categories. You see exactly what you have and what form it is in.
 
 **Transaction history.** Every credit earned, every purchase made, every payout received -- it is all recorded and accessible. You can review your financial activity at any time, with full details about where each transaction came from and when it occurred.
 
@@ -46,9 +46,9 @@ Cash is real money. You earn it through wellness list commissions, referral inco
 
 Cash earnings represent the value you create for others. When your recommendations help someone make a better health decision, when your referral brings a committed member into the community, when your expertise helps a client improve their wellbeing -- those contributions have real economic value, and you receive it.
 
-### VTN (Coming Soon)
+### VTNA (Coming Soon)
 
-Vitana Tokens will be the long-term value layer. VTN is currently in development and will represent a deeper commitment to the longevity ecosystem -- a way to hold value that grows alongside the community over time. When VTN becomes available, I will walk you through exactly how it works and how it integrates with your existing credits and cash.
+Vitana Tokens will be the long-term value layer. VTNA is currently in development and will represent a deeper commitment to the longevity ecosystem -- a way to hold value that grows alongside the community over time. When VTNA becomes available, I will walk you through exactly how it works and how it integrates with your existing credits and cash.
 
 ## Why Your Wallet Matters for Longevity
 

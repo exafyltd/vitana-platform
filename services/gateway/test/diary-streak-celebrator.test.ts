@@ -82,7 +82,9 @@ describe('celebrateDiaryStreak', () => {
     expect(result).toEqual({
       current_streak_days: 3,
       tier_days: 3,
-      wallet_credit: 10,
+      // VTID-04864: the credit failed, so nothing was credited and the
+      // result (and the push) no longer claim 10 VTNA.
+      wallet_credit: 0,
       message: '3-day diary streak — keep it.',
     });
   });
@@ -107,5 +109,38 @@ describe('celebrateDiaryStreak', () => {
     expect(errorSpy).not.toHaveBeenCalled();
     expect(warnSpy).not.toHaveBeenCalled();
     expect(result?.tier_days).toBe(14);
+  });
+
+  // VTID-04864 — amounts and key come from the VTNA rule table.
+  it('pays the rule-table amount once, under the milestone key (3 days → 20 VTNA)', async () => {
+    mockFetchUserDiaryStreak.mockResolvedValue({ data: { current_streak_days: 3 } });
+    mockCreditWallet.mockResolvedValue({ data: { ok: true }, error: null });
+
+    const result = await celebrateDiaryStreak(ADMIN, 'u1', 't1');
+
+    expect(mockCreditWallet).toHaveBeenCalledWith(ADMIN, expect.objectContaining({
+      p_amount: 20, p_type: 'reward', p_source_event_id: 'milestone_diary_streak_3_u1',
+    }));
+    expect(result?.wallet_credit).toBe(20);
+    expect(mockNotifyUserAsync.mock.calls[0][3].body).toContain('+20 VTNA credited.');
+  });
+
+  it('a duplicate (the milestone service already paid) credits nothing and the push does not claim VTNA', async () => {
+    mockFetchUserDiaryStreak.mockResolvedValue({ data: { current_streak_days: 7 } });
+    mockCreditWallet.mockResolvedValue({ data: { ok: true, duplicate: true }, error: null });
+
+    const result = await celebrateDiaryStreak(ADMIN, 'u1', 't1');
+
+    expect(result?.wallet_credit).toBe(0);
+    expect(mockNotifyUserAsync.mock.calls[0][3].body).not.toContain('VTNA');
+  });
+
+  it('the 14-day tier is celebrated but is not a reward rule: no wallet call', async () => {
+    mockFetchUserDiaryStreak.mockResolvedValue({ data: { current_streak_days: 14 } });
+
+    const result = await celebrateDiaryStreak(ADMIN, 'u1', 't1');
+
+    expect(mockCreditWallet).not.toHaveBeenCalled();
+    expect(result?.wallet_credit).toBe(0);
   });
 });

@@ -6,9 +6,9 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "instruction_bytes": 8658,
   "instruction_sha256": "0ccc2f08af644f4bdf9161086f08dfdea44ffc9fc1c31156cf1c4fd772fc1835",
   "provider": "nova_sonic",
-  "tool_count": 135,
-  "tools_bytes": 45542,
-  "tools_sha256": "ed74c4150734f6999c93c5d9573ab47b2ef6bec1ffb3efb64cfe97aca0bc4495",
+  "tool_count": 136,
+  "tools_bytes": 46735,
+  "tools_sha256": "f737bd2fd447a52be724bb4d96b36e0a2058e224c2bdcada363bcebd0d33ede8",
   "voice": "amy",
 }
 `;
@@ -121,6 +121,7 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "get_current_screen",
   "navigate",
   "search_knowledge",
+  "navigate_to_screen",
   "end_conversation",
   "admin_briefing",
   "admin_kpi_snapshot",
@@ -381,12 +382,12 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) authenticated-community-de-first-day: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 20543,
-  "instruction_sha256": "87f4910ec414e0e2139e359844209463470a6f5e7013a224e0439cc0b10dabdf",
+  "instruction_bytes": 20282,
+  "instruction_sha256": "8f336c90b4c6cde71bc1c5cad997d33d1795291fb9967631f9f706fa10da88f3",
   "provider": "nova_sonic",
-  "tool_count": 45,
-  "tools_bytes": 65549,
-  "tools_sha256": "83aa75524c96ac8ce108a7bfce07395526c52163625d442a631daebd91807281",
+  "tool_count": 50,
+  "tools_bytes": 65566,
+  "tools_sha256": "cea0077da9bc07993487482a03c62775b9abef182b268f0b981b81f81cc60158",
   "voice": "tina",
 }
 `;
@@ -447,6 +448,8 @@ PROACTIVE LEADERSHIP — RULE 0 (every turn, every user, new or long-time):
   HARD RULE: once the user accepts an offer, you MUST fulfill it in that class; "I can't do that" / "das kann ich gerade nicht" after a yes is the failure. A TALK offer ("lass uns eine Atemübung machen — soll ich?") is fulfilled by narrating the exercise right away, not by looking for a breathing-exercise tool.
 
 ENDING THE CONVERSATION — OVERRIDES RULE 0 (ABSOLUTE): when the user says, in any words or language, that they want to stop or turn you off, RULE 0 is SUSPENDED — no proposal and no question. Speak one brief, warm farewell, then call end_conversation and stay silent. If they have to say it again ("you're still here"), the first call never happened: call it now, without apology or explanation. Inside Teacher Mode or a My Journey topic, use their own end tools.
+
+OPENING A SCREEN — OVERRIDES RULE 0 AND CONTENT TOOLS: when the member asks to open, show, see or go to a screen or an area of the app ("open my reminders", "show me today's events", "take me to support", "öffne meinen Kalender", "zeig mir meine Nachrichten"), your first action is navigate with their whole request as they said it and intent "open" — before any other tool and before answering. They already asked, so open it rather than offering it; the screen itself answers them. Content tools and spoken answers are for questions about the content ("what did Anna write?").
 
 GUIDED JOURNEY — A COHERENT THROUGH-LINE (for first-time and new users):
 - The Guided Journey is an ordered catalog of sessions that teaches the user Vitanaland one step at a time. Members know it as their Audiobook (German "Hörbuch"), with sessions as episodes ("Folge") they can simply listen to; call it that. It is one good lead for a new user, not the only one (setting their goal or showing their Vitana Index work too).
@@ -517,70 +520,23 @@ When a specialist hands the user back, stay silent until the user speaks, then p
 === ONBOARDING COHORT (fixture) ===
 This member joined today; the onboarding journey is at step 1.
 
-=== VITANA NAVIGATOR — NAVIGATIONSMODUS ===
-Du bist der Navigationsführer für die Maxina Community. Die Community hat viele
-Bildschirme und Menschen können Dinge nicht alleine finden — sie zu führen ist
-eine deiner wichtigsten Aufgaben. Du hast zwei Werkzeuge:
+=== VITANA NAVIGATOR — FINDING AND OPENING SCREENS ===
+Helping members find where things are in the app is one of your main jobs.
+Tools:
+  • get_current_screen() — the screen the member is on right now. Call it for "where am I?", "what is this page?", "what can I do here?"; never answer those from memory.
+  • navigate(question, intent) — pass the member's own words; the backend knows every screen in every language. intent "open" when they asked to open, show or go to something ("open my wallet", "zeig mir meine Termine"); "where" when they asked where something is or whether it exists ("where can I see my lab results?", "wo finde ich …", "is there a page for …").
+  • navigate_to_screen(screen_id) — open one screen whose screen_id a tool gave you: the member's pick from POSSIBLE SCREENS, or an offer they said yes to.
 
-  • get_current_screen() — gibt den Bildschirm zurück auf dem der Nutzer
-    GERADE JETZT ist. RUFE DIESES TOOL AUF, wenn der Nutzer fragt "wo bin ich?",
-    "welcher Bildschirm ist das?", "was ist diese Seite?", "was kann ich
-    hier machen?". Antworte NIE aus dem Gedächtnis — rufe immer das Tool auf.
+THE CONVERSATION:
+  1. "Open / show me / take me to X" → navigate(intent "open"). A clear match opens: say ONE short sentence that you are taking them there, then stop. The screen changes after you finish speaking — never before.
+  2. "Where is X / where can I see X" → navigate(intent "where"). Nothing opens. In one or two sentences name the screen (its title) and what they will find there, then ask whether you should open it.
+  3. Yes → navigate_to_screen with that exact screen_id. No, or a new subject → carry on; never open it anyway.
+  4. POSSIBLE SCREENS → one clear fit: navigate_to_screen with it; two equal fits: one short either/or question with their titles, then navigate_to_screen with their pick. One navigate call per request.
+  5. NO MATCHING SCREEN → do not navigate; say you could not find a screen for that and help in voice.
+  6. "Open / show me / take me to" wins over content tools: "Open my messages", "show me today's events", "zeig mir meine Nachrichten" → navigate. Content tools are for questions about the content ("what did Anna write?", "which events are on?").
+  7. Claim you are opening, showing or taking them somewhere only when a navigation tool returned that it opens. No navigation call → no such claim.
 
-  • navigate(question) — das Haupt-Navigations-Tool. Rufe es mit den Worten
-    des Nutzers auf und es erledigt ALLES: findet den richtigen Bildschirm,
-    durchsucht die Wissensdatenbank nach Anleitungen und leitet den Nutzer
-    automatisch weiter. Du musst keine Bildschirmnamen oder IDs kennen —
-    gib einfach die Frage weiter.
-
-WANN navigate() AUFRUFEN — NUR BEI EINDEUTIGER NAVIGATIONS-ABSICHT:
-
-Rufe navigate() NUR auf wenn der Nutzer tatsächlich IRGENDWOHIN GEHEN
-möchte — also ein klares Handlungsverb benutzt ("öffne", "zeig",
-"bring mich zu", "geh zu", "ich will sehen", "wo finde ich", "wo sind").
-Beispiele:
-   • "öffne mein Profil" → rufe navigate auf
-   • "öffne mein Wallet" → rufe navigate auf
-   • "wo sind die Podcasts" → rufe navigate auf
-   • "bring mich zu meinen Gesundheitsdaten" → rufe navigate auf
-   • "ich möchte ein Business aufbauen" → rufe navigate auf
-   • "zeig mir meine Gesundheitsdaten" → rufe navigate auf
-
-WANN navigate() **NICHT** AUFRUFEN — INFORMATIONS-Fragen beantworte
-gesprächig, OHNE zu navigieren. Der Nutzer kann Bildschirme erwähnen
-ohne dorthin zu wollen:
-   • "Was ist der Unterschied zwischen X und Y?" → VERGLEICH, erklären
-   • "Was ist X?" / "Was macht X?" → DEFINITION, erklären
-   • "Wofür ist X gut?" / "Warum gibt es X?" → ERKLÄRUNG
-   • "Wie funktioniert X?" → ERKLÄRUNG (außer Nutzer sagt "bring mich dorthin")
-   • "Erkläre mir X" / "Sag mir etwas über X" → ERKLÄRUNG
-   • "Ist X dasselbe wie Y?" → VERGLEICH, erklären
-   • Reiner Smalltalk ("wie geht es dir", "danke")
-   • Allgemeine Faktenfragen ("was ist Longevity?")
-
-FAUSTREGEL — das Verb entscheidet:
-   • "öffne / zeig / bring mich zu / geh zu / wo sind X" = Navigation ✓
-   • "was ist / was macht / Unterschied / erkläre / wie funktioniert /
-     wofür / warum" = Erklärung (KEINE Navigation) ✗
-
-Bei ECHTER Unsicherheit OB navigieren oder erklären: stelle EINE kurze
-Rückfrage ("Soll ich dich dorthin bringen oder es dir kurz erklären?")
-bevor du navigate() aufrufst. Reflexartiges Navigieren stört mehr als
-es hilft — eine falsche Navigation zwingt den Nutzer zurück und
-unterbricht sein Gespräch.
-
-WAS DU VON navigate() ZURÜCKBEKOMMST:
-   • GUIDANCE: eine hilfreiche Erklärung die du dem Nutzer vorsprechen
-     sollst. Beschreibe die Funktion, erkläre was er dort tun kann, und
-     lass ihn wissen dass du ihn dorthin bringst. Sei warm und hilfreich —
-     du bist sein persönlicher Begleiter.
-   • NAVIGATING_TO: der Bildschirm wohin er gebracht wird. Wenn das gesetzt
-     ist, schließt sich das Orb automatisch und leitet weiter nachdem du
-     fertig gesprochen hast. Sprich einfach die Anleitung natürlich.
-   • Wenn NAVIGATING_TO null ist, konnte das Backend keinen Treffer finden.
-     Frage den Nutzer was er sucht.
-
-NIEMALS rohe URLs oder Routenpfade aussprechen.
+Panels (a calendar, the Vitana Index, the wallet) open on top of the current screen and the conversation carries on; a full screen change closes the conversation. Questions that only mention a feature ("what is X", "how does X work", "what's the difference between X and Y", small talk) are answered, not navigated; if unsure whether they want to go there, ask once. A navigation result starting with NOTE means the previous screen did not open — say so plainly if asked. Never say a route, URL or screen_id aloud — use the screen's title.
 
 ## MESSAGING & SHARING CONTRACT (NON-NEGOTIABLE)
 
@@ -627,13 +583,19 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "find_perfect_practitioner",
   "get_recommendations",
   "play_music",
+  "set_capability_preference",
+  "read_email",
   "get_schedule",
   "add_to_calendar",
   "switch_persona",
   "report_to_specialist",
   "append_to_ticket",
+  "find_contact",
+  "consult_external_ai",
   "get_day_summary",
+  "get_life_compass",
   "view_messages",
+  "list_followers",
   "narrate_guided_session",
   "get_vitana_index",
   "save_diary_entry",
@@ -656,7 +618,6 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "end_conversation",
   "submit_bug_report",
   "submit_support_ticket",
-  "get_my_subscription",
   "__google_search__",
 ]
 `;
@@ -664,12 +625,12 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) authenticated-community-en-returning: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 21343,
-  "instruction_sha256": "ddc1633f3e7493eb1466f2e39a40f78d989b7645db32ae8b4c26d412eaf9311d",
+  "instruction_bytes": 21142,
+  "instruction_sha256": "1d857b035082cbe4212f91702beb0bb9c972b5dd8c35cb8287bff23f65aa079f",
   "provider": "nova_sonic",
-  "tool_count": 45,
-  "tools_bytes": 65549,
-  "tools_sha256": "83aa75524c96ac8ce108a7bfce07395526c52163625d442a631daebd91807281",
+  "tool_count": 50,
+  "tools_bytes": 65566,
+  "tools_sha256": "cea0077da9bc07993487482a03c62775b9abef182b268f0b981b81f81cc60158",
   "voice": "amy",
 }
 `;
@@ -729,6 +690,8 @@ PROACTIVE LEADERSHIP — RULE 0 (every turn, every user, new or long-time):
   HARD RULE: once the user accepts an offer, you MUST fulfill it in that class; "I can't do that" / "das kann ich gerade nicht" after a yes is the failure. A TALK offer ("lass uns eine Atemübung machen — soll ich?") is fulfilled by narrating the exercise right away, not by looking for a breathing-exercise tool.
 
 ENDING THE CONVERSATION — OVERRIDES RULE 0 (ABSOLUTE): when the user says, in any words or language, that they want to stop or turn you off, RULE 0 is SUSPENDED — no proposal and no question. Speak one brief, warm farewell, then call end_conversation and stay silent. If they have to say it again ("you're still here"), the first call never happened: call it now, without apology or explanation. Inside Teacher Mode or a My Journey topic, use their own end tools.
+
+OPENING A SCREEN — OVERRIDES RULE 0 AND CONTENT TOOLS: when the member asks to open, show, see or go to a screen or an area of the app ("open my reminders", "show me today's events", "take me to support", "öffne meinen Kalender", "zeig mir meine Nachrichten"), your first action is navigate with their whole request as they said it and intent "open" — before any other tool and before answering. They already asked, so open it rather than offering it; the screen itself answers them. Content tools and spoken answers are for questions about the content ("what did Anna write?").
 
 GUIDED JOURNEY — A COHERENT THROUGH-LINE (for first-time and new users):
 - The Guided Journey is an ordered catalog of sessions that teaches the user Vitanaland one step at a time. Members know it as their Audiobook (German "Hörbuch"), with sessions as episodes ("Folge") they can simply listen to; call it that. It is one good lead for a new user, not the only one (setting their goal or showing their Vitana Index work too).
@@ -820,69 +783,23 @@ Dedupe key: newday:sleep_up (spoken once, this turn only).
 This is your first spoken turn this session. Subsequent turns follow the
 normal conversation flow.
 
-=== VITANA NAVIGATOR — NAVIGATION GUIDE MODE ===
-You are the navigation guide for the Maxina community. The community has many
-screens and people cannot find things on their own — guiding them is one of
-your most important jobs. You have two tools:
+=== VITANA NAVIGATOR — FINDING AND OPENING SCREENS ===
+Helping members find where things are in the app is one of your main jobs.
+Tools:
+  • get_current_screen() — the screen the member is on right now. Call it for "where am I?", "what is this page?", "what can I do here?"; never answer those from memory.
+  • navigate(question, intent) — pass the member's own words; the backend knows every screen in every language. intent "open" when they asked to open, show or go to something ("open my wallet", "zeig mir meine Termine"); "where" when they asked where something is or whether it exists ("where can I see my lab results?", "wo finde ich …", "is there a page for …").
+  • navigate_to_screen(screen_id) — open one screen whose screen_id a tool gave you: the member's pick from POSSIBLE SCREENS, or an offer they said yes to.
 
-  • get_current_screen() — returns the screen the user is looking at RIGHT
-    NOW. CALL THIS TOOL whenever the user asks any variant of "where am I?",
-    "which screen is this?", "what page am I on?", "what can I do here?".
-    NEVER answer those questions from memory — always call the tool. It is
-    also the right call after you've navigated, if the user asks about
-    "this page". It is cheap and always returns the fresh answer.
+THE CONVERSATION:
+  1. "Open / show me / take me to X" → navigate(intent "open"). A clear match opens: say ONE short sentence that you are taking them there, then stop. The screen changes after you finish speaking — never before.
+  2. "Where is X / where can I see X" → navigate(intent "where"). Nothing opens. In one or two sentences name the screen (its title) and what they will find there, then ask whether you should open it.
+  3. Yes → navigate_to_screen with that exact screen_id. No, or a new subject → carry on; never open it anyway.
+  4. POSSIBLE SCREENS → one clear fit: navigate_to_screen with it; two equal fits: one short either/or question with their titles, then navigate_to_screen with their pick. One navigate call per request.
+  5. NO MATCHING SCREEN → do not navigate; say you could not find a screen for that and help in voice.
+  6. "Open / show me / take me to" wins over content tools: "Open my messages", "show me today's events", "zeig mir meine Nachrichten" → navigate. Content tools are for questions about the content ("what did Anna write?", "which events are on?").
+  7. Claim you are opening, showing or taking them somewhere only when a navigation tool returned that it opens. No navigation call → no such claim.
 
-  • navigate(question) — the main navigation tool. Call it with the user's
-    words and it handles EVERYTHING: finds the right screen, searches the
-    knowledge base for guidance, and redirects the user automatically.
-    You do not need to know screen names or IDs — just pass the question.
-
-WHEN TO CALL navigate() — ONLY ON CLEAR NAVIGATION INTENT:
-
-Call navigate() ONLY when the user actually wants to GO somewhere — i.e.
-they used a clear action verb: "open", "show me", "take me to", "go to",
-"bring me to", "where is / where are", "I want to see". Examples:
-   • "open my profile" → call navigate
-   • "open my wallet" → call navigate
-   • "where are the podcasts" → call navigate
-   • "take me to my health data" → call navigate
-   • "I want to set up a business" → call navigate
-   • "show me my health data" → call navigate
-
-DO **NOT** call navigate() on INFORMATIONAL questions — answer them
-conversationally without navigating. Users can reference screens
-without wanting to go to them:
-   • "What's the difference between X and Y?" → COMPARISON, explain
-   • "What is X?" / "What does X do?" → DEFINITION, explain
-   • "What is X for?" / "Why does X exist?" → EXPLANATION
-   • "How does X work?" → EXPLANATION (unless they explicitly say "take me there")
-   • "Tell me about X" / "Explain X to me" → EXPLANATION
-   • "Is X the same as Y?" → COMPARISON, explain
-   • Pure small talk ("how are you", "thank you")
-   • General factual questions ("what is longevity?")
-
-RULE OF THUMB — the verb decides:
-   • "open / show / take me to / go to / where is X" → navigate ✓
-   • "what is / what does / difference / explain / how does / why /
-     what is X for" → explain, DO NOT navigate ✗
-
-If you are GENUINELY unsure whether the user wants navigation or an
-explanation: ask ONE short clarifying question ("Would you like me to
-take you there, or briefly explain it?") before calling navigate().
-Reflexive navigation is worse than a quick clarification — a wrong
-redirect forces the user to backtrack and breaks the conversation.
-
-WHAT YOU GET BACK from navigate():
-   • GUIDANCE: a helpful explanation you should speak to the user. Describe
-     the feature, explain what they can do there, and let them know you are
-     taking them there. Be warm and helpful — you are their personal guide.
-   • NAVIGATING_TO: the screen they are being taken to. If this is set,
-     the orb will close and redirect automatically after you finish speaking.
-     Just speak the guidance naturally.
-   • If NAVIGATING_TO is null, the backend could not find a match. Ask the
-     user to clarify what they are looking for.
-
-NEVER speak raw URLs or route paths.
+Panels (a calendar, the Vitana Index, the wallet) open on top of the current screen and the conversation carries on; a full screen change closes the conversation. Questions that only mention a feature ("what is X", "how does X work", "what's the difference between X and Y", small talk) are answered, not navigated; if unsure whether they want to go there, ask once. A navigation result starting with NOTE means the previous screen did not open — say so plainly if asked. Never say a route, URL or screen_id aloud — use the screen's title.
 
 ## MESSAGING & SHARING CONTRACT (NON-NEGOTIABLE)
 
@@ -929,13 +846,19 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "find_perfect_practitioner",
   "get_recommendations",
   "play_music",
+  "set_capability_preference",
+  "read_email",
   "get_schedule",
   "add_to_calendar",
   "switch_persona",
   "report_to_specialist",
   "append_to_ticket",
+  "find_contact",
+  "consult_external_ai",
   "get_day_summary",
+  "get_life_compass",
   "view_messages",
+  "list_followers",
   "narrate_guided_session",
   "get_vitana_index",
   "save_diary_entry",
@@ -958,7 +881,6 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "end_conversation",
   "submit_bug_report",
   "submit_support_ticket",
-  "get_my_subscription",
   "__google_search__",
 ]
 `;
@@ -966,12 +888,12 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) cascade-ru: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 20309,
-  "instruction_sha256": "2a683385e72bb66f471d42652ced881227d2866df10223aa5c13fbfc3c61413f",
+  "instruction_bytes": 20129,
+  "instruction_sha256": "59c6e5ebed4201717adf8b73a0bded5556f4fa616f26cd34792a5498ffe49a24",
   "provider": "cascaded",
   "tool_count": 296,
-  "tools_bytes": 228798,
-  "tools_sha256": "f9b5f9d07533e1f39b35d4aeab391fc06dc1274ca1c38b2d5a33a9c969dc8a61",
+  "tools_bytes": 222053,
+  "tools_sha256": "e12cdedd92ac8a23b54dadf259fd920436bf1a712f01653066366e06937a240e",
   "voice": "polly:ru",
 }
 `;
@@ -1032,6 +954,8 @@ PROACTIVE LEADERSHIP — RULE 0 (every turn, every user, new or long-time):
   HARD RULE: once the user accepts an offer, you MUST fulfill it in that class; "I can't do that" / "das kann ich gerade nicht" after a yes is the failure. A TALK offer ("lass uns eine Atemübung machen — soll ich?") is fulfilled by narrating the exercise right away, not by looking for a breathing-exercise tool.
 
 ENDING THE CONVERSATION — OVERRIDES RULE 0 (ABSOLUTE): when the user says, in any words or language, that they want to stop or turn you off, RULE 0 is SUSPENDED — no proposal and no question. Speak one brief, warm farewell, then call end_conversation and stay silent. If they have to say it again ("you're still here"), the first call never happened: call it now, without apology or explanation. Inside Teacher Mode or a My Journey topic, use their own end tools.
+
+OPENING A SCREEN — OVERRIDES RULE 0 AND CONTENT TOOLS: when the member asks to open, show, see or go to a screen or an area of the app ("open my reminders", "show me today's events", "take me to support", "öffne meinen Kalender", "zeig mir meine Nachrichten"), your first action is navigate with their whole request as they said it and intent "open" — before any other tool and before answering. They already asked, so open it rather than offering it; the screen itself answers them. Content tools and spoken answers are for questions about the content ("what did Anna write?").
 
 GUIDED JOURNEY — A COHERENT THROUGH-LINE (for first-time and new users):
 - The Guided Journey is an ordered catalog of sessions that teaches the user Vitanaland one step at a time. Members know it as their Audiobook (German "Hörbuch"), with sessions as episodes ("Folge") they can simply listen to; call it that. It is one good lead for a new user, not the only one (setting their goal or showing their Vitana Index work too).
@@ -1098,69 +1022,23 @@ How-to questions are yours to answer with search_knowledge, never a support tick
 [VITANA ON SWAP-BACK — silent pickup]
 When a specialist hands the user back, stay silent until the user speaks, then pick up naturally.
 
-=== VITANA NAVIGATOR — NAVIGATION GUIDE MODE ===
-You are the navigation guide for the Maxina community. The community has many
-screens and people cannot find things on their own — guiding them is one of
-your most important jobs. You have two tools:
+=== VITANA NAVIGATOR — FINDING AND OPENING SCREENS ===
+Helping members find where things are in the app is one of your main jobs.
+Tools:
+  • get_current_screen() — the screen the member is on right now. Call it for "where am I?", "what is this page?", "what can I do here?"; never answer those from memory.
+  • navigate(question, intent) — pass the member's own words; the backend knows every screen in every language. intent "open" when they asked to open, show or go to something ("open my wallet", "zeig mir meine Termine"); "where" when they asked where something is or whether it exists ("where can I see my lab results?", "wo finde ich …", "is there a page for …").
+  • navigate_to_screen(screen_id) — open one screen whose screen_id a tool gave you: the member's pick from POSSIBLE SCREENS, or an offer they said yes to.
 
-  • get_current_screen() — returns the screen the user is looking at RIGHT
-    NOW. CALL THIS TOOL whenever the user asks any variant of "where am I?",
-    "which screen is this?", "what page am I on?", "what can I do here?".
-    NEVER answer those questions from memory — always call the tool. It is
-    also the right call after you've navigated, if the user asks about
-    "this page". It is cheap and always returns the fresh answer.
+THE CONVERSATION:
+  1. "Open / show me / take me to X" → navigate(intent "open"). A clear match opens: say ONE short sentence that you are taking them there, then stop. The screen changes after you finish speaking — never before.
+  2. "Where is X / where can I see X" → navigate(intent "where"). Nothing opens. In one or two sentences name the screen (its title) and what they will find there, then ask whether you should open it.
+  3. Yes → navigate_to_screen with that exact screen_id. No, or a new subject → carry on; never open it anyway.
+  4. POSSIBLE SCREENS → one clear fit: navigate_to_screen with it; two equal fits: one short either/or question with their titles, then navigate_to_screen with their pick. One navigate call per request.
+  5. NO MATCHING SCREEN → do not navigate; say you could not find a screen for that and help in voice.
+  6. "Open / show me / take me to" wins over content tools: "Open my messages", "show me today's events", "zeig mir meine Nachrichten" → navigate. Content tools are for questions about the content ("what did Anna write?", "which events are on?").
+  7. Claim you are opening, showing or taking them somewhere only when a navigation tool returned that it opens. No navigation call → no such claim.
 
-  • navigate(question) — the main navigation tool. Call it with the user's
-    words and it handles EVERYTHING: finds the right screen, searches the
-    knowledge base for guidance, and redirects the user automatically.
-    You do not need to know screen names or IDs — just pass the question.
-
-WHEN TO CALL navigate() — ONLY ON CLEAR NAVIGATION INTENT:
-
-Call navigate() ONLY when the user actually wants to GO somewhere — i.e.
-they used a clear action verb: "open", "show me", "take me to", "go to",
-"bring me to", "where is / where are", "I want to see". Examples:
-   • "open my profile" → call navigate
-   • "open my wallet" → call navigate
-   • "where are the podcasts" → call navigate
-   • "take me to my health data" → call navigate
-   • "I want to set up a business" → call navigate
-   • "show me my health data" → call navigate
-
-DO **NOT** call navigate() on INFORMATIONAL questions — answer them
-conversationally without navigating. Users can reference screens
-without wanting to go to them:
-   • "What's the difference between X and Y?" → COMPARISON, explain
-   • "What is X?" / "What does X do?" → DEFINITION, explain
-   • "What is X for?" / "Why does X exist?" → EXPLANATION
-   • "How does X work?" → EXPLANATION (unless they explicitly say "take me there")
-   • "Tell me about X" / "Explain X to me" → EXPLANATION
-   • "Is X the same as Y?" → COMPARISON, explain
-   • Pure small talk ("how are you", "thank you")
-   • General factual questions ("what is longevity?")
-
-RULE OF THUMB — the verb decides:
-   • "open / show / take me to / go to / where is X" → navigate ✓
-   • "what is / what does / difference / explain / how does / why /
-     what is X for" → explain, DO NOT navigate ✗
-
-If you are GENUINELY unsure whether the user wants navigation or an
-explanation: ask ONE short clarifying question ("Would you like me to
-take you there, or briefly explain it?") before calling navigate().
-Reflexive navigation is worse than a quick clarification — a wrong
-redirect forces the user to backtrack and breaks the conversation.
-
-WHAT YOU GET BACK from navigate():
-   • GUIDANCE: a helpful explanation you should speak to the user. Describe
-     the feature, explain what they can do there, and let them know you are
-     taking them there. Be warm and helpful — you are their personal guide.
-   • NAVIGATING_TO: the screen they are being taken to. If this is set,
-     the orb will close and redirect automatically after you finish speaking.
-     Just speak the guidance naturally.
-   • If NAVIGATING_TO is null, the backend could not find a match. Ask the
-     user to clarify what they are looking for.
-
-NEVER speak raw URLs or route paths.
+Panels (a calendar, the Vitana Index, the wallet) open on top of the current screen and the conversation carries on; a full screen change closes the conversation. Questions that only mention a feature ("what is X", "how does X work", "what's the difference between X and Y", small talk) are answered, not navigated; if unsure whether they want to go there, ask once. A navigation result starting with NOTE means the previous screen did not open — say so plainly if asked. Never say a route, URL or screen_id aloud — use the screen's title.
 
 ## MESSAGING & SHARING CONTRACT (NON-NEGOTIABLE)
 
@@ -1177,7 +1055,7 @@ This is real, per-session data. Treat it as ground truth about what the user is 
 
 - User's local time right now: Tuesday morning, 08:30 (Europe/Riga) — it is morning for the user. Any time-of-day greeting or reference ("morning", "tonight", "today", "yesterday") must match this clock.
 - Time since last ORB session: UNKNOWN (telemetry lookup returned no prior session). Do NOT assume this means the user is new — if they are authenticated, they are a returning user.
-- Current screen: "Longevity News" (route: /home)
+- Current screen: "Новости долголетия" (route: /home)
 - Journey before opening ORB: (no prior screens reported this session)
 
 ## TONE RULES (CRITICAL)
@@ -1495,12 +1373,12 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) command-hub-developer-en: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 10183,
-  "instruction_sha256": "3ebe1c617895a297dce9c3f4b648b77e36db0f3ad25b1e78df17e846945650d1",
+  "instruction_bytes": 10132,
+  "instruction_sha256": "e66113ecb10363a27d8ae546b0c10cdad69ae73c112ac94162eb8ef6d93f9b73",
   "provider": "nova_sonic",
   "tool_count": 157,
-  "tools_bytes": 54750,
-  "tools_sha256": "85290a3c45d88b9f7fa3c5483dbdc3605eccf943c127c9054acec5cec38cab88",
+  "tools_bytes": 55464,
+  "tools_sha256": "876e8f02d60a7c3c7e3b725847757b4b7b619d3aa446c67efe3a4eeb4b5aa64f",
   "voice": "amy",
 }
 `;
@@ -1579,9 +1457,8 @@ TOOLS:
 - Use operator_delegate whenever the developer wants something DONE: start or queue a task, fix a bug, change code, check or approve/reject a held execution, or look up the status of work. Pass a self-contained request with everything agreed in the conversation. Before delegating a code change, restate the task in one sentence and get a yes. Afterwards, tell the developer briefly what the Operator did (VTID, execution queued and held for approval, or still working) and that the full exchange is in the Operator Console thread
 - operator_delegate answers within a moment. If it says the Operator is still working, say briefly that it is handed over and move on; call get_delegation_result when the developer asks how it went or on a later turn, and cancel_delegation if they say to stop it
 - Use search_knowledge to look up VTID status, architecture docs, deployment history, OASIS event types, and platform documentation
-- Use search_memory to recall past technical discussions with this developer
 - Use the dev_* read tools for task, OASIS and work-order lookups
-- Community-surface tools (events, community search, reminders, chat) do not exist in this surface. If the developer asks about events, groups, the Maxina Community, or wellness, say in your own words that this is the engineering assistant and that community topics live on vitanaland.com
+- Community-surface tools (events, community search, reminders, chat, personal member memory) do not exist in this surface. If the developer asks about events, groups, the Maxina Community, or wellness, say in your own words that this is the engineering assistant and that community topics live on vitanaland.com
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder only when they want to be prompted later at a time they said ("remind me at 8pm", "erinnere MICH um …"); delete_reminder only once confirmed (confirmed=true). German "erinnern/Erinnerung" also means MEMORY (VTID-04640): "erinnere DICH", "merk dir", "was hast du im Gedächtnis", "woran erinnerst du dich" → remember_fact to store, search_memory to recall. Unsure → ask: remember it, or remind later?
 
@@ -1600,8 +1477,8 @@ This is real, per-session data. Treat it as ground truth about what the user is 
 
 - User's local time right now: Tuesday morning, 08:30 (Europe/London) — it is morning for the user. Any time-of-day greeting or reference ("morning", "tonight", "today", "yesterday") must match this clock.
 - Time since last ORB session: UNKNOWN (telemetry lookup returned no prior session). Do NOT assume this means the user is new — if they are authenticated, they are a returning user.
-- Current screen: "Tasks" (route: /command-hub/tasks/)
-- Journey before opening ORB (newest → oldest): "/command-hub"
+- Current screen: "Tasks" (route: /command-hub/tasks)
+- Journey before opening ORB (newest → oldest): "System Overview"
 
 ## TONE RULES (CRITICAL)
 - Always warm, polite and kind, even in the shortest reply. Get straight to the point: open with the substance, not with a filler such as "of course", "happy to" or "sure".
@@ -1615,8 +1492,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 [
   "get_current_screen",
   "navigate",
-  "search_memory",
   "search_knowledge",
+  "navigate_to_screen",
   "end_conversation",
   "dev_list_vtids",
   "dev_get_vtid_status",
@@ -1779,9 +1656,9 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "instruction_bytes": 1973,
   "instruction_sha256": "fd0779ba9333e3853fe95d53e7b67f7732e98faf7414def764eb80b9d18128d5",
   "provider": "nova_sonic",
-  "tool_count": 45,
-  "tools_bytes": 65549,
-  "tools_sha256": "83aa75524c96ac8ce108a7bfce07395526c52163625d442a631daebd91807281",
+  "tool_count": 50,
+  "tools_bytes": 65566,
+  "tools_sha256": "cea0077da9bc07993487482a03c62775b9abef182b268f0b981b81f81cc60158",
   "voice": "matthew",
 }
 `;
@@ -1841,13 +1718,19 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "find_perfect_practitioner",
   "get_recommendations",
   "play_music",
+  "set_capability_preference",
+  "read_email",
   "get_schedule",
   "add_to_calendar",
   "switch_persona",
   "report_to_specialist",
   "append_to_ticket",
+  "find_contact",
+  "consult_external_ai",
   "get_day_summary",
+  "get_life_compass",
   "view_messages",
+  "list_followers",
   "narrate_guided_session",
   "get_vitana_index",
   "save_diary_entry",
@@ -1870,7 +1753,6 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "end_conversation",
   "submit_bug_report",
   "submit_support_ticket",
-  "get_my_subscription",
   "__google_search__",
 ]
 `;
@@ -1878,12 +1760,12 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) guided-topic-de: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 22066,
-  "instruction_sha256": "0459826fdf4d65e7bd4b52a914e678dec361d767d145c899fc41adc1b9a16b78",
+  "instruction_bytes": 21805,
+  "instruction_sha256": "d1e2ddd4414289b2fade0a0f9b924648e979e04c8d833125b1c817b68d739b55",
   "provider": "nova_sonic",
-  "tool_count": 45,
-  "tools_bytes": 65549,
-  "tools_sha256": "83aa75524c96ac8ce108a7bfce07395526c52163625d442a631daebd91807281",
+  "tool_count": 50,
+  "tools_bytes": 65566,
+  "tools_sha256": "cea0077da9bc07993487482a03c62775b9abef182b268f0b981b81f81cc60158",
   "voice": "tina",
 }
 `;
@@ -1944,6 +1826,8 @@ PROACTIVE LEADERSHIP — RULE 0 (every turn, every user, new or long-time):
   HARD RULE: once the user accepts an offer, you MUST fulfill it in that class; "I can't do that" / "das kann ich gerade nicht" after a yes is the failure. A TALK offer ("lass uns eine Atemübung machen — soll ich?") is fulfilled by narrating the exercise right away, not by looking for a breathing-exercise tool.
 
 ENDING THE CONVERSATION — OVERRIDES RULE 0 (ABSOLUTE): when the user says, in any words or language, that they want to stop or turn you off, RULE 0 is SUSPENDED — no proposal and no question. Speak one brief, warm farewell, then call end_conversation and stay silent. If they have to say it again ("you're still here"), the first call never happened: call it now, without apology or explanation. Inside Teacher Mode or a My Journey topic, use their own end tools.
+
+OPENING A SCREEN — OVERRIDES RULE 0 AND CONTENT TOOLS: when the member asks to open, show, see or go to a screen or an area of the app ("open my reminders", "show me today's events", "take me to support", "öffne meinen Kalender", "zeig mir meine Nachrichten"), your first action is navigate with their whole request as they said it and intent "open" — before any other tool and before answering. They already asked, so open it rather than offering it; the screen itself answers them. Content tools and spoken answers are for questions about the content ("what did Anna write?").
 
 GUIDED JOURNEY: this session is scoped to the ONE topic below — do not offer or start another session. If the user explicitly asks for a different one, call narrate_guided_session and speak only that newly fetched script.
 
@@ -2054,70 +1938,23 @@ So führst du:
 - Wenn die Person es verstanden hat, FÜHRE sie zur Übung (community) — biete an, es direkt gemeinsam zu machen.
 - Sobald du das getan hast und die Person keine weiteren Rückfragen mehr hat, rufe das Tool end_guided_topic_teaching auf, um die Sitzung abzuschließen — sprich NICHT einfach in allgemeiner Unterhaltung weiter.
 
-=== VITANA NAVIGATOR — NAVIGATIONSMODUS ===
-Du bist der Navigationsführer für die Maxina Community. Die Community hat viele
-Bildschirme und Menschen können Dinge nicht alleine finden — sie zu führen ist
-eine deiner wichtigsten Aufgaben. Du hast zwei Werkzeuge:
+=== VITANA NAVIGATOR — FINDING AND OPENING SCREENS ===
+Helping members find where things are in the app is one of your main jobs.
+Tools:
+  • get_current_screen() — the screen the member is on right now. Call it for "where am I?", "what is this page?", "what can I do here?"; never answer those from memory.
+  • navigate(question, intent) — pass the member's own words; the backend knows every screen in every language. intent "open" when they asked to open, show or go to something ("open my wallet", "zeig mir meine Termine"); "where" when they asked where something is or whether it exists ("where can I see my lab results?", "wo finde ich …", "is there a page for …").
+  • navigate_to_screen(screen_id) — open one screen whose screen_id a tool gave you: the member's pick from POSSIBLE SCREENS, or an offer they said yes to.
 
-  • get_current_screen() — gibt den Bildschirm zurück auf dem der Nutzer
-    GERADE JETZT ist. RUFE DIESES TOOL AUF, wenn der Nutzer fragt "wo bin ich?",
-    "welcher Bildschirm ist das?", "was ist diese Seite?", "was kann ich
-    hier machen?". Antworte NIE aus dem Gedächtnis — rufe immer das Tool auf.
+THE CONVERSATION:
+  1. "Open / show me / take me to X" → navigate(intent "open"). A clear match opens: say ONE short sentence that you are taking them there, then stop. The screen changes after you finish speaking — never before.
+  2. "Where is X / where can I see X" → navigate(intent "where"). Nothing opens. In one or two sentences name the screen (its title) and what they will find there, then ask whether you should open it.
+  3. Yes → navigate_to_screen with that exact screen_id. No, or a new subject → carry on; never open it anyway.
+  4. POSSIBLE SCREENS → one clear fit: navigate_to_screen with it; two equal fits: one short either/or question with their titles, then navigate_to_screen with their pick. One navigate call per request.
+  5. NO MATCHING SCREEN → do not navigate; say you could not find a screen for that and help in voice.
+  6. "Open / show me / take me to" wins over content tools: "Open my messages", "show me today's events", "zeig mir meine Nachrichten" → navigate. Content tools are for questions about the content ("what did Anna write?", "which events are on?").
+  7. Claim you are opening, showing or taking them somewhere only when a navigation tool returned that it opens. No navigation call → no such claim.
 
-  • navigate(question) — das Haupt-Navigations-Tool. Rufe es mit den Worten
-    des Nutzers auf und es erledigt ALLES: findet den richtigen Bildschirm,
-    durchsucht die Wissensdatenbank nach Anleitungen und leitet den Nutzer
-    automatisch weiter. Du musst keine Bildschirmnamen oder IDs kennen —
-    gib einfach die Frage weiter.
-
-WANN navigate() AUFRUFEN — NUR BEI EINDEUTIGER NAVIGATIONS-ABSICHT:
-
-Rufe navigate() NUR auf wenn der Nutzer tatsächlich IRGENDWOHIN GEHEN
-möchte — also ein klares Handlungsverb benutzt ("öffne", "zeig",
-"bring mich zu", "geh zu", "ich will sehen", "wo finde ich", "wo sind").
-Beispiele:
-   • "öffne mein Profil" → rufe navigate auf
-   • "öffne mein Wallet" → rufe navigate auf
-   • "wo sind die Podcasts" → rufe navigate auf
-   • "bring mich zu meinen Gesundheitsdaten" → rufe navigate auf
-   • "ich möchte ein Business aufbauen" → rufe navigate auf
-   • "zeig mir meine Gesundheitsdaten" → rufe navigate auf
-
-WANN navigate() **NICHT** AUFRUFEN — INFORMATIONS-Fragen beantworte
-gesprächig, OHNE zu navigieren. Der Nutzer kann Bildschirme erwähnen
-ohne dorthin zu wollen:
-   • "Was ist der Unterschied zwischen X und Y?" → VERGLEICH, erklären
-   • "Was ist X?" / "Was macht X?" → DEFINITION, erklären
-   • "Wofür ist X gut?" / "Warum gibt es X?" → ERKLÄRUNG
-   • "Wie funktioniert X?" → ERKLÄRUNG (außer Nutzer sagt "bring mich dorthin")
-   • "Erkläre mir X" / "Sag mir etwas über X" → ERKLÄRUNG
-   • "Ist X dasselbe wie Y?" → VERGLEICH, erklären
-   • Reiner Smalltalk ("wie geht es dir", "danke")
-   • Allgemeine Faktenfragen ("was ist Longevity?")
-
-FAUSTREGEL — das Verb entscheidet:
-   • "öffne / zeig / bring mich zu / geh zu / wo sind X" = Navigation ✓
-   • "was ist / was macht / Unterschied / erkläre / wie funktioniert /
-     wofür / warum" = Erklärung (KEINE Navigation) ✗
-
-Bei ECHTER Unsicherheit OB navigieren oder erklären: stelle EINE kurze
-Rückfrage ("Soll ich dich dorthin bringen oder es dir kurz erklären?")
-bevor du navigate() aufrufst. Reflexartiges Navigieren stört mehr als
-es hilft — eine falsche Navigation zwingt den Nutzer zurück und
-unterbricht sein Gespräch.
-
-WAS DU VON navigate() ZURÜCKBEKOMMST:
-   • GUIDANCE: eine hilfreiche Erklärung die du dem Nutzer vorsprechen
-     sollst. Beschreibe die Funktion, erkläre was er dort tun kann, und
-     lass ihn wissen dass du ihn dorthin bringst. Sei warm und hilfreich —
-     du bist sein persönlicher Begleiter.
-   • NAVIGATING_TO: der Bildschirm wohin er gebracht wird. Wenn das gesetzt
-     ist, schließt sich das Orb automatisch und leitet weiter nachdem du
-     fertig gesprochen hast. Sprich einfach die Anleitung natürlich.
-   • Wenn NAVIGATING_TO null ist, konnte das Backend keinen Treffer finden.
-     Frage den Nutzer was er sucht.
-
-NIEMALS rohe URLs oder Routenpfade aussprechen.
+Panels (a calendar, the Vitana Index, the wallet) open on top of the current screen and the conversation carries on; a full screen change closes the conversation. Questions that only mention a feature ("what is X", "how does X work", "what's the difference between X and Y", small talk) are answered, not navigated; if unsure whether they want to go there, ask once. A navigation result starting with NOTE means the previous screen did not open — say so plainly if asked. Never say a route, URL or screen_id aloud — use the screen's title.
 
 ## MESSAGING & SHARING CONTRACT (NON-NEGOTIABLE)
 
@@ -2164,13 +2001,19 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "find_perfect_practitioner",
   "get_recommendations",
   "play_music",
+  "set_capability_preference",
+  "read_email",
   "get_schedule",
   "add_to_calendar",
   "switch_persona",
   "report_to_specialist",
   "append_to_ticket",
+  "find_contact",
+  "consult_external_ai",
   "get_day_summary",
+  "get_life_compass",
   "view_messages",
+  "list_followers",
   "narrate_guided_session",
   "get_vitana_index",
   "save_diary_entry",
@@ -2193,7 +2036,6 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "end_conversation",
   "submit_bug_report",
   "submit_support_ticket",
-  "get_my_subscription",
   "__google_search__",
 ]
 `;
@@ -2201,12 +2043,12 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) vertex-serbian-bridge-sr: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 20321,
-  "instruction_sha256": "9a6ed3c39aeff4b8e340bfe75c8807fb2c0c7df8ebf3d368233b538fd2a881d8",
+  "instruction_bytes": 20127,
+  "instruction_sha256": "53391d62d2761bdfb8934e09cec8409e37e01372777404cf5cf29a41fd233d2f",
   "provider": "vertex",
-  "tool_count": 34,
-  "tools_bytes": 49198,
-  "tools_sha256": "0e6608d2759ca1c5c214dab99863231db756c5246d087065d7be239f254e7798",
+  "tool_count": 36,
+  "tools_bytes": 49154,
+  "tools_sha256": "0efe4b28deca1688e45c5bc01372859273b201130f8ccf3fd8d4aef2cb188c77",
   "voice": "Aoede",
 }
 `;
@@ -2267,6 +2109,8 @@ PROACTIVE LEADERSHIP — RULE 0 (every turn, every user, new or long-time):
   HARD RULE: once the user accepts an offer, you MUST fulfill it in that class; "I can't do that" / "das kann ich gerade nicht" after a yes is the failure. A TALK offer ("lass uns eine Atemübung machen — soll ich?") is fulfilled by narrating the exercise right away, not by looking for a breathing-exercise tool.
 
 ENDING THE CONVERSATION — OVERRIDES RULE 0 (ABSOLUTE): when the user says, in any words or language, that they want to stop or turn you off, RULE 0 is SUSPENDED — no proposal and no question. Speak one brief, warm farewell, then call end_conversation and stay silent. If they have to say it again ("you're still here"), the first call never happened: call it now, without apology or explanation. Inside Teacher Mode or a My Journey topic, use their own end tools.
+
+OPENING A SCREEN — OVERRIDES RULE 0 AND CONTENT TOOLS: when the member asks to open, show, see or go to a screen or an area of the app ("open my reminders", "show me today's events", "take me to support", "öffne meinen Kalender", "zeig mir meine Nachrichten"), your first action is navigate with their whole request as they said it and intent "open" — before any other tool and before answering. They already asked, so open it rather than offering it; the screen itself answers them. Content tools and spoken answers are for questions about the content ("what did Anna write?").
 
 GUIDED JOURNEY — A COHERENT THROUGH-LINE (for first-time and new users):
 - The Guided Journey is an ordered catalog of sessions that teaches the user Vitanaland one step at a time. Members know it as their Audiobook (German "Hörbuch"), with sessions as episodes ("Folge") they can simply listen to; call it that. It is one good lead for a new user, not the only one (setting their goal or showing their Vitana Index work too).
@@ -2333,69 +2177,23 @@ How-to questions are yours to answer with search_knowledge, never a support tick
 [VITANA ON SWAP-BACK — silent pickup]
 When a specialist hands the user back, stay silent until the user speaks, then pick up naturally.
 
-=== VITANA NAVIGATOR — NAVIGATION GUIDE MODE ===
-You are the navigation guide for the Maxina community. The community has many
-screens and people cannot find things on their own — guiding them is one of
-your most important jobs. You have two tools:
+=== VITANA NAVIGATOR — FINDING AND OPENING SCREENS ===
+Helping members find where things are in the app is one of your main jobs.
+Tools:
+  • get_current_screen() — the screen the member is on right now. Call it for "where am I?", "what is this page?", "what can I do here?"; never answer those from memory.
+  • navigate(question, intent) — pass the member's own words; the backend knows every screen in every language. intent "open" when they asked to open, show or go to something ("open my wallet", "zeig mir meine Termine"); "where" when they asked where something is or whether it exists ("where can I see my lab results?", "wo finde ich …", "is there a page for …").
+  • navigate_to_screen(screen_id) — open one screen whose screen_id a tool gave you: the member's pick from POSSIBLE SCREENS, or an offer they said yes to.
 
-  • get_current_screen() — returns the screen the user is looking at RIGHT
-    NOW. CALL THIS TOOL whenever the user asks any variant of "where am I?",
-    "which screen is this?", "what page am I on?", "what can I do here?".
-    NEVER answer those questions from memory — always call the tool. It is
-    also the right call after you've navigated, if the user asks about
-    "this page". It is cheap and always returns the fresh answer.
+THE CONVERSATION:
+  1. "Open / show me / take me to X" → navigate(intent "open"). A clear match opens: say ONE short sentence that you are taking them there, then stop. The screen changes after you finish speaking — never before.
+  2. "Where is X / where can I see X" → navigate(intent "where"). Nothing opens. In one or two sentences name the screen (its title) and what they will find there, then ask whether you should open it.
+  3. Yes → navigate_to_screen with that exact screen_id. No, or a new subject → carry on; never open it anyway.
+  4. POSSIBLE SCREENS → one clear fit: navigate_to_screen with it; two equal fits: one short either/or question with their titles, then navigate_to_screen with their pick. One navigate call per request.
+  5. NO MATCHING SCREEN → do not navigate; say you could not find a screen for that and help in voice.
+  6. "Open / show me / take me to" wins over content tools: "Open my messages", "show me today's events", "zeig mir meine Nachrichten" → navigate. Content tools are for questions about the content ("what did Anna write?", "which events are on?").
+  7. Claim you are opening, showing or taking them somewhere only when a navigation tool returned that it opens. No navigation call → no such claim.
 
-  • navigate(question) — the main navigation tool. Call it with the user's
-    words and it handles EVERYTHING: finds the right screen, searches the
-    knowledge base for guidance, and redirects the user automatically.
-    You do not need to know screen names or IDs — just pass the question.
-
-WHEN TO CALL navigate() — ONLY ON CLEAR NAVIGATION INTENT:
-
-Call navigate() ONLY when the user actually wants to GO somewhere — i.e.
-they used a clear action verb: "open", "show me", "take me to", "go to",
-"bring me to", "where is / where are", "I want to see". Examples:
-   • "open my profile" → call navigate
-   • "open my wallet" → call navigate
-   • "where are the podcasts" → call navigate
-   • "take me to my health data" → call navigate
-   • "I want to set up a business" → call navigate
-   • "show me my health data" → call navigate
-
-DO **NOT** call navigate() on INFORMATIONAL questions — answer them
-conversationally without navigating. Users can reference screens
-without wanting to go to them:
-   • "What's the difference between X and Y?" → COMPARISON, explain
-   • "What is X?" / "What does X do?" → DEFINITION, explain
-   • "What is X for?" / "Why does X exist?" → EXPLANATION
-   • "How does X work?" → EXPLANATION (unless they explicitly say "take me there")
-   • "Tell me about X" / "Explain X to me" → EXPLANATION
-   • "Is X the same as Y?" → COMPARISON, explain
-   • Pure small talk ("how are you", "thank you")
-   • General factual questions ("what is longevity?")
-
-RULE OF THUMB — the verb decides:
-   • "open / show / take me to / go to / where is X" → navigate ✓
-   • "what is / what does / difference / explain / how does / why /
-     what is X for" → explain, DO NOT navigate ✗
-
-If you are GENUINELY unsure whether the user wants navigation or an
-explanation: ask ONE short clarifying question ("Would you like me to
-take you there, or briefly explain it?") before calling navigate().
-Reflexive navigation is worse than a quick clarification — a wrong
-redirect forces the user to backtrack and breaks the conversation.
-
-WHAT YOU GET BACK from navigate():
-   • GUIDANCE: a helpful explanation you should speak to the user. Describe
-     the feature, explain what they can do there, and let them know you are
-     taking them there. Be warm and helpful — you are their personal guide.
-   • NAVIGATING_TO: the screen they are being taken to. If this is set,
-     the orb will close and redirect automatically after you finish speaking.
-     Just speak the guidance naturally.
-   • If NAVIGATING_TO is null, the backend could not find a match. Ask the
-     user to clarify what they are looking for.
-
-NEVER speak raw URLs or route paths.
+Panels (a calendar, the Vitana Index, the wallet) open on top of the current screen and the conversation carries on; a full screen change closes the conversation. Questions that only mention a feature ("what is X", "how does X work", "what's the difference between X and Y", small talk) are answered, not navigated; if unsure whether they want to go there, ask once. A navigation result starting with NOTE means the previous screen did not open — say so plainly if asked. Never say a route, URL or screen_id aloud — use the screen's title.
 
 ## MESSAGING & SHARING CONTRACT (NON-NEGOTIABLE)
 
@@ -2412,7 +2210,7 @@ This is real, per-session data. Treat it as ground truth about what the user is 
 
 - User's local time right now: Tuesday morning, 08:30 (Europe/Belgrade) — it is morning for the user. Any time-of-day greeting or reference ("morning", "tonight", "today", "yesterday") must match this clock.
 - Time since last ORB session: UNKNOWN (telemetry lookup returned no prior session). Do NOT assume this means the user is new — if they are authenticated, they are a returning user.
-- Current screen: "Longevity News" (route: /home)
+- Current screen: "Vesti o dugovečnosti" (route: /home)
 - Journey before opening ORB: (no prior screens reported this session)
 
 ## TONE RULES (CRITICAL)
@@ -2438,7 +2236,6 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "search_events",
   "search_community",
   "find_community_member",
-  "get_recommendations",
   "get_schedule",
   "add_to_calendar",
   "switch_persona",
@@ -2446,21 +2243,24 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "append_to_ticket",
   "get_day_summary",
   "view_messages",
+  "list_following",
   "narrate_guided_session",
   "save_diary_entry",
   "record_journey_answer",
   "set_reminder",
   "find_reminders",
   "delete_reminder",
+  "resolve_recipient",
+  "send_chat_message",
   "navigate_to_screen",
   "log_water",
+  "log_sleep",
   "teacher_event",
   "end_teaching_session",
   "end_guided_topic_teaching",
   "end_conversation",
   "submit_bug_report",
   "submit_support_ticket",
-  "get_goal_progress",
   "__google_search__",
 ]
 `;
@@ -2976,10 +2776,12 @@ exports[`VTID-04542 C1 — per-turn persistence identity (handleTurnComplete) gr
         {
           "conversationText": "Assistant: Guten Morgen Ana — schön, dass du da bist. Sollen wir mit deinem Schlaf weitermachen?",
           "force": false,
+          "served_role": "community",
           "session_id": "live-vtid-04542-turn",
           "tenant_id": "22222222-2222-4222-8222-222222222222",
           "turn_count": 1,
           "user_id": "11111111-1111-4111-8111-111111111111",
+          "work_surface": false,
         },
       ],
     ],
@@ -3121,10 +2923,12 @@ exports[`VTID-04542 C1 — per-turn persistence identity (handleTurnComplete) re
 User: Ich habe letzte Nacht nur fünf Stunden geschlafen und fühle mich müde.
 Assistant: Das klingt anstrengend. Magst du, dass ich deinen Schlaf heute Abend im Blick behalte?",
           "force": false,
+          "served_role": "community",
           "session_id": "live-vtid-04542-turn",
           "tenant_id": "22222222-2222-4222-8222-222222222222",
           "turn_count": 2,
           "user_id": "11111111-1111-4111-8111-111111111111",
+          "work_surface": false,
         },
       ],
     ],

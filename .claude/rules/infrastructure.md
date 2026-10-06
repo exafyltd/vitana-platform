@@ -182,10 +182,9 @@ BEDROCK_ROLE_ARN=xxx
 PARTNER_INVITE_EMAIL_ENABLED=true
 RESEND_API_KEY=xxx
 EMAIL_FROM="Vitanaland <noreply@vitanaland.com>"
-# Partner terms version in force for the onboarding engine (VTID-04478). Unset =
-# no terms published: POST /partner-onboarding/:orgId/terms/accept answers 503
-# and no org can submit. Set it only once the terms text is published.
-PARTNER_TERMS_VERSION=2026-09
+# Partner terms: no env var any more (VTID-04895). The version in force is the
+# published row of partner_terms_versions, published through the exafy_admin
+# API /api/v1/admin/partner-terms. None published = no org can submit.
 # Jev (TypeSafe System One) typed decisions (VTID-04473). Both must be set;
 # unset = every decision answers 503 not_configured. Staging wires them when
 # vitana/gateway/staging/typesafe-api-key exists. JEV_COMMUNITY_ENABLED stays
@@ -199,6 +198,14 @@ OPENAI_API_KEY=xxx
 # GOOGLE_CLOUD_PROJECT/VERTEX_AI_LOCATION must point at the NEW project,
 # never lovable-vitana-vers1 (permanently decommissioned).
 VERTEX_SERBIAN_BRIDGE_ENABLED=true
+# Russian-only Vertex Live bridge, the SECOND one — see
+# §2e-vertex-russian-bridge (VTID-04813). Its OWN switch, deliberately not a
+# widened Serbian gate: Polly has no neural/generative Russian voice at all
+# (only standard-engine Tatyana/Maxim), so the voice quality is not fixable
+# in Polly. Shares the same GCP project/WIF config as the Serbian bridge.
+# Off by default; `false` reverts ru to the Transcribe->Bedrock->Polly
+# cascade byte-for-byte, independently of sr.
+VERTEX_RUSSIAN_BRIDGE_ENABLED=true
 GOOGLE_CLOUD_PROJECT=<new-project-id>
 VERTEX_AI_LOCATION=us-central1
 GCP_SERVICE_ACCOUNT_JSON=xxx
@@ -243,6 +250,11 @@ ORCHESTRATOR_RUN_LEASE_TTL_MS=300000
 # skips the check; anything else (the default) is 'log': allowed, and every
 # call that would be rejected is logged. Staging pins 'enforce'.
 LEDGER_WRITE_AUTH_MODE=log
+# /api/v1/scheduled-notifications/* (VTID-04677) need X-Gateway-Internal ==
+# GATEWAY_INTERNAL_TOKEN (Secrets Manager vitana/gateway/<env>/internal-token).
+# Same three modes; default 'log'. Staging pins 'log'; enforce is a separate,
+# owner-approved change. GET /health stays open and reports the mode.
+SCHEDULED_NOTIFICATIONS_AUTH_MODE=log
 ```
 
 `GOOGLE_CLOUD_PROJECT`, `GCP_PROJECT`, `VERTEX_LOCATION`, `VERTEX_MODEL`,

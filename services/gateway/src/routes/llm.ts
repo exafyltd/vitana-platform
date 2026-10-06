@@ -82,6 +82,9 @@ export const PolicySchema = z.object({
   triage: StageConfigSchema,
   vision: StageConfigSchema.optional(),
   classifier: StageConfigSchema.optional(),
+  // VTID-04868: optional (no stored row has it yet); validatePolicy() rejects
+  // a non-null fallback or a non-bedrock primary for this stage.
+  plan_sparring: StageConfigSchema.optional(),
 });
 
 const UpdatePolicySchema = z.object({
@@ -112,6 +115,7 @@ const TelemetryQuerySchema = z.object({
     'triage',
     'vision',
     'classifier',
+    'plan_sparring',
   ] as const).optional(),
   provider: z.string().optional(),
   model: z.string().optional(),

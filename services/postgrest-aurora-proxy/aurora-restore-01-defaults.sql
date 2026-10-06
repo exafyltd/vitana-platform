@@ -1,4 +1,6 @@
 -- Column defaults (idempotent as-is -- SET DEFAULT overwrites)
+-- VTID-04880: nav_catalog* statements below are guarded with to_regclass -- those
+-- tables were archived to legacy_archive in Supabase and may be absent.
 ALTER TABLE ONLY public."OasisEvent" ALTER COLUMN created_at SET DEFAULT now();
 ALTER TABLE ONLY public."OasisEvent" ALTER COLUMN id SET DEFAULT (gen_random_uuid())::text;
 ALTER TABLE ONLY public."OasisEvent" ALTER COLUMN projected SET DEFAULT false;
@@ -1507,22 +1509,22 @@ ALTER TABLE ONLY public.monetization_signals ALTER COLUMN indicator SET DEFAULT 
 ALTER TABLE ONLY public.monetization_signals ALTER COLUMN weight SET DEFAULT 50;
 ALTER TABLE ONLY public.mood_pattern_aggregates ALTER COLUMN id SET DEFAULT gen_random_uuid();
 ALTER TABLE ONLY public.mood_pattern_aggregates ALTER COLUMN status SET DEFAULT 'active'::text;
-ALTER TABLE ONLY public.nav_catalog ALTER COLUMN anonymous_safe SET DEFAULT false;
-ALTER TABLE ONLY public.nav_catalog ALTER COLUMN context_rules SET DEFAULT '{}'::jsonb;
-ALTER TABLE ONLY public.nav_catalog ALTER COLUMN created_at SET DEFAULT now();
-ALTER TABLE ONLY public.nav_catalog ALTER COLUMN id SET DEFAULT gen_random_uuid();
-ALTER TABLE ONLY public.nav_catalog ALTER COLUMN is_active SET DEFAULT true;
-ALTER TABLE ONLY public.nav_catalog ALTER COLUMN override_triggers SET DEFAULT '[]'::jsonb;
-ALTER TABLE ONLY public.nav_catalog ALTER COLUMN platform SET DEFAULT 'mobile'::text;
-ALTER TABLE ONLY public.nav_catalog ALTER COLUMN priority SET DEFAULT 0;
-ALTER TABLE ONLY public.nav_catalog ALTER COLUMN related_kb_topics SET DEFAULT '[]'::jsonb;
-ALTER TABLE ONLY public.nav_catalog ALTER COLUMN role SET DEFAULT 'community'::text;
-ALTER TABLE ONLY public.nav_catalog ALTER COLUMN updated_at SET DEFAULT now();
-ALTER TABLE ONLY public.nav_catalog_audit ALTER COLUMN created_at SET DEFAULT now();
-ALTER TABLE ONLY public.nav_catalog_audit ALTER COLUMN id SET DEFAULT gen_random_uuid();
-ALTER TABLE ONLY public.nav_catalog_i18n ALTER COLUMN description SET DEFAULT ''::text;
-ALTER TABLE ONLY public.nav_catalog_i18n ALTER COLUMN updated_at SET DEFAULT now();
-ALTER TABLE ONLY public.nav_catalog_i18n ALTER COLUMN when_to_visit SET DEFAULT ''::text;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE ONLY public.nav_catalog ALTER COLUMN anonymous_safe SET DEFAULT false$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE ONLY public.nav_catalog ALTER COLUMN context_rules SET DEFAULT '{}'::jsonb$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE ONLY public.nav_catalog ALTER COLUMN created_at SET DEFAULT now()$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE ONLY public.nav_catalog ALTER COLUMN id SET DEFAULT gen_random_uuid()$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE ONLY public.nav_catalog ALTER COLUMN is_active SET DEFAULT true$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE ONLY public.nav_catalog ALTER COLUMN override_triggers SET DEFAULT '[]'::jsonb$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE ONLY public.nav_catalog ALTER COLUMN platform SET DEFAULT 'mobile'::text$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE ONLY public.nav_catalog ALTER COLUMN priority SET DEFAULT 0$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE ONLY public.nav_catalog ALTER COLUMN related_kb_topics SET DEFAULT '[]'::jsonb$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE ONLY public.nav_catalog ALTER COLUMN role SET DEFAULT 'community'::text$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE ONLY public.nav_catalog ALTER COLUMN updated_at SET DEFAULT now()$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_audit') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE ONLY public.nav_catalog_audit ALTER COLUMN created_at SET DEFAULT now()$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_audit') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE ONLY public.nav_catalog_audit ALTER COLUMN id SET DEFAULT gen_random_uuid()$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_i18n') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE ONLY public.nav_catalog_i18n ALTER COLUMN description SET DEFAULT ''::text$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_i18n') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE ONLY public.nav_catalog_i18n ALTER COLUMN updated_at SET DEFAULT now()$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_i18n') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE ONLY public.nav_catalog_i18n ALTER COLUMN when_to_visit SET DEFAULT ''::text$SQL04880$; END IF; END $NAV04880$;
 ALTER TABLE ONLY public.news_items ALTER COLUMN created_at SET DEFAULT now();
 ALTER TABLE ONLY public.news_items ALTER COLUMN fetched_at SET DEFAULT now();
 ALTER TABLE ONLY public.news_items ALTER COLUMN id SET DEFAULT gen_random_uuid();

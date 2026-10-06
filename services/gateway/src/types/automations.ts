@@ -6,6 +6,8 @@
  */
 
 // ── Automation ID ranges ────────────────────────────────────
+import { rewardAmount } from '../services/rewards/vtna-reward-rules';
+
 export type AutomationDomain =
   | 'connect-people'           // AP-0100
   | 'community-groups'         // AP-0200
@@ -171,12 +173,14 @@ export interface Referral {
 
 // ── Reward config ───────────────────────────────────────────
 export const REWARD_TABLE: Record<string, { amount: number; description: string }> = {
-  'complete_onboarding':     { amount: 50,  description: 'Completed onboarding profile' },
+  // VTID-04864: amounts that are VTNA reward rules come from the one rule
+  // table (services/rewards/vtna-reward-rules.ts), never from here.
+  'complete_onboarding':     { amount: rewardAmount('onboarding_complete'),  description: 'Completed onboarding profile' },
   'first_lab_report':        { amount: 100, description: 'Uploaded first lab report' },
   'match_accept_message':    { amount: 20,  description: 'Accepted a match and sent a message' },
   'live_room_attended':      { amount: 30,  description: 'Attended a live room (>10 min)' },
   'group_reached_5':         { amount: 75,  description: 'Created a group that reached 5 members' },
-  'referral_completed':      { amount: 200, description: 'Referred a friend who completed onboarding' },
+  'referral_completed':      { amount: rewardAmount('invite_friend_joined'), description: 'Referred a friend who completed onboarding' },
   'product_review':          { amount: 25,  description: 'Wrote a product/service review' },
   'health_goal_milestone':   { amount: 50,  description: 'Achieved a health goal milestone' },
   'streak_30_days':          { amount: 100, description: '30-day daily usage streak' },

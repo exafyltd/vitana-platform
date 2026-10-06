@@ -85,6 +85,15 @@ export interface OrbTopicSeed {
   /** Where Vitana redirects the user after narrating (a route or feature key). */
   guidedPracticeTarget: string | null;
   source: 'published' | 'draft_fallback';
+  /**
+   * VTID-04873 — the language the narration text (`vitanaVoiceScript`, or the
+   * explanation when there is no script) is actually written in. Equal to the
+   * requested locale only when that locale's translation covers it; otherwise
+   * 'de'. Anything that reads the seed aloud must check this: a TTS voice for
+   * one language reading another language's text is the bug this field exists
+   * to prevent.
+   */
+  narrationLocale: string;
 }
 
 export interface ChecklistValidationIssue {

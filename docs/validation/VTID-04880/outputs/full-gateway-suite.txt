@@ -1,0 +1,14 @@
+# Full gateway jest suite (npx jest --silent), 2026-10-05
+## run 1
+FAIL test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+Tests:       1 failed, 200 passed (1 ms)
+Tests:       1 failed, 200 passed (1 ms)
+FAIL test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+Test Suites: 1 failed, 1 skipped, 1500 passed, 1501 of 1502 total
+Tests:       1 failed, 25 skipped, 6 todo, 23879 passed, 23911 total
+
+The one failure: test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts — the longer
+VTID-04880 comment pushed the prod task-definition step to 20,056 chars (limit 20,000).
+Fixed by shortening the comment. Re-run of that suite plus the VTID-04880 suites:
+Test Suites: 3 passed, 3 total
+Tests:       18 passed, 18 total

@@ -1,0 +1,67 @@
+PASS test/vtid-04834-live-session-start-stop-once.test.ts
+PASS test/orb/live/session/vtid-04738-tool-answer-thinking.test.ts
+PASS test/orb/live/session/vtid-04592-end-conversation-backstop.test.ts
+PASS test/vtid-04835-shutdown-drain.test.ts
+PASS test/orb/live/session/vtid-04753-recall-hold.test.ts
+PASS test/orb/live/session/vtid-04747-soft-turn-end.test.ts
+PASS test/orb/live/session/still-here-complaint-backstop.test.ts
+PASS test/orb/live/session/vtid-04609-post-farewell-output-dropped.test.ts
+PASS test/orb/latency/vtid-04542-voice-payload-identity.test.ts
+PASS test/orb/live/session/live-session-controller.test.ts
+PASS test/orb/live/session/vtid-04619-navigate-backstop.test.ts
+PASS test/orb/live/session/guided-topic-spoken-first-utterance.test.ts
+PASS test/orb/live/session/upstream-message-handler.test.ts
+PASS test/orb/live/session/persona-swap-in-process.test.ts
+PASS test/vtid-04776-voice-supervisor.test.ts
+PASS test/orb/live/session/chat-bridge-reliability.test.ts
+PASS test/orb/live/session/vtid-04702-remember-hold.test.ts
+PASS test/orb/live/session/vtid-04545-session-start-characterization.test.ts
+PASS test/orb/live/session/vtid-04542-latency-wiring.test.ts
+PASS test/orb/live/session/vtid-04543-sse-send-identity-cache.test.ts
+PASS test/orb/live/session/vtid-04425-context-update.test.ts
+PASS test/vtid-04785-session-end-telemetry.test.ts
+PASS test/orb/live/session/upstream-session-binding.test.ts
+PASS test/orb/live/session/vtid-04509-opening-action-guard.test.ts
+PASS test/orb/live/session/nova-idle-keepalive.test.ts
+PASS test/orb/live/session/vtid-04480-opening-turn-guard.test.ts
+PASS test/orb/live/session/vtid-04418-teardown-dedupe.test.ts
+PASS test/orb/live/session/upstream-provider-parity.test.ts
+PASS test/orb/live/session/vtid-04549-persona-preconnect.test.ts
+PASS test/orb/live/session/vtid-04414-session-context-builder.test.ts
+PASS test/orb/routes/session-start-voice-telemetry.test.ts
+PASS test/orb/live/session/vtid-04353-finalize-live-session.test.ts
+PASS test/orb/live/session/session-mutator.test.ts
+PASS test/orb/live/session/vtid-04714-reasoning-leak.test.ts
+PASS test/orb/live/session/upstream-close-classifier.test.ts
+PASS test/orb/live/session/orb-fast-start.test.ts
+PASS test/orb/live/session/vtid-04599-schluss-with-filler.test.ts
+PASS test/orb/live/session/vtid-04549-persona-preconnect-wiring.test.ts
+PASS test/orb/live/session/tool-failure-grace.test.ts
+PASS test/orb/live/session/pending-tool-results.test.ts
+PASS test/orb/live/session/upstream-keepalive.test.ts
+PASS test/orb/live/session/ws-start-adapter.test.ts
+PASS test/orb/live/session/session-context.test.ts
+PASS test/orb/live/session/conversation-state-machine.test.ts
+PASS test/orb/live/session/live-session-registry.test.ts
+Test Suites: 45 passed, 45 total
+Tests:       765 passed, 765 total
+Snapshots:   56 passed, 56 total
+== npm run test:roles
+PASS test/vtid-04560-role-separation-regression.test.ts
+Test Suites: 1 passed, 1 total
+Tests:       105 passed, 105 total
+Snapshots:   0 total
+== npm run test:support
+PASS test/vtid-04456-customer-support-pipeline-regression.test.ts
+PASS test/feedback-pipeline.test.ts
+PASS test/vtid-04445-persona-voice-gender.test.ts
+PASS test/vtid-04332-report-to-specialist-status-contract.test.ts
+Test Suites: 4 passed, 4 total
+Tests:       84 passed, 84 total
+Snapshots:   0 total
+== npm run test:operator
+PASS test/vtid-04465-operator-pipeline-regression.test.ts (8.575 s)
+Test Suites: 1 passed, 1 total
+Tests:       30 passed, 30 total
+Snapshots:   0 total
+# (72 'Cannot log after tests are done' warnings from background async console output in the pre-existing orb/live/session suites removed; no failures)

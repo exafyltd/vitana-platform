@@ -7,3 +7,5 @@ Tests:       79 passed, 79 total
 select topic, count(*) from oasis_events where created_at > now()-interval '24 hours' and topic like 'dev_autopilot.plan%' group by topic;
 dev_autopilot.plan.failed 47 | dev_autopilot.plan.generated 11 | dev_autopilot.plan.version_added 10
 (every plan.failed message: "Plan generation failed after Ns: unknown error")
+-- 2026-10-06, after merging origin/main (81 commits): per-day counts
+2026-10-02 failed 5 | 10-03 failed 4 | 10-04 failed 5 | 10-05 failed 4 | 10-06 failed 2 | generated 0 since 2026-10-02

@@ -1,6 +1,6 @@
-# AP-0700: Payments, Wallet & Vitana Token (VTN)
+# AP-0700: Payments, Wallet & Vitana Token (VTNA)
 
-> Automations for Stripe payment lifecycle, subscription management, wallet operations, Vitana Token (VTN) launch and economy, creator payouts via Stripe Connect, and financial monetization readiness.
+> Automations for Stripe payment lifecycle, subscription management, wallet operations, Vitana Token (VTNA) launch and economy, creator payouts via Stripe Connect, and financial monetization readiness.
 
 ---
 
@@ -154,7 +154,7 @@ Monitors creator payouts and notifies on successful transfers, failed payouts, o
 | **Skill** | `vitana-wallet` (NEW) |
 
 **What it does:**
-Awards wallet credits for engagement actions that build community value. Credits can be used toward marketplace purchases, premium features, or converted to VTN.
+Awards wallet credits for engagement actions that build community value. Credits can be used toward marketplace purchases, premium features, or converted to VTNA.
 
 **Reward-eligible actions:**
 | Action | Credits |
@@ -197,33 +197,33 @@ CREATE TABLE wallet_transactions (
 
 ---
 
-## AP-0709 — Vitana Token (VTN) Launch Automation
+## AP-0709 — Vitana Token (VTNA) Launch Automation
 
 | Field | Value |
 |-------|-------|
 | **Status** | `PLANNED` |
 | **Priority** | `P0` |
-| **Trigger** | VTN token launch event |
+| **Trigger** | VTNA token launch event |
 | **Skill** | `vitana-wallet` |
 
 **What it does:**
 Manages the Vitana Token launch lifecycle: initial distribution, conversion from credits, and ongoing token economy.
 
 **Actions:**
-1. On VTN launch day: notify all users _"The Vitana Token (VTN) is live! Your [N] credits have been converted to [M] VTN"_
-2. Convert existing wallet credits to VTN at launch rate
-3. Enable VTN balance display in wallet UI
-4. Activate VTN payment option in marketplace
+1. On VTNA launch day: notify all users _"The Vitana Token (VTNA) is live! Your [N] credits have been converted to [M] VTNA"_
+2. Convert existing wallet credits to VTNA at launch rate
+3. Enable VTNA balance display in wallet UI
+4. Activate VTNA payment option in marketplace
 5. Emit OASIS event `autopilot.wallet.vtn_launched`
 
-**Sub-automations for ongoing VTN economy:**
-- **AP-0709a**: VTN earned for health milestones (Vitana Index improvement)
-- **AP-0709b**: VTN earned for community contribution (groups, events, referrals)
-- **AP-0709c**: VTN spent in marketplace (products, services, premium rooms)
-- **AP-0709d**: VTN staking rewards for long-term holders
+**Sub-automations for ongoing VTNA economy:**
+- **AP-0709a**: VTNA earned for health milestones (Vitana Index improvement)
+- **AP-0709b**: VTNA earned for community contribution (groups, events, referrals)
+- **AP-0709c**: VTNA spent in marketplace (products, services, premium rooms)
+- **AP-0709d**: VTNA staking rewards for long-term holders
 
 **Notes:**
-- VTN is an internal utility token — not a cryptocurrency (regulatory compliance)
+- VTNA is an internal utility token — not a cryptocurrency (regulatory compliance)
 - Exchange rate and economics defined in token whitepaper (separate doc)
 - Token economics VTID to be allocated
 
@@ -300,7 +300,7 @@ Monthly spending summary showing how users invested in their health: services us
 
 **Actions:**
 1. Query `wallet_transactions` for last month
-2. Compile: total spent, credits earned, VTN balance, top categories
+2. Compile: total spent, credits earned, VTNA balance, top categories
 3. Cross-reference with `usage_outcomes`: _"You spent [amount] on [service] and reported [outcome]"_
 4. Suggest: _"Based on your outcomes, you might also like [related product/service]"_
 

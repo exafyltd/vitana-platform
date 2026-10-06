@@ -1,0 +1,4 @@
+{"vtid":"VTID-04849","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"existing","ref":"npx jest test/vtid-04849-prod-deploy-drops-dead-db-secret.test.ts","cwd":"services/gateway","reason":"Production-workflow-only change; staging deploys through AWS-STAGE-DEPLOY-GATEWAY.yml, which is untouched. The new step, its position and its jq filter are proven by this suite; the next production deploy's own smoke and post-deploy verification (automatic rollback, VTID-04647) prove it live."}
+]}

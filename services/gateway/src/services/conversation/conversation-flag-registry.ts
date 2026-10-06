@@ -38,6 +38,7 @@ import { DEFAULT_PROVIDER_TIMEOUT_MS } from '../assistant-continuation/decide-co
 import { isDiaryRollupEnabled } from '../memory/diary-theme-rollup';
 import { isSupportSpecialistEnabled } from '../orchestrator/support-specialist';
 import { isCommerceSpecialistEnabled } from '../orchestrator/commerce-specialist';
+import { isGoogleAwsSupplierEnabled } from '../../lib/google-access-token';
 import { isDelegationPersistEnabled } from '../orchestrator/delegation-run-store';
 import { featureFlagSetting, isFeatureLive } from '../feature-flags';
 import { GATEWAY_WORKFLOW_PINS } from './conversation-flag-pins.generated';
@@ -208,11 +209,6 @@ export const CONVERSATION_FLAGS: readonly ConversationFlagDef[] = [
     read: (env) => resolveVertexToolCatalogByteBudget(env),
   },
   {
-    name: 'NAV_V2_ENABLED', area: 'tools', vtid: 'VTID-04517', parse: 'exact_true', code_default: 'off',
-    description: 'Registry-backed navigation: `navigate` is answered by the screen registry (open vs where-is).',
-    read: exactTrue('NAV_V2_ENABLED'),
-  },
-  {
     name: 'NAV_CONTINUATION_BIND', area: 'tools', vtid: null, parse: 'exact_true', code_default: 'off',
     description: 'A spoken yes to a pending navigation offer the model did not act on opens the offered screen.',
     read: exactTrue('NAV_CONTINUATION_BIND'),
@@ -255,6 +251,11 @@ export const CONVERSATION_FLAGS: readonly ConversationFlagDef[] = [
     name: 'VERTEX_SERBIAN_BRIDGE_ENABLED', area: 'voice', vtid: 'VTID-04000', parse: 'exact_true', code_default: 'off',
     description: 'Serbian sessions run on the Vertex Live bridge (new GCP project).',
     read: trimmedTrue('VERTEX_SERBIAN_BRIDGE_ENABLED'),
+  },
+  {
+    name: 'GOOGLE_AUTH_AWS_SUPPLIER_ENABLED', area: 'voice', vtid: 'VTID-04893', parse: 'exact_true', code_default: 'off',
+    description: 'The Vertex bridges get their Google token with the ECS task role instead of the EC2-style credential source.',
+    read: (env) => isGoogleAwsSupplierEnabled(env),
   },
   {
     name: 'VERTEX_LIVE_UNAVAILABLE', area: 'voice', vtid: 'VTID-03649', parse: 'exact_true', code_default: 'off',

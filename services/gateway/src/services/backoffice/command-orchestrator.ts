@@ -20,6 +20,9 @@ import { emitOasisEvent } from '../oasis-event-service';
 import { getSupabase } from '../../lib/supabase';
 import { recordCustomerEpisode } from '../memory/customer';
 import { isCrmGatesOn, runCrmGates } from '../jev/gates/crm-gates';
+import { isDuplicateAccountOn, runDuplicateAccountCheck } from '../jev/gates/duplicate-account-gate';
+import { isApprovalRiskOn, recordApprovalDecision, runApprovalRiskCheck } from '../jev/gates/approval-risk-gate';
+import { isPaymentMatchOn, runPaymentMatchCheck } from '../jev/gates/payment-match-gate';
 
 const VTID = 'VTID-03842';
 
@@ -45,6 +48,19 @@ function rememberForCustomer(done: CommandRow): void {
 function scoreCrmRecord(done: CommandRow): void {
   if (done.status !== 'executed' || !isCrmGatesOn()) return;
   void runCrmGates(done);
+}
+
+/** VTID-04810: Jev E5 shadow duplicate check on company creates; off unless its mode is set. Never awaited. */
+function checkDuplicateAccount(done: CommandRow): void {
+  if (done.status !== 'executed' || !isDuplicateAccountOn()) return;
+  if (done.type !== 'crm.company.create' && done.type !== 'sales.customer.create') return;
+  void runDuplicateAccountCheck(done, { bridge: getErpBridgeClient() });
+}
+
+/** VTID-04819: Jev E8 shadow payment ↔ invoice match on allocations; off unless its mode is set. Never awaited. */
+function checkPaymentMatch(done: CommandRow): void {
+  if (done.status !== 'executed' || done.type !== 'finance.payment.allocate' || !isPaymentMatchOn()) return;
+  void runPaymentMatchCheck(done, { bridge: getErpBridgeClient() });
 }
 
 export interface OrchestratorCaller {
@@ -221,6 +237,8 @@ export async function submitCommand(caller: OrchestratorCaller, access: Effectiv
     });
     await store.updateCommand(row.id, { approval_id: approval.id });
     row.approval_id = approval.id;
+    // VTID-04811 (Jev E7, shadow): a risk hint for the approver, recorded only. Never awaited.
+    if (isApprovalRiskOn()) void runApprovalRiskCheck(row, approval.id);
     await audit(store, caller, access, channel, 'command.queued', row.id, approval.id, { type: spec.type, tier: decision.tier, approve_capability: approveCap, escalations: decision.escalations, eligible_approvers: eligible });
     return { http: 202, body: { ok: true, command: publicCommand(row), approval: { approval_id: approval.id, approve_capability: approveCap, eligible_approvers: eligible } } };
   }
@@ -231,6 +249,8 @@ export async function submitCommand(caller: OrchestratorCaller, access: Effectiv
   const done = await store.updateCommand(row.id, { status: outcome.status, receipt: outcome.receipt, reason: outcome.reason, executed_at: outcome.status === 'executed' ? new Date().toISOString() : null });
   rememberForCustomer(done);
   scoreCrmRecord(done);
+  checkDuplicateAccount(done);
+  checkPaymentMatch(done);
   await audit(store, caller, access, channel, outcome.status === 'executed' ? 'command.executed' : 'command.failed', row.id, null, { type: spec.type, tier: decision.tier, escalations: decision.escalations, reason: outcome.reason });
   return { http: outcome.status === 'executed' ? 200 : 502, body: { ok: outcome.status === 'executed', command: publicCommand(done) } };
 }
@@ -253,16 +273,20 @@ export async function decideApproval(caller: OrchestratorCaller, access: Effecti
 
   if (verdict === 'rejected') {
     await store.updateApproval(approval.id, { status: 'rejected', decided_by: caller.user_id, decided_at: now, decision_note: note });
+    if (isApprovalRiskOn()) void recordApprovalDecision(approval.id, 'rejected');
     const done = await store.updateCommand(command.id, { status: 'rejected', reason: 'approval_rejected' });
     await audit(store, caller, access, channel, 'approval.rejected', command.id, approval.id, { note, requester_id: approval.requester_id });
     return { http: 200, body: { ok: true, command: publicCommand(done) } };
   }
 
   await store.updateApproval(approval.id, { status: 'approved', decided_by: caller.user_id, decided_at: now, decision_note: note });
+  if (isApprovalRiskOn()) void recordApprovalDecision(approval.id, 'approved');
   const outcome = await runOnBridge(command, (command.resolved_payload ?? command.payload) as Record<string, unknown>, { id: approval.id, approver: caller.user_id, requester: approval.requester_id });
   const done = await store.updateCommand(command.id, { status: outcome.status, receipt: outcome.receipt, reason: outcome.reason, executed_at: outcome.status === 'executed' ? now : null });
   rememberForCustomer(done);
   scoreCrmRecord(done);
+  checkDuplicateAccount(done);
+  checkPaymentMatch(done);
   await audit(store, caller, access, channel, 'approval.approved', command.id, approval.id, { note, requester_id: approval.requester_id, outcome: outcome.status, reason: outcome.reason });
   return { http: outcome.status === 'executed' ? 200 : 502, body: { ok: outcome.status === 'executed', command: publicCommand(done) } };
 }

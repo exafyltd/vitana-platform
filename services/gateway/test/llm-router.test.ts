@@ -16,6 +16,7 @@ import {
   PROVIDER_FLAGSHIPS,
   VALID_STAGES,
   VALID_PROVIDERS,
+  NO_FALLBACK_STAGES,
   type LLMStage,
 } from '../src/constants/llm-defaults';
 
@@ -23,6 +24,11 @@ describe('BOOTSTRAP-LLM-ROUTER constants', () => {
   describe('flagship-only safe defaults', () => {
     test('every primary model in LLM_SAFE_DEFAULTS is its provider flagship', () => {
       for (const stage of VALID_STAGES) {
+        // VTID-04868: plan_sparring is deliberately NOT the Bedrock flagship —
+        // the owner pinned the partner to Opus 4.6 so it differs from the
+        // planners' models (independence). Its own invariants (Bedrock, no
+        // fallback) are pinned in vtid-04868-plan-sparring-stage.test.ts.
+        if (NO_FALLBACK_STAGES.includes(stage)) continue;
         const cfg = LLM_SAFE_DEFAULTS[stage];
         const flagship = PROVIDER_FLAGSHIPS[cfg.primary_provider];
         expect(cfg.primary_model).toBe(flagship);

@@ -1,4 +1,6 @@
 -- Non-PK indexes (idempotent via IF NOT EXISTS)
+-- VTID-04880: nav_catalog* statements below are guarded with to_regclass -- those
+-- tables were archived to legacy_archive in Supabase and may be absent.
 CREATE INDEX IF NOT EXISTS idx_oasis_events_created_at ON public."OasisEvent" USING btree (created_at);
 CREATE INDEX IF NOT EXISTS idx_oasis_events_service_created ON public."OasisEvent" USING btree (service, created_at);
 CREATE INDEX IF NOT EXISTS idx_oasis_events_status_created ON public."OasisEvent" USING btree (status, created_at);
@@ -764,17 +766,17 @@ CREATE INDEX IF NOT EXISTS idx_monetization_signals_session ON public.monetizati
 CREATE INDEX IF NOT EXISTS idx_monetization_signals_tenant_user ON public.monetization_signals USING btree (tenant_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_monetization_signals_type ON public.monetization_signals USING btree (tenant_id, user_id, signal_type);
 CREATE INDEX IF NOT EXISTS mood_pattern_user_active ON public.mood_pattern_aggregates USING btree (tenant_id, user_id) WHERE (status = 'active'::text);
-CREATE INDEX IF NOT EXISTS nav_catalog_active_idx ON public.nav_catalog USING btree (is_active) WHERE (is_active = true);
-CREATE INDEX IF NOT EXISTS nav_catalog_category_idx ON public.nav_catalog USING btree (category);
-CREATE INDEX IF NOT EXISTS nav_catalog_platform_idx ON public.nav_catalog USING btree (platform);
-CREATE INDEX IF NOT EXISTS nav_catalog_platform_role_idx ON public.nav_catalog USING btree (platform, role);
-CREATE UNIQUE INDEX IF NOT EXISTS nav_catalog_screen_platform_role_shared_uq ON public.nav_catalog USING btree (screen_id, platform, role) WHERE (tenant_id IS NULL);
-CREATE UNIQUE INDEX IF NOT EXISTS nav_catalog_screen_platform_role_tenant_uq ON public.nav_catalog USING btree (screen_id, platform, role, tenant_id) WHERE (tenant_id IS NOT NULL);
-CREATE INDEX IF NOT EXISTS nav_catalog_tenant_idx ON public.nav_catalog USING btree (tenant_id) WHERE (tenant_id IS NOT NULL);
-CREATE INDEX IF NOT EXISTS nav_catalog_audit_catalog_idx ON public.nav_catalog_audit USING btree (catalog_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS nav_catalog_audit_screen_idx ON public.nav_catalog_audit USING btree (screen_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS nav_catalog_i18n_lang_idx ON public.nav_catalog_i18n USING btree (lang);
-CREATE INDEX IF NOT EXISTS nav_catalog_i18n_lang_sha_idx ON public.nav_catalog_i18n USING btree (lang, source_sha);
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$CREATE INDEX IF NOT EXISTS nav_catalog_active_idx ON public.nav_catalog USING btree (is_active) WHERE (is_active = true)$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$CREATE INDEX IF NOT EXISTS nav_catalog_category_idx ON public.nav_catalog USING btree (category)$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$CREATE INDEX IF NOT EXISTS nav_catalog_platform_idx ON public.nav_catalog USING btree (platform)$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$CREATE INDEX IF NOT EXISTS nav_catalog_platform_role_idx ON public.nav_catalog USING btree (platform, role)$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$CREATE UNIQUE INDEX IF NOT EXISTS nav_catalog_screen_platform_role_shared_uq ON public.nav_catalog USING btree (screen_id, platform, role) WHERE (tenant_id IS NULL)$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$CREATE UNIQUE INDEX IF NOT EXISTS nav_catalog_screen_platform_role_tenant_uq ON public.nav_catalog USING btree (screen_id, platform, role, tenant_id) WHERE (tenant_id IS NOT NULL)$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$CREATE INDEX IF NOT EXISTS nav_catalog_tenant_idx ON public.nav_catalog USING btree (tenant_id) WHERE (tenant_id IS NOT NULL)$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_audit') IS NOT NULL THEN EXECUTE $SQL04880$CREATE INDEX IF NOT EXISTS nav_catalog_audit_catalog_idx ON public.nav_catalog_audit USING btree (catalog_id, created_at DESC)$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_audit') IS NOT NULL THEN EXECUTE $SQL04880$CREATE INDEX IF NOT EXISTS nav_catalog_audit_screen_idx ON public.nav_catalog_audit USING btree (screen_id, created_at DESC)$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_i18n') IS NOT NULL THEN EXECUTE $SQL04880$CREATE INDEX IF NOT EXISTS nav_catalog_i18n_lang_idx ON public.nav_catalog_i18n USING btree (lang)$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_i18n') IS NOT NULL THEN EXECUTE $SQL04880$CREATE INDEX IF NOT EXISTS nav_catalog_i18n_lang_sha_idx ON public.nav_catalog_i18n USING btree (lang, source_sha)$SQL04880$; END IF; END $NAV04880$;
 CREATE INDEX IF NOT EXISTS idx_news_items_hash ON public.news_items USING btree (content_hash);
 CREATE INDEX IF NOT EXISTS idx_news_items_lang_published ON public.news_items USING btree (language, published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_news_items_language ON public.news_items USING btree (language);

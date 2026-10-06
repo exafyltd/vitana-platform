@@ -42,11 +42,7 @@ beforeAll(async () => {
   __setNavServiceForTests({ index: f.index, embedder: f.embedder });
 });
 beforeEach(() => {
-  process.env.NAV_V2_ENABLED = 'true';
   (emitOasisEvent as jest.Mock).mockClear();
-});
-afterAll(() => {
-  delete process.env.NAV_V2_ENABLED;
 });
 
 describe('openScreen — every gate in one place', () => {
@@ -123,11 +119,14 @@ describe('navigate — open vs. where', () => {
     expect(resolved.payload).toMatchObject({ resolver: 'registry-v2', kind: 'match', intent: 'open' });
   });
 
-  it('returns null so the caller falls back when the resolver cannot run', async () => {
+  it('says so honestly, and never guesses, when the resolver cannot run (VTID-04846)', async () => {
     const f = await loadRegistryFixture();
     __setNavServiceForTests({ index: f.index, embedder: createStaticNavEmbedder(new Map([['x', new Float32Array(512)]])) });
     try {
-      expect(await navigateByRequest('something never embedded', 'open', member)).toBeNull();
+      const r = ok(await navigateByRequest('something never embedded', 'open', member));
+      expect(r.result.decision).toBe('unavailable');
+      expect(r.result.directive).toBeUndefined();
+      expect(r.text).toMatch(/SCREEN LOOKUP UNAVAILABLE/);
     } finally {
       __setNavServiceForTests({ index: f.index, embedder: f.embedder });
     }
@@ -146,11 +145,17 @@ describe('the shared voice tools with NAV_V2_ENABLED', () => {
     expect(ok(r).result.offer.screen_id).toBe('INBOX.OVERVIEW');
   });
 
-  it('keeps role surfaces on the legacy navigator', async () => {
+  it('refuses voice navigation in the admin area (VTID-04846)', async () => {
     const r = await dispatchOrbTool('navigate', { question: 'Open my messages', intent: 'open', current_route: '/admin/users' }, identity as any);
-    expect((ok(r).result as any)?.offer).toBeUndefined();
+    expect(r.ok).toBe(false);
+    expect((r as any).error).toMatch(/admin area/);
     const types = (emitOasisEvent as jest.Mock).mock.calls.map((c) => c[0].type);
     expect(types).not.toContain('orb.navigator.resolved');
+  });
+
+  it('serves the other role areas from the member app, as the legacy navigator did (VTID-04846)', async () => {
+    const r = await dispatchOrbTool('navigate', { question: 'Open my messages', intent: 'open', current_route: '/backoffice/orders' }, identity as any);
+    expect(directive(r)?.screen_id).toBe('INBOX.OVERVIEW');
   });
 
   it('navigate_to_screen resolves an invented id from the stated reason instead of fuzzy-matching it', async () => {
@@ -193,11 +198,8 @@ describe('tool declarations', () => {
     expect(navigateDecl()?.parameters?.properties?.intent?.enum).toEqual(['open', 'where']);
   });
 
-  it('leaves the declaration unchanged when the flag is off', () => {
-    delete process.env.NAV_V2_ENABLED;
-    const decl = navigateDecl();
-    expect(decl?.parameters?.properties?.question).toBeDefined();
-    expect(decl?.parameters?.properties?.intent).toBeUndefined();
+  it('declares the question too (VTID-04846: no flag-off declaration remains)', () => {
+    expect(navigateDecl()?.parameters?.properties?.question).toBeDefined();
   });
 });
 
@@ -242,11 +244,8 @@ describe('VTID-04521 — speak first, hold the offer, open on yes', () => {
     expect(await buildContinuationDirective({ current_route: '/home', isAnonymous: true } as any, { screen_id: 'WALLET.OVERVIEW', route: '/wallet' })).toBeNull();
   });
 
-  it('keeps the legacy directive and latch with the flag off', async () => {
-    delete process.env.NAV_V2_ENABLED;
-    const built = await buildContinuationDirective({ current_route: '/home' } as any, { screen_id: 'MEMORY.DIARY', route: '/memory/diary', title: 'Diary' });
-    expect(built).toEqual({ latch: true, directive: expect.objectContaining({ route: '/memory/diary', vtid: 'VTID-NAV-01' }) });
-    expect(built?.directive.after_speech).toBeUndefined();
+  it('opens nothing for an offer whose screen the registry no longer has (VTID-04846)', async () => {
+    expect(await buildContinuationDirective({ current_route: '/home' } as any, { screen_id: 'RETIRED.SCREEN', route: '/retired', title: 'Retired' })).toBeNull();
   });
 });
 
@@ -258,21 +257,15 @@ describe('VTID-04521 — prompts and tool lists under the flag', () => {
     const d = decl('navigate_to_screen')?.description as string;
     expect(d).toBe(NAVIGATE_TO_SCREEN_V2_DESCRIPTION);
     expect(d).not.toMatch(/HARD-REDIRECT|Locate/);
-    delete process.env.NAV_V2_ENABLED;
-    expect(decl('navigate_to_screen')?.description).toMatch(/HARD-REDIRECT/);
   });
 
   it('lets the admin surface open what navigate found', () => {
     expect(decl('navigate_to_screen', 'admin')).toBeDefined();
-    delete process.env.NAV_V2_ENABLED;
-    expect(decl('navigate_to_screen', 'admin')).toBeUndefined();
   });
 
   it('gives the cascade the three navigation tools', () => {
     for (const t of ['navigate', 'navigate_to_screen', 'get_current_screen']) expect(isCascadeTool(t)).toBe(true);
     expect(isCascadeTool('send_chat_message')).toBe(false);
-    delete process.env.NAV_V2_ENABLED;
-    expect(isCascadeTool('navigate')).toBe(false);
     expect(isCascadeTool('switch_persona')).toBe(true);
   });
 
@@ -281,8 +274,7 @@ describe('VTID-04521 — prompts and tool lists under the flag', () => {
     expect(p).toBe(NAVIGATOR_POLICY_V2);
     expect(p).toMatch(/intent "where"/);
     expect(p).toMatch(/after you finish speaking/);
-    delete process.env.NAV_V2_ENABLED;
-    expect(buildNavigatorPolicySection('en')).not.toBe(NAVIGATOR_POLICY_V2);
+    expect(buildNavigatorPolicySection('en')).toBe(NAVIGATOR_POLICY_V2);
   });
 
   it('sends open/show requests to navigate and forbids claiming an unopened screen (VTID-04557)', () => {

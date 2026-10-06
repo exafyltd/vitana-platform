@@ -242,6 +242,14 @@ describe('VTID-04367 role-scoped episodic reads', () => {
     expect(rpc!.args.p_active_role).toBe('staff');
   });
 
+  it('VTID-04870: the REST step fetches exactly the rows it keeps (no 3x overfetch)', async () => {
+    supabaseMock.setTable('memory_items', { data: [memoryItemRow('mi-9')], error: null });
+    await getMemoryContext({ ...INPUT });
+    const limits = (supabaseMock.chain.limit as jest.Mock).mock.calls.map((c: unknown[]) => c[0]);
+    expect(limits).toContain(50);
+    expect(limits).not.toContain(150);
+  });
+
   it('the REST fallback carries the same role filter', async () => {
     supabaseMock.setTable('memory_items', { data: [memoryItemRow('mi-2')], error: null });
     await getMemoryContext({ ...INPUT, role: 'developer', query: 'hi' });

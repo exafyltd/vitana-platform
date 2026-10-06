@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-04847",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/mcp",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": ["\"authorization_servers\"", "/auth/v1", "/mcp"],
+      "reason": "an AI assistant discovers the Vitanaland sign-in (Supabase Auth) from this metadata"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/mcp",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "the MCP endpoint is mounted and refuses a caller that has not signed in, before any tool runs"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/commerce-mcp.test.ts test/vtid-04847-partner-onboarding-service.test.ts test/partner-onboarding.test.ts test/partner-onboarding-catalogue.test.ts test/vtid-04560-role-separation-regression.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the tools create and change a supplier's business in the shared production database, so they are proven here with fakes; the owner runs the one real AI-assistant onboarding on staging once Supabase Auth's OAuth server is switched on"
+    }
+  ]
+}

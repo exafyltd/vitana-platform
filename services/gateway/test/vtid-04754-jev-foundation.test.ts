@@ -205,8 +205,10 @@ describe('VTID-04754 decide() enforces tenant control before any token is spent'
       outcome: 'denied',
       reason: 'tenant_jev_disabled',
     });
-    const spent = createMemoryJevControl({ t1: { enabled: true, planes: ['internal'], monthly_budget_usd: 5 } }, { t1: 5 });
-    const r = await decide('support_ticket_triage', { body: 'x' }, staff, { source: 't', call, env: ENV, control: spent.control });
+    // VTID-04857: the budget caps community spend (member content counts as member) — never internal.
+    const admin = { actor_id: 'a', active_role: 'admin', tenant_id: 't1' };
+    const spent = createMemoryJevControl({ t1: { enabled: true, planes: ['internal', 'member'], monthly_budget_usd: 5 } }, { t1: 5 });
+    const r = await decide('moderation_severity', { content: 'x' }, admin, { source: 't', call, env: MEMBER_ENV, control: spent.control });
     expect(r).toMatchObject({ ok: false, outcome: 'fallback', reason: 'tenant_budget_exhausted', status: 429 });
     expect(call).not.toHaveBeenCalled();
     await new Promise((s) => setImmediate(s));
@@ -221,11 +223,12 @@ describe('VTID-04754 decide() enforces tenant control before any token is spent'
       reason: 'tenant_config_unavailable',
     });
     const noSpend = {
-      getTenantFlag: async () => ({ enabled: true, planes: ['internal'] as any, monthly_budget_usd: 10 }),
+      getTenantFlag: async () => ({ enabled: true, planes: ['internal', 'member'] as any, monthly_budget_usd: 10 }),
       getMonthSpend: async () => null,
       recordSpend: async () => undefined,
     };
-    expect(await decide('support_ticket_triage', { body: 'x' }, staff, { source: 't', call, env: ENV, control: noSpend })).toMatchObject({
+    const admin = { actor_id: 'a', active_role: 'admin', tenant_id: 't1' };
+    expect(await decide('moderation_severity', { content: 'x' }, admin, { source: 't', call, env: MEMBER_ENV, control: noSpend })).toMatchObject({
       outcome: 'fallback',
       reason: 'budget_check_failed',
     });

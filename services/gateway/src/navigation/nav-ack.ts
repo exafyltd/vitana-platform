@@ -4,7 +4,7 @@
  * The server used to assume every directive worked: it moved
  * `current_route` the moment the directive left, so a refused or failed
  * navigation turned into a false "you are already there" on the next
- * request. With the registry dispatcher (NAV_V2_ENABLED) the widget reports
+ * request. With the registry dispatcher the widget reports
  * `nav_result` after the app handled the directive:
  *
  *   opened      the screen or overlay is showing

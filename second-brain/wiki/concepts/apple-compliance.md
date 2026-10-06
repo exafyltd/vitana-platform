@@ -46,7 +46,7 @@ Three internal balance types stored as simple numeric values in PostgreSQL:
 ```
 Table: user_wallets
   - user_id (UUID)
-  - currency_type (TEXT: 'USD', 'VTN', 'CREDITS')
+  - currency_type (TEXT: 'USD', 'VTNA', 'CREDITS')
   - balance (NUMERIC, default 1000.00)
 ```
 

@@ -42,7 +42,7 @@ interface ApprovalItem {
 /**
  * VTID row from vtid_ledger table
  */
-interface VtidLedgerRow {
+export interface VtidLedgerRow {
   id: string;
   vtid: string;
   task_family: string;
@@ -123,13 +123,17 @@ function isTerminalStatus(status: string): boolean {
 }
 
 /**
+ * VTID-04876: exported (unchanged) for the Overview's /ops/attention
+ * decisions-waiting adapter, which reads the same pending-approval set
+ * in-process instead of calling GET /pending over HTTP.
+ *
  * Fetch VTIDs from ledger that are approval-eligible
  * Rules:
  * - VTID must match ^VTID-\d{4,5}$ format
  * - Status must not be terminal
  * - Must not be DEV-*, ADM-*, AICOR-* (legacy identifiers)
  */
-async function fetchApprovalEligibleVtids(
+export async function fetchApprovalEligibleVtids(
   supabaseUrl: string,
   svcKey: string,
   limit: number
@@ -167,7 +171,7 @@ async function fetchApprovalEligibleVtids(
  * Fetch PR/branch info from OASIS events for given VTIDs
  * Looks for cicd.github.create_pr.succeeded and cicd.github.find_pr.succeeded events
  */
-async function fetchPrInfoForVtids(
+export async function fetchPrInfoForVtids(
   supabaseUrl: string,
   svcKey: string,
   vtids: string[]

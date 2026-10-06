@@ -2,7 +2,9 @@ name: I18N-DB-SEED
 run-name: 'Seed DB content i18n [VTID: VTID-03515] locale=${{ inputs.locale || ''scheduled-check'' }} (${{ github.ref_name }})'
 
 # VTID-03515 — bring a language to full parity on DB-backed user-visible content
-# (`nav_catalog_i18n`, `journey_checklist_translations`).
+# (`journey_checklist_translations`). VTID-04880 removed the Navigator catalog
+# surface (`nav_catalog_i18n`): the voice navigator reads the screen registry,
+# whose per-locale titles live in vitana-v1, and the table was archived.
 #
 # The whole "add language N+1" procedure is:
 #   1. INSERT the locale into `supported_locales` (status 'beta').
@@ -22,10 +24,6 @@ on:
         description: 'Comma-separated locale codes (must exist in supported_locales), or "all-ga" / "all"'
         required: true
         default: 'all'
-      surface:
-        description: 'Surface(s): nav-catalog, journey-checklist (blank = both)'
-        required: false
-        default: ''
       apply:
         description: 'Write the result to the database (false = artifacts only)'
         required: true
@@ -45,15 +43,13 @@ on:
   repository_dispatch:
     # NO LANGUAGE LEFT BEHIND, for content that does not live in git.
     #
-    # The curriculum (254 topics) and the Navigator catalog are edited in the
-    # admin UI and published to the database, so no push event ever fires and
-    # git-based propagation is blind to them.
+    # The curriculum (254 topics) is edited in the admin UI and published to
+    # the database, so no push event ever fires and git-based propagation is
+    # blind to it.
     #
     # WIRED FROM THE GATEWAY (VTID-03522) —
     # services/gateway/src/services/db-i18n/notify-source-changed.ts, called
-    # from publishChecklist()/rollbackChecklist() and from
-    # invalidateNavCatalogCache() (the choke point all four nav_catalog admin
-    # writes already pass through).
+    # from publishChecklist()/rollbackChecklist().
     #
     # The emitter coalesces bursts into one dispatch per 30s window and is
     # fire-and-forget: it can never fail the publish that triggered it. When it
@@ -174,7 +170,6 @@ jobs:
             all)    ARGS="--all" ;;
             *)      ARGS="--locale=${{ inputs.locale }}" ;;
           esac
-          [ -n "${{ inputs.surface }}" ] && ARGS="$ARGS --surface=${{ inputs.surface }}"
           [ "${{ inputs.apply }}" = "true" ] && ARGS="$ARGS --apply"
           [ "${{ inputs.from_artifact }}" = "true" ] && ARGS="$ARGS --from-artifact"
           ARGS="$ARGS --curriculum=${{ inputs.curriculum }}"
@@ -212,15 +207,42 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/db-i18n/ || true
+          # VTID-04768 — ONE rolling branch + ONE open PR, not one per run.
+          # This used to branch off `i18n-db/artifacts-<run_id>` and open a new
+          # PR every run. The PRs are not merged promptly, `main` therefore
+          # never contains the artifacts, and the next run (nightly cron, or
+          # any db-i18n-source-changed dispatch) saw the same artifacts as
+          # "new" again: one more identical PR per day. Now the artifacts
+          # accumulate on a stable branch and a PR is opened only if none is
+          # already open for it.
+          BRANCH="i18n-db/artifacts"
+          ARTIFACTS="$RUNNER_TEMP/db-i18n-artifacts"
+          rm -rf "$ARTIFACTS"
+          if [ ! -d data/db-i18n ]; then
+            echo "No artifact changes."
+            exit 0
+          fi
+          cp -r data/db-i18n "$ARTIFACTS"
+
+          # Rebase this run's output onto the rolling branch (if it exists) so
+          # locales from earlier runs are kept, not overwritten.
+          git reset -q --hard
+          git clean -fdq data/db-i18n
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            git fetch -q origin "$BRANCH"
+            git checkout -q -B "$BRANCH" "origin/$BRANCH"
+          else
+            git checkout -q -B "$BRANCH"
+          fi
+          mkdir -p data/db-i18n
+          cp -r "$ARTIFACTS"/. data/db-i18n/
+
+          git add data/db-i18n/
           if git diff --cached --quiet; then
             echo "No artifact changes."
             exit 0
           fi
-
-          BRANCH="i18n-db/artifacts-${{ github.run_id }}"
-          git checkout -b "$BRANCH"
-          git commit -m "chore(i18n-db): seed DB content translations (VTID-03515, VTID-03689)"
+          git commit -m "chore(i18n-db): seed DB content translations (VTID-03515, VTID-03689, VTID-04768)"
 
           for i in 1 2 3 4 5; do
             if git push origin "HEAD:$BRANCH"; then PUSHED=1; break; fi
@@ -235,25 +257,35 @@ jobs:
           # A PR is best-effort: the artifacts are safe on the branch either
           # way, and failing the job over PR creation would discard a
           # successful, paid-for translation run for a bookkeeping step.
-          # NOTE the indentation of the body lines below. A `run: |` block
-          # scalar ENDS at the first line indented less than the block, so a
-          # multi-line string written flush-left silently truncates the YAML
-          # and the whole workflow stops parsing. That exact mistake has cost
-          # this repo two incidents already (VTID-03505, VTID-03521), and it
-          # does not surface as a failing step — it surfaces as a run with
-          # zero jobs. Keep every continuation line indented.
-          PR_BODY="Automated by I18N-DB-SEED run ${{ github.run_id }}.
-          Committed data/db-i18n/ artifacts so --from-artifact can replay this
-          locale with zero LLM spend. The database write already happened during
-          the run; merging this only makes the next run cheap and the
-          translations reviewable."
+          # An already-open PR for the rolling branch picks up the new commit
+          # by itself, so nothing more to do.
+          OPEN_PRS=$(gh pr list --head "$BRANCH" --base "${{ github.ref_name }}" --state open --json number --jq 'length' || echo "")
+          if [ "$OPEN_PRS" = "0" ]; then
+            # NOTE the indentation of the body lines below. A `run: |` block
+            # scalar ENDS at the first line indented less than the block, so a
+            # multi-line string written flush-left silently truncates the YAML
+            # and the whole workflow stops parsing. That exact mistake has cost
+            # this repo two incidents already (VTID-03505, VTID-03521), and it
+            # does not surface as a failing step — it surfaces as a run with
+            # zero jobs. Keep every continuation line indented.
+            PR_BODY="Automated by I18N-DB-SEED (latest run ${{ github.run_id }}).
+            Rolling PR: later runs push onto this branch instead of opening new PRs.
+            Committed data/db-i18n/ artifacts so --from-artifact can replay a
+            locale with zero LLM spend. The database write already happened during
+            the runs; merging this only makes the next run cheap and the
+            translations reviewable."
 
-          gh pr create \
-            --base "${{ github.ref_name }}" \
-            --head "$BRANCH" \
-            --title "chore(i18n-db): DB content translation artifacts (VTID-03689)" \
-            --body "$PR_BODY" \
-            || echo "::warning::artifacts pushed to $BRANCH but PR creation failed — open one by hand"
+            gh pr create \
+              --base "${{ github.ref_name }}" \
+              --head "$BRANCH" \
+              --title "chore(i18n-db): DB content translation artifacts (VTID-03689)" \
+              --body "$PR_BODY" \
+              || echo "::warning::artifacts pushed to $BRANCH but PR creation failed — open one by hand"
+          elif [ -z "$OPEN_PRS" ]; then
+            echo "::warning::could not list PRs for $BRANCH — artifacts are pushed, check for an open PR by hand"
+          else
+            echo "PR for $BRANCH already open — it now includes this run's commit."
+          fi
 
       # Report the seeder's verdict last, so a partial run is visibly red
       # without having cost the work that did succeed.

@@ -11,6 +11,8 @@ Pipeline test ticket FB-2026-10-000144 reached auto-dispatch twice (14:14 and
 It is not specific to that ticket. Over the 24 hours to 14:20 UTC the Dev
 Autopilot planner recorded 47 `dev_autopilot.plan.failed` events, every one
 "unknown error", against 11 `dev_autopilot.plan.generated`.
+Re-measured 2026-10-06 before merging: 20 more failures between 2 and 6
+October and no generated plan since 2 October.
 
 Root cause: the planner runs on DeepSeek Flash (VTID-04593 override) with
 `maxTokens: 8000`. DeepSeek spends the budget on hidden reasoning and returns

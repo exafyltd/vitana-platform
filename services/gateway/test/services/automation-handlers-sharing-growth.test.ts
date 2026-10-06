@@ -47,7 +47,7 @@ function makeFakeSupabase(resultsByTable: Record<string, Array<{ data?: any; cou
       };
       return chain;
     },
-    rpc: jest.fn(async () => ({ data: null, error: null })),
+    rpc: jest.fn(async () => ({ data: { ok: true }, error: null })),
   };
 }
 
@@ -118,9 +118,12 @@ describe('runReferralReward (AP-0405)', () => {
     const handler = getHandler('runReferralReward')!;
     const result = await handler(ctx);
     expect(notify).toHaveBeenCalledTimes(1);
-    expect(supabase.rpc).toHaveBeenCalledWith('increment_wallet_balance', expect.objectContaining({
-      p_user_id: 'u1', p_currency_type: 'CREDITS',
+    expect(supabase.rpc).toHaveBeenCalledWith('credit_wallet', expect.objectContaining({
+      // VTID-04864: the referral reward is the rule-table invite amount (was 200).
+      p_user_id: 'u1', p_amount: 1000, p_type: 'reward', p_source: 'AP-0405',
+      p_source_event_id: 'referral_reward:u1:u2',
     }));
+    expect(ctx.log).not.toHaveBeenCalledWith(expect.stringContaining('credit_wallet failed'));
     expect(result).toEqual({ usersAffected: 2, actionsTaken: 3 });
   });
 
@@ -136,7 +139,7 @@ describe('runReferralReward (AP-0405)', () => {
     expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
   });
 
-  it('logs (does not silence) an increment_wallet_balance RPC error, while still notifying and completing normally', async () => {
+  it('logs (does not silence) a credit_wallet RPC error, while still notifying and completing normally', async () => {
     const supabase = makeFakeSupabase({
       referrals: [{ data: [{ id: 'ref-1' }], error: null }],
       app_users: [{ data: { display_name: 'Alex' }, error: null }],
@@ -148,7 +151,7 @@ describe('runReferralReward (AP-0405)', () => {
     const result = await handler(ctx);
 
     expect(ctx.log).toHaveBeenCalledWith(
-      expect.stringContaining('increment_wallet_balance RPC returned an error for referral reward (referrer=u1): connection terminated'),
+      expect.stringContaining('credit_wallet failed for referral reward (referrer=u1): connection terminated'),
     );
     // Unchanged: the "friend joined" notification and the referral-completed
     // event/return shape do not depend on the wallet credit outcome — this

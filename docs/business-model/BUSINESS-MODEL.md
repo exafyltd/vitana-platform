@@ -273,7 +273,7 @@ No fake transparency under any circumstances. If neither mode is achievable, the
 3. **Voice and Live Room overage is paid only by purchased credits or hard-degrade.** Never by reward credits, never by extending the monthly tier quota.
 4. **Two-column wallet** enforces #3 at the schema level — `feature_entitlements.allowed_burn_buckets` config determines which buckets can pay; `fn_consume_credits` checks before debit.
 5. **D36 vulnerability deferral** → degrade to standard voice / offer PAYG credits / wait, but **never gift expensive minutes**. Deferral itself is metered: max 3 defer-grants per user per month (configurable).
-6. **All discount/multiplier mechanisms are out of launch scope** — no code, no flag, no promise. Specifically: 2× earn multiplier, subscription offset, Earn-Your-Month milestone, reward→subscription conversion are NOT in v1.
+6. **All discount/multiplier mechanisms are out of launch scope** — no code, no flag, no promise. Specifically: 2× earn multiplier, subscription offset, Earn-Your-Month milestone, reward→subscription conversion are NOT in v1. **Amended 2026-10-01 (owner decision, §11):** reward→subscription conversion is approved — earned VTNA (never purchased credits) may be converted into Premium months. The other three stay out of scope.
 7. **All caps are config**, not code — `subscription_plans.features_json`, `feature_entitlements.quota`, `redemption_codes.max_uses`, `tenant_settings.feature_flags.marketing_budget_eur_remaining_cents`. Single SQL UPDATE retunes any value.
 8. **Credit reservation pattern**: any future "credits at checkout" flow must reserve credits BEFORE Stripe checkout and release on Stripe failure (prevents double-spend race). Not in v1 scope.
 9. **Marketing-budget cap is a hard money guard**: `fn_redeem_code` and `fn_grant_referral` decrement the cap at redemption time and return `BUDGET_EXHAUSTED` when zero.
@@ -339,3 +339,55 @@ Each of these is a separate scoped project with its own cashflow analysis when p
 | KB chapter [`docs/knowledge-base/en/07-maxina-experience/03-ethical-ai-and-privacy.md`](../knowledge-base/en/07-maxina-experience/03-ethical-ai-and-privacy.md) | §7 (Trust Center) above |
 
 Plan source of truth: `.claude/plans/the-plan-should-also-humming-stonebraker.md` (engineering plan, with full §A–§T sections).
+
+---
+
+## 11. Engagement & rewards — owner decisions (2026-10-01)
+
+Recorded by VTID-04809 (Phase 1 of the engagement plan); later phases get
+their own VTIDs. These supersede anything above that conflicts with them.
+
+1. **Reward→subscription conversion approved.** Guardrail #6 is amended:
+   earned VTNA can be converted into Premium months.
+2. **Founding offer:** the first 1,000 members receive a full year of Premium,
+   announced in onboarding as worth **€119.88** (12 × €9.99).
+3. **Cost ceiling accepted:** ≈ €119.88k list value for 1,000 free years
+   (≈ €89k at the €89 annual price), above the earlier ≈ €55k promo ceiling.
+4. **Year-two qualification is a mix:** reaching engagement/Vitana Index
+   goals earns the second year outright; members who miss them can still
+   convert earned VTNA into Premium months.
+5. **`user_wallets.CREDITS` is the canonical VTNA ledger** (VTID-04809).
+6. **Rewards spend earned VTNA only** — purchased credits stay with feature
+   overage (guardrails #2/#3 unchanged).
+7. **VTNA is pegged to EUR:** 1 VTNA = €0.01; USD is shown at the live rate.
+8. **Rewards Shop** (MAXINA merch, Son Amaret Chardonnay MAXINA Edition,
+   services, event tickets, constantly updated) prices items in VTNA with the
+   EUR/USD equivalent per the member's currency setting. Wine: the member
+   confirms their age and pays shipping. The Rewards screen lives in the
+   Wallet as the existing `/wallet/rewards` subscreen.
+
+### 11a. How members earn VTNA — owner decisions (2026-10-03, amended 2026-10-05)
+
+The rule table is `services/gateway/src/services/rewards/vtna-reward-rules.ts`
+(VTID-04864); every payer reads its amounts from there.
+
+- **2026-10-03 (VTID-04864):** "You earn VTNA for real things you do
+  yourself, once per milestone, and for staying consistent." First steps
+  (once each), diary streaks 3/7/30 (once each), invites (1,000 per friend
+  who joins, max 10 per 30 days; 10,000 once at 10 friends). Never earns:
+  anything Vitana does for you, purchases, self-reported actions.
+- **2026-10-05 (VTID-04878) amends it:**
+  - *Onboarding complete* (50 VTNA) pays **at signup** — nothing records the
+    guided onboarding as finished.
+  - *Autopilot action done* pays again: **5 VTNA, max 2 per day** (UTC).
+    Completion is self-reported, so the amount stays small and capped.
+  - *Live room* with someone else present for **15 full minutes: 20 VTNA,
+    max 3 per week** (server-verified join/leave). In-person meetups earn
+    once event check-in exists; RSVPs pay only the one-time first-RSVP step.
+  - *New Vitana Index personal best*, **at least 10 points above the
+    previous best: 50 VTNA, max once a week**. The first reading is the
+    baseline.
+  - Members are paid for first steps they already took before the ledger
+    existed (one silent back-pay, no notifications).
+  - Ceiling from the new rules: ≈ 775 VTNA (≈ €7.75) per member per month at
+    the caps.

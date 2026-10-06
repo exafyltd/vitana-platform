@@ -598,7 +598,7 @@ const HEALTH_WELLNESS: AutomationDefinition[] = [
 ];
 
 // =============================================================================
-// AP-0700: Payments, Wallet & VTN
+// AP-0700: Payments, Wallet & VTNA
 // =============================================================================
 const PAYMENTS_WALLET: AutomationDefinition[] = [
   {
@@ -663,7 +663,7 @@ const PAYMENTS_WALLET: AutomationDefinition[] = [
     // Stays PLANNED: a token-launch automation is a one-time tokenomics/
     // treasury operation outside this session's scope — not a schema-drift
     // gap closable by fixing table/column names.
-    id: 'AP-0709', name: 'Vitana Token (VTN) Launch Automation', domain: 'payments-wallet-vtn',
+    id: 'AP-0709', name: 'Vitana Token (VTNA) Launch Automation', domain: 'payments-wallet-vtn',
     status: 'PLANNED', priority: 'P0', triggerType: 'manual',
     targetRoles: ALL_ROLES,
   },

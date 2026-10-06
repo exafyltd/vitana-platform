@@ -108,6 +108,20 @@ logged and skipped, never a failed deploy.
 - Apple rows open the app-specific password dialog once the encryption key is
   in place.
 
-Production needs the same three steps with `--env prod`, the production
-redirect URIs, and the matching wiring in `AWS-PROD-DEPLOY-GATEWAY.yml`
-(not added yet — VTID-04507 is staging only).
+Production needs the same three steps with `--env prod` and the production
+redirect URIs. The production wiring exists since VTID-04914: the prod
+deploy role cannot describe secrets, so after
+`scripts/aws/setup-connected-apps-oauth-secrets.sh --env prod provision --apply`
+set two **repository variables** in `exafyltd/vitana-platform` (Settings →
+Secrets and variables → Actions → Variables) to the full secret ARNs the
+script prints:
+
+- `PROD_GOOGLE_OAUTH_CLIENT_ID_ARN`
+- `PROD_GOOGLE_OAUTH_CLIENT_SECRET_ARN`
+
+The next production deploy wires them (both or neither; an empty variable
+never produces a secret reference). `CALENDAR_GOOGLE_SYNC_ENABLED=true` is
+already pinned on both environments, so Google Calendar two-way sync
+(VTID-04372) starts as soon as the client exists. The Google calendar
+scopes (`calendar.app.created`, `calendar.freebusy`) need Google's app
+verification before members outside the test-user list can connect.

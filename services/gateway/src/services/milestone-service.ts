@@ -15,6 +15,8 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import * as repo from './milestone-service-repository';
+import { rewardAmount, rewardEventId } from './rewards/vtna-reward-rules';
+import { creditWalletSucceeded } from './wallet/vtna-reward-keys';
 
 // =============================================================================
 // Milestone Definitions
@@ -164,6 +166,12 @@ export const MILESTONES: Record<string, MilestoneDefinition> = {
   },
 };
 
+// VTID-04864: amounts come from the one VTNA rule table (vtna-reward-rules.ts),
+// never from this file — a milestone that is not a reward rule pays 0.
+for (const [id, def] of Object.entries(MILESTONES)) {
+  def.reward = rewardAmount(id);
+}
+
 // =============================================================================
 // Milestone State — tracks which milestones a user has achieved
 // =============================================================================
@@ -185,29 +193,35 @@ async function getAchievedMilestones(
 
 /**
  * Record a milestone as achieved by inserting a completed recommendation.
+ *
+ * VTID-04878: the row used to carry `tenant_id` (a column
+ * autopilot_recommendations does not have, so PostgREST rejected the whole
+ * insert) plus risk_level 'none', impact_score 80 and effort_score 0, which
+ * the table's CHECKs reject (risk_level low..critical, scores 1..10). The
+ * result was never read, so no milestone was ever recorded. Returns whether
+ * the row landed.
  */
 async function recordMilestone(
   supabase: SupabaseClient,
   userId: string,
-  tenantId: string,
   milestoneId: string,
-): Promise<void> {
+): Promise<boolean> {
   const def = MILESTONES[milestoneId];
-  if (!def) return;
+  if (!def) return false;
 
-  await repo.insertAchievedMilestone(supabase, {
-    tenant_id: tenantId,
+  const { error } = await repo.insertAchievedMilestone(supabase, {
     user_id: userId,
     title: def.name,
     summary: def.celebration,
     domain: 'milestone',
     source_type: 'milestone',
     source_ref: milestoneId,
-    risk_level: 'none',
-    impact_score: 80,
-    effort_score: 0,
+    risk_level: 'low',
+    impact_score: 8,
+    effort_score: 1,
     status: 'completed',
     activated_at: new Date().toISOString(),
+    completed_at: new Date().toISOString(),
     metadata: {
       milestone_id: milestoneId,
       category: def.category,
@@ -215,6 +229,11 @@ async function recordMilestone(
       completed_at: new Date().toISOString(),
     },
   });
+  if (error) {
+    console.error(`[MilestoneService] could not record ${milestoneId} for ${userId.slice(0, 8)}…: ${error.message}`);
+    return false;
+  }
+  return true;
 }
 
 // =============================================================================
@@ -276,6 +295,18 @@ interface CheckContext {
   userId: string;
   tenantId: string;
   achieved: Set<string>;
+}
+
+// VTID-04878: onboarding_complete pays at signup (owner decision 2026-10-05).
+// Nothing records the guided onboarding as finished, so a primary tenant
+// membership — the member signed up — is the signal. The reward key is the
+// one AP-1301's welcome bonus uses, so the two can never both pay.
+async function checkOnboardingComplete(ctx: CheckContext): Promise<string | null> {
+  if (ctx.achieved.has('onboarding_complete')) return null;
+
+  const { count } = await repo.countPrimaryMemberships(ctx.supabase, ctx.userId);
+
+  return (count || 0) >= 1 ? 'onboarding_complete' : null;
 }
 
 async function checkProfileComplete(ctx: CheckContext): Promise<string | null> {
@@ -389,6 +420,7 @@ async function checkFirstReferral(ctx: CheckContext): Promise<string | null> {
 
 // All checkers in priority order
 const ALL_CHECKERS = [
+  checkOnboardingComplete,
   checkProfileComplete,
   checkFirstDiary,
   checkConnectionMilestones,
@@ -404,6 +436,133 @@ const ALL_CHECKERS = [
 // Public API
 // =============================================================================
 
+export interface MilestoneScanOptions {
+  /**
+   * VTID-04878: skip the `user.milestone.reached` event. The reward sweep's
+   * backfill pays milestones members reached before the ledger existed; they
+   * land in the wallet history without a celebration for something old.
+   */
+  quiet?: boolean;
+}
+
+export interface MilestoneScanResult {
+  milestones: string[];
+  recorded: number;
+  record_failures: number;
+  vtna_credited: number;
+  credit_failures: number;
+}
+
+/**
+ * Record, announce and pay one newly achieved milestone. The payment is keyed
+ * by rewardEventId, so it lands at most once whatever happens to the record;
+ * the event is only emitted once the milestone is recorded, so a failing
+ * record can never re-announce the same milestone on every scan.
+ */
+async function awardMilestone(
+  supabase: SupabaseClient,
+  userId: string,
+  tenantId: string,
+  milestoneId: string,
+  opts: MilestoneScanOptions,
+  result: MilestoneScanResult,
+): Promise<void> {
+  const recorded = await recordMilestone(supabase, userId, milestoneId);
+  if (recorded) result.recorded++;
+  else result.record_failures++;
+
+  if (recorded && !opts.quiet) {
+    await emitMilestoneEvent(userId, tenantId, milestoneId);
+  }
+
+  const def = MILESTONES[milestoneId];
+  if (!def || def.reward <= 0) return;
+
+  // supabase-js resolves .rpc() with {error} on a Postgres failure and
+  // credit_wallet reports business failures as data.ok=false — both are
+  // checked (VTID-04878; the old code read only `error`).
+  try {
+    const { data, error } = await repo.creditWalletForMilestone(supabase, {
+      p_tenant_id: tenantId,
+      p_user_id: userId,
+      p_amount: def.reward,
+      p_type: 'reward',
+      p_source: 'milestone',
+      p_source_event_id: rewardEventId(milestoneId, userId),
+      p_description: def.celebration,
+    });
+    if (error) {
+      result.credit_failures++;
+      console.error(`[MilestoneService] credit_wallet RPC returned an error for ${milestoneId}: ${error.message}`);
+    } else if (!creditWalletSucceeded(data, error)) {
+      result.credit_failures++;
+      const reason = (data as { error?: string } | null)?.error ?? 'unknown';
+      console.error(`[MilestoneService] credit_wallet refused ${milestoneId} for ${userId.slice(0, 8)}…: ${reason}`);
+    } else if (!(data as { duplicate?: boolean }).duplicate) {
+      result.vtna_credited += def.reward;
+    }
+  } catch (walletErr: any) {
+    // Network-layer failure (the only case .rpc() actually rejects for).
+    result.credit_failures++;
+    console.warn(`[MilestoneService] credit_wallet failed for ${milestoneId}: ${walletErr?.message ?? walletErr}`);
+  }
+}
+
+async function runCheckers(
+  ctx: CheckContext,
+  checkers: Array<(ctx: CheckContext) => Promise<string | null>>,
+): Promise<string[]> {
+  const found: string[] = [];
+  for (const checker of checkers) {
+    try {
+      const id = await checker(ctx);
+      if (id && !ctx.achieved.has(id)) {
+        found.push(id);
+        ctx.achieved.add(id); // prevent double-fire within the same scan
+      }
+    } catch (err) {
+      console.warn(`[MilestoneService] Checker failed for user ${ctx.userId.slice(0, 8)}…:`, err);
+    }
+  }
+  return found;
+}
+
+/** Each checker returns one milestone per pass (e.g. five_connections before first_connection). */
+const MAX_SCAN_PASSES = 4;
+
+/**
+ * Scan a single user for every newly achieved milestone and pay it.
+ * Repeats the checkers until a pass finds nothing new, so a member who
+ * qualified for several tiers before the ledger existed is caught up in one
+ * scan instead of one tier per scan.
+ */
+export async function scanUserMilestonesDetailed(
+  supabase: SupabaseClient,
+  userId: string,
+  tenantId: string,
+  opts: MilestoneScanOptions = {},
+): Promise<MilestoneScanResult> {
+  const achieved = await getAchievedMilestones(supabase, userId, tenantId);
+  const ctx: CheckContext = { supabase, userId, tenantId, achieved };
+  const result: MilestoneScanResult = {
+    milestones: [], recorded: 0, record_failures: 0, vtna_credited: 0, credit_failures: 0,
+  };
+
+  for (let pass = 0; pass < MAX_SCAN_PASSES; pass++) {
+    const found = await runCheckers(ctx, ALL_CHECKERS);
+    if (found.length === 0) break;
+    for (const milestoneId of found) {
+      result.milestones.push(milestoneId);
+      await awardMilestone(supabase, userId, tenantId, milestoneId, opts, result);
+    }
+  }
+
+  if (result.milestones.length > 0) {
+    console.log(`[MilestoneService] User ${userId.slice(0, 8)}… achieved: ${result.milestones.join(', ')}`);
+  }
+  return result;
+}
+
 /**
  * Scan a single user for any newly achieved milestones.
  * Returns the list of newly achieved milestone IDs.
@@ -415,67 +574,9 @@ export async function scanUserMilestones(
   supabase: SupabaseClient,
   userId: string,
   tenantId: string,
+  opts: MilestoneScanOptions = {},
 ): Promise<string[]> {
-  const achieved = await getAchievedMilestones(supabase, userId, tenantId);
-  const ctx: CheckContext = { supabase, userId, tenantId, achieved };
-
-  const newMilestones: string[] = [];
-
-  for (const checker of ALL_CHECKERS) {
-    try {
-      const result = await checker(ctx);
-      if (result && !achieved.has(result)) {
-        newMilestones.push(result);
-        achieved.add(result); // prevent double-fire within same scan
-      }
-    } catch (err) {
-      console.warn(`[MilestoneService] Checker failed for user ${userId.slice(0, 8)}…:`, err);
-    }
-  }
-
-  // Record and emit events for all new milestones
-  for (const milestoneId of newMilestones) {
-    await recordMilestone(supabase, userId, tenantId, milestoneId);
-    await emitMilestoneEvent(userId, tenantId, milestoneId);
-
-    // Credit wallet reward if applicable.
-    //
-    // credit_wallet is best-effort — a duplicate p_source_event_id is
-    // idempotent and fine to ignore. But supabase-js's .rpc() resolves
-    // normally with an {error} field on a Postgres-level failure — it
-    // does NOT throw — so the old empty `catch {}` here was unreachable
-    // for that case and the failure was completely invisible in logs
-    // (AURORA-B3-RPC-PARITY-INVENTORY.md's 2026-08-29 addendum). Checking
-    // `error` explicitly makes it loud, per this codebase's own "never
-    // silence errors" rule, without changing whether the milestone is
-    // recorded (that stays a product decision, not fixed here).
-    const def = MILESTONES[milestoneId];
-    if (def && def.reward > 0) {
-      try {
-        const { error: walletErr } = await repo.creditWalletForMilestone(supabase, {
-          p_tenant_id: tenantId,
-          p_user_id: userId,
-          p_amount: def.reward,
-          p_type: 'reward',
-          p_source: 'milestone',
-          p_source_event_id: `milestone_${milestoneId}_${userId}`,
-          p_description: def.celebration,
-        });
-        if (walletErr) {
-          console.error(`[MilestoneService] credit_wallet RPC returned an error for ${milestoneId}: ${walletErr.message}`);
-        }
-      } catch (walletErr: any) {
-        // Network-layer failure (the only case .rpc() actually rejects for).
-        console.warn(`[MilestoneService] credit_wallet failed for ${milestoneId}: ${walletErr?.message ?? walletErr}`);
-      }
-    }
-  }
-
-  if (newMilestones.length > 0) {
-    console.log(`[MilestoneService] User ${userId.slice(0, 8)}… achieved: ${newMilestones.join(', ')}`);
-  }
-
-  return newMilestones;
+  return (await scanUserMilestonesDetailed(supabase, userId, tenantId, opts)).milestones;
 }
 
 /**
@@ -518,46 +619,12 @@ export async function checkMilestonesForAction(
       break;
   }
 
-  const newMilestones: string[] = [];
-
-  for (const checker of relevantCheckers) {
-    try {
-      const result = await checker(ctx);
-      if (result && !achieved.has(result)) {
-        newMilestones.push(result);
-        achieved.add(result);
-      }
-    } catch (err) {
-      console.warn(`[MilestoneService] Checker failed:`, err);
-    }
-  }
-
-  // Record and emit
+  const newMilestones = await runCheckers(ctx, relevantCheckers);
+  const result: MilestoneScanResult = {
+    milestones: newMilestones, recorded: 0, record_failures: 0, vtna_credited: 0, credit_failures: 0,
+  };
   for (const milestoneId of newMilestones) {
-    await recordMilestone(supabase, userId, tenantId, milestoneId);
-    await emitMilestoneEvent(userId, tenantId, milestoneId);
-
-    // See the identical wallet-credit block above (scanUserMilestones) for
-    // why `error` is checked explicitly rather than relying on `catch`.
-    const def = MILESTONES[milestoneId];
-    if (def && def.reward > 0) {
-      try {
-        const { error: walletErr } = await repo.creditWalletForMilestone(supabase, {
-          p_tenant_id: tenantId,
-          p_user_id: userId,
-          p_amount: def.reward,
-          p_type: 'reward',
-          p_source: 'milestone',
-          p_source_event_id: `milestone_${milestoneId}_${userId}`,
-          p_description: def.celebration,
-        });
-        if (walletErr) {
-          console.error(`[MilestoneService] credit_wallet RPC returned an error for ${milestoneId}: ${walletErr.message}`);
-        }
-      } catch (walletErr: any) {
-        console.warn(`[MilestoneService] credit_wallet failed for ${milestoneId}: ${walletErr?.message ?? walletErr}`);
-      }
-    }
+    await awardMilestone(supabase, userId, tenantId, milestoneId, {}, result);
   }
 
   return newMilestones;

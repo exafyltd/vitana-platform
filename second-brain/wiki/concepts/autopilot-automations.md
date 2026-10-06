@@ -18,7 +18,7 @@ Every automation has a permanent `AP-XXXX` ID that never changes, organized into
 | AP-0400 | **Sharing & Growth** | 10 | 0 | WhatsApp sharing, social media cards, referral tracking, viral loops, weekly recaps |
 | AP-0500 | **Engagement Loops** | 8 | 2 | Morning briefings, weekly digests, re-engagement for dormant users, milestone celebrations |
 | AP-0600 | **Health & Wellness** | 15 | 3 | PHI redaction, lab report ingestion, biomarker trends, quality-of-life recommendations, wearable anomaly detection |
-| AP-0700 | **Payments & VTN** | 12 | 3 | Payment retry, Stripe Connect onboarding, wallet credits, VTN token economy, monetization readiness |
+| AP-0700 | **Payments & VTNA** | 12 | 3 | Payment retry, Stripe Connect onboarding, wallet credits, VTNA token economy, monetization readiness |
 | AP-0800 | **Personalization Engines** | 5 | 0 | Social comfort filtering, taste alignment, opportunity surfacing, life-stage awareness, overload detection |
 | AP-0900 | **Memory & Intelligence** | 5 | 0 | Memory-informed matching, fact extraction from conversations, relationship graph maintenance, semantic search |
 | AP-1000 | **Platform Operations** | 5 | 2 | VTID lifecycle, governance flags, post-deploy health checks, error rate alerts |
@@ -50,7 +50,7 @@ These flows chain automations across domains to create complete user journeys:
 - **Health -> Business -> Live Rooms (Quality of Life)**: Lab ingestion (AP-0607) -> Trend analysis (AP-0608) -> Recommendations (AP-0609) -> Professional referral (AP-0612) -> Consultation matching (AP-1208) -> Booking (AP-1202) -> Outcome tracking (AP-1105)
 - **Social -> Sharing -> Growth (Viral Loop)**: Daily match (AP-0101) -> Introduction (AP-0103) -> Invite after positive (AP-0404) -> WhatsApp share (AP-0401) -> Viral signup (AP-0410) -> Referral reward (AP-0405) -> Wallet credits (AP-0708)
 - **Creator -> Business -> Revenue**: Shop setup (AP-1106) -> Stripe Connect (AP-0706) -> Service distribution (AP-1101) -> Paid room setup (AP-1201) -> Booking (AP-1202) -> Revenue report (AP-1205)
-- **Engagement -> Wallet -> VTN (Token Economy)**: Credits for engagement (AP-0708) -> VTN launch (AP-0709) -> Spending insights (AP-0712) -> Monetization readiness (AP-0710) -> Product matching (AP-1102)
+- **Engagement -> Wallet -> VTNA (Token Economy)**: Credits for engagement (AP-0708) -> VTNA launch (AP-0709) -> Spending insights (AP-0712) -> Monetization readiness (AP-0710) -> Product matching (AP-1102)
 
 ### Safety and Ethical Guardrails
 

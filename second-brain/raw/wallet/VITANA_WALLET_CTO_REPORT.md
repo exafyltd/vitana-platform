@@ -18,7 +18,7 @@ The Vitana Wallet and Messenger system has **complete core implementation** for 
 ## What's Currently Implemented ✅
 
 ### 1. Frontend Exchange System
-- **QuickExchangeWidget**: Currency conversion UI (USD ↔ VTN ↔ Credits)
+- **QuickExchangeWidget**: Currency conversion UI (USD ↔ VTNA ↔ Credits)
 - **Exchange rate display**: Real-time rate simulation with trend indicators
 - **Exchange calculations**: Proper rate calculations with 1% fees
 - **Currency formatting**: Proper display for all three currencies
@@ -35,7 +35,7 @@ The Vitana Wallet and Messenger system has **complete core implementation** for 
   ```sql
   - id (uuid, primary key)
   - user_id (uuid, references auth.users)
-  - currency_type (USD, VTN, CREDITS)
+  - currency_type (USD, VTNA, CREDITS)
   - balance (decimal 15,2, default 1000.00)
   - created_at, updated_at (timestamps)
   - RLS policies enabled
@@ -101,7 +101,7 @@ The Vitana Wallet and Messenger system has **complete core implementation** for 
 ### 4. Integration & APIs
 - **External payment gateways**: No Stripe/PayPal integration for USD deposits
 - **Bank account linking**: No direct bank transfers
-- **Crypto integration**: No blockchain connectivity for VTN tokens
+- **Crypto integration**: No blockchain connectivity for VTNA tokens
 - **Third-party APIs**: No external exchange rate feeds
 
 ### 5. Analytics & Reporting
@@ -120,7 +120,7 @@ The Vitana Wallet and Messenger system has **complete core implementation** for 
 CREATE TABLE user_wallets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id),
-  currency_type TEXT CHECK (currency_type IN ('USD', 'VTN', 'CREDITS')),
+  currency_type TEXT CHECK (currency_type IN ('USD', 'VTNA', 'CREDITS')),
   balance DECIMAL(15,2) DEFAULT 1000.00,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW(),

@@ -1,0 +1,8 @@
+$ cd services/gateway && npx tsc --noEmit -p .
+(clean)
+$ npx jest test/vtid-04874
+Tests: 8 passed (outputs/jest-rate.txt) — the first run caught a real bug (the first would_limit report was suppressed because lastReport started at 0); fixed by starting it at -Infinity
+$ npx jest test/vtid-047 test/vtid-048 test/routes/jev
+Test Suites: 68 passed — Tests: 957 passed (outputs/jest-jev-all.txt)
+$ npm run test:operator && npm run test:roles && npm run test:support
+30 passed; 105 passed; 84 passed (outputs/jest-operator-roles-support.txt)

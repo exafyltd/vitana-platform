@@ -10,6 +10,10 @@
  *                                    content_data? } — content_data persists in chat_messages.metadata
  *                                    (e.g. { attachments: [{url, path, mime, filename, size}] }).
  *                                    @vitana mentions in text trigger Vitana reply.
+ *                                    content_data.mentions ([{user_id, display_name}]) tags
+ *                                    members (VTID-04926): sanitized server-side, stored in
+ *                                    metadata.mentions, and those members get a chat_mention
+ *                                    push instead of the generic new_chat_message one.
  *                                    Reactions are written client-side via Supabase RLS on
  *                                    message_reactions (polymorphic on chat_messages.id).
  *   POST   /:id/read               — Mark all group messages read up to "now"
@@ -38,6 +42,9 @@ import { VITANA_BOT_USER_ID, isVitanaBot } from '../lib/vitana-bot';
 import { processConversationTurn } from '../services/conversation-client';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import * as repo from './chat-groups-repository';
+import { tt } from '../i18n/catalog';
+import { bulkGetUserLocales } from '../i18n/server-locale';
+import { fetchUnmentionableIds, sanitizeMentions, type ChatMention } from '../lib/chat-mentions';
 
 const router = Router();
 
@@ -179,6 +186,16 @@ router.get('/:id', requireAuth, requireTenant, async (req: Request, res: Respons
   const profileById = new Map(profileRows.map(p => [p.user_id, p]));
   const appUserById = new Map(appUserRows.map(u => [u.user_id, u]));
 
+  // VTID-04926: service and test accounts are never offered as @mentions.
+  // Fails closed — if the lookup errors, nobody is offered (the composer just
+  // shows no suggestions) rather than risking a test account surfacing.
+  let unmentionable: Set<string> | null = null;
+  try {
+    unmentionable = await fetchUnmentionableIds(supabase, memberIds);
+  } catch (err: any) {
+    console.warn('[ChatGroups] mentionable lookup failed:', err?.message || err);
+  }
+
   const enrichedMembers = (members || []).map(m => {
     const profile = profileById.get(m.user_id);
     const appUser = appUserById.get(m.user_id);
@@ -194,6 +211,7 @@ router.get('/:id', requireAuth, requireTenant, async (req: Request, res: Respons
       display_name: displayName,
       avatar_url: profile?.avatar_url || null,
       is_bot: isVitanaBot(m.user_id),
+      mentionable: unmentionable !== null && !unmentionable.has(m.user_id) && !isVitanaBot(m.user_id),
     };
   });
 
@@ -272,6 +290,15 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
     return res.status(403).json({ ok: false, error: 'not_a_member' });
   }
 
+  // VTID-04926: never store what the client claims about mentions — only the
+  // sanitized list, and only when someone is actually tagged.
+  let mentions: ChatMention[] = [];
+  if ('mentions' in metadata) {
+    mentions = await resolveGroupMentions(supabase, groupId, identity.user_id, trimmed, (metadata as any).mentions);
+    delete (metadata as any).mentions;
+    if (mentions.length > 0) (metadata as any).mentions = mentions;
+  }
+
   const { data, error } = await repo.insertChatGroupMessage(supabase, {
     tenant_id: identity.tenant_id,
     sender_id: identity.user_id,
@@ -312,6 +339,7 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
       identity.tenant_id!,
       fanoutBody,
       data.id,
+      new Set(mentions.map(m => m.user_id)),
     );
   } catch (err: any) {
     console.warn('[ChatGroups] Fanout failed:', err?.message || err);
@@ -474,6 +502,36 @@ async function requireMembership(
   return { role: (data as any).role };
 }
 
+/**
+ * VTID-04926: turn the client's `content_data.mentions` into the list that is
+ * stored and notified — members of this group only, never the sender, the
+ * Vitana bot or a service/test account, and only names that appear in the
+ * text. Fails closed: if the account lookup errors, nobody is tagged (the
+ * message itself still sends).
+ */
+async function resolveGroupMentions(
+  supabase: SupabaseClient,
+  groupId: string,
+  senderId: string,
+  content: string,
+  raw: unknown,
+): Promise<ChatMention[]> {
+  if (!Array.isArray(raw) || raw.length === 0 || !content) return [];
+  try {
+    const { data: members, error } = await repo.listChatGroupMemberIds(supabase, groupId);
+    if (error) throw new Error(error.message);
+    const memberIds = new Set(((members || []) as Array<{ user_id: string }>).map((m) => m.user_id));
+    const claimed = raw
+      .map((e) => (e && typeof e === 'object' ? (e as { user_id?: unknown }).user_id : null))
+      .filter((id): id is string => typeof id === 'string' && memberIds.has(id));
+    const excludedIds = await fetchUnmentionableIds(supabase, [...new Set(claimed)]);
+    return sanitizeMentions({ raw, content, senderId, memberIds, excludedIds });
+  } catch (err: any) {
+    console.warn('[ChatGroups] mention resolution failed, sending untagged:', err?.message || err);
+    return [];
+  }
+}
+
 async function fanoutGroupNotifications(
   supabase: SupabaseClient,
   groupId: string,
@@ -481,6 +539,7 @@ async function fanoutGroupNotifications(
   tenantId: string,
   content: string,
   messageId: string,
+  mentionedIds: ReadonlySet<string> = new Set(),
 ): Promise<void> {
   const [{ data: group }, { data: members }, { data: senderAppUser }, { data: senderProfile }] = await Promise.all([
     repo.fetchChatGroupName(supabase, groupId),
@@ -502,32 +561,60 @@ async function fanoutGroupNotifications(
     (m: { user_id: string }) => m.user_id !== senderId && !isVitanaBot(m.user_id),
   ) as Array<{ user_id: string }>;
 
-  // Promise.allSettled so one bad member can't block the rest, and so the
-  // caller's await actually finishes before Cloud Run can freeze the
-  // container (see call site's comment for why fire-and-forget silently
-  // drops pushes here).
-  const results = await Promise.allSettled(
-    recipients.map((m) =>
-      notifyUser(
-        m.user_id,
+  // VTID-04926: members tagged in this message get ONE push — chat_mention,
+  // titled in their own language and opening the message itself — instead of
+  // the generic new_chat_message one everybody else gets.
+  const mentionedRecipientIds = recipients.map((m) => m.user_id).filter((id) => mentionedIds.has(id));
+  const mentionLocales = mentionedRecipientIds.length > 0
+    ? await bulkGetUserLocales(supabase, mentionedRecipientIds).catch(() => new Map())
+    : new Map();
+
+  const notifyMember = (userId: string) => {
+    if (mentionedIds.has(userId)) {
+      return notifyUser(
+        userId,
         tenantId,
-        'new_chat_message',
+        'chat_mention',
         {
-          title: groupName,
-          body: `${senderName}: ${body}`,
+          title: tt('notif.chat_mention.title', mentionLocales.get(userId), { sender: senderName, group: groupName }),
+          body,
           data: {
-            type: 'new_group_message',
+            type: 'chat_mention',
             group_id: groupId,
             sender_id: senderId,
             sender_name: senderName,
             message_id: messageId,
-            url: `/inbox/g/${groupId}`,
+            url: `/inbox/g/${groupId}/msg/${messageId}`,
           },
         },
         supabase,
-      ),
-    ),
-  );
+      );
+    }
+    return notifyUser(
+      userId,
+      tenantId,
+      'new_chat_message',
+      {
+        title: groupName,
+        body: `${senderName}: ${body}`,
+        data: {
+          type: 'new_group_message',
+          group_id: groupId,
+          sender_id: senderId,
+          sender_name: senderName,
+          message_id: messageId,
+          url: `/inbox/g/${groupId}`,
+        },
+      },
+      supabase,
+    );
+  };
+
+  // Promise.allSettled so one bad member can't block the rest, and so the
+  // caller's await actually finishes before Cloud Run can freeze the
+  // container (see call site's comment for why fire-and-forget silently
+  // drops pushes here).
+  const results = await Promise.allSettled(recipients.map((m) => notifyMember(m.user_id)));
   const failed = results.filter((r) => r.status === 'rejected').length;
   if (failed > 0) {
     console.warn(`[ChatGroups] fanout: ${failed}/${results.length} notifyUser calls rejected`);

@@ -1,0 +1,7 @@
+# VTID-04891 — commands (read-only unless noted)
+curl -D - .../rest/v1/app_users?select=id      (publishable key, Prefer: count=exact, Range: 0-0)   # HTTP/2 400 {"code":"42703","message":"column app_users.id does not exist"}
+curl -D - .../rest/v1/app_users?select=user_id (same)                                               # HTTP/2 200, content-range: */0
+rds-data execute_statement select count(*) from app_users (claude-readonly secret)                 # 233
+supabase execute_sql select count(*) from app_users                                                 # 233
+bash -c 'set -euo pipefail; <the workflow parse lines>' on 0-0/233 | no header | 0-0/*                # COUNT=233 | error branch | error branch
+npx jest test/vtid-04891 test/vtid-04787 (services/gateway)                                         # 5 passed

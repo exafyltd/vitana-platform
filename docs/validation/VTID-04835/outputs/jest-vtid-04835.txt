@@ -1,0 +1,12 @@
+    ✓ emits one server_shutdown stop + facts end per live session (16 ms)
+    ✓ skips sessions another end path already reported (3 ms)
+    ✓ is idempotent and latches, so a socket close after the drain books nothing more (44 ms)
+    ✓ is bounded by the timeout when a write hangs (155 ms)
+    ✓ never throws — a throwing emit loses only that OASIS row; every session still gets its stop attempt + facts end (1 ms)
+    ✓ works with no live sessions and when the controller was never configured (1 ms)
+    ✓ drains first, then closes the server, then exits 0 — once, however many signals (2 ms)
+    ✓ a hanging drain hook cannot hold shutdown past the drain bound; a hanging close past the grace (203 ms)
+    ✓ a throwing drain hook does not stop the shutdown (2 ms)
+    ✓ index.ts installs the handler with the live-session drain, and nothing else registers a signal handler (178 ms)
+Test Suites: 1 passed, 1 total
+Tests:       10 passed, 10 total

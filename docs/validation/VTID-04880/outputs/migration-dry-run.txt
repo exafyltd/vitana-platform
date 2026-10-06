@@ -1,0 +1,34 @@
+# VTID-04880 migration dry-run — local PostgreSQL 16.13, database 'dry' (never production)
+# Seeded with: roles anon/authenticated/service_role, auth.jwt() stub, supported_locales (de,en,fr),
+# supabase/migrations/20260411000000_nav_catalog.sql, nav_catalog_i18n.source_sha + lang FK (NOT VALID),
+# 20260819085846_vtid_03679_*.sql (the live health function), 3 catalog rows x 3 langs = 9 i18n rows.
+
+## state before (rolled back):
+public.nav_catalog_i18n rows=9
+health nav keys: nav_catalog_canonical_entries nav_catalog_incomplete_ga_locales
+
+## apply
+(no errors; psql ON_ERROR_STOP=1, only NOTICE lines filtered)
+public.nav_catalog=NULL  legacy_archive.nav_catalog_i18n rows=9
+health nav keys: (none)
+lang fkey present: false
+touch fn schema: legacy_archive
+archived trigger fires: true
+
+## rollback (header) + re-apply
+after rollback public rows=9
+after re-apply archive rows=9
+
+## guard: a public view still depending on the tables aborts the whole migration
+psql:supabase/migrations/20261005090000_vtid_04880_archive_nav_catalog.sql:244: ERROR:  VTID-04880: public views still depend on nav_catalog*: v_nav
+still in public after abort: true
+
+## guard: a public function naming the tables aborts it
+psql:supabase/migrations/20261005090000_vtid_04880_archive_nav_catalog.sql:244: ERROR:  VTID-04880: public functions still reference nav_catalog*: f_nav
+final: archived=true
+
+## drift parser on the real file
+created [] dropped [ 'nav_catalog', 'nav_catalog_audit', 'nav_catalog_i18n' ]
+
+## guarded Aurora restore statements with the tables absent (67 of 68; nav_catalog_role_chk is the pre-existing truncated literal)
+all no-op, no error

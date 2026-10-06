@@ -1,0 +1,12 @@
+# VTID-04859 — commands run in this session (services/gateway unless noted)
+(root) read-only SQL against the VITANA project: 231 primary members, 94 with launch_auto_grant_2026 (until 2027-05-28),
+       FOUNDING code unused (0/500), service_bot_accounts 2, notification_test_actors 1 (incl. the documented test user),
+       live shapes of user_tenants / app_users / user_subscriptions / paywall_events, welcome-chat trigger pattern
+(root) PGPORT_TEST=55433 scripts/ci/test-vtid-04859-founding.sh   # migration applied twice to a local PG16 replica; all assertions pass
+(root) mutation: drop the service_bot_accounts exclusion -> the migration's own self-check aborts (exit 3); restored -> passes
+npx jest test/vtid-04859-founding-1000.test.ts test/routes/billing-founding.test.ts test/routes/billing-repository.test.ts \
+  test/orb-tools/admin-oversight-billing-tools.test.ts test/vtid-04560-role-separation-regression.test.ts \
+  test/vtid-04456-customer-support-pipeline-regression.test.ts test/vtid-04465-operator-pipeline-regression.test.ts   # 7 suites, 242 tests
+npx tsc --noEmit -p .                                                 # clean
+(root) node scripts/ci/validate-pr-locally.cjs --title-file ... --body-file ... --base main
+2026-10-03T08:36:08Z bash scripts/ci/test-vtid-04859-founding.sh  # rerun after adding e2e-address exclusion (two unregistered e2e accounts are live primary members); mutation (clause -> false) caught by migration self-check

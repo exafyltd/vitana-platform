@@ -54,7 +54,7 @@ Last rebuilt: 2026-04-12
 - [[health-tracking]] — Health dashboard, nutrition, sleep, biomarkers, wearables
 - [[matchmaking-system]] — Intelligent matchmaking, daily matches, 7 types
 - [[discover-marketplace]] — AI picks, supplements, doctors, deals, ordering
-- [[financial-longevity]] — Credits, cash, VTN tokens, longevity economy
+- [[financial-longevity]] — Credits, cash, VTNA tokens, longevity economy
 
 ---
 

@@ -151,6 +151,9 @@ describe('commitSessionMemory — commit path', () => {
       user_id: 'user-Y',
       session_id: 'session-Z',
       force: true,
+      // VTID-04798: the served role (and, when known, the work surface) decide
+      // whether the session may write personal facts.
+      served_role: 'community',
     });
   });
 

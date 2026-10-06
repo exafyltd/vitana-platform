@@ -46,40 +46,46 @@ function functionBody(source: string, signature: string): string {
   return source.slice(start, end);
 }
 
-describe('VTID-03917: fetchActionRequired() silent refresh no longer forces a full renderApp()', () => {
-  it('the silentRefresh branch calls refreshActionRequiredPanel(), not renderApp()', () => {
-    const body = functionBody(SOURCE, 'async function fetchActionRequired(silentRefresh) {');
-    expect(body).toMatch(/if\s*\(silentRefresh\)\s*\{\s*refreshActionRequiredPanel\(\);\s*\}\s*else\s*\{\s*renderApp\(\);\s*\}/);
+// VTID-04876: the Action Required panel was replaced by the ops/attention
+// cockpit; the same no-full-rerender guarantee now holds for its 30 s poll.
+describe('VTID-03917 (via VTID-04876): fetchOpsAttention() silent refresh never forces a full renderApp()', () => {
+  it('the silentRefresh branch calls refreshOpsAttentionPanel(), not renderApp()', () => {
+    const body = functionBody(SOURCE, 'async function fetchOpsAttention(silentRefresh) {');
+    expect(body).toMatch(/if\s*\(silentRefresh\)\s*\{\s*refreshOpsAttentionPanel\(\);\s*\}\s*else\s*\{\s*renderApp\(\);\s*\}/);
   });
 
-  it('refreshActionRequiredPanel() replaces the existing .action-required-panel node in place', () => {
-    const body = functionBody(SOURCE, 'function refreshActionRequiredPanel() {');
-    expect(body).toContain("document.querySelector('.action-required-panel')");
-    expect(body).toContain('renderActionRequiredPanel()');
-    expect(body).toContain('oldPanel.replaceWith(newPanel)');
-    // Must not fall back to a full rebuild — that would reintroduce the bug.
+  it('refreshOpsAttentionPanel() replaces the existing .ops-attention node in place', () => {
+    const body = functionBody(SOURCE, 'function refreshOpsAttentionPanel() {');
+    expect(body).toContain("document.querySelector('.ops-attention')");
+    expect(body).toContain('old.replaceWith(renderOpsAttentionCockpit())');
     expect(body).not.toContain('renderApp()');
   });
 
-  it('the 30s _actionRequiredTimer still calls fetchActionRequired with silentRefresh=true', () => {
-    const idx = SOURCE.indexOf('state._actionRequiredTimer = setInterval(function () {');
+  it('the 30 s _opsAttentionTimer calls fetchOpsAttention with silentRefresh=true', () => {
+    const idx = SOURCE.indexOf('state._opsAttentionTimer = setInterval(function () {');
     expect(idx).toBeGreaterThan(-1);
-    const end = SOURCE.indexOf('}, 30000);', idx);
-    const body = SOURCE.slice(idx, end);
-    expect(body).toContain('fetchActionRequired(true);');
+    const end = SOURCE.indexOf('}, OPS_ATTENTION_POLL_MS);', idx);
+    expect(end).toBeGreaterThan(idx);
+    expect(SOURCE.slice(idx, end)).toContain('fetchOpsAttention(true);');
   });
 
   it('a non-silent call (initial load) still does a full renderApp()', () => {
-    const body = functionBody(SOURCE, 'async function fetchActionRequired(silentRefresh) {');
-    // The isInitialLoad-gated first render is unchanged.
+    const body = functionBody(SOURCE, 'async function fetchOpsAttention(silentRefresh) {');
     expect(body).toContain('if (isInitialLoad && !silentRefresh) renderApp();');
+  });
+
+  it('the old Action Required fetcher/panel are gone', () => {
+    expect(SOURCE).not.toContain('async function fetchActionRequired(');
+    expect(SOURCE).not.toContain('function renderActionRequiredPanel(');
   });
 });
 
 describe('VTID-03917: fetchOverviewTimeseries() parity fix (defensive — no live silentRefresh caller today)', () => {
-  it('does not call renderApp() when silentRefresh is true', () => {
-    const body = functionBody(SOURCE, 'async function fetchOverviewTimeseries(silentRefresh) {');
-    expect(body).toMatch(/state\.activeTab === 'system-overview' && !silentRefresh\)\s*\{\s*renderApp\(\);/);
+  it('fetchOverviewTimeseries() is gone (VTID-04887): it fed only the deleted metrics grid', () => {
+    // The cockpit's sparklines come from /ops/attention (VTID-04886), whose
+    // poll is pinned silent above, so there is no second re-render path left.
+    expect(SOURCE).not.toMatch(/function\s+fetchOverviewTimeseries\s*\(/);
+    expect(SOURCE).not.toMatch(/\bfetchOverviewTimeseries\(/);
   });
 });
 

@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-04845",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "name": "db-i18n translator repairs unescaped inner quotes",
+      "ref": "npx jest test/db-i18n/db-i18n.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The translator runs inside the I18N-DB-SEED workflow, not as a staging HTTP surface; nothing on the staging gateway changes behaviour. Its effect is proven by this suite and, after merge, by re-seeding pl/pt/sr/tr/zh until T257 lands."
+    }
+  ]
+}

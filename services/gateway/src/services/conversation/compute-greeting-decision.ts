@@ -397,6 +397,10 @@ export interface GreetingDecisionContext {
   /** Short factual lines the opener may lead with (system pulse / admin
    *  briefing). Facts, never finished sentences. */
   workSurfaceHighlights?: string[] | null;
+  /** VTID-04840: a task the session was opened for on its work surface.
+   *  `commerce_setup` — the supplier tapped "Talk to Vitana" in the AI setup
+   *  sheet, so the commerce opener asks for their website. */
+  workSurfaceTask?: 'commerce_setup' | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -704,9 +708,26 @@ const WORK_SURFACE_OPENER_INTENT: Record<string, string> = {
     'below (an approval waiting, an escalation). When nothing is pending, say so in fresh words. Then offer ' +
     'ONE concrete next step. Stay on business operations.',
   commerce:
-    'You are the business assistant for this partner organisation. Lead with the most important open item ' +
-    'from the facts below, or say in fresh words that nothing is open. Then offer ONE concrete next step. ' +
-    'Stay on the organisation\'s business work.',
+    'You are this supplier\'s onboarding guide and Vitanaland Commerce specialist. Lead with where they stand, ' +
+    'taken from the facts below: their business and the one step that comes next, or, when they have no ' +
+    'business yet, that you can set it up together. Then offer to take that ONE step with them now. ' +
+    'Stay on their business on Vitanaland.',
+};
+
+/**
+ * VTID-04840 — per-task opener intent on a work surface (English INTENT,
+ * NEVER rule 41). Facts are not used: the task is the whole opening.
+ */
+const WORK_SURFACE_TASK_INTENT: Record<string, { role: string; intent: string }> = {
+  commerce_setup: {
+    role: 'commerce',
+    intent:
+      'The user asked you, as their onboarding guide, to set up their business on Vitanaland with them. Briefly ' +
+      'say you will guide them through it, then ask for the address of their website so you can read it and ' +
+      'prepare the business and its products or services for them to check. Mention that nothing is saved until ' +
+      'they confirm it on the screen. As soon as they give an address, call draft_business_setup with it. If they ' +
+      'have no website, guide them through the screen one step at a time.',
+  },
 };
 
 /**
@@ -728,6 +749,25 @@ export function tryWorkSurfaceRung(ctx: GreetingDecisionContext): GreetingDecisi
     };
   }
   const role = ctx.workSurfaceRole || 'developer';
+  const task = ctx.workSurfaceTask ? WORK_SURFACE_TASK_INTENT[ctx.workSurfaceTask] : undefined;
+  if (task && task.role === role) {
+    const taskDirective =
+      `Open with ONE or TWO short spoken sentences, as audio. INTENT: ${task.intent} ` +
+      'Compose the wording yourself, fresh each time.';
+    return {
+      wakeOpener: 'work_surface_open',
+      directive: taskDirective,
+      diag: {
+        lang: ctx.lang,
+        prompt_len: taskDirective.length,
+        wake_opener: 'work_surface_open',
+        surface,
+        role,
+        task: ctx.workSurfaceTask,
+      },
+      effects: { markGreetingSent: true, armWatchdog: true },
+    };
+  }
   const intent = WORK_SURFACE_OPENER_INTENT[role] || WORK_SURFACE_OPENER_INTENT.developer;
   const highlights = (ctx.workSurfaceHighlights || [])
     .map((h) => (typeof h === 'string' ? h.replace(/\s+/g, ' ').trim() : ''))

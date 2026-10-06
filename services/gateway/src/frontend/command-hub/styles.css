@@ -14699,7 +14699,7 @@ border-bottom: 1px solid var(--color-border, #333);
 .module-header .section-subtitle { margin: 0; font-size: 0.85rem; color: var(--color-text-secondary); }
 
 /* ── Metrics Grid ── */
-.metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+
 .metrics-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
 .metrics-grid.cols-5 { grid-template-columns: repeat(5, 1fr); }
 .metric-card {
@@ -15703,7 +15703,7 @@ border-bottom: 1px solid var(--color-border, #333);
 
 /* ── Responsive ── */
 @media (max-width: 900px) {
-  .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+  
   .overview-services-grid, .infra-services-grid, .infra-card-grid, .infra-card-grid--3col, .config-cards-grid, .llm-providers-grid, .controls-grid { grid-template-columns: 1fr; }
   
   .personality-field-group { grid-template-columns: 1fr; }
@@ -15727,9 +15727,7 @@ border-bottom: 1px solid var(--color-border, #333);
  * ========================================================================= */
 
 /* -- Pipeline Funnel -- */
-.pipeline-dashboard-container {
-    padding: 1rem;
-}
+
 
 .pipeline-funnel {
     display: flex;
@@ -15803,53 +15801,20 @@ border-bottom: 1px solid var(--color-border, #333);
 
 
 
-.entry-point-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    gap: 0.75rem;
-}
 
-.entry-point-card {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 1rem;
-    background: var(--bg-tertiary, #16213e);
-    border-radius: 8px;
-    border: 1px solid var(--border-color, #2d3748);
-}
 
-.ep-icon {
-    font-size: 1.5rem;
-    margin-bottom: 4px;
-}
 
-.ep-count {
-    font-size: 1.75rem;
-    font-weight: 700;
-    color: var(--text-primary, #e2e8f0);
-}
 
-.ep-label {
-    font-size: 0.75rem;
-    color: var(--text-secondary, #94a3b8);
-    text-align: center;
-}
+
+
+
+
+
 
 /* -- Pipeline Health Strip -- */
-.pipeline-health-strip {
-    padding: 1rem;
-    background: var(--bg-tertiary, #16213e);
-    border-radius: 8px;
-    border: 1px solid var(--border-color, #2d3748);
-}
 
-.health-strip-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 0;
-}
+
+
 
 .health-dot {
     width: 10px;
@@ -15863,30 +15828,14 @@ border-bottom: 1px solid var(--color-border, #333);
 .health-dot-red { background-color: #ef4444; }
 
 
-.health-strip-label {
-    font-size: 0.85rem;
-    color: var(--text-secondary, #94a3b8);
-}
 
-.success-rate-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 0;
-    margin-top: 8px;
-    border-top: 1px solid var(--border-color, #2d3748);
-}
 
-.success-rate-value {
-    font-size: 1.25rem;
-    font-weight: 700;
-}
+
+
+
 
 /* -- Attention Items -- */
-.pipeline-attention-section,
-.attention-priority-section {
-    margin-bottom: 1.5rem;
-}
+
 
 .attention-all-clear {
     padding: 2rem;
@@ -15978,6 +15927,14 @@ border-bottom: 1px solid var(--color-border, #333);
     margin-bottom: 4px;
 }
 
+
+
+
+
+
+
+
+
 .rec-title {
     font-size: 0.9rem;
     font-weight: 600;
@@ -16028,6 +15985,36 @@ border-bottom: 1px solid var(--color-border, #333);
     display: flex;
     gap: 8px;
 }
+
+/* VTID-04887: Vitana Recommends, kept in the Overview disclosure. */
+.overview-recommends-panel {
+    background: var(--bg-tertiary, #16213e);
+    border: 1px solid var(--border-color, #2d3748);
+    border-radius: 8px;
+    padding: 0.5rem;
+    /* Full width like the Service Health panel; the dashboard grid is 1fr 1fr. */
+    grid-column: 1 / -1;
+    min-width: 0;
+}
+
+.overview-recommends-panel .rec-title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.overview-recs-title {
+    margin: 0;
+}
+
+.overview-recs-empty {
+    font-size: 0.85rem;
+}
+
+
+
+
+
+
 
 /* -- Compact Health -- */
 
@@ -16083,31 +16070,16 @@ border-bottom: 1px solid var(--color-border, #333);
     display: block;
 }
 
-.overview-list-wrap {
-    overflow-y: auto;
-    overflow-x: hidden;
-    max-height: 360px;
-    min-width: 0;
-    width: 100%;
-    box-sizing: border-box;
-}
+
 
 .overview-refreshing-tag {
     font-size: 0.72rem;
     color: #6b7280;
 }
 
-.overview-status-operational {
-    background: rgba(16, 185, 129, 0.08);
-    border-color: rgba(16, 185, 129, 0.3);
-    color: #10b981;
-}
 
-.overview-status-degraded {
-    background: rgba(245, 158, 11, 0.08);
-    border-color: rgba(245, 158, 11, 0.3);
-    color: #f59e0b;
-}
+
+
 
 .overview-status-critical {
     background: rgba(239, 68, 68, 0.1);
@@ -16115,92 +16087,38 @@ border-bottom: 1px solid var(--color-border, #333);
     color: #ef4444;
 }
 
-.status-banner-left {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-}
+/* VTID-04869: health not measured / dashboard fetch failed — grey, never green. */
 
-.status-banner-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: currentColor;
-    flex-shrink: 0;
-}
 
-.status-banner-dot-pulse {
-    animation: pulse-dot 1.5s ease-in-out infinite;
-}
+
+
+
+
+
 
 @keyframes pulse-dot {
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.5; transform: scale(1.3); }
 }
 
-.status-banner-label {
-    font-weight: 700;
-    font-size: 0.85rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-}
 
-.status-banner-detail {
-    font-size: 0.8rem;
-    opacity: 0.8;
-}
 
-.status-banner-right {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-}
 
-.status-banner-time {
-    font-size: 0.75rem;
-    color: var(--text-tertiary, #64748b);
-}
+
+
+
+
 
 /* Key Metrics Grid */
-.overview-metrics-grid {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    grid-auto-rows: var(--metric-card-min-height, 108px);
-    align-items: stretch;
-    gap: var(--overview-grid-gap, 0.45rem);
-    width: 100%;
-    box-sizing: border-box;
-    align-self: start;
-}
 
-@media (max-width: 1400px) {
-    .overview-metrics-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-}
-@media (max-width: 1100px) {
-    .overview-metrics-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
+
+
+
 /* The existing @media (max-width: 768px) block below collapses to 2 columns. */
 
-.overview-metric-card {
-    background: var(--bg-tertiary, #16213e);
-    border: 1px solid var(--border-color, #2d3748);
-    border-radius: 6px;
-    padding: var(--metric-card-padding, 0.6rem 0.4rem);
-    min-height: var(--metric-card-min-height, 88px);
-    text-align: center;
-    transition: border-color 0.2s;
-    min-width: 0;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    box-sizing: border-box;
-}
 
-.overview-metric-card:hover {
-    border-color: rgba(255, 255, 255, 0.15);
-}
+
+
 
 .metric-value {
     font-size: var(--metric-value-size, 1.15rem);
@@ -16227,15 +16145,7 @@ border-bottom: 1px solid var(--color-border, #333);
     max-width: 100%;
 }
 
-.metric-subtitle {
-    font-size: var(--metric-subtitle-size, 0.55rem);
-    color: var(--text-tertiary, #64748b);
-    margin-top: 0.15rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
-}
+
 
 /* Panel Shared Styles — see compact versions below */
 
@@ -16246,18 +16156,20 @@ border-bottom: 1px solid var(--color-border, #333);
     border-radius: 10px;
     line-height: 1.4;
 }
-
-.overview-count-badge-red {
-    background: rgba(239, 68, 68, 0.2);
-    color: #ef4444;
-}
-
-
-
 .overview-count-badge-green {
     background: rgba(16, 185, 129, 0.2);
     color: #10b981;
 }
+.overview-count-badge-amber {
+    background: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+}
+
+
+
+
+
+
 
 /* Service Health Grid — compact 3-col */
 .overview-health-grid {
@@ -16285,7 +16197,7 @@ border-bottom: 1px solid var(--color-border, #333);
 
 
 /* Metric card icon */
-.metric-icon { display:flex; justify-content:center; margin-bottom:3px; color: var(--text-secondary, #94a3b8); }
+
 .metric-icon svg { width:24px; height:24px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
 
 /* Health grid card — small box with name + latency (4x4 grid) */
@@ -16407,30 +16319,17 @@ border-bottom: 1px solid var(--color-border, #333);
 }
 
 /* ORB Communication Panel */
-.overview-orb-panel {
-    background: var(--bg-tertiary, #16213e);
-    border: 1px solid var(--border-color, #2d3748);
-    border-radius: 8px;
-    padding: 0.5rem;
-}
 
-.orb-config-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.2rem 0;
-    font-size: 0.8rem;
-}
 
-.orb-config-label {
-    flex: 1;
-    color: var(--text-secondary, #94a3b8);
-}
 
-.orb-config-value {
-    font-weight: 600;
-    font-size: 0.8rem;
-}
+
+
+
+
+
+/* VTID-04869: ORB card value tones (class-based, CSP-safe) */
+
+
 
 .orb-alert {
     background: rgba(239, 68, 68, 0.1);
@@ -16445,82 +16344,27 @@ border-bottom: 1px solid var(--color-border, #333);
 
 
 
-.orb-metric-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 0.2rem 0;
-    font-size: 0.8rem;
-    color: var(--text-secondary, #94a3b8);
-}
 
-.orb-metric-value {
-    font-weight: 600;
-    color: var(--text-primary, #e2e8f0);
-}
+
+
 
 /* Recent Failures Panel */
-.overview-failures-panel {
-    background: var(--bg-tertiary, #16213e);
-    border: 1px solid var(--border-color, #2d3748);
-    border-radius: 8px;
-    padding: 0.5rem;
-}
 
-.failure-row {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.2rem 0;
-    font-size: 0.72rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-    min-width: 0;
-    width: 100%;
-}
 
-.failure-row:last-child {
-    border-bottom: none;
-}
 
-.failure-time {
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
-    font-size: 0.7rem;
-    color: var(--text-tertiary, #64748b);
-    min-width: 50px;
-    flex-shrink: 0;
-}
 
-.failure-topic {
-    color: #fca5a5;
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
-    font-size: 0.7rem;
-    max-width: 180px;
-    flex-shrink: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
 
-.failure-message {
-    flex: 1 1 0;
-    min-width: 0;
-    color: var(--text-secondary, #94a3b8);
-    font-size: 0.73rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
 
-.overview-failures-panel {
-    min-width: 0;
-}
+
+
+
+
+
+
+
 
 /* Deploy History Panel */
-.overview-deploy-panel {
-    background: var(--bg-tertiary, #16213e);
-    border: 1px solid var(--border-color, #2d3748);
-    border-radius: 8px;
-    padding: 0.5rem;
-}
+
 
 .deploy-row {
     display: flex;
@@ -16572,38 +16416,15 @@ border-bottom: 1px solid var(--color-border, #333);
 }
 
 /* No Failures / All Clear */
-.overview-no-failures {
-    padding: 0.4rem;
-    text-align: center;
-    color: #10b981;
-    font-size: 0.72rem;
-    background: rgba(16, 185, 129, 0.05);
-    border-radius: 6px;
-    border: 1px solid rgba(16, 185, 129, 0.12);
-}
+
 
 /* Attention Center panel */
-.overview-attention-center {
-    background: var(--bg-tertiary, #16213e);
-    border: 1px solid var(--border-color, #2d3748);
-    border-radius: 8px;
-    padding: 0.5rem;
-}
+
 
 /* Bottom row: Attention + Recommends side by side */
-.overview-bottom-row {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.5rem;
-}
 
-.overview-recommends-panel {
-    background: var(--bg-tertiary, #16213e);
-    border: 1px solid var(--border-color, #2d3748);
-    border-radius: 8px;
-    padding: 0.5rem;
-}
+
+
 
 /* Panel titles — compact */
 .overview-panel-title {
@@ -16625,28 +16446,14 @@ border-bottom: 1px solid var(--color-border, #333);
     .overview-dashboard {
         grid-template-columns: 1fr;
     }
-    .overview-metrics-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .overview-bottom-row {
-        grid-template-columns: 1fr;
-    }
+    
+    
 }
 
 /* -- Event Filter -- */
-.event-filter-select {
-    background: var(--bg-tertiary, #16213e);
-    color: var(--text-primary, #e2e8f0);
-    border: 1px solid var(--border-color, #2d3748);
-    border-radius: 4px;
-    padding: 4px 8px;
-    font-size: 0.85rem;
-    margin-right: 8px;
-}
 
-.event-row-error {
-    background: #ef444415 !important;
-}
+
+
 
 .event-row-error td {
     color: #fca5a5 !important;
@@ -16697,9 +16504,7 @@ border-bottom: 1px solid var(--color-border, #333);
         grid-template-columns: 1fr;
     }
 
-    .entry-point-grid {
-        grid-template-columns: repeat(3, 1fr);
-    }
+    
 
     .funnel-stage {
         min-width: auto;
@@ -17924,4 +17729,148 @@ button.fb-chip:focus-visible,
     .rec-q-metrics { gap: 4px 10px; }
     .rec-dismiss-options { grid-template-columns: 1fr; }
     .autopilot-recommendations-modal .modal-footer { flex-wrap: wrap; }
+}
+
+/* ==========================================================================
+   VTID-04876: Overview Phase 1 — supervisor cockpit (status bar + queue).
+   Severity is icon + text label + colour; UNKNOWN is grey, never green.
+   Logical properties only (RTL-safe); targets >= 24px.
+   ========================================================================== */
+.overview-cockpit { display: flex; flex-direction: column; gap: 0.85rem; }
+.ops-attention { display: flex; flex-direction: column; gap: 0.75rem; }
+
+.ops-status-bar {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 0.5rem 1rem; padding: 0.75rem 1rem; border: 1px solid; border-radius: 8px;
+}
+.ops-status-main { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+.ops-verdict-label { font-weight: 800; font-size: 1.05rem; letter-spacing: 0.04em; }
+.ops-verdict-detail { font-size: 0.85rem; opacity: 0.9; }
+.ops-status-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; font-size: 0.8rem; }
+.ops-count { display: inline-flex; align-items: center; gap: 0.25rem; min-height: 24px; padding: 0 0.45rem; border-radius: 4px; }
+.ops-sources, .ops-generated { color: #cbd5e1; }
+.ops-env { padding: 0.1rem 0.5rem; border-radius: 999px; border: 1px solid rgba(148, 163, 184, 0.4); color: #e2e8f0; }
+.ops-env-staging { border-color: rgba(250, 204, 21, 0.6); color: #fde68a; }
+.ops-refresh { min-height: 24px; min-width: 24px; }
+.ops-unknown-sources { flex-basis: 100%; font-size: 0.75rem; color: #cbd5e1; }
+.ops-unknown-source { white-space: normal; }
+
+.ops-verdict-critical { background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.5); color: #fca5a5; }
+.ops-verdict-attention { background: rgba(245, 158, 11, 0.10); border-color: rgba(245, 158, 11, 0.45); color: #fcd34d; }
+.ops-verdict-ok { background: rgba(34, 197, 94, 0.08); border-color: rgba(34, 197, 94, 0.35); color: #86efac; }
+.ops-verdict-unknown { background: rgba(148, 163, 184, 0.08); border-color: rgba(148, 163, 184, 0.4); color: #cbd5e1; }
+
+.ops-sev { display: inline-flex; align-items: center; gap: 0.25rem; min-width: 6.5rem; padding: 0.1rem 0.45rem; border-radius: 4px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+.ops-sev-p1 { background: rgba(239, 68, 68, 0.22); color: #fecaca; }
+.ops-sev-p2 { background: rgba(245, 158, 11, 0.22); color: #fde68a; }
+.ops-sev-p3 { background: rgba(59, 130, 246, 0.20); color: #bfdbfe; }
+
+.ops-queue { display: flex; flex-direction: column; gap: 0.5rem; }
+.ops-queue-title { margin: 0; font-size: 1rem; font-weight: 700; color: #f3f4f6; }
+.ops-filters { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.ops-filter {
+    min-height: 28px; padding: 0.15rem 0.6rem; border-radius: 999px; cursor: pointer;
+    background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.14); color: #e5e7eb; font-size: 0.78rem;
+}
+.ops-filter:focus-visible, .ops-item-link:focus-visible, .ops-refresh:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
+.ops-filter-active { background: rgba(96, 165, 250, 0.2); border-color: rgba(96, 165, 250, 0.6); }
+.ops-filter-count { opacity: 0.75; margin-inline-start: 0.2rem; }
+.ops-queue-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.ops-item { border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.08); border-inline-start-width: 4px; background: rgba(15, 23, 42, 0.55); }
+.ops-item.ops-sev-p1 { border-inline-start-color: #ef4444; background: rgba(15, 23, 42, 0.55); color: inherit; }
+.ops-item.ops-sev-p2 { border-inline-start-color: #f59e0b; background: rgba(15, 23, 42, 0.55); color: inherit; }
+.ops-item.ops-sev-p3 { border-inline-start-color: #3b82f6; background: rgba(15, 23, 42, 0.55); color: inherit; }
+.ops-item-link {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; min-height: 44px;
+    padding: 0.55rem 0.8rem; color: inherit; text-decoration: none; text-align: start;
+}
+.ops-item-link:hover { background: rgba(255, 255, 255, 0.04); }
+.ops-item-main { display: flex; flex-direction: column; gap: 0.15rem; flex: 1 1 16rem; min-width: 0; }
+.ops-item-title { font-weight: 600; color: #f3f4f6; overflow-wrap: anywhere; }
+.ops-item-detail { font-size: 0.78rem; color: rgba(229, 231, 235, 0.78); overflow-wrap: anywhere; }
+.ops-item-meta { display: flex; gap: 0.5rem; font-size: 0.72rem; color: #94a3b8; }
+.ops-item-count { font-weight: 700; color: #e5e7eb; }
+.ops-queue-empty { margin: 0; padding: 0.6rem 0.8rem; font-size: 0.85rem; color: #cbd5e1; }
+.ops-queue-blind { color: #fca5a5; }
+
+.ops-attention-legacy > summary { cursor: pointer; min-height: 28px; padding: 0.4rem 0; color: #cbd5e1; font-size: 0.85rem; }
+.ops-attention-legacy[open] > summary { margin-bottom: 0.6rem; }
+
+@media (max-width: 480px) {
+    .ops-status-bar { padding: 0.6rem 0.7rem; }
+    .ops-sev { min-width: 0; }
+}
+
+/* ==========================================================================
+   VTID-04885: Overview Phase 2 — domain tiles (one per plan domain).
+   Worst severity is icon + text label + colour; a domain without an adapter
+   says "Not yet monitored" (never green). Logical properties only.
+   ========================================================================== */
+.ops-tiles { display: flex; flex-direction: column; gap: 0.5rem; }
+.ops-tiles-title { margin: 0; font-size: 1rem; font-weight: 700; color: #f3f4f6; }
+.ops-tile-grid {
+    list-style: none; margin: 0; padding: 0;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr)); gap: 0.5rem;
+}
+.ops-tile { border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08); border-block-start-width: 3px; background: rgba(15, 23, 42, 0.55); min-width: 0; }
+.ops-tile.ops-sev-p1 { border-block-start-color: #ef4444; background: rgba(15, 23, 42, 0.55); color: inherit; }
+.ops-tile.ops-sev-p2 { border-block-start-color: #f59e0b; background: rgba(15, 23, 42, 0.55); color: inherit; }
+.ops-tile.ops-sev-p3 { border-block-start-color: #3b82f6; background: rgba(15, 23, 42, 0.55); color: inherit; }
+.ops-tile.ops-tile-ok { border-block-start-color: #22c55e; }
+.ops-tile.ops-tile-unknown { border-block-start-color: #94a3b8; }
+.ops-tile.ops-tile-unmonitored { border-style: dashed; opacity: 0.8; }
+.ops-tile-body {
+    display: flex; flex-direction: column; gap: 0.2rem; min-height: 44px; height: 100%;
+    padding: 0.55rem 0.7rem; color: inherit; text-decoration: none; text-align: start; box-sizing: border-box;
+}
+.ops-tile-link:hover { background: rgba(255, 255, 255, 0.04); }
+.ops-tile-link:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
+.ops-tile-label { font-weight: 700; color: #f3f4f6; font-size: 0.88rem; overflow-wrap: anywhere; }
+.ops-tile-state { display: inline-flex; align-self: flex-start; align-items: center; gap: 0.25rem; padding: 0.1rem 0.45rem; border-radius: 4px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+.ops-tile-state.ops-tile-ok { background: rgba(34, 197, 94, 0.18); color: #bbf7d0; }
+.ops-tile-state.ops-tile-unknown { background: rgba(148, 163, 184, 0.2); color: #e2e8f0; }
+.ops-tile-state.ops-tile-unmonitored { background: rgba(148, 163, 184, 0.1); color: #cbd5e1; }
+.ops-tile-count { font-size: 0.82rem; color: #e5e7eb; }
+.ops-tile-fresh, .ops-tile-note { font-size: 0.72rem; color: #94a3b8; overflow-wrap: anywhere; }
+
+/* ==========================================================================
+   VTID-04886: Overview Phase 3 — Ack / Snooze, timeline, sparklines,
+   P1 notification toggle. Logical properties only; targets >= 24px.
+   ========================================================================== */
+.ops-item-acked { opacity: 0.62; }
+.ops-item-acked:hover, .ops-item-acked:focus-within { opacity: 1; }
+.ops-item-ack { display: block; padding: 0 0.8rem 0.3rem; font-size: 0.72rem; color: #a5b4fc; overflow-wrap: anywhere; }
+.ops-item-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; padding: 0 0.8rem 0.5rem; }
+.ops-action-btn { min-height: 28px; min-width: 44px; padding: 0.15rem 0.6rem; font-size: 0.75rem; }
+.ops-action-btn:focus-visible, .ops-notify:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
+.ops-action-note { font-size: 0.72rem; color: #fca5a5; }
+.ops-action-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.5rem 0.75rem; padding: 0.4rem 0.8rem 0.65rem; border-block-start: 1px dashed rgba(255, 255, 255, 0.12); }
+.ops-action-label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.72rem; color: #cbd5e1; flex: 1 1 12rem; min-width: 0; }
+.ops-action-label textarea, .ops-action-label select, .ops-action-label input {
+    min-height: 32px; padding: 0.3rem 0.45rem; border-radius: 4px; box-sizing: border-box; inline-size: 100%;
+    background: rgba(2, 6, 23, 0.7); border: 1px solid rgba(255, 255, 255, 0.18); color: #e5e7eb; font: inherit; font-size: 0.8rem;
+}
+.ops-action-buttons { display: flex; gap: 0.4rem; }
+.ops-action-error { flex-basis: 100%; margin: 0; font-size: 0.75rem; color: #fca5a5; }
+.ops-count-hidden { background: rgba(148, 163, 184, 0.16); color: #e2e8f0; }
+.ops-hidden > summary { cursor: pointer; min-height: 28px; padding: 0.3rem 0; color: #cbd5e1; font-size: 0.82rem; }
+.ops-hidden-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.ops-hidden-item { display: flex; flex-wrap: wrap; gap: 0.3rem 0.6rem; align-items: center; padding: 0.35rem 0.6rem; border-radius: 6px; background: rgba(15, 23, 42, 0.4); opacity: 0.8; }
+.ops-sparks { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; font-size: 0.75rem; color: #cbd5e1; }
+.ops-spark { display: inline-flex; align-items: center; gap: 0.35rem; }
+.ops-spark-svg { fill: currentColor; opacity: 0.85; vertical-align: middle; }
+.ops-spark-partial { font-style: italic; opacity: 0.8; }
+.ops-timeline { display: flex; flex-direction: column; gap: 0.5rem; }
+.ops-timeline-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.ops-timeline-item {
+    display: grid; grid-template-columns: 6.5rem 6rem minmax(0, 1fr); gap: 0.5rem; align-items: baseline;
+    padding: 0.3rem 0.6rem; border-inline-start: 3px solid #64748b; background: rgba(15, 23, 42, 0.4); font-size: 0.78rem;
+}
+.ops-timeline-item.ops-tone-bad { border-inline-start-color: #ef4444; }
+.ops-timeline-item.ops-tone-good { border-inline-start-color: #22c55e; }
+.ops-timeline-at { color: #94a3b8; }
+.ops-timeline-kind { color: #cbd5e1; text-transform: uppercase; font-size: 0.68rem; letter-spacing: 0.03em; }
+.ops-timeline-title { color: #e5e7eb; overflow-wrap: anywhere; }
+@media (max-width: 480px) {
+    .ops-timeline-item { grid-template-columns: 1fr; gap: 0.1rem; }
 }

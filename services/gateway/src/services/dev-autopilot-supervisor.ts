@@ -400,12 +400,17 @@ export function buildAlerts(input: {
   return a;
 }
 
-async function get<T>(s: Supa, path: string): Promise<T | null> {
+async function getRead<T>(s: Supa, path: string, readErrors?: string[]): Promise<T | null> {
   const r = await supa<T>(s, path);
-  return r.ok && r.data !== undefined ? r.data : null;
+  if (r.ok && r.data !== undefined) return r.data;
+  // VTID-04876: callers that must not mistake a failed read for "nothing
+  // found" (the /ops/attention cockpit) pass readErrors to learn about it.
+  readErrors?.push(path.split('?')[0].replace('/rest/v1/', ''));
+  return null;
 }
 
-export async function buildSupervisorSnapshot(nowMs: number = Date.now()) {
+export async function buildSupervisorSnapshot(nowMs: number = Date.now(), opts: { readErrors?: string[] } = {}) {
+  const get = <T,>(s: Supa, path: string) => getRead<T>(s, path, opts.readErrors);
   const s = getSupabase();
   if (!s) return { ok: false as const, error: 'Supabase not configured' };
 

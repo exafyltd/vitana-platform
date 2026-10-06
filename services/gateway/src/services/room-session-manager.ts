@@ -17,7 +17,7 @@
  */
 
 import { evaluateTransition } from './room-state-machine';
-import { DailyClient } from './daily-client';
+import { DailyClient, computeDailyRoomExpiry } from './daily-client';
 import { emitOasisEvent } from './oasis-event-service';
 import type {
   RoomStatus,
@@ -179,23 +179,31 @@ export class RoomSessionManager {
     const sessionData = result.data;
     let dailyRoomUrl: string | undefined;
 
-    // Create or reuse Daily.co room (permanent per room)
+    // Create or refresh the Daily.co room (permanent per room). VTID-04904:
+    // private room, expiry follows THIS session (not the first one ever).
     if (this.dailyClient) {
       try {
-        const roomResult = await this.dailyClient.createRoom({
-          roomId,
-          title: payload.session_title || 'Vitana Live Room',
+        const roomResult = await this.dailyClient.ensureRoom(roomId, {
+          expiresAt: computeDailyRoomExpiry({
+            startsAt: payload.starts_at,
+            endsAt: payload.ends_at || null,
+            durationMinutes: Number(payload.metadata?.duration_minutes) || null,
+          }),
         });
         dailyRoomUrl = roomResult.roomUrl;
 
-        // Persist Daily.co room info to database metadata
+        // Persist Daily.co room info to database metadata.
+        // VTID-04904 (B4): live_room_update_metadata replaces the whole
+        // column, so read the current metadata and send the merged object —
+        // otherwise price/description set elsewhere are wiped.
         const updateResult = await callRpc(token, 'live_room_update_metadata', {
           p_live_room_id: roomId,
-          p_metadata: {
+          p_metadata: await this.mergedRoomMetadata(roomId, token, {
             daily_room_url: roomResult.roomUrl,
             daily_room_name: roomResult.roomName,
+            daily_room_exp: roomResult.exp,
             video_provider: 'daily_co'
-          }
+          })
         });
 
         if (!updateResult.ok) {
@@ -524,11 +532,18 @@ export class RoomSessionManager {
         const lobbyOpenTime = startsAt - bufferMs;
 
         if (now >= lobbyOpenTime) {
-          await callRpc(token, 'live_room_transition_status', {
+          const lobbyResult = await callRpc(token, 'live_room_transition_status', {
             p_room_id: roomId,
             p_new_status: 'lobby',
             p_expected_old_status: 'scheduled',
           });
+          // VTID-04905 (B8/F3): the RPC is host-only. When it fails (a viewer's
+          // token, a conflict) the room did NOT move — so the listing must not
+          // be flipped to LIVE either.
+          if (!lobbyResult.ok) {
+            console.log(`[VTID-04905] Auto-transition scheduled → lobby not applied for ${roomId}: ${lobbyResult.error}`);
+            return;
+          }
           console.log(`[VTID-01228] Auto-transition: room ${roomId} scheduled → lobby`);
 
           // VTID-01228: Sync to community_live_streams so stream becomes visible
@@ -562,15 +577,67 @@ export class RoomSessionManager {
         const endsAt = new Date(session.ends_at).getTime();
 
         if (now >= endsAt) {
-          await callRpc(token, 'live_room_end_session', {
+          const endResult = await callRpc(token, 'live_room_end_session', {
             p_room_id: roomId,
           });
+          // VTID-04905 (F3): guarded the same way — only a successful (host)
+          // end moves the listing to ended.
+          if (!endResult.ok) {
+            console.log(`[VTID-04905] Auto-transition live → ended not applied for ${roomId}: ${endResult.error}`);
+            return;
+          }
           console.log(`[VTID-01228] Auto-transition: room ${roomId} live → ended (timeout)`);
+          await this.patchListing(roomId, { status: 'ended', ended_at: new Date().toISOString() });
         }
       }
     } catch (err: any) {
       // Auto-transitions are best-effort; don't block the request
       console.warn('[VTID-01228] Auto-transition check failed:', err.message);
+    }
+  }
+
+  /**
+   * VTID-04905: the host entering a scheduled/lobby session starts it, via
+   * the existing host-only transitions (scheduled → lobby → live). Each step
+   * re-reads state and goes through transition(), so host authorization and
+   * optimistic locking are unchanged.
+   */
+  async startForHost(roomId: string, userId: string, token: string): Promise<TransitionResult> {
+    const state = await callRpc(token, 'live_room_get_state', { p_room_id: roomId });
+    if (!state.ok || !state.data?.room) {
+      return { ok: false, error: 'ROOM_NOT_FOUND' };
+    }
+    let status = state.data.room.status as RoomStatus;
+    if (status === 'live') return { ok: true, newStatus: 'live' };
+    if (status === 'scheduled') {
+      const lobby = await this.transition(roomId, { type: 'OPEN_LOBBY', userId }, token);
+      if (!lobby.ok) return lobby;
+      status = 'lobby';
+    }
+    if (status === 'lobby') {
+      return this.transition(roomId, { type: 'START', userId }, token);
+    }
+    return { ok: false, error: 'INVALID_TRANSITION', message: `Cannot start a room in '${status}'` };
+  }
+
+  /** Service-role PATCH of the community_live_streams listing row. Best-effort. */
+  private async patchListing(roomId: string, patch: Record<string, unknown>): Promise<void> {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+    if (!supabaseUrl || !supabaseKey) return;
+    try {
+      await fetch(`${supabaseUrl}/rest/v1/community_live_streams?id=eq.${roomId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify(patch)
+      });
+    } catch (err: any) {
+      console.warn(`[VTID-04905] community_live_streams sync failed for ${roomId}: ${err.message}`);
     }
   }
 
@@ -708,6 +775,27 @@ export class RoomSessionManager {
   // ===========================================================================
   // Private Helpers
   // ===========================================================================
+
+  /**
+   * VTID-04904 (B4): current room metadata with `patch` applied on top.
+   * `live_room_update_metadata` replaces the column, so every writer must
+   * send the merged object. If the read fails, only the patch is returned
+   * (same as before this change) rather than blocking the session.
+   */
+  async mergedRoomMetadata(
+    roomId: string,
+    token: string,
+    patch: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const current = await callRpc(token, 'live_room_get', { p_live_room_id: roomId });
+    const existing = current.ok && current.data?.metadata && typeof current.data.metadata === 'object'
+      ? current.data.metadata as Record<string, unknown>
+      : {};
+    if (!current.ok) {
+      console.warn(`[VTID-04904] live_room_get failed before metadata merge for ${roomId}: ${current.error}`);
+    }
+    return { ...existing, ...patch };
+  }
 
   private async emitTransitionEvent(
     roomId: string,

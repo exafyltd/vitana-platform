@@ -28,7 +28,10 @@ import { resolveJevAccess, roleMayUseDecision, JevCaller, JevPlane } from './jev
 import { applyPiiPolicy } from './jev-pii';
 import { getJevDecision, JevDecisionDef } from './jev-decisions';
 import { emitJevDecisionEvent, jevCostUsd, JevOutcome } from './jev-telemetry';
-import { evaluateJevPolicy, isTenantScoped, JEV_DEFAULT_TENANT_FLAG, JEV_PLATFORM_TENANT } from './jev-policy';
+import { evaluateJevPolicy, isTenantScoped, isJevBudgetedPlane, jevSpendPlane, JEV_BUDGETED_PLANES, JEV_DEFAULT_TENANT_FLAG, JEV_PLATFORM_TENANT } from './jev-policy';
+import { maybeRaiseBudgetAlerts } from './jev-budget-alerts';
+import { CommunityRateLimiter, getDefaultCommunityRateLimiter } from './jev-community-rate';
+import { checkMemberQuota, getDefaultMemberQuotaStore, isQuotaLimited, MemberQuotaStore } from './jev-member-quota';
 import { getDefaultJevControl, JevControl } from './jev-tenant-control';
 
 /** Jev allows 64k tokens per request; stay far below it without a tokenizer. */
@@ -76,6 +79,16 @@ export interface DecideOptions {
   env?: NodeJS.ProcessEnv;
   /** Tenant flag + spend store. Defaults to the Supabase-backed control. */
   control?: JevControl;
+  /**
+   * VTID-04872: the member a community decision is for. A system caller
+   * ranking for a member names them here; on the member plane the caller is
+   * the member. Without one, a quota-limited call is not counted.
+   */
+  member_id?: string;
+  /** VTID-04872: per-member daily counter. Defaults to the Supabase-backed store. */
+  quota?: MemberQuotaStore;
+  /** VTID-04874: community share of the Jev rate limit. Defaults to the per-task bucket. */
+  communityRate?: CommunityRateLimiter;
 }
 
 export function interpretAnswer(q: JevQuestion, a: JevAnswer): InterpretedAnswer {
@@ -158,10 +171,28 @@ export async function decide(name: string, input: unknown, caller: JevCaller, op
   if (!flag) return fallback('tenant_config_unavailable', { status: 503 });
   const policy = evaluateJevPolicy({ plane: access.plane, data: def.data, decisionPlanes: def.planes, flag, env });
   if (!policy.allowed) return denied(policy.reason);
-  if (flag.monthly_budget_usd !== null) {
-    const spent = await control.getMonthSpend(tenantKey);
+  // VTID-04857: the budget caps community/customer spend only; internal and
+  // system_autopilot calls are never throttled by it (internal is unlimited).
+  const spendPlane = jevSpendPlane(access.plane, def.data);
+  const budget = isJevBudgetedPlane(spendPlane) ? flag.monthly_budget_usd : null;
+  let budgetedSpent = 0;
+  if (budget !== null) {
+    const spent = await control.getMonthSpend(tenantKey, JEV_BUDGETED_PLANES);
     if (spent === null) return fallback('budget_check_failed', { status: 503 });
-    if (spent >= flag.monthly_budget_usd) return fallback('tenant_budget_exhausted', { status: 429 });
+    if (spent >= budget) return fallback('tenant_budget_exhausted', { status: 429 });
+    budgetedSpent = spent;
+  }
+
+  // VTID-04872: Class C is off on the member plane; Class B is quota-limited per member per day.
+  if (spendPlane === 'member' && def.community_class === 'C') return denied('community_class_c_off');
+  const memberId = opts.member_id ?? (access.plane === 'member' ? caller.actor_id : undefined);
+  if (memberId && isQuotaLimited(def, spendPlane)) {
+    const q = await checkMemberQuota({ decision: name, tenantId: tenantKey, memberId, store: opts.quota ?? getDefaultMemberQuotaStore(), env });
+    if (!q.allowed) return fallback(q.reason, { status: q.reason === 'member_daily_quota_exhausted' ? 429 : 503 });
+  }
+  // VTID-04874: member spend takes a token from the community share of the account rate limit.
+  if (spendPlane === 'member' && !(opts.communityRate ?? getDefaultCommunityRateLimiter()).admit(name)) {
+    return fallback('community_rate_limited', { status: 429 });
   }
 
   const pii = applyPiiPolicy(def.buildState(parsed.data), def.pii);
@@ -183,7 +214,8 @@ export async function decide(name: string, input: unknown, caller: JevCaller, op
   const verdict = answers[def.primary];
   const outcome: 'decided' | 'abstained' = verdict.confidence >= def.threshold ? 'decided' : 'abstained';
   const cost = jevCostUsd(res.model, res.usage.input_tokens);
-  void control.recordSpend(tenantKey, access.plane, res.usage.input_tokens, cost);
+  void control.recordSpend(tenantKey, spendPlane, res.usage.input_tokens, cost);
+  if (budget !== null) void maybeRaiseBudgetAlerts({ tenantId: tenantKey, budgetUsd: budget, spentBeforeUsd: budgetedSpent, costUsd: cost });
   emitJevDecisionEvent({
     ...base,
     outcome,

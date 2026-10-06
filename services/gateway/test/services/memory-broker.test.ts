@@ -242,6 +242,67 @@ describe('memory-broker feature gate (memory_broker_enabled)', () => {
 // Input validation (checked before the flag gate)
 // ---------------------------------------------------------------------------
 
+describe('VTID-04877 the flag check never blocks a read once the value is known', () => {
+  afterEach(() => { jest.useRealTimers(); });
+
+  it('an expired cache serves the last value while the refresh is still pending', async () => {
+    jest.useFakeTimers({ now: new Date('2026-10-04T10:00:00Z'), doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+    supabaseMock.setTable('app_users', { data: appUsersRow(), error: null });
+    await getMemoryContext(BASE_INPUT); // first read of the process awaits the flag
+    expect(mockGetSystemControl).toHaveBeenCalledTimes(1);
+
+    jest.setSystemTime(new Date('2026-10-04T10:05:00Z')); // past the 30 s TTL
+    let release!: (v: unknown) => void;
+    mockGetSystemControl.mockImplementationOnce(() => new Promise((r) => { release = r; }));
+
+    // The old code awaited getSystemControl here and would never resolve.
+    const pack = await getMemoryContext(BASE_INPUT);
+    expect(pack.ok).toBe(true);
+    expect(pack.meta.gate_ms).toBe(0);
+    expect(mockGetSystemControl).toHaveBeenCalledTimes(2);
+
+    // The background refresh lands and is what the next read uses.
+    release({ key: 'memory_broker_enabled', enabled: false });
+    await Promise.resolve(); await Promise.resolve();
+    const next = await getMemoryContext(BASE_INPUT);
+    expect(next.error).toBe('memory_broker_disabled');
+    expect(mockGetSystemControl).toHaveBeenCalledTimes(2);
+  });
+
+  it('concurrent reads on an expired cache start one refresh, not one each', async () => {
+    jest.useFakeTimers({ now: new Date('2026-10-04T10:00:00Z'), doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+    supabaseMock.setTable('app_users', { data: appUsersRow(), error: null });
+    await getMemoryContext(BASE_INPUT);
+    jest.setSystemTime(new Date('2026-10-04T10:05:00Z'));
+    mockGetSystemControl.mockImplementation(() => new Promise(() => undefined));
+    await Promise.all([getMemoryContext(BASE_INPUT), getMemoryContext(BASE_INPUT), getMemoryContext(BASE_INPUT)]);
+    expect(mockGetSystemControl).toHaveBeenCalledTimes(2);
+  });
+
+  it('a refresh still in flight when the cache is invalidated never overwrites it', async () => {
+    let release!: (v: unknown) => void;
+    mockGetSystemControl.mockImplementationOnce(() => new Promise((r) => { release = r; }));
+    const first = getMemoryContext(BASE_INPUT); // awaits the pending refresh
+    invalidateBrokerFlagCache();
+    release({ key: 'memory_broker_enabled', enabled: false });
+    await first;
+
+    // The stale "false" was fenced off: the next read fetches again (enabled).
+    supabaseMock.setTable('app_users', { data: appUsersRow(), error: null });
+    const pack = await getMemoryContext(BASE_INPUT);
+    expect(pack.ok).toBe(true);
+    expect(mockGetSystemControl).toHaveBeenCalledTimes(2);
+  });
+
+  it('meta.gate_ms is reported on the disabled and the success branch', async () => {
+    supabaseMock.setTable('app_users', { data: appUsersRow(), error: null });
+    expect(typeof (await getMemoryContext(BASE_INPUT)).meta.gate_ms).toBe('number');
+    invalidateBrokerFlagCache();
+    mockGetSystemControl.mockResolvedValue({ key: 'memory_broker_enabled', enabled: false });
+    expect(typeof (await getMemoryContext(BASE_INPUT)).meta.gate_ms).toBe('number');
+  });
+});
+
 describe('memory-broker input contract', () => {
   it('rejects a read with no tenant_id, without ever checking the flag or the DB', async () => {
     const pack = await getMemoryContext({ ...BASE_INPUT, tenant_id: '' });

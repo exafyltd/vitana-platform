@@ -1,0 +1,6 @@
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: no single run: step exceeds 20,000 characters (GitHub Actions workflow-file size limit) (3 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml: no single run: step exceeds 20,000 characters (GitHub Actions workflow-file size limit) (3 ms)
+    ✓ VTIDs are either a real id or null — the registry never invents one (4 ms)
+    ✓ registers the production navigator switch on its own registry
+    ✓ keeps Devon's registry voice (Charon) — a Gemini prebuilt voice
+Tests:       705 passed, 705 total

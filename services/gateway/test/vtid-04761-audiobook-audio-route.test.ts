@@ -44,7 +44,11 @@ const seed = {
   explanation: { whatItIs: null, userBenefit: null, whenToUse: null, tryThis: null },
   guidedPracticeTarget: null,
   source: 'published',
+  narrationLocale: 'de',
 };
+// The seed as getOrbTopicSeed returns it when the topic IS translated into
+// the requested language.
+const translatedSeed = (_c: unknown, _t: unknown, _v: unknown, lang: string) => ({ ...seed, narrationLocale: lang });
 
 describe('GET /api/v1/journey/audiobook/topics/:topicId/audio', () => {
   beforeEach(() => {
@@ -69,7 +73,7 @@ describe('GET /api/v1/journey/audiobook/topics/:topicId/audio', () => {
   });
 
   it('422 when narration is unavailable for the language', async () => {
-    mockSeed.mockResolvedValue(seed);
+    mockSeed.mockImplementation(translatedSeed);
     mockSynth.mockResolvedValue(null);
     const res = await request(app()).get(`${AUDIO}?lang=sr`).set('Authorization', 'Bearer valid-user');
     expect(res.status).toBe(422);
@@ -77,16 +81,25 @@ describe('GET /api/v1/journey/audiobook/topics/:topicId/audio', () => {
   });
 
   it('200 audio/mpeg, private cache, in the requested language', async () => {
-    mockSeed.mockResolvedValue(seed);
+    mockSeed.mockImplementation(translatedSeed);
     mockSynth.mockResolvedValue({ mp3: Buffer.from('ID3fake'), cached: true });
     const res = await request(app()).get(`${AUDIO}?lang=en`).set('Authorization', 'Bearer valid-user');
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toBe('audio/mpeg');
     expect(res.headers['cache-control']).toBe('private, max-age=86400');
     expect(res.headers['x-audiobook-cache']).toBe('hit');
+    expect(res.headers['x-audiobook-narration-locale']).toBe('en');
     expect(mockSeed.mock.calls[0][1]).toBe('T001');
     expect(mockSeed.mock.calls[0][3]).toBe('en');
     expect(mockSynth.mock.calls[0][1]).toBe('en');
+  });
+
+  it('VTID-04873: 422 narration_not_translated — German text is never read in another language\'s voice', async () => {
+    mockSeed.mockResolvedValue(seed); // narration is German only
+    const res = await request(app()).get(`${AUDIO}?lang=en`).set('Authorization', 'Bearer valid-user');
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({ ok: false, error: 'narration_not_translated', lang: 'en' });
+    expect(mockSynth).not.toHaveBeenCalled();
   });
 
   it('an unknown language falls back to German', async () => {

@@ -58,6 +58,36 @@ export function parseJevTenantFlag(raw: unknown): JevTenantFlag | null {
   return { enabled: parsed.data.enabled, planes: parsed.data.planes, monthly_budget_usd: parsed.data.monthly_budget_usd ?? null };
 }
 
+/**
+ * VTID-04857: the tenant budget caps community and customer spend only. The
+ * internal planes stay unlimited (owner decision 2026-09-25), so a tenant
+ * budget never throttles staff tooling or Dev Autopilot.
+ */
+export const JEV_BUDGETED_PLANES: readonly JevPlane[] = Object.freeze(['member', 'patient', 'partner_org'] as JevPlane[]);
+
+/**
+ * The plane a call's spend is counted under. Member content is community
+ * spend whoever runs it (an admin moderating, an autopilot ranking), so it is
+ * counted under 'member' and capped by the tenant budget like member calls.
+ */
+export function jevSpendPlane(plane: JevPlane, data: JevDataClass): JevPlane {
+  if (JEV_BUDGETED_PLANES.includes(plane)) return plane;
+  return data === 'member_content' ? 'member' : plane;
+}
+
+export function isJevBudgetedPlane(plane: JevPlane): boolean {
+  return JEV_BUDGETED_PLANES.includes(plane);
+}
+
+/** Owner alert levels as fractions of the monthly budget (approved 2026-10-03). */
+export const JEV_BUDGET_ALERT_LEVELS = [0.8, 1] as const;
+
+/** The alert levels a spend step from `before` to `after` crossed. Pure. */
+export function crossedBudgetLevels(before: number, after: number, budget: number | null): number[] {
+  if (budget === null || !(budget > 0)) return [];
+  return JEV_BUDGET_ALERT_LEVELS.filter((l) => before < l * budget && after >= l * budget);
+}
+
 export type JevPolicyDenyReason =
   | 'plane_not_permitted_for_decision'
   | 'phi_refused_no_dpa'

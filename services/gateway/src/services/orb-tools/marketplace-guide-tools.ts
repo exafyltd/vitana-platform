@@ -28,6 +28,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { shadowMarketplaceIntent } from '../jev/gates/community-class-a-gates';
 import { randomUUID } from 'crypto';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { writeFact } from '../memory-facts-service';
@@ -363,6 +364,8 @@ export async function tool_classify_marketplace_intent(
     }
     if (!need) return { ok: false, error: 'classify_marketplace_intent requires the stated need (or a recorded goal).' };
     const { intent, reasons } = classifyIntent(need);
+    // VTID-04879: Jev in shadow beside the heuristic; never awaited, never changes the result.
+    void shadowMarketplaceIntent({ need, existingIntent: intent, tenantId: id.tenant_id, userId: id.user_id }).catch(() => undefined);
     const nextTool =
       intent === 'diagnostic_test'
         ? 'browse_wellness_services (labs) — note the dedicated diagnostic-test catalog is not built yet'

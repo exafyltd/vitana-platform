@@ -1,0 +1,15 @@
+# commands run for VTID-04873, 2026-10-04T07:53:10Z
+cd services/gateway
+$ npx tsc --noEmit -p .
+exit 0
+$ npx jest test/vtid-04873-narration-language.test.ts test/vtid-04761-audiobook-audio-route.test.ts test/vtid-04761-audiobook-audio.test.ts test/services/assistant-continuation/providers/guided-topic-narration.test.ts test/journey-checklist.test.ts test/journey-checklist-translations.test.ts test/db-i18n test/services/guided-journey
+exit 0
+Test Suites: 1 skipped, 11 passed, 11 of 12 total
+Tests:       22 skipped, 191 passed, 213 total
+$ npx jest <247 suites matching guided|journey|audiobook|narration|db-i18n|polly>
+Test Suites: 1 skipped, 246 passed, 246 of 247 total
+Tests:       22 skipped, 6 todo, 4463 passed, 4491 total
+exit 0
+$ AURORA_TEST_DATABASE_URL=<local postgres 16> npx jest test/db-i18n/aurora-integration.test.ts   (fresh database)
+Tests:       22 passed, 22 total
+exit 0

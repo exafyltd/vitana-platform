@@ -1,0 +1,5 @@
+PASS test/vtid-04774-claim-feasibility-gate.test.ts
+PASS test/vtid-04467-dispatch-fallback.test.ts
+PASS test/vtid-04801-repeat-run-guard.test.ts
+PASS test/vtid-04465-operator-pipeline-regression.test.ts (6.332 s)
+Tests:       79 passed, 79 total

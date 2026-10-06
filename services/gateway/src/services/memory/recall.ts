@@ -52,6 +52,42 @@ export interface OrbRecallResult {
   error?: string;
 }
 
+/**
+ * VTID-04870: per-stream latency for the recall log line, e.g.
+ * `memory_facts:120,memory_items:640`. recall() was 2-3x slower than the
+ * legacy read on both gateways (VTID-04784 shadow) with tiny tables, so the
+ * line names the slow stream instead of leaving it to guesswork.
+ */
+export function formatStreamMs(perStream: Record<string, number> | undefined | null): string {
+  if (!perStream) return '-';
+  const parts = Object.entries(perStream)
+    .filter(([, ms]) => Number.isFinite(ms))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, ms]) => `${k}:${Math.round(ms)}`);
+  return parts.length ? parts.join(',') : '-';
+}
+
+/** VTID-04877: a known millisecond value, or '-' when the pack does not carry one. */
+export function formatGateMs(gateMs: number | undefined | null): string {
+  return typeof gateMs === 'number' && Number.isFinite(gateMs) ? String(Math.round(gateMs)) : '-';
+}
+
+/**
+ * VTID-04877: the part of the total that neither the flag check nor the
+ * slowest stream explains (event-loop lag, pack assembly). '-' when the gate
+ * time is unknown; an empty stream map counts as 0.
+ */
+export function formatUnaccountedMs(
+  totalMs: number,
+  gateMs: number | undefined | null,
+  perStream: Record<string, number> | undefined | null,
+): string {
+  if (typeof gateMs !== 'number' || !Number.isFinite(gateMs)) return '-';
+  const streams = Object.values(perStream || {}).filter((ms) => Number.isFinite(ms));
+  const slowest = streams.length ? Math.max(...streams) : 0;
+  return String(Math.max(0, Math.round(totalMs - gateMs - slowest)));
+}
+
 /** Budget for the whole read. The legacy read used a 2 s hard timeout. */
 export const ORB_RECALL_BUDGET_MS = 1500;
 
@@ -73,9 +109,17 @@ export function packToRecallItems(pack: MemoryPack): OrbRecallResult['sections']
       category_key: 'personal',
       source: 'memory_facts',
       content: `${f.fact_key}: ${f.fact_value}`,
-      content_json: { fact_key: f.fact_key, fact_value: f.fact_value, entity: f.entity },
+      content_json: { fact_key: f.fact_key, fact_value: f.fact_value, entity: f.entity, asserted_at: f.asserted_at || null },
       importance: Math.round((Number.isFinite(f.confidence) ? f.confidence : 0.85) * 100),
-      occurred_at: f.asserted_at || now,
+      // VTID-04851: a current fact is true now, however long ago it was
+      // learned. The context window decays relevance by occurred_at (half
+      // after ~2 weeks), so stamping the learned date let episodes push old
+      // facts — a spouse's name, a child's — out of the prompt: the shadow
+      // comparison (VTID-04784) found recall ~3 facts short of the legacy
+      // read in 11 of 18 production sessions. The legacy read stamps facts
+      // with the read time; this does the same. The learned date stays in
+      // content_json.asserted_at.
+      occurred_at: now,
       created_at: f.asserted_at || now,
     });
   }
@@ -146,14 +190,18 @@ export async function recallOrbMemoryItems(
     });
     const latency = Date.now() - t0;
     if (!pack.ok) {
-      console.warn(`[VTID-04452] orb recall unavailable in ${latency}ms: ${pack.error ?? 'unknown'}`);
+      console.warn(
+        `[VTID-04452] orb recall unavailable in ${latency}ms: ${pack.error ?? 'unknown'} gate_ms=${formatGateMs(pack.meta?.gate_ms)}`,
+      );
       return { ok: false, items: [], latency_ms: latency, degraded: true, sections: empty, error: pack.error ?? 'broker_not_ok' };
     }
     const { items, ...sections } = packToRecallItems(pack);
     const gotAny = Object.keys(pack.blocks).length > 0;
     console.log(
       `[VTID-04452] orb recall in ${latency}ms facts=${sections.facts} episodes=${sections.episodes} ` +
-      `diary=${sections.diary} degraded=${pack.meta.degraded} streams=${pack.meta.streams_hit.join(',')}`,
+      `diary=${sections.diary} degraded=${pack.meta.degraded} streams=${pack.meta.streams_hit.join(',')} ` +
+      `stream_ms=${formatStreamMs(pack.meta.latency_ms_per_stream)} gate_ms=${formatGateMs(pack.meta.gate_ms)} ` +
+      `unaccounted_ms=${formatUnaccountedMs(latency, pack.meta.gate_ms, pack.meta.latency_ms_per_stream)}`,
     );
     if (!gotAny) {
       return { ok: false, items: [], latency_ms: latency, degraded: true, sections, error: 'no_sections_loaded' };

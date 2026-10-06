@@ -36,8 +36,38 @@ const ALWAYS_ALLOWED_WRITES = [/\/auth\/v1\/token(\?|$)/];
 type GuardOptions = { allowAbortedWrites: RegExp | RegExp[] | null };
 type GuardFixtures = { stagingGuard: void };
 
+// VTID-04831 — a rejected password sign-in names its reason. Specs sign in
+// through the `request` fixture and only assert that a token came back, so a
+// rejection read as a bare "sign-in failed". Log the HTTP status and Supabase's
+// own error code/message from the response — never the request (email,
+// password) and never a token, and redact anything email-shaped in the message.
+export function describeAuthRejection(status: number, body: unknown): string {
+  const b = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+  const pick = (k: string) => (typeof b[k] === 'string' || typeof b[k] === 'number' ? String(b[k]) : '');
+  const code = pick('error_code') || pick('error') || pick('code');
+  const msg = (pick('msg') || pick('error_description') || pick('message'))
+    .replace(/[^\s@]+@[^\s@]+/g, '<redacted>')
+    .slice(0, 200);
+  return `[staging-guard] sign-in rejected: HTTP ${status}${code ? ` ${code}` : ''}${msg ? ` — ${msg}` : ''}`;
+}
+
+const SIGN_IN = /\/auth\/v1\/token\?grant_type=password/;
+
 export const test = base.extend<GuardOptions & GuardFixtures>({
   allowAbortedWrites: [null, { option: true }],
+  request: async ({ request }, use, testInfo) => {
+    const post = request.post.bind(request);
+    request.post = async (url: string, options?: Parameters<typeof post>[1]) => {
+      const res = await post(url, options);
+      if (SIGN_IN.test(url) && !res.ok()) {
+        const line = describeAuthRejection(res.status(), await res.json().catch(() => null));
+        console.log(line);
+        await testInfo.attach('sign-in-rejected', { body: line, contentType: 'text/plain' });
+      }
+      return res;
+    };
+    await use(request);
+  },
   stagingGuard: [
     async ({ page, allowAbortedWrites }, use, testInfo) => {
       const blocked: string[] = [];

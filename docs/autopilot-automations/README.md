@@ -19,7 +19,7 @@ Example: AP-0101 = "Daily match delivery"
 | AP-0400 – AP-0499 | Sharing & Growth | [04-sharing-growth.md](./04-sharing-growth.md) |
 | AP-0500 – AP-0599 | Engagement Loops | [05-engagement-loops.md](./05-engagement-loops.md) |
 | AP-0600 – AP-0699 | Health & Wellness | [06-health-wellness.md](./06-health-wellness.md) |
-| AP-0700 – AP-0799 | Payments, Wallet & VTN | [07-payments-subscriptions.md](./07-payments-subscriptions.md) |
+| AP-0700 – AP-0799 | Payments, Wallet & VTNA | [07-payments-subscriptions.md](./07-payments-subscriptions.md) |
 | AP-0800 – AP-0899 | Personalization Engines | [08-personalization-engines.md](./08-personalization-engines.md) |
 | AP-0900 – AP-0999 | Memory & Intelligence | [09-memory-intelligence.md](./09-memory-intelligence.md) |
 | AP-1000 – AP-1099 | Platform Operations | [10-platform-operations.md](./10-platform-operations.md) |
@@ -51,7 +51,7 @@ Example: AP-0101 = "Daily match delivery"
 | Sharing & Growth | 10 | 10 | 0 | 0 | 0 |
 | Engagement Loops | 8 | 6 | 0 | 2 | 0 |
 | Health & Wellness | 15 | 12 | 0 | 3 | 0 |
-| Payments, Wallet & VTN | 12 | 9 | 0 | 3 | 0 |
+| Payments, Wallet & VTNA | 12 | 9 | 0 | 3 | 0 |
 | Personalization Engines | 5 | 5 | 0 | 0 | 0 |
 | Memory & Intelligence | 5 | 5 | 0 | 0 | 0 |
 | Platform Operations | 5 | 3 | 0 | 2 | 0 |
@@ -105,8 +105,8 @@ AP-1106 (Shop Setup) → AP-0706 (Stripe Connect) → AP-1101 (Service Distribut
   → AP-0711 (Weekly Earnings) → AP-1108 (Growth Tips)
 ```
 
-### Engagement → Wallet → VTN (Token Economy Flow)
+### Engagement → Wallet → VTNA (Token Economy Flow)
 ```
-AP-0708 (Credits for Engagement) → AP-0709 (VTN Launch) → AP-0712 (Spending Insights)
+AP-0708 (Credits for Engagement) → AP-0709 (VTNA Launch) → AP-0712 (Spending Insights)
   → AP-0710 (Monetization Readiness) → AP-1102 (Product Matching)
 ```

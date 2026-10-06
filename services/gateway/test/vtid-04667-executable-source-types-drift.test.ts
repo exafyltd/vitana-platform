@@ -47,7 +47,9 @@ describe('Command Hub executable source types', () => {
     const recs = fs.readFileSync(path.resolve(__dirname, '../src/routes/autopilot-recommendations.ts'), 'utf8');
     const sel = recs.match(/const select = '([^']+)';/)![1].split(',');
     expect(sel).toContain('source_type');
-    const pipeline = fs.readFileSync(path.resolve(__dirname, '../src/routes/autopilot.ts'), 'utf8');
+    // VTID-04875: the /pipeline/summary query moved verbatim from
+    // routes/autopilot.ts into services/pipeline-summary-builder.ts.
+    const pipeline = fs.readFileSync(path.resolve(__dirname, '../src/services/pipeline-summary-builder.ts'), 'utf8');
     expect(pipeline).toMatch(/autopilot_recommendations\?status=eq\.pending[^`]*select=[^`]*\bsource_type\b/);
   });
 

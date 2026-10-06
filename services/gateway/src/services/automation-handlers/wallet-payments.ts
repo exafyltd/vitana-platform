@@ -1,10 +1,11 @@
 /**
- * Payments, Wallet & VTN Handlers — AP-0700 series
+ * Payments, Wallet & VTNA Handlers — AP-0700 series
  *
  * VTID: VTID-01250
  * Automations for Stripe lifecycle, wallet credits, creator payouts.
  */
 
+import { rewardAmount, rewardEventId } from '../rewards/vtna-reward-rules';
 import { AutomationContext, REWARD_TABLE, CreditWalletResult } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
 import * as repo from './wallet-payments-repository';
@@ -96,6 +97,11 @@ async function runCreatorPayoutMonitor(ctx: AutomationContext) {
 }
 
 // ── AP-0708: Wallet Credit Rewards for Engagement ───────────
+/** VTID-04864: AP-0708 reward types that map to an approved VTNA rule. */
+export const AP0708_APPROVED_RULES: Readonly<Record<string, string>> = {
+  complete_onboarding: 'onboarding_complete',
+};
+
 async function runWalletCreditReward(ctx: AutomationContext) {
   const payload = ctx.run.metadata as any;
   const { user_id, reward_type, event_id } = payload || {};
@@ -106,9 +112,19 @@ async function runWalletCreditReward(ctx: AutomationContext) {
     ctx.log(`Unknown reward type: ${reward_type}`);
     return { usersAffected: 0, actionsTaken: 0 };
   }
+  // VTID-04864: only rewards that are an approved VTNA rule may pay, at the
+  // rule-table amount and under that rule's one key per member (so the
+  // milestone service and this automation can never both pay it). Legacy
+  // types (product_review, first_lab_report, …) are not approved rules.
+  const ruleId = AP0708_APPROVED_RULES[reward_type];
+  if (!ruleId) {
+    ctx.log(`Reward type ${reward_type} is not an approved VTNA rule — not paid`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
 
   const { supabase, tenantId } = ctx;
-  const sourceEventId = event_id || `${reward_type}_${user_id}_${Date.now()}`;
+  const sourceEventId = rewardEventId(ruleId, user_id);
+  void event_id;
 
   // credit_wallet's error field must be checked explicitly: supabase-js's
   // .rpc() resolves normally with {error} on a Postgres-level failure (e.g.
@@ -119,7 +135,7 @@ async function runWalletCreditReward(ctx: AutomationContext) {
   const { data, error } = await repo.creditWallet(supabase, {
     p_tenant_id: tenantId,
     p_user_id: user_id,
-    p_amount: rewardConfig.amount,
+    p_amount: rewardAmount(ruleId),
     p_type: 'reward',
     p_source: 'AP-0708',
     p_source_event_id: sourceEventId,
@@ -139,13 +155,13 @@ async function runWalletCreditReward(ctx: AutomationContext) {
 
   if (result?.ok) {
     ctx.notify(user_id, 'orb_proactive_message', {
-      title: `+${rewardConfig.amount} Credits!`,
+      title: `+${rewardAmount(ruleId)} VTNA!`,
       body: `${rewardConfig.description}. Your balance: ${result.balance} credits.`,
-      data: { url: '/wallet', amount: String(rewardConfig.amount), balance: String(result.balance) },
+      data: { url: '/wallet', amount: String(rewardAmount(ruleId)), balance: String(result.balance) },
     });
 
     await ctx.emitEvent('autopilot.wallet.credits_awarded', {
-      user_id, reward_type, amount: rewardConfig.amount, balance: result.balance,
+      user_id, reward_type, amount: rewardAmount(ruleId), balance: result.balance,
     });
 
     return { usersAffected: 1, actionsTaken: 1 };
@@ -279,7 +295,7 @@ async function runSubscriptionExpiryWarning(ctx: AutomationContext) {
 
 // ── AP-0712: Spending Insights for Users ────────────────────
 // wallet_transactions (from_user_id, to_currency dropped — from_currency/
-// amount/status; no tenant_id column) is the live VTN exchange ledger.
+// amount/status; no tenant_id column) is the live VTNA exchange ledger.
 // Summarizes the prior calendar month's completed outgoing spend per user.
 const SPENDING_INSIGHTS_MAX_USERS_PER_RUN = 1000;
 

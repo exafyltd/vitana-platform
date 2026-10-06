@@ -102,8 +102,12 @@ describe('VTID-04534 — the fixed prompt leaves room for context and history', 
   test('the rewritten RULE 0 + GUIDED JOURNEY and TOOLS regions stay small', () => {
     const s = buildLiveSystemInstruction('de', 'warm', undefined, 'community');
     const seg = (a: string, z: string) => byteLength(s.slice(s.indexOf(a), s.indexOf(z, s.indexOf(a) + 1)));
-    // Before VTID-04534: 11,553 and 7,133 bytes.
-    expect(seg('PROACTIVE LEADERSHIP — RULE 0', 'GREETING RULES (CRITICAL)')).toBeLessThan(5_500);
-    expect(seg('TOOLS:', '\nIMPORTANT:')).toBeLessThan(4_500);
+    // Before VTID-04534: 11,553 and 7,133 bytes. VTID-04846: the RULE 0 region
+    // now always carries the VTID-04607 open-screen override (~200 bytes), as
+    // it already did in production under NAV_V2_ENABLED; measured 5,698.
+    expect(seg('PROACTIVE LEADERSHIP — RULE 0', 'GREETING RULES (CRITICAL)')).toBeLessThan(5_900);
+    // The open-screen override's own text starts with "TOOLS:", so anchor on the
+    // TOOLS list itself.
+    expect(seg('\nTOOLS:\n-', '\nIMPORTANT:')).toBeLessThan(4_500);
   });
 });

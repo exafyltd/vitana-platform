@@ -111,6 +111,16 @@ jest.mock('../../../../src/services/assistant-continuation/providers/login-brief
   computeFastProactiveOpener: jest.fn(async () => 'PROACTIVE-LINE'),
 }));
 
+// VTID-04823: VTID-04595 holds the morning journey greeting (and its
+// last_session_date stamp) until 05:00 local. These scenarios describe a
+// daytime session, so pin the local hour; with the real clock the suite
+// failed every night between 00:00 and 05:00 Europe/Berlin. The date logic
+// (todayInTimezone) stays real.
+jest.mock('../../../../src/services/assistant-continuation/providers/new-day-return', () => ({
+  ...jest.requireActual('../../../../src/services/assistant-continuation/providers/new-day-return'),
+  localHourInTimezone: jest.fn(() => 10),
+}));
+
 jest.mock('../../../../src/services/assistant-continuation/providers/new-day-overview-payload', () => {
   const actual = jest.requireActual('../../../../src/services/assistant-continuation/providers/new-day-overview-payload');
   return {

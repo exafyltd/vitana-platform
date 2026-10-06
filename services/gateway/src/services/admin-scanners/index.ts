@@ -19,7 +19,6 @@ import { contentModerationScanner } from './content-moderation';
 import { communityScanner } from './community';
 import { usersLifecycleScanner } from './users-lifecycle';
 import { marketplaceScanner } from './marketplace';
-import { navigatorScanner } from './navigator';
 import { knowledgeScanner } from './knowledge';
 import { assistantScanner } from './assistant';
 import { signupsFunnelScanner } from './signups-funnel';
@@ -37,7 +36,6 @@ const REGISTRY: AdminScanner[] = [
   communityScanner,
   usersLifecycleScanner,
   marketplaceScanner,
-  navigatorScanner,
   knowledgeScanner,
   assistantScanner,
   signupsFunnelScanner,

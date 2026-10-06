@@ -1,0 +1,22 @@
+# VTID-04895 — commands run (2026-10-05)
+
+# Audit (read-only, production Supabase): acceptances and the auth.sessions column the session check uses
+SELECT count(*) FROM partner_terms_acceptances;                         -- 0
+SELECT column_name FROM information_schema.columns
+ WHERE table_schema='auth' AND table_name='sessions' AND column_name ILIKE '%client%';   -- oauth_client_id
+
+# Supabase docs (search_docs, OAuth 2.1 server): every OAuth access token includes `client_id`;
+# "(auth.jwt() ->> 'client_id') IS NOT NULL" identifies an OAuth client.
+
+# Migration on a throwaway local Postgres 16 (never a shared database)
+initdb -D /tmp/pgterms/data && pg_ctl -D /tmp/pgterms/data start
+PGHOST=/tmp/pgterms PGUSER=postgres scripts/ci/sql-tests/run-partner-terms-test.sh
+#  -> PASS vtid-04895 partner terms lifecycle   (outputs/sql-test.txt)
+
+# Staging change suite validation
+node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base origin/main --head HEAD \
+  --title "VTID-04895: partner terms publish, show, accept, re-accept"
+
+# Jest: local npm install is refused by the registry policy in this container (403),
+# so the suites run in the gateway Jest CI job.
+# Applied 2026-10-05 ~11:50 UTC via RUN-MIGRATION.yml run 37305520159 (owner go-ahead); post-check: table+RLS, 3 cols, 3 triggers, 2 RPCs, privileges ok, 0 versions, 0 acceptances
