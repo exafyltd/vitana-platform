@@ -3531,3 +3531,25 @@ snoozed at P2 that later reaches P1 is shown again). Indexes:
 `(env, expires_at DESC)` for the active read, `(env, fingerprint, created_at
 DESC)`. The latest unexpired row per fingerprint wins. Tested on a throwaway
 Postgres: `scripts/ci/sql-tests/run-ops-attention-acks-test.sh`.
+
+---
+
+## @mentions — comment `mentions`, `search_mention_candidates()`, mention notification types (VTID-04926)
+
+Migrations: `exafyltd/vitana-v1` `supabase/migrations/20261006140000_vtid_04926_mentions.sql`
+(tables/functions) and this repo's `supabase/migrations/20261006150000_vtid_04926_mention_notification_types.sql`
+(notification switches). Both idempotent; both tested on a throwaway Postgres 16.
+
+| Object | Change |
+|---|---|
+| `profile_post_comments.mentions`, `media_upload_comments.mentions` | new `jsonb NOT NULL DEFAULT '[]'` — `[{user_id, display_name}]`, same shape as `profile_posts.mentions`. Written by the client only when someone is tagged. |
+| `search_mention_candidates(p_query text, p_limit int)` | SECURITY DEFINER, `search_path=public`, granted to `authenticated` only. The only source the @mention picker uses for posts/comments (called over GET). Escapes `\ % _`, needs `auth.uid()`, excludes the caller, `notification_test_actors`, `service_bot_accounts`, and anyone who shares no tenant with the caller. Limit clamped 1–10. |
+| `_mention_recipient_ok(author, tagged)` | guard used by both dispatchers: not the author, not a test/service account, shares a tenant with the author. No client grant. |
+| `_dispatch_post_mention_notifications()` | redefined: adds the guard above and per-post dedupe; otherwise the VTID-03806 body. |
+| `_dispatch_comment_mention_notifications()` + `trg_notify_{profile_post,media_upload}_comment_mention` | AFTER INSERT, only when `mentions` is a non-empty array; sends `comment_mention` (EN/DE by `_notif_user_locale`), `data.url=/post/<post|media>/<id>`; skips the post owner and the parent comment's author (they already get `post_comment`/`comment_reply`). Fail-safe — a bad tag never blocks the comment. |
+| `notification_type_controls` | `chat_mention` and `comment_mention` ON for every tenant (an auto-registered OFF row is switched on; an admin's deliberate OFF is kept). |
+| `notification_categories.mapped_types` | `chat_mention` → `direct_messages`, `comment_mention` → `posts_reactions`. |
+
+Group chat mentions need no schema change: the gateway stores the sanitized
+list in `chat_messages.metadata.mentions` (`routes/chat-groups.ts`,
+`lib/chat-mentions.ts`).
