@@ -1,0 +1,6 @@
+$ node scripts/conversation/generate-flag-pins.mjs
+-  COMMERCE_MCP_ENABLED: { staging: "true", prod: null },
++  COMMERCE_MCP_ENABLED: { staging: "true", prod: "true" },
+$ python3 (yaml.safe_load + bash -n + 20k limit on every run step)
+['Build task-definition (internal token)', 'Build task-definition (reward sweep off)', 'Build task-definition (Commerce MCP)', 'Build task-definition (2/2 — optional overrides) + register + roll the service']
+ok

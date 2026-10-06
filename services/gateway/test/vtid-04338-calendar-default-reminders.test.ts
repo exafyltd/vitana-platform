@@ -196,7 +196,7 @@ describe('flag and wiring', () => {
     delete process.env.CALENDAR_DEFAULT_REMINDERS_ENABLED;
     expect(startCalendarRemindersLoop()).toBe(false);
   });
-  it('startup starts the loop; staging pins it; prod does not', () => {
+  it('startup starts the loop; staging and prod pin it', () => {
     const root = path.resolve(__dirname, '..');
     expect(fs.readFileSync(path.join(root, 'src/index.ts'), 'utf8')).toContain('startCalendarRemindersLoop()');
     const wf = path.resolve(root, '../../.github/workflows');
@@ -204,7 +204,8 @@ describe('flag and wiring', () => {
     expect(staging).toContain('{name:"CALENDAR_DEFAULT_REMINDERS_ENABLED", value:"true"}');
     const strip = staging.slice(staging.indexOf('.containerDefinitions[0].environment |='));
     expect(strip.slice(0, strip.indexOf('| not) ]'))).toContain('"CALENDAR_DEFAULT_REMINDERS_ENABLED"');
-    expect(fs.readFileSync(path.join(wf, 'AWS-PROD-DEPLOY-GATEWAY.yml'), 'utf8')).not.toContain('CALENDAR_DEFAULT_REMINDERS_ENABLED');
+    // VTID-04914 (owner decision 2026-10-06): production pins it too.
+    expect(fs.readFileSync(path.join(wf, 'AWS-PROD-DEPLOY-GATEWAY.yml'), 'utf8')).toContain('{name:"CALENDAR_DEFAULT_REMINDERS_ENABLED", value:"true"}');
   });
 });
 

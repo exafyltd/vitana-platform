@@ -140,4 +140,17 @@ describe('VTID-04525 B7 — conversation flag registry', () => {
     // Run leases stay off everywhere until their migration and review.
     expect(GATEWAY_WORKFLOW_PINS.ORCHESTRATOR_RUN_LEASE_ENABLED ?? { staging: null, prod: null }).toEqual({ staging: null, prod: null });
   });
+  // VTID-04893: the Vertex bridges' Google token comes from the ECS task role
+  // when this flag is on. Staging turns it on; production stays off until the
+  // owner-side Workload Identity binding is proven there.
+  test('registers the Google task-role token flag: voice, exact-true, staging only', () => {
+    const flag = CONVERSATION_FLAGS.find((f) => f.name === 'GOOGLE_AUTH_AWS_SUPPLIER_ENABLED');
+    expect(flag).toMatchObject({ area: 'voice', vtid: 'VTID-04893', parse: 'exact_true', code_default: 'off' });
+    expect(flag!.read({})).toBe(false);
+    expect(flag!.read({ GOOGLE_AUTH_AWS_SUPPLIER_ENABLED: ' true ' })).toBe(true);
+    const row = resolveConversationFlags({}).find((r) => r.name === 'GOOGLE_AUTH_AWS_SUPPLIER_ENABLED')!;
+    expect(row).toMatchObject({ effective: false, staging_pin: 'true' });
+    expect(row.prod_pin ?? null).toBeNull();
+    expect(readFileSync(join(SRC, 'routes/orb-live.ts'), 'utf8')).toContain('isGoogleAwsSupplierEnabled()');
+  });
 });

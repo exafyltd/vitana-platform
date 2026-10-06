@@ -947,6 +947,109 @@ jobs:
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Internal token wired: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].secrets[] | select(.name == "GATEWAY_INTERNAL_TOKEN") | .name]')"
 
+      - name: Build task-definition (Live Rooms Daily key)
+        # VTID-04923: DAILY_API_KEY for Live Rooms video (VTID-04904). Stored by
+        # the owner 2026-10-06 as vitana/gateway/prod/daily-api-key (same value
+        # as staging's). Full ARN, for the same reason as JEV_SECRET_ARN above:
+        # this role has no secretsmanager:Describe*. The execution role reads
+        # vitana/* already. Takes effect only on an owner-approved prod deploy.
+        env:
+          DAILY_SECRET_ARN: arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/prod/daily-api-key-9wlfyX
+        run: |
+          set -e
+          NEW_DEF=$(jq --arg D "$DAILY_SECRET_ARN" '
+            .containerDefinitions[0].secrets |=
+              ( [ (. // [])[] | select(.name != "DAILY_API_KEY") ]
+                + [ {name:"DAILY_API_KEY", valueFrom:$D} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Daily key wired: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].secrets[] | select(.name == "DAILY_API_KEY") | .name]')"
+
+      - name: Build task-definition (reward sweep off)
+        # VTID-04896: the VTNA reward sweep (VTID-04878) pays real wallets every
+        # 6 h from inside the production gateway and has never run anywhere —
+        # staging is excluded by VITANA_ENV. Owner decision 2026-10-05: it stays
+        # OFF in production until the owner explicitly approves it. Enabling is
+        # that approval, made visible: dispatch with
+        # env_overrides={"REWARD_SWEEP_ENABLED":"true"} (applied in 2/2) or
+        # change this pin. "Verify reward sweep setting" below checks the live
+        # task definition after the roll.
+        run: |
+          set -e
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name != "REWARD_SWEEP_ENABLED") ]
+                + [ {name:"REWARD_SWEEP_ENABLED", value:"false"} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Reward sweep pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "REWARD_SWEEP_ENABLED")]')"
+          # VTID-04899: the immediate Autopilot completion reward
+          # (autopilot_action_done) is off in production too; it pays only when
+          # exactly "true". Enable it with env_overrides or by changing this pin.
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name != "AUTOPILOT_ACTION_REWARD_ENABLED") ]
+                + [ {name:"AUTOPILOT_ACTION_REWARD_ENABLED", value:"false"} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Autopilot reward pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "AUTOPILOT_ACTION_REWARD_ENABLED")]')"
+
+      - name: Build task-definition (Commerce MCP)
+        # VTID-04897: Commerce MCP (VTID-04847) on in production, after the
+        # first production release with the reward sweep off was verified
+        # (VTID-04896). The resource URL comes from the request host
+        # (gateway.vitanaland.com), the authorization server is the shared
+        # Supabase project's /auth/v1, portal links map to vitanaland.com and
+        # the OAuth consent page has been in the production frontend since
+        # VTID-04848. Rollback = "false".
+        run: |
+          set -e
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name != "COMMERCE_MCP_ENABLED") ]
+                + [ {name:"COMMERCE_MCP_ENABLED", value:"true"} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Commerce MCP pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "COMMERCE_MCP_ENABLED")]')"
+
+      - name: Build task-definition (calendar gates)
+        # VTID-04914 (owner decision 2026-10-06): the calendar loops run in
+        # production, not only on staging (AWS-STAGE-DEPLOY-GATEWAY.yml pins
+        # the same two). Staging already runs them against the shared
+        # Supabase project; reminder rows upsert on (calendar_event_id,
+        # calendar_occurrence_start, reminder_offset_minutes) with
+        # ignore-duplicates and the dispatch claim uses SKIP LOCKED, so a
+        # second reconciler adds redundancy, not duplicate reminders.
+        #   CALENDAR_DEFAULT_REMINDERS_ENABLED (VTID-04338)
+        #   CALENDAR_MAINTENANCE_ENABLED (VTID-04374)
+        #   CALENDAR_GOOGLE_SYNC_ENABLED (VTID-04372) -- with no Google OAuth
+        #     client the sync reports not_configured and does nothing.
+        # Google OAuth client: the deploy role has no secretsmanager:Describe*
+        # (VTID-03880), so the full ARNs come from repository variables the
+        # operator sets after scripts/aws/setup-connected-apps-oauth-secrets.sh
+        # --env prod provision --apply. Empty variable -> not wired: a
+        # valueFrom pointing at a missing secret stops every new task from
+        # starting (VTID-04849). Rollback: change a pin to "false" here.
+        env:
+          GOOGLE_ID_ARN: ${{ vars.PROD_GOOGLE_OAUTH_CLIENT_ID_ARN }}
+          GOOGLE_SECRET_ARN: ${{ vars.PROD_GOOGLE_OAUTH_CLIENT_SECRET_ARN }}
+        run: |
+          set -e
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name | IN("CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","CALENDAR_GOOGLE_SYNC_ENABLED") | not) ]
+                + [ {name:"CALENDAR_DEFAULT_REMINDERS_ENABLED", value:"true"},
+                    {name:"CALENDAR_MAINTENANCE_ENABLED", value:"true"},
+                    {name:"CALENDAR_GOOGLE_SYNC_ENABLED", value:"true"} ] )' /tmp/vitana-new-task-def.json)
+          if [ -n "$GOOGLE_ID_ARN" ] && [ -n "$GOOGLE_SECRET_ARN" ]; then
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg I "$GOOGLE_ID_ARN" --arg S "$GOOGLE_SECRET_ARN" '
+              .containerDefinitions[0].secrets |=
+                ( [ (. // [])[] | select(.name | IN("GOOGLE_OAUTH_CLIENT_ID","GOOGLE_OAUTH_CLIENT_SECRET") | not) ]
+                  + [ {name:"GOOGLE_OAUTH_CLIENT_ID", valueFrom:$I},
+                      {name:"GOOGLE_OAUTH_CLIENT_SECRET", valueFrom:$S} ] )')
+            echo "Google OAuth client wired from repository variables"
+          else
+            echo "Google OAuth client not wired (PROD_GOOGLE_OAUTH_CLIENT_ID_ARN / _SECRET_ARN unset); sync stays not_configured"
+          fi
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Calendar gates pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name | startswith("CALENDAR_")) | .name]')"
+
       - name: Build task-definition (2/2 — optional overrides) + register + roll the service
         id: roll
         env:
@@ -1331,6 +1434,45 @@ jobs:
           echo "::error::Smoke failed — health/build-info/alive did not report env=production with the deployed commit"
           exit 1
 
+      # VTID-04896: read-only. The live service's task definition must carry
+      # REWARD_SWEEP_ENABLED=false, unless this dispatch's env_overrides set
+      # the key explicitly (the owner's approval to enable). A mismatch fails
+      # the job, which rolls the service back (VTID-04647).
+      - name: Verify reward sweep setting (live task definition)
+        id: sweepcheck
+        env:
+          ENV_OVERRIDES_INPUT: ${{ inputs.env_overrides }}
+        run: |
+          set -e
+          EXPECTED=false
+          if [ -n "$ENV_OVERRIDES_INPUT" ] && echo "$ENV_OVERRIDES_INPUT" | jq -e 'has("REWARD_SWEEP_ENABLED")' >/dev/null 2>&1; then
+            EXPECTED=$(echo "$ENV_OVERRIDES_INPUT" | jq -r '.REWARD_SWEEP_ENABLED | tostring')
+            echo "::warning::env_overrides sets REWARD_SWEEP_ENABLED=$EXPECTED for this deploy"
+          fi
+          TD=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].taskDefinition' --output text)
+          LIVE=$(aws ecs describe-task-definition --task-definition "$TD" \
+            --query 'taskDefinition.containerDefinitions[0].environment[?name==`REWARD_SWEEP_ENABLED`].value | [0]' --output text)
+          echo "Live task definition: $TD"
+          echo "REWARD_SWEEP_ENABLED=$LIVE (expected $EXPECTED)"
+          if [ "$LIVE" != "$EXPECTED" ]; then
+            echo "::error::REWARD_SWEEP_ENABLED is '$LIVE' on the live task definition, expected '$EXPECTED'"
+            exit 1
+          fi
+          # VTID-04899: same check for the immediate Autopilot completion reward.
+          EXPECTED_AP=false
+          if [ -n "$ENV_OVERRIDES_INPUT" ] && echo "$ENV_OVERRIDES_INPUT" | jq -e 'has("AUTOPILOT_ACTION_REWARD_ENABLED")' >/dev/null 2>&1; then
+            EXPECTED_AP=$(echo "$ENV_OVERRIDES_INPUT" | jq -r '.AUTOPILOT_ACTION_REWARD_ENABLED | tostring')
+            echo "::warning::env_overrides sets AUTOPILOT_ACTION_REWARD_ENABLED=$EXPECTED_AP for this deploy"
+          fi
+          LIVE_AP=$(aws ecs describe-task-definition --task-definition "$TD" \
+            --query 'taskDefinition.containerDefinitions[0].environment[?name==`AUTOPILOT_ACTION_REWARD_ENABLED`].value | [0]' --output text)
+          echo "AUTOPILOT_ACTION_REWARD_ENABLED=$LIVE_AP (expected $EXPECTED_AP)"
+          if [ "$LIVE_AP" != "$EXPECTED_AP" ]; then
+            echo "::error::AUTOPILOT_ACTION_REWARD_ENABLED is '$LIVE_AP' on the live task definition, expected '$EXPECTED_AP'"
+            exit 1
+          fi
+
       # VTID-04647: read-only post-deploy verification. GET requests only, no
       # auth, nothing written — production gets read-only checks (owner rule
       # 2026-09-26). Only long-standing routes, so an env-only redeploy of an
@@ -1353,6 +1495,27 @@ jobs:
             if [ "$OK" = 1 ]; then echo "✓ GET $P -> $OUT"; else echo "::error::GET $P failed post-deploy ($OUT)"; FAIL=1; fi
           done
           [ "$FAIL" = 0 ]
+
+      # VTID-04904: read-only, never fails the deploy. Live Rooms need
+      # DAILY_API_KEY on the gateway task definition — an owner prerequisite
+      # this workflow does not place. Reports whether the live task definition
+      # carries it (as env or secret NAME — values are never read or printed)
+      # as a warning annotation when it is missing.
+      - name: Report DAILY_API_KEY presence (live task definition, read-only)
+        continue-on-error: true
+        run: |
+          set +e
+          TD=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].taskDefinition' --output text 2>/dev/null)
+          WHERE=$(aws ecs describe-task-definition --task-definition "$TD" \
+            --query 'taskDefinition.containerDefinitions[0].{env:environment[].name,sec:secrets[].name}' --output json 2>/dev/null \
+            | jq -r '[(if ((.env // []) | index("DAILY_API_KEY")) != null then "env" else empty end), (if ((.sec // []) | index("DAILY_API_KEY")) != null then "secret" else empty end)] | join(",")' 2>/dev/null)
+          if [ -n "$WHERE" ]; then
+            echo "DAILY_API_KEY present on $TD ($WHERE)"
+          else
+            echo "::warning::DAILY_API_KEY is not on the live gateway task definition ($TD) - Live Rooms cannot open video (owner prerequisite, VTID-04904)"
+          fi
+          exit 0
 
       # VTID-04647: automatic rollback. Runs when the service was rolled and a
       # later step failed (stabilize, smoke or post-deploy verification). It

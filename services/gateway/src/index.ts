@@ -195,6 +195,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminMarketplaceRouter = require('./routes/admin-marketplace').default;
   // VTID-03885: Partner Health Test Integration — admin portal (orders/inbox/confirm-match)
   const adminPartnerHealthRouter = require('./routes/admin-partner-health').default;
+  // VTID-04895: partner terms lifecycle — exafy_admin publishing API
+  const adminPartnerTermsRouter = require('./routes/admin-partner-terms').default;
   // VTID-03885: Partner Health Test Integration — self-service consent (grant/revoke/check)
   const partnerHealthConsentRouter = require('./routes/partner-health-consent').default;
   // VTID-03932: Commerce Partner Onboarding — self-service partner org registration + roster
@@ -546,6 +548,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const opsActionRequiredRouter = require('./routes/ops-action-required').default;
   // VTID-04876: Command Hub Overview cockpit feed (exafy_admin only)
   const opsAttentionRouter = require('./routes/ops-attention').default;
+  // VTID-04887: pipeline summary for the Command Hub (exafy_admin; the
+  // /api/v1/autopilot/pipeline/summary route stays service-token only)
+  const opsPipelineSummaryRouter = require('./routes/ops-pipeline-summary').default;
   // DEV-COMHU-03404: Overview trend data — hourly oasis_events rollup for sparklines
   const opsOverviewTimeseriesRouter = require('./routes/ops-overview-timeseries').default;
   // VTID-04663: Service Health checks for signals the database already computes.
@@ -1164,6 +1169,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/marketplace', adminMarketplaceRouter, { owner: 'admin-marketplace' });
   // VTID-03885: Partner Health Test Integration admin portal
   mountRouterSync(app, '/api/v1/admin/partner-health', adminPartnerHealthRouter, { owner: 'admin-partner-health' });
+  // VTID-04895: partner terms lifecycle — exafy_admin publishing API
+  mountRouterSync(app, '/api/v1/admin/partner-terms', adminPartnerTermsRouter, { owner: 'admin-partner-terms' });
   // VTID-03885: Partner Health Test Integration self-service consent
   mountRouterSync(app, '/api/v1/partner-health/consent', partnerHealthConsentRouter, { owner: 'partner-health-consent' });
   // VTID-03932: Commerce Partner Onboarding — self-service partner org registration + roster
@@ -1422,6 +1429,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/ops/action-required', opsActionRequiredRouter, { owner: 'ops-action-required' });
   // VTID-04876: GET /api/v1/ops/attention — ranked "needs attention now" queue (exafy_admin only)
   mountRouterSync(app, '/api/v1/ops/attention', opsAttentionRouter, { owner: 'ops-attention' });
+  // VTID-04887: GET /api/v1/ops/pipeline-summary — buildPipelineSummary() in-process (exafy_admin only)
+  mountRouterSync(app, '/api/v1/ops/pipeline-summary', opsPipelineSummaryRouter, { owner: 'ops-pipeline-summary' });
 
   // DEV-COMHU-03404: Overview trend data — hourly oasis_events rollup for sparklines
   mountRouterSync(app, '/api/v1/ops/overview-timeseries', opsOverviewTimeseriesRouter, { owner: 'ops-overview-timeseries' });

@@ -23,8 +23,21 @@ import { getAllSystemControls } from './system-controls-service';
 import { isAutonomousExecutionTask } from '../routes/worker-orchestrator';
 import { fetchApprovalEligibleVtids, fetchPrInfoForVtids } from '../routes/approvals';
 import { runRuntimeCheckCached } from '../routes/ops-runtime-health';
-import type { AttentionReads, ControlRow, LedgerRow, WaitingRow } from './ops-attention-adapters';
-import type { AttentionStateStore, StateRow } from './ops-attention';
+import { aggregateSpend, budgetLines, loadSpendToday } from './orchestrator/budgets';
+import {
+  GOOGLE_LLM_PROVIDERS,
+  JEV_BUDGET_TOPIC,
+  LEDGER_READ_LIMIT,
+  TICKET_CLOSED_STATUSES,
+  TIMELINE_READ_LIMIT,
+  SELF_HEAL_READ_LIMIT,
+  TIMELINE_TOPICS,
+  type AttentionReads,
+  type ControlRow,
+  type LedgerRow,
+  type WaitingRow,
+} from './ops-attention-adapters';
+import type { AckRow, AttentionAckStore, AttentionStateStore, StateRow } from './ops-attention';
 
 /** Same threshold as the pipeline summary's BROKEN classification. */
 const PIPELINE_BROKEN_AFTER_MS = 2 * 60 * 60_000;
@@ -41,6 +54,12 @@ function check<T>(res: { data: T | null; error: { message: string } | null }, ta
 }
 
 export function createAttentionReads(opts: { authHeader?: string } = {}): AttentionReads {
+  // VTID-04885: operator_pipeline and stuck_vtids read the same in-progress
+  // ledger page; one read per computation serves both.
+  let ledger: Promise<LedgerRow[]> | null = null;
+  // VTID-04886: the autonomy adapter and the timeline read the same 24 h of
+  // self_healing_log; one read per window per computation serves both.
+  const heals = new Map<string, Promise<any[]>>();
   return {
     async healthSummary() {
       const s = await buildHealthSummary({ authHeader: opts.authHeader });
@@ -107,17 +126,24 @@ export function createAttentionReads(opts: { authHeader?: string } = {}): Attent
       return Array.isArray(snap.alerts) ? snap.alerts : [];
     },
 
-    async selfHealOutcomes(sinceIso) {
-      return check(
-        await sb()
-          .from('self_healing_log')
-          .select('vtid,endpoint,failure_class,outcome,created_at')
-          .in('outcome', ['escalated', 'rolled_back'])
-          .gte('created_at', sinceIso)
-          .order('created_at', { ascending: false })
-          .limit(100),
-        'self_healing_log',
-      ) as any[];
+    selfHealOutcomes(sinceIso) {
+      let p = heals.get(sinceIso);
+      if (!p) {
+        p = (async () =>
+          check(
+            await sb()
+              .from('self_healing_log')
+              .select('vtid,endpoint,failure_class,outcome,created_at')
+              .in('outcome', ['escalated', 'rolled_back'])
+              .gte('created_at', sinceIso)
+              .order('created_at', { ascending: false })
+              .limit(SELF_HEAL_READ_LIMIT),
+            'self_healing_log',
+          ) as any[])();
+        heals.set(sinceIso, p);
+        p.catch(() => heals.delete(sinceIso));
+      }
+      return p;
     },
 
     async pipelineBrokenVtids() {
@@ -139,17 +165,23 @@ export function createAttentionReads(opts: { authHeader?: string } = {}): Attent
       return rows.map((r) => String(r.vtid));
     },
 
-    async inProgressLedger() {
-      return check(
-        await sb()
-          .from('vtid_ledger')
-          .select('vtid,title,metadata,claimed_by,claim_started_at,claim_expires_at,updated_at')
-          .like('vtid', 'VTID-%')
-          .eq('status', 'in_progress')
-          .or('is_terminal.is.null,is_terminal.eq.false')
-          .limit(500),
-        'vtid_ledger',
-      ) as LedgerRow[];
+    inProgressLedger() {
+      if (!ledger) {
+        ledger = (async () =>
+          check(
+            await sb()
+              .from('vtid_ledger')
+              .select('vtid,title,metadata,claimed_by,claim_started_at,claim_expires_at,updated_at')
+              .like('vtid', 'VTID-%')
+              .eq('status', 'in_progress')
+              .or('is_terminal.is.null,is_terminal.eq.false')
+              .limit(LEDGER_READ_LIMIT),
+            'vtid_ledger',
+          ) as LedgerRow[])();
+        // A failed read is not cached: the next caller retries.
+        ledger.catch(() => { ledger = null; });
+      }
+      return ledger;
     },
 
     isAutonomous(row: LedgerRow) {
@@ -258,6 +290,151 @@ export function createAttentionReads(opts: { authHeader?: string } = {}): Attent
           title: (r as any).title || r.description || r.vtid,
           waiting_since: r.updated_at,
         }));
+    },
+
+    // ── VTID-04885 (Phase 2) ──
+
+    async llmBudgetLines() {
+      // The same read and arithmetic as GET /api/v1/orchestrator/budgets.
+      const { rows, since, truncated, error } = await loadSpendToday(sb());
+      if (error) throw new Error(`oasis_events (llm.call.completed): ${error}`);
+      return { since, truncated, lines: budgetLines(aggregateSpend(rows)) };
+    },
+
+    async jevBudgetAlerts(sinceIso) {
+      return check(
+        await sb()
+          .from('oasis_events')
+          .select('topic,created_at,metadata')
+          .eq('topic', JEV_BUDGET_TOPIC)
+          .gte('created_at', sinceIso)
+          .order('created_at', { ascending: false })
+          .limit(200),
+        'oasis_events',
+      ) as any[];
+    },
+
+    async ciTestRuns(sinceIso) {
+      const [runs, syncState] = await Promise.all([
+        sb()
+          .from('ci_test_runs')
+          .select('repo,workflow_file,workflow_name,branch,conclusion,html_url,run_created_at')
+          .eq('branch', 'main')
+          .gte('run_created_at', sinceIso)
+          .order('run_created_at', { ascending: false })
+          .limit(1000),
+        sb().from('ci_test_sync_state').select('repo,last_synced_at').limit(10),
+      ]);
+      const rows = check(runs, 'ci_test_runs') as any[];
+      const state = check(syncState, 'ci_test_sync_state') as Array<{ last_synced_at: string | null }>;
+      // The OLDEST repository sync is the freshness of the whole read.
+      const synced = state.map((r) => r.last_synced_at).filter((x): x is string => !!x).sort();
+      return { rows, last_synced_at: state.length && synced.length === state.length ? synced[0] : null };
+    },
+
+    async failingTestContracts() {
+      return check(
+        await sb()
+          .from('test_contracts')
+          .select('id,capability,service,status,last_run_at,last_failure_signature')
+          .eq('status', 'fail')
+          .order('last_run_at', { ascending: false, nullsFirst: false })
+          .limit(100),
+        'test_contracts',
+      ) as any[];
+    },
+
+    async routines() {
+      return check(
+        await sb()
+          .from('routines')
+          .select('name,display_name,cron_schedule,last_run_at,last_run_status,consecutive_failures,created_at')
+          .eq('enabled', true)
+          .limit(200),
+        'routines',
+      ) as any[];
+    },
+
+    async openSupportTickets(agedBeforeIso) {
+      // Uses idx_feedback_tickets_priority_status (partial: open tickets only).
+      const closed = `(${TICKET_CLOSED_STATUSES.join(',')})`;
+      return check(
+        await sb()
+          .from('feedback_tickets')
+          .select('id,ticket_number,kind,status,priority,created_at')
+          .not('status', 'in', closed)
+          .or(`priority.in.(p0,p1),created_at.lt.${agedBeforeIso}`)
+          .order('created_at', { ascending: true })
+          .limit(300),
+        'feedback_tickets',
+      ) as any[];
+    },
+
+    async llmGoogleCalls(sinceIso) {
+      const rows = check(
+        await sb()
+          .from('oasis_events')
+          .select('created_at,metadata')
+          .eq('topic', 'llm.call.completed')
+          .gte('created_at', sinceIso)
+          // Provider OR a Gemini model: a Google landing can carry a legacy or
+          // non-Google provider label; isGoogleLlmCall() makes the final call.
+          .or(`metadata->>provider.in.(${GOOGLE_LLM_PROVIDERS.join(',')}),metadata->>model.ilike.gemini*`)
+          .order('created_at', { ascending: false })
+          .limit(500),
+        'oasis_events',
+      ) as Array<{ created_at: string; metadata: Record<string, unknown> | null }>;
+      return rows.map((r) => {
+        const m = r.metadata || {};
+        return {
+          created_at: r.created_at,
+          provider: typeof m.provider === 'string' ? m.provider : null,
+          model: typeof m.model === 'string' ? m.model : null,
+          stage: typeof m.stage === 'string' ? m.stage : null,
+          service: typeof m.service === 'string' ? m.service : null,
+          fallback_used: m.fallback_used === true || m.fallback_used === 'true',
+        };
+      });
+    },
+
+    // ── VTID-04886 (Phase 3) ──
+
+    async timelineEvents(sinceIso) {
+      return check(
+        await sb()
+          .from('oasis_events')
+          .select('topic,created_at,metadata')
+          .in('topic', TIMELINE_TOPICS)
+          .gte('created_at', sinceIso)
+          .order('created_at', { ascending: false })
+          .limit(TIMELINE_READ_LIMIT),
+        'oasis_events',
+      ) as any[];
+    },
+  };
+}
+
+const ACK_COLUMNS = 'id,env,fingerprint,action,reason,severity,actor_user_id,actor_email,vtid,created_at,expires_at';
+
+/** VTID-04886: ops_attention_acks via the service role (migration 20261005100000). */
+export function supabaseAckStore(): AttentionAckStore {
+  return {
+    async active(env, nowIso): Promise<AckRow[]> {
+      return check(
+        await sb()
+          .from('ops_attention_acks')
+          .select(ACK_COLUMNS)
+          .eq('env', env)
+          .gt('expires_at', nowIso)
+          .order('created_at', { ascending: false })
+          .limit(500),
+        'ops_attention_acks',
+      ) as AckRow[];
+    },
+    async insert(row): Promise<AckRow> {
+      const { data, error } = await sb().from('ops_attention_acks').insert(row).select(ACK_COLUMNS).single();
+      if (error || !data) throw new Error(`ops_attention_acks: ${error ? error.message : 'no row returned'}`);
+      return data as AckRow;
     },
   };
 }

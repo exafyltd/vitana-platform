@@ -363,9 +363,10 @@ describe('decisions_waiting adapter', () => {
 });
 
 describe('registry', () => {
-  it('has exactly the seven Phase 1 adapters', () => {
+  it('has the seven Phase 1 adapters, then the six Phase 2 adapters (VTID-04885)', () => {
     expect(ATTENTION_ADAPTERS.map((a) => a.id)).toEqual([
       'service_health', 'release', 'voice_supervisor', 'autonomy', 'operator_pipeline', 'governance', 'decisions_waiting',
+      'cost_budgets', 'tests_contracts', 'routines', 'support_tickets', 'llm_google_fallback', 'stuck_vtids',
     ]);
   });
 });

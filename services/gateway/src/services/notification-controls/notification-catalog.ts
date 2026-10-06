@@ -42,10 +42,12 @@ const ROWS: Row[] = [
   ['comment_like', 'member', 'posts', 'member_activity', 'ready', 'Like on your comment', 'Like auf deinen Kommentar', 'Someone liked your comment.', 'Jemand hat deinen Kommentar geliked.'],
   ['comment_reply', 'member', 'posts', 'member_activity', 'ready', 'Reply to your comment', 'Antwort auf deinen Kommentar', 'Someone replied to your comment.', 'Jemand hat auf deinen Kommentar geantwortet.'],
   ['post_mention', 'member', 'posts', 'member_activity', 'ready', 'You were mentioned', 'Du wurdest erwähnt', 'Someone mentioned you in a post.', 'Jemand hat dich in einem Beitrag erwähnt.'],
+  ['comment_mention', 'member', 'posts', 'member_activity', 'ready', 'Mentioned in a comment', 'In einem Kommentar erwähnt', 'Someone mentioned you in a comment.', 'Jemand hat dich in einem Kommentar erwähnt.'],
   ['new_follower', 'member', 'posts', 'member_activity', 'ready', 'New follower', 'Neuer Follower', 'Someone started following you.', 'Jemand folgt dir jetzt.'],
 
   // ── Chat ──────────────────────────────────────────────────────────────────
   ['new_chat_message', 'member', 'chat', 'member_activity', 'ready', 'New chat message', 'Neue Chat-Nachricht', 'A person or group sent you a message.', 'Eine Person oder Gruppe hat dir geschrieben.'],
+  ['chat_mention', 'member', 'chat', 'member_activity', 'ready', 'Mentioned in a group chat', 'In einem Gruppenchat erwähnt', 'Someone mentioned you in a group chat message.', 'Jemand hat dich in einer Gruppenchat-Nachricht erwähnt.'],
   ['message_reaction', 'member', 'chat', 'member_activity', 'ready', 'Reaction to your message', 'Reaktion auf deine Nachricht', 'Someone reacted to your chat message.', 'Jemand hat auf deine Chat-Nachricht reagiert.'],
   ['listing_interest', 'member', 'chat', 'member_activity', 'unverified', 'Interest in your listing', 'Interesse an deinem Angebot', 'A buyer messaged you about your marketplace listing.', 'Jemand hat dir zu deinem Marktplatz-Angebot geschrieben.'],
 

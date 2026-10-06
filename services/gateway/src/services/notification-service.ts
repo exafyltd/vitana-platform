@@ -100,6 +100,9 @@ export const TYPE_META: Record<string, TypeMeta> = {
   live_room_recording_ready: { channel: 'inapp',          priority: 'p3', category: 'live_room' },
   // Chat
   new_chat_message:                { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },
+  // VTID-04926: a member @mentioned in a group chat message (sent instead of
+  // new_chat_message to that member, same chat preference).
+  chat_mention:                    { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },
   orb_proactive_message:           { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },
   conversation_followup_reminder:  { channel: 'inapp',          priority: 'p2', category: 'chat' },
   orb_suggestion:                  { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },

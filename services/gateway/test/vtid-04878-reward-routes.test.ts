@@ -141,6 +141,14 @@ describe('POST /api/v1/autopilot/recommendations/:id/complete pays autopilot_act
     expect(res.body).toMatchObject({ ok: true, status: 'completed', reward: 0 });
   });
 
+  test('VTID-04899: with the reward switched off the claim answers rule_off, pays 0, and the completion still succeeds', async () => {
+    rpcReturns({ ok: true, title: 'Walk', already_completed: false });
+    claim.mockResolvedValue({ outcome: 'rule_off', credited: 0 });
+    const res = await request(app).post('/api/v1/autopilot/recommendations/rec-4/complete').set('Authorization', 'Bearer member');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, status: 'completed', reward: 0 });
+  });
+
   test('a repeat completion never claims', async () => {
     rpcReturns({ ok: true, title: 'Walk', already_completed: true });
     const res = await request(app).post('/api/v1/autopilot/recommendations/rec-1/complete').set('Authorization', 'Bearer member');

@@ -95,6 +95,12 @@ export interface ChecklistInput {
   acceptedTermsVersions: string[];
   /** The terms version currently in force, or null when none is published. */
   currentTermsVersion: string | null;
+  /**
+   * VTID-04895: every version that shares the current version's re-acceptance
+   * baseline. Accepting any of them counts (an editorial update keeps earlier
+   * acceptances valid). Omitted: only the current version counts.
+   */
+  termsBaselineVersions?: string[];
   memberCount: number;
 }
 
@@ -173,7 +179,9 @@ export function buildChecklist(input: ChecklistInput): Checklist {
         if (!input.currentTermsVersion) {
           status = 'todo';
           missing = ['terms_not_published'];
-        } else if (input.acceptedTermsVersions.includes(input.currentTermsVersion)) {
+        } else if (
+          (input.termsBaselineVersions ?? [input.currentTermsVersion]).some((v) => input.acceptedTermsVersions.includes(v))
+        ) {
           status = 'done';
         } else {
           status = 'todo';

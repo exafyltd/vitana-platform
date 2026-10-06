@@ -1,0 +1,209 @@
+diff --git a/docs/legal/partner-terms/2026-10/ar.md b/docs/legal/partner-terms/2026-10/ar.md
+index 1c7e41df..b8f1265a 100644
+--- a/docs/legal/partner-terms/2026-10/ar.md
++++ b/docs/legal/partner-terms/2026-10/ar.md
+@@ -147,2 +146,0 @@ p) التحايل على آليات الحماية في المنصة.
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -159,2 +156,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -196,2 +191,0 @@ g) الشريك يتصرف على نحو آخر مخالف لالتزاماته.
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -200,2 +193,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-
+@@ -206 +198 @@ FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-21.1 تُوجَّه الإشعارات القانونية إلى VITANALAND على العنوان التالي: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi، الإمارات العربية المتحدة؛ [LEGAL NOTICE CONTACT TO CONFIRM].
++21.1 تُوجَّه الإشعارات القانونية إلى VITANALAND على العنوان التالي: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi، الإمارات العربية المتحدة؛ legal@vitanaland.com.
+diff --git a/docs/legal/partner-terms/2026-10/de.md b/docs/legal/partner-terms/2026-10/de.md
+index deb0abcd..c7d08bb1 100644
+--- a/docs/legal/partner-terms/2026-10/de.md
++++ b/docs/legal/partner-terms/2026-10/de.md
+@@ -147,2 +146,0 @@ p) die Umgehung von Schutzmechanismen der Plattform.
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -159,2 +156,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -196,2 +191,0 @@ g) der Partner sich sonst pflichtwidrig verhält.
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -200,2 +193,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-
+@@ -206 +198 @@ FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-21.1 Rechtliche Mitteilungen an VITANALAND sind zu richten an: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Vereinigte Arabische Emirate; [LEGAL NOTICE CONTACT TO CONFIRM].
++21.1 Rechtliche Mitteilungen an VITANALAND sind zu richten an: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Vereinigte Arabische Emirate; legal@vitanaland.com.
+diff --git a/docs/legal/partner-terms/2026-10/en.md b/docs/legal/partner-terms/2026-10/en.md
+index ccd469b1..3ec53713 100644
+--- a/docs/legal/partner-terms/2026-10/en.md
++++ b/docs/legal/partner-terms/2026-10/en.md
+@@ -147,2 +146,0 @@ p) circumvention of the platform's protective mechanisms.
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -159,2 +156,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -196,2 +191,0 @@ g) the Partner otherwise acts in breach of its obligations.
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -200,2 +193,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-
+@@ -206 +198 @@ FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-21.1 Legal notices to VITANALAND shall be addressed to: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, United Arab Emirates; [LEGAL NOTICE CONTACT TO CONFIRM].
++21.1 Legal notices to VITANALAND shall be addressed to: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, United Arab Emirates; legal@vitanaland.com.
+diff --git a/docs/legal/partner-terms/2026-10/es.md b/docs/legal/partner-terms/2026-10/es.md
+index a2911254..ede9c44f 100644
+--- a/docs/legal/partner-terms/2026-10/es.md
++++ b/docs/legal/partner-terms/2026-10/es.md
+@@ -147,2 +146,0 @@ p) la elusión de los mecanismos de protección de la plataforma.
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -159,2 +156,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -196,2 +191,0 @@ g) el Socio incurre de otro modo en un incumplimiento de sus obligaciones.
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -200,2 +193,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-
+@@ -206 +198 @@ FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-21.1 Las notificaciones legales dirigidas a VITANALAND deberán remitirse a: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Emiratos Árabes Unidos; [LEGAL NOTICE CONTACT TO CONFIRM].
++21.1 Las notificaciones legales dirigidas a VITANALAND deberán remitirse a: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Emiratos Árabes Unidos; legal@vitanaland.com.
+diff --git a/docs/legal/partner-terms/2026-10/fr.md b/docs/legal/partner-terms/2026-10/fr.md
+index e171475c..76cbb822 100644
+--- a/docs/legal/partner-terms/2026-10/fr.md
++++ b/docs/legal/partner-terms/2026-10/fr.md
+@@ -147,2 +146,0 @@ p) le contournement des mécanismes de protection de la plateforme.
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -159,2 +156,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -196,2 +191,0 @@ g) le Partenaire manque de toute autre manière à ses obligations.
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -200,2 +193,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-
+@@ -206 +198 @@ FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-21.1 Les notifications juridiques destinées à VITANALAND doivent être adressées à : EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Émirats arabes unis ; [LEGAL NOTICE CONTACT TO CONFIRM].
++21.1 Les notifications juridiques destinées à VITANALAND doivent être adressées à : EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Émirats arabes unis ; legal@vitanaland.com.
+diff --git a/docs/legal/partner-terms/2026-10/pl.md b/docs/legal/partner-terms/2026-10/pl.md
+index 78f8af64..3d5f9186 100644
+--- a/docs/legal/partner-terms/2026-10/pl.md
++++ b/docs/legal/partner-terms/2026-10/pl.md
+@@ -147,2 +146,0 @@ p) obchodzenie mechanizmów ochronnych platformy.
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -159,2 +156,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -196,2 +191,0 @@ g) Partner w inny sposób narusza swoje obowiązki.
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -200,2 +193,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-
+@@ -206 +198 @@ FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-21.1 Zawiadomienia prawne do VITANALAND należy kierować na adres: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Zjednoczone Emiraty Arabskie; [LEGAL NOTICE CONTACT TO CONFIRM].
++21.1 Zawiadomienia prawne do VITANALAND należy kierować na adres: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Zjednoczone Emiraty Arabskie; legal@vitanaland.com.
+diff --git a/docs/legal/partner-terms/2026-10/pt-BR.md b/docs/legal/partner-terms/2026-10/pt-BR.md
+index e0e621d4..0644e72e 100644
+--- a/docs/legal/partner-terms/2026-10/pt-BR.md
++++ b/docs/legal/partner-terms/2026-10/pt-BR.md
+@@ -147,2 +146,0 @@ p) a burla de mecanismos de proteção da plataforma.
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -159,2 +156,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -196,2 +191,0 @@ g) o Parceiro age de outra forma em violação de suas obrigações.
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -200,2 +193,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-
+@@ -206 +198 @@ FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-21.1 As notificações legais à VITANALAND devem ser enviadas para: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Emirados Árabes Unidos; [LEGAL NOTICE CONTACT TO CONFIRM].
++21.1 As notificações legais à VITANALAND devem ser enviadas para: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Emirados Árabes Unidos; legal@vitanaland.com.
+diff --git a/docs/legal/partner-terms/2026-10/ru.md b/docs/legal/partner-terms/2026-10/ru.md
+index e2dfcffd..60fe1d75 100644
+--- a/docs/legal/partner-terms/2026-10/ru.md
++++ b/docs/legal/partner-terms/2026-10/ru.md
+@@ -147,2 +146,0 @@ p) обход защитных механизмов платформы.
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -159,2 +156,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -196,2 +191,0 @@ g) Партнер иным образом нарушает свои обязан
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -200,2 +193,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-
+@@ -206 +198 @@ FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-21.1 Юридические уведомления в адрес VITANALAND направляются по адресу: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Объединенные Арабские Эмираты; [LEGAL NOTICE CONTACT TO CONFIRM].
++21.1 Юридические уведомления в адрес VITANALAND направляются по адресу: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Объединенные Арабские Эмираты; legal@vitanaland.com.
+diff --git a/docs/legal/partner-terms/2026-10/sr.md b/docs/legal/partner-terms/2026-10/sr.md
+index f76bf096..5b0931bd 100644
+--- a/docs/legal/partner-terms/2026-10/sr.md
++++ b/docs/legal/partner-terms/2026-10/sr.md
+@@ -147,2 +146,0 @@ p) zaobilaženje zaštitnih mehanizama platforme.
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -159,2 +156,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -196,2 +191,0 @@ g) se Partner na drugi način ponaša protivno svojim obavezama.
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -200,2 +193,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-
+@@ -206 +198 @@ FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-21.1 Pravna obaveštenja za VITANALAND upućuju se na: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Ujedinjeni Arapski Emirati; [LEGAL NOTICE CONTACT TO CONFIRM].
++21.1 Pravna obaveštenja za VITANALAND upućuju se na: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Ujedinjeni Arapski Emirati; legal@vitanaland.com.
+diff --git a/docs/legal/partner-terms/2026-10/tr.md b/docs/legal/partner-terms/2026-10/tr.md
+index 787b1669..55e85d99 100644
+--- a/docs/legal/partner-terms/2026-10/tr.md
++++ b/docs/legal/partner-terms/2026-10/tr.md
+@@ -147,2 +146,0 @@ p) platformun koruma mekanizmalarının atlatılması.
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -159,2 +156,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -196,2 +191,0 @@ g) İş Ortağının başka bir şekilde yükümlülüklerine aykırı davranmas
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -200,2 +193,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-
+@@ -206 +198 @@ FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-21.1 VITANALAND'a yönelik hukuki bildirimler şu adrese gönderilmelidir: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Birleşik Arap Emirlikleri; [LEGAL NOTICE CONTACT TO CONFIRM].
++21.1 VITANALAND'a yönelik hukuki bildirimler şu adrese gönderilmelidir: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Birleşik Arap Emirlikleri; legal@vitanaland.com.
+diff --git a/docs/legal/partner-terms/2026-10/zh-CN.md b/docs/legal/partner-terms/2026-10/zh-CN.md
+index 485f8308..5b0142cf 100644
+--- a/docs/legal/partner-terms/2026-10/zh-CN.md
++++ b/docs/legal/partner-terms/2026-10/zh-CN.md
+@@ -147,2 +146,0 @@ p) 规避平台的保护机制。
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -159,2 +156,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -196,2 +191,0 @@ g) 合作伙伴有其他违反义务的行为。
+-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-
+@@ -200,2 +193,0 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
+-FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-
+@@ -206 +198 @@ FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
+-21.1 致 VITANALAND 的法律通知应发送至：EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi，阿拉伯联合酋长国；[LEGAL NOTICE CONTACT TO CONFIRM]。
++21.1 致 VITANALAND 的法律通知应发送至：EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi，阿拉伯联合酋长国；legal@vitanaland.com。

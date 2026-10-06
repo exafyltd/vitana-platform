@@ -1403,6 +1403,7 @@ CREATE TABLE my_new_table (
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
 | 2026-10-05 | **VTID-04892 — Vitana Onboarding Assistant, slice 1 (shadow).** New tables (RLS on, service role writes only): `onboarding_coach_state` (one row per cohort member: stage d0…d61_90/done, pilot_stage_override, next_action_key, last_touch_at, snoozed_until, ignored_streak, opted_out_at; members read their own row), `onboarding_coach_decisions` (what the coach decided or would do, unique per member + local day + mode), `onboarding_touch_ledger` (one onboarding touch per member per local day, status pending/sent/failed, one retry). New functions (service role only): `claim_onboarding_touch(uuid, uuid, date, text, text)`, `finish_onboarding_touch(bigint, text)`. `user_proactive_touches.surface` CHECK widened to the presence pacer's 11 surfaces + `onboarding_coach` (NOT VALID then VALIDATE) — the four newer surfaces were previously rejected and never counted. Migration `20261005130000_vtid_04892_onboarding_coach.sql`. | Claude | VTID-04892 |
+| 2026-10-06 | VTID-04909, **applied 2026-10-06 10:40 UTC** via `RUN-MIGRATION.yml` run 37451365925 (VTID-04911; pre-check 0 versions / 0 acceptances; owner-approved; migration `20261006120000_vtid_04909_partner_terms_german_binding.sql`): partner terms become **German-binding**. `partner_terms_versions.binding_locale` default and CHECK `= 'de'`; `partner_terms_versions_binding_text` now requires `content.de` title + body; `publish_partner_terms_version()` hashes `sha256(UTF-8(content.de.title \|\| E'\\n' \|\| content.de.body_md))` (same construction, German substituted) and refuses without an English title + body (`PARTNER_TERMS_ENGLISH_MISSING`); new CHECK `partner_terms_acceptances_shown_locale_supported` (`de, en, es, sr, fr, pt-BR, ru, pl, ar, zh-CN, tr`); comments updated. The migration **refuses to run unless both tables hold 0 rows** (verified read-only 0/0 on 2026-10-06) and changes nothing when it refuses. Tested on a throwaway Postgres incl. the refusal (`scripts/ci/sql-tests/run-partner-terms-test.sh`, CI `SQL-PARTNER-TERMS`). Until applied, gateway draft writes (`binding_locale 'de'`) are refused by the old CHECK — no terms can be created meanwhile. | Claude Code | VTID-04909 |
 | 2026-10-04 | VTID-04868 hardening, **committed, NOT applied** (migration `20261004120000_vtid_04868_plan_sparring_hardening.sql`, review findings on PR #3899): `allocate_global_vtid` 4-arg dropped → 5-arg `(p_source, p_layer, p_module, p_sparring_id uuid DEFAULT NULL, p_plan_hash text DEFAULT NULL)` with the bounded 1000-step collision-skipping loop restored (service_role only); `_plan_sparring_gate_eval` binds a sparring id only when `metadata.plan_hash` = the session's `final_plan_hash` (`plan_hash_missing` / `plan_hash_mismatch` → `invalid`; log mode still never raises); `plan_sparring_append_round(uuid, jsonb)` dropped → `(uuid, jsonb, int p_expected_round)` raising SQLSTATE `PS409` on a stale/duplicate append or a non-`in_progress` session (service_role only). No table or config change. Rollback `docs/validation/VTID-04868/rollback.sql` reverses both VTID-04868 migrations. Tested twice + rollback on a throwaway Postgres (`scripts/ci/test-vtid-04868-plan-sparring.sh`). | Claude Code | VTID-04868 |
 | 2026-10-04 | VTID-04868, **applied live 2026-10-04 08:26 UTC (RUN-MIGRATION run 37188907901)** (migration `20261004110000_vtid_04868_plan_sparring_gate.sql`, Plan Sparring Gate P1, LOG MODE): tables `plan_sparring_sessions`, `plan_sparring_config` (row mode='log'), `plan_sparring_shadow_log` (RLS on, no anon/authenticated access); role `vitana_governance_owner` (NOLOGIN); `allocate_global_vtid` 3-arg dropped → 4-arg with `p_sparring_id uuid DEFAULT NULL` (service_role only); `submit_plan_sparring_record()`, `plan_sparring_append_round()`; BEFORE INSERT trigger `trg_plan_sparring_check` on `vtid_ledger` (log mode never raises); partial unique index `vtid_ledger_sparring_id_unique`. Rollback `docs/validation/VTID-04868/rollback.sql`. Tested twice + rollback on a throwaway Postgres (`scripts/ci/test-vtid-04868-plan-sparring.sh`). See the section above. | Claude Code | VTID-04868 |
 | 2026-10-01 | VTID-04798, **applied live** 2026-10-01 with the owner's go (migration `20261001160000_vtid_04798_memory_sensitivity.sql`, RUN-MIGRATION run 36895020174; verified: 457 fact rows and 65 items special_category, both triggers and constraints present): `memory_facts.sensitivity` and `memory_items.sensitivity` (text NOT NULL DEFAULT 'standard', CHECK in ('standard','special_category')) mark GDPR Art. 9 data. One rule decides it: immutable function `memory_sensitivity_of(text)` on the fact key / category key, applied by BEFORE INSERT/UPDATE triggers `trg_memory_facts_sensitivity` / `trg_memory_items_sensitivity` (they only ever raise to special_category) and by a backfill (measured 2026-10-01: 95 of 392 current fact keys, 457 fact rows, 65 items). `memory_items.sensitivity_flag` (VTID-01116, never written) is left as is. Tested on a throwaway Postgres: `scripts/ci/sql-tests/run-memory-sensitivity-test.sh` (CI `SQL-MEMORY-SENSITIVITY.yml`). | Claude Code | VTID-04798 |
@@ -1421,6 +1422,7 @@ CREATE TABLE my_new_table (
 | 2026-09-23 | VTID-04431, **applied live**: function `support_resolution_search(p_query_embedding vector, p_tenant_id uuid, p_top_k int default 3, p_exclude_ticket_id text, p_min_similarity float8 default 0.35)` — read-only, `service_role` only; searches `memory_items` `support_ticket` rows with `active_role='support'` in ONE tenant and returns `(ticket_id, similarity, occurred_at)` only, never episode text. Used by the Sage/Devon/Mira drafters. | Claude Code | VTID-04431 |
 | 2026-09-23 | VTID-04441, **applied live**: table `memory_fact_forgotten (id, tenant_id, user_id, fact_key, value_hash, forgotten_at)`, unique on (tenant_id, user_id, fact_key, value_hash), RLS on, `service_role` only. One row per value a user forgot in the Memory Garden; `value_hash` is sha256 of the normalised value, the value is not kept. `rememberFact()` refuses an inferred write of a forgotten value; an explicit user statement clears the marker. | Claude Code | VTID-04441 |
 | 2026-09-23 | VTID-04407, **applied live**: `dev_agent_memory.author_user_id` + category `handoff` + `write_dev_memory(..., p_author_user_id)` (single overload, service_role only) + `recall_dev_memory()` excludes handoffs. | Claude Code | VTID-04407 |
+| 2026-10-05 | Partner terms lifecycle (VTID-04895): new `partner_terms_versions` (English binding, one published, immutable once published, re-acceptance baseline), `partner_terms_acceptances` gains `terms_version_id`, `content_sha256`, `shown_locale` and becomes append-only with a version/hash check, functions `publish_partner_terms_version` and `auth_session_is_delegated` (service role only). Migration `20261005130000_vtid_04895_partner_terms_lifecycle.sql`, tested on a throwaway Postgres (`scripts/ci/sql-tests/run-partner-terms-test.sh`, CI `SQL-PARTNER-TERMS`). **Applied to the live project 2026-10-05** on the platform owner's go-ahead, before merge (Migration Drift Check), via `RUN-MIGRATION.yml` (Management API) — the Supabase MCP `apply_migration` timed out twice with nothing applied. Post-checked read-only: table with RLS, 3 new acceptance columns, 3 triggers, both RPCs; browser roles cannot insert or publish, service_role can publish; 0 versions, 0 acceptances. | Claude | VTID-04895 |
 | 2026-09-24 | Onboarding engine storage (VTID-04478, spec §6.1/§6.2): `partner_onboarding_steps` (per-org status of the steps a dedicated endpoint decides) and `partner_terms_acceptances` (audit of a terms acceptance: version, user, time, IP, user agent). RLS on, member SELECT via `is_partner_org_member()`, writes revoked from anon/authenticated. Migration `20260924150000_vtid_04478_partner_onboarding_engine.sql`. **Applied to the live project 2026-09-24** on the platform owner's go-ahead, before merge (Migration Drift Check). Post-checked: both tables with RLS and the member SELECT policy. Browser roles keep only SELECT/REFERENCES/TRIGGER; INSERT/UPDATE/DELETE/TRUNCATE are revoked. TRUNCATE was added to the revoke during the apply, because Supabase's default grants include it and RLS does not cover it. | Claude | VTID-04478 |
 | 2026-09-24 | Partner account model (VTID-04471, spec §5.1/§5.2): `partner_organizations` gains `partner_type`, `lifecycle_state`, `legal_name`, `country`, `vat_id`, `website`, `trust_level`, the helpers `partner_org_status_for_lifecycle()` / `partner_org_vertical_for_type()` and `trg_partner_organizations_sync`; `merchants.partner_organization_id` and `partner_tenant.partner_organization_id` FKs with an idempotent backfill. Migrations `20260924130000_vtid_04471_partner_account_model.sql` + Prisma `20260924_vcaop_partner_org_link_0007`. **Applied to the live project 2026-09-24** on the platform owner's go-ahead, before the gateway change merged (`/register` and `/mine` select the new columns). Post-checked read-only: all 9 columns, 4 CHECKs, both FKs, the 3 functions and the trigger present, and the mappings correct. The backfill changed no rows (0 orgs, 0 owned merchants, 0 `partner_tenant` rows before and after). | Claude | VTID-04471 |
 | 2026-09-23 | VTID-04391, **applied live**: `memory_categories` row `daily_learning` (mapped to `uncategorized`) and partial unique index `uq_memory_items_daily_learning` on `memory_items (user_id, (content_json->>'date')) WHERE category_key = 'daily_learning'` — one daily learning per user per local date, written by AP-0914. | Claude Code | VTID-04391 |
@@ -1459,6 +1461,7 @@ CREATE TABLE my_new_table (
 | 2026-09-23 | New tables `calendar_google_sync`, `calendar_google_links`, `calendar_external_busy` for Google Calendar two-way sync (switched off). No tokens stored — they stay in `social_connections`. RLS on, no policies, no browser grants. | Claude | VTID-04372 |
 | 2026-09-24 | New tables `calendar_push_targets`, `calendar_push_links`: Outlook and iCloud calendar push into a member-owned "Vitanaland" calendar. RLS on, no policies, no browser grants. | Claude | VTID-04436 |
 | 2026-09-24 | `connected_app_settings.app_id` CHECK gains `outlook-contacts` (Outlook contacts import; rows land in `contacts` with `source='microsoft'`). | Claude | VTID-04449 |
+| 2026-10-06 | Triggers on `global_community_events` → `calendar_events`: the host gets an entry on create, edits to time/place/title move every live entry for the event, delete cancels them; future hosts backfilled. No table/column change. | Claude | VTID-04915 |
 | 2026-05-12 | Added `cover_url`, `cover_generated_at`, `cover_source` to `user_intents` for the Find-a-Match cover-photo flow (user upload OR server-side OpenAI Images generation OR curated fallback). Idx on `(requester_user_id, cover_generated_at)` for per-user rate-limit. | Claude | BOOTSTRAP-INTENT-COVER-GEN |
 | 2026-05-20 | Added `decision_policy` + `policy_render_block` (Phase B.1 of decision-contract refactor). Versioned, tenant-aware, time-bounded externalized policy values + localized render fragments. Schema only — no consumer reads yet (lands in Phase B.4). | Claude | VTID-03113 |
 | 2026-05-20 | Seeded Phase B vertical-proof rows: 5 `decision_policy` rows (session-recency bucket thresholds) + 64 `policy_render_block` rows (8 greeting buckets × 8 languages). English content authoritative; non-`en` rows carry `notes='seeded from en; awaiting translation'`. Still no consumer reads yet — that's Phase B.4. | Claude | VTID-03114 |
@@ -1567,6 +1570,15 @@ Written by the gateway's `services/calendar-reminders.ts` loop (`CALENDAR_DEFAUL
 - `trg_calendar_dedupe_event_rsvp` — AFTER INSERT on `calendar_events` for rows carrying `metadata.meetup_id` from any other source → deletes the trigger-written `community_rsvp` row for the same user+event, so the web client's own row (which it knows how to delete) is the one that stays.
 - The older `trg_rsvp_calendar_sync` / `trg_rsvp_cancel_calendar_sync` on `event_attendance` remain; that table is unused (0 rows).
 
+### calendar_events ← global_community_events (VTID-04915 triggers)
+
+**Purpose:** the host of a community event gets it in their calendar, and changes to an event reach every attendee's entry. Migration `20261006140000_vtid_04915_community_event_host_and_time_sync.sql`. One function, `fn_community_event_to_calendar()` (SECURITY DEFINER, not executable by `anon`/`authenticated`):
+
+- `trg_community_event_host_calendar` — AFTER INSERT → one row for `created_by`, same shape as the VTID-04321 rows plus `metadata.host=true`; skipped without `start_time`/`created_by` or when the host already has a live row. A client-written row arriving later replaces it via `trg_calendar_dedupe_event_rsvp`.
+- `trg_community_event_change_calendar` — AFTER UPDATE OF `start_time, end_time, location, virtual_link, title, description`, only when one actually changed → one set-based UPDATE of every live (not cancelled) row matching `source_ref` or `metadata.meetup_id`. Cancelled rows stay cancelled. Reminders follow through the calendar reminder reconcile.
+- `trg_community_event_delete_calendar` — AFTER DELETE → one set-based cancel of every live row for the event.
+- Tested on a throwaway Postgres: `scripts/ci/sql-tests/vtid-04915-community-event-calendar.test.sql` (CI `SQL-COMMUNITY-EVENT-CALENDAR`).
+
 ### calendar_feed_tokens (VTID-04358)
 
 **Purpose:** the private iCalendar subscription link (`GET /api/v1/calendar/feed/<token>.ics`) that lets Apple/Google/Outlook subscribe to a user's Vitanaland calendar. Migration `20260923170000_vtid_04358_calendar_feed_tokens.sql`, applied live 2026-09-23.
@@ -1582,7 +1594,7 @@ RLS enabled with no policies; `ALL` revoked from `PUBLIC`/`anon`/`authenticated`
 
 ### calendar_google_sync / calendar_google_links / calendar_external_busy (VTID-04372)
 
-**Purpose:** Google Calendar two-way sync. Built, switched off (`CALENDAR_GOOGLE_SYNC_ENABLED` exactly `true` + the Google OAuth client). Push: the member's own community/personal entries go to a "Vitanaland" calendar the app creates in their Google account (scope `calendar.app.created`, so no other Google calendar is ever touched). Pull: only free/busy of their Google primary calendar (scope `calendar.freebusy`), shown as grey busy blocks. OAuth tokens are **not** here — they stay in `social_connections` (provider `google`). Migration `20260923180000_vtid_04372_calendar_google_sync.sql`, applied live 2026-09-23.
+**Purpose:** Google Calendar two-way sync. Switch pinned on in staging and production since VTID-04914 (owner decision 2026-10-06); it runs only once the Google OAuth client is also configured (`CALENDAR_GOOGLE_SYNC_ENABLED` exactly `true` + `GOOGLE_OAUTH_CLIENT_ID`/`SECRET`), otherwise `not_configured`. Push: the member's own community/personal entries go to a "Vitanaland" calendar the app creates in their Google account (scope `calendar.app.created`, so no other Google calendar is ever touched). Pull: only free/busy of their Google primary calendar (scope `calendar.freebusy`), shown as grey busy blocks. OAuth tokens are **not** here — they stay in `social_connections` (provider `google`). Migration `20260923180000_vtid_04372_calendar_google_sync.sql`, applied live 2026-09-23.
 
 `calendar_google_sync` — one row per member:
 
@@ -3097,8 +3109,27 @@ Written only by the gateway (service role); members read their own org's rows vi
 | `accepted_by` | UUID NOT NULL | |
 | `accepted_at` | TIMESTAMPTZ | |
 | `ip_address`, `user_agent` | TEXT | audit (spec §6.2) |
+| `terms_version_id` | UUID FK → partner_terms_versions | VTID-04895; `UNIQUE (partner_organization_id, terms_version_id)`; `terms_version` is filled from it on insert |
+| `content_sha256` | TEXT | VTID-04895; must equal the version's hash. VTID-04909 (applied 2026-10-06): the hash of the binding **German** text, whatever language was on screen |
+| `shown_locale` | TEXT | VTID-04895: `en` or `en+<locale>`. VTID-04909 (applied 2026-10-06): the BCP-47 code of the language on screen, CHECK in `de, en, es, sr, fr, pt-BR, ru, pl, ar, zh-CN, tr` |
 
-Written only by `POST /api/v1/partner-onboarding/:orgId/terms/accept`; members read their own org's rows (RLS).
+Written only by `POST /api/v1/partner-onboarding/:orgId/terms/accept`; members read their own org's rows (RLS). VTID-04895: new rows need `terms_version_id`, `content_sha256` and `shown_locale` (CHECK, NOT VALID); an insert must name the **published** version and its exact hash (trigger); the table is append-only (UPDATE/DELETE raise, except the cascade from deleting the organization).
+
+### partner_terms_versions (VTID-04895)
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID PK | |
+| `version` | TEXT UNIQUE | e.g. `2026-10` |
+| `status` | TEXT CHECK | `draft \| published \| superseded`; partial unique index: one `published` |
+| `requires_reacceptance` | BOOLEAN | material (true) vs editorial (false); the first published version is always true |
+| `binding_locale` | TEXT CHECK | `en` under VTID-04895 (owner decision 2026-10-05); **`de` since VTID-04909 was applied 2026-10-06** (owner decision 2026-10-06: German binding) |
+| `content` | JSONB | `{ <locale>: { title, body_md } }`. VTID-04909: keys are exact BCP-47 codes (`de, en, es, sr, fr, pt-BR, ru, pl, ar, zh-CN, tr`); `de` title and body required by the table, `en` required to publish |
+| `content_sha256` | TEXT | set at publish: sha256(binding title + `\n` + body) — English under VTID-04895, **German** since VTID-04909 was applied (2026-10-06); translations are never hashed |
+| `baseline_version_id` | UUID FK → self | set at publish: itself when material, else the previous version's baseline. Acceptance of any version with the current baseline counts |
+| `created_by`, `created_at`, `updated_at`, `published_by`, `published_at` | | |
+
+Immutable once published (trigger, also for the service role): drafts are edited while they stay drafts; draft → published sets only the publish fields; published → superseded changes only `status`; non-draft rows cannot be deleted. RLS: authenticated read published/superseded; no browser writes. Written by the exafy_admin API (`/api/v1/admin/partner-terms`) through `publish_partner_terms_version(p_id, p_actor)` (service role only). `auth_session_is_delegated(p_session_id)` (service role only) answers `direct \| delegated \| unknown` from `auth.sessions.oauth_client_id`; the accept route accepts only `direct`.
 
 ### partner_organization_members
 
@@ -3469,3 +3500,57 @@ decision 2026-10-04). A failed read or write never fails the response: the
 request falls back to "first seen at this request" and the response's
 `attention_state` source reports it. Rows unseen for more than a day carry
 no meaning and may be deleted.
+
+## Command Hub Overview Ack / Snooze — `ops_attention_acks` (VTID-04886, 2026-10-05) — NOT YET APPLIED
+
+Migration `supabase/migrations/20261005100000_vtid_04886_ops_attention_acks.sql`.
+One row per exafy_admin action on a `GET /api/v1/ops/attention` item (Command
+Hub Overview, plan A Phase 3, plan F5), keyed by the item's env-scoped
+fingerprint. Written only by the gateway (`POST /api/v1/ops/attention/ack` and
+`/snooze` → `services/ops-attention.ts` → `services/ops-attention-reads.ts`,
+service role). RLS on with no client policies: service role only. Idempotent
+(`IF NOT EXISTS`). Each write also emits OASIS `ops.attention.acked` /
+`ops.attention.snoozed`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid | PK, `gen_random_uuid()` |
+| `env` | text | `production` or `staging` (VITANA_ENV); CHECK constrained |
+| `fingerprint` | text | `<env>:<source>:<entity key>` (3–300 chars) |
+| `action` | text | `ack` (shown, de-emphasised) or `snooze` (hidden until expiry, counted) |
+| `reason` | text | NOT NULL, 3–500 chars after trimming |
+| `severity` | text | the item's severity when acted on (`P1`/`P2`/`P3`) |
+| `actor_user_id` | uuid | the exafy_admin's user id |
+| `actor_email` | text | the exafy_admin's email |
+| `vtid` | text | optional linked VTID (`VTID-\d{4,5}`) |
+| `created_at` | timestamptz | default `now()` |
+| `expires_at` | timestamptz | NOT NULL; CHECK `created_at < expires_at <= created_at + 24 h` |
+
+CHECK `ops_attention_acks_p1_never_snoozed`: no `snooze` row with severity
+`P1` (the route refuses it first with 400 `p1_not_snoozable`; a fingerprint
+snoozed at P2 that later reaches P1 is shown again). Indexes:
+`(env, expires_at DESC)` for the active read, `(env, fingerprint, created_at
+DESC)`. The latest unexpired row per fingerprint wins. Tested on a throwaway
+Postgres: `scripts/ci/sql-tests/run-ops-attention-acks-test.sh`.
+
+---
+
+## @mentions — comment `mentions`, `search_mention_candidates()`, mention notification types (VTID-04926)
+
+Migrations: `exafyltd/vitana-v1` `supabase/migrations/20261006140000_vtid_04926_mentions.sql`
+(tables/functions) and this repo's `supabase/migrations/20261006150000_vtid_04926_mention_notification_types.sql`
+(notification switches). Both idempotent; both tested on a throwaway Postgres 16.
+
+| Object | Change |
+|---|---|
+| `profile_post_comments.mentions`, `media_upload_comments.mentions` | new `jsonb NOT NULL DEFAULT '[]'` — `[{user_id, display_name}]`, same shape as `profile_posts.mentions`. Written by the client only when someone is tagged. |
+| `search_mention_candidates(p_query text, p_limit int)` | SECURITY DEFINER, `search_path=public`, granted to `authenticated` only. The only source the @mention picker uses for posts/comments (called over GET). Escapes `\ % _`, needs `auth.uid()`, excludes the caller, `notification_test_actors`, `service_bot_accounts`, and anyone who shares no tenant with the caller. Limit clamped 1–10. |
+| `_mention_recipient_ok(author, tagged)` | guard used by both dispatchers: not the author, not a test/service account, shares a tenant with the author. No client grant. |
+| `_dispatch_post_mention_notifications()` | redefined: adds the guard above and per-post dedupe; otherwise the VTID-03806 body. |
+| `_dispatch_comment_mention_notifications()` + `trg_notify_{profile_post,media_upload}_comment_mention` | AFTER INSERT, only when `mentions` is a non-empty array; sends `comment_mention` (EN/DE by `_notif_user_locale`), `data.url=/post/<post|media>/<id>`; skips the post owner and the parent comment's author (they already get `post_comment`/`comment_reply`). Fail-safe — a bad tag never blocks the comment. |
+| `notification_type_controls` | `chat_mention` and `comment_mention` ON for every tenant (an auto-registered OFF row is switched on; an admin's deliberate OFF is kept). |
+| `notification_categories.mapped_types` | `chat_mention` → `direct_messages`, `comment_mention` → `posts_reactions`. |
+
+Group chat mentions need no schema change: the gateway stores the sanitized
+list in `chat_messages.metadata.mentions` (`routes/chat-groups.ts`,
+`lib/chat-mentions.ts`).

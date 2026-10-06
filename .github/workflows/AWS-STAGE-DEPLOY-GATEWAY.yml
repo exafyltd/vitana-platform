@@ -295,6 +295,31 @@ jobs:
           # JEV_COMMUNITY_ENABLED opens the member plane here (held until the TypeSafe DPA, owner 2026-10-04).
           jq -c '.env += [{name:"JEV_SELFHEAL_PROVIDER_FAILURE_MODE", value:"shadow"}, {name:"JEV_SELFHEAL_INCIDENT_DEDUPE_MODE", value:"shadow"}, {name:"JEV_AGENT_PROGRESS_MODE", value:"shadow"}, {name:"JEV_CLAIM_FEASIBILITY_MODE", value:"shadow"}, {name:"JEV_VOICE_SESSION_OUTCOME_MODE", value:"shadow"}, {name:"JEV_CRM_LEAD_SCORE_MODE", value:"shadow"}, {name:"JEV_CRM_ACCOUNT_CLASSIFICATION_MODE", value:"shadow"}, {name:"JEV_FINDING_DEDUPE_MODE", value:"shadow"}, {name:"JEV_SELFHEAL_PRETRIAGE_MODE", value:"shadow"}, {name:"JEV_CI_FAILURE_ROUTING_MODE", value:"shadow"}, {name:"JEV_REPEAT_RUN_GUARD_MODE", value:"shadow"}, {name:"JEV_SELFHEAL_DEPLOY_CAUSE_MODE", value:"shadow"}, {name:"JEV_FIX_VERIFICATION_MODE", value:"shadow"}, {name:"JEV_VOICE_BACKSTOP_CLUSTERS_MODE", value:"shadow"}, {name:"JEV_VOICE_SLOW_SESSION_MODE", value:"shadow"}, {name:"JEV_PLANNABILITY_MODE", value:"shadow"}, {name:"JEV_TEST_SELECTION_MODE", value:"shadow"}, {name:"JEV_PR_CLASH_MODE", value:"shadow"}, {name:"JEV_CRM_DUPLICATE_ACCOUNT_MODE", value:"shadow"}, {name:"JEV_APPROVAL_RISK_MODE", value:"shadow"}, {name:"JEV_CHANGE_RISK_MODE", value:"shadow"}, {name:"JEV_OPERATOR_ROUTE_MODE", value:"shadow"}, {name:"JEV_VOICE_OPENER_OUTCOMES_MODE", value:"shadow"}, {name:"JEV_LESSON_NOVELTY_MODE", value:"shadow"}, {name:"JEV_PAYMENT_INVOICE_MATCH_MODE", value:"shadow"}, {name:"JEV_PARTNER_ONBOARDING_TRIAGE_MODE", value:"shadow"}, {name:"JEV_COMPANY_DOC_RELEVANCE_MODE", value:"shadow"}, {name:"JEV_DOCUMENT_TYPE_ROUTING_MODE", value:"shadow"}, {name:"JEV_ROOT_CAUSE_ROLLUP_MODE", value:"shadow"}, {name:"JEV_COMMUNITY_INTENT_KIND_MODE", value:"shadow"}, {name:"JEV_COMMUNITY_MARKETPLACE_INTENT_MODE", value:"shadow"}, {name:"JEV_COMMUNITY_WORTH_REMEMBERING_MODE", value:"shadow"}, {name:"JEV_COMMUNITY_TICKET_TRIAGE_MODE", value:"shadow"}]' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
           jq -c '{env, sec: [.sec[].name]}' "$F"
+      # VTID-04923: Live Rooms video (VTID-04904) needs DAILY_API_KEY. Optional,
+      # Jev pattern: wired only when vitana/gateway/staging/daily-api-key exists
+      # (stored by the owner 2026-10-06); absent => not wired, the deploy never
+      # fails and /api/v1/live/health reports daily_configured=false. Rides on
+      # connected-apps.json, merged by name (strip-then-add) in the roll step.
+      - name: Resolve Live Rooms Daily key
+        run: |
+          set -euo pipefail
+          NAME="vitana/gateway/staging/daily-api-key"
+          ERR="$RUNNER_TEMP/daily-describe.err"
+          ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>"$ERR" || true)
+          F="$RUNNER_TEMP/connected-apps.json"
+          if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+            if grep -q ResourceNotFoundException "$ERR"; then
+              echo "  $NAME not found - DAILY_API_KEY not wired (VTID-04923)"
+            elif grep -qE 'AccessDenied|not authorized' "$ERR"; then
+              echo "::warning::$NAME access denied for the deploy role - DAILY_API_KEY not wired: $(head -c 300 "$ERR")"
+            else
+              echo "::warning::$NAME lookup failed - DAILY_API_KEY not wired: $(head -c 300 "$ERR")"
+            fi
+          else
+            echo "  resolved $NAME -> DAILY_API_KEY"
+            jq -c --arg a "$ARN" '.sec += [{name:"DAILY_API_KEY", valueFrom:$a}]' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
+          fi
+          jq -c '{env, sec: [.sec[].name]}' "$F"
       # VTID-04542 latency plan (comment kept outside the run: scalar, VTID-03788
       # size guard): four exact-'true' flags pinned on STAGING ONLY until re-measured
       # here, prod untouched -- Devon pre-connect (04549), cascade sentence streaming
@@ -758,6 +783,9 @@ jobs:
 #     gets default reminders (reconciled into `reminders` every minute).
 #   CALENDAR_MAINTENANCE_ENABLED (VTID-04374) -- hourly rescheduler for
 #     Autopilot/journey suggestions + 6-hourly priority refresh, in-process.
+#   CALENDAR_GOOGLE_SYNC_ENABLED (VTID-04914, owner decision 2026-10-06) --
+#     Google two-way sync; not_configured until the Google OAuth client
+#     secrets exist (Resolve Connected Apps sign-in config, above).
 #   MEMORY_ORB_RECALL_ENABLED (VTID-04452) -- the ORB live prompt reads
 #     memory through the broker; falls back to the legacy read on failure.
 #     Staging only, to measure '[VTID-04452] orb recall in Nms' first.
@@ -1032,20 +1060,18 @@ jobs:
                                                 "OPERATOR_PLANNER_ENABLED",
                                                 "OPERATOR_VTID_SELF_ALLOCATE_ENABLED","OPERATOR_PR_APPROVAL_REQUIRED",
                                                 "OPERATOR_THREADS_ENABLED","OPERATOR_TURN_MEMORY_ENABLED",
-                                                "REMINDERS_INPROCESS_DISPATCH_ENABLED","CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","MEMORY_ORB_RECALL_ENABLED","MEMORY_ORB_RECALL_SHADOW",
+                                                "REMINDERS_INPROCESS_DISPATCH_ENABLED","CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","CALENDAR_GOOGLE_SYNC_ENABLED","MEMORY_ORB_RECALL_ENABLED","MEMORY_ORB_RECALL_SHADOW",
                                                 "FEEDBACK_AUTO_DISPATCH_ENABLED","LEDGER_WRITE_AUTH_MODE","SCHEDULED_NOTIFICATIONS_AUTH_MODE",
                                                 "NAV_V2_ENABLED","NAV_REGISTRY_URL",
                                                 "OPERATOR_SQL_READONLY_ENABLED","OPERATOR_SQL_READONLY_BACKEND",
                                                 "OPERATOR_MACHINE_AUTH_ENABLED",
-                                                "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
-                                                "AURORA_CA_BUNDLE_PATH",
-                                                "GOOGLE_CLOUD_PROJECT","VERTEX_AI_LOCATION",
-                                                "VERTEX_SERBIAN_BRIDGE_ENABLED",
-                                                "VERTEX_RUSSIAN_BRIDGE_ENABLED",
-                                                "GCP_SERVICE_ACCOUNT_JSON",
-                                                "OPERATOR_CODEINTEL_ENABLED", "ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED","ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED","ORCHESTRATOR_DELEGATION_PERSIST_ENABLED","COMMERCE_AI_SETUP_ENABLED","COMMERCE_MCP_ENABLED",
-                                                "DEV_AUTOPILOT_SCAN_TOKEN",
-                                                "DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED",
+                    "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
+                    "AURORA_CA_BUNDLE_PATH",
+                    "GOOGLE_CLOUD_PROJECT","VERTEX_AI_LOCATION","VERTEX_SERBIAN_BRIDGE_ENABLED","VERTEX_RUSSIAN_BRIDGE_ENABLED","GOOGLE_AUTH_AWS_SUPPLIER_ENABLED",
+                    "GCP_SERVICE_ACCOUNT_JSON",
+                    "OPERATOR_CODEINTEL_ENABLED", "ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED","ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED","ORCHESTRATOR_DELEGATION_PERSIST_ENABLED","COMMERCE_AI_SETUP_ENABLED","COMMERCE_MCP_ENABLED","AUTOPILOT_ACTION_REWARD_ENABLED",
+                    "DEV_AUTOPILOT_SCAN_TOKEN",
+                    "DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED",
                                                 "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR",
                                                 "NAV_CONTINUATION_BIND","VITANA_ENV","GATEWAY_URL",
                                                 "AUTOMATIONS_DELIVERY_MODE","AUTOPILOT_HEARTBEAT_ENABLED","DEFAULT_TENANT_ID") | not) ]
@@ -1102,6 +1128,7 @@ jobs:
                           {name:"REMINDERS_INPROCESS_DISPATCH_ENABLED", value:"true"},
                           {name:"CALENDAR_DEFAULT_REMINDERS_ENABLED", value:"true"},
                           {name:"CALENDAR_MAINTENANCE_ENABLED", value:"true"},
+                          {name:"CALENDAR_GOOGLE_SYNC_ENABLED", value:"true"},
                           {name:"FEEDBACK_AUTO_DISPATCH_ENABLED", value:"true"},
                           {name:"LEDGER_WRITE_AUTH_MODE", value:"enforce"},
                           {name:"MEMORY_ORB_RECALL_ENABLED", value:"true"},
@@ -1111,11 +1138,10 @@ jobs:
                           {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"},
                           {name:"GOOGLE_CLOUD_PROJECT", value:"project-da3eb05a-c86e-47cb-85f"},
                           {name:"VERTEX_AI_LOCATION", value:"global"},
-                          {name:"VERTEX_SERBIAN_BRIDGE_ENABLED", value:"true"},
-                          {name:"VERTEX_RUSSIAN_BRIDGE_ENABLED", value:"true"},
+                          {name:"VERTEX_SERBIAN_BRIDGE_ENABLED", value:"true"}, {name:"VERTEX_RUSSIAN_BRIDGE_ENABLED", value:"true"}, {name:"GOOGLE_AUTH_AWS_SUPPLIER_ENABLED", value:"true"},
                           {name:"GCP_SERVICE_ACCOUNT_JSON", value:$GCP_CRED_CONFIG},
                           {name:"OPERATOR_CODEINTEL_ENABLED", value:"true"}, {name:"ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED", value:"true"}, {name:"ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED", value:"true"}, {name:"ORCHESTRATOR_DELEGATION_PERSIST_ENABLED", value:"true"},
-                          {name:"COMMERCE_AI_SETUP_ENABLED", value:"true"}, {name:"COMMERCE_MCP_ENABLED", value:"true"},
+                          {name:"COMMERCE_AI_SETUP_ENABLED", value:"true"}, {name:"COMMERCE_MCP_ENABLED", value:"true"}, {name:"AUTOPILOT_ACTION_REWARD_ENABLED", value:"true"},
                           {name:"CODEINTEL_PLATFORM_REPO_DIR", value:"/repo-platform"},
                           {name:"CODEINTEL_V1_REPO_DIR", value:"/repo-vitana-v1"},
                           {name:"DEV_AUTOPILOT_SCAN_TOKEN", value:$SCAN_TOKEN} ] )
@@ -1244,6 +1270,27 @@ jobs:
             exit 1
           fi
           echo "✓ Nova Sonic health: enabled=$(echo "$NOVA" | jq -r '.enabled') ready=$(echo "$NOVA" | jq -r '.ready') canary_users=$(echo "$NOVA" | jq -r '.canary_user_count')"
+
+      # VTID-04904: read-only, never fails the deploy. Live Rooms need
+      # DAILY_API_KEY on the gateway task definition — an owner prerequisite
+      # this workflow does not place. Reports whether the live task definition
+      # carries it (as env or secret NAME — values are never read or printed)
+      # as a warning annotation when it is missing.
+      - name: Report DAILY_API_KEY presence (live task definition, read-only)
+        continue-on-error: true
+        run: |
+          set +e
+          TD=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].taskDefinition' --output text 2>/dev/null)
+          WHERE=$(aws ecs describe-task-definition --task-definition "$TD" \
+            --query 'taskDefinition.containerDefinitions[0].{env:environment[].name,sec:secrets[].name}' --output json 2>/dev/null \
+            | jq -r '[(if ((.env // []) | index("DAILY_API_KEY")) != null then "env" else empty end), (if ((.sec // []) | index("DAILY_API_KEY")) != null then "secret" else empty end)] | join(",")' 2>/dev/null)
+          if [ -n "$WHERE" ]; then
+            echo "DAILY_API_KEY present on $TD ($WHERE)"
+          else
+            echo "::warning::DAILY_API_KEY is not on the live gateway task definition ($TD) - Live Rooms cannot open video (owner prerequisite, VTID-04904)"
+          fi
+          exit 0
 
       - name: Emit OASIS event + software_versions row (best-effort)
         if: always()

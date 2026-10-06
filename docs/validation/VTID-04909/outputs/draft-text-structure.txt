@@ -1,0 +1,11 @@
+de structure identical sections=21 clauses=63 items=31
+en structure identical sections=21 clauses=63 items=31
+es structure identical sections=21 clauses=63 items=31
+sr structure identical sections=21 clauses=63 items=31
+fr structure identical sections=21 clauses=63 items=31
+pt-BR structure identical sections=21 clauses=63 items=31
+ru structure identical sections=21 clauses=63 items=31
+pl structure identical sections=21 clauses=63 items=31
+ar structure identical sections=21 clauses=63 items=31
+zh-CN structure identical sections=21 clauses=63 items=31
+tr structure identical sections=21 clauses=63 items=31
