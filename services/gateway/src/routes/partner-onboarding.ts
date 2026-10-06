@@ -39,7 +39,7 @@ import {
   type Caller,
 } from '../services/partner-onboarding-service';
 import { detectPlatform } from '../services/platform-detect';
-import { loadBaselineVersions, loadCurrentTerms, requestDelegation, termsForDisplay } from '../services/partner-terms';
+import { availableTermsLocales, loadBaselineVersions, loadCurrentTerms, requestDelegation, termsForDisplay } from '../services/partner-terms';
 import { VERIFICATION_LEVEL_REQUIRED } from '../services/partner-onboarding-checklist';
 import {
   computeVerification,
@@ -428,9 +428,12 @@ router.post('/:orgId/verification/check', requireAuth, requireOrgAdmin(), async 
 
 /**
  * VTID-04895: the terms in force, as the supplier reads them before accepting:
- * the English (binding) text, the caller's language alongside when a
- * translation exists, the version, its content hash and whether this org has
- * already accepted (under the re-acceptance baseline).
+ * the version, its content hash and whether this org has already accepted
+ * (under the re-acceptance baseline).
+ * VTID-04909: one language at a time — `?locale=` (the app language, or the
+ * one the supplier switched to), German when that language is missing — with
+ * the binding German text and the list of languages the version carries. The
+ * hash is the German text's, whatever language is shown.
  */
 router.get('/:orgId/terms', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
   const supabase = getSupabase();
@@ -458,8 +461,6 @@ router.get('/:orgId/terms', requireAuth, requireOrgAdmin(), async (req: Request,
     reacceptance_required: !accepted && rows.length > 0,
   });
 });
-
-const SHOWN_LOCALE = /^en(\+[a-z]{2})?$/;
 
 router.post('/:orgId/terms/accept', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
   const supabase = getSupabase();
@@ -489,9 +490,12 @@ router.post('/:orgId/terms/accept', requireAuth, requireOrgAdmin(), async (req: 
   if (req.body?.content_sha256 !== current.content_sha256) {
     return res.status(409).json({ ok: false, error: 'TERMS_CONTENT_MISMATCH', current_version: current.version });
   }
+  // VTID-04909: the language that was on screen — one this version carries.
+  // It is recorded, never part of the hash: German is binding.
   const shownLocale = typeof req.body?.shown_locale === 'string' ? req.body.shown_locale : '';
-  if (!SHOWN_LOCALE.test(shownLocale)) {
-    return res.status(400).json({ ok: false, error: 'shown_locale must be "en" or "en+<language>"' });
+  const available = availableTermsLocales(current);
+  if (!(available as string[]).includes(shownLocale)) {
+    return res.status(400).json({ ok: false, error: 'INVALID_SHOWN_LOCALE', available_locales: available });
   }
 
   const { org, error } = await loadOrg(supabase, orgId);

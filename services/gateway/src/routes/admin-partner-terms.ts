@@ -10,9 +10,11 @@
  *   POST /:id/publish publish a draft: supersedes the current version in one
  *                     transaction (publish_partner_terms_version)
  *
- * English is binding (owner decision O-3): `content.en.title` and
- * `content.en.body_md` are required; other locales are translations. No terms
- * text lives in code — the owner/legal supplies it through this API.
+ * German is binding (VTID-04909, owner decision 2026-10-06, replacing O-3):
+ * `content.de` and `content.en` (second language) need a title and body;
+ * locale keys are the exact BCP-47 codes in SUPPORTED_TERMS_LOCALES
+ * (`pt-BR`, `zh-CN` — never `pt`/`zh`). No terms text lives in code — the
+ * owner/legal supplies it through this API.
  * Writes are refused for an AI assistant's delegated OAuth token, as for the
  * supplier's acceptance.
  */
@@ -20,7 +22,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { requireAuth, requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
-import { BINDING_LOCALE, requestDelegation } from '../services/partner-terms';
+import { BINDING_LOCALE, REQUIRED_TERMS_LOCALES, SUPPORTED_TERMS_LOCALES, isSupportedTermsLocale, requestDelegation } from '../services/partner-terms';
 
 const router = Router();
 router.use(requireAuth, requireExafyAdmin);
@@ -31,12 +33,27 @@ const VERSION_FIELDS =
 const MAX_TITLE = 300;
 const MAX_BODY = 200_000;
 
-/** Validates `content`: English title + body required; each locale has a title and body. */
+/** Locale keys that look like a supported language but are not its exact code. */
+const NOT_THE_CODE: Record<string, string> = { pt: 'pt-BR', 'pt-br': 'pt-BR', pt_br: 'pt-BR', zh: 'zh-CN', 'zh-cn': 'zh-CN', zh_cn: 'zh-CN' };
+
+/**
+ * Validates `content`: keys are exactly the supported BCP-47 codes; German
+ * (binding) and English (second language) need a title and body; every
+ * locale given has a title and body.
+ */
 export function parseTermsContent(raw: unknown): { ok: true; content: Record<string, { title: string; body_md: string }> } | { ok: false; error: string } {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, error: 'content must be an object of { <locale>: { title, body_md } }' };
   const content: Record<string, { title: string; body_md: string }> = {};
   for (const [locale, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (!/^[a-z]{2}$/.test(locale)) return { ok: false, error: `content locale "${locale}" must be a two-letter code` };
+    if (!isSupportedTermsLocale(locale)) {
+      const hint = NOT_THE_CODE[locale.toLowerCase()] ?? NOT_THE_CODE[locale];
+      return {
+        ok: false,
+        error: hint
+          ? `content locale "${locale}" is not a supported code — use "${hint}"`
+          : `content locale "${locale}" is not supported (use one of ${SUPPORTED_TERMS_LOCALES.join(', ')})`,
+      };
+    }
     const v = (value ?? {}) as Record<string, unknown>;
     const title = typeof v.title === 'string' ? v.title.trim() : '';
     const body = typeof v.body_md === 'string' ? v.body_md.trim() : '';
@@ -44,7 +61,12 @@ export function parseTermsContent(raw: unknown): { ok: true; content: Record<str
     if (title.length > MAX_TITLE || body.length > MAX_BODY) return { ok: false, error: `content.${locale} is too long` };
     content[locale] = { title, body_md: body };
   }
-  if (!content[BINDING_LOCALE]) return { ok: false, error: 'content.en (the binding English text) is required' };
+  for (const req of REQUIRED_TERMS_LOCALES) {
+    if (!content[req]) {
+      const role = req === BINDING_LOCALE ? 'the binding German text' : 'the English text (second language)';
+      return { ok: false, error: `content.${req} (${role}) is required` };
+    }
+  }
   return { ok: true, content };
 }
 
