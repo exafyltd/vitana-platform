@@ -1569,6 +1569,15 @@ Written by the gateway's `services/calendar-reminders.ts` loop (`CALENDAR_DEFAUL
 - `trg_calendar_dedupe_event_rsvp` — AFTER INSERT on `calendar_events` for rows carrying `metadata.meetup_id` from any other source → deletes the trigger-written `community_rsvp` row for the same user+event, so the web client's own row (which it knows how to delete) is the one that stays.
 - The older `trg_rsvp_calendar_sync` / `trg_rsvp_cancel_calendar_sync` on `event_attendance` remain; that table is unused (0 rows).
 
+### calendar_events ← global_community_events (VTID-04915 triggers)
+
+**Purpose:** the host of a community event gets it in their calendar, and changes to an event reach every attendee's entry. Migration `20261006140000_vtid_04915_community_event_host_and_time_sync.sql`. One function, `fn_community_event_to_calendar()` (SECURITY DEFINER, not executable by `anon`/`authenticated`):
+
+- `trg_community_event_host_calendar` — AFTER INSERT → one row for `created_by`, same shape as the VTID-04321 rows plus `metadata.host=true`; skipped without `start_time`/`created_by` or when the host already has a live row. A client-written row arriving later replaces it via `trg_calendar_dedupe_event_rsvp`.
+- `trg_community_event_change_calendar` — AFTER UPDATE OF `start_time, end_time, location, virtual_link, title, description`, only when one actually changed → one set-based UPDATE of every live (not cancelled) row matching `source_ref` or `metadata.meetup_id`. Cancelled rows stay cancelled. Reminders follow through the calendar reminder reconcile.
+- `trg_community_event_delete_calendar` — AFTER DELETE → one set-based cancel of every live row for the event.
+- Tested on a throwaway Postgres: `scripts/ci/sql-tests/vtid-04915-community-event-calendar.test.sql` (CI `SQL-COMMUNITY-EVENT-CALENDAR`).
+
 ### calendar_feed_tokens (VTID-04358)
 
 **Purpose:** the private iCalendar subscription link (`GET /api/v1/calendar/feed/<token>.ics`) that lets Apple/Google/Outlook subscribe to a user's Vitanaland calendar. Migration `20260923170000_vtid_04358_calendar_feed_tokens.sql`, applied live 2026-09-23.
@@ -1584,7 +1593,7 @@ RLS enabled with no policies; `ALL` revoked from `PUBLIC`/`anon`/`authenticated`
 
 ### calendar_google_sync / calendar_google_links / calendar_external_busy (VTID-04372)
 
-**Purpose:** Google Calendar two-way sync. Built, switched off (`CALENDAR_GOOGLE_SYNC_ENABLED` exactly `true` + the Google OAuth client). Push: the member's own community/personal entries go to a "Vitanaland" calendar the app creates in their Google account (scope `calendar.app.created`, so no other Google calendar is ever touched). Pull: only free/busy of their Google primary calendar (scope `calendar.freebusy`), shown as grey busy blocks. OAuth tokens are **not** here — they stay in `social_connections` (provider `google`). Migration `20260923180000_vtid_04372_calendar_google_sync.sql`, applied live 2026-09-23.
+**Purpose:** Google Calendar two-way sync. Switch pinned on in staging and production since VTID-04914 (owner decision 2026-10-06); it runs only once the Google OAuth client is also configured (`CALENDAR_GOOGLE_SYNC_ENABLED` exactly `true` + `GOOGLE_OAUTH_CLIENT_ID`/`SECRET`), otherwise `not_configured`. Push: the member's own community/personal entries go to a "Vitanaland" calendar the app creates in their Google account (scope `calendar.app.created`, so no other Google calendar is ever touched). Pull: only free/busy of their Google primary calendar (scope `calendar.freebusy`), shown as grey busy blocks. OAuth tokens are **not** here — they stay in `social_connections` (provider `google`). Migration `20260923180000_vtid_04372_calendar_google_sync.sql`, applied live 2026-09-23.
 
 `calendar_google_sync` — one row per member:
 

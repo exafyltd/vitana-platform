@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04915",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "scripts/ci/sql-tests/run-community-event-calendar-test.sh",
+      "cwd": ".",
+      "reason": "the platform part of VTID-04915 is a database migration (community event host entry, event edits move entries, delete cancels them) with no gateway code. It is proven against a throwaway Postgres next to the VTID-04321 attendee trigger (CI SQL-COMMUNITY-EVENT-CALENDAR), including two mutation checks. Staging shares the production Supabase project, so verification never creates, edits or deletes an event."
+    }
+  ]
+}
