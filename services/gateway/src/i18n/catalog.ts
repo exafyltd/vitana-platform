@@ -243,6 +243,9 @@ export type GatewayI18nKey =
   // listing
   | 'notif.listing_interest.title'
   | 'notif.listing_interest.body'
+  // VTID-04926: push to a member @mentioned in a group chat message (the body
+  // is the message itself).
+  | 'notif.chat_mention.title'
   // VTID-03604: nightly goodnight push — the "you didn't open ORB tonight"
   // counterpart to the spoken day-close. Fixed catalog text, not
   // LLM-composed: unlike the ORB voice path (CLAUDE.md NEVER-rule 41), a

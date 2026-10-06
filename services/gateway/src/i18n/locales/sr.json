@@ -130,6 +130,7 @@
   "notif.marketplace_listing_removed.body": "Administrator je uklonio „{title}\": {reason}",
   "notif.listing_interest.title": "Interesovanje za tvoj oglas",
   "notif.listing_interest.body": "Neko je zainteresovan za „{title}\".",
+  "notif.chat_mention.title": "{sender} te pominje u „{group}“",
   "notif.day_close.title": "Лаку ноћ 🌙",
   "notif.day_close.body": "Дан је прошао — ако ти нешто још увек пролази кроз главу, реци ми.",
   "notif.partner_test_status_changed.title": "Ažuriranje od {partner_name}",
