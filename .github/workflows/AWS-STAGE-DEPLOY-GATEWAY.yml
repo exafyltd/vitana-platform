@@ -295,6 +295,31 @@ jobs:
           # JEV_COMMUNITY_ENABLED opens the member plane here (held until the TypeSafe DPA, owner 2026-10-04).
           jq -c '.env += [{name:"JEV_SELFHEAL_PROVIDER_FAILURE_MODE", value:"shadow"}, {name:"JEV_SELFHEAL_INCIDENT_DEDUPE_MODE", value:"shadow"}, {name:"JEV_AGENT_PROGRESS_MODE", value:"shadow"}, {name:"JEV_CLAIM_FEASIBILITY_MODE", value:"shadow"}, {name:"JEV_VOICE_SESSION_OUTCOME_MODE", value:"shadow"}, {name:"JEV_CRM_LEAD_SCORE_MODE", value:"shadow"}, {name:"JEV_CRM_ACCOUNT_CLASSIFICATION_MODE", value:"shadow"}, {name:"JEV_FINDING_DEDUPE_MODE", value:"shadow"}, {name:"JEV_SELFHEAL_PRETRIAGE_MODE", value:"shadow"}, {name:"JEV_CI_FAILURE_ROUTING_MODE", value:"shadow"}, {name:"JEV_REPEAT_RUN_GUARD_MODE", value:"shadow"}, {name:"JEV_SELFHEAL_DEPLOY_CAUSE_MODE", value:"shadow"}, {name:"JEV_FIX_VERIFICATION_MODE", value:"shadow"}, {name:"JEV_VOICE_BACKSTOP_CLUSTERS_MODE", value:"shadow"}, {name:"JEV_VOICE_SLOW_SESSION_MODE", value:"shadow"}, {name:"JEV_PLANNABILITY_MODE", value:"shadow"}, {name:"JEV_TEST_SELECTION_MODE", value:"shadow"}, {name:"JEV_PR_CLASH_MODE", value:"shadow"}, {name:"JEV_CRM_DUPLICATE_ACCOUNT_MODE", value:"shadow"}, {name:"JEV_APPROVAL_RISK_MODE", value:"shadow"}, {name:"JEV_CHANGE_RISK_MODE", value:"shadow"}, {name:"JEV_OPERATOR_ROUTE_MODE", value:"shadow"}, {name:"JEV_VOICE_OPENER_OUTCOMES_MODE", value:"shadow"}, {name:"JEV_LESSON_NOVELTY_MODE", value:"shadow"}, {name:"JEV_PAYMENT_INVOICE_MATCH_MODE", value:"shadow"}, {name:"JEV_PARTNER_ONBOARDING_TRIAGE_MODE", value:"shadow"}, {name:"JEV_COMPANY_DOC_RELEVANCE_MODE", value:"shadow"}, {name:"JEV_DOCUMENT_TYPE_ROUTING_MODE", value:"shadow"}, {name:"JEV_ROOT_CAUSE_ROLLUP_MODE", value:"shadow"}, {name:"JEV_COMMUNITY_INTENT_KIND_MODE", value:"shadow"}, {name:"JEV_COMMUNITY_MARKETPLACE_INTENT_MODE", value:"shadow"}, {name:"JEV_COMMUNITY_WORTH_REMEMBERING_MODE", value:"shadow"}, {name:"JEV_COMMUNITY_TICKET_TRIAGE_MODE", value:"shadow"}]' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
           jq -c '{env, sec: [.sec[].name]}' "$F"
+      # VTID-04923: Live Rooms video (VTID-04904) needs DAILY_API_KEY. Optional,
+      # Jev pattern: wired only when vitana/gateway/staging/daily-api-key exists
+      # (stored by the owner 2026-10-06); absent => not wired, the deploy never
+      # fails and /api/v1/live/health reports daily_configured=false. Rides on
+      # connected-apps.json, merged by name (strip-then-add) in the roll step.
+      - name: Resolve Live Rooms Daily key
+        run: |
+          set -euo pipefail
+          NAME="vitana/gateway/staging/daily-api-key"
+          ERR="$RUNNER_TEMP/daily-describe.err"
+          ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>"$ERR" || true)
+          F="$RUNNER_TEMP/connected-apps.json"
+          if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+            if grep -q ResourceNotFoundException "$ERR"; then
+              echo "  $NAME not found - DAILY_API_KEY not wired (VTID-04923)"
+            elif grep -qE 'AccessDenied|not authorized' "$ERR"; then
+              echo "::warning::$NAME access denied for the deploy role - DAILY_API_KEY not wired: $(head -c 300 "$ERR")"
+            else
+              echo "::warning::$NAME lookup failed - DAILY_API_KEY not wired: $(head -c 300 "$ERR")"
+            fi
+          else
+            echo "  resolved $NAME -> DAILY_API_KEY"
+            jq -c --arg a "$ARN" '.sec += [{name:"DAILY_API_KEY", valueFrom:$a}]' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
+          fi
+          jq -c '{env, sec: [.sec[].name]}' "$F"
       # VTID-04542 latency plan (comment kept outside the run: scalar, VTID-03788
       # size guard): four exact-'true' flags pinned on STAGING ONLY until re-measured
       # here, prod untouched -- Devon pre-connect (04549), cascade sentence streaming
