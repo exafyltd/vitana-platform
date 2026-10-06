@@ -144,8 +144,6 @@ p) a burla de mecanismos de proteção da plataforma.
 
 ## 15. Responsabilidade
 
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
-
 15.1 A VITANALAND responde, nos termos da legislação aplicável, por danos que a VITANALAND causar com dolo ou culpa grave, por fraude, bem como em todos os demais casos em que a responsabilidade não possa ser excluída ou limitada por força de norma cogente.
 
 15.2 Nos demais casos, a VITANALAND responde somente por danos decorrentes do descumprimento de obrigações da VITANALAND previstas nestes Termos de Parceria. Na medida permitida por lei, fica excluída a responsabilidade por danos indiretos e consequenciais, bem como por lucros cessantes. Na medida permitida por lei, a responsabilidade total da VITANALAND decorrente destes Termos de Parceria ou relacionada a eles fica limitada à soma das remunerações e comissões que a VITANALAND tenha recebido do Parceiro ou de operações com o Parceiro nos doze meses anteriores ao evento que deu origem ao dano.
@@ -155,8 +153,6 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
 15.4 A VITANALAND empenha-se em operar a plataforma de forma confiável, mas não garante disponibilidade ininterrupta ou livre de erros. Manutenções, falhas e alterações da plataforma podem restringir temporariamente a disponibilidade.
 
 ## 16. Indenização
-
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
 
 16.1 O Parceiro manterá a VITANALAND indene em relação a reclamações de terceiros, incluindo custos razoáveis de defesa jurídica, na medida em que tais reclamações decorram do fato de que
 a) os produtos ou serviços do Parceiro são ilícitos,
@@ -193,16 +189,12 @@ g) o Parceiro age de outra forma em violação de suas obrigações.
 
 ## 20. Lei aplicável e foro
 
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
-
 20.1 Estes Termos de Parceria são regidos pelas leis dos Emirados Árabes Unidos, salvo quando disposições legais imperativas determinarem o contrário.
-
-FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
 
 20.2 Na medida em que a lei permitir, os tribunais competentes de Abu Dhabi, Emirados Árabes Unidos, terão jurisdição sobre litígios decorrentes destes Termos de Parceria ou relacionados a eles.
 
 ## 21. Contato e notificações legais
 
-21.1 As notificações legais à VITANALAND devem ser enviadas para: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Emirados Árabes Unidos; [LEGAL NOTICE CONTACT TO CONFIRM].
+21.1 As notificações legais à VITANALAND devem ser enviadas para: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Emirados Árabes Unidos; legal@vitanaland.com.
 
 21.2 As notificações ao Parceiro serão enviadas para os dados de contato que o Parceiro tiver registrado na VITANALAND.

@@ -144,8 +144,6 @@ p) obchodzenie mechanizmów ochronnych platformy.
 
 ## 15. Odpowiedzialność
 
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
-
 15.1 VITANALAND ponosi odpowiedzialność zgodnie z przepisami prawa za szkody wyrządzone przez VITANALAND umyślnie lub wskutek rażącego niedbalstwa, za oszustwo, a także we wszystkich innych przypadkach, w których odpowiedzialności nie można wyłączyć ani ograniczyć na mocy bezwzględnie obowiązujących przepisów prawa.
 
 15.2 W pozostałym zakresie VITANALAND odpowiada wyłącznie za szkody wynikające z naruszenia obowiązków VITANALAND określonych w niniejszych Warunkach dla Partnerów. Odpowiedzialność za szkody pośrednie i następcze oraz za utracone korzyści jest wyłączona w zakresie dozwolonym przez prawo. Łączna odpowiedzialność VITANALAND wynikająca z niniejszych Warunków dla Partnerów lub z nimi związana jest, w zakresie dozwolonym przez prawo, ograniczona do sumy wynagrodzeń i prowizji otrzymanych przez VITANALAND od Partnera lub z transakcji z Partnerem w okresie dwunastu miesięcy poprzedzających zdarzenie wyrządzające szkodę.
@@ -155,8 +153,6 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
 15.4 VITANALAND dokłada starań, aby zapewnić niezawodne działanie platformy, nie gwarantuje jednak jej nieprzerwanej ani wolnej od błędów dostępności. Prace konserwacyjne, zakłócenia i zmiany platformy mogą czasowo ograniczać jej dostępność.
 
 ## 16. Zwolnienie z odpowiedzialności
-
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
 
 16.1 Partner zwalnia VITANALAND z odpowiedzialności z tytułu roszczeń osób trzecich, w tym z uzasadnionych kosztów obrony prawnej, w zakresie, w jakim roszczenia te wynikają z tego, że
 a) produkty lub usługi Partnera są niezgodne z prawem,
@@ -193,16 +189,12 @@ g) Partner w inny sposób narusza swoje obowiązki.
 
 ## 20. Prawo właściwe i jurysdykcja
 
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
-
 20.1 Niniejsze Warunki dla Partnerów podlegają prawu Zjednoczonych Emiratów Arabskich, chyba że bezwzględnie obowiązujące przepisy prawa stanowią inaczej.
-
-FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
 
 20.2 W zakresie dozwolonym przez prawo do rozstrzygania sporów wynikających z niniejszych Warunków dla Partnerów lub z nimi związanych właściwe są sądy w Abu Zabi, Zjednoczone Emiraty Arabskie.
 
 ## 21. Kontakt i zawiadomienia prawne
 
-21.1 Zawiadomienia prawne do VITANALAND należy kierować na adres: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Zjednoczone Emiraty Arabskie; [LEGAL NOTICE CONTACT TO CONFIRM].
+21.1 Zawiadomienia prawne do VITANALAND należy kierować na adres: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Zjednoczone Emiraty Arabskie; legal@vitanaland.com.
 
 21.2 Zawiadomienia do Partnera są przesyłane na dane kontaktowe podane przez Partnera w VITANALAND.

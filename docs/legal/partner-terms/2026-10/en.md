@@ -144,8 +144,6 @@ p) circumvention of the platform's protective mechanisms.
 
 ## 15. Liability
 
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
-
 15.1 VITANALAND is liable in accordance with the statutory provisions for damage caused by VITANALAND intentionally or through gross negligence, for fraud, and in all other cases in which liability cannot be excluded or limited under mandatory law.
 
 15.2 In all other respects, VITANALAND is liable only for damage resulting from a breach of VITANALAND's obligations under these Partner Terms. Liability for indirect and consequential damage and for loss of profit is excluded to the extent permitted by law. VITANALAND's aggregate liability arising out of or in connection with these Partner Terms is limited, to the extent permitted by law, to the total fees and commissions that VITANALAND received from the Partner, or from transactions with the Partner, in the twelve months preceding the event giving rise to the damage.
@@ -155,8 +153,6 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
 15.4 VITANALAND endeavours to operate the platform reliably but does not guarantee uninterrupted or error-free availability. Maintenance, disruptions and changes to the platform may temporarily limit availability.
 
 ## 16. Indemnification
-
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
 
 16.1 The Partner shall indemnify VITANALAND against third-party claims, including reasonable costs of legal defence, to the extent that such claims are based on the fact that
 a) the Partner's products or services are unlawful,
@@ -193,16 +189,12 @@ g) the Partner otherwise acts in breach of its obligations.
 
 ## 20. Governing Law and Jurisdiction
 
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
-
 20.1 These Partner Terms are governed by the laws of the United Arab Emirates, except where mandatory legal provisions require otherwise.
-
-FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
 
 20.2 To the extent legally permitted, the competent courts of Abu Dhabi, United Arab Emirates, shall have jurisdiction over disputes arising out of or in connection with these Partner Terms.
 
 ## 21. Contact and Legal Notices
 
-21.1 Legal notices to VITANALAND shall be addressed to: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, United Arab Emirates; [LEGAL NOTICE CONTACT TO CONFIRM].
+21.1 Legal notices to VITANALAND shall be addressed to: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, United Arab Emirates; legal@vitanaland.com.
 
 21.2 Notices to the Partner shall be sent to the contact details the Partner has stored with VITANALAND.

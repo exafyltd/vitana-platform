@@ -144,8 +144,6 @@ p) 规避平台的保护机制。
 
 ## 15. 责任
 
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
-
 15.1 对于 VITANALAND 因故意或重大过失造成的损害、欺诈，以及根据强制性法律不得排除或限制责任的所有其他情形，VITANALAND 依照法律规定承担责任。
 
 15.2 除此之外，VITANALAND 仅对因其违反本合作伙伴条款项下义务而造成的损害承担责任。在法律允许的范围内，排除对间接损失、后果性损失及利润损失的责任。在法律允许的范围内，VITANALAND 因本合作伙伴条款引起或与之相关的全部责任，以造成损害的事件发生前十二个月内 VITANALAND 从合作伙伴处或从与合作伙伴的交易中所收取的报酬和佣金总额为限。
@@ -155,8 +153,6 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
 15.4 VITANALAND 致力于平台的可靠运行，但不保证平台不间断或无错误地可用。维护、故障及平台变更可能暂时限制可用性。
 
 ## 16. 免责补偿
-
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
 
 16.1 对于第三方提出的索赔，在其基于以下原因的范围内，合作伙伴应使 VITANALAND 免于承担该等索赔（包括合理的法律抗辩费用）：
 a) 合作伙伴的产品或服务违法；
@@ -193,16 +189,12 @@ g) 合作伙伴有其他违反义务的行为。
 
 ## 20. 适用法律与管辖
 
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
-
 20.1 本合作伙伴条款受阿拉伯联合酋长国法律管辖，但强制性法律规定另有要求的除外。
-
-FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
 
 20.2 在法律允许的范围内，因本合作伙伴条款引起或与之相关的争议，由阿拉伯联合酋长国阿布扎比有管辖权的法院管辖。
 
 ## 21. 联系方式与法律通知
 
-21.1 致 VITANALAND 的法律通知应发送至：EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi，阿拉伯联合酋长国；[LEGAL NOTICE CONTACT TO CONFIRM]。
+21.1 致 VITANALAND 的法律通知应发送至：EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi，阿拉伯联合酋长国；legal@vitanaland.com。
 
 21.2 致合作伙伴的通知将发送至合作伙伴在 VITANALAND 登记的联系方式。

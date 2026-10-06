@@ -144,8 +144,6 @@ p) la elusión de los mecanismos de protección de la plataforma.
 
 ## 15. Responsabilidad
 
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
-
 15.1 VITANALAND responderá conforme a las disposiciones legales de los daños que VITANALAND cause con dolo o negligencia grave, en caso de fraude, así como en todos los demás casos en que la responsabilidad no pueda excluirse ni limitarse conforme al derecho imperativo.
 
 15.2 En los demás casos, VITANALAND solo responderá de los daños que se deriven del incumplimiento de las obligaciones de VITANALAND conforme a las presentes Condiciones para Socios. Queda excluida, en la medida en que la ley lo permita, la responsabilidad por daños indirectos y consecuentes, así como por lucro cesante. La responsabilidad total de VITANALAND derivada de las presentes Condiciones para Socios o relacionada con ellas se limita, en la medida en que la ley lo permita, al importe total de las remuneraciones y comisiones que VITANALAND haya percibido del Socio o de operaciones con el Socio durante los doce meses anteriores al hecho causante del daño.
@@ -155,8 +153,6 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
 15.4 VITANALAND procura un funcionamiento fiable de la plataforma, pero no garantiza una disponibilidad ininterrumpida ni libre de errores. El mantenimiento, las interrupciones y los cambios de la plataforma pueden limitar temporalmente su disponibilidad.
 
 ## 16. Indemnidad
-
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
 
 16.1 El Socio mantendrá indemne a VITANALAND frente a las reclamaciones de terceros, incluidos los costes razonables de defensa jurídica, en la medida en que dichas reclamaciones se basen en que
 a) los productos o servicios del Socio son ilícitos,
@@ -193,16 +189,12 @@ g) el Socio incurre de otro modo en un incumplimiento de sus obligaciones.
 
 ## 20. Legislación aplicable y jurisdicción
 
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
-
 20.1 Las presentes Condiciones para Socios se rigen por las leyes de los Emiratos Árabes Unidos, salvo que disposiciones legales imperativas establezcan otra cosa.
-
-FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
 
 20.2 En la medida en que la ley lo permita, los tribunales competentes de Abu Dabi, Emiratos Árabes Unidos, serán competentes para conocer de las controversias derivadas de las presentes Condiciones para Socios o relacionadas con ellas.
 
 ## 21. Contacto y notificaciones legales
 
-21.1 Las notificaciones legales dirigidas a VITANALAND deberán remitirse a: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Emiratos Árabes Unidos; [LEGAL NOTICE CONTACT TO CONFIRM].
+21.1 Las notificaciones legales dirigidas a VITANALAND deberán remitirse a: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Emiratos Árabes Unidos; legal@vitanaland.com.
 
 21.2 Las notificaciones al Socio se efectuarán a los datos de contacto que el Socio haya registrado en VITANALAND.

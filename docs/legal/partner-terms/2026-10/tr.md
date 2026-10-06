@@ -144,8 +144,6 @@ p) platformun koruma mekanizmalarının atlatılması.
 
 ## 15. Sorumluluk
 
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
-
 15.1 VITANALAND; kasten veya ağır ihmalle neden olduğu zararlardan, dolandırıcılıktan ve sorumluluğun emredici hukuk kuralları uyarınca hariç tutulamadığı veya sınırlandırılamadığı diğer tüm hallerde kanun hükümleri uyarınca sorumludur.
 
 15.2 Bunun dışında VITANALAND, yalnızca VITANALAND'ın işbu İş Ortağı Koşullarından doğan yükümlülüklerinin ihlaline dayanan zararlardan sorumludur. Dolaylı zararlar ve sonuç zararları ile yoksun kalınan kâr için sorumluluk, kanunen izin verilen ölçüde hariç tutulmuştur. VITANALAND'ın işbu İş Ortağı Koşullarından doğan veya bunlarla bağlantılı toplam sorumluluğu, kanunen izin verilen ölçüde, zarara yol açan olaydan önceki on iki ay içinde VITANALAND'ın İş Ortağından veya İş Ortağı ile yapılan işlemlerden elde ettiği ücret ve komisyonların toplamı ile sınırlıdır.
@@ -155,8 +153,6 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
 15.4 VITANALAND, platformun güvenilir şekilde işletilmesi için çaba gösterir; ancak kesintisiz veya hatasız erişilebilirliği garanti etmez. Bakım, arızalar ve platformda yapılan değişiklikler erişilebilirliği geçici olarak kısıtlayabilir.
 
 ## 16. Tazmin ve Ari Tutma
-
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
 
 16.1 İş Ortağı, makul hukuki savunma masrafları dahil olmak üzere üçüncü kişilerin taleplerine karşı, bu talepler aşağıdaki hususlara dayandığı ölçüde VITANALAND'ı ari tutar:
 a) İş Ortağının ürün veya hizmetlerinin hukuka aykırı olması,
@@ -193,16 +189,12 @@ g) İş Ortağının başka bir şekilde yükümlülüklerine aykırı davranmas
 
 ## 20. Uygulanacak Hukuk ve Yetkili Mahkeme
 
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
-
 20.1 İşbu İş Ortağı Koşulları, emredici yasal hükümler aksini gerektirmedikçe Birleşik Arap Emirlikleri hukukuna tabidir.
-
-FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
 
 20.2 Hukuken izin verilen ölçüde, işbu İş Ortağı Koşullarından doğan veya bunlarla bağlantılı uyuşmazlıklarda Abu Dabi, Birleşik Arap Emirlikleri'ndeki yetkili mahkemeler yetkilidir.
 
 ## 21. İletişim ve Hukuki Bildirimler
 
-21.1 VITANALAND'a yönelik hukuki bildirimler şu adrese gönderilmelidir: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Birleşik Arap Emirlikleri; [LEGAL NOTICE CONTACT TO CONFIRM].
+21.1 VITANALAND'a yönelik hukuki bildirimler şu adrese gönderilmelidir: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Birleşik Arap Emirlikleri; legal@vitanaland.com.
 
 21.2 İş Ortağına yapılacak bildirimler, İş Ortağının VITANALAND'da kayıtlı iletişim bilgilerine gönderilir.
