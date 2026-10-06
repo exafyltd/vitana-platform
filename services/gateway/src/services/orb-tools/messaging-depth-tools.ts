@@ -374,7 +374,7 @@ export const tool_send_group_chat_message: Handler = async (args, id, sb) => {
               group_id: group.id,
               sender_id: id.user_id,
               message_id: messageId,
-              url: `/inbox/g/${group.id}`,
+              url: `/inbox/g/${group.id}/msg/${messageId}`, // VTID-04928
             },
           },
           sb,

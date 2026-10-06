@@ -603,7 +603,8 @@ async function fanoutGroupNotifications(
           sender_id: senderId,
           sender_name: senderName,
           message_id: messageId,
-          url: `/inbox/g/${groupId}`,
+          // VTID-04928: open the message that was received, not the group's top.
+          url: `/inbox/g/${groupId}/msg/${messageId}`,
         },
       },
       supabase,
@@ -822,7 +823,7 @@ router.post('/:id/refanout-welcome', requireAuth, requireExafyAdmin, async (req:
             sender_name: 'Vitana',
             message_id: welcome.id,
             idempotency_key: idemKey,
-            url: `/inbox/g/${groupId}`,
+            url: `/inbox/g/${groupId}/msg/${welcome.id}`, // VTID-04928
           },
         },
         supabase,
