@@ -1641,6 +1641,7 @@ router.get('/health', async (_req: Request, res: Response) => {
 router.post('/onboarding-coach-tick', async (req: Request, res: Response) => {
   const auth = evaluateScheduledNotificationsAuth(req);
   if (!auth.ok) return res.status(auth.status ?? 401).json({ ok: false, error: auth.error });
+  // impact-allow-no-oasis: runCoachTick emits the OASIS events itself (one tick_completed per tick + real stage changes).
 
   const config = resolveCoachConfig();
   if (config.mode === 'disabled-on-staging') {

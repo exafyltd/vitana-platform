@@ -9,3 +9,5 @@ npx jest test/vtid-04892-onboarding-coach.test.ts                             # 
 npm run test:roles                                                            # 105 passed
 npx jest test/scheduled-notifications-*.test.ts test/vtid-04677-scheduled-notifications-auth.test.ts   # 53 passed
 node docs/validation/VTID-04892/pglite-onboarding-coach-check.mjs supabase/migrations/20261005130000_vtid_04892_onboarding_coach.sql   # 27 PASS (outputs/pglite-onboarding-coach.txt)
+npx jest test/vtid-04892-onboarding-journey-pacer.test.ts                     # 4 passed; mutation: a code-only new surface -> drift guard fails (restored)
+cd services/gateway && npx jest --silent                                    # full suite: 1511 suites passed (1 skipped), 24,061 tests passed

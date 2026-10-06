@@ -13,6 +13,7 @@ import { VITANA_ENV } from '../env';
 
 const router = Router();
 
+// public-route: mode only, no member data — the read-only staging suite (rule 48) checks it without a sign-in.
 router.get('/status', (_req: Request, res: Response) => {
   const config = resolveCoachConfig();
   res.json({ ok: true, mode: config.mode, reason: config.reason, env: VITANA_ENV });

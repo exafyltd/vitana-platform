@@ -24,6 +24,9 @@ TEST: services/gateway/test/vtid-04892-onboarding-coach.test.ts
 AC-6 Migration `20261005130000_vtid_04892_onboarding_coach.sql`: coach state (members read their own row), decision log and touch ledger with RLS and no client writes; `claim_onboarding_touch` gives one touch per member per local day with exactly one retry after a failed send, `finish_onboarding_touch` moves only pending rows, both service_role only; the pacer's `user_proactive_touches.surface` CHECK is widened to the code's 11 surfaces + `onboarding_coach` (NOT VALID, then VALIDATE; live rows checked read-only first: only priority_card and welcome_banner exist). Applied to a throwaway Postgres twice, 27 checks; an unknown live surface aborts the whole migration with nothing half-applied.
 TEST: docs/validation/VTID-04892/pglite-onboarding-coach-check.mjs (outputs/pglite-onboarding-coach.txt)
 
+AC-6b The pacer's TypeScript surface union and the latest migration's CHECK list the same surfaces (drift guard; adding a surface to the code without the CHECK fails it — mutation-checked), and `onboarding_coach` is once per day and counts toward a quiet member's cross-surface cap.
+TEST: services/gateway/test/vtid-04892-onboarding-journey-pacer.test.ts
+
 AC-7 The new route file is claimed by the `health` atlas domain; the role-separation suite stays green.
 TEST: services/gateway/test/vtid-04560-role-separation-regression.test.ts
 

@@ -29,7 +29,7 @@
   },
   {
    "kind": "existing",
-   "ref": "npx jest test/vtid-04892-onboarding-coach.test.ts test/vtid-04560-role-separation-regression.test.ts",
+   "ref": "npx jest test/vtid-04892-onboarding-coach.test.ts test/vtid-04892-onboarding-journey-pacer.test.ts test/vtid-04560-role-separation-regression.test.ts",
    "cwd": "services/gateway",
    "reason": "The coach writes rows and staging shares the production database, so the tick never runs on staging (409 disabled-on-staging, proven in the suite). Its rules, the shadow-only tick (writes only coach tables, sends nothing, strict exclusion), a 90-day simulation and the tick's own token enforcement are proven in vtid-04892-onboarding-coach; the migration (one touch per local day, one retry, service-role only, pacer CHECK widening) is proven over a throwaway Postgres by docs/validation/VTID-04892/pglite-onboarding-coach-check.mjs (outputs/pglite-onboarding-coach.txt). test:roles covers the new route file's atlas domain."
   }
