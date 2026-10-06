@@ -144,8 +144,6 @@ p) zaobilaženje zaštitnih mehanizama platforme.
 
 ## 15. Odgovornost
 
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
-
 15.1 VITANALAND odgovara u skladu sa zakonskim propisima za štetu koju VITANALAND prouzrokuje namerno ili krajnjom nepažnjom, za prevaru, kao i u svim drugim slučajevima u kojima se odgovornost prema prinudnim propisima ne može isključiti ili ograničiti.
 
 15.2 U ostalim slučajevima VITANALAND odgovara samo za štetu koja proizlazi iz povrede obaveza VITANALAND po ovim Partnerskim uslovima. Odgovornost za posrednu i posledičnu štetu, kao i za izmaklu korist, isključena je u meri u kojoj je to zakonom dozvoljeno. Ukupna odgovornost VITANALAND po osnovu ili u vezi sa ovim Partnerskim uslovima ograničena je, u meri u kojoj je to zakonom dozvoljeno, na zbir naknada i provizija koje je VITANALAND u periodu od dvanaest meseci pre događaja koji je prouzrokovao štetu primio od Partnera ili iz poslova sa Partnerom.
@@ -155,8 +153,6 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
 15.4 VITANALAND nastoji da obezbedi pouzdan rad platforme, ali ne garantuje neprekidnu dostupnost niti dostupnost bez grešaka. Održavanje, smetnje i izmene platforme mogu privremeno ograničiti dostupnost.
 
 ## 16. Oslobađanje od odgovornosti
-
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
 
 16.1 Partner oslobađa VITANALAND od odgovornosti po zahtevima trećih lica, uključujući razumne troškove pravne odbrane, u meri u kojoj se ti zahtevi zasnivaju na tome da
 a) su proizvodi ili usluge Partnera nezakoniti,
@@ -193,16 +189,12 @@ g) se Partner na drugi način ponaša protivno svojim obavezama.
 
 ## 20. Merodavno pravo i nadležnost suda
 
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
-
 20.1 Na ove Partnerske uslove primenjuje se pravo Ujedinjenih Arapskih Emirata, osim ako prinudni propisi ne određuju drugačije.
-
-FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
 
 20.2 U meri u kojoj je to pravno dozvoljeno, za sporove koji proističu iz ovih Partnerskih uslova ili su u vezi sa njima nadležni su nadležni sudovi u Abu Dabiju, Ujedinjeni Arapski Emirati.
 
 ## 21. Kontakt i pravna obaveštenja
 
-21.1 Pravna obaveštenja za VITANALAND upućuju se na: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Ujedinjeni Arapski Emirati; [LEGAL NOTICE CONTACT TO CONFIRM].
+21.1 Pravna obaveštenja za VITANALAND upućuju se na: EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Ujedinjeni Arapski Emirati; legal@vitanaland.com.
 
 21.2 Obaveštenja Partneru dostavljaju se na kontakt podatke koje je Partner evidentirao kod VITANALAND.

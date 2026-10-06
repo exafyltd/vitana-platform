@@ -144,8 +144,6 @@ p) le contournement des mécanismes de protection de la plateforme.
 
 ## 15. Responsabilité
 
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
-
 15.1 VITANALAND est responsable, conformément aux dispositions légales, des dommages causés intentionnellement ou par négligence grave par VITANALAND, en cas de fraude, ainsi que dans tous les autres cas où la responsabilité ne peut être exclue ou limitée en vertu de dispositions impératives.
 
 15.2 Pour le surplus, VITANALAND n'est responsable que des dommages résultant d'un manquement de VITANALAND à ses obligations au titre des présentes Conditions partenaires. Dans la mesure permise par la loi, la responsabilité pour les dommages indirects et consécutifs ainsi que pour le manque à gagner est exclue. Dans la mesure permise par la loi, la responsabilité totale de VITANALAND découlant des présentes Conditions partenaires ou en lien avec celles-ci est limitée au montant total des rémunérations et commissions que VITANALAND a perçues du Partenaire ou au titre d'opérations conclues avec le Partenaire au cours des douze mois précédant le fait générateur du dommage.
@@ -155,8 +153,6 @@ FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
 15.4 VITANALAND s'efforce d'assurer un fonctionnement fiable de la plateforme, mais ne garantit pas une disponibilité ininterrompue ou exempte d'erreurs. La maintenance, les dysfonctionnements et les modifications de la plateforme peuvent limiter temporairement sa disponibilité.
 
 ## 16. Garantie contre les réclamations de tiers
-
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
 
 16.1 Le Partenaire garantit VITANALAND contre les réclamations de tiers, y compris les frais raisonnables de défense juridique, dans la mesure où ces réclamations résultent du fait que :
 a) les produits ou services du Partenaire sont illicites ;
@@ -193,16 +189,12 @@ g) le Partenaire manque de toute autre manière à ses obligations.
 
 ## 20. Droit applicable et juridiction compétente
 
-FINAL LEGAL COUNSEL REVIEW REQUIRED BEFORE PUBLICATION
-
 20.1 Les présentes Conditions partenaires sont régies par le droit des Émirats arabes unis, sauf dispositions légales impératives contraires.
-
-FINAL LEGAL COUNSEL CONFIRMATION REQUIRED
 
 20.2 Dans la mesure permise par la loi, les litiges découlant des présentes Conditions partenaires ou en lien avec celles-ci relèvent de la compétence des tribunaux compétents d'Abu Dhabi, Émirats arabes unis.
 
 ## 21. Contact et notifications juridiques
 
-21.1 Les notifications juridiques destinées à VITANALAND doivent être adressées à : EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Émirats arabes unis ; [LEGAL NOTICE CONTACT TO CONFIRM].
+21.1 Les notifications juridiques destinées à VITANALAND doivent être adressées à : EXAFY LTD, DD-16-121-018, Floor 16, Al Khatem Tower, WeWork Hub71, ADGM Square, Al Maryah Island, Abu Dhabi, Émirats arabes unis ; legal@vitanaland.com.
 
 21.2 Les notifications destinées au Partenaire sont envoyées aux coordonnées que le Partenaire a enregistrées auprès de VITANALAND.
