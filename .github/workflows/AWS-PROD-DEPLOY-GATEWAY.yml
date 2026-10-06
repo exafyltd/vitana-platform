@@ -947,6 +947,23 @@ jobs:
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Internal token wired: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].secrets[] | select(.name == "GATEWAY_INTERNAL_TOKEN") | .name]')"
 
+      - name: Build task-definition (Live Rooms Daily key)
+        # VTID-04923: DAILY_API_KEY for Live Rooms video (VTID-04904). Stored by
+        # the owner 2026-10-06 as vitana/gateway/prod/daily-api-key (same value
+        # as staging's). Full ARN, for the same reason as JEV_SECRET_ARN above:
+        # this role has no secretsmanager:Describe*. The execution role reads
+        # vitana/* already. Takes effect only on an owner-approved prod deploy.
+        env:
+          DAILY_SECRET_ARN: arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/prod/daily-api-key-9wlfyX
+        run: |
+          set -e
+          NEW_DEF=$(jq --arg D "$DAILY_SECRET_ARN" '
+            .containerDefinitions[0].secrets |=
+              ( [ (. // [])[] | select(.name != "DAILY_API_KEY") ]
+                + [ {name:"DAILY_API_KEY", valueFrom:$D} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Daily key wired: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].secrets[] | select(.name == "DAILY_API_KEY") | .name]')"
+
       - name: Build task-definition (reward sweep off)
         # VTID-04896: the VTNA reward sweep (VTID-04878) pays real wallets every
         # 6 h from inside the production gateway and has never run anywhere —
