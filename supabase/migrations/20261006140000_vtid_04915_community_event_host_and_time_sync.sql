@@ -28,6 +28,9 @@
 --   * AFTER DELETE -> ONE set-based cancel of every live entry for it.
 --
 -- Backfill: hosts of events that start in the future get their entry.
+--
+-- impact-allow-solo-migration: triggers + backfill only; existing code
+-- (the /calendar window read, the reminder reconcile) already reads these rows.
 
 CREATE OR REPLACE FUNCTION public.fn_community_event_to_calendar()
 RETURNS trigger
