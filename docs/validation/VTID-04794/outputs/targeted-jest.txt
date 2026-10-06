@@ -1,0 +1,6 @@
+    ✓ an empty reply cut off by the cap falls back to the stage fallback (307 ms)
+    ✓ with no fallback configured it fails with a named reason, never ok with no text (46 ms)
+    ✓ a truncated reply WITH text is still returned, marked truncated (55 ms)
+    ✓ a truncated reply carrying a tool call is still returned (53 ms)
+    ✓ an empty reply that finished normally is unchanged (ok) (56 ms)
+Tests:       5 passed, 5 total
