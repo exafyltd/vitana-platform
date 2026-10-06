@@ -1008,6 +1008,48 @@ jobs:
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Commerce MCP pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "COMMERCE_MCP_ENABLED")]')"
 
+      - name: Build task-definition (calendar gates)
+        # VTID-04914 (owner decision 2026-10-06): the calendar loops run in
+        # production, not only on staging (AWS-STAGE-DEPLOY-GATEWAY.yml pins
+        # the same two). Staging already runs them against the shared
+        # Supabase project; reminder rows upsert on (calendar_event_id,
+        # calendar_occurrence_start, reminder_offset_minutes) with
+        # ignore-duplicates and the dispatch claim uses SKIP LOCKED, so a
+        # second reconciler adds redundancy, not duplicate reminders.
+        #   CALENDAR_DEFAULT_REMINDERS_ENABLED (VTID-04338)
+        #   CALENDAR_MAINTENANCE_ENABLED (VTID-04374)
+        #   CALENDAR_GOOGLE_SYNC_ENABLED (VTID-04372) -- with no Google OAuth
+        #     client the sync reports not_configured and does nothing.
+        # Google OAuth client: the deploy role has no secretsmanager:Describe*
+        # (VTID-03880), so the full ARNs come from repository variables the
+        # operator sets after scripts/aws/setup-connected-apps-oauth-secrets.sh
+        # --env prod provision --apply. Empty variable -> not wired: a
+        # valueFrom pointing at a missing secret stops every new task from
+        # starting (VTID-04849). Rollback: change a pin to "false" here.
+        env:
+          GOOGLE_ID_ARN: ${{ vars.PROD_GOOGLE_OAUTH_CLIENT_ID_ARN }}
+          GOOGLE_SECRET_ARN: ${{ vars.PROD_GOOGLE_OAUTH_CLIENT_SECRET_ARN }}
+        run: |
+          set -e
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name | IN("CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","CALENDAR_GOOGLE_SYNC_ENABLED") | not) ]
+                + [ {name:"CALENDAR_DEFAULT_REMINDERS_ENABLED", value:"true"},
+                    {name:"CALENDAR_MAINTENANCE_ENABLED", value:"true"},
+                    {name:"CALENDAR_GOOGLE_SYNC_ENABLED", value:"true"} ] )' /tmp/vitana-new-task-def.json)
+          if [ -n "$GOOGLE_ID_ARN" ] && [ -n "$GOOGLE_SECRET_ARN" ]; then
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg I "$GOOGLE_ID_ARN" --arg S "$GOOGLE_SECRET_ARN" '
+              .containerDefinitions[0].secrets |=
+                ( [ (. // [])[] | select(.name | IN("GOOGLE_OAUTH_CLIENT_ID","GOOGLE_OAUTH_CLIENT_SECRET") | not) ]
+                  + [ {name:"GOOGLE_OAUTH_CLIENT_ID", valueFrom:$I},
+                      {name:"GOOGLE_OAUTH_CLIENT_SECRET", valueFrom:$S} ] )')
+            echo "Google OAuth client wired from repository variables"
+          else
+            echo "Google OAuth client not wired (PROD_GOOGLE_OAUTH_CLIENT_ID_ARN / _SECRET_ARN unset); sync stays not_configured"
+          fi
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Calendar gates pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name | startswith("CALENDAR_")) | .name]')"
+
       - name: Build task-definition (2/2 — optional overrides) + register + roll the service
         id: roll
         env:
