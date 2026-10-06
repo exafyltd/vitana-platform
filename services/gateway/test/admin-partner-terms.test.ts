@@ -1,6 +1,8 @@
 /**
  * VTID-04895 — partner terms lifecycle: the exafy_admin publishing API and the
  * terms service (current version fails closed, display, assistant-token check).
+ * VTID-04909: German is binding; English required; exact BCP-47 locale codes;
+ * German fallback; the hash never depends on the language shown.
  * The database rules themselves (immutability, one published, append-only,
  * hash/version check, baseline) are proven against a real Postgres in
  * scripts/ci/sql-tests/vtid-04895-partner-terms.test.sql (CI SQL-PARTNER-TERMS).
@@ -65,7 +67,14 @@ jest.mock('../src/lib/supabase', () => ({ getSupabase: () => supa }));
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const router = require('../src/routes/admin-partner-terms').default;
 import { parseTermsContent } from '../src/routes/admin-partner-terms';
-import { loadCurrentTerms, requestDelegation, termsForDisplay, type PublishedTerms } from '../src/services/partner-terms';
+import {
+  loadCurrentTerms,
+  requestDelegation,
+  resolveTermsLocale,
+  SUPPORTED_TERMS_LOCALES,
+  termsForDisplay,
+  type PublishedTerms,
+} from '../src/services/partner-terms';
 
 const app = () => {
   const a = express();
@@ -74,7 +83,8 @@ const app = () => {
   return a;
 };
 const ADMIN = { user_id: 'admin-1', exafy_admin: true };
-const EN = { en: { title: 'Partner Terms', body_md: 'Binding text' } };
+// VTID-04909: the smallest valid content — German (binding) and English (second language).
+const EN = { de: { title: 'Partnerbedingungen', body_md: 'Verbindlicher Text' }, en: { title: 'Partner Terms', body_md: 'English text' } };
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -112,20 +122,24 @@ describe('admin publishing API — access', () => {
 });
 
 describe('drafts', () => {
-  it('creates a draft with English binding text; re-acceptance defaults to required', async () => {
+  it('creates a draft with German binding text; re-acceptance defaults to required', async () => {
     let row: any;
     handlers.partner_terms_versions = (c) => { row = c.args[0]; return { data: { id: 'tv-1', status: 'draft', ...row }, error: null }; };
-    const r = await request(app()).post('/api/v1/admin/partner-terms').send({ version: ' 2026-10 ', content: { ...EN, de: { title: 'T', body_md: 'B' } } });
+    const r = await request(app()).post('/api/v1/admin/partner-terms').send({ version: ' 2026-10 ', content: { ...EN, 'pt-BR': { title: 'T', body_md: 'B' } } });
     expect(r.status).toBe(201);
-    expect(row).toMatchObject({ version: '2026-10', binding_locale: 'en', requires_reacceptance: true, created_by: 'admin-1' });
-    expect(row.content.de).toEqual({ title: 'T', body_md: 'B' });
+    expect(row).toMatchObject({ version: '2026-10', binding_locale: 'de', requires_reacceptance: true, created_by: 'admin-1' });
+    expect(row.content['pt-BR']).toEqual({ title: 'T', body_md: 'B' });
     expect(emitOasisEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'partner_terms.draft_saved', actor_id: 'admin-1', payload: expect.objectContaining({ action: 'created' }) }));
   });
 
-  it('400 without the English text; 409 for an existing version', async () => {
+  it('400 without the German or the English text; 409 for an existing version', async () => {
     handlers.partner_terms_versions = () => ({ data: null, error: null });
-    const noEn = await request(app()).post('/api/v1/admin/partner-terms').send({ version: '2026-10', content: { de: { title: 'T', body_md: 'B' } } });
+    const noEn = await request(app()).post('/api/v1/admin/partner-terms').send({ version: '2026-10', content: { de: EN.de } });
     expect(noEn.status).toBe(400);
+    const noDe = await request(app()).post('/api/v1/admin/partner-terms').send({ version: '2026-10', content: { en: EN.en } });
+    expect(noDe.status).toBe(400);
+    expect(noDe.body.error).toMatch(/content\.de .*German/);
+    expect(calls.filter((x) => x.table === 'partner_terms_versions')).toHaveLength(0);
     handlers.partner_terms_versions = () => ({ data: null, error: { code: '23505', message: 'dup' } });
     const dup = await request(app()).post('/api/v1/admin/partner-terms').send({ version: '2026-10', content: EN });
     expect(dup.status).toBe(409);
@@ -189,19 +203,65 @@ describe('publish', () => {
 });
 
 describe('content validation', () => {
-  it('English title and body are required; locales are two letters', () => {
+  const T = { title: 'T', body_md: 'B' };
+
+  it('German is mandatory: missing object, title or body is an error naming German', () => {
     expect(parseTermsContent(EN).ok).toBe(true);
-    expect(parseTermsContent({ de: { title: 'T', body_md: 'B' } }).ok).toBe(false);
-    expect(parseTermsContent({ en: { title: ' ', body_md: 'B' } }).ok).toBe(false);
-    expect(parseTermsContent({ ...EN, deu: { title: 'T', body_md: 'B' } }).ok).toBe(false);
+    for (const de of [undefined, { body_md: 'B' }, { title: 'T' }, { title: ' ', body_md: 'B' }, { title: 'T', body_md: '  ' }]) {
+      const r = parseTermsContent({ en: EN.en, ...(de ? { de } : {}) });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toMatch(/content\.de/);
+    }
+  });
+
+  it('English is required as the second language', () => {
+    const r = parseTermsContent({ de: EN.de });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/content\.en .*English/);
+    expect(parseTermsContent({ de: EN.de, en: { title: ' ', body_md: 'B' } }).ok).toBe(false);
+  });
+
+  it('accepts all 11 exact codes, including pt-BR and zh-CN', () => {
+    const all = Object.fromEntries(SUPPORTED_TERMS_LOCALES.map((k) => [k, T]));
+    expect(SUPPORTED_TERMS_LOCALES).toEqual(['de', 'en', 'es', 'sr', 'fr', 'pt-BR', 'ru', 'pl', 'ar', 'zh-CN', 'tr']);
+    const r = parseTermsContent(all);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(Object.keys(r.content)).toEqual(SUPPORTED_TERMS_LOCALES);
+  });
+
+  it.each([
+    ['pt', /use "pt-BR"/],
+    ['zh', /use "zh-CN"/],
+    ['pt-br', /use "pt-BR"/],
+    ['zh-cn', /use "zh-CN"/],
+    ['EN', /not supported/],
+    ['de-DE', /not supported/],
+    ['it', /not supported/],
+    ['deu', /not supported/],
+  ])('rejects %s — never mapped silently', (key, msg) => {
+    const r = parseTermsContent({ ...EN, [key]: T });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(msg);
+  });
+
+  it('rejects anything that is not an object of texts', () => {
     expect(parseTermsContent(null).ok).toBe(false);
+    expect(parseTermsContent([EN]).ok).toBe(false);
   });
 });
 
 describe('terms service', () => {
   const TERMS: PublishedTerms = {
     id: 'tv-1', version: '2026-10', baseline_version_id: 'tv-1', content_sha256: 'h1', requires_reacceptance: true,
-    published_at: '2026-10-05T00:00:00Z', content: { en: { title: 'Partner Terms', body_md: 'Binding' }, de: { title: 'Partnerbedingungen', body_md: 'Übersetzung' } },
+    published_at: '2026-10-05T00:00:00Z',
+    content: {
+      de: { title: 'Partnerbedingungen', body_md: 'Verbindlich' },
+      en: { title: 'Partner Terms', body_md: 'English' },
+      'pt-BR': { title: 'Termos de Parceria', body_md: 'Português' },
+      'zh-CN': { title: '合作伙伴条款', body_md: '中文' },
+      ar: { title: 'شروط الشركاء', body_md: 'عربي' },
+      sr: { title: 'Partnerski uslovi', body_md: 'Srpski' },
+    },
   };
 
   it('the current version fails closed: missing table or error → not published', async () => {
@@ -212,11 +272,40 @@ describe('terms service', () => {
     expect(await loadCurrentTerms(supa)).toEqual(TERMS);
   });
 
-  it('display: English binding always; a translation alongside only when it exists', () => {
-    expect(termsForDisplay(TERMS, 'de-DE')).toMatchObject({ binding: { title: 'Partner Terms' }, translation: { locale: 'de' }, shown_locale: 'en+de' });
-    expect(termsForDisplay(TERMS, 'en')).toMatchObject({ translation: null, shown_locale: 'en' });
-    expect(termsForDisplay(TERMS, 'sr')).toMatchObject({ translation: null, shown_locale: 'en' });
-    expect(termsForDisplay(TERMS, null).shown_locale).toBe('en');
+  it('display: the requested language, German binding text alongside, languages in owner order', () => {
+    expect(termsForDisplay(TERMS, 'de-DE')).toMatchObject({
+      binding_locale: 'de', binding: { title: 'Partnerbedingungen' }, locale: 'de', text: { title: 'Partnerbedingungen' },
+      translation: null, shown_locale: 'de', fallback: false, direction: 'ltr',
+    });
+    expect(termsForDisplay(TERMS, 'en-US')).toMatchObject({ locale: 'en', text: { title: 'Partner Terms' }, translation: { locale: 'en' }, shown_locale: 'en' });
+    expect(termsForDisplay(TERMS, 'pt-BR')).toMatchObject({ locale: 'pt-BR', text: { title: 'Termos de Parceria' }, shown_locale: 'pt-BR' });
+    expect(termsForDisplay(TERMS, 'zh-CN')).toMatchObject({ locale: 'zh-CN', text: { title: '合作伙伴条款' } });
+    expect(termsForDisplay(TERMS, 'ar-XA')).toMatchObject({ locale: 'ar', direction: 'rtl' });
+    expect(termsForDisplay(TERMS, 'de').available_locales).toEqual(['de', 'en', 'sr', 'pt-BR', 'ar', 'zh-CN']);
+  });
+
+  it('a missing translation falls back to German, never English', () => {
+    for (const req of ['fr-FR', 'tr-TR', 'pt', 'pt-PT', 'zh', 'zh-TW', 'xx']) {
+      expect(termsForDisplay(TERMS, req)).toMatchObject({ locale: 'de', shown_locale: 'de', fallback: true, text: { title: 'Partnerbedingungen' } });
+    }
+    expect(termsForDisplay(TERMS, null)).toMatchObject({ locale: 'de', fallback: false });
+    expect(termsForDisplay(TERMS, '')).toMatchObject({ locale: 'de', fallback: false });
+  });
+
+  it('the hash is the version\'s canonical German hash whatever language is shown', () => {
+    const hashes = new Set(['de-DE', 'en-US', 'sr-RS', 'pt-BR', 'ar-XA', 'zh-CN', 'fr-FR', null].map((l) => termsForDisplay(TERMS, l).content_sha256));
+    expect([...hashes]).toEqual(['h1']);
+  });
+
+  it('maps every app catalog key to its terms language', () => {
+    const all = [...SUPPORTED_TERMS_LOCALES];
+    const table: Array<[string, string]> = [
+      ['de-DE', 'de'], ['en-US', 'en'], ['es-ES', 'es'], ['sr-RS', 'sr'], ['fr-FR', 'fr'], ['pt-BR', 'pt-BR'],
+      ['ru-RU', 'ru'], ['pl-PL', 'pl'], ['ar-XA', 'ar'], ['zh-CN', 'zh-CN'], ['tr-TR', 'tr'],
+      ['de', 'de'], ['pt_BR', 'pt-BR'], ['zh_cn', 'zh-CN'], ['fr-CA', 'fr'], ['sr-Latn-RS', 'sr'],
+    ];
+    for (const [req, want] of table) expect(resolveTermsLocale(req, all)).toEqual({ locale: want, fallback: false });
+    for (const req of ['pt', 'pt-PT', 'zh', 'zh-TW', 'it-IT']) expect(resolveTermsLocale(req, all)).toEqual({ locale: 'de', fallback: true });
   });
 
   it('assistant check: a client_id claim never reaches the session lookup; RPC errors refuse', async () => {

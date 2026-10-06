@@ -1,10 +1,11 @@
 name: SQL-PARTNER-TERMS
-run-name: 'partner terms lifecycle against a throwaway Postgres [VTID: VTID-04895] (${{ github.ref_name }})'
+run-name: 'partner terms lifecycle against a throwaway Postgres [VTID: VTID-04895 VTID-04909] (${{ github.ref_name }})'
 
 # VTID-04895 — runs the partner terms lifecycle migration against a disposable
 # Postgres service container: published versions immutable, one published at a
 # time, publish/supersede, the re-acceptance baseline, append-only acceptances
-# with hash/version checks, the delegated-session lookup, privileges. Never
+# with hash/version checks, the delegated-session lookup, privileges; and
+# (VTID-04909) German binding + the migration's empty-table guard. Never
 # runs against Supabase.
 
 on:
@@ -40,5 +41,8 @@ jobs:
         run: |
           set -o pipefail
           scripts/ci/sql-tests/run-partner-terms-test.sh 2>&1 | tee /tmp/terms.log
-      - name: Assert the test ran to the end
-        run: grep -q "^PASS vtid-04895 partner terms lifecycle" /tmp/terms.log
+      - name: Assert every test ran to the end
+        run: |
+          grep -q "^PASS vtid-04895 partner terms lifecycle" /tmp/terms.log
+          grep -q "^PASS vtid-04909 partner terms german binding" /tmp/terms.log
+          grep -q "^PASS vtid-04909 migration refuses unless empty" /tmp/terms.log

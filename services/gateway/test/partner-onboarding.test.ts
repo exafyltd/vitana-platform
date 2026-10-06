@@ -137,10 +137,16 @@ const COMPANY = { legal_name: 'Acme GmbH', country: 'DE', vat_id: 'DE123456789',
 const TERMS_V = {
   id: 'tv-2026-09', version: '2026-09', baseline_version_id: 'tv-2026-09', content_sha256: 'hash-2026-09',
   requires_reacceptance: true, published_at: '2026-10-05T00:00:00Z',
-  content: { en: { title: 'Partner Terms', body_md: 'Binding text' }, de: { title: 'Partnerbedingungen', body_md: 'Übersetzung' } },
+  // VTID-04909: German binding; English second; translations under exact BCP-47 codes.
+  content: {
+    de: { title: 'Partnerbedingungen', body_md: 'Verbindlicher Text' },
+    en: { title: 'Partner Terms', body_md: 'English text' },
+    ar: { title: 'شروط الشركاء', body_md: 'نص' },
+    'pt-BR': { title: 'Termos de Parceria', body_md: 'Texto' },
+  } as Record<string, { title: string; body_md: string }>,
 };
 let publishedTerms: typeof TERMS_V | null;
-const ACCEPT = { terms_version: '2026-09', content_sha256: 'hash-2026-09', shown_locale: 'en' };
+const ACCEPT = { terms_version: '2026-09', content_sha256: 'hash-2026-09', shown_locale: 'de' };
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -300,11 +306,28 @@ describe('POST /:orgId/terms/accept', () => {
     expect(r.body.error).toBe('TERMS_CONTENT_MISMATCH');
   });
 
-  it('400 for a shown_locale that is not en or en+<language>', async () => {
+  it.each(['en+de', 'pt', 'zh-CN', 'fr', '', 'DE'])('400 for shown_locale %p: not a language this version carries', async (shown) => {
+    let inserted = false;
     wireOrg(org());
+    handlers.partner_terms_acceptances = (c) => { if (c.op === 'insert') inserted = true; return { data: [], error: null }; };
     const r = await request(app()).post('/api/v1/partner-onboarding/org-1/terms/accept').set('Authorization', 'Bearer owner-1')
-      .send({ ...ACCEPT, shown_locale: 'de' });
+      .send({ ...ACCEPT, shown_locale: shown });
     expect(r.status).toBe(400);
+    expect(r.body).toMatchObject({ error: 'INVALID_SHOWN_LOCALE', available_locales: ['de', 'en', 'pt-BR', 'ar'] });
+    expect(inserted).toBe(false);
+  });
+
+  it.each(['de', 'en', 'pt-BR', 'ar'])('accepting while %s is on screen binds the same German hash', async (shown) => {
+    let row: any = null;
+    wireOrg(org());
+    handlers.partner_terms_acceptances = (c) => {
+      if (c.op === 'insert') { row = c.args[0]; return { data: null, error: null }; }
+      return { data: [{ terms_version: '2026-09' }], error: null };
+    };
+    const r = await request(app()).post('/api/v1/partner-onboarding/org-1/terms/accept').set('Authorization', 'Bearer owner-1')
+      .send({ ...ACCEPT, shown_locale: shown });
+    expect(r.status).toBe(200);
+    expect(row).toMatchObject({ terms_version_id: 'tv-2026-09', content_sha256: 'hash-2026-09', shown_locale: shown });
   });
 
   it('a version published between reading and accepting is refused by the database as stale (409)', async () => {
@@ -332,18 +355,18 @@ describe('POST /:orgId/terms/accept', () => {
       return { data: [{ terms_version: '2026-09' }], error: null };
     };
     const r = await request(app()).post('/api/v1/partner-onboarding/org-1/terms/accept').set('Authorization', 'Bearer owner-1')
-      .set('User-Agent', 'jest-agent').send({ ...ACCEPT, shown_locale: 'en+de' });
+      .set('User-Agent', 'jest-agent').send({ ...ACCEPT, shown_locale: 'pt-BR' });
     expect(r.status).toBe(200);
     // VTID-04895: business, user, exact version (string + id), content hash, language shown; time by default.
     expect(row).toMatchObject({
       partner_organization_id: 'org-1', terms_version: '2026-09', terms_version_id: 'tv-2026-09', content_sha256: 'hash-2026-09',
-      shown_locale: 'en+de', accepted_by: OWNER, user_agent: 'jest-agent',
+      shown_locale: 'pt-BR', accepted_by: OWNER, user_agent: 'jest-agent',
     });
     expect(typeof row.ip_address).toBe('string');
     expect(r.body.checklist.steps.find((s: any) => s.key === 'terms').status).toBe('done');
     expect(emitOasisEventMock).toHaveBeenCalledWith(expect.objectContaining({
       type: 'partner_org.terms_accepted',
-      payload: expect.objectContaining({ terms_version_id: 'tv-2026-09', content_sha256: 'hash-2026-09', shown_locale: 'en+de' }),
+      payload: expect.objectContaining({ terms_version_id: 'tv-2026-09', content_sha256: 'hash-2026-09', shown_locale: 'pt-BR' }),
     }));
     // The assistant check ran on the caller's own session.
     expect(calls.find((c) => c.table === 'rpc:auth_session_is_delegated')?.args[0]).toEqual({ p_session_id: 'sess-owner' });
@@ -373,24 +396,27 @@ describe('GET /:orgId/terms (VTID-04895)', () => {
     expect(r.body).toMatchObject({ published: false, terms: null, accepted: false });
   });
 
-  it('shows the English binding text, the German translation alongside, the version and its hash', async () => {
+  it('shows the caller language, the binding German text, the version and its German hash', async () => {
     wireOrg(org());
-    const r = await read('de');
+    const r = await read('pt-BR');
     expect(r.body.terms).toMatchObject({
-      version: '2026-09', content_sha256: 'hash-2026-09', binding_locale: 'en',
-      binding: { title: 'Partner Terms', body_md: 'Binding text' },
-      translation: { locale: 'de', title: 'Partnerbedingungen' },
-      shown_locale: 'en+de',
+      version: '2026-09', content_sha256: 'hash-2026-09', binding_locale: 'de',
+      binding: { title: 'Partnerbedingungen', body_md: 'Verbindlicher Text' },
+      locale: 'pt-BR', text: { title: 'Termos de Parceria' }, fallback: false, direction: 'ltr',
+      available_locales: ['de', 'en', 'pt-BR', 'ar'], shown_locale: 'pt-BR',
     });
     expect(r.body.accepted).toBe(false);
     expect(r.body.reacceptance_required).toBe(false);
   });
 
-  it('English only when the caller language has no translation', async () => {
+  it('German when the caller language has no translation (never English); Arabic is right-to-left', async () => {
     wireOrg(org());
-    const r = await read('fr');
-    expect(r.body.terms.translation).toBeNull();
-    expect(r.body.terms.shown_locale).toBe('en');
+    const fr = await read('fr-FR');
+    expect(fr.body.terms).toMatchObject({ locale: 'de', fallback: true, text: { title: 'Partnerbedingungen' }, shown_locale: 'de' });
+    const none = await read();
+    expect(none.body.terms).toMatchObject({ locale: 'de', fallback: false });
+    const ar = await read('ar-XA');
+    expect(ar.body.terms).toMatchObject({ locale: 'ar', direction: 'rtl', content_sha256: 'hash-2026-09' });
   });
 
   it('an acceptance of an earlier version with the same baseline (editorial update) still counts', async () => {
