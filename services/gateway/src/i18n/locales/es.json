@@ -130,6 +130,7 @@
   "notif.marketplace_listing_removed.body": "Un administrador eliminó «{title}»: {reason}",
   "notif.listing_interest.title": "Interés en tu anuncio",
   "notif.listing_interest.body": "Alguien está interesado en «{title}».",
+  "notif.chat_mention.title": "{sender} te mencionó en «{group}»",
   "notif.day_close.title": "Buenas noches 🌙",
   "notif.day_close.body": "El día ha terminado — si todavía tienes algo en mente, cuéntamelo.",
   "notif.partner_test_status_changed.title": "Actualización de {partner_name}",

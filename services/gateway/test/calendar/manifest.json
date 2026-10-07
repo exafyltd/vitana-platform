@@ -133,6 +133,11 @@
       "tests": [
         "test/vtid-04602-04604-go-live.test.ts"
       ]
+    },
+    "src/services/calendar-share.ts": {
+      "tests": [
+        "test/vtid-04916-calendar-share.test.ts"
+      ]
     }
   }
 }

@@ -187,14 +187,15 @@ describe('flags and routes', () => {
     expect((await request(a).post('/api/v1/calendar/reprioritize')).status).toBe(200);
   });
 
-  it('the loop is wired at boot and pinned on staging only', () => {
+  it('the loop is wired at boot and pinned on staging and production', () => {
     const index = fs.readFileSync(path.resolve(__dirname, '../src/index.ts'), 'utf8');
     expect(index).toContain('startCalendarMaintenanceLoop()');
     const root = path.resolve(__dirname, '../../..');
     const stage = fs.readFileSync(path.join(root, '.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml'), 'utf8');
     expect(stage).toContain('{name:"CALENDAR_MAINTENANCE_ENABLED", value:"true"}');
     const prod = fs.readFileSync(path.join(root, '.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml'), 'utf8');
-    expect(prod).not.toContain('CALENDAR_MAINTENANCE_ENABLED');
+    // VTID-04914 (owner decision 2026-10-06): production pins it too.
+    expect(prod).toContain('{name:"CALENDAR_MAINTENANCE_ENABLED", value:"true"}');
   });
 });
 

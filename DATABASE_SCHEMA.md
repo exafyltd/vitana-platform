@@ -1402,6 +1402,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-10-05 | **VTID-04892 — Vitana Onboarding Assistant, slice 1 (shadow).** New tables (RLS on, service role writes only): `onboarding_coach_state` (one row per cohort member: stage d0…d61_90/done, pilot_stage_override, next_action_key, last_touch_at, snoozed_until, ignored_streak, opted_out_at; members read their own row), `onboarding_coach_decisions` (what the coach decided or would do, unique per member + local day + mode), `onboarding_touch_ledger` (one onboarding touch per member per local day, status pending/sent/failed, one retry). New functions (service role only): `claim_onboarding_touch(uuid, uuid, date, text, text)`, `finish_onboarding_touch(bigint, text)`. `user_proactive_touches.surface` CHECK widened to the presence pacer's 11 surfaces + `onboarding_coach` (NOT VALID then VALIDATE) — the four newer surfaces were previously rejected and never counted. Migration `20261005130000_vtid_04892_onboarding_coach.sql`. | Claude | VTID-04892 |
 | 2026-10-06 | VTID-04909, **applied 2026-10-06 10:40 UTC** via `RUN-MIGRATION.yml` run 37451365925 (VTID-04911; pre-check 0 versions / 0 acceptances; owner-approved; migration `20261006120000_vtid_04909_partner_terms_german_binding.sql`): partner terms become **German-binding**. `partner_terms_versions.binding_locale` default and CHECK `= 'de'`; `partner_terms_versions_binding_text` now requires `content.de` title + body; `publish_partner_terms_version()` hashes `sha256(UTF-8(content.de.title \|\| E'\\n' \|\| content.de.body_md))` (same construction, German substituted) and refuses without an English title + body (`PARTNER_TERMS_ENGLISH_MISSING`); new CHECK `partner_terms_acceptances_shown_locale_supported` (`de, en, es, sr, fr, pt-BR, ru, pl, ar, zh-CN, tr`); comments updated. The migration **refuses to run unless both tables hold 0 rows** (verified read-only 0/0 on 2026-10-06) and changes nothing when it refuses. Tested on a throwaway Postgres incl. the refusal (`scripts/ci/sql-tests/run-partner-terms-test.sh`, CI `SQL-PARTNER-TERMS`). Until applied, gateway draft writes (`binding_locale 'de'`) are refused by the old CHECK — no terms can be created meanwhile. | Claude Code | VTID-04909 |
 | 2026-10-04 | VTID-04868 hardening, **committed, NOT applied** (migration `20261004120000_vtid_04868_plan_sparring_hardening.sql`, review findings on PR #3899): `allocate_global_vtid` 4-arg dropped → 5-arg `(p_source, p_layer, p_module, p_sparring_id uuid DEFAULT NULL, p_plan_hash text DEFAULT NULL)` with the bounded 1000-step collision-skipping loop restored (service_role only); `_plan_sparring_gate_eval` binds a sparring id only when `metadata.plan_hash` = the session's `final_plan_hash` (`plan_hash_missing` / `plan_hash_mismatch` → `invalid`; log mode still never raises); `plan_sparring_append_round(uuid, jsonb)` dropped → `(uuid, jsonb, int p_expected_round)` raising SQLSTATE `PS409` on a stale/duplicate append or a non-`in_progress` session (service_role only). No table or config change. Rollback `docs/validation/VTID-04868/rollback.sql` reverses both VTID-04868 migrations. Tested twice + rollback on a throwaway Postgres (`scripts/ci/test-vtid-04868-plan-sparring.sh`). | Claude Code | VTID-04868 |
 | 2026-10-04 | VTID-04868, **applied live 2026-10-04 08:26 UTC (RUN-MIGRATION run 37188907901)** (migration `20261004110000_vtid_04868_plan_sparring_gate.sql`, Plan Sparring Gate P1, LOG MODE): tables `plan_sparring_sessions`, `plan_sparring_config` (row mode='log'), `plan_sparring_shadow_log` (RLS on, no anon/authenticated access); role `vitana_governance_owner` (NOLOGIN); `allocate_global_vtid` 3-arg dropped → 4-arg with `p_sparring_id uuid DEFAULT NULL` (service_role only); `submit_plan_sparring_record()`, `plan_sparring_append_round()`; BEFORE INSERT trigger `trg_plan_sparring_check` on `vtid_ledger` (log mode never raises); partial unique index `vtid_ledger_sparring_id_unique`. Rollback `docs/validation/VTID-04868/rollback.sql`. Tested twice + rollback on a throwaway Postgres (`scripts/ci/test-vtid-04868-plan-sparring.sh`). See the section above. | Claude Code | VTID-04868 |
@@ -1460,6 +1461,7 @@ CREATE TABLE my_new_table (
 | 2026-09-23 | New tables `calendar_google_sync`, `calendar_google_links`, `calendar_external_busy` for Google Calendar two-way sync (switched off). No tokens stored — they stay in `social_connections`. RLS on, no policies, no browser grants. | Claude | VTID-04372 |
 | 2026-09-24 | New tables `calendar_push_targets`, `calendar_push_links`: Outlook and iCloud calendar push into a member-owned "Vitanaland" calendar. RLS on, no policies, no browser grants. | Claude | VTID-04436 |
 | 2026-09-24 | `connected_app_settings.app_id` CHECK gains `outlook-contacts` (Outlook contacts import; rows land in `contacts` with `source='microsoft'`). | Claude | VTID-04449 |
+| 2026-10-06 | Triggers on `global_community_events` → `calendar_events`: the host gets an entry on create, edits to time/place/title move every live entry for the event, delete cancels them; future hosts backfilled. No table/column change. | Claude | VTID-04915 |
 | 2026-05-12 | Added `cover_url`, `cover_generated_at`, `cover_source` to `user_intents` for the Find-a-Match cover-photo flow (user upload OR server-side OpenAI Images generation OR curated fallback). Idx on `(requester_user_id, cover_generated_at)` for per-user rate-limit. | Claude | BOOTSTRAP-INTENT-COVER-GEN |
 | 2026-05-20 | Added `decision_policy` + `policy_render_block` (Phase B.1 of decision-contract refactor). Versioned, tenant-aware, time-bounded externalized policy values + localized render fragments. Schema only — no consumer reads yet (lands in Phase B.4). | Claude | VTID-03113 |
 | 2026-05-20 | Seeded Phase B vertical-proof rows: 5 `decision_policy` rows (session-recency bucket thresholds) + 64 `policy_render_block` rows (8 greeting buckets × 8 languages). English content authoritative; non-`en` rows carry `notes='seeded from en; awaiting translation'`. Still no consumer reads yet — that's Phase B.4. | Claude | VTID-03114 |
@@ -1568,6 +1570,15 @@ Written by the gateway's `services/calendar-reminders.ts` loop (`CALENDAR_DEFAUL
 - `trg_calendar_dedupe_event_rsvp` — AFTER INSERT on `calendar_events` for rows carrying `metadata.meetup_id` from any other source → deletes the trigger-written `community_rsvp` row for the same user+event, so the web client's own row (which it knows how to delete) is the one that stays.
 - The older `trg_rsvp_calendar_sync` / `trg_rsvp_cancel_calendar_sync` on `event_attendance` remain; that table is unused (0 rows).
 
+### calendar_events ← global_community_events (VTID-04915 triggers)
+
+**Purpose:** the host of a community event gets it in their calendar, and changes to an event reach every attendee's entry. Migration `20261006140000_vtid_04915_community_event_host_and_time_sync.sql`. One function, `fn_community_event_to_calendar()` (SECURITY DEFINER, not executable by `anon`/`authenticated`):
+
+- `trg_community_event_host_calendar` — AFTER INSERT → one row for `created_by`, same shape as the VTID-04321 rows plus `metadata.host=true`; skipped without `start_time`/`created_by` or when the host already has a live row. A client-written row arriving later replaces it via `trg_calendar_dedupe_event_rsvp`.
+- `trg_community_event_change_calendar` — AFTER UPDATE OF `start_time, end_time, location, virtual_link, title, description`, only when one actually changed → one set-based UPDATE of every live (not cancelled) row matching `source_ref` or `metadata.meetup_id`. Cancelled rows stay cancelled. Reminders follow through the calendar reminder reconcile.
+- `trg_community_event_delete_calendar` — AFTER DELETE → one set-based cancel of every live row for the event.
+- Tested on a throwaway Postgres: `scripts/ci/sql-tests/vtid-04915-community-event-calendar.test.sql` (CI `SQL-COMMUNITY-EVENT-CALENDAR`).
+
 ### calendar_feed_tokens (VTID-04358)
 
 **Purpose:** the private iCalendar subscription link (`GET /api/v1/calendar/feed/<token>.ics`) that lets Apple/Google/Outlook subscribe to a user's Vitanaland calendar. Migration `20260923170000_vtid_04358_calendar_feed_tokens.sql`, applied live 2026-09-23.
@@ -1583,7 +1594,7 @@ RLS enabled with no policies; `ALL` revoked from `PUBLIC`/`anon`/`authenticated`
 
 ### calendar_google_sync / calendar_google_links / calendar_external_busy (VTID-04372)
 
-**Purpose:** Google Calendar two-way sync. Built, switched off (`CALENDAR_GOOGLE_SYNC_ENABLED` exactly `true` + the Google OAuth client). Push: the member's own community/personal entries go to a "Vitanaland" calendar the app creates in their Google account (scope `calendar.app.created`, so no other Google calendar is ever touched). Pull: only free/busy of their Google primary calendar (scope `calendar.freebusy`), shown as grey busy blocks. OAuth tokens are **not** here — they stay in `social_connections` (provider `google`). Migration `20260923180000_vtid_04372_calendar_google_sync.sql`, applied live 2026-09-23.
+**Purpose:** Google Calendar two-way sync. Switch pinned on in staging and production since VTID-04914 (owner decision 2026-10-06); it runs only once the Google OAuth client is also configured (`CALENDAR_GOOGLE_SYNC_ENABLED` exactly `true` + `GOOGLE_OAUTH_CLIENT_ID`/`SECRET`), otherwise `not_configured`. Push: the member's own community/personal entries go to a "Vitanaland" calendar the app creates in their Google account (scope `calendar.app.created`, so no other Google calendar is ever touched). Pull: only free/busy of their Google primary calendar (scope `calendar.freebusy`), shown as grey busy blocks. OAuth tokens are **not** here — they stay in `social_connections` (provider `google`). Migration `20260923180000_vtid_04372_calendar_google_sync.sql`, applied live 2026-09-23.
 
 `calendar_google_sync` — one row per member:
 
@@ -3521,3 +3532,45 @@ snoozed at P2 that later reaches P1 is shown again). Indexes:
 `(env, expires_at DESC)` for the active read, `(env, fingerprint, created_at
 DESC)`. The latest unexpired row per fingerprint wins. Tested on a throwaway
 Postgres: `scripts/ci/sql-tests/run-ops-attention-acks-test.sh`.
+
+---
+
+## @mentions — comment `mentions`, `search_mention_candidates()`, mention notification types (VTID-04926)
+
+Migrations: `exafyltd/vitana-v1` `supabase/migrations/20261006140000_vtid_04926_mentions.sql`
+(tables/functions) and this repo's `supabase/migrations/20261006150000_vtid_04926_mention_notification_types.sql`
+(notification switches). Both idempotent; both tested on a throwaway Postgres 16.
+
+| Object | Change |
+|---|---|
+| `profile_post_comments.mentions`, `media_upload_comments.mentions` | new `jsonb NOT NULL DEFAULT '[]'` — `[{user_id, display_name}]`, same shape as `profile_posts.mentions`. Written by the client only when someone is tagged. |
+| `search_mention_candidates(p_query text, p_limit int)` | SECURITY DEFINER, `search_path=public`, granted to `authenticated` only. The only source the @mention picker uses for posts/comments (called over GET). Escapes `\ % _`, needs `auth.uid()`, excludes the caller, `notification_test_actors`, `service_bot_accounts`, and anyone who shares no tenant with the caller. Limit clamped 1–10. |
+| `_mention_recipient_ok(author, tagged)` | guard used by both dispatchers: not the author, not a test/service account, shares a tenant with the author. No client grant. |
+| `_dispatch_post_mention_notifications()` | redefined: adds the guard above and per-post dedupe; otherwise the VTID-03806 body. |
+| `_dispatch_comment_mention_notifications()` + `trg_notify_{profile_post,media_upload}_comment_mention` | AFTER INSERT, only when `mentions` is a non-empty array; sends `comment_mention` (EN/DE by `_notif_user_locale`), `data.url=/post/<post|media>/<id>`; skips the post owner and the parent comment's author (they already get `post_comment`/`comment_reply`). Fail-safe — a bad tag never blocks the comment. |
+| `notification_type_controls` | `chat_mention` and `comment_mention` ON for every tenant (an auto-registered OFF row is switched on; an admin's deliberate OFF is kept). |
+| `notification_categories.mapped_types` | `chat_mention` → `direct_messages`, `comment_mention` → `posts_reactions`. |
+
+Group chat mentions need no schema change: the gateway stores the sanitized
+list in `chat_messages.metadata.mentions` (`routes/chat-groups.ts`,
+`lib/chat-mentions.ts`).
+
+---
+
+## Event shares in the feed — `profile_posts.attached_ref_*`, `community_event_shared` (VTID-04916, 2026-10-07) — applied on merge
+
+Migration: `exafyltd/vitana-v1` `supabase/migrations/20261007100000_vtid_04916_profile_posts_event_attachment.sql`
+(applied by that repo's `apply-vtid-04916-event-share-posts-migration.yml` on merge). Idempotent; tested on a
+throwaway Postgres 16 (`scripts/sql-tests/run-event-share-posts-test.sh`, CI `SQL-EVENT-SHARE-POSTS`).
+
+| Object | Change |
+|---|---|
+| `profile_posts.attached_ref_type` | new `text`, `community_event` \| `live_room_session` (check `profile_posts_attached_ref_type_check`). The event a post shares. |
+| `profile_posts.attached_ref_id` | new `uuid` — `global_community_events.id` or `live_room_sessions.id`. Both columns set or both null (`profile_posts_attached_ref_pair_check`). |
+| `idx_profile_posts_one_share_per_event` | UNIQUE `(user_id, attached_ref_type, attached_ref_id) WHERE attached_ref_id IS NOT NULL` — one share per member per event. |
+| `profile_posts_guard_attached_ref()` + `trg_profile_posts_guard_attached_ref` | BEFORE INSERT/UPDATE. For `anon`/`authenticated` (read like `auth.role()`: `request.jwt.claim.role`, else `request.jwt.claims->>'role'`): an insert with a reference raises `ATTACH_VIA_GATEWAY`; an update keeps the old reference. Only the gateway (service role) writes it, from `POST /api/v1/calendar/events/:id/share-to-feed`. |
+| `notify_community_on_public_post()` | redefined. A post without a reference: the live body, unchanged. With one: type `community_event_shared` (EN "Join in?" / "<name> is going to \"<title>\""; DE "Kommst du mit?" / "<name> ist dabei: „<title>“"), `data` adds `ref_type`/`ref_id`, and a recipient who already got one for the same event in the last 24 h is skipped. |
+| `idx_user_notifications_event_shared` | `(user_id, (data->>'ref_id'), created_at DESC) WHERE type = 'community_event_shared'` — the 24 h lookup. |
+
+`community_event_shared` is in the gateway's notification catalog (`member`, `posts`); like every new type it
+starts OFF per tenant (VTID-04674) until an admin turns it on.

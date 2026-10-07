@@ -198,6 +198,29 @@ describe('tools', () => {
     expect(terms).toMatchObject({ done_on_vitanaland: true, link: expect.stringMatching(/\/commerce\?org=org-1$/) });
   });
 
+  test('get_onboarding_status passes on the reviewer\'s request and an admin approval (VTID-04933)', async () => {
+    const steps = (verification: Record<string, unknown>) => ({
+      ...CHECKLIST,
+      steps: [CHECKLIST.steps[0], CHECKLIST.steps[1], { key: 'verification', required: true, ...verification }],
+    });
+    svc.getOnboardingStatus.mockResolvedValueOnce(okStatus({
+      checklist: steps({ status: 'todo', detail: { review_note: { reason: 'Please add a service description.', requested_by: 'admin-1' } } }),
+    }));
+    let res = await authed(call('get_onboarding_status', { organization_id: 'org-1' }));
+    let v = res.body.result.structuredContent.steps.find((s: { step: string }) => s.step === 'verification');
+    expect(v).toMatchObject({ status: 'todo', review_note: 'Please add a service description.' });
+    expect(v.approved_by_vitanaland).toBeUndefined();
+    expect(JSON.stringify(v)).not.toContain('admin-1');
+
+    svc.getOnboardingStatus.mockResolvedValueOnce(okStatus({
+      checklist: steps({ status: 'done', detail: { method: 'admin_approval', level: 1, approved_by: 'admin-1' } }),
+    }));
+    res = await authed(call('get_onboarding_status', { organization_id: 'org-1' }));
+    v = res.body.result.structuredContent.steps.find((s: { step: string }) => s.step === 'verification');
+    expect(v).toMatchObject({ status: 'done', approved_by_vitanaland: true });
+    expect(JSON.stringify(v)).not.toContain('admin-1');
+  });
+
   test('submit_for_verification needs the supplier to confirm', async () => {
     const res = await authed(call('submit_for_verification', { organization_id: 'org-1' }));
     expect(res.body.result.isError).toBe(true);

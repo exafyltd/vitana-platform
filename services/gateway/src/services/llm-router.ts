@@ -1250,6 +1250,24 @@ async function runProviderCall(
     effort: opts.effort,
   });
 
+  // VTID-04794: a reply cut off by the output cap with no text and no tool
+  // call is not an answer. DeepSeek Flash spends its budget on hidden
+  // reasoning and returns empty `content` with finish_reason=length; reported
+  // as ok, the stage fallback never ran and the planner failed with
+  // "unknown error" on about half of all plans (staging, 2026-10-01).
+  if (
+    result.ok
+    && isTruncatedStop(result.stopReason)
+    && !(result.text ?? '').trim()
+    && !result.toolCall
+    && !(result.toolCalls && result.toolCalls.length > 0)
+  ) {
+    const error = `${provider}/${model} returned no text: output cap reached (stop_reason=${result.stopReason}, `
+      + `output_tokens=${result.usage?.outputTokens ?? 'n/a'})`;
+    void failLLMCallDetached(ctx, { code: 'empty_truncated', message: error });
+    return { ok: false, error, provider, model };
+  }
+
   if (result.ok) {
     void completeLLMCallDetached(ctx, {
       inputTokens: result.usage?.inputTokens,

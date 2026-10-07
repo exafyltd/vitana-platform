@@ -13,8 +13,8 @@
 #
 # Secrets intentionally deferred (2026-07-24): ANTHROPIC_API_KEY and
 # OPENAI_API_KEY are not yet populated in Secrets Manager pending an AWS
-# sponsorship decision for Anthropic — GITHUB_SAFE_MERGE_TOKEN, SUPABASE_*,
-# and DB_PASSWORD are live. A task definition referencing an empty secret
+# sponsorship decision for Anthropic — GITHUB_SAFE_MERGE_TOKEN and SUPABASE_*
+# are live (DB_PASSWORD is dropped: its secret was deleted, VTID-04930). A task definition referencing an empty secret
 # fails at ECS provisioning time (ResourceInitializationError), before the
 # container even starts — so the live task definition omits the two
 # deferred secrets until real values exist. Re-add them (see git history
@@ -205,6 +205,11 @@ jobs:
                 | .containerDefinitions[0].secrets |=
                     ( [ (. // [])[] | select(.name | IN("DEEPSEEK_API_KEY") | not) ]
                       + [ {name:"DEEPSEEK_API_KEY", valueFrom:$DS} ] )
+                # VTID-04930: DB_PASSWORD pointed at the deleted Aurora managed
+                # secret (rds!cluster-...), so ECS could start no executor task
+                # (ResourceInitializationError). Nothing in the image reads it.
+                # Same drop as VTID-04849 (gateway) and VTID-04858 (agents).
+                | .containerDefinitions[0].secrets |= [ (. // [])[] | select(.name != "DB_PASSWORD") ]
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" --query 'taskDefinition.taskDefinitionArn' --output text)

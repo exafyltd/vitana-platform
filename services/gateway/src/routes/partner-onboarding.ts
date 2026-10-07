@@ -42,7 +42,7 @@ import {
 } from '../services/partner-onboarding-service';
 import { detectPlatform } from '../services/platform-detect';
 import { availableTermsLocales, loadBaselineVersions, loadCurrentTerms, requestDelegation, termsForDisplay } from '../services/partner-terms';
-import { VERIFICATION_LEVEL_REQUIRED } from '../services/partner-onboarding-checklist';
+import { VERIFICATION_LEVEL_REQUIRED, verificationIsStale } from '../services/partner-onboarding-checklist';
 import {
   computeVerification,
   domainProofInstructions,

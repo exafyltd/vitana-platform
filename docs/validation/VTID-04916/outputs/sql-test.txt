@@ -1,0 +1,6 @@
+psql:../../supabase/migrations/20261007100000_vtid_04916_profile_posts_event_attachment.sql:71: NOTICE:  trigger "trg_profile_posts_guard_attached_ref" for relation "public.profile_posts" does not exist, skipping
+psql:../../supabase/migrations/20261007100000_vtid_04916_profile_posts_event_attachment.sql:26: NOTICE:  column "attached_ref_type" of relation "profile_posts" already exists, skipping
+psql:../../supabase/migrations/20261007100000_vtid_04916_profile_posts_event_attachment.sql:26: NOTICE:  column "attached_ref_id" of relation "profile_posts" already exists, skipping
+psql:../../supabase/migrations/20261007100000_vtid_04916_profile_posts_event_attachment.sql:42: NOTICE:  relation "idx_profile_posts_one_share_per_event" already exists, skipping
+psql:../../supabase/migrations/20261007100000_vtid_04916_profile_posts_event_attachment.sql:79: NOTICE:  relation "idx_user_notifications_event_shared" already exists, skipping
+PASS vtid-04916 event share posts

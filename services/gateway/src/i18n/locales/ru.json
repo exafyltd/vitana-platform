@@ -130,6 +130,7 @@
   "notif.marketplace_listing_removed.body": "Администратор удалил «{title}»: {reason}",
   "notif.listing_interest.title": "Интерес к твоему объявлению",
   "notif.listing_interest.body": "Кто-то заинтересовался «{title}».",
+  "notif.chat_mention.title": "{sender} упоминает тебя в «{group}»",
   "notif.day_close.title": "Спокойной ночи 🌙",
   "notif.day_close.body": "День закончился — если тебя что-то всё ещё беспокоит, скажи мне.",
   "notif.partner_test_status_changed.title": "Обновление от {partner_name}",

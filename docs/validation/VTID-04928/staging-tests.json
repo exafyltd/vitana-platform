@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-04928",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "name": "group routes are mounted and refuse an unsigned caller (read-only)",
+      "path": "/api/v1/chat/groups/00000000-0000-4000-8000-000000000000",
+      "expect_status": 401,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04928-group-push-opens-message.test.ts test/vtid-04926-chat-group-mentions.test.ts test/orb-tools/inbox-conversation-nav.test.ts",
+      "cwd": "services/gateway",
+      "reason": "sending a group message is a write, so the push it produces is proven here: the generic new_chat_message push (and the mention push) deep-links to /inbox/g/<groupId>/msg/<messageId>; every group-message push site (send fanout, welcome re-fanout, ORB voice send) carries the message id. The app side (landing on that message, also when the document scrolls) is verified in the community-app staging suite (exafyltd/vitana-v1 docs/validation/VTID-04928)."
+    }
+  ]
+}

@@ -145,7 +145,7 @@ export const DOMAIN_ATLAS: readonly AtlasDomain[] = [
     title: 'Health, longevity and My Journey',
     summary:
       'The Vitana Index and pillars, lab reports and biomarkers, wearables, diary and reminders, calendar, and the guided My Journey with its checklist, topics and teacher mode.',
-    routes: [/^health/, /^longevity/, /^vitana-index/, /^wearables/, /^diary/, /^reminders/, /^journey-/, /^guided-journey$/, /^my-journey$/, /^patient-health-results$/, /^fhir-/, /^calendar/, /^availability-readiness$/, /^locations/, /^partner-health-consent$/, /^tenant-admin\/health-index/],
+    routes: [/^health/, /^longevity/, /^vitana-index/, /^wearables/, /^diary/, /^reminders/, /^journey-/, /^guided-journey$/, /^my-journey$/, /^onboarding-coach$/, /^patient-health-results$/, /^fhir-/, /^calendar/, /^availability-readiness$/, /^locations/, /^partner-health-consent$/, /^tenant-admin\/health-index/],
     code: ['services/guided-journey/', 'services/vitana-index*.ts', 'orb/teacher/'],
     tables: ['vitana_index_scores', 'lab_reports', 'biomarker_results', 'journey_checklist_translations', 'diary_entries', 'reminders'],
     flags: ['NARRATION_AUDIO_CACHE'],
@@ -157,7 +157,7 @@ export const DOMAIN_ATLAS: readonly AtlasDomain[] = [
     title: 'Commerce and Discover',
     summary:
       'Discover feed and search, merchants and products, affiliate sync (Awin, Shopify), click attribution, the universal cart and shopping agent, VCAOP, VAEA (the Business Hub referral assistant), and self-service partner onboarding.',
-    routes: [/^offers/, /^commerce-ai-setup$/, /^commerce-mcp$/, /^shop-/, /^shopify-/, /^shopping-agent/, /^universal-cart/, /^discover-/, /^vcaop/, /^partner-/, /^awin-sync/, /^catalog-ingest/, /^click-redirect/, /^internal-marketplace-sync$/, /^cover-images$/, /^integrations/, /^connected-apps$/, /^connector-webhooks/, /^admin-marketplace/, /^admin-community-marketplace$/, /^admin-partner-health$/, /^admin-partner-terms$/, /^community-marketplace$/, /^vaea/],
+    routes: [/^offers/, /^commerce-ai-setup$/, /^commerce-mcp$/, /^shop-/, /^shopify-/, /^shopping-agent/, /^universal-cart/, /^discover-/, /^vcaop/, /^partner-/, /^awin-sync/, /^catalog-ingest/, /^click-redirect/, /^internal-marketplace-sync$/, /^cover-images$/, /^integrations/, /^connected-apps$/, /^connector-webhooks/, /^admin-marketplace/, /^admin-community-marketplace$/, /^admin-partner-health$/, /^admin-partner-terms$/, /^admin-partner-review$/, /^community-marketplace$/, /^vaea/],
     code: ['services/commerce/', 'services/commerce-ai-setup.ts', 'services/commerce-mcp.ts', 'services/partner-*.ts'],
     tables: ['merchants', 'products', 'partner_organizations', 'partner_registry', 'affiliate_clicks', 'partner_terms_versions'],
     flags: ['PARTNER_INVITE_EMAIL_ENABLED', 'ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED', 'COMMERCE_MCP_ENABLED'],

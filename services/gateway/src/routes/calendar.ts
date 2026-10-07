@@ -41,6 +41,8 @@ import {
   rescheduleEvent,
 } from '../services/calendar-service';
 import { completeSourceForCalendarEvent } from '../services/calendar-producers';
+import { z } from 'zod';
+import { isShareableEntry, listSharedPostIds, shareCalendarEntryToFeed, shareRefOf, SHARE_TEXT_MAX } from '../services/calendar-share';
 
 // Pillar keys — must match the 5 canonical Vitana pillars.
 const PILLAR_KEYS = ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'] as const;
@@ -425,7 +427,29 @@ router.get('/events/window', async (req: Request, res: Response) => {
       const { listExternalBusy } = await import('../services/calendar-google-sync');
       external = await listExternalBusy(userId, { from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString() });
     }
-    const merged = mergeWorkItems<any>([...data, ...external], work);
+    // VTID-04916: can this entry be shared to the feed, and was it already?
+    const nowDate = new Date();
+    const refIds = data
+      .map((it: any) => (it.event && !it.busy ? shareRefOf(it.event)?.ref_id : null))
+      .filter((id: string | null | undefined): id is string => !!id);
+    let shared = new Map<string, string>();
+    if (refIds.length) {
+      try {
+        shared = await listSharedPostIds(userId, refIds);
+      } catch (e: any) {
+        console.warn(`${LOG_PREFIX} shared-post lookup failed (window still served): ${e?.message}`);
+      }
+    }
+    const decorated = data.map((it: any) => {
+      if (!it.event || it.busy) return it;
+      const ref = shareRefOf(it.event);
+      return {
+        ...it,
+        shareable: isShareableEntry(it.event, nowDate),
+        shared_post_id: ref ? shared.get(ref.ref_id) ?? null : null,
+      };
+    });
+    const merged = mergeWorkItems<any>([...decorated, ...external], work);
     return res.json({ ok: true, data: merged, count: merged.length, timezone: userTimezone ?? null, work_lenses: lenses });
   } catch (err: any) {
     console.error(`${LOG_PREFIX} GET /events/window error:`, err.message);
@@ -764,6 +788,54 @@ router.post('/events/:id/complete', async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error(`${LOG_PREFIX} POST /events/:id/complete error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// POST /events/:id/share-to-feed — VTID-04916
+//   body: { text?: string, is_public?: boolean } (nothing else accepted)
+//   The post's author is the verified caller, never a body field.
+//   200 { post_id } · 404 NOT_FOUND · 409 NOT_SHAREABLE{reason} |
+//   ALREADY_SHARED{post_id} | DUPLICATE_POST · 429 SHARE_LIMIT | RATE_LIMITED · 403 USER_SUSPENDED
+// =============================================================================
+const ShareToFeedSchema = z
+  .object({
+    text: z.string().max(SHARE_TEXT_MAX).optional(),
+    is_public: z.boolean().optional(),
+  })
+  .strict();
+
+router.post('/events/:id/share-to-feed', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const parsed = ShareToFeedSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ ok: false, error: 'INVALID_BODY', issues: parsed.error.issues });
+
+    const entry = await getOwnCalendarEvent(req.params.id, userId);
+    const result = await shareCalendarEntryToFeed(userId, entry as any, parsed.data);
+    if (!result.ok) {
+      return res.status(result.status).json({
+        ok: false,
+        error: result.error,
+        ...(result.reason ? { reason: result.reason } : {}),
+        ...(result.post_id ? { post_id: result.post_id } : {}),
+      });
+    }
+
+    emitOasisEvent({
+      vtid: 'VTID-04916',
+      type: 'calendar.shared_to_feed' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: `Calendar entry shared to the feed (${result.ref.ref_type})`,
+      payload: { user_id: userId, entry_id: req.params.id, post_id: result.post_id, ref_type: result.ref.ref_type, ref_id: result.ref.ref_id },
+    }).catch(() => {});
+
+    return res.json({ ok: true, data: { post_id: result.post_id } });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /events/:id/share-to-feed error:`, err.message);
     return res.status(500).json({ ok: false, error: 'Internal error' });
   }
 });

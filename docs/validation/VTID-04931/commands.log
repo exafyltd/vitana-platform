@@ -1,0 +1,4 @@
+# VTID-04931 (2026-10-07)
+cd services/gateway && npx jest test/vtid-04878 test/milestone-service.test.ts test/vtid-04864   # 5 suites, 65 tests passed
+npx tsc --noEmit -p .                                                                            # clean
+# mutation: metadata re-added to the row -> "the row has no tenant_id and satisfies the table CHECKs" fails

@@ -629,11 +629,11 @@ jobs:
           # an explicit env_overrides dispatch — never as an automatic side
           # effect of an unrelated deploy again.
 
-          # VTID-04866: WS transport on prod. SSE splits a session's requests
-          # across tasks during a deploy overlap; a WebSocket stays on one task.
-          # Off: env_overrides {"FEATURE_ORB_WS_TRANSPORT_ENV":"off"} (one
-          # dispatch); durable off = edit this line. NOVA_PREWARM/GREETING_
-          # PREBUFFER stay unpinned (WS-only, unmeasured on prod).
+          # VTID-04934: WS transport OFF on prod. VTID-04866's "ws" pin broke
+          # member Orb sessions 2026-10-04..07 (0 user turns in ~190 WS
+          # sessions); prod is back on SSE. Re-enabling needs a new VTID with a
+          # device-verified widget fix. NOVA_PREWARM/GREETING_PREBUFFER stay
+          # unpinned (WS-only, inert with WS off).
           NEW_DEF=$(echo "$NEW_DEF" | jq '
             .containerDefinitions[0].environment |=
               ( [ .[] | select(.name | IN("FEATURE_ORB_FAST_START_ENV","FEATURE_ORB_BRAIN_CACHE_ENV","FEATURE_LATENCY_TELEMETRY_ENV","FEATURE_ORB_SAFE_FAST_GREETING_ENV","FEATURE_ORB_WS_TRANSPORT_ENV") | not) ]
@@ -641,7 +641,7 @@ jobs:
                     {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"},
                     {name:"FEATURE_LATENCY_TELEMETRY_ENV", value:"staging+prod"},
                     {name:"FEATURE_ORB_SAFE_FAST_GREETING_ENV", value:"staging+prod"},
-                    {name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"staging+prod"} ] )')
+                    {name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"off"} ] )')
 
           # VTID-04227 — the Dev Autopilot loop's five operating flags, DECLARED
           # here instead of living only in whatever the live task def happens
@@ -947,6 +947,23 @@ jobs:
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Internal token wired: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].secrets[] | select(.name == "GATEWAY_INTERNAL_TOKEN") | .name]')"
 
+      - name: Build task-definition (Live Rooms Daily key)
+        # VTID-04923: DAILY_API_KEY for Live Rooms video (VTID-04904). Stored by
+        # the owner 2026-10-06 as vitana/gateway/prod/daily-api-key (same value
+        # as staging's). Full ARN, for the same reason as JEV_SECRET_ARN above:
+        # this role has no secretsmanager:Describe*. The execution role reads
+        # vitana/* already. Takes effect only on an owner-approved prod deploy.
+        env:
+          DAILY_SECRET_ARN: arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/prod/daily-api-key-9wlfyX
+        run: |
+          set -e
+          NEW_DEF=$(jq --arg D "$DAILY_SECRET_ARN" '
+            .containerDefinitions[0].secrets |=
+              ( [ (. // [])[] | select(.name != "DAILY_API_KEY") ]
+                + [ {name:"DAILY_API_KEY", valueFrom:$D} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Daily key wired: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].secrets[] | select(.name == "DAILY_API_KEY") | .name]')"
+
       - name: Build task-definition (reward sweep off)
         # VTID-04896: the VTNA reward sweep (VTID-04878) pays real wallets every
         # 6 h from inside the production gateway and has never run anywhere —
@@ -990,6 +1007,48 @@ jobs:
                 + [ {name:"COMMERCE_MCP_ENABLED", value:"true"} ] )' /tmp/vitana-new-task-def.json)
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Commerce MCP pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "COMMERCE_MCP_ENABLED")]')"
+
+      - name: Build task-definition (calendar gates)
+        # VTID-04914 (owner decision 2026-10-06): the calendar loops run in
+        # production, not only on staging (AWS-STAGE-DEPLOY-GATEWAY.yml pins
+        # the same two). Staging already runs them against the shared
+        # Supabase project; reminder rows upsert on (calendar_event_id,
+        # calendar_occurrence_start, reminder_offset_minutes) with
+        # ignore-duplicates and the dispatch claim uses SKIP LOCKED, so a
+        # second reconciler adds redundancy, not duplicate reminders.
+        #   CALENDAR_DEFAULT_REMINDERS_ENABLED (VTID-04338)
+        #   CALENDAR_MAINTENANCE_ENABLED (VTID-04374)
+        #   CALENDAR_GOOGLE_SYNC_ENABLED (VTID-04372) -- with no Google OAuth
+        #     client the sync reports not_configured and does nothing.
+        # Google OAuth client: the deploy role has no secretsmanager:Describe*
+        # (VTID-03880), so the full ARNs come from repository variables the
+        # operator sets after scripts/aws/setup-connected-apps-oauth-secrets.sh
+        # --env prod provision --apply. Empty variable -> not wired: a
+        # valueFrom pointing at a missing secret stops every new task from
+        # starting (VTID-04849). Rollback: change a pin to "false" here.
+        env:
+          GOOGLE_ID_ARN: ${{ vars.PROD_GOOGLE_OAUTH_CLIENT_ID_ARN }}
+          GOOGLE_SECRET_ARN: ${{ vars.PROD_GOOGLE_OAUTH_CLIENT_SECRET_ARN }}
+        run: |
+          set -e
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name | IN("CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","CALENDAR_GOOGLE_SYNC_ENABLED") | not) ]
+                + [ {name:"CALENDAR_DEFAULT_REMINDERS_ENABLED", value:"true"},
+                    {name:"CALENDAR_MAINTENANCE_ENABLED", value:"true"},
+                    {name:"CALENDAR_GOOGLE_SYNC_ENABLED", value:"true"} ] )' /tmp/vitana-new-task-def.json)
+          if [ -n "$GOOGLE_ID_ARN" ] && [ -n "$GOOGLE_SECRET_ARN" ]; then
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg I "$GOOGLE_ID_ARN" --arg S "$GOOGLE_SECRET_ARN" '
+              .containerDefinitions[0].secrets |=
+                ( [ (. // [])[] | select(.name | IN("GOOGLE_OAUTH_CLIENT_ID","GOOGLE_OAUTH_CLIENT_SECRET") | not) ]
+                  + [ {name:"GOOGLE_OAUTH_CLIENT_ID", valueFrom:$I},
+                      {name:"GOOGLE_OAUTH_CLIENT_SECRET", valueFrom:$S} ] )')
+            echo "Google OAuth client wired from repository variables"
+          else
+            echo "Google OAuth client not wired (PROD_GOOGLE_OAUTH_CLIENT_ID_ARN / _SECRET_ARN unset); sync stays not_configured"
+          fi
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Calendar gates pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name | startswith("CALENDAR_")) | .name]')"
 
       - name: Build task-definition (2/2 — optional overrides) + register + roll the service
         id: roll

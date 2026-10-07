@@ -1,0 +1,15 @@
+VTID-04926 local checks (2026-10-06)
+
+Gateway jest: vtid-04926-chat-group-mentions 9/9; related suites 126/126 and 159/159; tsc clean.
+
+Migration 20261006150000 on a throwaway Postgres 16, seeded with tenant 1 = chat_mention auto-registered OFF,
+tenant 2 = comment_mention OFF by an admin. After applying twice:
+
+ tenant_id                            | type            | enabled | auto_registered
+ 10000000-0000-0000-0000-000000000001 | chat_mention    | t       | f
+ 10000000-0000-0000-0000-000000000001 | comment_mention | t       | f
+ 20000000-0000-0000-0000-000000000002 | chat_mention    | t       | f
+ 20000000-0000-0000-0000-000000000002 | comment_mention | f       | f      <- admin OFF kept
+
+ direct_messages | ["new_chat_message", "message_reaction", "chat_mention"]
+ posts_reactions | ["post_like", "post_mention", "comment_mention"]

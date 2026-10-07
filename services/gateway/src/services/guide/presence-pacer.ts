@@ -43,7 +43,11 @@ export type ProactiveSurface =
   | 'voice_opener_initiative'
   // Journey Conversation V2 — once-per-day inspirational/responsibility
   // reflection slot (spec docs/SPEC-journey-conversation-v2.md §10).
-  | 'vitana_responsibility_message';
+  | 'vitana_responsibility_message'
+  // VTID-04892: the Vitana Onboarding Assistant's one touch a day. Keep this
+  // union and the user_proactive_touches.surface CHECK in step (migration
+  // 20261005130000) — a surface missing from the CHECK is silently not counted.
+  | 'onboarding_coach';
 
 export type PresenceLevel = 'quiet' | 'balanced' | 'engaged';
 

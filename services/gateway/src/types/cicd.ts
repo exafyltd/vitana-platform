@@ -151,6 +151,10 @@ export type CicdEventType =
   | 'vtid.plan_sparring.missing'
   | 'vtid.plan_sparring.break_glass'
   | 'vtid.plan_sparring.tamper_detected'
+  // VTID-04892: Vitana Onboarding Assistant. One aggregate event per coach
+  // tick (never one per member per tick), plus a member's real stage changes.
+  | 'onboarding.coach.tick_completed'
+  | 'onboarding.coach.stage_changed'
   | 'cicd.github.create_pr.requested'
   | 'cicd.github.create_pr.succeeded'
   | 'cicd.github.create_pr.failed'
@@ -1090,6 +1094,12 @@ export type CicdEventType =
   // VTID-04499: onboarding connections and mapping step
   | 'partner_org.connection_started'
   | 'partner_org.mapping_step_changed'
+  // VTID-04933: exafy_admin supplier review (approve = verification level 1, request changes, reject, per-offering listing)
+  | 'partner_org.review.approved'
+  | 'partner_org.review.changes_requested'
+  | 'partner_org.review.rejected'
+  | 'partner_org.review.product_kept_offline'
+  | 'partner_org.review.product_listing_allowed'
   // VTID-04838: a supplier's confirmed AI-setup draft created a business and/or draft products.
   | 'commerce.ai_setup.applied'
   | 'commerce.mcp.tool_called'

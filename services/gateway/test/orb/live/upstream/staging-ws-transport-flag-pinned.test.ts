@@ -49,32 +49,35 @@ describe('VTID-03791: staging pins FEATURE_ORB_WS_TRANSPORT_ENV', () => {
     expect(strip).toContain('"FEATURE_ORB_WS_TRANSPORT_ENV"');
   });
 
-  // VTID-04866 (owner decision 2026-10-03) — the "later decision" this test
-  // used to defer is made: prod pins the transport to 'ws'. On SSE a voice
-  // session is one stream plus ~15 POSTs/s that the ALB routes one by one,
-  // so during a deploy's two-task overlap a member's requests split across
-  // tasks and the session dies. A WebSocket stays on one task.
-  describe('VTID-04866: prod pins FEATURE_ORB_WS_TRANSPORT_ENV', () => {
+  // VTID-04934 — rollback of VTID-04866. VTID-04866 pinned prod to 'ws'
+  // (owner decision 2026-10-03) so a deploy's two-task overlap could not
+  // split a session. On prod it broke member Orb sessions instead: from
+  // 2026-10-04 to 2026-10-07 ~190 WebSocket sessions averaged ~2 s and none
+  // reached a user turn (11 of 15 did on SSE on 2026-10-03). Prod is pinned
+  // back to "off" (SSE); staging keeps "staging-only" so the failure can be
+  // reproduced there. Re-enabling is a new VTID with a device-verified fix.
+  describe('VTID-04866 rollback: prod pins FEATURE_ORB_WS_TRANSPORT_ENV to "off"', () => {
     const prodYml = fs.readFileSync(
       path.resolve(__dirname, '../../../../../../.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml'),
       'utf8',
     );
+    const PIN = '{name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"off"}';
 
-    it('upserts the flag as "staging+prod" (the value that is live on prod)', () => {
-      expect(prodYml).toMatch(/\{name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"staging\+prod"\}/);
-      // "staging-only" would read as on and resolve to SSE on prod.
+    it('upserts the flag as "off" so WebSocket stays off on prod', () => {
+      expect(prodYml).toMatch(/\{name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"off"\}/);
+      expect(prodYml).not.toMatch(/\{name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"staging\+prod"\}/);
       expect(prodYml).not.toMatch(/\{name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"staging-only"\}/);
     });
 
     it('strips the inherited value in the same jq block, so no duplicate key survives', () => {
-      const add = prodYml.indexOf('{name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"staging+prod"}');
+      const add = prodYml.indexOf(PIN);
       const block = prodYml.slice(prodYml.lastIndexOf('.containerDefinitions[0].environment |=', add), add);
       const strip = block.slice(0, block.indexOf('| not) ]'));
       expect(strip).toContain('"FEATURE_ORB_WS_TRANSPORT_ENV"');
     });
 
-    it('is pinned before env_overrides is applied, so a one-dispatch "off" still wins', () => {
-      const add = prodYml.indexOf('{name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"staging+prod"}');
+    it('is pinned before env_overrides is applied, so a one-dispatch override still wins', () => {
+      const add = prodYml.indexOf(PIN);
       const overrides = prodYml.indexOf('Applying env_overrides');
       expect(add).toBeGreaterThan(0);
       expect(overrides).toBeGreaterThan(add);

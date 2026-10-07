@@ -841,6 +841,7 @@
     "PATCH /events/:id",
     "POST /events/:id/move",
     "POST /events/:id/complete",
+    "POST /events/:id/share-to-feed",
     "DELETE /events/:id",
     "POST /journey/initialize",
     "POST /reschedule",
@@ -1129,7 +1130,9 @@
               "minutes": 0
             }
           ],
-          "movable": false
+          "movable": false,
+          "shareable": false,
+          "shared_post_id": null
         },
         {
           "id": "e1",
@@ -1185,7 +1188,9 @@
               "minutes": 30
             }
           ],
-          "movable": true
+          "movable": true,
+          "shareable": false,
+          "shared_post_id": null
         },
         {
           "id": "d1",

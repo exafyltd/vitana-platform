@@ -18,11 +18,12 @@
  * Writes are refused for an AI assistant's delegated OAuth token, as for the
  * supplier's acceptance.
  */
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Request, Response } from 'express';
 import { requireAuth, requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
-import { BINDING_LOCALE, REQUIRED_TERMS_LOCALES, SUPPORTED_TERMS_LOCALES, isSupportedTermsLocale, requestDelegation } from '../services/partner-terms';
+import { BINDING_LOCALE, REQUIRED_TERMS_LOCALES, SUPPORTED_TERMS_LOCALES, isSupportedTermsLocale } from '../services/partner-terms';
+import { requireOwnSession } from '../middleware/require-own-session';
 
 const router = Router();
 router.use(requireAuth, requireExafyAdmin);
@@ -72,14 +73,8 @@ export function parseTermsContent(raw: unknown): { ok: true; content: Record<str
 
 const actorOf = (req: Request) => (req as AuthenticatedRequest).identity?.user_id ?? null;
 
-/** Writes come from the admin's own session, never an assistant's delegated token. */
-async function requireOwnSession(req: Request, res: Response, next: NextFunction) {
-  const supabase = getSupabase();
-  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
-  const verdict = await requestDelegation(supabase, (req as AuthenticatedRequest).auth_raw_claims as Record<string, unknown> | undefined);
-  if (verdict !== 'direct') return res.status(403).json({ ok: false, error: 'REQUIRES_OWN_SESSION' });
-  return next();
-}
+// Writes come from the admin's own session, never an assistant's delegated token
+// (shared with the supplier review routes since VTID-04933).
 
 /** Who drafted which terms text is part of the audit trail, not only who published it. */
 const draftEvent = (req: Request, row: { id: string; version: string }, action: 'created' | 'edited') => ({

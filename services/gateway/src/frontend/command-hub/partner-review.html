@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Supplier review — Command Hub</title>
+  <link rel="stylesheet" href="/command-hub/styles.css?v=20261007-VTID-04933-review" />
+  <link rel="stylesheet" href="/command-hub/partner-review.css?v=20261007-VTID-04933-review" />
+</head>
+<body>
+  <div class="pr-container">
+    <header class="pr-header">
+      <h1>Supplier review</h1>
+      <p class="pr-sub">
+        Commerce suppliers waiting for a decision (VTID-04933). Approve = verification level 1; the supplier goes live only
+        when every required step is done. Super admins only; actions need your own session.
+      </p>
+      <div class="pr-controls">
+        <label>State&nbsp;
+          <select id="pr-state">
+            <option value="">Waiting for review</option>
+            <option value="needs_action">needs_action</option>
+            <option value="verifying">verifying</option>
+            <option value="exception">exception</option>
+            <option value="live">live</option>
+            <option value="rejected">rejected</option>
+            <option value="draft,submitted">draft / submitted</option>
+          </select>
+        </label>
+        <button id="pr-refresh" type="button">Refresh</button>
+      </div>
+    </header>
+    <main class="pr-main">
+      <section id="pr-list" class="pr-list" aria-live="polite">Loading…</section>
+      <section id="pr-detail" class="pr-detail" aria-live="polite"></section>
+    </main>
+  </div>
+  <script src="/command-hub/partner-review.js?v=20261007-VTID-04933-review"></script>
+</body>
+</html>

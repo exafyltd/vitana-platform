@@ -81,6 +81,12 @@ describe('milestone recording (VTID-04878 root cause)', () => {
     await scanUserMilestonesDetailed(sb, U, T);
     const row = m.insertAchievedMilestone.mock.calls[0][1] as Record<string, unknown>;
     expect(row).not.toHaveProperty('tenant_id');
+    // VTID-04931: exactly the live columns the row may use; any other key
+    // (tenant_id, metadata, …) makes PostgREST reject the whole insert.
+    expect(Object.keys(row).sort()).toEqual([
+      'activated_at', 'completed_at', 'domain', 'effort_score', 'impact_score', 'risk_level',
+      'source_ref', 'source_type', 'status', 'summary', 'title', 'user_id',
+    ]);
     expect(['low', 'medium', 'high', 'critical']).toContain(row.risk_level);
     for (const k of ['impact_score', 'effort_score'] as const) {
       expect(row[k]).toBeGreaterThanOrEqual(1);
