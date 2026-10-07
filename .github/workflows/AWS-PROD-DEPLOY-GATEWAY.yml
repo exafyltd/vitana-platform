@@ -964,30 +964,31 @@ jobs:
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Daily key wired: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].secrets[] | select(.name == "DAILY_API_KEY") | .name]')"
 
-      - name: Build task-definition (reward sweep off)
-        # VTID-04896: the VTNA reward sweep (VTID-04878) pays real wallets every
-        # 6 h from inside the production gateway and has never run anywhere —
-        # staging is excluded by VITANA_ENV. Owner decision 2026-10-05: it stays
-        # OFF in production until the owner explicitly approves it. Enabling is
-        # that approval, made visible: dispatch with
-        # env_overrides={"REWARD_SWEEP_ENABLED":"true"} (applied in 2/2) or
-        # change this pin. "Verify reward sweep setting" below checks the live
-        # task definition after the roll.
+      - name: Build task-definition (reward payouts on)
+        # VTID-04896 pinned the VTNA reward sweep (VTID-04878) off in production
+        # until the owner approved it; VTID-04899 did the same for the immediate
+        # Autopilot completion reward. VTID-04944, owner decision 2026-10-07:
+        # both stay ON in production, so a publish without overrides keeps
+        # paying (two publishes on 2026-10-07 had silently switched them off).
+        # Turning payouts off is one dispatch with
+        # env_overrides={"REWARD_SWEEP_ENABLED":"false","AUTOPILOT_ACTION_REWARD_ENABLED":"false"}
+        # (applied in 2/2, after this step). "Verify reward sweep setting" below
+        # checks the live task definition after the roll.
         run: |
           set -e
           NEW_DEF=$(jq '
             .containerDefinitions[0].environment |=
               ( [ (. // [])[] | select(.name != "REWARD_SWEEP_ENABLED") ]
-                + [ {name:"REWARD_SWEEP_ENABLED", value:"false"} ] )' /tmp/vitana-new-task-def.json)
+                + [ {name:"REWARD_SWEEP_ENABLED", value:"true"} ] )' /tmp/vitana-new-task-def.json)
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Reward sweep pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "REWARD_SWEEP_ENABLED")]')"
-          # VTID-04899: the immediate Autopilot completion reward
-          # (autopilot_action_done) is off in production too; it pays only when
-          # exactly "true". Enable it with env_overrides or by changing this pin.
+          # VTID-04899/VTID-04944: the immediate Autopilot completion reward
+          # (autopilot_action_done) pays only when exactly "true"; on in
+          # production, off with env_overrides.
           NEW_DEF=$(jq '
             .containerDefinitions[0].environment |=
               ( [ (. // [])[] | select(.name != "AUTOPILOT_ACTION_REWARD_ENABLED") ]
-                + [ {name:"AUTOPILOT_ACTION_REWARD_ENABLED", value:"false"} ] )' /tmp/vitana-new-task-def.json)
+                + [ {name:"AUTOPILOT_ACTION_REWARD_ENABLED", value:"true"} ] )' /tmp/vitana-new-task-def.json)
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Autopilot reward pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "AUTOPILOT_ACTION_REWARD_ENABLED")]')"
 
@@ -1434,17 +1435,18 @@ jobs:
           echo "::error::Smoke failed — health/build-info/alive did not report env=production with the deployed commit"
           exit 1
 
-      # VTID-04896: read-only. The live service's task definition must carry
-      # REWARD_SWEEP_ENABLED=false, unless this dispatch's env_overrides set
-      # the key explicitly (the owner's approval to enable). A mismatch fails
-      # the job, which rolls the service back (VTID-04647).
+      # VTID-04896/VTID-04944: read-only. The live service's task definition
+      # must carry REWARD_SWEEP_ENABLED=true (the pin above), unless this
+      # dispatch's env_overrides set the key explicitly (e.g. "false" to turn
+      # payouts off). A mismatch fails the job, which rolls the service back
+      # (VTID-04647).
       - name: Verify reward sweep setting (live task definition)
         id: sweepcheck
         env:
           ENV_OVERRIDES_INPUT: ${{ inputs.env_overrides }}
         run: |
           set -e
-          EXPECTED=false
+          EXPECTED=true
           if [ -n "$ENV_OVERRIDES_INPUT" ] && echo "$ENV_OVERRIDES_INPUT" | jq -e 'has("REWARD_SWEEP_ENABLED")' >/dev/null 2>&1; then
             EXPECTED=$(echo "$ENV_OVERRIDES_INPUT" | jq -r '.REWARD_SWEEP_ENABLED | tostring')
             echo "::warning::env_overrides sets REWARD_SWEEP_ENABLED=$EXPECTED for this deploy"
@@ -1460,7 +1462,7 @@ jobs:
             exit 1
           fi
           # VTID-04899: same check for the immediate Autopilot completion reward.
-          EXPECTED_AP=false
+          EXPECTED_AP=true
           if [ -n "$ENV_OVERRIDES_INPUT" ] && echo "$ENV_OVERRIDES_INPUT" | jq -e 'has("AUTOPILOT_ACTION_REWARD_ENABLED")' >/dev/null 2>&1; then
             EXPECTED_AP=$(echo "$ENV_OVERRIDES_INPUT" | jq -r '.AUTOPILOT_ACTION_REWARD_ENABLED | tostring')
             echo "::warning::env_overrides sets AUTOPILOT_ACTION_REWARD_ENABLED=$EXPECTED_AP for this deploy"

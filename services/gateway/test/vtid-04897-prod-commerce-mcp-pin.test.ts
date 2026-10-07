@@ -30,9 +30,10 @@ describe('production deploy turns Commerce MCP on', () => {
     expect(isCommerceMcpEnabled({} as NodeJS.ProcessEnv)).toBe(false);
   });
 
-  it('the generated flag pins show it on for staging and production; the sweep stays off', () => {
+  // VTID-04944: the reward sweep is pinned on in production since 2026-10-07.
+  it('the generated flag pins show it on for staging and production; the sweep is on in production', () => {
     const { GATEWAY_WORKFLOW_PINS } = require('../src/services/conversation/conversation-flag-pins.generated');
     expect(GATEWAY_WORKFLOW_PINS.COMMERCE_MCP_ENABLED).toEqual({ staging: 'true', prod: 'true' });
-    expect(GATEWAY_WORKFLOW_PINS.REWARD_SWEEP_ENABLED).toEqual({ staging: null, prod: 'false' });
+    expect(GATEWAY_WORKFLOW_PINS.REWARD_SWEEP_ENABLED).toEqual({ staging: null, prod: 'true' });
   });
 });

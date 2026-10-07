@@ -144,16 +144,19 @@ describe('deploy workflows', () => {
   const prodSteps = (yaml.load(wf('AWS-PROD-DEPLOY-GATEWAY.yml')) as any).jobs['build-push-deploy'].steps as Array<{ name?: string; run?: string }>;
   const at = (prefix: string) => prodSteps.findIndex((s) => (s.name ?? '').startsWith(prefix));
 
-  test('production pins it "false" before registration', () => {
-    const pin = prodSteps[at('Build task-definition (reward sweep off)')];
-    expect(pin.run).toContain('{name:"AUTOPILOT_ACTION_REWARD_ENABLED", value:"false"}');
+  // VTID-04944: on in production (owner decision 2026-10-07); off is an env_overrides dispatch.
+  test('production pins it "true" before registration and before env_overrides (2/2)', () => {
+    const pin = prodSteps[at('Build task-definition (reward payouts on)')];
+    expect(pin).toBeDefined();
+    expect(pin.run).toContain('{name:"AUTOPILOT_ACTION_REWARD_ENABLED", value:"true"}');
+    expect(pin.run).not.toContain('{name:"AUTOPILOT_ACTION_REWARD_ENABLED", value:"false"}');
     expect(pin.run).toContain('select(.name != "AUTOPILOT_ACTION_REWARD_ENABLED")');
-    expect(at('Build task-definition (reward sweep off)')).toBeLessThan(at('Build task-definition (2/2'));
+    expect(at('Build task-definition (reward payouts on)')).toBeLessThan(at('Build task-definition (2/2'));
   });
 
   test('the live check after the roll covers it (rollback on mismatch), read-only', () => {
     const check = prodSteps[at('Verify reward sweep setting')].run ?? '';
-    expect(check).toContain('EXPECTED_AP=false');
+    expect(check).toContain('EXPECTED_AP=true');
     expect(check).toContain('has("AUTOPILOT_ACTION_REWARD_ENABLED")');
     expect(check).toMatch(/if \[ "\$LIVE_AP" != "\$EXPECTED_AP" \]; then[\s\S]*exit 1/);
     expect(check).not.toMatch(/update-service|register-task-definition/);
@@ -164,7 +167,7 @@ describe('deploy workflows', () => {
     expect(stage).toContain('{name:"AUTOPILOT_ACTION_REWARD_ENABLED", value:"true"}');
     expect(stage).toContain('"COMMERCE_MCP_ENABLED","AUTOPILOT_ACTION_REWARD_ENABLED",');
     const { GATEWAY_WORKFLOW_PINS } = require('../src/services/conversation/conversation-flag-pins.generated');
-    expect(GATEWAY_WORKFLOW_PINS.AUTOPILOT_ACTION_REWARD_ENABLED).toEqual({ staging: 'true', prod: 'false' });
-    expect(GATEWAY_WORKFLOW_PINS.REWARD_SWEEP_ENABLED).toEqual({ staging: null, prod: 'false' });
+    expect(GATEWAY_WORKFLOW_PINS.AUTOPILOT_ACTION_REWARD_ENABLED).toEqual({ staging: 'true', prod: 'true' });
+    expect(GATEWAY_WORKFLOW_PINS.REWARD_SWEEP_ENABLED).toEqual({ staging: null, prod: 'true' });
   });
 });
