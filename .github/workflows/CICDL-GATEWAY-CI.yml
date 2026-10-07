@@ -83,6 +83,14 @@ jobs:
       - name: Prisma Validate
         run: pnpm exec prisma validate
 
+      # VTID-04950: the root pnpm install never installs services/gateway's own
+      # dependencies, so `tsc` resolved to a different TypeScript and failed on
+      # tsconfig (TS5108). `|| echo` hid that for as long as the step existed.
+      # Install the gateway's locked deps, the same way TEST-SUITE does.
+      - name: Install gateway dependencies
+        working-directory: services/gateway
+        run: npm ci --no-audit --no-fund
+
       - name: Gateway Build Check
         working-directory: services/gateway
         # VTID-04950 (plan E1): a failing build fails the check (it used to be masked).
