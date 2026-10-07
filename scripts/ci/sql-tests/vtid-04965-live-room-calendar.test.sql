@@ -3,6 +3,11 @@
 -- Run: scripts/ci/sql-tests/run-live-room-calendar-test.sh
 \set ON_ERROR_STOP on
 
+do $$ begin
+  if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon nologin; end if;
+  if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated nologin; end if;
+end $$;
+
 create table public.community_live_streams (
   id uuid primary key default gen_random_uuid(),
   title text, description text, status text, scheduled_for timestamptz, duration_minutes int
