@@ -1,0 +1,1 @@
+{"vtid":"VTID-04935","service":"gateway","tests":[{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},{"kind":"existing","ref":"npx jest test/orb/context/compile-assistant-decision-context.test.ts","cwd":"services/gateway","reason":"Test-only change, proven in CI."}]}
