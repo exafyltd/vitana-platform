@@ -6,7 +6,7 @@
       "kind": "http",
       "target": "gateway",
       "method": "GET",
-      "path": "/command-hub/orb-widget.js?v=20261002-vtid-04843-widget-rebust",
+      "path": "/command-hub/orb-widget.js?v=20261007-vtid-04951-guide-mode",
       "expect_status": 200,
       "expect_body_contains": ["startCommerceSetup", "vitana:commerce-setup-draft", "startPayload.commerce_setup = true"],
       "reason": "the deployed widget carries the commerce setup entry point and forwards the draft to the host page"

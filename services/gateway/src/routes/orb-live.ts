@@ -1372,6 +1372,8 @@ export interface GeminiLiveSession {
   support_report?: boolean;
   /** VTID-04840: opened from the commerce AI setup sheet ("Talk to Vitana"). */
   commerce_setup?: boolean;
+  /** VTID-04951: "Ask Vitana" from a screen — the guide (FAQ / how-to) context. */
+  guide?: GuideContext | null;
   /** VTID-04430: the host app's build stamp; voice-filed tickets store it. */
   app_version?: string | null;
   // VTID-NAV: Cached memory pack from the first navigator_consult call this
@@ -2095,6 +2097,8 @@ import {
 } from '../orb/live/prewarm/prewarm-fingerprint';
 import { personaVoiceAvailability } from '../orb/live/voice/specialist-voice-availability';
 import { getUserLocale } from '../i18n/server-locale';
+// VTID-04951: guide mode ("Ask Vitana" from a screen opens Vitana as that screen's FAQ guide).
+import { buildGuideModeBlock, guideOpenFrom, type GuideContext } from '../orb/live/guide/guide-context';
 import { registerRuleForLang } from '../i18n/llm-locale';
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
 import { startNovaSonicKeepWarm, startNovaSonicModelWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
@@ -7710,6 +7714,8 @@ export function assembleOrbSetupEnvelope(
                           ? `\n\n${(session as any).lastTranscriptSection}`
                           : '')
                       + (((session as any).onboardingCohortBlock as string | undefined) ?? '')
+                      // VTID-04951: guide mode lasts the whole conversation, not just turn 1.
+                      + buildGuideModeBlock((session as any).guide)
                       // v3: SWAP-BACK WELCOME block — fires only when a
                       // specialist just returned the user. Drives Vitana's
                       // first turn (welcome + role-acknowledge + open or
@@ -8907,8 +8913,12 @@ async function connectToLiveAPI(
         // VTID-04554: with ORB_PREWARM_FULL_CONTEXT_ENABLED the blind claim is
         // off; the cold branch claims only on a fingerprint match.
         const _prewarmFullContext = isPrewarmFullContextEnabled();
-        const _prewarmEligible = !!session.identity?.user_id && !isWorkSurface(sessionSurface) && _prewarmPersonaIsVitana;
-        const prewarmedNova = session.identity?.user_id && !isWorkSurface(sessionSurface) && _prewarmPersonaIsVitana && !_prewarmFullContext
+        // VTID-04951: a guide session carries a GUIDE MODE block in its system
+        // instruction; a pooled stream was opened with the generic one and could
+        // not take it, so guide sessions always cold-connect.
+        const _guideSession = !!(session as any).guide;
+        const _prewarmEligible = !!session.identity?.user_id && !isWorkSurface(sessionSurface) && _prewarmPersonaIsVitana && !_guideSession;
+        const prewarmedNova = session.identity?.user_id && !isWorkSurface(sessionSurface) && _prewarmPersonaIsVitana && !_guideSession && !_prewarmFullContext
           ? consumePrewarmedNovaSession(session.identity.user_id)
           : null;
         if (session.identity?.user_id && isWorkSurface(sessionSurface)) emitDiag(session, 'nova_prewarm_skipped_work_surface', { provider: 'nova_sonic', surface: sessionSurface });
@@ -10978,6 +10988,8 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               // VTID-04395: only before the first turn — a transparent reconnect
               // later in the report must not re-open the intake.
               supportReportOpen: (session as any).support_report === true && (session.turn_count || 0) === 0,
+              // VTID-04951: the guide opens turn 1 only, like the support report.
+              guideOpen: guideOpenFrom(session as any),
               // VTID-04575: a reopen with its earlier turns continues that thread.
               reopenedWithHistory: (session as any)._reopenedWithHistory === true && (session.turn_count || 0) === 0,
               wakeBriefDecisionId: null,
@@ -11346,6 +11358,8 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       // VTID-04395: only before the first turn — a transparent reconnect
       // later in the report must not re-open the intake.
       supportReportOpen: (session as any).support_report === true && (session.turn_count || 0) === 0,
+      // VTID-04951: the guide opens turn 1 only, like the support report.
+      guideOpen: guideOpenFrom(session as any),
       // VTID-04575: a reopen with its earlier turns continues that thread.
       reopenedWithHistory: (session as any)._reopenedWithHistory === true && (session.turn_count || 0) === 0,
       // BOOTSTRAP-ORB-DAY-CLOSE: short opener (buildDayCloseOpenerLine) is now
