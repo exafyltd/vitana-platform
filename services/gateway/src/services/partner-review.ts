@@ -152,7 +152,7 @@ export async function reviewDetail(s: Supa, orgId: string): Promise<ServiceResul
       currency: p.currency,
       url: p.affiliate_url,
       is_active: p.is_active,
-      listing: listingState(p),
+      listing: listingState({ is_active: p.is_active ?? null, listing_hold: p.listing_hold, first_listed_at: p.first_listed_at }),
       admin_listing: p.attributes?.admin_listing ?? null,
     }));
   }
