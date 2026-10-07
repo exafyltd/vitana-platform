@@ -41,6 +41,7 @@
  */
 
 import type { OverviewPayload } from '../assistant-continuation/providers/new-day-overview-payload';
+import { buildGuideOpenTrigger, type GuideContext } from '../../orb/live/guide/guide-context';
 import {
   buildNewDayOverviewBlock,
   buildNewDayOverviewOpenerLine,
@@ -149,7 +150,10 @@ export type WakeOpener =
   | 'legacy_default'
   /** VTID-04560 — a work surface (Command Hub / admin / BackOffice /
    *  commerce) opens with its own role's opener; no member rung can win. */
-  | 'work_surface_open';
+  | 'work_surface_open'
+  /** VTID-04951 — the member tapped "Ask Vitana" on a screen: Vitana opens as
+   *  that screen's FAQ / how-to guide instead of the daily greeting. */
+  | 'guide_open';
 
 /**
  * VTID-04525 (Conversation hub B1) — every rung, in the order the type above
@@ -173,6 +177,7 @@ const WAKE_OPENER_ORDER: Record<WakeOpener, number> = {
   silenced_on_cadence: 12,
   legacy_default: 13,
   work_surface_open: 14,
+  guide_open: 15,
 };
 export const WAKE_OPENERS: readonly WakeOpener[] = (Object.keys(WAKE_OPENER_ORDER) as WakeOpener[])
   .sort((a, b) => WAKE_OPENER_ORDER[a] - WAKE_OPENER_ORDER[b]);
@@ -339,6 +344,14 @@ export interface GreetingDecisionContext {
    * support-report rung then opens as an intake instead of any briefing.
    */
   supportReportOpen?: boolean;
+  /**
+   * VTID-04951: the guide the member opened Vitana with ("Ask Vitana" on a
+   * screen, session-start fields `guide_feature`/`guide_state`/...), set only
+   * while no turn has run. The guide rung then opens as that screen's FAQ
+   * guide. Sits below an explicit support report and above a queued guided
+   * topic: an explicit tap on "ask Vitana" beats a topic that was only queued.
+   */
+  guideOpen?: GuideContext | null;
   /**
    * VTID-04575: true when this session was started by the client with the
    * earlier turns of the same conversation (`transcript_history`) and nothing
@@ -1094,6 +1107,28 @@ function trySupportReportRung(ctx: GreetingDecisionContext): GreetingDecision | 
   };
 }
 
+/**
+ * VTID-04951 — "Ask Vitana" from a screen. The words are composed by the model
+ * from an English intent (buildGuideOpenTrigger), never a finished sentence.
+ */
+function tryGuideOpenRung(ctx: GreetingDecisionContext): GreetingDecision | null {
+  if (!ctx.guideOpen || ctx.isAnonymous) return null;
+  const trigger = buildGuideOpenTrigger(ctx.guideOpen);
+  return {
+    wakeOpener: 'guide_open',
+    directive: trigger,
+    diag: {
+      lang: ctx.lang,
+      prompt_len: trigger.length,
+      wake_opener: 'guide_open',
+      decision_id: ctx.wakeBriefDecisionId || null,
+      guide_feature: ctx.guideOpen.feature,
+      guide_state: ctx.guideOpen.state,
+    },
+    effects: { markGreetingSent: true, armWatchdog: true },
+  };
+}
+
 function tryGuidedTopicRung(ctx: GreetingDecisionContext): GreetingDecision | null {
   if (!ctx.guidedTopicNarrationContent || ctx.isAnonymous) return null;
   const od = ctx.openDecision;
@@ -1143,6 +1178,7 @@ export function overviewIndependentOpenerWins(ctx: GreetingDecisionContext): boo
   return (
     tryWorkSurfaceRung(ctx) !== null ||
     trySupportReportRung(ctx) !== null ||
+    tryGuideOpenRung(ctx) !== null ||
     tryGuidedTopicRung(ctx) !== null
   );
 }
@@ -1163,6 +1199,10 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
   // tapped topic: it outranks every briefing rung.
   const supportFast = trySupportReportRung(ctx);
   if (supportFast) return supportFast;
+
+  // VTID-04951 — "Ask Vitana" on a screen outranks a queued guided topic.
+  const guideFast = tryGuideOpenRung(ctx);
+  if (guideFast) return guideFast;
 
   const guidedFast = tryGuidedTopicRung(ctx);
   if (guidedFast) return guidedFast;
@@ -1390,6 +1430,10 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
   // above day_close / newday_overview.
   const supportNormal = trySupportReportRung(ctx);
   if (supportNormal) return supportNormal;
+
+  // VTID-04951 — same position on the normal ladder (see computeSafeFastLadder).
+  const guideNormal = tryGuideOpenRung(ctx);
+  if (guideNormal) return guideNormal;
 
   const guidedNormal = tryGuidedTopicRung(ctx);
   if (guidedNormal) return guidedNormal;

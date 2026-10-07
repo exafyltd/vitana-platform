@@ -2525,6 +2525,17 @@
         startPayload.commerce_setup = true;
         _s.commerceSetup = false;
       }
+      // VTID-04951: opened with "Ask Vitana" from a screen — four short flat
+      // fields (the gateway validates each). One-shot, same as support_report:
+      // startPayload is rebuilt on every _sessionStart, so a reconnect never
+      // re-opens the guide.
+      if (_s.guide) {
+        startPayload.guide_feature = _s.guide.feature;
+        startPayload.guide_state = _s.guide.state;
+        if (_s.guide.kind) startPayload.guide_kind = _s.guide.kind;
+        if (_s.guide.title) startPayload.guide_title = _s.guide.title;
+        _s.guide = null;
+      }
 
       // VTID-03291 / DEV-COMHU-0507: Guided Journey catalog topic tap. When the
       // host opened the orb via VitanaOrb.focusGuidedTopic(topicId), the topicId
@@ -5465,6 +5476,7 @@
     // into the next, unrelated open.
     _s.supportReport = false;
     _s.commerceSetup = false; // VTID-04840: same for a commerce setup open.
+    _s.guide = null; // VTID-04951: and for a guide open that never started.
     // VTID-03293 (#3 fix-2): kill the reconnect/disconnect machinery so a STALLED
     // session (e.g. stuck "connecting" with no audio) can ALWAYS be closed. The
     // recovery watchdog is a setInterval that re-fires _resetAndReconnect; without
@@ -6213,6 +6225,23 @@
     startSupportReport: function () {
       try { _sessionStop(); } catch (e) { /* best-effort */ }
       _s.supportReport = true;
+      _show();
+    },
+
+    // VTID-04951: open the orb as the FAQ / how-to guide for the screen the
+    // member is on ("Ask Vitana"). ctx = {feature, state, kind?, title?}; the
+    // gateway validates it and Vitana opens as that screen's guide instead of
+    // the daily greeting. One-shot, like startSupportReport. A malformed ctx
+    // opens the orb normally.
+    startGuide: function (ctx) {
+      try { _sessionStop(); } catch (e) { /* best-effort */ }
+      var c = ctx && typeof ctx === 'object' ? ctx : null;
+      _s.guide = (c && typeof c.feature === 'string' && typeof c.state === 'string') ? {
+        feature: c.feature.slice(0, 40),
+        state: c.state.slice(0, 20),
+        kind: typeof c.kind === 'string' ? c.kind.slice(0, 30) : '',
+        title: typeof c.title === 'string' ? c.title.slice(0, 80) : ''
+      } : null;
       _show();
     },
 

@@ -1,0 +1,11 @@
+# VTID-04951 — commands actually run (from services/gateway), 2026-10-07
+npx tsc --noEmit -p .                          -> exit 0
+npx jest test/orb/live/guide test/services/conversation/vtid-04395-support-report-rung.test.ts test/orb/live/prewarm test/vtid-04659-staging-checks-use-versioned-urls.test.ts test/scripts/command-hub-ownership-guard.test.ts
+                                               -> 10 suites, 122 tests passed (outputs/jest-guide-mode.txt)
+npx jest test/services/conversation test/orb test/frontend test/vtid-04560 test/vtid-04659 test/routes/command-hub-static-cache-headers
+                                               -> 351 suites; 2 prewarm source pins updated for `!_guideSession`, then 5/5 prewarm suites green
+npx jest test/command-hub test/vtid-04456 test/vtid-04465
+                                               -> 35 suites, 554 tests passed
+PR_TITLE="VTID-04951: guide mode" node scripts/ci/command-hub-ownership-guard.js
+                                               -> Guard check PASSED
+# Not run: a real spoken guide session (needs a microphone and the model) — checked by the owner on staging.

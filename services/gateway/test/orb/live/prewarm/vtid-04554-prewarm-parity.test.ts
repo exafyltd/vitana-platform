@@ -266,7 +266,7 @@ describe('VTID-04554 prewarm envelope == cold envelope for a fixture', () => {
 
 describe('VTID-04554 wiring (source) — flag off is today', () => {
   it('flag off: the blind login-prewarm claim is exactly the old one; flag on disables it', () => {
-    expect(code).toMatch(/const prewarmedNova = session\.identity\?\.user_id && !isWorkSurface\(sessionSurface\) && _prewarmPersonaIsVitana && !_prewarmFullContext\s*\n\s*\? consumePrewarmedNovaSession\(session\.identity\.user_id\)/);
+    expect(code).toMatch(/const prewarmedNova = session\.identity\?\.user_id && !isWorkSurface\(sessionSurface\) && _prewarmPersonaIsVitana && !_guideSession && !_prewarmFullContext\s*\n\s*\? consumePrewarmedNovaSession\(session\.identity\.user_id\)/);
     expect(code).toMatch(/const _prewarmFullContext = isPrewarmFullContextEnabled\(\);/);
   });
 

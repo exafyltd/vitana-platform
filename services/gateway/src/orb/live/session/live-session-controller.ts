@@ -804,6 +804,7 @@ export async function handleLiveStreamEndTurn(
  *  to break circular imports per VTID-03167). */
 export { VERTEX_WAKE_BRIEF_OVERRIDE_MARKER } from '../instruction/wake-brief-marker';
 import { VERTEX_WAKE_BRIEF_OVERRIDE_MARKER } from '../instruction/wake-brief-marker';
+import { sanitizeGuideContext } from '../guide/guide-context';
 
 // VTID-03167: sentinel prefix that providers can use to ship a fully-
 // formed structural block in `userFacingLine`. When present, the
@@ -2012,6 +2013,9 @@ export async function handleLiveSessionStart(
     // VTID-04840: the supplier tapped "Talk to Vitana" in the commerce AI
     // setup sheet; the commerce opener then asks for their website.
     commerce_setup: (body as any).commerce_setup === true,
+    // VTID-04951: opened with "Ask Vitana" from a screen — the guide (FAQ /
+    // how-to) for that screen. Validated field by field; null opens normally.
+    guide: sanitizeGuideContext(body),
     // VTID-04430: the host app's build stamp; voice-filed tickets store it.
     app_version: normalizeAppVersion((body as any).app_version),
   };
