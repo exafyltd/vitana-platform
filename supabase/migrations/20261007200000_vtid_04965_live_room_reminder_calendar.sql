@@ -14,6 +14,7 @@
 --     their row, except registered test/service accounts.
 -- 'live_room' is already allowed by valid_source_type (VTID-04331).
 -- Idempotent: safe to run twice.
+-- impact-allow-solo-migration: a trigger + backfill on existing tables; the frontend half is exafyltd/vitana-v1#1277.
 
 CREATE OR REPLACE FUNCTION public.fn_live_stream_subscription_to_calendar()
 RETURNS trigger
