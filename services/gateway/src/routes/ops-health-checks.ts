@@ -153,13 +153,32 @@ export function evalOrbSessionLedger(h: {
 export const PUSH_STALE_MIN = 15;
 export const PUSH_DOWN_MIN = 60;
 export const PUSH_BACKLOG_MAX = 25;
-export function evalPushDispatch(rows: Array<{ created_at: string }>, now = Date.now()): OpsCheck {
-  if (rows.length === 0) return { status: 'ok', unsent: 0 };
-  const oldestMin = Math.round((now - new Date(rows[0].created_at).getTime()) / 60000);
-  const base = { unsent: rows.length, oldest_age_min: oldestMin };
-  if (oldestMin > PUSH_DOWN_MIN) return { status: 'down', reason: 'push_dispatch_stalled', ...base };
-  if (oldestMin > PUSH_STALE_MIN || rows.length > PUSH_BACKLOG_MAX) {
+/**
+ * VTID-04962: FCM error share over the outcome window. Only FCM attempts
+ * count (delivered_fcm, delivered_both, fcm_error); rows with no recorded
+ * outcome are ignored, never treated as failures.
+ */
+export const PUSH_FCM_ERROR_RATIO_MAX = 0.5;
+export const PUSH_FCM_MIN_ATTEMPTS = 20;
+
+export function evalPushDispatch(
+  rows: Array<{ created_at: string }>,
+  now = Date.now(),
+  outcomes?: Record<string, number>,
+): OpsCheck {
+  const oldestMin = rows.length ? Math.round((now - new Date(rows[0].created_at).getTime()) / 60000) : 0;
+  const base: Record<string, unknown> = rows.length ? { unsent: rows.length, oldest_age_min: oldestMin } : { unsent: 0 };
+  if (outcomes) base.outcomes = outcomes;
+  if (rows.length && oldestMin > PUSH_DOWN_MIN) return { status: 'down', reason: 'push_dispatch_stalled', ...base };
+  if (rows.length && (oldestMin > PUSH_STALE_MIN || rows.length > PUSH_BACKLOG_MAX)) {
     return { status: 'degraded', reason: 'push_backlog_growing', ...base };
+  }
+  if (outcomes) {
+    const fcmErrors = outcomes.fcm_error ?? 0;
+    const fcmAttempts = fcmErrors + (outcomes.delivered_fcm ?? 0) + (outcomes.delivered_both ?? 0);
+    if (fcmAttempts >= PUSH_FCM_MIN_ATTEMPTS && fcmErrors / fcmAttempts > PUSH_FCM_ERROR_RATIO_MAX) {
+      return { status: 'degraded', reason: 'fcm_send_errors', fcm_error_ratio: Math.round((fcmErrors / fcmAttempts) * 100) / 100, ...base };
+    }
   }
   return { status: 'ok', ...base };
 }
@@ -234,8 +253,35 @@ router.get('/push-dispatch', (_req: Request, res: Response) => { // public-route
         if (error) throw new Error(`user_notifications: ${error.message}`);
         return (data ?? []) as Array<{ created_at: string }>;
       }),
+      Date.now(),
+      await cached('push_outcomes', loadPushOutcomes),
     ),
   );
 });
+
+/**
+ * VTID-04962: push_outcome counts over the last 6 hours. Returns undefined
+ * when the counts cannot be read (e.g. the column is not migrated yet), so
+ * the backlog check above still answers on its own.
+ */
+async function loadPushOutcomes(): Promise<Record<string, number> | undefined> {
+  const sb = getSupabase();
+  if (!sb) return undefined;
+  try {
+    const since = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await sb
+      .from('user_notifications')
+      .select('push_outcome')
+      .not('push_outcome', 'is', null)
+      .gte('created_at', since)
+      .limit(5000);
+    if (error) return undefined;
+    const counts: Record<string, number> = {};
+    for (const r of (data ?? []) as Array<{ push_outcome: string }>) counts[r.push_outcome] = (counts[r.push_outcome] ?? 0) + 1;
+    return counts;
+  } catch {
+    return undefined;
+  }
+}
 
 export { router as opsHealthChecksRouter };

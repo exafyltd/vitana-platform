@@ -234,13 +234,73 @@ export const TYPE_META: Record<string, TypeMeta> = {
 // ── Low-level FCM Send ───────────────────────────────────────
 
 /**
+ * VTID-04962: what happened to one FCM send.
+ *  - 'sent'  — FCM accepted the message.
+ *  - 'stale' — the token is unregistered/invalid; the caller revokes it.
+ *  - 'error' — any other failure (credentials, permission, project,
+ *    quota, network). NOT delivered, and the token is kept.
+ * Before VTID-04962 'error' was reported as delivered, which hid a broken
+ * FCM path and suppressed the Appilix fallback that keys off zero sends.
+ */
+export type FcmSendResult = 'sent' | 'stale' | 'error';
+
+/** Per-user fan-out tally, filled by sendPushToUser() when passed in. */
+export interface PushFanoutOutcome {
+  sent: number;
+  stale: number;
+  errors: number;
+}
+
+export function newPushFanoutOutcome(): PushFanoutOutcome {
+  return { sent: 0, stale: 0, errors: 0 };
+}
+
+/** Values of user_notifications.push_outcome (VTID-04962). */
+export type PushOutcome =
+  | 'delivered_fcm'
+  | 'delivered_appilix'
+  | 'delivered_both'
+  | 'no_device'
+  | 'fcm_error'
+  | 'suppressed_type_disabled'
+  | 'suppressed_push_disabled'
+  | 'suppressed_dnd'
+  | 'dispatch_exception';
+
+/** The delivery outcome of one notification after FCM and Appilix ran. */
+export function classifyPushOutcome(fcm: PushFanoutOutcome, appilixSent: boolean): PushOutcome {
+  if (fcm.sent > 0 && appilixSent) return 'delivered_both';
+  if (fcm.sent > 0) return 'delivered_fcm';
+  if (appilixSent) return 'delivered_appilix';
+  if (fcm.errors > 0) return 'fcm_error';
+  return 'no_device';
+}
+
+/**
+ * Record the outcome on the notification row. Best effort: a failure is
+ * logged and dropped — push_sent_at, not this column, is what stops a row
+ * from being pushed twice.
+ */
+export async function recordPushOutcome(
+  supabase: SupabaseClient<any, any, any>,
+  notificationId: string,
+  outcome: PushOutcome,
+): Promise<void> {
+  try {
+    const { error } = await repo.setNotificationPushOutcome(supabase, notificationId, outcome);
+    if (error) console.warn(`[Notifications] push_outcome write failed for ${notificationId}: ${error.message}`);
+  } catch (err: any) {
+    console.warn(`[Notifications] push_outcome write failed for ${notificationId}: ${err?.message || err}`);
+  }
+}
+
+/**
  * Send push notification to a single FCM token.
- * Returns false if the token is stale (should be removed).
  */
 export async function sendPushNotification(
   deviceToken: string,
   payload: NotificationPayload
-): Promise<boolean> {
+): Promise<FcmSendResult> {
   try {
     await fcm.send({
       token: deviceToken,
@@ -265,7 +325,7 @@ export async function sendPushNotification(
         ...(payload.tag ? { notification: { tag: payload.tag } } : {}),
       },
     });
-    return true;
+    return 'sent';
   } catch (err: any) {
     const code = err.code || err.errorInfo?.code || '';
     if (
@@ -273,10 +333,12 @@ export async function sendPushNotification(
       code === 'messaging/invalid-registration-token'
     ) {
       console.warn('[Notifications] Stale FCM token, will remove:', deviceToken.slice(0, 20) + '...');
-      return false;
+      return 'stale';
     }
-    console.error('[Notifications] FCM send error:', err.message || err);
-    return true; // Don't remove token on transient errors
+    // Not delivered. The token is kept (the failure may be transient or on
+    // our side, e.g. credentials), but it must not count as a send.
+    console.error(`[Notifications] FCM send error code=${code || 'unknown'}:`, err.message || err);
+    return 'error';
   }
 }
 
@@ -288,7 +350,7 @@ export async function sendPushToUser(
   tenantId: string,
   payload: NotificationPayload,
   supabase: SupabaseClient<any, any, any>,
-  opts?: { excludeAppilixTagged?: boolean }
+  opts?: { excludeAppilixTagged?: boolean; outcome?: PushFanoutOutcome }
 ): Promise<number> {
   // Only devices this user still OWNS (VTID-03481). A revoked row means the
   // device was taken over by another account, or the user signed out on it —
@@ -312,18 +374,25 @@ export async function sendPushToUser(
 
   if (!targets.length) return 0;
 
+  // VTID-04962: only an accepted send counts. Compare against the result
+  // strings explicitly — every FcmSendResult is a truthy string.
+  const tally = opts?.outcome ?? newPushFanoutOutcome();
   let sent = 0;
   for (const { fcm_token } of targets) {
-    const ok = await sendPushNotification(fcm_token, payload);
-    if (ok) {
+    const result = await sendPushNotification(fcm_token, payload);
+    if (result === 'sent') {
       sent++;
-    } else {
+      tally.sent++;
+    } else if (result === 'stale') {
+      tally.stale++;
       // FCM rejected the token as unregistered/invalid — it is dead for every
       // owner, so revoke it outright rather than scoping to this user.
       await repo.revokeDeviceToken(supabase, fcm_token, {
         revoked_at: new Date().toISOString(),
         revoked_reason: 'fcm_invalid',
       });
+    } else {
+      tally.errors++;
     }
   }
   return sent;
@@ -771,6 +840,7 @@ export async function notifyUser(
   //      last-resort fallback (original behavior).
   let pushed = 0;
   let appilixSent = false;
+  const fcmTally = newPushFanoutOutcome();
   if (shouldSendPush) {
     // VTID-03481: skip Appilix entirely for a user who is signed out on every
     // device we know about. Appilix targets by user_identity and retains stale
@@ -797,14 +867,26 @@ export async function notifyUser(
         // browser web-push) are safe to fall back to here.
         pushed = await sendPushToUser(userId, tenantId, payload, supabase, {
           excludeAppilixTagged: true,
+          outcome: fcmTally,
         });
       }
     } else {
-      pushed = await sendPushToUser(userId, tenantId, payload, supabase);
+      pushed = await sendPushToUser(userId, tenantId, payload, supabase, { outcome: fcmTally });
       if (pushed === 0 && !appilixSuppressed) {
         appilixSent = await sendAppilixPush(userId, payload);
       }
     }
+  }
+
+  // VTID-04962: record what actually happened on the row this call wrote.
+  // Push-capable rows only; a push the member's settings held back says so.
+  if (notificationId && (meta.channel === 'push' || meta.channel === 'push_and_inapp')) {
+    const outcome: PushOutcome = shouldSendPush
+      ? classifyPushOutcome(fcmTally, appilixSent)
+      : pushBlockedByDnd
+        ? 'suppressed_dnd'
+        : 'suppressed_push_disabled';
+    await recordPushOutcome(supabase, notificationId, outcome);
   }
 
   console.log(
