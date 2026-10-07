@@ -16336,25 +16336,15 @@ router.post('/session/:id/audio-ready', optionalAuth, async (req: AuthenticatedR
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'supabase_unavailable' });
   try {
-    const { writeOrbSessionState } = await import('../services/orb/orb-session-state');
-    // Short TTL: the ack is only meaningful within the session-start window.
-    const r = await writeOrbSessionState(
+    // VTID-04943: shared with the WebSocket transport's audio_ready.
+    const { recordAudioReadyAck } = await import('../services/orb/orb-session-state');
+    const r = await recordAudioReadyAck({
       supabase,
       userId,
-      'audio_ready_ack',
-      { session_id: sessionId, ready_at: new Date().toISOString() },
-      10, // minutes
-    );
-    void emitOasisEvent({
-      vtid: 'DEV-COMHU-0504',
-      type: 'orb.session.audio_ready.acked',
-      source: 'orb-live',
-      status: 'info',
-      message: `audio pipeline ready ack for session ${sessionId}`,
-      payload: { session_id: sessionId, user_id: userId, ok: r.ok, reason: r.reason },
-      actor_id: userId,
-      surface: 'orb',
-    }).catch(() => {});
+      sessionId,
+      transport: 'http',
+      emit: emitOasisEvent,
+    });
     return res.json({ ok: r.ok });
   } catch (e) {
     return res.status(200).json({ ok: false, reason: e instanceof Error ? e.message : String(e) });
@@ -18014,7 +18004,10 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
         sendWsMessage(clientWs, { type: 'error', message: 'No active session.' });
         return;
       }
+      {
+      let wsGreeting: 'deferred_sent' | 'prebuffer_flushed' | 'already_released';
       if (liveSession.greetingDeferred && !liveSession.greetingSent && liveSession.upstreamWs) {
+        wsGreeting = 'deferred_sent';
         console.log(`[VTID-AUDIO-READY] Client audio_ready received — sending chime + deferred greeting for session ${liveSession.sessionId}`);
         // VTID-INSTANT-FEEDBACK: Send activation chime immediately so user hears
         // instant audio feedback while Gemini generates the real greeting (2-5s).
@@ -18042,6 +18035,7 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
         // gap to audio_out_first_chunk is the model's first-token time.
         liveSession.establishLatency?.mark('greeting_sent', { deferred: true });
       } else if (liveSession.prebufferGreetingAudio) {
+        wsGreeting = 'prebuffer_flushed';
         // DEV-COMHU-0513 — greeting pre-buffer: generation already started at
         // connect; the client is now ready, so release the held greeting audio
         // (chime first, then buffered chunks). This is the common case — the ack
@@ -18050,7 +18044,24 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
         console.log(`[GREETING-PREBUFFER] Client audio_ready received — flushing held greeting for session ${liveSession.sessionId}`);
         flushPrebufferedGreeting(liveSession, clientWs, 'audio_ready');
       } else {
+        wsGreeting = 'already_released';
         console.log(`[VTID-AUDIO-READY] audio_ready received but greeting already sent or not deferred: session=${liveSession.sessionId}`);
+      }
+      // VTID-04943: record the ack like the HTTP route does, after the greeting
+      // is released and without waiting on it. Anonymous sessions record nothing.
+      const ackUserId = liveSession.identity?.user_id;
+      if (ackUserId) {
+        void import('../services/orb/orb-session-state')
+          .then(({ recordAudioReadyAck }) => recordAudioReadyAck({
+            supabase: getSupabase(),
+            userId: ackUserId,
+            sessionId: liveSession.sessionId,
+            transport: 'ws',
+            greeting: wsGreeting,
+            emit: emitOasisEvent,
+          }))
+          .catch(() => { /* best-effort telemetry */ });
+      }
       }
       break;
 
