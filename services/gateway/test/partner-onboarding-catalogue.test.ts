@@ -159,6 +159,8 @@ function wire(over: Partial<World> = {}): World {
     return { data: w.priorStep ? [{ step_key: 'catalogue', status: w.priorStep, detail: {} }] : [], error: null };
   };
   handlers.partner_terms_acceptances = () => ({ data: [], error: null });
+  // VTID-04953: the checklist reads the org's connection count.
+  handlers.integration_manifest = () => ({ data: null, count: 0, error: null });
   return w;
 }
 

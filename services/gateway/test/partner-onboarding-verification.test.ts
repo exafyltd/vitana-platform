@@ -116,6 +116,10 @@ function wire(org: Record<string, any>, opts: { admin?: boolean; priorDetail?: a
     return { data: stored, error: null };
   };
   handlers.partner_terms_acceptances = () => ({ data: [], error: null });
+  // VTID-04953: the checklist reads the org's catalogue source.
+  handlers.integration_manifest = () => ({ data: null, count: 0, error: null });
+  handlers.merchants = () => ({ data: [], error: null });
+  handlers.products = () => ({ data: [], error: null });
   return state;
 }
 

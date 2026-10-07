@@ -27,6 +27,7 @@ function input(over: Partial<ChecklistInput> = {}, org: Partial<ChecklistInput['
     acceptedTermsVersions: [],
     currentTermsVersion: '2026-09',
     memberCount: 1,
+    catalogueSource: { connections: 0, completeOfferings: 0 },
     ...over,
   };
 }
@@ -108,8 +109,9 @@ describe('buildChecklist', () => {
     const all = requiredSteps('affiliate_brand')
       .filter((k) => !DERIVED_STEPS.includes(k))
       .map((k) => ({ step_key: k, status: 'done' }));
+    // A connected partner: the stored mapping row (connections reconcile) counts.
     const c = buildChecklist(input(
-      { storedSteps: all, acceptedTermsVersions: ['2026-09'] },
+      { storedSteps: all, acceptedTermsVersions: ['2026-09'], catalogueSource: { connections: 1, completeOfferings: 0 } },
       { partner_type: 'affiliate_brand', ...COMPLETE_SHOP_COMPANY },
     ));
     expect(c.complete).toBe(true);

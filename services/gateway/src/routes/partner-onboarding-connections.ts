@@ -26,8 +26,8 @@
  * through the portal endpoints, which know nothing about the org, so the step is
  * reconciled here on every list and create; the row is only written, and
  * `partner_org.mapping_step_changed` only emitted, when the status moves.
- * Partners with a manual catalogue and no connection confirm mapping another
- * way, which is not built yet.
+ * Partners with a manual or AI/MCP catalogue and no connection complete
+ * mapping with one complete offering (VTID-04953); the checklist derives it.
  *
  * Activation (certified → active) stays the platform's one-approval gate on
  * the admin router, exactly as in the portal.

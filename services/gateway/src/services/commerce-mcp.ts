@@ -273,6 +273,17 @@ const STEP_TOOLS: Record<string, string> = {
   catalogue: 'add_product',
   mapping: 'connect_store',
 };
+/**
+ * VTID-04953 (B3): mapping without a catalogue connection is finished by one
+ * complete offering, so the assistant adds or completes a product instead of
+ * connecting a store the supplier does not have.
+ */
+const CATALOGUE_MAPPING_ACTION = 'Add one complete offering: title, price, link, origin country and where it is offered.';
+
+function isCatalogueMapping(st: { detail?: { source?: unknown } | null; missing?: string[] } | undefined): boolean {
+  return Boolean(st && (st.detail?.source === 'catalogue' || st.missing?.includes('complete_offering')));
+}
+
 const STEP_SUPPLIER_ACTIONS: Record<string, string> = {
   terms: 'Read and accept the Partner Terms on Vitanaland.',
   tracking_test: 'Finish the tracking test on Vitanaland.',
@@ -286,7 +297,11 @@ const STEP_SUPPLIER_ACTIONS: Record<string, string> = {
  * assistant can call, or what only the supplier can do and the link for it.
  */
 export function nextAction(
-  checklist: { next_step?: string | null; complete?: boolean } | null,
+  checklist: {
+    next_step?: string | null;
+    complete?: boolean;
+    steps?: Array<{ key: string; detail?: { source?: unknown } | null; missing?: string[] }>;
+  } | null,
   typeless: boolean,
   link: string,
 ): { step: string | null; tool: string | null; supplier_action: string | null; link: string | null } {
@@ -295,6 +310,9 @@ export function nextAction(
   if (checklist.complete) return { step: null, tool: 'submit_for_verification', supplier_action: null, link: null };
   const step = checklist.next_step ?? null;
   if (!step) return { step: null, tool: null, supplier_action: null, link: null };
+  if (step === 'mapping' && isCatalogueMapping(checklist.steps?.find((s) => s.key === 'mapping'))) {
+    return { step, tool: 'add_product', supplier_action: CATALOGUE_MAPPING_ACTION, link: null };
+  }
   const tool = STEP_TOOLS[step] ?? null;
   const supplierAction = STEP_SUPPLIER_ACTIONS[step] ?? (tool ? null : 'Finish this step on Vitanaland.');
   return { step, tool, supplier_action: supplierAction, link: supplierAction ? link : null };
@@ -330,7 +348,9 @@ export function shapeStatus(body: Record<string, any>, portalUrl: string): Recor
       // VTID-04933: what the Vitanaland reviewer asked the supplier to change.
       ...(typeof st.detail?.review_note?.reason === 'string' ? { review_note: st.detail.review_note.reason } : {}),
       ...(st.detail?.method === 'admin_approval' ? { approved_by_vitanaland: true } : {}),
-      ...(ON_SCREEN_STEPS.has(st.key) ? { done_on_vitanaland: true, link: `${portalUrl}/commerce?org=${org.id}` } : {}),
+      // VTID-04953: a not_required step is not something to do on Vitanaland.
+      ...(ON_SCREEN_STEPS.has(st.key) && st.status !== 'not_required' ? { done_on_vitanaland: true, link: `${portalUrl}/commerce?org=${org.id}` } : {}),
+      ...(st.key === 'mapping' && isCatalogueMapping(st) && st.status !== 'done' ? { how: CATALOGUE_MAPPING_ACTION } : {}),
     })),
     portal_link: `${portalUrl}/commerce?org=${org.id}`,
     ...(typeless
