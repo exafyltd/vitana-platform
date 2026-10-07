@@ -60,8 +60,9 @@ OASIS_IMPACT: no — no event topic added or changed; the RPCs, triggers and fix
 
 ## Database apply
 
-Applied to the shared Supabase project before merge (migration + fix-up), then verified read-only: live bodies' md5
-equal the migration file's, triggers present, helper grants, and the post-apply counts in `outputs/`.
+Applied 2026-10-07, before merge, through `RUN-MIGRATION.yml` (Supabase Management API) from this branch — migration,
+then fix-up — and verified read-only: the four live bodies' md5 equal the migration file's, the four triggers exist,
+the helper is executable by `service_role` only, and every excluded-account count is 0 (`outputs/after-apply-verification.json`).
 
 ## MERGE_PAYLOAD_PREVIEW
 

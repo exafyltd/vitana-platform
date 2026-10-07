@@ -29,3 +29,12 @@ $ npm run test:support          Tests: 85 passed (4 suites)
 ## Staging manifest
 $ node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(require('./docs/validation/VTID-04888/staging-tests.json'))"
 {"ok":true,"errors":[]}
+
+## Apply (2026-10-07) — the Supabase connector's writes timed out in this session; applied via the repo's own path
+Pre-check (read-only): live md5 of the four RPCs unchanged since capture; counts unchanged (3/3/18/16/11/173), 0 dependents.
+gh workflow RUN-MIGRATION.yml --ref claude/funny-mccarthy-1bt8nz -f migration_file=supabase/migrations/20261005120000_vtid_04888_rule45_intents_profiles.sql
+  -> live md5 of all four functions == migration file blocks; 4 triggers present; helper EXECUTE service_role only
+gh workflow RUN-MIGRATION.yml --ref claude/funny-mccarthy-1bt8nz -f migration_file=supabase/migrations/data-fixups/20261005120100_vtid_04888_rule45_cleanup.sql
+  -> excluded visible profiles 0, live intents 0, own recs 0, real rows listing them 0, matches 0;
+     intent_matches 297 -> 124, intent_match_recommendations 65 -> 49
+Details: outputs/after-apply-verification.json
