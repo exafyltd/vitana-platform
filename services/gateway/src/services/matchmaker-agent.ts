@@ -24,6 +24,7 @@ import { withGeminiLog } from './gemini-call-log';
 import { callClaudeText, CLAUDE_SONNET_4_6 } from './claude-text-client';
 import type { MatchRow } from './intent-matcher';
 import * as repo from './matchmaker-agent-repository';
+import { fetchExcludedTestServiceAccountIds } from '../lib/excluded-test-service-accounts';
 
 const PRIMARY_MODEL = CLAUDE_SONNET_4_6;
 
@@ -387,7 +388,8 @@ async function probePoolSize(source: SourceIntent): Promise<number> {
   return count ?? 0;
 }
 
-async function loadProfileFallback(
+/** Exported for tests (VTID-04888). */
+export async function loadProfileFallback(
   source: SourceIntent, _requester: RequesterContext
 ): Promise<ProfileFallbackCandidate[]> {
   const supabase = getSupabase();
@@ -399,7 +401,11 @@ async function loadProfileFallback(
 
   // Pull profiles that have ANY dance preferences set, prioritising same variety.
   const { data: profs } = await repo.fetchProfilesWithDancePreferences(supabase, source.requester_user_id, 20);
+  // VTID-04888 (CLAUDE.md rule 45): test/service accounts are never offered to a member as a match. The
+  // intent_matches backstop trigger also refuses to store one; this keeps them out of the agent prompt too.
+  const excluded = await fetchExcludedTestServiceAccountIds(supabase);
   const list = ((profs as any[]) || []).filter((p) => {
+    if (excluded.has(String(p.user_id))) return false;
     const v = p.dance_preferences?.varieties;
     return Array.isArray(v) && v.length > 0;
   });
