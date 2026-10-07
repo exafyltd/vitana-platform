@@ -224,8 +224,8 @@ export async function notifyUser(
 
 export function notifyUserAsync(/* fire-and-forget variant */): void;
 export function notifyUsersAsync(/* batch variant */): void;
-export async function sendPushNotification(/* ... */): Promise<void>;
-export async function sendPushToUser(/* ... */): Promise<void>;
+export async function sendPushNotification(/* ... */): Promise<FcmSendResult>; // "sent" | "stale" | "error" (VTID-04962)
+export async function sendPushToUser(/* ... */): Promise<number>; // accepted FCM sends only (VTID-04962)
 export async function sendAppilixPush(/* ... */): Promise<void>;
 \`\`\`
 

@@ -30,6 +30,7 @@ export const REMINDER_NOTIFICATION_TYPE = 'reminder_due';
 import { tt } from '../i18n/catalog';
 import { getUserLocale } from '../i18n/server-locale';
 import * as repo from '../routes/scheduled-notifications-repository';
+import { sharedDbLoopAllowed } from '../env';
 
 const DEFAULT_STALE_AFTER_MINUTES = 60;
 const DEFAULT_TICK_INTERVAL_MS = 30_000;
@@ -40,8 +41,16 @@ export function resolveStaleAfterMinutes(raw: string | undefined = process.env.R
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_STALE_AFTER_MINUTES;
 }
 
-export function isInProcessDispatchEnabled(raw: string | undefined = process.env.REMINDERS_INPROCESS_DISPATCH_ENABLED): boolean {
-  return raw === 'true';
+/**
+ * The flag must be exactly 'true'. VTID-04963: on staging (which shares the
+ * production database) the loop also needs REMINDERS_STAGING_DISPATCH_OVERRIDE
+ * exactly 'true' — real members' reminders are dispatched by production.
+ */
+export function isInProcessDispatchEnabled(
+  raw: string | undefined = process.env.REMINDERS_INPROCESS_DISPATCH_ENABLED,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return raw === 'true' && sharedDbLoopAllowed('REMINDERS_STAGING_DISPATCH_OVERRIDE', env);
 }
 
 async function getServiceClient() {

@@ -24,7 +24,7 @@ import { getUserLocale } from '../../i18n/server-locale';
 import { tt } from '../../i18n/catalog';
 import { decidePushDelivery } from '../notification-controls/notification-controls-service';
 import { sendPushToUser } from '../notification-service';
-import { REMINDER_NOTIFICATION_TYPE } from '../reminders-dispatch';
+import { REMINDER_NOTIFICATION_TYPE, isInProcessDispatchEnabled } from '../reminders-dispatch';
 
 export const AUDIOBOOK_REMINDER_ROUTE = '/autopilot/audiobook';
 const TICK_MS = 5 * 60 * 1000;
@@ -93,8 +93,10 @@ export async function runAudiobookReminderTick(
 
 let started = false;
 
+// VTID-04963: same gate as the reminders loop (incl. the staging rule), with
+// the audiobook kill switch layered on top.
 export function isAudiobookReminderLoopEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.REMINDERS_INPROCESS_DISPATCH_ENABLED === 'true' && env.AUDIOBOOK_REMINDERS_DISABLED !== 'true';
+  return isInProcessDispatchEnabled(env.REMINDERS_INPROCESS_DISPATCH_ENABLED, env) && env.AUDIOBOOK_REMINDERS_DISABLED !== 'true';
 }
 
 /** Start the 5-minute tick. Idempotent; returns whether it was started. */

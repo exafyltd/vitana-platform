@@ -199,12 +199,14 @@ describe('wiring', () => {
     expect(index).toContain('startRemindersDispatchLoop()');
   });
 
-  it('staging pins the flag to exact "true" (strip-then-add); prod is untouched', () => {
+  it('staging pins the flag to exact "true" (strip-then-add); prod pins it too (VTID-04963)', () => {
     const staging = fs.readFileSync(path.join(WF, 'AWS-STAGE-DEPLOY-GATEWAY.yml'), 'utf8');
     const prod = fs.readFileSync(path.join(WF, 'AWS-PROD-DEPLOY-GATEWAY.yml'), 'utf8');
     expect(staging).toContain('{name:"REMINDERS_INPROCESS_DISPATCH_ENABLED", value:"true"}');
     const strip = staging.slice(staging.indexOf('.containerDefinitions[0].environment |='));
     expect(strip.slice(0, strip.indexOf('| not) ]'))).toContain('"REMINDERS_INPROCESS_DISPATCH_ENABLED"');
-    expect(prod).not.toContain('REMINDERS_INPROCESS_DISPATCH_ENABLED');
+    // VTID-04963: production dispatches real members' reminders itself; staging
+    // (shared database) only keeps going behind REMINDERS_STAGING_DISPATCH_OVERRIDE.
+    expect(prod).toContain('{name:"REMINDERS_INPROCESS_DISPATCH_ENABLED", value:"true"}');
   });
 });

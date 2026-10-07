@@ -20,7 +20,10 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { notifyUser, notifyUserAsync, sendPushToUser, sendAppilixPush, isSignedOutOnAllKnownDevices, TYPE_META } from '../services/notification-service';
+import {
+  notifyUser, notifyUserAsync, sendPushToUser, sendAppilixPush, isSignedOutOnAllKnownDevices, TYPE_META,
+  newPushFanoutOutcome, classifyPushOutcome, recordPushOutcome, type PushOutcome,
+} from '../services/notification-service';
 import { generatePersonalRecommendations } from '../services/recommendation-engine';
 import { LangCode, resolveLanguage } from '../services/recommendation-engine/analyzers/community-user-analyzer';
 import { tt, type GatewayI18nKey } from '../i18n/catalog';
@@ -1294,6 +1297,14 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
   let dispatched = 0;
   let skipped = 0;
 
+  // VTID-04962: push_sent_at stays the "handled" marker and is written first,
+  // on its own, so a failed outcome write can never leave a row to be pushed
+  // again. The outcome is recorded after it, best effort.
+  const markHandled = async (id: string, outcome: PushOutcome) => {
+    await repo.markNotificationPushSent(supa, id, new Date().toISOString());
+    await recordPushOutcome(supa, id, outcome);
+  };
+
   for (const notif of pending) {
     try {
       // VTID-04674: the admin switch. The row exists (it passed the database
@@ -1303,7 +1314,7 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
         typeof notif.data === 'object' && notif.data !== null ? (notif.data as any).automation_id : '',
       );
       if (!(await isNotificationTypeAllowed(supa, notif.tenant_id, notif.type, sourceKey))) {
-        await repo.markNotificationPushSent(supa, notif.id, new Date().toISOString());
+        await markHandled(notif.id, 'suppressed_type_disabled');
         skipped++;
         continue;
       }
@@ -1316,7 +1327,7 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
 
       // If push disabled globally, skip push but still mark as handled
       if (prefs?.push_enabled === false) {
-        await repo.markNotificationPushSent(supa, notif.id, new Date().toISOString());
+        await markHandled(notif.id, 'suppressed_push_disabled');
         skipped++;
         continue;
       }
@@ -1324,7 +1335,7 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
       // DND check — p0 bypasses DND. VTID-04674: in the member's timezone,
       // not the gateway's UTC clock.
       if (notif.priority !== 'p0' && (await isMemberInQuietHours(supa, notif.user_id, prefs))) {
-        await repo.markNotificationPushSent(supa, notif.id, new Date().toISOString());
+        await markHandled(notif.id, 'suppressed_dnd');
         skipped++;
         continue;
       }
@@ -1366,30 +1377,31 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
       // had both identities mapped to the device.
       let sent = 0;
       let appilixSent = false;
+      const fcmTally = newPushFanoutOutcome();
       const appilixSuppressed = await isSignedOutOnAllKnownDevices(notif.user_id, supa);
       if (hasDeepLink) {
         appilixSent = appilixSuppressed
           ? false
           : await sendAppilixPush(notif.user_id, pushPayload);
         if (!appilixSent) {
-          sent = await sendPushToUser(notif.user_id, notif.tenant_id, pushPayload, supa);
+          sent = await sendPushToUser(notif.user_id, notif.tenant_id, pushPayload, supa, { outcome: fcmTally });
         }
       } else {
-        sent = await sendPushToUser(notif.user_id, notif.tenant_id, pushPayload, supa);
+        sent = await sendPushToUser(notif.user_id, notif.tenant_id, pushPayload, supa, { outcome: fcmTally });
         if (sent === 0 && !appilixSuppressed) {
           appilixSent = await sendAppilixPush(notif.user_id, pushPayload);
         }
       }
 
-      // Mark as dispatched
-      await repo.markNotificationPushSent(supa, notif.id, new Date().toISOString());
+      // Mark as dispatched, with what actually happened
+      await markHandled(notif.id, classifyPushOutcome(fcmTally, appilixSent));
 
       if (sent > 0 || appilixSent) dispatched++;
       else skipped++; // No device tokens found and Appilix not configured
     } catch (err: any) {
       console.error(`[PushDispatch] Failed for notification ${notif.id}:`, err.message || err);
-      // Still mark as sent to avoid infinite retries
-      await repo.markNotificationPushSent(supa, notif.id, new Date().toISOString());
+      // Still mark as handled to avoid infinite retries
+      await markHandled(notif.id, 'dispatch_exception');
       skipped++;
     }
   }
