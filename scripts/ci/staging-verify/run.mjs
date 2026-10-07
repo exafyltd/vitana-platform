@@ -17,7 +17,7 @@
 
 import { createRequire } from 'node:module';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, appendFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, appendFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -341,6 +341,16 @@ async function verify(args) {
     if (!v.ok) throw new Error(`smoke/${service}.json invalid: ${v.errors.join('; ')}`);
     results.push(...(await runSuite(service, repoRoot, outDir, 'smoke', smoke.tests)));
     for (const s of plan.suites) results.push(...(await runSuite(service, repoRoot, outDir, s.vtid, s.tests)));
+    if (args.full === 'true') {
+      // VTID-04949 (C2): nightly full run — every other suite for this service too.
+      const all = {};
+      const dir = join(repoRoot, 'docs', 'validation');
+      if (existsSync(dir)) for (const v of readdirSync(dir)) if (/^VTID-\d{4,5}$/.test(v)) all[v] = loadManifest(repoRoot, v);
+      const full = lib.planFullRun({ service, manifests: all, alreadyRun: plan.suites.map((x) => x.vtid) });
+      log(`full run: ${full.suites.length} more suite(s), ${full.invalid.length} invalid`);
+      for (const iv of full.invalid) results.push({ suite: iv.vtid, name: 'manifest valid', kind: 'manifest', ok: false, problems: iv.errors, ms: 0 });
+      for (const s of full.suites) results.push(...(await runSuite(service, repoRoot, outDir, s.vtid, s.tests)));
+    }
     const after = await confirmLive(service, sha, repoRoot, { attempts: 1, samples: 5 });
     if (after.state !== 'match') {
       superseded = after.state === 'superseded';
@@ -364,6 +374,7 @@ async function verify(args) {
     staging_stamp: before.stamp,
     production_stamp: prodStamp,
     run_url: runUrl,
+    full: args.full === 'true',
     results,
     plan: { suites: plan.suites.map((s) => s.vtid), missing: plan.missing, invalid: plan.invalid, legacy_count: plan.legacy.length },
     shipping: shipping.map(({ sha: s, subject, author, date }) => ({ sha: s, subject, author, date })),
@@ -426,7 +437,14 @@ if (args.cmd === 'verify') {
   });
 } else if (args.cmd === 'check-pr') {
   checkPr(args);
+} else if (args.cmd === 'stamp') {
+  // VTID-04949 (C2): the full commit staging serves right now, for the nightly run.
+  stagingStamp(args.service).then((st) => {
+    const full = st ? git(resolve(args['repo-root'] || '.'), ['rev-parse', '--verify', `${st}^{commit}`], { allowFail: true }) : null;
+    if (!full) { console.error(`::error::could not resolve the staging stamp '${st}' for ${args.service}`); process.exit(1); }
+    console.log(full);
+  });
 } else {
-  console.error('usage: run.mjs verify|check-pr …');
+  console.error('usage: run.mjs verify|check-pr|stamp …');
   process.exit(2);
 }

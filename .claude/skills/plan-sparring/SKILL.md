@@ -63,7 +63,7 @@ and the verdict.
 Allocate immediately, never asking about the VTID. Implement, test, PR, merge, then run the
 post-merge loop. In a cloud session, arm a `send_later` self check-in about 8 minutes after merge
 and re-arm it every 5 minutes, up to 2 hours. Each check-in reads the STAGING-VERIFY result for the
-merge commit. On pass, send Gate 2 ("Staging verified — ready for deployment to production?") with
+merge commit. Before Gate 2, check that the newest full staging run (`staging.verify.*` with `metadata.full=true`) for the service is under 24 h old; if not, dispatch `STAGING-VERIFY.yml` with `full=true` and wait for it (VTID-04949). On pass, send Gate 2 ("Staging verified — ready for deployment to production?") with
 the evidence. On fail, fix forward, at most 3 attempts per failure before escalating with evidence.
 If the work outgrows the approved scope, add the change to the plan and send it back to the same
 partner for one round. CONVERGED → continue. Not converged → that is the one mid-flight question.
