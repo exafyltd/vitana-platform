@@ -103,7 +103,7 @@ Surface resolution code: `services/gateway/src/orb/live/instruction/live-system-
 |---|---|---|---|
 | `dragan3` | `c5a4daf9-190a-4a9e-9638-d6b32f85244a` | Dragan (Red) | Clean account, used for happy-path verification |
 | `dragan1` | `0adc6ff6-acb0-4dca-99d0-295211a40e3e` | Dragan Alexander (Blue) | Heavy account. **Manually pruned 2026-05-29 to 200 memory_items + 200 memory_facts**. Used for heavy-user verification — must keep working AND must accumulate predictably across subsequent sessions. |
-| (synthetic) | `a27552a3-0257-4305-8ed0-351a80fd3701` | e2e-test@vitana.dev | Use for synthetic Playwright flows. Password: `VitanaE2eTest2026!` |
+| (synthetic) | `a27552a3-0257-4305-8ed0-351a80fd3701` | e2e-test@vitana.dev | Use for synthetic Playwright flows. Password: in the `TEST_USER_PASSWORD` secret (never committed) |
 
 ### 1.7 Useful smoke commands
 

@@ -22,7 +22,7 @@ if (!anonKey) { note('anon key from bundle', false, 'not found'); process.exit(1
 const session = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json', apikey: anonKey },
-  body: JSON.stringify({ email: 'e2e-test@vitana.dev', password: 'VitanaE2eTest2026!' }),
+  body: JSON.stringify({ email: 'e2e-test@vitana.dev', password: process.env.TEST_USER_PASSWORD }),
 }).then(r => r.json());
 note('Supabase login', !!session.access_token, session.access_token ? `user ${session.user?.id?.slice(0, 8)}…` : JSON.stringify(session).slice(0, 120));
 if (!session.access_token) process.exit(1);

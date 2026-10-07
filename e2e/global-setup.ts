@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = 'https://inmkhvwdcuyhnxkgfvsb.supabase.co';
 const TEST_EMAIL = process.env.TEST_USER_EMAIL || 'e2e-test@vitana.dev';
-const TEST_PASSWORD = process.env.TEST_USER_PASSWORD || 'VitanaE2eTest2026!';
+const TEST_PASSWORD = process.env.TEST_USER_PASSWORD ?? '';
 
 /**
  * Playwright globalSetup: provisions a dedicated E2E test user in Supabase.
