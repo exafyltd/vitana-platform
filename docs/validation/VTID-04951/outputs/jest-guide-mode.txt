@@ -1,0 +1,135 @@
+PASS test/orb/live/prewarm/vtid-04548-prewarm-brain-role.test.ts
+    ✓ the Command Hub warms developer (7 ms)
+    ✓ mobile warms community, even on a Command Hub route (1 ms)
+    ✓ no route (a prewarm that does not send one) keeps the old community warm
+    ✓ role_preferences wins for the session active_role (the rule both paths now share) (1 ms)
+    ✓ active_role: the Command Hub lifts a missing/community role to developer, mobile forces community (2 ms)
+    ✓ the brain role is not moved by role_preferences: the session start has no app role on the identity either (1 ms)
+    ✓ community, Berlin (1 ms)
+    ✓ Command Hub, New York
+    ✓ mobile on the Command Hub route (1 ms)
+    ✓ no timezone
+    ✓ a different timezone is a different key
+    ✓ a Command Hub prewarm makes the Command Hub session a cache hit with the right role and zone (20 ms)
+    ✓ a prewarm for another zone is NOT served to the session (it builds its own) (8 ms)
+    ✓ prewarming again after a route switch warms the new role; the old key stays valid (16 ms)
+PASS test/orb/live/prewarm/orb-live-prewarm-wiring.test.ts
+    ✓ the WS message union includes prewarm and the switch dispatches it fire-and-forget (3 ms)
+    ✓ handleWsPrewarmMessage is gated on the ORB_NOVA_PREWARM feature flag and bails with no identity/active session (1 ms)
+    ✓ handleWsPrewarmMessage only tells the client it is safe to reuse the socket AFTER registration succeeds (Codex review, PR #3218) (1 ms)
+    ✓ connectToLiveAPI claims a prewarmed client by user_id before falling back to a cold connect (2 ms)
+    ✓ the reuse branch rebinds the four Nova-specific callbacks before the session can rotate/idle/diagnose (1 ms)
+    ✓ a claimed warm connection skips the real connect() call — the whole point of reuse (2 ms)
+    ✓ reused_warm_start is threaded into both the latency mark and the connect_succeeded OASIS event (1 ms)
+PASS test/scripts/command-hub-ownership-guard.test.ts
+    ✓ still approves an allowlisted VTID in the PR title (4 ms)
+    ✓ still approves an allowlisted VTID in the branch name
+    ✓ is still present and unmodified in the source (1 ms)
+    ✓ (a) approves a dev-autopilot/* branch carrying a real VTID in the PR title (1 ms)
+    ✓ accepts the executor branch with a 4-digit VTID too (VTID-\d{4,5})
+    ✓ (b) still FAILS a dev-autopilot/* branch with no VTID in the PR title (1 ms)
+    ✓ (c) still FAILS a non dev-autopilot branch with an unlisted VTID
+    ✓ does not accept a dev-autopilot branch name appearing only in the PR title
+    ✓ anchors the branch pattern — a branch merely CONTAINING the marker does not qualify
+    ✓ is the only branch pattern the carve-out recognizes
+    ✓ defines the protected path the carve-out cannot widen
+    ✓ explains in-source that the branch pattern is the executor’s and that VALIDATOR-CHECK is the real guarantee (1 ms)
+PASS test/vtid-04659-staging-checks-use-versioned-urls.test.ts
+    ✓ index.html loads orb-widget.js with a versioned cache bust (1 ms)
+    ✓ no staging http check reads a versioned Command Hub asset at its bare URL (6 ms)
+PASS test/orb/live/prewarm/vtid-04542-prewarm-miss-reason.test.ts
+    ✓ never prewarmed → none_available (2 ms)
+    ✓ TTL expired → expired (and the claim still returns null as before) (2 ms)
+    ✓ found dead at claim → dead_on_claim
+    ✓ a new prewarm or a successful claim clears the recorded reason
+PASS test/services/conversation/vtid-04395-support-report-rung.test.ts
+    ✓ opens as a support intake on the normal ladder (1 ms)
+    ✓ outranks the day-close at night (1 ms)
+    ✓ opens as a support intake on the safe-fast ladder too
+    ✓ never for an anonymous session, and not when the flag is off (1 ms)
+    ✓ is an English intent with no quoted spoken sentence (NEVER-rule 41)
+    ✓ session start stores support_report from the start body (1 ms)
+    ✓ both greeting sites gate it on turn 0 (5 ms)
+    ✓ the widget exposes startSupportReport and sends the flag one-shot (2 ms)
+    ✓ the Command Hub orb-widget cache-bust is this change or later
+PASS test/orb/live/prewarm/nova-session-prewarm.test.ts
+    ✓ registers and then claims a still-open prewarmed session (3 ms)
+    ✓ returns null for a user with no prewarmed session
+    ✓ claiming a dead (closed) connection returns null and closes it — never hands back a broken client (1 ms)
+    ✓ registering a second prewarm for the same user discards (and closes) the first (2 ms)
+    ✓ discardPrewarmedNovaSession closes and removes a pending entry, is a no-op if none exists (2 ms)
+    ✓ feeds a silence keepalive frame on an interval while unclaimed, and stops once claimed (1 ms)
+    ✓ never feeds silence to a client that has already closed (1 ms)
+    ✓ closes and removes an unclaimed entry once the TTL expires (1 ms)
+    ✓ a TTL that fires after the entry was already claimed is a no-op — never closes the real session's client out from under it (1 ms)
+    ✓ an invalid TTL env var falls back to the default rather than firing immediately or never (1 ms)
+PASS test/orb/live/guide/vtid-04951-guide-mode.test.ts
+    ✓ accepts the four flat fields (2 ms)
+    ✓ kind and title are optional and dropped when they do not pass (1 ms)
+    ✓ drops the whole guide when the feature or the state is malformed or missing (2 ms)
+    ✓ accepts a well-formed feature that has no hint of its own (1 ms)
+    ✓ flattens an injection-shaped title: no line breaks, no quotes, max 80 (1 ms)
+    ✓ opens on turn 0 only, so a later reconnect never re-opens the guide (2 ms)
+    ✓ is an English intent with no double-quoted sentence (NEVER-rule 41) (1 ms)
+    ✓ the guide block names the facts, the knowledge fallback and the injection guard (1 ms)
+    ✓ opens as the guide on the normal ladder and the safe-fast ladder (2 ms)
+    ✓ outranks a late-evening day close and the briefing rungs (1 ms)
+    ✓ precedence: support report > guide > queued guided topic > resume thread (1 ms)
+    ✓ never for an anonymous session or without a guide (1 ms)
+    ✓ a work surface never reaches the member guide rung
+    ✓ skips the overview gather like the other explicit rungs, and lists the rung for the Command Hub (3 ms)
+    ✓ session start stores the sanitised guide from the start body (2 ms)
+    ✓ both greeting sites read the guide through the turn-0 helper (5 ms)
+    ✓ the guide block rides the session system instruction (4 ms)
+    ✓ a guide session never claims a pooled prewarmed stream (6 ms)
+    ✓ the widget exposes startGuide and sends the four fields one-shot (3 ms)
+    ✓ the Command Hub orb-widget cache-bust is this change or later (1 ms)
+PASS test/orb/live/guided-topic-teaching-complete-signal.test.ts
+    ✓ is present in the authenticated tool catalog, right after end_teaching_session (10 ms)
+    ✓ is NOT present for an anonymous session (matches every other authenticated-only tool) (1 ms)
+    ✓ takes an optional freeform "reason" parameter, same shape as end_teaching_session (3 ms)
+    ✓ description tells the model to call it AFTER teaching, not before (1 ms)
+    ✓ has a case body for end_guided_topic_teaching
+    ✓ emits an orb_directive with directive:'end_guided_topic_teaching' over both SSE and WS (1 ms)
+    ✓ includes the active guided_topic_id in the directive payload (for the client + telemetry)
+    ✓ never throws on a transport write failure — the directive emit is wrapped in try/catch
+    ✓ always returns success:true (best-effort, matching end_teaching_session) (1 ms)
+    ✓ handles msg.directive === 'end_guided_topic_teaching' (1 ms)
+    ✓ polls audioPlaying/scheduledSources/audioQueue before hiding, same pattern as the navigate directive
+    ✓ has a hard safety cap so a stuck/misreported audio state cannot wait forever
+    ✓ calls _hide() only after the poll resolves (audio drained or cap hit), not on a blind fixed delay (1 ms)
+    ✓ does NOT set audioPlaying=false as a way to stop new chunks — that flag does not gate the audio handler (1 ms)
+    ✓ fires an optional onGuidedTopicTeachingEnd host callback, without throwing if absent
+    ✓ does not disturb the existing end_teaching_session branch (Teacher Mode unaffected) (1 ms)
+    ✓ declares a generous, documented backstop ceiling (not a short/turn-count heuristic) (1 ms)
+    ✓ a real topic tap arms _guidedTopicOpenedAt and starts the backstop interval (10 ms)
+    ✓ clears any stale backstop interval before arming a new one (Replay re-tap safety) (1 ms)
+    ✓ the backstop check still measures the ceiling from the tap and calls the shared teardown (1 ms)
+    ✓ _hide() clears both _guidedTopicOpenedAt and the backstop interval — a real close ends the backstop too (1 ms)
+    ✓ _endGuidedTopicTeaching is a single shared helper used by both the directive handler and the backstop (2 ms)
+PASS test/orb/live/prewarm/vtid-04554-prewarm-parity.test.ts
+    ✓ only the exact string "true" enables it; default OFF (5 ms)
+    ✓ is stable across object key order in the tool declarations (1 ms)
+    ✓ changes with anything baked into the stream at connect (1 ms)
+    ✓ the render-time mask is diagnostic only: it hides the clock lines and nothing else (1 ms)
+    ✓ toolNamesOf lists declarations in order (1 ms)
+    ✓ claims only on an exact fingerprint match in the same language
+    ✓ mismatch → no claim, discard the pooled stream (1 ms)
+    ✓ guided topic → never claims, leaves the pooled stream for a later ordinary open
+    ✓ language mismatch → never claims, even with an equal fingerprint (1 ms)
+    ✓ a legacy (flag-off) prewarm has no fingerprint → never claimed on the full-context path
+    ✓ peek reads without claiming; the fingerprint travels with the entry (1 ms)
+    ✓ same member, same context, same instant → identical instruction, tools, voice, budget handling → claimed (67 ms)
+    ✓ a wake-brief override chosen at session start is baked into the instruction → mismatch → cold (37 ms)
+    ✓ a session on another screen than the prewarm assumed → different instruction/tools → mismatch → cold (34 ms)
+    ✓ a different context (another member state) → mismatch → cold (38 ms)
+    ✓ a guided-topic session never claims, a language change never claims (46 ms)
+    ✓ the prewarm passes no-op diagnostic hooks (a shadow writes nothing); the session passes the real ones (2 ms)
+    ✓ flag off: the blind login-prewarm claim is exactly the old one; flag on disables it (1 ms)
+    ✓ flag on: the claim happens in the cold branch, after the cold envelope, through the fingerprint check (1 ms)
+    ✓ the claim helper consumes only on a decided claim and names every miss (2 ms)
+    ✓ the WS prewarm handler keeps the legacy path when the flag is off (1 ms)
+    ✓ the full-context prewarm pools the fingerprint of exactly what it connected with (1 ms)
+Test Suites: 10 passed, 10 total
+Tests:       122 passed, 122 total
+Snapshots:   0 total
