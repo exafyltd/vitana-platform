@@ -25,6 +25,10 @@ name: AWS Prod Deploy Orb Agent (ECS)
 on:
   workflow_dispatch:
     inputs:
+      commit_sha:
+        description: 'VTID-04950: full or short commit to deploy (pins the build; default = the dispatch ref)'
+        required: false
+        default: ''
       reason:
         description: 'Reason for this AWS orb-agent deploy — required'
         required: true
@@ -64,6 +68,18 @@ jobs:
       DEPLOY_REASON: ${{ inputs.reason }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # VTID-04950: a session-approved deploy ships exactly the approved
+          # commit, never whatever the dispatch ref points at (Part 1 IF-THEN 26).
+          ref: ${{ inputs.commit_sha || github.sha }}
+
+      - name: Verify the pinned commit (VTID-04950)
+        if: ${{ inputs.commit_sha != '' }}
+        run: |
+          set -e
+          echo "${{ inputs.commit_sha }}" | grep -Eq '^[0-9a-f]{7,40}$' || { echo "::error::commit_sha must be a hex commit"; exit 1; }
+          HEAD_SHA=$(git rev-parse HEAD)
+          case "$HEAD_SHA" in ${{ inputs.commit_sha }}*) echo "Pinned to $HEAD_SHA" ;; *) echo "::error::checked out $HEAD_SHA, not ${{ inputs.commit_sha }}"; exit 1 ;; esac
 
       - name: Resolve commit metadata
         id: commit
@@ -92,6 +108,22 @@ jobs:
             exit 1
           fi
 
+      # VTID-04950: record what production runs BEFORE this deploy touches the
+      # service, so a failed check can put it back (same contract as the
+      # gateway's VTID-04647 rollback). Read-only.
+      - name: Capture rollback target (task definition live before this deploy)
+        id: prev
+        run: |
+          set -e
+          PREV_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].taskDefinition' --output text)
+          if [ -z "$PREV_ARN" ] || [ "$PREV_ARN" = "None" ]; then
+            echo "::error::Could not read the live task definition; refusing to deploy without a rollback target."
+            exit 1
+          fi
+          echo "arn=$PREV_ARN" >> "$GITHUB_OUTPUT"
+          echo "Rollback target: $PREV_ARN"
+
       - name: Build and push image
         id: build
         env:
@@ -105,6 +137,7 @@ jobs:
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
       - name: Register task-definition revision + roll the service
+        id: roll
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
@@ -149,3 +182,21 @@ jobs:
             echo "- Reason: ${{ env.DEPLOY_REASON }}"
             echo "- VTID: VTID-03414"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # VTID-04950: automatic rollback (gateway contract VTID-04647). Runs when
+      # the service was rolled and a later step failed; re-points the service
+      # at the captured task definition and waits for it to stabilize. Kill
+      # switch: repository variable PROD_AUTO_ROLLBACK_DISABLED=true. The job
+      # still fails: a rolled-back deploy is not a successful deploy.
+      - name: Roll back to the previous task definition
+        id: rollback
+        if: ${{ failure() && steps.prev.outputs.arn != '' && steps.roll.outcome != 'skipped' && vars.PROD_AUTO_ROLLBACK_DISABLED != 'true' }}
+        env:
+          PREV_ARN: ${{ steps.prev.outputs.arn }}
+        run: |
+          set -e
+          echo "::warning::Post-deploy checks failed — rolling back to $PREV_ARN"
+          aws ecs update-service --cluster "${{ env.ECS_CLUSTER }}" --service "${{ env.ECS_SERVICE }}" \
+            --task-definition "$PREV_ARN" >/dev/null
+          aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"
+          echo "## ⚠️ Rolled back to $PREV_ARN" >> "$GITHUB_STEP_SUMMARY"

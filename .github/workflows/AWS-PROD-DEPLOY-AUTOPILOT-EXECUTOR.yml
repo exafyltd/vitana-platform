@@ -50,6 +50,10 @@ name: AWS Prod Deploy Autopilot Executor (ECS Task Def)
 on:
   workflow_dispatch:
     inputs:
+      commit_sha:
+        description: 'VTID-04950: full or short commit to deploy (pins the build; default = the dispatch ref)'
+        required: false
+        default: ''
       reason:
         description: 'Reason for this AWS autopilot-executor deploy — required'
         required: true
@@ -84,6 +88,18 @@ jobs:
       DEPLOY_REASON: ${{ inputs.reason }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # VTID-04950: a session-approved deploy ships exactly the approved
+          # commit, never whatever the dispatch ref points at (Part 1 IF-THEN 26).
+          ref: ${{ inputs.commit_sha || github.sha }}
+
+      - name: Verify the pinned commit (VTID-04950)
+        if: ${{ inputs.commit_sha != '' }}
+        run: |
+          set -e
+          echo "${{ inputs.commit_sha }}" | grep -Eq '^[0-9a-f]{7,40}$' || { echo "::error::commit_sha must be a hex commit"; exit 1; }
+          HEAD_SHA=$(git rev-parse HEAD)
+          case "$HEAD_SHA" in ${{ inputs.commit_sha }}*) echo "Pinned to $HEAD_SHA" ;; *) echo "::error::checked out $HEAD_SHA, not ${{ inputs.commit_sha }}"; exit 1 ;; esac
 
       - name: Resolve commit metadata
         id: commit
