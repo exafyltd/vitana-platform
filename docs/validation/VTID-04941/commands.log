@@ -1,0 +1,2 @@
+# VTID-04941 — commands run (local jest; nothing against Supabase or production)
+cd services/gateway && npx jest test/vtid-04941-commerce-mcp-automation.test.ts test/vtid-04941-verification-service.test.ts test/partner-onboarding-verification.test.ts test/partner-onboarding.test.ts test/partner-onboarding-connections.test.ts test/partner-onboarding-catalogue.test.ts test/commerce-mcp.test.ts test/vtid-04940-commerce-mcp-supplier-data.test.ts test/vtid-04890-commerce-business-type.test.ts

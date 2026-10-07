@@ -34,13 +34,13 @@
  */
 
 import { Router, Request, Response, RequestHandler } from 'express';
-import { randomUUID } from 'crypto';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { getCallerId, requireOrgAdmin } from './partner-orgs';
-import { loadOrg, respondWithState, type Supa } from './partner-onboarding';
-import { insertConnection, registerConnectionRoutes } from './vcaop-portal-my';
+import { loadOrg, type Supa } from './partner-onboarding';
+import { startConnection } from '../services/partner-onboarding-service';
+import { registerConnectionRoutes } from './vcaop-portal-my';
 import * as vcaopRepo from '../services/vcaop-portal/vcaop-portal-repository';
 
 const router = Router();
@@ -52,9 +52,10 @@ const CONNECTION_SELECT =
 export const MAPPING_CONFIRMED_STATES: readonly string[] = ['certified', 'active', 'degraded'];
 
 /** Lifecycle states in which an org cannot start a new connection. */
-const CONNECTIONS_LOCKED_STATES = ['rejected', 'suspended'];
+export const CONNECTIONS_LOCKED_STATES = ['rejected', 'suspended'];
 
-const TOKEN = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
+export const CONNECTOR_TOKEN = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
+const TOKEN = CONNECTOR_TOKEN;
 
 /** The mapping step status for a set of connection states; null when there are none. */
 export function mappingStepStatus(states: readonly string[]): 'done' | 'in_progress' | null {
@@ -62,7 +63,7 @@ export function mappingStepStatus(states: readonly string[]): 'done' | 'in_progr
   return states.some((s) => MAPPING_CONFIRMED_STATES.includes(s)) ? 'done' : 'in_progress';
 }
 
-interface ConnectionRow {
+export interface ConnectionRow {
   id: string;
   connector_id: string;
   provider_id: string;
@@ -73,7 +74,7 @@ interface ConnectionRow {
   partner_tenant?: { name?: string; jurisdiction?: string | null } | null;
 }
 
-async function listOrgConnections(s: Supa, orgId: string): Promise<{ rows: ConnectionRow[]; error: string | null }> {
+export async function listOrgConnections(s: Supa, orgId: string): Promise<{ rows: ConnectionRow[]; error: string | null }> {
   const { data, error } = await s
     .from('integration_manifest')
     .select(CONNECTION_SELECT)
@@ -194,114 +195,17 @@ router.post('/:orgId/connections', requireAuth, requireOrgAdmin(), async (req: R
   const s = getSupabase();
   if (!s) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const callerId = getCallerId(req);
-  const orgId = req.params.orgId;
-
-  const { org, error } = await loadOrg(s, orgId);
-  if (error) return res.status(500).json({ ok: false, error });
-  if (!org) return res.status(404).json({ ok: false, error: 'ORG_NOT_FOUND' });
-  if (CONNECTIONS_LOCKED_STATES.includes(org.lifecycle_state)) {
-    return res.status(409).json({ ok: false, error: 'CONNECTIONS_LOCKED', lifecycle_state: org.lifecycle_state });
-  }
-
+  if (!callerId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const identity = (req as AuthenticatedRequest).identity;
   const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
-
-  // Default the connector from the org's website detection.
-  let connectorId = body.connector_id;
-  let providerId = body.provider_id;
-  if (connectorId === undefined && providerId === undefined) {
-    const { data: row, error: bdErr } = await s
-      .from('partner_organizations')
-      .select('business_details')
-      .eq('id', orgId)
-      .maybeSingle();
-    if (bdErr) return res.status(500).json({ ok: false, error: bdErr.message });
-    const det = ((row as { business_details?: Record<string, any> } | null)?.business_details ?? {}).platform_detection;
-    if (det && typeof det === 'object') {
-      connectorId = det.connector_id ?? undefined;
-      providerId = det.provider_id ?? undefined;
-    }
-  }
-  if (typeof connectorId !== 'string' || !TOKEN.test(connectorId) || typeof providerId !== 'string' || !TOKEN.test(providerId)) {
-    return res.status(400).json({
-      ok: false,
-      error: 'CONNECTOR_REQUIRED',
-      message: 'connector_id and provider_id are required (or run POST /detect on a recognised storefront first)',
-    });
-  }
-  for (const key of ['connection_type', 'risk_level'] as const) {
-    if (body[key] !== undefined && (typeof body[key] !== 'string' || !TOKEN.test(body[key] as string))) {
-      return res.status(400).json({ ok: false, error: `${key} must be a short lowercase token` });
-    }
-  }
-  const openapi = body.openapi_document;
-  if (openapi !== undefined && (openapi === null || typeof openapi !== 'object' || Array.isArray(openapi))) {
-    return res.status(400).json({ ok: false, error: 'openapi_document must be a JSON object' });
-  }
-
-  const now = new Date().toISOString();
-
-  // One partner_tenant per org.
-  const found = await s
-    .from('partner_tenant')
-    .select('id')
-    .eq('partner_organization_id', orgId)
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (found.error) return res.status(500).json({ ok: false, error: found.error.message });
-  let partnerTenantId = (found.data as { id: string } | null)?.id ?? null;
-  if (!partnerTenantId) {
-    partnerTenantId = randomUUID();
-    const identity = (req as AuthenticatedRequest).identity;
-    const { error: ptErr } = await s.from('partner_tenant').insert({
-      id: partnerTenantId,
-      tenant_id: identity?.tenant_id || 'platform',
-      name: org.display_name,
-      status: 'discovered',
-      jurisdiction: org.country,
-      partner_organization_id: orgId,
-      // The org owner, so the portal's per-connection endpoints serve them.
-      owner_user_id: org.owner_user_id,
-      owner_email: callerId === org.owner_user_id ? identity?.email ?? null : null,
-      created_at: now,
-      updated_at: now,
-    });
-    if (ptErr) return res.status(500).json({ ok: false, error: ptErr.message });
-  }
-
-  const created = await insertConnection(s, {
-    partnerTenantId,
-    connector_id: connectorId,
-    provider_id: providerId,
-    connection_type: body.connection_type as string | undefined,
-    risk_level: body.risk_level as string | undefined,
-    openapi_document: openapi,
-    now,
-  });
-  if (!created.ok) return res.status(created.status).json({ ok: false, error: created.error });
-
-  await emitOasisEvent({
-    vtid: 'VTID-04499',
-    type: 'partner_org.connection_started',
-    source: 'partner-onboarding',
-    status: 'success',
-    message: `Partner organization ${orgId}: connection ${created.manifestId} started (${connectorId}, ${created.initialState}).`,
-    payload: {
-      partner_organization_id: orgId,
-      connection_id: created.manifestId,
-      connector_id: connectorId,
-      provider_id: providerId,
-      state: created.initialState,
-    },
-    actor_id: callerId ?? undefined,
-  });
-
-  const refreshed = await refreshMappingStep(s, orgId, callerId);
-  if (refreshed.error) return res.status(500).json({ ok: false, error: refreshed.error });
-
-  return respondWithState(res, s, orgId, 201, {
-    connection: { id: created.manifestId, connector_id: connectorId, provider_id: providerId, state: created.initialState },
-  });
+  // VTID-04941: the creation logic lives in the onboarding service, shared with the Commerce MCP.
+  const r = await startConnection(
+    s,
+    { userId: callerId, email: identity?.email ?? null, tenantId: identity?.tenant_id ?? null, orgAdminChecked: true },
+    req.params.orgId,
+    body,
+  );
+  return res.status(r.status).json(r.body);
 });
 
 // ==================== Per connection (VTID-04527) ====================

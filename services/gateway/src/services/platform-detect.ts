@@ -68,6 +68,14 @@ function isDisallowedIP(ip: string): boolean {
     if (low.startsWith('fe80')) return true; // link-local
     const mapped = low.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
     if (mapped) return isDisallowedIPv4(mapped[1]);
+    // VTID-04941: the same IPv4-mapped address in hex form (what `new URL` produces,
+    // e.g. ::ffff:7f00:1 for 127.0.0.1) is judged by the IPv4 rules too.
+    const mappedHex = low.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+    if (mappedHex) {
+      const hi = parseInt(mappedHex[1], 16);
+      const lo = parseInt(mappedHex[2], 16);
+      return isDisallowedIPv4(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`);
+    }
     return false;
   }
   return true; // unknown address family — fail closed
@@ -82,7 +90,9 @@ function isDisallowedIP(ip: string): boolean {
  * redirected host is its own risk independent of SSRF, so it validates the
  * host once via this function and then fetches with `redirect: 'error'`).
  */
-export async function assertPublicHost(hostname: string): Promise<void> {
+export async function assertPublicHost(rawHostname: string): Promise<void> {
+  // URL.hostname keeps the brackets of an IPv6 literal; judge the address itself.
+  const hostname = rawHostname.replace(/^\[|\]$/g, '');
   if (net.isIP(hostname)) {
     if (isDisallowedIP(hostname)) throw new Error('blocked_private_address');
     return;

@@ -164,7 +164,7 @@ describe('MCP protocol', () => {
     const res = await authed(rpc('tools/list'));
     const names = res.body.result.tools.map((t: { name: string }) => t.name);
     expect(names).toEqual([
-      'get_onboarding_status', 'create_business', 'update_business', 'add_product', 'list_products', 'update_product', 'submit_for_verification',
+      'get_onboarding_status', 'create_business', 'update_business', 'add_product', 'list_products', 'update_product', 'check_verification', 'connect_store', 'submit_for_verification',
     ]);
     expect(names.join(' ')).not.toMatch(/terms/);
   });

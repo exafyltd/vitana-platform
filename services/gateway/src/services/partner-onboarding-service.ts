@@ -17,6 +17,7 @@
  * Results are { status, body } with the routes' own HTTP status and JSON body,
  * so the routes answer exactly as before.
  */
+import { randomBytes, randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
 import {
   PARTNER_TYPES,
@@ -27,11 +28,33 @@ import {
   type LifecycleState,
   type PartnerType,
 } from './partner-lifecycle';
-import { evaluateVerification, submitTransitions, type Checklist } from './partner-onboarding-checklist';
+import { VERIFICATION_LEVEL_REQUIRED, evaluateVerification, submitTransitions, type Checklist } from './partner-onboarding-checklist';
+import {
+  computeVerification,
+  domainProofInstructions,
+  domainsMatch,
+  emailDomainOf,
+  hostOf,
+  htmlContainsMetaToken,
+  isEuCountry,
+  normalizeVatNumber,
+  txtRecordsContainToken,
+  type CheckStatus,
+  type VerificationChecks,
+} from './partner-verification';
+import { checkVatVies, fetchSiteHtml, lookupDomainProofTxt, readEmailConfirmation } from './partner-verification-io';
+import { assertPublicHost, detectPlatform } from './platform-detect';
 import { PRODUCT_FIELDS, catalogueEvent, findOrgMerchant, syncCatalogueStep } from './partner-setup';
 import { isPartnerTriageOn, runPartnerTriage } from './jev/gates/partner-triage-gate';
 import { loadChecklist, loadOrg, makeOrgKey, type OrgRow, type Supa } from '../routes/partner-onboarding';
 import { ProductPatchSchema, SHIPS_SOMEWHERE_MESSAGE, shipsSomewhere } from '../routes/vcaop-portal-my-products';
+import { insertConnection } from '../routes/vcaop-portal-my';
+import {
+  CONNECTIONS_LOCKED_STATES,
+  CONNECTOR_TOKEN,
+  listOrgConnections,
+  refreshMappingStep,
+} from '../routes/partner-onboarding-connections';
 
 export interface ServiceResult {
   status: number;
@@ -215,6 +238,13 @@ export async function updateCompany(
   if (!parsed.ok) return fail(400, { error: parsed.error });
   if (Object.keys(parsed.facts).length === 0) {
     return fail(400, { error: 'at least one of legal_name, country, vat_id, website is required' });
+  }
+  // VTID-04941: defence in depth. parseCompanyFacts only checks the website is
+  // a well-formed http(s) URL; refuse one that points at an internal address
+  // here, so it is never stored. The fetch-time guard stays authoritative.
+  if (parsed.facts.website) {
+    const blocked = await websiteIsInternal(parsed.facts.website);
+    if (blocked) return fail(400, { error: 'website must be a public internet address' });
   }
 
   const { error: updErr } = await s
@@ -456,4 +486,427 @@ export async function updateProduct(
   if (step.error) return fail(500, { error: step.error });
   if (step.changed) await catalogueEvent(org.id, step, caller.userId);
   return orgState(s, org.id, 200, { product: data });
+}
+
+
+// ==================== VTID-04941: verification, store detection, connections ====================
+
+/** How long the host lookup at store time may take; a slow resolver never blocks a save. */
+const WEBSITE_HOST_CHECK_MS = 2000;
+
+/**
+ * True only when the website's host is, or resolves to, a loopback, private,
+ * link-local or other non-public address. A DNS failure or a slow resolver is
+ * NOT a refusal here (a typo or a flaky resolver must not stop a save); the
+ * fetch-time guard (ssrfGuardedFetch) is authoritative.
+ */
+export async function websiteIsInternal(website: string): Promise<boolean> {
+  const host = hostOf(website);
+  if (!host) return false;
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      assertPublicHost(host),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('host_check_timeout')), WEBSITE_HOST_CHECK_MS);
+      }),
+    ]);
+    return false;
+  } catch (err) {
+    return (err as Error)?.message === 'blocked_private_address';
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+const TIMED_OUT = Symbol('timed_out');
+
+/** Runs one slow check inside what is left of an overall time budget. */
+async function withinBudget<T>(deadline: number | null, run: () => Promise<T>): Promise<T | typeof TIMED_OUT> {
+  if (deadline === null) return run();
+  const left = deadline - Date.now();
+  if (left <= 0) return TIMED_OUT;
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      run(),
+      new Promise<typeof TIMED_OUT>((resolve) => {
+        timer = setTimeout(() => resolve(TIMED_OUT), left);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * Runs the automated verification checks of spec §7 and records the result as
+ * the `verification` step row (moved here from routes/partner-onboarding.ts so
+ * the Commerce MCP runs exactly the same checks). With `budgetMs`, slow checks
+ * (DNS, the site fetch, VIES) that exceed the overall budget are reported as
+ * `unavailable` with `retry_after` instead of blocking; a timed-out check never
+ * credits a level.
+ */
+export async function checkVerification(
+  s: Supa,
+  caller: Caller,
+  orgId: string,
+  opts: { budgetMs?: number } = {},
+): Promise<ServiceResult> {
+  const denied = await authorize(s, caller, orgId);
+  if (denied) return denied;
+  const callerId = caller.userId;
+
+  const { org, error } = await loadOrg(s, orgId);
+  if (error) return fail(500, { error });
+  if (!org) return fail(404, { error: 'ORG_NOT_FOUND' });
+  if (!isPartnerType(org.partner_type)) return fail(409, { error: 'PARTNER_TYPE_MISSING' });
+  if (org.lifecycle_state === 'rejected') {
+    return fail(409, { error: 'NOT_CHECKABLE', lifecycle_state: org.lifecycle_state });
+  }
+  const required = VERIFICATION_LEVEL_REQUIRED[org.partner_type];
+  const deadline = opts.budgetMs ? Date.now() + opts.budgetMs : null;
+  let timedOut = false;
+
+  const prior = await s
+    .from('partner_onboarding_steps')
+    .select('detail')
+    .eq('partner_organization_id', orgId)
+    .eq('step_key', 'verification')
+    .maybeSingle();
+  if (prior.error) return fail(500, { error: prior.error.message });
+  const priorToken = (prior.data as { detail?: { domain_token?: unknown } } | null)?.detail?.domain_token;
+  const token = typeof priorToken === 'string' && /^[a-f0-9]{32}$/.test(priorToken) ? priorToken : randomBytes(16).toString('hex');
+
+  // Level 0: the org owner's confirmed email and ownership of the website.
+  const email = await readEmailConfirmation(s as any, org.owner_user_id);
+  const emailStatus: CheckStatus =
+    email.status === 'confirmed' ? 'passed' : email.status === 'unconfirmed' ? 'failed' : 'unavailable';
+
+  const host = hostOf(org.website);
+  let domainStatus: CheckStatus = 'pending';
+  let domainMethod: 'email_domain' | 'dns_txt' | 'meta_tag' | null = null;
+  if (host) {
+    const emailDomain = emailDomainOf(email.email);
+    if (email.status === 'confirmed' && emailDomain && domainsMatch(host, emailDomain)) {
+      domainMethod = 'email_domain';
+    } else {
+      const txt = await withinBudget(deadline, () => lookupDomainProofTxt(host));
+      if (txt === TIMED_OUT) timedOut = true;
+      else if (txtRecordsContainToken(txt, token)) domainMethod = 'dns_txt';
+      if (!domainMethod && !timedOut) {
+        const html = await withinBudget(deadline, () => fetchSiteHtml(org.website as string));
+        if (html === TIMED_OUT) timedOut = true;
+        else if (html !== null && htmlContainsMetaToken(html, token)) domainMethod = 'meta_tag';
+      }
+    }
+    if (domainMethod) domainStatus = 'passed';
+    else if (timedOut) domainStatus = 'unavailable';
+  }
+
+  // Level 1: EU VAT id in VIES (not required outside the EU). Only looked up
+  // for types that need level 1+; otherwise left `pending`, never `not_required`.
+  let vatStatus: CheckStatus = isEuCountry(org.country) ? 'pending' : org.country ? 'not_required' : 'pending';
+  let vatRegisteredName: string | null = null;
+  let vatError: string | undefined;
+  if (required >= 1 && isEuCountry(org.country)) {
+    const vat = org.vat_id ? normalizeVatNumber(org.vat_id, org.country as string) : null;
+    if (!org.vat_id) vatStatus = 'pending';
+    else if (!vat) vatStatus = 'failed';
+    else {
+      const vies = await withinBudget(deadline, () => checkVatVies(vat.country_code, vat.number));
+      if (vies === TIMED_OUT) {
+        timedOut = true;
+        vatStatus = 'unavailable';
+        vatError = 'timeout';
+      } else {
+        vatStatus = vies.status === 'valid' ? 'passed' : vies.status === 'invalid' ? 'failed' : 'unavailable';
+        vatRegisteredName = vies.name;
+        vatError = vies.error;
+      }
+    }
+  }
+
+  const checks: VerificationChecks = {
+    email_verified: emailStatus,
+    domain: domainStatus,
+    vat: vatStatus,
+    // Spec Q2 (Stripe Connect or VIES + billing mandate) and Q6 (licence
+    // sources) are open, so neither provider exists yet.
+    business_verification: 'not_configured',
+    licence: 'not_configured',
+  };
+  const outcome = computeVerification(required, checks);
+  if (!host) outcome.missing.unshift('website');
+  const checkedAt = new Date().toISOString();
+
+  const detail = {
+    level_required: required,
+    level_reached: outcome.level_reached,
+    checks,
+    missing: outcome.missing,
+    domain_method: domainMethod,
+    domain_token: token,
+    vat_registered_name: vatRegisteredName,
+    ...(vatError ? { vat_error: vatError } : {}),
+    facts: { website: org.website, country: org.country, vat_id: org.vat_id },
+    checked_at: checkedAt,
+  };
+  const { error: upErr } = await s.from('partner_onboarding_steps').upsert(
+    {
+      partner_organization_id: orgId,
+      step_key: 'verification',
+      status: outcome.step_status,
+      detail,
+      updated_by: callerId,
+      updated_at: checkedAt,
+    },
+    { onConflict: 'partner_organization_id,step_key' },
+  );
+  if (upErr) return fail(500, { error: upErr.message });
+
+  const trustLevel = outcome.level_reached ?? 0;
+  if (trustLevel !== org.trust_level) {
+    const { error: trustErr } = await s
+      .from('partner_organizations')
+      .update({ trust_level: trustLevel, updated_at: checkedAt })
+      .eq('id', orgId);
+    if (trustErr) return fail(500, { error: trustErr.message });
+  }
+
+  await emitOasisEvent({
+    vtid: 'VTID-04486',
+    type: 'partner_org.verification_checked',
+    source: 'partner-onboarding',
+    status: outcome.step_status === 'done' ? 'success' : outcome.step_status === 'failed' ? 'warning' : 'info',
+    message: `Partner organization ${orgId}: verification level ${outcome.level_reached ?? 'none'} of ${required} (${outcome.step_status}).`,
+    // Check statuses only: the VAT id, email and registered name stay in the step row.
+    payload: {
+      partner_organization_id: orgId,
+      level_required: required,
+      level_reached: outcome.level_reached,
+      step_status: outcome.step_status,
+      checks,
+      domain_method: domainMethod,
+    },
+    actor_id: callerId,
+  });
+
+  return orgState(s, orgId, 200, {
+    verification: {
+      level_required: required,
+      level_reached: outcome.level_reached,
+      status: outcome.step_status,
+      checks,
+      missing: outcome.missing,
+      domain_method: domainMethod,
+      domain_proof: host && domainStatus !== 'passed' ? domainProofInstructions(host, token) : null,
+      ...(timedOut ? { partial: true, retry_after_seconds: 30 } : {}),
+    },
+  });
+}
+
+/** Detect the storefront platform from the org's website and record it (moved from the /detect route). */
+export async function detectStore(
+  s: Supa,
+  caller: Caller,
+  orgId: string,
+  input: { website?: unknown } = {},
+): Promise<ServiceResult> {
+  const denied = await authorize(s, caller, orgId);
+  if (denied) return denied;
+
+  const { data: row, error } = await s
+    .from('partner_organizations')
+    .select('id, website, business_details')
+    .eq('id', orgId)
+    .maybeSingle();
+  if (error) return fail(500, { error: error.message });
+  if (!row) return fail(404, { error: 'ORG_NOT_FOUND' });
+  const current = row as { id: string; website: string | null; business_details: Record<string, unknown> | null };
+
+  const requested = input.website;
+  let website: string | null = current.website;
+  if (requested !== undefined && requested !== null && requested !== '') {
+    const parsed = parseCompanyFacts({ website: requested });
+    if (!parsed.ok) return fail(400, { error: parsed.error });
+    website = parsed.facts.website ?? null;
+  }
+  if (!website) return fail(400, { error: 'WEBSITE_REQUIRED' });
+
+  const detection = await detectPlatform(website);
+  if (!detection.ok) {
+    return fail(422, { error: 'DETECTION_FAILED', reason: detection.error ?? 'unknown' });
+  }
+
+  const record = {
+    url: website,
+    connector_id: detection.connector_id ?? null,
+    provider_id: detection.provider_id ?? null,
+    platform_name: detection.name_hint ?? null,
+    confidence: detection.confidence ?? 'none',
+    detected_at: new Date().toISOString(),
+  };
+  const { error: updErr } = await s
+    .from('partner_organizations')
+    .update({
+      business_details: { ...(current.business_details ?? {}), platform_detection: record },
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', orgId);
+  if (updErr) return fail(500, { error: updErr.message });
+
+  await emitOasisEvent({
+    vtid: 'VTID-04481',
+    type: 'partner_org.platform_detected',
+    source: 'partner-onboarding',
+    status: 'success',
+    message: `Partner organization ${orgId}: storefront platform ${record.connector_id ?? 'not recognised'} (${record.confidence}).`,
+    payload: {
+      partner_organization_id: orgId,
+      connector_id: record.connector_id,
+      provider_id: record.provider_id,
+      confidence: record.confidence,
+    },
+    actor_id: caller.userId,
+  });
+
+  return orgState(s, orgId, 200, {
+    detection: record,
+    suggested: { website, display_name: detection.site_name ?? null },
+  });
+}
+
+/**
+ * Start a connection for the org (moved from POST /:orgId/connections). The
+ * connector defaults from the org's website detection. With `reuseExisting`
+ * (the MCP's idempotent path) a connection the org already has for the same
+ * connector and provider is returned instead of creating a second one.
+ */
+export async function startConnection(
+  s: Supa,
+  caller: Caller,
+  orgId: string,
+  input: Record<string, unknown> = {},
+  opts: { reuseExisting?: boolean } = {},
+): Promise<ServiceResult> {
+  const denied = await authorize(s, caller, orgId);
+  if (denied) return denied;
+  const callerId = caller.userId;
+
+  const { org, error } = await loadOrg(s, orgId);
+  if (error) return fail(500, { error });
+  if (!org) return fail(404, { error: 'ORG_NOT_FOUND' });
+  if (CONNECTIONS_LOCKED_STATES.includes(org.lifecycle_state)) {
+    return fail(409, { error: 'CONNECTIONS_LOCKED', lifecycle_state: org.lifecycle_state });
+  }
+
+  let connectorId = input.connector_id;
+  let providerId = input.provider_id;
+  if (connectorId === undefined && providerId === undefined) {
+    const { data: row, error: bdErr } = await s
+      .from('partner_organizations')
+      .select('business_details')
+      .eq('id', orgId)
+      .maybeSingle();
+    if (bdErr) return fail(500, { error: bdErr.message });
+    const det = ((row as { business_details?: Record<string, any> } | null)?.business_details ?? {}).platform_detection;
+    if (det && typeof det === 'object') {
+      connectorId = det.connector_id ?? undefined;
+      providerId = det.provider_id ?? undefined;
+    }
+  }
+  if (typeof connectorId !== 'string' || !CONNECTOR_TOKEN.test(connectorId) || typeof providerId !== 'string' || !CONNECTOR_TOKEN.test(providerId)) {
+    return fail(400, {
+      error: 'CONNECTOR_REQUIRED',
+      message: 'connector_id and provider_id are required (or run POST /detect on a recognised storefront first)',
+    });
+  }
+  for (const key of ['connection_type', 'risk_level'] as const) {
+    if (input[key] !== undefined && (typeof input[key] !== 'string' || !CONNECTOR_TOKEN.test(input[key] as string))) {
+      return fail(400, { error: `${key} must be a short lowercase token` });
+    }
+  }
+  const openapi = input.openapi_document;
+  if (openapi !== undefined && (openapi === null || typeof openapi !== 'object' || Array.isArray(openapi))) {
+    return fail(400, { error: 'openapi_document must be a JSON object' });
+  }
+
+  if (opts.reuseExisting) {
+    const listed = await listOrgConnections(s, orgId);
+    if (listed.error) return fail(500, { error: listed.error });
+    const same = listed.rows.find((r) => r.connector_id === connectorId && r.provider_id === providerId);
+    if (same) {
+      const refreshed = await refreshMappingStep(s, orgId, callerId);
+      if (refreshed.error) return fail(500, { error: refreshed.error });
+      return orgState(s, orgId, 200, {
+        connection: { id: same.id, connector_id: connectorId, provider_id: providerId, state: same.status },
+        reused: true,
+      });
+    }
+  }
+
+  const now = new Date().toISOString();
+
+  // One partner_tenant per org.
+  const found = await s
+    .from('partner_tenant')
+    .select('id')
+    .eq('partner_organization_id', orgId)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (found.error) return fail(500, { error: found.error.message });
+  let partnerTenantId = (found.data as { id: string } | null)?.id ?? null;
+  if (!partnerTenantId) {
+    partnerTenantId = randomUUID();
+    const { error: ptErr } = await s.from('partner_tenant').insert({
+      id: partnerTenantId,
+      tenant_id: caller.tenantId || 'platform',
+      name: org.display_name,
+      status: 'discovered',
+      jurisdiction: org.country,
+      partner_organization_id: orgId,
+      // The org owner, so the portal's per-connection endpoints serve them.
+      owner_user_id: org.owner_user_id,
+      owner_email: callerId === org.owner_user_id ? caller.email ?? null : null,
+      created_at: now,
+      updated_at: now,
+    });
+    if (ptErr) return fail(500, { error: ptErr.message });
+  }
+
+  const created = await insertConnection(s, {
+    partnerTenantId,
+    connector_id: connectorId,
+    provider_id: providerId,
+    connection_type: input.connection_type as string | undefined,
+    risk_level: input.risk_level as string | undefined,
+    openapi_document: openapi,
+    now,
+  });
+  if (!created.ok) return fail(created.status, { error: created.error });
+
+  await emitOasisEvent({
+    vtid: 'VTID-04499',
+    type: 'partner_org.connection_started',
+    source: 'partner-onboarding',
+    status: 'success',
+    message: `Partner organization ${orgId}: connection ${created.manifestId} started (${connectorId}, ${created.initialState}).`,
+    payload: {
+      partner_organization_id: orgId,
+      connection_id: created.manifestId,
+      connector_id: connectorId,
+      provider_id: providerId,
+      state: created.initialState,
+    },
+    actor_id: callerId,
+  });
+
+  const refreshed = await refreshMappingStep(s, orgId, callerId);
+  if (refreshed.error) return fail(500, { error: refreshed.error });
+
+  return orgState(s, orgId, 201, {
+    connection: { id: created.manifestId, connector_id: connectorId, provider_id: providerId, state: created.initialState },
+  });
 }

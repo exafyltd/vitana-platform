@@ -119,7 +119,7 @@ describe('result size', () => {
 describe('tool catalogue (what the Directory review reads)', () => {
   test('the exact tool names', () => {
     expect(COMMERCE_MCP_TOOLS.map((t) => t.name)).toEqual([
-      'get_onboarding_status', 'create_business', 'update_business', 'add_product', 'list_products', 'update_product', 'submit_for_verification',
+      'get_onboarding_status', 'create_business', 'update_business', 'add_product', 'list_products', 'update_product', 'check_verification', 'connect_store', 'submit_for_verification',
     ]);
   });
   test.each(COMMERCE_MCP_TOOLS.map((t) => [t.name, t] as const))('%s has a title, a description and a read-only or destructive hint', (_n, tool) => {
