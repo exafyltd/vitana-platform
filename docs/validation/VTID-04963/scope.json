@@ -8,7 +8,7 @@
     "services/gateway/src/services/reminders-dispatch.ts",
     "services/gateway/src/services/guided-journey/audiobook-reminder-dispatch.ts",
     "services/gateway/src/services/conversation/conversation-flag-pins.generated.ts",
-    "services/gateway/test/vtid-04963-reminders-env-gate.test.ts",
+    "services/gateway/test/vtid-04963-reminders-guided-journey-gate.test.ts",
     "services/gateway/test/vtid-04320-reminders-dispatch.test.ts",
     "docs/validation/VTID-04963/**"
   ],
