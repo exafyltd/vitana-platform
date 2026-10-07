@@ -989,6 +989,17 @@ dev/ops/backoffice; member ranking priced per tenant budget.
    (beside `pick_specialist_for_text`) — shadow, staging-only pins, inert until
    the member plane opens on staging, which is held until the TypeSafe DPA
    (owner 2026-10-04). C2 deferred: no LLM selection exists to replace.
+   Class B ranking decisions are VTID-04883 (D1–D3, D5–D8): one call per request,
+   a choice over fixed slots c1…c8 with the candidates in the existing order, agreement =
+   Jev's pick equals the existing top-1 — D1 `community_calendar_priority`, D2
+   `community_next_action`, D3 `community_match_rerank` (skipped on the exact-name
+   short-circuit), D5 `community_suggestion_pick`, D6 `community_notification_worth`
+   (noul, after the insert and push, sampled 10% by notification id), D7
+   `community_feed_pick` (product feed only, sampled 10% per request), D8
+   `community_member_tiebreak` (query-hash fallback only). Shadow, staging-only pins,
+   inert until the member plane opens. D4 moved to Bedrock instead (VTID-04889); All
+   News stays client-side and out of scope. Test/service accounts were removed from
+   the ranked pools first (VTID-04888).
 4. Whether Community Autopilot on member data counts as the member plane
    (implemented as yes).
 

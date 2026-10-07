@@ -28,6 +28,7 @@ import { extractIntent, friendlyMissingFields, type ExtractedIntent } from './in
 import { embedIntent } from './intent-embedding';
 import { computeForIntent, surfaceTopMatches } from './intent-matcher';
 import * as repo from './intent-find-match-repository';
+import { shadowMatchRerank } from './jev/gates/community-ranking-gates';
 
 const PARTNER_REVEAL_KINDS = new Set<IntentKind>(['partner_seek']);
 
@@ -296,6 +297,18 @@ export async function runFindMatch(
           `[BOOTSTRAP-FIND-MATCH] exact-name short-circuit non-fatal: ${err instanceof Error ? err.message : 'unknown'}`,
         );
       }
+    }
+
+    // VTID-04883 (D3): Jev re-rank check of the SQL ranking (SQL #1 first). Skipped when the exact-name
+    // short-circuit chose the result. Fire-and-forget.
+    if (!exactPersonMatch) {
+      void shadowMatchRerank({
+        tenantId: id.tenant_id,
+        userId: id.user_id,
+        intentKind: kind,
+        category: extract.category ?? null,
+        candidates,
+      }).catch(() => undefined);
     }
 
     let postedIntentId: string | null = null;

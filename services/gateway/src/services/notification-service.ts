@@ -23,6 +23,7 @@ import {
   normalizeSourceKey,
   isMemberInQuietHours,
 } from './notification-controls/notification-controls-service';
+import { shadowNotificationWorth } from './jev/gates/community-ranking-gates';
 
 // Initialize Firebase Admin (once)
 if (!admin.apps.length) {
@@ -812,6 +813,20 @@ export async function notifyUser(
     (pushBlockedByDnd ? ' (DND)' : '') +
     (meta.channel === 'silent' ? ' (silent)' : '')
   );
+
+  // VTID-04883 (D6): Jev shadow "was it worth it", after the insert and the push, sampled by notification id.
+  // Fire-and-forget: never delays or changes the dispatch.
+  void shadowNotificationWorth({
+    tenantId,
+    userId,
+    notificationId,
+    type,
+    category: String(meta.category),
+    priority: String(meta.priority),
+    channel: String(meta.channel),
+    pushed: pushed > 0 || appilixSent,
+    dnd: isDnd,
+  }).catch(() => undefined);
 
   return { pushed, inapp: inappWritten };
 }

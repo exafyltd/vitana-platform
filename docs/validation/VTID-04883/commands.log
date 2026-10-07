@@ -1,0 +1,13 @@
+# VTID-04883 commands (2026-10-07)
+
+$ cd services/gateway && npx jest test/vtid-04883-community-ranking.test.ts
+Tests: 19 passed, 19 total
+$ npx tsc --noEmit -p .                     (clean)
+$ npx jest test/vtid-04879-community-class-a.test.ts    Tests: 18 passed
+$ npm run test:operator                     Tests: 30 passed
+$ npm run test:roles                        Tests: 105 passed
+$ npm run test:support                      Tests: 85 passed
+$ npx jest                                  Test Suites: 1 skipped, 1540 passed; Tests: 25 skipped, 6 todo, 24593 passed
+$ node scripts/conversation/generate-flag-pins.mjs   (wrote conversation-flag-pins.generated.ts)
+$ node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(require('./docs/validation/VTID-04883/staging-tests.json'))"
+{"ok":true,"errors":[]}
