@@ -33,8 +33,10 @@ inserted notification id); 0 and 1 are absolute; D7 skips guests.
 AC-7: Every call site is fire-and-forget with its own `.catch`, placed after the existing result is final: D1 after the
 PATCHes (tenant looked up only when the gate is on), D2 after `rank()`, D3 after the exact-name short-circuit and
 skipped when it chose, D5 after the ranked order is applied, D6 after the insert and push right before the unchanged
-`return`, D7 after `rankFeedProducts`, D8 only on the two query-hash fallbacks. A gate never throws.
+`return`, D7 after `rankFeedProducts`, D8 only on the two query-hash fallbacks. A gate never throws. The real
+composer returns the identical decision with the D2 shadow resolving, hanging forever or rejecting.
   TEST: services/gateway/test/vtid-04883-community-ranking.test.ts
+  TEST: services/gateway/test/services/assistant-continuation/providers/next-action/vtid-04883-decide-next-action-shadow.test.ts
 AC-8: Seven modes plus the two sample rates are pinned in `AWS-STAGE-DEPLOY-GATEWAY.yml` only; production sets none;
 nothing opens the member plane; the Jev pin step stays under 20,000 characters.
   TEST: services/gateway/test/vtid-04883-community-ranking.test.ts
@@ -50,7 +52,7 @@ SCOPE_ALLOWLIST:
 - services/gateway/src/services/jev/jev-decisions.ts (seven decisions)
 - services/gateway/src/services/calendar-prioritizer.ts (D1), services/gateway/src/services/assistant-continuation/providers/next-action/composer.ts (D2), services/gateway/src/services/intent-find-match.ts (D3), services/gateway/src/services/recommendation-engine/recommendation-generator.ts (D5), services/gateway/src/services/notification-service.ts (D6), services/gateway/src/routes/discover-feed.ts (D7), services/gateway/src/services/voice-tools/community-member-ranker.ts (D8)
 - .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml (staging shadow pins), services/gateway/src/services/conversation/conversation-flag-pins.generated.ts
-- services/gateway/test/vtid-04883-community-ranking.test.ts (new)
+- services/gateway/test/vtid-04883-community-ranking.test.ts (new), services/gateway/test/services/assistant-continuation/providers/next-action/vtid-04883-decide-next-action-shadow.test.ts (new, conversation-flow test for the composer)
 - DATABASE_SCHEMA.md, docs/JEV-INTEGRATION-PLAN.md, docs/validation/VTID-04883/**
 
 ## OASIS

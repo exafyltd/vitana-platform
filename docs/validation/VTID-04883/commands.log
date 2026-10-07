@@ -11,3 +11,4 @@ $ npx jest                                  Test Suites: 1 skipped, 1540 passed;
 $ node scripts/conversation/generate-flag-pins.mjs   (wrote conversation-flag-pins.generated.ts)
 $ node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(require('./docs/validation/VTID-04883/staging-tests.json'))"
 {"ok":true,"errors":[]}
+$ npx jest test/services/assistant-continuation/providers/next-action/   Tests: 170 passed (incl. 3 new D2 flow tests)
