@@ -27,6 +27,7 @@ import {
 import { rankFeedProducts, type FeedConfig } from '../services/feed-ranker';
 import * as jose from 'jose';
 import * as repo from './discover-feed-repository';
+import { shadowFeedPick } from '../services/jev/gates/community-ranking-gates';
 
 const router = Router();
 
@@ -228,6 +229,19 @@ router.get('/feed', async (req: Request, res: Response) => {
     ctx,
     limit,
   });
+
+  // VTID-04883 (D7): Jev shadow of the product feed's lead item, sampled per request. Signed-in members
+  // only; fire-and-forget, the response never waits for it.
+  if (!isGuest) {
+    void shadowFeedPick({
+      tenantId: ctx.tenant_id,
+      userId: user_id,
+      requestRef: `${user_id}:${Date.now()}:${Math.random()}`,
+      lifecycleStage,
+      regionGroup,
+      items: ranked.items,
+    }).catch(() => undefined);
+  }
 
   res.json({
     ok: true,

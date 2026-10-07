@@ -3472,6 +3472,11 @@ Community Class A shadow rows (VTID-04879) use `plane = 'member'` and the
 subject types `community_utterance`, `community_marketplace_need`,
 `community_memory_turn` and `community_ticket`; `subject_ref` is a hash of
 session/turn ids, never member text or ids. No column change.
+Community ranking shadow rows (VTID-04883, D1–D3, D5–D8) also use `plane = 'member'`, with the
+subject types `community_calendar_run`, `community_next_action_compose`, `community_find_match`,
+`community_suggestion_batch`, `community_notification`, `community_feed_request` and
+`community_member_search`; `jev_verdict` holds the picked slot (`c1`…`c8`), the existing slot, the
+candidate count and a `truncated` flag — never candidate names or text. No column change.
 
 ### Jev member daily quota (VTID-04872)
 Table: `jev_member_daily_counters` (PK `tenant_id, user_id, day`; `calls`,
