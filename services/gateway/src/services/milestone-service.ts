@@ -196,7 +196,7 @@ async function getAchievedMilestones(
  *
  * VTID-04878: the row used to carry `tenant_id` (a column
  * autopilot_recommendations does not have, so PostgREST rejected the whole
- * insert) plus risk_level 'none', impact_score 80 and effort_score 0, which
+ * insert; VTID-04931 found `metadata` was the same) plus risk_level 'none', impact_score 80 and effort_score 0, which
  * the table's CHECKs reject (risk_level low..critical, scores 1..10). The
  * result was never read, so no milestone was ever recorded. Returns whether
  * the row landed.
@@ -222,12 +222,10 @@ async function recordMilestone(
     status: 'completed',
     activated_at: new Date().toISOString(),
     completed_at: new Date().toISOString(),
-    metadata: {
-      milestone_id: milestoneId,
-      category: def.category,
-      reward: def.reward,
-      completed_at: new Date().toISOString(),
-    },
+    // VTID-04931: no `metadata` — autopilot_recommendations has no such column
+    // and PostgREST rejected every row for it (462 in the first production
+    // sweep). The milestone id is source_ref; category and reward come from
+    // MILESTONES and the VTNA rule table.
   });
   if (error) {
     console.error(`[MilestoneService] could not record ${milestoneId} for ${userId.slice(0, 8)}…: ${error.message}`);
