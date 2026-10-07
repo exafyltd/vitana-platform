@@ -3553,3 +3553,23 @@ Migrations: `exafyltd/vitana-v1` `supabase/migrations/20261006140000_vtid_04926_
 Group chat mentions need no schema change: the gateway stores the sanitized
 list in `chat_messages.metadata.mentions` (`routes/chat-groups.ts`,
 `lib/chat-mentions.ts`).
+
+---
+
+## Event shares in the feed — `profile_posts.attached_ref_*`, `community_event_shared` (VTID-04916, 2026-10-07) — applied on merge
+
+Migration: `exafyltd/vitana-v1` `supabase/migrations/20261007100000_vtid_04916_profile_posts_event_attachment.sql`
+(applied by that repo's `apply-vtid-04916-event-share-posts-migration.yml` on merge). Idempotent; tested on a
+throwaway Postgres 16 (`scripts/sql-tests/run-event-share-posts-test.sh`, CI `SQL-EVENT-SHARE-POSTS`).
+
+| Object | Change |
+|---|---|
+| `profile_posts.attached_ref_type` | new `text`, `community_event` \| `live_room_session` (check `profile_posts_attached_ref_type_check`). The event a post shares. |
+| `profile_posts.attached_ref_id` | new `uuid` — `global_community_events.id` or `live_room_sessions.id`. Both columns set or both null (`profile_posts_attached_ref_pair_check`). |
+| `idx_profile_posts_one_share_per_event` | UNIQUE `(user_id, attached_ref_type, attached_ref_id) WHERE attached_ref_id IS NOT NULL` — one share per member per event. |
+| `profile_posts_guard_attached_ref()` + `trg_profile_posts_guard_attached_ref` | BEFORE INSERT/UPDATE. For `anon`/`authenticated` (read like `auth.role()`: `request.jwt.claim.role`, else `request.jwt.claims->>'role'`): an insert with a reference raises `ATTACH_VIA_GATEWAY`; an update keeps the old reference. Only the gateway (service role) writes it, from `POST /api/v1/calendar/events/:id/share-to-feed`. |
+| `notify_community_on_public_post()` | redefined. A post without a reference: the live body, unchanged. With one: type `community_event_shared` (EN "Join in?" / "<name> is going to \"<title>\""; DE "Kommst du mit?" / "<name> ist dabei: „<title>“"), `data` adds `ref_type`/`ref_id`, and a recipient who already got one for the same event in the last 24 h is skipped. |
+| `idx_user_notifications_event_shared` | `(user_id, (data->>'ref_id'), created_at DESC) WHERE type = 'community_event_shared'` — the 24 h lookup. |
+
+`community_event_shared` is in the gateway's notification catalog (`member`, `posts`); like every new type it
+starts OFF per tenant (VTID-04674) until an admin turns it on.

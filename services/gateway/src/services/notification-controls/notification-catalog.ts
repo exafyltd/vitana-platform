@@ -37,6 +37,8 @@ type Row = [
 const ROWS: Row[] = [
   // ── Posts & reactions (database triggers) ─────────────────────────────────
   ['community_post_published', 'member', 'posts', 'member_activity', 'ready', 'New community post', 'Neuer Community-Beitrag', 'Someone in the community published a post or video.', 'Jemand in der Community hat einen Beitrag oder ein Video veröffentlicht.'],
+  // VTID-04916: a member shared an event they are going to; at most one per recipient per event per 24 h.
+  ['community_event_shared', 'member', 'posts', 'member_activity', 'ready', 'Event shared to the feed', 'Event im Feed geteilt', 'A member shared an event they are going to (one per event per day).', 'Ein Mitglied hat ein Event geteilt, zu dem es geht (eins pro Event und Tag).'],
   ['post_like', 'member', 'posts', 'member_activity', 'ready', 'Like on your post', 'Like auf deinen Beitrag', 'Someone liked your post.', 'Jemand hat deinen Beitrag geliked.'],
   ['post_comment', 'member', 'posts', 'member_activity', 'ready', 'Comment on your post', 'Kommentar zu deinem Beitrag', 'Someone commented on your post.', 'Jemand hat deinen Beitrag kommentiert.'],
   ['comment_like', 'member', 'posts', 'member_activity', 'ready', 'Like on your comment', 'Like auf deinen Kommentar', 'Someone liked your comment.', 'Jemand hat deinen Kommentar geliked.'],
