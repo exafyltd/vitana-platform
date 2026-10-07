@@ -31,10 +31,13 @@ const ORG_ROLES = ['org_admin', 'staff', 'professional'] as const;
 type OrgRole = (typeof ORG_ROLES)[number];
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-// VTID-04337 (SEC-3) — the only statuses /:orgId/activate may move from.
-// 'rejected' is terminal for this endpoint; reversing a rejection is a
-// deliberate decision that needs its own path, not a side effect of activate.
-export const ACTIVATABLE_STATUSES = ['pending_review', 'suspended', 'active'] as const;
+// VTID-04337 (SEC-3) — 'rejected' is terminal for /:orgId/activate; reversing
+// a rejection is a deliberate decision that needs its own path.
+// VTID-04933 — the guard is on lifecycle_state, not the legacy status (draft,
+// submitted, verifying, needs_action and exception all read 'pending_review'):
+// an org that never submitted (draft/submitted) cannot be switched live from
+// here. The supplier review (/api/v1/admin/partner-review) is the normal path.
+export const ACTIVATABLE_LIFECYCLE_STATES = ['verifying', 'needs_action', 'exception', 'suspended', 'paused', 'live'] as const;
 
 // VTID-03974 — the machine-readable routing signal that decides whether an
 // activated org gets a partner_registry bridge (see POST /:orgId/activate
@@ -344,7 +347,7 @@ router.post('/:orgId/activate', requireAuth, async (req: Request, res: Response)
     .from('partner_organizations')
     .update({ status: 'active', updated_at: new Date().toISOString() })
     .eq('id', req.params.orgId)
-    .in('status', [...ACTIVATABLE_STATUSES])
+    .in('lifecycle_state', [...ACTIVATABLE_LIFECYCLE_STATES])
     .select('id, org_key, display_name, commerce_vertical, status')
     .maybeSingle();
   if (error) return res.status(500).json({ ok: false, error: error.message });
@@ -353,17 +356,18 @@ router.post('/:orgId/activate', requireAuth, async (req: Request, res: Response)
     // activation. Tell the two apart so the caller gets an honest answer.
     const { data: existing, error: lookupErr } = await supabase
       .from('partner_organizations')
-      .select('id, status')
+      .select('id, status, lifecycle_state')
       .eq('id', req.params.orgId)
       .maybeSingle();
     if (lookupErr) return res.status(500).json({ ok: false, error: lookupErr.message });
     if (!existing) return res.status(404).json({ ok: false, error: 'organization not found' });
-    const current = (existing as { status: string }).status;
+    const current = existing as { status: string; lifecycle_state: string | null };
     return res.status(409).json({
       ok: false,
       error: 'ORG_NOT_ACTIVATABLE',
-      message: `An organization in status "${current}" cannot be activated.`,
-      status: current,
+      message: `An organization in lifecycle state "${current.lifecycle_state}" cannot be activated.`,
+      status: current.status,
+      lifecycle_state: current.lifecycle_state,
     });
   }
   const orgRow = org as { id: string; org_key: string; display_name: string; commerce_vertical: CommerceVertical | null; status: string };

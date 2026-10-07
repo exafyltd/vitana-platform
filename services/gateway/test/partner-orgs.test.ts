@@ -535,17 +535,27 @@ describe('POST /:orgId/activate', () => {
     expect(r.status).toBe(404);
   });
 
-  it('409 ORG_NOT_ACTIVATABLE for a rejected org, and the update was conditional on status (VTID-04337 SEC-3)', async () => {
+  // VTID-04933: the guard is on lifecycle_state (was the legacy status, VTID-04337 SEC-3).
+  it.each([
+    ['rejected', 'rejected'],
+    ['draft', 'pending_review'],
+    ['submitted', 'pending_review'],
+  ])('409 ORG_NOT_ACTIVATABLE for a %s org, and the update was conditional on lifecycle_state', async (lifecycle, status) => {
     tableHandlers.partner_organizations = ({ op }: any) =>
       op === 'update'
-        ? { data: null, error: null } // the status filter matched nothing
-        : { data: { id: 'org-1', status: 'rejected' }, error: null };
+        ? { data: null, error: null } // the lifecycle filter matched nothing
+        : { data: { id: 'org-1', status, lifecycle_state: lifecycle }, error: null };
     const r = await request(makeApp())
       .post('/api/v1/partner-orgs/org-1/activate')
       .set('Authorization', 'Bearer exafy-admin-1');
     expect(r.status).toBe(409);
-    expect(r.body).toMatchObject({ ok: false, error: 'ORG_NOT_ACTIVATABLE', status: 'rejected' });
-    expect(inFilters).toContainEqual({ table: 'partner_organizations', column: 'status', values: ['pending_review', 'suspended', 'active'] });
+    expect(r.body).toMatchObject({ ok: false, error: 'ORG_NOT_ACTIVATABLE', status, lifecycle_state: lifecycle });
+    expect(inFilters).toContainEqual({
+      table: 'partner_organizations',
+      column: 'lifecycle_state',
+      values: ['verifying', 'needs_action', 'exception', 'suspended', 'paused', 'live'],
+    });
+    expect(inFilters.find((f) => f.column === 'status')).toBeUndefined();
     expect(emitOasisEventMock).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'partner_org.activated' }));
   });
 

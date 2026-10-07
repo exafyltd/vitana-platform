@@ -264,6 +264,9 @@ export function shapeStatus(body: Record<string, any>, portalUrl: string): Recor
       required: st.required,
       status: st.status,
       ...(st.missing?.length ? { missing: st.missing } : {}),
+      // VTID-04933: what the Vitanaland reviewer asked the supplier to change.
+      ...(typeof st.detail?.review_note?.reason === 'string' ? { review_note: st.detail.review_note.reason } : {}),
+      ...(st.detail?.method === 'admin_approval' ? { approved_by_vitanaland: true } : {}),
       ...(ON_SCREEN_STEPS.has(st.key) ? { done_on_vitanaland: true, link: `${portalUrl}/commerce?org=${org.id}` } : {}),
     })),
     portal_link: `${portalUrl}/commerce?org=${org.id}`,
