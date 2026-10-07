@@ -165,8 +165,10 @@ describe('POST /:id/send with mentions (VTID-04926)', () => {
     expect(stefanCall[3].body).toBe('@Stefan Ehlke wir haben dich vermisst');
     expect(stefanCall[3].data.url).toBe('/inbox/g/g1/msg/msg-1');
 
-    // Everyone else: the unchanged generic push. Nobody gets two.
+    // Everyone else: the generic push. Nobody gets two.
     expect(byUser.get(MICHAEL)![2]).toBe('new_chat_message');
+    // VTID-04928: the generic push opens the received message too.
+    expect(byUser.get(MICHAEL)![3].data.url).toBe('/inbox/g/g1/msg/msg-1');
     expect(byUser.get(TESTER)![2]).toBe('new_chat_message');
     expect(mockNotifyUser.mock.calls.filter((c) => c[0] === STEFAN)).toHaveLength(1);
     expect(byUser.has(SENDER)).toBe(false);
