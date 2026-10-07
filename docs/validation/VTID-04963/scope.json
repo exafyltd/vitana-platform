@@ -1,0 +1,17 @@
+{
+  "vtid": "VTID-04963",
+  "kind": "fix",
+  "paths": [
+    ".github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml",
+    ".github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml",
+    "services/gateway/src/env.ts",
+    "services/gateway/src/services/reminders-dispatch.ts",
+    "services/gateway/src/services/guided-journey/audiobook-reminder-dispatch.ts",
+    "services/gateway/src/services/conversation/conversation-flag-pins.generated.ts",
+    "services/gateway/test/vtid-04963-reminders-env-gate.test.ts",
+    "services/gateway/test/vtid-04320-reminders-dispatch.test.ts",
+    "docs/validation/VTID-04963/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

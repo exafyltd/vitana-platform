@@ -21,6 +21,18 @@ export const isStaging = VITANA_ENV === 'staging';
 export const isProduction = VITANA_ENV === 'production';
 
 /**
+ * VTID-04963: may a background loop that acts on real members run here?
+ * Staging shares the production database, so a loop that claims and acts on
+ * real members' rows (reminders, pushes) must run in production, not on
+ * staging — unless that loop's override env var is exactly "true".
+ * Reads env at call time (unlike the constants above) so tests can vary it.
+ */
+export function sharedDbLoopAllowed(overrideVar: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.VITANA_ENV !== 'staging') return true;
+  return env[overrideVar] === 'true';
+}
+
+/**
  * Derive the Supabase host from SUPABASE_URL for the /admin/health response.
  * Returns the hostname only (no scheme, no path) so staging vs prod isolation
  * is trivially visible — staging branch URLs differ from production URL.

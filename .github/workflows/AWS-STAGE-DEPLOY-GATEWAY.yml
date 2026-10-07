@@ -780,6 +780,8 @@ jobs:
 #     and sweeper run in-process; no external scheduler has called
 #     /reminders-tick since GCP was shut down, so no reminder fired. The
 #     claim RPC uses SKIP LOCKED, so several tasks (or prod too) are safe.
+#   REMINDERS_STAGING_DISPATCH_OVERRIDE (VTID-04963) -- staging runs reminders
+#     only while "true"; prod dispatches them. Phase 2 sets "false".
 #   CALENDAR_DEFAULT_REMINDERS_ENABLED (VTID-04338) -- every calendar entry
 #     gets default reminders (reconciled into `reminders` every minute).
 #   CALENDAR_MAINTENANCE_ENABLED (VTID-04374) -- hourly rescheduler for
@@ -1047,21 +1049,18 @@ jobs:
                                                 "FEATURE_ORB_WS_TRANSPORT_ENV",
                                                 "ORB_FULL_DUPLEX_ENABLED","ORB_DEVON_PRECONNECT_ENABLED","ORB_CASCADE_STREAMING_ENABLED","ORB_MOBILE_LEAD_FIRST_ONLY_ENABLED","ORB_TOOL_ACK_INTENT_ENABLED",
                                                 "ORB_VERTEX_SHARED_HANDLERS","ORB_TOOL_SELECTION_ENABLED","BRAIN_PERSONAL_WEIGHTS","BRAIN_SCORED_OPENING",
-                                                "ORB_DAY_CLOSE_RUNG_ENABLED",
-                                                "ORB_LOG_NOVA_INSTRUCTION_DEBUG",
+                                                "ORB_DAY_CLOSE_RUNG_ENABLED","ORB_LOG_NOVA_INSTRUCTION_DEBUG",
                                                 "TTS_PROVIDER","TTS_POLLY_STRICT","VERTEX_LIVE_UNAVAILABLE",
                                                 "ORB_CASCADED_VOICE_ENABLED",
-                                                "OPERATOR_EXECUTION_ONRAMP_ENABLED",
-                                                "OPERATOR_ONRAMP_EXECUTOR",
+                                                "OPERATOR_EXECUTION_ONRAMP_ENABLED","OPERATOR_ONRAMP_EXECUTOR",
                                                 "OPERATOR_CODEBASE_READ_ENABLED","OPERATOR_DB_READONLY_ENABLED","OPERATOR_AWS_READONLY_ENABLED",
                                                 "OPERATOR_BOOTSTRAP_PACK_ENABLED","OPERATOR_BOOTSTRAP_BUILD_INFO_URLS",
                                                 "DEV_AUTOPILOT_LLM_REVIEW_ENABLED",
                                                 "DEV_AUTOPILOT_USE_JOB","DEV_AUTOPILOT_JOB_CLOUD",
-                                                "DEV_AUTOPILOT_WATCHER_LIVE",
-                                                "OPERATOR_PLANNER_ENABLED",
+                                                "DEV_AUTOPILOT_WATCHER_LIVE","OPERATOR_PLANNER_ENABLED",
                                                 "OPERATOR_VTID_SELF_ALLOCATE_ENABLED","OPERATOR_PR_APPROVAL_REQUIRED",
                                                 "OPERATOR_THREADS_ENABLED","OPERATOR_TURN_MEMORY_ENABLED",
-                                                "REMINDERS_INPROCESS_DISPATCH_ENABLED","CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","CALENDAR_GOOGLE_SYNC_ENABLED","MEMORY_ORB_RECALL_ENABLED","MEMORY_ORB_RECALL_SHADOW",
+                                                "REMINDERS_INPROCESS_DISPATCH_ENABLED","REMINDERS_STAGING_DISPATCH_OVERRIDE","CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","CALENDAR_GOOGLE_SYNC_ENABLED","MEMORY_ORB_RECALL_ENABLED","MEMORY_ORB_RECALL_SHADOW",
                                                 "FEEDBACK_AUTO_DISPATCH_ENABLED","LEDGER_WRITE_AUTH_MODE","SCHEDULED_NOTIFICATIONS_AUTH_MODE",
                                                 "NAV_V2_ENABLED","NAV_REGISTRY_URL",
                                                 "OPERATOR_SQL_READONLY_ENABLED","OPERATOR_SQL_READONLY_BACKEND",
@@ -1127,6 +1126,7 @@ jobs:
                           {name:"OPERATOR_THREADS_ENABLED", value:"true"},
                           {name:"OPERATOR_TURN_MEMORY_ENABLED", value:"true"},
                           {name:"REMINDERS_INPROCESS_DISPATCH_ENABLED", value:"true"},
+                          {name:"REMINDERS_STAGING_DISPATCH_OVERRIDE", value:"true"},
                           {name:"CALENDAR_DEFAULT_REMINDERS_ENABLED", value:"true"},
                           {name:"CALENDAR_MAINTENANCE_ENABLED", value:"true"},
                           {name:"CALENDAR_GOOGLE_SYNC_ENABLED", value:"true"},

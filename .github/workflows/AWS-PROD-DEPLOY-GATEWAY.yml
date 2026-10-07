@@ -992,6 +992,25 @@ jobs:
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Autopilot reward pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "AUTOPILOT_ACTION_REWARD_ENABLED")]')"
 
+      - name: Build task-definition (reminders dispatch on)
+        # VTID-04963: production runs the reminders tick + sweeper (and the
+        # audiobook daily reminder) in-process. Until now only STAGING did —
+        # the EventBridge reminders jobs were never created — so real
+        # members' reminders were fired by the staging gateway, which shares
+        # this database. Both claim functions use FOR UPDATE SKIP LOCKED, so
+        # prod and staging running together cannot double-fire. Turning it
+        # off is one dispatch with deploy_mode=env-only and
+        # env_overrides={"REMINDERS_INPROCESS_DISPATCH_ENABLED":"false"}
+        # (applied in 2/2, after this step).
+        run: |
+          set -e
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name != "REMINDERS_INPROCESS_DISPATCH_ENABLED") ]
+                + [ {name:"REMINDERS_INPROCESS_DISPATCH_ENABLED", value:"true"} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Reminders dispatch pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "REMINDERS_INPROCESS_DISPATCH_ENABLED")]')"
+
       - name: Build task-definition (Commerce MCP)
         # VTID-04897: Commerce MCP (VTID-04847) on in production, after the
         # first production release with the reward sweep off was verified
