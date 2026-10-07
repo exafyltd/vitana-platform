@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04939",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/commerce-mcp.test.ts",
+      "cwd": "services/gateway",
+      "reason": "no runtime change: the new proof is a database test in CI (SQL-SUPPLIER-LISTING-GATE) against a throwaway Postgres; the Commerce MCP suite must stay green."
+    }
+  ]
+}

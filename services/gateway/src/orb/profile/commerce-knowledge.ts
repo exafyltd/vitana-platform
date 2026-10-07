@@ -18,7 +18,7 @@ const STEP_LABEL: Record<string, string> = {
   company: 'company details',
   verification: 'verification',
   catalogue: 'products or services',
-  mapping: 'shop connection',
+  mapping: 'catalogue mapping (one complete offering, or a connected shop)', // VTID-04953
   tracking_test: 'tracking test',
   results_channel: 'results channel',
   terms: 'partner terms',

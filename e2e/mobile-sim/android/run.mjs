@@ -92,7 +92,7 @@ async function main() {
     report,
     url: args.url,
     email: process.env.TEST_USER_EMAIL || 'e2e-test@vitana.dev',
-    password: process.env.TEST_USER_PASSWORD || 'VitanaE2eTest2026!',
+    password: process.env.TEST_USER_PASSWORD,
     beginRecording,
   };
 

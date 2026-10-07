@@ -164,7 +164,7 @@ describe('MCP protocol', () => {
     const res = await authed(rpc('tools/list'));
     const names = res.body.result.tools.map((t: { name: string }) => t.name);
     expect(names).toEqual([
-      'get_onboarding_status', 'create_business', 'update_business', 'add_product', 'list_products', 'update_product', 'submit_for_verification',
+      'get_onboarding_status', 'create_business', 'update_business', 'add_product', 'list_products', 'update_product', 'check_verification', 'connect_store', 'submit_for_verification',
     ]);
     expect(names.join(' ')).not.toMatch(/terms/);
   });
@@ -196,6 +196,41 @@ describe('tools', () => {
     expect(out.structuredContent).toMatchObject({ organization_id: 'org-1', state: 'draft', next_step: 'company', created: true });
     const terms = out.structuredContent.steps.find((s: { step: string }) => s.step === 'terms');
     expect(terms).toMatchObject({ done_on_vitanaland: true, link: expect.stringMatching(/\/commerce\?org=org-1$/) });
+  });
+
+  test('mapping without a connection points at a complete offering, never at connect_store (VTID-04953)', async () => {
+    const withMapping = (mapping: Record<string, unknown>) => ({
+      ...CHECKLIST,
+      next_step: 'mapping',
+      steps: [
+        { key: 'company', required: true, status: 'done' },
+        { key: 'mapping', required: true, ...mapping },
+        { key: 'tracking_test', required: false, status: 'not_required' },
+        { key: 'billing_mandate', required: false, status: 'not_required' },
+      ],
+    });
+    svc.getOnboardingStatus.mockResolvedValueOnce(okStatus({
+      checklist: withMapping({ status: 'todo', missing: ['complete_offering'], detail: { source: 'catalogue', complete_offerings: 0 } }),
+    }));
+    let out = (await authed(call('get_onboarding_status', { organization_id: 'org-1' }))).body.result.structuredContent;
+    expect(out.next_action).toMatchObject({ step: 'mapping', tool: 'add_product' });
+    expect(out.next_action.tool).not.toBe('connect_store');
+    const mapping = out.steps.find((s: { step: string }) => s.step === 'mapping');
+    expect(mapping.how).toMatch(/complete offering/);
+    // Not-required steps are not "done on Vitanaland".
+    for (const k of ['tracking_test', 'billing_mandate']) {
+      const st = out.steps.find((s: { step: string }) => s.step === k);
+      expect(st).toMatchObject({ status: 'not_required' });
+      expect(st.done_on_vitanaland).toBeUndefined();
+    }
+
+    // With a store connection the connections path still applies.
+    svc.getOnboardingStatus.mockResolvedValueOnce(okStatus({
+      checklist: withMapping({ status: 'in_progress', detail: { source: 'connections' } }),
+    }));
+    out = (await authed(call('get_onboarding_status', { organization_id: 'org-1' }))).body.result.structuredContent;
+    expect(out.next_action).toMatchObject({ step: 'mapping', tool: 'connect_store' });
+    expect(out.steps.find((s: { step: string }) => s.step === 'mapping').how).toBeUndefined();
   });
 
   test('get_onboarding_status passes on the reviewer\'s request and an admin approval (VTID-04933)', async () => {

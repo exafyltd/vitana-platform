@@ -46,6 +46,7 @@ import {
   getMemberByRegistration,
 } from './superlatives';
 import * as repo from './community-member-ranker-repository';
+import { shadowMemberTiebreak } from '../jev/gates/community-ranking-gates';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -913,6 +914,30 @@ export function hashQuery(query: string, viewerId: string): string {
  * what was asked. This rotates the choice so different queries land on
  * different members while the same query stays stable.
  */
+/**
+ * VTID-04883 (D8): Jev shadow on the query-hash fallback only (no tier found a signal-based winner).
+ * Fire-and-forget; the pick above is already final.
+ */
+function fireMemberTiebreakShadow(
+  args: FindMemberArgs,
+  pool: Candidate[],
+  pick: Candidate,
+  lane: string,
+  viewerCity: string | null,
+  viewerCountry: string | null,
+): void {
+  void shadowMemberTiebreak({
+    tenantId: args.viewer_tenant_id,
+    viewerId: args.viewer_user_id,
+    query: args.query,
+    lane,
+    viewerCity,
+    viewerCountry,
+    pool,
+    pickUserId: pick.user_id,
+  }).catch(() => undefined);
+}
+
 function pickByQueryHash(pool: Candidate[], query: string): Candidate {
   if (pool.length === 0) {
     throw new Error('pickByQueryHash: empty pool');
@@ -928,7 +953,7 @@ export async function findCommunityMember(
   args: FindMemberArgs,
 ): Promise<{ result: FindMemberResult; tier: Tier; lane: Lane; winnerUserId: string | null }> {
   const parsed = parseQuery(args.query);
-  const { pool } = await buildCandidatePool(
+  const { pool, viewerCity, viewerCountry } = await buildCandidatePool(
     sb,
     parsed,
     args.viewer_user_id,
@@ -1112,6 +1137,7 @@ export async function findCommunityMember(
   }
   if (noCoreIntent && parsed.locationFilter) {
     const winnerCand = pickByQueryHash(pool, args.query);
+    fireMemberTiebreakShadow(args, pool, winnerCand, 'location_only', viewerCity, viewerCountry);
     return helpers.finalize(winnerCand, 1, 'location_only') || {
       tier: 1 as Tier, lane: 'location_only' as Lane, winnerUserId: winnerCand.user_id,
       result: makeSoftFloor(parsed, winnerCand, false, signals),
@@ -1189,6 +1215,7 @@ export async function findCommunityMember(
   // members. Same query stays stable across calls; just don't always
   // return pool[0] when there's no specific signal.
   const floorCand = pickByQueryHash(pool, args.query);
+  fireMemberTiebreakShadow(args, pool, floorCand, 'floor', viewerCity, viewerCountry);
   return helpers.finalize(floorCand, 3, 'floor') || {
     tier: 3 as Tier, lane: 'floor' as Lane, winnerUserId: floorCand.user_id,
     result: makeSoftFloor(parsed, floorCand, false, signals),

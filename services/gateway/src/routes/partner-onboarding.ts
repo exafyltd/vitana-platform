@@ -33,6 +33,8 @@ import {
 } from '../services/partner-onboarding-checklist';
 import { getCallerId, isExafyAdmin, requireOrgAdmin } from './partner-orgs';
 import {
+  checkVerification,
+  detectStore,
   startOnboarding,
   submitForVerification,
   updateCompany,
@@ -40,7 +42,7 @@ import {
 } from '../services/partner-onboarding-service';
 import { detectPlatform } from '../services/platform-detect';
 import { availableTermsLocales, loadBaselineVersions, loadCurrentTerms, requestDelegation, termsForDisplay } from '../services/partner-terms';
-import { VERIFICATION_LEVEL_REQUIRED, verificationIsStale } from '../services/partner-onboarding-checklist';
+import { VERIFICATION_LEVEL_REQUIRED, isCompleteOffering, verificationIsStale, type OfferingFields } from '../services/partner-onboarding-checklist';
 import {
   computeVerification,
   domainProofInstructions,
@@ -111,6 +113,41 @@ export async function loadOrg(supabase: Supa, orgId: string): Promise<{ org: Org
   return { org: (data as OrgRow | null) ?? null, error: null };
 }
 
+/** VTID-04953: one complete offering is enough; the cap bounds the read for large catalogues. */
+const OFFERING_SCAN_LIMIT = 200;
+const OFFERING_FIELDS = 'title, price_cents, currency, affiliate_url, origin_country, ships_to_countries, ships_to_regions';
+
+/**
+ * VTID-04953 (owner decision B3): where the org's catalogue comes from — its
+ * external catalogue connections (integration_manifest via partner_tenant,
+ * the same filter as listOrgConnections) and how many complete offerings its
+ * merchants hold. A read error fails the checklist load, never a silent "done".
+ */
+export async function loadCatalogueSource(
+  supabase: Supa,
+  orgId: string,
+): Promise<{ source: { connections: number; completeOfferings: number } | null; error: string | null }> {
+  const [conns, merchants] = await Promise.all([
+    supabase
+      .from('integration_manifest')
+      .select('id, partner_tenant!inner(partner_organization_id)', { count: 'exact', head: true })
+      .eq('partner_tenant.partner_organization_id', orgId),
+    supabase.from('merchants').select('id').eq('partner_organization_id', orgId),
+  ]);
+  if (conns.error) return { source: null, error: conns.error.message };
+  if (merchants.error) return { source: null, error: merchants.error.message };
+  const connections = typeof conns.count === 'number' ? conns.count : 0;
+  const mRows = Array.isArray(merchants.data) ? merchants.data : merchants.data ? [merchants.data] : [];
+  const merchantIds = (mRows as unknown as Array<{ id?: string }>).map((m) => m.id).filter((id): id is string => typeof id === 'string');
+  if (merchantIds.length === 0) return { source: { connections, completeOfferings: 0 }, error: null };
+
+  const products = await supabase.from('products').select(OFFERING_FIELDS).in('merchant_id', merchantIds).limit(OFFERING_SCAN_LIMIT);
+  if (products.error) return { source: null, error: products.error.message };
+  const rows = (Array.isArray(products.data) ? products.data : []) as unknown as OfferingFields[];
+  const completeOfferings = rows.filter(isCompleteOffering).length;
+  return { source: { connections, completeOfferings }, error: null };
+}
+
 export async function loadChecklist(supabase: Supa, org: OrgRow): Promise<{ checklist: Checklist | null; error: string | null }> {
   if (!isPartnerType(org.partner_type)) return { checklist: null, error: null };
 
@@ -129,6 +166,8 @@ export async function loadChecklist(supabase: Supa, org: OrgRow): Promise<{ chec
   ]);
   const failed = [steps, terms, members].find((r) => r.error);
   if (failed?.error) return { checklist: null, error: failed.error.message };
+  const catalogue = await loadCatalogueSource(supabase, org.id);
+  if (catalogue.error || !catalogue.source) return { checklist: null, error: catalogue.error ?? 'catalogue source unavailable' };
 
   const checklist = buildChecklist({
     org: {
@@ -143,6 +182,7 @@ export async function loadChecklist(supabase: Supa, org: OrgRow): Promise<{ chec
     currentTermsVersion: currentTerms?.version ?? null,
     termsBaselineVersions,
     memberCount: typeof members.count === 'number' ? members.count : 1,
+    catalogueSource: catalogue.source,
   });
   return { checklist, error: null };
 }
@@ -205,67 +245,10 @@ router.patch('/:orgId/company', requireAuth, requireOrgAdmin(), async (req: Requ
 router.post('/:orgId/detect', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
-  const orgId = req.params.orgId;
-
-  const { data: row, error } = await supabase
-    .from('partner_organizations')
-    .select('id, website, business_details')
-    .eq('id', orgId)
-    .maybeSingle();
-  if (error) return res.status(500).json({ ok: false, error: error.message });
-  if (!row) return res.status(404).json({ ok: false, error: 'ORG_NOT_FOUND' });
-  const current = row as { id: string; website: string | null; business_details: Record<string, unknown> | null };
-
-  const requested = req.body?.website;
-  let website: string | null = current.website;
-  if (requested !== undefined && requested !== null && requested !== '') {
-    const parsed = parseCompanyFacts({ website: requested });
-    if (!parsed.ok) return res.status(400).json({ ok: false, error: parsed.error });
-    website = parsed.facts.website ?? null;
-  }
-  if (!website) return res.status(400).json({ ok: false, error: 'WEBSITE_REQUIRED' });
-
-  const detection = await detectPlatform(website);
-  if (!detection.ok) {
-    return res.status(422).json({ ok: false, error: 'DETECTION_FAILED', reason: detection.error ?? 'unknown' });
-  }
-
-  const record = {
-    url: website,
-    connector_id: detection.connector_id ?? null,
-    provider_id: detection.provider_id ?? null,
-    platform_name: detection.name_hint ?? null,
-    confidence: detection.confidence ?? 'none',
-    detected_at: new Date().toISOString(),
-  };
-  const { error: updErr } = await supabase
-    .from('partner_organizations')
-    .update({
-      business_details: { ...(current.business_details ?? {}), platform_detection: record },
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', orgId);
-  if (updErr) return res.status(500).json({ ok: false, error: updErr.message });
-
-  await emitOasisEvent({
-    vtid: 'VTID-04481',
-    type: 'partner_org.platform_detected',
-    source: 'partner-onboarding',
-    status: 'success',
-    message: `Partner organization ${orgId}: storefront platform ${record.connector_id ?? 'not recognised'} (${record.confidence}).`,
-    payload: {
-      partner_organization_id: orgId,
-      connector_id: record.connector_id,
-      provider_id: record.provider_id,
-      confidence: record.confidence,
-    },
-    actor_id: getCallerId(req) ?? undefined,
-  });
-
-  return respondWithState(res, supabase, orgId, 200, {
-    detection: record,
-    suggested: { website, display_name: detection.site_name ?? null },
-  });
+  const callerId = getCallerId(req);
+  if (!callerId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const r = await detectStore(supabase, { ...callerOf(req, callerId), orgAdminChecked: true }, req.params.orgId, { website: req.body?.website });
+  return res.status(r.status).json(r.body);
 });
 
 // ==================== Verification (VTID-04486) ====================
@@ -280,156 +263,11 @@ router.post('/:orgId/detect', requireAuth, requireOrgAdmin(), async (req: Reques
 router.post('/:orgId/verification/check', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
-  const orgId = req.params.orgId;
   const callerId = getCallerId(req);
   if (!callerId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
-
-  const { org, error } = await loadOrg(supabase, orgId);
-  if (error) return res.status(500).json({ ok: false, error });
-  if (!org) return res.status(404).json({ ok: false, error: 'ORG_NOT_FOUND' });
-  if (!isPartnerType(org.partner_type)) return res.status(409).json({ ok: false, error: 'PARTNER_TYPE_MISSING' });
-  if (org.lifecycle_state === 'rejected') {
-    return res.status(409).json({ ok: false, error: 'NOT_CHECKABLE', lifecycle_state: org.lifecycle_state });
-  }
-  const required = VERIFICATION_LEVEL_REQUIRED[org.partner_type];
-
-  const prior = await supabase
-    .from('partner_onboarding_steps')
-    .select('detail')
-    .eq('partner_organization_id', orgId)
-    .eq('step_key', 'verification')
-    .maybeSingle();
-  if (prior.error) return res.status(500).json({ ok: false, error: prior.error.message });
-  const priorDetail = ((prior.data as { detail?: Record<string, unknown> | null } | null)?.detail ?? null) as Record<string, unknown> | null;
-  // VTID-04933: an admin approval (verification level 1, owner decision for v1)
-  // holds until the company facts change; this check still runs and reports,
-  // but never downgrades it. Read before anything is written.
-  const heldApproval = priorDetail?.method === 'admin_approval' && !verificationIsStale(priorDetail, { partner_type: org.partner_type, legal_name: org.legal_name, country: org.country, vat_id: org.vat_id, website: org.website });
-  const priorToken = priorDetail?.domain_token;
-  const token = typeof priorToken === 'string' && /^[a-f0-9]{32}$/.test(priorToken) ? priorToken : randomBytes(16).toString('hex');
-
-  // Level 0: the org owner's confirmed email (the account the org belongs
-  // to, whoever runs the check), and ownership of the website.
-  const email = await readEmailConfirmation(supabase as any, org.owner_user_id);
-  const emailStatus: CheckStatus =
-    email.status === 'confirmed' ? 'passed' : email.status === 'unconfirmed' ? 'failed' : 'unavailable';
-
-  const host = hostOf(org.website);
-  let domainStatus: CheckStatus = 'pending';
-  let domainMethod: 'email_domain' | 'dns_txt' | 'meta_tag' | null = null;
-  if (host) {
-    const emailDomain = emailDomainOf(email.email);
-    if (email.status === 'confirmed' && emailDomain && domainsMatch(host, emailDomain)) {
-      domainMethod = 'email_domain';
-    } else if (txtRecordsContainToken(await lookupDomainProofTxt(host), token)) {
-      domainMethod = 'dns_txt';
-    } else {
-      const html = await fetchSiteHtml(org.website as string);
-      if (html !== null && htmlContainsMetaToken(html, token)) domainMethod = 'meta_tag';
-    }
-    if (domainMethod) domainStatus = 'passed';
-  }
-
-  // Level 1: EU VAT id in VIES (not required outside the EU). Only looked
-  // up for types that need level 1+; otherwise left `pending`, never
-  // `not_required`, so a level-0 type is not credited with a check that
-  // never ran.
-  let vatStatus: CheckStatus = isEuCountry(org.country) ? 'pending' : org.country ? 'not_required' : 'pending';
-  let vatRegisteredName: string | null = null;
-  let vatError: string | undefined;
-  if (required >= 1 && isEuCountry(org.country)) {
-    const vat = org.vat_id ? normalizeVatNumber(org.vat_id, org.country as string) : null;
-    if (!org.vat_id) vatStatus = 'pending';
-    else if (!vat) vatStatus = 'failed';
-    else {
-      const vies = await checkVatVies(vat.country_code, vat.number);
-      vatStatus = vies.status === 'valid' ? 'passed' : vies.status === 'invalid' ? 'failed' : 'unavailable';
-      vatRegisteredName = vies.name;
-      vatError = vies.error;
-    }
-  }
-
-  const checks: VerificationChecks = {
-    email_verified: emailStatus,
-    domain: domainStatus,
-    vat: vatStatus,
-    // Spec Q2 (Stripe Connect or VIES + billing mandate) and Q6 (licence
-    // sources) are open, so neither provider exists yet. Reported for every
-    // type: only the levels a type needs appear in `missing`, and the level
-    // reached is never credited above what was actually checked.
-    business_verification: 'not_configured',
-    licence: 'not_configured',
-  };
-  const outcome = computeVerification(required, checks);
-  if (!host) outcome.missing.unshift('website');
-  const checkedAt = new Date().toISOString();
-
-  const detail = {
-    level_required: required,
-    level_reached: outcome.level_reached,
-    checks,
-    missing: outcome.missing,
-    domain_method: domainMethod,
-    domain_token: token,
-    vat_registered_name: vatRegisteredName,
-    ...(vatError ? { vat_error: vatError } : {}),
-    facts: { website: org.website, country: org.country, vat_id: org.vat_id },
-    checked_at: checkedAt,
-  };
-  const { error: upErr } = await supabase.from('partner_onboarding_steps').upsert(
-    {
-      partner_organization_id: orgId,
-      step_key: 'verification',
-      status: heldApproval ? 'done' : outcome.step_status,
-      detail: heldApproval
-        ? { ...priorDetail, domain_token: token, auto_check: { level_reached: outcome.level_reached, checks, missing: outcome.missing, domain_method: domainMethod, checked_at: checkedAt } }
-        : detail,
-      updated_by: callerId,
-      updated_at: checkedAt,
-    },
-    { onConflict: 'partner_organization_id,step_key' },
-  );
-  if (upErr) return res.status(500).json({ ok: false, error: upErr.message });
-
-  const trustLevel = heldApproval ? Math.max(outcome.level_reached ?? 0, 1) : outcome.level_reached ?? 0;
-  if (trustLevel !== org.trust_level) {
-    const { error: trustErr } = await supabase
-      .from('partner_organizations')
-      .update({ trust_level: trustLevel, updated_at: checkedAt })
-      .eq('id', orgId);
-    if (trustErr) return res.status(500).json({ ok: false, error: trustErr.message });
-  }
-
-  await emitOasisEvent({
-    vtid: 'VTID-04486',
-    type: 'partner_org.verification_checked',
-    source: 'partner-onboarding',
-    status: outcome.step_status === 'done' ? 'success' : outcome.step_status === 'failed' ? 'warning' : 'info',
-    message: `Partner organization ${orgId}: verification level ${outcome.level_reached ?? 'none'} of ${required} (${outcome.step_status}).`,
-    // Check statuses only: the VAT id, email and registered name stay in the step row.
-    payload: {
-      partner_organization_id: orgId,
-      level_required: required,
-      level_reached: outcome.level_reached,
-      step_status: outcome.step_status,
-      checks,
-      domain_method: domainMethod,
-    },
-    actor_id: callerId,
-  });
-
-  return respondWithState(res, supabase, orgId, 200, {
-    verification: {
-      level_required: required,
-      level_reached: outcome.level_reached,
-      status: outcome.step_status,
-      checks,
-      missing: outcome.missing,
-      domain_method: domainMethod,
-      domain_proof: host && domainStatus !== 'passed' ? domainProofInstructions(host, token) : null,
-      ...(heldApproval ? { admin_approval: true } : {}),
-    },
-  });
+  // VTID-04941: the checks live in the onboarding service, shared with the Commerce MCP.
+  const r = await checkVerification(supabase, { ...callerOf(req, callerId), orgAdminChecked: true }, req.params.orgId);
+  return res.status(r.status).json(r.body);
 });
 
 // ==================== Terms ====================

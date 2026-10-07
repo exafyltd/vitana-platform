@@ -164,6 +164,15 @@ Each org has a checklist computed from `partner_type`. Each step is `todo | in_p
 | billing mandate (direct partners, §9.2) | – | direct only | – | direct only | – |
 | team invited | optional | optional | optional | optional | optional |
 
+**v1 policy (VTID-04953, owner decisions B3/B4, 2026-10-07):**
+- **Service providers** do not need the sales tracking test or the billing mandate in v1 — neither system exists yet,
+  so nobody could complete them. They show as `not_required` and come back when those systems ship.
+- **Mapping without an external catalogue connection** (manual or AI/MCP catalogue): complete once the org has at
+  least one **complete offering** — title, price, currency, link, origin country, and at least one country or region
+  it is offered in (the fields `ProductSchema` requires). An offering an admin keeps offline still counts; mapping is
+  about catalogue data, not publication. With a connection, mapping follows the connection state as before.
+- Changing these rules moves no org by itself; an org moves only when it re-submits or an admin approves.
+
 ### 6.2 API (gateway, new)
 All endpoints require an authenticated user and are owner/admin-scoped by org membership. Base path: `/api/v1/partner-onboarding`.
 

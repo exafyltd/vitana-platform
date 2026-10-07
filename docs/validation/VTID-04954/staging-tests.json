@@ -1,0 +1,39 @@
+{
+  "vtid": "VTID-04954",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "the supplier review page opts out of the shared scroll lock and has the status bar",
+      "target": "gateway",
+      "path": "/command-hub/partner-review.html",
+      "expect_status": 200,
+      "expect_content_type": "text/html",
+      "expect_body_contains": "<body class=\"pr-page\">"
+    },
+    {
+      "kind": "http",
+      "name": "the page stylesheet lets the page scroll",
+      "target": "gateway",
+      "path": "/command-hub/partner-review.css",
+      "expect_status": 200,
+      "expect_content_type": "text/css",
+      "expect_body_contains": "body.pr-page { height: auto; min-height: 100vh; overflow: auto; }"
+    },
+    {
+      "kind": "http",
+      "name": "the page script explains an expired Command Hub sign-in",
+      "target": "gateway",
+      "path": "/command-hub/partner-review.js",
+      "expect_status": 200,
+      "expect_content_type": "application/javascript",
+      "expect_body_contains": "Your Command Hub sign-in has expired."
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/command-hub/vtid-04954-partner-review-page.test.ts",
+      "cwd": "services/gateway",
+      "reason": "button disabling, the status bar and the 401 handling run in a signed-in browser session; the static suite pins them and a local browser run (outputs/browser-check.json, screenshots) exercised them against a mocked API"
+    }
+  ]
+}

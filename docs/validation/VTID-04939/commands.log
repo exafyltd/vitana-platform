@@ -1,0 +1,6 @@
+# VTID-04939 — commands run (throwaway local Postgres 16 on a unix socket; nothing against Supabase or production)
+initdb + pg_ctl start -p 5544
+PGHOST=/tmp PGPORT=5544 PGUSER=postgres scripts/ci/sql-tests/run-supplier-listing-gate-test.sh
+  -> PASS vtid-04939 supplier listing gate excludes allowlisted owners
+mutation: same run with the 'excluded_account' RETURN in supplier_listing_block replaced by NULL
+  -> ERROR: reviewer merchant is excluded_account (assertion failed, as it must)

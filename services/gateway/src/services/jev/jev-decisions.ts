@@ -51,6 +51,23 @@ export interface JevDecisionDef<I = any> {
 }
 
 const ENGINEERING = ['developer', 'admin', 'infra'] as const;
+
+// VTID-04883: shared shapes for the community ranking decisions (D gates).
+/** Flat, small fields only: ids are never names, numbers are bands or scores. */
+const rankingFields = z.record(z.union([z.string().max(120), z.number(), z.boolean(), z.null()]));
+const rankingInput = z.object({ context: rankingFields, candidates: z.array(rankingFields).min(1).max(8) });
+export const RANKING_SLOTS = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8'] as const;
+const SLOT_CRITERIA: Record<string, string> = Object.fromEntries(
+  RANKING_SLOTS.map((s, i) => [s, `Candidate ${s} (number ${i + 1} in the list). Only choose a slot that is in the list.`]),
+);
+const RANKING_DECISIONS: ReadonlyArray<readonly [string, string, string]> = [
+  ['community_calendar_priority', 'Which upcoming calendar event matters most for this member now (D1, shadow of the calendar prioritizer).', 'Which listed calendar event should be this member\'s top priority right now?'],
+  ['community_next_action', 'Which next action Vitana should offer this member (D2, shadow of the next-action composer).', 'Which listed next action is the most useful one for Vitana to offer this member now?'],
+  ['community_match_rerank', 'Which Find-a-Match candidate fits the member\'s request best (D3, shadow re-rank check of the SQL ranking).', 'Which listed candidate intent fits the member\'s request best?'],
+  ['community_suggestion_pick', 'Which Autopilot suggestion should come first for this member (D5, shadow of the pillar-weighted ranking).', 'Which listed suggestion should this member see first?'],
+  ['community_feed_pick', 'Which Discover product should lead this member\'s feed (D7, shadow of the feed ranker; sampled).', 'Which listed product should be first in this member\'s feed?'],
+  ['community_member_tiebreak', 'Which community member to suggest when the search found no signal (D8, shadow of the query-hash fallback).', 'No listed member matched the search on any signal. Which one is the most sensible suggestion for this search?'],
+];
 const BACKOFFICE = ['backoffice', 'admin'] as const;
 const SUPPORT = ['staff', 'admin', 'developer', 'backoffice'] as const;
 
@@ -1207,6 +1224,46 @@ const defs: JevDecisionDef[] = [
     community_class: 'A',
     pii: 'redact',
     buildState: (i) => ({ member_report: i.summary }),
+  },
+  // VTID-04883: community ranking decisions D1–D3, D5–D8 (docs/JEV-INTEGRATION-PLAN.md §10.4 D), shadow only.
+  // One call per request: a choice over fixed slots c1…c8 (questions are fixed per decision), candidates in
+  // the state in the existing order. Class B (per-member quota). State is derived in code: no names, no
+  // health values, no other member's personal data.
+  ...RANKING_DECISIONS.map(
+    ([name, description, instructions]): JevDecisionDef => ({
+      name,
+      description,
+      roles: ENGINEERING,
+      input: rankingInput,
+      questions: { pick: { type: 'choice', instructions, criteria: SLOT_CRITERIA } },
+      primary: 'pick',
+      threshold: 0.5,
+      planes: INTERNAL_AND_AUTOPILOT,
+      data: 'member_content',
+      community_class: 'B',
+      pii: 'redact',
+      buildState: (i) => ({ member_context: i.context, candidates: i.candidates }),
+    }),
+  ),
+  {
+    name: 'community_notification_worth',
+    description: 'Whether a notification just sent was worth sending to this member now (D6, shadow; sampled).',
+    roles: ENGINEERING,
+    input: z.object({ notification: rankingFields, context: rankingFields }),
+    questions: {
+      worth: {
+        type: 'noul',
+        instructions:
+          'Was this notification worth interrupting this member for, now, given its type, priority and how many notifications they already received today?',
+      },
+    },
+    primary: 'worth',
+    threshold: 0.6,
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'member_content',
+    community_class: 'B',
+    pii: 'redact',
+    buildState: (i) => ({ notification: i.notification, member_context: i.context }),
   },
 ];
 

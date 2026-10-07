@@ -83,6 +83,7 @@ import {
   getMarketplaceSignalImpact,
   getWearableSignalImpact,
 } from './signal-impact';
+import { shadowSuggestionPick } from '../jev/gates/community-ranking-gates';
 
 const LOG_PREFIX = '[VTID-01185:Generator]';
 
@@ -1036,6 +1037,20 @@ export async function generatePersonalRecommendations(
       recommendations = rankedOrder
         .map(r => indexById.get((r.rec as { id?: string }).id as string))
         .filter((r): r is GeneratedRecommendation => !!r);
+      // VTID-04883 (D5): Jev shadow of the member's ranked suggestions. Fire-and-forget.
+      void shadowSuggestionPick({
+        tenantId,
+        userId,
+        runId: runResult.data?.run_id ?? null,
+        suggestions: recommendations.map((r) => ({
+          domain: r.domain,
+          source_type: String(r.source_type),
+          impact_score: r.impact_score,
+          effort_score: r.effort_score,
+          risk_level: r.risk_level,
+          time_estimate_seconds: r.time_estimate_seconds ?? null,
+        })),
+      }).catch(() => undefined);
     } catch (rankErr: any) {
       console.warn(`${LOG_PREFIX} rankBatch failed (non-fatal):`, rankErr?.message);
     }

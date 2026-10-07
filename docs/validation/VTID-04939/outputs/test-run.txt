@@ -1,0 +1,2 @@
+PASS vtid-04939 supplier listing gate excludes allowlisted owners
+Mutation check (exclusion removed from supplier_listing_block): ERROR  reviewer merchant is excluded_account

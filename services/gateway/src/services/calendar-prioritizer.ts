@@ -14,6 +14,8 @@
 
 import { emitOasisEvent } from './oasis-event-service';
 import { PILLAR_KEYS, PILLAR_TAGS, type PillarKey } from '../lib/vitana-pillars';
+import { isCommunityGateOn } from './jev/gates/community-class-a-gates';
+import { RANKING_GATES, shadowCalendarPriority } from './jev/gates/community-ranking-gates';
 
 export type PillarScores = Partial<Record<PillarKey, number>>;
 
@@ -93,6 +95,8 @@ export async function reprioritizeUserEvents(userId: string): Promise<Prioritiza
   const events = await resp.json() as any[];
   const result: PrioritizationResult = { updated: 0, errors: 0 };
   const pillarScores = events.length ? await fetchLatestPillarScores(supabaseUrl, headers, userId) : null;
+  // VTID-04883 (D1): the run's scores, for the Jev shadow after the loop.
+  const scored: Array<{ id: string; score: number; event_type?: string | null; pillar: PillarKey | null; start_time?: string | null; reschedule_count?: number | null; source_type?: string | null }> = [];
 
   for (const event of events) {
     try {
@@ -126,6 +130,7 @@ export async function reprioritizeUserEvents(userId: string): Promise<Prioritiza
 
       // Clamp to 0-100
       score = Math.min(100, Math.max(0, score));
+      scored.push({ id: String(event.id), score, event_type: event.event_type, pillar: eventPillar(event), start_time: event.start_time, reschedule_count: event.reschedule_count, source_type: event.source_type });
 
       // Only update if score changed
       if (score !== event.priority_score) {
@@ -150,7 +155,28 @@ export async function reprioritizeUserEvents(userId: string): Promise<Prioritiza
     }
   }
 
+  // VTID-04883 (D1): Jev shadow of this member's ranking. Fire-and-forget, after the PATCHes; the tenant is
+  // looked up only when the gate is on.
+  if (scored.length > 0 && isCommunityGateOn(RANKING_GATES.calendar)) {
+    void (async () => {
+      const tr = await fetch(`${supabaseUrl}/rest/v1/user_tenants?user_id=eq.${userId}&select=tenant_id,is_primary&order=is_primary.desc&limit=1`, { headers });
+      const rows = tr.ok ? ((await tr.json()) as Array<{ tenant_id: string }>) : [];
+      await shadowCalendarPriority({ tenantId: rows[0]?.tenant_id, userId, weakestPillar: weakestPillar(pillarScores), events: scored, now });
+    })().catch(() => undefined);
+  }
+
   return result;
+}
+
+/** The lowest-scoring pillar, or null without index data. Pure. */
+export function weakestPillar(scores: PillarScores | null): PillarKey | null {
+  if (!scores) return null;
+  let best: PillarKey | null = null;
+  for (const p of PILLAR_KEYS) {
+    const v = scores[p];
+    if (typeof v === 'number' && (best === null || v < (scores[best] as number))) best = p;
+  }
+  return best;
 }
 
 /**

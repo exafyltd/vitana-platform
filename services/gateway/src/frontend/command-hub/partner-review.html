@@ -4,10 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Supplier review — Command Hub</title>
-  <link rel="stylesheet" href="/command-hub/styles.css?v=20261007-VTID-04933-review" />
-  <link rel="stylesheet" href="/command-hub/partner-review.css?v=20261007-VTID-04933-review" />
+  <link rel="stylesheet" href="/command-hub/styles.css?v=20261007-VTID-04954" />
+  <link rel="stylesheet" href="/command-hub/partner-review.css?v=20261007-VTID-04954" />
 </head>
-<body>
+<body class="pr-page">
   <div class="pr-container">
     <header class="pr-header">
       <h1>Supplier review</h1>
@@ -30,11 +30,12 @@
         <button id="pr-refresh" type="button">Refresh</button>
       </div>
     </header>
+    <div id="pr-status" class="pr-status" role="status" aria-live="polite"></div>
     <main class="pr-main">
       <section id="pr-list" class="pr-list" aria-live="polite">Loading…</section>
       <section id="pr-detail" class="pr-detail" aria-live="polite"></section>
     </main>
   </div>
-  <script src="/command-hub/partner-review.js?v=20261007-VTID-04933-review"></script>
+  <script src="/command-hub/partner-review.js?v=20261007-VTID-04954"></script>
 </body>
 </html>

@@ -148,12 +148,17 @@ function seed(over: Row = {}, steps: Row[] = []) {
     partner_terms_acceptances: [{ partner_organization_id: ORG, terms_version: '2026-10', content_sha256: 'h', shown_locale: 'en', accepted_at: '2026-10-06T15:05:17Z' }],
     partner_organization_members: [{ partner_organization_id: ORG, user_id: 'owner-1', role: 'org_admin' }],
     merchants: [{ id: 'm-1', partner_organization_id: ORG }],
-    products: [{ id: 'p-1', merchant_id: 'm-1', title: 'AI & Digital Platform Consultation', price_cents: 15000, currency: 'EUR', affiliate_url: 'https://www.exafy.io/', is_active: false, listing_hold: null, first_listed_at: null, attributes: { kind: 'service' }, created_at: 'x' }],
+    products: [{ id: 'p-1', merchant_id: 'm-1', title: 'AI & Digital Platform Consultation', price_cents: 15000, currency: 'EUR', affiliate_url: 'https://www.exafy.io/', origin_country: 'AE', ships_to_countries: ['AE'], is_active: false, listing_hold: null, first_listed_at: null, attributes: { kind: 'service' }, created_at: 'x' }],
     oasis_events: [],
   };
 }
-/** Every required step of a service_provider except verification. */
-const ALL_BUT_VERIFICATION = ['catalogue', 'mapping', 'tracking_test', 'billing_mandate'].map((k) => ({ step_key: k, status: 'done', detail: null }));
+/**
+ * Every required step of a service_provider except verification. Since
+ * VTID-04953 that is the catalogue row alone: mapping is derived from the
+ * complete offering (no connection), and tracking_test / billing_mandate are
+ * not required for service providers in v1.
+ */
+const ALL_BUT_VERIFICATION = [{ step_key: 'catalogue', status: 'done', detail: null }];
 const org = () => db.partner_organizations[0];
 const step = (k: string) => db.partner_onboarding_steps.find((s) => s.step_key === k);
 
