@@ -166,6 +166,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const schedulerRouter = require('./routes/scheduler').default;
   // Scheduled notification webhook endpoints (Cloud Scheduler triggers)
   const scheduledNotificationsRouter = require('./routes/scheduled-notifications').default;
+  // VTID-04892: Vitana Onboarding Assistant — read-only coach status
+  const onboardingCoachRouter = require('./routes/onboarding-coach').default;
   // Real-time My Journey celebrations — daily-goal, phase milestone, progress thresholds
   const celebrationsRouter = require('./routes/celebrations').default;
   // VTID-02601: Reminders feature — voice-creatable + audio-interrupt delivery
@@ -1142,6 +1144,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/scheduler', schedulerRouter, { owner: 'scheduler' });
   // Scheduled notification webhooks (Cloud Scheduler triggers)
   mountRouterSync(app, '/api/v1/scheduled-notifications', scheduledNotificationsRouter, { owner: 'scheduled-notifications' });
+  mountRouterSync(app, '/api/v1/onboarding-coach', onboardingCoachRouter, { owner: 'onboarding-coach' });
   mountRouterSync(app, '/api/v1/celebrations', celebrationsRouter, { owner: 'celebrations' });
   mountRouterSync(app, '/api/v1/reminders', remindersRouter, { owner: 'reminders' });
 
