@@ -219,6 +219,35 @@ describe('POST /:orgId/verification/check', () => {
     expect(state.trust_level).toBe(0);
   });
 
+  // VTID-04933: an admin approval counts as level 1 and the automatic check
+  // must not undo it while the company facts are unchanged.
+  const approval = {
+    method: 'admin_approval', level: 1, approved_by: 'admin-1', approved_at: '2026-10-07T09:00:00Z', domain_token: TOKEN,
+    facts: { website: 'https://www.acme.example/', country: 'DE', vat_id: 'DE 123456789' },
+  };
+
+  it('keeps an admin approval: step stays done, trust_level stays 1, the automatic findings are recorded beside it', async () => {
+    const state = wire({ lifecycle_state: 'needs_action', trust_level: 1 }, { priorDetail: approval });
+    const r = await check();
+    expect(r.status).toBe(200);
+    expect(r.body.verification).toMatchObject({ level_reached: 0, admin_approval: true });
+    const row = upsertCall()!.args[0];
+    expect(row.status).toBe('done');
+    expect(row.detail).toMatchObject({ method: 'admin_approval', level: 1, approved_by: 'admin-1', domain_token: TOKEN });
+    expect(row.detail.auto_check).toMatchObject({ level_reached: 0, missing: ['business_verification_not_configured'] });
+    expect(state.trust_level).toBe(1);
+  });
+
+  it('an admin approval made for other company facts no longer holds', async () => {
+    const state = wire({ lifecycle_state: 'needs_action', trust_level: 1, website: 'https://new.acme.example/' }, { priorDetail: approval });
+    const r = await check();
+    expect(r.body.verification.admin_approval).toBeUndefined();
+    const row = upsertCall()!.args[0];
+    expect(row.status).not.toBe('done');
+    expect(row.detail.method).toBeUndefined();
+    expect(state.trust_level).toBe(0);
+  });
+
   it('409 for a rejected org, and nothing is recorded', async () => {
     wire({ lifecycle_state: 'rejected', status: 'rejected' });
     const r = await check();

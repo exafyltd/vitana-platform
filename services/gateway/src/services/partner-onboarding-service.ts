@@ -311,6 +311,59 @@ export async function setMissingPartnerType(
   return orgState(s, orgId);
 }
 
+export type LifecycleMove = { from: LifecycleState; to: LifecycleState };
+
+/**
+ * Applies lifecycle moves one at a time, each a compare-and-set on the current
+ * state and allowed by the lifecycle graph, with one `partner_org.lifecycle_changed`
+ * event per move. Shared by submit (VTID-04478) and the admin review (VTID-04933),
+ * so no caller can move an org outside the graph.
+ */
+export async function applyLifecycleMoves(
+  s: Supa,
+  orgId: string,
+  moves: LifecycleMove[],
+  opts: {
+    actorId: string | null;
+    source: string;
+    partnerType: PartnerType | null;
+    reason: string;
+    payloadFor?: (move: LifecycleMove) => Record<string, unknown>;
+  },
+): Promise<{ applied: LifecycleMove[]; failure: ServiceResult | null }> {
+  const applied: LifecycleMove[] = [];
+  for (const move of moves) {
+    if (!canTransition(move.from, move.to)) return { applied, failure: fail(500, { error: `illegal transition ${move.from} -> ${move.to}` }) };
+    const { data, error: updErr } = await s
+      .from('partner_organizations')
+      .update({ lifecycle_state: move.to, updated_at: new Date().toISOString() })
+      .eq('id', orgId)
+      .eq('lifecycle_state', move.from)
+      .select('id');
+    if (updErr) return { applied, failure: fail(500, { error: updErr.message, applied }) };
+    if (!Array.isArray(data) || data.length === 0) return { applied, failure: fail(409, { error: 'CONCURRENT_UPDATE', applied }) };
+    applied.push(move);
+
+    await emitOasisEvent({
+      vtid: 'VTID-04478',
+      type: 'partner_org.lifecycle_changed',
+      source: opts.source,
+      status: move.to === 'needs_action' || move.to === 'rejected' ? 'warning' : 'success',
+      message: `Partner organization ${orgId}: ${move.from} -> ${move.to}.`,
+      payload: {
+        partner_organization_id: orgId,
+        partner_type: opts.partnerType,
+        from: move.from,
+        to: move.to,
+        reason: opts.reason,
+        ...(opts.payloadFor ? opts.payloadFor(move) : {}),
+      },
+      actor_id: opts.actorId ?? undefined,
+    });
+  }
+  return { applied, failure: null };
+}
+
 /** Submit for verification: the rules decide live / needs_action. */
 export async function submitForVerification(
   s: Supa,
@@ -337,36 +390,15 @@ export async function submitForVerification(
   const moves = submitTransitions(org.lifecycle_state, verdict.outcome);
   if (!moves) return fail(409, { error: 'NOT_SUBMITTABLE', lifecycle_state: org.lifecycle_state });
 
-  const applied: Array<{ from: LifecycleState; to: LifecycleState }> = [];
-  for (const move of moves) {
-    if (!canTransition(move.from, move.to)) return fail(500, { error: `illegal transition ${move.from} -> ${move.to}` });
-    const { data, error: updErr } = await s
-      .from('partner_organizations')
-      .update({ lifecycle_state: move.to, updated_at: new Date().toISOString() })
-      .eq('id', orgId)
-      .eq('lifecycle_state', move.from)
-      .select('id');
-    if (updErr) return fail(500, { error: updErr.message, applied });
-    if (!Array.isArray(data) || data.length === 0) return fail(409, { error: 'CONCURRENT_UPDATE', applied });
-    applied.push(move);
-
-    await emitOasisEvent({
-      vtid: 'VTID-04478',
-      type: 'partner_org.lifecycle_changed',
-      source: meta.source ?? 'partner-onboarding',
-      status: move.to === 'needs_action' ? 'warning' : 'success',
-      message: `Partner organization ${orgId}: ${move.from} -> ${move.to}.`,
-      payload: {
-        partner_organization_id: orgId,
-        partner_type: org.partner_type as PartnerType,
-        from: move.from,
-        to: move.to,
-        reason: 'submit',
-        ...(move.to === 'needs_action' ? { open_steps: verdict.open_steps, failed_steps: verdict.failed_steps } : {}),
-      },
-      actor_id: caller.userId,
-    });
-  }
+  const moved = await applyLifecycleMoves(s, orgId, moves, {
+    actorId: caller.userId,
+    source: meta.source ?? 'partner-onboarding',
+    partnerType: org.partner_type as PartnerType,
+    reason: 'submit',
+    payloadFor: (move) => (move.to === 'needs_action' ? { open_steps: verdict.open_steps, failed_steps: verdict.failed_steps } : {}),
+  });
+  if (moved.failure) return moved.failure;
+  const applied = moved.applied;
 
   // VTID-04820 (Jev E10, shadow): advisory triage, never awaited.
   if (applied.length && isPartnerTriageOn()) {
@@ -441,10 +473,28 @@ export async function updateProduct(
     }
   }
 
+  // VTID-04933: `attributes.admin_listing` is the admin's listing decision
+  // (keep offline / allow listing). A supplier never sets it, and replacing
+  // `attributes` keeps the decision that is already there.
+  const patch: Record<string, unknown> = { ...parsed.data };
+  if (patch.attributes && typeof patch.attributes === 'object') {
+    const { admin_listing: _ignored, ...supplierAttrs } = patch.attributes as Record<string, unknown>;
+    const { data: cur, error: curErr } = await s
+      .from('products')
+      .select('attributes')
+      .eq('id', productId)
+      .eq('merchant_id', merchantId)
+      .maybeSingle();
+    if (curErr) return fail(500, { error: curErr.message });
+    if (!cur) return fail(404, { error: 'PRODUCT_NOT_FOUND' });
+    const kept = ((cur as { attributes?: Record<string, unknown> | null }).attributes ?? {}).admin_listing;
+    patch.attributes = kept === undefined ? supplierAttrs : { ...supplierAttrs, admin_listing: kept };
+  }
+
   // merchant_id is the authorization: another org's product matches no row.
   const { data, error } = await s
     .from('products')
-    .update(parsed.data)
+    .update(patch)
     .eq('id', productId)
     .eq('merchant_id', merchantId)
     .select(PRODUCT_FIELDS)

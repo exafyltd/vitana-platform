@@ -1090,6 +1090,12 @@ export type CicdEventType =
   // VTID-04499: onboarding connections and mapping step
   | 'partner_org.connection_started'
   | 'partner_org.mapping_step_changed'
+  // VTID-04933: exafy_admin supplier review (approve = verification level 1, request changes, reject, per-offering listing)
+  | 'partner_org.review.approved'
+  | 'partner_org.review.changes_requested'
+  | 'partner_org.review.rejected'
+  | 'partner_org.review.product_kept_offline'
+  | 'partner_org.review.product_listing_allowed'
   // VTID-04838: a supplier's confirmed AI-setup draft created a business and/or draft products.
   | 'commerce.ai_setup.applied'
   | 'commerce.mcp.tool_called'

@@ -1,0 +1,47 @@
+{
+  "vtid": "VTID-04933",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "admin partner review list is mounted and refuses an unsigned caller",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/admin/partner-review",
+      "expect_status": 401
+    },
+    {
+      "kind": "http",
+      "name": "approve is mounted and its auth gate rejects an unsigned write before any handler runs",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/api/v1/admin/partner-review/00000000-0000-0000-0000-000000000000/approve",
+      "rejected_probe": true,
+      "expect_status": 401
+    },
+    {
+      "kind": "http",
+      "name": "Command Hub supplier review page is served",
+      "target": "gateway",
+      "path": "/command-hub/partner-review.html",
+      "expect_status": 200,
+      "expect_content_type": "text/html",
+      "expect_body_contains": "partner-review.js?v=20261007-VTID-04933-review"
+    },
+    {
+      "kind": "http",
+      "name": "served review script talks to the admin review API",
+      "target": "gateway",
+      "path": "/command-hub/partner-review.js?v=20261007-VTID-04933-review",
+      "expect_status": 200,
+      "expect_content_type": "application/javascript",
+      "expect_body_contains": "/api/v1/admin/partner-review"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04933-partner-review.test.ts test/partner-orgs.test.ts test/admin-partner-terms.test.ts test/vtid-04471-partner-account-model.test.ts test/partner-onboarding-verification.test.ts test/commerce-mcp.test.ts",
+      "cwd": "services/gateway",
+      "reason": "approve, request changes, reject, keep offline and allow listing all write to shared data, which a read-only staging suite cannot do; the unit suite pins every transition, refusal, event and the 403 for a signed-in non-admin and for a delegated token"
+    }
+  ]
+}

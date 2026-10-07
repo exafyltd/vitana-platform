@@ -1,0 +1,8 @@
+# VTID-04933 — commands run for this change (no production reads or writes)
+PGHOST=/var/tmp/pgsock_pt PGPORT=54329 PGUSER=postgres scripts/ci/sql-tests/run-partner-review-test.sh   # throwaway local Postgres 16
+node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(require('./docs/validation/VTID-04933/staging-tests.json'))"
+node scripts/ci/validator-path-guard.cjs <changed-files> gateway_backend <pr-body>
+VTID=VTID-04933 python3 -I acgate.py   # local copy of the acceptance gate
+node --check services/gateway/src/frontend/command-hub/partner-review.js
+# CI: gateway Jest (vtid-04933-partner-review, partner-orgs, admin-partner-terms, partner-onboarding-verification,
+#     commerce-mcp, vtid-04471), typecheck, SQL-PARTNER-REVIEW (postgres:16 service), Command Hub ownership guard.

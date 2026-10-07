@@ -40,7 +40,7 @@ import {
 } from '../services/partner-onboarding-service';
 import { detectPlatform } from '../services/platform-detect';
 import { availableTermsLocales, loadBaselineVersions, loadCurrentTerms, requestDelegation, termsForDisplay } from '../services/partner-terms';
-import { VERIFICATION_LEVEL_REQUIRED } from '../services/partner-onboarding-checklist';
+import { VERIFICATION_LEVEL_REQUIRED, verificationIsStale } from '../services/partner-onboarding-checklist';
 import {
   computeVerification,
   domainProofInstructions,
@@ -300,7 +300,12 @@ router.post('/:orgId/verification/check', requireAuth, requireOrgAdmin(), async 
     .eq('step_key', 'verification')
     .maybeSingle();
   if (prior.error) return res.status(500).json({ ok: false, error: prior.error.message });
-  const priorToken = (prior.data as { detail?: { domain_token?: unknown } } | null)?.detail?.domain_token;
+  const priorDetail = ((prior.data as { detail?: Record<string, unknown> | null } | null)?.detail ?? null) as Record<string, unknown> | null;
+  // VTID-04933: an admin approval (verification level 1, owner decision for v1)
+  // holds until the company facts change; this check still runs and reports,
+  // but never downgrades it. Read before anything is written.
+  const heldApproval = priorDetail?.method === 'admin_approval' && !verificationIsStale(priorDetail, { partner_type: org.partner_type, legal_name: org.legal_name, country: org.country, vat_id: org.vat_id, website: org.website });
+  const priorToken = priorDetail?.domain_token;
   const token = typeof priorToken === 'string' && /^[a-f0-9]{32}$/.test(priorToken) ? priorToken : randomBytes(16).toString('hex');
 
   // Level 0: the org owner's confirmed email (the account the org belongs
@@ -375,8 +380,10 @@ router.post('/:orgId/verification/check', requireAuth, requireOrgAdmin(), async 
     {
       partner_organization_id: orgId,
       step_key: 'verification',
-      status: outcome.step_status,
-      detail,
+      status: heldApproval ? 'done' : outcome.step_status,
+      detail: heldApproval
+        ? { ...priorDetail, domain_token: token, auto_check: { level_reached: outcome.level_reached, checks, missing: outcome.missing, domain_method: domainMethod, checked_at: checkedAt } }
+        : detail,
       updated_by: callerId,
       updated_at: checkedAt,
     },
@@ -384,7 +391,7 @@ router.post('/:orgId/verification/check', requireAuth, requireOrgAdmin(), async 
   );
   if (upErr) return res.status(500).json({ ok: false, error: upErr.message });
 
-  const trustLevel = outcome.level_reached ?? 0;
+  const trustLevel = heldApproval ? Math.max(outcome.level_reached ?? 0, 1) : outcome.level_reached ?? 0;
   if (trustLevel !== org.trust_level) {
     const { error: trustErr } = await supabase
       .from('partner_organizations')
@@ -420,6 +427,7 @@ router.post('/:orgId/verification/check', requireAuth, requireOrgAdmin(), async 
       missing: outcome.missing,
       domain_method: domainMethod,
       domain_proof: host && domainStatus !== 'passed' ? domainProofInstructions(host, token) : null,
+      ...(heldApproval ? { admin_approval: true } : {}),
     },
   });
 });
