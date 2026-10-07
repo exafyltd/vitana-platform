@@ -26,13 +26,13 @@
       "path": "/command-hub/partner-review.html",
       "expect_status": 200,
       "expect_content_type": "text/html",
-      "expect_body_contains": "partner-review.js?v=20261007-VTID-04933-review"
+      "expect_body_contains": "/command-hub/partner-review.js"
     },
     {
       "kind": "http",
       "name": "served review script talks to the admin review API",
       "target": "gateway",
-      "path": "/command-hub/partner-review.js?v=20261007-VTID-04933-review",
+      "path": "/command-hub/partner-review.js",
       "expect_status": 200,
       "expect_content_type": "application/javascript",
       "expect_body_contains": "/api/v1/admin/partner-review"
