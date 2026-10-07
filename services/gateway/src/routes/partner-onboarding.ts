@@ -42,7 +42,7 @@ import {
 } from '../services/partner-onboarding-service';
 import { detectPlatform } from '../services/platform-detect';
 import { availableTermsLocales, loadBaselineVersions, loadCurrentTerms, requestDelegation, termsForDisplay } from '../services/partner-terms';
-import { VERIFICATION_LEVEL_REQUIRED, verificationIsStale } from '../services/partner-onboarding-checklist';
+import { VERIFICATION_LEVEL_REQUIRED, isCompleteOffering, verificationIsStale, type OfferingFields } from '../services/partner-onboarding-checklist';
 import {
   computeVerification,
   domainProofInstructions,
@@ -113,6 +113,41 @@ export async function loadOrg(supabase: Supa, orgId: string): Promise<{ org: Org
   return { org: (data as OrgRow | null) ?? null, error: null };
 }
 
+/** VTID-04953: one complete offering is enough; the cap bounds the read for large catalogues. */
+const OFFERING_SCAN_LIMIT = 200;
+const OFFERING_FIELDS = 'title, price_cents, currency, affiliate_url, origin_country, ships_to_countries, ships_to_regions';
+
+/**
+ * VTID-04953 (owner decision B3): where the org's catalogue comes from — its
+ * external catalogue connections (integration_manifest via partner_tenant,
+ * the same filter as listOrgConnections) and how many complete offerings its
+ * merchants hold. A read error fails the checklist load, never a silent "done".
+ */
+export async function loadCatalogueSource(
+  supabase: Supa,
+  orgId: string,
+): Promise<{ source: { connections: number; completeOfferings: number } | null; error: string | null }> {
+  const [conns, merchants] = await Promise.all([
+    supabase
+      .from('integration_manifest')
+      .select('id, partner_tenant!inner(partner_organization_id)', { count: 'exact', head: true })
+      .eq('partner_tenant.partner_organization_id', orgId),
+    supabase.from('merchants').select('id').eq('partner_organization_id', orgId),
+  ]);
+  if (conns.error) return { source: null, error: conns.error.message };
+  if (merchants.error) return { source: null, error: merchants.error.message };
+  const connections = typeof conns.count === 'number' ? conns.count : 0;
+  const mRows = Array.isArray(merchants.data) ? merchants.data : merchants.data ? [merchants.data] : [];
+  const merchantIds = (mRows as unknown as Array<{ id?: string }>).map((m) => m.id).filter((id): id is string => typeof id === 'string');
+  if (merchantIds.length === 0) return { source: { connections, completeOfferings: 0 }, error: null };
+
+  const products = await supabase.from('products').select(OFFERING_FIELDS).in('merchant_id', merchantIds).limit(OFFERING_SCAN_LIMIT);
+  if (products.error) return { source: null, error: products.error.message };
+  const rows = (Array.isArray(products.data) ? products.data : []) as unknown as OfferingFields[];
+  const completeOfferings = rows.filter(isCompleteOffering).length;
+  return { source: { connections, completeOfferings }, error: null };
+}
+
 export async function loadChecklist(supabase: Supa, org: OrgRow): Promise<{ checklist: Checklist | null; error: string | null }> {
   if (!isPartnerType(org.partner_type)) return { checklist: null, error: null };
 
@@ -131,6 +166,8 @@ export async function loadChecklist(supabase: Supa, org: OrgRow): Promise<{ chec
   ]);
   const failed = [steps, terms, members].find((r) => r.error);
   if (failed?.error) return { checklist: null, error: failed.error.message };
+  const catalogue = await loadCatalogueSource(supabase, org.id);
+  if (catalogue.error || !catalogue.source) return { checklist: null, error: catalogue.error ?? 'catalogue source unavailable' };
 
   const checklist = buildChecklist({
     org: {
@@ -145,6 +182,7 @@ export async function loadChecklist(supabase: Supa, org: OrgRow): Promise<{ chec
     currentTermsVersion: currentTerms?.version ?? null,
     termsBaselineVersions,
     memberCount: typeof members.count === 'number' ? members.count : 1,
+    catalogueSource: catalogue.source,
   });
   return { checklist, error: null };
 }

@@ -112,7 +112,11 @@ function org(over: Record<string, any> = {}) {
 }
 
 /** Wires the tables a full state read touches. `state` is mutated by updates. */
-function wireOrg(state: Record<string, any>, extra: { steps?: any[]; terms?: string[]; admin?: boolean } = {}) {
+function wireOrg(state: Record<string, any>, extra: { steps?: any[]; terms?: string[]; admin?: boolean; connections?: number } = {}) {
+  // VTID-04953: the checklist reads the org's catalogue source.
+  handlers.integration_manifest = () => ({ data: null, count: extra.connections ?? 0, error: null });
+  handlers.merchants = () => ({ data: [], error: null });
+  handlers.products = () => ({ data: [], error: null });
   handlers.partner_organizations = (c) => {
     if (c.op === 'update') {
       const guard = c.filters.find(([k]) => k === 'lifecycle_state');
@@ -473,6 +477,7 @@ describe('POST /:orgId/submit', () => {
     const state = org({ ...COMPANY, partner_type: 'affiliate_brand' });
     wireOrg(state, {
       terms: ['2026-09'],
+      connections: 1,
       steps: ['verification', 'catalogue', 'mapping', 'tracking_test'].map((k) => ({ step_key: k, status: 'done' })),
     });
     const r = await request(app()).post('/api/v1/partner-onboarding/org-1/submit').set('Authorization', 'Bearer owner-1');

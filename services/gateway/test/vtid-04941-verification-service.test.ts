@@ -67,6 +67,10 @@ function wire(org: Record<string, any> = {}) {
   handlers.partner_organization_members = (c) => (c.terminal === 'maybeSingle' ? { data: { role: 'org_admin' }, error: null } : { data: null, count: 1, error: null });
   handlers.partner_onboarding_steps = (c) => (c.op === 'upsert' ? { data: null, error: null } : c.terminal === 'maybeSingle' ? { data: null, error: null } : { data: [], error: null });
   handlers.partner_terms_acceptances = () => ({ data: [], error: null });
+  // VTID-04953: the checklist reads the org's catalogue source.
+  handlers.integration_manifest = () => ({ data: null, count: 0, error: null });
+  handlers.merchants = () => ({ data: [], error: null });
+  handlers.products = () => ({ data: [], error: null });
   return state;
 }
 
