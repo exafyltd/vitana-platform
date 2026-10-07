@@ -1062,6 +1062,11 @@ Standing rules for any Commerce change:
    `credit_wallet()` call with a home-made counter. The reward sweep
    (`services/rewards/reward-sweep.ts`) pays only on production
    (`VITANA_ENV` must not be `staging`; staging shares the database).
+   **VTID-04944 (owner decision 2026-10-07):** `AWS-PROD-DEPLOY-GATEWAY.yml`
+   pins `REWARD_SWEEP_ENABLED` and `AUTOPILOT_ACTION_REWARD_ENABLED` to
+   `"true"`, so every production publish keeps payouts on. To switch them off,
+   dispatch with `env_overrides` setting both to `"false"`; the post-deploy
+   check then expects `false`.
 
 ---
 
