@@ -34,6 +34,9 @@ export const OperatorChatMessageSchema = z.object({
   role: z.enum(['operator', 'assistant', 'system']).optional().default('operator'),
   mode: z.enum(['chat', 'task', 'control']).optional().default('chat'),
   metadata: z.record(z.unknown()).optional(),
+  // VTID-04975: engine for a NEW thread ('kiro' = kiro-cli over ACP). An existing
+  // thread keeps the engine it was created with; this field is ignored for it.
+  engine: z.enum(['llm', 'kiro']).optional(),
   // VTID-01027: Session memory fields
   conversation_id: z.string().optional(),
   context: z.array(z.object({

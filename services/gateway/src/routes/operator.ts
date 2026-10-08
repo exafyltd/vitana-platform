@@ -35,7 +35,10 @@ import { processMessage } from '../services/ai-orchestrator';
 import { isOperatorRouteOn, recordOperatorRouteOutcome, runOperatorRoute } from '../services/jev/gates/operator-route-gate';
 // VTID-0536: Gemini Operator Tools Bridge
 import { processWithGemini, type OperatorTurnEventSink } from '../services/gemini-operator';
-import { getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn, listOperatorThreadMessages, listOperatorThreads } from '../services/operator-threads';
+import { getThreadEngine, getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn, listOperatorThreadMessages, listOperatorThreads } from '../services/operator-threads';
+import { runKiroTurn, cancelKiroTurn, closeKiroSession, isKiroEngineEnabled, openKiroSessionCount } from '../services/kiro/kiro-turn';
+import { answerPermission } from '../services/kiro/permission-broker';
+import type { KiroTurnEventSink } from '../services/kiro/kiro-events';
 import { extractAndRecordTurnMemory, isTurnMemoryEnabled } from '../services/operator-turn-memory';
 import { writeDevMemory } from '../services/dev-agent-memory';
 // VTID-03851: verified-caller marker for autopilot_execute_task (set or
@@ -411,8 +414,22 @@ export async function runOperatorChatTurn(
     // exactly as before.
     const threadSummary = isOperatorThreadsEnabled() ? await getThreadSummary(threadId).catch(() => null) : null;
     // VTID-04816 (Jev A10, shadow): which lane the message asks for, judged beside the turn.
-    const routeCheck = isOperatorRouteOn() ? runOperatorRoute({ threadId, message, developerTools: geminiUserRole === 'admin' }) : null;
-    let geminiResult = await processWithGemini({
+    // VTID-04975: an existing thread keeps the engine it was created with; the
+    // request's `engine` only picks it for a NEW thread. Kiro is exafy_admin only.
+    const isKiro = ((await getThreadEngine(threadId)) ?? validation.data.engine ?? 'llm') === 'kiro';
+    if (isKiro && geminiUserRole !== 'admin') {
+      return { status: 403, body: { ok: false, error: 'kiro_requires_admin' } };
+    }
+    const routeCheck = !isKiro && isOperatorRouteOn() ? runOperatorRoute({ threadId, message, developerTools: geminiUserRole === 'admin' }) : null;
+    let geminiResult: Awaited<ReturnType<typeof processWithGemini>> = isKiro
+      ? await runKiroTurn({
+        threadId,
+        userId: callerIdentity?.user_id ?? null,
+        message,
+        // Kiro events are additive frame types; the stream route writes `type` as the frame name.
+        emit: opts.onEvent as unknown as KiroTurnEventSink | undefined,
+      })
+      : await processWithGemini({
       text: message,
       threadId,
       attachments: attachments.map(a => ({ oasis_ref: a.oasis_ref, kind: a.kind })),
@@ -441,7 +458,9 @@ export async function runOperatorChatTurn(
     // retry (a genuinely confused model gets the honest simulated reply
     // back rather than looping).
     const executedToolNames = (geminiResult.toolResults || []).map((tr) => tr.name);
-    const simulatedCall = detectSimulatedToolCallReply(geminiResult.reply || '', executedToolNames);
+    const simulatedCall = isKiro
+      ? { detected: false as const, toolName: '', reason: '' }
+      : detectSimulatedToolCallReply(geminiResult.reply || '', executedToolNames);
     if (simulatedCall.detected) {
       console.warn(
         `[VTID-04172] simulated tool call detected on thread ${threadId} (${simulatedCall.toolName}): ${simulatedCall.reason} — retrying once`,
@@ -476,7 +495,7 @@ export async function runOperatorChatTurn(
     // preferences …) → dev_agent_memory, extracted by the memory stage.
     // Fire and forget, fail-open; trivial turns are skipped before any
     // model call. Independent of the thread store below.
-    if (isTurnMemoryEnabled()) {
+    if (!isKiro && isTurnMemoryEnabled()) {
       extractAndRecordTurnMemory({
         threadId,
         userText: message,
@@ -497,6 +516,7 @@ export async function runOperatorChatTurn(
         userText: message,
         reply: geminiResult.reply,
         tools: (geminiResult.toolResults || []).map((tr) => ({ name: tr.name, result: JSON.stringify(tr.response ?? {}) })),
+        engine: isKiro ? 'kiro' : 'llm',
         meta: { conversation_id: conversation_id || null, request_id: requestId, provider: geminiResult.meta?.provider ?? null, model: geminiResult.meta?.model ?? null, ...(opts.channel ? { channel: opts.channel } : {}) },
       })
         .then((r) => (r.recorded ? maybeSummarizeThread(threadId, r.turns) : false))
@@ -693,6 +713,53 @@ router.post('/chat/stream', optionalAuth, operatorMachineAuth, async (req: Reque
     if (!closed) writeSseFrame(res, 'done', { threadId });
     if (!res.writableEnded) res.end();
   }
+});
+
+// ==================== Kiro engine (VTID-04975) ====================
+// All exafy_admin only. A session is addressed by its thread id; only the
+// user who owns it may cancel/close it or answer its permission cards.
+
+/** GET /kiro/status — is the engine switched on, and how many sessions are open. */
+router.get('/kiro/status', requireAdminAuth, (_req: AuthenticatedRequest, res: Response) => {
+  return res.json({ ok: true, enabled: isKiroEngineEnabled(), open_sessions: openKiroSessionCount() });
+});
+
+/** POST /kiro/permissions/:requestId { allow: boolean } — answer an approval card. */
+router.post('/kiro/permissions/:requestId', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const parsed = z.object({ allow: z.boolean() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'INVALID_BODY' });
+  const r = answerPermission(req.params.requestId, req.identity?.user_id ?? null, parsed.data.allow);
+  if (!r.ok) return res.status(r.error === 'forbidden' ? 403 : 404).json({ ok: false, error: r.error });
+  // Every approval decision is a governed state transition: no key, no prompt, no tool arguments.
+  await ingestOperatorEvent({
+    vtid: 'VTID-04975',
+    type: 'operator.kiro.permission_answered',
+    status: 'info',
+    message: `Kiro tool permission ${parsed.data.allow ? 'allowed' : 'denied'}`,
+    payload: { request_id: req.params.requestId, allow: parsed.data.allow, user_id: req.identity?.user_id ?? null },
+  }).catch(() => {});
+  return res.json({ ok: true });
+});
+
+/** POST /kiro/sessions/:threadId/cancel — stop the running turn; the session stays open. */
+router.post('/kiro/sessions/:threadId/cancel', requireAdminAuth, (req: AuthenticatedRequest, res: Response) => {
+  const r = cancelKiroTurn(req.params.threadId, req.identity?.user_id ?? null);
+  if (!r.ok) return res.status(r.error === 'forbidden' ? 403 : 404).json({ ok: false, error: r.error });
+  return res.json({ ok: true });
+});
+
+/** DELETE /kiro/sessions/:threadId — close the session and its kiro-cli process. */
+router.delete('/kiro/sessions/:threadId', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const r = closeKiroSession(req.params.threadId, req.identity?.user_id ?? null);
+  if (!r.ok) return res.status(r.error === 'forbidden' ? 403 : 404).json({ ok: false, error: r.error });
+  await ingestOperatorEvent({
+    vtid: 'VTID-04975',
+    type: 'operator.kiro.session_closed',
+    status: 'info',
+    message: 'Kiro session closed by its owner',
+    payload: { thread_id: req.params.threadId, user_id: req.identity?.user_id ?? null },
+  }).catch(() => {});
+  return res.json({ ok: true });
 });
 
 /**
