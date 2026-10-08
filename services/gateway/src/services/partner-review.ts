@@ -18,6 +18,7 @@
  *   explicit publication (on now if the org is live, otherwise with the org).
  */
 import { emitOasisEvent } from './oasis-event-service';
+import { fetchExcludedTestServiceAccountIds } from '../lib/excluded-test-service-accounts';
 import { isLifecycleState, isPartnerType, type LifecycleState, type PartnerType } from './partner-lifecycle';
 import { VERIFICATION_LEVEL_REQUIRED, evaluateVerification } from './partner-onboarding-checklist';
 import { applyLifecycleMoves, type LifecycleMove, type ServiceResult } from './partner-onboarding-service';
@@ -91,12 +92,16 @@ export async function listForReview(s: Supa, stateFilter?: string): Promise<Serv
   }
   const { data, error } = await s
     .from('partner_organizations')
-    .select('id, org_key, display_name, legal_name, partner_type, country, website, lifecycle_state, status, trust_level, created_at, updated_at')
+    .select('id, org_key, display_name, legal_name, partner_type, country, website, lifecycle_state, status, trust_level, created_at, updated_at, owner_user_id')
     .in('lifecycle_state', [...states])
     .order('updated_at', { ascending: false })
     .limit(200);
   if (error) return fail(500, { error: error.message });
-  const rows = (data ?? []) as Array<Record<string, any>>;
+  // VTID-04971: review-sandbox suppliers (registered test accounts) are never a decision for staff.
+  const excluded = await fetchExcludedTestServiceAccountIds(s as any);
+  const rows = ((data ?? []) as Array<Record<string, any>>)
+    .filter((r) => !excluded.has(String(r.owner_user_id)))
+    .map(({ owner_user_id: _owner, ...rest }) => rest);
 
   const out = [];
   for (const row of rows) {

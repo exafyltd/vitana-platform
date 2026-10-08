@@ -45,6 +45,7 @@ import {
 import { createOrgProduct, findOrgMerchant, upsertOrgMerchant } from './partner-setup';
 import { BUSINESS_CATEGORIES, catalogueVerticalForCategory, isBusinessCategory } from './commerce-ai-setup';
 import { loadOrg, type Supa } from '../routes/partner-onboarding';
+import { SANDBOX_SUBMIT_NOTE, isSandboxAccount } from './sandbox-accounts';
 import { cleanText, MAX_LEN, MAX_LIST_ITEMS, SUPPLIER_DATA_NOTE, supplierData } from './commerce-mcp-safety';
 
 export const MCP_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'] as const;
@@ -406,6 +407,7 @@ export function shapeStatus(body: Record<string, any>, portalUrl: string): Recor
           business_types: [...PARTNER_TYPES],
         }
       : {}),
+    ...(body.sandbox === true ? { sandbox: true, sandbox_note: SANDBOX_SUBMIT_NOTE } : {}),
     ...(body.created !== undefined ? { created: body.created } : {}),
     ...(body.transitions ? { transitions: body.transitions, open_steps: body.open_steps ?? [] } : {}),
   };
@@ -504,6 +506,8 @@ async function addProduct(ctx: McpCallContext, args: Record<string, unknown>): P
 async function connectStore(ctx: McpCallContext, args: Record<string, unknown>): Promise<ToolCallResult> {
   const orgId = str(args.organization_id);
   if (!orgId) return toolError('invalid_input', 'organization_id is required');
+  // VTID-04971: a review-sandbox supplier only sees the platform recognised; no connection or manifest is created.
+  const sandbox = await isSandboxAccount(ctx.supabase as any, ctx.caller.userId);
   const detected = await detectStore(ctx.supabase, ctx.caller, orgId, {});
   if (detected.status >= 400) {
     const err = String((detected.body as any).error ?? '');
@@ -521,6 +525,18 @@ async function connectStore(ctx: McpCallContext, args: Record<string, unknown>):
       recognised: false,
       connection: null,
       supplier_action: 'The shop platform was not recognised automatically. The supplier chooses how to connect it on Vitanaland.',
+      link,
+    });
+  }
+  if (sandbox) {
+    return toolOk({
+      organization_id: orgId,
+      recognised: true,
+      sandbox: true,
+      sandbox_note: 'This is a review sandbox: the shop platform is recognised, but no connection is created.',
+      detection: { confidence: det.confidence ?? 'none', ...supplierData({ platform_name: cleanText(det.platform_name) }) },
+      supplier_data_note: SUPPLIER_DATA_NOTE,
+      connection: null,
       link,
     });
   }
