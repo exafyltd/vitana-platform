@@ -24,6 +24,7 @@
  *   4. No LiveKit adapter, no provider selection — L-lane work.
  */
 
+import { mintLiveSessionId } from './cross-task-forward';
 import { playbackLeadHandshakeFields } from '../playback-lead';
 import { handleNavResultMessage } from '../../../navigation/nav-ack';
 import { handleContextUpdateMessage } from './context-update';
@@ -1143,8 +1144,10 @@ export async function handleLiveSessionStart(
     console.log(`[VTID-02020] Reconnect session start: stage=${reconnectStage}, history=${reconnectTranscriptHistory.length} turns, conversation_id=${resolvedConversationId} (incoming=${!!incomingConversationId})`);
   }
 
-  // Generate session ID
-  const sessionId = `live-${randomUUID()}`;
+  // Generate session ID. VTID-05002: with ORB_SSE_CROSS_TASK_FORWARD_ENABLED the id
+  // carries this task's encrypted address so another task can forward to it
+  // during a deploy overlap; otherwise it is `live-<uuid>` exactly as before.
+  const sessionId = await mintLiveSessionId();
 
   // VTID-01224: Build bootstrap context pack (memory + knowledge) for system instruction
   let contextInstruction: string | undefined;
