@@ -134,4 +134,4 @@ begin
   assert (select status from public.calendar_events where source_ref_id = r4::text) = 'confirmed', 'once linked to a calendar entry the reminder no longer drives the mirror';
 end $$;
 
-select 'PASS vtid-04978 reminders in calendar';
+\echo PASS vtid-04978 reminders in calendar
