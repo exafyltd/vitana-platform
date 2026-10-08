@@ -6,7 +6,7 @@
       "kind": "http",
       "name": "a body check sees code served past the first megabyte of the 2.5 MB Command Hub app.js",
       "target": "gateway",
-      "path": "/command-hub/app.js?v=20261031-vtid-04975",
+      "path": "/command-hub/app.js?v=20261101-vtid-04984",
       "expect_status": 200,
       "expect_content_type": "application/javascript",
       "expect_body_contains": ["function orderedHealthGroups(items, preferred)", "function classifyHealthProbe(httpStatus, body)"]

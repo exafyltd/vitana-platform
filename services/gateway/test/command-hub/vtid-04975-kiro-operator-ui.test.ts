@@ -214,9 +214,11 @@ describe('VTID-04975 wiring (source check)', () => {
       expect(CSS).toContain(`.${c}`);
     }
   });
-  it('the Command Hub cache-bust parameter is bumped for this change', () => {
+  it('index.html loads app.js and styles.css at (or after) the VTID-04975 version', () => {
     const html = readFileSync(join(FE, 'index.html'), 'utf8');
-    expect(html).toContain('styles.css?v=20261031-vtid-04975');
-    expect(html).toContain('app.js?v=20261031-vtid-04975');
+    const app = (html.match(/app\.js\?v=([^"']+)/) || [])[1] || '';
+    const css = (html.match(/styles\.css\?v=([^"']+)/) || [])[1] || '';
+    expect(app >= '20261031-vtid-04975').toBe(true);
+    expect(css).toBe(app);
   });
 });

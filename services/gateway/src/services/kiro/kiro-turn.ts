@@ -12,7 +12,7 @@
  * with the owner's KIRO_API_KEY in that child's environment only. This file
  * never sees, stores or logs a key.
  */
-import { AcpClient, type AcpChild } from './acp-client';
+import { AcpClient, type AcpChild, type KiroModel, type KiroModelState } from './acp-client';
 import { mapAcpUpdate, type KiroTurnEventSink } from './kiro-events';
 import { makePermissionHandler } from './permission-broker';
 
@@ -46,6 +46,8 @@ interface KiroSession {
   userId: string | null;
   emit: KiroTurnEventSink;
   idle: NodeJS.Timeout | null;
+  /** VTID-04984: the models Kiro offers for this session, and the current one. */
+  models: KiroModelState | null;
 }
 
 const sessions = new Map<string, KiroSession>();
@@ -99,8 +101,8 @@ async function openSession(input: KiroTurnInput, b: KiroBackend): Promise<KiroSe
   });
   try {
     await client.initialize();
-    const sessionId = await client.newSession(b.workspace(ctx));
-    const session: KiroSession = { client, sessionId, userId: input.userId, emit: input.emit ?? (() => {}), idle: null };
+    const { sessionId, models } = await client.openNewSession(b.workspace(ctx));
+    const session: KiroSession = { client, sessionId, userId: input.userId, emit: input.emit ?? (() => {}), idle: null, models };
     holder.session = session;
     return session;
   } catch (err) {
@@ -142,7 +144,7 @@ export async function runKiroTurn(input: KiroTurnInput, env: NodeJS.ProcessEnv =
   try {
     const { stopReason } = await session.client.prompt(session.sessionId, input.message);
     collect({ type: 'kiro.turn_end', stop_reason: stopReason });
-    return result('ok', reply, { stop_reason: stopReason }, [...tools.values()].map((t) => ({ name: t.name, response: { kind: t.kind, status: t.status } })));
+    return result('ok', reply, { stop_reason: stopReason, kiro_model: session.models?.current ?? null }, [...tools.values()].map((t) => ({ name: t.name, response: { kind: t.kind, status: t.status } })));
   } catch (err) {
     closeSession(input.threadId);
     return result('error', 'Kiro turn failed.', { error: err instanceof Error ? err.message : String(err) });
@@ -165,6 +167,29 @@ export function closeKiroSession(threadId: string, userId: string | null): { ok:
   if (s.userId !== userId) return { ok: false, error: 'forbidden' };
   closeSession(threadId);
   return { ok: true };
+}
+
+/** VTID-04984: the models Kiro offers for this thread's session. Owner only. */
+export function listKiroModels(threadId: string, userId: string | null):
+  { ok: true; models: KiroModel[]; current: string | null } | { ok: false; error: 'not_found' | 'forbidden' } {
+  const s = sessions.get(threadId);
+  if (!s) return { ok: false, error: 'not_found' };
+  if (s.userId !== userId) return { ok: false, error: 'forbidden' };
+  return { ok: true, models: s.models?.models ?? [], current: s.models?.current ?? null };
+}
+
+/** VTID-04984: switch this thread's Kiro model through Kiro. Owner only; Kiro's own error is passed through. */
+export async function setKiroModel(threadId: string, userId: string | null, modelId: string):
+  Promise<{ ok: true; models: KiroModel[]; current: string | null } | { ok: false; error: 'not_found' | 'forbidden' | 'kiro_error'; message?: string }> {
+  const s = sessions.get(threadId);
+  if (!s) return { ok: false, error: 'not_found' };
+  if (s.userId !== userId) return { ok: false, error: 'forbidden' };
+  try {
+    s.models = await s.client.setModel(s.sessionId, s.models ?? { models: [], current: null, via: 'config_option', configId: 'model' }, modelId);
+    return { ok: true, models: s.models.models, current: s.models.current };
+  } catch (err) {
+    return { ok: false, error: 'kiro_error', message: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 export function openKiroSessionCount(): number { return sessions.size; }
