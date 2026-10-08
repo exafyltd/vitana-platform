@@ -41,12 +41,26 @@ export function hostAllowed(host: string, allowed: string[]): boolean {
   return allowed.some((a) => h === a || h.endsWith(`.${a}`));
 }
 
-export function redirectUrisAllowed(uris: string[], allowed: string[]): boolean {
+/**
+ * VTID-04990: a desktop app's redirect: plain http to this machine. Exact host match
+ * only (127.0.0.1, ::1, localhost) - never a suffix, never https, never another 127.x.
+ */
+export function isLoopbackRedirect(u: string): boolean {
+  try {
+    const url = new URL(u);
+    return url.protocol === 'http:' && (url.hostname === '127.0.0.1' || url.hostname === '[::1]' || url.hostname === 'localhost');
+  } catch {
+    return false;
+  }
+}
+
+export function redirectUrisAllowed(uris: string[], allowed: string[], allowLoopback = false): boolean {
   if (uris.length === 0) return false;
   return uris.every((u) => {
     try {
       const url = new URL(u);
-      return url.protocol === 'https:' && hostAllowed(url.hostname, allowed);
+      if (url.protocol === 'https:' && hostAllowed(url.hostname, allowed)) return true;
+      return allowLoopback && isLoopbackRedirect(u);
     } catch {
       return false;
     }
@@ -60,7 +74,7 @@ export function resetClientCache(): void {
 }
 
 export type ClientCheck =
-  | { ok: true; clientId: string | null; clientName: string | null; delegated: boolean }
+  | { ok: true; clientId: string | null; clientName: string | null; delegated: boolean; loopback?: true }
   | { ok: false; reason: 'client_unidentified' | 'client_unknown' | 'client_not_approved' | 'session_origin_unknown' };
 
 /**
@@ -74,6 +88,8 @@ export async function checkMcpClient(
   claims: jose.JWTPayload | undefined,
   env: NodeJS.ProcessEnv = process.env,
   now = Date.now(),
+  /** VTID-04990: `allowLoopback` is true only for requests on the ChatGPT path (/mcp/chatgpt). */
+  opts: { allowLoopback?: boolean } = {},
 ): Promise<ClientCheck> {
   const clientId = typeof claims?.client_id === 'string' ? claims.client_id : null;
   if (!clientId) {
@@ -100,6 +116,8 @@ export async function checkMcpClient(
       return { ok: false, reason: 'client_unknown' };
     }
   }
-  if (!redirectUrisAllowed(info.uris, allowedRedirectHosts(env))) return { ok: false, reason: 'client_not_approved' };
-  return { ok: true, clientId, clientName: info.name, delegated: true };
+  const allowLoopback = opts.allowLoopback === true;
+  if (!redirectUrisAllowed(info.uris, allowedRedirectHosts(env), allowLoopback)) return { ok: false, reason: 'client_not_approved' };
+  const usesLoopback = allowLoopback && info.uris.some(isLoopbackRedirect);
+  return { ok: true, clientId, clientName: info.name, delegated: true, ...(usesLoopback ? { loopback: true as const } : {}) };
 }

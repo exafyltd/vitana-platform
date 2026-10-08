@@ -1,0 +1,3 @@
+$ edit routes/commerce-mcp.ts, services/mcp-client-allowlist.ts, types/cicd.ts, AWS-STAGE-DEPLOY-GATEWAY.yml (COMMERCE_MCP_CHATGPT pinned on staging), plugin mcp.json/.mcp.json (URL -> /mcp/chatgpt)
+$ new test services/gateway/test/vtid-04990-chatgpt-oauth.test.ts
+# jest cannot run in the session (registry.npmjs.org blocked); CI is the proof.

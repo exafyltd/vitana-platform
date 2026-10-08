@@ -1,0 +1,62 @@
+{
+  "vtid": "VTID-04990",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "the authorization-server document advertises only email and profile",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/.well-known/oauth-authorization-server",
+      "expect_status": 200,
+      "expect_body_contains": "\"scopes_supported\":[\"email\",\"profile\"]",
+      "reason": "read-only; the shim is what keeps ChatGPT from asking for openid"
+    },
+    {
+      "kind": "http",
+      "name": "the ChatGPT resource metadata names this gateway as its authorization server",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/mcp/chatgpt",
+      "expect_status": 200,
+      "expect_body_contains": "/mcp/chatgpt",
+      "reason": "read-only; staging reports its own host, so only the path is checked"
+    },
+    {
+      "kind": "http",
+      "name": "the Claude resource metadata is unchanged",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/mcp",
+      "expect_status": 200,
+      "expect_body_contains": "\"scopes_supported\":[\"email\",\"profile\"]",
+      "reason": "read-only; /mcp must not change"
+    },
+    {
+      "kind": "http",
+      "name": "an unsigned call to the ChatGPT path is refused with the sign-in challenge",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/mcp/chatgpt",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "reason": "rejected probe, nothing is written"
+    },
+    {
+      "kind": "http",
+      "name": "an unsigned call to /mcp is still refused",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/mcp",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "reason": "rejected probe, nothing is written"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04990-chatgpt-oauth.test.ts test/vtid-04980-chatgpt-plugin-package.test.ts test/vtid-04968-delegation-guard.test.ts test/vtid-04969-commerce-mcp-openai-metadata.test.ts test/commerce-mcp.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the ChatGPT path, loopback approval, the unchanged /mcp, the package URL, the delegation guard and the existing MCP behaviour"
+    }
+  ]
+}

@@ -15,7 +15,7 @@ import { COMMERCE_MCP_TOOLS } from '../src/services/commerce-mcp';
 const ROOT = path.resolve(__dirname, '../../../integrations/chatgpt-plugin/vitanaland');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const json = (p: string) => JSON.parse(read(p));
-const MCP_URL = 'https://gateway.vitanaland.com/mcp';
+const MCP_URL = 'https://gateway.vitanaland.com/mcp/chatgpt'; // VTID-04990: the ChatGPT-only path
 
 describe('plugin manifests', () => {
   const portable = json('plugin.json');

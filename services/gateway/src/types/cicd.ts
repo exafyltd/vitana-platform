@@ -1105,6 +1105,7 @@ export type CicdEventType =
   | 'commerce.mcp.tool_called'
   | 'commerce.mcp.delegated_token_blocked'
   | 'commerce.mcp.client_refused'
+  | 'commerce.mcp.loopback_client_approved'
   | 'partner_org.sandbox_submitted'
   // VTID-04859: a Founding Member saw (and closed) their free-year celebration.
   | 'billing.founding.celebrated'

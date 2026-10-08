@@ -16,6 +16,20 @@
  * (services/commerce-mcp.ts).
  *
  * Off unless COMMERCE_MCP_ENABLED=true (404).
+ *
+ * VTID-04990 — a ChatGPT-only path, so the Claude path above never changes:
+ *
+ *   POST /mcp/chatgpt                                          same tools, same auth
+ *   GET  /.well-known/oauth-protected-resource/mcp/chatgpt     resource metadata → this gateway
+ *   GET  /.well-known/oauth-authorization-server               metadata shim, scopes `email profile`
+ *
+ * ChatGPT's desktop client requests Supabase's full scope list (incl. `openid`),
+ * for which Supabase must mint an ID token it cannot sign (HS256 project key), so
+ * its token exchange fails (500). Pointing ChatGPT at a metadata document that
+ * advertises only `email profile` avoids that; every endpoint in it stays
+ * Supabase's. On this path only, a loopback redirect (a desktop app's
+ * http://127.0.0.1:<port>/…) is an approved client. Off unless
+ * COMMERCE_MCP_CHATGPT=true as well (404 everywhere above, today's behaviour).
  */
 import { Router, type Request, type Response } from 'express';
 import { verifyAndExtractIdentity } from '../middleware/auth-supabase-jwt';
@@ -78,6 +92,55 @@ function enabled(res: Response): boolean {
   return false;
 }
 
+/** VTID-04990: the ChatGPT-only path needs BOTH switches, exact string `true`. */
+export function isChatgptPathEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return isCommerceMcpEnabled(env) && env.COMMERCE_MCP_CHATGPT === 'true';
+}
+
+function chatgptEnabled(res: Response): boolean {
+  if (isChatgptPathEnabled()) return true;
+  res.status(404).json({ ok: false, error: 'COMMERCE_MCP_DISABLED' });
+  return false;
+}
+
+/** The resource metadata the ChatGPT path advertises: this gateway is its authorization server (the shim below). */
+export function chatgptResourceMetadata(req: Request) {
+  const origin = publicOrigin(req);
+  return {
+    resource: `${origin}/mcp/chatgpt`,
+    resource_name: 'Vitanaland Commerce',
+    authorization_servers: [origin],
+    scopes_supported: [...MCP_SCOPES],
+    bearer_methods_supported: ['header'],
+    resource_documentation: `${portalUrlFor(origin)}/commerce`,
+  };
+}
+
+/**
+ * VTID-04990: authorization-server metadata (RFC 8414) for the ChatGPT path. Only the
+ * scopes differ from Supabase's own document (no `openid`, so no ID token); the
+ * endpoints are Supabase's, which still registers clients, shows consent and
+ * issues the tokens. No jwks / userinfo / ID-token fields: nothing here is an
+ * OpenID provider.
+ */
+export function chatgptAuthorizationServerMetadata(req: Request) {
+  const origin = publicOrigin(req);
+  const as = authorizationServer();
+  if (!as) return null;
+  return {
+    issuer: origin,
+    authorization_endpoint: `${as}/oauth/authorize`,
+    token_endpoint: `${as}/oauth/token`,
+    registration_endpoint: `${as}/oauth/clients/register`,
+    scopes_supported: [...MCP_SCOPES],
+    response_types_supported: ['code'],
+    response_modes_supported: ['query'],
+    grant_types_supported: ['authorization_code', 'refresh_token'],
+    token_endpoint_auth_methods_supported: ['none'],
+    code_challenge_methods_supported: ['S256'],
+  };
+}
+
 /**
  * VTID-04969: OpenAI verifies the domain by fetching a token the portal shows,
  * served as plain text and nothing else. Off (404) until the token is set; it is
@@ -92,6 +155,19 @@ wellKnownRouter.get('/openai-apps-challenge', (_req: Request, res: Response) => 
 wellKnownRouter.get(['/oauth-protected-resource', '/oauth-protected-resource/mcp'], (req: Request, res: Response) => {
   if (!enabled(res)) return;
   res.json(protectedResourceMetadata(req));
+});
+
+// VTID-04990: the ChatGPT-only path (404 unless COMMERCE_MCP_CHATGPT=true).
+wellKnownRouter.get('/oauth-protected-resource/mcp/chatgpt', (req: Request, res: Response) => {
+  if (!chatgptEnabled(res)) return;
+  res.json(chatgptResourceMetadata(req));
+});
+
+wellKnownRouter.get('/oauth-authorization-server', (req: Request, res: Response) => {
+  if (!chatgptEnabled(res)) return;
+  const doc = chatgptAuthorizationServerMetadata(req);
+  if (!doc) return res.status(503).json({ ok: false, error: 'AUTH_SERVER_UNCONFIGURED' });
+  return res.json(doc);
 });
 
 /** A small per-user budget: an assistant loop must not hammer the services. */
@@ -111,24 +187,48 @@ export function resetMcpLimits(): void {
   windows.clear();
 }
 
-function unauthorized(req: Request, res: Response, description: string) {
-  const metadata = `${publicOrigin(req)}/.well-known/oauth-protected-resource/mcp`;
+function unauthorized(req: Request, res: Response, description: string, chatgpt = false) {
+  const metadata = `${publicOrigin(req)}/.well-known/oauth-protected-resource/mcp${chatgpt ? '/chatgpt' : ''}`;
   res
     .status(401)
     .set('WWW-Authenticate', `Bearer resource_metadata="${metadata}", scope="${MCP_SCOPES.join(' ')}", error="invalid_token", error_description="${description}"`)
     .json({ jsonrpc: '2.0', id: null, error: { code: -32001, message: description } });
 }
 
-router.post('/', async (req: Request, res: Response) => { // inline-bearer-auth
+/** VTID-04990: one audit event per loopback client per hour (the name is self-declared; it is logged, never trusted). */
+const loopbackLogged = new Map<string, number>();
+export function resetLoopbackAudit(): void {
+  loopbackLogged.clear();
+}
+async function auditLoopbackClient(clientId: string | null, clientName: string | null, userId: string, now = Date.now()): Promise<void> {
+  const key = clientId ?? userId;
+  const last = loopbackLogged.get(key) ?? 0;
+  if (now - last < 3_600_000) return;
+  if (loopbackLogged.size > 5_000) loopbackLogged.clear();
+  loopbackLogged.set(key, now);
+  await emitOasisEvent({
+    vtid: 'VTID-04990',
+    type: 'commerce.mcp.loopback_client_approved',
+    source: 'commerce-mcp',
+    status: 'info',
+    message: `Commerce MCP approved a loopback client on /mcp/chatgpt: ${clientName ?? 'unnamed'}.`,
+    payload: { client_id: clientId, client_name: clientName, path: '/mcp/chatgpt' },
+    actor_id: userId,
+    actor_role: 'agent',
+    surface: 'api',
+  }).catch(() => undefined);
+}
+
+const mcpPost = (chatgpt: boolean) => async (req: Request, res: Response) => {
   // impact-allow-no-oasis: every tools/call emits commerce.mcp.tool_called
   // (services/commerce-mcp.ts auditToolCall), and each Commerce write emits
   // its own partner_org.* event through the shared services.
-  if (!enabled(res)) return;
+  if (chatgpt ? !chatgptEnabled(res) : !enabled(res)) return;
   const header = req.get('authorization') ?? '';
   const token = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : '';
-  if (!token) return unauthorized(req, res, 'Sign in to Vitanaland to connect this assistant.');
+  if (!token) return unauthorized(req, res, 'Sign in to Vitanaland to connect this assistant.', chatgpt);
   const verified = await verifyAndExtractIdentity(token).catch(() => null);
-  if (!verified?.identity?.user_id) return unauthorized(req, res, 'The Vitanaland sign-in has expired or is not valid.');
+  if (!verified?.identity?.user_id) return unauthorized(req, res, 'The Vitanaland sign-in has expired or is not valid.', chatgpt);
   const identity = verified.identity;
 
   const supabase = getSupabase();
@@ -138,7 +238,9 @@ router.post('/', async (req: Request, res: Response) => { // inline-bearer-auth
   }
 
   // VTID-04968: only approved assistants (by registered redirect host) may use the tools.
-  const client = await checkMcpClient(supabase as any, verified.claims);
+  // VTID-04990: a loopback redirect (a desktop app) is approved on the ChatGPT path only.
+  const client = await checkMcpClient(supabase as any, verified.claims, process.env, Date.now(), { allowLoopback: chatgpt });
+  if (client.ok && client.loopback) await auditLoopbackClient(client.clientId, client.clientName, identity.user_id);
   if (!client.ok) {
     await emitOasisEvent({
       vtid: 'VTID-04968',
@@ -146,7 +248,7 @@ router.post('/', async (req: Request, res: Response) => { // inline-bearer-auth
       source: 'commerce-mcp',
       status: 'warning',
       message: `Commerce MCP refused a client: ${client.reason}.`,
-      payload: { reason: client.reason, client_id: typeof (verified.claims as any)?.client_id === 'string' ? (verified.claims as any).client_id : null },
+      payload: { reason: client.reason, client_id: typeof (verified.claims as any)?.client_id === 'string' ? (verified.claims as any).client_id : null, path: chatgpt ? '/mcp/chatgpt' : '/mcp' },
       actor_id: identity.user_id,
       actor_role: 'agent',
       surface: 'api',
@@ -177,9 +279,25 @@ router.post('/', async (req: Request, res: Response) => { // inline-bearer-auth
   }
   const r = await handleJsonRpc(body as JsonRpcRequest, ctx);
   return r ? res.json(r) : res.status(202).end();
+};
+
+router.post('/', (req: Request, res: Response) => { // inline-bearer-auth
+  // impact-allow-no-oasis: mcpPost authenticates inline, every tools/call emits
+  // commerce.mcp.tool_called (services/commerce-mcp.ts) and a refused client emits
+  // commerce.mcp.client_refused.
+  return mcpPost(false)(req, res);
+});
+router.post('/chatgpt', (req: Request, res: Response) => { // inline-bearer-auth
+  // impact-allow-no-oasis: the same handler as above, on the ChatGPT-only path.
+  return mcpPost(true)(req, res);
 });
 
 router.all('/', (_req: Request, res: Response) => {
+  res.status(405).set('Allow', 'POST').json({ jsonrpc: '2.0', id: null, error: { code: -32000, message: 'Method not allowed' } });
+});
+
+router.all('/chatgpt', (_req: Request, res: Response) => {
+  if (!chatgptEnabled(res)) return;
   res.status(405).set('Allow', 'POST').json({ jsonrpc: '2.0', id: null, error: { code: -32000, message: 'Method not allowed' } });
 });
 

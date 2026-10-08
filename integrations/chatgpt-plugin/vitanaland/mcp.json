@@ -2,7 +2,7 @@
   "mcpServers": {
     "vitanaland-commerce": {
       "type": "streamable-http",
-      "url": "https://gateway.vitanaland.com/mcp"
+      "url": "https://gateway.vitanaland.com/mcp/chatgpt"
     }
   }
 }

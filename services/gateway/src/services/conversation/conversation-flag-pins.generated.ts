@@ -26,6 +26,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   CODEINTEL_PLATFORM_REPO_DIR: { staging: "/repo-platform", prod: null },
   CODEINTEL_V1_REPO_DIR: { staging: "/repo-vitana-v1", prod: null },
   COMMERCE_AI_SETUP_ENABLED: { staging: "true", prod: null },
+  COMMERCE_MCP_CHATGPT: { staging: "true", prod: null },
   COMMERCE_MCP_ENABLED: { staging: "true", prod: "true" },
   COMMIT_SHA: { staging: "dynamic", prod: "dynamic" },
   DEFAULT_TENANT_ID: { staging: "2e7528b8-472a-4356-88da-0280d4639cce", prod: null },
