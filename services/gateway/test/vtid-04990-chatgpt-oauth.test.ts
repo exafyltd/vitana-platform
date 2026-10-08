@@ -307,7 +307,7 @@ describe('rollout: staging has the switch on, production workflow does not pin i
   const wf = (f: string) => fs.readFileSync(path.resolve(__dirname, '../../../.github/workflows', f), 'utf8');
   test('staging pins COMMERCE_MCP_CHATGPT=true in both lists; the production workflow never sets it', () => {
     const stage = wf('AWS-STAGE-DEPLOY-GATEWAY.yml');
-    expect(stage).toContain('"COMMERCE_MCP_ENABLED","COMMERCE_MCP_CHATGPT"');
+    expect(stage).toContain('"COMMERCE_MCP_CHATGPT","COMMERCE_MCP_ENABLED","AUTOPILOT_ACTION_REWARD_ENABLED"');
     expect(stage).toContain('{name:"COMMERCE_MCP_CHATGPT", value:"true"}');
     expect(wf('AWS-PROD-DEPLOY-GATEWAY.yml')).not.toContain('COMMERCE_MCP_CHATGPT');
   });
