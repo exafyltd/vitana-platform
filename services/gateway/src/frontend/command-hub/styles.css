@@ -2335,8 +2335,10 @@ body {
   font-style: normal;
 }
 
-
-
+.kiro-approval--allowed { border-color: #3f6b3f; background: rgba(127, 181, 127, 0.08); }
+.kiro-approval--denied,
+.kiro-approval--expired,
+.kiro-approval--error { border-color: #6b3f3f; background: rgba(217, 119, 111, 0.08); }
 
 .kiro-approval-text {
   flex: 1 1 14rem;

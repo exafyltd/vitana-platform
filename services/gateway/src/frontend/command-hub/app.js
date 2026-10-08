@@ -24607,7 +24607,9 @@ function appendKiroLiveTranscript(wrap) {
     }
     live.permissions.forEach(function (p) {
         var card = document.createElement('div');
-        card.className = 'kiro-approval' + (p.answer ? ' kiro-approval--' + p.answer : '');
+        // Literal class names, so the dead-CSS matcher (find-dead-css-classes.mjs) sees them used.
+        var answerClass = { allowed: 'kiro-approval--allowed', denied: 'kiro-approval--denied', expired: 'kiro-approval--expired', error: 'kiro-approval--error' }[p.answer];
+        card.className = 'kiro-approval' + (answerClass ? ' ' + answerClass : '');
         card.setAttribute('role', 'group');
         card.setAttribute('aria-label', 'Kiro asks for permission');
         var what = document.createElement('div');
