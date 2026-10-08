@@ -932,6 +932,8 @@ function mergeServerOperatorThreads(localIndex, serverThreads, dismissedIds) {
         var local = byId[st.id];
         if (local) {
             if (lastAt > (local.updatedAt || 0)) local.updatedAt = lastAt;
+            // VTID-04975: the server's engine wins — it never changes after creation.
+            if (st.engine === 'kiro') local.engine = 'kiro';
             if ((!local.title || local.title === 'New conversation') && st.title) local.title = st.title;
             return;
         }
@@ -943,6 +945,7 @@ function mergeServerOperatorThreads(localIndex, serverThreads, dismissedIds) {
             updatedAt: lastAt || Date.now(),
             fromServer: true
         };
+        if (st.engine === 'kiro') thread.engine = 'kiro';
         index.push(thread);
         byId[st.id] = thread;
         added++;
@@ -1369,6 +1372,12 @@ function renderOperatorThreadRow(thread) {
     const meta = document.createElement('div');
     meta.className = 'chat-session-row-meta';
     meta.textContent = formatRelativeTime(thread.updatedAt);
+    if (operatorThreadEngine(thread) === 'kiro') {
+        const tag = document.createElement('span');
+        tag.className = 'chat-engine-tag';
+        tag.textContent = 'Kiro';
+        meta.appendChild(tag);
+    }
     info.appendChild(meta);
 
     row.appendChild(info);
@@ -3995,7 +4004,9 @@ const state = {
     operatorChatHistory: [], // Array of { role: 'user'|'assistant', content, ts }
     operatorConversationId: null, // UUID for conversation continuity
     // VTID-03822: Multi-thread conversation state
-    operatorThreads: [], // Array of { id, title, conversationId, createdAt, updatedAt }
+    operatorThreads: [], // Array of { id, title, conversationId, createdAt, updatedAt, engine? } — engine 'kiro' (VTID-04975), absent = Operator
+    kiroStatus: null, // VTID-04975: GET /api/v1/operator/kiro/status once per page load; null = not known yet
+    chatLiveKiro: { text: '', tools: [], permissions: [] }, // VTID-04975: a Kiro turn's streamed text, tool lines and approval cards
     operatorActiveThreadId: null,
     // VTID-03949: sessions sidebar + double-click-to-rename state
     operatorSessionsSidebarCollapsed: false,
@@ -23549,6 +23560,11 @@ function renderOperatorChat() {
         titleBar.appendChild(fallbackTitle);
     }
 
+    // VTID-04975: Operator | Kiro on an empty thread, a fixed Kiro badge after.
+    fetchKiroStatus();
+    const engineControl = renderOperatorEngineSwitch();
+    if (engineControl) titleBar.appendChild(engineControl);
+
     const newThreadBtn = document.createElement('button');
     newThreadBtn.type = 'button';
     newThreadBtn.className = 'chat-new-thread-btn';
@@ -23575,7 +23591,9 @@ function renderOperatorChat() {
         state.chatStickToBottom = distanceFromBottom <= 80;
     });
 
-    if (state.chatMessages.length === 0) {
+    if (state.chatMessages.length === 0 && activeOperatorEngine() === 'kiro') {
+        messages.appendChild(renderKiroThreadPanel());
+    } else if (state.chatMessages.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'chat-empty-state';
         empty.textContent = 'No messages yet. Start a conversation with the Operator.';
@@ -23922,6 +23940,8 @@ function updateOperatorLiveTranscriptDom() {
 }
 
 function applyOperatorTurnFrame(frame) {
+    // VTID-04975: Kiro frames have their own handler.
+    if (frame.event && frame.event.indexOf('kiro.') === 0) { applyKiroTurnFrame(frame); return; }
     var d = frame.data || {};
     if (frame.event === 'tool.call') {
         state.chatLiveTranscript[d.index] = {
@@ -23990,6 +24010,7 @@ async function streamOperatorTurn(payload) {
 async function requestOperatorTurn(payload) {
     state.chatLiveTranscript = [];
     state.chatLiveModelTurns = [];
+    resetKiroLiveTranscript();
     try {
         return await streamOperatorTurn(payload);
     } catch (err) {
@@ -24282,6 +24303,271 @@ function renderAutopilotLiveStepsPanel(execId) {
     return panel;
 }
 
+// ---------------------------------------------------------------------------
+// VTID-04975: Kiro engine in the Operator Console
+// ---------------------------------------------------------------------------
+// A thread answers either with the Operator (default) or with Kiro
+// (kiro-cli over ACP, run by the gateway). The engine is picked on an empty
+// thread and fixed once the first message is sent; the gateway keeps an
+// existing thread's engine whatever the request says. Kiro reads and
+// searches on its own; before it edits or runs anything it asks, and the ask
+// shows here as an approval card. No answer in time means denied.
+
+var KIRO_TOOL_STATUS = { completed: 'ok', failed: 'failed' };
+
+function operatorThreadEngine(thread) {
+    return thread && thread.engine === 'kiro' ? 'kiro' : 'llm';
+}
+
+function activeOperatorEngine() {
+    var thread = (state.operatorThreads || []).find(function (t) { return t.id === state.operatorActiveThreadId; });
+    return operatorThreadEngine(thread);
+}
+
+function canChangeOperatorEngine() {
+    return state.chatMessages.length === 0 && !state.chatSending;
+}
+
+function kiroIsConnected() {
+    return !!(state.kiroStatus && state.kiroStatus.enabled === true);
+}
+
+function setActiveOperatorEngine(engine) {
+    var thread = (state.operatorThreads || []).find(function (t) { return t.id === state.operatorActiveThreadId; });
+    if (!thread || !canChangeOperatorEngine()) return;
+    if (engine === 'kiro' && !kiroIsConnected()) return;
+    if (engine === 'kiro') thread.engine = 'kiro';
+    else delete thread.engine;
+    saveOperatorThreadsIndex(state.operatorThreads);
+    renderApp();
+}
+
+var _kiroStatusRequested = false;
+async function fetchKiroStatus() {
+    if (_kiroStatusRequested || !state.authToken) return;
+    _kiroStatusRequested = true;
+    try {
+        var res = await fetch('/api/v1/operator/kiro/status', { headers: buildContextHeaders({}) });
+        state.kiroStatus = res.ok ? await res.json() : { ok: false, enabled: false, error: res.status };
+    } catch (e) {
+        state.kiroStatus = { ok: false, enabled: false, error: 'unreachable' };
+    }
+    renderApp();
+}
+
+function resetKiroLiveTranscript() {
+    state.chatLiveKiro = { text: '', tools: [], permissions: [] };
+}
+
+function applyKiroTurnFrame(frame) {
+    var d = frame.data || {};
+    var live = state.chatLiveKiro;
+    if (frame.event === 'kiro.message_chunk') {
+        live.text += d.text || '';
+    } else if (frame.event === 'kiro.tool_call') {
+        live.tools.push({ id: d.tool_call_id, title: d.title || d.kind || 'Tool', kind: d.kind, status: 'running' });
+    } else if (frame.event === 'kiro.tool_update') {
+        var tool = live.tools.find(function (t) { return t.id === d.tool_call_id; });
+        if (tool) {
+            tool.status = KIRO_TOOL_STATUS[d.status] || tool.status;
+            if (d.title) tool.title = d.title;
+        }
+    } else if (frame.event === 'kiro.permission_request') {
+        live.permissions.push({ id: d.request_id, title: d.title || 'A tool', kind: d.kind, expires_at: d.expires_at, answer: null });
+    } else {
+        return;
+    }
+    updateOperatorLiveTranscriptDom();
+}
+
+function kiroLiveHasContent() {
+    var live = state.chatLiveKiro;
+    return !!(live && (live.text || live.tools.length || live.permissions.length));
+}
+
+async function answerKiroPermission(requestId, allow) {
+    var card = state.chatLiveKiro.permissions.find(function (p) { return p.id === requestId; });
+    if (!card || card.answer) return;
+    card.answer = 'sending';
+    updateOperatorLiveTranscriptDom();
+    try {
+        var res = await fetch('/api/v1/operator/kiro/permissions/' + encodeURIComponent(requestId), {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ allow: allow })
+        });
+        card.answer = res.ok ? (allow ? 'allowed' : 'denied') : (res.status === 404 ? 'expired' : 'error');
+    } catch (e) {
+        card.answer = 'error';
+    }
+    updateOperatorLiveTranscriptDom();
+}
+
+async function stopKiroTurn() {
+    if (!state.operatorActiveThreadId) return;
+    try {
+        await fetch('/api/v1/operator/kiro/sessions/' + encodeURIComponent(state.operatorActiveThreadId) + '/cancel', {
+            method: 'POST', headers: buildContextHeaders({})
+        });
+    } catch (e) {
+        console.warn('[VTID-04975] Kiro cancel failed:', e);
+    }
+}
+
+async function endKiroSession() {
+    if (!state.operatorActiveThreadId) return;
+    try {
+        var res = await fetch('/api/v1/operator/kiro/sessions/' + encodeURIComponent(state.operatorActiveThreadId), {
+            method: 'DELETE', headers: buildContextHeaders({})
+        });
+        showToast(res.ok || res.status === 404 ? 'Kiro session ended' : 'Could not end the Kiro session', res.ok || res.status === 404 ? 'success' : 'error');
+    } catch (e) {
+        showToast('Could not end the Kiro session', 'error');
+    }
+}
+
+/** Title-bar control: Operator | Kiro on an empty thread, a fixed badge after. */
+function renderOperatorEngineSwitch() {
+    var engine = activeOperatorEngine();
+    if (!canChangeOperatorEngine()) {
+        if (engine !== 'kiro') return null;
+        var fixed = document.createElement('div');
+        fixed.className = 'chat-engine-fixed';
+        var badge = document.createElement('span');
+        badge.className = 'chat-engine-badge';
+        badge.textContent = 'Kiro';
+        fixed.appendChild(badge);
+        if (!state.chatSending) {
+            var end = document.createElement('button');
+            end.type = 'button';
+            end.className = 'chat-engine-end-btn';
+            end.textContent = 'End session';
+            end.title = 'Close this thread’s Kiro session. The next message starts a fresh one.';
+            end.onclick = function () { endKiroSession(); };
+            fixed.appendChild(end);
+        }
+        return fixed;
+    }
+    var group = document.createElement('div');
+    group.className = 'chat-engine-switch';
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', 'Answer this thread with');
+    [['llm', 'Operator'], ['kiro', 'Kiro']].forEach(function (opt) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'chat-engine-option' + (engine === opt[0] ? ' chat-engine-option--active' : '');
+        btn.textContent = opt[1];
+        btn.setAttribute('aria-pressed', engine === opt[0] ? 'true' : 'false');
+        if (opt[0] === 'kiro' && !kiroIsConnected()) {
+            btn.disabled = true;
+            btn.title = state.kiroStatus ? 'Kiro is not connected on this deployment yet' : 'Checking Kiro…';
+        }
+        btn.onclick = function () { setActiveOperatorEngine(opt[0]); };
+        group.appendChild(btn);
+    });
+    return group;
+}
+
+/** Empty state of a Kiro thread: what Kiro can do here and whether it is ready. */
+function renderKiroThreadPanel() {
+    var panel = document.createElement('div');
+    panel.className = 'kiro-panel';
+
+    var head = document.createElement('div');
+    head.className = 'kiro-panel-head';
+    var title = document.createElement('div');
+    title.className = 'kiro-panel-title';
+    title.textContent = 'Kiro workspace';
+    head.appendChild(title);
+    var status = document.createElement('span');
+    var connected = kiroIsConnected();
+    status.className = 'kiro-panel-status ' + (connected ? 'kiro-panel-status--on' : 'kiro-panel-status--off');
+    status.textContent = !state.kiroStatus ? 'Checking…' : connected ? 'Connected' : 'Not connected';
+    head.appendChild(status);
+    panel.appendChild(head);
+
+    var rows = [
+        ['Reads & searches', 'on its own'],
+        ['Edits files, runs commands', 'asks you first — denied after 2 minutes without an answer'],
+        ['Your Kiro API key', 'not linked']
+    ];
+    var list = document.createElement('dl');
+    list.className = 'kiro-panel-rows';
+    rows.forEach(function (r) {
+        var dt = document.createElement('dt');
+        dt.textContent = r[0];
+        var dd = document.createElement('dd');
+        dd.textContent = r[1];
+        list.appendChild(dt);
+        list.appendChild(dd);
+    });
+    panel.appendChild(list);
+
+    var hint = document.createElement('div');
+    hint.className = 'kiro-panel-hint';
+    hint.textContent = connected
+        ? 'Describe the change you want. Kiro streams its work below and asks before it touches anything.'
+        : 'Kiro answers once it is connected for your account. Until then this thread replies “not connected”.';
+    panel.appendChild(hint);
+    return panel;
+}
+
+/** Kiro's part of the live transcript: streamed text, tool lines, approval cards, Stop. */
+function appendKiroLiveTranscript(wrap) {
+    var live = state.chatLiveKiro;
+    if (!live || activeOperatorEngine() !== 'kiro') return;
+    live.tools.forEach(function (tool) {
+        var line = document.createElement('div');
+        line.className = 'chat-tool-activity-line chat-tool-activity-line--' + tool.status;
+        var marker = tool.status === 'ok' ? '✓ ' : tool.status === 'failed' ? '✗ ' : '… ';
+        line.textContent = marker + tool.title + (tool.status === 'running' ? ' (running)' : '');
+        wrap.appendChild(line);
+    });
+    // Kiro's own words first, then what it is waiting on you for, right above Stop.
+    if (live.text) {
+        var text = document.createElement('div');
+        text.className = 'kiro-live-text';
+        text.textContent = live.text;
+        wrap.appendChild(text);
+    }
+    live.permissions.forEach(function (p) {
+        var card = document.createElement('div');
+        card.className = 'kiro-approval' + (p.answer ? ' kiro-approval--' + p.answer : '');
+        card.setAttribute('role', 'group');
+        card.setAttribute('aria-label', 'Kiro asks for permission');
+        var what = document.createElement('div');
+        what.className = 'kiro-approval-text';
+        what.textContent = 'Kiro wants to ' + (p.kind ? p.kind + ': ' : '') + p.title;
+        card.appendChild(what);
+        if (!p.answer) {
+            var actions = document.createElement('div');
+            actions.className = 'kiro-approval-actions';
+            [[true, 'Allow'], [false, 'Deny']].forEach(function (a) {
+                var b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'kiro-approval-btn' + (a[0] ? ' kiro-approval-btn--allow' : '');
+                b.textContent = a[1];
+                b.onclick = function () { answerKiroPermission(p.id, a[0]); };
+                actions.appendChild(b);
+            });
+            card.appendChild(actions);
+        } else {
+            var done = document.createElement('div');
+            done.className = 'kiro-approval-result';
+            done.textContent = { sending: 'Sending…', allowed: 'Allowed', denied: 'Denied', expired: 'Expired — denied', error: 'Could not send — Kiro will deny it' }[p.answer] || p.answer;
+            card.appendChild(done);
+        }
+        wrap.appendChild(card);
+    });
+    var stop = document.createElement('button');
+    stop.type = 'button';
+    stop.className = 'kiro-stop-btn';
+    stop.textContent = 'Stop';
+    stop.title = 'Stop Kiro’s current turn';
+    stop.onclick = function () { stopKiroTurn(); };
+    wrap.appendChild(stop);
+}
+
 function renderOperatorLiveTranscript() {
     var wrap = document.createElement('div');
     wrap.className = 'chat-tool-activity chat-tool-activity--live';
@@ -24315,8 +24601,11 @@ function renderOperatorLiveTranscript() {
         var thinking = document.createElement('div');
         thinking.className = 'chat-tool-activity-line chat-tool-activity-line--running';
         thinking.textContent = String.fromCodePoint(0x2026) + ' Thinking';
-        wrap.appendChild(thinking);
+        // VTID-04975: a Kiro turn that is already streaming is not "Thinking".
+        if (!kiroLiveHasContent()) wrap.appendChild(thinking);
     }
+    // VTID-04975: a Kiro thread's streamed work, approval cards and Stop.
+    appendKiroLiveTranscript(wrap);
     return wrap;
 }
 
@@ -24464,6 +24753,8 @@ async function sendChatMessage() {
             // it every request got a random thread (144 of 152 live threads
             // had exactly one turn), so rolling summaries never accrued.
             threadId: state.operatorActiveThreadId || undefined,
+            // VTID-04975: picks the engine for a new thread; ignored for an existing one.
+            engine: activeOperatorEngine() === 'kiro' ? 'kiro' : undefined,
             conversation_id: state.operatorConversationId,
             context: context.length > 0 ? context : undefined,
             attachments: attachments.length > 0 ? attachments : undefined

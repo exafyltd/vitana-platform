@@ -6,3 +6,7 @@ $ npx jest test/vtid-04465-operator-pipeline-regression.test.ts test/operator-ch
 Test Suites: 4 passed; Tests: 73 passed, 2 skipped
 $ npx jest test/vtid-04025-operator-turn-memory.test.ts test/vtid-04816-operator-route.test.ts test/vtid-04975-kiro-engine.test.ts test/vtid-04465-operator-pipeline-regression.test.ts test/operator-chat-oasis.test.ts test/vtid-04022-operator-threads.test.ts
 PASS (the two suites CI flagged pass unchanged; Kiro engine suite 25 tests)
+$ npx jest test/command-hub   (follow-up UI PR)
+Tests: 519 passed (incl. vtid-04975-kiro-operator-ui: 15)
+$ node scratchpad/kiro-ui-shots.js   # real app.js block + real styles.css in Chromium, desktop 1400x900 and mobile 390x844
+8 screenshots, horizontal-overflow=false on all; Allow click -> POST /api/v1/operator/kiro/permissions/r1, card shows Allowed
