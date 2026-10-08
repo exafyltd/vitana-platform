@@ -781,6 +781,21 @@ CREATE TABLE public.founding_members (
 
 ### Wallet System (USD / Credits / VTNA) — added 2026-07-17
 
+> **VTID-04982 (2026-10-08): Rewards shop.** `reward_shop_items` (catalogue,
+> titles/descriptions per locale, `vtna_price`, `fulfilment` ship|event|digital,
+> `age_restricted`/`min_age`, `ships_to_countries`, `stock`/`reserved`),
+> `reward_shipping_fees` (country × EUR/USD flat fee) and `reward_orders`
+> (one row per redemption; statuses awaiting_shipping_payment → paid →
+> fulfilling → shipped → delivered, or cancelled/refunded; no birth date is
+> stored, only `age_confirmed_at`). Members read active items, fees and their
+> own orders; every write goes through `redeem_reward_item`,
+> `settle_reward_order_shipping`, `release_reward_reservation`,
+> `release_expired_reward_reservations` and `set_reward_order_status`
+> (service_role only). VTNA is debited from the earned bucket through
+> `credit_wallet(..., 'reward', 'reward_shop', 'reward_shop:<order id>')`.
+> Not rows in `products`, so nothing in Discover reads them. Migration
+> `20261008180000_vtid_04982_rewards_shop.sql`.
+
 > **VTID-04809 (2026-10-01, owner decision): `user_wallets.CREDITS` is the
 > canonical VTNA ledger.** 1 VTNA = 1 CREDIT = **EUR 0.01** (pegged to EUR;
 > the USD figure is a live ECB conversion). `user_wallets.earned_balance`

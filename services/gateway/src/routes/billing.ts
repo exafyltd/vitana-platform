@@ -48,6 +48,7 @@ import {
 } from '../services/entitlement-service';
 import * as repo from './billing-repository';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { settleShipping as settleRewardShipping, releaseOnExpiry as releaseRewardOnExpiry } from '../services/rewards/reward-shop';
 
 const VTID = 'VTID-03107';
 const FOUNDING_VTID = 'VTID-04859';
@@ -823,6 +824,12 @@ router.post('/webhooks/stripe', async (req: Request, res: Response) => {
       case 'checkout.session.completed':
         await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
         break;
+      case 'checkout.session.expired': {
+        // VTID-04982: an unpaid Rewards shop shipping checkout releases its hold.
+        const expired = event.data.object as Stripe.Checkout.Session;
+        if (expired.metadata?.vitana_kind === 'reward_shipping') await releaseRewardOnExpiry(sb(), expired);
+        break;
+      }
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
         await handleSubscriptionUpserted(event.data.object as Stripe.Subscription);
@@ -856,6 +863,11 @@ router.post('/webhooks/stripe', async (req: Request, res: Response) => {
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promise<void> {
   const kind = session.metadata?.vitana_kind;
+  // VTID-04982: Rewards shop shipping fee paid -> debit the VTNA (or refund).
+  if (kind === 'reward_shipping') {
+    await settleRewardShipping(sb(), session);
+    return;
+  }
   const userId = session.metadata?.vitana_user_id || session.client_reference_id || undefined;
   const tenantId = session.metadata?.vitana_tenant_id;
   if (!userId || !tenantId) {
