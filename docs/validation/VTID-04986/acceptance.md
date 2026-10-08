@@ -114,3 +114,18 @@ OASIS_PROOF: no new OASIS event types; the removed route only read `oasis_events
   the real `styles.css`. On today's main that deletes the `.kiro-approval--*` rules (built
   dynamically by VTID-04975), and `vtid-04975-kiro-operator-ui.test.ts` then fails when it runs
   later in the same process tree. The working tree was restored after each run (`commands.log`).
+
+## Decisions taken (after the build agent stopped on the regen drift)
+
+- **The full regen is committed in this PR** (`dev-screen-inventory-v1.json`, `navigation-config.js`).
+  The drift is the inventory catching up with the live Command Hub since 2026-04-27 (16 retired/moved
+  rows out, 40 real screens in, 5 new sections; summary `outputs/06-regen-drift-summary.txt`). Leaving it
+  out would not prevent it: `REGEN-SCREENS-CATALOG.yml` runs on the generator change after merge and opens
+  an auto-merging PR with the same output, unreviewed. Committing it here keeps it in a reviewed PR.
+  The validator passes (25 modules, 133 screens) and `--check` reports in sync.
+- **Duplicate screen-id overrides** in the generator (outside the plan's text, required for the generator
+  to run at all): existing `DEV-TESTING_*` ids stay stable; new sections get a prefix.
+
+AC-6: The committed inventory and `navigation-config.js` list none of the four retired Overview tabs, and
+the generator's `--check` reports them in sync.
+TEST: services/gateway/test/vtid-04986-screen-inventory-in-sync.test.ts

@@ -12,11 +12,7 @@ export const NAVIGATION_CONFIG = [
     module: "overview",
     label: "Overview",
     tabs: [
-      { key: "system-overview", label: "System Overview" },
-      { key: "live-metrics", label: "Live Metrics" },
-      { key: "recent-events", label: "Recent Events" },
-      { key: "errors-violations", label: "Errors & Violations" },
-      { key: "release-feed", label: "Release Feed" }
+      { key: "system-overview", label: "System Overview" }
     ]
   },
   {
@@ -28,9 +24,28 @@ export const NAVIGATION_CONFIG = [
       { key: "tenants", label: "Tenants" },
       { key: "content-moderation", label: "Content Moderation" },
       { key: "identity-access", label: "Identity Access" },
+      { key: "analytics", label: "Analytics" },
+      { key: "billing-dashboard", label: "Billing Dashboard" },
+      { key: "billing-codes", label: "Billing Codes" }
+    ]
+  },
+  {
+    module: "commerce",
+    label: "Commerce",
+    tabs: [
+      { key: "overview", label: "Overview" },
+      { key: "providers-onboarding", label: "Providers Onboarding" },
+      { key: "commissions-rewards", label: "Commissions Rewards" },
+      { key: "affiliate-programs", label: "Affiliate Programs" },
       { key: "marketplace-shops", label: "Marketplace Shops" },
-      { key: "marketplace-review", label: "Marketplace Review" },
-      { key: "analytics", label: "Analytics" }
+      { key: "marketplace-review", label: "Marketplace Review" }
+    ]
+  },
+  {
+    module: "knowledge-base",
+    label: "Knowledge Base",
+    tabs: [
+      { key: "checklist", label: "Checklist" }
     ]
   },
   {
@@ -38,14 +53,35 @@ export const NAVIGATION_CONFIG = [
     label: "Assistant",
     tabs: [
       { key: "overview", label: "Overview" },
-      { key: "orb-live", label: "ORB Live" },
       { key: "sessions", label: "Sessions" },
       { key: "personality", label: "Personality" },
       { key: "experiments", label: "Experiments" },
-      { key: "metrics", label: "Metrics" },
-      { key: "awareness-registry", label: "Awareness Registry" },
-      { key: "awareness-test", label: "Awareness Test" },
-      { key: "voice-tools", label: "Voice Tools" }
+      { key: "metrics", label: "Metrics" }
+    ]
+  },
+  {
+    module: "conversation",
+    label: "Conversation",
+    tabs: [
+      { key: "config", label: "Config" },
+      { key: "monitor", label: "Monitor" },
+      { key: "tools", label: "Tools" },
+      { key: "simulator", label: "Simulator" },
+      { key: "awareness", label: "Awareness" },
+      { key: "journey-context", label: "Journey Context" },
+      { key: "tool-catalog", label: "Tool Catalog" }
+    ]
+  },
+  {
+    module: "voice",
+    label: "Voice",
+    tabs: [
+      { key: "overview", label: "Overview" },
+      { key: "segments", label: "Segments" },
+      { key: "sessions", label: "Sessions" },
+      { key: "issues-healing", label: "Issues Healing" },
+      { key: "test-bench", label: "Test Bench" },
+      { key: "providers", label: "Providers" }
     ]
   },
   {
@@ -68,7 +104,8 @@ export const NAVIGATION_CONFIG = [
       { key: "task-queue", label: "Task Queue" },
       { key: "event-stream", label: "Event Stream" },
       { key: "deployments", label: "Deployments" },
-      { key: "runbook", label: "Runbook" }
+      { key: "runbook", label: "Runbook" },
+      { key: "localization", label: "Localization" }
     ]
   },
   {
@@ -117,7 +154,9 @@ export const NAVIGATION_CONFIG = [
       { key: "runs", label: "Runs" },
       { key: "live", label: "Live" },
       { key: "engine", label: "Engine" },
-      { key: "growth", label: "Growth" }
+      { key: "growth", label: "Growth" },
+      { key: "mission-alignment", label: "Mission Alignment" },
+      { key: "orchestrator", label: "Orchestrator" }
     ]
   },
   {
@@ -184,8 +223,7 @@ export const NAVIGATION_CONFIG = [
       { key: "latency", label: "Latency" },
       { key: "errors", label: "Errors" },
       { key: "sse", label: "SSE" },
-      { key: "debug-panel", label: "Debug Panel" },
-      { key: "voice-lab", label: "Voice LAB" }
+      { key: "debug-panel", label: "Debug Panel" }
     ]
   },
   {
@@ -232,7 +270,15 @@ export const NAVIGATION_CONFIG = [
       { key: "architecture", label: "Architecture" },
       { key: "workforce", label: "Workforce" },
       { key: "system-knowledge", label: "System Knowledge" },
-      { key: "specialists", label: "Specialists" }
+      { key: "manuals", label: "Manuals" }
+    ]
+  },
+  {
+    module: "routines",
+    label: "Routines",
+    tabs: [
+      { key: "catalog", label: "Catalog" },
+      { key: "history", label: "History" }
     ]
   },
   {
@@ -240,9 +286,9 @@ export const NAVIGATION_CONFIG = [
     label: "Feedback",
     tabs: [
       { key: "inbox", label: "Inbox" },
-      { key: "handoffs", label: "Live Handoffs" },
-      { key: "kpis", label: "KPIs" },
-      { key: "audit", label: "Audit Log" }
+      { key: "handoffs", label: "Handoffs" },
+      { key: "kpis", label: "Kpis" },
+      { key: "audit", label: "Audit" }
     ]
   }
 ];
