@@ -81,6 +81,14 @@
       "cloud_run_service": "erp-bridge",
       "deployable": true,
       "$comment": "VTID-03840: AWS ECS staging service vitana-erp-bridge via AWS-STAGE-DEPLOY-ERP-BRIDGE.yml (no Cloud Run \u2014 key kept for schema compatibility)"
+    },
+    "kiro-runner": {
+      "paths": [
+        "services/kiro-runner/"
+      ],
+      "cloud_run_service": "kiro-runner",
+      "deployable": true,
+      "$comment": "VTID-04999: AWS ECS staging service vitana-kiro-runner via AWS-STAGE-DEPLOY-KIRO-RUNNER.yml (no Cloud Run \u2014 key kept for schema compatibility)"
     }
   },
   "shared": {

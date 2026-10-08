@@ -38,6 +38,10 @@ import { processWithGemini, type OperatorTurnEventSink } from '../services/gemin
 import { getThreadEngine, getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn, listOperatorThreadMessages, listOperatorThreads } from '../services/operator-threads';
 import { runKiroTurn, cancelKiroTurn, closeKiroSession, isKiroEngineEnabled, openKiroSessionCount, listKiroModels, setKiroModel } from '../services/kiro/kiro-turn';
 import { answerPermission } from '../services/kiro/permission-broker';
+import { registerKiroBackendFromEnv, runnerConfig, kiroKeyRequest } from '../services/kiro/remote-backend';
+
+// VTID-04999: run Kiro on the private kiro-runner when the engine and the runner are configured.
+registerKiroBackendFromEnv();
 import type { KiroTurnEventSink } from '../services/kiro/kiro-events';
 import { extractAndRecordTurnMemory, isTurnMemoryEnabled } from '../services/operator-turn-memory';
 import { writeDevMemory } from '../services/dev-agent-memory';
@@ -768,7 +772,7 @@ router.post('/chat/stream', optionalAuth, operatorMachineAuth, async (req: Reque
 
 /** GET /kiro/status — is the engine switched on, and how many sessions are open. */
 router.get('/kiro/status', requireAdminAuth, (_req: AuthenticatedRequest, res: Response) => {
-  return res.json({ ok: true, enabled: isKiroEngineEnabled(), open_sessions: openKiroSessionCount() });
+  return res.json({ ok: true, enabled: isKiroEngineEnabled(), runner_configured: runnerConfig() !== null, open_sessions: openKiroSessionCount() });
 });
 
 /** POST /kiro/permissions/:requestId { allow: boolean } — answer an approval card. */
@@ -856,6 +860,62 @@ router.delete('/kiro/sessions/:threadId', requireAdminAuth, async (req: Authenti
     payload: { thread_id: req.params.threadId },
   }).catch(() => {});
   return res.json({ ok: true });
+});
+
+// ==================== Kiro API key (VTID-04999) ====================
+// Each user links their OWN key: the user id is only ever the signed-in
+// identity, never a body or URL value. The key is forwarded to the runner,
+// which keeps it in Secrets Manager; it is never logged, stored or returned here.
+
+/** GET /kiro/key — is the caller's Kiro API key linked, and since when. */
+router.get('/kiro/key', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const r = await kiroKeyRequest('GET', userId);
+  if (!r.ok) return res.status(r.status).json({ ok: false, error: r.error });
+  return res.json(r);
+});
+
+/** PUT /kiro/key { key } — link or replace the caller's Kiro API key. */
+router.put('/kiro/key', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const parsed = z.object({ key: z.string().min(1).max(4096).regex(/^\S+$/) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'INVALID_KEY' });
+  const r = await kiroKeyRequest('PUT', userId, parsed.data.key);
+  if (!r.ok) return res.status(r.status).json({ ok: false, error: r.error });
+  await emitOasisEvent({
+    vtid: 'VTID-04999',
+    type: 'operator.kiro.key_linked',
+    source: 'gateway-operator',
+    status: 'info',
+    message: 'Kiro API key linked by its owner',
+    actor_id: userId,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: { updated_at: r.updated_at },
+  }).catch(() => {});
+  return res.json(r);
+});
+
+/** DELETE /kiro/key — revoke the caller's Kiro API key now; their open Kiro sessions end. */
+router.delete('/kiro/key', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const r = await kiroKeyRequest('DELETE', userId);
+  if (!r.ok) return res.status(r.status).json({ ok: false, error: r.error });
+  await emitOasisEvent({
+    vtid: 'VTID-04999',
+    type: 'operator.kiro.key_revoked',
+    source: 'gateway-operator',
+    status: 'info',
+    message: 'Kiro API key revoked by its owner',
+    actor_id: userId,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: {},
+  }).catch(() => {});
+  return res.json(r);
 });
 
 /**
