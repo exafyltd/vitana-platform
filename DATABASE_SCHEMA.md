@@ -795,6 +795,13 @@ CREATE TABLE public.founding_members (
 > longer write `user_wallets`/`wallet_transactions` directly and
 > `update_user_balance` refuses `'add'`. Migration
 > `20261001180000_vtid_04809_vtna_reward_ledger.sql`.
+>
+> **VTID-04981 (2026-10-08):** `fn_consume_credits` (VTID-03107 paywall
+> overage debit, SECURITY DEFINER, takes any `p_user_id`) is executable by
+> `service_role` only. It had been granted to `authenticated`, which let a
+> signed-in member debit another member's earned or purchased credits (never
+> used: 0 `paywall:%` debits). Behaviour for the gateway is unchanged.
+> Migration `20261008170000_vtid_04981_consume_credits_lockdown.sql`.
 
 **This is the live, production system backing the wallet UI** (`useWallet.ts`
 in `vitana-v1` → `user_wallets` + RPCs below). It predates and is entirely
