@@ -49,7 +49,7 @@ describe('VTID-04542 beacon wiring (static)', () => {
     const show = extractFunction('function _show()').body;
     expect(show.indexOf('_latBegin()')).toBeGreaterThanOrEqual(0);
     expect(show.indexOf('_latBegin()')).toBeLessThan(show.indexOf('_sessionStart()'));
-    const hide = extractFunction('function _hide()').body;
+    const hide = extractFunction('function _hide(reason)').body;
     expect(hide.indexOf('_latFlush()')).toBeGreaterThanOrEqual(0);
     expect(hide.indexOf('_latFlush()')).toBeLessThan(hide.indexOf('_sessionStop()'));
   });

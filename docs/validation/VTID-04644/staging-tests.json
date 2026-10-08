@@ -6,7 +6,7 @@
       "kind": "http",
       "target": "gateway",
       "method": "GET",
-      "path": "/command-hub/orb-widget.js?v=20261007-vtid-04951-guide-mode",
+      "path": "/command-hub/orb-widget.js?v=20261008-vtid-05001-hide-reasons",
       "expect_status": 200,
       "expect_body_contains": "msg.after_turn === true",
       "reason": "the served voice widget, at the versioned URL the app loads (vitana-v1 VTID-04658), runs a directive the gateway sends after the turn ended at once. The unversioned URL is Cloudflare-cached immutable and proves nothing about what members get."

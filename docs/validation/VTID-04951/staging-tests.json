@@ -6,7 +6,7 @@
       "kind": "http",
       "target": "gateway",
       "method": "GET",
-      "path": "/command-hub/orb-widget.js?v=20261007-vtid-04951-guide-mode",
+      "path": "/command-hub/orb-widget.js?v=20261008-vtid-05001-hide-reasons",
       "expect_status": 200,
       "expect_body_contains": ["startGuide: function (ctx)", "startPayload.guide_feature = _s.guide.feature;", "startPayload.guide_state = _s.guide.state;"],
       "reason": "the deployed widget carries VitanaOrb.startGuide and sends the four guide fields one-shot on the session start"

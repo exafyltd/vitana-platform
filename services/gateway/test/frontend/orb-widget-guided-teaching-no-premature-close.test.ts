@@ -50,7 +50,7 @@ describe('orb-widget guided teaching does not close before it starts (VTID-03685
 
   it('the turn-1-complete handler never calls _hide() or _sessionStop() for a guided open', () => {
     const block = extractBlock(source, "if (_s.guidedAutoClose && !_s.greetingComplete) {");
-    expect(block).not.toMatch(/_hide\(\)/);
+    expect(block).not.toMatch(/_hide\((?:'[a-z_]+')?\)/);
     expect(block).not.toMatch(/_sessionStop\(\)/);
   });
 

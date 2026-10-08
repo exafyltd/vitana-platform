@@ -48,6 +48,7 @@ import { randomUUID } from 'crypto';
 // VTID-04543: in-process cache for lookupPrimaryTenant.
 import { createPrimaryTenantCache } from '../orb/live/session/primary-tenant-cache';
 import { closeIfSessionGone } from '../orb/live/session/orphan-upstream-guard';
+import { sanitizeHideDiagnostics } from '../orb/live/session/hide-reasons';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
@@ -16281,7 +16282,10 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
  * Authenticated only — anonymous sessions have no durable identity to key on.
  * Fails soft: continuity is an optimization, never a hard dependency.
  *
- *   POST /api/v1/orb/session/continuity   { reason, ttl_minutes, value }
+ *   POST /api/v1/orb/session/continuity   { reason, ttl_minutes, value,
+ *                                           hide_reason?, ms_since_tap?, transport?, start_phase? }
+ *   (VTID-05001: the four optional fields say which close path ran; they are
+ *   allowlisted/clamped by sanitizeHideDiagnostics and only go into the event.)
  *   GET  /api/v1/orb/session/continuity   → { ok, continuity|null }
  *   DELETE /api/v1/orb/session/continuity → clear
  */
@@ -16318,7 +16322,7 @@ router.post('/session/continuity', optionalAuth, async (req: AuthenticatedReques
       source: 'orb-live',
       status: 'info',
       message: `orb continuity persisted (reason=${body.reason || 'hide'}, ttl=${ttl}m)`,
-      payload: { user_id: userId, reason: body.reason || 'hide', ttl_minutes: ttl, ok: r.ok },
+      payload: { user_id: userId, reason: body.reason || 'hide', ttl_minutes: ttl, ok: r.ok, ...sanitizeHideDiagnostics(body) },
       actor_id: userId,
       surface: 'orb',
     }).catch(() => {});

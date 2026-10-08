@@ -73,12 +73,12 @@ describe("orb-widget 'session_ended' message handling (VTID-03778)", () => {
 
   it('calls _hide() — the same full, honest teardown a real close uses', () => {
     const block = sessionEndedCaseBlock(source);
-    expect(block).toMatch(/_hide\(\);/);
+    expect(block).toMatch(/_hide\('[a-z_]+'\);/);
   });
 
   it('is a scoped fix — the case block itself contains exactly one _hide() call, no other logic added', () => {
     const block = sessionEndedCaseBlock(source);
-    const hideCalls = [...block.matchAll(/_hide\(\);/g)];
+    const hideCalls = [...block.matchAll(/_hide\('[a-z_]+'\);/g)];
     expect(hideCalls.length).toBe(1);
   });
 });
@@ -92,7 +92,7 @@ describe('orb-widget _sessionStop() unconditional _userInitiatedStop (unchanged,
   });
 
   it('_hide() itself is safe to call from a server-driven event: it does not require a prior user gesture', () => {
-    const body = extractFunctionBody(source, 'function _hide() {');
+    const body = extractFunctionBody(source, 'function _hide(reason) {');
     // _hide() must not early-return based on some "was this user-initiated"
     // flag that a synthetic call site (like the message handler) wouldn't
     // have set — it should unconditionally tear down + close.

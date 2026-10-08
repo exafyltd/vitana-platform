@@ -29,14 +29,14 @@ describe('orb-widget close/reopen continuity (DEV-COMHU-0503)', () => {
   const source = fs.readFileSync(WIDGET_PATH, 'utf8');
 
   it('_hide persists continuity (reason hide, 15 min) before teardown', () => {
-    const body = extractFunctionBody(source, 'function _hide()');
-    expect(body).toMatch(/_persistContinuity\('hide', 15\)/);
+    const body = extractFunctionBody(source, 'function _hide(reason)');
+    expect(body).toMatch(/_persistContinuity\('hide', 15, hideDiag\)/);
     // The persist call must come BEFORE _sessionStop tears media down.
-    expect(body.indexOf("_persistContinuity('hide', 15)")).toBeLessThan(body.indexOf('_sessionStop()'));
+    expect(body.indexOf("_persistContinuity('hide', 15, hideDiag)")).toBeLessThan(body.indexOf('_sessionStop()'));
   });
 
   it('_persistContinuity POSTs conversation_id + transcript to the continuity endpoint', () => {
-    const body = extractFunctionBody(source, 'function _persistContinuity(reason, ttlMinutes)');
+    const body = extractFunctionBody(source, 'function _persistContinuity(reason, ttlMinutes, diag)');
     expect(body).toMatch(/\/api\/v1\/orb\/session\/continuity/);
     expect(body).toMatch(/conversation_id/);
     expect(body).toMatch(/transcript_history/);
@@ -59,14 +59,14 @@ describe('orb-widget close/reopen continuity (DEV-COMHU-0503)', () => {
     // Match statements (leading whitespace), not the words inside comments:
     // suppression set → _hide() call → _clearContinuity() DELETE, in that order.
     const iSuppress = body.indexOf('_s._suppressContinuityPersist = true');
-    const iHide = body.search(/\n\s*_hide\(\);/);
+    const iHide = body.search(/\n\s*_hide\('reset'\);/);
     const iClear = body.search(/\n\s*_clearContinuity\(\);/);
     expect(iSuppress).toBeLessThan(iHide);
     expect(iHide).toBeLessThan(iClear);
   });
 
   it('_persistContinuity honors the suppression flag (review fix)', () => {
-    const body = extractFunctionBody(source, 'function _persistContinuity(reason, ttlMinutes)');
+    const body = extractFunctionBody(source, 'function _persistContinuity(reason, ttlMinutes, diag)');
     expect(body).toMatch(/if \(_s\._suppressContinuityPersist\) return;/);
   });
 

@@ -189,9 +189,9 @@ describe('VTID-03762: orb-widget.js closes the overlay on the end_guided_topic_t
     const block = extractHelperBody(source);
     // No longer a bare "setTimeout(..., 500)" straight to _hide() — must be
     // gated behind the stillPlaying poll first.
-    expect(block).not.toMatch(/_hide\(\);[\s\S]{0,40}\},\s*500\)/);
+    expect(block).not.toMatch(/_hide\((?:'[a-z_]+')?\);[\s\S]{0,40}\},\s*500\)/);
     const stillPlayingIdx = block.indexOf('stillPlaying');
-    const hideIdx = block.indexOf('_hide();');
+    const hideIdx = block.search(/_hide\('[a-z_]+'\);/);
     expect(stillPlayingIdx).toBeGreaterThan(-1);
     expect(hideIdx).toBeGreaterThan(stillPlayingIdx);
   });
@@ -311,7 +311,7 @@ describe('VTID-03762 follow-up: client-side backstop when the model never calls 
   });
 
   it('_hide() clears both _guidedTopicOpenedAt and the backstop interval — a real close ends the backstop too', () => {
-    const body = extractFunctionBody(source, 'function _hide() {');
+    const body = extractFunctionBody(source, 'function _hide(reason) {');
     expect(body).toMatch(/_s\._guidedTopicOpenedAt = null;/);
     expect(body).toMatch(/clearInterval\(_s\._guidedTopicBackstopInterval\)/);
     expect(body).toMatch(/_s\._guidedTopicBackstopInterval = null;/);

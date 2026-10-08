@@ -1,0 +1,36 @@
+{
+  "vtid": "VTID-05001",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after the change",
+      "path": "/alive",
+      "expect_status": 200
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/command-hub/orb-widget.js?v=20261008-vtid-05001-hide-reasons",
+      "expect_status": 200,
+      "expect_body_contains": ["transport: 'sse'", "hide_reason: diag ? diag.hide_reason : undefined", "function _hide(reason)"],
+      "reason": "the deployed widget defaults to SSE and reports why the overlay closed"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/orb/live/transport",
+      "expect_status": 200,
+      "expect_body_contains": ["\"transport\":\"ws\""],
+      "reason": "staging still asks for WebSocket explicitly (staging-only), so the failure stays reproducible there"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/orb/vtid-05001-orb-hide-reasons.test.ts test/orb/live/ws-transport-default.test.ts test/frontend test/vtid-04659-staging-checks-use-versioned-urls.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the continuity route's new fields would need a write to prove on staging (rule 48); the allowlist, clamping, the AST check of every close and the transport decision are proven here"
+    }
+  ]
+}
