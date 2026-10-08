@@ -2254,6 +2254,8 @@ function doLogout() {
     localStorage.removeItem('vitana.refreshToken');
     localStorage.removeItem('vitana.viewRole');
     localStorage.removeItem('vitana.userEmail');
+    // VTID-04999: no Kiro key draft or key status outlives the signed-in user.
+    resetKiroKeyState();
 
     // Destroy VitanaOrb widget on logout
     if (window.VitanaOrb) window.VitanaOrb.destroy();
@@ -24576,6 +24578,15 @@ function kiroKeyInput() {
         _kiroKeyInput.setAttribute('aria-label', 'Kiro API key');
     }
     return _kiroKeyInput;
+}
+
+/** Sign-out: drop any unsent key draft and the previous user's key status. */
+function resetKiroKeyState() {
+    if (_kiroKeyInput) _kiroKeyInput.value = '';
+    _kiroKeyInput = null;
+    _kiroKeyRequested = false;
+    _kiroStatusRequested = false;
+    state.kiroKey = null;
 }
 
 async function linkKiroKey() {

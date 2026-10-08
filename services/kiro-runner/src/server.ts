@@ -59,6 +59,7 @@ function readJson(req: http.IncomingMessage): Promise<any> {
 export function createRunnerServer(cfg: RunnerConfig, store: KeyStore): http.Server {
   const log = cfg.log ?? ((m: string) => console.log(m));
   const wss = new WebSocketServer({ noServer: true, maxPayload: cfg.limits.maxLineBytes });
+  let pending = 0; // sessions past the cap check whose key read is still in flight
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://kiro-runner');
@@ -108,17 +109,23 @@ export function createRunnerServer(cfg: RunnerConfig, store: KeyStore): http.Ser
     if (!isUserId(userId) || !threadId || threadId.length > 200) return reject(400, 'Bad Request');
 
     wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
+      // Reserve the slot before the key read, so concurrent connects cannot all pass the cap.
+      if (sessionCount() + pending >= cfg.maxSessions) { ws.close(CLOSE.busy, 'kiro_runner_busy'); return; }
+      pending++;
       void (async () => {
-        if (sessionCount() >= cfg.maxSessions) { ws.close(CLOSE.busy, 'kiro_runner_busy'); return; }
-        let key: string | null;
-        try { key = await store.get(userId); } catch (err) {
-          log(`[kiro-runner] key read failed: ${err instanceof KeyUnavailableError ? err.message : 'error'}`);
-          ws.close(CLOSE.keyUnavailable, 'kiro_key_unavailable');
-          return;
+        try {
+          let key: string | null;
+          try { key = await store.get(userId); } catch (err) {
+            log(`[kiro-runner] key read failed: ${err instanceof KeyUnavailableError ? err.message : 'error'}`);
+            ws.close(CLOSE.keyUnavailable, 'kiro_key_unavailable');
+            return;
+          }
+          if (!key) { ws.close(CLOSE.keyMissing, 'kiro_key_missing'); return; }
+          if (ws.readyState !== ws.OPEN) return;
+          startRelay({ ws, userId, threadId, key, workRoot: cfg.workRoot, limits: cfg.limits, kiroBin: cfg.kiroBin, spawnImpl: cfg.spawnImpl, log });
+        } finally {
+          pending--;
         }
-        if (!key) { ws.close(CLOSE.keyMissing, 'kiro_key_missing'); return; }
-        if (ws.readyState !== ws.OPEN) return;
-        startRelay({ ws, userId, threadId, key, workRoot: cfg.workRoot, limits: cfg.limits, kiroBin: cfg.kiroBin, spawnImpl: cfg.spawnImpl, log });
       })();
     });
   });

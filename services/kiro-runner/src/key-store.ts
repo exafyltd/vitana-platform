@@ -55,7 +55,12 @@ export function onlyRunnerReadsPolicy(readerRoleArn: string): string {
 }
 
 export class KeyStore {
-  constructor(private readonly sm: SecretsClient, private readonly prefix: string, private readonly readerRoleArn: string | null = null) {}
+  constructor(
+    private readonly sm: SecretsClient,
+    private readonly prefix: string,
+    private readonly readerRoleArn: string | null = null,
+    private readonly sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+  ) {}
 
   secretName(userId: string): string {
     if (!isUserId(userId)) throw new Error('invalid user id');
@@ -64,16 +69,32 @@ export class KeyStore {
 
   async put(userId: string, key: string): Promise<void> {
     const name = this.secretName(userId);
-    try {
-      await this.sm.send(new CreateSecretCommand({
-        Name: name,
-        SecretString: key,
-        Description: 'VTID-04999 Kiro API key of one Command Hub user',
-        Tags: [{ Key: 'vtid', Value: 'VTID-04999' }],
-      }));
-    } catch (err) {
-      if (errName(err) !== 'ResourceExistsException') throw err;
-      await this.sm.send(new PutSecretValueCommand({ SecretId: name, SecretString: key }));
+    // A revoke force-deletes asynchronously: for a short while the name still
+    // exists but is pending deletion, so neither create nor put works. Back off
+    // and retry the create until the deletion has finished (DeleteSecret API docs).
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await this.sm.send(new CreateSecretCommand({
+          Name: name,
+          SecretString: key,
+          Description: 'VTID-04999 Kiro API key of one Command Hub user',
+          Tags: [{ Key: 'vtid', Value: 'VTID-04999' }],
+        }));
+        break;
+      } catch (err) {
+        const n = errName(err);
+        if (n !== 'ResourceExistsException' && n !== 'InvalidRequestException') throw err;
+        if (n === 'ResourceExistsException') {
+          try {
+            await this.sm.send(new PutSecretValueCommand({ SecretId: name, SecretString: key }));
+            break;
+          } catch (putErr) {
+            if (errName(putErr) !== 'InvalidRequestException') throw putErr; // pending deletion: retry the create
+          }
+        }
+        if (attempt >= 5) throw err;
+        await this.sleep(500 * 2 ** attempt);
+      }
     }
     if (this.readerRoleArn) {
       await this.sm.send(new PutResourcePolicyCommand({ SecretId: name, ResourcePolicy: onlyRunnerReadsPolicy(this.readerRoleArn), BlockPublicPolicy: true }));

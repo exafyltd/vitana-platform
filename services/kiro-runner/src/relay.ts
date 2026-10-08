@@ -17,6 +17,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { randomUUID } from 'crypto';
+import { StringDecoder } from 'string_decoder';
 import type { WebSocket } from 'ws';
 
 export const CLOSE = {
@@ -134,13 +135,16 @@ export function startRelay(o: RelayOptions): RelaySession {
   ping.unref?.();
   o.ws.on('pong', () => { alive = true; });
 
+  // Decode across chunk boundaries so a multi-byte character split between two chunks survives.
+  const decoder = new StringDecoder('utf8');
   child.stdout?.on('data', (chunk: Buffer | string) => {
-    buf += String(chunk);
+    buf += typeof chunk === 'string' ? chunk : decoder.write(chunk);
     let nl: number;
     while ((nl = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, nl).trim();
       buf = buf.slice(nl + 1);
       if (!line) continue;
+      if (Buffer.byteLength(line) > o.limits.maxLineBytes) { end(CLOSE.tooBig, 'kiro_line_too_long'); return; }
       if (line[0] !== '{') {
         // Kiro's own plain-text errors ("not logged in"). Keep the first one for the log; it carries no key.
         if (firstNoise) { firstNoise = false; log(`[kiro-runner] session ${id} kiro-cli said: ${line.slice(0, 200)}`); }

@@ -35,7 +35,7 @@ function load(fetchImpl: any, over: any = {}, confirmAnswer = true) {
   const api = new Function(
     'state', 'document', 'fetch', 'buildContextHeaders', 'renderApp', 'saveOperatorThreadsIndex',
     'updateOperatorLiveTranscriptDom', 'showToast', 'confirm', 'console',
-    BLOCK + '\nreturn { renderKiroThreadPanel, renderKiroKeyControls, kiroKeyStatusText, linkKiroKey, revokeKiroKey, kiroKeyInput, fetchKiroKeyStatus };',
+    BLOCK + '\nreturn { renderKiroThreadPanel, renderKiroKeyControls, kiroKeyStatusText, linkKiroKey, revokeKiroKey, kiroKeyInput, fetchKiroKeyStatus, resetKiroKeyState };',
   )(
     state, { createElement: (t: string) => new El(t) }, fetchMock, (h: any) => ({ Authorization: 'Bearer tok', ...h }),
     () => { calls.renders++; }, () => {}, () => {}, (m: string) => { calls.toasts.push(m); },
@@ -118,6 +118,25 @@ describe('VTID-04999 Kiro key field', () => {
     const no = load(ok({}), { kiroKey: { loaded: true, linked: true } }, false);
     await no.api.revokeKiroKey();
     expect(no.fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('sign-out drops an unsent draft and the previous user’s key status, and the next user’s status is read fresh', async () => {
+    const { api, state, fetchMock } = load(ok({ linked: true, updated_at: '2026-10-08T10:00:00.000Z' }));
+    await api.fetchKiroKeyStatus();
+    const draft: El = api.kiroKeyInput();
+    draft.value = 'unsent_key_of_user_a';
+    api.resetKiroKeyState();
+    expect(draft.value).toBe('');
+    expect(state.kiroKey).toBeNull();
+    expect(api.kiroKeyInput()).not.toBe(draft);
+    expect(api.kiroKeyInput().value).toBe('');
+    await api.fetchKiroKeyStatus();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('doLogout calls the reset', () => {
+    const logout = APP_JS.slice(APP_JS.indexOf('function doLogout() {'), APP_JS.indexOf('function doLogout() {') + 1500);
+    expect(logout).toContain('resetKiroKeyState();');
   });
 
   it('without a runner the card says so and shows no field', async () => {

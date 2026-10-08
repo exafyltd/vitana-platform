@@ -171,6 +171,23 @@ describe('relay', () => {
     await waitFor(() => logs.some((l) => l.includes('kiro-cli said: Error: You are not logged in')));
   });
 
+  it('enforces the cap on a complete (newline-terminated) line too', async () => {
+    const s = await open();
+    await s.ready;
+    s.ws.send(JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: 'S1', prompt: [{ type: 'text', text: 'bigline' }] } }));
+    expect(await s.closed).toEqual({ code: 1009, reason: 'kiro_line_too_long' });
+    expect(s.frames).toHaveLength(0);
+  });
+
+  it('decodes a multi-byte character split across stdout chunks', async () => {
+    const s = await open();
+    await s.ready;
+    s.ws.send(JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'session/prompt', params: { sessionId: 'S1', prompt: [{ type: 'text', text: 'utf8' }] } }));
+    await waitFor(() => s.frames.length >= 1);
+    expect(s.frames[0].result.text).toBe('café ünïcode');
+    s.ws.close();
+  });
+
   it('kills the session when kiro-cli writes a line over the cap', async () => {
     const s = await open();
     await s.ready;
@@ -188,6 +205,19 @@ describe('bounds', () => {
     expect(await b.closed).toEqual({ code: 4429, reason: 'kiro_runner_busy' });
     a.ws.close();
   });
+  it('reserves the slot before the key read, so concurrent connects cannot pass the cap', async () => {
+    await start({ maxSessions: 1 });
+    await http('PUT', `/keys/${U1}`, { key: 'k' });
+    const realGet = sm.send.bind(sm);
+    sm.send = async (cmd: any) => { if (cmd.constructor.name === 'GetSecretValueCommand') await new Promise((r) => setTimeout(r, 80)); return realGet(cmd); };
+    const a = await open(U1, 'a'); const b = await open(U1, 'b'); const c = await open(U1, 'c');
+    const results = await Promise.race([Promise.all([b.closed, c.closed]), new Promise((r) => setTimeout(() => r('timeout'), 2000))]);
+    expect(results).toEqual([{ code: 4429, reason: 'kiro_runner_busy' }, { code: 4429, reason: 'kiro_runner_busy' }]);
+    await a.ready;
+    expect(sessionCount()).toBe(1);
+    a.ws.close();
+  });
+
   it('ends an idle session', async () => {
     await start({ limits: { ...limits, idleMs: 150 } });
     await http('PUT', `/keys/${U1}`, { key: 'k' });
@@ -200,6 +230,36 @@ describe('bounds', () => {
     const s = await open(); await s.ready;
     const t = setInterval(() => s.ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })), 30);
     try { expect(await s.closed).toEqual({ code: 4410, reason: 'kiro_session_max_lifetime' }); } finally { clearInterval(t); }
+  });
+});
+
+describe('relink right after a revoke', () => {
+  it('retries the create while the old secret is still pending deletion', async () => {
+    const fake = new FakeSM();
+    let pendingDeletion = 2;
+    const send = fake.send.bind(fake);
+    fake.send = async (cmd: any) => {
+      const err = (n: string) => Object.assign(new Error(n), { name: n });
+      if (pendingDeletion > 0 && cmd.constructor.name === 'CreateSecretCommand') { pendingDeletion--; throw err('InvalidRequestException'); }
+      return send(cmd);
+    };
+    const sleeps: number[] = [];
+    const store = new KeyStore(fake, 'p', null, async (ms) => { sleeps.push(ms); });
+    await store.put(U1, 'new-key');
+    expect(fake.secrets.get(`p/${U1}`)?.value).toBe('new-key');
+    expect(sleeps).toEqual([500, 1000]);
+  });
+  it('a pending deletion seen as "exists" then put-fails is retried too, and gives up after 6 tries', async () => {
+    const fake = new FakeSM();
+    const err = (n: string) => Object.assign(new Error(n), { name: n });
+    fake.send = async (cmd: any) => {
+      if (cmd.constructor.name === 'CreateSecretCommand') throw err('ResourceExistsException');
+      if (cmd.constructor.name === 'PutSecretValueCommand') throw err('InvalidRequestException');
+      return {};
+    };
+    const sleeps: number[] = [];
+    await expect(new KeyStore(fake, 'p', null, async (ms) => { sleeps.push(ms); }).put(U1, 'k')).rejects.toThrow('ResourceExistsException');
+    expect(sleeps).toHaveLength(5);
   });
 });
 
