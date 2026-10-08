@@ -1,0 +1,60 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-04987/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-04987/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04975-kiro-operator-ui.test.ts
+  VTID-04975 engine switch
+    ✓ offers Operator | Kiro on an empty thread and stores the choice (10 ms)
+    ✓ disables Kiro until the gateway reports it connected, and refuses to switch to it (3 ms)
+    ✓ fixes the engine once the thread has messages: a Kiro badge, no switch (2 ms)
+  VTID-04975 Kiro workspace card
+    ✓ shows the status and what Kiro may do on its own vs. only after asking (6 ms)
+  VTID-04975 live Kiro transcript
+    ✓ builds streamed text, tool lines and approval cards from kiro.* frames (3 ms)
+    ✓ adds nothing to an Operator thread
+  VTID-04975 Kiro actions
+    ✓ Allow posts the answer with auth headers and shows the outcome (2 ms)
+    ✓ an expired card reads Expired, a network error reads as denied
+    ✓ Stop and End session call the cancel and close routes for the active thread
+    ✓ fetches the Kiro status once per page load
+  VTID-04975 wiring (source check)
+    ✓ the request names the engine only for a Kiro thread (1 ms)
+    ✓ Kiro frames go to their own handler and reset with each turn (3 ms)
+    ✓ a server thread keeps its engine, and a Kiro thread shows its tag and workspace card (1 ms)
+    ✓ every class the block uses has a rule in styles.css (2 ms)
+    ✓ the Command Hub cache-bust parameter is bumped for this change
+
+PASS test/services/conversation/vtid-04525-conversation-flag-registry.test.ts
+  VTID-04525 B7 — conversation flag registry
+    ✓ names are unique and every entry is read somewhere in the gateway source (1229 ms)
+    ✓ exact-true flags: only the string `true` enables (7 ms)
+    ✓ not-false flags: on unless exactly `false` (2 ms)
+    ✓ number flags resolve to a finite number whatever the raw value (2 ms)
+    ✓ inline-read mirrors match the source expression they mirror (10 ms)
+    ✓ invalid raw values are flagged per parse rule
+    ✓ resolve reports raw, effective, validity and both workflow pins (2 ms)
+    ✓ VTIDs are either a real id or null — the registry never invents one (4 ms)
+    ✓ the generated workflow pins file is current (run the generator if this fails) (60 ms)
+    ✓ JEV_DECISIONS_ENABLED is a workflow pin (staging true|false, prod true), not a conversation flag (1 ms)
+    ✓ registers the production navigator switch on its own registry
+    ✓ pins the three orchestrator specialist flags "true" on staging and prod (1 ms)
+    ✓ registers the Google task-role token flag: voice, exact-true, staging only (5 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       28 passed, 28 total
+Snapshots:   0 total
+Time:        2.85 s, estimated 3 s
+Ran all test suites matching /test\/services\/conversation\/vtid-04525-conversation-flag-registry.test.ts|test\/command-hub\/vtid-04975-kiro-operator-ui.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

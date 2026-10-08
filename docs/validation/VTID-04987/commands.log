@@ -1,0 +1,59 @@
+# VTID-04987: commands run in the worktree /home/user/wt-04987 (branch wt/vtid-04987, from origin/main cf3a91c3).
+# No live endpoint or database was called. Every jest run had AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and
+# AWS_SESSION_TOKEN unset, and every test uses a fake SDK client. The only AWS calls were the four script dry runs
+# in step 7, which are read-only. Neither script was run with --apply.
+# node_modules: a real copy of the main checkout's node_modules (not the symlink), so npm install did not touch
+# the main checkout.
+
+# 0. Dependency (npm, never by hand)
+npm install @aws-sdk/client-cloudwatch@3.1135.0          # same release as @aws-sdk/client-cloudwatch-logs; package.json gets ^3.1135.0
+                                                         # lockfile diff is additive only: client-cloudwatch, @smithy/middleware-compression, fflate
+                                                         # (a first try at the latest 3.1147.0 bumped @aws-sdk/core and the credential providers; reverted for the smaller change)
+
+# 1. Type check
+npx tsc --noEmit                                         # exit 0 (outputs/01-tsc.txt); no TS2742 noise with the copied node_modules
+
+# 2. New and changed tests
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+npx jest --ci test/vtid-04987 test/vtid-04876-ops-attention test/vtid-04885-ops-attention test/vtid-04886-ops-attention \
+  test/command-hub/vtid-04885-overview-tiles.test.ts test/command-hub/vtid-04876-overview-cockpit.test.ts test/command-hub/vtid-04887-overview-cleanup.test.ts
+                                                         # 13 suites, 246 passed (outputs/02-vtid-04987-tests.txt); the two new files: 27 tests
+
+# 3. Standing suites
+npm run test:operator -- --ci                            # rule 42e: 30 passed (outputs/03-test-operator.txt)
+npm run test:roles -- --ci                               # rule 42h: 105 passed (outputs/04-test-roles.txt)
+
+# 4. Command Hub tests (no command-hub frontend file was touched; ALLOWED_VTID_PATTERN unchanged)
+npx jest --ci test/command-hub test/scripts              # 51 suites, 719 passed (outputs/05-command-hub-tests.txt)
+git checkout -- services/gateway/src/frontend/command-hub/styles.css   # undo find-dead-css-classes.test.ts's mutation; never committed
+
+# 5. Scripts
+bash -n scripts/aws/setup-gateway-cloudwatch-read-grant.sh scripts/aws/setup-gateway-alb-health-alarm.sh
+shellcheck (0.11.0, shellcheck-py in the session scratchpad) both scripts   # no findings after renaming an unused loop variable (outputs/06-script-checks.txt)
+
+# 6. Staging workflow register step vs GitHub's 20,000-char run limit
+python3 (yaml.safe_load, compare the register step's run: before/after)   # 19,969 -> 19,321; jq program identical apart from the flag (outputs/10-workflow-run-length.txt)
+
+# 7. Dry runs: read-only, default mode, as IAM user claude-code-aws-agent in 472838866351 / eu-central-1
+#    (aws-cli 1.46.1 installed into the session scratchpad)
+scripts/aws/setup-gateway-cloudwatch-read-grant.sh --env staging   # outputs/dry-run-grant-staging.txt, exit 0
+scripts/aws/setup-gateway-cloudwatch-read-grant.sh --env prod      # outputs/dry-run-grant-prod.txt, exit 0
+#    calls: sts get-caller-identity, ecs describe-services (x2), ecs describe-task-definition (x2), iam get-role-policy (AccessDenied for the session user, reported)
+#    finding: staging (vitana-gateway:822) and prod (vitana-gateway-awsdr:164) share task role vitana-ecs-task-role
+scripts/aws/setup-gateway-alb-health-alarm.sh --service vitana-gateway-awsdr   # outputs/dry-run-alarm-vitana-gateway-awsdr.txt, exit 0
+scripts/aws/setup-gateway-alb-health-alarm.sh --service vitana-gateway         # outputs/dry-run-alarm-vitana-gateway.txt, exit 0
+#    calls: sts get-caller-identity, ecs describe-services, elbv2 describe-target-groups, sns list-topics, cloudwatch describe-alarms
+#    finding: prod -> targetgroup/vitana-tg-gateway-awsdr; staging -> targetgroup/vitana-tg-gateway-prod (the documented naming trap,
+#    resolved correctly by ARN); both on app/vitana-alb-prod; SNS vitana-alarms-prod exists; neither alarm exists yet
+
+# 8. Evidence-pack validators
+node -e "require('./scripts/ci/validate-pr-locally.cjs').checkAcceptanceMapping('docs/validation/VTID-04987/acceptance.md')"   # Acceptance mapping OK (outputs/08-acceptance-mapping.txt)
+node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(...)"                                                # {"ok":true} (outputs/09-staging-tests-manifest.txt)
+cp <session scratchpad>/sparring-VTID-04987.md docs/validation/VTID-04987/plan-sparring.md                                     # verbatim (cmp identical)
+
+# 9. Full gateway suite
+npx jest --ci                                            # 1564 suites run, 0 failed to run; 24949 passed, 2 failed (outputs/07-full-suite.*)
+node scripts/conversation/generate-flag-pins.mjs         # fix 1: the generated workflow-pins file now lists OPS_ATTENTION_CLOUDWATCH_ENABLED (staging true, prod null)
+git checkout -- services/gateway/src/frontend/command-hub/styles.css   # fix 2: undo the dead-CSS test's mutation, the cause of the vtid-04975 failure
+npx jest --ci test/services/conversation/vtid-04525-conversation-flag-registry.test.ts test/command-hub/vtid-04975-kiro-operator-ui.test.ts
+                                                         # 28 passed (outputs/07b-rerun-after-fix.txt)

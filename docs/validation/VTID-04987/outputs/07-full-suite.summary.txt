@@ -1,0 +1,14 @@
+# npx jest --ci (full gateway suite), AWS credentials unset
+## first full run (before regenerating the flag pins)
+Test Suites: 2 failed, 1 skipped, 1562 passed, 1564 of 1565 total
+Tests:       2 failed, 25 skipped, 6 todo, 24949 passed, 24982 total
+failed to run: 0
+failing suites:
+Summary of all failing tests
+FAIL test/services/conversation/vtid-04525-conversation-flag-registry.test.ts
+FAIL test/command-hub/vtid-04975-kiro-operator-ui.test.ts
+FAIL test/services/conversation/vtid-04525-conversation-flag-registry.test.ts
+
+## causes and fixes
+- vtid-04525-conversation-flag-registry: conversation-flag-pins.generated.ts was stale after the staging workflow gained OPS_ATTENTION_CLOUDWATCH_ENABLED. Fixed by running node scripts/conversation/generate-flag-pins.mjs (adds 'OPS_ATTENTION_CLOUDWATCH_ENABLED: { staging: "true", prod: null }').
+- vtid-04975-kiro-operator-ui: test/scripts/find-dead-css-classes.test.ts mutates styles.css during a full run (known); with styles.css restored (git checkout) it passes.

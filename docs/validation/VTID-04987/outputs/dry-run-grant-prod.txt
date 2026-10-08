@@ -1,0 +1,23 @@
+$ scripts/aws/setup-gateway-cloudwatch-read-grant.sh --env prod
+[setup-gateway-cloudwatch-read-grant] account 472838866351 region eu-central-1 env prod service vitana-gateway-awsdr cluster Vitana-ECS-Cluster
+[setup-gateway-cloudwatch-read-grant] live task definition: arn:aws:ecs:eu-central-1:472838866351:task-definition/vitana-gateway-awsdr:164
+[setup-gateway-cloudwatch-read-grant] task role:            arn:aws:iam::472838866351:role/vitana-ecs-task-role (role name vitana-ecs-task-role)
+[setup-gateway-cloudwatch-read-grant] NOTE: staging (vitana-gateway) uses the SAME task role — this grant applies to both gateways.
+[setup-gateway-cloudwatch-read-grant] inline policy vitana-gateway-cloudwatch-describe-alarms-VTID-04987 on vitana-ecs-task-role:
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OpsAttentionCloudWatchDescribeAlarmsVTID04987",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:DescribeAlarms"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+[setup-gateway-cloudwatch-read-grant] current state of vitana-gateway-cloudwatch-describe-alarms-VTID-04987:
+[setup-gateway-cloudwatch-read-grant]   not readable or absent: An error occurred (AccessDenied) when calling the GetRolePolicy operation: User: arn:aws:iam::472838866351:user/claude-code-aws-agent is not authorized to perform: iam:GetRolePolicy on resource: role vitana-ecs-task-role because no identity-based policy allows the iam:GetRolePolicy action. Go to https://us-east-1.console.aws.amazon.com/iam/home?region=us-east-1#/authorization-details/872373ib0q6ovwdmyeaq4t4m4 for complete details, or call the GetRequestAuthorizationDetails API with the following authorization id: 872373ib0q6ovwdmyeaq4t4m4
+[setup-gateway-cloudwatch-read-grant] dry run — nothing changed. Re-run with --apply to put-role-policy.
+exit=0

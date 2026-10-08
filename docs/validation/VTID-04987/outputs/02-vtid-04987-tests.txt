@@ -1,0 +1,446 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-04987/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04885-ops-attention-phase2-adapters.test.ts
+  cost_budgets adapter
+    ✓ an LLM budget over its daily limit is P2; >= 80% is P3; runs are grouped (6 ms)
+    ✓ lines under 80% are not reported
+    ✓ Jev: one item per tenant, the highest level wins — 100% is P2 (exhausted), 80% is P3 (1 ms)
+    ✓ reads the Jev events from the start of the UTC month (1 ms)
+    ✓ a truncated spend read or one failed half is partial (UNKNOWN); both failing throws (35 ms)
+  tests_contracts adapter
+    ✓ a workflow failing on main >= 2 runs in a row is P2, since the first failure of the streak (1 ms)
+    ✓ a single latest failure is P3; a green latest run or a non-main branch is not reported (1 ms)
+    ✓ failing capability contracts are one P3 item (1 ms)
+    ✓ a stale or never-run results sync is UNKNOWN (never a clean OK) (1 ms)
+  routines adapter
+    ✓ cronIntervalMs understands the simple shapes and refuses the rest (1 ms)
+    ✓ a failed last run is P3; three in a row is P2 (1 ms)
+    ✓ overdue after 1.5 intervals without a run (P3, since = when it became overdue); never-run uses created_at (6 ms)
+    ✓ a run still "running" after 6 h is P3
+    ✓ a schedule it cannot judge makes the source UNKNOWN; an unreadable table throws
+  support_tickets adapter
+    ✓ an open p0 is P2 and deep-links to that ticket (?ticket=)
+    ✓ p1 waiting > 1 h is P3, > 4 h is P2; under 1 h is not reported (1 ms)
+    ✓ several tickets link to the inbox list; closed statuses never count (1 ms)
+    ✓ reads tickets older than 72 h as "aged"; an unreadable table throws
+  llm_google_fallback adapter
+    ✓ any fallback that landed on Google in 24 h is P2 (an incident)
+    ✓ a stage routed at Google without a fallback is its own P2; other providers are ignored
+    ✓ reads a 24 h window; an unreadable read throws (UNKNOWN, never "no fallbacks") (1 ms)
+  stuck_vtids adapter
+    ✓ session-plane VTIDs without an update for > 72 h are one P3 item; autonomous tasks are excluded (1 ms)
+    ✓ one stale VTID deep-links to its task drawer (?vtid=)
+    ✓ a full 500-row page is truncated (UNKNOWN) (2 ms)
+  registry, not-wired sources and domain tiles
+    ✓ VTID-04987: the CloudWatch source is wired — dependency present, registered behind its flag, on the platform tile (1 ms)
+    ✓ the plan's 13 domains, every adapter in exactly one tile
+    ✓ buildDomainSummary: worst severity, open count, freshness; unmonitored is never OK (2 ms)
+    ✓ the full registry over the Phase 2 fakes: every new source reports, the response carries 13 domains (4 ms)
+    ✓ a throwing Phase 2 read makes only its source and its tile UNKNOWN
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04876-overview-cockpit.test.ts
+  VTID-04876: status bar
+    ✓ polls every 30 s and goes blind after 2x the poll interval (5 ms)
+    ✓ any fetch error, or no answer yet, is UNKNOWN — never OK (4 ms)
+    ✓ shows the server verdict when fresh; an unknown or unrecognised verdict stays UNKNOWN (3 ms)
+    ✓ labels staging as "Staging build · production data" (3 ms)
+    ✓ renders verdict, P1/P2/P3 counts, sources fresh x/y, generated_at, env and refresh (2 ms)
+  VTID-04876: ranked queue
+    ✓ severity is icon + text label + colour class (5 ms)
+    ✓ the queue body is aria-live="polite" and has a "Needs attention now" heading (1 ms)
+    ✓ domain filters are data-action buttons with aria-pressed (2 ms)
+    ✓ an empty queue with unknown sources is explicitly not an all-clear (1 ms)
+    ✓ each item is a real link carrying its deeplink and navigates via navigateToScreen(section, tab, query) (1 ms)
+  VTID-04876: no inline handlers
+    ✓ no 'onclick=' anywhere in the Overview region (2 ms)
+    ✓ the cockpit assigns no on* handler properties; one delegated listener reads data-action (2 ms)
+    ✓ the cockpit block is CSP-clean (no inline style or eval) (1 ms)
+    ✓ says why its strings are English (admin-facing by design) (1 ms)
+  VTID-04876: polling and the /ops/attention migration
+    ✓ renderOverviewSystemView renders the cockpit and polls every 30 s on the real router keys only (2 ms)
+    ✓ the old panels are kept, collapsed, and rendered only when opened (1 ms)
+    ✓ fetches GET /api/v1/ops/attention with the signed-in headers; nothing reads /ops/action-required any more (2 ms)
+    ✓ keeps showing the last good answer on error but marks the cockpit blind (1 ms)
+  VTID-04876: deep-link contract (?vtid= / ?session=)
+    ✓ the frontend contract equals the backend DEEPLINK_QUERY_CONTRACT (1 ms)
+    ✓ params are read on navigation: navigateToScreen, back/forward and page load (1 ms)
+    ✓ applyDeepLinkParams keys on the real router state (1 ms)
+    ✓ ?vtid= on command-hub/tasks opens the task drawer (9 ms)
+    ✓ an unresolvable ?vtid= on the task list shows a toast and falls back to the list (6 ms)
+    ✓ ?vtid= on oasis/vtid-ledger opens the ledger drawer; unresolvable → toast + list (8 ms)
+    ✓ ?session= on voice/sessions opens the voice session drawer; unresolvable → toast + list (11 ms)
+    ✓ a param on a screen outside the contract is ignored (4 ms)
+  VTID-04876: every adapter deeplink resolves against NAVIGATION_CONFIG
+    ✓ every section/tab exists, every query key is one its screen reads, every screen is dispatched (7 ms)
+    ✓ the drawers are reachable: ?vtid= deeplinks are emitted for tasks and the ledger (2 ms)
+  VTID-04876: styles and asset version
+    ✓ the cockpit styles exist (UNKNOWN is grey) and use logical properties (2 ms)
+    ✓ index.html loads app.js and styles.css at (or after) the VTID-04876 version
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.error
+    [ops-attention] OASIS ops.attention.acked not recorded: insert failed
+
+      707 |     const r = await emit(event);
+      708 |     oasisEmitted = !!(r && r.ok);
+    > 709 |     if (!oasisEmitted) console.error(`[ops-attention] OASIS ${event.type} not recorded:`, r && r.error);
+          |                                ^
+      710 |   } catch (err) {
+      711 |     console.error(`[ops-attention] OASIS ${event.type} failed:`, errMessage(err));
+      712 |   }
+
+      at recordOpsAttentionAction (src/services/ops-attention.ts:709:32)
+      at src/routes/ops-attention.ts:80:19
+
+PASS test/vtid-04886-ops-attention-ack-route.test.ts
+  POST /ack, /snooze — real auth middleware
+    ✓ 401 JSON without an Authorization header; nothing is written or emitted (163 ms)
+  POST /ack, /snooze — admin (middleware mocked)
+    ✓ a non-admin is refused by the gate (31 ms)
+    ✓ Zod: reason required, expiry <= 24 h, integer minutes, known keys only, vtid shape (80 ms)
+    ✓ P1 is ackable but NEVER snoozable (400 p1_not_snoozable); the severity is the server's (44 ms)
+    ✓ snooze a P2: one row (actor, reason, expiry <= 24 h), one OASIS event, and the next GET hides it and counts it (35 ms)
+    ✓ ack emits ops.attention.acked; an OASIS failure is reported, the action still stands (48 ms)
+    ✓ an item that is not open now is 404 not_open; another env's fingerprint is 400 wrong_env (40 ms)
+    ✓ the write-side cap holds even without the route (recordOpsAttentionAction refuses > 24 h) (33 ms)
+    ✓ index.ts: the ack/snooze routes ride the existing /api/v1/ops/attention mount after express.json() (3 ms)
+    ✓ the OASIS event types are in the CicdEventType union
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.error
+    [ops-attention] ack read failed — nothing is hidden: acks table missing
+
+      452 |         .then((rows) => ({ rows, error: null }))
+      453 |         .catch((err) => {
+    > 454 |           console.error('[ops-attention] ack read failed — nothing is hidden:', errMessage(err));
+          |                   ^
+      455 |           return { rows: [] as AckRow[], error: errMessage(err) };
+      456 |         })
+      457 |     : Promise.resolve({ rows: [] as AckRow[], error: null });
+
+      at src/services/ops-attention.ts:454:19
+
+  console.error
+    [ops-attention] ack read failed — nothing is hidden: timeout after 3000 ms
+
+      452 |         .then((rows) => ({ rows, error: null }))
+      453 |         .catch((err) => {
+    > 454 |           console.error('[ops-attention] ack read failed — nothing is hidden:', errMessage(err));
+          |                   ^
+      455 |           return { rows: [] as AckRow[], error: errMessage(err) };
+      456 |         })
+      457 |     : Promise.resolve({ rows: [] as AckRow[], error: null });
+
+      at src/services/ops-attention.ts:454:19
+      at buildOpsAttention (src/services/ops-attention.ts:534:16)
+
+PASS test/vtid-04886-ops-attention-acks-timeline.test.ts
+  applyAcks
+    ✓ ack marks (still shown); snooze hides and lists; P1 is never hidden (snooze_overridden) (2 ms)
+    ✓ the latest unexpired row per fingerprint wins; expired rows are ignored (1 ms)
+  buildOpsAttention with acks
+    ✓ a snoozed P2 leaves the queue, counts.hidden says so, the domain tile counts it, the verdict follows what is shown (1 ms)
+    ✓ an ack read failure hides nothing and is reported in acks_error (not a source, so no false UNKNOWN) (2 ms)
+    ✓ an ack read that hangs is cut at 3 s (4 ms)
+  timeline + sparklines
+    ✓ timelineFrom: classified, newest first, unknown topics and blocklisted self-heal endpoints dropped (1 ms)
+    ✓ sparklinesFrom: 24 hourly buckets, oldest first; deploys exclude failures, incidents are the bad events (1 ms)
+    ✓ the response carries the timeline and sparklines; a failed timeline read is an error and null sparklines (1 ms)
+  production reads (VTID-04886)
+    ✓ timelineEvents: oasis_events topic IN TIMELINE_TOPICS, 24 h, newest first, LIMIT 200; throws on error (16 ms)
+    ✓ selfHealOutcomes is read once per window per computation (autonomy + timeline share it)
+    ✓ ack store: active rows by env and expires_at > now; insert returns the row; errors throw (2 ms)
+    ✓ the migration: table, CHECKs (24 h, reason, P1 never snoozed), RLS, service_role only, idempotent (2 ms)
+  sparklines are marked partial when a read hits its row cap (Codex review)
+    ✓ sparklinesFrom carries the partial flag; default false
+    ✓ buildTimeline: a capped timeline or self-heal read makes the totals a lower bound (1 ms)
+    ✓ the cockpit labels partial totals as a lower bound (20 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04876-ops-attention-route.test.ts
+  GET /api/v1/ops/attention — real auth middleware
+    ✓ 401 JSON without an Authorization header (never reaches the aggregator) (25 ms)
+  GET /api/v1/ops/attention — admin (middleware mocked)
+    ✓ 200 {ok, data} with the contract shape for an exafy_admin (42 ms)
+    ✓ a non-admin is refused by the gate (34 ms)
+  index.ts mounts the route like its neighbours
+    ✓ mountRouterSync at /api/v1/ops/attention with owner ops-attention (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04887-overview-cleanup.test.ts
+  VTID-04887 (1): the four old Overview tabs are redirects
+    ✓ the Overview section has exactly one tab, System Overview (38 ms)
+    ✓ there is one redirect per old tab, each with a short note (1 ms)
+    ✓ every redirect target exists in NAVIGATION_CONFIG (walk) (1 ms)
+    ✓ every redirect in the shared table resolves to a real tab too (no dangling legacy link) (4 ms)
+    ✓ getRouteFromPath sends /command-hub/overview/live-metrics/ (with or without the slash) to its screen (1 ms)
+    ✓ getRouteFromPath sends /command-hub/overview/recent-events/ (with or without the slash) to its screen
+    ✓ getRouteFromPath sends /command-hub/overview/errors-violations/ (with or without the slash) to its screen (1 ms)
+    ✓ getRouteFromPath sends /command-hub/overview/release-feed/ (with or without the slash) to its screen (1 ms)
+    ✓ System Overview itself still routes to the cockpit
+    ✓ the note is shown once as an info toast wherever a route is applied (2 ms)
+    ✓ on first load the address bar is rewritten to the target tab path (1 ms)
+  VTID-04887 (1): no dead tab content
+    ✓ no render dispatch branch for any old tab remains (7 ms)
+    ✓ `computeDeploySuccessRate` is deleted and nothing mentions it (3 ms)
+    ✓ `computeOrbSessionStats` is deleted and nothing mentions it (4 ms)
+    ✓ `computeSystemStatus` is deleted and nothing mentions it (3 ms)
+    ✓ `fetchOverviewDashboard` is deleted and nothing mentions it (3 ms)
+    ✓ `fetchOverviewErrors` is deleted and nothing mentions it (4 ms)
+    ✓ `fetchOverviewHealth` is deleted and nothing mentions it (3 ms)
+    ✓ `fetchOverviewMetrics` is deleted and nothing mentions it (3 ms)
+    ✓ `fetchOverviewRecentEvents` is deleted and nothing mentions it (3 ms)
+    ✓ `fetchOverviewReleases` is deleted and nothing mentions it (3 ms)
+    ✓ `fetchOverviewReleasesSilent` is deleted and nothing mentions it (4 ms)
+    ✓ `fetchOverviewTimeseries` is deleted and nothing mentions it (4 ms)
+    ✓ `fetchPipelineSummary` is deleted and nothing mentions it (3 ms)
+    ✓ `metricCardHTML` is deleted and nothing mentions it (4 ms)
+    ✓ `metricColor` is deleted and nothing mentions it (4 ms)
+    ✓ `metricColorInverse` is deleted and nothing mentions it (4 ms)
+    ✓ `renderMetricsGroup` is deleted and nothing mentions it (3 ms)
+    ✓ `renderOverviewErrorsViolationsView` is deleted and nothing mentions it (3 ms)
+    ✓ `renderOverviewLiveMetricsView` is deleted and nothing mentions it (3 ms)
+    ✓ `renderOverviewRecentEventsView` is deleted and nothing mentions it (3 ms)
+    ✓ `renderOverviewReleaseFeedView` is deleted and nothing mentions it (3 ms)
+    ✓ `renderVtidAttentionCard` is deleted and nothing mentions it (4 ms)
+    ✓ `renderVtidAttentionSection` is deleted and nothing mentions it (3 ms)
+    ✓ `sparklineSVG` is deleted and nothing mentions it (4 ms)
+    ✓ `startOverviewDashboardPolling` is deleted and nothing mentions it (3 ms)
+    ✓ `startOverviewReleasesAutoRefresh` is deleted and nothing mentions it (3 ms)
+    ✓ `stopOverviewReleasesAutoRefresh` is deleted and nothing mentions it (4 ms)
+    ✓ the hardcoded lists and state the old tabs and panels used are gone (11 ms)
+  VTID-04887 (2): the detailed panels keep only grouped Service Health and Vitana Recommends
+    ✓ renders the grouped Service Health panel from the registry poll only
+    ✓ no other pre-Phase-1 panel is left
+    ✓ the disclosure is labelled for what it holds and stays collapsed until opened (1 ms)
+    ✓ Vitana Recommends is rendered inside the disclosure, after Service Health
+    ✓ the cockpit is the only Overview poll (no 60 s dashboard refresh) (2 ms)
+    ✓ the Service Health badge names full class names, so the dead-CSS matcher sees them (2 ms)
+  VTID-04887 (3): browser callers of the pipeline summary use the admin route
+    ✓ no code line calls the service-token /api/v1/autopilot/pipeline/summary (24 ms)
+    Vitana Recommends
+      ✓ reads the admin route with the bearer token and keeps only the recommendations
+      ✓ cannot loop: fetched is set in finally, and the panel fetches only when not fetched/loading (1 ms)
+      ✓ a failed or pending read is never "No pending recommendations"
+      ✓ keeps Generate, Activate and Dismiss, and refreshes through the admin route
+  VTID-04887: asset version
+    ✓ index.html loads app.js and styles.css at (or after) the VTID-04887 version
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04987-ops-attention-cloudwatch-reads.test.ts
+  createAttentionReads().cloudwatchAlarms()
+    ✓ delegates to describeAlarmsInAlarm() with its defaults and returns its result unchanged (2 ms)
+    ✓ a failed read throws through (the aggregator maps it to UNKNOWN) (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04987-ops-attention-cloudwatch.test.ts
+  describeAlarmsInAlarm (DescribeAlarms, read-only)
+    ✓ asks for ALARM state only, metric + composite alarms, and follows NextToken (11 ms)
+    ✓ drops anything the service returns that is not in ALARM (defence in depth)
+    ✓ caps at 100 alarms and reports truncated when more remain (3 ms)
+    ✓ throws on AccessDenied — never "no alarms" (12 ms)
+    ✓ throws when a later page fails (no partial "all clear") (1 ms)
+    ✓ times out (5 s by default) and aborts the request (21 ms)
+    ✓ region comes from AWS_REGION, default eu-central-1
+    ✓ the module makes no write call: DescribeAlarms is the only CloudWatch command it imports (1 ms)
+  cloudwatch_alarms adapter rubric
+    ✓ P1 = an alarm in ALARM named vitana-gateway-prod-*; every other alarm in ALARM = P2 (staging included) (1 ms)
+    ✓ items deep-link to the platform tile screen and carry name, namespace, reason and state time (12 ms)
+    ✓ a capped read is partial (UNKNOWN) and still shows what it found; a failed read throws (17 ms)
+    ✓ no alarms in ALARM = no items
+  OPS_ATTENTION_CLOUDWATCH_ENABLED gate
+    ✓ only the exact string "true" registers the source; unset, "false", "TRUE", "1" do not (1 ms)
+    ✓ flag off: the platform tile shows cloudwatch_alarms as not monitored — the tile is not unknown (1 ms)
+    ✓ flag on: a registered source that did not report is unknown (never ok)
+  aggregator default = attentionAdapters()
+    ✓ flag off: no cloudwatch_alarms source runs; the platform tile is ok with the source not monitored; nothing UNKNOWN (2 ms)
+    ✓ flag on + AccessDenied: the source is unknown with the error; the platform tile and the verdict are UNKNOWN (1 ms)
+    ✓ flag on + a production-gateway alarm in ALARM: a P1 item on the platform tile, verdict CRITICAL (1 ms)
+    ✓ explicit adapters still override the default (the existing test seam) (1 ms)
+    ✓ the aggregator source reads the helper, not the constant
+  OPS_ATTENTION_CLOUDWATCH_ENABLED pinning
+    ✓ staging strips it and sets exactly "true" (1 ms)
+    ✓ prod does not set it (a later follow-up PR, after staging shows the source ok) (1 ms)
+  operator scripts
+    ✓ both are dry-run by default and change something only with --apply
+    ✓ the grant resolves the task role from the live task definition and grants cloudwatch:DescribeAlarms only (1 ms)
+    ✓ the alarm resolves service → target group → ALB from AWS, never by target-group name, and refuses without the SNS topic (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04885-overview-tiles.test.ts
+  VTID-04885: domain tiles
+    ✓ a blind cockpit shows every tile UNKNOWN; an unmonitored domain says "Not yet monitored", never OK (2 ms)
+    ✓ worst severity wins (icon + text label + colour class); unknown with nothing open is UNKNOWN; clean is OK (1 ms)
+    ✓ the tiles render inside the cockpit from data.domains, with data-action links (no onclick) (3 ms)
+    ✓ every tile deep link is a NAVIGATION_CONFIG screen the dispatcher renders (3 ms)
+    ✓ the queue filters cover every domain a Phase 2 adapter emits (2 ms)
+  VTID-04885: the Feedback module is routable without a sidebar entry
+    ✓ NAVIGATION_CONFIG has a feedback section with the four dispatched tabs, flagged sidebar:false (2 ms)
+    ✓ renderSidebar skips sidebar:false sections, so the sidebar is unchanged
+    ✓ ?ticket= on feedback/inbox opens the ticket drawer; an unknown id falls back with a toast (2 ms)
+  VTID-04885: styles and asset version
+    ✓ the tile styles exist and use logical properties only (1 ms)
+    ✓ index.html loads app.js and styles.css at (or after) the VTID-04885 version (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04876-ops-attention-reads.test.ts
+  in-process wiring (no HTTP self-calls)
+    ✓ service health → buildHealthSummary with the caller auth header (2 ms)
+    ✓ voice → buildVoiceOverview({window:"1h", scope:{is_platform_admin:true}}) (1 ms)
+    ✓ release build-info → the cached ops-runtime checks (1 ms)
+    ✓ operator → BROKEN vtids (in progress, no update for 2 h) read directly + isAutonomousExecutionTask (1 ms)
+    ✓ autonomy → buildSupervisorSnapshot alerts
+    ✓ autonomy: a failed subordinate supervisor read throws (UNKNOWN), never an empty alert list (18 ms)
+    ✓ operator: a failed broken-task read throws, never an empty broken set (1 ms)
+    ✓ voice: the overview truncation flag is passed through (1 ms)
+    ✓ governance: only OPEN violations (IGNORED and RESOLVED are not open) (1 ms)
+    ✓ PR approvals → the /approvals/pending helpers, only rows with a PR or branch (1 ms)
+    ✓ nothing above used fetch
+  bounded supabase reads
+    ✓ oasis_events latestEvent: topic IN + created_at >= + newest first + LIMIT 1 (1 ms)
+    ✓ a read error throws instead of returning an empty list (1 ms)
+    ✓ in-progress ledger: VTID-% in_progress non-terminal, LIMIT 500 (1 ms)
+    ✓ self-heal pending approval drops human-decided rows
+    ✓ system controls: an empty list is unreadable; a missing allocator row is disabled unless the env var is set (1 ms)
+    ✓ kill switch: row → engaged flag; no row → null
+  ops_attention_state store
+    ✓ loads by env + fingerprints and upserts (env, fingerprint) (1 ms)
+    ✓ a write error throws (the aggregator logs it and carries on) (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04885-ops-attention-phase2-reads.test.ts
+  cost & budgets
+    ✓ LLM budget lines come from loadSpendToday + the budgets arithmetic (same as GET /orchestrator/budgets) (1 ms)
+    ✓ a failed spend read throws (never "no spend") (13 ms)
+    ✓ Jev budget alerts: oasis_events topic = jev.budget.threshold_crossed, since, LIMIT 200 (1 ms)
+  tests & contracts
+    ✓ ci_test_runs on main since the window (LIMIT 1000) + the oldest repository sync time (1 ms)
+    ✓ a repository that never synced makes last_synced_at null; a failed read throws (1 ms)
+    ✓ failing contracts: test_contracts status = fail, LIMIT 100
+  routines, support tickets, Google fallback
+    ✓ routines: enabled only, LIMIT 200; an error throws (1 ms)
+    ✓ support tickets: open statuses only (the partial index), p0/p1 or aged, oldest first, LIMIT 300 (1 ms)
+    ✓ Google calls: llm.call.completed in the window with a Google provider OR a Gemini model; fallback_used parsed (1 ms)
+  the in-progress ledger is read once per computation (operator_pipeline + stuck_vtids)
+    ✓ two callers share one read; a failed read is retried by the next caller
+    ✓ nothing above used fetch
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04876-ops-attention-aggregator.test.ts
+  verdict
+    ✓ CRITICAL beats UNKNOWN; UNKNOWN beats ATTENTION/OK; OK only with all sources fresh and no items (2 ms)
+  buildOpsAttention
+    ✓ response shape, env-scoped fingerprints, ranking by severity then age (1 ms)
+    ✓ an adapter that exceeds the 3 s timeout is UNKNOWN; the verdict is UNKNOWN, not OK (1 ms)
+    ✓ per-source budgets: service health 8 s, autonomy 6 s, every other source 3 s (1 ms)
+    ✓ a throwing adapter is UNKNOWN; a P1 elsewhere still makes the verdict CRITICAL (1 ms)
+    ✓ a partial adapter is UNKNOWN but still shows its candidates
+    ✓ the full default registry runs over all-healthy fakes: OK with 14 fresh sources (13 adapters + state, VTID-04885) (1 ms)
+  hysteresis (time-based, N2/N5/N8)
+    ✓ a source-timestamped candidate is stateless: shown once held long enough, no state write (1 ms)
+    ✓ a stateless-source candidate opens only after 2 min of consecutive observation (2 ms)
+    ✓ a gap longer than the clear grace (90 s) resets first_seen; a shorter one keeps it (1 ms)
+    ✓ staging and production state never mix: the fingerprint and the store call carry env
+    ✓ a state READ failure never breaks the response: logged, first seen at this request, attention_state UNKNOWN (1 ms)
+    ✓ a state WRITE failure never breaks the response: logged, source stays ok with the error noted (1 ms)
+  getOpsAttention — single-flight + cache
+    ✓ concurrent callers share one computation; within 25 s the cache answers; after, it recomputes (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04876-ops-attention-adapters.test.ts
+  service_health adapter (N5 golden path)
+    ✓ golden-path failing → P1, other failing → P2, degraded → P3; all held 2 min via state (3 ms)
+    ✓ an unmeasured golden-path check (no_access) makes the source UNKNOWN, never green
+    ✓ an unmeasured non-golden check is skipped silently (1 ms)
+  release adapter
+    ✓ P1 when the newest prod deploy failed < 2 h ago; not after 2 h; not when completed (1 ms)
+    ✓ P2 when STAGING-VERIFY failed on the latest staging deploy, not when a newer deploy landed (1 ms)
+    ✓ P3 STAGING-VERIFY stale only beyond 72 h (1 ms)
+    ✓ commit drift is a P3 candidate held 48 h via state; unreadable build-info → source UNKNOWN (1 ms)
+    ✓ a legacy deploy-failure topic within 24 h is P3 (1 ms)
+  voice_supervisor adapter
+    ✓ system_wide → P1, segment critical → P2, warning → P3 (1 ms)
+    ✓ carries quarantines and open architecture reports over from /ops/action-required (P3) (1 ms)
+    ✓ a truncated overview keeps its verdicts (a P1 stays visible) but the source is partial (→ UNKNOWN)
+    ✓ insufficient_data is no item; a failing overview read throws (→ UNKNOWN) (33 ms)
+  autonomy adapter
+    ✓ critical alert → P2, warning → P3, info dropped, kill switch and approvals owned elsewhere (N7) (1 ms)
+    ✓ alert keys ignore the changing numbers in the text (1 ms)
+    ✓ self-heal rolled_back → P2, escalated → P3, grouped per endpoint, blocklist applied (1 ms)
+  operator_pipeline adapter (N4)
+    ✓ stuck = no heartbeat > 60 min by claim_expires_at - 60 min, never updated_at
+    ✓ only isAutonomousExecutionTask() rows count; session VTIDs are never flagged
+    ✓ broken (pipeline summary) autonomous task → P2 even when unclaimed; no 30–60 min band (1 ms)
+    ✓ pipeline summary failure → partial (UNKNOWN), heartbeat items still reported (4 ms)
+  governance adapter
+    ✓ a disarmed governance kill-switch control → P2 with who/when (1 ms)
+    ✓ Dev Autopilot kill switch engaged → one P2 fingerprint with the activation time (N7) (1 ms)
+    ✓ critical violations → one P2 item, others → one P3 item (grouped with count) (1 ms)
+    ✓ unreadable controls throw (→ UNKNOWN) (1 ms)
+  decisions_waiting adapter
+    ✓ waiting > 4 h → P2, > 1 h → P3, ≤ 1 h not shown; grouped per kind with count (1 ms)
+    ✓ one failing kind → partial (UNKNOWN); all failing → throws (1 ms)
+  registry
+    ✓ has the seven Phase 1 adapters, then the six Phase 2 adapters (VTID-04885)
+
+Test Suites: 13 passed, 13 total
+Tests:       246 passed, 246 total
+Snapshots:   0 total
+Time:        2.933 s
+Ran all test suites matching /test\/vtid-04987|test\/vtid-04876-ops-attention|test\/vtid-04885-ops-attention|test\/vtid-04886-ops-attention|test\/command-hub\/vtid-04885-overview-tiles.test.ts|test\/command-hub\/vtid-04876-overview-cockpit.test.ts|test\/command-hub\/vtid-04887-overview-cleanup.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
