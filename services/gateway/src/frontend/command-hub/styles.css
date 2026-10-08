@@ -2214,6 +2214,28 @@ body {
   font-size: 0.62rem;
 }
 
+.chat-kiro-model-select {
+  min-height: 28px;
+  max-width: 14rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid #2f3540;
+  border-radius: 6px;
+  background: #15181d;
+  color: #e0e0e0;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.chat-kiro-model-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.chat-kiro-model-select:focus-visible {
+  outline: 2px solid #2a7bff;
+  outline-offset: 1px;
+}
+
 .chat-engine-end-btn {
   min-height: 28px;
   padding: 0.2rem 0.6rem;
@@ -2385,6 +2407,8 @@ body {
 }
 
 @media (max-width: 640px) {
+  .chat-kiro-model-select { max-width: 6.5rem; }
+  .chat-engine-end-btn { padding: 0.2rem 0.4rem; }
   .kiro-panel { margin-top: 1rem; }
   .kiro-panel-rows { grid-template-columns: 1fr; gap: 0.1rem; }
   .kiro-panel-rows dd { margin-bottom: 0.45rem; }

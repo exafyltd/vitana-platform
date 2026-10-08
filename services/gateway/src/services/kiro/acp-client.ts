@@ -36,6 +36,51 @@ export interface AcpClientOptions {
   onPermissionRequest?: AcpPermissionHandler;
 }
 
+/**
+ * VTID-04984: the models Kiro offers for a session. Kiro reports them either
+ * as an ACP config option with category "model" (switched with
+ * session/set_config_option) or, on its v2 engine, as a `models` field
+ * (switched with session/set_model).
+ * Sources: https://agentclientprotocol.com/protocol/session-config-options and
+ * https://kiro.dev/docs/cli/acp/ ("session/set_model … CLI v2 only — CLI V3
+ * uses session/set_config_option").
+ */
+export interface KiroModel { id: string; name: string; description?: string }
+export interface KiroModelState {
+  models: KiroModel[];
+  current: string | null;
+  via: 'config_option' | 'set_model';
+  configId?: string;
+}
+
+function str(v: unknown): string | undefined { return typeof v === 'string' && v ? v : undefined; }
+
+/** Read Kiro's model list out of a session/new (or set) result. */
+export function parseModelState(result: unknown): KiroModelState | null {
+  const r = (result ?? {}) as Record<string, any>;
+  const opts: any[] = Array.isArray(r.configOptions) ? r.configOptions : [];
+  const opt = opts.find((o) => o && o.category === 'model') ?? opts.find((o) => o && o.id === 'model');
+  if (opt && Array.isArray(opt.options)) {
+    const models: KiroModel[] = [];
+    for (const entry of opt.options) {
+      const list = Array.isArray(entry?.options) ? entry.options : [entry]; // groups or plain values
+      for (const o of list) {
+        const id = str(o?.value);
+        if (id) models.push({ id, name: str(o.name) ?? id, ...(str(o.description) ? { description: str(o.description) } : {}) });
+      }
+    }
+    return { models, current: str(opt.currentValue) ?? null, via: 'config_option', configId: String(opt.id) };
+  }
+  const m = r.models;
+  if (m && Array.isArray(m.availableModels)) {
+    const models: KiroModel[] = m.availableModels
+      .map((o: any) => ({ id: str(o?.modelId) ?? '', name: str(o?.name) ?? str(o?.modelId) ?? '', ...(str(o?.description) ? { description: str(o.description) } : {}) }))
+      .filter((x: KiroModel) => x.id);
+    return { models, current: str(m.currentModelId) ?? null, via: 'set_model' };
+  }
+  return null;
+}
+
 export class AcpError extends Error {
   constructor(message: string, readonly code?: number) { super(message); this.name = 'AcpError'; }
 }
@@ -135,9 +180,24 @@ export class AcpClient {
   }
 
   async newSession(cwd: string, mcpServers: unknown[] = []): Promise<string> {
+    return (await this.openNewSession(cwd, mcpServers)).sessionId;
+  }
+
+  /** VTID-04984: session/new, keeping the model list Kiro returns with it. */
+  async openNewSession(cwd: string, mcpServers: unknown[] = []): Promise<{ sessionId: string; models: KiroModelState | null }> {
     const r = await this.request<{ sessionId: string }>('session/new', { cwd, mcpServers });
     if (!r?.sessionId) throw new AcpError('session/new returned no sessionId');
-    return r.sessionId;
+    return { sessionId: r.sessionId, models: parseModelState(r) };
+  }
+
+  /** VTID-04984: switch the session's model the way Kiro reported it. Kiro's own error is thrown as-is. */
+  async setModel(sessionId: string, state: KiroModelState, modelId: string): Promise<KiroModelState> {
+    if (state.via === 'config_option') {
+      const r = await this.request('session/set_config_option', { sessionId, configId: state.configId ?? 'model', value: modelId });
+      return parseModelState(r) ?? { ...state, current: modelId };
+    }
+    await this.request('session/set_model', { sessionId, modelId });
+    return { ...state, current: modelId };
   }
 
   async loadSession(sessionId: string, cwd: string, mcpServers: unknown[] = []): Promise<void> {
