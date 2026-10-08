@@ -84,7 +84,7 @@ function enabled(res: Response): boolean {
  * independent of the MCP switch because OpenAI pings it when the plugin is submitted.
  */
 wellKnownRouter.get('/openai-apps-challenge', (_req: Request, res: Response) => {
-  const token = process.env.OPENAI_APPS_CHALLENGE_TOKEN?.trim();
+  const token = (process.env.OPENAI_APPS_CHALLENGE_TOKEN ?? '').trim();
   if (!token) return res.status(404).type('text/plain').send('');
   return res.status(200).type('text/plain').send(token);
 });

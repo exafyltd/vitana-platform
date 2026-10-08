@@ -17,7 +17,8 @@
       "method": "POST",
       "path": "/mcp",
       "expect_status": 401,
-      "reason": "an unsigned MCP request is still refused by the endpoint's own sign-in (rejected probe; nothing is written)"
+      "reason": "an unsigned MCP request is still refused by the endpoint's own sign-in (rejected probe; nothing is written)",
+      "rejected_probe": true
     },
     {
       "kind": "existing",
