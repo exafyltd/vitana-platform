@@ -156,6 +156,20 @@ function loadDev() {
     'databases/analytics': 'DB_ANALYTICS',
     'infrastructure/deployments': 'INFRA_DEPLOYMENTS',
     'models-evaluations/evaluations': 'MODEL_EVALUATIONS',
+    // VTID-04986: ids the inventory already carried (hand-chosen while the
+    // regen was broken) stay stable; sections added since get a prefix.
+    'testing-qa/overview': 'TESTING_OVERVIEW',
+    'testing-qa/catalog': 'TESTING_CATALOG',
+    'testing-qa/runs': 'TESTING_RUNS',
+    'testing-qa/run-tests': 'TESTING_RUN_TESTS',
+    'testing-qa/test-contracts': 'TESTING_TEST_CONTRACTS',
+    'commerce/overview': 'COMMERCE_OVERVIEW',
+    'voice/overview': 'VOICE_OVERVIEW',
+    'voice/sessions': 'VOICE_SESSIONS',
+    'conversation/config': 'CONVERSATION_CONFIG',
+    'conversation/tools': 'CONVERSATION_TOOLS',
+    'routines/history': 'ROUTINES_HISTORY',
+    'routines/catalog': 'ROUTINES_CATALOG',
   };
 
   const screens = [];
@@ -204,6 +218,80 @@ function extractObjectLiteralAfter(rawSrc, marker) {
   bail(`unbalanced braces after ${marker}`);
 }
 
+// --- ADM: evaluating the ADMIN_SECTIONS literal ------------------------------
+//
+// VTID-04986: the literal references lucide-react icons as bare identifiers
+// (`icon: Inbox`). A fixed list of icon stubs broke the generator the first
+// time vitana-v1 added an icon it did not know (`ReferenceError: Inbox is not
+// defined`). The stubs are now derived from the literal itself: every bare
+// identifier it references is stubbed with an inert value, so a new icon can
+// never break the regen again.
+
+const JS_RESERVED = new Set([
+  'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default',
+  'delete', 'do', 'else', 'export', 'extends', 'false', 'finally', 'for',
+  'function', 'if', 'import', 'in', 'instanceof', 'new', 'null', 'return',
+  'super', 'switch', 'this', 'throw', 'true', 'try', 'typeof', 'var', 'void',
+  'while', 'with', 'yield', 'let', 'static', 'await', 'enum', 'implements',
+  'interface', 'package', 'private', 'protected', 'public', 'undefined', 'NaN',
+  'Infinity', 'as', 'satisfies',
+]);
+
+/**
+ * Collect every bare identifier a JS/TS literal references outside string
+ * literals (`icon: Inbox` → `Inbox`). Property keys and member names after a
+ * `.` are collected too; stubbing an extra name is harmless.
+ */
+export function collectBareIdentifiers(literal) {
+  const src = stripComments(literal);
+  const names = new Set();
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '"' || c === "'" || c === '`') {
+      const q = c;
+      i++;
+      while (i < src.length && src[i] !== q) i += src[i] === '\\' ? 2 : 1;
+      i++;
+      continue;
+    }
+    if (/[A-Za-z_$]/.test(c)) {
+      let j = i + 1;
+      while (j < src.length && /[\w$]/.test(src[j])) j++;
+      const name = src.slice(i, j);
+      if (!JS_RESERVED.has(name)) names.add(name);
+      i = j;
+      continue;
+    }
+    if (/[0-9]/.test(c)) {
+      // Skip numeric literals so `1e3` / `0x1f` never yield identifiers.
+      let j = i + 1;
+      while (j < src.length && /[\w.]/.test(src[j])) j++;
+      i = j;
+      continue;
+    }
+    i++;
+  }
+  return [...names].sort();
+}
+
+/** One inert, frozen value per identifier, for vm.runInNewContext. */
+export function buildIdentifierStubs(literal) {
+  const ctx = Object.create(null);
+  for (const name of collectBareIdentifiers(literal)) {
+    ctx[name] = Object.freeze({ __stub: name });
+  }
+  return ctx;
+}
+
+/** Evaluate `export const ADMIN_SECTIONS = [...]` from admin-navigation.ts source. */
+export function parseAdminSections(src) {
+  const arrLit = extractArrayLiteralAfter(src, 'export const ADMIN_SECTIONS');
+  // Strip TypeScript type annotations (`: AdminSection[]` etc).
+  const cleaned = arrLit.replace(/:\s*AdminSection\[\]/g, '');
+  return vm.runInNewContext(`(${cleaned})`, buildIdentifierStubs(cleaned), { timeout: 1000 });
+}
+
 // --- ADM: ADMIN_SECTIONS from vitana-v1/src/config/admin-navigation.ts ------
 
 function loadAdm() {
@@ -220,22 +308,16 @@ function loadAdm() {
     } catch { return []; }
   }
   const src = fs.readFileSync(ADMIN_NAV_TS, 'utf8');
-  const arrLit = extractArrayLiteralAfter(src, 'export const ADMIN_SECTIONS');
-
-  // Strip TypeScript type annotations (`: AdminSection[]` etc) and provide stub
-  // identifiers for the lucide-react icons referenced in the literal.
-  const cleaned = arrLit.replace(/:\s*AdminSection\[\]/g, '');
-  const ctx = {
-    LayoutDashboard: 0, Users: 0, Sparkles: 0, BookOpen: 0, Compass: 0,
-    Zap: 0, MessageSquare: 0, Video: 0, Bell: 0, BarChart3: 0,
-    Settings: 0, ShieldCheck: 0,
-  };
-  const sections = vm.runInNewContext(`(${cleaned})`, ctx, { timeout: 1000 });
+  const sections = parseAdminSections(src);
 
   // Disambiguator for the `growth` key colliding between Autopilot and Insights.
   const idOverrides = {
     'autopilot/growth': 'AUTOPILOT_GROWTH',
     'insights/growth': 'INSIGHTS_GROWTH',
+    // VTID-04986: tab keys that collide with an existing ADM id.
+    'backoffice/dashboard': 'BACKOFFICE_DASHBOARD',
+    'notifications/activity': 'NOTIFICATIONS_ACTIVITY',
+    'insights/events': 'INSIGHTS_EVENTS',
   };
 
   const screens = [];
@@ -380,4 +462,7 @@ function main() {
   console.log(`  ${all.length} entries: DEV ${dev.length} · ADM ${adm.length} · others ${others.length}`);
 }
 
-main();
+// Run only when executed directly, so tests can import the helpers above.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
+}

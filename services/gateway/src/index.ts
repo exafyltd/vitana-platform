@@ -555,8 +555,6 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-04887: pipeline summary for the Command Hub (exafy_admin; the
   // /api/v1/autopilot/pipeline/summary route stays service-token only)
   const opsPipelineSummaryRouter = require('./routes/ops-pipeline-summary').default;
-  // DEV-COMHU-03404: Overview trend data — hourly oasis_events rollup for sparklines
-  const opsOverviewTimeseriesRouter = require('./routes/ops-overview-timeseries').default;
   // VTID-04663: Service Health checks for signals the database already computes.
   const { opsHealthChecksRouter } = require('./routes/ops-health-checks');
   // VTID-04664: Service Health checks for systems that had none.
@@ -1445,8 +1443,6 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-04887: GET /api/v1/ops/pipeline-summary — buildPipelineSummary() in-process (exafy_admin only)
   mountRouterSync(app, '/api/v1/ops/pipeline-summary', opsPipelineSummaryRouter, { owner: 'ops-pipeline-summary' });
 
-  // DEV-COMHU-03404: Overview trend data — hourly oasis_events rollup for sparklines
-  mountRouterSync(app, '/api/v1/ops/overview-timeseries', opsOverviewTimeseriesRouter, { owner: 'ops-overview-timeseries' });
   // VTID-04663: GET /api/v1/ops/health/* — Command Hub Service Health checks (public, cached, read-only)
   mountRouterSync(app, '/api/v1/ops/health', opsHealthChecksRouter, { owner: 'ops-health-checks' });
   // VTID-04664: GET /api/v1/ops/runtime/* — deploy, AWS runtime, autopilot, voice, data, support checks

@@ -1,0 +1,401 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/scripts/generate-command-hub-symbol-index.test.ts
+  generate-command-hub-symbol-index.mjs (T8)
+    ✓ finds a simple top-level function and its exact line range (75 ms)
+    ✓ finds nested function declarations inside another function body (58 ms)
+    ✓ marks an IIFE (`(function name() {...})()`) with kind "iife", not "function" (68 ms)
+    ✓ does not mis-parse a brace character inside a string or template literal as function-body structure (53 ms)
+    ✓ does not treat a `function` mention inside a comment as a real declaration (56 ms)
+    ✓ finds an async function and labels it correctly (71 ms)
+    ✓ --check exits 0 and prints "in sync" when the stored index already matches, and exits 1 when the source changed (177 ms)
+    against the real repo (sanity/regression check)
+      ✓ runs clean against the real Command Hub source and finds known functions at plausible line ranges (249 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/scripts/vtid-04287-env-var-binding-satisfiable.test.ts
+  VTID-04287: new-env-var-requires-workflow-binding is satisfiable
+    ✓ returns no finding for the motivating diff — every added line has a defensive fallback (60 ms)
+    ✓ accepts the canonical `?? ` remedy the rule itself recommends (59 ms)
+    ✓ still reports a bare read — the gate is not a rubber stamp for any added line (96 ms)
+    ✓ still reports a read that is only one line of a multi-line addition (123 ms)
+    ✓ flags a var that is bound on one line and read bare on another (114 ms)
+    ✓ does not treat `|| undefined` as a binding — that is still an undefined read (122 ms)
+    ✓ does not treat `|| process.env.OTHER` as a binding — OTHER may itself be unset (107 ms)
+    ✓ does not treat a read used AS the fallback as a binding (56 ms)
+    ✓ accepts literal, template, number, boolean and null fallbacks (353 ms)
+    ✓ accepts a bare identifier fallback, which is how the harness scripts read OUT_DIR (101 ms)
+    ✓ accepts a later fallback when the line has more than one (48 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/scripts/secret-exposure-scanner.test.ts
+  VTID-04273: secret-exposure-scanner-v1 false positives
+    ✓ does not flag the CI service-container default at a loopback host (127.0.0.1) (67 ms)
+    ✓ does not flag the same default at "localhost" (55 ms)
+    ✓ does not flag a bash-interpolated URL built entirely from variables (53 ms)
+    ✓ does not flag a TS template literal building a URL from a runtime parameter (54 ms)
+    ✓ does not flag an already-redacted (***) preview (49 ms)
+    ✓ STILL flags a genuine, literal, non-loopback, non-redacted embedded credential (50 ms)
+    ✓ still flags a genuine credential even when the host looks like a bare IP that is not loopback (48 ms)
+    ✓ unrelated secret patterns (e.g. an Anthropic key) are unaffected by this change (54 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/scripts/vtid-04417-transport-flow-parity.test.ts
+  VTID-04417: transport-flow-parity
+    ✓ the current tree has no findings for any transport file (88 ms)
+    ✓ covers the session-start controller as well as both routes (60 ms)
+    ✓ flags a direct computeGreetingDecision call (52 ms)
+    ✓ flags a direct context build (legacy pack, brain, cached brain) (55 ms)
+    ✓ does not flag the builder passed as a dependency, a definition, comments, or allowed lines (51 ms)
+    ✓ check() turns a direct call into a blocker finding naming the line (51 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/scripts/backfill-dev-memory-from-claude-md.test.ts
+  parseChangelog
+    ✓ extracts date, vtid, title, and content for a normal row (2 ms)
+    ✓ produces vtid: null for a row with no VTID reference, rather than dropping it (1 ms)
+    ✓ returns an empty list when the CHANGE LOG header is missing
+    ✓ truncates content past MAX_CONTENT_CHARS instead of feeding an oversized string to the embedder
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/scripts/dev-autopilot-todo-scanner-self-match.test.ts
+  VTID-04275: todo-scanner-v1 self-match false positives
+    ✓ does not flag its own file at scripts/ci/dev-autopilot-scan.mjs (53 ms)
+    ✓ does not flag scripts/ci/scanners/registry.mjs's own scanner metadata (51 ms)
+    ✓ still flags a genuine TODO comment in a sibling scanner file (58 ms)
+    ✓ still flags a genuine TODO comment anywhere outside the denylist (51 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/scripts/vtid-04986-regen-screens-catalog.test.ts
+  VTID-04986: regen-screens-catalog dynamic icon stubs
+    ✓ parses ADMIN_SECTIONS that reference an icon the generator has never seen (71 ms)
+    ✓ stubs every bare identifier and nothing inside strings or comments (75 ms)
+    ✓ gives each stub an inert frozen value (49 ms)
+    ✓ does not run the regen (or write files) when imported (55 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [workflow-inputs] within 2 of the 25 limit: AWS-PROD-DEPLOY-GATEWAY.yml=24
+
+      86 |     if (near.length > 0) {
+      87 |       // eslint-disable-next-line no-console
+    > 88 |       console.warn(
+         |               ^
+      89 |         `[workflow-inputs] within 2 of the ${MAX_DISPATCH_INPUTS} limit: ` +
+      90 |           near.map((w) => `${w.file}=${w.count}`).join(', '),
+      91 |       );
+
+      at Object.<anonymous> (test/scripts/workflow-dispatch-input-limit.test.ts:88:15)
+
+PASS test/scripts/workflow-dispatch-input-limit.test.ts
+  workflow_dispatch input limit
+    ✓ no workflow exceeds GitHub’s 25-input maximum (104 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml specifically stays dispatchable (44 ms)
+    ✓ actually parsed some dispatch workflows — a guard that scans nothing passes forever (25 ms)
+    ✓ flags a workflow that is near the ceiling, so the next addition is a decision (23 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/scripts/check-migration-drift.test.ts
+  stripSqlComments
+    ✓ removes line comments (1 ms)
+    ✓ removes block comments (1 ms)
+  parseMigrationSql — declarations
+    ✓ finds a plain CREATE TABLE (1 ms)
+    ✓ finds IF NOT EXISTS and public-qualified forms (1 ms)
+    ✓ lowercases and unquotes identifiers
+    ✓ ignores non-public schemas (1 ms)
+    ✓ does not match "create table" inside prose or mid-statement
+    ✓ ignores commented-out DDL (1 ms)
+  parseMigrationSql — removals
+    ✓ records DROP TABLE
+    ✓ treats a rename as dropping the old name and creating the new (1 ms)
+    ✓ treats SET SCHEMA out of public as a removal, and into public as a declaration
+    ✓ ignores a SET SCHEMA in a comment (the rollback lives in the header) (1 ms)
+
+PASS test/scripts/test-catalog-lib.test.ts
+  classifyTestFile
+    ✓ groups gateway Jest files by area (1 ms)
+    ✓ marks gateway tests outside the Jest roots as their own (never run) suite
+    ✓ recognises Playwright, sibling services, Python and frontend files (2 ms)
+    ✓ ignores non-test files and node_modules (1 ms)
+  countCases
+    ✓ counts it/test calls including .each and .skip, not method calls
+    ✓ counts python test functions (1 ms)
+  workflow parsing
+    ✓ reads triggers and crons from the on: block only (1 ms)
+    ✓ labels environments by the hosts a workflow targets (2 ms)
+    ✓ puts database monitors on production (one shared Supabase project) (1 ms)
+    ✓ flags a Playwright workflow that touches a production host (1 ms)
+    ✓ does not flag production curl checks when the Playwright step runs on staging (VTID-04648)
+    ✓ resolves env references in the Playwright step (VTID-04648)
+    ✓ ignores production hosts in a refusal glob (VTID-04648) (1 ms)
+    ✓ flags dead GCP hosts and ignores commented-out steps
+    ✓ labels deploy workflows by what they deploy and treats scheduled data jobs as jobs (2 ms)
+  describeCron / runsPerDay
+    ✓ */15 * * * * (1 ms)
+    ✓ 35 * * * *
+    ✓ 7,37 * * * *
+    ✓ 0 7,19 * * *
+    ✓ 0 2 * * 0 (1 ms)
+  buildCatalog
+    ✓ attaches suites to the workflows that run them
+    ✓ marks a suite no workflow runs as never_run
+    ✓ resolves named npm test suites to their files
+  this repository, scanned for real
+    ✓ classifies every gateway Jest file into a suite (7 ms)
+    ✓ only wires suites to workflows that exist (1 ms)
+    ✓ puts every test/monitor/gate workflow in at least one environment, unless it is flagged (18 ms)
+    ✓ runs no browser suite against production (VTID-04648) (13 ms)
+    ✓ catalogues TEST-CATALOG.yml itself as a job, not a test (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/scripts/validate-pr-locally.test.ts
+  validate-pr-locally — PR-body/metadata gates
+    title/body presence (exit 2)
+      ✓ rejects an empty title (1 ms)
+      ✓ rejects an empty body (6 ms)
+    VTID extraction (exit 10)
+      ✓ rejects when neither title nor a VTID: body line has one (1 ms)
+      ✓ accepts a VTID from the title
+      ✓ falls back to an explicit VTID: line in the body, not a prose mention
+    VALIDATION_PROFILE extraction (exit 11)
+      ✓ rejects when missing entirely (1 ms)
+      ✓ rejects when the colon has no separating space (awk $2 is empty)
+      ✓ extracts the profile when properly spaced (1 ms)
+    required markers (exit 12-15)
+      ✓ rejects when SCOPE_ALLOWLIST: is missing (exit 12)
+      ✓ rejects when ACCEPTANCE: is missing (exit 13) (1 ms)
+      ✓ rejects when MERGE_PAYLOAD_PREVIEW: is missing (exit 14)
+      ✓ rejects when OASIS_IMPACT: is missing (exit 15) (1 ms)
+    changed files (exit 16)
+      ✓ rejects when the diff is empty (1 ms)
+    path ownership guard (delegated to validator-path-guard.cjs)
+      ✓ propagates an unknown-profile rejection (exit 21) (1 ms)
+    evidence pack gate (exit 30-33)
+      ✓ rejects a missing evidence dir
+      ✓ rejects a missing acceptance.md (1 ms)
+      ✓ rejects a missing commands.log (1 ms)
+      ✓ rejects a missing outputs/ dir (1 ms)
+    acceptance mapping gate (exit 40-41) — the real VTID-03933/03934 incident
+      ✓ checkAcceptanceMapping() directly reproduces the exact reported CI failure: "Verified manually:" is not a TEST:/CURL:/UI: token (2 ms)
+      ✓ rejects via the full validate() pipeline when an AC has no TEST:/CURL:/UI: within 12 lines (1 ms)
+      ✓ rejects when acceptance.md has no AC- entries at all
+      ✓ approves the corrected wording that actually shipped (leads with TEST:) (1 ms)
+    OASIS traceability gate (exit 80-81) — the real VTID-03933/03934 incident
+      ✓ reproduces the exact reported CI failure: prose instead of the literal yes/no token (1 ms)
+      ✓ approves the corrected literal token that actually shipped (1 ms)
+      ✓ requires OASIS_PROOF: in acceptance.md when OASIS_IMPACT: yes (1 ms)
+      ✓ approves OASIS_IMPACT: yes when OASIS_PROOF: is present (1 ms)
+    CSP governance gate (exit 50)
+      ✓ rejects a CSP-pattern hit in an added line under the CSP surface (1 ms)
+    merge deploy gate (exit 90-91)
+      ✓ rejects when the title does not literally contain the VTID resolved from the body (1 ms)
+    the full happy path
+      ✓ approves a well-formed PR end to end and prints the PASS summary (2 ms)
+      ✓ skips the Build Gate by default and says so (1 ms)
+
+PASS test/scripts/validator-path-guard.test.ts
+  the remit is exactly the workflow trigger
+    ✓ matches the paths: list in VALIDATOR-CHECK.yml (1 ms)
+  gateway_backend — the ordinary cases
+    ✓ approves a PR confined to the gateway source tree (1 ms)
+    ✓ approves evidence docs alongside source
+  the VTID-03696 fix — out-of-remit files are reported, not rejected
+    ✓ approves the mixed PR that previously could not pass under any profile (1 ms)
+    ✓ says out loud which files it did not judge
+    ✓ does not present "not judged" as approval of those trees
+    ✓ .env.example is NOT treated as a committed .env (1 ms)
+  what the guard still rejects
+    ✓ rejects a committed .env anywhere, ignoring remit
+    ✓ rejects a bare .env at the repo root
+    ✓ rejects an unknown profile (1 ms)
+    ✓ rejects an in-remit file outside the declared profile — the check that still has teeth
+    ✓ does not let out-of-remit files mask an in-remit violation
+  dependency changes are declared, not forbidden
+    ✓ rejects an undeclared lockfile change (1 ms)
+    ✓ approves the same change once declared
+    ✓ still reports the dependency change when declared (1 ms)
+    ✓ catches yarn.lock too, not just npm and pnpm
+    ✓ ranks a committed .env above an undeclared lockfile (1 ms)
+  route-mount evidence keys off an ADDED route, not a touched file
+    ✓ requires evidence when a route is actually added (1 ms)
+    ✓ does NOT require evidence for a route file edited without adding a route
+    ✓ ignores removed and context lines
+    ✓ ignores the +++ file header, which is not an added line
+    ✓ requires evidence if any added line registers a route, among many that do not
+    ✓ treats an empty diff as not requiring evidence (2 ms)
+  CSP scanning is scoped to the browser-served surface
+    ✓ scans the command-hub frontend trees
+    ✓ does not scan the validator workflow — which contains the CSP patterns itself (1 ms)
+    ✓ does not scan lockfiles — a registry URL is not a CDN asset
+    ✓ does not scan markdown, CI scripts or migrations
+    ✓ does not scan gateway backend source — it is not served to a browser (1 ms)
+    ✓ picks the frontend files out of a mixed change set
+  CSP scan judges ADDED lines, not whole file content (VTID-03714)
+    ✓ flags a pattern that appears in an ADDED line (1 ms)
+    ✓ does NOT flag the identical pattern in a context (unchanged) line (1 ms)
+    ✓ does NOT flag a pattern in a REMOVED line
+    ✓ ignores the +++ file header, which is not an added line (1 ms)
+    ✓ reproduces the exact PR #3167 false positive and confirms it is now clean
+    ✓ still catches a genuinely NEW CSP violation added by a diff
+    ✓ P2 — an added line that itself starts with "++" is not mistaken for a file header
+    ✓ P2 — a genuine unified-diff file header (with the space) is still skipped (1 ms)
+    ✓ P1 — a pattern split across two consecutive added lines is still caught
+    ✓ P1 — consecutive added lines are joined only when truly contiguous (no context/removed line between)
+    ✓ isDiffFileHeader distinguishes a real header from added content that merely starts with +++
+  degenerate input
+    ✓ ignores blank lines and surrounding whitespace (1 ms)
+    ✓ approves an empty change set rather than throwing
+  VTID-03706 — the three diff-marker cases VTID-03714 does not cover
+    ✓ does NOT flag a pre-existing violation carried as a CONTEXT line (1 ms)
+    ✓ does NOT flag a violation being REMOVED
+    ✓ does not flag an external <script src=…>, which is the sanctioned form
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/scripts/command-hub-ownership-guard.test.ts
+  the pre-existing ALLOWED_VTID_PATTERN check is intact
+    ✓ still approves an allowlisted VTID in the PR title (4 ms)
+    ✓ still approves an allowlisted VTID in the branch name (1 ms)
+    ✓ is still present and unmodified in the source (1 ms)
+  VTID-04052 — the Dev Autopilot agent-executor branch pattern
+    ✓ (a) approves a dev-autopilot/* branch carrying a real VTID in the PR title
+    ✓ accepts the executor branch with a 4-digit VTID too (VTID-\d{4,5}) (1 ms)
+    ✓ (b) still FAILS a dev-autopilot/* branch with no VTID in the PR title
+    ✓ (c) still FAILS a non dev-autopilot branch with an unlisted VTID
+    ✓ does not accept a dev-autopilot branch name appearing only in the PR title
+    ✓ anchors the branch pattern — a branch merely CONTAINING the marker does not qualify
+    ✓ is the only branch pattern the carve-out recognizes (2 ms)
+  the guard still protects the Command Hub path itself
+    ✓ defines the protected path the carve-out cannot widen
+    ✓ explains in-source that the branch pattern is the executor’s and that VALIDATOR-CHECK is the real guarantee (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/scripts/verify-all-orb-languages.test.ts
+  VTID-03731: verify-all-orb-languages coverage
+    ✓ has a test phrase for every language the live gate admits (3 ms)
+    ✓ does not carry a stale test phrase for a language the gate no longer admits
+    ✓ NOVA_NATIVE matches NOVA_SONIC_SUPPORTED_LANGUAGES exactly
+    ✓ sr is the one declared cascade-ineligible language, and is a real member of the gate
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/scripts/conversation-flow-rule-satisfiable.test.ts
+  VTID-03721: conversation-flow gate is satisfiable
+    ✓ accepts services/gateway/test/routes/orb-livekit.test.ts — the canonical test for a file the rule flags (1 ms)
+    ✓ accepts services/gateway/test/routes/orb-live.test.ts — the canonical test for a file the rule flags (1 ms)
+    ✓ accepts services/gateway/test/vtid-04560-role-separation-regression.test.ts — the canonical test for a file the rule flags
+    ✓ still accepts the flow suites it was written for (1 ms)
+    ✓ has not become a rubber stamp for any changed test file
+    ✓ does not match non-test files
+    ✓ every transport file the rule flags has an accepted test path (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/scripts/verify-cascade-audio-timing.test.ts
+  VTID-03716 — verifyWidgetWiringIsConnected (Codex P2 fix)
+    ✓ passes against the real, currently-shipped orb-widget.js (4 ms)
+    ✓ throws if createBuffer() is regressed back to a hardcoded rate — the exact VTID-03711 defect (21 ms)
+    ✓ throws with a clear message if the assignment pattern itself is gone (refactor, not just a regression) (1 ms)
+    ✓ does not throw when createBuffer() correctly reads the parsed-rate variable under a different name (1 ms)
+  VTID-03719 — pacingBoundsFor (script-aware plausibility bounds)
+    ✓ uses the wider alphabetic band for Latin/Cyrillic/Arabic languages (2 ms)
+    ✓ uses a lower CJK band for zh — real Mandarin speech runs ~3-5 chars/sec
+    ✓ a real measured zh sample (4.9 chars/sec) falls inside the zh band but would have failed the alphabetic one (1 ms)
+
+PASS test/scripts/find-dead-css-classes.test.ts
+  find-dead-css-classes.mjs (T11)
+    ✓ removes a rule whose single simple selector is a class with zero JS/HTML occurrence (71 ms)
+    ✓ does NOT remove a class referenced only via runtime string concatenation (a false-positive risk this matcher must not fall for) (56 ms)
+    ✓ does NOT remove a rule when only SOME of its comma-separated selectors are dead (64 ms)
+    ✓ does NOT remove a rule with a compound or descendant selector, even if its class is dead (69 ms)
+    ✓ removes a dead rule nested inside @media, and drops the block entirely once it is empty (55 ms)
+    ✓ keeps an @media block that still has a live rule after removing its dead sibling (63 ms)
+    ✓ does not treat a class mentioned only in a CSS comment, or built from a template-literal prefix, as live (66 ms)
+    ✓ --check exits 0 ("in sync") once --fix has already been applied, and would exit 1 on a still-dirty file (187 ms)
+    ✓ report-only mode (no flags) never writes the file (68 ms)
+  against the real repo styles.css (sanity check)
+    ✓ running the real generator in --check mode after --fix reports in sync, and the file is still non-empty/well-formed (3228 ms)
+
+Test Suites: 17 passed, 17 total
+Tests:       204 passed, 204 total
+Snapshots:   0 total
+Time:        4.991 s
+Ran all test suites matching /test\/scripts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
