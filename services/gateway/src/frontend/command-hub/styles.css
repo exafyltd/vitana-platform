@@ -2321,6 +2321,72 @@ body {
   line-height: 1.35;
 }
 
+.kiro-key {
+  margin: 0 0 0.85rem;
+}
+
+.kiro-key-form,
+.kiro-key-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.kiro-key-input {
+  flex: 1 1 14rem;
+  min-width: 0;
+  min-height: 2.25rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #3a414d;
+  border-radius: 8px;
+  background: #0f1115;
+  color: #e0e0e0;
+  font-size: 0.85rem;
+}
+
+.kiro-key-input:focus {
+  outline: 2px solid #6b8afd;
+  outline-offset: 1px;
+}
+
+.kiro-key-btn {
+  min-height: 2.25rem;
+  padding: 0.35rem 0.9rem;
+  border: 1px solid #3a414d;
+  border-radius: 8px;
+  background: transparent;
+  color: #d6d9de;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.kiro-key-btn:hover:not(:disabled) {
+  border-color: #4a5260;
+  color: #fff;
+}
+
+.kiro-key-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.kiro-key-btn--primary {
+  border-color: #4a63d8;
+  background: #3b55cc;
+  color: #fff;
+}
+
+.kiro-key-btn--danger {
+  color: #e3a39c;
+}
+
+.kiro-key-note {
+  margin-top: 0.4rem;
+  color: #9aa0a6;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
 .kiro-approval {
   display: flex;
   flex-wrap: wrap;

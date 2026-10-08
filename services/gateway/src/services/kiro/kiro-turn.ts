@@ -8,7 +8,9 @@
  *
  * Phase 1 ships this inert: no KiroBackend is registered and
  * KIRO_ENGINE_ENABLED is unset, so a Kiro thread answers `not_connected`.
- * The Phase 2 kiro-runner registers a backend that spawns `kiro-cli acp`
+ * VTID-04999: remote-backend.ts registers the kiro-runner backend when
+ * KIRO_ENGINE_ENABLED, KIRO_RUNNER_URL and KIRO_RUNNER_TOKEN are all set.
+ * The runner spawns `kiro-cli acp`
  * with the owner's KIRO_API_KEY in that child's environment only. This file
  * never sees, stores or logs a key.
  */
@@ -23,6 +25,11 @@ export interface KiroBackend {
   spawn(ctx: KiroSpawnContext): Promise<AcpChild> | AcpChild;
   /** Isolated working directory for the session. */
   workspace(ctx: KiroSpawnContext): string;
+}
+
+/** VTID-04999: the signed-in user has no Kiro API key linked (the runner closed the session with 4401). */
+export class KiroKeyMissingError extends Error {
+  constructor() { super('kiro_key_missing'); this.name = 'KiroKeyMissingError'; }
 }
 
 export interface KiroTurnInput {
@@ -124,6 +131,11 @@ export async function runKiroTurn(input: KiroTurnInput, env: NodeJS.ProcessEnv =
       return result('busy', 'Kiro has too many open sessions right now. Close one and try again.', { limit: mine >= lim.perUser ? 'per_user' : 'global' });
     }
     try { session = await openSession(input, backend); } catch (err) {
+      // VTID-04999: no linked key is "not connected for you", not a failure. Admin-only
+      // Operator Console text, English by design (server i18n 13b admin/dev exclusion).
+      if (err instanceof KiroKeyMissingError) {
+        return result('not_connected', 'Link your Kiro API key in the Kiro workspace panel.', { error: 'kiro_key_missing' });
+      }
       return result('error', 'Kiro could not start.', { error: err instanceof Error ? err.message : String(err) });
     }
     sessions.set(input.threadId, session);

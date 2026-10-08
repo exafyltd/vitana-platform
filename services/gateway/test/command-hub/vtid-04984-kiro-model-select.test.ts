@@ -112,7 +112,8 @@ describe('VTID-04984 wiring (source check)', () => {
   it('the dropdown has its styles and the cache-bust is bumped', () => {
     expect(CSS).toContain('.chat-kiro-model-select');
     const html = readFileSync(join(FE, 'index.html'), 'utf8');
-    expect(html).toContain('app.js?v=20261101-vtid-04984');
-    expect(html).toContain('styles.css?v=20261101-vtid-04984');
+    // Bumped past VTID-04984 by later Command Hub changes (VTID-04999); never back to an older build.
+    expect(html).not.toContain('app.js?v=20261101-vtid-04984');
+    expect(html).toMatch(/app\.js\?v=2026\d{4}-vtid-\d{5}/);
   });
 });

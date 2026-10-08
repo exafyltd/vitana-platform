@@ -1123,7 +1123,10 @@ export type CicdEventType =
   | 'operator.kiro.session_cancelled'
   | 'operator.kiro.session_closed'
   // VTID-04984: a Kiro thread's model switched through Kiro (user, thread and model id only).
-  | 'operator.kiro.model_selected';
+  | 'operator.kiro.model_selected'
+  // VTID-04999: a user linked or revoked their own Kiro API key (user id only, never the key).
+  | 'operator.kiro.key_linked'
+  | 'operator.kiro.key_revoked';
 
 export interface CicdOasisEvent {
   vtid: string;

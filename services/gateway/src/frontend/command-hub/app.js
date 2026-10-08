@@ -24543,8 +24543,155 @@ function renderOperatorEngineSwitch() {
     return group;
 }
 
+// VTID-04999: each user links their OWN Kiro API key. The key is typed into a
+// password field, sent once to /kiro/key and cleared; it is never kept in
+// state or browser storage. The status only says linked/not linked and when.
+var _kiroKeyRequested = false;
+async function fetchKiroKeyStatus(force) {
+    if ((_kiroKeyRequested && !force) || !state.authToken) return;
+    _kiroKeyRequested = true;
+    try {
+        var res = await fetch('/api/v1/operator/kiro/key', { headers: buildContextHeaders({}) });
+        var body = await res.json().catch(function () { return {}; });
+        state.kiroKey = res.ok && body.ok
+            ? { loaded: true, linked: body.linked === true, updated_at: body.updated_at || null }
+            : { loaded: true, unavailable: true };
+    } catch (e) {
+        state.kiroKey = { loaded: true, unavailable: true };
+    }
+    renderApp();
+}
+
+// One input element reused across re-renders, so a background re-render never
+// wipes what the user is typing. Its value is cleared the moment it is sent.
+var _kiroKeyInput = null;
+function kiroKeyInput() {
+    if (!_kiroKeyInput) {
+        _kiroKeyInput = document.createElement('input');
+        _kiroKeyInput.type = 'password';
+        _kiroKeyInput.className = 'kiro-key-input';
+        _kiroKeyInput.autocomplete = 'off';
+        _kiroKeyInput.spellcheck = false;
+        _kiroKeyInput.placeholder = 'Paste your Kiro API key';
+        _kiroKeyInput.setAttribute('aria-label', 'Kiro API key');
+    }
+    return _kiroKeyInput;
+}
+
+async function linkKiroKey() {
+    var input = kiroKeyInput();
+    var key = (input.value || '').trim();
+    input.value = '';
+    if (!key) return;
+    state.kiroKey = Object.assign({}, state.kiroKey, { busy: true });
+    renderApp();
+    try {
+        var res = await fetch('/api/v1/operator/kiro/key', {
+            method: 'PUT',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ key: key })
+        });
+        key = '';
+        var body = await res.json().catch(function () { return {}; });
+        if (res.ok && body.ok) {
+            state.kiroKey = { loaded: true, linked: true, updated_at: body.updated_at || null };
+            showToast('Kiro API key linked', 'success');
+        } else {
+            state.kiroKey = Object.assign({}, state.kiroKey, { busy: false });
+            showToast(body.error === 'INVALID_KEY' || body.error === 'invalid_key' ? 'That does not look like a Kiro API key' : 'Could not link the Kiro API key', 'error');
+        }
+    } catch (e) {
+        state.kiroKey = Object.assign({}, state.kiroKey, { busy: false });
+        showToast('Could not link the Kiro API key', 'error');
+    }
+    renderApp();
+}
+
+async function revokeKiroKey() {
+    if (!confirm('Revoke your Kiro API key? Your open Kiro sessions end now.')) return;
+    state.kiroKey = Object.assign({}, state.kiroKey, { busy: true });
+    renderApp();
+    try {
+        var res = await fetch('/api/v1/operator/kiro/key', { method: 'DELETE', headers: buildContextHeaders({}) });
+        if (res.ok) {
+            state.kiroKey = { loaded: true, linked: false, updated_at: null };
+            showToast('Kiro API key revoked', 'success');
+        } else {
+            state.kiroKey = Object.assign({}, state.kiroKey, { busy: false });
+            showToast('Could not revoke the Kiro API key', 'error');
+        }
+    } catch (e) {
+        state.kiroKey = Object.assign({}, state.kiroKey, { busy: false });
+        showToast('Could not revoke the Kiro API key', 'error');
+    }
+    renderApp();
+}
+
+function kiroKeyStatusText() {
+    var k = state.kiroKey;
+    if (!k) return 'checking…';
+    if (k.unavailable) return 'not available on this deployment';
+    if (!k.linked) return 'not linked';
+    return k.updated_at ? 'linked · ' + new Date(k.updated_at).toLocaleDateString() : 'linked';
+}
+
+/** Link / Replace / Revoke for the signed-in user's own Kiro API key. */
+function renderKiroKeyControls() {
+    var k = state.kiroKey;
+    if (!k || k.unavailable) return null;
+    var box = document.createElement('div');
+    box.className = 'kiro-key';
+    if (!k.linked || k.editing) {
+        var form = document.createElement('form');
+        form.className = 'kiro-key-form';
+        form.onsubmit = function (e) { e.preventDefault(); linkKiroKey(); };
+        var input = kiroKeyInput();
+        input.disabled = !!k.busy;
+        form.appendChild(input);
+        var link = document.createElement('button');
+        link.type = 'submit';
+        link.className = 'kiro-key-btn kiro-key-btn--primary';
+        link.textContent = k.busy ? 'Linking…' : k.linked ? 'Replace' : 'Link';
+        link.disabled = !!k.busy;
+        form.appendChild(link);
+        if (k.linked) {
+            var cancel = document.createElement('button');
+            cancel.type = 'button';
+            cancel.className = 'kiro-key-btn';
+            cancel.textContent = 'Cancel';
+            cancel.onclick = function () { kiroKeyInput().value = ''; state.kiroKey = Object.assign({}, k, { editing: false }); renderApp(); };
+            form.appendChild(cancel);
+        }
+        box.appendChild(form);
+        var note = document.createElement('div');
+        note.className = 'kiro-key-note';
+        note.textContent = 'Your own key from your Kiro account. It is stored encrypted for your account only and never shown again.';
+        box.appendChild(note);
+    } else {
+        var actions = document.createElement('div');
+        actions.className = 'kiro-key-actions';
+        var replace = document.createElement('button');
+        replace.type = 'button';
+        replace.className = 'kiro-key-btn';
+        replace.textContent = 'Replace';
+        replace.disabled = !!k.busy;
+        replace.onclick = function () { state.kiroKey = Object.assign({}, k, { editing: true }); renderApp(); };
+        actions.appendChild(replace);
+        var revoke = document.createElement('button');
+        revoke.type = 'button';
+        revoke.className = 'kiro-key-btn kiro-key-btn--danger';
+        revoke.textContent = 'Revoke';
+        revoke.disabled = !!k.busy;
+        revoke.onclick = function () { revokeKiroKey(); };
+        actions.appendChild(revoke);
+        box.appendChild(actions);
+    }
+    return box;
+}
+
 /** Empty state of a Kiro thread: what Kiro can do here and whether it is ready. */
 function renderKiroThreadPanel() {
+    fetchKiroKeyStatus();
     var panel = document.createElement('div');
     panel.className = 'kiro-panel';
 
@@ -24564,7 +24711,7 @@ function renderKiroThreadPanel() {
     var rows = [
         ['Reads & searches', 'on its own'],
         ['Edits files, runs commands', 'asks you first — denied after 2 minutes without an answer'],
-        ['Your Kiro API key', 'not linked']
+        ['Your Kiro API key', kiroKeyStatusText()]
     ];
     var list = document.createElement('dl');
     list.className = 'kiro-panel-rows';
@@ -24577,10 +24724,14 @@ function renderKiroThreadPanel() {
         list.appendChild(dd);
     });
     panel.appendChild(list);
+    var keyControls = renderKiroKeyControls();
+    if (keyControls) panel.appendChild(keyControls);
 
     var hint = document.createElement('div');
     hint.className = 'kiro-panel-hint';
-    hint.textContent = connected
+    hint.textContent = connected && state.kiroKey && state.kiroKey.linked === false
+        ? 'Link your Kiro API key above, then describe the change you want.'
+        : connected
         ? 'Describe the change you want. Kiro streams its work below and asks before it touches anything.'
         : 'Kiro answers once it is connected for your account. Until then this thread replies “not connected”.';
     panel.appendChild(hint);

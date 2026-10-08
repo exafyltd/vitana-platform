@@ -103,7 +103,8 @@ describe('VTID-04975 Kiro workspace card', () => {
     expect(on.find('kiro-panel-status')[0].textContent).toBe('Connected');
     expect(on.text()).toMatch(/Reads & searches/);
     expect(on.text()).toMatch(/asks you first/);
-    expect(on.text()).toMatch(/not linked/);
+    // VTID-04999: the key row shows the user's real key status (checking until it is read).
+    expect(on.text()).toMatch(/Your Kiro API key checking/);
     expect(load({ kiroStatus: { enabled: false } }).api.renderKiroThreadPanel().find('kiro-panel-status')[0].textContent).toBe('Not connected');
     expect(load({ kiroStatus: null }).api.renderKiroThreadPanel().find('kiro-panel-status')[0].textContent).toMatch(/Checking/);
   });
