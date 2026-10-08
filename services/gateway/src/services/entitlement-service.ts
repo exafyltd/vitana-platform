@@ -588,9 +588,10 @@ export async function recordUsage(
  * fn_consume_credits RPC which maps bucket → wallet_transactions.type and
  * lets the §M trigger route correctly. Idempotent on idempotencyKey.
  *
- * When `bucket` is omitted, picks the first allowed bucket from the feature's
- * config (rewards first if allowed, else purchased) to drain lower-utility
- * credits first.
+ * Earned VTNA (`reward_credits`) is never spent here: owner decision
+ * 2026-10-08 (VTID-04988), only rewards (shop, Premium conversion) spend it,
+ * and fn_consume_credits refuses that bucket. Overage is paid from
+ * purchased credits; a caller's preference for reward_credits is ignored.
  */
 export async function consumeCredits(
   userId: string,
@@ -612,21 +613,16 @@ export async function consumeCredits(
   }
 
   const creditsToDebit = units * config.credit_cost_per_unit;
-  const buckets = await readWalletBuckets(tenantId, userId);
+  // Balances no longer pick the bucket (VTID-04988); the read stays so a
+  // broken wallet_balances source is still logged on this path.
+  await readWalletBuckets(tenantId, userId);
 
-  // Pick bucket: preferred if explicitly given AND allowed, else "rewards
-  // first if allowed and has sufficient balance, else purchased"
-  let bucket: WalletBucket;
-  if (preferredBucket && config.allowed_burn_buckets.includes(preferredBucket)) {
-    bucket = preferredBucket;
-  } else if (
-    config.allowed_burn_buckets.includes('reward_credits') &&
-    buckets.reward_credits >= creditsToDebit
-  ) {
-    bucket = 'reward_credits';
-  } else {
-    bucket = 'purchased_credits';
-  }
+  // Pick bucket: the caller's preference when allowed and not earned VTNA,
+  // else purchased credits.
+  const bucket: WalletBucket =
+    preferredBucket && preferredBucket !== 'reward_credits' && config.allowed_burn_buckets.includes(preferredBucket)
+      ? preferredBucket
+      : 'purchased_credits';
 
   const sb = client();
   const { data, error } = await repo.consumeCreditsRpc(sb, {
