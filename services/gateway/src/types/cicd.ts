@@ -1111,6 +1111,12 @@ export type CicdEventType =
   // VTID-04878: VTNA reward sweep runs
   | 'rewards.milestone_sweep.completed'
   | 'rewards.milestone_sweep.failed'
+  // VTID-04982: Rewards shop
+  | 'rewards.shop.redeemed'
+  | 'rewards.shop.shipping_paid'
+  | 'rewards.shop.refunded'
+  | 'rewards.shop.reservation_expired'
+  | 'rewards.shop.order_status_changed'
   // VTID-04975: Kiro engine in the Command Hub Operator (user id and request/thread id only).
   | 'operator.kiro.permission_answered'
   | 'operator.kiro.session_cancelled'

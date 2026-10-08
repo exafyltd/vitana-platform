@@ -1,0 +1,7 @@
+{"vtid":"VTID-04982","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"shop route is mounted and needs a member (401 JSON, not an HTML 404)","path":"/api/v1/rewards/shop","expect_status":401,"expect_content_type":"json"},
+{"kind":"http","name":"orders route is mounted and needs a member","path":"/api/v1/rewards/orders","expect_status":401,"expect_content_type":"json"},
+{"kind":"http","name":"admin orders route is mounted and needs a member","path":"/api/v1/admin/rewards/orders","expect_status":401,"expect_content_type":"json"},
+{"kind":"existing","ref":"npx jest test/vtid-04982-rewards-shop.test.ts","cwd":"services/gateway","reason":"Redeeming, settling and refunding are writes and staging shares the production database, so they are proven by the SQL harness (13 scenarios on a throwaway Postgres) and the gateway tests (26), never on staging."}
+]}

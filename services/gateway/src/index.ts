@@ -406,6 +406,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const walletRouter = require('./routes/wallet').default;
   // VTID-04878: VTNA reward sweep trigger (internal / exafy_admin, production only)
   const rewardsSweepRouter = require('./routes/rewards-sweep').default;
+  // VTID-04982: Rewards shop (member redeem with earned VTNA, admin catalogue/orders)
+  const rewardsShopRouter = require('./routes/rewards-shop').default;
   const walletStripeWebhookRouter = require('./routes/wallet-stripe-webhook').default;
   // VTID-03249: Wallet spend + earning admin endpoints (cart / marketplace integration contract)
   const walletAdminRouter = require('./routes/wallet-admin').default;
@@ -1284,6 +1286,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1', walletRouter, { owner: 'wallet' });
   // VTID-04878: POST /api/v1/rewards/sweep — requireInternalOrAdmin inside router.
   mountRouterSync(app, '/api/v1', rewardsSweepRouter, { owner: 'rewards-sweep' });
+  // VTID-04982: /api/v1/rewards/shop, /rewards/orders, /admin/rewards/* — requireAuth (+ requireExafyAdmin) inside router.
+  mountRouterSync(app, '/api/v1', rewardsShopRouter, { owner: 'rewards-shop' });
   // VTID-03249: Wallet admin spend/credit routes (cart / marketplace integration).
   // Path-scoped requireAuth + requireExafyAdmin inside router.
   mountRouterSync(app, '/api/v1', walletAdminRouter, { owner: 'wallet-admin' });
@@ -1823,6 +1827,18 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ VTNA reward sweep loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04982: Rewards shop — releases unpaid shipping holds every 5 minutes
+      // (backstop for checkout.session.expired). ECS only; never on staging.
+      try {
+        const { startRewardReservationSweep } = require('./services/rewards/reward-shop');
+        const { getSupabase } = require('./lib/supabase');
+        if (startRewardReservationSweep(getSupabase)) {
+          console.log('🛍️ Rewards shop reservation sweep started (VTID-04982)');
+        }
+      } catch (error) {
+        console.warn('⚠️ Rewards shop reservation sweep initialization failed (non-fatal):', error);
       }
 
       // VTID-04374: calendar maintenance — moves Autopilot/journey suggestions
