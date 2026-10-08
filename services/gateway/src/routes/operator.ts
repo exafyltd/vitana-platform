@@ -731,20 +731,35 @@ router.post('/kiro/permissions/:requestId', requireAdminAuth, async (req: Authen
   const r = answerPermission(req.params.requestId, req.identity?.user_id ?? null, parsed.data.allow);
   if (!r.ok) return res.status(r.error === 'forbidden' ? 403 : 404).json({ ok: false, error: r.error });
   // Every approval decision is a governed state transition: no key, no prompt, no tool arguments.
-  await ingestOperatorEvent({
+  await emitOasisEvent({
     vtid: 'VTID-04975',
     type: 'operator.kiro.permission_answered',
+    source: 'gateway-operator',
     status: 'info',
     message: `Kiro tool permission ${parsed.data.allow ? 'allowed' : 'denied'}`,
-    payload: { request_id: req.params.requestId, allow: parsed.data.allow, user_id: req.identity?.user_id ?? null },
+    actor_id: req.identity?.user_id,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: { request_id: req.params.requestId, allow: parsed.data.allow },
   }).catch(() => {});
   return res.json({ ok: true });
 });
 
 /** POST /kiro/sessions/:threadId/cancel — stop the running turn; the session stays open. */
-router.post('/kiro/sessions/:threadId/cancel', requireAdminAuth, (req: AuthenticatedRequest, res: Response) => {
+router.post('/kiro/sessions/:threadId/cancel', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
   const r = cancelKiroTurn(req.params.threadId, req.identity?.user_id ?? null);
   if (!r.ok) return res.status(r.error === 'forbidden' ? 403 : 404).json({ ok: false, error: r.error });
+  await emitOasisEvent({
+    vtid: 'VTID-04975',
+    type: 'operator.kiro.session_cancelled',
+    source: 'gateway-operator',
+    status: 'info',
+    message: 'Kiro turn cancelled by its owner',
+    actor_id: req.identity?.user_id,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: { thread_id: req.params.threadId },
+  }).catch(() => {});
   return res.json({ ok: true });
 });
 
@@ -752,12 +767,16 @@ router.post('/kiro/sessions/:threadId/cancel', requireAdminAuth, (req: Authentic
 router.delete('/kiro/sessions/:threadId', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
   const r = closeKiroSession(req.params.threadId, req.identity?.user_id ?? null);
   if (!r.ok) return res.status(r.error === 'forbidden' ? 403 : 404).json({ ok: false, error: r.error });
-  await ingestOperatorEvent({
+  await emitOasisEvent({
     vtid: 'VTID-04975',
     type: 'operator.kiro.session_closed',
+    source: 'gateway-operator',
     status: 'info',
     message: 'Kiro session closed by its owner',
-    payload: { thread_id: req.params.threadId, user_id: req.identity?.user_id ?? null },
+    actor_id: req.identity?.user_id,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: { thread_id: req.params.threadId },
   }).catch(() => {});
   return res.json({ ok: true });
 });

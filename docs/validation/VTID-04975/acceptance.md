@@ -8,7 +8,7 @@ ROUTE_MOUNT: `GET /api/v1/operator/kiro/status`, `POST /api/v1/operator/kiro/per
 
 FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/operator/kiro/status (staging, unauthenticated GET).
 
-OASIS_PROOF: answering a Kiro permission card emits `operator.kiro.permission_answered` and closing a session emits `operator.kiro.session_closed` (vtid VTID-04975; user id and request/thread id only, no key, prompt or tool arguments).
+OASIS_PROOF: answering a Kiro permission card emits `operator.kiro.permission_answered`, cancelling a turn emits `operator.kiro.session_cancelled` and closing a session emits `operator.kiro.session_closed` (emitOasisEvent; types added to the CicdEventType union) (vtid VTID-04975; user id and request/thread id only, no key, prompt or tool arguments).
 
 CURL_PROOF: unauthenticated `GET /api/v1/operator/kiro/status` answers 401 with application/json (route exists), not an HTML 404.
 
