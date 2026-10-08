@@ -35,7 +35,10 @@ import { processMessage } from '../services/ai-orchestrator';
 import { isOperatorRouteOn, recordOperatorRouteOutcome, runOperatorRoute } from '../services/jev/gates/operator-route-gate';
 // VTID-0536: Gemini Operator Tools Bridge
 import { processWithGemini, type OperatorTurnEventSink } from '../services/gemini-operator';
-import { getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn, listOperatorThreadMessages, listOperatorThreads } from '../services/operator-threads';
+import { getThreadEngine, getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn, listOperatorThreadMessages, listOperatorThreads } from '../services/operator-threads';
+import { runKiroTurn, cancelKiroTurn, closeKiroSession, isKiroEngineEnabled, openKiroSessionCount } from '../services/kiro/kiro-turn';
+import { answerPermission } from '../services/kiro/permission-broker';
+import type { KiroTurnEventSink } from '../services/kiro/kiro-events';
 import { extractAndRecordTurnMemory, isTurnMemoryEnabled } from '../services/operator-turn-memory';
 import { writeDevMemory } from '../services/dev-agent-memory';
 // VTID-03851: verified-caller marker for autopilot_execute_task (set or
@@ -250,6 +253,58 @@ interface OperatorChatTurnOutcome {
   body: Record<string, unknown>;
 }
 
+/**
+ * VTID-04975: one operator chat turn answered by Kiro. Same reply shape as the
+ * LLM path; the thread is recorded with engine 'kiro' (no rolling summary — the
+ * conversation lives in the Kiro session) and the reply is logged to OASIS.
+ * The user's message was already logged by the caller.
+ */
+async function runKiroChatTurn(a: {
+  requestId: string; threadId: string; createdAt: string; message: string;
+  attachments: Array<{ oasis_ref: string; kind: string }>; mode: string;
+  conversation_id?: string; validatedVtid: string | undefined; userId: string | null;
+  isAdmin: boolean; channel?: string; emit?: KiroTurnEventSink;
+}): Promise<OperatorChatTurnOutcome> {
+  if (!a.isAdmin) return { status: 403, body: { ok: false, error: 'kiro_requires_admin' } };
+  const result = await runKiroTurn({ threadId: a.threadId, userId: a.userId, message: a.message, emit: a.emit });
+
+  if (isOperatorThreadsEnabled()) {
+    recordOperatorTurn({
+      threadId: a.threadId,
+      identity: { user_id: a.userId, role: 'admin' },
+      userText: a.message,
+      reply: result.reply,
+      tools: result.toolResults.map((tr) => ({ name: tr.name, result: JSON.stringify(tr.response ?? {}) })),
+      engine: 'kiro',
+      meta: { conversation_id: a.conversation_id || null, request_id: a.requestId, engine: 'kiro', kiro_status: result.meta.kiro_status ?? null, ...(a.channel ? { channel: a.channel } : {}) },
+    }).catch((err) => console.warn('[VTID-04975] kiro thread record failed:', err instanceof Error ? err.message : err));
+  }
+
+  const assistantEvent = await ingestChatMessageEvent({
+    threadId: a.threadId,
+    vtid: a.validatedVtid,
+    role: 'assistant',
+    mode: a.mode as OperatorChatMode,
+    message: result.reply,
+    metadata: { request_id: a.requestId, ...result.meta, ...(result.toolResults.length ? { toolCalls: result.toolResults.map((tr) => tr.name) } : {}) },
+  });
+
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      reply: result.reply,
+      attachments: a.attachments,
+      oasis_ref: `OASIS-CHAT-${a.requestId.slice(0, 8).toUpperCase()}`,
+      meta: result.meta,
+      threadId: a.threadId,
+      messageId: assistantEvent.eventId || randomUUID(),
+      createdAt: a.createdAt,
+      ...(result.toolResults.length ? { toolResults: result.toolResults } : {}),
+    },
+  };
+}
+
 export async function runOperatorChatTurn(
   req: Request,
   // VTID-04310: `channel` tags the recorded thread messages (e.g.
@@ -406,6 +461,18 @@ export async function runOperatorChatTurn(
     // trust level here rather than the spoofable x-operator-role header
     // getOperatorRole() reads elsewhere in this file.
     const geminiUserRole = callerIdentity?.exafy_admin === true ? 'admin' : undefined;
+    // VTID-04975: an existing thread keeps the engine it was created with; the
+    // request's `engine` only picks it for a NEW thread. A Kiro thread leaves
+    // here — everything below is the unchanged LLM path.
+    if (((await getThreadEngine(threadId)) ?? validation.data.engine ?? 'llm') === 'kiro') {
+      return runKiroChatTurn({
+        requestId, threadId, createdAt, message, attachments, mode, conversation_id,
+        validatedVtid, userId: callerIdentity?.user_id ?? null, isAdmin: geminiUserRole === 'admin',
+        channel: opts.channel,
+        // Kiro events are additive frame types; the stream route writes `type` as the frame name.
+        emit: opts.onEvent as unknown as KiroTurnEventSink | undefined,
+      });
+    }
     // VTID-04022: server-side thread summary feeds the memory recall. Fail-open
     // — a missing table / Supabase error yields null and the turn proceeds
     // exactly as before.
@@ -693,6 +760,72 @@ router.post('/chat/stream', optionalAuth, operatorMachineAuth, async (req: Reque
     if (!closed) writeSseFrame(res, 'done', { threadId });
     if (!res.writableEnded) res.end();
   }
+});
+
+// ==================== Kiro engine (VTID-04975) ====================
+// All exafy_admin only. A session is addressed by its thread id; only the
+// user who owns it may cancel/close it or answer its permission cards.
+
+/** GET /kiro/status — is the engine switched on, and how many sessions are open. */
+router.get('/kiro/status', requireAdminAuth, (_req: AuthenticatedRequest, res: Response) => {
+  return res.json({ ok: true, enabled: isKiroEngineEnabled(), open_sessions: openKiroSessionCount() });
+});
+
+/** POST /kiro/permissions/:requestId { allow: boolean } — answer an approval card. */
+router.post('/kiro/permissions/:requestId', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const parsed = z.object({ allow: z.boolean() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'INVALID_BODY' });
+  const r = answerPermission(req.params.requestId, req.identity?.user_id ?? null, parsed.data.allow);
+  if (!r.ok) return res.status(r.error === 'forbidden' ? 403 : 404).json({ ok: false, error: r.error });
+  // Every approval decision is a governed state transition: no key, no prompt, no tool arguments.
+  await emitOasisEvent({
+    vtid: 'VTID-04975',
+    type: 'operator.kiro.permission_answered',
+    source: 'gateway-operator',
+    status: 'info',
+    message: `Kiro tool permission ${parsed.data.allow ? 'allowed' : 'denied'}`,
+    actor_id: req.identity?.user_id,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: { request_id: req.params.requestId, allow: parsed.data.allow },
+  }).catch(() => {});
+  return res.json({ ok: true });
+});
+
+/** POST /kiro/sessions/:threadId/cancel — stop the running turn; the session stays open. */
+router.post('/kiro/sessions/:threadId/cancel', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const r = cancelKiroTurn(req.params.threadId, req.identity?.user_id ?? null);
+  if (!r.ok) return res.status(r.error === 'forbidden' ? 403 : 404).json({ ok: false, error: r.error });
+  await emitOasisEvent({
+    vtid: 'VTID-04975',
+    type: 'operator.kiro.session_cancelled',
+    source: 'gateway-operator',
+    status: 'info',
+    message: 'Kiro turn cancelled by its owner',
+    actor_id: req.identity?.user_id,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: { thread_id: req.params.threadId },
+  }).catch(() => {});
+  return res.json({ ok: true });
+});
+
+/** DELETE /kiro/sessions/:threadId — close the session and its kiro-cli process. */
+router.delete('/kiro/sessions/:threadId', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const r = closeKiroSession(req.params.threadId, req.identity?.user_id ?? null);
+  if (!r.ok) return res.status(r.error === 'forbidden' ? 403 : 404).json({ ok: false, error: r.error });
+  await emitOasisEvent({
+    vtid: 'VTID-04975',
+    type: 'operator.kiro.session_closed',
+    source: 'gateway-operator',
+    status: 'info',
+    message: 'Kiro session closed by its owner',
+    actor_id: req.identity?.user_id,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: { thread_id: req.params.threadId },
+  }).catch(() => {});
+  return res.json({ ok: true });
 });
 
 /**

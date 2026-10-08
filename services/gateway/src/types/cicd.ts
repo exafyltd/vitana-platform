@@ -1110,7 +1110,11 @@ export type CicdEventType =
   | 'billing.founding.celebrated'
   // VTID-04878: VTNA reward sweep runs
   | 'rewards.milestone_sweep.completed'
-  | 'rewards.milestone_sweep.failed';
+  | 'rewards.milestone_sweep.failed'
+  // VTID-04975: Kiro engine in the Command Hub Operator (user id and request/thread id only).
+  | 'operator.kiro.permission_answered'
+  | 'operator.kiro.session_cancelled'
+  | 'operator.kiro.session_closed';
 
 export interface CicdOasisEvent {
   vtid: string;

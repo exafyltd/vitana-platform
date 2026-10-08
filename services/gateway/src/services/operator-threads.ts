@@ -157,6 +157,9 @@ function normalizeUserId(userId: string | null | undefined): string | null {
 // Persistence
 // ---------------------------------------------------------------------------
 
+/** VTID-04975: which engine answers a thread. Set at creation, never updated. */
+export type OperatorThreadEngine = 'llm' | 'kiro';
+
 export interface RecordTurnInput {
   threadId: string;
   identity?: { user_id?: string | null; tenant_id?: string | null; role?: string | null } | null;
@@ -165,6 +168,8 @@ export interface RecordTurnInput {
   /** Tool calls the turn made, with a compact rendering of each result. */
   tools?: Array<{ name: string; result: string }>;
   meta?: Record<string, unknown>;
+  /** VTID-04975: engine for a NEW thread; ignored for an existing one (engine never changes). */
+  engine?: OperatorThreadEngine;
 }
 
 interface ThreadRow { id: string; turns: number; summary: string | null; summary_turns: number; title: string | null }
@@ -195,6 +200,8 @@ export async function recordOperatorTurn(input: RecordTurnInput, env: NodeJS.Pro
           tenant_id: input.identity?.tenant_id || null,
           role: input.identity?.role || null,
           title: deriveThreadTitle(input.userText),
+          // Only sent for kiro so an LLM thread insert never depends on the new column.
+          ...(input.engine === 'kiro' ? { engine: 'kiro' } : {}),
           turns,
           created_at: now,
           updated_at: now,
@@ -271,6 +278,8 @@ export interface OperatorThreadListItem {
   turns: number;
   last_message_at: string | null;
   created_at: string;
+  /** VTID-04975 */
+  engine?: OperatorThreadEngine;
 }
 
 export const THREAD_LIST_SUMMARY_CHARS = 280;
@@ -291,8 +300,10 @@ export async function listOperatorThreads(
   const owner = normalizeUserId(opts.userId);
   if (!owner) return { ok: true, threads: [] };
   const limit = Math.max(1, Math.min(opts.limit ?? 30, 100));
-  const r = await rest<OperatorThreadListItem[]>(s,
-    `operator_threads?user_id=eq.${encodeURIComponent(owner)}&select=id,title,summary,turns,last_message_at,created_at&order=last_message_at.desc.nullslast&limit=${limit}`);
+  const listPath = (cols: string) => `operator_threads?user_id=eq.${encodeURIComponent(owner)}&select=${cols}&order=last_message_at.desc.nullslast&limit=${limit}`;
+  let r = await rest<OperatorThreadListItem[]>(s, listPath('id,title,summary,turns,last_message_at,created_at,engine'));
+  // VTID-04975: fail-open if the engine column is not there yet.
+  if (!r.ok) r = await rest<OperatorThreadListItem[]>(s, listPath('id,title,summary,turns,last_message_at,created_at'));
   if (!r.ok) return { ok: false, error: 'unavailable' };
   const threads = (r.data || []).map((t) => ({
     ...t,
@@ -300,6 +311,26 @@ export async function listOperatorThreads(
     summary: t.summary ? clipMessage(t.summary, THREAD_LIST_SUMMARY_CHARS) : null,
   }));
   return { ok: true, threads };
+}
+
+/**
+ * VTID-04975: the engine a thread was created with, or null when the thread is
+ * unknown (no row yet, threads disabled, column missing, any error) so the
+ * caller falls back to the engine the request asks for. An existing thread's
+ * engine always wins over the request.
+ */
+export async function getThreadEngine(threadId: string, env: NodeJS.ProcessEnv = process.env): Promise<OperatorThreadEngine | null> {
+  if (!isOperatorThreadsEnabled(env)) return null;
+  const s = getSupa();
+  if (!s) return null;
+  try {
+    const r = await rest<Array<{ engine: string | null }>>(s, `operator_threads?id=eq.${encodeURIComponent(threadId)}&select=engine&limit=1`);
+    const row = r.ok && r.data ? r.data[0] : undefined;
+    if (!row) return null;
+    return row.engine === 'kiro' ? 'kiro' : 'llm';
+  } catch {
+    return null;
+  }
 }
 
 export async function getThreadSummary(threadId: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {

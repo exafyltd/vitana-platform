@@ -1,0 +1,28 @@
+{
+  "vtid": "VTID-04975",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "liveness answers (read-only)"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/operator/kiro/status",
+      "expect_status": 401,
+      "reason": "the new Kiro status route exists and refuses an unauthenticated caller (JSON 401, not an HTML 404); read-only, nothing written"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04975-kiro-engine.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the ACP client, permission broker and turn runner run in-process against a scripted fake kiro-cli"
+    }
+  ]
+}
