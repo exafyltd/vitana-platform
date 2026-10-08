@@ -34,7 +34,12 @@ const migration = fs.readFileSync(
 // ---------------------------------------------------------------------------
 describe('types mirror the migration CHECKs', () => {
   it('source types', () => {
-    for (const t of CALENDAR_SOURCE_TYPES) expect(migration).toContain(`'${t}'`);
+    // VTID-04978 widened the CHECK after 04331; the latest recreate must list every type.
+    const latest = fs.readFileSync(
+      path.join(repoRoot, 'supabase/migrations/20261008150000_vtid_04978_reminders_in_calendar.sql'),
+      'utf8',
+    );
+    for (const t of CALENDAR_SOURCE_TYPES) expect(latest).toContain(`'${t}'`);
   });
   it('role contexts', () => {
     const check = migration.slice(migration.indexOf('valid_role_context'));

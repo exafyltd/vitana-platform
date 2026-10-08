@@ -163,7 +163,8 @@
       "appointment",
       "live_room",
       "goal_plan",
-      "guided_journey"
+      "guided_journey",
+      "reminder"
     ],
     "event": [
       "personal",

@@ -1,0 +1,17 @@
+{
+  "vtid": "VTID-04978",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261008150000_vtid_04978_reminders_in_calendar.sql",
+    "scripts/ci/sql-tests/*reminders-in-calendar*",
+    ".github/workflows/SQL-REMINDERS-IN-CALENDAR.yml",
+    "services/gateway/src/types/calendar.ts",
+    "services/gateway/test/vtid-04978-*.test.ts",
+    "services/gateway/test/vtid-04331-calendar-data-model.test.ts",
+    "services/gateway/test/calendar/__golden__/calendar-logic.json",
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-04978/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
