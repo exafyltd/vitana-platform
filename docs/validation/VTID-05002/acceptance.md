@@ -21,7 +21,13 @@ TEST: services/gateway/test/orb/live/upstream/staging-deploy-workflow-bash-synta
 TEST: services/gateway/test/services/conversation/vtid-04525-conversation-flag-registry.test.ts
 
 AC-6: Staging (read-only): a forged owner tag on `GET /api/v1/orb/live/stream` returns the normal 404 JSON (no 502, no forward).
-CURL: GET https://preview-aws-gateway.vitanaland.com/api/v1/orb/live/stream?session_id=live-00000000-0000-0000-0000-000000000000.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA -> 404 {"ok":false,"error":"Session not found"}
+CURL: GET https://preview-aws-gateway.vitanaland.com/api/v1/orb/live/stream?session_id=live-00000000-0000-0000-0000-000000000000.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA -> 404 {"ok":false,"error":"Session not found"} (content type text/event-stream)
+
+ROUTE_MOUNT: no new route. The existing ORB live routes `GET /api/v1/orb/live/stream`, `POST /api/v1/orb/live/stream/send`, `POST /api/v1/orb/live/stream/end-turn` and `POST /api/v1/orb/live/session/stop` (router `routes/orb-live.ts`, mounted under `/api/v1/orb`) each gain one middleware, `orbSseCrossTaskForward`, after `optionalAuth`.
+
+FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/orb/live/stream?session_id=live-00000000-0000-0000-0000-000000000000 (staging, unauthenticated GET).
+
+CURL_PROOF: unauthenticated GET of that URL answers 404 with `{"ok":false,"error":"Session not found"}` (content type `text/event-stream`, set by the route before its session lookup) — the route exists and is served by the gateway, not an HTML 404. Same answer before and after this change.
 
 Prerequisite (already satisfied, no infra change): security group `sg-0fbcf7b59b1f0d685` (staging and prod gateway tasks) allows 8080 from itself — rule `sgr-0893fcd2586a7a51a`, `docs/validation/VTID-03840/outputs/19-staging-bootstrap.txt:5`.
 

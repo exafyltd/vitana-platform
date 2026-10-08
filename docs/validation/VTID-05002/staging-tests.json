@@ -14,8 +14,11 @@
       "method": "GET",
       "path": "/api/v1/orb/live/stream?session_id=live-00000000-0000-0000-0000-000000000000.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       "expect_status": 404,
-      "expect_body_contains": ["Session not found"],
-      "reason": "a forged owner tag is refused and served locally as today's 404 JSON — never a 502 and never a forward"
+      "expect_body_contains": [
+        "Session not found"
+      ],
+      "reason": "a forged owner tag is refused and served locally as today's 404 JSON \u2014 never a 502 and never a forward (this route sets its SSE content type before the session lookup, so the 404 body carries text/event-stream, as today)",
+      "expect_content_type": "text/event-stream"
     },
     {
       "kind": "existing",
