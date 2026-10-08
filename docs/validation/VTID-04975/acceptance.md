@@ -29,5 +29,18 @@ AC-6: The existing operator pipeline is unchanged for LLM threads.
   TEST: services/gateway/test/vtid-04022-operator-threads.test.ts
   TEST: services/gateway/test/operator-chat-oasis.test.ts
 
+## Command Hub UI (follow-up PR of the same plan)
+
+AC-7: An empty Operator thread offers an Operator | Kiro switch; Kiro is disabled until `GET /kiro/status` reports it enabled; once the thread has a message the engine is fixed and shows as a Kiro badge (with End session when idle).
+  TEST: services/gateway/test/command-hub/vtid-04975-kiro-operator-ui.test.ts
+AC-8: A Kiro thread's empty state is the Kiro workspace card: connection status, what Kiro does on its own (reads, searches), what it asks first (edits, commands; denied after 2 minutes), and that the API key is not linked.
+  TEST: services/gateway/test/command-hub/vtid-04975-kiro-operator-ui.test.ts
+AC-9: kiro.* stream frames render live: tool lines with status, Kiro's streamed text, approval cards with Allow / Deny (POST /kiro/permissions/:id) and a Stop button (POST cancel); an expired or failed answer reads as denied.
+  TEST: services/gateway/test/command-hub/vtid-04975-kiro-operator-ui.test.ts
+  UI: screenshots outputs/ui-*.png (desktop 1400x900, mobile 390x844), no horizontal overflow
+AC-10: The request carries `engine: 'kiro'` only for a Kiro thread, a server thread keeps its engine, and Kiro threads carry a Kiro tag in the sessions list. Every existing Command Hub test still passes.
+  TEST: services/gateway/test/command-hub/vtid-04975-kiro-operator-ui.test.ts
+  TEST: services/gateway/test/command-hub/t2-no-zero-caller-functions.test.ts
+
 ## Not in this change
 Phase 2 (kiro-runner service, Secrets Manager key vault, kiro_user_links, linking dstevanovic@hotmail.com) is gated on written Kiro/AWS terms confirmation. The Command Hub "Connect Kiro" panel follows in a later commit of the same plan.

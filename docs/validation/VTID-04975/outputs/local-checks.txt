@@ -1,3 +1,5 @@
 tsc --noEmit: clean
 kiro engine tests: 22/22
 operator regression suites: 4 suites, 73 passed, 2 skipped
+command-hub tests: 519 passed
+kiro UI screenshots: 8, no horizontal overflow

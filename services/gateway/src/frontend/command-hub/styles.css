@@ -2145,6 +2145,251 @@ body {
   background: #1f63d1;
 }
 
+/* VTID-04975: Kiro engine in the Operator Console — engine switch, workspace
+   card, approval cards. Same dark palette as the chat around it. */
+.chat-engine-switch {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 2px;
+  border: 1px solid #2f3540;
+  border-radius: 8px;
+  background: #15181d;
+}
+
+.chat-engine-option {
+  min-height: 28px;
+  padding: 0.2rem 0.75rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #9aa0a6;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.chat-engine-option:hover:not(:disabled) {
+  color: #e0e0e0;
+}
+
+.chat-engine-option--active {
+  background: #2a3442;
+  color: #fff;
+}
+
+.chat-engine-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.chat-engine-option:focus-visible,
+.chat-engine-end-btn:focus-visible,
+.kiro-approval-btn:focus-visible,
+.kiro-stop-btn:focus-visible {
+  outline: 2px solid #2a7bff;
+  outline-offset: 1px;
+}
+
+.chat-engine-fixed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.chat-engine-badge,
+.chat-engine-tag {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid #6b4fc8;
+  border-radius: 999px;
+  color: #c7b8ff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.chat-engine-tag {
+  margin-left: 0.4rem;
+  padding: 0 0.35rem;
+  font-size: 0.62rem;
+}
+
+.chat-engine-end-btn {
+  min-height: 28px;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid #2f3540;
+  border-radius: 6px;
+  background: transparent;
+  color: #9aa0a6;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.chat-engine-end-btn:hover {
+  color: #e0e0e0;
+  border-color: #4a5260;
+}
+
+.kiro-panel {
+  align-self: center;
+  width: 100%;
+  max-width: 520px;
+  margin: 2rem auto 0;
+  padding: 1rem 1.15rem;
+  border: 1px solid #2f3540;
+  border-radius: 12px;
+  background: #15181d;
+  color: #d6d9de;
+}
+
+.kiro-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.kiro-panel-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.kiro-panel-status {
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.kiro-panel-status--on {
+  background: rgba(127, 181, 127, 0.15);
+  color: #9fd49f;
+}
+
+.kiro-panel-status--off {
+  background: rgba(201, 162, 39, 0.15);
+  color: #e0c066;
+}
+
+.kiro-panel-rows {
+  display: grid;
+  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
+  gap: 0.4rem 0.9rem;
+  margin: 0 0 0.85rem;
+  font-size: 0.82rem;
+}
+
+.kiro-panel-rows dt {
+  color: #9aa0a6;
+}
+
+.kiro-panel-rows dd {
+  margin: 0;
+  color: #e0e0e0;
+  overflow-wrap: anywhere;
+}
+
+.kiro-panel-hint {
+  padding-top: 0.75rem;
+  border-top: 1px solid #252a33;
+  color: #9aa0a6;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.kiro-approval {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+  margin: 0.35rem 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #6b4fc8;
+  border-radius: 8px;
+  background: rgba(107, 79, 200, 0.12);
+  font-style: normal;
+}
+
+.kiro-approval--allowed { border-color: #3f6b3f; background: rgba(127, 181, 127, 0.08); }
+.kiro-approval--denied,
+.kiro-approval--expired,
+.kiro-approval--error { border-color: #6b3f3f; background: rgba(217, 119, 111, 0.08); }
+
+.kiro-approval-text {
+  flex: 1 1 14rem;
+  min-width: 0;
+  color: #e6e1ff;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.kiro-approval-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.kiro-approval-btn {
+  min-width: 64px;
+  min-height: 32px;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid #4a5260;
+  border-radius: 6px;
+  background: transparent;
+  color: #e0e0e0;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.kiro-approval-btn--allow {
+  border-color: #2a7bff;
+  background: #2a7bff;
+  color: #fff;
+}
+
+.kiro-approval-result {
+  color: #9aa0a6;
+  font-size: 0.78rem;
+}
+
+.kiro-live-text {
+  margin: 0.35rem 0;
+  padding: 0.6rem 0.9rem;
+  border-radius: 10px;
+  background: #23272e;
+  color: #e0e0e0;
+  font-size: 0.9rem;
+  font-style: normal;
+  line-height: 1.3rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.kiro-stop-btn {
+  align-self: flex-start;
+  min-height: 28px;
+  margin-top: 0.3rem;
+  padding: 0.2rem 0.75rem;
+  border: 1px solid #6b3f3f;
+  border-radius: 6px;
+  background: transparent;
+  color: #e3a39c;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.kiro-stop-btn:hover {
+  background: rgba(217, 119, 111, 0.12);
+}
+
+@media (max-width: 640px) {
+  .kiro-panel { margin-top: 1rem; }
+  .kiro-panel-rows { grid-template-columns: 1fr; gap: 0.1rem; }
+  .kiro-panel-rows dd { margin-bottom: 0.45rem; }
+}
+
 /* VTID-03822: tool-activity lines rendered under a chat bubble */
 .chat-tool-activity {
   display: flex;

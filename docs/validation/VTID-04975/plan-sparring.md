@@ -76,4 +76,7 @@ Approved by the owner in session 2026-10-08 ("yes, go ahead") at Gate 1, plan ha
 - Phase 1 only. Phase 2 (kiro-runner, Secrets Manager key vault, kiro_user_links, real keys, dstevanovic@hotmail.com link) is NOT in this change and stays gated on written Kiro/AWS terms confirmation.
 - Session new/load happen implicitly on the first/next chat turn of a Kiro thread; explicit endpoints exist for cancel, close, permission answers and status (R13 narrowed to what a client needs; new/load add nothing the chat turn does not already do).
 - Kiro turns skip the LLM-only extras (simulated-tool-call retry, route-gate shadow check, turn-memory extraction).
-- The Command Hub UI panel ships in a follow-up commit of the same plan, because the Command Hub frontend is a path-guarded zone.
+- The Command Hub UI ships as a follow-up PR of the same plan (the Command Hub frontend is a path-guarded zone; VTID-04975 added to its allowlist).
+- UI: the "Connect Kiro" panel is the Kiro workspace card in a Kiro thread's empty state (status, trust rules, key "not linked"). Pasting/revoking a key ships with Phase 2, because no key endpoint exists before the key vault does; the card states the key is not linked rather than offering a field that goes nowhere.
+- UI: the Kiro option is disabled while the gateway reports Kiro not connected, so nobody starts a thread that can only answer "not connected".
+- The cache-bust bump repoints the staging probes of 13 earlier VTIDs that pin the previous ?v= value (same practice as VTID-04887).
