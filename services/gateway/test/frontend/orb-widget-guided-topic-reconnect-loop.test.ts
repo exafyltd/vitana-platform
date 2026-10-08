@@ -78,7 +78,7 @@ describe('orb-widget _s._guidedTopicZeroAudioFailCount lifecycle (VTID-03776)', 
   });
 
   it('is reset to 0 by _hide() — a real close ends the overlay session', () => {
-    const idx = source.indexOf('function _hide() {');
+    const idx = source.indexOf('function _hide(reason) {');
     expect(idx).toBeGreaterThan(-1);
     const openIdx = source.indexOf('{', idx);
     let depth = 0, end = openIdx;

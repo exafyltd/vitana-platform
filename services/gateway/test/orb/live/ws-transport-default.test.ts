@@ -119,14 +119,17 @@ describe('cleanupWsSession keys the live session by its own id (VTID-03471)', ()
   });
 });
 
-describe('orb widget defaults to the WebSocket transport (VTID-03471)', () => {
+// VTID-05001: the compiled default is now 'sse'. With 'ws' compiled in, a
+// client whose GET /live/transport had not answered (or failed) started on
+// WebSocket even while the server said off — real members kept hitting the
+// broken WS start on prod after the VTID-04934 rollback. WS now needs an
+// explicit server 'ws' (staging) or the developer override.
+describe('orb widget uses WebSocket only when asked (VTID-03471, VTID-05001)', () => {
   const src = fs.readFileSync(WIDGET, 'utf8');
 
-  it('compiles in `ws` as the default transport', () => {
-    // The whole point of L-04/L-05: stop sending ~15.6 authenticated POSTs
-    // per second of speech.
-    expect(src).toMatch(/transport:\s*'ws'/);
-    expect(src).not.toMatch(/transport:\s*'sse'\s*\n\s*\};/);
+  it('compiles in `sse` as the default transport, so the kill switch holds before /live/transport answers', () => {
+    expect(src).toMatch(/\n\s*transport:\s*'sse'\s*\n\s*\};/);
+    expect(src).not.toMatch(/\n\s*transport:\s*'ws'\s*\n\s*\};/);
   });
 
   it('lets the operator veto the default without a redeploy', () => {

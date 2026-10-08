@@ -97,7 +97,7 @@ describe('VTID-03808 ORB overlay survives a modal dialog behind it', () => {
   it('keeps the close button wired unconditionally — it was never disabled', () => {
     // Pinning this so a future reader does not "fix" a recurrence by adding a
     // guard here: the handler was always correct, the element was unreachable.
-    expect(source).toMatch(/closeBtn\.addEventListener\('click', _hide\);/);
+    expect(source).toMatch(/closeBtn\.addEventListener\('click', function \(\) \{ _hide\('close_button'\); \}\);/);
     expect(source).not.toMatch(/closeBtn\.disabled/);
   });
 

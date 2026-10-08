@@ -142,9 +142,12 @@ describe('VTID-03799 guided-topic replay loop', () => {
   describe('pre-existing invariants still hold', () => {
     it('_endGuidedTopicTeaching still sets its flag before hiding (no double-fire)', () => {
       const idx = WIDGET.indexOf('function _endGuidedTopicTeaching(');
-      const fn = WIDGET.slice(idx, idx + 1400);
-      expect(fn.indexOf('_s._guidedTopicTeachingEnded = true;'))
-        .toBeLessThan(fn.indexOf('_hide()'));
+      // VTID-05001: the window covers the real `_hide('guided_topic_end')`
+      // call (before, `indexOf('_hide()')` matched a comment mention).
+      const fn = WIDGET.slice(idx, idx + 2400);
+      const hideAt = fn.search(/_hide\('[a-z_]+'\)/);
+      expect(hideAt).toBeGreaterThan(0);
+      expect(fn.indexOf('_s._guidedTopicTeachingEnded = true;')).toBeLessThan(hideAt);
     });
 
     it('_hide still clears every guided flag', () => {

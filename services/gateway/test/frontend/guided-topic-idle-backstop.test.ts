@@ -102,7 +102,7 @@ describe('VTID-03799 guided-topic idle backstop', () => {
     });
 
     it('and cleared by _hide, same lifecycle as the backstop it drives', () => {
-      const body = extractFunctionBody(source, 'function _hide() {');
+      const body = extractFunctionBody(source, 'function _hide(reason) {');
       expect(body).toMatch(/_s\._guidedTopicLastActivityAt = null;/);
       expect(body).toMatch(/_s\._guidedTopicOpenedAt = null;/);
     });

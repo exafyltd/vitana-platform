@@ -41,7 +41,7 @@ describe('orb-widget background/idle watchdog (mobile overheating fix)', () => {
 
   it('ends the session instead of leaving it running when backgrounding is detected', () => {
     const body = extractFunctionBody(source, 'function _startBackgroundWatchdog()');
-    expect(body).toMatch(/_hide\(\)/);
+    expect(body).toMatch(/_hide\('[a-z_]+'\)/);
   });
 
   // VTID-03783: this used to call _sessionStop() directly — the same
@@ -59,7 +59,7 @@ describe('orb-widget background/idle watchdog (mobile overheating fix)', () => {
     expect(blockEnd).toBeGreaterThan(killIdx);
     const killBlock = body.slice(killIdx, blockEnd);
     expect(killBlock).not.toMatch(/^\s*_sessionStop\(\);?\s*$/m);
-    expect(killBlock).toMatch(/_hide\(\);/);
+    expect(killBlock).toMatch(/_hide\('[a-z_]+'\);/);
   });
 
   it('does NOT call _endGuidedTopicTeaching() — a background-kill must not auto-mark a step done', () => {

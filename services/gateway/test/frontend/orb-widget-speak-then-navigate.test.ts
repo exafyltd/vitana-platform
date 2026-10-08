@@ -50,7 +50,7 @@ describe('speak-then-navigate', () => {
     expect(body).toMatch(/if \(!stays\) _s\.navigationPending = true/);
     expect(body).toMatch(/scheduledSources/);
     expect(body).toMatch(/_cfg\.onNavigationRequest\(msg\.route, ctx\)/);
-    expect(body).toMatch(/if \(!stays && _s\._sessionGeneration === myGen\) _hide\(\)/);
+    expect(body).toMatch(/if \(!stays && _s\._sessionGeneration === myGen\) _hide\('nav_tool'\)/);
     expect(body).toMatch(/typeof result\.then === 'function'/);
   });
 

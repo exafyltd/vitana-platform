@@ -40,7 +40,7 @@ describe('orb-widget keep_orb_open on navigate (BOOTSTRAP-ORB-UNREAD-MESSAGES-NA
   it('still calls _hide() on the normal (keep_orb_open absent) path', () => {
     // The branch must be an if/else — _hide() still exists in this block
     // for the default case, unconditionally reachable when the flag isn't set.
-    expect(navigateBlock).toMatch(/\}\s*else\s*\{\s*_hide\(\);\s*\}/);
+    expect(navigateBlock).toMatch(/\}\s*else\s*\{\s*_hide\('navigate'\);\s*\}/);
   });
 
   it('onNavigationRequest is still called in both branches (navigation itself is unaffected)', () => {

@@ -117,11 +117,11 @@ describe('orb-widget guided-topic reconnect (VTID-03675)', () => {
     // The flags still clear here (a candidate DID win and get spoken, so a
     // later reconnect must not resend guided_topic_id); the overlay itself
     // now falls through to the normal listening transition below.
-    expect(block).not.toMatch(/_hide\(\)/);
+    expect(block).not.toMatch(/_hide\((?:'[a-z_]+')?\)/);
   });
 
   it('_hide() also clears a never-delivered guided topic so it cannot leak into a later session', () => {
-    const body = extractFunctionBody(source, 'function _hide()');
+    const body = extractFunctionBody(source, 'function _hide(reason)');
     expect(body).toMatch(/_s\.guidedAutoClose = false/);
     expect(body).toMatch(/_s\.guidedTopic = null/);
   });
