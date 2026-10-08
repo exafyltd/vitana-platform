@@ -1,0 +1,5 @@
+psql:../../../supabase/migrations/20261009090000_vtid_04994_subscription_dates_in_calendar.sql:132: NOTICE:  trigger "trg_subscription_insert_calendar" for relation "public.user_subscriptions" does not exist, skipping
+psql:../../../supabase/migrations/20261009090000_vtid_04994_subscription_dates_in_calendar.sql:139: NOTICE:  trigger "trg_subscription_update_calendar" for relation "public.user_subscriptions" does not exist, skipping
+psql:../../../supabase/migrations/20261009090000_vtid_04994_subscription_dates_in_calendar.sql:151: NOTICE:  trigger "trg_subscription_delete_calendar" for relation "public.user_subscriptions" does not exist, skipping
+psql:vtid-04994-subscription-dates-in-calendar.test.sql:129: WARNING:  fn_subscription_to_calendar failed: new row for relation "calendar_events" violates check constraint "boom" (23514)
+PASS vtid-04994 subscription dates in calendar

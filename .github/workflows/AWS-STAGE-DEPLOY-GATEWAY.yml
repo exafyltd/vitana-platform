@@ -321,6 +321,33 @@ jobs:
             jq -c --arg a "$ARN" '.sec += [{name:"DAILY_API_KEY", valueFrom:$a}]' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
           fi
           jq -c '{env, sec: [.sec[].name]}' "$F"
+      # VTID-04999: the Operator's Kiro engine on the private kiro-runner. Jev
+      # pattern: wired only when the runner token secret exists (the owner runs
+      # scripts/aws/setup-kiro-runner-staging.sh provision --apply); then
+      # KIRO_RUNNER_URL + KIRO_RUNNER_TOKEN + KIRO_ENGINE_ENABLED=true. Absent =>
+      # KIRO_ENGINE_ENABLED=false (Kiro threads answer "not connected", as today)
+      # and the deploy never fails. STAGING ONLY: AWS-PROD-DEPLOY-GATEWAY.yml has
+      # no KIRO_RUNNER wiring (guarded by test/vtid-04999-kiro-runner-backend.test.ts).
+      - name: Resolve Kiro runner config
+        run: |
+          set -euo pipefail
+          NAME="vitana/kiro-runner/staging/runner-token"
+          ERR="$RUNNER_TEMP/kiro-describe.err"
+          ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>"$ERR" || true)
+          F="$RUNNER_TEMP/connected-apps.json"
+          if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+            if grep -q ResourceNotFoundException "$ERR"; then
+              echo "  $NAME not found - Kiro engine stays off (VTID-04999; expected until provisioned)"
+            else
+              echo "::warning::$NAME lookup failed - Kiro engine stays off: $(head -c 300 "$ERR")"
+            fi
+            jq -c '.env += [{name:"KIRO_ENGINE_ENABLED", value:"false"}]' "$F" > "$F.tmp"
+          else
+            echo "  resolved $NAME -> KIRO_RUNNER_TOKEN, KIRO_RUNNER_URL, KIRO_ENGINE_ENABLED=true"
+            jq -c --arg a "$ARN" '.env += [{name:"KIRO_ENGINE_ENABLED", value:"true"}, {name:"KIRO_RUNNER_URL", value:"http://kiro-runner.vitana.internal:8080"}] | .sec += [{name:"KIRO_RUNNER_TOKEN", valueFrom:$a}]' "$F" > "$F.tmp"
+          fi
+          mv "$F.tmp" "$F"
+          jq -c '{env, sec: [.sec[].name]}' "$F"
       # VTID-04542 latency plan (comment kept outside the run: scalar, VTID-03788
       # size guard): four exact-'true' flags pinned on STAGING ONLY until re-measured
       # here, prod untouched -- Devon pre-connect (04549), cascade sentence streaming

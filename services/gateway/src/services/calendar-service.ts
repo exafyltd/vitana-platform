@@ -172,6 +172,104 @@ export async function checkConflicts(
   return resp.json() as Promise<any>;
 }
 
+// =============================================================================
+// VTID-04995 — overlap warnings
+// =============================================================================
+
+export type ConflictKind = 'own' | 'busy' | 'external';
+
+/** One thing a proposed time overlaps. Busy/external carry no title, on purpose. */
+export interface ConflictItem {
+  kind: ConflictKind;
+  id: string;
+  event_id: string;
+  title: string | null;
+  start_time: string;
+  end_time: string;
+  source?: string;
+}
+
+/** Entries the system writes as information, not as time the member has committed. */
+const NON_COMMITMENT_SOURCES = new Set(['reminder', 'subscription']);
+const ONE_HOUR_MS = 60 * 60 * 1000;
+
+export interface ExternalBusyLike {
+  id: string;
+  event_id: string;
+  start_time: string;
+  end_time: string;
+  source?: string;
+}
+
+/**
+ * Pure: what a proposed [start, end) overlaps, given what the calendar screen
+ * shows (window items: own entries with recurrence expanded, other lenses as
+ * title-less busy blocks) and the member's external busy times.
+ *  - own: the member's confirmed entries in the active lens (title included)
+ *  - busy: another lens of the same member (time only)
+ *  - external: a busy block from a connected calendar (time only)
+ * Reminders and subscription dates never conflict; `excludeEventId` is the
+ * entry being edited or moved (all its occurrences).
+ */
+export function computeConflicts(
+  items: CalendarWindowItem[],
+  external: ExternalBusyLike[],
+  proposed: { start: string; end: string },
+  opts: { excludeEventId?: string } = {},
+): ConflictItem[] {
+  const pStart = Date.parse(proposed.start);
+  const pEnd = Date.parse(proposed.end);
+  if (Number.isNaN(pStart) || Number.isNaN(pEnd) || pEnd <= pStart) return [];
+
+  const overlaps = (start: string, end: string | null): { start: number; end: number } | null => {
+    const s = Date.parse(start);
+    if (Number.isNaN(s)) return null;
+    const parsedEnd = end ? Date.parse(end) : NaN;
+    const e = Number.isNaN(parsedEnd) ? s + ONE_HOUR_MS : parsedEnd;
+    return s < pEnd && e > pStart ? { start: s, end: e } : null;
+  };
+
+  const out: ConflictItem[] = [];
+  for (const it of items) {
+    if (opts.excludeEventId && it.event_id === opts.excludeEventId) continue;
+    const hit = overlaps(it.start_time, it.end_time);
+    if (!hit) continue;
+    if (it.busy || !it.event) {
+      out.push({ kind: 'busy', id: it.id, event_id: it.event_id, title: null, start_time: new Date(hit.start).toISOString(), end_time: new Date(hit.end).toISOString() });
+      continue;
+    }
+    if (it.event.status !== 'confirmed') continue;
+    if (NON_COMMITMENT_SOURCES.has(String(it.event.source_type))) continue;
+    out.push({ kind: 'own', id: it.id, event_id: it.event_id, title: it.event.title ?? null, start_time: new Date(hit.start).toISOString(), end_time: new Date(hit.end).toISOString() });
+  }
+  for (const x of external) {
+    const hit = overlaps(x.start_time, x.end_time);
+    if (!hit) continue;
+    out.push({ kind: 'external', id: x.id, event_id: x.event_id, title: null, start_time: new Date(hit.start).toISOString(), end_time: new Date(hit.end).toISOString(), source: x.source });
+  }
+  return out.sort((a, b) => a.start_time.localeCompare(b.start_time)).slice(0, 20);
+}
+
+/**
+ * Overlaps for a proposed window, composed exactly like the calendar screen:
+ * the window read plus the external busy blocks the window route adds on top.
+ */
+export async function findConflicts(
+  userId: string,
+  role: string | null,
+  startTime: string,
+  endTime: string,
+  opts: { excludeEventId?: string; userTimezone?: string } = {},
+): Promise<ConflictItem[]> {
+  const window = { from: startTime, to: endTime };
+  const { listExternalBusy } = await import('./calendar-google-sync');
+  const [items, external] = await Promise.all([
+    listCalendarWindow(userId, role, window, { includeBusy: true, userTimezone: opts.userTimezone }),
+    listExternalBusy(userId, window),
+  ]);
+  return computeConflicts(items, external, { start: startTime, end: endTime }, { excludeEventId: opts.excludeEventId });
+}
+
 /**
  * Find calendar gaps (free time slots) for a given day.
  */

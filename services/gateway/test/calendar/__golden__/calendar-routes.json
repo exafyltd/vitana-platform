@@ -739,6 +739,14 @@
         "error": "start_time and end_time required"
       }
     },
+    "conflicts_bad_window": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "start_time and end_time must be ISO timestamps with end_time > start_time"
+      }
+    },
     "conflicts": {
       "status": 200,
       "type": "application/json",
@@ -746,20 +754,31 @@
         "ok": true,
         "data": [
           {
+            "kind": "own",
             "id": "e1",
-            "title": "Walk",
-            "start_time": "2026-10-05T07:30:00.000Z",
+            "event_id": "e1",
+            "title": "Standup",
+            "start_time": "2026-10-05T07:00:00.000Z",
+            "end_time": "2026-10-05T07:30:00.000Z"
+          }
+        ],
+        "conflicts": [
+          {
+            "kind": "own",
+            "id": "e1",
+            "event_id": "e1",
+            "title": "Standup",
+            "start_time": "2026-10-05T07:00:00.000Z",
+            "end_time": "2026-10-05T07:30:00.000Z"
+          },
+          {
+            "kind": "external",
+            "id": "google:1",
+            "event_id": "google:1",
+            "title": null,
+            "start_time": "2026-10-05T07:15:00.000Z",
             "end_time": "2026-10-05T08:00:00.000Z",
-            "event_type": "workout",
-            "status": "confirmed",
-            "role_context": "community",
-            "completion_status": null,
-            "priority_score": 50,
-            "wellness_tags": [
-              "movement"
-            ],
-            "pillar": "exercise",
-            "contribution_vector": null
+            "source": "google"
           }
         ],
         "has_conflicts": true
@@ -812,12 +831,16 @@
       ]
     ],
     [
-      "checkConflicts",
+      "findConflicts",
       [
         "u1",
         null,
         "2026-10-05T07:00:00Z",
-        "2026-10-05T08:00:00Z"
+        "2026-10-05T08:00:00Z",
+        {
+          "excludeEventId": "e9",
+          "userTimezone": "Europe/Berlin"
+        }
       ]
     ]
   ],

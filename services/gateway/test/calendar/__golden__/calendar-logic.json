@@ -164,7 +164,8 @@
       "live_room",
       "goal_plan",
       "guided_journey",
-      "reminder"
+      "reminder",
+      "subscription"
     ],
     "event": [
       "personal",

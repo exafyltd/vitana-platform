@@ -14,10 +14,11 @@ const SQL = readFileSync(join(ROOT, 'supabase/migrations/20261008150000_vtid_049
 const SCOPE = "created_via IN ('voice', 'ui') AND %s.calendar_event_id IS NULL AND %s.recurrence_rule IS NULL";
 
 describe('VTID-04978: reminders in the calendar', () => {
-  it("the source-type CHECK lists 'reminder' and the gateway type list matches", () => {
+  it("the source-type CHECK in this migration lists 'reminder' and the gateway type list has it", () => {
     expect(CALENDAR_SOURCE_TYPES).toContain('reminder');
     const check = SQL.slice(SQL.indexOf('ADD CONSTRAINT valid_source_type'), SQL.indexOf('-- 2. Mirror function'));
-    for (const t of CALENDAR_SOURCE_TYPES) expect(check).toContain(`'${t}'`);
+    expect(check).toContain("'reminder'");
+    // That every type in the gateway list is in the NEWEST recreate is pinned by vtid-04331-calendar-data-model.test.ts.
   });
 
   it('all three triggers carry the member-made, one-shot, unlinked scope in their WHEN clause', () => {

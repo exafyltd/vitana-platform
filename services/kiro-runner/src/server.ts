@@ -1,0 +1,134 @@
+/**
+ * VTID-04999: kiro-runner HTTP + WebSocket server.
+ *
+ *   GET    /alive                        open; service + kiro-cli version
+ *   GET    /keys/:userId                 { linked, updated_at } — never the key
+ *   PUT    /keys/:userId   { key }       link or replace
+ *   DELETE /keys/:userId                 revoke now; ends that user's sessions
+ *   WS     /sessions?user_id=&thread_id= one kiro-cli acp process
+ *
+ * Everything but /alive needs `Authorization: Bearer <KIRO_RUNNER_TOKEN>`.
+ * The service is private (Cloud Map only); the gateway is its only caller and
+ * takes the user id from the signed-in identity. Request bodies are never logged.
+ */
+import http from 'http';
+import { timingSafeEqual } from 'crypto';
+import { WebSocketServer, type WebSocket } from 'ws';
+import { KeyStore, KeyUnavailableError, isPlausibleKey, isUserId } from './key-store';
+import { CLOSE, sessionCount, startRelay, stopUserSessions, type RelayLimits, type RelayOptions } from './relay';
+
+export interface RunnerConfig {
+  token: string;
+  workRoot: string;
+  maxSessions: number;
+  limits: RelayLimits;
+  kiroCliVersion: string;
+  kiroBin?: string;
+  spawnImpl?: RelayOptions['spawnImpl'];
+  log?: (msg: string) => void;
+}
+
+const MAX_BODY_BYTES = 16 * 1024;
+
+export function tokenMatches(header: string | undefined, token: string): boolean {
+  if (!token || !header || !header.startsWith('Bearer ')) return false;
+  const a = Buffer.from(header.slice(7));
+  const b = Buffer.from(token);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+function send(res: http.ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(body));
+}
+
+function readJson(req: http.IncomingMessage): Promise<any> {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer) => {
+      size += c.length;
+      if (size > MAX_BODY_BYTES) { reject(new Error('too_large')); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); } catch { reject(new Error('bad_json')); } });
+    req.on('error', reject);
+  });
+}
+
+export function createRunnerServer(cfg: RunnerConfig, store: KeyStore): http.Server {
+  const log = cfg.log ?? ((m: string) => console.log(m));
+  const wss = new WebSocketServer({ noServer: true, maxPayload: cfg.limits.maxLineBytes });
+  let pending = 0; // sessions past the cap check whose key read is still in flight
+
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url ?? '/', 'http://kiro-runner');
+    const done = (status: number, body: unknown) => { send(res, status, body); log(`[kiro-runner] ${req.method} ${url.pathname.replace(/\/keys\/.+/, '/keys/:userId')} ${status}`); };
+
+    if (req.method === 'GET' && url.pathname === '/alive') {
+      return done(200, { ok: true, service: 'kiro-runner', kiro_cli_version: cfg.kiroCliVersion, sessions: sessionCount() });
+    }
+    if (!tokenMatches(req.headers.authorization, cfg.token)) return done(401, { ok: false, error: 'unauthorized' });
+
+    const m = /^\/keys\/([^/]+)$/.exec(url.pathname);
+    if (!m) return done(404, { ok: false, error: 'not_found' });
+    const userId = decodeURIComponent(m[1]);
+    if (!isUserId(userId)) return done(400, { ok: false, error: 'invalid_user_id' });
+
+    try {
+      if (req.method === 'GET') return done(200, { ok: true, ...(await store.status(userId)) });
+      if (req.method === 'PUT') {
+        let body: any;
+        try { body = await readJson(req); } catch { return done(400, { ok: false, error: 'invalid_body' }); }
+        if (!isPlausibleKey(body?.key)) return done(400, { ok: false, error: 'invalid_key' });
+        await store.put(userId, body.key);
+        return done(200, { ok: true, ...(await store.status(userId)) });
+      }
+      if (req.method === 'DELETE') {
+        await store.delete(userId);
+        const ended = stopUserSessions(userId);
+        return done(200, { ok: true, linked: false, updated_at: null, sessions_ended: ended });
+      }
+      return done(405, { ok: false, error: 'method_not_allowed' });
+    } catch (err) {
+      log(`[kiro-runner] key store error: ${(err as Error)?.name ?? 'error'}`);
+      return done(502, { ok: false, error: 'key_store_unavailable' });
+    }
+  });
+
+  server.on('upgrade', (req, socket, head) => {
+    const url = new URL(req.url ?? '/', 'http://kiro-runner');
+    const reject = (status: number, text: string) => {
+      socket.write(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+      socket.destroy();
+    };
+    if (url.pathname !== '/sessions') return reject(404, 'Not Found');
+    if (!tokenMatches(req.headers.authorization, cfg.token)) return reject(401, 'Unauthorized');
+    const userId = url.searchParams.get('user_id') ?? '';
+    const threadId = url.searchParams.get('thread_id') ?? '';
+    if (!isUserId(userId) || !threadId || threadId.length > 200) return reject(400, 'Bad Request');
+
+    wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
+      // Reserve the slot before the key read, so concurrent connects cannot all pass the cap.
+      if (sessionCount() + pending >= cfg.maxSessions) { ws.close(CLOSE.busy, 'kiro_runner_busy'); return; }
+      pending++;
+      void (async () => {
+        try {
+          let key: string | null;
+          try { key = await store.get(userId); } catch (err) {
+            log(`[kiro-runner] key read failed: ${err instanceof KeyUnavailableError ? err.message : 'error'}`);
+            ws.close(CLOSE.keyUnavailable, 'kiro_key_unavailable');
+            return;
+          }
+          if (!key) { ws.close(CLOSE.keyMissing, 'kiro_key_missing'); return; }
+          if (ws.readyState !== ws.OPEN) return;
+          startRelay({ ws, userId, threadId, key, workRoot: cfg.workRoot, limits: cfg.limits, kiroBin: cfg.kiroBin, spawnImpl: cfg.spawnImpl, log });
+        } finally {
+          pending--;
+        }
+      })();
+    });
+  });
+
+  return server;
+}
