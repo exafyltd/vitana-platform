@@ -9,7 +9,7 @@ Listing content lives in `plugin.json` (`extensions.com.openai.interface`); the 
 - [ ] Final submission.
 
 ## Package (done in this folder)
-- [x] `plugin.json` (portable) + `mcp.json` (`streamable-http`, `https://gateway.vitanaland.com/mcp`)
+- [x] `plugin.json` (portable) + `mcp.json` (`streamable-http`, `https://gateway.vitanaland.com/mcp/chatgpt`)
 - [x] `.codex-plugin/plugin.json` + `.mcp.json` (Codex fallback)
 - [x] One skill: `skills/set-up-my-business`
 - [x] `assets/logo.png`, `assets/composer-icon.png` (512x512 PNG)

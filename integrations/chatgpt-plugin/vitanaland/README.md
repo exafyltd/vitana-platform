@@ -1,6 +1,6 @@
 # Vitanaland ChatGPT plugin (VTID-04980)
 
-Packaging only. The plugin points at the existing Commerce MCP (`https://gateway.vitanaland.com/mcp`) and Supabase OAuth. There is no second backend and no second identity system.
+Packaging only. The plugin points at the existing Commerce MCP (the ChatGPT-only path `https://gateway.vitanaland.com/mcp/chatgpt`, VTID-04990) and Supabase OAuth. There is no second backend and no second identity system.
 
 - `plugin.json`, `mcp.json`, `skills/`, `assets/` - portable plugin layout
 - `.codex-plugin/plugin.json`, `.mcp.json` - Codex layout (same content)
