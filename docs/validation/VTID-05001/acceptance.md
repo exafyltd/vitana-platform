@@ -28,4 +28,6 @@ TEST: services/gateway/test/vtid-04659-staging-checks-use-versioned-urls.test.ts
 AC-7: Staging serves the new widget (read-only).
 CURL: GET https://preview-aws-gateway.vitanaland.com/command-hub/orb-widget.js?v=20261008-vtid-05001-hide-reasons -> 200, contains `transport: 'sse'` and `hide_reason: diag ? diag.hide_reason : undefined`
 
+OASIS_PROOF: `orb.session.continuity.persisted` keeps its topic, source and existing payload fields; it gains four optional fields (`hide_reason`, `ms_since_tap`, `transport`, `start_phase`) only from an allowlisted/clamped client body (AC-4 test). Read-only check after PUBLISH: `select metadata->>'hide_reason', count(*) from oasis_events where topic='orb.session.continuity.persisted' and created_at > <publish time> group by 1`.
+
 Data collection after PUBLISH (read-only SQL, not a gate): distribution of `hide_reason` on `orb.session.continuity.persisted` where `ms_since_tap < 5000` and `start_phase = 'connecting'`. The fix for the close itself is a separate, sparred plan.
