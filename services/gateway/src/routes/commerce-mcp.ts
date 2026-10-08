@@ -219,7 +219,7 @@ async function auditLoopbackClient(clientId: string | null, clientName: string |
   }).catch(() => undefined);
 }
 
-const mcpPost = (chatgpt: boolean) => async (req: Request, res: Response) => { // inline-bearer-auth
+const mcpPost = (chatgpt: boolean) => async (req: Request, res: Response) => {
   // impact-allow-no-oasis: every tools/call emits commerce.mcp.tool_called
   // (services/commerce-mcp.ts auditToolCall), and each Commerce write emits
   // its own partner_org.* event through the shared services.
@@ -281,8 +281,16 @@ const mcpPost = (chatgpt: boolean) => async (req: Request, res: Response) => { /
   return r ? res.json(r) : res.status(202).end();
 };
 
-router.post('/', mcpPost(false));
-router.post('/chatgpt', mcpPost(true));
+router.post('/', (req: Request, res: Response) => { // inline-bearer-auth
+  // impact-allow-no-oasis: mcpPost authenticates inline, every tools/call emits
+  // commerce.mcp.tool_called (services/commerce-mcp.ts) and a refused client emits
+  // commerce.mcp.client_refused.
+  return mcpPost(false)(req, res);
+});
+router.post('/chatgpt', (req: Request, res: Response) => { // inline-bearer-auth
+  // impact-allow-no-oasis: the same handler as above, on the ChatGPT-only path.
+  return mcpPost(true)(req, res);
+});
 
 router.all('/', (_req: Request, res: Response) => {
   res.status(405).set('Allow', 'POST').json({ jsonrpc: '2.0', id: null, error: { code: -32000, message: 'Method not allowed' } });
