@@ -8,6 +8,8 @@ ROUTE_MOUNT: services/gateway/src/index.ts mounts the existing commerce-mcp rout
 
 FINAL_URL: https://preview-aws-gateway.vitanaland.com/.well-known/oauth-authorization-server (staging, read-only GET).
 
+OASIS_PROOF: the loopback approval emits `commerce.mcp.loopback_client_approved` (client_id, client_name, path), once per client per hour, and a refused client emits `commerce.mcp.client_refused` with the path; both are asserted in services/gateway/test/vtid-04990-chatgpt-oauth.test.ts ("a loopback client is audited once per hour, with its (self-declared) name", "a refused client is 403 CLIENT_NOT_APPROVED with the path in the audit event").
+
 CURL_PROOF: staging returns 200 with `"scopes_supported":["email","profile"]` for the authorization-server document and for the Claude resource metadata, 200 for `/.well-known/oauth-protected-resource/mcp/chatgpt`, and an unsigned POST to `/mcp/chatgpt` and `/mcp` each returns 401.
 
 ## Acceptance criteria
