@@ -29,16 +29,22 @@ const migration = fs.readFileSync(
   'utf8',
 );
 
+
+// The CHECK is recreated by each migration that adds a source type; the newest
+// recreate must list every type the gateway knows (VTID-04994: found by scanning).
+function latestSourceTypeCheckMigration(root: string): string {
+  const dir = path.join(root, 'supabase/migrations');
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.sql')).sort();
+  const newest = [...files].reverse().find((f) => fs.readFileSync(path.join(dir, f), 'utf8').includes('ADD CONSTRAINT valid_source_type'));
+  return fs.readFileSync(path.join(dir, newest as string), 'utf8');
+}
+
 // ---------------------------------------------------------------------------
 // Schema mirrors
 // ---------------------------------------------------------------------------
 describe('types mirror the migration CHECKs', () => {
   it('source types', () => {
-    // VTID-04978 widened the CHECK after 04331; the latest recreate must list every type.
-    const latest = fs.readFileSync(
-      path.join(repoRoot, 'supabase/migrations/20261008150000_vtid_04978_reminders_in_calendar.sql'),
-      'utf8',
-    );
+    const latest = latestSourceTypeCheckMigration(repoRoot);
     for (const t of CALENDAR_SOURCE_TYPES) expect(latest).toContain(`'${t}'`);
   });
   it('role contexts', () => {

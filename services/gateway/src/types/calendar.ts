@@ -218,7 +218,7 @@ export const CALENDAR_SOURCE_TYPES = [
   'autopilot', 'community_rsvp', 'assistant', 'journey',
   'vtid', 'ci_cd', 'nudge_engine',
   'health_plan', 'lab_order', 'appointment', 'live_room', 'goal_plan', 'guided_journey',
-  'reminder',
+  'reminder', 'subscription',
 ] as const;
 
 /** The calendar_events.event_type CHECK list (valid_event_type). */
