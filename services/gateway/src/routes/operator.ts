@@ -36,7 +36,7 @@ import { isOperatorRouteOn, recordOperatorRouteOutcome, runOperatorRoute } from 
 // VTID-0536: Gemini Operator Tools Bridge
 import { processWithGemini, type OperatorTurnEventSink } from '../services/gemini-operator';
 import { getThreadEngine, getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn, listOperatorThreadMessages, listOperatorThreads } from '../services/operator-threads';
-import { runKiroTurn, cancelKiroTurn, closeKiroSession, isKiroEngineEnabled, openKiroSessionCount } from '../services/kiro/kiro-turn';
+import { runKiroTurn, cancelKiroTurn, closeKiroSession, isKiroEngineEnabled, openKiroSessionCount, listKiroModels, setKiroModel } from '../services/kiro/kiro-turn';
 import { answerPermission } from '../services/kiro/permission-broker';
 import type { KiroTurnEventSink } from '../services/kiro/kiro-events';
 import { extractAndRecordTurnMemory, isTurnMemoryEnabled } from '../services/operator-turn-memory';
@@ -808,6 +808,36 @@ router.post('/kiro/sessions/:threadId/cancel', requireAdminAuth, async (req: Aut
     payload: { thread_id: req.params.threadId },
   }).catch(() => {});
   return res.json({ ok: true });
+});
+
+/** GET /kiro/sessions/:threadId/models — the models Kiro offers for this session (VTID-04984). */
+router.get('/kiro/sessions/:threadId/models', requireAdminAuth, (req: AuthenticatedRequest, res: Response) => {
+  const r = listKiroModels(req.params.threadId, req.identity?.user_id ?? null);
+  if (!r.ok) return res.status(r.error === 'forbidden' ? 403 : 404).json({ ok: false, error: r.error });
+  return res.json({ ok: true, models: r.models, current_model: r.current });
+});
+
+/** POST /kiro/sessions/:threadId/model { model_id } — switch the model through Kiro (VTID-04984). */
+router.post('/kiro/sessions/:threadId/model', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const parsed = z.object({ model_id: z.string().min(1).max(200) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'INVALID_BODY' });
+  const r = await setKiroModel(req.params.threadId, req.identity?.user_id ?? null, parsed.data.model_id);
+  if (!r.ok) {
+    const status = r.error === 'forbidden' ? 403 : r.error === 'not_found' ? 404 : 400;
+    return res.status(status).json({ ok: false, error: r.error, ...(r.message ? { message: r.message } : {}) });
+  }
+  await emitOasisEvent({
+    vtid: 'VTID-04984',
+    type: 'operator.kiro.model_selected',
+    source: 'gateway-operator',
+    status: 'info',
+    message: 'Kiro model switched by the session owner',
+    actor_id: req.identity?.user_id,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: { thread_id: req.params.threadId, model_id: r.current },
+  }).catch(() => {});
+  return res.json({ ok: true, models: r.models, current_model: r.current });
 });
 
 /** DELETE /kiro/sessions/:threadId — close the session and its kiro-cli process. */

@@ -4006,6 +4006,7 @@ const state = {
     // VTID-03822: Multi-thread conversation state
     operatorThreads: [], // Array of { id, title, conversationId, createdAt, updatedAt, engine? } — engine 'kiro' (VTID-04975), absent = Operator
     kiroStatus: null, // VTID-04975: GET /api/v1/operator/kiro/status once per page load; null = not known yet
+    kiroModels: {}, // VTID-04984: { [threadId]: { loaded, models: [{id,name,description}], current } } — Kiro's own model list per session
     chatLiveKiro: { text: '', tools: [], permissions: [] }, // VTID-04975: a Kiro turn's streamed text, tool lines and approval cards
     operatorActiveThreadId: null,
     // VTID-03949: sessions sidebar + double-click-to-rename state
@@ -23725,6 +23726,13 @@ function renderOperatorChat() {
                     meta.appendChild(badge);
                 }
             }
+            // VTID-04984: which Kiro model answered.
+            if (msg.meta && msg.meta.engine === 'kiro' && msg.meta.kiro_model) {
+                var kiroBadge = document.createElement('span');
+                kiroBadge.className = 'message-cost-badge';
+                kiroBadge.textContent = 'Kiro \u00b7 ' + kiroModelName(msg.meta.kiro_model);
+                meta.appendChild(kiroBadge);
+            }
 
             messages.appendChild(meta);
         });
@@ -24375,6 +24383,8 @@ function applyKiroTurnFrame(frame) {
     } else if (frame.event === 'kiro.permission_request') {
         live.permissions.push({ id: d.request_id, title: d.title || 'A tool', kind: d.kind, expires_at: d.expires_at, answer: null });
     } else {
+        // VTID-04984: after a turn, re-read Kiro's model list (the session may be new).
+        if (frame.event === 'kiro.turn_end' && state.kiroModels) delete state.kiroModels[state.operatorActiveThreadId];
         return;
     }
     updateOperatorLiveTranscriptDom();
@@ -24426,6 +24436,68 @@ async function endKiroSession() {
     }
 }
 
+// VTID-04984: model selection inside Kiro. The list is whatever Kiro offers
+// for the thread's session; picking one switches it through Kiro. Before the
+// first message there is no session, so there is nothing to list yet.
+function ensureKiroModels(threadId) {
+    if (!threadId || !state.authToken) return;
+    state.kiroModels = state.kiroModels || {};
+    if (state.kiroModels[threadId]) return;
+    state.kiroModels[threadId] = { loading: true, models: [], current: null };
+    fetch('/api/v1/operator/kiro/sessions/' + encodeURIComponent(threadId) + '/models', { headers: buildContextHeaders({}) })
+        .then(function (res) { return res.ok ? res.json() : null; })
+        .then(function (body) {
+            state.kiroModels[threadId] = { loaded: true, models: (body && body.models) || [], current: (body && body.current_model) || null };
+            renderApp();
+        })
+        .catch(function () { state.kiroModels[threadId] = { loaded: true, models: [], current: null }; });
+}
+
+function kiroModelName(modelId) {
+    var entry = (state.kiroModels || {})[state.operatorActiveThreadId];
+    var m = entry && entry.models.find(function (x) { return x.id === modelId; });
+    return m ? m.name : modelId;
+}
+
+async function selectKiroModel(threadId, modelId) {
+    try {
+        var res = await fetch('/api/v1/operator/kiro/sessions/' + encodeURIComponent(threadId) + '/model', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ model_id: modelId })
+        });
+        var body = await res.json().catch(function () { return {}; });
+        if (res.ok && body.ok) {
+            state.kiroModels[threadId] = { loaded: true, models: body.models || [], current: body.current_model || modelId };
+        } else {
+            showToast(body.message || 'Kiro could not switch the model', 'error');
+        }
+    } catch (e) {
+        showToast('Kiro could not switch the model', 'error');
+    }
+    renderApp();
+}
+
+function renderKiroModelSelect(threadId) {
+    ensureKiroModels(threadId);
+    var entry = (state.kiroModels || {})[threadId];
+    if (!entry || !entry.models.length) return null;
+    var select = document.createElement('select');
+    select.className = 'chat-kiro-model-select';
+    select.setAttribute('aria-label', 'Kiro model');
+    select.disabled = !!state.chatSending;
+    entry.models.forEach(function (m) {
+        var opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.name;
+        if (m.description) opt.title = m.description;
+        if (m.id === entry.current) opt.selected = true;
+        select.appendChild(opt);
+    });
+    select.onchange = function () { selectKiroModel(threadId, select.value); };
+    return select;
+}
+
 /** Title-bar control: Operator | Kiro on an empty thread, a fixed badge after. */
 function renderOperatorEngineSwitch() {
     var engine = activeOperatorEngine();
@@ -24437,6 +24509,9 @@ function renderOperatorEngineSwitch() {
         badge.className = 'chat-engine-badge';
         badge.textContent = 'Kiro';
         fixed.appendChild(badge);
+        // VTID-04984: Kiro's own models for this session.
+        var modelSelect = renderKiroModelSelect(state.operatorActiveThreadId);
+        if (modelSelect) fixed.appendChild(modelSelect);
         if (!state.chatSending) {
             var end = document.createElement('button');
             end.type = 'button';

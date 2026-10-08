@@ -1114,7 +1114,9 @@ export type CicdEventType =
   // VTID-04975: Kiro engine in the Command Hub Operator (user id and request/thread id only).
   | 'operator.kiro.permission_answered'
   | 'operator.kiro.session_cancelled'
-  | 'operator.kiro.session_closed';
+  | 'operator.kiro.session_closed'
+  // VTID-04984: a Kiro thread's model switched through Kiro (user, thread and model id only).
+  | 'operator.kiro.model_selected';
 
 export interface CicdOasisEvent {
   vtid: string;
