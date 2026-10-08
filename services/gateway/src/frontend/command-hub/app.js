@@ -24597,11 +24597,12 @@ function renderOperatorLiveTranscript() {
         }) + (d.stage ? ' (' + d.stage + ')' : '');
         wrap.appendChild(mline);
     });
-    if (state.chatLiveTranscript.length === 0 && state.chatLiveModelTurns.length === 0 && !kiroLiveHasContent()) {
+    if (state.chatLiveTranscript.length === 0 && state.chatLiveModelTurns.length === 0) {
         var thinking = document.createElement('div');
         thinking.className = 'chat-tool-activity-line chat-tool-activity-line--running';
         thinking.textContent = String.fromCodePoint(0x2026) + ' Thinking';
-        wrap.appendChild(thinking);
+        // VTID-04975: a Kiro turn that is already streaming is not "Thinking".
+        if (!kiroLiveHasContent()) wrap.appendChild(thinking);
     }
     // VTID-04975: a Kiro thread's streamed work, approval cards and Stop.
     appendKiroLiveTranscript(wrap);
