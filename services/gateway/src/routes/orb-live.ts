@@ -49,7 +49,7 @@ import { randomUUID } from 'crypto';
 import { createPrimaryTenantCache } from '../orb/live/session/primary-tenant-cache';
 import { closeIfSessionGone } from '../orb/live/session/orphan-upstream-guard';
 import { sanitizeHideDiagnostics } from '../orb/live/session/hide-reasons';
-import { createCrossTaskForward } from '../orb/live/session/cross-task-forward';
+import { createCrossTaskForward, FORWARDED_HEADER, FORWARDED_STREAM_GRACE_MS, isCrossTaskForwardEnabled } from '../orb/live/session/cross-task-forward';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
@@ -16898,15 +16898,36 @@ router.get('/live/stream', optionalAuth, orbSseCrossTaskForward, async (req: Aut
   // same payload shape, same auto-clear-on-write-failure behavior.
   const heartbeat = startSseHeartbeat(res);
 
+  // VTID-05002: a stream that reached this (owning) task through another
+  // task's forward ends when THAT task stops at the end of a deploy, not
+  // because the client left. EventSource then reconnects with the same
+  // session_id, now straight to this task — so hold the session for a short
+  // grace instead of destroying a live conversation, and tear it down only if
+  // no new stream attached in that window.
+  const viaForward = !!req.get(FORWARDED_HEADER) && isCrossTaskForwardEnabled();
+
   // Handle client disconnect
   req.on('close', () => {
-    console.log(`[VTID-01155] Live stream disconnected: ${sessionId}`);
+    console.log(`[VTID-01155] Live stream disconnected: ${sessionId}${viaForward ? ' (forwarded stream)' : ''}`);
     heartbeat.clear();
     decrementConnection(clientIP);
     if (session.sseResponse === res) {
       session.sseResponse = null;
     }
+    if (viaForward) {
+      setTimeout(() => {
+        if (session.sseResponse && session.sseResponse !== res) {
+          console.log(`[orb-forward] VTID-05002 session=${sessionId.slice(0, 13)} kept: client reconnected after the forwarded stream ended`);
+          return;
+        }
+        teardownSseSession();
+      }, FORWARDED_STREAM_GRACE_MS);
+      return;
+    }
+    teardownSseSession();
+  });
 
+  const teardownSseSession = (): void => {
     // VTID-04353: memory + voice summary through the one idempotent finalize
     // (was a separate forced extraction racing POST /live/session/stop).
     finalizeLiveSession(session, { sessionId, reason: 'sse_disconnect' });
@@ -16937,7 +16958,7 @@ router.get('/live/stream', optionalAuth, orbSseCrossTaskForward, async (req: Aut
     clearExtractionState(sessionId);
     liveSessions.delete(sessionId);
     console.log(`[VTID-SESSION-LEAK-FIX] Cleaned up live session on SSE disconnect: ${sessionId} (remaining: ${liveSessions.size})`);
-  });
+  };
 });
 
 /**

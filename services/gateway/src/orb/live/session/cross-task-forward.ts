@@ -29,6 +29,12 @@ import type { NextFunction, Request, Response } from 'express';
 export const FORWARD_FLAG = 'ORB_SSE_CROSS_TASK_FORWARD_ENABLED';
 /** Set on a forwarded request; the receiving task never forwards it again. */
 export const FORWARDED_HEADER = 'x-orb-forwarded-by';
+/**
+ * How long the owning task keeps a session after a FORWARDED SSE stream
+ * closes, so the client's EventSource can reconnect directly (Codex review on
+ * #3969: the forwarding task stopping must not destroy the owner's session).
+ */
+export const FORWARDED_STREAM_GRACE_MS = 20_000;
 /** Time to establish the task-to-task TCP connection. */
 export const FORWARD_CONNECT_TIMEOUT_MS = 3000;
 

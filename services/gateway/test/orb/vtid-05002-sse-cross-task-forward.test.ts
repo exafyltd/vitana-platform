@@ -241,6 +241,41 @@ describe('VTID-05002: flag off', () => {
   });
 });
 
+describe('VTID-05002: owner-bearing ids fit the client latency beacon (Codex review #3969)', () => {
+  afterEach(() => __setSelfAddressForTests(undefined));
+  it('the beacon schema accepts a full owner-bearing id', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { clientLatencyBeaconSchema } = require('../../src/orb/live/client-latency-beacon');
+    __setSelfAddressForTests('10.255.255.255:65535'); // longest IPv4:port
+    const id = await mintLiveSessionId(ENV_ON);
+    expect(id.length).toBeGreaterThan(64);
+    const shape = clientLatencyBeaconSchema.shape?.session_id ?? clientLatencyBeaconSchema._def?.schema?.shape?.session_id;
+    expect(shape.safeParse(id).success).toBe(true);
+  });
+});
+
+describe('VTID-05002: a forwarded stream ending does not destroy the owner session (Codex review #3969)', () => {
+  const fs = require('fs') as typeof import('fs');
+  const path = require('path') as typeof import('path');
+  const src = fs.readFileSync(path.resolve(__dirname, '../../src/routes/orb-live.ts'), 'utf8');
+  const start = src.indexOf("router.get('/live/stream', optionalAuth, orbSseCrossTaskForward,");
+  const route = src.slice(start, src.indexOf("router.post('/live/stream/send'", start));
+  it('detects a forwarded stream only with the flag on', () => {
+    expect(route).toContain('const viaForward = !!req.get(FORWARDED_HEADER) && isCrossTaskForwardEnabled();');
+  });
+  it('defers teardown by the grace and keeps the session when a new stream attached', () => {
+    const close = route.slice(route.indexOf("req.on('close'"));
+    expect(close).toMatch(/if \(viaForward\) \{\s*setTimeout\(\(\) => \{\s*if \(session\.sseResponse && session\.sseResponse !== res\)/);
+    expect(close).toContain('}, FORWARDED_STREAM_GRACE_MS);');
+    expect(close.indexOf('teardownSseSession();')).toBeGreaterThan(0);
+  });
+  it('a direct stream still tears down at once (unchanged)', () => {
+    const close = route.slice(route.indexOf("req.on('close'"), route.indexOf('const teardownSseSession'));
+    // after the forwarded branch returns, the direct path calls teardown synchronously
+    expect(close.trim().endsWith('teardownSseSession();\n  });')).toBe(true);
+  });
+});
+
 describe('VTID-05002: wiring in the gateway', () => {
   const fs = require('fs') as typeof import('fs');
   const path = require('path') as typeof import('path');

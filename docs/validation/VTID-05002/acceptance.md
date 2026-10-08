@@ -16,6 +16,13 @@ TEST: services/gateway/test/orb/vtid-05002-sse-cross-task-forward.test.ts
 AC-4: Flag off — behaviour is byte-identical to today, including for an id that carries an owner part.
 TEST: services/gateway/test/orb/vtid-05002-sse-cross-task-forward.test.ts
 
+AC-4b (Codex review on #3969): a forwarded SSE stream that ends because the forwarding task stopped does not destroy the owner's session — the owner holds it for `FORWARDED_STREAM_GRACE_MS` (20 s) and keeps it when the client's EventSource reconnects directly; a direct stream still tears down at once.
+TEST: services/gateway/test/orb/vtid-05002-sse-cross-task-forward.test.ts
+
+AC-4c (Codex review on #3969): the client latency beacon accepts owner-bearing session ids (cap 64 -> 160), so flagged sessions keep their `voice.latency.client` event.
+TEST: services/gateway/test/orb/vtid-05002-sse-cross-task-forward.test.ts
+TEST: services/gateway/test/orb/live/vtid-04542-client-latency-route.test.ts
+
 AC-5: Staging pins `ORB_SSE_CROSS_TASK_FORWARD_ENABLED="true"` (strip + re-add); prod is not pinned (off) and builds its env from its own task definition, so the staging pin cannot reach prod. The deploy step stays valid bash and under the 20,000-character limit; the generated flag pins mirror the workflow.
 TEST: services/gateway/test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
 TEST: services/gateway/test/services/conversation/vtid-04525-conversation-flag-registry.test.ts
