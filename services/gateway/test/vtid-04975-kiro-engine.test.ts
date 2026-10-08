@@ -10,6 +10,8 @@ import { answerPermission, makePermissionHandler, pendingPermissionCount } from 
 import {
   setKiroBackend, runKiroTurn, cancelKiroTurn, closeKiroSession, closeAllKiroSessions, openKiroSessionCount,
 } from '../src/services/kiro/kiro-turn';
+import fs from 'fs';
+import path from 'path';
 import { OperatorChatMessageSchema } from '../src/types/operator-chat';
 
 type Script = (msg: any, send: (o: unknown) => void) => void;
@@ -259,5 +261,30 @@ describe('chat schema', () => {
     expect(OperatorChatMessageSchema.safeParse({ message: 'hi', engine: 'llm' }).success).toBe(true);
     expect(OperatorChatMessageSchema.safeParse({ message: 'hi', engine: 'other' }).success).toBe(false);
     expect((OperatorChatMessageSchema.parse({ message: 'hi' }) as any).engine).toBeUndefined();
+  });
+});
+
+describe('operator route wiring (source check)', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../src/routes/operator.ts'), 'utf8');
+
+  it('a Kiro thread leaves runOperatorChatTurn before the LLM call, and only an exafy_admin may use it', () => {
+    const fork = src.indexOf("=== 'kiro') {\n      return runKiroChatTurn({");
+    const llm = src.indexOf('let geminiResult = await processWithGemini({');
+    expect(fork).toBeGreaterThan(-1);
+    expect(llm).toBeGreaterThan(fork);
+    expect(src).toContain("if (!a.isAdmin) return { status: 403, body: { ok: false, error: 'kiro_requires_admin' } };");
+  });
+
+  it('an existing thread keeps its engine: the stored engine is consulted before the request field', () => {
+    expect(src).toContain("(await getThreadEngine(threadId)) ?? validation.data.engine ?? 'llm'");
+  });
+
+  it('every Kiro mutation route is admin-only and logs an OASIS event', () => {
+    for (const t of ['operator.kiro.permission_answered', 'operator.kiro.session_cancelled', 'operator.kiro.session_closed']) {
+      expect(src).toContain(`type: '${t}'`);
+    }
+    for (const r of ["'/kiro/status'", "'/kiro/permissions/:requestId'", "'/kiro/sessions/:threadId/cancel'", "'/kiro/sessions/:threadId'"]) {
+      expect(src).toMatch(new RegExp(`router\\.(get|post|delete)\\(${r.replace(/[/:]/g, (c) => '\\' + c)}, requireAdminAuth`));
+    }
   });
 });

@@ -253,6 +253,58 @@ interface OperatorChatTurnOutcome {
   body: Record<string, unknown>;
 }
 
+/**
+ * VTID-04975: one operator chat turn answered by Kiro. Same reply shape as the
+ * LLM path; the thread is recorded with engine 'kiro' (no rolling summary — the
+ * conversation lives in the Kiro session) and the reply is logged to OASIS.
+ * The user's message was already logged by the caller.
+ */
+async function runKiroChatTurn(a: {
+  requestId: string; threadId: string; createdAt: string; message: string;
+  attachments: Array<{ oasis_ref: string; kind: string }>; mode: string;
+  conversation_id?: string; validatedVtid: string | undefined; userId: string | null;
+  isAdmin: boolean; channel?: string; emit?: KiroTurnEventSink;
+}): Promise<OperatorChatTurnOutcome> {
+  if (!a.isAdmin) return { status: 403, body: { ok: false, error: 'kiro_requires_admin' } };
+  const result = await runKiroTurn({ threadId: a.threadId, userId: a.userId, message: a.message, emit: a.emit });
+
+  if (isOperatorThreadsEnabled()) {
+    recordOperatorTurn({
+      threadId: a.threadId,
+      identity: { user_id: a.userId, role: 'admin' },
+      userText: a.message,
+      reply: result.reply,
+      tools: result.toolResults.map((tr) => ({ name: tr.name, result: JSON.stringify(tr.response ?? {}) })),
+      engine: 'kiro',
+      meta: { conversation_id: a.conversation_id || null, request_id: a.requestId, engine: 'kiro', kiro_status: result.meta.kiro_status ?? null, ...(a.channel ? { channel: a.channel } : {}) },
+    }).catch((err) => console.warn('[VTID-04975] kiro thread record failed:', err instanceof Error ? err.message : err));
+  }
+
+  const assistantEvent = await ingestChatMessageEvent({
+    threadId: a.threadId,
+    vtid: a.validatedVtid,
+    role: 'assistant',
+    mode: a.mode as OperatorChatMode,
+    message: result.reply,
+    metadata: { request_id: a.requestId, ...result.meta, ...(result.toolResults.length ? { toolCalls: result.toolResults.map((tr) => tr.name) } : {}) },
+  });
+
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      reply: result.reply,
+      attachments: a.attachments,
+      oasis_ref: `OASIS-CHAT-${a.requestId.slice(0, 8).toUpperCase()}`,
+      meta: result.meta,
+      threadId: a.threadId,
+      messageId: assistantEvent.eventId || randomUUID(),
+      createdAt: a.createdAt,
+      ...(result.toolResults.length ? { toolResults: result.toolResults } : {}),
+    },
+  };
+}
+
 export async function runOperatorChatTurn(
   req: Request,
   // VTID-04310: `channel` tags the recorded thread messages (e.g.
@@ -409,27 +461,25 @@ export async function runOperatorChatTurn(
     // trust level here rather than the spoofable x-operator-role header
     // getOperatorRole() reads elsewhere in this file.
     const geminiUserRole = callerIdentity?.exafy_admin === true ? 'admin' : undefined;
+    // VTID-04975: an existing thread keeps the engine it was created with; the
+    // request's `engine` only picks it for a NEW thread. A Kiro thread leaves
+    // here — everything below is the unchanged LLM path.
+    if (((await getThreadEngine(threadId)) ?? validation.data.engine ?? 'llm') === 'kiro') {
+      return runKiroChatTurn({
+        requestId, threadId, createdAt, message, attachments, mode, conversation_id,
+        validatedVtid, userId: callerIdentity?.user_id ?? null, isAdmin: geminiUserRole === 'admin',
+        channel: opts.channel,
+        // Kiro events are additive frame types; the stream route writes `type` as the frame name.
+        emit: opts.onEvent as unknown as KiroTurnEventSink | undefined,
+      });
+    }
     // VTID-04022: server-side thread summary feeds the memory recall. Fail-open
     // — a missing table / Supabase error yields null and the turn proceeds
     // exactly as before.
     const threadSummary = isOperatorThreadsEnabled() ? await getThreadSummary(threadId).catch(() => null) : null;
     // VTID-04816 (Jev A10, shadow): which lane the message asks for, judged beside the turn.
-    // VTID-04975: an existing thread keeps the engine it was created with; the
-    // request's `engine` only picks it for a NEW thread. Kiro is exafy_admin only.
-    const isKiro = ((await getThreadEngine(threadId)) ?? validation.data.engine ?? 'llm') === 'kiro';
-    if (isKiro && geminiUserRole !== 'admin') {
-      return { status: 403, body: { ok: false, error: 'kiro_requires_admin' } };
-    }
-    const routeCheck = !isKiro && isOperatorRouteOn() ? runOperatorRoute({ threadId, message, developerTools: geminiUserRole === 'admin' }) : null;
-    let geminiResult: Awaited<ReturnType<typeof processWithGemini>> = isKiro
-      ? await runKiroTurn({
-        threadId,
-        userId: callerIdentity?.user_id ?? null,
-        message,
-        // Kiro events are additive frame types; the stream route writes `type` as the frame name.
-        emit: opts.onEvent as unknown as KiroTurnEventSink | undefined,
-      })
-      : await processWithGemini({
+    const routeCheck = isOperatorRouteOn() ? runOperatorRoute({ threadId, message, developerTools: geminiUserRole === 'admin' }) : null;
+    let geminiResult = await processWithGemini({
       text: message,
       threadId,
       attachments: attachments.map(a => ({ oasis_ref: a.oasis_ref, kind: a.kind })),
@@ -458,9 +508,7 @@ export async function runOperatorChatTurn(
     // retry (a genuinely confused model gets the honest simulated reply
     // back rather than looping).
     const executedToolNames = (geminiResult.toolResults || []).map((tr) => tr.name);
-    const simulatedCall = isKiro
-      ? { detected: false as const, toolName: '', reason: '' }
-      : detectSimulatedToolCallReply(geminiResult.reply || '', executedToolNames);
+    const simulatedCall = detectSimulatedToolCallReply(geminiResult.reply || '', executedToolNames);
     if (simulatedCall.detected) {
       console.warn(
         `[VTID-04172] simulated tool call detected on thread ${threadId} (${simulatedCall.toolName}): ${simulatedCall.reason} — retrying once`,
@@ -495,7 +543,7 @@ export async function runOperatorChatTurn(
     // preferences …) → dev_agent_memory, extracted by the memory stage.
     // Fire and forget, fail-open; trivial turns are skipped before any
     // model call. Independent of the thread store below.
-    if (!isKiro && isTurnMemoryEnabled()) {
+    if (isTurnMemoryEnabled()) {
       extractAndRecordTurnMemory({
         threadId,
         userText: message,
@@ -516,7 +564,6 @@ export async function runOperatorChatTurn(
         userText: message,
         reply: geminiResult.reply,
         tools: (geminiResult.toolResults || []).map((tr) => ({ name: tr.name, result: JSON.stringify(tr.response ?? {}) })),
-        engine: isKiro ? 'kiro' : 'llm',
         meta: { conversation_id: conversation_id || null, request_id: requestId, provider: geminiResult.meta?.provider ?? null, model: geminiResult.meta?.model ?? null, ...(opts.channel ? { channel: opts.channel } : {}) },
       })
         .then((r) => (r.recorded ? maybeSummarizeThread(threadId, r.turns) : false))
