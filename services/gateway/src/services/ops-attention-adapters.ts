@@ -56,6 +56,12 @@
  *   stuck_vtids        P3 session-plane VTIDs in progress with no ledger
  *                         update for > 72 h (autonomous tasks belong to
  *                         operator_pipeline)
+ *   cloudwatch_alarms  P1 a CloudWatch alarm in ALARM whose name starts with
+ *                         `vitana-gateway-prod-` (the production-gateway
+ *                         alarms, VTID-04987 naming convention)
+ *                      P2 every other alarm in ALARM (incl. staging's)
+ *                      Registered only when OPS_ATTENTION_CLOUDWATCH_ENABLED
+ *                      is exactly 'true' (attentionAdapters()).
  *
  * The Command Hub is admin-facing and English by design: titles and details
  * here are operator text, not member-facing copy (no i18n catalog).
@@ -91,7 +97,9 @@ export type AttentionSourceId =
   | 'routines'
   | 'support_tickets'
   | 'llm_google_fallback'
-  | 'stuck_vtids';
+  | 'stuck_vtids'
+  // VTID-04987 (gated: attentionAdapters())
+  | 'cloudwatch_alarms';
 
 export interface Deeplink {
   section: string;
@@ -298,6 +306,25 @@ export interface AttentionReads {
   // ── VTID-04886 (Phase 3) ──
   /** The 24 h timeline: events among TIMELINE_TOPICS at/after `sinceIso`, newest first. */
   timelineEvents(sinceIso: string): Promise<OasisEventRow[]>;
+  // ── VTID-04987 ──
+  /**
+   * CloudWatch alarms currently in ALARM (DescribeAlarms, read-only), at most
+   * CLOUDWATCH_ALARM_CAP; `truncated` when the cap was hit. Throws when the
+   * alarms could not be read — never "no alarms".
+   */
+  cloudwatchAlarms(): Promise<{ alarms: CloudWatchAlarmLite[]; truncated: boolean }>;
+}
+
+/** VTID-04987: one CloudWatch alarm in ALARM state. */
+export interface CloudWatchAlarmLite {
+  name: string;
+  type: 'metric' | 'composite';
+  /** null for a composite alarm. */
+  namespace: string | null;
+  metric_name: string | null;
+  state_reason: string | null;
+  /** When the alarm entered its current state (ISO), or null. */
+  state_updated_at: string | null;
 }
 
 /**
@@ -1367,6 +1394,52 @@ export async function stuckVtidsAdapter(reads: AttentionReads, ctx: AdapterConte
     : { candidates };
 }
 
+// ── 14. CloudWatch alarms (VTID-04987) ──────────────────────────────────────
+
+/**
+ * Alarm-name prefix of the production-gateway alarms. An alarm in ALARM
+ * whose name starts with it is P1; every other alarm in ALARM is P2.
+ * scripts/aws/setup-gateway-alb-health-alarm.sh creates
+ * `vitana-gateway-prod-no-healthy-targets` under this convention; a future
+ * production-gateway alarm must use the same prefix to page as P1.
+ */
+export const GATEWAY_PROD_ALARM_PREFIX = 'vitana-gateway-prod-';
+
+export async function cloudwatchAlarmsAdapter(reads: AttentionReads): Promise<AdapterOutput> {
+  const { alarms, truncated } = await reads.cloudwatchAlarms();
+  const candidates: Candidate[] = alarms.map((a) => {
+    const p1 = a.name.startsWith(GATEWAY_PROD_ALARM_PREFIX);
+    return {
+      key: a.name,
+      domain: 'platform',
+      severity: p1 ? 'P1' : 'P2',
+      title: `CloudWatch alarm ${a.name} in ALARM`,
+      detail:
+        (a.namespace ? `${a.namespace}${a.metric_name ? ` ${a.metric_name}` : ''}` : a.type === 'composite' ? 'composite alarm' : 'metric alarm') +
+        (a.state_reason ? ` · ${a.state_reason.slice(0, 160)}` : '') +
+        (p1 ? ' · production gateway' : ''),
+      // CloudWatch already held the condition for its own evaluation
+      // periods before it entered ALARM: no second hold here.
+      since: a.state_updated_at,
+      hold_ms: 0,
+      count: 1,
+      // The platform tile's screen (no dedicated alarms screen).
+      deeplink: link('overview', 'system-overview'),
+      evidence: {
+        alarm_name: a.name,
+        namespace: a.namespace,
+        reason: a.state_reason,
+        state_updated_at: a.state_updated_at,
+        alarm_type: a.type,
+        metric_name: a.metric_name,
+      },
+    };
+  });
+  return truncated
+    ? { candidates, partial_error: `cloudwatch: DescribeAlarms hit the ${alarms.length}-alarm cap; more alarms may be in ALARM` }
+    : { candidates };
+}
+
 // ── Registry ────────────────────────────────────────────────────────────────
 
 export interface AdapterSpec {
@@ -1399,18 +1472,42 @@ export const ATTENTION_ADAPTERS: AdapterSpec[] = [
 ];
 
 /**
+ * VTID-04987: the CloudWatch source. Not in ATTENTION_ADAPTERS — it is
+ * registered only behind its flag, by attentionAdapters(). The read itself is
+ * bounded at 5 s (ops-attention-cloudwatch.ts), so its budget is 6 s.
+ */
+export const CLOUDWATCH_ALARMS_ADAPTER: AdapterSpec = { id: 'cloudwatch_alarms', run: (r) => cloudwatchAlarmsAdapter(r), timeoutMs: 6_000 };
+
+/** VTID-04987: the CloudWatch source's gate. Exact string 'true'; anything else is off. */
+export function isCloudwatchAlarmsEnabled(): boolean {
+  return (process.env.OPS_ATTENTION_CLOUDWATCH_ENABLED ?? 'false') === 'true';
+}
+
+/**
+ * VTID-04987: the adapters the aggregator runs — ATTENTION_ADAPTERS, plus the
+ * CloudWatch source when OPS_ATTENTION_CLOUDWATCH_ENABLED is 'true'. Decided
+ * here, once; the aggregator and the tile summary both read it.
+ */
+export function attentionAdapters(): AdapterSpec[] {
+  return isCloudwatchAlarmsEnabled() ? [...ATTENTION_ADAPTERS, CLOUDWATCH_ALARMS_ADAPTER] : ATTENTION_ADAPTERS;
+}
+
+/**
+ * VTID-04987: why a source a tile lists is not registered. Such a source is
+ * shown on its tile as not monitored — never ok, never unknown.
+ */
+export const GATED_SOURCE_REASONS: Partial<Record<AttentionSourceId, string>> = {
+  cloudwatch_alarms:
+    'OPS_ATTENTION_CLOUDWATCH_ENABLED is not "true" on this deployment, so CloudWatch alarms are not read. ' +
+    'The gateway task role needs cloudwatch:DescribeAlarms first (scripts/aws/setup-gateway-cloudwatch-read-grant.sh).',
+};
+
+/**
  * VTID-04885: sources the plan names that have no in-process adapter yet.
  * Their domain tile says "not yet monitored" for them — never unknown, never OK.
+ * Empty since VTID-04987 wired cloudwatch_alarms; kept for future sources.
  */
-export const NOT_WIRED_SOURCES: Array<{ id: string; domain: TileDomainKey; reason: string }> = [
-  {
-    id: 'cloudwatch_alarms',
-    domain: 'platform',
-    reason:
-      'CloudWatch DescribeAlarms needs @aws-sdk/client-cloudwatch, which the gateway does not depend on, ' +
-      'and a task-role IAM grant (its own infra VTID). Gate OPS_ATTENTION_CLOUDWATCH_ENABLED is reserved for it.',
-  },
-];
+export const NOT_WIRED_SOURCES: Array<{ id: string; domain: TileDomainKey; reason: string }> = [];
 
 // ── Domain tiles (VTID-04885) ───────────────────────────────────────────────
 
@@ -1429,7 +1526,7 @@ export interface TileDomain {
 
 /** The plan's 13 domains, in display order. */
 export const TILE_DOMAINS: TileDomain[] = [
-  { key: 'platform', label: 'Platform & Services', sources: ['service_health'], deeplink: link('overview', 'system-overview') },
+  { key: 'platform', label: 'Platform & Services', sources: ['service_health', 'cloudwatch_alarms'], deeplink: link('overview', 'system-overview') },
   { key: 'release', label: 'Release Pipeline', sources: ['release'], deeplink: link('operator', 'deployments') },
   { key: 'voice', label: 'Voice / ORB', sources: ['voice_supervisor'], deeplink: link('voice', 'overview') },
   { key: 'llm', label: 'AI & LLM Routing', sources: ['llm_google_fallback'], deeplink: link('models-evaluations', 'routing') },

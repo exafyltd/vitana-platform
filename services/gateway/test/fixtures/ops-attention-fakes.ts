@@ -40,6 +40,8 @@ export function fakeReads(over: Partial<AttentionReads> = {}): AttentionReads {
     llmGoogleCalls: async () => [],
     // VTID-04886 (Phase 3)
     timelineEvents: async () => [],
+    // VTID-04987
+    cloudwatchAlarms: async () => ({ alarms: [], truncated: false }),
     ...over,
   };
 }

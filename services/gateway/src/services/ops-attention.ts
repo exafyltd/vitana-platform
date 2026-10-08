@@ -32,6 +32,12 @@
  * VTID-04885 (Phase 2): six more adapters and `domains`, one summary per plan
  * domain (buildDomainSummary).
  *
+ * VTID-04987: the default adapter set is attentionAdapters() — the CloudWatch
+ * source runs only when OPS_ATTENTION_CLOUDWATCH_ENABLED is 'true'. A source a
+ * tile lists that is not registered is shown on its tile as not monitored
+ * (in `not_wired`), never ok and never unknown; a registered source that did
+ * not report is still unknown.
+ *
  * VTID-04886 (Phase 3):
  *   - Ack / Snooze (ops_attention_acks, plan F5). The latest unexpired row per
  *     fingerprint wins. An acked item stays in the queue, marked `ack` (the
@@ -50,8 +56,9 @@
 
 import { VITANA_ENV, type VitanaEnv } from '../env';
 import {
-  ATTENTION_ADAPTERS,
+  GATED_SOURCE_REASONS,
   NOT_WIRED_SOURCES,
+  attentionAdapters,
   SELF_HEAL_ENDPOINT_BLOCKLIST,
   TILE_DOMAINS,
   TIMELINE_READ_LIMIT,
@@ -270,16 +277,31 @@ export function computeVerdict(counts: Pick<AttentionData['counts'], 'p1' | 'p2'
 
 const SEVERITIES: Severity[] = ['P1', 'P2', 'P3'];
 
-/** VTID-04885: the 13 domain tiles from the sources and the (unsliced) items. */
-export function buildDomainSummary(sources: AttentionSource[], items: AttentionItem[], hidden: HiddenItem[] = []): DomainSummary[] {
+/**
+ * VTID-04885: the 13 domain tiles from the sources and the (unsliced) items.
+ * VTID-04987: `registered` = the source ids that are registered on this
+ * deployment (default: attentionAdapters()). A tile source outside it is
+ * gated off: listed in `not_wired`, not counted, never unknown.
+ */
+export function buildDomainSummary(
+  sources: AttentionSource[],
+  items: AttentionItem[],
+  hidden: HiddenItem[] = [],
+  registered: string[] = attentionAdapters().map((a) => a.id),
+): DomainSummary[] {
   return TILE_DOMAINS.map((d) => {
-    const own = sources.filter((s) => (d.sources as string[]).includes(s.id));
-    const notWired = NOT_WIRED_SOURCES.filter((n) => n.domain === d.key).map((n) => ({ id: n.id, reason: n.reason }));
-    const its = items.filter((i) => (d.sources as string[]).includes(i.source));
-    const monitored = d.sources.length > 0;
+    const live = (d.sources as string[]).filter((id) => registered.includes(id));
+    const gated = (d.sources as string[]).filter((id) => !registered.includes(id));
+    const own = sources.filter((s) => live.includes(s.id));
+    const notWired = [
+      ...NOT_WIRED_SOURCES.filter((n) => n.domain === d.key).map((n) => ({ id: n.id, reason: n.reason })),
+      ...gated.map((id) => ({ id, reason: GATED_SOURCE_REASONS[id as AttentionSourceId] ?? 'not registered on this deployment' })),
+    ];
+    const its = items.filter((i) => live.includes(i.source));
+    const monitored = live.length > 0;
     // A monitored domain whose adapter did not run at all (not in `sources`)
     // is unknown, exactly like one whose adapter failed.
-    const missing = monitored && own.length < d.sources.length;
+    const missing = monitored && own.length < live.length;
     const unknown = missing || own.some((s) => s.status !== 'ok');
     const fetched = own.map((s) => s.fetched_at).sort();
     return {
@@ -290,10 +312,10 @@ export function buildDomainSummary(sources: AttentionSource[], items: AttentionI
       worst_severity: SEVERITIES.find((sev) => its.some((i) => i.severity === sev)) ?? null,
       open: its.length,
       sources_fresh: own.filter((s) => s.status === 'ok').length,
-      sources_total: d.sources.length,
+      sources_total: live.length,
       fetched_at: fetched[0] ?? null,
-      hidden: hidden.filter((h) => (d.sources as string[]).includes(h.source)).length,
-      source_ids: [...d.sources],
+      hidden: hidden.filter((h) => live.includes(h.source)).length,
+      source_ids: live,
       errors: own.filter((s) => s.error).map((s) => `${s.id}: ${s.error}`),
       not_wired: notWired,
       deeplink: d.deeplink,
@@ -419,7 +441,7 @@ export async function buildTimeline(reads: AttentionReads, now: number): Promise
 /** One full computation, uncached. Never throws for an adapter or state failure. */
 export async function buildOpsAttention(input: BuildAttentionInput): Promise<AttentionData> {
   const { env, now, reads, state } = input;
-  const adapters = input.adapters ?? ATTENTION_ADAPTERS;
+  const adapters = input.adapters ?? attentionAdapters();
   const nowIso = new Date(now).toISOString();
 
   // VTID-04886: the timeline and the active acks are read alongside the
@@ -529,7 +551,8 @@ export async function buildOpsAttention(input: BuildAttentionInput): Promise<Att
     counts,
     sources,
     items: shown.slice(0, MAX_ITEMS),
-    domains: buildDomainSummary(sources, shown, hidden),
+    // Registered = the deployment's set plus whatever this computation ran.
+    domains: buildDomainSummary(sources, shown, hidden, [...new Set([...attentionAdapters(), ...adapters].map((a) => a.id))]),
     hidden,
     acks_error: acks.error,
     timeline,

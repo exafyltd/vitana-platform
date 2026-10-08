@@ -7,7 +7,9 @@
 
 import {
   ATTENTION_ADAPTERS,
+  CLOUDWATCH_ALARMS_ADAPTER,
   NOT_WIRED_SOURCES,
+  attentionAdapters,
   TILE_DOMAINS,
   costBudgetsAdapter,
   cronIntervalMs,
@@ -252,11 +254,24 @@ describe('stuck_vtids adapter', () => {
 });
 
 describe('registry, not-wired sources and domain tiles', () => {
-  it('the CloudWatch adapter is not wired (no @aws-sdk/client-cloudwatch dependency) and is listed as such', () => {
+  // VTID-04987 replaced the "not wired" guard: the CloudWatch source is wired,
+  // behind OPS_ATTENTION_CLOUDWATCH_ENABLED.
+  it('VTID-04987: the CloudWatch source is wired — dependency present, registered behind its flag, on the platform tile', () => {
     const pkg = require('../package.json');
-    expect(pkg.dependencies['@aws-sdk/client-cloudwatch']).toBeUndefined();
-    expect(ATTENTION_ADAPTERS.map((a) => a.id)).not.toContain('cloudwatch_alarms');
-    expect(NOT_WIRED_SOURCES).toEqual([expect.objectContaining({ id: 'cloudwatch_alarms', domain: 'platform' })]);
+    expect(pkg.dependencies['@aws-sdk/client-cloudwatch']).toMatch(/^\^3\./);
+    expect(pkg.dependencies['@aws-sdk/client-cloudwatch'].split('.')[0]).toBe(pkg.dependencies['@aws-sdk/client-cloudwatch-logs'].split('.')[0]);
+    const prev = process.env.OPS_ATTENTION_CLOUDWATCH_ENABLED;
+    try {
+      delete process.env.OPS_ATTENTION_CLOUDWATCH_ENABLED;
+      expect(attentionAdapters().map((a) => a.id)).not.toContain('cloudwatch_alarms');
+      process.env.OPS_ATTENTION_CLOUDWATCH_ENABLED = 'true';
+      expect(attentionAdapters().map((a) => a.id)).toContain('cloudwatch_alarms');
+    } finally {
+      if (prev === undefined) delete process.env.OPS_ATTENTION_CLOUDWATCH_ENABLED;
+      else process.env.OPS_ATTENTION_CLOUDWATCH_ENABLED = prev;
+    }
+    expect(TILE_DOMAINS.find((d) => d.key === 'platform')!.sources).toEqual(['service_health', 'cloudwatch_alarms']);
+    expect(NOT_WIRED_SOURCES).toEqual([]);
   });
 
   it('the plan\'s 13 domains, every adapter in exactly one tile', () => {
@@ -265,7 +280,8 @@ describe('registry, not-wired sources and domain tiles', () => {
       'Governance', 'Quality', 'Cost & Budgets', 'Community & Support', 'Moderation & Commerce', 'Data & Memory', 'Scheduled Jobs',
     ]);
     const owned = TILE_DOMAINS.flatMap((d) => d.sources);
-    expect([...owned].sort()).toEqual(ATTENTION_ADAPTERS.map((a) => a.id).sort());
+    // VTID-04987: the gated CloudWatch spec counts as an adapter here.
+    expect([...owned].sort()).toEqual([...ATTENTION_ADAPTERS, CLOUDWATCH_ALARMS_ADAPTER].map((a) => a.id).sort());
     expect(TILE_DOMAINS.filter((d) => !d.sources.length).map((d) => d.key)).toEqual(['commerce', 'data']);
   });
 
