@@ -19,6 +19,7 @@
  */
 import { randomBytes, randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+import { isSandboxAccount } from './sandbox-accounts';
 import {
   PARTNER_TYPES,
   canTransition,
@@ -419,6 +420,21 @@ export async function submitForVerification(
   const verdict = evaluateVerification(checklist);
   const moves = submitTransitions(org.lifecycle_state, verdict.outcome);
   if (!moves) return fail(409, { error: 'NOT_SUBMITTABLE', lifecycle_state: org.lifecycle_state });
+
+  // VTID-04971: a review-sandbox supplier (registered test account) is recorded and
+  // stopped here: no state change, so no review queue entry and no go-live.
+  if (await isSandboxAccount(s as any, org.owner_user_id ?? caller.userId)) {
+    await emitOasisEvent({
+      vtid: 'VTID-04971',
+      type: 'partner_org.sandbox_submitted',
+      source: meta.source ?? 'partner-onboarding',
+      status: 'info',
+      message: `Sandbox organization ${orgId} submitted; nothing changed.`,
+      payload: { partner_organization_id: orgId, would_be_outcome: verdict.outcome, open_steps: verdict.open_steps },
+      actor_id: caller.userId,
+    }).catch(() => undefined);
+    return orgState(s, orgId, 200, { transitions: [], open_steps: verdict.open_steps, sandbox: true });
+  }
 
   const moved = await applyLifecycleMoves(s, orgId, moves, {
     actorId: caller.userId,

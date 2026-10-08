@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-04971",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/sandbox-accounts.ts",
+    "services/gateway/src/services/partner-onboarding-service.ts",
+    "services/gateway/src/services/partner-review.ts",
+    "services/gateway/src/services/commerce-mcp.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/test/vtid-04971-*.test.ts",
+    "docs/validation/VTID-04971/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
