@@ -1,0 +1,5 @@
+# VTID-04978 — commands run and their results (local throwaway Postgres 16 on a unix socket; never a shared or production database)
+$ scripts/ci/sql-tests/run-reminders-in-calendar-test.sh   -> PASS vtid-04978 reminders in calendar   (outputs/sql-test.txt)
+$ [mutation 1] drop the recurrence guard from the insert trigger's WHEN, rerun -> ASSERT failure; restored -> PASS
+$ [mutation 2] stop 'failed' from cancelling the entry, rerun -> ASSERT failure; restored -> PASS
+$ cd services/gateway && npx jest test/vtid-04978-reminders-in-calendar-migration.test.ts test/vtid-04331-calendar-data-model.test.ts test/calendar   (outputs/jest.txt)
