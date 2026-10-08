@@ -15,6 +15,10 @@ jest.mock('../src/middleware/auth-supabase-jwt', () => ({
   optionalAuth: (_req: any, _res: any, next: any) => next(),
 }));
 jest.mock('../src/lib/supabase', () => ({ getSupabase: () => ({}) }));
+// VTID-04968: client approval is pinned in vtid-04968-delegation-guard.test.ts.
+jest.mock('../src/services/mcp-client-allowlist', () => ({
+  checkMcpClient: async () => ({ ok: true, clientId: 'claude-ai', clientName: 'Claude', delegated: true }),
+}));
 const emitOasisEvent = jest.fn().mockResolvedValue({ ok: true });
 jest.mock('../src/services/oasis-event-service', () => ({ emitOasisEvent: (...a: unknown[]) => emitOasisEvent(...a) }));
 
