@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04995",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04995-calendar-conflicts.test.ts",
+      "cwd": "services/gateway",
+      "reason": "GET /api/v1/calendar/conflicts now answers from what the calendar screen shows (recurrence expanded, other lenses and connected calendars as title-less busy time). It is an authenticated read; staging shares the production database and has no member entries to assert on, so the behaviour is pinned by the pure computeConflicts unit tests (boundaries, titles never leak for busy/external, reminders/subscription dates excluded, edit-self exclusion, DST) and the route contract/golden."
+    }
+  ]
+}

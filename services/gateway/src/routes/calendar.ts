@@ -28,7 +28,7 @@ import {
   getUserTodayEvents,
   getUserCalendarHistory,
   getCalendarGaps,
-  checkConflicts,
+  findConflicts,
   createCalendarEvent,
   bulkCreateCalendarEvents,
   updateCalendarEvent,
@@ -531,6 +531,23 @@ router.get('/events/gaps', async (req: Request, res: Response) => {
   }
 });
 
+/** The member's time zone for calendar reads, or undefined (the service default applies). */
+async function resolveUserTimezone(userId: string): Promise<string | undefined> {
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    const { getUserTimezone } = await import('../services/daily-pace-service');
+    if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE) {
+      return await getUserTimezone(
+        createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE) as any,
+        userId,
+      );
+    }
+  } catch {
+    // fall back to the service default inside listCalendarWindow
+  }
+  return undefined;
+}
+
 // =============================================================================
 // GET /conflicts — Check conflicts for proposed window
 // =============================================================================
@@ -546,8 +563,24 @@ router.get('/conflicts', async (req: Request, res: Response) => {
       return res.status(400).json({ ok: false, error: 'start_time and end_time required' });
     }
 
-    const conflicts = await checkConflicts(userId, role, startTime, endTime);
-    return res.json({ ok: true, data: conflicts.map(toSummary), has_conflicts: conflicts.length > 0 });
+    const startMs = Date.parse(startTime);
+    const endMs = Date.parse(endTime);
+    if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs <= startMs) {
+      return res.status(400).json({ ok: false, error: 'start_time and end_time must be ISO timestamps with end_time > start_time' });
+    }
+    const excludeEventId = typeof req.query.exclude_event_id === 'string' ? req.query.exclude_event_id : undefined;
+    // VTID-04995: same composition as the calendar screen (recurrence expanded,
+    // other lenses and connected calendars as title-less busy time).
+    const conflicts = await findConflicts(userId, role, startTime, endTime, {
+      excludeEventId,
+      userTimezone: await resolveUserTimezone(userId),
+    });
+    return res.json({
+      ok: true,
+      data: conflicts.filter((c) => c.kind === 'own'),
+      conflicts,
+      has_conflicts: conflicts.length > 0,
+    });
   } catch (err: any) {
     console.error(`${LOG_PREFIX} GET /conflicts error:`, err.message);
     return res.status(500).json({ ok: false, error: 'Internal error' });
