@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "vitanaland-commerce": {
+      "type": "http",
+      "url": "https://gateway.vitanaland.com/mcp"
+    }
+  }
+}

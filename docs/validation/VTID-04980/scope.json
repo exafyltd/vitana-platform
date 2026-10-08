@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-04980",
+  "kind": "feature",
+  "paths": [
+    "integrations/chatgpt-plugin/**",
+    "services/gateway/test/vtid-04980-*.test.ts",
+    "docs/validation/VTID-04980/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
