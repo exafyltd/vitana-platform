@@ -39,7 +39,9 @@ describe('VTID-04981 fn_consume_credits lockdown', () => {
       const sql = fs.readFileSync(path.join(MIGRATIONS, f), 'utf8');
       const grants = sql.match(/GRANT[^;]*fn_consume_credits[^;]*;/gi) ?? [];
       for (const g of grants) {
-        expect({ file: f, grant: g }).toEqual({ file: f, grant: expect.not.stringMatching(/\b(authenticated|anon|PUBLIC)\b/i) });
+        // Only the grantees count: `public.fn_consume_credits` is the schema, not the PUBLIC role.
+        const grantees = g.replace(/^[\s\S]*?\bTO\b/i, '');
+        expect({ file: f, grantees }).toEqual({ file: f, grantees: expect.not.stringMatching(/\b(authenticated|anon|public)\b/i) });
       }
     }
   });

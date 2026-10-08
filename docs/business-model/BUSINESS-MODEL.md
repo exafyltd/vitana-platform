@@ -133,14 +133,14 @@ The single most important cashflow guardrail in v1: **separation by source AND b
 | Bucket | Source | Burn paths in v1 |
 |---|---|---|
 | `purchased_credits` | Stripe credit-pack top-ups · ENTER-code grants · refunds · transfers | **Any feature** (default) — Live AI overage, Room overage, lab, photo, match |
-| `reward_credits` | Diary streaks · milestones · referrals · hosted workshops · wellness-list rewards · group-creation rewards | **Cheap features only** — match reveal · photo · lab. **NEVER** Live AI minutes, Room minutes, or subscription discount. |
+| `reward_credits` (earned VTNA) | Diary streaks · milestones · referrals · hosted workshops · wellness-list rewards · group-creation rewards | **Rewards only** — the Rewards shop and Premium conversion (owner decision 2026-10-08, VTID-04988; §11 item 6). **NEVER** paywall overage of any feature. |
 | `cash_balance` | Sell-and-Earn commissions held by Vitana · Stripe Connect hosting payouts · workshop revenue | **Withdrawable to bank** via Stripe Connect Express. Not in-app spend. |
 
 Implementation: 3 columns on `wallet_balances`. The legacy `balance` column stays as the sum across buckets for backward compatibility.
 
 **Rules** (enforced by `feature_entitlements.allowed_burn_buckets`):
 - `consumeCredits(userId, feature, amount)` checks the feature's `allowed_burn_buckets` config
-- Burn order when both allowed: **rewards first** (drain the lower-utility bucket first; preserves cash-equivalent purchased credits)
+- Paywall overage is paid from `purchased_credits` only; no feature lists `reward_credits` in `allowed_burn_buckets`, and `fn_consume_credits` refuses that bucket (VTID-04988, superseding the earlier "rewards first" burn order)
 - UI: Wallet page shows up to three rows (Credits / Rewards / Cash earnings). Subscriptions/checkout flows show only `Credits`.
 
 ---

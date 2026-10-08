@@ -1,0 +1,19 @@
+$ bash scripts/ci/test-vtid-04988-rewards-only.sh
+VTID-04988: all assertions passed
+
+# mutation: entitlement-service.ts reverted to the rewards-first selection
+Tests:       2 failed, 4 passed, 6 total
+
+    ✓ on the RPC returning {error} (the wallet_balances-does-not-exist shape): logs it loudly, and buckets fall back to all-zero (unchanged behavior) (10 ms)
+    ✓ on a successful wallet fetch: logs nothing (1 ms)
+    ✓ revokes members and keeps the gateway, and checks itself on apply (13 ms)
+    ✓ no later migration grants fn_consume_credits to members again (3 ms)
+    ✓ the gateway calls it through the service-role client (1 ms)
+    ✓ reproduces the VTID-03107 grant, applies the lockdown twice and passes the SQL assertions (2049 ms)
+    ✓ uses purchased credits even when the config still lists reward_credits and it would cover the debit (10 ms)
+    ✓ ignores a caller preference for reward_credits (2 ms)
+    ✓ keeps honouring an allowed purchased_credits preference (3 ms)
+    ✓ removes reward_credits from every feature and refuses it in fn_consume_credits (2 ms)
+    ✓ keeps the VTID-04981 lockdown: members cannot execute it (1 ms)
+    ✓ applies twice over the live shapes and passes the SQL assertions (2192 ms)
+Tests:       12 passed, 12 total

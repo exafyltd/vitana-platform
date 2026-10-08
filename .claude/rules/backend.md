@@ -1055,7 +1055,9 @@ Standing rules for any Commerce change:
    1 VTNA = EUR 0.01. Every VTNA reward goes through `credit_wallet()`
    (`p_type 'reward'`, a stable `p_source_event_id`), lands in
    `earned_balance`, and only rewards (shop, subscription conversion) may
-   spend it. Never credit VTNA with `increment_wallet_balance()` or from the
+   spend it — never paywall overage (VTID-04988: no feature's
+   `allowed_burn_buckets` lists `reward_credits`, and `fn_consume_credits`
+   refuses it). Never credit VTNA with `increment_wallet_balance()` or from the
    client. **Repeatable, capped rewards (VTID-04878)** go through
    `claim_capped_reward()` with the amount/cap/window from
    `services/rewards/vtna-reward-rules.ts`, never through a bare

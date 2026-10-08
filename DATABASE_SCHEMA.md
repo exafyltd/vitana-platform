@@ -802,6 +802,12 @@ CREATE TABLE public.founding_members (
 > signed-in member debit another member's earned or purchased credits (never
 > used: 0 `paywall:%` debits). Behaviour for the gateway is unchanged.
 > Migration `20261008170000_vtid_04981_consume_credits_lockdown.sql`.
+>
+> **VTID-04988 (2026-10-08, owner decision):** earned VTNA is spent only on
+> rewards. `feature_entitlements.allowed_burn_buckets` no longer lists
+> `reward_credits` for any feature, and `fn_consume_credits` returns
+> `BUCKET_NOT_SPENDABLE` for that bucket without writing. Migration
+> `20261008190000_vtid_04988_earned_vtna_rewards_only.sql`.
 
 **This is the live, production system backing the wallet UI** (`useWallet.ts`
 in `vitana-v1` → `user_wallets` + RPCs below). It predates and is entirely
