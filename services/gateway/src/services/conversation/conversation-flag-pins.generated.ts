@@ -128,6 +128,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   OPERATOR_THREADS_ENABLED: { staging: "true", prod: "true" },
   OPERATOR_TURN_MEMORY_ENABLED: { staging: "true", prod: "true" },
   OPERATOR_VTID_SELF_ALLOCATE_ENABLED: { staging: "true", prod: "true" },
+  OPS_ATTENTION_CLOUDWATCH_ENABLED: { staging: "true", prod: null },
   ORB_CASCADED_VOICE_ENABLED: { staging: "true", prod: "dynamic" },
   ORB_CASCADE_STREAMING_ENABLED: { staging: "true", prod: null },
   ORB_CONTEXT_READY_GATE_TIMEOUT_MS: { staging: null, prod: "300" },

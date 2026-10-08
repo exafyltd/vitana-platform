@@ -1,0 +1,19 @@
+$ scripts/aws/setup-gateway-alb-health-alarm.sh --service vitana-gateway-awsdr
+[setup-gateway-alb-health-alarm] account 472838866351 region eu-central-1 env prod service vitana-gateway-awsdr cluster Vitana-ECS-Cluster
+[setup-gateway-alb-health-alarm] resolved from AWS (not from names):
+[setup-gateway-alb-health-alarm]   target group  arn:aws:elasticloadbalancing:eu-central-1:472838866351:targetgroup/vitana-tg-gateway-awsdr/a2b0e810877c12e7  (name vitana-tg-gateway-awsdr — informational only)
+[setup-gateway-alb-health-alarm]   load balancer arn:aws:elasticloadbalancing:eu-central-1:472838866351:loadbalancer/app/vitana-alb-prod/3d60b7c377e63d95
+[setup-gateway-alb-health-alarm]   dimensions    TargetGroup=targetgroup/vitana-tg-gateway-awsdr/a2b0e810877c12e7 LoadBalancer=app/vitana-alb-prod/3d60b7c377e63d95
+[setup-gateway-alb-health-alarm]   SNS topic     arn:aws:sns:eu-central-1:472838866351:vitana-alarms-prod
+[setup-gateway-alb-health-alarm] current alarm vitana-gateway-prod-no-healthy-targets:
+null
+[setup-gateway-alb-health-alarm] would put-metric-alarm:
+  --alarm-name vitana-gateway-prod-no-healthy-targets
+  --namespace AWS/ApplicationELB --metric-name HealthyHostCount --statistic Minimum
+  --dimensions Name=TargetGroup,Value=targetgroup/vitana-tg-gateway-awsdr/a2b0e810877c12e7 Name=LoadBalancer,Value=app/vitana-alb-prod/3d60b7c377e63d95
+  --period 60 --evaluation-periods 2 --datapoints-to-alarm 2
+  --threshold 1 --comparison-operator LessThanThreshold
+  --treat-missing-data breaching
+  --alarm-actions arn:aws:sns:eu-central-1:472838866351:vitana-alarms-prod --ok-actions arn:aws:sns:eu-central-1:472838866351:vitana-alarms-prod
+[setup-gateway-alb-health-alarm] dry run — nothing changed. Re-run with --apply to create/update the alarm.
+exit=0

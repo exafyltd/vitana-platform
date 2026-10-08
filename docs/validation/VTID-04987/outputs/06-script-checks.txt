@@ -1,0 +1,4 @@
+bash -n OK scripts/aws/setup-gateway-cloudwatch-read-grant.sh
+bash -n OK scripts/aws/setup-gateway-alb-health-alarm.sh
+version: 0.11.0
+shellcheck: no findings (exit 0)

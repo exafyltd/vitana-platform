@@ -828,6 +828,15 @@ jobs:
 # Production runs the code default (log) until its logs show no unknown
 # callers. Rollback: "log" (or "off" in an emergency).
 #
+# VTID-04987 -- OPS_ATTENTION_CLOUDWATCH_ENABLED=true, STAGING ONLY: the
+# Overview cockpit's cloudwatch_alarms source (DescribeAlarms, read-only).
+# The staging task role needs cloudwatch:DescribeAlarms first
+# (scripts/aws/setup-gateway-cloudwatch-read-grant.sh --env staging --apply);
+# without it the source reads UNKNOWN, never green. Production is a separate
+# follow-up PR after staging shows the source ok. Rollback: "false". The
+# strip list above was re-indented (whitespace only, jq ignores it) so this
+# step stays under GitHub's 20,000-char run limit.
+#
 # VTID-04677 -- SCHEDULED_NOTIFICATIONS_AUTH_MODE is stripped (not pinned:
 # this step is at GitHub's 20,000-char run limit), so staging runs the code
 # default "log": /api/v1/scheduled-notifications/* logs every call without
@@ -1038,33 +1047,33 @@ jobs:
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
                     ( [ .[] | select(.name | IN("GIT_COMMIT_SHA","COMMIT_SHA","BUILD_INFO_MARKER",
-                                                "NOVA_SONIC_ENABLED","NOVA_SONIC_REGION","NOVA_SONIC_MODEL_ID",
-                                                "NOVA_SONIC_CANARY_USER_IDS","NOVA_SONIC_CANARY_TENANT_IDS",
-                                                "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV",
-                                                "FEATURE_ORB_SAFE_FAST_GREETING_ENV",
-                                                "FEATURE_LATENCY_TELEMETRY_ENV",
-                                                "FEATURE_ORB_FAST_START_ENV",
-                                                "FEATURE_ORB_BRAIN_CACHE_ENV",
-                                                "FEATURE_ORB_NOVA_PREWARM_ENV",
-                                                "FEATURE_ORB_WS_TRANSPORT_ENV",
-                                                "ORB_FULL_DUPLEX_ENABLED","ORB_DEVON_PRECONNECT_ENABLED","ORB_CASCADE_STREAMING_ENABLED","ORB_MOBILE_LEAD_FIRST_ONLY_ENABLED","ORB_TOOL_ACK_INTENT_ENABLED",
-                                                "ORB_VERTEX_SHARED_HANDLERS","ORB_TOOL_SELECTION_ENABLED","BRAIN_PERSONAL_WEIGHTS","BRAIN_SCORED_OPENING",
-                                                "ORB_DAY_CLOSE_RUNG_ENABLED","ORB_LOG_NOVA_INSTRUCTION_DEBUG",
-                                                "TTS_PROVIDER","TTS_POLLY_STRICT","VERTEX_LIVE_UNAVAILABLE",
-                                                "ORB_CASCADED_VOICE_ENABLED",
-                                                "OPERATOR_EXECUTION_ONRAMP_ENABLED","OPERATOR_ONRAMP_EXECUTOR",
-                                                "OPERATOR_CODEBASE_READ_ENABLED","OPERATOR_DB_READONLY_ENABLED","OPERATOR_AWS_READONLY_ENABLED",
-                                                "OPERATOR_BOOTSTRAP_PACK_ENABLED","OPERATOR_BOOTSTRAP_BUILD_INFO_URLS",
-                                                "DEV_AUTOPILOT_LLM_REVIEW_ENABLED",
-                                                "DEV_AUTOPILOT_USE_JOB","DEV_AUTOPILOT_JOB_CLOUD",
-                                                "DEV_AUTOPILOT_WATCHER_LIVE","OPERATOR_PLANNER_ENABLED",
-                                                "OPERATOR_VTID_SELF_ALLOCATE_ENABLED","OPERATOR_PR_APPROVAL_REQUIRED",
-                                                "OPERATOR_THREADS_ENABLED","OPERATOR_TURN_MEMORY_ENABLED",
-                                                "REMINDERS_INPROCESS_DISPATCH_ENABLED","REMINDERS_STAGING_DISPATCH_OVERRIDE","CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","CALENDAR_GOOGLE_SYNC_ENABLED","MEMORY_ORB_RECALL_ENABLED","MEMORY_ORB_RECALL_SHADOW",
-                                                "FEEDBACK_AUTO_DISPATCH_ENABLED","LEDGER_WRITE_AUTH_MODE","SCHEDULED_NOTIFICATIONS_AUTH_MODE",
-                                                "NAV_V2_ENABLED","NAV_REGISTRY_URL",
-                                                "OPERATOR_SQL_READONLY_ENABLED","OPERATOR_SQL_READONLY_BACKEND",
-                                                "OPERATOR_MACHINE_AUTH_ENABLED",
+                    "NOVA_SONIC_ENABLED","NOVA_SONIC_REGION","NOVA_SONIC_MODEL_ID",
+                    "NOVA_SONIC_CANARY_USER_IDS","NOVA_SONIC_CANARY_TENANT_IDS",
+                    "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV",
+                    "FEATURE_ORB_SAFE_FAST_GREETING_ENV",
+                    "FEATURE_LATENCY_TELEMETRY_ENV",
+                    "FEATURE_ORB_FAST_START_ENV",
+                    "FEATURE_ORB_BRAIN_CACHE_ENV",
+                    "FEATURE_ORB_NOVA_PREWARM_ENV",
+                    "FEATURE_ORB_WS_TRANSPORT_ENV",
+                    "ORB_FULL_DUPLEX_ENABLED","ORB_DEVON_PRECONNECT_ENABLED","ORB_CASCADE_STREAMING_ENABLED","ORB_MOBILE_LEAD_FIRST_ONLY_ENABLED","ORB_TOOL_ACK_INTENT_ENABLED",
+                    "ORB_VERTEX_SHARED_HANDLERS","ORB_TOOL_SELECTION_ENABLED","BRAIN_PERSONAL_WEIGHTS","BRAIN_SCORED_OPENING",
+                    "ORB_DAY_CLOSE_RUNG_ENABLED","ORB_LOG_NOVA_INSTRUCTION_DEBUG",
+                    "TTS_PROVIDER","TTS_POLLY_STRICT","VERTEX_LIVE_UNAVAILABLE",
+                    "ORB_CASCADED_VOICE_ENABLED",
+                    "OPERATOR_EXECUTION_ONRAMP_ENABLED","OPERATOR_ONRAMP_EXECUTOR",
+                    "OPERATOR_CODEBASE_READ_ENABLED","OPERATOR_DB_READONLY_ENABLED","OPERATOR_AWS_READONLY_ENABLED","OPS_ATTENTION_CLOUDWATCH_ENABLED",
+                    "OPERATOR_BOOTSTRAP_PACK_ENABLED","OPERATOR_BOOTSTRAP_BUILD_INFO_URLS",
+                    "DEV_AUTOPILOT_LLM_REVIEW_ENABLED",
+                    "DEV_AUTOPILOT_USE_JOB","DEV_AUTOPILOT_JOB_CLOUD",
+                    "DEV_AUTOPILOT_WATCHER_LIVE","OPERATOR_PLANNER_ENABLED",
+                    "OPERATOR_VTID_SELF_ALLOCATE_ENABLED","OPERATOR_PR_APPROVAL_REQUIRED",
+                    "OPERATOR_THREADS_ENABLED","OPERATOR_TURN_MEMORY_ENABLED",
+                    "REMINDERS_INPROCESS_DISPATCH_ENABLED","REMINDERS_STAGING_DISPATCH_OVERRIDE","CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","CALENDAR_GOOGLE_SYNC_ENABLED","MEMORY_ORB_RECALL_ENABLED","MEMORY_ORB_RECALL_SHADOW",
+                    "FEEDBACK_AUTO_DISPATCH_ENABLED","LEDGER_WRITE_AUTH_MODE","SCHEDULED_NOTIFICATIONS_AUTH_MODE",
+                    "NAV_V2_ENABLED","NAV_REGISTRY_URL",
+                    "OPERATOR_SQL_READONLY_ENABLED","OPERATOR_SQL_READONLY_BACKEND",
+                    "OPERATOR_MACHINE_AUTH_ENABLED",
                     "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
                     "AURORA_CA_BUNDLE_PATH",
                     "GOOGLE_CLOUD_PROJECT","VERTEX_AI_LOCATION","VERTEX_SERBIAN_BRIDGE_ENABLED","VERTEX_RUSSIAN_BRIDGE_ENABLED","GOOGLE_AUTH_AWS_SUPPLIER_ENABLED",
@@ -1112,6 +1121,7 @@ jobs:
                           {name:"OPERATOR_CODEBASE_READ_ENABLED", value:"true"},
                           {name:"OPERATOR_DB_READONLY_ENABLED", value:"true"},
                           {name:"OPERATOR_AWS_READONLY_ENABLED", value:"true"},
+                          {name:"OPS_ATTENTION_CLOUDWATCH_ENABLED", value:"true"},
                           {name:"OPERATOR_BOOTSTRAP_PACK_ENABLED", value:"true"},
                           {name:"OPERATOR_BOOTSTRAP_BUILD_INFO_URLS", value:"staging=https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info,prod=https://gateway.vitanaland.com/api/v1/admin/build-info"},
                           {name:"DEV_AUTOPILOT_LLM_REVIEW_ENABLED", value:"true"},

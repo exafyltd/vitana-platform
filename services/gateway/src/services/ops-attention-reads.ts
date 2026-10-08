@@ -7,7 +7,8 @@
  * helpers, the ops-runtime build-info checks, and small bounded
  * service-role reads (supabase-js) with a LIMIT and an indexed filter
  * (topic + created_at, status, outcome). Nothing here makes an HTTP call to
- * this gateway's own routes.
+ * this gateway's own routes. VTID-04987: cloudwatchAlarms() is the one AWS
+ * read (DescribeAlarms, ops-attention-cloudwatch.ts).
  *
  * Every function throws on a failed read — the aggregator maps a throw to
  * an UNKNOWN source — and never turns "could not read" into "nothing found".
@@ -24,6 +25,7 @@ import { isAutonomousExecutionTask } from '../routes/worker-orchestrator';
 import { fetchApprovalEligibleVtids, fetchPrInfoForVtids } from '../routes/approvals';
 import { runRuntimeCheckCached } from '../routes/ops-runtime-health';
 import { aggregateSpend, budgetLines, loadSpendToday } from './orchestrator/budgets';
+import { describeAlarmsInAlarm } from './ops-attention-cloudwatch';
 import {
   GOOGLE_LLM_PROVIDERS,
   JEV_BUDGET_TOPIC,
@@ -410,6 +412,13 @@ export function createAttentionReads(opts: { authHeader?: string } = {}): Attent
           .limit(TIMELINE_READ_LIMIT),
         'oasis_events',
       ) as any[];
+    },
+
+    // ── VTID-04987 ──
+
+    async cloudwatchAlarms() {
+      // DescribeAlarms(StateValue=ALARM), paginated, capped, 5 s; throws on error.
+      return describeAlarmsInAlarm();
     },
   };
 }
