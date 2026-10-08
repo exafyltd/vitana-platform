@@ -20,7 +20,9 @@
 import { Router, type Request, type Response } from 'express';
 import { verifyAndExtractIdentity } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
-import { handleJsonRpc, isCommerceMcpEnabled, type JsonRpcRequest, type McpCallContext } from '../services/commerce-mcp';
+import { checkMcpClient } from '../services/mcp-client-allowlist';
+import { emitOasisEvent } from '../services/oasis-event-service';
+import { handleJsonRpc, isCommerceMcpEnabled, MCP_SCOPES as SERVICE_MCP_SCOPES, type JsonRpcRequest, type McpCallContext } from '../services/commerce-mcp';
 
 const router = Router();
 export const wellKnownRouter = Router();
@@ -55,7 +57,7 @@ export function portalUrlFor(origin: string, env: NodeJS.ProcessEnv = process.en
  * which it cannot sign with this project's HS256 key, and the token exchange
  * failed (500). The gateway only needs the access token, so no `openid`.
  */
-export const MCP_SCOPES = ['email', 'profile'] as const;
+export const MCP_SCOPES = SERVICE_MCP_SCOPES;
 
 function protectedResourceMetadata(req: Request) {
   const origin = publicOrigin(req);
@@ -75,6 +77,17 @@ function enabled(res: Response): boolean {
   res.status(404).json({ ok: false, error: 'COMMERCE_MCP_DISABLED' });
   return false;
 }
+
+/**
+ * VTID-04969: OpenAI verifies the domain by fetching a token the portal shows,
+ * served as plain text and nothing else. Off (404) until the token is set; it is
+ * independent of the MCP switch because OpenAI pings it when the plugin is submitted.
+ */
+wellKnownRouter.get('/openai-apps-challenge', (_req: Request, res: Response) => {
+  const token = (process.env.OPENAI_APPS_CHALLENGE_TOKEN ?? '').trim();
+  if (!token) return res.status(404).type('text/plain').send('');
+  return res.status(200).type('text/plain').send(token);
+});
 
 wellKnownRouter.get(['/oauth-protected-resource', '/oauth-protected-resource/mcp'], (req: Request, res: Response) => {
   if (!enabled(res)) return;
@@ -122,6 +135,23 @@ router.post('/', async (req: Request, res: Response) => { // inline-bearer-auth
   if (!supabase) return res.status(503).json({ jsonrpc: '2.0', id: null, error: { code: -32603, message: 'DB_UNAVAILABLE' } });
   if (!allowMcpCall(identity.user_id)) {
     return res.status(429).set('Retry-After', '60').json({ jsonrpc: '2.0', id: null, error: { code: -32003, message: 'RATE_LIMITED' } });
+  }
+
+  // VTID-04968: only approved assistants (by registered redirect host) may use the tools.
+  const client = await checkMcpClient(supabase as any, verified.claims);
+  if (!client.ok) {
+    await emitOasisEvent({
+      vtid: 'VTID-04968',
+      type: 'commerce.mcp.client_refused',
+      source: 'commerce-mcp',
+      status: 'warning',
+      message: `Commerce MCP refused a client: ${client.reason}.`,
+      payload: { reason: client.reason, client_id: typeof (verified.claims as any)?.client_id === 'string' ? (verified.claims as any).client_id : null },
+      actor_id: identity.user_id,
+      actor_role: 'agent',
+      surface: 'api',
+    }).catch(() => undefined);
+    return res.status(403).json({ jsonrpc: '2.0', id: null, error: { code: -32002, message: 'CLIENT_NOT_APPROVED' } });
   }
 
   const origin = publicOrigin(req);

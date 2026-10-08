@@ -133,7 +133,8 @@ describe('tool catalogue', () => {
   test('the two new tools are write tools, not destructive, and idempotent', () => {
     for (const name of ['check_verification', 'connect_store']) {
       const t = COMMERCE_MCP_TOOLS.find((x) => x.name === name)!;
-      expect(t.annotations).toEqual({ readOnlyHint: false, destructiveHint: false, idempotentHint: true });
+      // VTID-04969: both reach outside Vitanaland (the supplier's website, DNS, VIES, their shop).
+      expect(t.annotations).toEqual({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true });
       expect(t.title.length).toBeGreaterThan(2);
     }
   });

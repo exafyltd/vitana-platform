@@ -68,6 +68,35 @@ const INSTRUCTIONS = [
 
 // ==================== Tool catalogue ====================
 
+/**
+ * VTID-04922/04882: the scopes an assistant requests. Supabase's server issues
+ * identity scopes only; authorization is by the org-admin checks in the services.
+ * `openid` is deliberately absent (the ID-token signing failure, VTID-04882).
+ */
+export const MCP_SCOPES = ['email', 'profile'] as const;
+
+/**
+ * VTID-04969: every tool needs a signed-in supplier. OpenAI reads `securitySchemes`
+ * on the tool (and the mirror in `_meta` for clients that only read `_meta`).
+ */
+const SECURITY_SCHEMES = [{ type: 'oauth2', scopes: [...MCP_SCOPES] }] as const;
+
+/**
+ * OpenAI requires all three hints as explicit booleans on every tool.
+ * - readOnly: the tool changes nothing.
+ * - destructive: it can erase or irreversibly change something. Our writes only
+ *   create or overwrite DRAFT data that another call restores; the one change that
+ *   restarts a passed verification is gated behind `confirmed` instead.
+ * - openWorld: it reaches outside Vitanaland (the supplier's website, DNS, VIES,
+ *   their shop platform).
+ */
+const hints = (h: { readOnly: boolean; idempotent: boolean; openWorld?: boolean }) => ({
+  readOnlyHint: h.readOnly,
+  destructiveHint: false,
+  idempotentHint: h.idempotent,
+  openWorldHint: h.openWorld === true,
+});
+
 const ORG_ID = { type: 'string', description: 'The business id from get_onboarding_status or create_business.' };
 const BUSINESS_TYPE = {
   type: 'string',
@@ -87,7 +116,9 @@ export const COMMERCE_MCP_TOOLS = [
     description:
       "Lists the supplier's businesses on Vitanaland, or, with organization_id, one business's setup state: each step, what is missing, the next step and links for the steps done on Vitanaland itself.",
     inputSchema: { type: 'object', properties: { organization_id: ORG_ID }, additionalProperties: false },
-    annotations: { readOnlyHint: true },
+    annotations: hints({ readOnly: true, idempotent: true }),
+    securitySchemes: SECURITY_SCHEMES,
+    _meta: { securitySchemes: SECURITY_SCHEMES },
   },
   {
     name: 'create_business',
@@ -103,7 +134,9 @@ export const COMMERCE_MCP_TOOLS = [
       required: ['name', 'business_type'],
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    annotations: hints({ readOnly: false, idempotent: true }),
+    securitySchemes: SECURITY_SCHEMES,
+    _meta: { securitySchemes: SECURITY_SCHEMES },
   },
   {
     name: 'update_business',
@@ -124,7 +157,9 @@ export const COMMERCE_MCP_TOOLS = [
       required: ['organization_id'],
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    annotations: hints({ readOnly: false, idempotent: true }),
+    securitySchemes: SECURITY_SCHEMES,
+    _meta: { securitySchemes: SECURITY_SCHEMES },
   },
   {
     name: 'add_product',
@@ -153,14 +188,18 @@ export const COMMERCE_MCP_TOOLS = [
       required: ['organization_id', 'title', 'price'],
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    annotations: hints({ readOnly: false, idempotent: false }),
+    securitySchemes: SECURITY_SCHEMES,
+    _meta: { securitySchemes: SECURITY_SCHEMES },
   },
   {
     name: 'list_products',
     title: 'List products',
     description: "Lists the business's products and services with their ids, prices and whether they are live.",
     inputSchema: { type: 'object', properties: { organization_id: ORG_ID }, required: ['organization_id'], additionalProperties: false },
-    annotations: { readOnlyHint: true },
+    annotations: hints({ readOnly: true, idempotent: true }),
+    securitySchemes: SECURITY_SCHEMES,
+    _meta: { securitySchemes: SECURITY_SCHEMES },
   },
   {
     name: 'update_product',
@@ -183,7 +222,9 @@ export const COMMERCE_MCP_TOOLS = [
       required: ['organization_id', 'product_id'],
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    annotations: hints({ readOnly: false, idempotent: true }),
+    securitySchemes: SECURITY_SCHEMES,
+    _meta: { securitySchemes: SECURITY_SCHEMES },
   },
   {
     name: 'check_verification',
@@ -191,7 +232,9 @@ export const COMMERCE_MCP_TOOLS = [
     description:
       'Runs the automatic business checks (confirmed email, website ownership, EU VAT id) and records the result. Safe to repeat. If the website ownership is not yet proven, the result says exactly which DNS record or meta tag the supplier must add to their website, then call again. A slow check comes back as partial with retry_after_seconds: wait and call again.',
     inputSchema: { type: 'object', properties: { organization_id: ORG_ID }, required: ['organization_id'] },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    annotations: hints({ readOnly: false, idempotent: true, openWorld: true }),
+    securitySchemes: SECURITY_SCHEMES,
+    _meta: { securitySchemes: SECURITY_SCHEMES },
   },
   {
     name: 'connect_store',
@@ -199,7 +242,9 @@ export const COMMERCE_MCP_TOOLS = [
     description:
       "Recognises the platform of the business website (for example Shopify) and starts the shop connection. Safe to repeat: an existing connection is reused. If the supplier must approve access in their shop, the result gives the Vitanaland link for it; never ask them to paste keys or passwords into the chat. Set the business website first with update_business.",
     inputSchema: { type: 'object', properties: { organization_id: ORG_ID }, required: ['organization_id'] },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    annotations: hints({ readOnly: false, idempotent: true, openWorld: true }),
+    securitySchemes: SECURITY_SCHEMES,
+    _meta: { securitySchemes: SECURITY_SCHEMES },
   },
   {
     name: 'submit_for_verification',
@@ -212,7 +257,9 @@ export const COMMERCE_MCP_TOOLS = [
       required: ['organization_id', 'confirmed'],
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    annotations: hints({ readOnly: false, idempotent: false }),
+    securitySchemes: SECURITY_SCHEMES,
+    _meta: { securitySchemes: SECURITY_SCHEMES },
   },
 ] as const;
 

@@ -588,6 +588,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Middleware - IMPORTANT: JSON body parser must come before route handlers
   app.use(express.json({ limit: '2mb' }));
 
+  // VTID-04968: AI delegated credentials (OAuth clients such as Claude/ChatGPT)
+  // reach only /mcp and the discovery documents, never the general REST API.
+  const { delegatedTokenGuard } = require('./services/delegation-guard');
+  app.use(delegatedTokenGuard());
+
   // Health check
   app.get('/health', (req, res) => {
     res.json({ status: 'healthy', timestamp: new Date().toISOString() });

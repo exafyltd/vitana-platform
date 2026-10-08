@@ -15,6 +15,9 @@ jest.mock('../src/middleware/auth-supabase-jwt', () => ({
   optionalAuth: (_req: any, _res: any, next: any) => next(),
 }));
 jest.mock('../src/lib/supabase', () => ({ getSupabase: () => ({}) }));
+// VTID-04968: the client allow-list is pinned in vtid-04968-delegation-guard.test.ts.
+const checkMcpClient = jest.fn();
+jest.mock('../src/services/mcp-client-allowlist', () => ({ checkMcpClient: (...a: unknown[]) => checkMcpClient(...a) }));
 const emitOasisEvent = jest.fn().mockResolvedValue({ ok: true });
 jest.mock('../src/services/oasis-event-service', () => ({ emitOasisEvent: (...a: unknown[]) => emitOasisEvent(...a) }));
 
@@ -73,6 +76,7 @@ const authed = (body: unknown) => request(app()).post('/mcp').set('Authorization
 const prevEnv = { ...process.env };
 beforeEach(() => {
   jest.clearAllMocks();
+  checkMcpClient.mockResolvedValue({ ok: true, clientId: 'claude-ai', clientName: 'Claude', delegated: true });
   routes.resetMcpLimits();
   process.env.COMMERCE_MCP_ENABLED = 'true';
   process.env.SUPABASE_URL = 'https://proj.supabase.example';
@@ -340,5 +344,16 @@ describe('audit and limits', () => {
     for (let i = 0; i < 120; i++) expect(routes.allowMcpCall('u-9', 1000)).toBe(true);
     expect(routes.allowMcpCall('u-9', 1000)).toBe(false);
     expect(routes.allowMcpCall('u-9', 62_000)).toBe(true);
+  });
+});
+
+describe('VTID-04968 client approval', () => {
+  it('refuses a client that is not approved, audits it, and runs no tool', async () => {
+    checkMcpClient.mockResolvedValue({ ok: false, reason: 'client_not_approved' });
+    const res = await authed(call('get_onboarding_status'));
+    expect(res.status).toBe(403);
+    expect(res.body.error.message).toBe('CLIENT_NOT_APPROVED');
+    expect(svc.listMyOrgs).not.toHaveBeenCalled();
+    expect(emitOasisEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'commerce.mcp.client_refused', payload: expect.objectContaining({ reason: 'client_not_approved' }) }));
   });
 });
