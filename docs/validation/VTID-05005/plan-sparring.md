@@ -23,3 +23,8 @@ Off unless KIRO_MCP_ENABLED=true. Read tools only; write tools and repo cloning 
 
 ## Owner approval
 2026-10-09, in session: "yes, build it" (after "Include SQL and logs. I want full access.").
+
+## Post-review change (Codex review on PR #3974, before merge)
+- Batches: capped at 10 messages, charged per message, run sequentially.
+- `session/prompt` no longer uses the 30 s request default (15 min; the user has Stop); each tool call has a 100 s budget; the relay waits 115 s — all inside the ALB's measured 120 s idle timeout.
+- `dev_deep_dive` removed from the read set (runs up to 150 s, past that limit). The R2 F8 adapter fix (setThreadAuth) stays: other Operator checks use the same map.

@@ -63,6 +63,7 @@ async function adminStatus(userId: string, now = Date.now()) {
 }
 
 const CALLS_PER_MINUTE = 240;
+const MAX_BATCH = 10;
 const windows = new Map<string, number[]>();
 export function allowKiroMcpCall(userId: string, now = Date.now()): boolean {
   const recent = (windows.get(userId) ?? []).filter((t) => t > now - 60_000);
@@ -134,14 +135,20 @@ router.post('/', async (req: Request, res: Response) => {
   const { userId, threadId } = check.claims;
   const status = await adminStatus(userId);
   if (!status.admin) return rpcError(res, 403, -32003, 'exafy_admin required');
-  if (!allowKiroMcpCall(userId)) return rpcError(res, 429, -32004, 'too many tool calls; slow down');
-
   const ctx: CallCtx = { userId, tenantId: status.tenantId, threadId };
   const body = req.body;
   if (Array.isArray(body)) {
-    const out = (await Promise.all(body.map((m) => handleKiroMcp(m, ctx)))).filter(Boolean);
+    // A batch is charged per message and run one after another, never fanned out.
+    if (body.length === 0 || body.length > MAX_BATCH) return rpcError(res, 400, -32600, `a batch holds 1-${MAX_BATCH} messages`);
+    const out: JsonRpcResponse[] = [];
+    for (const m of body) {
+      if (!allowKiroMcpCall(userId)) return rpcError(res, 429, -32004, 'too many tool calls; slow down');
+      const r = await handleKiroMcp(m, ctx);
+      if (r) out.push(r);
+    }
     return out.length ? res.json(out) : res.status(202).end();
   }
+  if (!allowKiroMcpCall(userId)) return rpcError(res, 429, -32004, 'too many tool calls; slow down');
   const out = await handleKiroMcp(body ?? {}, ctx);
   return out ? res.json(out) : res.status(202).end();
 });

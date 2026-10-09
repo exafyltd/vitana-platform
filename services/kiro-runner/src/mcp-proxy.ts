@@ -12,7 +12,8 @@ import { createInterface } from 'readline';
 
 const url = process.env.VITANA_MCP_URL ?? '';
 const token = process.env.VITANA_MCP_TOKEN ?? '';
-const TIMEOUT_MS = 120_000;
+// Over the gateway's 100 s per-tool budget, under the ALB's 120 s idle timeout.
+const TIMEOUT_MS = 115_000;
 
 function write(msg: unknown): void { process.stdout.write(`${JSON.stringify(msg)}\n`); }
 

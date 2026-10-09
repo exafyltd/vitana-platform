@@ -14,7 +14,7 @@ const mockEmit = jest.fn(async (_e: any) => ({ ok: true }));
 jest.mock('../src/services/oasis-event-service', () => ({ emitOasisEvent: (e: any) => mockEmit(e) }));
 
 import { mintKiroMcpToken, verifyKiroMcpToken, KIRO_MCP_TOKEN_TTL_MS } from '../src/services/kiro/kiro-mcp-token';
-import { callKiroMcpTool, kiroMcpTools, KIRO_MCP_READ_TOOLS } from '../src/services/kiro/kiro-mcp-tools';
+import { callKiroMcpTool, kiroMcpTools, KIRO_MCP_READ_TOOLS, KIRO_MCP_TOOL_TIMEOUT_MS } from '../src/services/kiro/kiro-mcp-tools';
 import { getThreadAuth } from '../src/services/operator-execute-authz';
 import router, { resetKiroMcpLimits, setKiroMcpAdminLookup } from '../src/routes/operator-kiro-mcp';
 
@@ -54,6 +54,8 @@ describe('the tool set', () => {
 
   it('holds no write tool', () => {
     const names = kiroMcpTools().map((t) => t.name);
+    // dev_deep_dive runs up to 150 s, past the ALB's 120 s idle limit (Codex review on #3974).
+    expect(names).not.toContain('dev_deep_dive');
     for (const w of ['dev_create_pr', 'dev_merge_pr', 'dev_deploy_service', 'autopilot_execute_task', 'autopilot_run_task', 'dev_approve_item', 'dev_approve_spec', 'send_chat_message', 'run_code']) {
       expect(names).not.toContain(w);
     }
@@ -65,12 +67,24 @@ describe('the tool set', () => {
       seen = { id: threadId, auth: getThreadAuth(threadId) };
       return { ok: true, data: { hello: 'world' } };
     });
-    const r = await callKiroMcpTool({ userId: U, tenantId: 'tenant-1', threadId: 'th' }, 'dev_deep_dive', { question: 'q' }, exec as any);
+    const r = await callKiroMcpTool({ userId: U, tenantId: 'tenant-1', threadId: 'th' }, 'dev_read_file', { path: 'README.md' }, exec as any);
     expect(r).toEqual({ ok: true, text: '{"hello":"world"}' });
     expect(seen!.id).toMatch(/^kiro-mcp:th:/);
-    // dev_deep_dive's own check: a signed-in developer session.
+    // The Operator's own checks see a signed-in developer session.
     expect(seen!.auth).toEqual({ user_id: U, exafy_admin: true });
     expect(getThreadAuth(seen!.id)).toBeUndefined();
+  });
+
+  it('a tool past its 100 s budget answers "timed out" instead of hanging the call', async () => {
+    jest.useFakeTimers();
+    try {
+      const never = jest.fn(() => new Promise<never>(() => {}));
+      const p = callKiroMcpTool({ userId: U, tenantId: null, threadId: 't' }, 'dev_read_file', {}, never as any);
+      jest.advanceTimersByTime(KIRO_MCP_TOOL_TIMEOUT_MS);
+      const r = await p;
+      expect(r.ok).toBe(false);
+      expect(r.text).toContain('timed out after 100 s');
+    } finally { jest.useRealTimers(); }
   });
 
   it('refuses unknown tools and callers without a user; a thrown tool is an error result', async () => {
@@ -144,6 +158,18 @@ describe('POST /api/v1/operator/kiro/mcp', () => {
     expect(JSON.stringify(ev)).not.toContain('secret-arg-value');
   });
 
+  it('a batch is capped at 10 messages and charged per message, never fanned out', async () => {
+    const ping = (i: number) => ({ jsonrpc: '2.0', id: i, method: 'ping' });
+    expect((await rpc(Array.from({ length: 11 }, (_, i) => ping(i)))).status).toBe(400);
+    expect((await rpc([])).status).toBe(400);
+    const ok = await rpc(Array.from({ length: 10 }, (_, i) => ping(i)));
+    expect(ok.body).toHaveLength(10);
+    // 10 charged by the batch: 230 more singles fit, the 231st is refused.
+    let last = 0;
+    for (let i = 0; i < 231; i++) last = (await rpc(ping(i))).status;
+    expect(last).toBe(429);
+  });
+
   it('rate-limits a runaway loop per user (429)', async () => {
     let last = 0;
     for (let i = 0; i < 241; i++) last = (await rpc({ jsonrpc: '2.0', id: i, method: 'ping' })).status;
@@ -154,6 +180,13 @@ describe('POST /api/v1/operator/kiro/mcp', () => {
 describe('wiring (source check)', () => {
   const root = path.join(__dirname, '../../..');
   const read = (p: string) => fs.readFileSync(path.join(root, p), 'utf8');
+
+  it('a Kiro turn may outlast the 30 s request default (tools run inside it)', () => {
+    const acp = read('services/gateway/src/services/kiro/acp-client.ts');
+    expect(acp).toContain('export const KIRO_PROMPT_TIMEOUT_MS = 15 * 60_000;');
+    expect(acp).toMatch(/'session\/prompt', \{ sessionId, prompt: \[\{ type: 'text', text \}\] \}, timeoutMs\)/);
+    expect(read('services/kiro-runner/src/mcp-proxy.ts')).toContain('const TIMEOUT_MS = 115_000;');
+  });
 
   it('the gateway sends the pass to the runner in a header, never the URL', () => {
     const rb = read('services/gateway/src/services/kiro/remote-backend.ts');

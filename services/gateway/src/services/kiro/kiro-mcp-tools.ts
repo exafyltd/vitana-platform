@@ -17,7 +17,9 @@ import { clearThreadAuth, setThreadAuth } from '../operator-execute-authz';
 
 export const KIRO_MCP_READ_TOOLS = [
   // code
-  'dev_search_codebase', 'dev_read_file', 'dev_repowise', 'dev_graphify', 'dev_domain_atlas', 'dev_deep_dive',
+  'dev_search_codebase', 'dev_read_file', 'dev_repowise', 'dev_graphify', 'dev_domain_atlas',
+  // dev_deep_dive is left out: it runs up to 150 s (deep-dive.ts), past the ALB's 120 s idle limit,
+  // and Kiro can do the same multi-step reading with the tools above.
   // OASIS, VTID ledger, tasks
   'dev_query_oasis_events', 'discover_oasis_tasks', 'oasis_analyze_vtid', 'dev_list_tasks', 'dev_get_task_detail',
   // autopilot (read)
@@ -67,6 +69,9 @@ export function isKiroMcpTool(name: string): name is KiroMcpToolName {
 
 export interface KiroMcpCaller { userId: string; tenantId: string | null; threadId: string }
 
+/** One tool call's budget: inside the ALB's 120 s idle timeout, under the relay's 115 s. */
+export const KIRO_MCP_TOOL_TIMEOUT_MS = 100_000;
+
 /** Largest tool result handed back to Kiro in one call (characters). */
 export const KIRO_MCP_RESULT_MAX_CHARS = 200_000;
 
@@ -87,7 +92,12 @@ export async function callKiroMcpTool(
   setThreadAuth(syntheticId, { user_id: caller.userId, exafy_admin: true });
   setThreadIdentity(syntheticId, { tenant_id: caller.tenantId ?? '', user_id: caller.userId, role: 'developer' });
   try {
-    const r = await exec(name, args, syntheticId);
+    let timer: NodeJS.Timeout | undefined;
+    const timedOut = new Promise<{ ok: false; error: string }>((resolve) => {
+      timer = setTimeout(() => resolve({ ok: false, error: `timed out after ${KIRO_MCP_TOOL_TIMEOUT_MS / 1000} s — narrow the request` }), KIRO_MCP_TOOL_TIMEOUT_MS);
+      timer.unref?.();
+    });
+    const r = await Promise.race([exec(name, args, syntheticId), timedOut]).finally(() => clearTimeout(timer));
     let text = JSON.stringify(r.ok ? (r.data ?? { ok: true }) : { ok: false, error: r.error ?? 'failed' });
     if (text.length > KIRO_MCP_RESULT_MAX_CHARS) text = `${text.slice(0, KIRO_MCP_RESULT_MAX_CHARS)}… [truncated: ${text.length} chars total — narrow the query]`;
     return { ok: r.ok, text };
