@@ -1126,7 +1126,9 @@ export type CicdEventType =
   | 'operator.kiro.model_selected'
   // VTID-04999: a user linked or revoked their own Kiro API key (user id only, never the key).
   | 'operator.kiro.key_linked'
-  | 'operator.kiro.key_revoked';
+  | 'operator.kiro.key_revoked'
+  // VTID-05003: a user's Kiro Power seat ran out of credits (user and thread id only).
+  | 'operator.kiro.credits_exhausted';
 
 export interface CicdOasisEvent {
   vtid: string;

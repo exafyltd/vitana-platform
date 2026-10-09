@@ -30,12 +30,12 @@
       "path": "/command-hub/",
       "expect_status": 200,
       "expect_content_type": "text/html",
-      "expect_body_contains": "app.js?v=20261108-vtid-04999"
+      "expect_body_contains": "app.js?v=20261109-vtid-05003"
     },
     {
       "kind": "http",
       "name": "served app.js has the Operator | Kiro switch, the Kiro workspace card and the approval cards",
-      "path": "/command-hub/app.js?v=20261108-vtid-04999",
+      "path": "/command-hub/app.js?v=20261109-vtid-05003",
       "expect_status": 200,
       "expect_content_type": "javascript",
       "expect_body_contains": [
@@ -47,7 +47,7 @@
     {
       "kind": "http",
       "name": "served styles.css has the Kiro styles",
-      "path": "/command-hub/styles.css?v=20261108-vtid-04999",
+      "path": "/command-hub/styles.css?v=20261109-vtid-05003",
       "expect_status": 200,
       "expect_content_type": "text/css",
       "expect_body_contains": [

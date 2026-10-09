@@ -964,6 +964,36 @@ jobs:
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Daily key wired: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].secrets[] | select(.name == "DAILY_API_KEY") | .name]')"
 
+      - name: Build task-definition (Kiro runner)
+        # VTID-05003: the Operator's Kiro engine on the PRODUCTION kiro-runner
+        # (vitana-kiro-runner-awsdr, scripts/aws/setup-kiro-runner.sh --env production).
+        # This role has no secretsmanager:Describe*, so presence is the repository
+        # variable KIRO_RUNNER_PROD_TOKEN_ARN (the full ARN the setup script prints).
+        # Set => KIRO_RUNNER_URL (production runner only) + KIRO_RUNNER_TOKEN +
+        # KIRO_ENGINE_ENABLED=true. Unset => KIRO_ENGINE_ENABLED=false and no runner
+        # refs, so a deploy never points production at a runner that is not there.
+        # Never the staging runner (guarded by test/vtid-05003-kiro-default-engine.test.ts).
+        env:
+          KIRO_TOKEN_ARN: ${{ vars.KIRO_RUNNER_PROD_TOKEN_ARN }}
+        run: |
+          set -e
+          case "$KIRO_TOKEN_ARN" in
+            "") ;;
+            arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/kiro-runner/production/runner-token-*) ;;
+            *) echo "::error::KIRO_RUNNER_PROD_TOKEN_ARN is not the production runner token ARN"; exit 1 ;;
+          esac
+          NEW_DEF=$(jq --arg T "$KIRO_TOKEN_ARN" '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name | IN("KIRO_ENGINE_ENABLED","KIRO_RUNNER_URL") | not) ]
+                + ( if $T == "" then [ {name:"KIRO_ENGINE_ENABLED", value:"false"} ]
+                    else [ {name:"KIRO_ENGINE_ENABLED", value:"true"},
+                           {name:"KIRO_RUNNER_URL", value:"http://kiro-runner-prod.vitana.internal:8080"} ] end ) )
+            | .containerDefinitions[0].secrets |=
+              ( [ (. // [])[] | select(.name != "KIRO_RUNNER_TOKEN") ]
+                + ( if $T == "" then [] else [ {name:"KIRO_RUNNER_TOKEN", valueFrom:$T} ] end ) )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Kiro wired: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name | startswith("KIRO_"))] + [.containerDefinitions[0].secrets[] | select(.name | startswith("KIRO_")) | {name}]')"
+
       - name: Build task-definition (reward payouts on)
         # VTID-04896 pinned the VTNA reward sweep (VTID-04878) off in production
         # until the owner approved it; VTID-04899 did the same for the immediate
@@ -1463,6 +1493,7 @@ jobs:
         id: sweepcheck
         env:
           ENV_OVERRIDES_INPUT: ${{ inputs.env_overrides }}
+          KIRO_TOKEN_ARN: ${{ vars.KIRO_RUNNER_PROD_TOKEN_ARN }}
         run: |
           set -e
           EXPECTED=true
@@ -1491,6 +1522,19 @@ jobs:
           echo "AUTOPILOT_ACTION_REWARD_ENABLED=$LIVE_AP (expected $EXPECTED_AP)"
           if [ "$LIVE_AP" != "$EXPECTED_AP" ]; then
             echo "::error::AUTOPILOT_ACTION_REWARD_ENABLED is '$LIVE_AP' on the live task definition, expected '$EXPECTED_AP'"
+            exit 1
+          fi
+          # VTID-05003: Kiro is on exactly when the production runner token variable is set.
+          EXPECTED_KIRO=false
+          [ -n "$KIRO_TOKEN_ARN" ] && EXPECTED_KIRO=true
+          if [ -n "$ENV_OVERRIDES_INPUT" ] && echo "$ENV_OVERRIDES_INPUT" | jq -e 'has("KIRO_ENGINE_ENABLED")' >/dev/null 2>&1; then
+            EXPECTED_KIRO=$(echo "$ENV_OVERRIDES_INPUT" | jq -r '.KIRO_ENGINE_ENABLED | tostring')
+          fi
+          LIVE_KIRO=$(aws ecs describe-task-definition --task-definition "$TD" \
+            --query 'taskDefinition.containerDefinitions[0].environment[?name==`KIRO_ENGINE_ENABLED`].value | [0]' --output text)
+          echo "KIRO_ENGINE_ENABLED=$LIVE_KIRO (expected $EXPECTED_KIRO)"
+          if [ "$LIVE_KIRO" != "$EXPECTED_KIRO" ]; then
+            echo "::error::KIRO_ENGINE_ENABLED is '$LIVE_KIRO' on the live task definition, expected '$EXPECTED_KIRO'"
             exit 1
           fi
 

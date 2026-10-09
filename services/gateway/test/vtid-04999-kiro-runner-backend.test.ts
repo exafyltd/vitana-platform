@@ -169,14 +169,16 @@ describe('routes and guards (source check)', () => {
 
   it('the backend is registered from the operator module and status reports the runner', () => {
     expect(operator).toContain('registerKiroBackendFromEnv();');
-    expect(operator).toContain('runner_configured: runnerConfig() !== null');
+    // VTID-05003 made the status per-user; the runner flag is still reported.
+    expect(operator).toContain('runner_configured: runnerConfigured');
   });
 
-  it('production is never pointed at the staging kiro-runner by this change', () => {
-    // When the production runner ships (its own VTID, after VTID-04999's staging phase),
-    // that VTID updates this guard together with AWS-PROD-DEPLOY-GATEWAY.yml.
+  it('production is never pointed at the staging kiro-runner', () => {
+    // VTID-05003 shipped the production runner: production may name only the production
+    // runner (kiro-runner-prod / vitana/kiro-runner/production), never staging's.
     const prod = fs.readFileSync(path.join(root, '.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml'), 'utf8');
-    expect(prod).not.toContain('KIRO_RUNNER');
-    expect(prod).not.toContain('kiro-runner');
+    expect(prod).not.toContain('kiro-runner.vitana.internal');
+    expect(prod).not.toContain('vitana/kiro-runner/staging');
+    expect(prod).toContain('http://kiro-runner-prod.vitana.internal:8080');
   });
 });

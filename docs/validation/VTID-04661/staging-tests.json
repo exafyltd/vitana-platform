@@ -39,13 +39,13 @@
     {
       "kind": "http",
       "name": "served app.js draws every group",
-      "path": "/command-hub/app.js?v=20261108-vtid-04999",
+      "path": "/command-hub/app.js?v=20261109-vtid-05003",
       "expect_body_contains": "function orderedHealthGroups(items, preferred)"
     },
     {
       "kind": "http",
       "name": "served app.js classifies ok:false and 401",
-      "path": "/command-hub/app.js?v=20261108-vtid-04999",
+      "path": "/command-hub/app.js?v=20261109-vtid-05003",
       "expect_body_contains": "function classifyHealthProbe(httpStatus, body)"
     },
     {

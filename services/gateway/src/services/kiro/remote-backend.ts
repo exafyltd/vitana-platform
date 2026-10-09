@@ -103,7 +103,7 @@ export type KiroKeyStatus = { ok: true; linked: boolean; updated_at: string | nu
 /** Forward a key call to the runner. The user id comes from the caller's identity only. */
 export async function kiroKeyRequest(
   method: 'GET' | 'PUT' | 'DELETE', userId: string, key?: string,
-  env: NodeJS.ProcessEnv = process.env, fetchImpl: typeof fetch = fetch,
+  env: NodeJS.ProcessEnv = process.env, fetchImpl: typeof fetch = fetch, timeoutMs = 10_000,
 ): Promise<KiroKeyStatus> {
   const cfg = runnerConfig(env);
   if (!cfg) return { ok: false, error: 'kiro_runner_not_configured', status: 503 };
@@ -112,7 +112,7 @@ export async function kiroKeyRequest(
       method,
       headers: { Authorization: `Bearer ${cfg.token}`, 'Content-Type': 'application/json' },
       body: method === 'PUT' ? JSON.stringify({ key }) : undefined,
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const body = await res.json().catch(() => ({})) as Record<string, unknown>;
     if (!res.ok || body.ok !== true) {
@@ -122,4 +122,27 @@ export async function kiroKeyRequest(
   } catch {
     return { ok: false, error: 'kiro_runner_unreachable', status: 502 };
   }
+}
+
+/**
+ * VTID-05003: is this user's Kiro key linked — for choosing the default engine.
+ * 2 s runner timeout, answer cached per user for 60 s (cleared when the user
+ * links or revokes). Unreachable / timeout / not configured => 'unknown'.
+ */
+const KEY_CACHE_MS = 60_000;
+const keyCache = new Map<string, { linked: boolean; at: number }>();
+
+export async function kiroKeyLinked(
+  userId: string, env: NodeJS.ProcessEnv = process.env, fetchImpl: typeof fetch = fetch, now: number = Date.now(),
+): Promise<boolean | 'unknown'> {
+  const hit = keyCache.get(userId);
+  if (hit && now - hit.at < KEY_CACHE_MS) return hit.linked;
+  const r = await kiroKeyRequest('GET', userId, undefined, env, fetchImpl, 2_000);
+  if (!r.ok) return 'unknown';
+  keyCache.set(userId, { linked: r.linked, at: now });
+  return r.linked;
+}
+
+export function clearKiroKeyCache(userId?: string): void {
+  if (userId) keyCache.delete(userId); else keyCache.clear();
 }
