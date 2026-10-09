@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-05017",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "staging build-info answers (the image built from the ECR Public mirror)",
+      "path": "/api/v1/admin/build-info",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "reason": "read-only GET; the deploy only reaches this point if the image built"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05017-base-images-ecr-public.test.ts",
+      "cwd": "services/gateway",
+      "reason": "every FROM in the four Dockerfiles uses the ECR Public mirror or an earlier stage"
+    }
+  ]
+}
