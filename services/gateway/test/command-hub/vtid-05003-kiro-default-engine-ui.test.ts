@@ -27,7 +27,7 @@ function load(over: any = {}, statusBody: any = { ok: true, enabled: true, defau
   const api = new Function(
     'state', 'document', 'fetch', 'buildContextHeaders', 'renderApp', 'saveOperatorThreadsIndex',
     'updateOperatorLiveTranscriptDom', 'showToast', 'confirm', 'console', 'startNewOperatorThread',
-    BLOCK + '\nreturn { fetchKiroStatus, applyDefaultOperatorEngine, renderKiroFallbackAction, continueInOperator, setActiveOperatorEngine, operatorThreadEngine };',
+    BLOCK + '\nreturn { fetchKiroStatus, applyDefaultOperatorEngine, renderKiroFallbackAction, continueInOperator, setActiveOperatorEngine, operatorThreadEngine, waitForKiroDefault, kiroReplyMeta };',
   )(
     state, { createElement: (t: string) => new El(t) }, fetchMock, (h: any) => h, () => { calls.renders++; }, () => { calls.saved++; },
     () => {}, () => {}, () => true, { warn: () => undefined }, startNewOperatorThread,
@@ -69,6 +69,45 @@ describe('VTID-05003 default engine', () => {
     const { api, state } = load({ kiroStatus: { enabled: true } });
     api.setActiveOperatorEngine('llm');
     expect(state.operatorThreads[0].engineChosen).toBe(true);
+  });
+});
+
+describe('VTID-05003 first send waits for the default', () => {
+  it('a send on an empty, unchosen thread waits for the status in flight and then sees the Kiro default', async () => {
+    let release: (v: any) => void = () => {};
+    const gate = new Promise((r) => { release = r; });
+    // a status read that has not answered yet
+    const slowFetch = async () => { await gate; return { ok: true, status: 200, json: async () => ({ ok: true, enabled: true, default_engine: 'kiro' }) }; };
+    const h = load({}, null as any);
+    (h.fetchMock as any).mockImplementation(slowFetch);
+    h.api.fetchKiroStatus(true);
+    let done = false;
+    const wait = h.api.waitForKiroDefault().then((v: boolean) => { done = true; return v; });
+    await Promise.resolve();
+    expect(done).toBe(false);
+    expect(await h.api.waitForKiroDefault()).toBe(false); // a second send while waiting is dropped
+    release(null);
+    expect(await wait).toBe(true);
+    expect(h.state.operatorThreads[0].engine).toBe('kiro');
+  });
+  it('does not wait when nothing is in flight or the user already chose', async () => {
+    const { api } = load({ operatorThreads: [{ id: 'T1', engineChosen: true }] });
+    expect(await api.waitForKiroDefault()).toBe(true);
+  });
+});
+
+describe('VTID-05003 fallback survives reloads', () => {
+  it('keeps only the Kiro fields the fallback and badge need', () => {
+    const { api } = load();
+    expect(api.kiroReplyMeta({ engine: 'kiro', kiro_status: 'no_credits', kiro_model: null, error: 'x', kiro_message: 'secret-ish' }))
+      .toEqual({ engine: 'kiro', kiro_status: 'no_credits', kiro_model: null });
+    expect(api.kiroReplyMeta({ provider: 'bedrock' })).toBeUndefined();
+  });
+  it('history entries carry it and both restore paths put it back on the message', () => {
+    expect(APP_JS).toContain('kiroMeta: kiroReplyMeta(result.meta)');
+    expect(APP_JS).toContain('kiroMeta: kiroReplyMeta(m.meta)');
+    expect(APP_JS.match(/meta: msg\.kiroMeta/g)).toHaveLength(2);
+    expect(APP_JS).toContain('if (!(await waitForKiroDefault())) return;');
   });
 });
 

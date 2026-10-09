@@ -37,9 +37,11 @@ env:
   ECR_REPOSITORY: vitana/kiro-runner
   ECS_CLUSTER: Vitana-ECS-Cluster
   ECS_SERVICE: vitana-kiro-runner-awsdr
-  SECRET_TOKEN: vitana/kiro-runner/production/runner-token
   KEY_PREFIX: vitana/kiro/production/users
   TASK_ROLE_SUFFIX: /vitana-kiro-runner-prod-task-role
+  # The prod deploy role has no secretsmanager:Describe*, so the token is referenced by the
+  # full ARN the setup script prints, stored as a repository variable (same as the gateway).
+  KIRO_TOKEN_ARN: ${{ vars.KIRO_RUNNER_PROD_TOKEN_ARN }}
 
 jobs:
   promote:
@@ -67,8 +69,10 @@ jobs:
           aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
             --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE \
             || { echo "::error::ECS service '${{ env.ECS_SERVICE }}' not ACTIVE — run scripts/aws/setup-kiro-runner.sh --env production provision --apply first."; exit 1; }
-          ARN=$(aws secretsmanager describe-secret --secret-id "${{ env.SECRET_TOKEN }}" --query ARN --output text 2>/dev/null || true)
-          [ -n "$ARN" ] && [ "$ARN" != "None" ] || { echo "::error::Secret '${{ env.SECRET_TOKEN }}' missing — provision production first."; exit 1; }
+          case "$KIRO_TOKEN_ARN" in
+            arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/kiro-runner/production/runner-token-*) ;;
+            *) echo "::error::Repository variable KIRO_RUNNER_PROD_TOKEN_ARN is not set to the production runner token ARN — run setup-kiro-runner.sh --env production provision --apply and set it as the script prints."; exit 1 ;;
+          esac
           aws ecr describe-images --repository-name "${{ env.ECR_REPOSITORY }}" \
             --image-ids imageTag="staging-${{ steps.inputs.outputs.short }}" >/dev/null 2>&1 \
             || { echo "::error::No staging image staging-${{ steps.inputs.outputs.short }} — only a staging-built, staging-verified image can be promoted."; exit 1; }
@@ -92,7 +96,7 @@ jobs:
         run: |
           set -e
           IMAGE="${{ steps.image.outputs.image }}"
-          SEC_TOKEN=$(aws secretsmanager describe-secret --secret-id "${{ env.SECRET_TOKEN }}" --query ARN --output text)
+          SEC_TOKEN="$KIRO_TOKEN_ARN"
           TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
             --query 'services[0].taskDefinition' --output text)
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
@@ -122,6 +126,8 @@ jobs:
           aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"
 
       - name: Smoke — the rolled task runs the promoted image and reports HEALTHY
+        env:
+          DEPLOY_REASON: ${{ inputs.reason }}   # never interpolated into the script (shell injection)
         run: |
           set -e
           RUNNING=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
@@ -136,4 +142,4 @@ jobs:
             sleep 10
           done
           [ "$H" = "HEALTHY" ] || { echo "::error::production kiro-runner is not HEALTHY ($H)"; exit 1; }
-          echo "- Reason: ${{ inputs.reason }}"
+          printf -- '- Reason: %s\n' "$DEPLOY_REASON"

@@ -190,4 +190,4 @@ jobs:
             sleep 10
           done
           [ "$H" = "HEALTHY" ] || { echo "::error::kiro-runner task is not HEALTHY ($H)"; exit 1; }
-          echo "- Reason: ${{ env.DEPLOY_REASON }}"
+          printf -- '- Reason: %s\n' "$DEPLOY_REASON"

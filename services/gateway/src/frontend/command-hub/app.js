@@ -999,7 +999,7 @@ async function loadOperatorThreadFromServer(threadId) {
         (body.messages || []).forEach(function (m) {
             if (!m || (m.role !== 'user' && m.role !== 'assistant') || !m.content) return;
             var channel = m.meta && m.meta.channel ? m.meta.channel : undefined;
-            history.push({ role: m.role, content: m.content, ts: Date.parse(m.created_at) || Date.now(), channel: channel, serverMessageId: m.id, serverCreatedAt: m.created_at });
+            history.push({ role: m.role, content: m.content, ts: Date.parse(m.created_at) || Date.now(), channel: channel, serverMessageId: m.id, serverCreatedAt: m.created_at, kiroMeta: kiroReplyMeta(m.meta) });
         });
         if (history.length === 0) return;
         state.operatorChatHistory = history;
@@ -1010,7 +1010,8 @@ async function loadOperatorThreadFromServer(threadId) {
                 content: msg.content,
                 timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
                 ts: msg.ts,
-                channel: msg.channel
+                channel: msg.channel,
+                meta: msg.kiroMeta
             };
         });
         renderApp();
@@ -1041,7 +1042,8 @@ function switchOperatorThread(threadId) {
             timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
             ts: msg.ts,
             followExecIds: msg.followExecIds,
-            channel: msg.channel
+            channel: msg.channel,
+            meta: msg.kiroMeta
         };
     });
     reattachFollowedExecutions(state.chatMessages);
@@ -24361,9 +24363,16 @@ function setActiveOperatorEngine(engine) {
 }
 
 var _kiroStatusRequested = false;
-async function fetchKiroStatus(force) {
-    if ((_kiroStatusRequested && !force) || !state.authToken) return;
+var _kiroStatusPending = null;
+function fetchKiroStatus(force) {
+    if ((_kiroStatusRequested && !force) || !state.authToken) return _kiroStatusPending || Promise.resolve();
     _kiroStatusRequested = true;
+    var p = loadKiroStatus().finally(function () { if (_kiroStatusPending === p) _kiroStatusPending = null; });
+    _kiroStatusPending = p;
+    return p;
+}
+
+async function loadKiroStatus() {
     try {
         var res = await fetch('/api/v1/operator/kiro/status', { headers: buildContextHeaders({}) });
         state.kiroStatus = res.ok ? await res.json() : { ok: false, enabled: false, error: res.status };
@@ -24379,6 +24388,28 @@ async function fetchKiroStatus(force) {
         if (operatorThreadEngine(active) !== before) saveOperatorThreadsIndex(state.operatorThreads);
     }
     renderApp();
+}
+
+/**
+ * VTID-05003: the first message of an empty, unchosen thread waits for a status
+ * read still in flight, so it goes to the engine the default picks (at most the
+ * gateway's 2 s runner lookup). Returns false when a send is already waiting.
+ */
+var _kiroDefaultWaiting = false;
+async function waitForKiroDefault() {
+    if (_kiroDefaultWaiting) return false;
+    var active = (state.operatorThreads || []).find(function (t) { return t.id === state.operatorActiveThreadId; });
+    if (!_kiroStatusPending || !active || active.engineChosen || !canChangeOperatorEngine()) return true;
+    _kiroDefaultWaiting = true;
+    try { await _kiroStatusPending; } catch (e) { /* status failure => default stays Operator */ }
+    finally { _kiroDefaultWaiting = false; }
+    return true;
+}
+
+/** VTID-05003: the part of a reply's meta the fallback action and Kiro badge need, persisted with history. */
+function kiroReplyMeta(meta) {
+    if (!meta || meta.engine !== 'kiro') return undefined;
+    return { engine: 'kiro', kiro_status: meta.kiro_status || null, kiro_model: meta.kiro_model || null };
 }
 
 /** VTID-05003: the gateway's default engine for new threads (Kiro while this user's Kiro Power seat can serve). */
@@ -24909,6 +24940,8 @@ async function sendChatMessage() {
     const messageText = state.chatInputValue.trim();
 
     if (!messageText) return;
+    // VTID-05003: a still-loading Kiro default decides this thread's engine before the first send.
+    if (!(await waitForKiroDefault())) return;
 
     // VTID-04106: re-arm auto-scroll on every send, regardless of where the
     // user was scrolled beforehand — see the VTID-0539 anchor check in
@@ -25108,7 +25141,8 @@ async function sendChatMessage() {
             role: 'assistant',
             content: replyContent,
             ts: Date.now(),
-            followExecIds: turnFollowExecIds
+            followExecIds: turnFollowExecIds,
+            kiroMeta: kiroReplyMeta(result.meta) // VTID-05003: keeps the fallback action across reloads
         };
         state.operatorChatHistory.push(assistantHistoryEntry);
         saveOperatorThreadHistory(state.operatorActiveThreadId, state.operatorChatHistory);

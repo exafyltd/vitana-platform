@@ -150,6 +150,18 @@ describe('wiring (source check)', () => {
     expect(wf).toContain('ECS_SERVICE: vitana-kiro-runner-awsdr');
     expect(wf).not.toContain('vitana/kiro-runner/staging');
   });
+  it('no dispatch input is interpolated into a run script; the prod runner never needs DescribeSecret', () => {
+    const yaml = require('js-yaml');
+    for (const f of ['AWS-PROD-DEPLOY-KIRO-RUNNER.yml', 'AWS-STAGE-DEPLOY-KIRO-RUNNER.yml']) {
+      const wf = yaml.load(fs.readFileSync(path.join(root, '.github/workflows', f), 'utf8'));
+      for (const job of Object.values<any>(wf.jobs)) for (const step of job.steps ?? []) {
+        if (step.run) expect([f, step.name, step.run.includes('${{ inputs.')]).toEqual([f, step.name, false]);
+      }
+    }
+    const prodRunner = fs.readFileSync(path.join(root, '.github/workflows/AWS-PROD-DEPLOY-KIRO-RUNNER.yml'), 'utf8');
+    expect(prodRunner).not.toContain('describe-secret');
+    expect(prodRunner).toContain('KIRO_TOKEN_ARN: ${{ vars.KIRO_RUNNER_PROD_TOKEN_ARN }}');
+  });
   it('environments never cross: staging gateway -> staging runner, production gateway -> production runner', () => {
     const stage = fs.readFileSync(path.join(root, '.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml'), 'utf8');
     const prod = fs.readFileSync(path.join(root, '.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml'), 'utf8');
