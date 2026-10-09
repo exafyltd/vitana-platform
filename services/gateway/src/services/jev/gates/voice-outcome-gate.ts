@@ -138,6 +138,10 @@ export async function runVoiceOutcomeCheck(a: VoiceOutcomeArgs): Promise<string 
     const outcome = r.ok && r.outcome === 'decided' ? String(r.verdict.value) : null;
     const expected = ruleOutcome(a.ruleClass);
     const agreed = outcome && expected ? outcome === expected : null;
+    // VTID-05012: an abstained row is scored on its lean; `agreed` stays decided-only.
+    const lean = r.ok && r.outcome === 'abstained' ? String(r.verdict.value) : null;
+    const leanAgreed = lean && expected ? lean === expected : null;
+    const compared = agreed !== null || leanAgreed !== null;
     return await recordJevShadowDecision(
       {
         gate: VOICE_OUTCOME_GATE,
@@ -155,13 +159,15 @@ export async function runVoiceOutcomeCheck(a: VoiceOutcomeArgs): Promise<string 
               provider: sig.provider ?? null,
               stop_reason: sig.stop_reason ?? null,
               rule_outcome: expected,
+              ...(lean !== null ? { lean } : {}),
             }
           : { reason: r.reason },
         jev_confidence: r.ok ? r.verdict.confidence : null,
         system_action: a.ruleClass || 'no_rule_class',
         agreed,
-        outcome: agreed === null ? null : 'compared_with_rule_class',
-        outcome_at: agreed === null ? null : new Date().toISOString(),
+        lean_agreed: leanAgreed,
+        outcome: compared ? 'compared_with_rule_class' : null,
+        outcome_at: compared ? new Date().toISOString() : null,
         cost_usd: r.ok ? r.cost_usd : 0,
       },
       a.sb === undefined ? getSupabase() : a.sb,

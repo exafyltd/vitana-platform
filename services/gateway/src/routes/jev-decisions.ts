@@ -29,7 +29,8 @@ import { isJevConfigured, jevModel } from '../services/jev/jev-client';
 import { getJevStats } from '../services/jev/jev-telemetry';
 import { resolveJevCaller, JevCallerError } from '../services/jev/jev-caller';
 import { currentMonthUtc } from '../services/jev/jev-tenant-control';
-import { fetchMonthSpendRows, shadowGateStatsRpc } from '../services/jev/jev-repository';
+import { fetchDevAutopilotKillSwitch, fetchMonthSpendRows, shadowGateStatsRpc } from '../services/jev/jev-repository';
+import { jevGateHealth } from '../services/jev/jev-shadow';
 
 const router = Router();
 
@@ -184,13 +185,17 @@ router.get('/jev/admin/stats', requireAuth, requireExafyAdmin, async (req: Authe
   const sb = getSupabase();
   let spend: unknown = null;
   let gates: unknown = null;
+  // VTID-05012: the loop a silent gate sits on, so "gate broken" and "loop stopped" read differently.
+  let devAutopilot: { kill_switch: boolean; updated_at: string | null } | null = null;
   const errors: string[] = [];
   if (sb) {
-    const [s1, s2] = await Promise.all([fetchMonthSpendRows(sb, month), shadowGateStatsRpc(sb, days)]);
+    const [s1, s2, s3] = await Promise.all([fetchMonthSpendRows(sb, month), shadowGateStatsRpc(sb, days), fetchDevAutopilotKillSwitch(sb)]);
     if (s1.error) errors.push(`spend: ${s1.error.message}`);
     else spend = s1.data;
     if (s2.error) errors.push(`shadow: ${s2.error.message}`);
     else gates = s2.data;
+    if (s3.error) errors.push(`dev_autopilot_config: ${s3.error.message}`);
+    else if (s3.data) devAutopilot = { kill_switch: !!s3.data.kill_switch, updated_at: s3.data.updated_at ?? null };
   } else {
     errors.push('no_supabase_client');
   }
@@ -209,6 +214,8 @@ router.get('/jev/admin/stats', requireAuth, requireExafyAdmin, async (req: Authe
       shadow_days: days,
       shadow_gates: gates,
       gate_modes,
+      gate_health: jevGateHealth(Array.isArray(gates) ? (gates as Array<{ gate: string; last_row_at?: string | null }>) : null),
+      loops: { dev_autopilot: devAutopilot },
       ...(errors.length ? { errors } : {}),
     },
   });

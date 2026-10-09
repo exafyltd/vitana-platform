@@ -30,6 +30,7 @@ jest.mock('../../src/services/jev/jev-repository', () => ({
   recordSpendRpc: jest.fn(async () => ok(0)),
   fetchMonthSpendRows: jest.fn(async () => ok([{ tenant_id: 't1', plane: 'internal', calls: 3, input_tokens: 2400, cost_usd: 0.0001 }])),
   shadowGateStatsRpc: jest.fn(async () => ok([])),
+  fetchDevAutopilotKillSwitch: jest.fn(async () => ok({ kill_switch: true, updated_at: '2026-10-07T08:08:58Z' })),
   insertShadowDecision: jest.fn(async () => ok({ id: 's1' })),
   updateShadowOutcome: jest.fn(async () => ok(null)),
 }));
@@ -185,5 +186,8 @@ describe('VTID-04473 jev routes', () => {
     expect(res.body.data.spend_month).toEqual([{ tenant_id: 't1', plane: 'internal', calls: 3, input_tokens: 2400, cost_usd: 0.0001 }]);
     expect(res.body.data.shadow_gates).toEqual([]);
     expect(res.body.data).toHaveProperty('gate_modes');
+    // VTID-05012: the loop next to its gates.
+    expect(res.body.data.loops).toEqual({ dev_autopilot: { kill_switch: true, updated_at: '2026-10-07T08:08:58Z' } });
+    expect(Array.isArray(res.body.data.gate_health)).toBe(true);
   });
 });

@@ -3503,6 +3503,17 @@ tenant's `member`/`patient`/`partner_org` rows only (internal and
 system_autopilot are uncapped); member-content calls are counted under
 `member`. Budgets set by `data-fixups/20261003120000_vtid_04857_jev_community_budgets.sql`
 (maxina 50, alkalma 10).
+Since VTID-05012 (`20261009120000_vtid_05012_jev_gate_observability.sql`):
+`jev_outcome` also allows `'skipped'` — a gate that is on but ends without
+asking Jev (no evidence, an error) writes a $0 row with `skip_reason`
+(non-null exactly when `jev_outcome = 'skipped'`, CHECK
+`jev_shadow_decisions_skip_reason_check`); the partial unique index
+`uq_jev_shadow_skip (gate, subject_ref, skip_reason) WHERE jev_outcome =
+'skipped'` keeps one per subject and reason. `lean_agreed` (nullable) scores
+an abstained row's below-threshold answer against the real outcome; `agreed`
+stays decided-only. `jev_shadow_gate_stats(days)` now also returns `skipped`,
+`last_row_at`, `lean_compared`, `lean_agreed`, and `calls` excludes skipped
+rows. Rollback: `docs/validation/VTID-05012/rollback.sql`.
 Community Class A shadow rows (VTID-04879) use `plane = 'member'` and the
 subject types `community_utterance`, `community_marketplace_need`,
 `community_memory_turn` and `community_ticket`; `subject_ref` is a hash of

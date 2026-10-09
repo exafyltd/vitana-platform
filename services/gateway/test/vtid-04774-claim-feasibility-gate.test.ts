@@ -106,9 +106,10 @@ describe('VTID-04774 check', () => {
     expect(await runClaimFeasibilityCheck({ executionId: 'e', findingId: 'f', load: async () => { throw new Error('db'); }, env: SHADOW, sb })).toBeNull();
     const failing = jest.fn().mockRejectedValue(new Error('net'));
     // The real client never throws; if one ever does, the gate's own catch
-    // swallows it: no row, null, and the claim is untouched.
+    // swallows it: null, the claim is untouched, and (VTID-05012) only a skipped row records why.
     expect(await runClaimFeasibilityCheck({ executionId: 'e', findingId: 'f', load: async () => ctx, env: SHADOW, sb, decideOptions: { call: failing } })).toBeNull();
-    expect(rows).toHaveLength(0);
+    expect(rows.filter((r) => r.jev_outcome === 'skipped').map((r) => r.skip_reason)).toEqual(['no_plan_or_finding', 'error', 'error']);
+    expect(rows.every((r) => r.jev_outcome === 'skipped')).toBe(true);
   });
 });
 

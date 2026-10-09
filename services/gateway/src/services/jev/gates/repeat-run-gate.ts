@@ -26,7 +26,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from '../../../lib/supabase';
 import { decide, DecideOptions } from '../jev-decision-service';
 import * as repo from '../jev-repository';
-import { jevGateMode, recordJevShadowDecision, recordJevShadowOutcome } from '../jev-shadow';
+import { jevGateMode, recordJevGateSkip, recordJevShadowDecision, recordJevShadowOutcome } from '../jev-shadow';
 
 export const REPEAT_RUN_GATE = 'repeat_run_guard';
 export const REPEAT_LOOKBACK_DAYS = 7;
@@ -67,9 +67,22 @@ export async function runRepeatRunCheck(a: {
   const env = a.env ?? process.env;
   const mode = jevGateMode(REPEAT_RUN_GATE, env);
   if (mode === 'off') return null;
+  // VTID-05012: a gate that is on but does not ask Jev records why.
+  const skip = (reason: string) =>
+    recordJevGateSkip(
+      { gate: REPEAT_RUN_GATE, decision: 'execution_repeat', mode, reason, subject_type: 'dev_autopilot_execution', subject_ref: a.executionId, system_action: 'dispatch' },
+      a.sb,
+    );
   try {
     const ctx = await a.load();
-    if (!ctx || !ctx.previous || !ctx.plan) return null;
+    if (!ctx || !ctx.plan) {
+      await skip('no_plan');
+      return null;
+    }
+    if (!ctx.previous) {
+      await skip('no_previous_run');
+      return null;
+    }
     const prev = ctx.previous;
     const base = {
       gate: REPEAT_RUN_GATE,
@@ -132,6 +145,7 @@ export async function runRepeatRunCheck(a: {
     );
   } catch (err: any) {
     console.warn(`[jev] ${REPEAT_RUN_GATE} check failed for ${a.executionId}: ${err?.message || err}`);
+    await skip('error');
     return null;
   }
 }
