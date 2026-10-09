@@ -1,0 +1,9 @@
+RUN-MIGRATION.yml run 37972875747 (ref claude/funny-mccarthy-1bt8nz @ 93b56ed1d): success, 2026-10-09T18:23Z.
+Read-only verification after apply:
+  jev_shadow_decisions_jev_outcome_check  CHECK (jev_outcome = ANY (... 'invalid', 'skipped'))
+  jev_shadow_decisions_skip_reason_check  CHECK ((jev_outcome = 'skipped') = (skip_reason IS NOT NULL))
+  uq_jev_shadow_skip                      UNIQUE btree (gate, subject_ref, skip_reason) WHERE jev_outcome = 'skipped'
+  columns                                 lean_agreed boolean, skip_reason text
+  jev_shadow_gate_stats(int) returns      gate, mode, calls, decided, with_outcome, agreed, agreement_rate, cost_usd,
+                                          skipped, last_row_at, lean_compared, lean_agreed
+  EXECUTE: service_role true, anon false; jev_shadow_gate_stats(30) returns 14 gates
