@@ -106,6 +106,11 @@ export function setThreadIdentity(threadId: string, identity: { tenant_id: strin
   // Auto-cleanup after 30 minutes
   setTimeout(() => threadIdentityMap.delete(threadId), 30 * 60 * 1000);
 }
+
+/** VTID-05005: forget a thread's identity now (the Kiro tool adapter registers one per call). */
+export function clearThreadIdentity(threadId: string): void {
+  threadIdentityMap.delete(threadId);
+}
 const GOOGLE_GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
 
 // VTID-01023: Vertex AI configuration - uses ADC (Application Default Credentials)

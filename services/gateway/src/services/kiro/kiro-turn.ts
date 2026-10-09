@@ -18,6 +18,7 @@ import { AcpClient, type AcpChild, type KiroModel, type KiroModelState } from '.
 import { mapAcpUpdate, type KiroTurnEventSink } from './kiro-events';
 import { makePermissionHandler } from './permission-broker';
 import { isKiroCreditError, setKiroCredits } from './credit-state';
+import { isKiroMcpEnabled } from './kiro-mcp-token';
 
 export interface KiroSpawnContext { userId: string | null; threadId: string }
 
@@ -67,7 +68,12 @@ interface KiroSession {
   models: KiroModelState | null;
   /** VTID-05003: this session's open moved the user's credits back to ok (reported once). */
   creditsChanged?: boolean;
+  /** VTID-05005: when the session (and its tool pass) was opened. */
+  openedAt: number;
 }
+
+/** VTID-05005: a session's tool pass lasts 1 h; an older session reopens at its next turn. */
+export const KIRO_MCP_SESSION_MAX_MS = 55 * 60_000;
 
 const sessions = new Map<string, KiroSession>();
 let backend: KiroBackend | null = null;
@@ -121,7 +127,7 @@ async function openSession(input: KiroTurnInput, b: KiroBackend): Promise<KiroSe
   try {
     await client.initialize();
     const { sessionId, models } = await client.openNewSession(b.workspace(ctx));
-    const session: KiroSession = { client, sessionId, userId: input.userId, emit: input.emit ?? (() => {}), idle: null, models };
+    const session: KiroSession = { client, sessionId, userId: input.userId, emit: input.emit ?? (() => {}), idle: null, models, openedAt: Date.now() };
     holder.session = session;
     return session;
   } catch (err) {
@@ -136,6 +142,10 @@ export async function runKiroTurn(input: KiroTurnInput, env: NodeJS.ProcessEnv =
   }
   let session = sessions.get(input.threadId);
   if (session && session.userId !== input.userId) return result('error', 'This Kiro session belongs to another user.', { error: 'forbidden' });
+  if (session && isKiroMcpEnabled(env) && Date.now() - session.openedAt > KIRO_MCP_SESSION_MAX_MS) {
+    closeSession(input.threadId);
+    session = undefined;
+  }
   if (!session) {
     const lim = kiroLimits(env);
     const mine = [...sessions.values()].filter((s) => s.userId === input.userId).length;

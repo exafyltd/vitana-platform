@@ -15,6 +15,7 @@
 import { EventEmitter } from 'events';
 import WebSocket from 'ws';
 import type { AcpChild } from './acp-client';
+import { isKiroMcpEnabled, mintKiroMcpToken } from './kiro-mcp-token';
 import { KiroKeyMissingError, setKiroBackend, type KiroBackend, type KiroSpawnContext } from './kiro-turn';
 
 export const RUNNER_READY_FRAME = JSON.stringify({ kiro_runner: 'ready' });
@@ -61,8 +62,13 @@ export function createRemoteKiroBackend(cfg: RemoteBackendConfig): KiroBackend {
     spawn: (ctx: KiroSpawnContext) => new Promise<AcpChild>((resolve, reject) => {
       if (!ctx.userId) { reject(new KiroKeyMissingError()); return; }
       const q = new URLSearchParams({ user_id: ctx.userId, thread_id: ctx.threadId });
+      // VTID-05005: the session's pass for the Operator's read tools, in a header (never the URL,
+      // so it is in no access log). Without it the runner attaches no tools.
+      const headers: Record<string, string> = { Authorization: `Bearer ${cfg.token}` };
+      const mcpToken = isKiroMcpEnabled() ? mintKiroMcpToken(ctx.userId, ctx.threadId) : null;
+      if (mcpToken) headers['X-Kiro-Mcp-Token'] = mcpToken;
       const ws = new WebSocket(`${wsBase(cfg.url)}/sessions?${q.toString()}`, {
-        headers: { Authorization: `Bearer ${cfg.token}` },
+        headers,
         maxPayload: MAX_FRAME_BYTES,
         handshakeTimeout: OPEN_TIMEOUT_MS,
       });

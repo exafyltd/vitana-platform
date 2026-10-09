@@ -1128,7 +1128,9 @@ export type CicdEventType =
   | 'operator.kiro.key_linked'
   | 'operator.kiro.key_revoked'
   // VTID-05003: a user's Kiro Power seat ran out of credits (user and thread id only).
-  | 'operator.kiro.credits_exhausted';
+  | 'operator.kiro.credits_exhausted'
+  // VTID-05005: Kiro called one of the Operator's read tools (tool, thread, latency, outcome; never args/results)
+  | 'operator.kiro.tool_called';
 
 export interface CicdOasisEvent {
   vtid: string;

@@ -47,6 +47,8 @@ export interface RelayOptions {
   userId: string;
   threadId: string;
   key: string;
+  /** VTID-05005: the session's pass for the Operator's read tools (none = no tools). */
+  mcp?: McpConfig | null;
   workRoot: string;
   limits: RelayLimits;
   kiroBin?: string;
@@ -76,12 +78,39 @@ export function childEnv(key: string, dir: string, base: NodeJS.ProcessEnv = pro
   };
 }
 
-/** session/new and session/load run in the session's own directory, whatever the gateway asked for. */
-export function rewriteCwd(line: string, dir: string): string {
+/** VTID-05005: where the `vitana` tools are and the session's pass for them. */
+export interface McpConfig { gatewayUrl: string; token: string }
+
+/** The relay program kiro-cli starts as the `vitana` stdio MCP server. */
+export const MCP_PROXY_PATH = path.join(__dirname, 'mcp-proxy.js');
+
+/**
+ * VTID-05005: the MCP servers a session gets — decided here, never by the gateway.
+ * Exactly the `vitana` relay when this session has a pass, otherwise none.
+ */
+export function mcpServersFor(mcp: McpConfig | null | undefined): unknown[] {
+  if (!mcp || !mcp.gatewayUrl || !mcp.token) return [];
+  return [{
+    name: 'vitana',
+    command: process.execPath,
+    args: [MCP_PROXY_PATH],
+    env: [
+      { name: 'VITANA_MCP_URL', value: `${mcp.gatewayUrl.replace(/\/+$/, '')}/api/v1/operator/kiro/mcp` },
+      { name: 'VITANA_MCP_TOKEN', value: mcp.token },
+    ],
+  }];
+}
+
+/**
+ * session/new and session/load run in the session's own directory and with the
+ * runner's own MCP server list, whatever the gateway asked for.
+ */
+export function rewriteCwd(line: string, dir: string, mcpServers: unknown[] = []): string {
   let msg: any;
   try { msg = JSON.parse(line); } catch { return line; }
   if (msg && (msg.method === 'session/new' || msg.method === 'session/load') && msg.params && typeof msg.params === 'object') {
     msg.params.cwd = dir;
+    msg.params.mcpServers = mcpServers;
     return JSON.stringify(msg);
   }
   return line;
@@ -99,6 +128,7 @@ export function startRelay(o: RelayOptions): RelaySession {
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
+  const servers = mcpServersFor(o.mcp);
   let ended = false;
   let idle: NodeJS.Timeout | null = null;
   let alive = true;
@@ -164,7 +194,7 @@ export function startRelay(o: RelayOptions): RelaySession {
     if (isBinary || ended) return;
     touch();
     alive = true;
-    child.stdin?.write(`${rewriteCwd(String(data), dir)}\n`);
+    child.stdin?.write(`${rewriteCwd(String(data), dir, servers)}\n`);
   });
   o.ws.on('close', () => end(CLOSE.normal, 'gateway_closed'));
   o.ws.on('error', () => end(CLOSE.normal, 'gateway_error'));
