@@ -2396,6 +2396,27 @@ body {
   color: #e3a39c;
 }
 
+/* VTID-05004: accepted key confirmation + the quiet way to manage it */
+.kiro-key-ok,
+.kiro-panel-rows dd.kiro-key-ok {
+  color: #9fd49f;
+  font-weight: 600;
+}
+
+.kiro-key-manage {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-muted, #8b93a7);
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.kiro-key-manage:hover {
+  color: var(--text-primary, #e6e9ef);
+}
+
 .kiro-key-note {
   margin-top: 0.4rem;
   color: #9aa0a6;

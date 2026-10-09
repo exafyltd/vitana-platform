@@ -24722,7 +24722,8 @@ function kiroKeyStatusText() {
     if (!k) return 'checking…';
     if (k.unavailable) return 'not available on this deployment';
     if (!k.linked) return 'not linked';
-    return k.updated_at ? 'linked · ' + new Date(k.updated_at).toLocaleDateString() : 'linked';
+    // VTID-05004: an accepted key is confirmed, not offered for revocation.
+    return '✓ Connected';
 }
 
 /** Link / Replace / Revoke for the signed-in user's own Kiro API key. */
@@ -24757,6 +24758,15 @@ function renderKiroKeyControls() {
         note.className = 'kiro-key-note';
         note.textContent = 'Your own key from your Kiro account. It is stored encrypted for your account only and never shown again.';
         box.appendChild(note);
+    } else if (!k.managing) {
+        // VTID-05004: linked → only a quiet "Manage key"; Replace/Revoke stay one click away
+        // so a leaked key can still be revoked.
+        var manage = document.createElement('button');
+        manage.type = 'button';
+        manage.className = 'kiro-key-manage';
+        manage.textContent = 'Manage key';
+        manage.onclick = function () { state.kiroKey = Object.assign({}, k, { managing: true }); renderApp(); };
+        box.appendChild(manage);
     } else {
         var actions = document.createElement('div');
         actions.className = 'kiro-key-actions';
@@ -24774,6 +24784,12 @@ function renderKiroKeyControls() {
         revoke.disabled = !!k.busy;
         revoke.onclick = function () { revokeKiroKey(); };
         actions.appendChild(revoke);
+        var done = document.createElement('button');
+        done.type = 'button';
+        done.className = 'kiro-key-btn';
+        done.textContent = 'Done';
+        done.onclick = function () { state.kiroKey = Object.assign({}, k, { managing: false }); renderApp(); };
+        actions.appendChild(done);
         box.appendChild(actions);
     }
     return box;
@@ -24805,11 +24821,12 @@ function renderKiroThreadPanel() {
     ];
     var list = document.createElement('dl');
     list.className = 'kiro-panel-rows';
-    rows.forEach(function (r) {
+    rows.forEach(function (r, i) {
         var dt = document.createElement('dt');
         dt.textContent = r[0];
         var dd = document.createElement('dd');
         dd.textContent = r[1];
+        if (i === 2 && state.kiroKey && state.kiroKey.linked) dd.className = 'kiro-key-ok';
         list.appendChild(dt);
         list.appendChild(dd);
     });

@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-05004",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "Command Hub loads the VTID-05004 app.js",
+      "path": "/command-hub/",
+      "expect_status": 200,
+      "expect_content_type": "text/html",
+      "expect_body_contains": "app.js?v=20261109-vtid-05004"
+    },
+    {
+      "kind": "http",
+      "name": "served app.js confirms a linked key and keeps Replace/Revoke behind Manage key",
+      "path": "/command-hub/app.js?v=20261109-vtid-05004",
+      "expect_status": 200,
+      "expect_content_type": "javascript",
+      "expect_body_contains": [
+        "kiro-key-manage",
+        "kiro-key-ok",
+        "✓ Connected"
+      ]
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/command-hub/vtid-04999-kiro-key-field.test.ts test/command-hub/vtid-05003-kiro-default-engine-ui.test.ts",
+      "cwd": "services/gateway",
+      "reason": "linked key shows only a green Connected and Manage key; Manage reveals Replace/Revoke/Done; revoke still confirms; a failed revoke keeps the view"
+    }
+  ]
+}

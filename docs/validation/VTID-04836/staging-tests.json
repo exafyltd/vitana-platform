@@ -1,3 +1,3 @@
 {"vtid":"VTID-04836","service":"gateway","tests":[
-{"kind":"http","name":"Command Hub loads the app.js that drops the retired earthlinks tenant","path":"/command-hub/","expect_status":200,"expect_content_type":"text/html","expect_body_contains":"app.js?v=20261109-vtid-05003"}
+{"kind":"http","name":"Command Hub loads the app.js that drops the retired earthlinks tenant","path":"/command-hub/","expect_status":200,"expect_content_type":"text/html","expect_body_contains":"app.js?v=20261109-vtid-05004"}
 ]}
