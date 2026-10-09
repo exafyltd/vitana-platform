@@ -99,3 +99,24 @@ F1-F5 closed. New: F6 [minor] naming of the computed token variable; F7 [minor] 
 - F7 — **ACCEPTED.** Documented: 0 results are expected.
 
 ## Verdict: CONVERGED (2 rounds)
+
+## Scope amendment A1 (during implementation, 2026-10-09) — W3 / VTID-05008
+
+Found before deploying W3. On `main`, `supabase/functions/get-proactive-context/index.ts` L41 calls `anonClient.auth.getClaims(...)` (added 2026-10-06 by VTID-04926, PR #1250, never deployed because push deploys are frozen). It imports `https://esm.sh/@supabase/supabase-js@2.39.3` (L3), whose auth client is `@supabase/gotrue-js ^2.60.0`, which has no `getClaims`: `deno check` reports TS2339 and unpkg's `gotrue-js@2.62.2` GoTrueClient.d.ts has 0 matches. So deploying `main` as planned would throw a TypeError on every call → 500. `supabase-js@2.57.2` (already used by 12 functions in this repo) pins `@supabase/auth-js 2.71.1`, whose GoTrueClient has `getClaims(jwt?, options?)`.
+
+`main`'s two functions read no dropped table (vs migration 20260924220000), and every table they read exists live (read-only `to_regclass` check, 2026-10-09).
+
+Proposed change (W3 grows from deploy-only to a one-line code fix + deploy):
+1. `get-proactive-context/index.ts`: bump the import to `supabase-js@2.57.2`. Commit in vitana-v1 under VTID-05008, PR, merge with green checks.
+2. Deploy both functions from the merge commit (as approved), not from today's `main`.
+3. Same latent bug exists in `generate-proactive-greeting/index.ts` (getClaims at L40, `supabase-js@2.39.3` at L2). Its live copy is a June version that does not use `getClaims`. I propose the same one-line bump in the repo only (no deploy), so that a later deploy of `main` does not break it. Alternative: leave it and flag it.
+4. Verify read-only after deploy: `list_edge_functions` shows new versions; Supabase function logs for the two show no 5xx/TypeError over the next hours.
+
+### Partner — amendment A1
+Premises verified. F8 [major]: fix generate-proactive-greeting in the repo too (no deploy) — it is called by src/hooks/useIntelligentGreeting.ts, so the next deploy of main would 500 every greeting. F9 [minor]: state that fetch-user-context does not call getClaims. Verdict: converges once F8 is accepted.
+
+### Planner responses — amendment A1
+- F8 — **ACCEPTED.** Same one-line bump in generate-proactive-greeting, committed under VTID-05008, not deployed (its live June copy does not use getClaims).
+- F9 — **ACCEPTED.** fetch-user-context does not call getClaims; its 2.39.3 import stays.
+
+### Verdict (amendment A1): CONVERGED
