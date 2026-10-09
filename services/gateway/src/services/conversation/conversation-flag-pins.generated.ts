@@ -141,6 +141,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   ORB_LOG_NOVA_INSTRUCTION_DEBUG: { staging: "true", prod: null },
   ORB_MOBILE_LEAD_FIRST_ONLY_ENABLED: { staging: "true", prod: null },
   ORB_NEWDAY_OVERVIEW_RUNG_ENABLED: { staging: null, prod: "dynamic" },
+  ORB_SSE_CROSS_TASK_FORWARD_ENABLED: { staging: "true", prod: null },
   ORB_TOOL_ACK_INTENT_ENABLED: { staging: "true", prod: null },
   ORB_TOOL_SELECTION_ENABLED: { staging: "true", prod: null },
   ORB_VERTEX_SHARED_HANDLERS: { staging: "true", prod: null },

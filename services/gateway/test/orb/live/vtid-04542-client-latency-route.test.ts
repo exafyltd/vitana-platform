@@ -106,7 +106,8 @@ describe('VTID-04542 client latency beacon', () => {
     ['mark above 600000', { ...VALID, marks: { tap: 600001 } }],
     ['non-numeric mark', { ...VALID, marks: { tap: '12' } }],
     ['mark name over 64 chars', { ...VALID, marks: { ['m'.repeat(65)]: 1 } }],
-    ['session_id over 64 chars', { ...VALID, session_id: 's'.repeat(65) }],
+    // VTID-05002: cap raised 64 -> 160 so owner-bearing SSE ids fit.
+    ['session_id over 160 chars', { ...VALID, session_id: 's'.repeat(161) }],
     ['21 marks', { ...VALID, marks: Object.fromEntries(Array.from({ length: 21 }, (_, i) => [`m${i}`, i])) }],
     ['non-boolean prewarm_socket_ready', { ...VALID, prewarm_socket_ready: 'yes' }],
   ])('invalid body (%s) → 400, nothing emitted', async (_label, body) => {

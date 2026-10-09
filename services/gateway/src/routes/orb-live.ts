@@ -49,6 +49,7 @@ import { randomUUID } from 'crypto';
 import { createPrimaryTenantCache } from '../orb/live/session/primary-tenant-cache';
 import { closeIfSessionGone } from '../orb/live/session/orphan-upstream-guard';
 import { sanitizeHideDiagnostics } from '../orb/live/session/hide-reasons';
+import { createCrossTaskForward, FORWARDED_HEADER, FORWARDED_STREAM_GRACE_MS, isCrossTaskForwardEnabled } from '../orb/live/session/cross-task-forward';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
@@ -16251,6 +16252,19 @@ async function warmBrainCacheForNextSession(
 }
 
 
+// VTID-05002: during a deploy overlap a request can land on the task that does
+// not hold the SSE session; forward it once to the owner (flag-gated, off by
+// default). See orb/live/session/cross-task-forward.ts.
+const orbSseCrossTaskForward = createCrossTaskForward({
+  hasSession: (id) => liveSessions.has(id),
+  getSessionId: (req) => {
+    const q = req.query.session_id;
+    if (typeof q === 'string' && q) return q;
+    const b = (req.body || {}) as { session_id?: unknown };
+    return typeof b.session_id === 'string' ? b.session_id : undefined;
+  },
+});
+
 /**
  * VTID-01155: POST /live/session/stop - Stop Gemini Live session
  * VTID-01226: Added requireAuthWithTenant middleware for multi-tenant auth
@@ -16267,7 +16281,7 @@ async function warmBrainCacheForNextSession(
  * - 403 FORBIDDEN: User doesn't own this session
  */
 // A8.2-complete: handler body lifted to orb/live/session/live-session-controller.ts.
-router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/live/session/stop', optionalAuth, orbSseCrossTaskForward, async (req: AuthenticatedRequest, res: Response) => {
   await handleLiveSessionStop(req, res);
 });
 
@@ -16502,7 +16516,7 @@ router.delete('/session/continuity', optionalAuth, async (req: AuthenticatedRequ
  * - 400 TENANT_REQUIRED: No active_tenant_id in JWT app_metadata
  * - 403 FORBIDDEN: User doesn't own this session
  */
-router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/live/stream', optionalAuth, orbSseCrossTaskForward, async (req: AuthenticatedRequest, res: Response) => {
   console.log('[VTID-ORBC] GET /orb/live/stream');
 
   const sessionId = req.query.session_id as string;
@@ -16884,15 +16898,36 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
   // same payload shape, same auto-clear-on-write-failure behavior.
   const heartbeat = startSseHeartbeat(res);
 
+  // VTID-05002: a stream that reached this (owning) task through another
+  // task's forward ends when THAT task stops at the end of a deploy, not
+  // because the client left. EventSource then reconnects with the same
+  // session_id, now straight to this task — so hold the session for a short
+  // grace instead of destroying a live conversation, and tear it down only if
+  // no new stream attached in that window.
+  const viaForward = !!req.get(FORWARDED_HEADER) && isCrossTaskForwardEnabled();
+
   // Handle client disconnect
   req.on('close', () => {
-    console.log(`[VTID-01155] Live stream disconnected: ${sessionId}`);
+    console.log(`[VTID-01155] Live stream disconnected: ${sessionId}${viaForward ? ' (forwarded stream)' : ''}`);
     heartbeat.clear();
     decrementConnection(clientIP);
     if (session.sseResponse === res) {
       session.sseResponse = null;
     }
+    if (viaForward) {
+      setTimeout(() => {
+        if (session.sseResponse && session.sseResponse !== res) {
+          console.log(`[orb-forward] VTID-05002 session=${sessionId.slice(0, 13)} kept: client reconnected after the forwarded stream ended`);
+          return;
+        }
+        teardownSseSession();
+      }, FORWARDED_STREAM_GRACE_MS);
+      return;
+    }
+    teardownSseSession();
+  });
 
+  const teardownSseSession = (): void => {
     // VTID-04353: memory + voice summary through the one idempotent finalize
     // (was a separate forced extraction racing POST /live/session/stop).
     finalizeLiveSession(session, { sessionId, reason: 'sse_disconnect' });
@@ -16923,7 +16958,7 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     clearExtractionState(sessionId);
     liveSessions.delete(sessionId);
     console.log(`[VTID-SESSION-LEAK-FIX] Cleaned up live session on SSE disconnect: ${sessionId} (remaining: ${liveSessions.size})`);
-  });
+  };
 });
 
 /**
@@ -16944,7 +16979,7 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
  * - 403 FORBIDDEN: User doesn't own this session
  */
 // A8.2-complete: handler body lifted to orb/live/session/live-session-controller.ts.
-router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/live/stream/send', optionalAuth, orbSseCrossTaskForward, async (req: AuthenticatedRequest, res: Response) => {
   await handleLiveStreamSend(req, res);
 });
 
@@ -16968,7 +17003,7 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
  * - 403 FORBIDDEN: User doesn't own this session
  */
 // A8.2: handler body lifted to orb/live/session/live-session-controller.ts.
-router.post('/live/stream/end-turn', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/live/stream/end-turn', optionalAuth, orbSseCrossTaskForward, async (req: AuthenticatedRequest, res: Response) => {
   await handleLiveStreamEndTurn(req, res);
 });
 
