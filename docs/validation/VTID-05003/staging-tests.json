@@ -16,12 +16,12 @@
       "path": "/command-hub/",
       "expect_status": 200,
       "expect_content_type": "text/html",
-      "expect_body_contains": "app.js?v=20261109-vtid-05003"
+      "expect_body_contains": "app.js?v=20261109-vtid-05004"
     },
     {
       "kind": "http",
       "name": "served app.js has the default engine and the fallback",
-      "path": "/command-hub/app.js?v=20261109-vtid-05003",
+      "path": "/command-hub/app.js?v=20261109-vtid-05004",
       "expect_status": 200,
       "expect_content_type": "javascript",
       "expect_body_contains": [

@@ -141,7 +141,9 @@ describe('VTID-05003 wiring (source check)', () => {
   it('styles and cache-bust', () => {
     expect(CSS).toContain('.kiro-fallback-btn');
     const html = readFileSync(join(FE, 'index.html'), 'utf8');
-    expect(html).toContain('app.js?v=20261109-vtid-05003');
-    expect(html).toContain('styles.css?v=20261109-vtid-05003');
+    // Bumped past VTID-05003 by later Command Hub changes (VTID-05004); never back to an older build.
+    expect(html).not.toContain('app.js?v=20261109-vtid-05003');
+    expect(html).toMatch(/app\.js\?v=2026\d{4}-vtid-\d{5}/);
+    expect(html).toMatch(/styles\.css\?v=2026\d{4}-vtid-\d{5}/);
   });
 });
