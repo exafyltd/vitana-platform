@@ -30,9 +30,14 @@ import boto3
 try:
     import psycopg2
 except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", "-q", "psycopg2-binary"])
-    import site
-    sys.path.append(site.getusersitepackages())
+    # CloudShell's python3 is a virtualenv (no --user); plain installs elsewhere may need --user.
+    pip = [sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check", "psycopg2-binary"]
+    if subprocess.call(pip) != 0:
+        subprocess.check_call(pip + ["--user"])
+        import site
+        sys.path.append(site.getusersitepackages())
+    import importlib
+    importlib.invalidate_caches()
     import psycopg2
 
 REGION = "eu-central-1"
