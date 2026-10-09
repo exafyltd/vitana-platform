@@ -5,7 +5,10 @@ DMS truncates pgvector values on the Supabase read, so after the full load
 every embedding on Aurora is NULL (2026-10-09 dress rehearsal: 0 of 7,942
 arrived complete). This copies them directly:
 
-  Supabase  -- read-only transactions, keyset pages of 200 rows
+  Supabase  -- REST API (PostgREST), read-only GETs with the service-role key,
+               keyset pages of 200 rows. Not a database connection: the
+               project's DB network restrictions only allow-list DMS, and
+               CloudShell has no IPv6 for the direct host anyway.
   Aurora    -- RDS Data API, 25 rows per transaction, with
                session_replication_role = replica so no trigger fires
                (an updated_at trigger would otherwise restamp every row)
@@ -16,31 +19,17 @@ the IVFFlat indexes, which were built on empty columns by the post-load.
 
 Re-runnable: it only ever sets an embedding to Supabase's current value.
 Run AFTER aurora-cutover-after-load.sh:  python3 aurora-cutover-embedding-backfill.py
-Needs: secretsmanager:GetSecretValue on vitana/supabase/prod/database-url and
-the cluster's master secret, rds-data:*. Prints no credentials.
+Needs: secretsmanager:GetSecretValue on vitana/supabase/prod/url,
+vitana/supabase/prod/service-role-key and the cluster's master secret;
+rds-data:*. Standard library + boto3 only. Prints no credentials.
 """
 import json
-import os
-import re
-import subprocess
-import sys
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 
 import boto3
-
-try:
-    import psycopg2
-except ImportError:
-    # CloudShell's python3 is a virtualenv (no --user); plain installs elsewhere may need --user.
-    pip = [sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check", "psycopg2-binary"]
-    if subprocess.call(pip) != 0:
-        subprocess.check_call(pip + ["--user"])
-        import site
-        sys.path.append(site.getusersitepackages())
-    import importlib
-    importlib.invalidate_caches()
-    import psycopg2
 
 REGION = "eu-central-1"
 CLUSTER = "vitana-aurora-prod"
@@ -48,7 +37,6 @@ CLUSTER_ARN = f"arn:aws:rds:{REGION}:472838866351:cluster:{CLUSTER}"
 DB = "vitana"
 PAGE = 200
 BATCH = 25
-POOLER_HOST = os.environ.get("SUPABASE_POOLER_HOST", "aws-1-eu-north-1.pooler.supabase.com")
 
 # (table, column, primary key, primary key type) -- same on both sides (checked 2026-10-09)
 COLUMNS = [
@@ -72,26 +60,51 @@ RESTORE_NOT_NULL = [("dev_agent_memory", "embedding"), ("memory_embeddings", "em
 REINDEX = ["ai_memory_embedding_idx", "dev_agent_memory_embedding_idx", "idx_mem_emb_vector"]
 
 
-def supabase_dsn(secrets):
-    raw = secrets.get_secret_value(SecretId="vitana/supabase/prod/database-url")["SecretString"].strip()
+def secret_string(secrets, name):
+    raw = secrets.get_secret_value(SecretId=name)["SecretString"].strip()
     if raw.startswith("{"):
         obj = json.loads(raw)
-        raw = next(v for k, v in obj.items() if isinstance(v, str) and v.startswith("postgres"))
-    u = urllib.parse.urlsplit(raw)
-    # db.<ref>.supabase.co is IPv6-only and CloudShell has no IPv6: use the IPv4
-    # session pooler the DMS source endpoint uses (user becomes postgres.<ref>).
-    m = re.fullmatch(r"db\.([a-z0-9]+)\.supabase\.co", u.hostname or "")
-    if m:
-        ref = m.group(1)
-        user = urllib.parse.unquote(u.username or "postgres")
-        if "." not in user:
-            user = f"{user}.{ref}"
-        auth = urllib.parse.quote(user, safe="") + (":" + u.password if u.password is not None else "")
-        u = u._replace(netloc=f"{auth}@{POOLER_HOST}:5432")
-    # keep only sslmode; pooler-specific params (pgbouncer=true, ...) break libpq
-    q = {k: v for k, v in urllib.parse.parse_qsl(u.query) if k == "sslmode"}
-    q.setdefault("sslmode", "require")
-    return urllib.parse.urlunsplit((u.scheme, u.netloc, u.path, urllib.parse.urlencode(q), ""))
+        raw = next(v for v in obj.values() if isinstance(v, str))
+    return raw
+
+
+class SupabaseRest:
+    """Read-only: issues GET requests only."""
+
+    def __init__(self, base_url, key):
+        self.base = base_url.rstrip("/") + "/rest/v1/"
+        self.headers = {"apikey": key, "Authorization": f"Bearer {key}", "Accept": "application/json"}
+
+    def _get(self, table, params, extra_headers=None):
+        url = self.base + table + "?" + urllib.parse.urlencode(params)
+        req = urllib.request.Request(url, headers={**self.headers, **(extra_headers or {})}, method="GET")
+        for attempt in range(6):
+            try:
+                with urllib.request.urlopen(req, timeout=60) as r:
+                    return json.loads(r.read() or b"null"), r.headers
+            except urllib.error.HTTPError as e:
+                if e.code in (429, 500, 502, 503, 504) and attempt < 5:
+                    time.sleep(2 ** attempt)
+                    continue
+                raise RuntimeError(f"Supabase REST {e.code} on {table}: {e.read()[:300]!r}") from None
+            except urllib.error.URLError:
+                if attempt < 5:
+                    time.sleep(2 ** attempt)
+                    continue
+                raise
+
+    def page(self, table, pk, col, last):
+        params = {"select": f"{pk},{col}", col: "not.is.null", "order": f"{pk}.asc", "limit": str(PAGE)}
+        if last is not None:
+            params[pk] = f"gt.{last}"
+        rows, _ = self._get(table, params)
+        # PostgREST returns vector as its text form "[...]"; accept a JSON array too.
+        return [(str(r[pk]), r[col] if isinstance(r[col], str) else json.dumps(r[col], separators=(",", ":")))
+                for r in rows]
+
+    def count(self, table, pk, col):
+        _, h = self._get(table, {"select": pk, col: "not.is.null", "limit": "1"}, {"Prefer": "count=exact"})
+        return int(h["Content-Range"].split("/")[-1])
 
 
 class Aurora:
@@ -144,16 +157,9 @@ class Aurora:
 
 def copy_column(src, aurora, table, col, pk, pktype):
     sql = f"UPDATE public.{table} SET {col} = CAST(:v AS vector) WHERE {pk} = CAST(:k AS {pktype})"
-    last, sent = "", 0
+    last, sent = None, 0
     while True:
-        with src.cursor() as cur:
-            cur.execute(
-                f'SELECT {pk}::text, {col}::text FROM public."{table}" '
-                f"WHERE {col} IS NOT NULL AND {pk}::text > %s ORDER BY {pk}::text LIMIT %s",
-                (last, PAGE),
-            )
-            rows = cur.fetchall()
-        src.commit()
+        rows = src.page(table, pk, col, last)
         if not rows:
             return sent
         for i in range(0, len(rows), BATCH):
@@ -173,8 +179,8 @@ def main():
     secret_arn = rds.describe_db_clusters(DBClusterIdentifier=CLUSTER)["DBClusters"][0]["MasterUserSecret"]["SecretArn"]
     aurora = Aurora(boto3.client("rds-data", REGION), secret_arn)
 
-    src = psycopg2.connect(supabase_dsn(secrets), connect_timeout=15)
-    src.set_session(readonly=True, autocommit=False)
+    src = SupabaseRest(secret_string(secrets, "vitana/supabase/prod/url"),
+                       secret_string(secrets, "vitana/supabase/prod/service-role-key"))
 
     # Fail before writing anything if triggers can't be switched off.
     aurora.probe_replica_role()
@@ -187,11 +193,8 @@ def main():
 
     print("== 2/3 verify: column, Supabase non-null, Aurora non-null")
     bad = 0
-    for table, col, _, _ in COLUMNS:
-        with src.cursor() as cur:
-            cur.execute(f'SELECT count({col}) FROM public."{table}"')
-            s = cur.fetchone()[0]
-        src.commit()
+    for table, col, pk, _ in COLUMNS:
+        s = src.count(table, pk, col)
         a = aurora.query(f"SELECT count({col}) FROM public.{table}")[0][0]
         flag = "" if a == s else "   <-- MISMATCH (rows added/removed on Supabase since the load?)"
         bad += a != s
@@ -210,7 +213,6 @@ def main():
         aurora.run(f"REINDEX INDEX public.{idx}")
         print(f"  {idx}: rebuilt")
 
-    src.close()
     print("ALL DONE" if not bad else f"DONE WITH {bad} WARNING(S) -- send this output to Claude")
 
 

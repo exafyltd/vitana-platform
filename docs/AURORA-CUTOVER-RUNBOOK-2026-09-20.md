@@ -32,7 +32,8 @@
 >   in order.
 > - **Embedding backfill (new step after `aurora-cutover-after-load.sh`):**
 >   `python3 aurora-cutover-embedding-backfill.py`. It reads Supabase read-only
->   (`vitana/supabase/prod/database-url`) and writes to Aurora through the Data
+>   through its REST API (GETs only, service-role key; the DB network allow-list
+>   admits only DMS) and writes to Aurora through the Data
 >   API, 25 rows per transaction with `session_replication_role = replica`, so
 >   no trigger restamps rows. It then compares counts per column, restores the
 >   2 NOT NULLs and rebuilds the 3 IVFFlat indexes. It can be re-run. Tested
