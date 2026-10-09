@@ -1,0 +1,10 @@
+> @vitana/gateway@1.0.1 test:operator
+> jest test/vtid-04465-operator-pipeline-regression.test.ts
+Tests:       30 passed, 30 total
+> @vitana/gateway@1.0.1 test:roles
+> jest test/vtid-04560-role-separation-regression.test.ts
+Tests:       105 passed, 105 total
+> @vitana/gateway@1.0.1 test:support
+> jest test/vtid-04456-customer-support-pipeline-regression.test.ts test/feedback-pipeline.test.ts test/vtid-04332-report-to-specialist-status-contract.test.ts test/vtid-04445-persona-voice-gender.test.ts
+Tests:       85 passed, 85 total
+exit=0

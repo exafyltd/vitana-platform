@@ -195,3 +195,8 @@ export async function fetchBudgetAlertEvent(sb: SupabaseClient, alertKey: string
 export async function bumpMemberQuotaRpc(sb: SupabaseClient, tenantId: string, memberId: string) {
   return sb.rpc('jev_member_quota_bump', { p_tenant_id: tenantId, p_user_id: memberId });
 }
+
+/** VTID-05012: the Dev Autopilot kill switch, shown next to its silent gates. */
+export async function fetchDevAutopilotKillSwitch(sb: SupabaseClient) {
+  return sb.from('dev_autopilot_config').select('kill_switch, updated_at').eq('id', 1).maybeSingle();
+}

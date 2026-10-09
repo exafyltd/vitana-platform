@@ -26,7 +26,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from '../../../lib/supabase';
 import { decide, DecideOptions } from '../jev-decision-service';
 import * as repo from '../jev-repository';
-import { jevGateMode, recordJevShadowDecision, recordJevShadowOutcome } from '../jev-shadow';
+import { jevGateMode, recordJevGateSkip, recordJevShadowDecision, recordJevShadowOutcome } from '../jev-shadow';
 
 export const PR_CLASH_GATE = 'pr_clash';
 export const MAX_OTHERS = 3;
@@ -83,11 +83,23 @@ export async function runPrClashCheck(a: {
   const env = a.env ?? process.env;
   const mode = jevGateMode(PR_CLASH_GATE, env);
   if (mode === 'off') return null;
+  // VTID-05012: a gate that is on but does not ask Jev records why.
+  const skip = (reason: string) =>
+    recordJevGateSkip(
+      { gate: PR_CLASH_GATE, decision: 'pr_clash', mode, reason, subject_type: 'dev_autopilot_execution', subject_ref: a.executionId, system_action: 'merged' },
+      a.sb,
+    );
   try {
     const merging = await a.deps.loadMerging();
-    if (!merging || merging.files.length === 0) return null;
+    if (!merging || merging.files.length === 0) {
+      await skip('no_merging_files');
+      return null;
+    }
     const pairs = overlappingChanges(merging, await a.deps.loadOthers());
-    if (pairs.length === 0) return null;
+    if (pairs.length === 0) {
+      await skip('no_overlapping_changes');
+      return null;
+    }
     const others: Array<{ execution_id: string; shared_files: number; shared_dirs: number; clash: boolean | null; probability: number | null }> = [];
     let cost = 0;
     let outcome = 'fallback';
@@ -134,6 +146,7 @@ export async function runPrClashCheck(a: {
     );
   } catch (err: any) {
     console.warn(`[jev] ${PR_CLASH_GATE} check failed for ${a.executionId}: ${err?.message || err}`);
+    await skip('error');
     return null;
   }
 }

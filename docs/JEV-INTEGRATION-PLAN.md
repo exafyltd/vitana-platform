@@ -951,6 +951,31 @@ Enforcing any gate waits for agreement data, which needs a production deploy.
 P3 status: complete in shadow — A9, A10, C4, F (both slices), E8, E10, E1, E2.
 The Jev pins now have their own production deploy step (VTID-04824).
 
+### 10.4d Self-healing observability (VTID-05012)
+
+Measured 2026-10-09 (30 days): none of the Dev Autopilot gates (A5–A10, B6,
+the repeat-run guard) had a row. They shipped 2026-10-01; the Dev Autopilot
+kill switch has been armed since 2026-10-07, and several gates ended without
+a row when they had nothing to ask, so "loop stopped", "nothing to ask" and
+"gate broken" looked the same. Abstained rows were never compared with the
+outcome (plannability 125, voice_session_outcome 150, 0 compared).
+
+Built: a gate that is on but does not ask Jev writes a $0 `skipped` row with
+a reason (ci-failure, pr-clash, fix-verification, repeat-run, approval-risk,
+claim-feasibility; the `catch` paths of those plus change-risk and
+test-selection); plannability and voice_session_outcome score their abstained
+rows' lean (`lean_agreed`); `GET /api/v1/jev/admin/stats` adds `gate_health`
+(every gate that is on, `silent` after 48 h without any row) and
+`loops.dev_autopilot` (the kill switch).
+
+Next slices, each its own plan: outcome joining for the Dev Autopilot gates
+(merged and kept / closed after CI / reverted), new shadow decisions where the
+loop fails (CI-failure or revert prediction, escalation triage, failed-fix
+classification), and a promotion policy (≥200 decided rows, ≥90 % precision
+against real outcomes, owner yes per gate). Separate finding: the 2026-09-22/23
+CI-triage storm (Bedrock "Operation not allowed", DeepSeek 402 fallback,
+490 escalations) has no breaker yet.
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,
