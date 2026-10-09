@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-05014",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "the Kiro repo readiness route exists and is admin-only",
+      "path": "/api/v1/operator/kiro/repos",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "route mounted behind requireAdminAuth; read-only (one GET per repo to GitHub when called by an admin)"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "safe-merge still refuses a repo outside the two Vitana repos",
+      "method": "POST",
+      "path": "/api/v1/github/safe-merge",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "POST only as a rejected probe (invalid bearer); nothing is merged"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05014-kiro-v1-writes.test.ts test/vtid-04465-operator-pipeline-regression.test.ts test/vtid-05006-kiro-write-tools.test.ts test/vtid-03946-operator-cross-repo-search.test.ts",
+      "cwd": "services/gateway",
+      "reason": "per-repo deny lists, vitana-v1 token on every vitana-v1 call, create-pr/safe-merge on both repos, the merge target check, the readiness probe, and the end-to-end vitana-v1 push under Allow over the fake database and GitHub"
+    }
+  ]
+}

@@ -18,12 +18,13 @@
  */
 import { getSupabase } from '../../lib/supabase';
 import { getPullRequest } from '../github-service';
+import { isVitanaRepo, repoGitHubToken } from '../vitana-repos';
 import { isAutopilotExecutionArmed } from '../system-controls-service';
 import { emitOasisEvent } from '../oasis-event-service';
 import { GEMINI_TOOL_DEFINITIONS } from '../gemini-operator';
 import { requestConfirmation, KIRO_WRITE_CALL_BUDGET_MS } from './kiro-mcp-confirmations';
 import { runOperatorTool, type KiroMcpCaller, type KiroMcpCallResult, type McpTool } from './kiro-mcp-tools';
-import { KIRO_PUSH_TOOL, pushKiroBranch, type PushArgs } from './kiro-push-branch';
+import { KIRO_PUSH_TOOL, pushKiroBranch, validatePush, type PushArgs } from './kiro-push-branch';
 
 export const KIRO_MCP_WRITE_TOOLS = [
   // PRs (the push is Kiro-only; the rest are the Operator's own tools)
@@ -110,10 +111,15 @@ export const checkTargetVtid: TargetCheck = async (name, args, vtid) => {
   }
   if (name === 'dev_merge_pr') {
     try {
-      const pr = await getPullRequest('exafyltd/vitana-platform', Number(args.pr_number));
+      // VTID-05014: read the PR from the repo the merge targets, with that repo's token.
+      const repo = args.repo === undefined ? 'exafyltd/vitana-platform' : String(args.repo);
+      if (!isVitanaRepo(repo)) return { ok: false, error: `repo not allowed: ${repo}` };
+      const token = repoGitHubToken(repo);
+      const pr = token ? await getPullRequest(repo, Number(args.pr_number), token) : await getPullRequest(repo, Number(args.pr_number));
       return String(pr?.title ?? '').includes(vtid) ? { ok: true } : { ok: false, error: `PR #${String(args.pr_number)} is not titled for ${vtid}` };
-    } catch {
-      return { ok: false, error: `PR #${String(args.pr_number)} not found` };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '';
+      return { ok: false, error: msg.startsWith('repo_token_not_configured') ? msg : `PR #${String(args.pr_number)} not found` };
     }
   }
   if (name === 'dev_push_kiro_branch') {
@@ -130,7 +136,9 @@ export function summarizeWrite(name: string, args: Record<string, any>): string 
     const paths = files.slice(0, 5).map((f: any) => String(f?.path ?? '')).join(', ');
     return `Push ${files.length} file(s) to ${String(args.repo)}:${String(args.branch)} — ${paths}${files.length > 5 ? ', …' : ''}`;
   }
-  return `${name}${pick('repo')}${pick('pr_number')}${pick('head_branch')}${pick('execution_id')}${pick('approval_id')}`.trim();
+  // VTID-05014: a PR card always names its repo (the default is vitana-platform).
+  const repo = (name === 'dev_create_pr' || name === 'dev_merge_pr') ? ` repo=${String(args.repo ?? 'exafyltd/vitana-platform').slice(0, 80)}` : pick('repo');
+  return `${name}${repo}${pick('pr_number')}${pick('head_branch')}${pick('execution_id')}${pick('approval_id')}`.trim();
 }
 
 export interface WriteDeps {
@@ -163,6 +171,11 @@ export async function callKiroMcpWrite(
   if (!v.ok) return { ok: false, text: `Refused: ${v.error}. Nothing was done.` };
   const t = await (deps.targetCheck ?? checkTargetVtid)(name, rawArgs as Record<string, any>, vtid);
   if (!t.ok) return { ok: false, text: `Refused: ${t.error}. Nothing was done.` };
+  // VTID-05014: a push the rules refuse (repo, branch, denied path, size) is refused before the user is asked.
+  if (name === 'dev_push_kiro_branch') {
+    const pv = validatePush(rawArgs as Partial<PushArgs>, caller.userId);
+    if (!pv.ok) return { ok: false, text: `Refused: ${pv.error}. Nothing was done.` };
+  }
 
   const confirm = await (deps.confirm ?? requestConfirmation)(
     { userId: caller.userId, threadId: caller.threadId, tool: name, vtid, summary: summarizeWrite(name, rawArgs as Record<string, any>) },

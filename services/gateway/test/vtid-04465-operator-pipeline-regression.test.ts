@@ -1257,6 +1257,44 @@ describe('Kiro writes: held until the user answers in the thread (VTID-05006)', 
     expect(platform.rows('kiro_mcp_confirmations')).toHaveLength(0);
   });
 
+  // VTID-05014: the same path to the second repo. The real push runs against the fake
+  // vitana-v1 repo, with the vitana-v1 token on every call and the platform repo untouched.
+  it('vitana-v1 push under Allow: one commit on the kiro branch, v1 token only, platform repo untouched', async () => {
+    process.env.FRONTEND_DEPLOY_TOKEN = 'pipeline-v1-token';
+    process.env.GITHUB_SAFE_MERGE_TOKEN = 'pipeline-platform-token';
+    const branch = `kiro/${ADMIN_USER.replace(/-/g, '').slice(0, 8)}/home-copy`;
+    const platformCalls = platform.github.calls.length;
+    const done = call('dev_push_kiro_branch', {
+      vtid: KIRO_VTID, repo: 'exafyltd/vitana-v1', branch, message: `${KIRO_VTID}: home copy`,
+      files: [{ path: 'src/pages/Home.tsx', content: 'export default 2;\n' }],
+    }).then((r) => r);
+    const row = await pendingRow();
+    expect(row).toMatchObject({ tool: 'dev_push_kiro_branch', vtid: KIRO_VTID });
+    expect(String(row.summary)).toContain(`exafyltd/vitana-v1:${branch}`);
+    expect((await answer(String(row.id), 'allow')).status).toBe(200);
+    const res = await done;
+    expect(res.body.result.isError).toBeFalsy();
+    expect(platform.githubV1.filesAt(branch)).toEqual({ 'src/pages/Home.tsx': 'export default 2;\n' });
+    expect(platform.githubV1.pushes).toEqual([expect.objectContaining({ branch, force: false })]);
+    expect(new Set(platform.githubV1.auths)).toEqual(new Set(['Bearer pipeline-v1-token']));
+    expect(platform.github.calls.length).toBe(platformCalls);
+    expect(topics()).toEqual(expect.arrayContaining(['operator.kiro.write_confirmed', 'operator.kiro.branch_pushed']));
+    delete process.env.FRONTEND_DEPLOY_TOKEN;
+  });
+
+  it('vitana-v1 push into supabase/: refused before anyone is asked', async () => {
+    process.env.FRONTEND_DEPLOY_TOKEN = 'pipeline-v1-token';
+    const branch = `kiro/${ADMIN_USER.replace(/-/g, '').slice(0, 8)}/edge-fn`;
+    const res = await call('dev_push_kiro_branch', {
+      vtid: KIRO_VTID, repo: 'exafyltd/vitana-v1', branch, message: `${KIRO_VTID}: fn`,
+      files: [{ path: 'supabase/functions/x/index.ts', content: 'x' }],
+    });
+    expect(res.body.result.isError).toBe(true);
+    expect(res.body.result.content[0].text).toMatch(/may not change supabase\/functions\/x\/index\.ts/);
+    expect(platform.githubV1.pushes).toHaveLength(0);
+    delete process.env.FRONTEND_DEPLOY_TOKEN;
+  });
+
   it('writes switched off: the write tools are not offered and a call is unknown', async () => {
     process.env.KIRO_MCP_WRITE_ENABLED = 'false';
     const res = await call('dev_merge_pr', { vtid: KIRO_VTID, pr_number: 1 });

@@ -13,6 +13,8 @@ export const CreatePrRequestSchema = z.object({
   body: z.string().min(1, 'PR body/description is required'),
   base: z.string().default('main'),
   head: z.string().min(1, 'Head branch is required'),
+  // VTID-05014: which Vitana repo (allowlisted in the route); default unchanged.
+  repo: z.string().default('exafyltd/vitana-platform'),
 });
 
 export type CreatePrRequest = z.infer<typeof CreatePrRequestSchema>;

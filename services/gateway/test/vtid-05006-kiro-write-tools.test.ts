@@ -147,7 +147,8 @@ describe('dev_push_kiro_branch', () => {
     expect(validatePush({ ...good, branch: 'main' }, U).ok).toBe(false);
     expect(validatePush({ ...good, branch: 'kiro/11111111/fix-card' }, U).ok).toBe(false);
     expect(validatePush({ ...good, repo: 'someone/else' }, U).ok).toBe(false);
-    expect(validatePush({ ...good, repo: 'exafyltd/vitana-v1' }, U).ok).toBe(false);
+    // VTID-05014 changed this contract on purpose: vitana-v1 is now a push target (its own deny list: test/vtid-05014-*).
+    expect(validatePush({ ...good, repo: 'exafyltd/vitana-v1' }, U).ok).toBe(true);
   });
 
   it('refuses governance, CI, evidence, migrations, ownership and dependency files, and traversal', () => {
