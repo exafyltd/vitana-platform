@@ -36,6 +36,8 @@ env:
   TARGET_AWS_REGION: eu-central-1
   ECR_REPOSITORY: vitana/kiro-runner
   ECS_CLUSTER: Vitana-ECS-Cluster
+  # VTID-05005: this environment's own public gateway, where the vitana tools relay calls.
+  MCP_GATEWAY_URL: https://gateway.vitanaland.com
   ECS_SERVICE: vitana-kiro-runner-awsdr
   KEY_PREFIX: vitana/kiro/production/users
   TASK_ROLE_SUFFIX: /vitana-kiro-runner-prod-task-role
@@ -101,16 +103,17 @@ jobs:
             --query 'services[0].taskDefinition' --output text)
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
             | jq --arg IMG "$IMAGE" --arg SEC_TOKEN "$SEC_TOKEN" --arg PREFIX "${{ env.KEY_PREFIX }}" \
-                 --arg REGION "${{ env.TARGET_AWS_REGION }}" --arg SUFFIX "${{ env.TASK_ROLE_SUFFIX }}" '
+                 --arg REGION "${{ env.TARGET_AWS_REGION }}" --arg MCPURL "${{ env.MCP_GATEWAY_URL }}" --arg SUFFIX "${{ env.TASK_ROLE_SUFFIX }}" '
                 .taskRoleArn as $ROLE
                 | if ($ROLE // "" | endswith($SUFFIX)) then . else error("task role is not the production kiro-runner role") end
                 | .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment =
                     ( ( .containerDefinitions[0].environment // [] )
-                      | [ .[] | select(.name | IN("KIRO_KEY_SECRET_PREFIX","KIRO_KEY_READER_ROLE_ARN","AWS_REGION") | not) ]
+                      | [ .[] | select(.name | IN("KIRO_KEY_SECRET_PREFIX","KIRO_KEY_READER_ROLE_ARN","AWS_REGION","KIRO_MCP_GATEWAY_URL") | not) ]
                       + [ {name:"KIRO_KEY_SECRET_PREFIX",   value:$PREFIX},
                           {name:"KIRO_KEY_READER_ROLE_ARN", value:$ROLE},
-                          {name:"AWS_REGION",               value:$REGION} ] )
+                          {name:"AWS_REGION",               value:$REGION},
+                          {name:"KIRO_MCP_GATEWAY_URL",     value:$MCPURL} ] )
                 | .containerDefinitions[0].secrets =
                     ( ( .containerDefinitions[0].secrets // [] )
                       | [ .[] | select(.name | IN("KIRO_RUNNER_TOKEN") | not) ]

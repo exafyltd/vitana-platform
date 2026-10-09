@@ -973,6 +973,7 @@ jobs:
         # KIRO_ENGINE_ENABLED=true. Unset => KIRO_ENGINE_ENABLED=false and no runner
         # refs, so a deploy never points production at a runner that is not there.
         # Never the staging runner (guarded by test/vtid-05003-kiro-default-engine.test.ts).
+        # VTID-05005: KIRO_MCP_ENABLED follows the engine — Kiro sessions get the Operator's read tools.
         env:
           KIRO_TOKEN_ARN: ${{ vars.KIRO_RUNNER_PROD_TOKEN_ARN }}
         run: |
@@ -984,9 +985,10 @@ jobs:
           esac
           NEW_DEF=$(jq --arg T "$KIRO_TOKEN_ARN" '
             .containerDefinitions[0].environment |=
-              ( [ (. // [])[] | select(.name | IN("KIRO_ENGINE_ENABLED","KIRO_RUNNER_URL") | not) ]
-                + ( if $T == "" then [ {name:"KIRO_ENGINE_ENABLED", value:"false"} ]
+              ( [ (. // [])[] | select(.name | IN("KIRO_ENGINE_ENABLED","KIRO_MCP_ENABLED","KIRO_RUNNER_URL") | not) ]
+                + ( if $T == "" then [ {name:"KIRO_ENGINE_ENABLED", value:"false"}, {name:"KIRO_MCP_ENABLED", value:"false"} ]
                     else [ {name:"KIRO_ENGINE_ENABLED", value:"true"},
+                           {name:"KIRO_MCP_ENABLED", value:"true"},
                            {name:"KIRO_RUNNER_URL", value:"http://kiro-runner-prod.vitana.internal:8080"} ] end ) )
             | .containerDefinitions[0].secrets |=
               ( [ (. // [])[] | select(.name != "KIRO_RUNNER_TOKEN") ]

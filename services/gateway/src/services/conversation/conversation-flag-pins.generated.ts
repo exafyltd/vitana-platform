@@ -98,6 +98,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   JEV_VOICE_SESSION_OUTCOME_MODE: { staging: "shadow", prod: "shadow" },
   JEV_VOICE_SLOW_SESSION_MODE: { staging: "shadow", prod: "shadow" },
   KIRO_ENGINE_ENABLED: { staging: "false | true", prod: "false | true" },
+  KIRO_MCP_ENABLED: { staging: "false | true", prod: "false | true" },
   KIRO_RUNNER_URL: { staging: "http://kiro-runner.vitana.internal:8080", prod: "http://kiro-runner-prod.vitana.internal:8080" },
   LEDGER_WRITE_AUTH_MODE: { staging: "enforce", prod: null },
   MARKETPLACE_SYNC_SECRET: { staging: null, prod: "dynamic" },

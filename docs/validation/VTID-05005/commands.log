@@ -1,0 +1,9 @@
+# VTID-05005 — local checks (2026-10-09)
+$ cd services/gateway && npx tsc --noEmit -p .            # clean
+$ npx jest test/vtid-05005-kiro-dev-tools-mcp.test.ts test/vtid-04999-kiro-runner-backend.test.ts test/vtid-05003-kiro-default-engine.test.ts test/vtid-04560-role-separation-regression.test.ts
+Tests: 147 passed, 147 total
+$ npm run test:operator
+Tests: 30 passed, 30 total
+$ cd services/kiro-runner && npx tsc --noEmit -p . && npm test
+Tests 28 passed (28)
+$ node scripts/conversation/generate-flag-pins.mjs        # KIRO_MCP_ENABLED pinned on both environments
