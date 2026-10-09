@@ -29,6 +29,8 @@ export const KIRO_MCP_READ_TOOLS = [
   // data and logs (owner decision: full read access)
   'dev_run_sql_readonly', 'dev_db_query', 'dev_cloudwatch_logs',
   'knowledge_search',
+  // VTID-05006: what Kiro needs to find the approvals it may act on
+  'dev_list_approvals', 'dev_approval_count',
 ] as const;
 
 export type KiroMcpToolName = (typeof KIRO_MCP_READ_TOOLS)[number];
@@ -87,6 +89,20 @@ export async function callKiroMcpTool(
   exec: Executor = executeTool,
 ): Promise<KiroMcpCallResult> {
   if (!isKiroMcpTool(name)) return { ok: false, text: `Unknown tool: ${name}` };
+  return runOperatorTool(caller, name, args, exec, KIRO_MCP_TOOL_TIMEOUT_MS);
+}
+
+/**
+ * Run one Operator tool as the verified caller, with its own time budget. Callers
+ * decide which tools may get here (the read set, or a write that passed its gates).
+ */
+export async function runOperatorTool(
+  caller: KiroMcpCaller,
+  name: string,
+  args: Record<string, unknown>,
+  exec: Executor = executeTool,
+  timeoutMs: number = KIRO_MCP_TOOL_TIMEOUT_MS,
+): Promise<KiroMcpCallResult> {
   if (!caller.userId) return { ok: false, text: 'No verified caller' };
   const syntheticId = `kiro-mcp:${caller.threadId}:${randomUUID()}`;
   setThreadAuth(syntheticId, { user_id: caller.userId, exafy_admin: true });
@@ -94,7 +110,7 @@ export async function callKiroMcpTool(
   try {
     let timer: NodeJS.Timeout | undefined;
     const timedOut = new Promise<{ ok: false; error: string }>((resolve) => {
-      timer = setTimeout(() => resolve({ ok: false, error: `timed out after ${KIRO_MCP_TOOL_TIMEOUT_MS / 1000} s — narrow the request` }), KIRO_MCP_TOOL_TIMEOUT_MS);
+      timer = setTimeout(() => resolve({ ok: false, error: `timed out after ${Math.round(timeoutMs / 1000)} s — narrow the request` }), timeoutMs);
       timer.unref?.();
     });
     const r = await Promise.race([exec(name, args, syntheticId), timedOut]).finally(() => clearTimeout(timer));

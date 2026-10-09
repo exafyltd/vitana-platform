@@ -3641,3 +3641,20 @@ throwaway Postgres 16 (`scripts/sql-tests/run-event-share-posts-test.sh`, CI `SQ
 
 `community_event_shared` is in the gateway's notification catalog (`member`, `posts`); like every new type it
 starts OFF per tenant (VTID-04674) until an admin turns it on.
+
+## Kiro write confirmations — `kiro_mcp_confirmations` (VTID-05006, 2026-10-09) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261009180000_vtid_05006_kiro_mcp_confirmations.sql`. Service role only (RLS on, no policies; `anon`/`authenticated` revoked).
+
+| Column | Meaning |
+|---|---|
+| `id` | uuid PK |
+| `user_id` | the signed-in admin whose Kiro session asked (only they can answer) |
+| `thread_id` | the Operator Kiro thread |
+| `tool` | the Operator write tool Kiro called (e.g. `dev_create_pr`, `dev_push_kiro_branch`) |
+| `vtid` | the VTID the call is for (required for every Kiro write) |
+| `summary` | short human-readable description shown on the Allow/Deny card — never secrets or file contents |
+| `status` | `pending` → `allowed` \| `denied` \| `expired` (only a `pending` row moves; `expired` when the call went away or the 60 s window ran out) |
+| `created_at`, `decided_at` | timestamps |
+
+Index `idx_kiro_mcp_confirmations_pending (user_id, thread_id, created_at DESC) WHERE status = 'pending'`.

@@ -20,6 +20,7 @@ import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { isKiroMcpEnabled, verifyKiroMcpToken } from '../services/kiro/kiro-mcp-token';
 import { callKiroMcpTool, isKiroMcpTool, kiroMcpTools } from '../services/kiro/kiro-mcp-tools';
+import { callKiroMcpWrite, isKiroMcpWriteEnabled, isKiroMcpWriteTool, kiroMcpWriteTools } from '../services/kiro/kiro-mcp-writes';
 import { MCP_PROTOCOL_VERSIONS, negotiateVersion, type JsonRpcRequest, type JsonRpcResponse } from '../services/commerce-mcp';
 
 const router = Router();
@@ -79,7 +80,7 @@ const rpcError = (res: Response, status: number, code: number, message: string) 
 
 // ---- JSON-RPC --------------------------------------------------------------
 
-interface CallCtx { userId: string; tenantId: string | null; threadId: string }
+interface CallCtx { userId: string; tenantId: string | null; threadId: string; signal?: AbortSignal }
 
 export async function handleKiroMcp(msg: JsonRpcRequest, ctx: CallCtx): Promise<JsonRpcResponse | null> {
   const isNotification = msg.id === undefined;
@@ -96,14 +97,17 @@ export async function handleKiroMcp(msg: JsonRpcRequest, ctx: CallCtx): Promise<
     case 'ping':
       return { jsonrpc: '2.0', id, result: {} };
     case 'tools/list':
-      return { jsonrpc: '2.0', id, result: { tools: kiroMcpTools() } };
+      return { jsonrpc: '2.0', id, result: { tools: isKiroMcpWriteEnabled() ? [...kiroMcpTools(), ...kiroMcpWriteTools()] : kiroMcpTools() } };
     case 'tools/call': {
       const name = msg.params?.name;
       if (typeof name !== 'string') return err(-32602, 'Invalid params: name is required');
-      if (!isKiroMcpTool(name)) return err(-32602, `Unknown tool: ${name}`);
+      const isWrite = isKiroMcpWriteTool(name) && isKiroMcpWriteEnabled();
+      if (!isKiroMcpTool(name) && !isWrite) return err(-32602, `Unknown tool: ${name}`);
       const args = (msg.params?.arguments && typeof msg.params.arguments === 'object' ? msg.params.arguments : {}) as Record<string, unknown>;
       const started = Date.now();
-      const r = await callKiroMcpTool(ctx, name, args);
+      const r = isWrite
+        ? await callKiroMcpWrite(ctx, name, args, ctx.signal ?? new AbortController().signal)
+        : await callKiroMcpTool(ctx, name, args);
       await emitOasisEvent({
         vtid: 'VTID-05005',
         type: 'operator.kiro.tool_called',
@@ -135,7 +139,10 @@ router.post('/', async (req: Request, res: Response) => {
   const { userId, threadId } = check.claims;
   const status = await adminStatus(userId);
   if (!status.admin) return rpcError(res, 403, -32003, 'exafy_admin required');
-  const ctx: CallCtx = { userId, tenantId: status.tenantId, threadId };
+  // VTID-05006: a held write call is cancelled the moment the caller goes away.
+  const aborter = new AbortController();
+  res.on('close', () => { if (!res.writableFinished) aborter.abort(); });
+  const ctx: CallCtx = { userId, tenantId: status.tenantId, threadId, signal: aborter.signal };
   const body = req.body;
   if (Array.isArray(body)) {
     // A batch is charged per message and run one after another, never fanned out.

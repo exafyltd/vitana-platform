@@ -2438,6 +2438,11 @@ body {
   font-style: normal;
 }
 
+/* VTID-05006: a Kiro write (PR, merge, autopilot, approval, branch push) waiting on Allow/Deny */
+.kiro-approval--write {
+  border-inline-start: 3px solid #e0b25b;
+}
+
 .kiro-approval--allowed { border-color: #3f6b3f; background: rgba(127, 181, 127, 0.08); }
 .kiro-approval--denied,
 .kiro-approval--expired,
