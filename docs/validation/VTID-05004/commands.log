@@ -1,0 +1,12 @@
+# VTID-05004 — commands run locally (2026-10-09)
+$ cd services/gateway && npx jest test/command-hub/vtid-04999-kiro-key-field.test.ts test/command-hub/vtid-05003-kiro-default-engine-ui.test.ts
+Tests: 24 passed, 24 total
+$ npx jest test/command-hub
+Tests: 551 passed, 551 total
+$ node scripts/generate-command-hub-symbol-index.mjs
+✓ regenerated specs/command-hub-symbol-index.json (935 functions across 11 files)
+$ node scratchpad/kiro-key-shots.js   # real app.js block + styles.css in Chromium
+desktop overflow false false buttons after manage ["Replace","Revoke","Done"]
+mobile overflow false false buttons after manage ["Replace","Revoke","Done"]
+# first shot showed the check in white (.kiro-panel-rows dd colour won); selector raised to
+# .kiro-panel-rows dd.kiro-key-ok, re-shot: green (outputs/kiro-key-a-linked-*.png)
