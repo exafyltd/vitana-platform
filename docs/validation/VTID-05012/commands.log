@@ -11,3 +11,4 @@ $ node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(requi
 {"ok":true,"errors":[]}
 # Read-only, before apply: constraint names and the live jev_shadow_gate_stats body match the VTID-04754 migration
 # (md5 of pg_get_functiondef eabeef4bc5a8ed4e945361e0c300efbb) — outputs/live-before.txt
+$ cd services/gateway && npx jest                                                    Test Suites: 1 skipped, 1579 passed; Tests: 25 skipped, 6 todo, 25176 passed
