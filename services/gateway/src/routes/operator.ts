@@ -36,7 +36,7 @@ import { isOperatorRouteOn, recordOperatorRouteOutcome, runOperatorRoute } from 
 // VTID-0536: Gemini Operator Tools Bridge
 import { processWithGemini, type OperatorTurnEventSink } from '../services/gemini-operator';
 import { getThreadEngine, getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn, listOperatorThreadMessages, listOperatorThreads } from '../services/operator-threads';
-import { runKiroTurn, cancelKiroTurn, closeKiroSession, isKiroEngineEnabled, openKiroSessionCount, listKiroModels, setKiroModel } from '../services/kiro/kiro-turn';
+import { runKiroTurn, cancelKiroTurn, closeKiroSession, isKiroEngineEnabled, openKiroSessionCount, listKiroModels, setKiroModel, type KiroHistoryMessage } from '../services/kiro/kiro-turn';
 import { answerPermission } from '../services/kiro/permission-broker';
 import { registerKiroBackendFromEnv, runnerConfig, kiroKeyRequest, kiroKeyLinked, clearKiroKeyCache } from '../services/kiro/remote-backend';
 import { confirmationStore, decideConfirmation } from '../services/kiro/kiro-mcp-confirmations';
@@ -273,7 +273,16 @@ async function runKiroChatTurn(a: {
   isAdmin: boolean; channel?: string; emit?: KiroTurnEventSink;
 }): Promise<OperatorChatTurnOutcome> {
   if (!a.isAdmin) return { status: 403, body: { ok: false, error: 'kiro_requires_admin' } };
-  const result = await runKiroTurn({ threadId: a.threadId, userId: a.userId, message: a.message, emit: a.emit });
+  // VTID-05018: if Kiro has to open a new session for this thread, it gets the thread's earlier
+  // turns (this user's thread only; the current message is recorded after the turn).
+  const loadHistory = async (): Promise<KiroHistoryMessage[]> => {
+    const r = await listOperatorThreadMessages(a.threadId, { userId: a.userId, limit: 60 });
+    if (!r.ok) return [];
+    return r.messages
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .map((m) => ({ role: m.role as 'user' | 'assistant', content: String(m.content ?? '') }));
+  };
+  const result = await runKiroTurn({ threadId: a.threadId, userId: a.userId, message: a.message, emit: a.emit, loadHistory });
   // VTID-05003: a used-up Kiro Power seat is a governed state transition, logged once per change.
   if (result.meta.kiro_status === 'no_credits' && result.meta.credits_changed === true) {
     await emitOasisEvent({

@@ -1,0 +1,23 @@
+{
+  "vtid": "VTID-05018",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "the Operator chat route still refuses an invalid caller",
+      "method": "POST",
+      "path": "/api/v1/operator/chat",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "POST only as a rejected probe (invalid bearer); no turn runs, nothing is written"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05018-kiro-thread-memory.test.ts test/vtid-04465-operator-pipeline-regression.test.ts test/vtid-04975-kiro-engine.test.ts test/vtid-05005-kiro-dev-tools-mcp.test.ts",
+      "cwd": "services/gateway",
+      "reason": "restored-history block, new-session-only loading, failure tolerance, and the end-to-end restore through the real chat route over the fake database"
+    }
+  ]
+}

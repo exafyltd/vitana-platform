@@ -1302,3 +1302,76 @@ describe('Kiro writes: held until the user answers in the thread (VTID-05006)', 
     expect(platform.rows('kiro_mcp_confirmations')).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// VTID-05018: a Kiro thread whose Kiro session is gone (idle close, deploy,
+// another task) gets its stored turns back. The REAL chat route, thread store
+// (over the fake database), Kiro turn runner and ACP client run; only
+// `kiro-cli acp` is a scripted fake.
+// ---------------------------------------------------------------------------
+import { EventEmitter } from 'events';
+import { setKiroBackend, closeAllKiroSessions } from '../src/services/kiro/kiro-turn';
+
+describe('Kiro thread memory: a reopened session gets the thread back (VTID-05018)', () => {
+  const THREAD = 'a5018000-0000-4000-8000-000000000001';
+  const prompts: any[] = [];
+
+  function fakeKiro(): any {
+    const out = new EventEmitter();
+    const proc = new EventEmitter();
+    const send = (o: unknown) => out.emit('data', `${JSON.stringify(o)}\n`);
+    return {
+      stdout: out,
+      stdin: {
+        write: (line: string) => {
+          const msg = JSON.parse(line);
+          if (msg.method === 'initialize') send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1 } });
+          else if (msg.method === 'session/new') send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 'K1' } });
+          else if (msg.method === 'session/prompt') {
+            prompts.push(msg.params.prompt);
+            send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'K1', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'You asked me to wire GitHub, AWS and Supabase.' } } } });
+            send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } });
+          }
+          return true;
+        },
+        end: () => {},
+      },
+      kill() { proc.emit('exit'); },
+      on: (ev: string, cb: any) => proc.on(ev, cb),
+    };
+  }
+
+  beforeEach(() => {
+    prompts.length = 0;
+    Object.assign(process.env, { OPERATOR_THREADS_ENABLED: 'true', KIRO_ENGINE_ENABLED: 'true' });
+    setKiroBackend({ spawn: () => fakeKiro(), workspace: () => '/work/pipeline' });
+    platform.insert('operator_threads', { id: THREAD, user_id: ADMIN_USER, engine: 'kiro', title: 'Kiro wiring', created_at: new Date(Date.now() - 6 * 3600_000).toISOString() });
+    platform.insert('operator_messages', { id: 'm1', thread_id: THREAD, role: 'user', content: 'Wire GitHub, AWS and Supabase into the Operator.', created_at: new Date(Date.now() - 6 * 3600_000).toISOString() });
+    platform.insert('operator_messages', { id: 'm2', thread_id: THREAD, role: 'tool', tool_name: 'dev_search_codebase', content: '{"raw":"tool output"}', created_at: new Date(Date.now() - 6 * 3600_000 + 1_000).toISOString() });
+    platform.insert('operator_messages', { id: 'm3', thread_id: THREAD, role: 'assistant', content: 'Here is what is wired today.', created_at: new Date(Date.now() - 6 * 3600_000 + 2_000).toISOString() });
+  });
+  afterEach(() => {
+    closeAllKiroSessions();
+    setKiroBackend(null);
+    delete process.env.OPERATOR_THREADS_ENABLED;
+    delete process.env.KIRO_ENGINE_ENABLED;
+  });
+
+  it('6 h later in the same thread: Kiro\'s first prompt carries the earlier turns (no tool rows), then the message', async () => {
+    const res = await consoleTurn({ kind: 'jwt', token: await jwt(ADMIN_USER, true) }, 'Do you remember what I asked?', THREAD);
+    expect(res.status).toBe(200);
+    expect(prompts).toHaveLength(1);
+    const [history, message] = prompts[0];
+    expect(history.text).toContain('=== RESTORED THREAD HISTORY');
+    expect(history.text).toContain('User: Wire GitHub, AWS and Supabase into the Operator.');
+    expect(history.text).toContain('You (Kiro): Here is what is wired today.');
+    expect(history.text).not.toContain('tool output');
+    expect(message).toEqual({ type: 'text', text: 'Do you remember what I asked?' });
+  });
+
+  it('another user\'s thread is not restored into this user\'s session', async () => {
+    platform.rows('operator_threads').find((t) => t.id === THREAD)!.user_id = 'e2222222-2222-4222-8222-222222222222';
+    await consoleTurn({ kind: 'jwt', token: await jwt(ADMIN_USER, true) }, 'hello', THREAD);
+    for (const p of prompts) expect(JSON.stringify(p)).not.toContain('Wire GitHub');
+  });
+});
