@@ -20,6 +20,8 @@ Needs: secretsmanager:GetSecretValue on vitana/supabase/prod/database-url and
 the cluster's master secret, rds-data:*. Prints no credentials.
 """
 import json
+import os
+import re
 import subprocess
 import sys
 import time
@@ -46,6 +48,7 @@ CLUSTER_ARN = f"arn:aws:rds:{REGION}:472838866351:cluster:{CLUSTER}"
 DB = "vitana"
 PAGE = 200
 BATCH = 25
+POOLER_HOST = os.environ.get("SUPABASE_POOLER_HOST", "aws-1-eu-north-1.pooler.supabase.com")
 
 # (table, column, primary key, primary key type) -- same on both sides (checked 2026-10-09)
 COLUMNS = [
@@ -75,6 +78,16 @@ def supabase_dsn(secrets):
         obj = json.loads(raw)
         raw = next(v for k, v in obj.items() if isinstance(v, str) and v.startswith("postgres"))
     u = urllib.parse.urlsplit(raw)
+    # db.<ref>.supabase.co is IPv6-only and CloudShell has no IPv6: use the IPv4
+    # session pooler the DMS source endpoint uses (user becomes postgres.<ref>).
+    m = re.fullmatch(r"db\.([a-z0-9]+)\.supabase\.co", u.hostname or "")
+    if m:
+        ref = m.group(1)
+        user = urllib.parse.unquote(u.username or "postgres")
+        if "." not in user:
+            user = f"{user}.{ref}"
+        auth = urllib.parse.quote(user, safe="") + (":" + u.password if u.password is not None else "")
+        u = u._replace(netloc=f"{auth}@{POOLER_HOST}:5432")
     # keep only sslmode; pooler-specific params (pgbouncer=true, ...) break libpq
     q = {k: v for k, v in urllib.parse.parse_qsl(u.query) if k == "sslmode"}
     q.setdefault("sslmode", "require")
