@@ -16,6 +16,8 @@ const PROTECTED_PATH = 'services/gateway/src/frontend/command-hub/';
 // VTID-0302: Original guard VTID
 // VTID-05001: orb-widget.js + index.html (?v= bump) only — the widget defaults to SSE (WS only
 //             when the server asks) and every overlay close passes an allowlisted reason.
+// VTID-05003: app.js + styles.css + index.html (?v= bump) only — Kiro as the default Operator
+// engine (per-user status), forced status re-read on new threads, "Continue in Operator".
 // VTID-04999: app.js + styles.css + index.html (?v= bump) only — the Kiro API key field
 // (link / replace / revoke) in the Kiro workspace card. Plan: docs/validation/VTID-04999/plan-sparring.md
 // VTID-04984: app.js + styles.css + index.html (?v= bump) only — model selection inside

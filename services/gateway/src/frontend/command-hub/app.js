@@ -799,7 +799,7 @@ function touchActiveOperatorThread() {
  * this flow (clearing the legacy single-thread keys is harmless hygiene
  * once every session is thread-aware).
  */
-function startNewOperatorThread() {
+function startNewOperatorThread(opts) {
     var now = Date.now();
     var thread = {
         id: generateOperatorThreadId(),
@@ -808,6 +808,8 @@ function startNewOperatorThread() {
         createdAt: now,
         updatedAt: now
     };
+    // VTID-05003: Kiro is the default engine when it can serve this user.
+    applyDefaultOperatorEngine(thread, opts && opts.engine);
     state.operatorThreads.unshift(thread);
     saveOperatorThreadsIndex(state.operatorThreads);
 
@@ -822,6 +824,8 @@ function startNewOperatorThread() {
     saveOperatorThreadHistory(thread.id, []);
     notifyOrbOperatorThread();
     renderApp();
+    // VTID-05003: re-read the status (credits may have changed) and re-apply the default.
+    if (!(opts && opts.engine)) fetchKiroStatus(true);
 }
 
 /**
@@ -23735,6 +23739,9 @@ function renderOperatorChat() {
                 kiroBadge.textContent = 'Kiro \u00b7 ' + kiroModelName(msg.meta.kiro_model);
                 meta.appendChild(kiroBadge);
             }
+            // VTID-05003: Kiro could not serve this turn — offer the Operator, never switch silently.
+            var kiroFallback = !isSent ? renderKiroFallbackAction(msg) : null;
+            if (kiroFallback) meta.appendChild(kiroFallback);
 
             messages.appendChild(meta);
         });
@@ -24348,13 +24355,14 @@ function setActiveOperatorEngine(engine) {
     if (engine === 'kiro' && !kiroIsConnected()) return;
     if (engine === 'kiro') thread.engine = 'kiro';
     else delete thread.engine;
+    thread.engineChosen = true;
     saveOperatorThreadsIndex(state.operatorThreads);
     renderApp();
 }
 
 var _kiroStatusRequested = false;
-async function fetchKiroStatus() {
-    if (_kiroStatusRequested || !state.authToken) return;
+async function fetchKiroStatus(force) {
+    if ((_kiroStatusRequested && !force) || !state.authToken) return;
     _kiroStatusRequested = true;
     try {
         var res = await fetch('/api/v1/operator/kiro/status', { headers: buildContextHeaders({}) });
@@ -24362,6 +24370,46 @@ async function fetchKiroStatus() {
     } catch (e) {
         state.kiroStatus = { ok: false, enabled: false, error: 'unreachable' };
     }
+    // VTID-05003: the fresh status decides the active thread's engine while it is still empty
+    // and the user has not picked one themselves.
+    var active = (state.operatorThreads || []).find(function (t) { return t.id === state.operatorActiveThreadId; });
+    if (active && !active.engineChosen && canChangeOperatorEngine()) {
+        var before = operatorThreadEngine(active);
+        applyDefaultOperatorEngine(active);
+        if (operatorThreadEngine(active) !== before) saveOperatorThreadsIndex(state.operatorThreads);
+    }
+    renderApp();
+}
+
+/** VTID-05003: the gateway's default engine for new threads (Kiro while this user's Kiro Power seat can serve). */
+function applyDefaultOperatorEngine(thread, forced) {
+    var engine = forced || (state.kiroStatus && state.kiroStatus.default_engine === 'kiro' ? 'kiro' : 'llm');
+    if (engine === 'kiro') thread.engine = 'kiro';
+    else delete thread.engine;
+}
+
+/** VTID-05003: no silent fallback — a Kiro reply that could not be served offers the Operator explicitly. */
+var KIRO_FALLBACK_STATUSES = { no_credits: true, not_connected: true };
+function renderKiroFallbackAction(msg) {
+    if (!msg || !msg.meta || msg.meta.engine !== 'kiro' || !KIRO_FALLBACK_STATUSES[msg.meta.kiro_status]) return null;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'kiro-fallback-btn';
+    btn.textContent = 'Continue in Operator';
+    btn.title = 'Open a new Operator thread with your last message, ready to send';
+    btn.onclick = function () { continueInOperator(msg); };
+    return btn;
+}
+
+function continueInOperator(sourceMsg) {
+    var idx = state.chatMessages.indexOf(sourceMsg);
+    var last = '';
+    for (var i = (idx >= 0 ? idx : state.chatMessages.length) - 1; i >= 0; i--) {
+        var m = state.chatMessages[i];
+        if (m && (m.type === 'user' || m.type === 'sent')) { last = m.content || ''; break; }
+    }
+    startNewOperatorThread({ engine: 'llm' });
+    state.chatInputValue = last;
     renderApp();
 }
 

@@ -2325,6 +2325,22 @@ body {
   margin: 0 0 0.85rem;
 }
 
+.kiro-fallback-btn {
+  margin-inline-start: 0.5rem;
+  padding: 0.15rem 0.6rem;
+  border: 1px solid #4a63d8;
+  border-radius: 999px;
+  background: transparent;
+  color: #b9c6ff;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.kiro-fallback-btn:hover {
+  background: rgba(74, 99, 216, 0.15);
+  color: #fff;
+}
+
 .kiro-key-form,
 .kiro-key-actions {
   display: flex;

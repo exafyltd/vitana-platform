@@ -38,7 +38,8 @@ import { processWithGemini, type OperatorTurnEventSink } from '../services/gemin
 import { getThreadEngine, getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn, listOperatorThreadMessages, listOperatorThreads } from '../services/operator-threads';
 import { runKiroTurn, cancelKiroTurn, closeKiroSession, isKiroEngineEnabled, openKiroSessionCount, listKiroModels, setKiroModel } from '../services/kiro/kiro-turn';
 import { answerPermission } from '../services/kiro/permission-broker';
-import { registerKiroBackendFromEnv, runnerConfig, kiroKeyRequest } from '../services/kiro/remote-backend';
+import { registerKiroBackendFromEnv, runnerConfig, kiroKeyRequest, kiroKeyLinked, clearKiroKeyCache } from '../services/kiro/remote-backend';
+import { getKiroCredits, kiroDefaultEngine } from '../services/kiro/credit-state';
 
 // VTID-04999: run Kiro on the private kiro-runner when the engine and the runner are configured.
 registerKiroBackendFromEnv();
@@ -271,6 +272,20 @@ async function runKiroChatTurn(a: {
 }): Promise<OperatorChatTurnOutcome> {
   if (!a.isAdmin) return { status: 403, body: { ok: false, error: 'kiro_requires_admin' } };
   const result = await runKiroTurn({ threadId: a.threadId, userId: a.userId, message: a.message, emit: a.emit });
+  // VTID-05003: a used-up Kiro Power seat is a governed state transition, logged once per change.
+  if (result.meta.kiro_status === 'no_credits' && result.meta.credits_changed === true) {
+    await emitOasisEvent({
+      vtid: 'VTID-05003',
+      type: 'operator.kiro.credits_exhausted',
+      source: 'gateway-operator',
+      status: 'warning',
+      message: 'Kiro credits used up for this user; new Operator threads default to the Operator',
+      actor_id: a.userId ?? undefined,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: { thread_id: a.threadId, source: result.meta.credit_source ?? null },
+    }).catch(() => {});
+  }
 
   if (isOperatorThreadsEnabled()) {
     recordOperatorTurn({
@@ -771,8 +786,18 @@ router.post('/chat/stream', optionalAuth, operatorMachineAuth, async (req: Reque
 // user who owns it may cancel/close it or answer its permission cards.
 
 /** GET /kiro/status — is the engine switched on, and how many sessions are open. */
-router.get('/kiro/status', requireAdminAuth, (_req: AuthenticatedRequest, res: Response) => {
-  return res.json({ ok: true, enabled: isKiroEngineEnabled(), runner_configured: runnerConfig() !== null, open_sessions: openKiroSessionCount() });
+router.get('/kiro/status', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const enabled = isKiroEngineEnabled();
+  const runnerConfigured = runnerConfig() !== null;
+  const userId = req.identity?.user_id ?? null;
+  // VTID-05003: the signed-in user's own key and credits decide the default engine for new threads.
+  const keyLinked: boolean | 'unknown' = enabled && runnerConfigured && userId ? await kiroKeyLinked(userId) : 'unknown';
+  const credits = getKiroCredits(userId);
+  return res.json({
+    ok: true, enabled, runner_configured: runnerConfigured, open_sessions: openKiroSessionCount(),
+    key_linked: keyLinked, credits,
+    default_engine: kiroDefaultEngine({ enabled, runnerConfigured, keyLinked, credits }),
+  });
 });
 
 /** POST /kiro/permissions/:requestId { allow: boolean } — answer an approval card. */
@@ -883,6 +908,7 @@ router.put('/kiro/key', requireAdminAuth, async (req: AuthenticatedRequest, res:
   const parsed = z.object({ key: z.string().min(1).max(4096).regex(/^\S+$/) }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, error: 'INVALID_KEY' });
   const r = await kiroKeyRequest('PUT', userId, parsed.data.key);
+  clearKiroKeyCache(userId);
   if (!r.ok) return res.status(r.status).json({ ok: false, error: r.error });
   await emitOasisEvent({
     vtid: 'VTID-04999',
@@ -903,6 +929,7 @@ router.delete('/kiro/key', requireAdminAuth, async (req: AuthenticatedRequest, r
   const userId = req.identity?.user_id;
   if (!userId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   const r = await kiroKeyRequest('DELETE', userId);
+  clearKiroKeyCache(userId);
   if (!r.ok) return res.status(r.status).json({ ok: false, error: r.error });
   await emitOasisEvent({
     vtid: 'VTID-04999',

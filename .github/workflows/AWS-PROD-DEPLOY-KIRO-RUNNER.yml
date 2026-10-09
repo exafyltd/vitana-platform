@@ -1,0 +1,139 @@
+# AWS-PROD-DEPLOY-KIRO-RUNNER — promote the staging-verified kiro-runner image
+# to the PRODUCTION ECS service vitana-kiro-runner-awsdr (VTID-05003).
+#
+# workflow_dispatch only, required reason + commit_sha. No rebuild: the staging
+# workflow (AWS-STAGE-DEPLOY-KIRO-RUNNER.yml) pushes vitana/kiro-runner:staging-<sha12>;
+# this workflow refuses unless that tag exists, re-tags the SAME manifest as
+# prod-<sha12>, and rolls the production service to it.
+#
+# The production service, task role and runner token are created by the owner with
+#   scripts/aws/setup-kiro-runner.sh --env production provision --apply
+# Until then the preflight fails loudly by design.
+#
+# Auth: GitHub OIDC (AWS_PROD_ROLE_ARN), like every AWS-PROD-DEPLOY-*.yml.
+
+name: AWS Prod Deploy Kiro Runner (ECS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Why this production kiro-runner deploy (VTID + approval)'
+        required: true
+      commit_sha:
+        description: 'The staging-verified commit whose kiro-runner image to promote (full SHA)'
+        required: true
+
+permissions:
+  contents: read
+  id-token: write # required for aws-actions/configure-aws-credentials OIDC
+
+concurrency:
+  group: aws-prod-deploy-kiro-runner
+  cancel-in-progress: false
+
+env:
+  TARGET_AWS_REGION: eu-central-1
+  ECR_REPOSITORY: vitana/kiro-runner
+  ECS_CLUSTER: Vitana-ECS-Cluster
+  ECS_SERVICE: vitana-kiro-runner-awsdr
+  SECRET_TOKEN: vitana/kiro-runner/production/runner-token
+  KEY_PREFIX: vitana/kiro/production/users
+  TASK_ROLE_SUFFIX: /vitana-kiro-runner-prod-task-role
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate inputs
+        id: inputs
+        env:
+          SHA: ${{ inputs.commit_sha }}
+        run: |
+          set -e
+          echo "$SHA" | grep -Eq '^[0-9a-f]{40}$' || { echo "::error::commit_sha must be a full 40-char SHA"; exit 1; }
+          echo "short=$(echo "$SHA" | cut -c1-12)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: ${{ env.TARGET_AWS_REGION }}
+
+      - name: Preflight — production service, token secret, staging-verified image
+        run: |
+          set -e
+          case "${{ env.ECS_SERVICE }}" in *awsdr) ;; *) echo "::error::not the production service"; exit 1 ;; esac
+          aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE \
+            || { echo "::error::ECS service '${{ env.ECS_SERVICE }}' not ACTIVE — run scripts/aws/setup-kiro-runner.sh --env production provision --apply first."; exit 1; }
+          ARN=$(aws secretsmanager describe-secret --secret-id "${{ env.SECRET_TOKEN }}" --query ARN --output text 2>/dev/null || true)
+          [ -n "$ARN" ] && [ "$ARN" != "None" ] || { echo "::error::Secret '${{ env.SECRET_TOKEN }}' missing — provision production first."; exit 1; }
+          aws ecr describe-images --repository-name "${{ env.ECR_REPOSITORY }}" \
+            --image-ids imageTag="staging-${{ steps.inputs.outputs.short }}" >/dev/null 2>&1 \
+            || { echo "::error::No staging image staging-${{ steps.inputs.outputs.short }} — only a staging-built, staging-verified image can be promoted."; exit 1; }
+
+      - name: Re-tag the staging image for production (same manifest, no rebuild)
+        id: image
+        run: |
+          set -e
+          SHORT="${{ steps.inputs.outputs.short }}"
+          MANIFEST=$(aws ecr batch-get-image --repository-name "${{ env.ECR_REPOSITORY }}" \
+            --image-ids imageTag="staging-$SHORT" --query 'images[0].imageManifest' --output text)
+          MT=$(aws ecr batch-get-image --repository-name "${{ env.ECR_REPOSITORY }}" \
+            --image-ids imageTag="staging-$SHORT" --query 'images[0].imageManifestMediaType' --output text)
+          aws ecr put-image --repository-name "${{ env.ECR_REPOSITORY }}" --image-tag "prod-$SHORT" \
+            --image-manifest "$MANIFEST" --image-manifest-media-type "$MT" >/dev/null 2>&1 \
+            || aws ecr describe-images --repository-name "${{ env.ECR_REPOSITORY }}" --image-ids imageTag="prod-$SHORT" >/dev/null
+          REGISTRY="$(aws sts get-caller-identity --query Account --output text).dkr.ecr.${{ env.TARGET_AWS_REGION }}.amazonaws.com"
+          echo "image=$REGISTRY/${{ env.ECR_REPOSITORY }}:prod-$SHORT" >> "$GITHUB_OUTPUT"
+
+      - name: Register task-definition revision + roll the service (desiredCount 1)
+        run: |
+          set -e
+          IMAGE="${{ steps.image.outputs.image }}"
+          SEC_TOKEN=$(aws secretsmanager describe-secret --secret-id "${{ env.SECRET_TOKEN }}" --query ARN --output text)
+          TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].taskDefinition' --output text)
+          NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
+            | jq --arg IMG "$IMAGE" --arg SEC_TOKEN "$SEC_TOKEN" --arg PREFIX "${{ env.KEY_PREFIX }}" \
+                 --arg REGION "${{ env.TARGET_AWS_REGION }}" --arg SUFFIX "${{ env.TASK_ROLE_SUFFIX }}" '
+                .taskRoleArn as $ROLE
+                | if ($ROLE // "" | endswith($SUFFIX)) then . else error("task role is not the production kiro-runner role") end
+                | .containerDefinitions[0].image = $IMG
+                | .containerDefinitions[0].environment =
+                    ( ( .containerDefinitions[0].environment // [] )
+                      | [ .[] | select(.name | IN("KIRO_KEY_SECRET_PREFIX","KIRO_KEY_READER_ROLE_ARN","AWS_REGION") | not) ]
+                      + [ {name:"KIRO_KEY_SECRET_PREFIX",   value:$PREFIX},
+                          {name:"KIRO_KEY_READER_ROLE_ARN", value:$ROLE},
+                          {name:"AWS_REGION",               value:$REGION} ] )
+                | .containerDefinitions[0].secrets =
+                    ( ( .containerDefinitions[0].secrets // [] )
+                      | [ .[] | select(.name | IN("KIRO_RUNNER_TOKEN") | not) ]
+                      + [ {name:"KIRO_RUNNER_TOKEN", valueFrom:$SEC_TOKEN} ] )
+                | .containerDefinitions[0].healthCheck = {command:["CMD","node","/app/dist/healthcheck.js"], interval:30, timeout:5, retries:3, startPeriod:20}
+                | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                      .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered $NEW_ARN"
+          aws ecs update-service --cluster "${{ env.ECS_CLUSTER }}" --service "${{ env.ECS_SERVICE }}" \
+            --task-definition "$NEW_ARN" --desired-count 1 >/dev/null
+          aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"
+
+      - name: Smoke — the rolled task runs the promoted image and reports HEALTHY
+        run: |
+          set -e
+          RUNNING=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].deployments[?status==`PRIMARY`].taskDefinition' --output text)
+          IMG=$(aws ecs describe-task-definition --task-definition "$RUNNING" --query 'taskDefinition.containerDefinitions[0].image' --output text)
+          [ "$IMG" = "${{ steps.image.outputs.image }}" ] || { echo "::error::PRIMARY deployment is not the promoted image"; exit 1; }
+          for _ in $(seq 1 18); do
+            TASK=$(aws ecs list-tasks --cluster "${{ env.ECS_CLUSTER }}" --service-name "${{ env.ECS_SERVICE }}" --desired-status RUNNING --query 'taskArns[0]' --output text)
+            H=$(aws ecs describe-tasks --cluster "${{ env.ECS_CLUSTER }}" --tasks "$TASK" --query 'tasks[0].healthStatus' --output text 2>/dev/null || echo UNKNOWN)
+            echo "task health: $H"
+            [ "$H" = "HEALTHY" ] && break
+            sleep 10
+          done
+          [ "$H" = "HEALTHY" ] || { echo "::error::production kiro-runner is not HEALTHY ($H)"; exit 1; }
+          echo "- Reason: ${{ inputs.reason }}"

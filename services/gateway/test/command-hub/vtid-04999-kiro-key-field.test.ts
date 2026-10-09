@@ -155,7 +155,8 @@ describe('VTID-04999 wiring (source check)', () => {
     expect(keyBlock).not.toMatch(/\.style\b|style=/);
     expect(keyBlock).not.toMatch(/localStorage|sessionStorage/);
     const html = readFileSync(join(FE, 'index.html'), 'utf8');
-    expect(html).toContain('app.js?v=20261108-vtid-04999');
-    expect(html).toContain('styles.css?v=20261108-vtid-04999');
+    // Bumped past VTID-04999 by later Command Hub changes (VTID-05003); never back to an older build.
+    expect(html).not.toContain('app.js?v=20261108-vtid-04999');
+    expect(html).toMatch(/app\.js\?v=2026\d{4}-vtid-\d{5}/);
   });
 });

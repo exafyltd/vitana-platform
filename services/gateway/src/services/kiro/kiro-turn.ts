@@ -17,6 +17,7 @@
 import { AcpClient, type AcpChild, type KiroModel, type KiroModelState } from './acp-client';
 import { mapAcpUpdate, type KiroTurnEventSink } from './kiro-events';
 import { makePermissionHandler } from './permission-broker';
+import { isKiroCreditError, setKiroCredits } from './credit-state';
 
 export interface KiroSpawnContext { userId: string | null; threadId: string }
 
@@ -45,7 +46,16 @@ export interface KiroTurnResult {
   meta: Record<string, unknown>;
 }
 
-export type KiroStatus = 'ok' | 'not_connected' | 'busy' | 'error';
+export type KiroStatus = 'ok' | 'not_connected' | 'busy' | 'error' | 'no_credits';
+
+// VTID-05003: admin-only Operator Console text, English by design (server i18n 13b admin/dev exclusion).
+const NO_CREDITS_REPLY = 'Your Kiro credits are used up — new threads use the Operator until they renew.';
+
+/** A used-up seat: remember it for the default engine, tell the caller whether it changed. */
+function noCredits(userId: string | null, source: 'empty_models' | 'error', kiroMessage?: string): KiroTurnResult {
+  const changed = setKiroCredits(userId, 'exhausted');
+  return result('no_credits', NO_CREDITS_REPLY, { error: 'kiro_no_credits', credit_source: source, credits_changed: changed, ...(kiroMessage ? { kiro_message: kiroMessage } : {}) });
+}
 
 interface KiroSession {
   client: AcpClient;
@@ -55,6 +65,8 @@ interface KiroSession {
   idle: NodeJS.Timeout | null;
   /** VTID-04984: the models Kiro offers for this session, and the current one. */
   models: KiroModelState | null;
+  /** VTID-05003: this session's open moved the user's credits back to ok (reported once). */
+  creditsChanged?: boolean;
 }
 
 const sessions = new Map<string, KiroSession>();
@@ -136,9 +148,18 @@ export async function runKiroTurn(input: KiroTurnInput, env: NodeJS.ProcessEnv =
       if (err instanceof KiroKeyMissingError) {
         return result('not_connected', 'Link your Kiro API key in the Kiro workspace panel.', { error: 'kiro_key_missing' });
       }
-      return result('error', 'Kiro could not start.', { error: err instanceof Error ? err.message : String(err) });
+      const msg = err instanceof Error ? err.message : String(err);
+      if (isKiroCreditError(msg)) return noCredits(input.userId, 'error', msg);
+      return result('error', 'Kiro could not start.', { error: msg });
     }
+    // VTID-05003: Kiro always offers a model; an empty list means the seat's credits are used up.
+    if (session.models && session.models.models.length === 0) {
+      session.client.close();
+      return noCredits(input.userId, 'empty_models');
+    }
+    const creditsChanged = session.models ? setKiroCredits(input.userId, 'ok') : false;
     sessions.set(input.threadId, session);
+    session.creditsChanged = creditsChanged;
   }
   touch(input.threadId, session);
 
@@ -156,10 +177,14 @@ export async function runKiroTurn(input: KiroTurnInput, env: NodeJS.ProcessEnv =
   try {
     const { stopReason } = await session.client.prompt(session.sessionId, input.message);
     collect({ type: 'kiro.turn_end', stop_reason: stopReason });
-    return result('ok', reply, { stop_reason: stopReason, kiro_model: session.models?.current ?? null }, [...tools.values()].map((t) => ({ name: t.name, response: { kind: t.kind, status: t.status } })));
+    const recovered = session.creditsChanged === true;
+    session.creditsChanged = false;
+    return result('ok', reply, { stop_reason: stopReason, kiro_model: session.models?.current ?? null, ...(recovered ? { credits_changed: true } : {}) }, [...tools.values()].map((t) => ({ name: t.name, response: { kind: t.kind, status: t.status } })));
   } catch (err) {
     closeSession(input.threadId);
-    return result('error', 'Kiro turn failed.', { error: err instanceof Error ? err.message : String(err) });
+    const msg = err instanceof Error ? err.message : String(err);
+    if (isKiroCreditError(msg)) return noCredits(input.userId, 'error', msg);
+    return result('error', 'Kiro turn failed.', { error: msg });
   }
 }
 
