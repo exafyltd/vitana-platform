@@ -39,6 +39,10 @@
 >   2 NOT NULLs and rebuilds the 3 IVFFlat indexes. It can be re-run. Tested
 >   end to end against scratch Postgres: values byte-identical, trigger
 >   suppressed.
+> - **Embedding backfill, first real run 2026-10-10: passed.** All 7,942 copied
+>   in about 4.5 minutes, and the counts match Supabase on all 13 columns. NOT
+>   NULL is restored on both columns and the 3 IVFFlat indexes are rebuilt. On
+>   the switch night it runs after the freeze, so nothing is missed.
 > - **DRESS REHEARSAL 2026-10-09 22:00Z — passed (no connection switch, no
 >   freeze).** The full DMS load took 20 min (21:46–22:06Z): 663 tables, 0
 >   errors. Then `aurora-cutover-after-load.sh` ran the post-load, 358 FKs and
