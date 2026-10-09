@@ -194,6 +194,14 @@ export async function recordJevShadowOutcome(
 }
 
 export const JEV_SILENT_AFTER_MS = 48 * 60 * 60 * 1000;
+/** The stats window `jevGateHealth` needs: anything shorter would hide a row that is not yet 48 h old. */
+export const JEV_HEALTH_MIN_DAYS = 2;
+
+/**
+ * JEV_*_MODE switches that are not shadow gates: they never write jev_shadow_decisions rows
+ * (member quota counters, the in-process community rate bucket), so gate health must not list them.
+ */
+export const JEV_NON_GATE_MODE_VARS: ReadonlySet<string> = new Set(['JEV_MEMBER_QUOTA_MODE', 'JEV_COMMUNITY_RATE_MODE']);
 
 export interface JevGateHealth {
   gate: string;
@@ -206,7 +214,8 @@ export interface JevGateHealth {
 /**
  * VTID-05012: every gate that is on (per its JEV_*_MODE env var) with the time of its newest row in
  * the stats window; `silent` when it has written no row of any kind (skipped included) in 48 h.
- * Pure: the caller passes the stats rows, the env and the clock.
+ * The stats must cover at least JEV_HEALTH_MIN_DAYS. Pure: the caller passes the stats rows, the env
+ * and the clock.
  */
 export function jevGateHealth(
   stats: Array<{ gate: string; last_row_at?: string | null }> | null | undefined,
@@ -217,7 +226,7 @@ export function jevGateHealth(
   const out: JevGateHealth[] = [];
   for (const name of Object.keys(env).sort()) {
     const m = /^JEV_([A-Z0-9_]+)_MODE$/.exec(name);
-    if (!m) continue;
+    if (!m || JEV_NON_GATE_MODE_VARS.has(name)) continue;
     const gate = m[1].toLowerCase();
     const mode = jevGateMode(gate, env);
     if (mode === 'off') continue;

@@ -28,7 +28,7 @@ jest.mock('../src/services/oasis-event-service', () => ({ emitOasisEvent: jest.f
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { JEV_SILENT_AFTER_MS, jevGateHealth, recordJevGateSkip, recordJevShadowOutcome } from '../src/services/jev/jev-shadow';
+import { JEV_HEALTH_MIN_DAYS, JEV_NON_GATE_MODE_VARS, JEV_SILENT_AFTER_MS, jevGateHealth, recordJevGateSkip, recordJevShadowOutcome } from '../src/services/jev/jev-shadow';
 import { runCiFailureRouting } from '../src/services/jev/gates/ci-failure-gate';
 import { runFixVerificationCheck } from '../src/services/jev/gates/fix-verification-gate';
 import { runChangeRiskCheck } from '../src/services/jev/gates/change-risk-gate';
@@ -235,6 +235,35 @@ describe('VTID-05012 C: jevGateHealth', () => {
       { gate: 'fix_verification', env: 'JEV_FIX_VERIFICATION_MODE', mode: 'shadow', last_row_at: null, silent: true },
       { gate: 'plannability', env: 'JEV_PLANNABILITY_MODE', mode: 'enforce', last_row_at: justInside, silent: false },
     ]);
+  });
+
+  test('member quota and community rate switches are not gates and are never listed', () => {
+    const env = { JEV_MEMBER_QUOTA_MODE: 'enforce', JEV_COMMUNITY_RATE_MODE: 'shadow', JEV_PLANNABILITY_MODE: 'shadow' } as NodeJS.ProcessEnv;
+    expect(jevGateHealth([], env, NOW).map((h) => h.gate)).toEqual(['plannability']);
+    expect([...JEV_NON_GATE_MODE_VARS].sort()).toEqual(['JEV_COMMUNITY_RATE_MODE', 'JEV_MEMBER_QUOTA_MODE']);
+  });
+
+  test('drift guard: every JEV_*_MODE the gateway reads or a deploy pins is a shadow gate or a listed non-gate switch', () => {
+    const root = path.join(__dirname, '../../..');
+    const gatesDir = path.join(__dirname, '../src/services/jev/gates');
+    const gateSrc = fs.readdirSync(gatesDir).map((f) => fs.readFileSync(path.join(gatesDir, f), 'utf8')).join('\n');
+    const sources = [
+      ...['AWS-STAGE-DEPLOY-GATEWAY.yml', 'AWS-PROD-DEPLOY-GATEWAY.yml'].map((f) => fs.readFileSync(path.join(root, '.github/workflows', f), 'utf8')),
+      fs.readFileSync(path.join(__dirname, '../src/services/jev/jev-member-quota.ts'), 'utf8'),
+      fs.readFileSync(path.join(__dirname, '../src/services/jev/jev-community-rate.ts'), 'utf8'),
+    ].join('\n');
+    const vars = [...new Set(sources.match(/JEV_[A-Z0-9_]+_MODE\b/g) || [])];
+    expect(vars.length).toBeGreaterThan(20);
+    const unknown = vars.filter((v) => {
+      if (JEV_NON_GATE_MODE_VARS.has(v)) return false;
+      const gate = v.replace(/^JEV_/, '').replace(/_MODE$/, '').toLowerCase();
+      return !gateSrc.includes(`'${gate}'`);
+    });
+    expect(unknown).toEqual([]);
+  });
+
+  test('the admin route asks for a window of at least JEV_HEALTH_MIN_DAYS for gate health', () => {
+    expect(JEV_HEALTH_MIN_DAYS * 24 * 60 * 60 * 1000).toBeGreaterThanOrEqual(JEV_SILENT_AFTER_MS);
   });
 
   test('no stats (RPC failed) → every gate that is on reads silent', () => {

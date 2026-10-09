@@ -30,7 +30,7 @@ import { getJevStats } from '../services/jev/jev-telemetry';
 import { resolveJevCaller, JevCallerError } from '../services/jev/jev-caller';
 import { currentMonthUtc } from '../services/jev/jev-tenant-control';
 import { fetchDevAutopilotKillSwitch, fetchMonthSpendRows, shadowGateStatsRpc } from '../services/jev/jev-repository';
-import { jevGateHealth } from '../services/jev/jev-shadow';
+import { JEV_HEALTH_MIN_DAYS, jevGateHealth } from '../services/jev/jev-shadow';
 
 const router = Router();
 
@@ -187,6 +187,8 @@ router.get('/jev/admin/stats', requireAuth, requireExafyAdmin, async (req: Authe
   let gates: unknown = null;
   // VTID-05012: the loop a silent gate sits on, so "gate broken" and "loop stopped" read differently.
   let devAutopilot: { kill_switch: boolean; updated_at: string | null } | null = null;
+  // Gate health needs a window of at least 48 h, whatever window the caller asked for.
+  let healthStats: unknown = null;
   const errors: string[] = [];
   if (sb) {
     const [s1, s2, s3] = await Promise.all([fetchMonthSpendRows(sb, month), shadowGateStatsRpc(sb, days), fetchDevAutopilotKillSwitch(sb)]);
@@ -196,6 +198,12 @@ router.get('/jev/admin/stats', requireAuth, requireExafyAdmin, async (req: Authe
     else gates = s2.data;
     if (s3.error) errors.push(`dev_autopilot_config: ${s3.error.message}`);
     else if (s3.data) devAutopilot = { kill_switch: !!s3.data.kill_switch, updated_at: s3.data.updated_at ?? null };
+    if (days >= JEV_HEALTH_MIN_DAYS) healthStats = gates;
+    else {
+      const s4 = await shadowGateStatsRpc(sb, JEV_HEALTH_MIN_DAYS);
+      if (s4.error) errors.push(`shadow_health: ${s4.error.message}`);
+      else healthStats = s4.data;
+    }
   } else {
     errors.push('no_supabase_client');
   }
@@ -214,7 +222,7 @@ router.get('/jev/admin/stats', requireAuth, requireExafyAdmin, async (req: Authe
       shadow_days: days,
       shadow_gates: gates,
       gate_modes,
-      gate_health: jevGateHealth(Array.isArray(gates) ? (gates as Array<{ gate: string; last_row_at?: string | null }>) : null),
+      gate_health: jevGateHealth(Array.isArray(healthStats) ? (healthStats as Array<{ gate: string; last_row_at?: string | null }>) : null),
       loops: { dev_autopilot: devAutopilot },
       ...(errors.length ? { errors } : {}),
     },
