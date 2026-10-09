@@ -5,19 +5,22 @@
 -- `products` is excluded from the DMS load and is deliberately not touched.
 -- One statement per line: run with scripts/aws/aurora-run-sql.sh.
 
-ALTER TABLE public.ai_memory ALTER COLUMN embedding TYPE vector(768) USING NULLIF(embedding,'')::vector;
-ALTER TABLE public.calendar_events ALTER COLUMN embedding TYPE vector(1536) USING NULLIF(embedding,'')::vector;
-ALTER TABLE public.dev_agent_memory ALTER COLUMN embedding TYPE vector(1024) USING NULLIF(embedding,'')::vector;
-ALTER TABLE public.feedback_tickets ALTER COLUMN embedding TYPE vector(1536) USING NULLIF(embedding,'')::vector;
-ALTER TABLE public.mem_episodes ALTER COLUMN embedding TYPE vector(1536) USING NULLIF(embedding,'')::vector;
-ALTER TABLE public.mem_facts ALTER COLUMN embedding TYPE vector(1536) USING NULLIF(embedding,'')::vector;
-ALTER TABLE public.memory_embeddings ALTER COLUMN embedding TYPE vector(768) USING NULLIF(embedding,'')::vector;
-ALTER TABLE public.memory_facts ALTER COLUMN embedding TYPE vector(1024) USING NULLIF(embedding,'')::vector;
-ALTER TABLE public.memory_items ALTER COLUMN embedding TYPE vector(1024) USING NULLIF(embedding,'')::vector;
-ALTER TABLE public.user_intents ALTER COLUMN embedding TYPE vector(1536) USING NULLIF(embedding,'')::vector;
-ALTER TABLE public.user_intents ALTER COLUMN embedding_v2 TYPE vector(1024) USING NULLIF(embedding_v2,'')::vector;
-ALTER TABLE public.vtid_ledger ALTER COLUMN embedding TYPE vector(1536) USING NULLIF(embedding,'')::vector;
-ALTER TABLE public.vtid_ledger ALTER COLUMN embedding_v2 TYPE vector(1024) USING NULLIF(embedding_v2,'')::vector;
+-- 2026-10-09: DMS truncates vector values on the source read (571 of 768
+-- values arrived), so only complete '[...]' texts are cast; truncated ones
+-- become NULL and must be backfilled from Supabase separately.
+ALTER TABLE public.ai_memory ALTER COLUMN embedding TYPE vector(768) USING CASE WHEN embedding LIKE '[%]' THEN embedding::vector END;
+ALTER TABLE public.calendar_events ALTER COLUMN embedding TYPE vector(1536) USING CASE WHEN embedding LIKE '[%]' THEN embedding::vector END;
+ALTER TABLE public.dev_agent_memory ALTER COLUMN embedding TYPE vector(1024) USING CASE WHEN embedding LIKE '[%]' THEN embedding::vector END;
+ALTER TABLE public.feedback_tickets ALTER COLUMN embedding TYPE vector(1536) USING CASE WHEN embedding LIKE '[%]' THEN embedding::vector END;
+ALTER TABLE public.mem_episodes ALTER COLUMN embedding TYPE vector(1536) USING CASE WHEN embedding LIKE '[%]' THEN embedding::vector END;
+ALTER TABLE public.mem_facts ALTER COLUMN embedding TYPE vector(1536) USING CASE WHEN embedding LIKE '[%]' THEN embedding::vector END;
+ALTER TABLE public.memory_embeddings ALTER COLUMN embedding TYPE vector(768) USING CASE WHEN embedding LIKE '[%]' THEN embedding::vector END;
+ALTER TABLE public.memory_facts ALTER COLUMN embedding TYPE vector(1024) USING CASE WHEN embedding LIKE '[%]' THEN embedding::vector END;
+ALTER TABLE public.memory_items ALTER COLUMN embedding TYPE vector(1024) USING CASE WHEN embedding LIKE '[%]' THEN embedding::vector END;
+ALTER TABLE public.user_intents ALTER COLUMN embedding TYPE vector(1536) USING CASE WHEN embedding LIKE '[%]' THEN embedding::vector END;
+ALTER TABLE public.user_intents ALTER COLUMN embedding_v2 TYPE vector(1024) USING CASE WHEN embedding_v2 LIKE '[%]' THEN embedding_v2::vector END;
+ALTER TABLE public.vtid_ledger ALTER COLUMN embedding TYPE vector(1536) USING CASE WHEN embedding LIKE '[%]' THEN embedding::vector END;
+ALTER TABLE public.vtid_ledger ALTER COLUMN embedding_v2 TYPE vector(1024) USING CASE WHEN embedding_v2 LIKE '[%]' THEN embedding_v2::vector END;
 CREATE INDEX ai_memory_embedding_idx ON public.ai_memory USING ivfflat (embedding vector_cosine_ops) WITH (lists='100');
 CREATE INDEX dev_agent_memory_embedding_idx ON public.dev_agent_memory USING ivfflat (embedding vector_cosine_ops) WITH (lists='100');
 CREATE INDEX mem_episodes_embedding_hnsw ON public.mem_episodes USING hnsw (embedding vector_cosine_ops) WITH (m='16', ef_construction='64');
