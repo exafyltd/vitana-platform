@@ -996,6 +996,28 @@ jobs:
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Kiro wired: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name | startswith("KIRO_"))] + [.containerDefinitions[0].secrets[] | select(.name | startswith("KIRO_")) | {name}]')"
 
+      - name: Build task-definition (dev-memory pack token)
+        # VTID-05009: DEV_MEMORY_PACK_TOKEN for the developer morning pack
+        # (VTID-04408). Kiro pattern: this role has no secretsmanager:Describe*,
+        # so presence is the repository variable DEV_MEMORY_PACK_TOKEN_PROD_ARN
+        # (full ARN of vitana/gateway/prod/dev-memory-pack-token). Unset => no
+        # ref, so a deploy never points at a secret that does not exist.
+        env:
+          PACK_TOKEN_ARN: ${{ vars.DEV_MEMORY_PACK_TOKEN_PROD_ARN }}
+        run: |
+          set -e
+          case "$PACK_TOKEN_ARN" in
+            "") ;;
+            arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/prod/dev-memory-pack-token-*) ;;
+            *) echo "::error::DEV_MEMORY_PACK_TOKEN_PROD_ARN is not the prod dev-memory pack token ARN"; exit 1 ;;
+          esac
+          NEW_DEF=$(jq --arg T "$PACK_TOKEN_ARN" '
+            .containerDefinitions[0].secrets |=
+              ( [ (. // [])[] | select(.name != "DEV_MEMORY_PACK_TOKEN") ]
+                + ( if $T == "" then [] else [ {name:"DEV_MEMORY_PACK_TOKEN", valueFrom:$T} ] end ) )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Dev-memory pack token wired: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].secrets[] | select(.name == "DEV_MEMORY_PACK_TOKEN") | .name]')"
+
       - name: Build task-definition (reward payouts on)
         # VTID-04896 pinned the VTNA reward sweep (VTID-04878) off in production
         # until the owner approved it; VTID-04899 did the same for the immediate
@@ -1398,15 +1420,17 @@ jobs:
           # VTID-04824: the Jev secret and gate switches are set in their own step,
           # "Build task-definition (Jev gates)", before this one.
 
-          # VTID-04784: memory plan phase 2. Prod keeps serving the legacy ORB
-          # memory read; recall() runs in the background and one counts-only
-          # '[VTID-04784] recall-shadow' line compares the two per session.
-          # Read-only, never awaited. The recall switch itself stays unset
-          # until scripts/memory/recall-shadow-report.sh shows they agree.
+          # VTID-04784: memory plan phase 2. One counts-only '[VTID-04784]
+          # recall-shadow' line per session compares recall() with the legacy
+          # ORB memory read. VTID-05007 (owner, 2026-10-09, 72 h prod shadow:
+          # facts 293/296 equal, 0 failed reads): prod now SERVES recall()
+          # and the shadow keeps logging the legacy read for the 2-week watch.
+          # Off: env-only dispatch, env_overrides={"MEMORY_ORB_RECALL_ENABLED":"false"}.
           NEW_DEF=$(echo "$NEW_DEF" | jq '
             .containerDefinitions[0].environment |=
-              ( [ .[] | select(.name != "MEMORY_ORB_RECALL_SHADOW") ]
-                + [ {name:"MEMORY_ORB_RECALL_SHADOW", value:"true"} ] )')
+              ( [ .[] | select(.name | IN("MEMORY_ORB_RECALL_SHADOW","MEMORY_ORB_RECALL_ENABLED") | not) ]
+                + [ {name:"MEMORY_ORB_RECALL_SHADOW", value:"true"},
+                    {name:"MEMORY_ORB_RECALL_ENABLED", value:"true"} ] )')
 
           # VTID-04786: AP-0910 memory embedding backfill runs here from its own
           # in-process loop (every 30 min, one task per interval via

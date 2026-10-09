@@ -97,6 +97,16 @@
             "statusMessage": "Applying standing auto-mode approvals (VTID-04248)..."
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-/home/user/vitana-platform}/.claude/hooks/session-start-dev-memory-pack.sh\"",
+            "timeout": 15,
+            "statusMessage": "Loading the developer morning pack (VTID-04408/VTID-05009)..."
+          }
+        ]
       }
     ],
     "SessionEnd": [

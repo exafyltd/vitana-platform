@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05011",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05011-eventbridge-automation-token.test.ts test/vtid-04352-eventbridge-only-filter.test.ts test/vtid-04226-eventbridge-test-contract-schedules.test.ts test/vtid-04673-eventbridge-cron-conversion.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the real script in --dry-run: each AP-XXXX job names the token of the gateway it calls, staging-target jobs unchanged, unknown URLs refused; nothing in this change deploys (the owner runs the script)"
+    }
+  ]
+}

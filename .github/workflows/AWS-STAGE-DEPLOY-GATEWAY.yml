@@ -321,6 +321,29 @@ jobs:
             jq -c --arg a "$ARN" '.sec += [{name:"DAILY_API_KEY", valueFrom:$a}]' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
           fi
           jq -c '{env, sec: [.sec[].name]}' "$F"
+      # VTID-05009: the developer morning pack (VTID-04408). The SessionStart hook
+      # sends X-Dev-Memory-Token; the gateway compares it with
+      # DEV_MEMORY_PACK_TOKEN. Daily-key pattern: wired only when
+      # vitana/gateway/staging/dev-memory-pack-token exists; absent => not wired,
+      # the deploy never fails and the hook gets 401 (route closed, as today).
+      - name: Resolve dev-memory pack token
+        run: |
+          set -euo pipefail
+          NAME="vitana/gateway/staging/dev-memory-pack-token"
+          ERR="$RUNNER_TEMP/devmem-describe.err"
+          ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>"$ERR" || true)
+          F="$RUNNER_TEMP/connected-apps.json"
+          if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+            if grep -q ResourceNotFoundException "$ERR"; then
+              echo "  $NAME not found - DEV_MEMORY_PACK_TOKEN not wired (VTID-05009)"
+            else
+              echo "::warning::$NAME lookup failed - DEV_MEMORY_PACK_TOKEN not wired: $(head -c 300 "$ERR")"
+            fi
+          else
+            echo "  resolved $NAME -> DEV_MEMORY_PACK_TOKEN"
+            jq -c --arg a "$ARN" '.sec += [{name:"DEV_MEMORY_PACK_TOKEN", valueFrom:$a}]' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
+          fi
+          jq -c '{env, sec: [.sec[].name]}' "$F"
       # VTID-04999: the Operator's Kiro engine on the private kiro-runner. Jev
       # pattern: wired only when the runner token secret exists (the owner runs
       # scripts/aws/setup-kiro-runner-staging.sh provision --apply); then
