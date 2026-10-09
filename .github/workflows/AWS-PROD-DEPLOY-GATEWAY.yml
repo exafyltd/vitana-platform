@@ -974,8 +974,9 @@ jobs:
         # refs, so a deploy never points production at a runner that is not there.
         # Never the staging runner (guarded by test/vtid-05003-kiro-default-engine.test.ts).
         # VTID-05005: KIRO_MCP_ENABLED follows the engine — Kiro sessions get the Operator's read tools.
-        # VTID-05006: Kiro WRITES stay off in production (KIRO_MCP_WRITE_ENABLED=false) until their own
-        # staging-verified, owner-approved switch.
+        # VTID-05006: Kiro WRITES follow the engine too (owner decision 2026-10-09, "ship and turn on
+        # writes", after STAGING-VERIFY 37977916422). Each write still needs an open VTID and the user's
+        # Allow in the thread. Off-switch: dispatch with env_overrides {"KIRO_MCP_WRITE_ENABLED":"false"}.
         env:
           KIRO_TOKEN_ARN: ${{ vars.KIRO_RUNNER_PROD_TOKEN_ARN }}
         run: |
@@ -991,7 +992,7 @@ jobs:
                 + ( if $T == "" then [ {name:"KIRO_ENGINE_ENABLED", value:"false"}, {name:"KIRO_MCP_ENABLED", value:"false"}, {name:"KIRO_MCP_WRITE_ENABLED", value:"false"} ]
                     else [ {name:"KIRO_ENGINE_ENABLED", value:"true"},
                            {name:"KIRO_MCP_ENABLED", value:"true"},
-                           {name:"KIRO_MCP_WRITE_ENABLED", value:"false"},
+                           {name:"KIRO_MCP_WRITE_ENABLED", value:"true"},
                            {name:"KIRO_RUNNER_URL", value:"http://kiro-runner-prod.vitana.internal:8080"} ] end ) )
             | .containerDefinitions[0].secrets |=
               ( [ (. // [])[] | select(.name != "KIRO_RUNNER_TOKEN") ]
