@@ -1,6 +1,6 @@
 -- Aurora cutover: recreate Supabase's public->public foreign keys on Aurora (VTID-04755)
 --
--- Generated read-only from Supabase (inmkhvwdcuyhnxkgfvsb) pg_constraint on 2026-10-05.
+-- Generated read-only from Supabase (inmkhvwdcuyhnxkgfvsb) pg_constraint on 2026-10-09.
 -- Aurora has ZERO foreign keys in public (DMS full loads don't copy them), so
 -- PostgREST on Aurora reports "0 Relationships" and every embedded select
 -- (e.g. select=*,profiles(*)) would fail after the cutover.
@@ -246,6 +246,8 @@ ALTER TABLE partner_organization_members ADD CONSTRAINT partner_organization_mem
 ALTER TABLE partner_registry ADD CONSTRAINT partner_registry_partner_organization_id_fkey FOREIGN KEY (partner_organization_id) REFERENCES partner_organizations(id) ON DELETE SET NULL NOT VALID;
 ALTER TABLE partner_tenant ADD CONSTRAINT partner_tenant_partner_organization_id_fkey FOREIGN KEY (partner_organization_id) REFERENCES partner_organizations(id) ON DELETE SET NULL NOT VALID;
 ALTER TABLE partner_terms_acceptances ADD CONSTRAINT partner_terms_acceptances_partner_organization_id_fkey FOREIGN KEY (partner_organization_id) REFERENCES partner_organizations(id) ON DELETE CASCADE NOT VALID;
+ALTER TABLE partner_terms_acceptances ADD CONSTRAINT partner_terms_acceptances_terms_version_id_fkey FOREIGN KEY (terms_version_id) REFERENCES partner_terms_versions(id) NOT VALID;
+ALTER TABLE partner_terms_versions ADD CONSTRAINT partner_terms_versions_baseline_version_id_fkey FOREIGN KEY (baseline_version_id) REFERENCES partner_terms_versions(id) NOT VALID;
 ALTER TABLE patient_provider_assignments ADD CONSTRAINT patient_provider_assignments_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE NOT VALID;
 ALTER TABLE pattern_discoveries ADD CONSTRAINT pattern_discoveries_implemented_rule_id_fkey FOREIGN KEY (implemented_rule_id) REFERENCES automation_rules(id) ON DELETE SET NULL NOT VALID;
 ALTER TABLE pattern_discoveries ADD CONSTRAINT pattern_discoveries_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE NOT VALID;
@@ -289,6 +291,7 @@ ALTER TABLE reseller_payouts ADD CONSTRAINT reseller_payouts_reseller_profile_id
 ALTER TABLE reseller_payouts ADD CONSTRAINT reseller_payouts_wallet_transaction_id_fkey FOREIGN KEY (wallet_transaction_id) REFERENCES wallet_transactions(id) NOT VALID;
 ALTER TABLE reseller_profiles ADD CONSTRAINT reseller_profiles_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE NOT VALID;
 ALTER TABLE retrieval_traces ADD CONSTRAINT retrieval_traces_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id) ON DELETE RESTRICT NOT VALID;
+ALTER TABLE reward_orders ADD CONSTRAINT reward_orders_item_id_fkey FOREIGN KEY (item_id) REFERENCES reward_shop_items(id) NOT VALID;
 ALTER TABLE rewards_ledger ADD CONSTRAINT rewards_ledger_commission_event_id_fkey FOREIGN KEY (commission_event_id) REFERENCES commission_event(id) ON UPDATE CASCADE ON DELETE SET NULL NOT VALID;
 ALTER TABLE risk_mitigations ADD CONSTRAINT risk_mitigations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE NOT VALID;
 ALTER TABLE role_preferences ADD CONSTRAINT role_preferences_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE NOT VALID;
