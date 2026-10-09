@@ -25,7 +25,7 @@ const workRoot = defaultWorkRoot();
 fs.mkdirSync(workRoot, { recursive: true, mode: 0o700 });
 
 // VTID-05006: both repos in every session (shared mirrors, a worktree per session).
-const mirrors = process.env.KIRO_REPO_MIRRORS === 'false' ? null : new RepoMirrors(workRoot);
+const mirrors = (process.env.KIRO_REPO_MIRRORS ?? 'true') === 'false' ? null : new RepoMirrors(workRoot);
 mirrors?.start();
 
 const store = new KeyStore(new SecretsManagerClient({ region: process.env.AWS_REGION || 'eu-central-1' }), prefix, process.env.KIRO_KEY_READER_ROLE_ARN || null);
