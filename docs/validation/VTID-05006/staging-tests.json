@@ -1,0 +1,51 @@
+{
+  "vtid": "VTID-05006",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "the confirmation list route exists and is admin-only",
+      "path": "/api/v1/operator/kiro/confirmations?thread_id=staging-verify",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "route mounted behind requireAdminAuth; read-only"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "the decision route refuses an invalid caller",
+      "method": "POST",
+      "path": "/api/v1/operator/kiro/confirmations/00000000-0000-4000-8000-000000000000",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "POST only as a rejected probe; no row is touched"
+    },
+    {
+      "kind": "http",
+      "name": "Command Hub loads the VTID-05006 app.js",
+      "path": "/command-hub/",
+      "expect_status": 200,
+      "expect_content_type": "text/html",
+      "expect_body_contains": "app.js?v=20261109-vtid-05006"
+    },
+    {
+      "kind": "http",
+      "name": "served app.js shows Kiro write requests as Allow/Deny cards",
+      "path": "/command-hub/app.js?v=20261109-vtid-05006",
+      "expect_status": 200,
+      "expect_content_type": "javascript",
+      "expect_body_contains": [
+        "function startKiroConfirmationPoll",
+        "kiro-approval--write"
+      ]
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05006-kiro-write-tools.test.ts test/vtid-04465-operator-pipeline-regression.test.ts",
+      "cwd": "services/gateway",
+      "reason": "gates in order, confirmation window/cancel/late answer, push limits, and the end-to-end held-until-Allow path over the fake database"
+    }
+  ]
+}

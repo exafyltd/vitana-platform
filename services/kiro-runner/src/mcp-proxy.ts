@@ -17,7 +17,7 @@ const TIMEOUT_MS = 115_000;
 
 function write(msg: unknown): void { process.stdout.write(`${JSON.stringify(msg)}\n`); }
 
-export async function forward(line: string, fetchImpl: typeof fetch = fetch): Promise<unknown | null> {
+export async function forward(line: string, fetchImpl: typeof fetch = fetch, cancel?: AbortSignal): Promise<unknown | null> {
   let msg: any;
   try { msg = JSON.parse(line); } catch { return { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }; }
   const id = msg && typeof msg === 'object' && 'id' in msg ? msg.id : undefined;
@@ -25,6 +25,8 @@ export async function forward(line: string, fetchImpl: typeof fetch = fetch): Pr
   if (!url || !token) return fail('vitana tools are not configured for this session');
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+  // VTID-05006: Kiro abandoning the call aborts it, so a held write is closed on the gateway too.
+  cancel?.addEventListener('abort', () => ctl.abort(), { once: true });
   try {
     const res = await fetchImpl(url, {
       method: 'POST',
@@ -42,11 +44,33 @@ export async function forward(line: string, fetchImpl: typeof fetch = fetch): Pr
   }
 }
 
+/** In-flight calls by JSON-RPC id, so `notifications/cancelled` can abort the right one. */
+export const inFlight = new Map<string, AbortController>();
+
+/** MCP cancellation from Kiro: abort the matching in-flight call. Returns true when it was one. */
+export function handleCancel(line: string): boolean {
+  let msg: any;
+  try { msg = JSON.parse(line); } catch { return false; }
+  if (!msg || msg.method !== 'notifications/cancelled') return false;
+  const ctl = inFlight.get(String(msg.params?.requestId));
+  ctl?.abort();
+  return true;
+}
+
+export function dispatch(line: string, out: (m: unknown) => void, fetchImpl: typeof fetch = fetch): Promise<void> {
+  if (handleCancel(line)) return Promise.resolve();
+  let id: string | null = null;
+  try { const m = JSON.parse(line); if (m && m.id !== undefined && m.id !== null) id = String(m.id); } catch { /* forward() answers */ }
+  const ctl = new AbortController();
+  if (id !== null) inFlight.set(id, ctl);
+  return forward(line, fetchImpl, ctl.signal).then((r) => { if (r) out(r); }).finally(() => { if (id !== null) inFlight.delete(id); });
+}
+
 if (require.main === module) {
   const rl = createInterface({ input: process.stdin });
   rl.on('line', (line) => {
     if (!line.trim()) return;
-    void forward(line).then((out) => { if (out) write(out); });
+    void dispatch(line, write);
   });
   rl.on('close', () => process.exit(0));
 }

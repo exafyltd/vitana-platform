@@ -1175,3 +1175,92 @@ describe('Contract: the emulated one-in-flight-execution index matches the migra
     expect([...statuses].sort()).toEqual([...INFLIGHT_UNIQUE_STATUSES].sort());
   });
 });
+
+// ---------------------------------------------------------------------------
+// VTID-05006: a Kiro session asks for an Operator write. The REAL MCP route,
+// gates, confirmation store (over the fake database) and Operator executor run;
+// only the admin lookup is stubbed (Supabase Auth's admin API is outside the
+// pipeline).
+// ---------------------------------------------------------------------------
+import kiroMcpRouter, { resetKiroMcpLimits, setKiroMcpAdminLookup } from '../src/routes/operator-kiro-mcp';
+import { mintKiroMcpToken } from '../src/services/kiro/kiro-mcp-token';
+
+describe('Kiro writes: held until the user answers in the thread (VTID-05006)', () => {
+  jest.setTimeout(30_000);
+  const KIRO_VTID = 'VTID-09001';
+  let mcp: express.Express;
+
+  beforeEach(() => {
+    Object.assign(process.env, { KIRO_MCP_ENABLED: 'true', KIRO_MCP_WRITE_ENABLED: 'true', GATEWAY_INTERNAL_TOKEN: 'pipeline-internal-token' });
+    setKiroMcpAdminLookup(async () => ({ admin: true, tenantId: null }));
+    resetKiroMcpLimits();
+    platform.insert('vtid_ledger', { vtid: KIRO_VTID, status: 'in_progress', spec_status: 'approved', title: 'Kiro write scenario' });
+    mcp = express();
+    mcp.use(express.json());
+    mcp.use('/api/v1/operator/kiro/mcp', kiroMcpRouter);
+  });
+  afterEach(() => {
+    setKiroMcpAdminLookup(null);
+    delete process.env.KIRO_MCP_WRITE_ENABLED;
+  });
+
+  const call = (name: string, args: Record<string, unknown>) =>
+    request(mcp).post('/api/v1/operator/kiro/mcp')
+      .set('Authorization', `Bearer ${mintKiroMcpToken(ADMIN_USER, 'kiro-thread-1')}`)
+      .send({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } });
+
+  async function pendingRow(): Promise<Row> {
+    const realSetTimeout = globalThis.setTimeout;
+    const deadline = Date.now() + 5_000;
+    for (;;) {
+      const r = platform.rows('kiro_mcp_confirmations').find((c) => c.status === 'pending');
+      if (r) return r;
+      if (Date.now() > deadline) throw new Error('no pending confirmation; rows=' + JSON.stringify(platform.rows('kiro_mcp_confirmations')) + ' unsupported=' + JSON.stringify(platform.unsupported) + ' ext=' + JSON.stringify(platform.externalCalls));
+      await new Promise((res) => realSetTimeout(res, 20));
+    }
+  }
+
+  async function answer(id: string, decision: 'allow' | 'deny') {
+    const token = await jwt(ADMIN_USER, true);
+    return request(app).post(`/api/v1/operator/kiro/confirmations/${id}`).set('Authorization', `Bearer ${token}`).send({ decision });
+  }
+
+  it('Allow: the card appears for the thread, the answer lands, the real executor runs, OASIS records it', async () => {
+    const pending = call('autopilot_cancel_execution', { vtid: KIRO_VTID });
+    const done = pending.then((r) => r);
+    const row = await pendingRow();
+    expect(row).toMatchObject({ user_id: ADMIN_USER, thread_id: 'kiro-thread-1', tool: 'autopilot_cancel_execution', vtid: KIRO_VTID });
+    const token = await jwt(ADMIN_USER, true);
+    const list = await request(app).get('/api/v1/operator/kiro/confirmations?thread_id=kiro-thread-1').set('Authorization', `Bearer ${token}`);
+    expect(list.body.pending.map((p: any) => p.id)).toEqual([row.id]);
+    expect((await answer(String(row.id), 'allow')).status).toBe(200);
+    const res = await done;
+    const text = res.body.result.content[0].text as string;
+    expect(text).not.toMatch(/^(Refused|Denied|No answer)/);
+    expect(platform.rows('kiro_mcp_confirmations')[0].status).toBe('allowed');
+    expect(topics()).toEqual(expect.arrayContaining(['operator.kiro.write_confirmed', 'operator.kiro.write_tool_called']));
+    // A second answer changes nothing.
+    expect((await answer(String(row.id), 'deny')).status).toBe(409);
+  });
+
+  it('Deny: nothing runs', async () => {
+    const done = call('autopilot_cancel_execution', { vtid: KIRO_VTID }).then((r) => r);
+    const row = await pendingRow();
+    expect((await answer(String(row.id), 'deny')).status).toBe(200);
+    const res = await done;
+    expect(res.body.result).toMatchObject({ isError: true, content: [{ text: 'Denied by the user. Nothing was done.' }] });
+  });
+
+  it('no open VTID: refused before anyone is asked', async () => {
+    const res = await call('autopilot_cancel_execution', { vtid: 'VTID-09999' });
+    expect(res.body.result.content[0].text).toBe('Refused: VTID-09999 does not exist. Nothing was done.');
+    expect(platform.rows('kiro_mcp_confirmations')).toHaveLength(0);
+  });
+
+  it('writes switched off: the write tools are not offered and a call is unknown', async () => {
+    process.env.KIRO_MCP_WRITE_ENABLED = 'false';
+    const res = await call('dev_merge_pr', { vtid: KIRO_VTID, pr_number: 1 });
+    expect(res.body.error.message).toBe('Unknown tool: dev_merge_pr');
+    expect(platform.rows('kiro_mcp_confirmations')).toHaveLength(0);
+  });
+});

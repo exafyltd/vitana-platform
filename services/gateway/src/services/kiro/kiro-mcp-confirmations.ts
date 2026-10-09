@@ -38,15 +38,17 @@ export const supabaseConfirmationStore: ConfirmationStore = {
     const db = getSupabase();
     if (!db) return null;
     const { data, error } = await db.from(T)
-      .insert({ user_id: r.userId, thread_id: r.threadId, tool: r.tool, vtid: r.vtid, summary: r.summary.slice(0, 600) })
-      .select('id').single();
-    return error || !data ? null : (data as { id: string }).id;
+      .insert({ user_id: r.userId, thread_id: r.threadId, tool: r.tool, vtid: r.vtid, summary: r.summary.slice(0, 600), status: 'pending' })
+      .select('id');
+    const row = Array.isArray(data) ? data[0] : data;
+    return error || !row ? null : ((row as { id?: string }).id ?? null);
   },
   async status(id) {
     const db = getSupabase();
     if (!db) return null;
-    const { data } = await db.from(T).select('status').eq('id', id).maybeSingle();
-    return (data as { status?: string } | null)?.status ?? null;
+    const { data } = await db.from(T).select('status').eq('id', id).limit(1);
+    const row = Array.isArray(data) ? data[0] : data;
+    return (row as { status?: string } | undefined)?.status ?? null;
   },
   async settle(id, to, userId) {
     const db = getSupabase();
