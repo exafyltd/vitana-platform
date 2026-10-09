@@ -5747,8 +5747,9 @@ async function executeDevCreatePr(
       body: JSON.stringify({
         vtid: args.vtid,
         repo: 'exafyltd/vitana-platform',
-        head_branch: args.head_branch,
-        base_branch: args.base_branch || 'main',
+        // VTID-05006: the route's schema (CreatePrRequestSchema) reads head/base.
+        head: args.head_branch,
+        base: args.base_branch || 'main',
         title: args.title || `${args.vtid}: ${args.head_branch}`,
         body: args.body || `PR created via Vitana Developer Assistant for ${args.vtid}`,
       }),
@@ -5793,7 +5794,8 @@ async function executeDevMergePr(
         vtid: args.vtid,
         repo: 'exafyltd/vitana-platform',
         pr_number: args.pr_number,
-        merge_method: args.merge_method || 'squash',
+        // VTID-05006: the route's schema (SafeMergeRequestSchema) reads merge_strategy.
+        merge_strategy: args.merge_method || 'squash',
       }),
     });
 
