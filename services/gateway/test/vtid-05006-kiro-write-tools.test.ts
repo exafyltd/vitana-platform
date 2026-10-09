@@ -204,9 +204,12 @@ describe('wiring (source check)', () => {
     for (const t of ['write_tool_called', 'write_confirmed', 'write_denied', 'branch_pushed']) expect(cicd).toContain(`| 'operator.kiro.${t}'`);
   });
 
-  it('writes are on for staging only; production stays off until its own approval', () => {
+  it('writes follow the engine on both environments (owner approved production 2026-10-09); off with no runner', () => {
     expect(read('.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml')).toContain('{name:"KIRO_MCP_WRITE_ENABLED", value:"true"}');
-    expect(read('.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml')).toContain('{name:"KIRO_MCP_WRITE_ENABLED", value:"false"}');
+    const prod = read('.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml');
+    expect(prod).toContain('{name:"KIRO_MCP_ENABLED", value:"true"},\n                           {name:"KIRO_MCP_WRITE_ENABLED", value:"true"},');
+    // No production runner configured: everything Kiro stays off.
+    expect(prod).toContain('{name:"KIRO_MCP_ENABLED", value:"false"}, {name:"KIRO_MCP_WRITE_ENABLED", value:"false"} ]');
   });
 
   it('the Command Hub polls only during a Kiro turn and answers through the confirmation route', () => {
