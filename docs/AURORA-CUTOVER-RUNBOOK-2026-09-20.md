@@ -30,6 +30,17 @@
 >   not have. Still open: 16 enum columns that are varchar on Aurora, and 2
 >   nullability differences. `aurora-cutover-fix-6-tables.sh` runs every step
 >   in order.
+> - **DRESS REHEARSAL 2026-10-09 22:00Z — passed (no connection switch, no
+>   freeze).** The full DMS load took 20 min (21:46–22:06Z): 663 tables, 0
+>   errors. Then `aurora-cutover-after-load.sh` ran the post-load, 358 FKs and
+>   19 views (`ALL DONE`, about 22:45Z after three script fixes). Open before
+>   the real switch: (1) **embeddings** — DMS truncated all 7,942 of them on
+>   the source read, so Aurora has none. They need a separate backfill from
+>   Supabase, after which `NOT NULL` goes back on
+>   `dev_agent_memory.embedding` and `memory_embeddings.embedding`;
+>   (2) `signup_funnel` view; (3) realtime, storage, edge functions and a
+>   public endpoint for the PostgREST proxy; (4) 16 enum columns that are
+>   varchar on Aurora.
 
 **UPDATED 2026-09-20 (second update, supersedes the one below it): the
 freeze window was postponed again — from tonight's midnight-CET window to
