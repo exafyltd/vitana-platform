@@ -20,6 +20,16 @@
 >   fails on FK-referenced tables.
 > - The final load uses task `vitana-fullload-final-catchup`
 >   (`arn:aws:dms:eu-central-1:472838866351:task:HBS7QKNHKFFT5GK6WDMK5236CA`).
+> - **UPDATE 2026-10-09: schema drift.** A full column diff showed Aurora is
+>   missing 79 columns, 8 tables and 20 views that Supabase has (later
+>   migrations never reached Aurora). **New Step 0**, before the pre-load:
+>   `aurora-cutover-schema-sync.sql`. **New last step**, after the FKs:
+>   `aurora-cutover-schema-sync-views.sql`. Both can be re-run, and both were
+>   tested twice against a scratch Postgres built from Aurora's real columns.
+>   `signup_funnel` is not created: it joins `auth.users`, which Aurora does
+>   not have. Still open: 16 enum columns that are varchar on Aurora, and 2
+>   nullability differences. `aurora-cutover-fix-6-tables.sh` runs every step
+>   in order.
 
 **UPDATED 2026-09-20 (second update, supersedes the one below it): the
 freeze window was postponed again — from tonight's midnight-CET window to
