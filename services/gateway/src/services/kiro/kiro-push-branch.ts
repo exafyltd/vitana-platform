@@ -3,21 +3,37 @@
  * through the gateway, never with a push credential of Kiro's own.
  *
  * Writes the given files as ONE commit on a `kiro/<user8>/<slug>` branch of
- * vitana-platform (only — see KIRO_PUSH_REPOS) via GitHub's git-data API (blobs → tree →
- * commit → ref), with the gateway's own GitHub token. The branch is created
+ * vitana-platform or vitana-v1 (VTID-05014) via GitHub's git-data API (blobs → tree →
+ * commit → ref), with the gateway's own token for that repo (repoGitHubToken). The branch is created
  * from main or fast-forwarded — never force-pushed, never main, never another
  * user's prefix. Kiro then opens the PR with dev_create_pr.
  */
 import { posix } from 'path';
+import { repoGitHubToken, isVitanaRepo, VITANA_REPOS } from '../vitana-repos';
 
-// vitana-platform only: the PR and safe-merge routes accept only that repo (cicd.ts DEFAULT_REPO).
-// vitana-v1 is in Kiro's workspace for reading; pushing to it is a separate plan.
-export const KIRO_PUSH_REPOS = ['exafyltd/vitana-platform'] as const;
+// VTID-05014: both Vitana repos (the /create-pr and /safe-merge routes accept both).
+export const KIRO_PUSH_REPOS = VITANA_REPOS;
 export const KIRO_PUSH_LIMITS = { files: 50, bytesPerFile: 512 * 1024, bytesTotal: 2 * 1024 * 1024 };
 
-/** Paths a Kiro push may never touch: CI, agent rules, governance, evidence, migrations, ownership, dependencies. */
-const DENIED_PREFIXES = ['.github/', '.claude/', 'gov/', 'scripts/ci/', 'docs/validation/', 'supabase/migrations/'];
+/** Paths a Kiro push may never touch, in either repo: CI, agent rules, evidence, ownership, dependencies. */
+const SHARED_DENIED_PREFIXES = ['.github/', '.claude/', 'docs/validation/'];
 const DENIED_NAMES = new Set(['CLAUDE.md', 'CODEOWNERS', 'package.json', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock']);
+/** Per repo, on top of the shared list. */
+const REPO_DENIED_PREFIXES: Record<string, string[]> = {
+  'exafyltd/vitana-platform': ['gov/', 'scripts/ci/', 'supabase/migrations/'],
+  // The whole supabase/ tree: supabase-functions-deploy.yml deploys supabase/functions/** to the
+  // production Supabase project on every push to main, and migrations live there too.
+  // eslint-rules/ + the eslint configs enforce the i18n hard rule; .env* holds build config.
+  'exafyltd/vitana-v1': ['supabase/', 'eslint-rules/'],
+};
+const REPO_DENIED_NAMES: Record<string, Set<string>> = {
+  'exafyltd/vitana-platform': new Set(),
+  'exafyltd/vitana-v1': new Set(['AGENTS.md', 'eslint.config.js', 'eslint-patterns.config.js']),
+};
+const REPO_DENIED_PATTERNS: Record<string, RegExp[]> = {
+  'exafyltd/vitana-platform': [],
+  'exafyltd/vitana-v1': [/(^|\/)\.env(\.|$)/],
+};
 
 export interface PushFile { path: string; content: string }
 export interface PushArgs { repo: string; branch: string; message: string; files: PushFile[] }
@@ -47,7 +63,12 @@ export function validatePush(a: Partial<PushArgs>, userId: string): { ok: true; 
     const norm = posix.normalize(raw);
     if (raw.startsWith('/') || norm.startsWith('..') || norm.split('/').includes('..') || norm === '.' || norm.endsWith('/')) return { ok: false, error: `invalid path: ${f.path}` };
     const base = posix.basename(norm);
-    if (DENIED_PREFIXES.some((p) => norm.startsWith(p)) || DENIED_NAMES.has(base) || norm === 'docs/CODEOWNERS') {
+    const repo = String(a.repo);
+    if (
+      SHARED_DENIED_PREFIXES.some((p) => norm.startsWith(p)) || (REPO_DENIED_PREFIXES[repo] ?? []).some((p) => norm.startsWith(p))
+      || DENIED_NAMES.has(base) || (REPO_DENIED_NAMES[repo]?.has(norm) ?? false)
+      || (REPO_DENIED_PATTERNS[repo] ?? []).some((re) => re.test(norm)) || norm === 'docs/CODEOWNERS'
+    ) {
       return { ok: false, error: `Kiro may not change ${norm} — that goes through the normal PR process` };
     }
     if (f.content.includes('\u0000')) return { ok: false, error: `binary content is not allowed: ${norm}` };
@@ -65,8 +86,22 @@ export function validatePush(a: Partial<PushArgs>, userId: string): { ok: true; 
 /** Minimal GitHub client for the push, injectable for tests. */
 export type GitHubCall = (method: string, endpoint: string, body?: unknown) => Promise<any>;
 
-export const defaultGitHubCall: GitHubCall = async (method, endpoint, body) => {
-  const token = process.env.GITHUB_SAFE_MERGE_TOKEN || process.env.GITHUB_TOKEN || '';
+/** The token a push to `repo` uses: the platform token, or the vitana-v1 token (never the platform one). */
+export function pushToken(repo: string): string {
+  if (!isVitanaRepo(repo)) throw new Error(`repo not allowed: ${repo}`);
+  const override = repoGitHubToken(repo); // throws repo_token_not_configured for an unset vitana-v1 token
+  return override ?? (process.env.GITHUB_SAFE_MERGE_TOKEN || process.env.GITHUB_TOKEN || '');
+}
+
+/** A GitHub client bound to one repo's token. */
+export function gitHubCallFor(repo: string): GitHubCall {
+  return (method, endpoint, body) => callGitHub(pushToken(repo), method, endpoint, body);
+}
+
+export const defaultGitHubCall: GitHubCall = async (method, endpoint, body) =>
+  callGitHub(process.env.GITHUB_SAFE_MERGE_TOKEN || process.env.GITHUB_TOKEN || '', method, endpoint, body);
+
+async function callGitHub(token: string, method: string, endpoint: string, body?: unknown): Promise<any> {
   if (!token) throw new Error('GitHub token not configured');
   const res = await fetch(`https://api.github.com${endpoint}`, {
     method,
@@ -77,14 +112,19 @@ export const defaultGitHubCall: GitHubCall = async (method, endpoint, body) => {
   if (res.status === 404 && method === 'GET') return null;
   if (!res.ok) throw new Error(`GitHub ${method} ${endpoint.split('?')[0]} → ${res.status}: ${text.slice(0, 200)}`);
   return text ? JSON.parse(text) : {};
-};
+}
 
 export interface PushResult { ok: boolean; error?: string; commit_sha?: string; branch?: string; created?: boolean; files?: number; bytes?: number }
 
-export async function pushKiroBranch(a: PushArgs, userId: string, gh: GitHubCall = defaultGitHubCall): Promise<PushResult> {
+export async function pushKiroBranch(a: PushArgs, userId: string, gh?: GitHubCall): Promise<PushResult> {
   const v = validatePush(a, userId);
   if (!v.ok) return { ok: false, error: v.error };
   const repo = a.repo;
+  if (!gh) {
+    // Resolve the token before any GitHub call: an unset vitana-v1 token fails here, loudly, with nothing written.
+    try { pushToken(repo); } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
+    gh = gitHubCallFor(repo);
+  }
   const existing = await gh('GET', `/repos/${repo}/git/ref/heads/${a.branch}`);
   const parentSha: string = existing?.object?.sha ?? (await gh('GET', `/repos/${repo}/git/ref/heads/main`))?.object?.sha;
   if (!parentSha) return { ok: false, error: 'could not read main' };
@@ -105,11 +145,11 @@ export async function pushKiroBranch(a: PushArgs, userId: string, gh: GitHubCall
 export const KIRO_PUSH_TOOL = {
   name: 'dev_push_kiro_branch',
   description:
-    'Push edited files from your workspace as ONE commit to your own kiro/<id>/<slug> branch of exafyltd/vitana-platform ' +
-    '(created from main or fast-forwarded; never main, never force). Text files only, ≤ 50 files, ≤ 512 KB each, ≤ 2 MB total; ' +
-    'no .github/, .claude/, CLAUDE.md, gov/, scripts/ci/, docs/validation/, supabase/migrations/, CODEOWNERS or package/lock files. ' +
-    'The commit message must start with the vtid. Needs the user\'s Allow. Then open the PR with dev_create_pr (head_branch = this branch). ' +
-    '(exafyltd/vitana-v1 is in your workspace to read; pushing to it is not available yet.)',
+    'Push edited files from your workspace as ONE commit to your own kiro/<id>/<slug> branch of exafyltd/vitana-platform or exafyltd/vitana-v1 ' +
+    '(created from main or fast-forwarded; never main, never force). Text files only, ≤ 50 files, ≤ 512 KB each, ≤ 2 MB total. ' +
+    'Never in either repo: .github/, .claude/, CLAUDE.md, docs/validation/, CODEOWNERS, package/lock files. ' +
+    'vitana-platform also: gov/, scripts/ci/, supabase/migrations/. vitana-v1 also: supabase/ (all of it), AGENTS.md, .env files, eslint-rules/, eslint.config.js, eslint-patterns.config.js. ' +
+    'The commit message must start with the vtid. Needs the user\'s Allow. Then open the PR with dev_create_pr (same repo, head_branch = this branch).',
   inputSchema: {
     type: 'object',
     properties: {

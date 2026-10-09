@@ -40,6 +40,7 @@ import { runKiroTurn, cancelKiroTurn, closeKiroSession, isKiroEngineEnabled, ope
 import { answerPermission } from '../services/kiro/permission-broker';
 import { registerKiroBackendFromEnv, runnerConfig, kiroKeyRequest, kiroKeyLinked, clearKiroKeyCache } from '../services/kiro/remote-backend';
 import { confirmationStore, decideConfirmation } from '../services/kiro/kiro-mcp-confirmations';
+import { kiroRepoReadiness } from '../services/kiro/kiro-repo-readiness';
 import { getKiroCredits, kiroDefaultEngine } from '../services/kiro/credit-state';
 
 // VTID-04999: run Kiro on the private kiro-runner when the engine and the runner are configured.
@@ -891,6 +892,12 @@ router.delete('/kiro/sessions/:threadId', requireAdminAuth, async (req: Authenti
 // ==================== Kiro write confirmations (VTID-05006) ====================
 // The Allow/Deny cards for writes a Kiro session asked the Operator's tools to do.
 // The caller's own rows only (user id from the identity, never the request).
+
+// VTID-05014: read-only — can the gateway's token for each repo Kiro writes to read it,
+// and what does GitHub report as that token's permissions. No writes, no token values.
+router.get('/kiro/repos', requireAdminAuth, async (_req: AuthenticatedRequest, res: Response) => {
+  return res.json({ ok: true, repos: await kiroRepoReadiness() });
+});
 
 router.get('/kiro/confirmations', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
   const caller = req.identity?.user_id;

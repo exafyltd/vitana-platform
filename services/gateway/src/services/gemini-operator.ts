@@ -55,6 +55,7 @@ import { devWorkerModel } from './dev-pipeline-models';
 import { executeKnowledgeSearch, KNOWLEDGE_SEARCH_TOOL_DEFINITION } from './knowledge-hub';
 // VTID-03835: Operator Console codebase read access (search + file read)
 import { searchCode, getFileContents } from './github-service';
+import { VITANA_REPOS, repoGitHubToken, isVitanaRepo } from './vitana-repos';
 import { getOperatorBootstrapPack } from './operator-bootstrap-pack';
 import { filterVitanaLogs, LOGS_DEFAULT_MINUTES, LOGS_MAX_MINUTES, LOGS_DEFAULT_LIMIT, LOGS_MAX_LIMIT } from './aws-cloudwatch-logs-readonly';
 import { buildRecallQuery } from './operator-threads';
@@ -1122,11 +1123,12 @@ NEVER claim a message was sent unless a call with confirmed=true returned ok. If
     },
     {
       name: 'dev_create_pr',
-      description: 'Create a GitHub pull request for a VTID branch.',
+      description: 'Create a GitHub pull request for a VTID branch, on exafyltd/vitana-platform (default) or exafyltd/vitana-v1.',
       parameters: {
         type: 'object',
         properties: {
           vtid: { type: 'string', description: 'The VTID this PR is for.' },
+          repo: { type: 'string', enum: ['exafyltd/vitana-platform', 'exafyltd/vitana-v1'], description: 'Repo to open the PR on. Defaults to exafyltd/vitana-platform.' },
           head_branch: { type: 'string', description: 'Branch to merge from.' },
           base_branch: { type: 'string', description: 'Branch to merge into. Defaults to main.' },
           title: { type: 'string', description: 'PR title.' },
@@ -1137,11 +1139,12 @@ NEVER claim a message was sent unless a call with confirmed=true returned ok. If
     },
     {
       name: 'dev_merge_pr',
-      description: 'Safe merge a PR with CI gate. Only merges if checks pass.',
+      description: 'Safe merge a PR with CI gate, on exafyltd/vitana-platform (default) or exafyltd/vitana-v1. Only merges if checks pass.',
       parameters: {
         type: 'object',
         properties: {
           vtid: { type: 'string', description: 'The VTID for this merge.' },
+          repo: { type: 'string', enum: ['exafyltd/vitana-platform', 'exafyltd/vitana-v1'], description: 'Repo the PR is on. Defaults to exafyltd/vitana-platform.' },
           pr_number: { type: 'integer', description: 'PR number to merge.' },
           merge_method: { type: 'string', enum: ['squash', 'merge', 'rebase'], description: 'Merge method. Defaults to squash.' }
         },
@@ -2794,9 +2797,11 @@ const OPERATOR_DEFAULT_REPO = 'exafyltd/vitana-platform';
 // FRONTEND_DEPLOY_TOKEN takes effect without a restart — same convention
 // as BEDROCK_ROLE_ARN (CLAUDE.md §2b) — rather than being frozen at
 // module-load time.
-const OPERATOR_ALLOWED_REPOS = ['exafyltd/vitana-platform', 'exafyltd/vitana-v1'] as const;
+// VTID-05014: the allowlist and the token now live in github-service
+// (VITANA_REPOS / repoGitHubToken) — one copy shared with the write paths.
+const OPERATOR_ALLOWED_REPOS = VITANA_REPOS;
 function operatorRepoToken(repo: string): string | undefined {
-  return repo === OPERATOR_DEFAULT_REPO ? undefined : process.env.FRONTEND_DEPLOY_TOKEN;
+  try { return isVitanaRepo(repo) ? repoGitHubToken(repo) : undefined; } catch { return undefined; }
 }
 
 function resolveOperatorRepo(requested: string | undefined): { repo: string; token?: string } | { error: string } {
@@ -4094,11 +4099,11 @@ export async function executeTool(
         break;
 
       case 'dev_create_pr':
-        result = await executeDevCreatePr(args as { vtid: string; head_branch: string; base_branch?: string; title?: string; body?: string }, threadId);
+        result = await executeDevCreatePr(args as { vtid: string; repo?: string; head_branch: string; base_branch?: string; title?: string; body?: string }, threadId);
         break;
 
       case 'dev_merge_pr':
-        result = await executeDevMergePr(args as { vtid: string; pr_number: number; merge_method?: string }, threadId);
+        result = await executeDevMergePr(args as { vtid: string; repo?: string; pr_number: number; merge_method?: string }, threadId);
         break;
 
       case 'dev_deploy_service':
@@ -5732,7 +5737,7 @@ async function executeDevQueryOasisEvents(
  * Create a GitHub PR
  */
 async function executeDevCreatePr(
-  args: { vtid: string; head_branch: string; base_branch?: string; title?: string; body?: string },
+  args: { vtid: string; repo?: string; head_branch: string; base_branch?: string; title?: string; body?: string },
   threadId: string
 ): Promise<ToolExecutionResult> {
   try {
@@ -5746,7 +5751,7 @@ async function executeDevCreatePr(
       },
       body: JSON.stringify({
         vtid: args.vtid,
-        repo: 'exafyltd/vitana-platform',
+        repo: args.repo || 'exafyltd/vitana-platform',
         // VTID-05006: the route's schema (CreatePrRequestSchema) reads head/base.
         head: args.head_branch,
         base: args.base_branch || 'main',
@@ -5778,7 +5783,7 @@ async function executeDevCreatePr(
  * Safe merge a PR
  */
 async function executeDevMergePr(
-  args: { vtid: string; pr_number: number; merge_method?: string },
+  args: { vtid: string; repo?: string; pr_number: number; merge_method?: string },
   threadId: string
 ): Promise<ToolExecutionResult> {
   try {
@@ -5792,7 +5797,7 @@ async function executeDevMergePr(
       },
       body: JSON.stringify({
         vtid: args.vtid,
-        repo: 'exafyltd/vitana-platform',
+        repo: args.repo || 'exafyltd/vitana-platform',
         pr_number: args.pr_number,
         // VTID-05006: the route's schema (SafeMergeRequestSchema) reads merge_strategy.
         merge_strategy: args.merge_method || 'squash',

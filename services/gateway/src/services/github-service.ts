@@ -29,6 +29,11 @@ function getGitHubToken(override?: string): string {
   return token;
 }
 
+// VTID-05014: the repo allowlist and token resolver live in ./vitana-repos (no imports, so
+// tests that mock this module keep them); re-exported here.
+export { VITANA_REPOS, isVitanaRepo, repoGitHubToken } from './vitana-repos';
+import { repoGitHubToken } from './vitana-repos';
+
 /**
  * VTID-04633: the thrown message keeps the `GitHub API error: <status> - <text>`
  * prefix callers match on, and appends GitHub's own `message` (e.g. "Resource
@@ -232,9 +237,10 @@ export async function getFileContents(
  */
 export async function getPullRequest(
   repo: string,
-  prNumber: number
+  prNumber: number,
+  tokenOverride?: string
 ): Promise<GitHubPullRequest> {
-  return githubRequest<GitHubPullRequest>(`/repos/${repo}/pulls/${prNumber}`);
+  return githubRequest<GitHubPullRequest>(`/repos/${repo}/pulls/${prNumber}`, {}, tokenOverride);
 }
 
 /**
@@ -249,10 +255,11 @@ export async function getPullRequest(
  */
 export async function getPrFiles(
   repo: string,
-  prNumber: number
+  prNumber: number,
+  tokenOverride?: string
 ): Promise<Array<{ filename: string; status: string; additions: number; deletions: number; patch?: string }>> {
   return githubRequest<Array<{ filename: string; status: string; additions: number; deletions: number; patch?: string }>>(
-    `/repos/${repo}/pulls/${prNumber}/files`
+    `/repos/${repo}/pulls/${prNumber}/files`, {}, tokenOverride
   );
 }
 
@@ -261,9 +268,10 @@ export async function getPrFiles(
  */
 export async function getCombinedStatus(
   repo: string,
-  ref: string
+  ref: string,
+  tokenOverride?: string
 ): Promise<GitHubCombinedStatus> {
-  return githubRequest<GitHubCombinedStatus>(`/repos/${repo}/commits/${ref}/status`);
+  return githubRequest<GitHubCombinedStatus>(`/repos/${repo}/commits/${ref}/status`, {}, tokenOverride);
 }
 
 /**
@@ -271,10 +279,11 @@ export async function getCombinedStatus(
  */
 export async function getCheckRuns(
   repo: string,
-  ref: string
+  ref: string,
+  tokenOverride?: string
 ): Promise<{ check_runs: GitHubCheckRun[] }> {
   return githubRequest<{ check_runs: GitHubCheckRun[] }>(
-    `/repos/${repo}/commits/${ref}/check-runs`
+    `/repos/${repo}/commits/${ref}/check-runs`, {}, tokenOverride
   );
 }
 
@@ -283,19 +292,20 @@ export async function getCheckRuns(
  */
 export async function getPrStatus(
   repo: string,
-  prNumber: number
+  prNumber: number,
+  tokenOverride?: string
 ): Promise<{
   pr: GitHubPullRequest;
   checks: CheckStatus[];
   allPassed: boolean;
 }> {
-  const pr = await getPullRequest(repo, prNumber);
+  const pr = await getPullRequest(repo, prNumber, tokenOverride);
   const headSha = pr.head.sha;
 
   // Get both legacy statuses and check runs
   const [combinedStatus, checkRunsResponse] = await Promise.all([
-    getCombinedStatus(repo, headSha).catch(() => ({ state: 'pending' as const, statuses: [] })),
-    getCheckRuns(repo, headSha).catch(() => ({ check_runs: [] })),
+    getCombinedStatus(repo, headSha, tokenOverride).catch(() => ({ state: 'pending' as const, statuses: [] })),
+    getCheckRuns(repo, headSha, tokenOverride).catch(() => ({ check_runs: [] })),
   ]);
 
   const checks: CheckStatus[] = [];
@@ -336,7 +346,8 @@ export async function createPullRequest(
   title: string,
   body: string,
   head: string,
-  base: string = 'main'
+  base: string = 'main',
+  tokenOverride?: string
 ): Promise<{ number: number; html_url: string }> {
   // Validate head is not main
   if (head === 'main' || head === 'master') {
@@ -358,7 +369,8 @@ export async function createPullRequest(
         head,
         base,
       }),
-    }
+    },
+    tokenOverride
   );
 }
 
@@ -589,7 +601,8 @@ export async function mergePullRequest(
   repo: string,
   prNumber: number,
   commitTitle: string,
-  mergeStrategy: 'squash' | 'merge' | 'rebase' = 'squash'
+  mergeStrategy: 'squash' | 'merge' | 'rebase' = 'squash',
+  tokenOverride?: string
 ): Promise<{ sha: string; merged: boolean; message: string }> {
   return githubRequest<{ sha: string; merged: boolean; message: string }>(
     `/repos/${repo}/pulls/${prNumber}/merge`,
@@ -599,7 +612,8 @@ export async function mergePullRequest(
         commit_title: commitTitle,
         merge_method: mergeStrategy,
       }),
-    }
+    },
+    tokenOverride
   );
 }
 
@@ -609,9 +623,10 @@ export async function mergePullRequest(
 export async function evaluateGovernance(
   repo: string,
   prNumber: number,
-  vtid: string
+  vtid: string,
+  tokenOverride?: string
 ): Promise<GovernanceEvaluation> {
-  const files = await getPrFiles(repo, prNumber);
+  const files = await getPrFiles(repo, prNumber, tokenOverride);
   const filenames = files.map((f) => f.filename);
 
   const blockedReasons: string[] = [];
