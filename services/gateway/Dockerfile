@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM public.ecr.aws/docker/library/node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 COPY tsconfig.json ./
@@ -9,7 +9,7 @@ COPY config ./config
 COPY specs ./specs
 RUN npm run build
 
-FROM node:20-alpine
+FROM public.ecr.aws/docker/library/node:20-alpine
 WORKDIR /app
 COPY package*.json ./
 # VTID-03773 — RDS CA bundle, baked in at build time (not fetched at
