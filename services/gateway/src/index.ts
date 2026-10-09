@@ -837,6 +837,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/agents/triage', triageAgentRouter, { owner: 'triage-agent' });
 
   // VTID-0509 + VTID-0510: Operator Console & Version Tracking
+  // VTID-05005: the Operator's read tools for Kiro sessions (MCP). Before the operator
+  // router so its own auth (the session pass) applies, not the console's.
+  mountRouterSync(app, '/api/v1/operator/kiro/mcp', require('./routes/operator-kiro-mcp').default, { owner: 'operator-kiro-mcp' });
   mountRouterSync(app, '/api/v1/operator', operatorRouter, { owner: 'operator' });
 
   // VTID-0526-D: Telemetry routes with stage counters

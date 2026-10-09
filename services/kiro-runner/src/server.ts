@@ -25,6 +25,8 @@ export interface RunnerConfig {
   kiroCliVersion: string;
   kiroBin?: string;
   spawnImpl?: RelayOptions['spawnImpl'];
+  /** VTID-05005: this environment's public gateway URL for the `vitana` tools (unset = no tools). */
+  mcpGatewayUrl?: string;
   log?: (msg: string) => void;
 }
 
@@ -107,6 +109,10 @@ export function createRunnerServer(cfg: RunnerConfig, store: KeyStore): http.Ser
     const userId = url.searchParams.get('user_id') ?? '';
     const threadId = url.searchParams.get('thread_id') ?? '';
     if (!isUserId(userId) || !threadId || threadId.length > 200) return reject(400, 'Bad Request');
+    // VTID-05005: the gateway-minted pass for the Operator's read tools. Opaque here; the gateway verifies it.
+    const rawMcp = req.headers['x-kiro-mcp-token'];
+    const mcpToken = typeof rawMcp === 'string' && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(rawMcp) && rawMcp.length <= 2048 ? rawMcp : '';
+    const mcp = cfg.mcpGatewayUrl && mcpToken ? { gatewayUrl: cfg.mcpGatewayUrl, token: mcpToken } : null;
 
     wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
       // Reserve the slot before the key read, so concurrent connects cannot all pass the cap.
@@ -122,7 +128,7 @@ export function createRunnerServer(cfg: RunnerConfig, store: KeyStore): http.Ser
           }
           if (!key) { ws.close(CLOSE.keyMissing, 'kiro_key_missing'); return; }
           if (ws.readyState !== ws.OPEN) return;
-          startRelay({ ws, userId, threadId, key, workRoot: cfg.workRoot, limits: cfg.limits, kiroBin: cfg.kiroBin, spawnImpl: cfg.spawnImpl, log });
+          startRelay({ ws, userId, threadId, key, mcp, workRoot: cfg.workRoot, limits: cfg.limits, kiroBin: cfg.kiroBin, spawnImpl: cfg.spawnImpl, log });
         } finally {
           pending--;
         }

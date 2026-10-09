@@ -11,7 +11,7 @@ process.stdin.on('data', (c) => {
     const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
     const m = JSON.parse(line);
     if (m.method === 'initialize') out({ jsonrpc: '2.0', id: m.id, result: {} });
-    else if (m.method === 'session/new') out({ jsonrpc: '2.0', id: m.id, result: { sessionId: 'S1', echo_cwd: m.params.cwd, proc_cwd: process.cwd(), env_keys: Object.keys(process.env).sort(), key: process.env.KIRO_API_KEY } });
+    else if (m.method === 'session/new') out({ jsonrpc: '2.0', id: m.id, result: { sessionId: 'S1', echo_cwd: m.params.cwd, echo_mcp: m.params.mcpServers, proc_cwd: process.cwd(), env_keys: Object.keys(process.env).sort(), key: process.env.KIRO_API_KEY } });
     else if (m.method === 'session/prompt') {
       if (m.params.prompt[0].text === 'flood') { process.stdout.write('{"x":"' + 'a'.repeat(2 * 1024 * 1024)); return; }
       if (m.params.prompt[0].text === 'bigline') { process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'x', params: { t: 'a'.repeat(2 * 1024 * 1024) } }) + '\n'); return; }

@@ -11,7 +11,7 @@ import type { AddressInfo } from 'net';
 import WebSocket from 'ws';
 import { KeyStore, isPlausibleKey, onlyRunnerReadsPolicy, type SecretsClient } from '../src/key-store';
 import { createRunnerServer, tokenMatches } from '../src/server';
-import { childEnv, rewriteCwd, sessionCount, stopAllSessions, READY_FRAME } from '../src/relay';
+import { childEnv, mcpServersFor, MCP_PROXY_PATH, rewriteCwd, sessionCount, stopAllSessions, READY_FRAME } from '../src/relay';
 
 const FAKE = path.join(__dirname, 'fixtures/fake-kiro-cli.js');
 const TOKEN = 'runner-token-abc';
@@ -57,8 +57,8 @@ const auth = { Authorization: `Bearer ${TOKEN}` };
 const http = (method: string, p: string, body?: unknown, headers: Record<string, string> = auth) =>
   fetch(`http://${base}${p}`, { method, headers: { 'Content-Type': 'application/json', ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
 
-function open(userId = U1, thread = 't1'): Promise<{ ws: WebSocket; frames: any[]; closed: Promise<{ code: number; reason: string }>; ready: Promise<void> }> {
-  const ws = new WebSocket(`ws://${base}/sessions?user_id=${userId}&thread_id=${thread}`, { headers: auth });
+function open(userId = U1, thread = 't1', extra: Record<string, string> = {}): Promise<{ ws: WebSocket; frames: any[]; closed: Promise<{ code: number; reason: string }>; ready: Promise<void> }> {
+  const ws = new WebSocket(`ws://${base}/sessions?user_id=${userId}&thread_id=${thread}`, { headers: { ...auth, ...extra } });
   const frames: any[] = [];
   let onReady: () => void; const ready = new Promise<void>((r) => { onReady = r; });
   const closed = new Promise<{ code: number; reason: string }>((r) => ws.on('close', (code, reason) => r({ code, reason: String(reason) })));
@@ -283,5 +283,73 @@ describe('helpers', () => {
     expect(JSON.parse(rewriteCwd('{"method":"session/load","params":{"cwd":"/"}}', '/w')).params.cwd).toBe('/w');
     expect(rewriteCwd('{"method":"session/prompt","params":{"cwd":"/"}}', '/w')).toContain('"cwd":"/"');
     expect(rewriteCwd('not json', '/w')).toBe('not json');
+  });
+});
+
+// VTID-05005: the `vitana` tools — the runner, never the gateway, decides the MCP servers.
+const PASS = 'eyJ1IjoidSJ9.c2ln';
+describe('vitana tools (VTID-05005)', () => {
+  const newSession = (s: { ws: WebSocket }, servers: unknown) =>
+    s.ws.send(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/etc', mcpServers: servers } }));
+
+  it('with a pass and a gateway URL: exactly the vitana relay, whatever the gateway sent', async () => {
+    await start({ mcpGatewayUrl: 'https://preview-aws-gateway.vitanaland.com/' });
+    await http('PUT', `/keys/${U1}`, { key: 'ksk_user_one' });
+    const s = await open(U1, 't1', { 'X-Kiro-Mcp-Token': PASS });
+    await s.ready;
+    newSession(s, [{ name: 'evil', command: '/bin/sh', args: ['-c', 'id'] }]);
+    await waitFor(() => s.frames.length >= 1);
+    const mcp = s.frames[0].result.echo_mcp;
+    expect(mcp).toHaveLength(1);
+    expect(mcp[0]).toMatchObject({ name: 'vitana', command: process.execPath, args: [MCP_PROXY_PATH] });
+    expect(mcp[0].env).toEqual([
+      { name: 'VITANA_MCP_URL', value: 'https://preview-aws-gateway.vitanaland.com/api/v1/operator/kiro/mcp' },
+      { name: 'VITANA_MCP_TOKEN', value: PASS },
+    ]);
+    s.ws.close();
+  });
+
+  it('no pass, a malformed pass, or no gateway URL: no MCP servers at all', async () => {
+    await start({ mcpGatewayUrl: 'https://preview-aws-gateway.vitanaland.com' });
+    await http('PUT', `/keys/${U1}`, { key: 'ksk_user_one' });
+    for (const extra of [{}, { 'X-Kiro-Mcp-Token': 'not a token; rm -rf /' }]) {
+      const s = await open(U1, 't1', extra);
+      await s.ready;
+      newSession(s, [{ name: 'evil', command: '/bin/sh' }]);
+      await waitFor(() => s.frames.length >= 1);
+      expect(s.frames[0].result.echo_mcp).toEqual([]);
+      s.ws.close();
+      await s.closed;
+    }
+    expect(mcpServersFor({ gatewayUrl: '', token: PASS })).toEqual([]);
+    expect(mcpServersFor(null)).toEqual([]);
+  });
+
+  it('session/load gets the same list; other methods are untouched', () => {
+    const servers = mcpServersFor({ gatewayUrl: 'https://gateway.vitanaland.com', token: PASS });
+    expect(JSON.parse(rewriteCwd('{"method":"session/load","params":{"cwd":"/","mcpServers":[{"name":"x"}]}}', '/w', servers)).params.mcpServers).toEqual(servers);
+    expect(rewriteCwd('{"method":"session/prompt","params":{"mcpServers":[1]}}', '/w', servers)).toContain('"mcpServers":[1]');
+  });
+
+  it('the pass reaches only the relay env, never kiro-cli’s own env', () => {
+    expect(Object.keys(childEnv('k', '/w'))).not.toContain('VITANA_MCP_TOKEN');
+  });
+});
+
+describe('mcp-proxy (VTID-05005)', () => {
+  it('posts each message with the pass and returns the gateway answer; notifications get none', async () => {
+    process.env.VITANA_MCP_URL = 'https://gw/api/v1/operator/kiro/mcp';
+    process.env.VITANA_MCP_TOKEN = PASS;
+    const { forward } = await import('../src/mcp-proxy');
+    const calls: any[] = [];
+    const ok = (async (u: string, init: any) => { calls.push([u, init]); return new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { tools: [] } }), { status: 200 }); }) as any;
+    expect(await forward('{"jsonrpc":"2.0","id":1,"method":"tools/list"}', ok)).toEqual({ jsonrpc: '2.0', id: 1, result: { tools: [] } });
+    expect(calls[0][0]).toBe('https://gw/api/v1/operator/kiro/mcp');
+    expect(calls[0][1].headers.Authorization).toBe(`Bearer ${PASS}`);
+    const accepted = (async () => new Response(null, { status: 202 })) as any;
+    expect(await forward('{"jsonrpc":"2.0","method":"notifications/initialized"}', accepted)).toBeNull();
+    const down = (async () => { throw new Error('ECONNREFUSED'); }) as any;
+    expect(await forward('{"jsonrpc":"2.0","id":7,"method":"tools/list"}', down)).toMatchObject({ id: 7, error: { message: expect.stringContaining('unreachable') } });
+    expect(await forward('not json', ok)).toMatchObject({ error: { code: -32700 } });
   });
 });

@@ -29,6 +29,8 @@ const server = createRunnerServer({
   workRoot,
   maxSessions: intEnv('KIRO_RUNNER_MAX_SESSIONS', 10),
   kiroCliVersion: process.env.KIRO_CLI_VERSION ?? 'unknown',
+  // VTID-05005: this environment's own public gateway, set per environment by its deploy workflow.
+  mcpGatewayUrl: /^https:\/\//.test(process.env.KIRO_MCP_GATEWAY_URL ?? '') ? process.env.KIRO_MCP_GATEWAY_URL : undefined,
   limits: {
     idleMs: intEnv('KIRO_RUNNER_IDLE_MS', 15 * 60_000),
     maxSessionMs: intEnv('KIRO_RUNNER_MAX_SESSION_MS', 14_400_000),
