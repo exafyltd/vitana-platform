@@ -29,3 +29,8 @@ repos in every session (shared mirrors + per-session worktrees). No deploy tool.
 
 ## Owner approval
 2026-10-09, in session: "Yes, ship both to production and build phase B."
+
+## Post-review changes (Codex review on PR #3977, before merge)
+- A write's target must belong to the gated VTID: approval ids encode it, an execution row carries it, a PR's title must name it, a push's commit message must start with it.
+- `dev_push_kiro_branch` is limited to exafyltd/vitana-platform: the existing create-PR/safe-merge routes accept only that repo (cicd.ts DEFAULT_REPO). vitana-v1 stays in the workspace for reading; pushing to it needs its own plan (merge governance change).
+- vitana-v1 is public (GitHub API `private: false`, anonymous `git ls-remote` answers), so the mirror clone needs no credential.

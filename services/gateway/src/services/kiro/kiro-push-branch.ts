@@ -3,14 +3,16 @@
  * through the gateway, never with a push credential of Kiro's own.
  *
  * Writes the given files as ONE commit on a `kiro/<user8>/<slug>` branch of
- * vitana-platform or vitana-v1 via GitHub's git-data API (blobs → tree →
+ * vitana-platform (only — see KIRO_PUSH_REPOS) via GitHub's git-data API (blobs → tree →
  * commit → ref), with the gateway's own GitHub token. The branch is created
  * from main or fast-forwarded — never force-pushed, never main, never another
  * user's prefix. Kiro then opens the PR with dev_create_pr.
  */
 import { posix } from 'path';
 
-export const KIRO_PUSH_REPOS = ['exafyltd/vitana-platform', 'exafyltd/vitana-v1'] as const;
+// vitana-platform only: the PR and safe-merge routes accept only that repo (cicd.ts DEFAULT_REPO).
+// vitana-v1 is in Kiro's workspace for reading; pushing to it is a separate plan.
+export const KIRO_PUSH_REPOS = ['exafyltd/vitana-platform'] as const;
 export const KIRO_PUSH_LIMITS = { files: 50, bytesPerFile: 512 * 1024, bytesTotal: 2 * 1024 * 1024 };
 
 /** Paths a Kiro push may never touch: CI, agent rules, governance, evidence, migrations, ownership, dependencies. */
@@ -103,10 +105,11 @@ export async function pushKiroBranch(a: PushArgs, userId: string, gh: GitHubCall
 export const KIRO_PUSH_TOOL = {
   name: 'dev_push_kiro_branch',
   description:
-    'Push edited files from your workspace as ONE commit to your own kiro/<id>/<slug> branch of exafyltd/vitana-platform or exafyltd/vitana-v1 ' +
+    'Push edited files from your workspace as ONE commit to your own kiro/<id>/<slug> branch of exafyltd/vitana-platform ' +
     '(created from main or fast-forwarded; never main, never force). Text files only, ≤ 50 files, ≤ 512 KB each, ≤ 2 MB total; ' +
     'no .github/, .claude/, CLAUDE.md, gov/, scripts/ci/, docs/validation/, supabase/migrations/, CODEOWNERS or package/lock files. ' +
-    'Needs a vtid and the user\'s Allow. Then open the PR with dev_create_pr (head_branch = this branch).',
+    'The commit message must start with the vtid. Needs the user\'s Allow. Then open the PR with dev_create_pr (head_branch = this branch). ' +
+    '(exafyltd/vitana-v1 is in your workspace to read; pushing to it is not available yet.)',
   inputSchema: {
     type: 'object',
     properties: {

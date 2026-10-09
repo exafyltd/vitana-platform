@@ -5,6 +5,7 @@
  *   1. KIRO_MCP_WRITE_ENABLED=true          — one switch for all Kiro writes
  *   2. autopilot_* only: isAutopilotExecutionArmed() — the autopilot kill switch
  *   3. a `vtid` that exists, is not terminal, is in_progress + approved
+ *   3b. the write's target (approval, execution, PR, push) belongs to that VTID
  *   4. the user's Allow in the Kiro thread (kiro-mcp-confirmations.ts)
  * and then runs through the same executor as the Operator (or, for the push,
  * kiro-push-branch.ts) within what is left of the call's 110 s budget.
@@ -16,6 +17,7 @@
  * owner-approved plan (CLAUDE.md rules 51-55).
  */
 import { getSupabase } from '../../lib/supabase';
+import { getPullRequest } from '../github-service';
 import { isAutopilotExecutionArmed } from '../system-controls-service';
 import { emitOasisEvent } from '../oasis-event-service';
 import { GEMINI_TOOL_DEFINITIONS } from '../gemini-operator';
@@ -86,6 +88,40 @@ export const checkVtidOpen: VtidCheck = async (vtid) => {
   return { ok: true };
 };
 
+/**
+ * The write's target must belong to the gated VTID (Codex review on #3977):
+ * an approval id encodes its VTID, an execution row carries one, a PR's title
+ * names it, a push's commit message must start with it. Tools whose executor
+ * takes the vtid itself (create PR, execute task, specs) are bound by that.
+ */
+export type TargetCheck = (name: string, args: Record<string, any>, vtid: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+export const checkTargetVtid: TargetCheck = async (name, args, vtid) => {
+  if (name === 'dev_approve_item' || name === 'dev_reject_item') {
+    const m = /^appr_(VTID-\d{4,5})_/.exec(String(args.approval_id ?? ''));
+    return m && m[1] === vtid ? { ok: true } : { ok: false, error: `approval ${String(args.approval_id ?? '')} is not for ${vtid}` };
+  }
+  if (name === 'autopilot_approve_execution' || name === 'autopilot_reject_execution' || name === 'autopilot_cancel_execution') {
+    if (!args.execution_id) return name === 'autopilot_cancel_execution' ? { ok: true } : { ok: false, error: 'execution_id required' };
+    const db = getSupabase();
+    if (!db) return { ok: false, error: 'ledger unavailable' };
+    const { data } = await db.from('dev_autopilot_executions').select('vtid').eq('id', String(args.execution_id)).limit(1);
+    const row = Array.isArray(data) ? data[0] : data;
+    return row && (row as { vtid?: string }).vtid === vtid ? { ok: true } : { ok: false, error: `execution ${String(args.execution_id)} is not for ${vtid}` };
+  }
+  if (name === 'dev_merge_pr') {
+    try {
+      const pr = await getPullRequest('exafyltd/vitana-platform', Number(args.pr_number));
+      return String(pr?.title ?? '').includes(vtid) ? { ok: true } : { ok: false, error: `PR #${String(args.pr_number)} is not titled for ${vtid}` };
+    } catch {
+      return { ok: false, error: `PR #${String(args.pr_number)} not found` };
+    }
+  }
+  if (name === 'dev_push_kiro_branch') {
+    return String(args.message ?? '').startsWith(vtid) ? { ok: true } : { ok: false, error: `the commit message must start with ${vtid}` };
+  }
+  return { ok: true };
+};
+
 /** A short, human-readable line for the Allow/Deny card — never file contents or secrets. */
 export function summarizeWrite(name: string, args: Record<string, any>): string {
   const pick = (k: string) => (args[k] === undefined ? '' : ` ${k}=${String(args[k]).slice(0, 80)}`);
@@ -99,6 +135,7 @@ export function summarizeWrite(name: string, args: Record<string, any>): string 
 
 export interface WriteDeps {
   vtidCheck?: VtidCheck;
+  targetCheck?: TargetCheck;
   armed?: () => Promise<boolean>;
   confirm?: typeof requestConfirmation;
   exec?: Parameters<typeof runOperatorTool>[3];
@@ -124,6 +161,8 @@ export async function callKiroMcpWrite(
   const vtid = typeof rawArgs.vtid === 'string' ? rawArgs.vtid.trim() : '';
   const v = await (deps.vtidCheck ?? checkVtidOpen)(vtid);
   if (!v.ok) return { ok: false, text: `Refused: ${v.error}. Nothing was done.` };
+  const t = await (deps.targetCheck ?? checkTargetVtid)(name, rawArgs as Record<string, any>, vtid);
+  if (!t.ok) return { ok: false, text: `Refused: ${t.error}. Nothing was done.` };
 
   const confirm = await (deps.confirm ?? requestConfirmation)(
     { userId: caller.userId, threadId: caller.threadId, tool: name, vtid, summary: summarizeWrite(name, rawArgs as Record<string, any>) },

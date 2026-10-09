@@ -9,7 +9,7 @@ import path from 'path';
 
 jest.mock('../src/services/oasis-event-service', () => ({ emitOasisEvent: jest.fn(async () => ({ ok: true })) }));
 
-import { callKiroMcpWrite, kiroMcpWriteTools, KIRO_MCP_WRITE_TOOLS, summarizeWrite } from '../src/services/kiro/kiro-mcp-writes';
+import { callKiroMcpWrite, checkTargetVtid, kiroMcpWriteTools, KIRO_MCP_WRITE_TOOLS, summarizeWrite } from '../src/services/kiro/kiro-mcp-writes';
 import { requestConfirmation, decideConfirmation, setConfirmationStore, type ConfirmationStore } from '../src/services/kiro/kiro-mcp-confirmations';
 import { validatePush, pushKiroBranch, kiroBranchPrefix } from '../src/services/kiro/kiro-push-branch';
 
@@ -49,7 +49,7 @@ describe('the gates, in order', () => {
   beforeEach(() => allow.mockClear());
 
   it('switched off: nothing is asked or run', async () => {
-    const r = await callKiroMcpWrite(caller, 'dev_merge_pr', { vtid: 'VTID-01234' }, new AbortController().signal, { env: {} as any, confirm: allow, vtidCheck: open });
+    const r = await callKiroMcpWrite(caller, 'dev_merge_pr', { vtid: 'VTID-01234' }, new AbortController().signal, { env: {} as any, confirm: allow, vtidCheck: open, targetCheck: open });
     expect(r.text).toMatch(/switched off/);
     expect(allow).not.toHaveBeenCalled();
   });
@@ -57,9 +57,9 @@ describe('the gates, in order', () => {
   it('autopilot writes respect the autopilot kill switch; other writes do not depend on it', async () => {
     const disarmed = async () => false;
     const exec = jest.fn(async () => ({ ok: true, data: { done: true } }));
-    const a = await callKiroMcpWrite(caller, 'autopilot_execute_task', { vtid: 'VTID-01234' }, new AbortController().signal, { env: ON, armed: disarmed, confirm: allow, vtidCheck: open, exec: exec as any });
+    const a = await callKiroMcpWrite(caller, 'autopilot_execute_task', { vtid: 'VTID-01234' }, new AbortController().signal, { env: ON, armed: disarmed, confirm: allow, vtidCheck: open, targetCheck: open, exec: exec as any });
     expect(a.text).toMatch(/disarmed/);
-    const b = await callKiroMcpWrite(caller, 'dev_merge_pr', { vtid: 'VTID-01234', pr_number: 3 }, new AbortController().signal, { env: ON, armed: disarmed, confirm: allow, vtidCheck: open, exec: exec as any });
+    const b = await callKiroMcpWrite(caller, 'dev_merge_pr', { vtid: 'VTID-01234', pr_number: 3 }, new AbortController().signal, { env: ON, armed: disarmed, confirm: allow, vtidCheck: open, targetCheck: open, exec: exec as any });
     expect(b.ok).toBe(true);
   });
 
@@ -73,14 +73,29 @@ describe('the gates, in order', () => {
   it('only an Allow runs the tool; a vtid the executor does not take is stripped', async () => {
     const exec = jest.fn(async (_n: string, args: any) => ({ ok: true, data: { args } }));
     const deny = async () => ({ outcome: 'denied' as const, id: 'c1' });
-    expect((await callKiroMcpWrite(caller, 'dev_approve_item', { vtid: 'VTID-01234', approval_id: 'a' }, new AbortController().signal, { env: ON, confirm: deny, vtidCheck: open, exec: exec as any })).text).toBe('Denied by the user. Nothing was done.');
+    expect((await callKiroMcpWrite(caller, 'dev_approve_item', { vtid: 'VTID-01234', approval_id: 'a' }, new AbortController().signal, { env: ON, confirm: deny, vtidCheck: open, targetCheck: open, exec: exec as any })).text).toBe('Denied by the user. Nothing was done.');
     expect(exec).not.toHaveBeenCalled();
-    const ok = await callKiroMcpWrite(caller, 'dev_approve_item', { vtid: 'VTID-01234', approval_id: 'a' }, new AbortController().signal, { env: ON, confirm: allow, vtidCheck: open, exec: exec as any });
+    const ok = await callKiroMcpWrite(caller, 'dev_approve_item', { vtid: 'VTID-01234', approval_id: 'a' }, new AbortController().signal, { env: ON, confirm: allow, vtidCheck: open, targetCheck: open, exec: exec as any });
     expect(ok.ok).toBe(true);
     expect(exec.mock.calls[0][1]).toEqual({ approval_id: 'a' });
     // dev_merge_pr takes a vtid of its own: it is kept.
-    await callKiroMcpWrite(caller, 'dev_merge_pr', { vtid: 'VTID-01234', pr_number: 1 }, new AbortController().signal, { env: ON, confirm: allow, vtidCheck: open, exec: exec as any });
+    await callKiroMcpWrite(caller, 'dev_merge_pr', { vtid: 'VTID-01234', pr_number: 1 }, new AbortController().signal, { env: ON, confirm: allow, vtidCheck: open, targetCheck: open, exec: exec as any });
     expect(exec.mock.calls[1][1]).toEqual({ vtid: 'VTID-01234', pr_number: 1 });
+  });
+
+  it('the target must belong to the gated VTID (Codex review on #3977)', async () => {
+    expect(await checkTargetVtid('dev_approve_item', { approval_id: 'appr_VTID-01234_abc' }, 'VTID-01234')).toEqual({ ok: true });
+    expect((await checkTargetVtid('dev_reject_item', { approval_id: 'appr_VTID-09999_abc' }, 'VTID-01234')).ok).toBe(false);
+    expect((await checkTargetVtid('dev_approve_item', { approval_id: 'whatever' }, 'VTID-01234')).ok).toBe(false);
+    expect((await checkTargetVtid('dev_push_kiro_branch', { message: 'fix: no vtid' }, 'VTID-01234')).ok).toBe(false);
+    expect(await checkTargetVtid('dev_push_kiro_branch', { message: 'VTID-01234: fix' }, 'VTID-01234')).toEqual({ ok: true });
+    expect((await checkTargetVtid('autopilot_approve_execution', {}, 'VTID-01234')).ok).toBe(false);
+    expect(await checkTargetVtid('autopilot_cancel_execution', {}, 'VTID-01234')).toEqual({ ok: true }); // listing mode
+    // A mismatch refuses before anyone is asked.
+    const mismatch = async () => ({ ok: false as const, error: 'approval appr_VTID-09999_x is not for VTID-01234' });
+    const r = await callKiroMcpWrite(caller, 'dev_approve_item', { vtid: 'VTID-01234', approval_id: 'appr_VTID-09999_x' }, new AbortController().signal, { env: ON, confirm: allow, vtidCheck: open, targetCheck: mismatch });
+    expect(r.text).toBe('Refused: approval appr_VTID-09999_x is not for VTID-01234. Nothing was done.');
+    expect(allow).not.toHaveBeenCalled();
   });
 
   it('the card never shows file contents', () => {
@@ -126,12 +141,13 @@ describe('the confirmation', () => {
 describe('dev_push_kiro_branch', () => {
   const good = { repo: 'exafyltd/vitana-platform', branch: `${kiroBranchPrefix(U)}fix-card`, message: 'VTID-01234: fix', files: [{ path: 'services/gateway/src/x.ts', content: 'export {}\n' }] };
 
-  it('only the caller’s own kiro/ branch of the two repos', () => {
+  it('only the caller’s own kiro/ branch of vitana-platform (the PR/merge routes accept only that repo)', () => {
     expect(kiroBranchPrefix(U)).toBe('kiro/0adc6ff6/');
     expect(validatePush(good, U).ok).toBe(true);
     expect(validatePush({ ...good, branch: 'main' }, U).ok).toBe(false);
     expect(validatePush({ ...good, branch: 'kiro/11111111/fix-card' }, U).ok).toBe(false);
     expect(validatePush({ ...good, repo: 'someone/else' }, U).ok).toBe(false);
+    expect(validatePush({ ...good, repo: 'exafyltd/vitana-v1' }, U).ok).toBe(false);
   });
 
   it('refuses governance, CI, evidence, migrations, ownership and dependency files, and traversal', () => {
