@@ -364,10 +364,10 @@ jobs:
             else
               echo "::warning::$NAME lookup failed - Kiro engine stays off: $(head -c 300 "$ERR")"
             fi
-            jq -c '.env += [{name:"KIRO_ENGINE_ENABLED", value:"false"}, {name:"KIRO_MCP_ENABLED", value:"false"}]' "$F" > "$F.tmp"
+            jq -c '.env += [{name:"KIRO_ENGINE_ENABLED", value:"false"}, {name:"KIRO_MCP_ENABLED", value:"false"}, {name:"KIRO_MCP_WRITE_ENABLED", value:"false"}]' "$F" > "$F.tmp"
           else
-            echo "  resolved $NAME -> KIRO_RUNNER_TOKEN, KIRO_RUNNER_URL, KIRO_ENGINE_ENABLED=true, KIRO_MCP_ENABLED=true (VTID-05005)"
-            jq -c --arg a "$ARN" '.env += [{name:"KIRO_ENGINE_ENABLED", value:"true"}, {name:"KIRO_MCP_ENABLED", value:"true"}, {name:"KIRO_RUNNER_URL", value:"http://kiro-runner.vitana.internal:8080"}] | .sec += [{name:"KIRO_RUNNER_TOKEN", valueFrom:$a}]' "$F" > "$F.tmp"
+            echo "  resolved $NAME -> KIRO_RUNNER_TOKEN, KIRO_RUNNER_URL, KIRO_ENGINE_ENABLED=true, KIRO_MCP_ENABLED=true (VTID-05005), KIRO_MCP_WRITE_ENABLED=true (VTID-05006)"
+            jq -c --arg a "$ARN" '.env += [{name:"KIRO_ENGINE_ENABLED", value:"true"}, {name:"KIRO_MCP_ENABLED", value:"true"}, {name:"KIRO_MCP_WRITE_ENABLED", value:"true"}, {name:"KIRO_RUNNER_URL", value:"http://kiro-runner.vitana.internal:8080"}] | .sec += [{name:"KIRO_RUNNER_TOKEN", valueFrom:$a}]' "$F" > "$F.tmp"
           fi
           mv "$F.tmp" "$F"
           jq -c '{env, sec: [.sec[].name]}' "$F"

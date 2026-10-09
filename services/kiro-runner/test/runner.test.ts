@@ -353,3 +353,57 @@ describe('mcp-proxy (VTID-05005)', () => {
     expect(await forward('not json', ok)).toMatchObject({ error: { code: -32700 } });
   });
 });
+
+// VTID-05006: both repos in every session; Kiro abandoning a call aborts it.
+import { execFileSync } from 'child_process';
+import { RepoMirrors } from '../src/repo-mirrors';
+
+describe('repo mirrors (VTID-05006)', () => {
+  it('clones once, then gives each session its own worktree of main; a missing repo never blocks', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kiro-mirror-'));
+    const origin = path.join(tmp, 'origin');
+    execFileSync('git', ['init', '-q', '-b', 'main', origin]);
+    fs.writeFileSync(path.join(origin, 'README.md'), 'hello\n');
+    execFileSync('git', ['-C', origin, '-c', 'user.email=t@t', '-c', 'user.name=t', 'add', '.']);
+    execFileSync('git', ['-C', origin, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init']);
+    const root = path.join(tmp, 'work');
+    const logs: string[] = [];
+    const m = new RepoMirrors(root, [{ name: 'repo-a', url: origin }, { name: 'repo-missing', url: path.join(tmp, 'nope') }], (l) => logs.push(l));
+    await m.refresh();
+    expect(m.isReady('repo-a')).toBe(true);
+    expect(m.isReady('repo-missing')).toBe(false);
+    expect(logs.some((l) => l.includes('repo-missing refresh failed'))).toBe(true);
+    const s1 = path.join(root, 's1'); const s2 = path.join(root, 's2');
+    fs.mkdirSync(s1); fs.mkdirSync(s2);
+    expect(await m.addWorktrees(s1)).toEqual(['repo-a']);
+    expect(await m.addWorktrees(s2)).toEqual(['repo-a']);
+    expect(fs.readFileSync(path.join(s1, 'repo-a', 'README.md'), 'utf8')).toBe('hello\n');
+    // Each session edits its own copy.
+    fs.writeFileSync(path.join(s1, 'repo-a', 'README.md'), 'changed\n');
+    expect(fs.readFileSync(path.join(s2, 'repo-a', 'README.md'), 'utf8')).toBe('hello\n');
+    // Session gone: its worktree is pruned on the next refresh.
+    fs.rmSync(s1, { recursive: true, force: true });
+    await m.refresh();
+    expect(await m.addWorktrees(path.join(root, 'gone'))).toEqual([]);
+  });
+});
+
+describe('mcp-proxy cancellation (VTID-05006)', () => {
+  it('notifications/cancelled aborts the matching in-flight call', async () => {
+    process.env.VITANA_MCP_URL = 'https://gw/api/v1/operator/kiro/mcp';
+    process.env.VITANA_MCP_TOKEN = 'a.b';
+    const { dispatch, handleCancel, inFlight } = await import('../src/mcp-proxy');
+    let aborted = false;
+    const hang = ((_u: string, init: any) => new Promise((_r, reject) => {
+      init.signal.addEventListener('abort', () => { aborted = true; reject(new Error('aborted')); });
+    })) as any;
+    const outs: unknown[] = [];
+    const p = dispatch('{"jsonrpc":"2.0","id":42,"method":"tools/call","params":{"name":"dev_merge_pr"}}', (m) => outs.push(m), hang);
+    expect(inFlight.has('42')).toBe(true);
+    expect(handleCancel('{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":42}}')).toBe(true);
+    await p;
+    expect(aborted).toBe(true);
+    expect(inFlight.has('42')).toBe(false);
+    expect(outs[0]).toMatchObject({ id: 42, error: { message: expect.stringContaining('unreachable') } });
+  });
+});

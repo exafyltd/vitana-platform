@@ -19,6 +19,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { StringDecoder } from 'string_decoder';
 import type { WebSocket } from 'ws';
+import type { RepoMirrors } from './repo-mirrors';
 
 export const CLOSE = {
   normal: 1000,
@@ -49,6 +50,8 @@ export interface RelayOptions {
   key: string;
   /** VTID-05005: the session's pass for the Operator's read tools (none = no tools). */
   mcp?: McpConfig | null;
+  /** VTID-05006: shared repo mirrors; each session gets its own worktrees (never blocks the start). */
+  mirrors?: RepoMirrors | null;
   workRoot: string;
   limits: RelayLimits;
   kiroBin?: string;
@@ -129,6 +132,7 @@ export function startRelay(o: RelayOptions): RelaySession {
   });
 
   const servers = mcpServersFor(o.mcp);
+  if (o.mirrors) void o.mirrors.addWorktrees(dir);
   let ended = false;
   let idle: NodeJS.Timeout | null = null;
   let alive = true;

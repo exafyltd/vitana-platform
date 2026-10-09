@@ -39,6 +39,7 @@ import { getThreadEngine, getThreadSummary, isOperatorThreadsEnabled, maybeSumma
 import { runKiroTurn, cancelKiroTurn, closeKiroSession, isKiroEngineEnabled, openKiroSessionCount, listKiroModels, setKiroModel } from '../services/kiro/kiro-turn';
 import { answerPermission } from '../services/kiro/permission-broker';
 import { registerKiroBackendFromEnv, runnerConfig, kiroKeyRequest, kiroKeyLinked, clearKiroKeyCache } from '../services/kiro/remote-backend';
+import { confirmationStore, decideConfirmation } from '../services/kiro/kiro-mcp-confirmations';
 import { getKiroCredits, kiroDefaultEngine } from '../services/kiro/credit-state';
 
 // VTID-04999: run Kiro on the private kiro-runner when the engine and the runner are configured.
@@ -883,6 +884,41 @@ router.delete('/kiro/sessions/:threadId', requireAdminAuth, async (req: Authenti
     actor_role: 'admin',
     surface: 'command-hub',
     payload: { thread_id: req.params.threadId },
+  }).catch(() => {});
+  return res.json({ ok: true });
+});
+
+// ==================== Kiro write confirmations (VTID-05006) ====================
+// The Allow/Deny cards for writes a Kiro session asked the Operator's tools to do.
+// The caller's own rows only (user id from the identity, never the request).
+
+router.get('/kiro/confirmations', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const caller = req.identity?.user_id;
+  if (!caller) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const threadId = typeof req.query.thread_id === 'string' ? req.query.thread_id.slice(0, 200) : '';
+  if (!threadId) return res.status(400).json({ ok: false, error: 'thread_id required' });
+  const pending = await confirmationStore().pending(caller, threadId);
+  return res.json({ ok: true, pending });
+});
+
+router.post('/kiro/confirmations/:id', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const caller = req.identity?.user_id;
+  if (!caller) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const decision = req.body?.decision;
+  if (decision !== 'allow' && decision !== 'deny') return res.status(400).json({ ok: false, error: 'decision must be allow or deny' });
+  const ok = await decideConfirmation(String(req.params.id), caller, decision);
+  // Not pending any more (answered, expired, or not the caller's): nothing changes.
+  if (!ok) return res.status(409).json({ ok: false, error: 'not_pending' });
+  await emitOasisEvent({
+    vtid: 'VTID-05006',
+    type: decision === 'allow' ? 'operator.kiro.write_confirmed' : 'operator.kiro.write_denied',
+    source: 'gateway-operator',
+    status: 'info',
+    message: `Kiro write ${decision === 'allow' ? 'allowed' : 'denied'} by the user`,
+    actor_id: caller,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: { confirmation_id: String(req.params.id) },
   }).catch(() => {});
   return res.json({ ok: true });
 });

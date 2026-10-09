@@ -24030,6 +24030,8 @@ async function requestOperatorTurn(payload) {
     state.chatLiveTranscript = [];
     state.chatLiveModelTurns = [];
     resetKiroLiveTranscript();
+    // VTID-05006: while a Kiro turn runs, its write requests wait on an Allow/Deny here.
+    if (activeOperatorEngine() === 'kiro') startKiroConfirmationPoll(state.operatorActiveThreadId);
     try {
         return await streamOperatorTurn(payload);
     } catch (err) {
@@ -24048,6 +24050,8 @@ async function requestOperatorTurn(payload) {
             throw new Error('Chat request failed: ' + response.status);
         }
         return await response.json();
+    } finally {
+        stopKiroConfirmationPoll();
     }
 }
 
@@ -24476,11 +24480,60 @@ function kiroLiveHasContent() {
     return !!(live && (live.text || live.tools.length || live.permissions.length));
 }
 
+// VTID-05006: a Kiro write (PR, merge, autopilot, approval, branch push) waits for the
+// signed-in user's Allow. The gateway holds the call and keeps the request in the
+// database, so this polls only while a Kiro turn is running and shows each one
+// as an approval card next to Kiro's own permission requests.
+var _kiroConfirmPoll = null;
+function startKiroConfirmationPoll(threadId) {
+    stopKiroConfirmationPoll();
+    if (!threadId || !state.authToken) return;
+    var tick = async function () {
+        try {
+            var res = await fetch('/api/v1/operator/kiro/confirmations?thread_id=' + encodeURIComponent(threadId), { headers: buildContextHeaders({}) });
+            if (!res.ok) return;
+            var body = await res.json();
+            var live = state.chatLiveKiro;
+            if (!live || !Array.isArray(body.pending)) return;
+            var added = false;
+            body.pending.forEach(function (c) {
+                var id = 'confirm:' + c.id;
+                if (live.permissions.some(function (p) { return p.id === id; })) return;
+                live.permissions.push({ id: id, confirmationId: c.id, write: true, title: c.summary || c.tool, kind: 'make a change' + (c.vtid ? ' (' + c.vtid + ')' : ''), answer: null });
+                added = true;
+            });
+            if (added) updateOperatorLiveTranscriptDom();
+        } catch (e) {
+            console.warn('[VTID-05006] Kiro confirmation poll failed:', e);
+        }
+    };
+    tick();
+    _kiroConfirmPoll = setInterval(tick, 2000);
+}
+function stopKiroConfirmationPoll() {
+    if (_kiroConfirmPoll) clearInterval(_kiroConfirmPoll);
+    _kiroConfirmPoll = null;
+}
+
 async function answerKiroPermission(requestId, allow) {
     var card = state.chatLiveKiro.permissions.find(function (p) { return p.id === requestId; });
     if (!card || card.answer) return;
     card.answer = 'sending';
     updateOperatorLiveTranscriptDom();
+    if (card.write) {
+        try {
+            var wr = await fetch('/api/v1/operator/kiro/confirmations/' + encodeURIComponent(card.confirmationId), {
+                method: 'POST',
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ decision: allow ? 'allow' : 'deny' })
+            });
+            card.answer = wr.ok ? (allow ? 'allowed' : 'denied') : (wr.status === 409 ? 'expired' : 'error');
+        } catch (e) {
+            card.answer = 'error';
+        }
+        updateOperatorLiveTranscriptDom();
+        return;
+    }
     try {
         var res = await fetch('/api/v1/operator/kiro/permissions/' + encodeURIComponent(requestId), {
             method: 'POST',
@@ -24867,9 +24920,9 @@ function appendKiroLiveTranscript(wrap) {
         var card = document.createElement('div');
         // Literal class names, so the dead-CSS matcher (find-dead-css-classes.mjs) sees them used.
         var answerClass = { allowed: 'kiro-approval--allowed', denied: 'kiro-approval--denied', expired: 'kiro-approval--expired', error: 'kiro-approval--error' }[p.answer];
-        card.className = 'kiro-approval' + (answerClass ? ' ' + answerClass : '');
+        card.className = 'kiro-approval' + (p.write ? ' kiro-approval--write' : '') + (answerClass ? ' ' + answerClass : '');
         card.setAttribute('role', 'group');
-        card.setAttribute('aria-label', 'Kiro asks for permission');
+        card.setAttribute('aria-label', p.write ? 'Kiro asks to make a change' : 'Kiro asks for permission');
         var what = document.createElement('div');
         what.className = 'kiro-approval-text';
         what.textContent = 'Kiro wants to ' + (p.kind ? p.kind + ': ' : '') + p.title;

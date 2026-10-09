@@ -16,6 +16,7 @@ import { timingSafeEqual } from 'crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { KeyStore, KeyUnavailableError, isPlausibleKey, isUserId } from './key-store';
 import { CLOSE, sessionCount, startRelay, stopUserSessions, type RelayLimits, type RelayOptions } from './relay';
+import type { RepoMirrors } from './repo-mirrors';
 
 export interface RunnerConfig {
   token: string;
@@ -27,6 +28,8 @@ export interface RunnerConfig {
   spawnImpl?: RelayOptions['spawnImpl'];
   /** VTID-05005: this environment's public gateway URL for the `vitana` tools (unset = no tools). */
   mcpGatewayUrl?: string;
+  /** VTID-05006: shared repo mirrors (none = sessions start without the repos). */
+  mirrors?: RepoMirrors | null;
   log?: (msg: string) => void;
 }
 
@@ -128,7 +131,7 @@ export function createRunnerServer(cfg: RunnerConfig, store: KeyStore): http.Ser
           }
           if (!key) { ws.close(CLOSE.keyMissing, 'kiro_key_missing'); return; }
           if (ws.readyState !== ws.OPEN) return;
-          startRelay({ ws, userId, threadId, key, mcp, workRoot: cfg.workRoot, limits: cfg.limits, kiroBin: cfg.kiroBin, spawnImpl: cfg.spawnImpl, log });
+          startRelay({ ws, userId, threadId, key, mcp, mirrors: cfg.mirrors, workRoot: cfg.workRoot, limits: cfg.limits, kiroBin: cfg.kiroBin, spawnImpl: cfg.spawnImpl, log });
         } finally {
           pending--;
         }
