@@ -30,6 +30,14 @@
 >   not have. Still open: 16 enum columns that are varchar on Aurora, and 2
 >   nullability differences. `aurora-cutover-fix-6-tables.sh` runs every step
 >   in order.
+> - **Embedding backfill (new step after `aurora-cutover-after-load.sh`):**
+>   `python3 aurora-cutover-embedding-backfill.py`. It reads Supabase read-only
+>   (`vitana/supabase/prod/database-url`) and writes to Aurora through the Data
+>   API, 25 rows per transaction with `session_replication_role = replica`, so
+>   no trigger restamps rows. It then compares counts per column, restores the
+>   2 NOT NULLs and rebuilds the 3 IVFFlat indexes. It can be re-run. Tested
+>   end to end against scratch Postgres: values byte-identical, trigger
+>   suppressed.
 > - **DRESS REHEARSAL 2026-10-09 22:00Z — passed (no connection switch, no
 >   freeze).** The full DMS load took 20 min (21:46–22:06Z): 663 tables, 0
 >   errors. Then `aurora-cutover-after-load.sh` ran the post-load, 358 FKs and
