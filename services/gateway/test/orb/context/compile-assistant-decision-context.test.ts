@@ -276,43 +276,57 @@ describe('compileAssistantDecisionContext', () => {
   });
 
   describe('parallel execution', () => {
-    it('runs all five providers concurrently (slowest determines total time)', async () => {
-      const order: string[] = [];
-      const out = await compileAssistantDecisionContext({
-        userId: 'u',
-        tenantId: 't',
-        providers: {
-          continuity: async () => {
-            await new Promise(r => setTimeout(r, 25));
-            order.push('continuity');
-            return stubContinuity;
-          },
-          conceptMastery: async () => {
-            await new Promise(r => setTimeout(r, 5));
-            order.push('concept');
-            return stubConceptMastery;
-          },
-          journeyStage: async () => {
-            await new Promise(r => setTimeout(r, 10));
-            order.push('journey');
-            return stubJourneyStage;
-          },
-          pillarMomentum: async () => {
-            await new Promise(r => setTimeout(r, 15));
-            order.push('pillar');
-            return stubPillarMomentum;
-          },
-          interactionStyle: async () => {
-            await new Promise(r => setTimeout(r, 20));
-            order.push('interaction');
-            return stubInteractionStyle;
-          },
-        },
+    // VTID-04935: this used to prove concurrency by asserting the order in
+    // which 5/10/15/20/25 ms timers fired, which a loaded CI runner can
+    // reorder (failed once on PR #3898). It now proves it without wall-clock
+    // time: every provider records its start, then waits on one gate that
+    // opens only when all five have started. Sequential awaiting can never
+    // open the gate.
+    it('starts all five providers before any of them finishes', async () => {
+      const events: string[] = [];
+      let started = 0;
+      let openGate!: () => void;
+      const gate = new Promise<void>(r => { openGate = r; });
+      const provider = <T>(name: string, stub: T) => async (): Promise<T> => {
+        events.push(`start:${name}`);
+        // The fifth start opens the gate synchronously, after its own push;
+        // every `end:*` push runs in a later microtask, so no end can come
+        // before a start.
+        if (++started === 5) openGate();
+        await gate;
+        events.push(`end:${name}`);
+        return stub;
+      };
+
+      // Guard for the regression this test exists to catch: if providers were
+      // awaited one after another, the first would wait on the gate forever.
+      // It never fires in normal operation (everything resolves in microtasks).
+      let guardTimer: ReturnType<typeof setTimeout> | undefined;
+      const guard = new Promise<never>((_, reject) => {
+        guardTimer = setTimeout(
+          () => reject(new Error('providers were not started concurrently')),
+          3000,
+        );
       });
-      // Order: concept (5ms) → journey (10ms) → pillar (15ms) →
-      // interaction (20ms) → continuity (25ms), proving all five
-      // providers ran in parallel.
-      expect(order).toEqual(['concept', 'journey', 'pillar', 'interaction', 'continuity']);
+
+      const out = await Promise.race([
+        compileAssistantDecisionContext({
+          userId: 'u',
+          tenantId: 't',
+          providers: {
+            continuity: provider('continuity', stubContinuity),
+            conceptMastery: provider('concept', stubConceptMastery),
+            journeyStage: provider('journey', stubJourneyStage),
+            pillarMomentum: provider('pillar', stubPillarMomentum),
+            interactionStyle: provider('interaction', stubInteractionStyle),
+          },
+        }),
+        guard,
+      ]).finally(() => clearTimeout(guardTimer));
+
+      const firstEnd = events.findIndex(e => e.startsWith('end:'));
+      expect(events.slice(0, firstEnd).filter(e => e.startsWith('start:'))).toHaveLength(5);
+      expect(events.filter(e => e.startsWith('end:'))).toHaveLength(5);
       expect(out.continuity).toEqual(stubContinuity);
       expect(out.concept_mastery).toEqual(stubConceptMastery);
       expect(out.journey_stage).toEqual(stubJourneyStage);

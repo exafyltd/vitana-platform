@@ -68,6 +68,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const boardAdapter = require('./routes/board-adapter').default;
   const { commandhub } = require('./routes/commandhub');
   const { vtidRouter } = require('./routes/vtid');
+  // VTID-04868: Plan Sparring Gate routes (/api/v1/plans/spar)
+  const { plansSparRouter } = require('./routes/plans-spar');
   // VTID-03177 (PROFILE): RUM beacon receiver from vitana-v1 frontend
   const { rumBeaconRouter } = require('./routes/rum-beacon');
   // VTID-SCREEN-LOAD-01: synthetic screen-load-time basic test — ingest +
@@ -164,6 +166,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const schedulerRouter = require('./routes/scheduler').default;
   // Scheduled notification webhook endpoints (Cloud Scheduler triggers)
   const scheduledNotificationsRouter = require('./routes/scheduled-notifications').default;
+  // VTID-04892: Vitana Onboarding Assistant — read-only coach status
+  const onboardingCoachRouter = require('./routes/onboarding-coach').default;
   // Real-time My Journey celebrations — daily-goal, phase milestone, progress thresholds
   const celebrationsRouter = require('./routes/celebrations').default;
   // VTID-02601: Reminders feature — voice-creatable + audio-interrupt delivery
@@ -191,6 +195,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminMarketplaceRouter = require('./routes/admin-marketplace').default;
   // VTID-03885: Partner Health Test Integration — admin portal (orders/inbox/confirm-match)
   const adminPartnerHealthRouter = require('./routes/admin-partner-health').default;
+  // VTID-04895: partner terms lifecycle — exafy_admin publishing API
+  const adminPartnerTermsRouter = require('./routes/admin-partner-terms').default;
+  // VTID-04933: Commerce supplier review — exafy_admin approve / request changes / reject, per-offering listing
+  const adminPartnerReviewRouter = require('./routes/admin-partner-review').default;
   // VTID-03885: Partner Health Test Integration — self-service consent (grant/revoke/check)
   const partnerHealthConsentRouter = require('./routes/partner-health-consent').default;
   // VTID-03932: Commerce Partner Onboarding — self-service partner org registration + roster
@@ -199,6 +207,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const partnerOnboardingRouter = require('./routes/partner-onboarding').default;
   const partnerOnboardingCatalogueRouter = require('./routes/partner-onboarding-catalogue').default;
   const partnerOnboardingConnectionsRouter = require('./routes/partner-onboarding-connections').default;
+  // VTID-04838: Commerce "Set up with AI" — website → draft, confirmed draft → business (COMMERCE_AI_SETUP_ENABLED)
+  const commerceAiSetupRouter = require('./routes/commerce-ai-setup').default;
+  // VTID-04847: Commerce MCP endpoint (/mcp + OAuth protected-resource metadata; COMMERCE_MCP_ENABLED)
+  const commerceMcpModule = require('./routes/commerce-mcp');
   // VTID-03939: Commerce Partner Onboarding Phase 3 — a patient's own aggregated health results
   const patientHealthResultsRouter = require('./routes/patient-health-results').default;
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
@@ -392,6 +404,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const billingRouter = require('./routes/billing').default;
   // VTID-03201: Stripe-funded wallet deposits (EUR + USD fiat ledger, ships in parallel with Billing v1)
   const walletRouter = require('./routes/wallet').default;
+  // VTID-04878: VTNA reward sweep trigger (internal / exafy_admin, production only)
+  const rewardsSweepRouter = require('./routes/rewards-sweep').default;
+  // VTID-04982: Rewards shop (member redeem with earned VTNA, admin catalogue/orders)
+  const rewardsShopRouter = require('./routes/rewards-shop').default;
   const walletStripeWebhookRouter = require('./routes/wallet-stripe-webhook').default;
   // VTID-03249: Wallet spend + earning admin endpoints (cart / marketplace integration contract)
   const walletAdminRouter = require('./routes/wallet-admin').default;
@@ -515,8 +531,6 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminI18nOpsRouter = require('./routes/admin-i18n-ops').default;
   // VTID-AP-ADMIN: Tenant-scoped Autopilot admin — settings, bindings, runs, recommendations
   const adminAutopilotRouter = require('./routes/admin-autopilot').default;
-  // VTID-NAV-02: Navigator catalog DB cache warmer (runs at boot)
-  const { warmNavCatalogCache } = require('./lib/nav-catalog-db');
   // Voice Feedback — Test user bug reports & UX improvement suggestions
   const voiceFeedbackRouter = require('./routes/voice-feedback').default;
   // VTID-01250: Autopilot Automations Engine — AP-XXXX registry, executor, wallet, sharing
@@ -536,8 +550,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const canaryTargetRouter = require('./routes/canary-target').default;
   // VTID-02031: Ops "Action Required" — pull surface mirroring Gchat pings
   const opsActionRequiredRouter = require('./routes/ops-action-required').default;
-  // DEV-COMHU-03404: Overview trend data — hourly oasis_events rollup for sparklines
-  const opsOverviewTimeseriesRouter = require('./routes/ops-overview-timeseries').default;
+  // VTID-04876: Command Hub Overview cockpit feed (exafy_admin only)
+  const opsAttentionRouter = require('./routes/ops-attention').default;
+  // VTID-04887: pipeline summary for the Command Hub (exafy_admin; the
+  // /api/v1/autopilot/pipeline/summary route stays service-token only)
+  const opsPipelineSummaryRouter = require('./routes/ops-pipeline-summary').default;
   // VTID-04663: Service Health checks for signals the database already computes.
   const { opsHealthChecksRouter } = require('./routes/ops-health-checks');
   // VTID-04664: Service Health checks for systems that had none.
@@ -570,6 +587,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // Middleware - IMPORTANT: JSON body parser must come before route handlers
   app.use(express.json({ limit: '2mb' }));
+
+  // VTID-04968: AI delegated credentials (OAuth clients such as Claude/ChatGPT)
+  // reach only /mcp and the discovery documents, never the general REST API.
+  const { delegatedTokenGuard } = require('./services/delegation-guard');
+  app.use(delegatedTokenGuard());
 
   // Health check
   app.get('/health', (req, res) => {
@@ -733,6 +755,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
     owner: 'presence-did-you-know',
   });
   mountRouterSync(app, '/api/v1/vtid', vtidRouter, { owner: 'vtid' });
+  // VTID-04868: Plan Sparring Gate (gateway tier) — partner rounds + verified approval.
+  mountRouterSync(app, '/api/v1/plans/spar', plansSparRouter, { owner: 'plans-spar' });
   // VTID-03177 (PROFILE): RUM beacon — POST /api/v1/rum/beacon
   mountRouterSync(app, '/api/v1/rum', rumBeaconRouter, { owner: 'rum-beacon' });
   // VTID-SCREEN-LOAD-01: POST /api/v1/frontend/screen-load/report, GET /api/v1/frontend/screen-load/health
@@ -813,6 +837,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/agents/triage', triageAgentRouter, { owner: 'triage-agent' });
 
   // VTID-0509 + VTID-0510: Operator Console & Version Tracking
+  // VTID-05005: the Operator's read tools for Kiro sessions (MCP). Before the operator
+  // router so its own auth (the session pass) applies, not the console's.
+  mountRouterSync(app, '/api/v1/operator/kiro/mcp', require('./routes/operator-kiro-mcp').default, { owner: 'operator-kiro-mcp' });
   mountRouterSync(app, '/api/v1/operator', operatorRouter, { owner: 'operator' });
 
   // VTID-0526-D: Telemetry routes with stage counters
@@ -941,6 +968,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // GET /api/v1/voice/improvement/briefing + POST /items/:id/create-vtid
   const voiceImproveRouter = require('./routes/voice-improve').default;
   mountRouterSync(app, '/api/v1', voiceImproveRouter, { owner: 'voice-improve' });
+
+  // VTID-04776/04778/04780: Voice Supervisor (Command Hub → Voice → Supervisor)
+  // GET /api/v1/voice/supervisor/{meta,overview,segments,sessions,fixes,fixes/:id/impact}
+  // exafy_admin sees all tenants; a tenant admin is confined to their tenant.
+  const voiceSupervisorRouter = require('./routes/voice-supervisor').default;
+  mountRouterSync(app, '/api/v1/voice/supervisor', voiceSupervisorRouter, { owner: 'voice-supervisor' });
 
   // VTID-02954 (PR-L1): Test Contract Registry — autonomy spine for self-healing
   // GET /api/v1/test-contracts + /:id + /by-capability/:cap + POST /:id/run
@@ -1119,6 +1152,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/scheduler', schedulerRouter, { owner: 'scheduler' });
   // Scheduled notification webhooks (Cloud Scheduler triggers)
   mountRouterSync(app, '/api/v1/scheduled-notifications', scheduledNotificationsRouter, { owner: 'scheduled-notifications' });
+  mountRouterSync(app, '/api/v1/onboarding-coach', onboardingCoachRouter, { owner: 'onboarding-coach' });
   mountRouterSync(app, '/api/v1/celebrations', celebrationsRouter, { owner: 'celebrations' });
   mountRouterSync(app, '/api/v1/reminders', remindersRouter, { owner: 'reminders' });
 
@@ -1145,6 +1179,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/marketplace', adminMarketplaceRouter, { owner: 'admin-marketplace' });
   // VTID-03885: Partner Health Test Integration admin portal
   mountRouterSync(app, '/api/v1/admin/partner-health', adminPartnerHealthRouter, { owner: 'admin-partner-health' });
+  // VTID-04895: partner terms lifecycle — exafy_admin publishing API
+  mountRouterSync(app, '/api/v1/admin/partner-terms', adminPartnerTermsRouter, { owner: 'admin-partner-terms' });
+  // VTID-04933: Commerce supplier review (exafy_admin)
+  mountRouterSync(app, '/api/v1/admin/partner-review', adminPartnerReviewRouter, { owner: 'admin-partner-review' });
   // VTID-03885: Partner Health Test Integration self-service consent
   mountRouterSync(app, '/api/v1/partner-health/consent', partnerHealthConsentRouter, { owner: 'partner-health-consent' });
   // VTID-03932: Commerce Partner Onboarding — self-service partner org registration + roster
@@ -1156,6 +1194,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/partner-onboarding', partnerOnboardingCatalogueRouter, { owner: 'partner-onboarding-catalogue' });
   // VTID-04499: onboarding connections step (/:orgId/connections)
   mountRouterSync(app, '/api/v1/partner-onboarding', partnerOnboardingConnectionsRouter, { owner: 'partner-onboarding-connections' });
+  // VTID-04838: Commerce "Set up with AI" (off unless COMMERCE_AI_SETUP_ENABLED=true)
+  mountRouterSync(app, '/api/v1/commerce/ai-setup', commerceAiSetupRouter, { owner: 'commerce-ai-setup' });
+  // VTID-04847: Commerce MCP — a supplier's AI assistant onboards their business (off unless COMMERCE_MCP_ENABLED=true)
+  mountRouterSync(app, '/mcp', commerceMcpModule.default, { owner: 'commerce-mcp' });
+  mountRouterSync(app, '/.well-known', commerceMcpModule.wellKnownRouter, { owner: 'commerce-mcp-well-known' });
   // VTID-03939: Commerce Partner Onboarding Phase 3 — GET /api/v1/patient/health-results
   mountRouterSync(app, '/api/v1/patient', patientHealthResultsRouter, { owner: 'patient-health-results' });
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
@@ -1242,6 +1285,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/stripe', walletStripeWebhookRouter, { owner: 'wallet-stripe-webhook' });
   // VTID-03201: Wallet user-facing routes (EUR + USD fiat). Path-scoped requireAuth inside router.
   mountRouterSync(app, '/api/v1', walletRouter, { owner: 'wallet' });
+  // VTID-04878: POST /api/v1/rewards/sweep — requireInternalOrAdmin inside router.
+  mountRouterSync(app, '/api/v1', rewardsSweepRouter, { owner: 'rewards-sweep' });
+  // VTID-04982: /api/v1/rewards/shop, /rewards/orders, /admin/rewards/* — requireAuth (+ requireExafyAdmin) inside router.
+  mountRouterSync(app, '/api/v1', rewardsShopRouter, { owner: 'rewards-shop' });
   // VTID-03249: Wallet admin spend/credit routes (cart / marketplace integration).
   // Path-scoped requireAuth + requireExafyAdmin inside router.
   mountRouterSync(app, '/api/v1', walletAdminRouter, { owner: 'wallet-admin' });
@@ -1394,9 +1441,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-02031: Ops Action Required — pull surface for Command Hub Overview
   mountRouterSync(app, '/api/v1/ops/action-required', opsActionRequiredRouter, { owner: 'ops-action-required' });
+  // VTID-04876: GET /api/v1/ops/attention — ranked "needs attention now" queue (exafy_admin only)
+  mountRouterSync(app, '/api/v1/ops/attention', opsAttentionRouter, { owner: 'ops-attention' });
+  // VTID-04887: GET /api/v1/ops/pipeline-summary — buildPipelineSummary() in-process (exafy_admin only)
+  mountRouterSync(app, '/api/v1/ops/pipeline-summary', opsPipelineSummaryRouter, { owner: 'ops-pipeline-summary' });
 
-  // DEV-COMHU-03404: Overview trend data — hourly oasis_events rollup for sparklines
-  mountRouterSync(app, '/api/v1/ops/overview-timeseries', opsOverviewTimeseriesRouter, { owner: 'ops-overview-timeseries' });
   // VTID-04663: GET /api/v1/ops/health/* — Command Hub Service Health checks (public, cached, read-only)
   mountRouterSync(app, '/api/v1/ops/health', opsHealthChecksRouter, { owner: 'ops-health-checks' });
   // VTID-04664: GET /api/v1/ops/runtime/* — deploy, AWS runtime, autopilot, voice, data, support checks
@@ -1616,6 +1665,27 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ ORB WebSocket server initialization failed (non-fatal):', error);
       }
 
+      // VTID-04835: SIGTERM/SIGINT drain. Before this the gateway had no
+      // signal handler at all, so a task ECS replaced ended every live ORB
+      // voice session with no vtid.live.session.stop / voice_session_facts end.
+      // Emits a `server_shutdown` stop per unreported live session (bounded,
+      // 5 s), then closes the server and exits.
+      try {
+        const { installGracefulShutdown } = require('./services/graceful-shutdown');
+        const { emitShutdownStopsForLiveSessions } = require('./orb/live/session/live-session-controller');
+        installGracefulShutdown(server, {
+          drainTimeoutMs: 5_000,
+          drainHooks: [
+            async () => {
+              const r = await emitShutdownStopsForLiveSessions('server_shutdown', 4_500);
+              console.log(`[VTID-04835] live-session drain: emitted=${r.emitted} skipped=${r.skipped} timedOut=${r.timedOut}`);
+            },
+          ],
+        });
+      } catch (error) {
+        console.warn('⚠️ Graceful shutdown handler installation failed (non-fatal):', error);
+      }
+
       // VTID-01178: Initialize autopilot controller (ensure VTIDs exist in ledger)
       try {
         const { initializeAutopilotController } = require('./services/autopilot-controller');
@@ -1710,6 +1780,42 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Reminder dispatch loop initialization failed (non-fatal):', error);
       }
 
+      // VTID-04786: AP-0910 memory embedding backfill, the one job of the
+      // automation engine that runs on production (it notifies nobody).
+      try {
+        const { startMemoryEmbeddingBackfillLoop } = require('./services/memory-embedding-backfill-loop');
+        startMemoryEmbeddingBackfillLoop();
+      } catch (error) {
+        console.warn('⚠️ Memory embedding backfill loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04763: the Audiobook's daily "your episode for today" push for
+      // members who asked for it. Same on-switch as reminder dispatch.
+      try {
+        const { startAudiobookReminderLoop } = require('./services/guided-journey/audiobook-reminder-dispatch');
+        const { getSupabase: getAudiobookSupabase } = require('./lib/supabase');
+        if (startAudiobookReminderLoop(() => getAudiobookSupabase())) {
+          console.log('🎧 Audiobook daily reminder loop started');
+        }
+      } catch (error) {
+        console.warn('⚠️ Audiobook daily reminder loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-05029: email digest for important notifications a push never
+      // reached. Inert unless EMAIL_FALLBACK_ENABLED=true AND Resend is
+      // configured, and never on staging (shared production database).
+      try {
+        const { startEmailFallbackLoop } = require('./services/email/notification-email-fallback');
+        const { getSupabase: getEmailFallbackSupabase } = require('./lib/supabase');
+        if (startEmailFallbackLoop(() => getEmailFallbackSupabase())) {
+          console.log('📧 Notification email fallback loop started');
+        } else {
+          console.log('⏸️ Notification email fallback loop disabled — needs EMAIL_FALLBACK_ENABLED=true, RESEND_API_KEY + EMAIL_FROM, and a non-staging env');
+        }
+      } catch (error) {
+        console.warn('⚠️ Notification email fallback loop initialization failed (non-fatal):', error);
+      }
+
       // VTID-04338: default reminders for calendar entries — reconciles the
       // reminders table against upcoming entries every minute.
       try {
@@ -1721,6 +1827,32 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ Calendar default-reminders loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04878: VTNA reward sweep — pays earned rewards every 6 hours.
+      // Production inside AWS ECS only; staging (VITANA_ENV=staging) never pays.
+      try {
+        const { startRewardSweepLoop } = require('./services/rewards/reward-sweep-runner');
+        const { getSupabase } = require('./lib/supabase');
+        if (startRewardSweepLoop(getSupabase)) {
+          console.log('🪙 VTNA reward sweep loop started (VTID-04878)');
+        } else {
+          console.log('⏸️ VTNA reward sweep loop not started (staging, outside ECS, or REWARD_SWEEP_ENABLED=false)');
+        }
+      } catch (error) {
+        console.warn('⚠️ VTNA reward sweep loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04982: Rewards shop — releases unpaid shipping holds every 5 minutes
+      // (backstop for checkout.session.expired). ECS only; never on staging.
+      try {
+        const { startRewardReservationSweep } = require('./services/rewards/reward-shop');
+        const { getSupabase } = require('./lib/supabase');
+        if (startRewardReservationSweep(getSupabase)) {
+          console.log('🛍️ Rewards shop reservation sweep started (VTID-04982)');
+        }
+      } catch (error) {
+        console.warn('⚠️ Rewards shop reservation sweep initialization failed (non-fatal):', error);
       }
 
       // VTID-04374: calendar maintenance — moves Autopilot/journey suggestions
@@ -1803,6 +1935,42 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Product analytics rollup scheduler initialization failed (non-fatal):', error);
       }
 
+      // VTID-04804 (Jev C2): voice backstop clusters, judged once per UTC day.
+      // Off unless JEV_VOICE_BACKSTOP_CLUSTERS_MODE is set; shadow only.
+      try {
+        const { startBackstopClusterScheduler } = require('./services/jev/gates/backstop-cluster-gate');
+        if (startBackstopClusterScheduler()) console.log('🧩 Jev voice backstop cluster scheduler started (VTID-04804)');
+      } catch (error) {
+        console.warn('⚠️ Jev voice backstop cluster scheduler initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04805 (Jev C3): stalled voice sessions, cause judged once per UTC day.
+      // Off unless JEV_VOICE_SLOW_SESSION_MODE is set; shadow only.
+      try {
+        const { startSlowSessionScheduler } = require('./services/jev/gates/slow-session-gate');
+        if (startSlowSessionScheduler()) console.log('🐢 Jev slow voice session scheduler started (VTID-04805)');
+      } catch (error) {
+        console.warn('⚠️ Jev slow voice session scheduler initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04817 (Jev C4): voice opener outcomes over the last 7 days, judged once per UTC day.
+      // Off unless JEV_VOICE_OPENER_OUTCOMES_MODE is set; shadow only.
+      try {
+        const { startOpenerOutcomesScheduler } = require('./services/jev/gates/opener-outcome-gate');
+        if (startOpenerOutcomesScheduler()) console.log('👋 Jev voice opener outcomes scheduler started (VTID-04817)');
+      } catch (error) {
+        console.warn('⚠️ Jev voice opener outcomes scheduler initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04825 (Jev F): root cause of each Dev Autopilot execution that ended badly (daily)
+      // and the weekly roll-up of top classes (Mondays, UTC). Off unless JEV_ROOT_CAUSE_ROLLUP_MODE is set.
+      try {
+        const { startRootCauseScheduler } = require('./services/jev/gates/root-cause-rollup-gate');
+        if (startRootCauseScheduler()) console.log('🧭 Jev root-cause roll-up scheduler started (VTID-04825)');
+      } catch (error) {
+        console.warn('⚠️ Jev root-cause roll-up scheduler initialization failed (non-fatal):', error);
+      }
+
       // VTID-01185: Initialize autonomous self-improvement engine
       try {
         const { initializeAutonomousEngine } = require('./services/recommendation-engine/autonomous-engine');
@@ -1823,6 +1991,19 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ Self-healing reconciler initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04868: Plan Sparring Gate tamper reconciler — hourly, read-only,
+      // off unless PLAN_SPARRING_RECONCILER_ENABLED=true.
+      try {
+        const { startPlanSparringReconciler } = require('./services/plan-sparring/reconciler');
+        if (startPlanSparringReconciler()) {
+          console.log('🛡️ Plan Sparring reconciler started (hourly, read-only)');
+        } else {
+          console.log('⏸️ Plan Sparring reconciler disabled — set PLAN_SPARRING_RECONCILER_ENABLED=true to enable');
+        }
+      } catch (error) {
+        console.warn('⚠️ Plan Sparring reconciler initialization failed (non-fatal):', error);
       }
 
       // VTID-01990: Idle session closer — writes user_session_summaries rows
@@ -1975,28 +2156,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ ConflictPairResolver cache warm failed (non-fatal, using fallback literals):', error);
       }
 
-      // VTID-NAV-02: Pre-warm Navigator catalog DB cache + start periodic refresh
-      try {
-        warmNavCatalogCache();
-        console.log('🧭 Navigator catalog DB cache warming (VTID-NAV-02)');
-
-        // VTID-NAV-SEMANTIC: Pre-compute embedding vectors for semantic search.
-        // Non-blocking — runs in the background, keyword scorer is the fallback
-        // until embeddings are ready.
-        const { warmCatalogEmbeddings } = require('./lib/navigation-catalog');
-        warmCatalogEmbeddings()
-          .then(() => console.log('🧠 Navigator semantic embeddings warmed'))
-          .catch((err: any) => console.warn('⚠️ Semantic embedding warm failed (non-fatal):', err.message));
-      } catch (error) {
-        console.warn('⚠️ Navigator catalog cache warm failed (non-fatal, using static fallback):', error);
-      }
-
-      // VTID-04517: registry-backed navigation (NAV_V2_ENABLED). Loads the
+      // VTID-04517 / VTID-04846: registry-backed navigation. Loads the
       // frontend's /nav-registry.json and builds the screen index in the
       // background; the bundled vectors make that near-instant unless the
-      // registry gained texts. Non-fatal: tools fall back to the legacy
-      // navigator until the index exists.
-      if (process.env.NAV_V2_ENABLED === 'true') {
+      // registry gained texts. Until the index exists the tools open exact
+      // screen names only and say so otherwise.
+      {
         const { warmNavService, navServiceStatus } = require('./navigation/nav-service');
         warmNavService()
           .then(() => console.log('🧭 Registry navigation ready', JSON.stringify(navServiceStatus())))

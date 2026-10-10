@@ -35,7 +35,8 @@ const P1: Array<[string, string, string, string]> = [
 
 describe('VTID-04662: existing health routes are registered', () => {
   it.each(P1)('%s is on the panel at %s in %s', (name, url, group) => {
-    expect(SERVICE_HEALTH_REGISTRY).toContainEqual({ name, url, group });
+    // VTID-04876: entries may also carry golden_path.
+    expect(SERVICE_HEALTH_REGISTRY).toContainEqual(expect.objectContaining({ name, url, group }));
     expect(SERVICE_HEALTH_GROUPS).toContain(group);
   });
 

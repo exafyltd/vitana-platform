@@ -1,0 +1,2614 @@
+{
+ "version": 1,
+ "_comment": "VTID-04814 — the Command Hub screens Vitana can open by voice. One entry per tab of NAVIGATION_CONFIG in src/frontend/command-hub/app.js (test/navigation/command-hub-screens.test.ts fails on drift). Ids keep the legacy DEVHUB.* ids from lib/navigation-catalog.ts where a tab had one. English only: the Command Hub is a developer tool, English by design.",
+ "screens": [
+  {
+   "id": "DEVHUB.OVERVIEW.SYSTEM_OVERVIEW",
+   "route": "/command-hub/overview/system-overview/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "System Overview",
+     "shows": "High-level system dashboard with health and status.",
+     "phrasings": [
+      "open System Overview",
+      "show me System Overview",
+      "go to the System Overview tab in Overview",
+      "show me the platform health dashboard",
+      "overall system status at a glance"
+     ],
+     "hint": "When asking for system overview, dashboard, system status, or platform health."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.ADMIN.USERS",
+   "route": "/command-hub/admin/users/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Users",
+     "shows": "User management and administration.",
+     "phrasings": [
+      "open Users",
+      "show me Users",
+      "go to the Users tab in Admin"
+     ],
+     "hint": "When asking about users, user management, user list, or user admin."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.ADMIN.PERMISSIONS",
+   "route": "/command-hub/admin/permissions/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Permissions",
+     "shows": "Permission and access control management.",
+     "phrasings": [
+      "open Permissions",
+      "show me Permissions",
+      "go to the Permissions tab in Admin"
+     ],
+     "hint": "When asking about permissions, access control, or authorization."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.ADMIN.TENANTS",
+   "route": "/command-hub/admin/tenants/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Tenants",
+     "shows": "Multi-tenant configuration and management.",
+     "phrasings": [
+      "open Tenants",
+      "show me Tenants",
+      "go to the Tenants tab in Admin"
+     ],
+     "hint": "When asking about tenants, organizations, or multi-tenancy."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.ADMIN.CONTENT_MODERATION",
+   "route": "/command-hub/admin/content-moderation/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Content Moderation",
+     "shows": "Content moderation queue and policies.",
+     "phrasings": [
+      "open Content Moderation",
+      "show me Content Moderation",
+      "go to the Content Moderation tab in Admin"
+     ],
+     "hint": "When asking about content moderation, moderation queue, or flagged content."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.ADMIN.IDENTITY_ACCESS",
+   "route": "/command-hub/admin/identity-access/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Identity & Access",
+     "shows": "Identity management and access policies.",
+     "phrasings": [
+      "open Identity & Access",
+      "show me Identity & Access",
+      "go to the Identity Access tab in Admin",
+      "open Identity Access in Admin"
+     ],
+     "hint": "When asking about identity, IAM, access management, or authentication."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.ADMIN.ANALYTICS",
+   "route": "/command-hub/admin/analytics/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Admin Analytics",
+     "shows": "Administrative analytics and usage data.",
+     "phrasings": [
+      "open Admin Analytics",
+      "show me Admin Analytics",
+      "go to the Analytics tab in Admin",
+      "open Analytics in Admin"
+     ],
+     "hint": "When asking about admin analytics, usage stats, or platform analytics."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.ADMIN.BILLING_DASHBOARD",
+   "route": "/command-hub/admin/billing-dashboard/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Admin Billing",
+     "shows": "Billing KPIs (MRR, ARR, active/trialing subs, voice degrades, budget) plus subscriptions-by-plan table from /api/v1/billing/admin/metrics.",
+     "phrasings": [
+      "open Admin Billing",
+      "show me Admin Billing",
+      "go to the Billing tab in Admin",
+      "open Billing in Admin"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.ADMIN.BILLING_CODES",
+   "route": "/command-hub/admin/billing-codes/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Admin Billing Codes",
+     "shows": "Form to generate redemption codes per campaign, a last-batch view, and a table of the latest 200 codes.",
+     "phrasings": [
+      "open Admin Billing Codes",
+      "show me Admin Billing Codes",
+      "go to the Billing Codes tab in Admin",
+      "open Billing Codes in Admin"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.COMMERCE.OVERVIEW",
+   "route": "/command-hub/commerce/overview/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Commerce Overview",
+     "shows": "KPI cards for providers, affiliate programs, open human tasks and pending commissions, plus a providers-per-category table.",
+     "phrasings": [
+      "open Commerce Overview",
+      "show me Commerce Overview",
+      "go to the Overview tab in Commerce",
+      "open Overview in Commerce"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.COMMERCE.PROVIDERS_ONBOARDING",
+   "route": "/command-hub/commerce/providers-onboarding/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Commerce Providers & Onboarding",
+     "shows": "Provider catalog (category, connector, KYB) with category filter, batch-onboard-all button, and human-task inbox for KYB checkpoints.",
+     "phrasings": [
+      "open Commerce Providers & Onboarding",
+      "show me Commerce Providers & Onboarding",
+      "go to the Providers & Onboarding tab in Commerce",
+      "open Providers & Onboarding in Commerce"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.COMMERCE.COMMISSIONS_REWARDS",
+   "route": "/command-hub/commerce/commissions-rewards/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Commerce Commissions & Rewards",
+     "shows": "Pending commissions table (merchant, user, gross, status) with Confirm (credits wallet, needs postback ref) and Reverse actions.",
+     "phrasings": [
+      "open Commerce Commissions & Rewards",
+      "show me Commerce Commissions & Rewards",
+      "go to the Commissions & Rewards tab in Commerce",
+      "open Commissions & Rewards in Commerce"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.COMMERCE.AFFILIATE_PROGRAMS",
+   "route": "/command-hub/commerce/affiliate-programs/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Commerce Affiliate Programs",
+     "shows": "Read-only table of affiliate programs showing network, source and whether cashback is allowed, not allowed or under review.",
+     "phrasings": [
+      "open Commerce Affiliate Programs",
+      "show me Commerce Affiliate Programs",
+      "go to the Affiliate Programs tab in Commerce",
+      "open Affiliate Programs in Commerce"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.COMMERCE.MARKETPLACE_SHOPS",
+   "route": "/command-hub/commerce/marketplace-shops/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Commerce Marketplace Shops",
+     "shows": "Marketplace shop sources table with filter, an Add-shop form and per-provider Sync-now buttons (/api/v1/admin/marketplace/sources).",
+     "phrasings": [
+      "open Commerce Marketplace Shops",
+      "show me Commerce Marketplace Shops",
+      "go to the Marketplace Shops tab in Commerce",
+      "open Marketplace Shops in Commerce"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.COMMERCE.MARKETPLACE_REVIEW",
+   "route": "/command-hub/commerce/marketplace-review/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Commerce Marketplace Review",
+     "shows": "Queue of ingestion-flagged marketplace products with Approve and Reject buttons per product.",
+     "phrasings": [
+      "open Commerce Marketplace Review",
+      "show me Commerce Marketplace Review",
+      "go to the Marketplace Review tab in Commerce",
+      "open Marketplace Review in Commerce"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.KNOWLEDGE_BASE.CHECKLIST",
+   "route": "/command-hub/knowledge-base/checklist/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Knowledge Base Checklist",
+     "shows": "Editor for the 90-session Guided Journey curriculum: search/filter topics, edit, validate, publish, roll back versions, per-session AI regeneration.",
+     "phrasings": [
+      "open Knowledge Base Checklist",
+      "show me Knowledge Base Checklist",
+      "go to the Checklist tab in Knowledge Base",
+      "open Checklist in Knowledge Base"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.ASSISTANT.OVERVIEW",
+   "route": "/command-hub/assistant/overview/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Assistant Overview",
+     "shows": "Live supervisor rollup for the voice assistant: active voice session count, awareness check status and recent voice errors.",
+     "phrasings": [
+      "open Assistant Overview",
+      "show me Assistant Overview",
+      "go to the Overview tab in Assistant",
+      "open Overview in Assistant",
+      "how many voice sessions are active right now",
+      "voice assistant supervisor overview",
+      "recent voice errors and awareness checks"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.ASSISTANT.SESSIONS",
+   "route": "/command-hub/assistant/sessions/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Assistant Sessions",
+     "shows": "Placeholder: hourglass card saying 'Coming next in VTID-01218C' for a planned historical session browser.",
+     "phrasings": [
+      "open Assistant Sessions",
+      "show me Assistant Sessions",
+      "go to the Sessions tab in Assistant",
+      "open Sessions in Assistant"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.ASSISTANT.PERSONALITY",
+   "route": "/command-hub/assistant/personality/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Assistant Personality",
+     "shows": "AI Personality Configuration: view and edit all assistant personality parameters (via /api/v1/ai-personality); changes apply to new sessions.",
+     "phrasings": [
+      "open Assistant Personality",
+      "show me Assistant Personality",
+      "go to the Personality tab in Assistant",
+      "open Personality in Assistant"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.ASSISTANT.EXPERIMENTS",
+   "route": "/command-hub/assistant/experiments/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Assistant Experiments",
+     "shows": "ORB Live runtime controls: kill switch, experiment selector, chunk size, debounce, clear-on-interrupt and model, plus current config snapshot.",
+     "phrasings": [
+      "open Assistant Experiments",
+      "show me Assistant Experiments",
+      "go to the Experiments tab in Assistant",
+      "open Experiments in Assistant"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.ASSISTANT.METRICS",
+   "route": "/command-hub/assistant/metrics/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Assistant Metrics",
+     "shows": "Learning-health view: nightly job runs, profile narrative freshness, facts per session and summary coverage over selectable time windows.",
+     "phrasings": [
+      "open Assistant Metrics",
+      "show me Assistant Metrics",
+      "go to the Metrics tab in Assistant",
+      "open Metrics in Assistant"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.CONVERSATION.CONFIG",
+   "route": "/command-hub/conversation/config/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Conversation Config",
+     "shows": "Read-only global conversation defaults: opening registers, next-best-action band table and screen-completion map from /admin/conversation/config.",
+     "phrasings": [
+      "open Conversation Config",
+      "show me Conversation Config",
+      "go to the Config tab in Conversation",
+      "open Config in Conversation"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.CONVERSATION.MONITOR",
+   "route": "/command-hub/conversation/monitor/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Conversation Monitor",
+     "shows": "Conversation performance tiles from the hourly metrics rollup plus a feed of recent greeting decisions.",
+     "phrasings": [
+      "open Conversation Monitor",
+      "show me Conversation Monitor",
+      "go to the Monitor tab in Conversation",
+      "open Monitor in Conversation"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.CONVERSATION.TOOLS",
+   "route": "/command-hub/conversation/tools/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Conversation Tool Health",
+     "shows": "Tool Health: list of recent assistant tool failures (tool_failed events) with count over the last window.",
+     "phrasings": [
+      "open Conversation Tool Health",
+      "show me Conversation Tool Health",
+      "go to the Tool Health tab in Conversation",
+      "open Tool Health in Conversation"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.CONVERSATION.SIMULATOR",
+   "route": "/command-hub/conversation/simulator/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Conversation Simulator",
+     "shows": "Dry-run form for a user ID showing register, surface, ranked next-best-actions and composed first-turn directive, plus a brain inspector.",
+     "phrasings": [
+      "open Conversation Simulator",
+      "show me Conversation Simulator",
+      "go to the Simulator tab in Conversation",
+      "open Simulator in Conversation"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.CONVERSATION.AWARENESS",
+   "route": "/command-hub/conversation/awareness/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Conversation Awareness",
+     "shows": "Awareness area with Registry, Test and Watchdogs sub-tabs plus a read-only Teach Vitanaland (Feature Discovery Coach) inspector.",
+     "phrasings": [
+      "open Conversation Awareness",
+      "show me Conversation Awareness",
+      "go to the Awareness tab in Conversation",
+      "open Awareness in Conversation"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.CONVERSATION.JOURNEY_CONTEXT",
+   "route": "/command-hub/conversation/journey-context/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Conversation Journey Context",
+     "shows": "Per-user inspector: pick user/tenant to see decision-context preview, Match Journey panel, source health and durable assistant state.",
+     "phrasings": [
+      "open Conversation Journey Context",
+      "show me Conversation Journey Context",
+      "go to the Journey Context tab in Conversation",
+      "open Journey Context in Conversation"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.CONVERSATION.TOOL_CATALOG",
+   "route": "/command-hub/conversation/tool-catalog/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Conversation Tool Catalog",
+     "shows": "Searchable catalog of every ORB voice tool, filterable by surface, role and pipeline wiring (LiveKit/gateway/planned), with stats.",
+     "phrasings": [
+      "open Conversation Tool Catalog",
+      "show me Conversation Tool Catalog",
+      "go to the Tool Catalog tab in Conversation",
+      "open Tool Catalog in Conversation"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.VOICE.OVERVIEW",
+   "route": "/command-hub/voice/overview/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Voice Overview",
+     "shows": "Voice supervisor overview: a health verdict, KPI tiles with change versus the previous window, live sessions now and quick links.",
+     "phrasings": [
+      "open Voice Overview",
+      "show me Voice Overview",
+      "go to the Overview tab in Voice",
+      "open Overview in Voice"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.VOICE.SEGMENTS",
+   "route": "/command-hub/voice/segments/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Voice Tenants & Roles",
+     "shows": "Tenants & Roles heatmap: voice health per tenant and assistant (or role, provider, language), coloured by health.",
+     "phrasings": [
+      "open Voice Tenants & Roles",
+      "show me Voice Tenants & Roles",
+      "go to the Tenants & Roles tab in Voice",
+      "open Tenants & Roles in Voice"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.VOICE.SESSIONS",
+   "route": "/command-hub/voice/sessions/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Voice Sessions",
+     "shows": "Live and recent voice sessions in one list; a row opens the session drawer with its timeline.",
+     "phrasings": [
+      "open Voice Sessions",
+      "show me Voice Sessions",
+      "go to the Sessions tab in Voice",
+      "open Sessions in Voice"
+     ]
+    }
+   },
+   "formerIds": [
+    "DEVHUB.DIAGNOSTICS.VOICE_LAB",
+    "DEVHUB.VOICE.ORB_LIVE"
+   ]
+  },
+  {
+   "id": "DEVHUB.VOICE.ISSUES_HEALING",
+   "route": "/command-hub/voice/issues-healing/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Voice Issues & Healing",
+     "shows": "Voice issues and their fixes: the Action Queue, the Self-Healing Pipeline and Fix Impact (before/after per shipped fix).",
+     "phrasings": [
+      "open Voice Issues & Healing",
+      "show me Voice Issues & Healing",
+      "go to the Issues & Healing tab in Voice",
+      "open Issues & Healing in Voice"
+     ]
+    }
+   },
+   "formerIds": [
+    "DEVHUB.VOICE.IMPROVE",
+    "DEVHUB.VOICE.SELF_HEALING"
+   ]
+  },
+  {
+   "id": "DEVHUB.VOICE.TEST_BENCH",
+   "route": "/command-hub/voice/test-bench/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Voice Test Bench",
+     "shows": "Voice test bench: LiveKit and Nova Sonic benches side by side, tool-routing dry run, ORB UI checks and the TTS and barge-in sweep.",
+     "phrasings": [
+      "open Voice Test Bench",
+      "show me Voice Test Bench",
+      "go to the Test Bench tab in Voice",
+      "open Test Bench in Voice"
+     ]
+    }
+   },
+   "formerIds": [
+    "DEVHUB.VOICE.LIVEKIT_TEST",
+    "DEVHUB.VOICE.NOVA_SONIC_TEST",
+    "DEVHUB.VOICE.ORB_UI_MONITOR"
+   ]
+  },
+  {
+   "id": "DEVHUB.VOICE.PROVIDERS",
+   "route": "/command-hub/voice/providers/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Voice Providers & Config",
+     "shows": "Switch V2V, STT and TTS providers and set TTS voice, language and speed with a preview button before saving.",
+     "phrasings": [
+      "open Voice Providers & Config",
+      "show me Voice Providers & Config",
+      "go to the Providers & Config tab in Voice",
+      "open Providers & Config in Voice"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.AUTONOMY.AUTOPILOT_COMMUNITY",
+   "route": "/command-hub/autonomy/autopilot-community/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Autonomy Autopilot Community",
+     "shows": "Static explainer of community Autopilot recommendations with a button linking to the Autopilot section; no live data.",
+     "phrasings": [
+      "open Autonomy Autopilot Community",
+      "show me Autonomy Autopilot Community",
+      "go to the Autopilot Community tab in Autonomy",
+      "open Autopilot Community in Autonomy"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.AUTONOMY.AUTOPILOT_DEVELOPER",
+   "route": "/command-hub/autonomy/autopilot-developer/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Autonomy Autopilot Developer",
+     "shows": "Dev Autopilot self-improving queue (scan, plan, approve, execute) with 10s polling and an arm/disarm kill switch.",
+     "phrasings": [
+      "open Autonomy Autopilot Developer",
+      "show me Autonomy Autopilot Developer",
+      "go to the Autopilot Developer tab in Autonomy",
+      "open Autopilot Developer in Autonomy"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.AUTONOMY.AUTOPILOT_ADMIN",
+   "route": "/command-hub/autonomy/autopilot-admin/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Autonomy Autopilot Admin",
+     "shows": "Placeholder: 'Coming soon' badge with a planned-scope list for admin-facing Autopilot recommendations.",
+     "phrasings": [
+      "open Autonomy Autopilot Admin",
+      "show me Autonomy Autopilot Admin",
+      "go to the Autopilot Admin tab in Autonomy",
+      "open Autopilot Admin in Autonomy"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.AUTONOMY.SELF_HEALING",
+   "route": "/command-hub/autonomy/self-healing/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Autonomy Self Healing",
+     "shows": "Self-Healing System view: kill switch, status bar and service detect/diagnose/fix/verify tasks including those awaiting approval.",
+     "phrasings": [
+      "open Autonomy Self Healing",
+      "show me Autonomy Self Healing",
+      "go to the Self Healing tab in Autonomy",
+      "open Self Healing in Autonomy"
+     ]
+    }
+   },
+   "formerIds": [
+    "DEVHUB.INFRA.SELF_HEALING"
+   ]
+  },
+  {
+   "id": "DEVHUB.AUTONOMY.AUTONOMY_PULSE",
+   "route": "/command-hub/autonomy/autonomy-pulse/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Autonomy Pulse",
+     "shows": "Unified feed of pending decisions and in-flight autonomous actions with severity/type count chips and filters (/api/v1/autonomy/pulse).",
+     "phrasings": [
+      "open Autonomy Pulse",
+      "show me Autonomy Pulse",
+      "go to the Autonomy Pulse tab in Autonomy"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.AUTONOMY.AUTONOMY_TRACE",
+   "route": "/command-hub/autonomy/autonomy-trace/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Autonomy Trace",
+     "shows": "Timeline of autonomous executions, self-heals, deploys and verifications with counts, time window and view-mode controls.",
+     "phrasings": [
+      "open Autonomy Trace",
+      "show me Autonomy Trace",
+      "go to the Autonomy Trace tab in Autonomy"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.OPERATOR.DASHBOARD",
+   "route": "/command-hub/operator/dashboard/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Operator Dashboard",
+     "shows": "Operator console with conversation intelligence.",
+     "phrasings": [
+      "open Operator Dashboard",
+      "show me Operator Dashboard",
+      "go to the Dashboard tab in Operator",
+      "open Dashboard in Operator",
+      "open Live Metrics",
+      "show me Live Metrics"
+     ],
+     "hint": "When asking for operator dashboard, operator console, or operator view."
+    }
+   },
+   "formerIds": [
+    "DEVHUB.OVERVIEW.LIVE_METRICS"
+   ]
+  },
+  {
+   "id": "DEVHUB.OPERATOR.TASK_QUEUE",
+   "route": "/command-hub/operator/task-queue/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Task Queue",
+     "shows": "Operator task queue for pending work.",
+     "phrasings": [
+      "open Task Queue",
+      "show me Task Queue",
+      "go to the Task Queue tab in Operator"
+     ],
+     "hint": "When asking about task queue, pending tasks, or operator queue."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.OPERATOR.EVENT_STREAM",
+   "route": "/command-hub/operator/event-stream/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Event Stream",
+     "shows": "Real-time event stream from the operator.",
+     "phrasings": [
+      "open Event Stream",
+      "show me Event Stream",
+      "go to the Event Stream tab in Operator"
+     ],
+     "hint": "When asking about event stream, live events, or real-time stream."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.OPERATOR.DEPLOYMENTS",
+   "route": "/command-hub/operator/deployments/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Operator Deployments",
+     "shows": "Deployment management from operator view.",
+     "phrasings": [
+      "open Operator Deployments",
+      "show me Operator Deployments",
+      "go to the Deployments tab in Operator",
+      "open Deployments in Operator",
+      "open Release Feed",
+      "show me Release Feed"
+     ],
+     "hint": "When asking about operator deployments or deployment control."
+    }
+   },
+   "formerIds": [
+    "DEVHUB.OVERVIEW.RELEASE_FEED"
+   ]
+  },
+  {
+   "id": "DEVHUB.OPERATOR.RUNBOOK",
+   "route": "/command-hub/operator/runbook/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Runbook",
+     "shows": "Operational runbook and procedures.",
+     "phrasings": [
+      "open Runbook",
+      "show me Runbook",
+      "go to the Runbook tab in Operator"
+     ],
+     "hint": "When asking about runbook, procedures, playbook, or operational guide."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.OPERATOR.LOCALIZATION",
+   "route": "/command-hub/operator/localization/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Operator Localization",
+     "shows": "Locale catalog status and audit verdicts table, buttons to trigger translate/audit workflows, and recent workflow runs.",
+     "phrasings": [
+      "open Operator Localization",
+      "show me Operator Localization",
+      "go to the Localization tab in Operator",
+      "open Localization in Operator"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.COMMAND_HUB.TASKS",
+   "route": "/command-hub/tasks/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Tasks",
+     "shows": "Developer task board with VTIDs and work items.",
+     "phrasings": [
+      "open Tasks",
+      "show me Tasks",
+      "go to the Tasks tab in Operations"
+     ],
+     "hint": "When asking for tasks, task board, my tasks, work items, backlog, todo list, or things to do."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.COMMAND_HUB.LIVE_CONSOLE",
+   "route": "/command-hub/live-console/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Live Console",
+     "shows": "Live terminal console for real-time logs and commands.",
+     "phrasings": [
+      "open Live Console",
+      "show me Live Console",
+      "go to the Live Console tab in Operations"
+     ],
+     "hint": "When asking for live console, terminal, logs, command line, or real-time output."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.COMMAND_HUB.EVENTS",
+   "route": "/command-hub/events/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Command Hub Events",
+     "shows": "Command Hub event log and activity.",
+     "phrasings": [
+      "open Command Hub Events",
+      "show me Command Hub Events",
+      "go to the Events tab in Operations",
+      "open Events in Operations"
+     ],
+     "hint": "When asking for command hub events, hub activity, or hub event log."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.COMMAND_HUB.VTIDS",
+   "route": "/command-hub/vtids/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "VTIDs",
+     "shows": "VTID registry and task identifier management.",
+     "phrasings": [
+      "open VTIDs",
+      "show me VTIDs",
+      "go to the VTIDs tab in Operations"
+     ],
+     "hint": "When asking about VTIDs, VTID list, task identifiers, or VTID registry."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.COMMAND_HUB.APPROVALS",
+   "route": "/command-hub/approvals/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Approvals",
+     "shows": "Pending approvals for PRs, merges, and deployments.",
+     "phrasings": [
+      "open Approvals",
+      "show me Approvals",
+      "go to the Approvals tab in Operations"
+     ],
+     "hint": "When asking about approvals, pending reviews, PR reviews, merge requests, or things to approve."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.GOVERNANCE.RULES",
+   "route": "/command-hub/governance/rules/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Governance Rules",
+     "shows": "System governance rules and enforcement policies.",
+     "phrasings": [
+      "open Governance Rules",
+      "show me Governance Rules",
+      "go to the Rules tab in Governance",
+      "open Rules in Governance"
+     ],
+     "hint": "When asking about governance, rules, policies, enforcement, or compliance."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.GOVERNANCE.CATEGORIES",
+   "route": "/command-hub/governance/categories/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Governance Categories",
+     "shows": "Two-column view: governance categories with rule counts by level (L1-L3) and the rules table for the selected category.",
+     "phrasings": [
+      "open Governance Categories",
+      "show me Governance Categories",
+      "go to the Categories tab in Governance",
+      "open Categories in Governance"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.GOVERNANCE.EVALUATIONS",
+   "route": "/command-hub/governance/evaluations/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Governance Evaluations",
+     "shows": "Safety evaluations and model behavior checks.",
+     "phrasings": [
+      "open Governance Evaluations",
+      "show me Governance Evaluations",
+      "go to the Evaluations tab in Governance",
+      "open Evaluations in Governance"
+     ],
+     "hint": "When asking about evaluations, safety checks, or model evaluations."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.GOVERNANCE.VIOLATIONS",
+   "route": "/command-hub/governance/violations/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Governance Violations",
+     "shows": "Logged governance violations and breaches.",
+     "phrasings": [
+      "open Governance Violations",
+      "show me Governance Violations",
+      "go to the Violations tab in Governance",
+      "open Violations in Governance",
+      "open Errors & Violations",
+      "show me Errors & Violations"
+     ],
+     "hint": "When asking about violations, breaches, compliance issues, or rule violations."
+    }
+   },
+   "formerIds": [
+    "DEVHUB.OVERVIEW.ERRORS_VIOLATIONS"
+   ]
+  },
+  {
+   "id": "DEVHUB.GOVERNANCE.HISTORY",
+   "route": "/command-hub/governance/history/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Governance History",
+     "shows": "Governance event timeline (deploy allowed/blocked, evaluations, rule changes) filterable by event type, level and actor.",
+     "phrasings": [
+      "open Governance History",
+      "show me Governance History",
+      "go to the History tab in Governance",
+      "open History in Governance",
+      "show me the governance event timeline",
+      "which deploys did governance block",
+      "history of governance decisions and rule changes",
+      "who changed a governance rule and when",
+      "past governance evaluations by actor and level"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.GOVERNANCE.PROPOSALS",
+   "route": "/command-hub/governance/proposals/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Governance Proposals",
+     "shows": "Table of governance proposals from /api/v1/governance/proposals; New Proposal button is marked 'coming soon'.",
+     "phrasings": [
+      "open Governance Proposals",
+      "show me Governance Proposals",
+      "go to the Proposals tab in Governance",
+      "open Proposals in Governance"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.GOVERNANCE.CONTROLS",
+   "route": "/command-hub/governance/controls/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Governance Controls",
+     "shows": "Feature flags and system controls.",
+     "phrasings": [
+      "open Governance Controls",
+      "show me Governance Controls",
+      "go to the Controls tab in Governance",
+      "open Controls in Governance"
+     ],
+     "hint": "When asking about controls, feature flags, system toggles, or kill switches."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.AGENTS.REGISTERED",
+   "route": "/command-hub/agents/registered-agents/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Registered Agents",
+     "shows": "Registry of all AI agents in the system.",
+     "phrasings": [
+      "open Registered Agents",
+      "show me Registered Agents",
+      "go to the Registered Agents tab in Agents"
+     ],
+     "hint": "When asking about agents, registered agents, agent list, bots, or AI agents."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.AGENTS.SKILLS",
+   "route": "/command-hub/agents/skills/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Agents Skills",
+     "shows": "Skills Registry table (skill ID, name, domain, rule ID) from worker orchestrator, with API status strip and raw JSON debug.",
+     "phrasings": [
+      "open Agents Skills",
+      "show me Agents Skills",
+      "go to the Skills tab in Agents",
+      "open Skills in Agents"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.AGENTS.PIPELINES",
+   "route": "/command-hub/agents/pipelines/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Agent Pipelines",
+     "shows": "Agent execution pipelines and run history.",
+     "phrasings": [
+      "open Agent Pipelines",
+      "show me Agent Pipelines",
+      "go to the Pipelines tab in Agents",
+      "open Pipelines in Agents"
+     ],
+     "hint": "When asking about agent pipelines, agent runs, or pipeline status."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.AGENTS.MEMORY",
+   "route": "/command-hub/agents/memory/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Agents Memory",
+     "shows": "Memory garden summary: total memories and a card grid of memory categories from /api/v1/memory/garden/summary.",
+     "phrasings": [
+      "open Agents Memory",
+      "show me Agents Memory",
+      "go to the Memory tab in Agents",
+      "open Memory in Agents"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.AGENTS.TELEMETRY",
+   "route": "/command-hub/agents/telemetry/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Agent Telemetry",
+     "shows": "Agent performance and telemetry data.",
+     "phrasings": [
+      "open Agent Telemetry",
+      "show me Agent Telemetry",
+      "go to the Telemetry tab in Agents",
+      "open Telemetry in Agents"
+     ],
+     "hint": "When asking about agent telemetry, agent performance, or agent monitoring."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.AUTOPILOT.REGISTRY",
+   "route": "/command-hub/autopilot/registry/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Autopilot Registry",
+     "shows": "Registered autopilot recommendations and their metadata.",
+     "phrasings": [
+      "open Autopilot Registry",
+      "show me Autopilot Registry",
+      "go to the Registry tab in Autopilot",
+      "open Registry in Autopilot"
+     ],
+     "hint": "When asking about autopilot registry, registered recommendations, or recommendation metadata."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.AUTOPILOT.SCANNERS",
+   "route": "/command-hub/autopilot/scanners/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Autopilot Scanners",
+     "shows": "Scanners that produce autopilot recommendations.",
+     "phrasings": [
+      "open Autopilot Scanners",
+      "show me Autopilot Scanners",
+      "go to the Scanners tab in Autopilot",
+      "open Scanners in Autopilot"
+     ],
+     "hint": "When asking about autopilot scanners, recommendation producers, or scanner configuration."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.AUTOPILOT.IMPACT_RULES",
+   "route": "/command-hub/autopilot/impact-rules/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Autopilot Impact Rules",
+     "shows": "Supervisor strip plus diff-aware PR impact rules list with severity summary, open/30-day hit counts and category/severity filters.",
+     "phrasings": [
+      "open Autopilot Impact Rules",
+      "show me Autopilot Impact Rules",
+      "go to the Impact Rules tab in Autopilot",
+      "open Impact Rules in Autopilot"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.AUTOPILOT.AUTO_APPROVE",
+   "route": "/command-hub/autopilot/auto-approve/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Autopilot Auto Approve",
+     "shows": "Auto-Approve Registry: detector coverage progress bar, baseline/impact auto-approve state cards and config rules summary.",
+     "phrasings": [
+      "open Autopilot Auto Approve",
+      "show me Autopilot Auto Approve",
+      "go to the Auto Approve tab in Autopilot",
+      "open Auto Approve in Autopilot"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.AUTOPILOT.RUNS",
+   "route": "/command-hub/autopilot/runs/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Autopilot Runs",
+     "shows": "History of autopilot execution runs.",
+     "phrasings": [
+      "open Autopilot Runs",
+      "show me Autopilot Runs",
+      "go to the Runs tab in Autopilot",
+      "open Runs in Autopilot"
+     ],
+     "hint": "When asking about autopilot runs, execution history, or past recommendations."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.AUTOPILOT.LIVE",
+   "route": "/command-hub/autopilot/live/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Autopilot Live",
+     "shows": "Live autopilot stream and currently executing actions.",
+     "phrasings": [
+      "open Autopilot Live",
+      "show me Autopilot Live",
+      "go to the Live tab in Autopilot",
+      "open Live in Autopilot"
+     ],
+     "hint": "When asking about live autopilot activity or currently running actions."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.AUTOPILOT.ENGINE",
+   "route": "/command-hub/autopilot/engine/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Autopilot Engine",
+     "shows": "Autopilot engine configuration and execution policies.",
+     "phrasings": [
+      "open Autopilot Engine",
+      "show me Autopilot Engine",
+      "go to the Engine tab in Autopilot",
+      "open Engine in Autopilot"
+     ],
+     "hint": "When asking about autopilot engine, execution policies, or engine configuration."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.AUTOPILOT.GROWTH",
+   "route": "/command-hub/autopilot/growth/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Autopilot Growth",
+     "shows": "Autopilot growth metrics and adoption analytics.",
+     "phrasings": [
+      "open Autopilot Growth",
+      "show me Autopilot Growth",
+      "go to the Growth tab in Autopilot",
+      "open Growth in Autopilot"
+     ],
+     "hint": "When asking about autopilot growth, adoption metrics, or recommendation analytics."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.AUTOPILOT.MISSION_ALIGNMENT",
+   "route": "/command-hub/autopilot/mission-alignment/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Autopilot Mission Alignment",
+     "shows": "Groups the live autopilot recommendation queue across the Ultimate Goal contract's three dimensions, with link to the contract.",
+     "phrasings": [
+      "open Autopilot Mission Alignment",
+      "show me Autopilot Mission Alignment",
+      "go to the Mission Alignment tab in Autopilot",
+      "open Mission Alignment in Autopilot"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.AUTOPILOT.ORCHESTRATOR",
+   "route": "/command-hub/autopilot/orchestrator/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Autopilot Orchestrator",
+     "shows": "Read-only cross-agent view: runs, budget usage, policy shadow changes, delegatable agents and role grants, with day-range filter.",
+     "phrasings": [
+      "open Autopilot Orchestrator",
+      "show me Autopilot Orchestrator",
+      "go to the Orchestrator tab in Autopilot",
+      "open Orchestrator in Autopilot"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.OASIS.EVENTS",
+   "route": "/command-hub/oasis/events/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "OASIS Events",
+     "shows": "OASIS event stream — the immutable audit log.",
+     "phrasings": [
+      "open OASIS Events",
+      "show me OASIS Events",
+      "go to the Events tab in OASIS",
+      "open Events in OASIS",
+      "open Recent Events",
+      "show me Recent Events"
+     ],
+     "hint": "When asking about OASIS, OASIS events, event log, audit log, event stream, or system events."
+    }
+   },
+   "formerIds": [
+    "DEVHUB.OVERVIEW.RECENT_EVENTS"
+   ]
+  },
+  {
+   "id": "DEVHUB.OASIS.VTID_LEDGER",
+   "route": "/command-hub/oasis/vtid-ledger/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "VTID Ledger",
+     "shows": "VTID lifecycle ledger with full event timeline.",
+     "phrasings": [
+      "open VTID Ledger",
+      "show me VTID Ledger",
+      "go to the VTID Ledger tab in OASIS"
+     ],
+     "hint": "When asking about VTID ledger, task lifecycle, VTID timeline, or task history."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.OASIS.ENTITIES",
+   "route": "/command-hub/oasis/entities/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "OASIS Entities",
+     "shows": "Table of VTID entities (VTID, title, module, family, status, created) from /api/v1/vtid/list.",
+     "phrasings": [
+      "open OASIS Entities",
+      "show me OASIS Entities",
+      "go to the Entities tab in OASIS",
+      "open Entities in OASIS"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.OASIS.STREAMS",
+   "route": "/command-hub/oasis/streams/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "OASIS Streams",
+     "shows": "Live SSE OASIS event stream with connect/disconnect and clear buttons, showing the last 100 events newest first.",
+     "phrasings": [
+      "open OASIS Streams",
+      "show me OASIS Streams",
+      "go to the Streams tab in OASIS",
+      "open Streams in OASIS"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.OASIS.COMMAND_LOG",
+   "route": "/command-hub/oasis/command-log/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "OASIS Command Log",
+     "shows": "Operator command log table (time, command type, actor, VTID, status, response) from /api/v1/operator/history.",
+     "phrasings": [
+      "open OASIS Command Log",
+      "show me OASIS Command Log",
+      "go to the Command Log tab in OASIS",
+      "open Command Log in OASIS"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.DATABASES.SUPABASE",
+   "route": "/command-hub/databases/supabase/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Supabase",
+     "shows": "Supabase database management and queries.",
+     "phrasings": [
+      "open Supabase",
+      "show me Supabase",
+      "go to the Supabase tab in Databases"
+     ],
+     "hint": "When asking about database, supabase, postgres, db, tables, or queries."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.DATABASES.VECTORS",
+   "route": "/command-hub/databases/vectors/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Vectors",
+     "shows": "Vector database and embedding storage.",
+     "phrasings": [
+      "open Vectors",
+      "show me Vectors",
+      "go to the Vectors tab in Databases"
+     ],
+     "hint": "When asking about vectors, embeddings, vector database, or pgvector."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.DATABASES.CACHE",
+   "route": "/command-hub/databases/cache/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Databases Cache",
+     "shows": "Static, hardcoded cards describing gateway in-memory cache strategies and TTLs plus architecture notes; no live data.",
+     "phrasings": [
+      "open Databases Cache",
+      "show me Databases Cache",
+      "go to the Cache tab in Databases",
+      "open Cache in Databases"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.DATABASES.ANALYTICS",
+   "route": "/command-hub/databases/analytics/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Databases Analytics",
+     "shows": "Event counts (total loaded, success, info, error) derived from OASIS events, plus an analytics pipeline note.",
+     "phrasings": [
+      "open Databases Analytics",
+      "show me Databases Analytics",
+      "go to the Analytics tab in Databases",
+      "open Analytics in Databases"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.DATABASES.CLUSTERS",
+   "route": "/command-hub/databases/clusters/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Databases Clusters",
+     "shows": "Static, hardcoded cards describing the Supabase Postgres setup (PgBouncer, pool size, backups, replicas); region shown as unverified.",
+     "phrasings": [
+      "open Databases Clusters",
+      "show me Databases Clusters",
+      "go to the Clusters tab in Databases",
+      "open Clusters in Databases"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.INFRA.SERVICES",
+   "route": "/command-hub/infrastructure/services/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Infrastructure Services",
+     "shows": "Real-time health of every Vitana platform service: endpoint, status and response latency per card.",
+     "phrasings": [
+      "open Infrastructure Services",
+      "show me Infrastructure Services",
+      "go to the Services tab in Infrastructure",
+      "show me the health of all platform services",
+      "which services are up or down",
+      "service status with latency"
+     ],
+     "hint": "When asking about services, infrastructure, service health, Cloud Run, or microservices."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.INFRA.HEALTH",
+   "route": "/command-hub/infrastructure/health/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Infrastructure Health",
+     "shows": "Infrastructure health monitoring.",
+     "phrasings": [
+      "open Infrastructure Health",
+      "show me Infrastructure Health",
+      "go to the Health tab in Infrastructure",
+      "open Health in Infrastructure"
+     ],
+     "hint": "When asking about infra health, system health, or health checks."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.INFRA.DEPLOYMENTS",
+   "route": "/command-hub/infrastructure/deployments/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Deployments",
+     "shows": "Deployment history and release management.",
+     "phrasings": [
+      "open Deployments",
+      "show me Deployments",
+      "go to the Deployments tab in Infrastructure"
+     ],
+     "hint": "When asking about deployments, deploy history, releases, deploy status, or what was deployed."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.INFRA.LOGS",
+   "route": "/command-hub/infrastructure/logs/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Logs",
+     "shows": "Application logs and log viewer.",
+     "phrasings": [
+      "open Logs",
+      "show me Logs",
+      "go to the Logs tab in Infrastructure"
+     ],
+     "hint": "When asking about logs, log viewer, application logs, or error logs."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.INFRA.CONFIG",
+   "route": "/command-hub/infrastructure/config/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Infrastructure Config",
+     "shows": "Read-only governance control flags and service configuration (change them in Governance Controls).",
+     "phrasings": [
+      "open Infrastructure Config",
+      "show me Infrastructure Config",
+      "go to the Config tab in Infrastructure",
+      "show me the service configuration flags",
+      "which control flags are set on the platform"
+     ],
+     "hint": "When asking about config, configuration, env vars, or environment."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.SECURITY.POLICIES",
+   "route": "/command-hub/security-dev/policies/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Security Policies",
+     "shows": "Table of governance rules shown as security policies with code, enforcement level and category (/api/v1/governance/rules).",
+     "phrasings": [
+      "open Security Policies",
+      "show me Security Policies",
+      "go to the Policies tab in Security",
+      "open Policies in Security"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.SECURITY.ROLES",
+   "route": "/command-hub/security-dev/roles/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Security Roles",
+     "shows": "List of dev admin users and their access roles from /api/v1/dev-access/users.",
+     "phrasings": [
+      "open Security Roles",
+      "show me Security Roles",
+      "go to the Roles tab in Security",
+      "open Roles in Security"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.SECURITY.KEYS_SECRETS",
+   "route": "/command-hub/security-dev/keys-secrets/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Keys & Secrets",
+     "shows": "API keys, secrets, and credential management.",
+     "phrasings": [
+      "open Keys & Secrets",
+      "show me Keys & Secrets",
+      "go to the Keys Secrets tab in Security",
+      "open Keys Secrets in Security"
+     ],
+     "hint": "When asking about secrets, API keys, credentials, keys, or key management."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.SECURITY.AUDIT_LOG",
+   "route": "/command-hub/security-dev/audit-log/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Audit Log",
+     "shows": "Security audit trail and access logs.",
+     "phrasings": [
+      "open Audit Log",
+      "show me Audit Log",
+      "go to the Audit Log tab in Security"
+     ],
+     "hint": "When asking about audit log, security audit, access log, or who did what."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.SECURITY.RLS",
+   "route": "/command-hub/security-dev/rls-access/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "RLS & Access",
+     "shows": "Row-level security and data access policies.",
+     "phrasings": [
+      "open RLS & Access",
+      "show me RLS & Access",
+      "go to the Rls Access tab in Security",
+      "open Rls Access in Security"
+     ],
+     "hint": "When asking about RLS, row-level security, data access, or access policies."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.INTEGRATIONS.MCP",
+   "route": "/command-hub/integrations-tools/mcp-connectors/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "MCP & CLI",
+     "shows": "MCP connectors and CLI tools.",
+     "phrasings": [
+      "open MCP & CLI",
+      "show me MCP & CLI",
+      "go to the MCP & CLI tab in Integrations"
+     ],
+     "hint": "When asking about MCP, CLI, connectors, integrations, or MCP tools."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.INTEGRATIONS.LLM_PROVIDERS",
+   "route": "/command-hub/integrations-tools/llm-providers/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "LLM Providers",
+     "shows": "LLM provider configuration and API keys.",
+     "phrasings": [
+      "open LLM Providers",
+      "show me LLM Providers",
+      "go to the LLM Providers tab in Integrations"
+     ],
+     "hint": "When asking about LLM providers, Gemini, Claude, OpenAI, or model providers."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.INTEGRATIONS.APIS",
+   "route": "/command-hub/integrations-tools/apis/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "APIs",
+     "shows": "API inventory and endpoint documentation.",
+     "phrasings": [
+      "open APIs",
+      "show me APIs",
+      "go to the API's tab in Integrations",
+      "open API's in Integrations"
+     ],
+     "hint": "When asking about APIs, endpoints, API list, or API documentation."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.INTEGRATIONS.TOOLS",
+   "route": "/command-hub/integrations-tools/tools/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Integrations Tools",
+     "shows": "Table of assistant conversation tools with description, status, average latency and last used time.",
+     "phrasings": [
+      "open Integrations Tools",
+      "show me Integrations Tools",
+      "go to the Tools tab in Integrations",
+      "open Tools in Integrations"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.INTEGRATIONS.PLUGINS",
+   "route": "/command-hub/integrations-tools/plugins/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Integrations Plugins & Extensions",
+     "shows": "Discovered plugins/connectors/LLM models with total/active/degraded/offline counts and a table of name, type, status, version, source.",
+     "phrasings": [
+      "open Integrations Plugins & Extensions",
+      "show me Integrations Plugins & Extensions",
+      "go to the Plugins & Extensions tab in Integrations",
+      "open Plugins & Extensions in Integrations"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.INTEGRATIONS.SERVICE_MESH",
+   "route": "/command-hub/integrations-tools/service-mesh/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Integrations Service Mesh",
+     "shows": "Placeholder: shows only a notice that this decommissioned-GCP view has been disabled; no data.",
+     "phrasings": [
+      "open Integrations Service Mesh",
+      "show me Integrations Service Mesh",
+      "go to the Service Mesh tab in Integrations",
+      "open Service Mesh in Integrations"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.DIAGNOSTICS.HEALTH_CHECKS",
+   "route": "/command-hub/diagnostics/health-checks/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Health Checks",
+     "shows": "Endpoint health checks and uptime monitoring.",
+     "phrasings": [
+      "open Health Checks",
+      "show me Health Checks",
+      "go to the Health Checks tab in Diagnostics"
+     ],
+     "hint": "When asking about health checks, uptime, endpoint health, or service availability."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.DIAGNOSTICS.LATENCY",
+   "route": "/command-hub/diagnostics/latency/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Latency",
+     "shows": "Latency monitoring and response time analysis.",
+     "phrasings": [
+      "open Latency",
+      "show me Latency",
+      "go to the Latency tab in Diagnostics"
+     ],
+     "hint": "When asking about latency, response time, slow endpoints, or performance issues."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.DIAGNOSTICS.ERRORS",
+   "route": "/command-hub/diagnostics/errors/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Diagnostics Errors",
+     "shows": "Error Tracker table of the 50 most recent error-status OASIS events (time, source, type, message, VTID).",
+     "phrasings": [
+      "open Diagnostics Errors",
+      "show me Diagnostics Errors",
+      "go to the Errors tab in Diagnostics",
+      "open Errors in Diagnostics"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.DIAGNOSTICS.SSE",
+   "route": "/command-hub/diagnostics/sse/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Diagnostics SSE",
+     "shows": "SSE stream monitor: connect to /api/v1/events/stream and watch connection status and received events.",
+     "phrasings": [
+      "open Diagnostics SSE",
+      "show me Diagnostics SSE",
+      "go to the SSE tab in Diagnostics",
+      "open SSE in Diagnostics"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.DIAGNOSTICS.DEBUG_PANEL",
+   "route": "/command-hub/diagnostics/debug-panel/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Debug Panel",
+     "shows": "Debug panel for troubleshooting.",
+     "phrasings": [
+      "open Debug Panel",
+      "show me Debug Panel",
+      "go to the Debug Panel tab in Diagnostics"
+     ],
+     "hint": "When asking about debug, debug panel, troubleshoot, or debugging."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.MODELS.MODELS",
+   "route": "/command-hub/models-evaluations/models/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Models",
+     "shows": "Model Registry table (model ID, provider, type, status, context window), auto-refreshing every 10 seconds.",
+     "phrasings": [
+      "open Models",
+      "show me Models",
+      "go to the Models tab in Models"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.MODELS.EVALUATIONS",
+   "route": "/command-hub/models-evaluations/evaluations/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Model Evaluations",
+     "shows": "LLM evaluation results and benchmarks.",
+     "phrasings": [
+      "open Model Evaluations",
+      "show me Model Evaluations",
+      "go to the Evaluations tab in Models",
+      "open Evaluations in Models"
+     ],
+     "hint": "When asking about model evaluations, benchmarks, model quality, or eval results."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.MODELS.BENCHMARKS",
+   "route": "/command-hub/models-evaluations/benchmarks/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Models Benchmarks",
+     "shows": "Per stage/model latency benchmarks from LLM telemetry: calls, P50/P95/P99, success rate and estimated cost.",
+     "phrasings": [
+      "open Models Benchmarks",
+      "show me Models Benchmarks",
+      "go to the Benchmarks tab in Models",
+      "open Benchmarks in Models"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.MODELS.ROUTING",
+   "route": "/command-hub/models-evaluations/routing/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Models Routing",
+     "shows": "Live routing policy table per stage (primary/fallback model and provider) with a Reset to Recommended Defaults button.",
+     "phrasings": [
+      "open Models Routing",
+      "show me Models Routing",
+      "go to the Routing tab in Models",
+      "open Routing in Models"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.MODELS.PLAYGROUND",
+   "route": "/command-hub/models-evaluations/playground/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Playground",
+     "shows": "Model playground for testing LLM prompts.",
+     "phrasings": [
+      "open Playground",
+      "show me Playground",
+      "go to the Playground tab in Models"
+     ],
+     "hint": "When asking about playground, test model, LLM test, prompt testing, or model playground."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.TESTING.OVERVIEW",
+   "route": "/command-hub/testing-qa/overview/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Testing Overview",
+     "shows": "Test health per environment, failing and flaky workflows, staging verification and coverage gaps.",
+     "phrasings": [
+      "open Testing Overview",
+      "show me Testing Overview",
+      "go to the Overview tab in Testing",
+      "open Overview in Testing",
+      "which tests are failing right now",
+      "show me the flaky test workflows",
+      "test health per environment"
+     ],
+     "hint": "When asking about test health, testing overview, what tests are failing, flaky tests, staging verification, or test coverage."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.TESTING.CATALOG",
+   "route": "/command-hub/testing-qa/catalog/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Test Catalog",
+     "shows": "Every test suite and workflow, where and how often it runs, and suites nothing runs.",
+     "phrasings": [
+      "open Test Catalog",
+      "show me Test Catalog",
+      "go to the Catalog tab in Testing",
+      "open Catalog in Testing"
+     ],
+     "hint": "When asking about the test catalog, which tests exist, unit tests, integration tests, missing tests, or how often tests run."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.TESTING.CI_REPORTS",
+   "route": "/command-hub/testing-qa/runs/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Test Runs",
+     "shows": "Every CI run of test, gate, monitor and end-to-end workflows in both repositories.",
+     "phrasings": [
+      "open Test Runs",
+      "show me Test Runs",
+      "go to the Runs tab in Testing",
+      "open Runs in Testing"
+     ],
+     "hint": "When asking about CI, build status, pipeline, CI reports, test runs, test results, or build failures."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.TESTING.RUN_TESTS",
+   "route": "/command-hub/testing-qa/run-tests/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Run Tests",
+     "shows": "Start a reviewed test workflow: development and staging tests, read-only production health checks.",
+     "phrasings": [
+      "open Run Tests",
+      "show me Run Tests",
+      "go to the Run Tests tab in Testing"
+     ],
+     "hint": "When asking to run tests, start a test, trigger a test suite, run a health check, or re-run staging verification."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.TESTING.E2E",
+   "route": "/command-hub/testing-qa/e2e/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "E2E Tests",
+     "shows": "End-to-end test results and playwright tests.",
+     "phrasings": [
+      "open E2E Tests",
+      "show me E2E Tests",
+      "go to the E2E tab in Testing",
+      "open E2E in Testing"
+     ],
+     "hint": "When asking about E2E tests, end-to-end tests, playwright, or integration testing."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.TESTING.TEST_CONTRACTS",
+   "route": "/command-hub/testing-qa/test-contracts/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Testing Test Contracts",
+     "shows": "Test Contracts table (capability, status, last run, owner) with per-row Run now and a Run scheduled scan button.",
+     "phrasings": [
+      "open Testing Test Contracts",
+      "show me Testing Test Contracts",
+      "go to the Test Contracts tab in Testing",
+      "open Test Contracts in Testing"
+     ]
+    }
+   },
+   "formerIds": [
+    "DEVHUB.VOICE.TEST_CONTRACTS"
+   ]
+  },
+  {
+   "id": "DEVHUB.INTELLIGENCE.MEMORY_VAULT",
+   "route": "/command-hub/intelligence-memory-dev/memory-vault/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Memory Vault",
+     "shows": "Memory items and fact storage inspector.",
+     "phrasings": [
+      "open Memory Vault",
+      "show me Memory Vault",
+      "go to the Memory Vault tab in Intelligence and Memory"
+     ],
+     "hint": "When asking about memory vault, memory dev, stored memories, or memory inspector."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.INTELLIGENCE.KNOWLEDGE_GRAPH",
+   "route": "/command-hub/intelligence-memory-dev/knowledge-graph/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Knowledge Graph",
+     "shows": "Knowledge graph visualization and relationship data.",
+     "phrasings": [
+      "open Knowledge Graph",
+      "show me Knowledge Graph",
+      "go to the Knowledge Graph tab in Intelligence and Memory"
+     ],
+     "hint": "When asking about knowledge graph, graph visualization, or entity relationships."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.INTELLIGENCE.EMBEDDINGS",
+   "route": "/command-hub/intelligence-memory-dev/embeddings/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Embeddings",
+     "shows": "Embedding vectors and similarity search tools.",
+     "phrasings": [
+      "open Embeddings",
+      "show me Embeddings",
+      "go to the Embeddings tab in Intelligence and Memory"
+     ],
+     "hint": "When asking about embeddings, vectors, similarity search, or embedding inspector."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.INTELLIGENCE.RECALL",
+   "route": "/command-hub/intelligence-memory-dev/recall/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Intelligence and Memory Recall",
+     "shows": "Live memory broker test: choose an intent and optional query to fetch the MemoryPack the brain would consume.",
+     "phrasings": [
+      "open Intelligence and Memory Recall",
+      "show me Intelligence and Memory Recall",
+      "go to the Recall tab in Intelligence and Memory",
+      "open Recall in Intelligence and Memory"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.INTELLIGENCE.INSPECTOR",
+   "route": "/command-hub/intelligence-memory-dev/inspector/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Intelligence and Memory Inspector",
+     "shows": "Last 24h memory.* OASIS events with event and identity-lock attempt counts and a recent events list.",
+     "phrasings": [
+      "open Intelligence and Memory Inspector",
+      "show me Intelligence and Memory Inspector",
+      "go to the Inspector tab in Intelligence and Memory",
+      "open Inspector in Intelligence and Memory"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.DOCS.SCREENS",
+   "route": "/command-hub/docs/screens/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Docs Screens",
+     "shows": "Screen inventory table (screen ID, module, etc.) filterable by role, from /api/v1/oasis/specs/dev-screen-inventory.",
+     "phrasings": [
+      "open Docs Screens",
+      "show me Docs Screens",
+      "go to the Screens tab in Docs",
+      "open Screens in Docs"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.DOCS.API_INVENTORY",
+   "route": "/command-hub/docs/api-inventory/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "API Inventory",
+     "shows": "Complete API endpoint inventory.",
+     "phrasings": [
+      "open API Inventory",
+      "show me API Inventory",
+      "go to the Api Inventory tab in Docs"
+     ],
+     "hint": "When asking about API inventory, all APIs, endpoint list, or API catalog."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.DOCS.DATABASE_SCHEMAS",
+   "route": "/command-hub/docs/database-schemas/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Database Schemas",
+     "shows": "Database table schemas and documentation.",
+     "phrasings": [
+      "open Database Schemas",
+      "show me Database Schemas",
+      "go to the Database Schemas tab in Docs"
+     ],
+     "hint": "When asking about database schemas, table structure, or schema docs."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.DOCS.ARCHITECTURE",
+   "route": "/command-hub/docs/architecture/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Architecture",
+     "shows": "System architecture documentation.",
+     "phrasings": [
+      "open Architecture",
+      "show me Architecture",
+      "go to the Architecture tab in Docs"
+     ],
+     "hint": "When asking about architecture, docs, documentation, system design, or architecture docs."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.DOCS.WORKFORCE",
+   "route": "/command-hub/docs/workforce/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Docs Workforce",
+     "shows": "Static cards for VTID pipeline agents (Planner, Worker, Validator, Deploy) with stage, model and capabilities.",
+     "phrasings": [
+      "open Docs Workforce",
+      "show me Docs Workforce",
+      "go to the Workforce tab in Docs",
+      "open Workforce in Docs"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.DOCS.SYSTEM_KNOWLEDGE",
+   "route": "/command-hub/docs/system-knowledge/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Docs System Knowledge",
+     "shows": "Read-only, searchable browser of system knowledge_docs that ground the assistant, filterable by path prefix.",
+     "phrasings": [
+      "open Docs System Knowledge",
+      "show me Docs System Knowledge",
+      "go to the System Knowledge tab in Docs",
+      "open System Knowledge in Docs"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.DOCS.MANUALS",
+   "route": "/command-hub/docs/manuals/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Docs Manuals",
+     "shows": "Per-tenant instruction manual viewer with tenant selector, showing chapters or a not-yet-authored notice.",
+     "phrasings": [
+      "open Docs Manuals",
+      "show me Docs Manuals",
+      "go to the Manuals tab in Docs",
+      "open Manuals in Docs"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.ROUTINES.CATALOG",
+   "route": "/command-hub/routines/catalog/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Routines Catalog",
+     "shows": "Catalog of daily Claude Code remote routines with last-run summaries from /api/v1/routines.",
+     "phrasings": [
+      "open Routines Catalog",
+      "show me Routines Catalog",
+      "go to the Catalog tab in Routines",
+      "open Catalog in Routines"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.ROUTINES.HISTORY",
+   "route": "/command-hub/routines/history/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Routines History",
+     "shows": "Pick a routine from a dropdown to see its last 30 runs and inspect each run's findings.",
+     "phrasings": [
+      "open Routines History",
+      "show me Routines History",
+      "go to the History tab in Routines",
+      "open History in Routines"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.FEEDBACK.INBOX",
+   "route": "/command-hub/feedback/inbox/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "disabled": "VTID-04885: routable for Overview deep links; its voice phrasings have no stored Titan vectors yet (adding them needs an embedding run), so voice does not open it",
+   "i18n": {
+    "en": {
+     "title": "Feedback Inbox",
+     "shows": "Member feedback and support tickets with priority, status and resolver.",
+     "phrasings": [
+      "open the Feedback Inbox",
+      "show me the support tickets",
+      "go to the Inbox tab in Feedback"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.FEEDBACK.HANDOFFS",
+   "route": "/command-hub/feedback/handoffs/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "disabled": "VTID-04885: routable for Overview deep links; its voice phrasings have no stored Titan vectors yet (adding them needs an embedding run), so voice does not open it",
+   "i18n": {
+    "en": {
+     "title": "Feedback Live Handoffs",
+     "shows": "Recent live hand-offs between Vitana and the specialist personas.",
+     "phrasings": [
+      "open the feedback live handoffs",
+      "show me recent specialist handoffs",
+      "go to the Live Handoffs tab in Feedback"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.FEEDBACK.KPIS",
+   "route": "/command-hub/feedback/kpis/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "disabled": "VTID-04885: routable for Overview deep links; its voice phrasings have no stored Titan vectors yet (adding them needs an embedding run), so voice does not open it",
+   "i18n": {
+    "en": {
+     "title": "Feedback KPIs",
+     "shows": "Support ticket KPIs: volume, resolution time and backlog.",
+     "phrasings": [
+      "open the feedback KPIs",
+      "show me the support ticket KPIs",
+      "go to the KPIs tab in Feedback"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.FEEDBACK.AUDIT",
+   "route": "/command-hub/feedback/audit/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "disabled": "VTID-04885: routable for Overview deep links; its voice phrasings have no stored Titan vectors yet (adding them needs an embedding run), so voice does not open it",
+   "i18n": {
+    "en": {
+     "title": "Feedback Audit Log",
+     "shows": "Audit log of actions taken on feedback tickets.",
+     "phrasings": [
+      "open the feedback audit log",
+      "show me the ticket audit log",
+      "go to the Audit Log tab in Feedback"
+     ]
+    }
+   }
+  }
+ ]
+}

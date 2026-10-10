@@ -35,8 +35,11 @@ import { writeSseEvent } from '../transport/sse-handler';
 import { detectRememberClaim, detectRememberIntent, REMEMBER_BACKSTOP_MARKER } from '../../../services/memory/remember-backstop';
 
 export interface RememberHold {
-  /** VTID-04753: `recall_question` — see recall-hold.ts. */
-  reason: 'remember_request' | 'save_claim' | 'recall_question';
+  /**
+   * VTID-04753: `recall_question` — see recall-hold.ts.
+   * VTID-04863: `already_known_check` — see remember-confirm-gate.ts.
+   */
+  reason: 'remember_request' | 'save_claim' | 'recall_question' | 'already_known_check';
   armedAt: number;
   audio: Array<{ dataB64: string; mimeType?: string }>;
   text: string[];

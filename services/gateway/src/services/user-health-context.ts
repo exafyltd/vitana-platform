@@ -125,8 +125,20 @@ interface CacheEntry {
   expiresAt: number;
 }
 
-const CACHE = new Map<string, CacheEntry>();
+// VTID-05025: two-level cache — user_id → (include-flags key → entry). A
+// context loaded with one set of include flags must never be served to a
+// caller that asked for another (e.g. wearable data to a commerce caller).
+// Invalidation stays a single delete of the user's outer entry.
+const CACHE = new Map<string, Map<string, CacheEntry>>();
 const CACHE_TTL_MS = 60_000;
+
+function cacheOptsKey(opts: GetUserHealthContextOpts): string {
+  return [
+    opts.include_wearable === true ? 'w1' : 'w0',
+    opts.include_calendar !== false ? 'c1' : 'c0',
+    opts.include_past_purchases !== false ? 'p1' : 'p0',
+  ].join('|');
+}
 
 export function invalidateUserHealthContext(user_id: string): void {
   CACHE.delete(user_id);
@@ -135,7 +147,9 @@ export function invalidateUserHealthContext(user_id: string): void {
 // ==================== Main primitive ====================
 
 export interface GetUserHealthContextOpts {
-  include_wearable?: boolean;   // Phase 1+ — if false (default), skip wearable source
+  // VTID-05025: opt-in. Wearable data is loaded only when this is exactly
+  // `true`; commerce callers must never set it (Health Hub D12).
+  include_wearable?: boolean;
   include_calendar?: boolean;   // default true
   include_past_purchases?: boolean; // default true
   bypass_cache?: boolean;
@@ -145,8 +159,9 @@ export async function getUserHealthContext(
   user_id: string,
   opts: GetUserHealthContextOpts = {}
 ): Promise<UserHealthContext> {
+  const optsKey = cacheOptsKey(opts);
   if (!opts.bypass_cache) {
-    const cached = CACHE.get(user_id);
+    const cached = CACHE.get(user_id)?.get(optsKey);
     if (cached && cached.expiresAt > Date.now()) return cached.ctx;
   }
 
@@ -196,7 +211,7 @@ export async function getUserHealthContext(
           opts.include_past_purchases !== false
             ? safe(repo.fetchConvertedProductOrders(supabase, user_id, 50))
             : Promise.resolve(null),
-          opts.include_wearable !== false
+          opts.include_wearable === true
             ? safe(repo.fetchWearableRollup7d(supabase, user_id))
             : Promise.resolve(null),
           opts.include_calendar !== false
@@ -348,8 +363,8 @@ export async function getUserHealthContext(
       }
     }
 
-    // VTID-02100: wearable 7-day rollup — non-fatal
-    if (opts.include_wearable !== false) {
+    // VTID-02100: wearable 7-day rollup — non-fatal; opt-in since VTID-05025
+    if (opts.include_wearable === true) {
       {
         const rollup = rollupRes?.data;
         if (rollup && rollup.days_with_data && rollup.days_with_data > 0) {
@@ -389,7 +404,12 @@ export async function getUserHealthContext(
   ctx.sources_queried = sources_queried;
   ctx.stale = stale;
 
-  CACHE.set(user_id, { ctx, expiresAt: Date.now() + CACHE_TTL_MS });
+  let userCache = CACHE.get(user_id);
+  if (!userCache) {
+    userCache = new Map<string, CacheEntry>();
+    CACHE.set(user_id, userCache);
+  }
+  userCache.set(optsKey, { ctx, expiresAt: Date.now() + CACHE_TTL_MS });
   return ctx;
 }
 
@@ -403,8 +423,12 @@ export async function getUserHealthContext(
  * Priority:
  *   1. Most recent user_stated condition with source='user_stated'.
  *   2. Any condition present in active_conditions.
- *   3. Signal-derived (wearable) — e.g. low sleep average -> 'insomnia'.
+ *   3. Upcoming travel -> 'jet-lag'.
  *   4. Null if nothing pops out.
+ *
+ * VTID-05025 (Health Hub D12): never derives a condition from device data.
+ * The result feeds commerce ranking and search, and device-derived health
+ * data must not personalise commerce.
  */
 export function inferPrimaryCondition(ctx: UserHealthContext): string | null {
   // Prefer user-stated condition
@@ -413,15 +437,6 @@ export function inferPrimaryCondition(ctx: UserHealthContext): string | null {
 
   // Any active condition
   if (ctx.active_conditions.length > 0) return ctx.active_conditions[0].key;
-
-  // Wearable-derived (Phase 1+)
-  const w = ctx.wearable_summary_7d;
-  if (w?.sleep_avg_minutes !== undefined && w.sleep_avg_minutes !== null && w.sleep_avg_minutes < 360) {
-    return 'insomnia';
-  }
-  if (w?.hrv_avg_ms !== undefined && w.hrv_avg_ms !== null && w.hrv_avg_ms < 40) {
-    return 'low-hrv';
-  }
 
   // Upcoming travel -> jet-lag
   const travelSoon = ctx.upcoming_events.find((e) =>

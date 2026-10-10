@@ -43,8 +43,9 @@ export async function fetchTenantFeatureFlags(sb: SupabaseClient, tenantId: stri
   return sb.from('tenant_settings').select('feature_flags').eq('tenant_id', tenantId).maybeSingle();
 }
 
-export async function fetchTenantMonthSpend(sb: SupabaseClient, tenantId: string, month: string) {
-  return sb.from('jev_spend_counters').select('cost_usd').eq('tenant_id', tenantId).eq('month', month);
+export async function fetchTenantMonthSpend(sb: SupabaseClient, tenantId: string, month: string, planes?: readonly string[]) {
+  const q = sb.from('jev_spend_counters').select('cost_usd').eq('tenant_id', tenantId).eq('month', month);
+  return planes ? q.in('plane', [...planes]) : q;
 }
 
 export async function fetchMonthSpendRows(sb: SupabaseClient, month: string) {
@@ -84,11 +85,118 @@ export async function fetchRecentShadowBySubject(sb: SupabaseClient, gate: strin
 export async function fetchRecentShadowRow(sb: SupabaseClient, gate: string, subjectRef: string, sinceIso: string) {
   return sb
     .from('jev_shadow_decisions')
-    .select('id, jev_outcome, jev_verdict')
+    .select('id, jev_outcome, jev_verdict, outcome')
     .eq('gate', gate)
     .eq('subject_ref', subjectRef)
     .gte('created_at', sinceIso)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
+}
+
+/** VTID-04802: the newest deploy-completed events of one topic at or before a time. */
+export async function fetchRecentDeployEvents(sb: SupabaseClient, topic: string, beforeIso: string, limit: number) {
+  return sb
+    .from('oasis_events')
+    .select('created_at, metadata')
+    .eq('topic', topic)
+    .lte('created_at', beforeIso)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+}
+
+/** VTID-04808: open (no outcome yet) shadow rows of a gate whose verdict lists an execution among `others`. */
+export async function fetchOpenShadowRowsNamingOther(sb: SupabaseClient, gate: string, executionId: string, sinceIso: string) {
+  return sb
+    .from('jev_shadow_decisions')
+    .select('id, jev_outcome, jev_verdict')
+    .eq('gate', gate)
+    .is('outcome', null)
+    .contains('jev_verdict', { others: [{ execution_id: executionId }] })
+    .gte('created_at', sinceIso)
+    .limit(10);
+}
+
+/** VTID-04805: stalled voice sessions in a window (metadata only). */
+export async function fetchStallEvents(sb: SupabaseClient, sinceIso: string, untilIso: string, limit = 500) {
+  return sb
+    .from('oasis_events')
+    .select('metadata, created_at')
+    .eq('topic', 'orb.live.stall_detected')
+    .gte('created_at', sinceIso)
+    .lt('created_at', untilIso)
+    .order('created_at', { ascending: true })
+    .limit(limit);
+}
+
+/** VTID-04805: one voice session's own events in a window (topic + metadata only). */
+export async function fetchSessionEvents(sb: SupabaseClient, sessionId: string, sinceIso: string, untilIso: string, limit = 400) {
+  return sb
+    .from('oasis_events')
+    .select('topic, metadata')
+    .eq('metadata->>session_id', sessionId)
+    .gte('created_at', sinceIso)
+    .lt('created_at', untilIso)
+    .limit(limit);
+}
+
+/** VTID-04817: finalized conversation sessions in a window (metadata only). */
+export async function fetchFinalizedSessions(sb: SupabaseClient, sinceIso: string, untilIso: string, limit = 10000) {
+  return sb
+    .from('oasis_events')
+    .select('metadata')
+    .eq('topic', 'conversation.session.finalized')
+    .gte('created_at', sinceIso)
+    .lt('created_at', untilIso)
+    .limit(limit);
+}
+
+/** VTID-04804: voice backstop diag events in a window (metadata only). */
+export async function fetchVoiceDiagEvents(sb: SupabaseClient, stages: readonly string[], sinceIso: string, untilIso: string, limit = 5000) {
+  return sb
+    .from('oasis_events')
+    .select('metadata')
+    .eq('topic', 'orb.live.diag')
+    .in('metadata->>stage', stages as string[])
+    .gte('created_at', sinceIso)
+    .lt('created_at', untilIso)
+    .limit(limit);
+}
+
+/** VTID-04825: Dev Autopilot executions that ended badly in a window (no tokens, no plan bodies). */
+export async function fetchEndedExecutions(sb: SupabaseClient, statuses: readonly string[], sinceIso: string, untilIso: string, limit = 200) {
+  return sb
+    .from('dev_autopilot_executions')
+    .select('id, status, failure_stage, metadata, updated_at')
+    .in('status', statuses as string[])
+    .gte('updated_at', sinceIso)
+    .lt('updated_at', untilIso)
+    .order('updated_at', { ascending: true })
+    .limit(limit);
+}
+
+/** VTID-04825: one gate's rows in a window (verdict only), for the weekly roll-up. */
+export async function fetchShadowRowsByGate(sb: SupabaseClient, gate: string, sinceIso: string, untilIso: string, limit = 2000) {
+  return sb
+    .from('jev_shadow_decisions')
+    .select('id, subject_ref, decision, jev_verdict, created_at')
+    .eq('gate', gate)
+    .gte('created_at', sinceIso)
+    .lt('created_at', untilIso)
+    .limit(limit);
+}
+
+/** VTID-04857: has this budget alert (tenant × month × level) already been raised by any task? */
+export async function fetchBudgetAlertEvent(sb: SupabaseClient, alertKey: string) {
+  return sb.from('oasis_events').select('id').eq('topic', 'jev.budget.threshold_crossed').eq('metadata->>alert_key', alertKey).limit(1).maybeSingle();
+}
+
+/** VTID-04872: count one Class B member call today; returns today's count. */
+export async function bumpMemberQuotaRpc(sb: SupabaseClient, tenantId: string, memberId: string) {
+  return sb.rpc('jev_member_quota_bump', { p_tenant_id: tenantId, p_user_id: memberId });
+}
+
+/** VTID-05012: the Dev Autopilot kill switch, shown next to its silent gates. */
+export async function fetchDevAutopilotKillSwitch(sb: SupabaseClient) {
+  return sb.from('dev_autopilot_config').select('kill_switch, updated_at').eq('id', 1).maybeSingle();
 }

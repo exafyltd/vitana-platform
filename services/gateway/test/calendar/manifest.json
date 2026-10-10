@@ -1,11 +1,12 @@
 {
-  "_comment": "VTID-04458 — every calendar source file and the tests that protect it. calendar-coverage.guard.test.ts fails when a calendar file is added without an entry here, or when a listed test no longer exists or no longer imports the file. `via` names the module whose tests drive a thin data-access seam.",
+  "_comment": "VTID-04458 \u2014 every calendar source file and the tests that protect it. calendar-coverage.guard.test.ts fails when a calendar file is added without an entry here, or when a listed test no longer exists or no longer imports the file. `via` names the module whose tests drive a thin data-access seam.",
   "sources": {
     "src/types/calendar.ts": {
       "tests": [
         "test/calendar/calendar-logic.golden.test.ts",
         "test/services/calendar-role-context.test.ts",
-        "test/vtid-04331-calendar-data-model.test.ts"
+        "test/vtid-04331-calendar-data-model.test.ts",
+        "test/vtid-04997-test-results-in-calendar-migration.test.ts"
       ]
     },
     "src/routes/calendar.ts": {
@@ -26,7 +27,9 @@
         "test/calendar/calendar-logic.golden.test.ts",
         "test/calendar/calendar-routes.contract.test.ts",
         "test/vtid-04331-calendar-data-model.test.ts",
-        "test/vtid-04374-calendar-maintenance.test.ts"
+        "test/vtid-04374-calendar-maintenance.test.ts",
+        "test/vtid-04995-calendar-conflicts.test.ts",
+        "test/vtid-04996-calendar-find-a-time.test.ts"
       ]
     },
     "src/services/calendar-recurrence.ts": {
@@ -132,6 +135,11 @@
     "src/orb/live/tools/calendar-write-guard.ts": {
       "tests": [
         "test/vtid-04602-04604-go-live.test.ts"
+      ]
+    },
+    "src/services/calendar-share.ts": {
+      "tests": [
+        "test/vtid-04916-calendar-share.test.ts"
       ]
     }
   }

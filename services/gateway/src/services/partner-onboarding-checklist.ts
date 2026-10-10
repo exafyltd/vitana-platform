@@ -40,14 +40,19 @@ export const DERIVED_STEPS: readonly StepKey[] = ['account', 'company', 'terms',
 
 /**
  * Spec §6.1. `team` is optional for every type. `billing_mandate` is required
- * for direct shops and service providers; network-sourced partners are
- * affiliate brands, for which it is not required.
+ * for direct shops; network-sourced partners are affiliate brands, for which
+ * it is not required.
+ *
+ * VTID-04953 (owner decision B4, 2026-10-07): for service providers v1,
+ * `tracking_test` and `billing_mandate` are not required until the tracking
+ * and billing systems exist — nobody could complete them. Re-add them here
+ * when those systems ship.
  */
 const REQUIRED_BY_TYPE: Readonly<Record<PartnerType, readonly StepKey[]>> = {
   lab: ['account', 'company', 'verification', 'catalogue', 'mapping', 'results_channel', 'terms', 'dpa'],
   supplier_shop: ['account', 'company', 'verification', 'catalogue', 'mapping', 'tracking_test', 'terms', 'billing_mandate'],
   practitioner_clinic: ['account', 'company', 'verification', 'catalogue', 'mapping', 'terms', 'dpa'],
-  service_provider: ['account', 'company', 'verification', 'catalogue', 'mapping', 'tracking_test', 'terms', 'billing_mandate'],
+  service_provider: ['account', 'company', 'verification', 'catalogue', 'mapping', 'terms'],
   affiliate_brand: ['account', 'company', 'verification', 'catalogue', 'mapping', 'tracking_test', 'terms'],
 };
 
@@ -95,7 +100,51 @@ export interface ChecklistInput {
   acceptedTermsVersions: string[];
   /** The terms version currently in force, or null when none is published. */
   currentTermsVersion: string | null;
+  /**
+   * VTID-04895: every version that shares the current version's re-acceptance
+   * baseline. Accepting any of them counts (an editorial update keeps earlier
+   * acceptances valid). Omitted: only the current version counts.
+   */
+  termsBaselineVersions?: string[];
   memberCount: number;
+  /**
+   * VTID-04953 (owner decision B3): where the catalogue comes from. With no
+   * external catalogue connection, mapping is derived from complete
+   * offerings; with one, the connections reconcile owns the mapping row.
+   */
+  catalogueSource: { connections: number; completeOfferings: number };
+}
+
+/** The product fields `isCompleteOffering` reads. */
+export interface OfferingFields {
+  title?: string | null;
+  price_cents?: number | null;
+  currency?: string | null;
+  affiliate_url?: string | null;
+  origin_country?: string | null;
+  ships_to_countries?: string[] | null;
+  ships_to_regions?: string[] | null;
+}
+
+/**
+ * VTID-04953: a complete offering has every field ProductSchema requires
+ * (routes/vcaop-portal-my-products.ts ProductFields + shipsSomewhere).
+ * Whether it is listed does not matter — mapping is about catalogue data,
+ * and an offering an admin keeps offline still counts.
+ */
+export function isCompleteOffering(p: OfferingFields): boolean {
+  const filled = (v: unknown) => typeof v === 'string' && v.trim().length > 0;
+  return (
+    filled(p.title) &&
+    typeof p.price_cents === 'number' &&
+    p.price_cents >= 0 &&
+    typeof p.currency === 'string' &&
+    p.currency.length === 3 &&
+    filled(p.affiliate_url) &&
+    typeof p.origin_country === 'string' &&
+    p.origin_country.length === 2 &&
+    ((p.ships_to_countries?.length ?? 0) > 0 || (p.ships_to_regions?.length ?? 0) > 0)
+  );
 }
 
 export interface ChecklistStep {
@@ -173,7 +222,9 @@ export function buildChecklist(input: ChecklistInput): Checklist {
         if (!input.currentTermsVersion) {
           status = 'todo';
           missing = ['terms_not_published'];
-        } else if (input.acceptedTermsVersions.includes(input.currentTermsVersion)) {
+        } else if (
+          (input.termsBaselineVersions ?? [input.currentTermsVersion]).some((v) => input.acceptedTermsVersions.includes(v))
+        ) {
           status = 'done';
         } else {
           status = 'todo';
@@ -184,6 +235,17 @@ export function buildChecklist(input: ChecklistInput): Checklist {
         status = input.memberCount > 1 ? 'done' : 'todo';
         break;
       default: {
+        // VTID-04953 (B3): no external catalogue connection → mapping is
+        // complete once there is one complete offering. A stored mapping row
+        // only comes from the connections reconcile, so it is ignored here;
+        // with a connection, that row stays the source of truth (below).
+        if (key === 'mapping' && input.catalogueSource.connections === 0) {
+          const n = input.catalogueSource.completeOfferings;
+          status = n >= 1 ? 'done' : 'todo';
+          if (n < 1) missing = ['complete_offering'];
+          detail = { source: 'catalogue', complete_offerings: n };
+          break;
+        }
         const row = stored.get(key);
         if (row && isStepStatus(row.status)) {
           status = row.status;

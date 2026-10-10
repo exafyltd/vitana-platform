@@ -37,15 +37,19 @@ type Row = [
 const ROWS: Row[] = [
   // ── Posts & reactions (database triggers) ─────────────────────────────────
   ['community_post_published', 'member', 'posts', 'member_activity', 'ready', 'New community post', 'Neuer Community-Beitrag', 'Someone in the community published a post or video.', 'Jemand in der Community hat einen Beitrag oder ein Video veröffentlicht.'],
+  // VTID-04916: a member shared an event they are going to; at most one per recipient per event per 24 h.
+  ['community_event_shared', 'member', 'posts', 'member_activity', 'ready', 'Event shared to the feed', 'Event im Feed geteilt', 'A member shared an event they are going to (one per event per day).', 'Ein Mitglied hat ein Event geteilt, zu dem es geht (eins pro Event und Tag).'],
   ['post_like', 'member', 'posts', 'member_activity', 'ready', 'Like on your post', 'Like auf deinen Beitrag', 'Someone liked your post.', 'Jemand hat deinen Beitrag geliked.'],
   ['post_comment', 'member', 'posts', 'member_activity', 'ready', 'Comment on your post', 'Kommentar zu deinem Beitrag', 'Someone commented on your post.', 'Jemand hat deinen Beitrag kommentiert.'],
   ['comment_like', 'member', 'posts', 'member_activity', 'ready', 'Like on your comment', 'Like auf deinen Kommentar', 'Someone liked your comment.', 'Jemand hat deinen Kommentar geliked.'],
   ['comment_reply', 'member', 'posts', 'member_activity', 'ready', 'Reply to your comment', 'Antwort auf deinen Kommentar', 'Someone replied to your comment.', 'Jemand hat auf deinen Kommentar geantwortet.'],
   ['post_mention', 'member', 'posts', 'member_activity', 'ready', 'You were mentioned', 'Du wurdest erwähnt', 'Someone mentioned you in a post.', 'Jemand hat dich in einem Beitrag erwähnt.'],
+  ['comment_mention', 'member', 'posts', 'member_activity', 'ready', 'Mentioned in a comment', 'In einem Kommentar erwähnt', 'Someone mentioned you in a comment.', 'Jemand hat dich in einem Kommentar erwähnt.'],
   ['new_follower', 'member', 'posts', 'member_activity', 'ready', 'New follower', 'Neuer Follower', 'Someone started following you.', 'Jemand folgt dir jetzt.'],
 
   // ── Chat ──────────────────────────────────────────────────────────────────
   ['new_chat_message', 'member', 'chat', 'member_activity', 'ready', 'New chat message', 'Neue Chat-Nachricht', 'A person or group sent you a message.', 'Eine Person oder Gruppe hat dir geschrieben.'],
+  ['chat_mention', 'member', 'chat', 'member_activity', 'ready', 'Mentioned in a group chat', 'In einem Gruppenchat erwähnt', 'Someone mentioned you in a group chat message.', 'Jemand hat dich in einer Gruppenchat-Nachricht erwähnt.'],
   ['message_reaction', 'member', 'chat', 'member_activity', 'ready', 'Reaction to your message', 'Reaktion auf deine Nachricht', 'Someone reacted to your chat message.', 'Jemand hat auf deine Chat-Nachricht reagiert.'],
   ['listing_interest', 'member', 'chat', 'member_activity', 'unverified', 'Interest in your listing', 'Interesse an deinem Angebot', 'A buyer messaged you about your marketplace listing.', 'Jemand hat dir zu deinem Marktplatz-Angebot geschrieben.'],
 

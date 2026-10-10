@@ -1,0 +1,5 @@
+psql:../../../supabase/migrations/20261010100000_vtid_04997_test_results_in_calendar.sql:116: NOTICE:  trigger "trg_test_result_insert_calendar" for relation "public.partner_health_test_orders" does not exist, skipping
+psql:../../../supabase/migrations/20261010100000_vtid_04997_test_results_in_calendar.sql:123: NOTICE:  trigger "trg_test_result_update_calendar" for relation "public.partner_health_test_orders" does not exist, skipping
+psql:../../../supabase/migrations/20261010100000_vtid_04997_test_results_in_calendar.sql:132: NOTICE:  trigger "trg_test_result_delete_calendar" for relation "public.partner_health_test_orders" does not exist, skipping
+psql:vtid-04997-test-results-in-calendar.test.sql:145: WARNING:  fn_test_result_to_calendar failed: new row for relation "calendar_events" violates check constraint "boom" (23514)
+PASS vtid-04997 test results in calendar

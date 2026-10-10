@@ -224,8 +224,10 @@
     //   2. the per-tab fallback latch — set when a WS start actually failed
     //   3. the server's answer from GET /api/v1/orb/live/transport
     //      (FEATURE_ORB_WS_TRANSPORT_ENV) — the operator kill switch
-    //   4. this compiled default
-    transport: 'ws'
+    //   4. this compiled default — 'sse' (VTID-05001): a client whose
+    //      transport answer has not arrived (or failed) must not start on WS
+    //      while the operator kill switch says off.
+    transport: 'sse'
   };
 
   var _s = {
@@ -2519,6 +2521,23 @@
         startPayload.support_report = true;
         _s.supportReport = false;
       }
+      // VTID-04840: opened from the commerce AI setup sheet ("Talk to
+      // Vitana"). One-shot, same as support_report.
+      if (_s.commerceSetup) {
+        startPayload.commerce_setup = true;
+        _s.commerceSetup = false;
+      }
+      // VTID-04951: opened with "Ask Vitana" from a screen — four short flat
+      // fields (the gateway validates each). One-shot, same as support_report:
+      // startPayload is rebuilt on every _sessionStart, so a reconnect never
+      // re-opens the guide.
+      if (_s.guide) {
+        startPayload.guide_feature = _s.guide.feature;
+        startPayload.guide_state = _s.guide.state;
+        if (_s.guide.kind) startPayload.guide_kind = _s.guide.kind;
+        if (_s.guide.title) startPayload.guide_title = _s.guide.title;
+        _s.guide = null;
+      }
 
       // VTID-03291 / DEV-COMHU-0507: Guided Journey catalog topic tap. When the
       // host opened the orb via VitanaOrb.focusGuidedTopic(topicId), the topicId
@@ -3682,7 +3701,7 @@
         // session, and — critically — actually hides the overlay). Reopening
         // is one tap away; freezing behind a stale caption is not.
         console.warn('[VTOrb] Server ended this session (superseded by a newer one) — closing overlay');
-        _hide();
+        _hide('session_superseded');
         break;
 
       case 'session_limit_reached':
@@ -3712,7 +3731,7 @@
                 // Small grace period so the very last audio sample plays out cleanly
                 setTimeout(function () {
                   if (_s._sessionGeneration !== myGen) return; // stale poll from a prior session
-                  _hide();
+                  _hide('signup_redirect');
                   if (redirectUrl) {
                     if (typeof _cfg.onSignupRedirect === 'function') {
                       try { _cfg.onSignupRedirect(redirectUrl); } catch (e) { console.error('[VTOrb] onSignupRedirect failed:', e); }
@@ -3850,7 +3869,7 @@
                 if (msg.keep_orb_open === true) {
                   _s.navigationPending = false;
                 } else {
-                  _hide();
+                  _hide('navigate');
                 }
                 if (typeof _cfg.onNavigationRequest === 'function') {
                   try { _cfg.onNavigationRequest(navRoute, navCtx); }
@@ -3876,7 +3895,7 @@
             // finish playing — _hide() is invoked after a short delay.
             _s.audioPlaying = false;
             setTimeout(function() {
-              try { _hide(); }
+              try { _hide('end_teaching_session'); }
               catch (e) { console.error('[VTOrb] _hide on end_teaching_session failed:', e); }
             }, 500);
             if (typeof _cfg.onTeachingSessionEnd === 'function') {
@@ -3933,7 +3952,7 @@
                 // Short grace period for the last buffer to finish cleanly.
                 setTimeout(function () {
                   if (_s._sessionGeneration !== myGen) return; // stale poll from a prior session
-                  try { _hide(); }
+                  try { _hide('end_conversation'); }
                   catch (e) { console.error('[VTOrb] _hide on end_conversation failed:', e); }
                 }, 200);
               }, 300);
@@ -3942,6 +3961,48 @@
           if (typeof _cfg.onConversationEnd === 'function') {
             try { _cfg.onConversationEnd(msg.reason || null); }
             catch (e) { console.error('[VTOrb] onConversationEnd handler failed:', e); }
+          }
+        } else if (msg.directive === 'commerce_setup_reading' || msg.directive === 'commerce_setup_draft' || msg.directive === 'commerce_setup_draft_failed') {
+          // VTID-04840: Vitana is drafting the supplier's business. Hand it to
+          // the host page (the commerce portal opens its review card); the
+          // orb keeps talking. The draft is data only — nothing was saved.
+          var _csEvent = msg.directive === 'commerce_setup_reading' ? 'vitana:commerce-setup-reading'
+            : msg.directive === 'commerce_setup_draft' ? 'vitana:commerce-setup-draft'
+            : 'vitana:commerce-setup-failed';
+          console.log('[VTOrb] orb_directive ' + msg.directive);
+          try {
+            window.dispatchEvent(new CustomEvent(_csEvent, {
+              detail: { draft: msg.draft || null, error: msg.error || null, website: msg.website || null },
+            }));
+          } catch (e) {
+            console.error('[VTOrb] commerce setup event dispatch failed:', e);
+          }
+          // The review card is on the host page, under this full-screen
+          // overlay: once the draft is there, let the current sentence finish
+          // and close the orb so the supplier sees it (same drain as
+          // end_conversation). The supplier confirms it on the screen.
+          if (msg.directive === 'commerce_setup_draft') {
+            _s.conversationEnding = true;
+            var _csAttempts = 0;
+            (function (myGen) {
+              (function _waitForCsSpeechEnd() {
+                setTimeout(function () {
+                  if (_s._sessionGeneration !== myGen) return;
+                  var stillPlaying = _s.audioPlaying ||
+                    (_s.scheduledSources && _s.scheduledSources.length > 0) ||
+                    (_s.audioQueue && _s.audioQueue.length > 0);
+                  if (stillPlaying && _csAttempts++ < 100) {
+                    _waitForCsSpeechEnd();
+                    return;
+                  }
+                  setTimeout(function () {
+                    if (_s._sessionGeneration !== myGen) return;
+                    try { _hide('commerce_setup_draft'); }
+                    catch (e) { console.error('[VTOrb] _hide on commerce_setup_draft failed:', e); }
+                  }, 200);
+                }, 300);
+              })();
+            })(_s._sessionGeneration);
           }
         } else {
           console.warn('[VTOrb] Unknown orb_directive: ' + msg.directive);
@@ -4746,7 +4807,7 @@
         // reliable "the lesson finished" signal (the app may have been
         // backgrounded mid-sentence), so this must not auto-mark a step done.
         _setStatus(_caption('sessionEndedBackground'));
-        _hide();
+        _hide('bg_watchdog');
         return;
       }
       // VTID-CODEX-REVIEW: gate on overlayVisible, not _s.active. _sessionStart's
@@ -4870,7 +4931,7 @@
     _fab.setAttribute('aria-label', 'Open Vitana Voice');
     _fab.addEventListener('click', function () {
       if (_s.overlayVisible) {
-        _hide();
+        _hide('fab_toggle');
       } else {
         _show();
       }
@@ -4953,7 +5014,7 @@
     closeBtn.style.cssText = 'width:56px;height:56px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.7);';
     closeBtn.innerHTML = _ICONS.close;
     closeBtn.setAttribute('aria-label', 'Close');
-    closeBtn.addEventListener('click', _hide);
+    closeBtn.addEventListener('click', function () { _hide('close_button'); });
     controls.appendChild(closeBtn);
 
     _root.appendChild(controls);
@@ -5264,7 +5325,30 @@
   // gateway so a brief UI close / transient disconnect does not look
   // "first-time" on reopen. Fire-and-forget; authenticated sessions only
   // (anonymous has no durable identity — the gateway returns ok:false).
-  function _persistContinuity(reason, ttlMinutes) {
+  // VTID-05001: the reasons a close can report. Mirrors HIDE_REASONS in
+  // services/gateway/src/orb/live/session/hide-reasons.ts (the route allowlist);
+  // test/orb/widget/orb-widget-hide-reasons.test.ts keeps the two in step.
+  var HIDE_REASONS = ['session_superseded', 'signup_redirect', 'navigate',
+    'end_teaching_session', 'end_conversation', 'commerce_setup_draft',
+    'bg_watchdog', 'fab_toggle', 'close_button', 'guided_topic_end', 'reset',
+    'nav_tool', 'api_hide', 'api_toggle', 'view_role_change', 'unknown'];
+
+  // VTID-05001: what the close looked like — which caller, how long after the
+  // tap, on which transport, and whether the session had started yet.
+  function _hideDiag(reason) {
+    var d = { hide_reason: 'unknown', ms_since_tap: null, transport: null, start_phase: null };
+    try {
+      if (typeof reason === 'string' && HIDE_REASONS.indexOf(reason) !== -1) d.hide_reason = reason;
+      var l = _s._lat;
+      if (l && typeof l.t0 === 'number') d.ms_since_tap = Math.max(0, Math.round(_latNow() - l.t0));
+      d.transport = (l && l.transport) || (_s.ws ? 'ws' : (_s.eventSource ? 'sse' : null));
+      var started = !!_s.active || !!(l && l.marks && l.marks.session_started !== undefined);
+      d.start_phase = started ? 'started' : 'connecting';
+    } catch (e) { /* diagnostics never block a close */ }
+    return d;
+  }
+
+  function _persistContinuity(reason, ttlMinutes, diag) {
     if (!_cfg.token) return; // anonymous → nothing durable to key on
     // DEV-COMHU-0503 (review fix): during an intentional forget (_reset), the
     // DELETE from _clearContinuity must NOT be raced by a _hide()-triggered
@@ -5282,6 +5366,10 @@
         body: JSON.stringify({
           reason: reason,
           ttl_minutes: ttlMinutes,
+          hide_reason: diag ? diag.hide_reason : undefined,
+          ms_since_tap: diag ? diag.ms_since_tap : undefined,
+          transport: diag ? diag.transport : undefined,
+          start_phase: diag ? diag.start_phase : undefined,
           value: {
             conversation_id: _s.conversationId || null,
             transcript_history: transcript,
@@ -5393,7 +5481,7 @@
         // 200ms the navigate directive uses.
         setTimeout(function () {
           if (_s._sessionGeneration !== myGen) return; // stale poll from a prior session
-          try { _hide(); }
+          try { _hide('guided_topic_end'); }
           catch (e) { console.error('[VTOrb] _hide on end_guided_topic_teaching failed:', e); }
           if (typeof _cfg.onGuidedTopicTeachingEnd === 'function') {
             try { _cfg.onGuidedTopicTeachingEnd(topicId, reason); }
@@ -5404,7 +5492,12 @@
     })();
   }
 
-  function _hide() {
+  function _hide(reason) {
+    // VTID-05001: record WHICH path closed the overlay. Every caller passes a
+    // short code from HIDE_REASONS (a test enforces it); anything else is
+    // reported as 'unknown'. Captured before _latFlush so the tap timeline is
+    // still the live one.
+    var hideDiag = _hideDiag(reason);
     // VTID-04542: overlay closed before (or after) first audio — report what
     // the cycle has. No-op if it was already sent at first audio.
     _latFlush();
@@ -5416,6 +5509,8 @@
     // VTID-04395: a support-report open that never started does not leak
     // into the next, unrelated open.
     _s.supportReport = false;
+    _s.commerceSetup = false; // VTID-04840: same for a commerce setup open.
+    _s.guide = null; // VTID-04951: and for a guide open that never started.
     // VTID-03293 (#3 fix-2): kill the reconnect/disconnect machinery so a STALLED
     // session (e.g. stuck "connecting" with no audio) can ALWAYS be closed. The
     // recovery watchdog is a setInterval that re-fires _resetAndReconnect; without
@@ -5494,7 +5589,7 @@
     // DEV-COMHU-0503: UI close preserves short-lived continuity (15 min) BEFORE
     // teardown, so reopening within the window resumes instead of greeting
     // first-time. _sessionStop tears down media/SSE + fires /session/stop.
-    _persistContinuity('hide', 15);
+    _persistContinuity('hide', 15, hideDiag);
     _sessionStop();
     _restoreSoundscape();
     if (_cfg.onClose) try { _cfg.onClose(); } catch (e) { /* ignore */ }
@@ -5524,7 +5619,7 @@
     _s.conversationId = null;
     _s._preDisconnectStage = null;
     _s._reconnectCount = 0;
-    _hide();
+    _hide('reset');
     _clearContinuity(); // DELETE last, after _hide's (now-suppressed) persist
     _s._suppressContinuityPersist = false;
   }
@@ -5592,7 +5687,7 @@
             if (done) return;
             done = true;
             _sendNavResult(msg, r, target);
-            if (!stays && _s._sessionGeneration === myGen) _hide();
+            if (!stays && _s._sessionGeneration === myGen) _hide('nav_tool');
           };
           if (result && typeof result.then === 'function') {
             setTimeout(function () { finish({ status: 'unknown', reason: 'host did not answer in time' }); }, 1500);
@@ -6145,7 +6240,7 @@
     },
 
     show: _show,
-    hide: _hide,
+    hide: function () { _hide('api_hide'); },
 
     // VTID-03300: open the orb and start a session FOCUSED on a specific
     // "My Journey" Foundation step. The host calls this when the user taps a
@@ -6164,6 +6259,33 @@
     startSupportReport: function () {
       try { _sessionStop(); } catch (e) { /* best-effort */ }
       _s.supportReport = true;
+      _show();
+    },
+
+    // VTID-04951: open the orb as the FAQ / how-to guide for the screen the
+    // member is on ("Ask Vitana"). ctx = {feature, state, kind?, title?}; the
+    // gateway validates it and Vitana opens as that screen's guide instead of
+    // the daily greeting. One-shot, like startSupportReport. A malformed ctx
+    // opens the orb normally.
+    startGuide: function (ctx) {
+      try { _sessionStop(); } catch (e) { /* best-effort */ }
+      var c = ctx && typeof ctx === 'object' ? ctx : null;
+      _s.guide = (c && typeof c.feature === 'string' && typeof c.state === 'string') ? {
+        feature: c.feature.slice(0, 40),
+        state: c.state.slice(0, 20),
+        kind: typeof c.kind === 'string' ? c.kind.slice(0, 30) : '',
+        title: typeof c.title === 'string' ? c.title.slice(0, 80) : ''
+      } : null;
+      _show();
+    },
+
+    // VTID-04840: open the orb to set up a business in the commerce portal.
+    // Vitana asks for the website and drafts the business; the draft arrives
+    // as the 'vitana:commerce-setup-draft' window event and the host opens
+    // its review card. Nothing is saved by voice. One-shot, like above.
+    startCommerceSetup: function () {
+      try { _sessionStop(); } catch (e) { /* best-effort */ }
+      _s.commerceSetup = true;
       _show();
     },
 
@@ -6249,7 +6371,7 @@
     reset: _reset,
 
     toggle: function () {
-      if (_s.overlayVisible) _hide(); else _show();
+      if (_s.overlayVisible) _hide('api_toggle'); else _show();
     },
 
     setLang: function (lang) {
@@ -6269,7 +6391,7 @@
       _s.surface = sf;
       if (_s.overlayVisible) {
         console.log('[VTOrb] view role changed to ' + r + ' (' + sf + ') — restarting the conversation');
-        _hide();
+        _hide('view_role_change');
         setTimeout(function () { if (!_s.overlayVisible) _show(); }, 300);
       }
     },

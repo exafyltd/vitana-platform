@@ -45,9 +45,12 @@ function stagingChecks(): Array<{ suite: string; test: StagingTest }> {
 }
 
 describe('VTID-04659 Command Hub asset URLs in staging checks', () => {
-  it('index.html loads orb-widget.js with the VTID-04659 cache bust', () => {
+  it('index.html loads orb-widget.js with a versioned cache bust', () => {
+    // VTID-05001 bumped it for the hide reasons (VTID-04951 before it, for guide mode). VTID-04843 re-busted it (the CDN had cached VTID-04840's version with the
+    // widget from before that deploy); any later bump
+    // updates this pin and the older suites that name it (VTID-04696).
     expect(versionedAssets().get('/command-hub/orb-widget.js')).toBe(
-      '20260926-vtid-04659-after-turn',
+      '20261008-vtid-05001-hide-reasons',
     );
   });
 

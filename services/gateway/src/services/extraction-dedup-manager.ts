@@ -22,7 +22,9 @@
 
 import { createHash } from 'crypto';
 import { extractAndPersistFacts, isInlineExtractionAvailable } from './inline-fact-extractor';
+import { shadowWorthRemembering } from './jev/gates/community-class-a-gates';
 import { addSessionFact } from './session-memory-buffer';
+import { mayWritePersonalFacts } from './memory/scope';
 
 // =============================================================================
 // Configuration
@@ -131,6 +133,14 @@ export interface DeduplicatedExtractInput {
   turn_count?: number;
   /** Force extraction even if dedup would skip it (e.g., session end) */
   force?: boolean;
+  /**
+   * VTID-04798: the conversation runs on a work surface (Command Hub, admin,
+   * BackOffice, commerce). Facts are the member's personal memory, so a work
+   * conversation never writes them.
+   */
+  work_surface?: boolean;
+  /** VTID-04798: the role the conversation serves; a work role also skips. */
+  served_role?: string | null;
 }
 
 export interface DeduplicatedExtractResult {
@@ -154,6 +164,11 @@ export interface DeduplicatedExtractResult {
 export function deduplicatedExtract(
   input: DeduplicatedExtractInput,
 ): DeduplicatedExtractResult {
+  // VTID-04798: never turn a work conversation into personal facts.
+  if (!mayWritePersonalFacts({ workSurface: input.work_surface, role: input.served_role })) {
+    return { extracted: false, skip_reason: 'work_surface' };
+  }
+
   // Check availability first
   if (!isInlineExtractionAvailable()) {
     return { extracted: false, skip_reason: 'inline_extraction_unavailable' };
@@ -200,14 +215,25 @@ export function deduplicatedExtract(
     state.turn_count_at_last_extraction = input.turn_count;
   }
 
+  // VTID-04879: Jev in shadow before the extractor (all skip guards above have passed);
+  // agreement is settled from how many facts the extractor stored. Never awaited.
+  const memoryShadow = shadowWorthRemembering({
+    conversation: input.conversationText,
+    tenantId: input.tenant_id,
+    userId: input.user_id,
+    sessionId: input.session_id,
+  });
+
   extractAndPersistFacts({
     conversationText: input.conversationText,
     tenant_id: input.tenant_id,
     user_id: input.user_id,
     session_id: input.session_id,
-  }).catch(err => {
-    console.warn(`[VTID-01230-dedup] Extraction failed (non-blocking): ${err.message}`);
-  });
+  })
+    .then((r) => memoryShadow.settle(r?.persisted ?? 0))
+    .catch(err => {
+      console.warn(`[VTID-01230-dedup] Extraction failed (non-blocking): ${err.message}`);
+    });
 
   console.log(
     `[VTID-01230-dedup] Extraction triggered for session ${input.session_id.substring(0, 8)}... ` +

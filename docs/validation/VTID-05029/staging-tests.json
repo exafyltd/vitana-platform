@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05029",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05029-email-fallback.test.ts test/i18n/catalog-coverage.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The job ships inert and never runs on staging by construction (VITANA_ENV=staging is a hard stop: staging shares the production database, so a staging run would email real members). Selection, grouping, the 6 h cap, every skip rule, stamp-after-send, the inert/staging gates and the catalog keys are proven by Jest; the standard gateway smoke run confirms the deployed build boots with the new loop wiring."
+    }
+  ]
+}

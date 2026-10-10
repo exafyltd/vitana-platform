@@ -1,0 +1,4 @@
+Local verification limits (session network policy: registry.npmjs.org, developers.openai.com blocked):
+- Syntax check of all changed TypeScript files: ok.
+- jest / tsc: not runnable locally; CI is the first run.
+- No production endpoint was probed and no production row was written for the sandbox (provisioning.sql is owner-run).

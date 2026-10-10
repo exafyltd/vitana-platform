@@ -1,0 +1,23 @@
+{
+  "vtid": "VTID-05005",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "Kiro tool endpoint exists and refuses an invalid pass",
+      "method": "POST",
+      "path": "/api/v1/operator/kiro/mcp",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "the route is mounted and on (KIRO_MCP_ENABLED=true on staging) and its pass check runs before any tool; read-only"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05005-kiro-dev-tools-mcp.test.ts test/vtid-04999-kiro-runner-backend.test.ts",
+      "cwd": "services/gateway",
+      "reason": "pass signature/env/expiry, route gates, exact read set, identity adapter, OASIS log, header wiring, per-environment workflows"
+    }
+  ]
+}

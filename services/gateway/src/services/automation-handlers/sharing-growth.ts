@@ -9,6 +9,8 @@ import { randomUUID } from 'crypto';
 import { AutomationContext, REWARD_TABLE } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
 import * as repo from './sharing-growth-repository';
+import { creditWalletSucceeded, referralRewardEventId } from '../wallet/vtna-reward-keys';
+import { rewardAmount } from '../rewards/vtna-reward-rules';
 import { proposeToMember, tallyOutcomes, type ProposalOutcome } from '../community-autopilot/automation-proposals';
 
 const APP_URL = process.env.APP_URL || 'https://vitana.app';
@@ -136,7 +138,7 @@ async function runInviteAfterPositive(ctx: AutomationContext) {
   // Delay 30 min is handled by heartbeat interval; send immediately here
   ctx.notify(userId, 'orb_suggestion', {
     title: 'Enjoying Vitana?',
-    body: 'Know someone who\'d love it? Invite them and earn 200 credits!',
+    body: `Know someone who'd love it? Invite them and earn ${rewardAmount('invite_friend_joined')} VTNA when they join!`,
     data: { url: '/invite', short_code: shortCode },
   });
 
@@ -145,12 +147,12 @@ async function runInviteAfterPositive(ctx: AutomationContext) {
 }
 
 // ── AP-0405: Referral Tracking & Reward ─────────────────────
-// Real schema: app_users' primary key is user_id, not id. credit_wallet()
-// RPC does not exist live — increment_wallet_balance(p_user_id, p_currency_type,
-// p_amount) does (writes to user_wallets, currency_type uppercased). It has
-// no idempotency key, so this self-guards by only crediting when the
-// referrals status-transition update actually affected a row (i.e. this is
-// the first time this referral has been marked signed_up).
+// Real schema: app_users' primary key is user_id, not id. The reward is
+// earned VTNA via credit_wallet() (VTID-04809), keyed per referrer+referred so
+// the member-invite claim path paying the same referral cannot double it. It
+// still only runs when the referrals status-transition update actually
+// affected a row (i.e. this is the first time this referral was marked
+// signed_up).
 async function runReferralReward(ctx: AutomationContext) {
   const payload = ctx.run.metadata as any;
   const { referrer_id, referred_id, source } = payload || {};
@@ -175,17 +177,21 @@ async function runReferralReward(ctx: AutomationContext) {
 
   const rewardConfig = REWARD_TABLE['referral_completed'];
 
-  // increment_wallet_balance is confirmed live (unlike credit_wallet — see
-  // AURORA-B3-RPC-PARITY-INVENTORY.md), but supabase-js's .rpc() still
-  // resolves normally with an {error} field on a Postgres-level failure
-  // rather than throwing, so a failure here was previously invisible.
-  const { error: walletErr } = await repo.incrementWalletBalance(supabase, {
+  // supabase-js's .rpc() resolves normally with an {error} field on a
+  // Postgres-level failure rather than throwing, and credit_wallet reports
+  // business failures as data.ok=false, so both are checked explicitly.
+  const { data: walletData, error: walletErr } = await repo.creditRewardWallet(supabase, {
+    p_tenant_id: tenantId,
     p_user_id: referrer_id,
-    p_currency_type: 'CREDITS',
     p_amount: rewardConfig.amount,
+    p_type: 'reward',
+    p_source: 'AP-0405',
+    p_source_event_id: referralRewardEventId(referrer_id, referred_id),
+    p_description: rewardConfig.description,
   });
-  if (walletErr) {
-    ctx.log(`increment_wallet_balance RPC returned an error for referral reward (referrer=${referrer_id}): ${walletErr.message}`);
+  if (!creditWalletSucceeded(walletData, walletErr)) {
+    const reason = walletErr?.message ?? (walletData as { error?: string } | null)?.error ?? 'unknown';
+    ctx.log(`credit_wallet failed for referral reward (referrer=${referrer_id}): ${reason}`);
   }
 
   await ctx.emitEvent('autopilot.sharing.referral_completed', {
@@ -524,7 +530,7 @@ async function runBringYourCircleInviteWave(ctx: AutomationContext) {
 
   ctx.notify(userId, 'orb_suggestion', {
     title: 'Bring your circle to Vitana 🎉',
-    body: `You're on a roll — invite a few friends who'd vibe with your matches. ${rewardConfig.amount} credits per friend who joins.`,
+    body: `You're on a roll — invite a few friends who'd vibe with your matches. ${rewardConfig.amount} VTNA per friend who joins.`,
     data: { url: '/invite', short_code: shortCode, share_link: deepLink, automation_id: 'AP-0411' },
   });
 

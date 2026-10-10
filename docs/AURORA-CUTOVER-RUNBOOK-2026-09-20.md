@@ -54,6 +54,14 @@
 >   (2) `signup_funnel` view; (3) realtime, storage, edge functions and a
 >   public endpoint for the PostgREST proxy; (4) 16 enum columns that are
 >   varchar on Aurora.
+> **VTID-04880 (2026-10-05):** `nav_catalog`, `nav_catalog_audit` and
+> `nav_catalog_i18n` no longer live in Supabase `public`. They were archived
+> into the `legacy_archive` schema with the legacy voice navigator
+> (migration `20261005090000_vtid_04880_archive_nav_catalog.sql`), so they are
+> not part of a `public` load. The restore scripts under
+> `services/postgrest-aurora-proxy/` and `scripts/aws/` guard every statement
+> on them with `to_regclass(...)`, so a fresh load without the tables runs
+> clean. Aurora copies that already exist are left as they are.
 
 **UPDATED 2026-09-20 (second update, supersedes the one below it): the
 freeze window was postponed again — from tonight's midnight-CET window to
@@ -385,6 +393,18 @@ aws dms describe-replication-tasks --region eu-central-1 \
   confirm rather than assume.
 - If the pgvector/`products`/`knowledge_docs` gaps from Steps 1-2 weren't
   closed, confirm they're still the *only* known gaps.
+
+**Plan Sparring Gate (VTID-04868) — before Step 7/8:** only now, after the
+final load has finished, create the `vtid_ledger` gate on Aurora
+(`trg_plan_sparring_check` + `vtid_ledger_sparring_id_unique`, from
+`supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql`, then
+`supabase/migrations/20261004120000_vtid_04868_plan_sparring_hardening.sql` —
+the 5-arg allocator, plan-hash binding and the 3-arg round append; confirm only
+the 5-arg `allocate_global_vtid` and the 3-arg `plan_sparring_append_round`
+exist), confirm
+`pg_trigger.tgenabled = 'O'` and that `plan_sparring_config.mode` equals
+Supabase's. Never create it while DMS is still writing `vtid_ledger`. Details:
+`docs/AURORA-B3-RPC-PARITY-INVENTORY.md`, VTID-04868 addendum.
 
 ### Step 7 — Flip connection strings
 

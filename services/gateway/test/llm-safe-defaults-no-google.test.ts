@@ -21,6 +21,7 @@
 
 import {
   LLM_SAFE_DEFAULTS,
+  NO_FALLBACK_STAGES,
   type LLMStage,
   type LLMProvider,
 } from '../src/constants/llm-defaults';
@@ -60,7 +61,15 @@ describe('LLM_SAFE_DEFAULTS never routes to Google (VTID-03579)', () => {
     expect(`${cfg.primary_model} ${cfg.fallback_model}`).not.toMatch(/gemini|palm|bison/i);
   });
 
-  it.each(stages)('stage %s only names Bedrock models the account can invoke', (stage) => {
+  // VTID-04868: plan_sparring is exempt from the subscribed-model list, on
+  // purpose. This guard exists because an unsubscribed PRIMARY with a fallback
+  // serves 100% fallback silently. plan_sparring has NO fallback, so an
+  // unsubscribed model fails loudly (every session escalates with
+  // model_unavailable) — the silent mode is impossible. What must hold
+  // instead is asserted right below: Bedrock primary, null fallback. The
+  // placeholder id is still unverified (IF-THEN 31) — see
+  // PLAN_SPARRING_DEFAULT_MODEL.
+  it.each(stages.filter((s) => !NO_FALLBACK_STAGES.includes(s)))('stage %s only names Bedrock models the account can invoke', (stage) => {
     const cfg = LLM_SAFE_DEFAULTS[stage];
     for (const [provider, model] of [
       [cfg.primary_provider, cfg.primary_model],
@@ -74,6 +83,13 @@ describe('LLM_SAFE_DEFAULTS never routes to Google (VTID-03579)', () => {
       // forever while this file still read `bedrock`.
       expect(SUBSCRIBED_BEDROCK_MODELS).toContain(model);
     }
+  });
+
+  it.each(NO_FALLBACK_STAGES)('no-fallback stage %s is Bedrock-primary with a NULL fallback (VTID-04868)', (stage) => {
+    const cfg = LLM_SAFE_DEFAULTS[stage];
+    expect(cfg.primary_provider).toBe('bedrock');
+    expect(cfg.fallback_provider).toBeNull();
+    expect(cfg.fallback_model).toBeNull();
   });
 
   it('keeps vision on a second Bedrock model, not DeepSeek', () => {

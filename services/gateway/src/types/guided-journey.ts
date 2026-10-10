@@ -31,6 +31,27 @@ export interface JourneyState {
   returnedToGuidedAt: string | null;
   lastOpenedTopicId: string | null;
   updatedAt: string;
+  /**
+   * VTID-04763 — Audiobook episodes heard on the member's own calendar day
+   * (`date` is their local YYYY-MM-DD, sent by the client). Drives the
+   * "one episode a day" goal identically on every device. Null until the
+   * first listen that carries a local date.
+   */
+  dailyListen: AudiobookDailyListen | null;
+  /** VTID-04763 — the member's daily "your episode for today" push, or null when off. */
+  audiobookReminder: AudiobookReminderPref | null;
+}
+
+export interface AudiobookDailyListen {
+  date: string;
+  sessions: number[];
+}
+
+export interface AudiobookReminderPref {
+  /** Local wall-clock time, HH:MM (24h). */
+  time: string;
+  /** IANA time zone the time is interpreted in. */
+  tz: string;
 }
 
 /** The raw DB row shape (snake_case) for `user_guided_journey_state`. */

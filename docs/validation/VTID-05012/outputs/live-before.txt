@@ -1,0 +1,9 @@
+Read-only, 2026-10-09, before apply:
+pg_constraint on public.jev_shadow_decisions:
+  jev_shadow_decisions_jev_outcome_check  CHECK ((jev_outcome = ANY (ARRAY['decided','abstained','fallback','failed','denied','invalid'])))
+  jev_shadow_decisions_mode_check         CHECK ((mode = ANY (ARRAY['shadow','enforce'])))
+  jev_shadow_decisions_plane_check        CHECK ((plane = ANY (ARRAY['internal','partner_org','member','patient','system_autopilot'])))
+  jev_shadow_decisions_pkey               PRIMARY KEY (id)
+jev_shadow_gate_stats(int): RETURNS TABLE(gate, mode, calls, decided, with_outcome, agreed, agreement_rate, cost_usd),
+  md5(pg_get_functiondef) = eabeef4bc5a8ed4e945361e0c300efbb (identical body to 20261001100000_vtid_04754 — rollback.sql restores it)
+dev_autopilot_config id=1: kill_switch=true, updated_at 2026-10-07 08:08:58+00

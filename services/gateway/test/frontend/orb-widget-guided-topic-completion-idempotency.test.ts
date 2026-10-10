@@ -111,7 +111,7 @@ describe('orb-widget guided-topic completion idempotency guard (VTID-03781)', ()
     // the guard is already set) — if _hide() also reset the flag, a
     // concurrent second call could race back in after the first call's own
     // _hide() ran but before onGuidedTopicTeachingEnd fired.
-    const body = extractFunctionBody(source, 'function _hide() {');
+    const body = extractFunctionBody(source, 'function _hide(reason) {');
     expect(body).not.toMatch(/_guidedTopicTeachingEnded = false/);
   });
 });

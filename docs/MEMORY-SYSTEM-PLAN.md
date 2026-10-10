@@ -502,10 +502,25 @@ Each phase is its own VTID, its own PR, a staging verification, and the owner's 
    - Erasure: apply the migration, then deploy the edge function.
    - People model.
 2. **Production voice on `recall()`.** Flip `MEMORY_ORB_RECALL_ENABLED` in production after a staging comparison of both read paths on the same sessions (read-only).
+   - **Started 2026-10-01 (VTID-04784): shadow comparison.**
+     - With `MEMORY_ORB_RECALL_SHADOW=true` (pinned on both gateways), every ORB memory read also reads the other path in the background.
+     - It logs one counts-only `[VTID-04784] recall-shadow` line per session: facts on each side, facts only on one side, value differences, `ai_memory` rows, other items, prompt size and latency.
+     - Production keeps serving the legacy read, so members see no change.
+     - `scripts/memory/recall-shadow-report.sh /vitana/gateway-awsdr 72` summarises the lines.
+     - **Flip when** shadow failures are about 0, facts agree (apart from rows the legacy read should not show), and recall is not slower.
 3. **Scope + sensitivity columns** on `memory_facts` and `memory_items`.
    - Backfill: everything existing is `personal`; developer/customer/support rows get their scopes.
    - RLS policies.
    - A non-bypass DB role for the gateway's memory module.
+   - **3a started 2026-10-01 (VTID-04798):**
+     - Found live: nothing that writes facts checked the surface. A Command Hub, admin or BackOffice conversation (voice extraction, session-end commit, the remember/forget/recall backstops, Operator Console text) wrote unscoped facts that the community Vitana then read. The member ranker showed another member's matched fact as the reason for a suggestion, health facts and health-tracking counts included.
+     - A work conversation no longer writes `memory_facts`: one rule (`mayWritePersonalFacts`, `services/memory/scope.ts`), checked in `deduplicatedExtract` and the session-end commit; the backstops stand down on work surfaces. Operator Console and developer-assistant turns are stamped `active_role='developer'` in `memory_items`.
+     - `sensitivity` (`standard` | `special_category`) on both tables, set in the database from the key (`memory_sensitivity_of`), backfilled: 95 of 392 current fact keys.
+     - The ranker reads `standard` facts only and no longer reads `health_features_daily`.
+     - Existing rows needed no scope backfill: all 3,737 `memory_items` and all facts are personal; developer, customer and support memory already live in their own stores or carry `active_role`.
+   - **3b (next):** RLS on transaction-local settings, a non-bypass DB role for the memory module, and only then a role column on `memory_facts`. Role-scoped facts wait for 3b on purpose: ~80 gateway files read `memory_facts` directly with the service role, so a role column without database enforcement would leak role facts into every one of them.
+   - **Decided (owner, 2026-10-01): no personal member memory on the Command Hub.** `search_memory` is no longer declared there, the developer persona no longer mentions it, and the live dispatcher refuses it on any work surface. §8.2's flow rule is narrowed accordingly: personal memory flows into every *member* role, never into a work surface (standing rule 42g).
+   - Migration applied to the live project 2026-10-01 (RUN-MIGRATION run 36895020174): 457 fact rows and 65 items `special_category`.
 4. **Snapshot + outbox.**
    - `memory_context_snapshot` rebuilt on change.
    - The voice bootstrap reads one row.

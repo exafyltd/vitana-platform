@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04978",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04978-reminders-in-calendar-migration.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the platform part of VTID-04978 is a database migration (a member's one-shot reminder appears in their calendar) plus one added value in the gateway's source-type list. The behaviour is proven on a throwaway Postgres (CI SQL-REMINDERS-IN-CALENDAR, two mutation checks); this suite pins the safety properties and the type/CHECK match. Staging shares the production Supabase project, so verification never creates or edits a reminder."
+    }
+  ]
+}

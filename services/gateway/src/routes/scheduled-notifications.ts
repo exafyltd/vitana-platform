@@ -20,7 +20,10 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { notifyUser, notifyUserAsync, sendPushToUser, sendAppilixPush, isSignedOutOnAllKnownDevices, TYPE_META } from '../services/notification-service';
+import {
+  notifyUser, notifyUserAsync, sendPushToUser, sendAppilixPush, isSignedOutOnAllKnownDevices, TYPE_META,
+  newPushFanoutOutcome, classifyPushOutcome, recordPushOutcome, type PushOutcome,
+} from '../services/notification-service';
 import { generatePersonalRecommendations } from '../services/recommendation-engine';
 import { LangCode, resolveLanguage } from '../services/recommendation-engine/analyzers/community-user-analyzer';
 import { tt, type GatewayI18nKey } from '../i18n/catalog';
@@ -41,7 +44,17 @@ import { runRemindersTick, runRemindersSweeper } from '../services/reminders-dis
 import { wideTodayWindow, pickFirstEventTodayPerUser } from '../services/calendar-today';
 
 import { withDependencyHealth } from '../services/dependency-probe';
+import { requireScheduledNotificationsAuth, scheduledNotificationsAuthStatus, evaluateScheduledNotificationsAuth } from '../middleware/scheduled-notifications-auth';
+import { runCoachTick } from '../services/onboarding-coach/coach-service';
+import { resolveCoachConfig } from '../services/onboarding-coach/config';
 const router = Router();
+
+// VTID-04677: every route below fans out notifications to members, so each
+// caller must present X-Gateway-Internal (the EventBridge Lambdas and the
+// gateway's own automation handlers). GET /health stays open; the middleware
+// passes it through itself. SCHEDULED_NOTIFICATIONS_AUTH_MODE decides whether a
+// missing/wrong token is logged (default) or rejected (enforce).
+router.use(requireScheduledNotificationsAuth);
 
 // ── Helper: get service-role Supabase client ─────────────────
 async function getServiceClient() {
@@ -549,8 +562,7 @@ router.post('/morning-briefing', async (req: Request, res: Response) => {
 // fractional offsets like Asia/Kathmandu UTC+5:45).
 // =============================================================================
 router.post('/daily-pace-notifications', async (req: Request, res: Response) => {
-  // public-route — called by Cloud Scheduler (no JWT); protected by GCP IAM
-  // at the scheduler layer, same pattern as the other entries in this file.
+  // auth: scheduled-notifications-auth (VTID-04677)
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
@@ -766,8 +778,7 @@ function pickTipLocale(text: { en: string; de: string; [k: string]: string }, lo
   return text[locale] ?? text.en;
 }
 
-// public-route — called by Cloud Scheduler (no JWT); protected by GCP IAM
-// at the scheduler layer, same pattern as the other entries in this file.
+// auth: scheduled-notifications-auth (VTID-04677)
 router.post('/daily-feature-tip', async (req: Request, res: Response) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
@@ -882,8 +893,8 @@ router.post('/daily-feature-tip', async (req: Request, res: Response) => {
 // is published once per tenant (recorded in created_by). Kill switch:
 // WHATS_NEW_AUTOPUBLISH=false. Same fan-out shape as /daily-feature-tip.
 // =============================================================================
-// public-route — called by EventBridge/Lambda (no JWT), same as the entries above.
-router.post('/whats-new', async (req: Request, res: Response) => { // public-route
+// auth: scheduled-notifications-auth (VTID-04677)
+router.post('/whats-new', async (req: Request, res: Response) => {
   if ((process.env.WHATS_NEW_AUTOPUBLISH ?? 'true') === 'false') {
     return res.status(200).json({ ok: true, skipped: 'disabled' });
   }
@@ -1083,7 +1094,8 @@ router.post('/weekly-reflection', async (req: Request, res: Response) => {
 // calendar's own reminders (VTID-04338). Kept as a no-op so an old caller
 // gets a clear answer instead of a 404.
 // Retired no-op: it reads and writes nothing, so there is nothing to protect.
-router.post('/meetup-reminders', (_req: Request, res: Response) => { // public-route
+// auth: scheduled-notifications-auth (VTID-04677)
+router.post('/meetup-reminders', (_req: Request, res: Response) => {
   // impact-allow-no-oasis — retired: no state change at all (VTID-04374)
   return res.status(200).json({ ok: true, dispatched: 0, retired: true, replaced_by: 'calendar-reminders' });
 });
@@ -1094,7 +1106,7 @@ router.post('/meetup-reminders', (_req: Request, res: Response) => { // public-r
 // today. Push-only (channel='push' in TYPE_META) so it doesn't clutter the
 // in-app inbox.
 // =============================================================================
-// public-route
+// auth: scheduled-notifications-auth (VTID-04677)
 router.post('/upcoming-events', async (req: Request, res: Response) => {
   // impact-allow-no-oasis
   // Fan-out only — reads calendar_events and dispatches push notifications.
@@ -1285,6 +1297,14 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
   let dispatched = 0;
   let skipped = 0;
 
+  // VTID-04962: push_sent_at stays the "handled" marker and is written first,
+  // on its own, so a failed outcome write can never leave a row to be pushed
+  // again. The outcome is recorded after it, best effort.
+  const markHandled = async (id: string, outcome: PushOutcome) => {
+    await repo.markNotificationPushSent(supa, id, new Date().toISOString());
+    await recordPushOutcome(supa, id, outcome);
+  };
+
   for (const notif of pending) {
     try {
       // VTID-04674: the admin switch. The row exists (it passed the database
@@ -1294,7 +1314,7 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
         typeof notif.data === 'object' && notif.data !== null ? (notif.data as any).automation_id : '',
       );
       if (!(await isNotificationTypeAllowed(supa, notif.tenant_id, notif.type, sourceKey))) {
-        await repo.markNotificationPushSent(supa, notif.id, new Date().toISOString());
+        await markHandled(notif.id, 'suppressed_type_disabled');
         skipped++;
         continue;
       }
@@ -1307,7 +1327,7 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
 
       // If push disabled globally, skip push but still mark as handled
       if (prefs?.push_enabled === false) {
-        await repo.markNotificationPushSent(supa, notif.id, new Date().toISOString());
+        await markHandled(notif.id, 'suppressed_push_disabled');
         skipped++;
         continue;
       }
@@ -1315,7 +1335,7 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
       // DND check — p0 bypasses DND. VTID-04674: in the member's timezone,
       // not the gateway's UTC clock.
       if (notif.priority !== 'p0' && (await isMemberInQuietHours(supa, notif.user_id, prefs))) {
-        await repo.markNotificationPushSent(supa, notif.id, new Date().toISOString());
+        await markHandled(notif.id, 'suppressed_dnd');
         skipped++;
         continue;
       }
@@ -1357,30 +1377,31 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
       // had both identities mapped to the device.
       let sent = 0;
       let appilixSent = false;
+      const fcmTally = newPushFanoutOutcome();
       const appilixSuppressed = await isSignedOutOnAllKnownDevices(notif.user_id, supa);
       if (hasDeepLink) {
         appilixSent = appilixSuppressed
           ? false
           : await sendAppilixPush(notif.user_id, pushPayload);
         if (!appilixSent) {
-          sent = await sendPushToUser(notif.user_id, notif.tenant_id, pushPayload, supa);
+          sent = await sendPushToUser(notif.user_id, notif.tenant_id, pushPayload, supa, { outcome: fcmTally });
         }
       } else {
-        sent = await sendPushToUser(notif.user_id, notif.tenant_id, pushPayload, supa);
+        sent = await sendPushToUser(notif.user_id, notif.tenant_id, pushPayload, supa, { outcome: fcmTally });
         if (sent === 0 && !appilixSuppressed) {
           appilixSent = await sendAppilixPush(notif.user_id, pushPayload);
         }
       }
 
-      // Mark as dispatched
-      await repo.markNotificationPushSent(supa, notif.id, new Date().toISOString());
+      // Mark as dispatched, with what actually happened
+      await markHandled(notif.id, classifyPushOutcome(fcmTally, appilixSent));
 
       if (sent > 0 || appilixSent) dispatched++;
       else skipped++; // No device tokens found and Appilix not configured
     } catch (err: any) {
       console.error(`[PushDispatch] Failed for notification ${notif.id}:`, err.message || err);
-      // Still mark as sent to avoid infinite retries
-      await repo.markNotificationPushSent(supa, notif.id, new Date().toISOString());
+      // Still mark as handled to avoid infinite retries
+      await markHandled(notif.id, 'dispatch_exception');
       skipped++;
     }
   }
@@ -1489,8 +1510,7 @@ router.post('/reminders-sweeper', async (_req: Request, res: Response) => {
 // =============================================================================
 const NIGHT_PUSH_LOCAL_HOUR = 22;
 
-// public-route — called by Cloud Scheduler (no JWT); protected by GCP IAM at
-// the scheduler layer, same pattern as every other entry in this file.
+// auth: scheduled-notifications-auth (VTID-04677)
 router.post('/night-push', async (req: Request, res: Response) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
@@ -1610,7 +1630,46 @@ router.post('/night-push', async (req: Request, res: Response) => {
 // =============================================================================
 router.get('/health', async (_req: Request, res: Response) => {
   // VTID-04665: report whether the dependency answers, not just that the route exists.
-  return res.status(200).json(await withDependencyHealth([{ table: 'user_notifications' }], { ok: true, service: 'scheduled-notifications' }));
+  // VTID-04677: also report the auth mode (and only whether a token is set),
+  // so the staging suite can prove what is deployed without sending a POST.
+  return res.status(200).json(await withDependencyHealth([{ table: 'user_notifications' }], {
+    ok: true,
+    service: 'scheduled-notifications',
+    ...scheduledNotificationsAuthStatus(),
+  }));
+});
+
+// =============================================================================
+// VTID-04892: Vitana Onboarding Assistant — coach tick (slice 1: shadow only)
+// =============================================================================
+// Decides, for every new member in the cohort, the next best onboarding step
+// and records it in coach-owned tables. Sends nothing in slice 1.
+//
+// The token is enforced HERE, whatever SCHEDULED_NOTIFICATIONS_AUTH_MODE says:
+// that global mode is `log` in both environments today and would let an
+// untokened call through (plan v3 §4.2, sparring N1). The staging gateway
+// refuses the tick outright — staging shares the production database.
+// auth: scheduled-notifications-auth (VTID-04677) + own enforcement (VTID-04892)
+router.post('/onboarding-coach-tick', async (req: Request, res: Response) => {
+  const auth = evaluateScheduledNotificationsAuth(req);
+  if (!auth.ok) return res.status(auth.status ?? 401).json({ ok: false, error: auth.error });
+  // impact-allow-no-oasis: runCoachTick emits the OASIS events itself (one tick_completed per tick + real stage changes).
+
+  const config = resolveCoachConfig();
+  if (config.mode === 'disabled-on-staging') {
+    return res.status(409).json({ ok: false, mode: config.mode, error: 'onboarding coach does not run on staging' });
+  }
+  if (config.mode !== 'shadow') return res.json({ ok: true, mode: config.mode, reason: config.reason });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+  try {
+    const result = await runCoachTick({ sb: supa as any, config });
+    return res.status(result.ok ? 200 : 503).json(result);
+  } catch (err: any) {
+    console.error('[onboarding-coach] tick failed:', err?.message || err);
+    return res.status(500).json({ ok: false, error: 'onboarding coach tick failed' });
+  }
 });
 
 export default router;

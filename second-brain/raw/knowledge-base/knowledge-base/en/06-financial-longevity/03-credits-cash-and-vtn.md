@@ -1,6 +1,6 @@
 ---
 id: kb-en-06-03
-title: "Credits, Cash, and VTN"
+title: "Credits, Cash, and VTNA"
 category: "financial-longevity"
 tags: ["credits", "cash", "vtn", "tokens", "wallet", "payments"]
 lang: "en"
@@ -10,7 +10,7 @@ last_updated: "2026-02-25"
 related: ["kb-en-06-01", "kb-en-18-01", "kb-en-18-03", "kb-en-18-06"]
 ---
 
-# Credits, Cash, and VTN
+# Credits, Cash, and VTNA
 
 Inside Maxina, value is not one-dimensional. Your contributions, your health consistency, and your community engagement create different kinds of value -- and the system reflects that through three distinct layers. Let me explain each one, how they work together, and what they mean for your financial longevity.
 
@@ -22,7 +22,7 @@ Think of Maxina's economy as having three layers, each serving a different purpo
 
 **Cash** represents real-money earnings from your wellness recommendations, referrals, and services. It is withdrawable and spendable outside of Vitanaland.
 
-**VTN (Vitana Tokens)** are coming soon and will represent long-term value accrual within the longevity economy -- a way to stake your commitment to the ecosystem and benefit from its growth over time.
+**VTNA (Vitana Tokens)** are coming soon and will represent long-term value accrual within the longevity economy -- a way to stake your commitment to the ecosystem and benefit from its growth over time.
 
 Each layer serves a different need, and together they create a financial framework that supports your longevity journey from multiple angles. Let me walk through each one in detail.
 
@@ -80,25 +80,25 @@ I track your cash earnings not as an isolated metric but as part of your overall
 
 If your earnings are growing, I acknowledge that as part of your progress. If there are opportunities to increase your earning potential -- a topic you could create a wellness list around, a skill you could share through hosting, a gap in the marketplace that matches your expertise -- I surface those opportunities so you can act on them if you choose.
 
-## VTN (Vitana Tokens): The Long-Term Layer
+## VTNA (Vitana Tokens): The Long-Term Layer
 
-VTN is the third value layer, and while it is not yet live, it is important to understand what it represents and why it exists.
+VTNA is the third value layer, and while it is not yet live, it is important to understand what it represents and why it exists.
 
-### What VTN Will Be
+### What VTNA Will Be
 
-Vitana Tokens are designed to be a token-based system for long-term value accrual within the longevity economy. Unlike credits, which are earned and spent in relatively short cycles, VTN represents a deeper commitment to the ecosystem -- and a share in its long-term growth.
+Vitana Tokens are designed to be a token-based system for long-term value accrual within the longevity economy. Unlike credits, which are earned and spent in relatively short cycles, VTNA represents a deeper commitment to the ecosystem -- and a share in its long-term growth.
 
 ### Staking and Long-Term Value
 
-The concept behind VTN is staking. When you hold VTN, you are signaling a long-term commitment to the Vitanaland ecosystem. As the ecosystem grows -- more members, more services, more health outcomes -- the value of that commitment grows with it.
+The concept behind VTNA is staking. When you hold VTNA, you are signaling a long-term commitment to the Vitanaland ecosystem. As the ecosystem grows -- more members, more services, more health outcomes -- the value of that commitment grows with it.
 
 Staking is a way of saying: I believe in this community, I am contributing to its growth, and I want to benefit from the long-term value that growth creates. It aligns your financial interest with the long-term health of the ecosystem, which aligns with the longevity principle at the heart of everything Maxina does.
 
-### When VTN Launches
+### When VTNA Launches
 
-VTN is currently in development. When it becomes available, I will walk you through exactly how it works, how to earn it, how to hold it, and what options you have. I will also explain any risks and limitations clearly, because financial transparency applies to every layer of the economy -- including the newest one.
+VTNA is currently in development. When it becomes available, I will walk you through exactly how it works, how to earn it, how to hold it, and what options you have. I will also explain any risks and limitations clearly, because financial transparency applies to every layer of the economy -- including the newest one.
 
-For now, what matters is understanding that the longevity economy is designed to grow with you over time. Credits serve your immediate engagement. Cash serves your current financial needs. VTN will serve your long-term financial relationship with the ecosystem.
+For now, what matters is understanding that the longevity economy is designed to grow with you over time. Credits serve your immediate engagement. Cash serves your current financial needs. VTNA will serve your long-term financial relationship with the ecosystem.
 
 ## How the Three Layers Work Together
 
@@ -108,13 +108,13 @@ Credits keep you engaged with the behaviors that support your health. They creat
 
 Cash rewards the value you create for others. When your trusted recommendations help someone make a better health decision, that contribution has real economic value -- and you receive it. This creates a financial cushion that reduces stress and supports your ability to invest in your own health over time.
 
-VTN will anchor your long-term relationship with the ecosystem. It represents the idea that longevity is a long game -- in health and in economics. The people who commit to this community for years, who build deep trust, and who contribute consistently to the health of others, should benefit from the growth they helped create.
+VTNA will anchor your long-term relationship with the ecosystem. It represents the idea that longevity is a long game -- in health and in economics. The people who commit to this community for years, who build deep trust, and who contribute consistently to the health of others, should benefit from the growth they helped create.
 
 Together, these three layers create a financial framework that supports your longevity at every time horizon: daily engagement, monthly and yearly earnings, and long-term value accrual. They are designed so that the same behaviors that improve your health also improve your financial position -- creating the kind of virtuous cycle that makes sustainable longevity possible.
 
 ## Your Wallet Is Your Financial Health Dashboard
 
-I encourage you to think of your wallet not just as a place where money sits, but as a reflection of your engagement, your contributions, and your financial trajectory within the longevity economy. When your credit balance is growing, it means your health behaviors are consistent. When your cash earnings are increasing, it means your recommendations are helping people. When VTN becomes available and your holdings grow, it means your long-term commitment is recognized.
+I encourage you to think of your wallet not just as a place where money sits, but as a reflection of your engagement, your contributions, and your financial trajectory within the longevity economy. When your credit balance is growing, it means your health behaviors are consistent. When your cash earnings are increasing, it means your recommendations are helping people. When VTNA becomes available and your holdings grow, it means your long-term commitment is recognized.
 
 I keep you informed about all three layers. I surface your balances, your earning trends, and your opportunities. And if something seems off -- if your earnings dip unexpectedly, or if a payout is delayed -- I explain what happened and help you resolve it.
 

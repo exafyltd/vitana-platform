@@ -1,0 +1,40 @@
+{
+  "vtid": "VTID-05003",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/operator/kiro/status",
+      "expect_status": 401,
+      "reason": "the per-user Kiro status route exists and refuses an unauthenticated caller (JSON 401); read-only"
+    },
+    {
+      "kind": "http",
+      "name": "Command Hub loads the Kiro default-engine app.js",
+      "path": "/command-hub/",
+      "expect_status": 200,
+      "expect_content_type": "text/html",
+      "expect_body_contains": "app.js?v=20261109-vtid-05006"
+    },
+    {
+      "kind": "http",
+      "name": "served app.js has the default engine and the fallback",
+      "path": "/command-hub/app.js?v=20261109-vtid-05006",
+      "expect_status": 200,
+      "expect_content_type": "javascript",
+      "expect_body_contains": [
+        "function applyDefaultOperatorEngine",
+        "function renderKiroFallbackAction",
+        "function continueInOperator"
+      ]
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05003-kiro-default-engine.test.ts test/command-hub/vtid-05003-kiro-default-engine-ui.test.ts",
+      "cwd": "services/gateway",
+      "reason": "default-engine rule, credit state transitions on a scripted Kiro, key-linked cache, environment separation of the workflows, and the Command Hub default/fallback against a fake DOM"
+    }
+  ]
+}

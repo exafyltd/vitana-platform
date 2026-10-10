@@ -83,9 +83,18 @@ jobs:
       - name: Prisma Validate
         run: pnpm exec prisma validate
 
+      # VTID-04950: the root pnpm install never installs services/gateway's own
+      # dependencies, so `tsc` resolved to a different TypeScript and failed on
+      # tsconfig (TS5108). `|| echo` hid that for as long as the step existed.
+      # Install the gateway's locked deps, the same way TEST-SUITE does.
+      - name: Install gateway dependencies
+        working-directory: services/gateway
+        run: npm ci --no-audit --no-fund
+
       - name: Gateway Build Check
         working-directory: services/gateway
-        run: pnpm run build || echo "⚠️ Build check completed"
+        # VTID-04950 (plan E1): a failing build fails the check (it used to be masked).
+        run: pnpm run build
 
       - name: Validate Dev frontend navigation spec (17 modules / 87 screens)
         working-directory: services/gateway
@@ -93,11 +102,13 @@ jobs:
 
       - name: Gateway Type Check
         working-directory: services/gateway
-        run: pnpm run typecheck || echo "⚠️ Type checking completed with warnings"
+        # VTID-04950: tsc --noEmit reports 0 errors on main, so it gates for real.
+        run: pnpm run typecheck
 
-      - name: Gateway Lint
-        working-directory: services/gateway
-        run: pnpm run lint || echo "⚠️ Linting completed with warnings"
+      # VTID-04950: the "Gateway Lint" step was removed. services/gateway has no
+      # ESLint config, so `eslint` exited 2 ("couldn't find a configuration
+      # file") on every run, and `|| echo` reported success. Introducing a lint
+      # regime is a separate decision; a step that cannot lint is not kept.
 
       # TESTS DEFERRED TO DEV-CICDL-0035
       # - name: Gateway Tests

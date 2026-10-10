@@ -80,7 +80,7 @@ The platform's [[longevity-philosophy]] (five health pillars) drives the [[healt
 [[matchmaking-system]] creates daily matches across 7 types (person, group, event, service, product, location, live room). [[live-rooms]] enable real-time video/audio via [[daily-co]] and [[webrtc-integration]]. Communication happens through [[sse-event-streaming]] and the [[gemini-live-api]].
 
 ### Commerce & Wallet
-The [[wallet-system]] manages credits, cash, and VTN tokens. [[stripe-connect]] handles payments (90/10 split for creators). The [[discover-marketplace]] offers AI-curated supplements, doctors, and services. [[financial-longevity]] ties wellness engagement to economic rewards.
+The [[wallet-system]] manages credits, cash, and VTNA tokens. [[stripe-connect]] handles payments (90/10 split for creators). The [[discover-marketplace]] offers AI-curated supplements, doctors, and services. [[financial-longevity]] ties wellness engagement to economic rewards.
 
 **Key entities:** [[stripe]], [[business-hub]]
 

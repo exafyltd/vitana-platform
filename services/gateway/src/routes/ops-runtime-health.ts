@@ -308,6 +308,18 @@ export function evalStuckTickets(rows: Array<{ created_at: string; status: strin
 
 // ── Routes ──────────────────────────────────────────────────────────────────
 
+/**
+ * VTID-04876: run one RUNTIME_CHECKS entry in-process through the same
+ * per-key 60 s cache + single-flight the route uses (the Overview's
+ * /ops/attention release adapter reads the two gateways' build-info this way,
+ * never by an HTTP self-call). Rejects when the check throws.
+ */
+export function runRuntimeCheckCached(key: string): Promise<RuntimeCheck> {
+  const fn = RUNTIME_CHECKS[key];
+  if (!fn) return Promise.reject(new Error(`unknown_runtime_check:${key}`));
+  return cached(key, fn);
+}
+
 function respond(res: Response, key: string, fn: () => Promise<RuntimeCheck>): void {
   cached(key, fn)
     .then((check) => res.status(200).json({ ...check, checked_at: new Date().toISOString() }))

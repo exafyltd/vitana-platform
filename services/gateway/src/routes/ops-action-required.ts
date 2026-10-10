@@ -16,10 +16,15 @@
  *      → 🚨 self-heal gave up / blast-radius rollback
  *
  * Read-only and side-effect-free. Mounted at /api/v1/ops/action-required.
+ *
+ * VTID-04876: platform exafy_admin only (requireAdminAuth, plan F4). The
+ * Command Hub Overview now reads GET /api/v1/ops/attention instead; this
+ * route stays for other callers but is no longer public.
  */
 
 import { Router, Request, Response } from 'express';
 import { probeEndpoint, isJsonHealthy, resolveProbeTarget } from '../services/self-healing-probe';
+import { requireAdminAuth } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
 
@@ -213,7 +218,7 @@ async function fetchSelfHealEscalations(
   }
 }
 
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', requireAdminAuth, async (_req: Request, res: Response) => {
   const config = getSupabaseConfig();
   if (!config) {
     return res.status(500).json({ ok: false, error: 'Supabase not configured' });

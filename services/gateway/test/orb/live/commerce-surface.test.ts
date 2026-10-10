@@ -50,7 +50,8 @@ describe('commerce tool catalog', () => {
       expect(n).not.toContain(banned);
     }
     expect(n.filter((x) => x.startsWith('backoffice_') || x.startsWith('dev_') || x.startsWith('developer_'))).toEqual([]);
-    const allowed = new Set(['get_current_screen', 'navigate', 'end_conversation', 'search_knowledge']);
+    // VTID-04521/04846: navigate_to_screen opens what navigate found on a work surface.
+    const allowed = new Set(['get_current_screen', 'navigate', 'navigate_to_screen', 'end_conversation', 'search_knowledge']);
     expect(n.every((x) => allowed.has(x))).toBe(true);
   });
 

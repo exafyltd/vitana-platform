@@ -37,6 +37,7 @@ import type { LLMProvider } from '../constants/llm-defaults';
 import { emitOasisEvent, cicdEvents } from './oasis-event-service';
 import {
   evaluateSafetyGate,
+  newFileCandidates,
   SafetyContext,
   SafetyPlan,
   SafetyDecision,
@@ -82,6 +83,7 @@ import {
 } from './dev-autopilot-approval-gates';
 import { loadCodeIndex, type CodeIndexBundle } from './codeintel-index';
 import { isClaimFeasibilityOn, runClaimFeasibilityCheck, recordClaimFeasibilityOutcome, type FeasibilityContext } from './jev/gates/claim-feasibility-gate';
+import { isRepeatRunGuardOn, runRepeatRunCheck, recordRepeatRunOutcome, FAILED_EXECUTION_STATUSES, REPEAT_LOOKBACK_DAYS, type RepeatContext } from './jev/gates/repeat-run-gate';
 import { rescoreTick } from './recommendation-quality/scoring-service';
 import { qualityReviewTick } from './recommendation-quality/quality-review';
 import { weeklySummaryTick } from './recommendation-quality/acceptance';
@@ -706,6 +708,9 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
     is_feedback_lane: isFeedbackLane,
     scanner: scannerForSafety,
     is_open_ended: isOpenEndedPlan,
+    // VTID-04790: new test files named e.g. "...-auth-...test.ts" are exempt
+    // from name-only deny rules; existence is checked on the base branch.
+    new_files: isOpenEndedPlan ? [] : await confirmNewFiles(files, cfg.deny_scope),
   };
   const decision = evaluateSafetyGate(safetyPlan, safetyCtx);
   if (!decision.ok) {
@@ -1200,6 +1205,26 @@ async function fetchFileContent(
   // GitHub returns base64-encoded content
   const decoded = Buffer.from(r.data.content || '', r.data.encoding as BufferEncoding || 'base64').toString('utf-8');
   return { exists: true, content: decoded, sha: r.data.sha };
+}
+
+/**
+ * VTID-04790: of `paths`, the test files caught only by name-only deny rules
+ * that do NOT exist on the base branch yet. Fails closed: a lookup error
+ * counts as "exists", so the deny rule keeps applying.
+ */
+export async function confirmNewFiles(
+  paths: string[],
+  deny: string[],
+  lookup: (path: string) => Promise<{ exists: boolean; error?: string }> = (p) => fetchFileContent(p, GITHUB_BASE_BRANCH),
+): Promise<string[]> {
+  const out: string[] = [];
+  for (const p of newFileCandidates(paths, deny)) {
+    try {
+      const r = await lookup(p);
+      if (!r.exists && !r.error) out.push(p);
+    } catch { /* fail closed */ }
+  }
+  return out;
 }
 
 async function getBranchSha(branch: string): Promise<{ ok: boolean; sha?: string; error?: string }> {
@@ -3084,6 +3109,15 @@ export async function backgroundExecutorTick(): Promise<void> {
         load: () => loadFeasibilityContext(s, exec),
       });
     }
+    // VTID-04801 (Jev P2 A4): is this the previous failed attempt again?
+    // Shadow, fire-and-forget, beside A2.
+    if (isRepeatRunGuardOn()) {
+      void runRepeatRunCheck({
+        executionId: exec.id,
+        findingId: exec.finding_id,
+        load: () => loadRepeatContext(s, exec),
+      });
+    }
 
     // VTID-02703: dispatch path — Cloud Run Job (durable) or in-process (fast).
     // The Job runtime survives container churn that kills long-running
@@ -3287,6 +3321,7 @@ export async function applyExecutionResult(
   // VTID-04774: the A2 feasibility row (if any) learns how the run ended.
   // Fire-and-forget; no row when the gate was off.
   void recordClaimFeasibilityOutcome(execId, result);
+  void recordRepeatRunOutcome(execId, result); // VTID-04801 (Jev A4)
   // VTID-04446: the running phase is over, whatever the result — close its
   // lease so the watchdog has nothing to decide. Idempotent, fail-open.
   if (isRunLeaseEnabled()) await releaseDevRunLease(leaseRest(s), execId, runPhaseOutcome(result), result.ok ? null : (result.error || null));
@@ -4373,6 +4408,38 @@ export { LOG_PREFIX, DRY_RUN, BACKGROUND_TICK_MS };
  * plan version's excerpt and file paths, and whether this is a fix-mode or
  * self-heal child. Two reads, the same ones the agent runner makes.
  */
+/** VTID-04801: the new attempt's plan and the newest failed attempt of the same finding (7 days). */
+async function loadRepeatContext(
+  s: SupaConfig,
+  exec: { id: string; finding_id: string; plan_version: number; metadata?: Record<string, unknown> | null },
+): Promise<RepeatContext | null> {
+  const since = new Date(Date.now() - REPEAT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const prevR = await supa<Array<{ id: string; plan_version: number; metadata?: Record<string, unknown> | null }>>(
+    s,
+    `/rest/v1/dev_autopilot_executions?finding_id=eq.${exec.finding_id}&id=neq.${exec.id}&status=in.(${FAILED_EXECUTION_STATUSES.join(',')})&created_at=gte.${since}&select=id,plan_version,metadata&order=created_at.desc&limit=1`,
+  );
+  const prev = prevR.ok && prevR.data && prevR.data[0] ? prevR.data[0] : null;
+  const ctx = await loadFeasibilityContext(s, exec);
+  if (!ctx) return null;
+  if (!prev) return { title: ctx.title || null, plan_version: exec.plan_version, plan: ctx.plan, fix_mode: ctx.fix_mode, previous: null };
+  let prevPlan = ctx.plan;
+  if (prev.plan_version !== exec.plan_version) {
+    const pr = await supa<Array<{ plan_markdown: string }>>(
+      s, `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${exec.finding_id}&version=eq.${prev.plan_version}&select=plan_markdown&limit=1`,
+    );
+    prevPlan = pr.ok && pr.data && pr.data[0] ? pr.data[0].plan_markdown || '' : '';
+  }
+  const pm = prev.metadata || {};
+  const failure = [pm.error, pm.failure_reason, pm.gate_reason].find((v): v is string => typeof v === 'string' && v.trim().length > 0) || '';
+  return {
+    title: ctx.title || null,
+    plan_version: exec.plan_version,
+    plan: ctx.plan,
+    fix_mode: ctx.fix_mode,
+    previous: { execution_id: prev.id, plan_version: prev.plan_version, plan: prevPlan, failure },
+  };
+}
+
 async function loadFeasibilityContext(
   s: SupaConfig,
   exec: { finding_id: string; plan_version: number; metadata?: Record<string, unknown> | null },

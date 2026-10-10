@@ -1,0 +1,30 @@
+{
+  "vtid": "VTID-05002",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after the change",
+      "path": "/alive",
+      "expect_status": 200
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/orb/live/stream?session_id=live-00000000-0000-0000-0000-000000000000.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expect_status": 404,
+      "expect_body_contains": [
+        "Session not found"
+      ],
+      "reason": "a forged owner tag is refused and served locally as today's 404 JSON \u2014 never a 502 and never a forward (this route sets its SSE content type before the session lookup, so the 404 body carries text/event-stream, as today)",
+      "expect_content_type": "text/event-stream"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/orb/vtid-05002-sse-cross-task-forward.test.ts test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts test/services/conversation/vtid-04525-conversation-flag-registry.test.ts",
+      "cwd": "services/gateway",
+      "reason": "proving a real cross-task forward on staging needs a live voice session (a write) during a deploy; two real HTTP servers stand in for the two tasks here"
+    }
+  ]
+}

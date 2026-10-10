@@ -1,0 +1,196 @@
+# AWS-STAGE-DEPLOY-KIRO-RUNNER — build kiro-runner from services/kiro-runner/,
+# push to ECR, roll the AWS STAGING ECS service (VTID-04999).
+#
+# Staging-first: auto-deploys on push to main when the service tree changes.
+# There is deliberately NO prod twin in this VTID — a production runner is a
+# later, owner-approved VTID, and AWS-PROD-DEPLOY-GATEWAY.yml carries no
+# KIRO_RUNNER wiring (test/vtid-04999-kiro-runner-backend.test.ts guards it).
+#
+# The ECS service `vitana-kiro-runner`, ECR repo `vitana/kiro-runner`, the task
+# role and the runner token secret are created by the owner with
+# scripts/aws/setup-kiro-runner-staging.sh provision --apply (sessions have no
+# AWS admin rights). Until then the preflight fails loudly by design; it never
+# silently deploys somewhere else.
+#
+# Required repository secrets (same static staging keys the gateway staging
+# workflow uses — documented follow-up: move to OIDC):
+#   AWS_STAGING_ACCESS_KEY_ID / AWS_STAGING_SECRET_ACCESS_KEY
+# Required Secrets Manager entry (eu-central-1):
+#   vitana/kiro-runner/staging/runner-token   -> KIRO_RUNNER_TOKEN
+
+name: AWS Stage Deploy Kiro Runner (ECS)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/kiro-runner/**'
+      - '.github/workflows/AWS-STAGE-DEPLOY-KIRO-RUNNER.yml'
+  pull_request:
+    paths:
+      - 'services/kiro-runner/**'
+      - '.github/workflows/AWS-STAGE-DEPLOY-KIRO-RUNNER.yml'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for this AWS staging kiro-runner deploy'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-stage-deploy-kiro-runner-${{ github.event_name == 'pull_request' && github.ref || 'deploy' }}
+  cancel-in-progress: false
+
+env:
+  TARGET_AWS_REGION: eu-central-1
+  ECR_REPOSITORY: vitana/kiro-runner
+  ECS_CLUSTER: Vitana-ECS-Cluster
+  # VTID-05005: this environment's own public gateway, where the vitana tools relay calls.
+  MCP_GATEWAY_URL: https://preview-aws-gateway.vitanaland.com
+  ECS_SERVICE: vitana-kiro-runner
+  SECRET_TOKEN: vitana/kiro-runner/staging/runner-token
+  KEY_PREFIX: vitana/kiro/staging/users
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install, typecheck, unit tests
+        working-directory: services/kiro-runner
+        run: |
+          npm ci --no-audit --no-fund
+          npx tsc --noEmit -p .
+          npm test
+
+  # Builds the image on every PR too: the pinned kiro-cli download, its sha256
+  # check and `kiro-cli --version` on the slim base all run here, before merge.
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image (pinned kiro-cli, sha256-checked)
+        run: docker build -t kiro-runner:ci services/kiro-runner
+      - name: Container smoke — /alive answers and reports the pinned kiro-cli
+        run: |
+          set -e
+          docker run -d --name kr -p 18080:8080 -e KIRO_RUNNER_TOKEN=ci-token -e KIRO_KEY_SECRET_PREFIX=ci/prefix kiro-runner:ci
+          for _ in $(seq 1 20); do curl -fsS localhost:18080/alive && break; sleep 1; done
+          curl -fsS localhost:18080/alive | grep -q '"kiro_cli_version":"2.28.0"'
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:18080/keys/0adc6ff6-acb0-4dca-99d0-295211a40e3e)" = "401"
+          docker exec kr kiro-cli acp --help | head -1
+          docker rm -f kr
+
+  build-push-deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_REASON: ${{ inputs.reason || 'auto-deploy on push to main' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve commit metadata
+        id: commit
+        run: echo "short=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_STAGING_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_STAGING_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.TARGET_AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Preflight — staging-only target, ECR repo, ECS service, token secret
+        run: |
+          set -e
+          case "${{ env.ECS_SERVICE }}" in
+            *awsdr*|*prod*) echo "::error::Refusing: '${{ env.ECS_SERVICE }}' looks like a production service. This workflow deploys STAGING only."; exit 1 ;;
+          esac
+          if ! aws ecr describe-repositories --repository-names "${{ env.ECR_REPOSITORY }}" >/dev/null 2>&1; then
+            echo "::error::ECR repository '${{ env.ECR_REPOSITORY }}' not found — run scripts/aws/setup-kiro-runner-staging.sh provision --apply first."; exit 1
+          fi
+          if ! aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+               --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+            echo "::error::ECS service '${{ env.ECS_SERVICE }}' not ACTIVE in '${{ env.ECS_CLUSTER }}' — provision it first."; exit 1
+          fi
+          ARN=$(aws secretsmanager describe-secret --secret-id "${{ env.SECRET_TOKEN }}" --query ARN --output text 2>/dev/null || true)
+          if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+            echo "::error::Secret '${{ env.SECRET_TOKEN }}' missing. Refusing to register a task definition that cannot start."; exit 1
+          fi
+
+      - name: Build and push image
+        id: build
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -e
+          IMAGE="$REGISTRY/${{ env.ECR_REPOSITORY }}:staging-${{ steps.commit.outputs.short }}"
+          docker build -t "$IMAGE" -t "$REGISTRY/${{ env.ECR_REPOSITORY }}:staging-latest" services/kiro-runner
+          docker push "$IMAGE"
+          docker push "$REGISTRY/${{ env.ECR_REPOSITORY }}:staging-latest"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Register task-definition revision + roll the service (desiredCount 1)
+        run: |
+          set -e
+          IMAGE="${{ steps.build.outputs.image }}"
+          SEC_TOKEN=$(aws secretsmanager describe-secret --secret-id "${{ env.SECRET_TOKEN }}" --query ARN --output text)
+          TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].taskDefinition' --output text)
+          echo "Current task definition: $TD_ARN"
+          NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
+            | jq --arg IMG "$IMAGE" --arg SEC_TOKEN "$SEC_TOKEN" --arg PREFIX "${{ env.KEY_PREFIX }}" --arg REGION "${{ env.TARGET_AWS_REGION }}" --arg MCPURL "${{ env.MCP_GATEWAY_URL }}" '
+                .taskRoleArn as $ROLE
+                | if ($ROLE // "" | endswith("/vitana-kiro-runner-task-role")) then . else error("task role is not vitana-kiro-runner-task-role") end
+                | .containerDefinitions[0].image = $IMG
+                | .containerDefinitions[0].environment =
+                    ( ( .containerDefinitions[0].environment // [] )
+                      | [ .[] | select(.name | IN("KIRO_KEY_SECRET_PREFIX","KIRO_KEY_READER_ROLE_ARN","AWS_REGION","KIRO_MCP_GATEWAY_URL") | not) ]
+                      + [ {name:"KIRO_KEY_SECRET_PREFIX",   value:$PREFIX},
+                          {name:"KIRO_KEY_READER_ROLE_ARN", value:$ROLE},
+                          {name:"AWS_REGION",               value:$REGION},
+                          {name:"KIRO_MCP_GATEWAY_URL",     value:$MCPURL} ] )
+                | .containerDefinitions[0].secrets =
+                    ( ( .containerDefinitions[0].secrets // [] )
+                      | [ .[] | select(.name | IN("KIRO_RUNNER_TOKEN") | not) ]
+                      + [ {name:"KIRO_RUNNER_TOKEN", valueFrom:$SEC_TOKEN} ] )
+                | .containerDefinitions[0].healthCheck = {command:["CMD","node","/app/dist/healthcheck.js"], interval:30, timeout:5, retries:3, startPeriod:20}
+                | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                      .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered $NEW_ARN"
+          aws ecs update-service --cluster "${{ env.ECS_CLUSTER }}" --service "${{ env.ECS_SERVICE }}" \
+            --task-definition "$NEW_ARN" --desired-count 1 >/dev/null
+          aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"
+          echo "Service stable on $NEW_ARN"
+
+      - name: Smoke — the rolled task runs our image and reports HEALTHY
+        run: |
+          set -e
+          # The runner is private (no ALB rule); its own /alive health check is what ECS reports.
+          RUNNING=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].deployments[?status==`PRIMARY`].taskDefinition' --output text)
+          IMG=$(aws ecs describe-task-definition --task-definition "$RUNNING" --query 'taskDefinition.containerDefinitions[0].image' --output text)
+          echo "PRIMARY deployment image: $IMG"
+          [ "$IMG" = "${{ steps.build.outputs.image }}" ] || { echo "::error::PRIMARY deployment is not the image just built"; exit 1; }
+          for _ in $(seq 1 18); do
+            TASK=$(aws ecs list-tasks --cluster "${{ env.ECS_CLUSTER }}" --service-name "${{ env.ECS_SERVICE }}" --desired-status RUNNING --query 'taskArns[0]' --output text)
+            H=$(aws ecs describe-tasks --cluster "${{ env.ECS_CLUSTER }}" --tasks "$TASK" --query 'tasks[0].healthStatus' --output text 2>/dev/null || echo UNKNOWN)
+            echo "task health: $H"
+            [ "$H" = "HEALTHY" ] && break
+            sleep 10
+          done
+          [ "$H" = "HEALTHY" ] || { echo "::error::kiro-runner task is not HEALTHY ($H)"; exit 1; }
+          printf -- '- Reason: %s\n' "$DEPLOY_REASON"

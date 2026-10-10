@@ -1,0 +1,10 @@
+    ✓ fires on subscribe and unsubscribe of live_stream_subscribers (4 ms)
+    ✓ writes the live_room shape that valid_source_type already allows (1 ms)
+    ✓ only a pending room with a future date reaches the calendar, in the trigger and the backfill (1 ms)
+    ✓ skips registered service and test accounts, in the trigger and the backfill (1 ms)
+    ✓ is idempotent: only a cancelled row is revived, the backfill never overwrites (1 ms)
+    ✓ cancels with one set-based statement: no loop, no network call (1 ms)
+    ✓ defaults to a one-hour room and is not executable by clients
+    ✓ has a throwaway-Postgres behaviour test wired into CI (1 ms)
+Test Suites: 1 passed, 1 total
+Tests:       8 passed, 8 total

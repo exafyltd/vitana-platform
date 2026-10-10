@@ -13,6 +13,8 @@ export const CreatePrRequestSchema = z.object({
   body: z.string().min(1, 'PR body/description is required'),
   base: z.string().default('main'),
   head: z.string().min(1, 'Head branch is required'),
+  // VTID-05014: which Vitana repo (allowlisted in the route); default unchanged.
+  repo: z.string().default('exafyltd/vitana-platform'),
 });
 
 export type CreatePrRequest = z.infer<typeof CreatePrRequestSchema>;
@@ -143,6 +145,18 @@ export type CicdEventType =
   // needs an auditable answer.
   | 'vtid.decision.watcher.lesson_muted'
   | 'vtid.decision.watcher.backfill'
+  // VTID-04868: Plan Sparring Gate. attached/missing are emitted at VTID
+  // allocation (log mode — shadow, never blocks); break_glass when an exempt
+  // insert is seen; tamper_detected by the hourly read-only reconciler
+  // (trigger disabled, ledger rows without sparring_id, config change).
+  | 'vtid.plan_sparring.attached'
+  | 'vtid.plan_sparring.missing'
+  | 'vtid.plan_sparring.break_glass'
+  | 'vtid.plan_sparring.tamper_detected'
+  // VTID-04892: Vitana Onboarding Assistant. One aggregate event per coach
+  // tick (never one per member per tick), plus a member's real stage changes.
+  | 'onboarding.coach.tick_completed'
+  | 'onboarding.coach.stage_changed'
   | 'cicd.github.create_pr.requested'
   | 'cicd.github.create_pr.succeeded'
   | 'cicd.github.create_pr.failed'
@@ -530,6 +544,11 @@ export type CicdEventType =
   // It is a governance DECISION (§6) — the evidence the "verify Bedrock FIRST,
   // then flip" ordering rule demands, and the record of who checked what.
   | 'llm.provider.verified'
+  // VTID-04886: Command Hub Overview Phase 3 — an exafy_admin acked or
+  // snoozed an /ops/attention item (reason + expiry <= 24 h; P1 is never
+  // snoozable). A human decision on the triage surface, not a poll (§6).
+  | 'ops.attention.acked'
+  | 'ops.attention.snoozed'
   | 'governance.llm_policy.updated'
   | 'governance.llm_policy.activated'
   | 'governance.llm_policy.reset'
@@ -625,6 +644,9 @@ export type CicdEventType =
   | 'orb.livekit.agent.room_join_succeeded'
   | 'orb.livekit.agent.room_join_failed'
   | 'orb.livekit.agent.disconnected'
+  // VTID-04776: the gateway minted a LiveKit session token (tenant, surface,
+  // role, lang — previously only inside the token metadata).
+  | 'orb.livekit.session.minted'
   // L2.2b.2 (VTID-02990): Gemini-via-Vertex text/model loop — proves the
   // agent can reach a model from canary room context using Cloud Run's
   // default service account (ADC, no API key). Emitted by the orb-agent's
@@ -919,6 +941,9 @@ export type CicdEventType =
   | 'connector.wearable.workout.recorded'
   | 'connector.wearable.other'
   | 'wearable.metrics.read'
+  // VTID-05030 (Health Hub D1): wearable token storage + vendor revoke
+  | 'connector.wearable.token_storage_unavailable'
+  | 'connector.wearable.vendor_revoke'
   // VTID-02300: Phase 3 outbound action consent events
   | 'connector.action.requested'
   | 'connector.action.executed'
@@ -1055,7 +1080,13 @@ export type CicdEventType =
   // VTID-04478: Commerce partner onboarding engine
   | 'partner_org.onboarding_started'
   | 'partner_org.company_updated'
+  // VTID-04890: a typeless draft gets its business type, once
+  | 'partner_org.partner_type_set'
   | 'partner_org.terms_accepted'
+  // VTID-04895: partner terms lifecycle
+  | 'partner_terms.draft_saved'
+  | 'partner_terms.version_published'
+  | 'partner_terms.reacceptance_required'
   | 'partner_org.lifecycle_changed'
   // VTID-04481: website platform detection during onboarding
   | 'partner_org.platform_detected'
@@ -1067,7 +1098,49 @@ export type CicdEventType =
   | 'partner_org.catalogue_imported'
   // VTID-04499: onboarding connections and mapping step
   | 'partner_org.connection_started'
-  | 'partner_org.mapping_step_changed';
+  | 'partner_org.mapping_step_changed'
+  // VTID-04933: exafy_admin supplier review (approve = verification level 1, request changes, reject, per-offering listing)
+  | 'partner_org.review.approved'
+  | 'partner_org.review.changes_requested'
+  | 'partner_org.review.rejected'
+  | 'partner_org.review.product_kept_offline'
+  | 'partner_org.review.product_listing_allowed'
+  // VTID-04838: a supplier's confirmed AI-setup draft created a business and/or draft products.
+  | 'commerce.ai_setup.applied'
+  | 'commerce.mcp.tool_called'
+  | 'commerce.mcp.delegated_token_blocked'
+  | 'commerce.mcp.client_refused'
+  | 'commerce.mcp.loopback_client_approved'
+  | 'partner_org.sandbox_submitted'
+  // VTID-04859: a Founding Member saw (and closed) their free-year celebration.
+  | 'billing.founding.celebrated'
+  // VTID-04878: VTNA reward sweep runs
+  | 'rewards.milestone_sweep.completed'
+  | 'rewards.milestone_sweep.failed'
+  // VTID-04982: Rewards shop
+  | 'rewards.shop.redeemed'
+  | 'rewards.shop.shipping_paid'
+  | 'rewards.shop.refunded'
+  | 'rewards.shop.reservation_expired'
+  | 'rewards.shop.order_status_changed'
+  // VTID-04975: Kiro engine in the Command Hub Operator (user id and request/thread id only).
+  | 'operator.kiro.permission_answered'
+  | 'operator.kiro.session_cancelled'
+  | 'operator.kiro.session_closed'
+  // VTID-04984: a Kiro thread's model switched through Kiro (user, thread and model id only).
+  | 'operator.kiro.model_selected'
+  // VTID-04999: a user linked or revoked their own Kiro API key (user id only, never the key).
+  | 'operator.kiro.key_linked'
+  | 'operator.kiro.key_revoked'
+  // VTID-05003: a user's Kiro Power seat ran out of credits (user and thread id only).
+  | 'operator.kiro.credits_exhausted'
+  // VTID-05005: Kiro called one of the Operator's read tools (tool, thread, latency, outcome; never args/results)
+  | 'operator.kiro.tool_called'
+  // VTID-05006: Kiro writes — the call (after its gates), the user's answer, a branch push (no content)
+  | 'operator.kiro.write_tool_called'
+  | 'operator.kiro.write_confirmed'
+  | 'operator.kiro.write_denied'
+  | 'operator.kiro.branch_pushed';
 
 export interface CicdOasisEvent {
   vtid: string;

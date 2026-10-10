@@ -11,6 +11,12 @@
  *
  * The Command Hub navigator is not a second registry: it may only switch
  * screens off or adjust them per tenant (decision 2026-09-24).
+ *
+ * VTID-04814: the Command Hub's own screens are the one part the gateway
+ * owns, because the gateway serves the Command Hub. They live in
+ * data/command-hub-screens.json (surface 'command-hub') and are merged into
+ * whichever community registry is in use, so one index answers both
+ * surfaces and the resolver keeps each session on its own surface.
  */
 import { createHash } from 'crypto';
 import * as fs from 'fs';
@@ -41,8 +47,27 @@ export interface NavScreen {
   aliases?: string[];
   formerIds?: string[];
   disabled?: string;
+  /**
+   * VTID-04814: which app renders the screen. Absent means the community
+   * app (every screen vitana-v1 publishes); 'command-hub' screens come from
+   * data/command-hub-screens.json. A session only ever reaches screens of
+   * its own surface.
+   */
+  surface?: NavSurface;
   /** Every shipped language, merged by the frontend build. */
   i18n: Record<string, NavScreenText>;
+}
+
+export type NavSurface = 'community' | 'command-hub';
+
+/** The surface a screen belongs to (absent = community). */
+export function screenSurface(s: Pick<NavScreen, 'surface'>): NavSurface {
+  return s.surface === 'command-hub' ? 'command-hub' : 'community';
+}
+
+/** The surface a route is on: the Command Hub is served under /command-hub. */
+export function surfaceForRoute(route: string | null | undefined): NavSurface {
+  return route && (route === '/command-hub' || route.startsWith('/command-hub/')) ? 'command-hub' : 'community';
 }
 
 export interface NavRegistry {
@@ -61,6 +86,7 @@ export interface LoadedNavRegistry {
 }
 
 export const SNAPSHOT_PATH = path.join(__dirname, 'data', 'nav-registry.snapshot.json');
+export const COMMAND_HUB_SCREENS_PATH = path.join(__dirname, 'data', 'command-hub-screens.json');
 const REFRESH_MS = 10 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 3000;
 
@@ -72,6 +98,62 @@ export function isVoiceTarget(s: NavScreen): boolean {
 /** The page a route belongs to (tabs and sections of one page share it). */
 export function pageOf(route: string): string {
   return route.split('?')[0].replace(/\/+$/, '') || '/';
+}
+
+/** A route template's page as a matcher: "/u/:identifier" matches "/u/maria". */
+function templateMatcher(template: string): RegExp | null {
+  const page = pageOf(template);
+  if (!page.includes(':')) return null;
+  const body = page.split('/').map((seg) => (seg.startsWith(':') ? '[^/]+' : seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))).join('/');
+  return new RegExp(`^${body}$`);
+}
+
+/**
+ * VTID-04846 — the screen a member is on, for "where am I" and the screen
+ * hints in the system instruction. Unlike findRegistryScreenByRoute it
+ * covers every screen, entity pages included ("/u/maria" is a member
+ * profile), and prefers the page itself over a tab or a panel on it.
+ * A section page names its first tab; unknown deeper paths fall back to
+ * their nearest known parent ("/comm/events-meetups/x/y" → Events & Meetups).
+ */
+export function findScreenForRoute(route: string | null | undefined, surface?: NavSurface): NavScreen | null {
+  if (!route) return null;
+  const all = getNavRegistry().registry.screens;
+  const surfaced = surface ? all.filter((s) => screenSurface(s) === surface) : all;
+  // A panel shares its host page's route; name the page, unless the panel is
+  // all the registry has for it (/calendar is both a page and a panel).
+  const screens = surfaced.filter((s) => !s.overlay);
+  const exact = screens.find((s) => s.route === route || s.mobileRoute === route);
+  if (exact) return exact;
+  // The page itself (no tab or section query) first, then any of its tabs.
+  const onPage = (page: string) => {
+    const hits = screens.filter((s) => pageOf(s.route) === page || (s.mobileRoute ? pageOf(s.mobileRoute) === page : false));
+    return hits.find((s) => !s.route.includes('?') && !s.disabled) || hits.find((s) => !s.disabled) || hits[0]
+      || surfaced.find((s) => s.overlay && pageOf(s.route) === page) || null;
+  };
+  const page = pageOf(route);
+  const direct = onPage(page);
+  if (direct) return direct;
+  const templated = screens.find((s) => templateMatcher(s.route)?.test(page) || (s.mobileRoute ? templateMatcher(s.mobileRoute)?.test(page) : false));
+  if (templated) return templated;
+  // A section page whose tabs carry their own routes ("/command-hub/overview"
+  // → its first tab), as the app shows it.
+  const child = screens.find((s) => !s.disabled && pageOf(s.route).startsWith(`${page}/`) && !s.route.includes(':'));
+  if (child) return child;
+  const parts = page.split('/').filter(Boolean);
+  while (parts.length > 1) {
+    parts.pop();
+    const parent = onPage(`/${parts.join('/')}`);
+    if (parent) return parent;
+  }
+  return null;
+}
+
+/** A screen's title and description in the member's language (English fallback). */
+export function screenText(s: NavScreen, lang: string): { title: string; shows?: string } {
+  const l = (lang || 'en').split('-')[0].toLowerCase();
+  const t = s.i18n[l] || s.i18n.en;
+  return { title: t?.title || s.i18n.en.title, shows: t?.shows || s.i18n.en.shows };
 }
 
 /** Returns a list of problems; empty means the registry is usable. */
@@ -95,8 +177,45 @@ export function registrySignature(reg: NavRegistry): string {
   return createHash('sha256').update(JSON.stringify(reg.screens)).digest('hex').slice(0, 16);
 }
 
+let commandHubCache: NavScreen[] | null = null;
+
+/** The Command Hub's screens (bundled with the gateway that serves it). */
+export function loadCommandHubScreens(): NavScreen[] {
+  if (!commandHubCache) {
+    const reg = JSON.parse(fs.readFileSync(COMMAND_HUB_SCREENS_PATH, 'utf8')) as NavRegistry;
+    const problems = validateNavRegistry(reg);
+    for (const s of reg.screens || []) {
+      if (screenSurface(s) !== 'command-hub') problems.push(`${s.id}: not a command-hub screen`);
+      if (surfaceForRoute(s.route) !== 'command-hub') problems.push(`${s.id}: route outside /command-hub`);
+    }
+    if (problems.length) throw new Error(`bundled command-hub screens are invalid: ${problems.slice(0, 3).join('; ')}`);
+    commandHubCache = reg.screens;
+  }
+  return commandHubCache;
+}
+
+/**
+ * The community registry plus the Command Hub's screens. A community screen
+ * never loses its place: a Command Hub id that collides with one is dropped
+ * (and logged) rather than shadowing it.
+ */
+export function withCommandHubScreens(reg: NavRegistry): NavRegistry {
+  const community = reg.screens.filter((s) => screenSurface(s) === 'community');
+  const taken = new Set(community.map((s) => s.id));
+  const hub: NavScreen[] = [];
+  for (const s of loadCommandHubScreens()) {
+    if (taken.has(s.id)) {
+      console.warn(`[nav-registry] command-hub screen ${s.id} collides with a community screen; dropped`);
+      continue;
+    }
+    hub.push(s);
+  }
+  return { ...reg, screens: [...community, ...hub] };
+}
+
 function wrap(registry: NavRegistry, source: LoadedNavRegistry['source']): LoadedNavRegistry {
-  return { registry, signature: registrySignature(registry), source, loaded_at: Date.now() };
+  const merged = withCommandHubScreens(registry);
+  return { registry: merged, signature: registrySignature(merged), source, loaded_at: Date.now() };
 }
 
 let snapshotCache: LoadedNavRegistry | null = null;

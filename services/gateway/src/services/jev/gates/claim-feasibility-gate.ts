@@ -24,7 +24,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from '../../../lib/supabase';
 import { decide, DecideOptions } from '../jev-decision-service';
-import { jevGateMode, recordJevShadowDecision, recordJevShadowOutcome } from '../jev-shadow';
+import { jevGateMode, recordJevGateSkip, recordJevShadowDecision, recordJevShadowOutcome } from '../jev-shadow';
 import * as repo from '../jev-repository';
 
 export const CLAIM_FEASIBILITY_GATE = 'claim_feasibility';
@@ -62,10 +62,17 @@ export async function runClaimFeasibilityCheck(a: ClaimFeasibilityArgs): Promise
   const env = a.env ?? process.env;
   const mode = jevGateMode(CLAIM_FEASIBILITY_GATE, env);
   if (mode === 'off') return null;
+  // VTID-05012: a gate that is on but does not ask Jev records why.
+  const skip = (reason: string) =>
+    recordJevGateSkip(
+      { gate: CLAIM_FEASIBILITY_GATE, decision: 'execution_feasibility', mode, reason, subject_type: 'dev_autopilot_execution', subject_ref: a.executionId, system_action: a.systemAction || 'dispatch' },
+      a.sb,
+    );
   try {
     const ctx = await a.load();
     if (!ctx) {
       console.warn(`[jev] ${CLAIM_FEASIBILITY_GATE}: no plan/finding for ${a.executionId} — not asked`);
+      await skip('no_plan_or_finding');
       return null;
     }
     const r = await decide(
@@ -103,6 +110,7 @@ export async function runClaimFeasibilityCheck(a: ClaimFeasibilityArgs): Promise
     );
   } catch (err: any) {
     console.warn(`[jev] ${CLAIM_FEASIBILITY_GATE} check failed for ${a.executionId}: ${err?.message || err}`);
+    await skip('error');
     return null;
   }
 }

@@ -81,7 +81,7 @@ const APPLY = Boolean(args.apply);
 const CHECK_ONLY = Boolean(args.check);
 const FROM_ARTIFACT = Boolean(args['from-artifact']);
 const CURRICULUM = String(args.curriculum ?? 'v2');
-const BATCH = args.batch ? Number(args.batch) : 15;
+const BATCH_OVERRIDE = args.batch ? Number(args.batch) : null;
 
 function artifactPath(surface: string, locale: string): string {
   return join(ARTIFACT_ROOT, surface, `${locale}.json`);
@@ -173,7 +173,7 @@ async function resolveLocales(repo: DbI18nRepository): Promise<SupportedLocaleRo
             return row;
           });
 
-  // German is the source for both surfaces and is never written to either
+  // German is the source for every surface and is never written to a
   // translation table; seeding it would create a divergent second copy.
   return wanted.filter((l) => {
     if (l.code === SOURCE_LOCALE) {
@@ -185,12 +185,12 @@ async function resolveLocales(repo: DbI18nRepository): Promise<SupportedLocaleRo
 }
 
 /**
- * Compare the two content surfaces between Supabase and Aurora, per locale.
+ * Compare the content surfaces between Supabase and Aurora, per locale.
  *
  * This is deliberately more than a debugging aid. `SUPABASE-TO-AURORA-MIGRATION-PLAN.md`
  * Phase 0 is gated on "full row-count + checksum reconciliation, Supabase vs
  * Aurora, per table" and "a re-runnable reconciliation job, not a one-time
- * manual check". For these two tables, this is that job — `source_sha` gives a
+ * manual check". For these tables, this is that job — `source_sha` gives a
  * content checksum for free, so a row that exists on both sides but differs is
  * reported as a mismatch rather than counted as present.
  *
@@ -237,13 +237,13 @@ async function runVerify(): Promise<void> {
   await closeAuroraPool();
   if (divergent > 0) {
     console.error(
-      `\n[db-i18n] ${divergent} divergence(s) between Supabase and Aurora on these two tables.\n` +
+      `\n[db-i18n] ${divergent} divergence(s) between Supabase and Aurora on these tables.\n` +
         `          This is a Phase 0 signal, not necessarily a pipeline bug — DMS may simply\n` +
         `          not have applied them. Investigate before treating Aurora as a valid copy.`,
     );
     process.exit(1);
   }
-  console.log('\n[db-i18n] Supabase and Aurora agree on both content surfaces.');
+  console.log('\n[db-i18n] Supabase and Aurora agree on every content surface.');
 }
 
 async function main(): Promise<void> {
@@ -358,7 +358,7 @@ async function main(): Promise<void> {
             brief: surface.translatorBrief,
           },
           surface.requiredFields,
-          BATCH,
+          BATCH_OVERRIDE ?? surface.batchSize ?? 15,
         );
         for (const u of todo) {
           const fields = translated.get(u.key);

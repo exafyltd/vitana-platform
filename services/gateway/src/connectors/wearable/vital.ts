@@ -26,6 +26,7 @@ import type {
   NormalizedEvent,
   WebhookRequest,
 } from '../types';
+import { revokeRequest } from './revoke-http';
 
 function vitalBaseUrl(): string {
   const region = process.env.VITAL_REGION ?? 'us';
@@ -151,6 +152,18 @@ const vitalConnector: Connector = {
   display_name: 'Vital',
   auth_type: 'sdk_bridge',
   capabilities: ['sleep.read', 'activity.read', 'workouts.read', 'hr.read', 'hrv.read', 'body.read'],
+
+  // VTID-05030: deregister the provider for the Vital (Junction) user
+  // (documented: DELETE /v2/user/{user_id}/{provider}). Widget rows never hold
+  // OAuth tokens here. 404 = the connection is already gone.
+  async revokeAccess(input) {
+    if (!input.provider_user_id) return { status: 'no_token' };
+    if (!input.provider_slug) return { status: 'unsupported', detail: 'provider_unknown' };
+    const headers = vitalHeaders();
+    if (!headers) return { status: 'unsupported', detail: 'not_configured' };
+    const url = `${vitalBaseUrl()}/user/${encodeURIComponent(input.provider_user_id)}/${encodeURIComponent(input.provider_slug)}`;
+    return revokeRequest(url, { method: 'DELETE', headers }, [404]);
+  },
 
   async initialize(): Promise<void> {
     if (!vitalHeaders()) {

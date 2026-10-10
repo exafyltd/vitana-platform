@@ -42,7 +42,7 @@ export type CommerceVertical = 'health' | 'general';
  *   draft → submitted → verifying → live
  *   verifying → needs_action (partner fixes, back to verifying)
  *   verifying → exception (Vitana review queue) → live | needs_action | rejected
- *   verifying → rejected
+ *   verifying → rejected; needs_action → rejected (admin review, VTID-04933)
  *   live ⇄ paused (automatic, recoverable by the partner)
  *   live → suspended (Vitana, exception outcome) → live (reinstated)
  * `rejected` is terminal.
@@ -51,7 +51,8 @@ export const LIFECYCLE_TRANSITIONS: Readonly<Record<LifecycleState, readonly Lif
   draft: ['submitted'],
   submitted: ['verifying'],
   verifying: ['live', 'needs_action', 'exception', 'rejected'],
-  needs_action: ['verifying'],
+  // VTID-04933: an admin may reject from needs_action in one move.
+  needs_action: ['verifying', 'rejected'],
   exception: ['live', 'needs_action', 'rejected'],
   live: ['paused', 'suspended'],
   paused: ['live'],

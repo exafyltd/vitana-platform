@@ -1,0 +1,12 @@
+# commands run for VTID-04893, 2026-10-05T10:52:20Z
+cd services/gateway
+$ npx tsc --noEmit -p .
+exit 0
+$ npx jest test/vtid-04893-google-aws-supplier.test.ts test/services/conversation/vtid-04525-conversation-flag-registry.test.ts test/orb/live/upstream test/routes/orb-livekit.test.ts
+exit 0
+Test Suites: 52 passed, 52 total
+Tests:       705 passed, 705 total
+$ npm run test:roles
+Test Suites: 1 passed, 1 total
+Tests:       105 passed, 105 total
+exit 0

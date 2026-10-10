@@ -232,13 +232,13 @@ describe('runWalletCreditReward (AP-0708) — credit_wallet error handling', () 
     const supabase = makeFakeSupabase({}, {
       credit_wallet: { data: null, error: { message: 'function credit_wallet(...) does not exist' } },
     });
-    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1', reward_type: 'product_review' });
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1', reward_type: 'complete_onboarding' });
     const handler = getHandler('runWalletCreditReward')!;
 
     const result = await handler(ctx);
 
     expect(ctx.log).toHaveBeenCalledWith(
-      expect.stringContaining('credit_wallet RPC returned an error for product_review/u1'),
+      expect.stringContaining('credit_wallet RPC returned an error for complete_onboarding/u1'),
     );
     expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('function credit_wallet(...) does not exist'));
     expect(notify).not.toHaveBeenCalled();
@@ -253,12 +253,12 @@ describe('runWalletCreditReward (AP-0708) — credit_wallet error handling', () 
     const supabase = makeFakeSupabase({}, {
       credit_wallet: { data: { duplicate: true }, error: null },
     });
-    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1', reward_type: 'product_review' });
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1', reward_type: 'complete_onboarding' });
     const handler = getHandler('runWalletCreditReward')!;
 
     const result = await handler(ctx);
 
-    expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('Duplicate reward blocked: product_review for u1'));
+    expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('Duplicate reward blocked: complete_onboarding for u1'));
     expect(notify).not.toHaveBeenCalled();
     expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
   });
@@ -267,7 +267,7 @@ describe('runWalletCreditReward (AP-0708) — credit_wallet error handling', () 
     const supabase = makeFakeSupabase({}, {
       credit_wallet: { data: { ok: true, balance: 125 }, error: null },
     });
-    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1', reward_type: 'product_review' });
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1', reward_type: 'complete_onboarding' });
     const handler = getHandler('runWalletCreditReward')!;
 
     const result = await handler(ctx);
@@ -275,9 +275,20 @@ describe('runWalletCreditReward (AP-0708) — credit_wallet error handling', () 
     expect(notify).toHaveBeenCalledTimes(1);
     expect(ctx.emitEvent).toHaveBeenCalledWith(
       'autopilot.wallet.credits_awarded',
-      expect.objectContaining({ user_id: 'u1', reward_type: 'product_review', amount: 25, balance: 125 }),
+      expect.objectContaining({ user_id: 'u1', reward_type: 'complete_onboarding', amount: 50, balance: 125 }),
     );
     expect(result).toEqual({ usersAffected: 1, actionsTaken: 1 });
+  });
+
+  // VTID-04864: only approved VTNA rules pay.
+  it('does not pay a legacy reward type that is not an approved VTNA rule', async () => {
+    const supabase = makeFakeSupabase({}, { credit_wallet: { data: { ok: true, balance: 125 }, error: null } });
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1', reward_type: 'product_review' });
+    const handler = getHandler('runWalletCreditReward')!;
+    const result = await handler(ctx);
+    expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('is not an approved VTNA rule'));
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
   });
 
   it('returns zero actions immediately for an unknown reward_type, without calling credit_wallet', async () => {

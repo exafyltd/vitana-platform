@@ -6,6 +6,11 @@
  * (locked once submitted), POST /:orgId/terms/accept (current version only,
  * recorded once), POST /:orgId/submit (prerequisites, guarded transitions,
  * one OASIS event per move).
+ *
+ * VTID-04895: the terms in force are the published partner_terms_versions row
+ * (no env var). Acceptance needs the exact version, its content hash and the
+ * language shown, and only the supplier's own session — an assistant's
+ * delegated OAuth token is refused.
  */
 
 import express from 'express';
@@ -20,9 +25,18 @@ jest.mock('../src/middleware/auth-supabase-jwt', () => ({
       'Bearer other-1': { user_id: 'other-1', email: 'x@example.com', exafy_admin: false },
       'Bearer no-email': { user_id: 'no-email-1', email: null, exafy_admin: false },
     };
-    const id = byToken[req.headers.authorization];
+    // VTID-04895: the verified token's claims, as requireAuth exposes them.
+    const claimsByToken: Record<string, any> = {
+      'Bearer owner-1': { sub: 'owner-1', session_id: 'sess-owner' },
+      'Bearer owner-oauth-claim': { sub: 'owner-1', session_id: 'sess-owner', client_id: 'claude-client' },
+      'Bearer owner-oauth-session': { sub: 'owner-1', session_id: 'sess-oauth' },
+      'Bearer owner-no-session': { sub: 'owner-1' },
+    };
+    const auth = req.headers.authorization;
+    const id = byToken[auth] ?? (claimsByToken[auth] ? byToken['Bearer owner-1'] : undefined);
     if (!id) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
     req.identity = id;
+    req.auth_raw_claims = claimsByToken[auth] ?? { sub: id.user_id, session_id: `sess-${id.user_id}` };
     return next();
   },
   optionalAuth: (_req: any, _res: any, next: any) => next(),
@@ -68,6 +82,13 @@ function makeFakeSupabase() {
       chain.then = (res: any, rej: any) => run('then').then(res, rej);
       return chain;
     },
+    // VTID-04895: auth_session_is_delegated — sess-oauth belongs to an OAuth client.
+    rpc(name: string, args: any) {
+      calls.push({ table: `rpc:${name}`, op: 'rpc', args: [args], filters: [], terminal: 'rpc' });
+      if (name !== 'auth_session_is_delegated') return Promise.resolve({ data: null, error: { message: `unexpected rpc ${name}` } });
+      const verdict = args.p_session_id === 'sess-oauth' ? 'delegated' : String(args.p_session_id).startsWith('sess-') ? 'direct' : 'unknown';
+      return Promise.resolve({ data: verdict, error: null });
+    },
   };
 }
 jest.mock('../src/lib/supabase', () => ({ getSupabase: () => makeFakeSupabase() }));
@@ -91,7 +112,11 @@ function org(over: Record<string, any> = {}) {
 }
 
 /** Wires the tables a full state read touches. `state` is mutated by updates. */
-function wireOrg(state: Record<string, any>, extra: { steps?: any[]; terms?: string[]; admin?: boolean } = {}) {
+function wireOrg(state: Record<string, any>, extra: { steps?: any[]; terms?: string[]; admin?: boolean; connections?: number } = {}) {
+  // VTID-04953: the checklist reads the org's catalogue source.
+  handlers.integration_manifest = () => ({ data: null, count: extra.connections ?? 0, error: null });
+  handlers.merchants = () => ({ data: [], error: null });
+  handlers.products = () => ({ data: [], error: null });
   handlers.partner_organizations = (c) => {
     if (c.op === 'update') {
       const guard = c.filters.find(([k]) => k === 'lifecycle_state');
@@ -112,11 +137,30 @@ function wireOrg(state: Record<string, any>, extra: { steps?: any[]; terms?: str
 
 const COMPANY = { legal_name: 'Acme GmbH', country: 'DE', vat_id: 'DE123456789', website: 'https://acme.example/' };
 
+/** VTID-04895: the published terms version (null = none published). */
+const TERMS_V = {
+  id: 'tv-2026-09', version: '2026-09', baseline_version_id: 'tv-2026-09', content_sha256: 'hash-2026-09',
+  requires_reacceptance: true, published_at: '2026-10-05T00:00:00Z',
+  // VTID-04909: German binding; English second; translations under exact BCP-47 codes.
+  content: {
+    de: { title: 'Partnerbedingungen', body_md: 'Verbindlicher Text' },
+    en: { title: 'Partner Terms', body_md: 'English text' },
+    ar: { title: 'شروط الشركاء', body_md: 'نص' },
+    'pt-BR': { title: 'Termos de Parceria', body_md: 'Texto' },
+  } as Record<string, { title: string; body_md: string }>,
+};
+let publishedTerms: typeof TERMS_V | null;
+const ACCEPT = { terms_version: '2026-09', content_sha256: 'hash-2026-09', shown_locale: 'de' };
+
 beforeEach(() => {
   jest.clearAllMocks();
   handlers = {};
   calls = [];
-  process.env.PARTNER_TERMS_VERSION = '2026-09';
+  publishedTerms = TERMS_V;
+  handlers.partner_terms_versions = (c) =>
+    c.terminal === 'maybeSingle'
+      ? { data: publishedTerms, error: null }
+      : { data: publishedTerms ? [{ version: publishedTerms.version }] : [], error: null };
 });
 
 describe('mount', () => {
@@ -228,17 +272,81 @@ describe('PATCH /:orgId/company', () => {
 
 describe('POST /:orgId/terms/accept', () => {
   it('503 when no terms are published', async () => {
-    delete process.env.PARTNER_TERMS_VERSION;
+    publishedTerms = null;
     wireOrg(org());
     const r = await request(app()).post('/api/v1/partner-onboarding/org-1/terms/accept').set('Authorization', 'Bearer owner-1')
-      .send({ terms_version: '2026-09' });
+      .send(ACCEPT);
     expect(r.status).toBe(503);
+  });
+
+  it('the terms table missing (migration not applied yet) reads as not published, never an error', async () => {
+    delete handlers.partner_terms_versions; // the fake throws for an unknown table
+    wireOrg(org());
+    const r = await request(app()).get('/api/v1/partner-onboarding/org-1').set('Authorization', 'Bearer owner-1');
+    expect(r.status).toBe(200);
+    expect(r.body.checklist.steps.find((s: any) => s.key === 'terms')).toMatchObject({ status: 'todo', missing: ['terms_not_published'] });
+  });
+
+  it.each([
+    ['an OAuth client_id claim (assistant token)', 'Bearer owner-oauth-claim'],
+    ['a session created for an OAuth client', 'Bearer owner-oauth-session'],
+    ['a token without a session', 'Bearer owner-no-session'],
+  ])('refuses %s: only the supplier accepts, never an assistant', async (_label, token) => {
+    let inserted = false;
+    wireOrg(org());
+    handlers.partner_terms_acceptances = (c) => { if (c.op === 'insert') inserted = true; return { data: [], error: null }; };
+    const r = await request(app()).post('/api/v1/partner-onboarding/org-1/terms/accept').set('Authorization', token).send(ACCEPT);
+    expect(r.status).toBe(403);
+    expect(r.body.error).toBe('TERMS_ACCEPTANCE_REQUIRES_SUPPLIER');
+    expect(inserted).toBe(false);
+    expect(emitOasisEventMock).not.toHaveBeenCalled();
+  });
+
+  it('409 when the text accepted is not the text published (content hash)', async () => {
+    wireOrg(org());
+    const r = await request(app()).post('/api/v1/partner-onboarding/org-1/terms/accept').set('Authorization', 'Bearer owner-1')
+      .send({ ...ACCEPT, content_sha256: 'hash-of-an-older-text' });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe('TERMS_CONTENT_MISMATCH');
+  });
+
+  it.each(['en+de', 'pt', 'zh-CN', 'fr', '', 'DE'])('400 for shown_locale %p: not a language this version carries', async (shown) => {
+    let inserted = false;
+    wireOrg(org());
+    handlers.partner_terms_acceptances = (c) => { if (c.op === 'insert') inserted = true; return { data: [], error: null }; };
+    const r = await request(app()).post('/api/v1/partner-onboarding/org-1/terms/accept').set('Authorization', 'Bearer owner-1')
+      .send({ ...ACCEPT, shown_locale: shown });
+    expect(r.status).toBe(400);
+    expect(r.body).toMatchObject({ error: 'INVALID_SHOWN_LOCALE', available_locales: ['de', 'en', 'pt-BR', 'ar'] });
+    expect(inserted).toBe(false);
+  });
+
+  it.each(['de', 'en', 'pt-BR', 'ar'])('accepting while %s is on screen binds the same German hash', async (shown) => {
+    let row: any = null;
+    wireOrg(org());
+    handlers.partner_terms_acceptances = (c) => {
+      if (c.op === 'insert') { row = c.args[0]; return { data: null, error: null }; }
+      return { data: [{ terms_version: '2026-09' }], error: null };
+    };
+    const r = await request(app()).post('/api/v1/partner-onboarding/org-1/terms/accept').set('Authorization', 'Bearer owner-1')
+      .send({ ...ACCEPT, shown_locale: shown });
+    expect(r.status).toBe(200);
+    expect(row).toMatchObject({ terms_version_id: 'tv-2026-09', content_sha256: 'hash-2026-09', shown_locale: shown });
+  });
+
+  it('a version published between reading and accepting is refused by the database as stale (409)', async () => {
+    wireOrg(org());
+    handlers.partner_terms_acceptances = (c) =>
+      c.op === 'insert' ? { data: null, error: { code: 'P0001', message: 'PARTNER_TERMS_VERSION_NOT_CURRENT' } } : { data: [], error: null };
+    const r = await request(app()).post('/api/v1/partner-onboarding/org-1/terms/accept').set('Authorization', 'Bearer owner-1').send(ACCEPT);
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe('TERMS_CONTENT_MISMATCH');
   });
 
   it('409 when accepting a version other than the one in force', async () => {
     wireOrg(org());
     const r = await request(app()).post('/api/v1/partner-onboarding/org-1/terms/accept').set('Authorization', 'Bearer owner-1')
-      .send({ terms_version: '2026-01' });
+      .send({ ...ACCEPT, terms_version: '2026-01' });
     expect(r.status).toBe(409);
     expect(r.body.current_version).toBe('2026-09');
   });
@@ -251,12 +359,21 @@ describe('POST /:orgId/terms/accept', () => {
       return { data: [{ terms_version: '2026-09' }], error: null };
     };
     const r = await request(app()).post('/api/v1/partner-onboarding/org-1/terms/accept').set('Authorization', 'Bearer owner-1')
-      .set('User-Agent', 'jest-agent').send({ terms_version: '2026-09' });
+      .set('User-Agent', 'jest-agent').send({ ...ACCEPT, shown_locale: 'pt-BR' });
     expect(r.status).toBe(200);
-    expect(row).toMatchObject({ partner_organization_id: 'org-1', terms_version: '2026-09', accepted_by: OWNER, user_agent: 'jest-agent' });
+    // VTID-04895: business, user, exact version (string + id), content hash, language shown; time by default.
+    expect(row).toMatchObject({
+      partner_organization_id: 'org-1', terms_version: '2026-09', terms_version_id: 'tv-2026-09', content_sha256: 'hash-2026-09',
+      shown_locale: 'pt-BR', accepted_by: OWNER, user_agent: 'jest-agent',
+    });
     expect(typeof row.ip_address).toBe('string');
     expect(r.body.checklist.steps.find((s: any) => s.key === 'terms').status).toBe('done');
-    expect(emitOasisEventMock).toHaveBeenCalledWith(expect.objectContaining({ type: 'partner_org.terms_accepted' }));
+    expect(emitOasisEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'partner_org.terms_accepted',
+      payload: expect.objectContaining({ terms_version_id: 'tv-2026-09', content_sha256: 'hash-2026-09', shown_locale: 'pt-BR' }),
+    }));
+    // The assistant check ran on the caller's own session.
+    expect(calls.find((c) => c.table === 'rpc:auth_session_is_delegated')?.args[0]).toEqual({ p_session_id: 'sess-owner' });
   });
 
   it('treats a second acceptance of the same version as already done', async () => {
@@ -264,10 +381,66 @@ describe('POST /:orgId/terms/accept', () => {
     handlers.partner_terms_acceptances = (c) =>
       c.op === 'insert' ? { data: null, error: { code: '23505', message: 'dup' } } : { data: [{ terms_version: '2026-09' }], error: null };
     const r = await request(app()).post('/api/v1/partner-onboarding/org-1/terms/accept').set('Authorization', 'Bearer owner-1')
-      .send({ terms_version: '2026-09' });
+      .send(ACCEPT);
     expect(r.status).toBe(200);
     expect(r.body.already_accepted).toBe(true);
     expect(emitOasisEventMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /:orgId/terms (VTID-04895)', () => {
+  const read = (locale?: string) =>
+    request(app()).get(`/api/v1/partner-onboarding/org-1/terms${locale ? `?locale=${locale}` : ''}`).set('Authorization', 'Bearer owner-1');
+
+  it('nothing published', async () => {
+    publishedTerms = null;
+    wireOrg(org());
+    const r = await read();
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ published: false, terms: null, accepted: false });
+  });
+
+  it('shows the caller language, the binding German text, the version and its German hash', async () => {
+    wireOrg(org());
+    const r = await read('pt-BR');
+    expect(r.body.terms).toMatchObject({
+      version: '2026-09', content_sha256: 'hash-2026-09', binding_locale: 'de',
+      binding: { title: 'Partnerbedingungen', body_md: 'Verbindlicher Text' },
+      locale: 'pt-BR', text: { title: 'Termos de Parceria' }, fallback: false, direction: 'ltr',
+      available_locales: ['de', 'en', 'pt-BR', 'ar'], shown_locale: 'pt-BR',
+    });
+    expect(r.body.accepted).toBe(false);
+    expect(r.body.reacceptance_required).toBe(false);
+  });
+
+  it('German when the caller language has no translation (never English); Arabic is right-to-left', async () => {
+    wireOrg(org());
+    const fr = await read('fr-FR');
+    expect(fr.body.terms).toMatchObject({ locale: 'de', fallback: true, text: { title: 'Partnerbedingungen' }, shown_locale: 'de' });
+    const none = await read();
+    expect(none.body.terms).toMatchObject({ locale: 'de', fallback: false });
+    const ar = await read('ar-XA');
+    expect(ar.body.terms).toMatchObject({ locale: 'ar', direction: 'rtl', content_sha256: 'hash-2026-09' });
+  });
+
+  it('an acceptance of an earlier version with the same baseline (editorial update) still counts', async () => {
+    wireOrg(org(), { terms: ['2026-08'] });
+    handlers.partner_terms_versions = (c) =>
+      c.terminal === 'maybeSingle' ? { data: TERMS_V, error: null } : { data: [{ version: '2026-08' }, { version: '2026-09' }], error: null };
+    const r = await read();
+    expect(r.body.accepted).toBe(true);
+    const state = await request(app()).get('/api/v1/partner-onboarding/org-1').set('Authorization', 'Bearer owner-1');
+    expect(state.body.checklist.steps.find((s: any) => s.key === 'terms').status).toBe('done');
+  });
+
+  it('an acceptance of an older baseline (material update) needs re-acceptance; the org stays as it is', async () => {
+    const state = org({ ...COMPANY, lifecycle_state: 'live' });
+    wireOrg(state, { terms: ['2026-01'] });
+    const r = await read();
+    expect(r.body).toMatchObject({ accepted: false, reacceptance_required: true });
+    const s = await request(app()).get('/api/v1/partner-onboarding/org-1').set('Authorization', 'Bearer owner-1');
+    expect(s.body.checklist.steps.find((x: any) => x.key === 'terms')).toMatchObject({ status: 'todo', detail: { current_version: '2026-09' } });
+    expect(state.lifecycle_state).toBe('live'); // owner decision O-1: no pause, no suspension
   });
 });
 
@@ -304,6 +477,7 @@ describe('POST /:orgId/submit', () => {
     const state = org({ ...COMPANY, partner_type: 'affiliate_brand' });
     wireOrg(state, {
       terms: ['2026-09'],
+      connections: 1,
       steps: ['verification', 'catalogue', 'mapping', 'tracking_test'].map((k) => ({ step_key: k, status: 'done' })),
     });
     const r = await request(app()).post('/api/v1/partner-onboarding/org-1/submit').set('Authorization', 'Bearer owner-1');

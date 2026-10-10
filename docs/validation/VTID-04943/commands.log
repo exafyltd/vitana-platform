@@ -1,0 +1,7 @@
+# VTID-04943 — commands (read-only unless noted)
+select public.ci_orb_session_state_health()                                    # session_starts_24h 132, acks_24h 0 (2026-10-06 20:56Z)
+select max(created_at) from oasis_events where topic='orb.session.audio_ready.acked'   # 2026-10-04 07:28:34Z
+git show cbbd963de (VTID-04866, merged 2026-10-04 07:18Z)                       # FEATURE_ORB_WS_TRANSPORT_ENV="staging+prod"
+orb.live.diag stages over 24h                                                  # none distinguishes audio_ready vs fallback release
+npx tsc --noEmit (services/gateway)                                            # clean
+npx jest test/vtid-04943 + 10 related ORB/session-state/health suites          # 127 passed

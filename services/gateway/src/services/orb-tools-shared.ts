@@ -26,6 +26,8 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import { getSupabase } from '../lib/supabase';
+import { writeDiaryEpisode, updateDiaryEpisodeText, resolveTenantId } from './memory/diary';
 import { shouldBlockTool } from './intelligence/role-policy-enforcer';
 import { recordToolDecision } from './orchestrator/policy-shadow';
 // VTID-03255 — Journey Foundation voice tool: writes every answer + returns next move.
@@ -116,18 +118,6 @@ import { DEVELOPER_KNOWLEDGE_TOOL_HANDLERS, DEVELOPER_KNOWLEDGE_TOOL_DECLARATION
 // Assistant" part).
 import { MARKETPLACE_GUIDE_TOOL_HANDLERS, MARKETPLACE_GUIDE_TOOL_DECLARATIONS } from './orb-tools/marketplace-guide-tools';
 import { MARKETPLACE_JOURNEY_TOOL_HANDLERS, MARKETPLACE_JOURNEY_TOOL_DECLARATIONS } from './orb-tools/marketplace-journey-tools';
-import {
-  lookupScreen,
-  lookupByAlias,
-  lookupByRoute,
-  suggestSimilar,
-  suggestSimilarScored,
-  searchCatalog,
-  FUZZY_NAV_MIN_SCORE,
-  resolveEffectiveRoles,
-  getContent,
-  type NavCatalogEntry,
-} from '../lib/navigation-catalog';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -2033,13 +2023,8 @@ export async function tool_explain_feature(args: OrbToolArgs, id?: OrbToolIdenti
 async function redirectScreenIdFor(route: string | null | undefined): Promise<string | null> {
   if (!route) return null;
   try {
-    if (process.env.NAV_V2_ENABLED === 'true') {
-      const { findRegistryScreenByRoute } = await import('../navigation/nav-dispatch');
-      const s = findRegistryScreenByRoute(route);
-      if (s) return s.id;
-    }
-    const { lookupByRoute } = await import('../lib/navigation-catalog');
-    return lookupByRoute(route)?.screen_id ?? null;
+    const { findRegistryScreenByRoute } = await import('../navigation/nav-dispatch');
+    return findRegistryScreenByRoute(route)?.id ?? null;
   } catch {
     return null;
   }
@@ -3331,27 +3316,71 @@ export async function tool_respond_to_match(
 }
 
 /**
- * PR 1.B-5: lifts orb-live.ts:handleNavigateToScreen's 7 gates into the
- * shared dispatcher so LiveKit's tool_navigate_to_screen enforces the
- * same robustness Vertex has today.
- *
- * Gates:
- *   1. Anonymous gate — refuses non-anonymous_safe screens for anonymous
- *      sessions. error_kind='auth_required'.
- *   2. Viewport gate (VTID-02789) — refuses mobile-only screens on
- *      desktop and desktop-only on mobile. error_kind='wrong_viewport'.
- *   3. Mobile_route override — when session is mobile AND the entry has
- *      a mobile_route, use it instead of route.
- *   4. Already-there dedup — skips when current_route already matches
- *      the resolved base path (overlay entries always pass).
- *   5. OASIS error_kind events — every rejection emits orb.navigator.blocked
- *      with a typed error_kind so admins can debug specific failure modes.
- *   6. Identity threading — is_anonymous + is_mobile read from
- *      OrbToolIdentity; current_route + recent_routes from args (consistent
- *      with the get_current_screen / navigate convention).
- *   7. Returns the directive payload — Vertex post-processes it for SSE/WS
- *      session-state mutations; LiveKit's wrapper publishes via the data
- *      channel.
+ * NAV-ENTITY-RESOLVE: a person-profile route (/u/:identifier) must NEVER
+ * dispatch a model-supplied identifier — the model invents slugs like
+ * "maria-maksina" that 404 ("Benutzer nicht gefunden"). Resolve the name
+ * through the canonical member directory instead (design invariants #1/#5/#7).
+ * Flag-gated. Only triggers when the identifier looks like a de-slugged NAME
+ * (has a separator) or an explicit name/query was supplied — a concrete
+ * @vitana_id handle still passes straight through (returns null).
+ * VTID-04846: shared by the registry and the legacy path.
+ */
+async function openProfileByName(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient | undefined,
+  screenIdArg: string,
+  sessionId: string | null,
+): Promise<OrbToolResult | null> {
+  if (process.env.NAV_ENTITY_RESOLVE !== 'true' || !sb || !id.user_id || !id.tenant_id) return null;
+  const rawId = String(args.identifier ?? args.target ?? '').trim();
+  const explicitName = String(args.name ?? args.query ?? args.reason ?? '').trim();
+  const nameQuery = explicitName || rawId.replace(/[-_]+/g, ' ').trim();
+  const looksLikeName = !!explicitName || /[-_\s]/.test(rawId);
+  if (!nameQuery || !looksLikeName) return null;
+  const { emitOasisEvent } = await import('./oasis-event-service');
+  emitOasisEvent({
+    vtid: 'VTID-NAV-01',
+    type: 'orb.navigator.blocked',
+    source: 'orb-tools-shared',
+    status: 'info',
+    message: `Profile-by-name '${nameQuery}' routed through member resolver (not trusting model identifier '${rawId}')`,
+    payload: {
+      session_id: sessionId,
+      attempted_screen_id: screenIdArg,
+      entity_query: nameQuery.slice(0, 120),
+      error_kind: 'entity_resolve',
+    },
+  }).catch(() => {});
+  const memberRes = await tool_find_community_member({ query: nameQuery }, id, sb);
+  if (memberRes.ok === false) return memberRes;
+  // Adapt the resolver's result to the navigate_to_screen contract so BOTH
+  // pipelines dispatch it (Vertex reads top-level screen_id/route/title;
+  // LiveKit reads result.directive). The resolver already built the correct
+  // profile directive (its own route + search_id for the match card).
+  const d = (memberRes.result as { directive?: { screen_id?: string; route?: string; title?: string } } | undefined)?.directive;
+  if (d && d.route) {
+    return {
+      ok: true,
+      result: {
+        screen_id: d.screen_id || 'profile_with_match',
+        route: d.route,
+        title: d.title || 'Profile',
+        entry_kind: 'route',
+        directive: d,
+      },
+      text: memberRes.text,
+    };
+  }
+  return memberRes;
+}
+
+/**
+ * navigate_to_screen — open one screen by id. Shared by every voice pipeline
+ * (Vertex/Nova post-process `result.directive` for SSE/WS; LiveKit's wrapper
+ * publishes it over the data channel). VTID-04846: the screen registry's
+ * openScreen() holds every gate (known screen, not disabled, visitor,
+ * viewport, surface, entity id, already there); the legacy catalog is gone.
  */
 export async function tool_navigate_to_screen(
   args: OrbToolArgs,
@@ -3380,444 +3409,121 @@ export async function tool_navigate_to_screen(
   const isAnon = (typeof args.is_anonymous === 'boolean' ? args.is_anonymous : id.is_anonymous)
     ?? !id.user_id;
   const isMobile = (typeof args.is_mobile === 'boolean' ? args.is_mobile : id.is_mobile) ?? false;
+  // VTID-04814: tools dispatched without the route in args (dev_open_hub_panel
+  // through the generic dispatcher) still carry it on the identity.
   const currentRoute = typeof args.current_route === 'string' && args.current_route.length > 0
     ? args.current_route
-    : null;
+    : (typeof id.current_route === 'string' && id.current_route.length > 0 ? id.current_route : null);
   const lang = (id.lang || 'en') as string;
   const sessionId = id.session_id || null;
 
-  // VTID-04517: with NAV_V2_ENABLED the screen registry decides. Screens that
-  // need an entity id (a member's profile, one meetup) and role surfaces the
-  // registry does not cover yet still use the legacy path below.
-  if (process.env.NAV_V2_ENABLED === 'true') {
-    const nav = await import('../navigation/nav-dispatch');
-    if (!nav.isLegacySurface(currentRoute)) {
-      const navCtx = { lang, isAnonymous: !!isAnon, isMobile: !!isMobile, currentRoute, sessionId };
-      const screen = nav.findRegistryScreen(screenIdArg);
-      if (screen && !nav.needsEntity(screen)) {
-        return nav.openScreen(screen.id, String(args.reason || ''), navCtx, { keepOrbOpen: args.keep_orb_open === true });
-      }
-      if (!screen) {
-        // An id the registry does not know is usually invented. Resolve what
-        // the model said it wanted instead of fuzzy-matching the id string.
-        const reasonText = typeof args.reason === 'string' ? args.reason.trim() : '';
-        const query = reasonText.length >= 4 ? reasonText : screenIdArg.replace(/[._/\-]+/g, ' ').trim();
-        // VTID-04629: the member's own words first, as navigate does.
-        const memberWords = typeof args.transcript_excerpt === 'string' ? args.transcript_excerpt : '';
-        const r = await nav.navigateByRequest(query, 'open', { ...navCtx, memberWords });
-        if (r) return r;
-      }
+  // VTID-04517 / VTID-04846: the screen registry decides every case.
+  const nav = await import('../navigation/nav-dispatch');
+  if (nav.isNavigationOffSurface(currentRoute)) return nav.navigationOffResult();
+  const navCtx = { lang, isAnonymous: !!isAnon, isMobile: !!isMobile, currentRoute, sessionId };
+  const screen = nav.findRegistryScreen(screenIdArg, nav.callSurface({ currentRoute }));
+  if (screen) {
+    if (screen.id === 'PROFILE.PUBLIC') {
+      const byName = await openProfileByName(args, id, sb, screenIdArg, sessionId);
+      if (byName) return byName;
     }
+    const opened = await nav.openScreen(screen.id, String(args.reason || ''), navCtx, { keepOrbOpen: args.keep_orb_open === true, entityArgs: args });
+    return applyJourneyModeRequest(opened, `${String(args.reason || '')} ${typeof args.transcript_excerpt === 'string' ? args.transcript_excerpt : ''}`, id, sb);
   }
-
-  const { emitOasisEvent } = await import('./oasis-event-service');
-
-  // Three-tier resolution: exact → alias → intent-recovery → fuzzy.
-  let entry: NavCatalogEntry | null = lookupScreen(screenIdArg) || lookupByAlias(screenIdArg);
-
-  // VTID-NAV-RECOVER: the model sometimes invents a screen_id that does not
-  // exist (e.g. 'EVENTS.FOLLOWING', 'COMM.EVENTS_MEETUPS'). String-fuzzy then
-  // maps it by surface similarity to the wrong screen — usually the parent
-  // (COMM.EVENTS → Hot) instead of the intended tab. The natural-language
-  // `reason` the model supplies IS reliable intent, so re-derive the target
-  // with the same catalog scorer the free-text `navigate` tool uses, preferring
-  // the reason over the de-slugged (and possibly misleading) screen_id tokens.
-  // Only adopt it on a clear win, otherwise fall through to the fuzzy gate.
-  if (!entry) {
-    const reasonText = typeof args.reason === 'string' ? args.reason.trim() : '';
-    const deslug = screenIdArg.replace(/[._/\-]+/g, ' ').trim();
-    const recoverQuery = reasonText.length >= 4 ? reasonText : deslug;
-    if (recoverQuery) {
-      const recovered = searchCatalog(recoverQuery, lang);
-      const top = recovered[0];
-      const second = recovered[1];
-      if (top && top.score >= 30 && top.score - (second?.score ?? 0) >= 6) {
-        entry = top.entry;
-        emitOasisEvent({
-          vtid: 'VTID-NAV-01',
-          type: 'orb.navigator.blocked',
-          source: 'orb-tools-shared',
-          status: 'info',
-          message: `Recovered invented screen_id '${screenIdArg}' → '${entry.screen_id}' via reason/intent (score ${top.score})`,
-          payload: {
-            session_id: sessionId,
-            attempted_screen_id: screenIdArg,
-            resolved_screen_id: entry.screen_id,
-            recover_score: top.score,
-            recover_query: recoverQuery.slice(0, 120),
-            error_kind: 'intent_recovered',
-          },
-        }).catch(() => {});
-      }
-    }
-  }
-
-  if (!entry) {
-    // VTID-NAV-CONFIDENCE (VTID-03258): only auto-resolve a fuzzy match when it clears the
-    // confidence floor. A weak best-match (title-word-only overlap) is NOT a
-    // license to teleport the user to "the nearest thing" — that was the
-    // wrong-screen-redirect class. Below the floor we reject and let the model
-    // ask, surfacing the near-misses as suggestions.
-    const scored = suggestSimilarScored(screenIdArg, 3);
-    const best = scored[0];
-    if (best && best.score >= FUZZY_NAV_MIN_SCORE) {
-      entry = best.entry;
-      emitOasisEvent({
-        vtid: 'VTID-NAV-01',
-        type: 'orb.navigator.blocked',
-        source: 'orb-tools-shared',
-        status: 'info',
-        message: `Fuzzy-resolved screen_id '${screenIdArg}' → '${entry.screen_id}' (score ${best.score})`,
-        payload: {
-          session_id: sessionId,
-          attempted_screen_id: screenIdArg,
-          resolved_screen_id: entry.screen_id,
-          fuzzy_score: best.score,
-          error_kind: 'fuzzy_resolved',
-        },
-      }).catch(() => {});
-    } else if (best) {
-      // Near-misses exist but none are confident enough — do NOT navigate.
-      emitOasisEvent({
-        vtid: 'VTID-NAV-CONFIDENCE',
-        type: 'orb.navigator.blocked',
-        source: 'orb-tools-shared',
-        status: 'warning',
-        message: `Low-confidence screen_id '${screenIdArg}' (best ${best.entry.screen_id} score ${best.score} < ${FUZZY_NAV_MIN_SCORE})`,
-        payload: {
-          session_id: sessionId,
-          attempted_screen_id: screenIdArg,
-          best_candidate: best.entry.screen_id,
-          fuzzy_score: best.score,
-          error_kind: 'low_confidence',
-          suggestions: scored.map((s) => s.entry.screen_id),
-        },
-      }).catch(() => {});
-      return {
-        ok: false,
-        error: `I'm not confident which screen '${screenIdArg}' means. Ask the user which they want — closest matches: ${scored
-          .map((s) => s.entry.screen_id)
-          .join(', ')}. Do not navigate until they confirm.`,
-      };
-    }
-  }
-  if (!entry) {
-    emitOasisEvent({
-      vtid: 'VTID-NAV-01',
-      type: 'orb.navigator.blocked',
-      source: 'orb-tools-shared',
-      status: 'warning',
-      message: `Unknown screen_id '${screenIdArg}' — no suggestions`,
-      payload: {
-        session_id: sessionId,
-        attempted_screen_id: screenIdArg,
-        error_kind: 'unknown',
-        suggestions: [],
-      },
-    }).catch(() => {});
-    return {
-      ok: false,
-      error: `Unknown screen_id '${screenIdArg}'. No matching screens found in the catalog.`,
-    };
-  }
-
-  // GATE 1: anonymous_safe.
-  if (isAnon && !entry.anonymous_safe) {
-    emitOasisEvent({
-      vtid: 'VTID-NAV-01',
-      type: 'orb.navigator.blocked',
-      source: 'orb-tools-shared',
-      status: 'warning',
-      message: `Screen '${screenIdArg}' requires authentication`,
-      payload: {
-        session_id: sessionId,
-        attempted_screen_id: screenIdArg,
-        error_kind: 'auth_required',
-      },
-    }).catch(() => {});
-    return {
-      ok: false,
-      error: `Screen '${screenIdArg}' requires the user to be signed in. Tell them briefly and offer to take them to registration instead.`,
-    };
-  }
-
-  // GATE 1.5: surface-role scoping (VTID-NAV-SURFACE / VTID-03258). The ORB Navigator must
-  // never cross surfaces: a community user on vitanaland is never teleported
-  // into /admin or /command-hub, and a developer in Command Hub is never sent
-  // to a community route Command Hub can't render. The session's surface is
-  // derived from current_route (NOT the DB role — same convention as the
-  // consult path), and the entry's effective roles come from the catalog. This
-  // is the direct-navigate counterpart to the surface scoping consultNavigator
-  // already applies, and the primary guard against wrong-screen redirects.
-  const surfaceRole = deriveNavigatorSurfaceRole(currentRoute);
-  const effectiveRoles = resolveEffectiveRoles(entry);
-  if (!effectiveRoles.includes(surfaceRole)) {
-    emitOasisEvent({
-      vtid: 'VTID-NAV-SURFACE',
-      type: 'orb.navigator.blocked',
-      source: 'orb-tools-shared',
-      status: 'warning',
-      message: `Cross-surface navigation blocked: '${entry.screen_id}' (roles ${effectiveRoles.join('/')}) from ${surfaceRole} surface`,
-      payload: {
-        session_id: sessionId,
-        attempted_screen_id: screenIdArg,
-        resolved_screen_id: entry.screen_id,
-        error_kind: 'wrong_surface',
-        session_surface_role: surfaceRole,
-        entry_roles: effectiveRoles,
-        current_route: currentRoute,
-      },
-    }).catch(() => {});
-    return {
-      ok: false,
-      error: `Screen '${entry.screen_id}' belongs to a different surface (${effectiveRoles.join('/')}) than the user's current one (${surfaceRole}). Do not navigate there. Stay within the user's current surface or answer in voice.`,
-    };
-  }
-
-  // GATE 2: viewport (VTID-02789).
-  if (entry.viewport_only) {
-    const sessionViewport: 'mobile' | 'desktop' = isMobile ? 'mobile' : 'desktop';
-    if (entry.viewport_only !== sessionViewport) {
-      emitOasisEvent({
-        vtid: 'VTID-02789',
-        type: 'orb.navigator.blocked',
-        source: 'orb-tools-shared',
-        status: 'warning',
-        message: `Screen '${entry.screen_id}' is ${entry.viewport_only}-only; session is ${sessionViewport}`,
-        payload: {
-          session_id: sessionId,
-          attempted_screen_id: screenIdArg,
-          error_kind: 'wrong_viewport',
-          required_viewport: entry.viewport_only,
-          session_viewport: sessionViewport,
-        },
-      }).catch(() => {});
-      return {
-        ok: false,
-        error: `Screen '${entry.screen_id}' is only available on ${entry.viewport_only}. Suggest a different screen or stay in voice.`,
-      };
-    }
-  }
-
-  // NAV-ENTITY-RESOLVE: a person-profile route (/u/:identifier) must NEVER
-  // dispatch a model-supplied identifier — the model invents slugs like
-  // "maria-maksina" that 404 ("Benutzer nicht gefunden"). Resolve the name
-  // through the canonical member directory instead (design invariants #1/#5/#7).
-  // Flag-gated; verify on staging. Only triggers when the identifier looks like
-  // a de-slugged NAME (has a separator) or an explicit name/query was supplied
-  // — a concrete @vitana_id handle still passes straight through.
-  if (
-    process.env.NAV_ENTITY_RESOLVE === 'true' &&
-    sb &&
-    entry.screen_id === 'PROFILE.PUBLIC' &&
-    id.user_id && id.tenant_id
-  ) {
-    const rawId = String(args.identifier ?? args.target ?? '').trim();
-    const explicitName = String(args.name ?? args.query ?? args.reason ?? '').trim();
-    const nameQuery = explicitName || rawId.replace(/[-_]+/g, ' ').trim();
-    const looksLikeName = !!explicitName || /[-_\s]/.test(rawId);
-    if (nameQuery && looksLikeName) {
-      emitOasisEvent({
-        vtid: 'VTID-NAV-01',
-        type: 'orb.navigator.blocked',
-        source: 'orb-tools-shared',
-        status: 'info',
-        message: `Profile-by-name '${nameQuery}' routed through member resolver (not trusting model identifier '${rawId}')`,
-        payload: {
-          session_id: sessionId,
-          attempted_screen_id: screenIdArg,
-          entity_query: nameQuery.slice(0, 120),
-          error_kind: 'entity_resolve',
-        },
-      }).catch(() => {});
-      const memberRes = await tool_find_community_member({ query: nameQuery }, id, sb);
-      if (memberRes.ok === false) return memberRes;
-      // Adapt the resolver's result to the navigate_to_screen contract so BOTH
-      // pipelines dispatch it (Vertex reads top-level screen_id/route/title;
-      // LiveKit reads result.directive). The resolver already built the correct
-      // profile directive (its own route + search_id for the match card).
-      const d = (memberRes.result as { directive?: { screen_id?: string; route?: string; title?: string } } | undefined)?.directive;
-      if (d && d.route) {
-        return {
-          ok: true,
-          result: {
-            screen_id: d.screen_id || 'profile_with_match',
-            route: d.route,
-            title: d.title || 'Profile',
-            entry_kind: 'route',
-            directive: d,
-          },
-          text: memberRes.text,
-        };
-      }
-      return memberRes;
-    }
-  }
-
-  // GATE 3: mobile_route override (VTID-02789).
-  const baseRoute = (isMobile && entry.mobile_route) ? entry.mobile_route : entry.route;
-
-  // Param substitution.
-  const missing: string[] = [];
-  let resolvedRoute = baseRoute.replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, (_m, name) => {
-    const v = args[name];
-    if (v === undefined || v === null || String(v).trim() === '') {
-      missing.push(String(name));
-      return ':' + String(name);
-    }
-    return encodeURIComponent(String(v).trim().replace(/^@/, ''));
-  });
-  if (missing.length > 0) {
-    emitOasisEvent({
-      vtid: 'VTID-NAV-01',
-      type: 'orb.navigator.blocked',
-      source: 'orb-tools-shared',
-      status: 'warning',
-      message: `Missing route param(s) for ${entry.screen_id}: ${missing.join(', ')}`,
-      payload: {
-        session_id: sessionId,
-        attempted_screen_id: screenIdArg,
-        error_kind: 'missing_param',
-        missing_params: missing,
-      },
-    }).catch(() => {});
-    return {
-      ok: false,
-      error: `Cannot navigate to ${entry.screen_id}: missing required parameter(s) ${missing.join(', ')}. Ask the user to provide them, then call navigate_to_screen again.`,
-    };
-  }
-
-  // Overlay query-marker append.
-  if (entry.entry_kind === 'overlay' && entry.overlay) {
-    const sep = resolvedRoute.includes('?') ? '&' : '?';
-    const params = new URLSearchParams();
-    params.set('open', entry.overlay.query_marker);
-    const needs = entry.overlay.needs_param;
-    if (needs) {
-      const v = args[needs];
-      if (v !== undefined && v !== null && String(v).trim() !== '') {
-        params.set(needs, String(v).trim().replace(/^@/, ''));
-      }
-    }
-    resolvedRoute = `${resolvedRoute}${sep}${params.toString()}`;
-  }
-
-  // GATE 4: already-there dedup. Compare to the resolved BASE path
-  // (mobile_route or route, no querystring) — same as Vertex line 4208.
-  const baseRoutePath = baseRoute.split('?')[0];
-  if (currentRoute && currentRoute === baseRoutePath && entry.entry_kind !== 'overlay') {
-    emitOasisEvent({
-      vtid: 'VTID-NAV-01',
-      type: 'orb.navigator.blocked',
-      source: 'orb-tools-shared',
-      status: 'info',
-      message: `User is already on ${baseRoutePath}`,
-      payload: {
-        session_id: sessionId,
-        attempted_screen_id: screenIdArg,
-        error_kind: 'already_there',
-      },
-    }).catch(() => {});
-    return {
-      ok: true,
-      result: {
-        screen_id: entry.screen_id,
-        route: entry.route,
-        already_there: true,
-        entry_kind: entry.entry_kind || 'route',
-      },
-      text: `The user is already on ${entry.route}. Suggest a related screen or just answer in voice instead.`,
-    };
-  }
-
-  // Success → directive payload.
-  const content = getContent(entry, lang);
-  const directive = {
-    type: 'orb_directive',
-    directive: 'navigate',
-    screen_id: entry.screen_id,
-    route: resolvedRoute,
-    title: content.title,
-    reason: String(args.reason || 'navigate_to_screen tool call'),
-    entry_kind: entry.entry_kind || 'route',
-    vtid: 'VTID-NAV-01',
-    // BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV: when the caller (a deterministic
-    // greeting-effect dispatch, not an LLM tool call) asks the ORB session
-    // to stay open after navigating — e.g. so a dictated reply to the
-    // sender it just announced can follow immediately — forward that as an
-    // explicit flag the client widget's navigate handler checks. Absent
-    // (the normal tool-call path never sets it) means today's existing
-    // hide-then-navigate behavior, unchanged.
-    ...(args.keep_orb_open === true ? { keep_orb_open: true } : {}),
-  };
-
-  emitOasisEvent({
-    vtid: 'VTID-NAV-01',
-    type: 'orb.navigator.requested',
-    source: 'orb-tools-shared',
-    status: 'info',
-    message: `navigate_to_screen ${entry.screen_id} (${resolvedRoute})`,
-    payload: {
-      session_id: sessionId,
-      screen_id: entry.screen_id,
-      route: resolvedRoute,
-      entry_kind: entry.entry_kind || 'route',
-      reason: directive.reason,
-      is_anonymous: isAnon,
-    },
-  }).catch(() => {});
-
-  return {
-    ok: true,
-    result: {
-      screen_id: entry.screen_id,
-      route: resolvedRoute,
-      base_route: baseRoutePath,
-      title: content.title,
-      entry_kind: entry.entry_kind || 'route',
-      directive,
-    },
-    text: entry.entry_kind === 'overlay'
-      ? `Overlay opened: ${content.title}. The user stays on their current screen — the popup is now visible. Continue the conversation; do NOT navigate elsewhere unless the user asks.`
-      : `Navigation queued to ${content.title} (${resolvedRoute}). The user is now being taken to the "${content.title}" screen. The widget is closing now. DO NOT generate any more audio or text for this turn. Your turn is complete — stop speaking immediately. If the user later asks which screen they are on, they are on "${content.title}".`,
-  };
+  // An id the registry does not know is usually invented. Resolve what the
+  // model said it wanted instead of fuzzy-matching the id string.
+  const reasonText = typeof args.reason === 'string' ? args.reason.trim() : '';
+  const query = reasonText.length >= 4 ? reasonText : screenIdArg.replace(/[._/\-]+/g, ' ').trim();
+  // VTID-04629: the member's own words first, as navigate does.
+  const memberWords = typeof args.transcript_excerpt === 'string' ? args.transcript_excerpt : '';
+  return nav.navigateByRequest(query, 'open', { ...navCtx, memberWords });
 }
 
 // ---------------------------------------------------------------------------
-// VTID-NAV-UNIFIED — free-text `navigate` tool (PR 1.B-4)
-//
-// Lifts orb-live.ts:handleNavigate into the shared dispatcher: runs the
-// 8-step consultNavigator resolution (override-trigger → keyword fast path
-// → semantic + KB + memory parallel → 70/30 hybrid scoring → confidence
-// bucketing → confident/ambiguous/unknown decision → anonymous gate → KB
-// excerpts), then constructs the redirect directive payload + builds the
-// LLM-facing guidance text.
-//
-// Vertex pipeline: consumes `result.directive` to emit immediately on its
-// SSE/WS transport, sets session.pendingNavigation, eagerly updates
-// session.current_route, writes navigator-action memory.
-//
-// LiveKit pipeline: the Python wrapper publishes `result.directive` over
-// the room data channel via _dispatch_with_directive (PR 1.B-0), and
-// updates GatewayClient.current_route from result.route so the next
-// get_current_screen call sees the fresh value.
-//
-// The tool is anonymous-safe — anonymous users hit the same consult engine
-// but the navigator's anonymous-safe gating prevents leaking authenticated
-// screens, returning blocked_reason='requires_auth' instead.
+// VTID-NAV-UNIFIED — free-text `navigate` tool. VTID-04517 / VTID-04846: the
+// screen registry's resolver answers (nav-dispatch.navigateByRequest); the
+// keyword consult engine it replaced is gone.
 // ---------------------------------------------------------------------------
 
 /**
- * Surface-scoped role derivation. Mirrors orb-live.ts:deriveSurfaceRole —
- * vitanaland.com routes → community, /admin/* → admin, /command-hub/* →
- * developer. The DB role is deliberately ignored: a developer browsing
- * vitanaland.com still sees only community routes from the Navigator.
+ * NAV-GUIDED-JOURNEY: "Guided Journey" is NOT a separate screen — it's the
+ * durable GUIDED vs FULL mode of My Journey (GuidedModeProvider, VTID-03279;
+ * the Einführung/Vollversion toggle). Which mode, if any, the member asked
+ * for. VTID-04846: shared by the registry and the legacy navigator.
  */
-function deriveNavigatorSurfaceRole(currentRoute: string | undefined | null): string {
-  const route = (currentRoute || '').toLowerCase();
-  if (route.startsWith('/command-hub')) return 'developer';
-  if (route === '/admin' || route.startsWith('/admin/')) return 'admin';
-  return 'community';
+export function detectJourneyModeRequest(text: string): 'guided' | 'full' | null {
+  const intentText = text.toLowerCase();
+  // Keyword detection for the GUIDED vs FULL durable mode. Deliberately
+  // broad — people don't say "guided journey" verbatim; they say "the
+  // simple one", "step by step", "der Anfänger-Modus", "show me everything".
+  // EN: guided / step-by-step / beginner / intro(duction) / tutorial /
+  //     onboarding / walk me through / simple(r) / basic / easy mode.
+  // DE: geführt / Einführung / Schritt für Schritt / Anfänger / einfach(e/r) /
+  //     leicht (+ "-modus"/"-version").
+  // VTID-04760: the guided view is presented to members as the Audiobook
+  //     (DE "Hörbuch"), so those names select it too.
+  const wantsGuided =
+    /guided|gef[üu]hrt|einf[üu]hrung|audio[\s-]?book|h(?:ö|oe?)rbuch|step[\s-]?by[\s-]?step|schritt[\s-]?f[üu]r[\s-]?schritt|beginner|anf[äa]nger|\bintro\b|introduction|tutorial|onboarding|walk me through|\bsimple(?:r)?\b|\bbasic\b|einfache?[rsn]?\b|\beasy\b|leichte?[rsn]?\b/.test(
+      intentText,
+    );
+  // EN: full app/version/mode/experience / complete / advanced /
+  //     everything / all features / pro mode.
+  // DE: Vollversion / volle Version / komplett(e/n) (App) / fortgeschritten /
+  //     erweitert / alle Funktionen / alles / Profi-Modus.
+  const wantsFull =
+    /full[\s-]?(?:app|version|mode|experience)|vollversion|volle\s+version|komplette?n?\s*app|\bkomplett(?:e[rsn]?)?\b|\bcomplete\b|advanced|fortgeschritten|erweitert|all[\s-]?features|alle\s+funktionen|\balles\b|everything|pro[\s-]?(?:mode|modus)|profi[\s-]?modus/.test(
+      intentText,
+    );
+  // NEGATION GUARD: "the FULL app, NOT the guided journey" must NOT switch
+  // to guided just because the word "guided" appears. Detect a negation
+  // token within ~3 words before a mode NAME and discount that side, so the
+  // explicitly-rejected mode never wins. Targets the named modes (the words
+  // people actually contrast); broad synonyms aren't negated in practice.
+  const negatedGuided =
+    /(?:not|n['’]?t|nicht|kein[a-z]*|rather than|instead of|statt|anstatt|ohne)\b(?:\W+\w+){0,3}?\W+(?:guided|gef[üu]hrt|einf[üu]hrung|audio[\s-]?book|h(?:ö|oe?)rbuch)/.test(
+      intentText,
+    );
+  const negatedFull =
+    /(?:not|n['’]?t|nicht|kein[a-z]*|rather than|instead of|statt|anstatt|ohne)\b(?:\W+\w+){0,3}?\W+(?:full|vollversion|volle|komplett|complete)/.test(
+      intentText,
+    );
+  const pickGuided = wantsGuided && !negatedGuided;
+  const pickFull = wantsFull && !negatedFull;
+  // Guided wins ties only among modes that were actually requested (i.e.
+  // not negated). "full not guided" → guided negated → full; "guided not
+  // full" → full negated → guided.
+  return pickGuided ? 'guided' : pickFull ? 'full' : null;
+}
+
+/**
+ * VTID-04846 — the registry path's half of NAV-GUIDED-JOURNEY: when a
+ * navigation is about to open My Journey and the member asked for the
+ * Audiobook (guided) or the full app, switch the durable mode first so they
+ * land in that view, and tell Vitana to explain the difference.
+ */
+export async function applyJourneyModeRequest(
+  r: OrbToolResult,
+  memberText: string,
+  id: OrbToolIdentity,
+  sb?: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (process.env.NAV_GUIDED_JOURNEY !== 'true' || !sb || !id.user_id || !r.ok) return r;
+  const directive = (r.result as { directive?: { route?: string } } | undefined)?.directive;
+  if (!directive?.route || directive.route.split('?')[0].replace(/\/+$/, '') !== '/autopilot') return r;
+  const mode = detectJourneyModeRequest(memberText);
+  if (!mode) return r;
+  try {
+    const { setJourneyMode } = await import('./guided-journey/guided-journey-state');
+    await setJourneyMode(sb, id.user_id, mode);
+  } catch (e) {
+    // The screen is still right, just in the member's previous mode.
+    console.error('[NAV-GUIDED-JOURNEY] setJourneyMode failed:', e instanceof Error ? e.message : e);
+    return r;
+  }
+  const note = mode === 'guided'
+    ? 'MODE_SWITCH: You switched the member into the AUDIOBOOK view of My Journey (the guided journey; German "Hörbuch") — short episodes to listen to one after another. Briefly explain how it differs from the FULL app and that they can switch back with the Hörbuch/Vollversion toggle at the top of the screen, or by asking you.'
+    : 'MODE_SWITCH: You switched the member into the FULL app view of My Journey — everything available at once. Briefly explain how it differs from the AUDIOBOOK (the guided, listen-only episodes) and that they can switch back with the Hörbuch/Vollversion toggle at the top of the screen, or by asking you.';
+  return { ...r, text: `${r.text || ''}\n${note}`.trim() };
 }
 
 export async function tool_navigate(
@@ -3832,447 +3538,40 @@ export async function tool_navigate(
 
   const lang = (id.lang || 'en') as string;
   const isMobile = (typeof args.is_mobile === 'boolean' ? args.is_mobile : id.is_mobile) ?? false;
+  // VTID-04814: tools dispatched without the route in args (dev_open_hub_panel
+  // through the generic dispatcher) still carry it on the identity.
   const currentRoute = typeof args.current_route === 'string' && args.current_route.length > 0
     ? args.current_route
-    : null;
-  const recentRoutes: string[] = Array.isArray(args.recent_routes)
-    ? (args.recent_routes as unknown[]).filter((s): s is string => typeof s === 'string')
-    : [];
+    : (typeof id.current_route === 'string' && id.current_route.length > 0 ? id.current_route : null);
   const transcriptExcerpt = typeof args.transcript_excerpt === 'string' ? args.transcript_excerpt : '';
-
-  // VTID-NAVIGATOR-SCOPING + VTID-MOBILE-COMMUNITY-ONLY: surface-scoped role
-  // is derived from the current route, never the DB role. Anonymous when
-  // either user_id or tenant_id is missing.
-  const surfaceRole = deriveNavigatorSurfaceRole(currentRoute);
+  // Anonymous when either user_id or tenant_id is missing.
   const isAnonymous = !id.user_id || !id.tenant_id;
 
-  // VTID-04517: with NAV_V2_ENABLED the registry resolver answers. `intent`
-  // says whether the member asked to open something or where it is; only an
-  // explicit open moves the screen. Falls back to the legacy navigator below
-  // when the resolver cannot run, or on role surfaces it does not cover yet.
-  if (process.env.NAV_V2_ENABLED === 'true') {
-    const nav = await import('../navigation/nav-dispatch');
-    if (!nav.isLegacySurface(currentRoute)) {
-      const intent = args.intent === 'open' ? 'open' : 'where';
-      // VTID-04521: a "where" answer ends with an offer; hold it so a bare
-      // "yes" opens that screen (the continuation bind consumes pending_cta).
-      const recordOffer = process.env.NAV_CONTINUATION_BIND === 'true' && sb && id.user_id
-        ? async (o: { screen_id: string; title: string; route: string }) => {
-            const { recordPendingOffer } = await import('./assistant-continuation/offer-outcomes');
-            await recordPendingOffer(sb, id.user_id as string, {
-              tool: 'navigate_to_screen',
-              payload: { screen_id: o.screen_id, route: o.route, title: o.title },
-              source: 'navigator_v2_offer',
-              key: `nav:${o.screen_id}`,
-              ttlMinutes: 5,
-            });
-          }
-        : undefined;
-      const r = await nav.navigateByRequest(question, intent, {
-        lang, isAnonymous, isMobile: !!isMobile, currentRoute, sessionId: id.session_id ?? null, recordOffer,
-        memberWords: transcriptExcerpt,
-      });
-      if (r) return r;
-    }
-  }
-
-  const { consultNavigator } = await import('./navigator-consult');
-  const { emitOasisEvent } = await import('./oasis-event-service');
-
-  const consultInput = {
-    question,
-    lang,
-    identity: !isAnonymous
-      ? {
-          user_id: id.user_id,
-          tenant_id: id.tenant_id as string,
-          role: surfaceRole,
-        }
-      : null,
-    is_anonymous: isAnonymous,
-    current_route: currentRoute || undefined,
-    recent_routes: recentRoutes,
-    transcript_excerpt: transcriptExcerpt || undefined,
-    session_id: id.session_id || undefined,
-    turn_number: id.turn_number || undefined,
-    conversation_start: id.session_started_iso || new Date().toISOString(),
-  };
-
-  const consultResult = await consultNavigator(consultInput);
-
-  // OASIS consulted event — same payload shape Vertex emits today.
-  emitOasisEvent({
-    vtid: 'VTID-NAV-01',
-    type: 'orb.navigator.consulted',
-    source: 'orb-tools-shared',
-    status: consultResult.confidence === 'low' ? 'warning' : 'info',
-    message: `navigate: confidence=${consultResult.confidence}, decision=${consultResult.decision}, primary=${consultResult.primary?.screen_id || 'none'}`,
-    payload: {
-      session_id: id.session_id || null,
-      question,
-      primary_screen_id: consultResult.primary?.screen_id || null,
-      confidence: consultResult.confidence,
-      decision: consultResult.decision,
-      alternative_screen_ids: consultResult.alternatives.slice(0, 3).map((a) => a.screen_id),
-      kb_excerpt_count: consultResult.kb_excerpt_count,
-      memory_hint_count: consultResult.memory_hint_count,
-      ms_elapsed: consultResult.ms_elapsed,
-      is_anonymous: isAnonymous,
-      // VTID-03586: attribution only — see OrbToolIdentity.upstream_provider.
-      provider: id.upstream_provider ?? null,
-    },
-  }).catch(() => {});
-
-  // VTID-02781: ambiguous → return either/or clarification text. No directive.
-  if (
-    consultResult.decision === 'ambiguous' &&
-    consultResult.alternatives.length >= 2 &&
-    !consultResult.blocked_reason
-  ) {
-    const top = consultResult.alternatives[0];
-    const second = consultResult.alternatives[1];
-    const third = consultResult.alternatives[2] || null;
-    emitOasisEvent({
-      vtid: 'VTID-02781',
-      type: 'orb.navigator.disambiguated',
-      source: 'orb-tools-shared',
-      status: 'info',
-      message: `disambiguating: ${top.screen_id} vs ${second.screen_id}${third ? ' vs ' + third.screen_id : ''}`,
-      payload: {
-        session_id: id.session_id || null,
-        question,
-        candidates: consultResult.alternatives.slice(0, 3).map((a) => ({
-          screen_id: a.screen_id,
-          route: a.route,
-          title: a.title,
-        })),
-        ms_elapsed: consultResult.ms_elapsed,
-        lang,
-        // VTID-03586: attribution only.
-        provider: id.upstream_provider ?? null,
-      },
-    }).catch(() => {});
-
-    const lines: string[] = [];
-    lines.push('NAVIGATING_TO: null (waiting for user choice — DO NOT redirect)');
-    lines.push(`DECISION: ambiguous`);
-    lines.push(`CANDIDATES:`);
-    consultResult.alternatives.slice(0, 3).forEach((a, i) => {
-      lines.push(`  [${i + 1}] ${a.screen_id} — ${a.title} (${a.route})`);
-    });
-    const askLine =
-      consultResult.suggested_question ||
-      (lang.startsWith('de')
-        ? `Meinst du ${top.title} oder ${second.title}${third ? ' — oder ' + third.title : ''}?`
-        : `Do you mean ${top.title} or ${second.title}${third ? ' — or ' + third.title : ''}?`);
-    lines.push(`ASK_USER: ${askLine}`);
-    lines.push('');
-    lines.push('Ask the either/or question naturally. WAIT for the user to pick.');
-    lines.push('Then call navigate_to_screen with the chosen screen_id directly —');
-    lines.push('do not call navigate again unless the user rephrases their request.');
-
-    // NAV_CONTINUATION_BIND — invariant #10 (auto-capture nav offers): this is a
-    // navigation OFFER (Vitana asks an either/or instead of auto-navigating) and
-    // the navigator has already resolved the top candidate. Record the TOP one
-    // as the session's pending_cta so a bare "Ja" deterministically opens it
-    // (the acceptance gate consumes it) rather than re-resolving the ambiguous
-    // phrase from scratch. Naming a specific candidate still routes through the
-    // LLM → navigate_to_screen, and that fresh confident nav supersedes this.
-    if (process.env.NAV_CONTINUATION_BIND === 'true' && sb && id.user_id) {
-      try {
+  // VTID-04517 / VTID-04846: the registry resolver answers every request.
+  // `intent` says whether the member asked to open something or where it
+  // is; only an explicit open moves the screen.
+  const nav = await import('../navigation/nav-dispatch');
+  if (nav.isNavigationOffSurface(currentRoute)) return nav.navigationOffResult();
+  const intent = args.intent === 'open' ? 'open' : 'where';
+  // VTID-04521: a "where" answer ends with an offer; hold it so a bare
+  // "yes" opens that screen (the continuation bind consumes pending_cta).
+  const recordOffer = process.env.NAV_CONTINUATION_BIND === 'true' && sb && id.user_id
+    ? async (o: { screen_id: string; title: string; route: string }) => {
         const { recordPendingOffer } = await import('./assistant-continuation/offer-outcomes');
-        await recordPendingOffer(sb, id.user_id, {
+        await recordPendingOffer(sb, id.user_id as string, {
           tool: 'navigate_to_screen',
-          payload: { screen_id: top.screen_id, route: top.route, title: top.title },
-          source: 'navigator_ambiguous',
-          key: `nav:${top.screen_id}`,
+          payload: { screen_id: o.screen_id, route: o.route, title: o.title },
+          source: 'navigator_v2_offer',
+          key: `nav:${o.screen_id}`,
           ttlMinutes: 5,
         });
-      } catch (e) {
-        console.error('[NAV-CONTINUATION-BIND] pending_cta write failed:', e instanceof Error ? e.message : e);
       }
-    }
-
-    return {
-      ok: true,
-      result: {
-        decision: 'ambiguous',
-        alternatives: consultResult.alternatives.slice(0, 3).map((a) => ({
-          screen_id: a.screen_id,
-          route: a.route,
-          title: a.title,
-        })),
-        suggested_question: askLine,
-      },
-      text: lines.join('\n'),
-    };
-  }
-
-  // Primary match with sufficient confidence → auto-navigate. Build directive.
-  if (consultResult.primary && consultResult.confidence !== 'low' && !consultResult.blocked_reason) {
-    const entry = lookupScreen(consultResult.primary.screen_id);
-    if (entry) {
-      // NAV-GUIDED-JOURNEY: "Guided Journey" is NOT a separate screen — it's the
-      // durable GUIDED vs FULL mode of My Journey (GuidedModeProvider, VTID-03279;
-      // the Einführung/Vollversion toggle). The Navigator can only emit /autopilot,
-      // which renders in the user's current durable mode. So when the user asks for
-      // their GUIDED journey (or the FULL app), flip the durable mode to match
-      // BEFORE opening the screen, so they land in the right view. We also tell
-      // Vitana to explain the difference + how to switch. Flag-gated; reuses the
-      // existing journey-mode service.
-      let journeyModeSwitched: 'guided' | 'full' | null = null;
-      if (
-        process.env.NAV_GUIDED_JOURNEY === 'true' &&
-        sb && id.user_id &&
-        entry.screen_id === 'AUTOPILOT.MY_JOURNEY'
-      ) {
-        const intentText = `${question} ${transcriptExcerpt}`.toLowerCase();
-        // Keyword detection for the GUIDED vs FULL durable mode. Deliberately
-        // broad — people don't say "guided journey" verbatim; they say "the
-        // simple one", "step by step", "der Anfänger-Modus", "show me everything".
-        // EN: guided / step-by-step / beginner / intro(duction) / tutorial /
-        //     onboarding / walk me through / simple(r) / basic / easy mode.
-        // DE: geführt / Einführung / Schritt für Schritt / Anfänger / einfach(e/r) /
-        //     leicht (+ "-modus"/"-version").
-        const wantsGuided =
-          /guided|gef[üu]hrt|einf[üu]hrung|step[\s-]?by[\s-]?step|schritt[\s-]?f[üu]r[\s-]?schritt|beginner|anf[äa]nger|\bintro\b|introduction|tutorial|onboarding|walk me through|\bsimple(?:r)?\b|\bbasic\b|einfache?[rsn]?\b|\beasy\b|leichte?[rsn]?\b/.test(
-            intentText,
-          );
-        // EN: full app/version/mode/experience / complete / advanced /
-        //     everything / all features / pro mode.
-        // DE: Vollversion / volle Version / komplett(e/n) (App) / fortgeschritten /
-        //     erweitert / alle Funktionen / alles / Profi-Modus.
-        const wantsFull =
-          /full[\s-]?(?:app|version|mode|experience)|vollversion|volle\s+version|komplette?n?\s*app|\bkomplett(?:e[rsn]?)?\b|\bcomplete\b|advanced|fortgeschritten|erweitert|all[\s-]?features|alle\s+funktionen|\balles\b|everything|pro[\s-]?(?:mode|modus)|profi[\s-]?modus/.test(
-            intentText,
-          );
-        // NEGATION GUARD: "the FULL app, NOT the guided journey" must NOT switch
-        // to guided just because the word "guided" appears. Detect a negation
-        // token within ~3 words before a mode NAME and discount that side, so the
-        // explicitly-rejected mode never wins. Targets the named modes (the words
-        // people actually contrast); broad synonyms aren't negated in practice.
-        const negatedGuided =
-          /(?:not|n['’]?t|nicht|kein[a-z]*|rather than|instead of|statt|anstatt|ohne)\b(?:\W+\w+){0,3}?\W+(?:guided|gef[üu]hrt|einf[üu]hrung)/.test(
-            intentText,
-          );
-        const negatedFull =
-          /(?:not|n['’]?t|nicht|kein[a-z]*|rather than|instead of|statt|anstatt|ohne)\b(?:\W+\w+){0,3}?\W+(?:full|vollversion|volle|komplett|complete)/.test(
-            intentText,
-          );
-        const pickGuided = wantsGuided && !negatedGuided;
-        const pickFull = wantsFull && !negatedFull;
-        // Guided wins ties only among modes that were actually requested (i.e.
-        // not negated). "full not guided" → guided negated → full; "guided not
-        // full" → full negated → guided.
-        const targetMode: 'guided' | 'full' | null = pickGuided ? 'guided' : pickFull ? 'full' : null;
-        if (targetMode) {
-          try {
-            const { setJourneyMode } = await import('./guided-journey/guided-journey-state');
-            await setJourneyMode(sb, id.user_id, targetMode);
-            journeyModeSwitched = targetMode;
-            console.log(`[NAV-GUIDED-JOURNEY] set journey mode = ${targetMode} for ${id.user_id} before opening My Journey`);
-          } catch (e) {
-            // Don't block navigation — the screen is still correct, just in the prior mode.
-            console.error('[NAV-GUIDED-JOURNEY] setJourneyMode failed:', e instanceof Error ? e.message : e);
-          }
-        }
-      }
-
-      const content = getContent(entry, lang);
-      // VTID-NAV-OVERLAY: resolve the route the SAME way navigate_to_screen
-      // does — honor mobile_route, and for overlay entries append the
-      // `?open=<query_marker>` marker the frontend intercepts. Without this the
-      // auto-redirect path dispatched the raw `entry.route` (e.g. `/calendar`),
-      // which is not a real page → 404. Overlays must open as a drawer instead.
-      const baseRoute = (isMobile && entry.mobile_route) ? entry.mobile_route : entry.route;
-      let resolvedRoute = baseRoute;
-      if (entry.entry_kind === 'overlay' && entry.overlay) {
-        const sep = resolvedRoute.includes('?') ? '&' : '?';
-        resolvedRoute = `${resolvedRoute}${sep}open=${entry.overlay.query_marker}`;
-      }
-      const directive = {
-        type: 'orb_directive',
-        directive: 'navigate',
-        screen_id: entry.screen_id,
-        route: resolvedRoute,
-        title: content.title,
-        reason: question,
-        entry_kind: entry.entry_kind || 'route',
-        vtid: 'VTID-NAV-01',
-      };
-
-      emitOasisEvent({
-        vtid: 'VTID-NAV-01',
-        type: 'orb.navigator.dispatched',
-        source: 'orb-tools-shared',
-        status: 'info',
-        message: `immediate dispatch to ${entry.screen_id}`,
-        payload: {
-          session_id: id.session_id || null,
-          screen_id: entry.screen_id,
-          route: resolvedRoute,
-          // VTID-NAV-MOBILEROUTE: surface the viewport flag + whether a mobile
-          // deep-link existed, so we can tell mobile_route misses apart from a
-          // false is_mobile when a redirect lands on the wrong (desktop) page.
-          is_mobile: isMobile,
-          had_mobile_route: !!entry.mobile_route,
-          drain_wait_ms: 0,
-        },
-      }).catch(() => {});
-
-      emitOasisEvent({
-        vtid: 'VTID-NAV-01',
-        type: 'orb.navigator.requested',
-        source: 'orb-tools-shared',
-        status: 'info',
-        message: `navigate auto-redirect to ${entry.screen_id} (${resolvedRoute})`,
-        payload: {
-          session_id: id.session_id || null,
-          screen_id: entry.screen_id,
-          route: resolvedRoute,
-          reason: question,
-          is_anonymous: isAnonymous,
-          is_mobile: isMobile,
-          had_mobile_route: !!entry.mobile_route,
-        },
-      }).catch(() => {});
-
-      const lines: string[] = [];
-      lines.push(`NAVIGATING_TO: ${content.title}`);
-      lines.push(`GUIDANCE: ${consultResult.explanation}`);
-      if (consultResult.kb_excerpts.length > 0) {
-        lines.push('ADDITIONAL_CONTEXT:');
-        consultResult.kb_excerpts.forEach((x, i) => lines.push(`  [${i + 1}] ${x}`));
-      }
-      lines.push('');
-      lines.push('Speak the GUIDANCE naturally to the user. Be helpful and warm —');
-      lines.push('explain the feature, tell them what they can do on that screen,');
-      lines.push('and let them know you are taking them there. The redirect happens');
-      lines.push('automatically when you finish speaking.');
-      if (journeyModeSwitched === 'guided') {
-        lines.push('');
-        lines.push('MODE_SWITCH: You switched the user into the GUIDED JOURNEY — the');
-        lines.push('step-by-step guided experience that walks them through one focused');
-        lines.push('move at a time. Briefly explain how this differs from the FULL app');
-        lines.push('(the complete version with everything available at once), and tell');
-        lines.push('them they can switch back anytime with the Einführung/Vollversion');
-        lines.push('toggle at the top of this screen — or just ask you to switch.');
-      } else if (journeyModeSwitched === 'full') {
-        lines.push('');
-        lines.push('MODE_SWITCH: You switched the user into the FULL app — the complete');
-        lines.push('version with everything available at once. Briefly explain how this');
-        lines.push('differs from the GUIDED Journey (the step-by-step guided experience),');
-        lines.push('and tell them they can switch back anytime with the');
-        lines.push('Einführung/Vollversion toggle at the top of this screen — or just ask you.');
-      }
-
-      return {
-        ok: true,
-        result: {
-          decision: 'confident',
-          confidence: consultResult.confidence,
-          screen_id: entry.screen_id,
-          // Return the RESOLVED route (honors mobile_route + overlay marker),
-          // matching the directive sent to the client and navigate_to_screen's
-          // contract. The caller stores result.route into session.current_route /
-          // pendingNavigation / navigator memory, so returning the raw desktop
-          // entry.route here would desync session state from where the client
-          // actually navigated (e.g. /settings/privacy vs /settings?mode=privacy).
-          route: resolvedRoute,
-          title: content.title,
-          reason: question,
-          directive,
-        },
-        text: lines.join('\n'),
-      };
-    }
-  }
-
-  // Blocked / confirmation / low-confidence — no directive, return clarification text.
-  if (consultResult.blocked_reason === 'requires_auth') {
-    return {
-      ok: true,
-      result: { decision: 'unknown', blocked_reason: 'requires_auth' },
-      text:
-        'NAVIGATING_TO: null\nGUIDANCE: ' +
-        consultResult.explanation +
-        '\nTell the user this feature requires joining the community and offer to take them to registration.',
-    };
-  }
-
-  if (consultResult.confirmation_needed && consultResult.primary && consultResult.alternative) {
-    const ask =
-      consultResult.suggested_question ||
-      `Would you like to go to ${consultResult.primary.title} or ${consultResult.alternative.title}?`;
-
-    // VTID-03446: this branch used to tell the model "call navigate again
-    // with their answer" — re-running the ENTIRE free-text disambiguation
-    // pipeline from scratch instead of jumping straight to the screen it
-    // had already identified. That reopened the door to a fresh ambiguous
-    // result one level deeper (e.g. a sub-route within the very screen just
-    // offered), which is how "pick an option -> get suboptions -> get
-    // sub-suboptions" happened — especially on Nova Sonic, whose weaker
-    // instruction-following made it more likely to actually walk the
-    // reopened branch instead of just redirecting. Aligned with the
-    // VTID-02781 ambiguous branch above: ask ONCE, then the only legal next
-    // move is navigate_to_screen(screen_id) — never a fresh navigate() call.
-    // Bind the top candidate as pending_cta (same mechanism the VTID-02781
-    // branch uses) so a bare "yes"/"the first one" resolves deterministically
-    // without the model having to re-derive anything.
-    if (process.env.NAV_CONTINUATION_BIND === 'true' && sb && id.user_id) {
-      try {
-        const { recordPendingOffer } = await import('./assistant-continuation/offer-outcomes');
-        await recordPendingOffer(sb, id.user_id, {
-          tool: 'navigate_to_screen',
-          payload: {
-            screen_id: consultResult.primary.screen_id,
-            route: consultResult.primary.route,
-            title: consultResult.primary.title,
-          },
-          source: 'navigator_reopened',
-          key: `nav:${consultResult.primary.screen_id}`,
-          ttlMinutes: 5,
-        });
-      } catch (e) {
-        console.error('[NAV-CONTINUATION-BIND] pending_cta write failed:', e instanceof Error ? e.message : e);
-      }
-    }
-
-    return {
-      ok: true,
-      result: {
-        decision: 'ambiguous',
-        suggested_question: ask,
-        alternatives: [
-          {
-            screen_id: consultResult.primary.screen_id,
-            route: consultResult.primary.route,
-            title: consultResult.primary.title,
-          },
-          {
-            screen_id: consultResult.alternative.screen_id,
-            route: consultResult.alternative.route,
-            title: consultResult.alternative.title,
-          },
-        ],
-      },
-      text:
-        `NAVIGATING_TO: null (waiting for user choice)\nGUIDANCE: ${consultResult.explanation}\n` +
-        `ASK_USER: ${ask}\n\n` +
-        'Ask the either/or question naturally. WAIT for the user to pick.\n' +
-        'Then call navigate_to_screen with the chosen screen_id directly —\n' +
-        'do not call navigate again unless the user rephrases their request.',
-    };
-  }
-
-  return {
-    ok: true,
-    result: { decision: 'unknown' },
-    text:
-      'NAVIGATING_TO: null\nGUIDANCE: ' +
-      consultResult.explanation +
-      '\nAsk the user to clarify what they are looking for so you can help them find it.',
-  };
+    : undefined;
+  const r = await nav.navigateByRequest(question, intent, {
+    lang, isAnonymous, isMobile: !!isMobile, currentRoute, sessionId: id.session_id ?? null, recordOffer,
+    memberWords: transcriptExcerpt,
+  });
+  return applyJourneyModeRequest(r, `${question} ${transcriptExcerpt}`, id, sb);
 }
 
 // ---------------------------------------------------------------------------
@@ -4591,8 +3890,8 @@ export async function tool_find_match(
 // ---------------------------------------------------------------------------
 // VTID-NAV-TIMEJOURNEY — get_current_screen (PR 1.B-3)
 //
-// Mirrors orb-live.ts:handleGetCurrentScreen byte-for-byte: resolves the
-// user's LIVE current route via the navigation catalog and includes the
+// Resolves the user's LIVE current route via the screen registry
+// (VTID-04846; the navigation catalog before that) and includes the
 // recent-screens trail so the LLM can answer "where am I?" / "where was I
 // before?" in one tool call. Anonymous-safe — reads no user-scoped state.
 //
@@ -4630,43 +3929,36 @@ export async function tool_get_current_screen(
     };
   }
 
-  const entry = lookupByRoute(route);
-  if (entry) {
-    const content = getContent(entry, lang);
+  // VTID-04846: the screen registry names the screen — the same list Vitana
+  // opens screens from, entity pages included.
+  const nav = await import('../navigation/nav-dispatch');
+  const s = nav.findScreenForRoute(route, nav.callSurface({ currentRoute: route }));
+  if (s) {
     const trailTitles: string[] = [];
     for (const r of recent) {
       if (r === route) continue;
-      const e = lookupByRoute(r);
-      if (e) trailTitles.push(getContent(e, lang).title);
+      const prev = nav.findScreenForRoute(r, nav.callSurface({ currentRoute: r }));
+      if (prev && prev.id !== s.id) trailTitles.push(nav.screenText(prev, lang).title);
       if (trailTitles.length >= 4) break;
     }
+    const text = nav.screenText(s, lang);
     const screen = withState({
-      title: content.title,
-      description: content.description,
-      category: entry.category,
-      screen_id: entry.screen_id,
-      route: entry.route,
+      title: text.title,
+      description: text.shows || '',
+      category: s.category,
+      screen_id: s.id,
+      route,
       recent_screens: trailTitles,
     });
-    return {
-      ok: true,
-      result: screen,
-      text: JSON.stringify(screen),
-    };
+    return { ok: true, result: screen, text: JSON.stringify(screen) };
   }
-
-  // Unknown route — catalog miss.
-  const fallback = withState({
+  const unknown = withState({
     title: 'Unknown screen',
-    description: 'The user is on a route that is not in the navigation catalog.',
+    description: 'The member is on a page the screen registry does not describe.',
     route,
     recent_screens: [] as string[],
   });
-  return {
-    ok: true,
-    result: fallback,
-    text: JSON.stringify(fallback),
-  };
+  return { ok: true, result: unknown, text: JSON.stringify(unknown) };
 }
 
 // ---------------------------------------------------------------------------
@@ -4775,6 +4067,16 @@ async function tool_get_pillar_subscores(
 const BARE_CONSENT_RX =
   /^(ja|okay?|klar|gerne|sicher|yes|sure|help me|hilf mir|ja,? hilf mir|yes,? help me|ja bitte|yes please)[.!,]*$/i;
 
+const VOICE_DIARY_TAGS = ['diary', 'voice', 'orb'];
+
+/** VTID-04884: the tenant for a diary episode; a voice identity may carry none. */
+async function diaryEpisodeIdentity(
+  admin: SupabaseClient,
+  identity: OrbToolIdentity,
+): Promise<{ user_id: string; tenant_id: string }> {
+  return { user_id: identity.user_id, tenant_id: await resolveTenantId(admin, identity.user_id, identity.tenant_id) };
+}
+
 export async function tool_save_diary_entry(
   args: OrbToolArgs,
   identity: OrbToolIdentity,
@@ -4854,19 +4156,51 @@ export async function tool_save_diary_entry(
         console.warn(
           `[save_diary_entry] diary_entries coalesce-update failed (non-fatal): ${updateErr.message}`,
         );
+      } else {
+        // VTID-04884: the row's episode follows the merged text.
+        const admin = getSupabase();
+        if (admin) {
+          await updateDiaryEpisodeText(admin, await diaryEpisodeIdentity(admin, identity), {
+            diary_entry_id: recentEntry.id,
+            text: mergedText,
+            source: 'voice',
+            tags: VOICE_DIARY_TAGS,
+            occurred_at: recentEntry.created_at,
+          });
+        }
       }
     } else {
-      const { error: insertErr } = await sb.from('diary_entries').insert({
-        user_id: identity.user_id,
-        text: rawText,
-        source: 'voice',
-        tags: ['diary', 'voice', 'orb'],
-      });
+      const { data: inserted, error: insertErr } = await sb
+        .from('diary_entries')
+        .insert({
+          user_id: identity.user_id,
+          text: rawText,
+          source: 'voice',
+          tags: VOICE_DIARY_TAGS,
+        })
+        .select('id, created_at')
+        .single();
       if (insertErr) {
         diary_entry_written = false;
         console.warn(
           `[save_diary_entry] diary_entries insert failed (non-fatal): ${insertErr.message}`,
         );
+      } else if (!inserted) {
+        console.warn('[VTID-04884] voice diary insert returned no row; episode skipped');
+      } else {
+        // VTID-04884: a voice diary entry becomes memory, as a typed one does
+        // (VTID-04390). It used to skip this, so voice diaries never reached memory.
+        const row = inserted as { id: string; created_at: string };
+        const admin = getSupabase();
+        if (admin) {
+          await writeDiaryEpisode(await diaryEpisodeIdentity(admin, identity), {
+            diary_entry_id: row.id,
+            text: rawText,
+            source: 'voice',
+            tags: VOICE_DIARY_TAGS,
+            occurred_at: row.created_at,
+          });
+        }
       }
     }
   } catch (insertErr) {
@@ -5968,8 +5302,8 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   share_intent_post: tool_share_intent_post,
   respond_to_match: tool_respond_to_match,
   navigate_to_screen: (args, id, sb) => tool_navigate_to_screen(args, id, sb),
-  // VTID-NAV-UNIFIED — free-text navigate (PR 1.B-4). Runs consultNavigator's
-  // 8-step resolution and constructs the redirect directive.
+  // VTID-NAV-UNIFIED — free-text navigate. The screen registry's resolver
+  // answers (VTID-04517 / VTID-04846).
   navigate: (args, id, sb) => tool_navigate(args, id, sb),
   // VTID-01975 — view_intent_matches (PR 1.B-6). Auto-redirects to
   // INTENTS.MATCH_DETAIL when the top score dominates the runner-up;
@@ -5980,7 +5314,7 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   // discoverable) or posts the request when nothing matches yet.
   find_match: tool_find_match,
   // VTID-NAV-TIMEJOURNEY — get_current_screen (PR 1.B-3). Resolves the user's
-  // LIVE current screen via the nav catalog. Anonymous-safe — pulls
+  // LIVE current screen via the screen registry. Anonymous-safe — pulls
   // current_route + recent_routes from args (Vertex/LiveKit pass them via
   // session/GatewayClient state at dispatch time).
   get_current_screen: tool_get_current_screen,

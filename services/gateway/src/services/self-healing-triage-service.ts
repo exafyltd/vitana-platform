@@ -375,13 +375,18 @@ export async function spawnTriageAgent(input: TriageInput): Promise<TriageResult
   //     failure type). Off by default; shadow records and triage proceeds;
   //     enforce skips a triage that cannot help (a provider outage, or an
   //     incident already triaged in the last 30 minutes).
-  const { runSelfHealGates, recordSelfHealGateOutcome } = await import('./jev/gates/selfheal-gates');
+  const { runSelfHealGates, recordSelfHealGateOutcome, recordPretriageOutcome } = await import('./jev/gates/selfheal-gates');
   const gates = await runSelfHealGates(input);
   if (gates.skip) {
     console.warn(`${LOG_PREFIX} Triage for ${input.vtid} skipped by ${gates.skip.gate}: ${gates.skip.reason}`);
     void recordSelfHealGateOutcome(gates, { ok: false, skipped: true });
     return { ok: false, error: `jev_gate:${gates.skip.gate}:${gates.skip.reason}`, skipped_by_gate: gates.skip };
   }
+
+  // VTID-04802 (Jev B4/B5): was there a deploy before this incident, and which
+  // commit most likely caused it? Started now, awaited only after triage.
+  const { isDeployCauseOn, runDeployCauseCheck, recordDeployCauseOutcome, defaultDeployCauseDeps } = await import('./jev/gates/deploy-cause-gate');
+  const deployCause = isDeployCauseOn() ? runDeployCauseCheck(input, defaultDeployCauseDeps()) : null;
 
   // 3. The `triage` stage, through the shared bounded tool loop (VTID-04232):
   //    the provider comes from llm_routing_policy; the tools are the
@@ -414,6 +419,9 @@ export async function spawnTriageAgent(input: TriageInput): Promise<TriageResult
 
   const elapsedMs = Date.now() - startTime;
 
+  if (!r.ok || !r.text) {
+    if (deployCause) void deployCause.then((dc) => recordDeployCauseOutcome(dc, null)); // VTID-04802
+  }
   if (!r.ok) {
     console.warn(`${LOG_PREFIX} Triage router call failed for ${input.vtid}: ${r.error}`);
     return { ok: false, error: r.error || 'router returned ok=false' };
@@ -431,6 +439,8 @@ export async function spawnTriageAgent(input: TriageInput): Promise<TriageResult
   report.llm_fallback_used = loop.fallbackUsed;
   report.tool_calls = loop.toolCalls;
   report.tools_used = loop.toolNames;
+  void recordPretriageOutcome(gates, report); // VTID-04799 (Jev B3)
+  if (deployCause) void deployCause.then((dc) => recordDeployCauseOutcome(dc, report)); // VTID-04802
   console.log(
     `${LOG_PREFIX} Triage complete for ${input.vtid}: provider=${r.provider} model=${r.model} fallback=${loop.fallbackUsed} tool_calls=${loop.toolCalls}${loop.toolNames.length ? ` (${loop.toolNames.join(', ')})` : ''} confidence=${report.confidence} (${report.confidence_numeric}) elapsed=${elapsedMs}ms`
   );

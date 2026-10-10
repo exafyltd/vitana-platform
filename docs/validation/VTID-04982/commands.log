@@ -1,0 +1,31 @@
+$ bash scripts/ci/test-vtid-04982-rewards-shop.sh
+VTID-04982: all assertions passed
+
+$ npx jest test/vtid-04982-rewards-shop.test.ts
+    ✓ needs a member; lists items with VTNA, EUR value, availability and affordability (30 ms)
+    ✓ rejects bad input before touching the database (15 ms)
+    ✓ ship item: reserves, opens a Stripe Checkout for the shipping fee only, never takes a price from the client (13 ms)
+    ✓ a replay hands back the session already opened for the order (4 ms)
+    ✓ a failed checkout releases the hold (15 ms)
+    ✓ event item: paid in VTNA at once, OASIS rewards.shop.redeemed, no Stripe (6 ms)
+    ✓ maps INSUFFICIENT_BALANCE to 409 (5 ms)
+    ✓ maps OUT_OF_STOCK to 409 (8 ms)
+    ✓ maps UNDER_MIN_AGE to 403 (5 ms)
+    ✓ maps AGE_CONFIRMATION_REQUIRED to 400 (4 ms)
+    ✓ maps NOT_ELIGIBLE to 403 (3 ms)
+    ✓ maps ITEM_NOT_AVAILABLE to 404 (3 ms)
+    ✓ maps SHIPPING_NOT_AVAILABLE to 409 (3 ms)
+    ✓ are exafy_admin only (5 ms)
+    ✓ PATCH status accepts only fulfilment statuses and reports the transition (4 ms)
+    ✓ PUT item validates the price and fulfilment (3 ms)
+    ✓ completed -> settle; paid emits shipping_paid, no refund (1 ms)
+    ✓ refunds the Stripe charge when the VTNA or the stock is gone
+    ✓ a database error throws so Stripe retries the webhook (17 ms)
+    ✓ expired -> release the hold once (1 ms)
+    ✓ billing.ts routes reward_shipping to the shop and handles checkout.session.expired (2 ms)
+    ✓ runs only on production ECS
+    ✓ reports releases to OASIS and stays quiet when none (1 ms)
+    ✓ refuses to apply while fn_consume_credits is open to members, and keeps every function server-side (1 ms)
+    ✓ debits only earned VTNA through credit_wallet, never stores a birth date, refuses test accounts (1 ms)
+    ✓ applies twice and passes the SQL assertions (1770 ms)
+Tests:       26 passed, 26 total

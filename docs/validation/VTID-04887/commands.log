@@ -1,0 +1,67 @@
+# VTID-04887: commands run in the worktree /home/user/wt-04885 (branch wt/vtid-04885),
+# on top of the VTID-04886 commit. No live endpoint, database or AWS API was called. Every
+# test uses mocks; the cockpit rendered offline with every request aborted; the Phase 3
+# migration re-ran only on a throwaway local Postgres 16 (unix socket, no TCP).
+# A previous build agent was stopped by a container restart; its partial app.js edits
+# (router redirects, NAVIGATION_CONFIG, the panel cut) were reviewed and kept, then finished.
+
+# 0. Dead-code discovery (repo tooling + the T2 guard's own rule)
+npx jest test/command-hub/t2-no-zero-caller-functions.test.ts         # after each deletion pass, until no zero-caller function is left
+node services/gateway/scripts/generate-command-hub-symbol-index.mjs   # line ranges used to delete whole functions, never by hand
+
+# 1. Type check
+npx tsc --noEmit                                           # exit 2: the same 24 TS2742 lines in 5 untouched *-repository.ts files (symlinked node_modules artifact, as in VTID-04885/04886); 0 other errors (outputs/01-tsc.txt)
+npx tsc --noEmit --preserveSymlinks                        # exit 0 (outputs/01b-tsc-preserve-symlinks.txt)
+
+# 2. New and updated tests
+npx jest --ci vtid-04885 vtid-04886 vtid-04887 vtid-04876 vtid-04875 test/vtid-03925-pipeline-summary-loop-fix.test.ts \
+  test/vtid-04671-recommendation-card.test.ts test/vtid-04667-executable-source-types-drift.test.ts test/navigation test/nav-golden
+                                                           # 470 passed (outputs/02-vtid-04887-tests.txt)
+
+# 3. Standing suites
+npm run test:operator -- --ci                              # rule 42e: 30 passed (outputs/03-test-operator.txt)
+npm run test:roles -- --ci                                 # rule 42h incl. atlas drift guard: 105 passed (outputs/04-test-roles.txt)
+
+# 4. Command Hub tests
+npx jest --ci test/command-hub test/scripts test/vtid-04696-staging-checks-follow-asset-bumps.test.ts \
+  test/vtid-03917-overview-poll-no-full-rerender.test.ts test/vtid-03925-pipeline-summary-loop-fix.test.ts \
+  test/vtid-03944-operator-popup-flicker-pollers.test.ts test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts
+                                                           # 54 suites, 746 passed (outputs/05-command-hub-tests.txt)
+
+# 5. Gates run locally
+git diff 3c4f53b7 -- services/gateway/src/frontend/ > csp_p4.txt && node scripts/ci/validator-path-guard.cjs --csp-added-lines csp_p4.txt
+                                                           # "No CSP pattern hits in added lines." (outputs/06-csp-added-lines.txt)
+git diff f17e1dd4 -- services/gateway/src/frontend/ > csp_all.txt && node scripts/ci/validator-path-guard.cjs --csp-added-lines csp_all.txt
+                                                           # Phases 2-4 together: "No CSP pattern hits in added lines."
+node -e "require('./scripts/ci/validate-pr-locally.cjs').checkAcceptanceMapping('docs/validation/VTID-04887/acceptance.md')"
+                                                           # Acceptance mapping OK (outputs/08-acceptance-mapping.txt)
+node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(...)"   # staging-tests.json valid ({"ok":true,"errors":[]})
+offline check of every docs/validation/*/staging-tests.json served-asset assertion against the local app.js/styles.css/*.html
+                                                           # 59 checked, 0 failed (outputs/13-staging-asset-assertions.txt)
+node services/gateway/scripts/generate-command-hub-symbol-index.mjs && ... --check
+                                                           # in sync, 902 functions (outputs/10-symbol-index.txt)
+node services/gateway/scripts/find-dead-css-classes.mjs --fix && ... --check
+                                                           # 57 rules removed; restored the rules Vitana Recommends uses; in sync (outputs/12-dead-css.txt)
+VITANA_V1_ROOT=/nonexistent node services/gateway/scripts/regen-screens-catalog.mjs
+                                                           # fails before and after this change on duplicate DEV screen ids (known gap, acceptance.md); inventory not hand-edited
+sed -i 's/20261029-vtid-04886/20261030-vtid-04887/g' index.html docs/validation/*/staging-tests.json   # VTID-04696
+
+# 6. Phase 3 migration re-run (throwaway Postgres 16, never Supabase/Aurora; the runner refuses those hosts)
+initdb -D /tmp/pg-vtid-04887/data -A trust -U postgres && pg_ctl -D /tmp/pg-vtid-04887/data -o '-k /tmp/pg-vtid-04887 -c listen_addresses=' start
+PGHOST=/tmp/pg-vtid-04887 PGUSER=postgres scripts/ci/sql-tests/run-ops-attention-acks-test.sh
+                                                           # "VTID-04886 ops_attention_acks: all assertions passed" (outputs/09-phase3-sql-harness-rerun.txt); cluster stopped and deleted
+
+# 7. Full gateway suite
+npx jest --ci                                              # exit 0: 1514 suites passed, 1 skipped; 24116 tests passed, 25 skipped, 6 todo; 126 snapshots (outputs/07-full-suite.summary.txt, outputs/07-full-suite.suites.txt)
+
+# 8. Visual check (offline): the real aggregator over fakes + an in-memory ack store computes the
+#    mock /ops/attention response (Phase 2 domains, Phase 3 acks/snooze/timeline); the real cockpit,
+#    Service Health and Vitana Recommends code renders it in headless Chromium, every request aborted.
+npx tsx scratchpad/mock-data.ts data4.json acks && node scratchpad/harness.js outputs data4.json p4
+                                                           # desktop 1400x900 + mobile 390x844: no horizontal scroll, no target < 24 px; 13 tiles;
+                                                           #   P1: 1 Ack, 0 Snooze; snooze POST shape; 1 hidden, 1 acked; 5 timeline rows; 2 sparklines;
+                                                           #   disclosure closed by default; opened: Service Health + Vitana Recommends only,
+                                                           #   recommendations fetched once from /api/v1/ops/pipeline-summary; blind -> every tile UNKNOWN
+                                                           #   (outputs/11-offline-render.txt and outputs/p4-*.png)
+
+# 2026-10-05 after PR open: route test renamed to test/ops-pipeline-summary.test.ts (impact rule new-route-needs-test expects <route>.test.ts); outputs/ above record the run under its earlier name test/vtid-04887-ops-pipeline-summary-route.test.ts.

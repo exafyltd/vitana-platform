@@ -51,7 +51,8 @@ describe('Multi-thread conversation state (VTID-03822)', () => {
   });
 
   it('startNewOperatorThread() creates a fresh thread, clears legacy single-thread keys, and re-renders', () => {
-    const start = SOURCE.indexOf('function startNewOperatorThread()');
+    // VTID-05003: the function takes an optional { engine } argument now.
+    const start = SOURCE.indexOf('function startNewOperatorThread(');
     const end = SOURCE.indexOf('\n}', start);
     expect(start).toBeGreaterThan(-1);
     const body = SOURCE.slice(start, end);

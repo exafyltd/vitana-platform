@@ -19,7 +19,7 @@ import { chromium, type Page } from '@playwright/test';
 const GATEWAY_URL = process.env.GATEWAY_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app';
 const SCREENSHOT_DIR = process.env.SCREENSHOT_DIR || '/tmp/visual-verify';
 const TEST_EMAIL = 'e2e-test@vitana.dev';
-const TEST_PASSWORD = 'VitanaE2eTest2026!';
+const TEST_PASSWORD = process.env.TEST_USER_PASSWORD ?? '';
 
 // Pages to screenshot after deploy — add new entries here to expand coverage
 const PAGES_TO_VERIFY = [

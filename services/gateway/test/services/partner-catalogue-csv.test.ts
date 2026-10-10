@@ -56,6 +56,13 @@ describe('parseCatalogueCsv', () => {
     }]);
   });
 
+  it('VTID-04783: carries category and subcategory columns through to the draft', () => {
+    const r = parseCatalogueCsv(`${HEADER},category,subcategory\n${ROW},supplements,vitamins`);
+    expect(r.fileError).toBeNull();
+    expect(r.errors).toEqual([]);
+    expect(r.rows[0].product).toEqual(expect.objectContaining({ category: 'supplements', subcategory: 'vitamins' }));
+  });
+
   it('accepts semicolon files, a BOM, and case-insensitive headers', () => {
     const csv = '﻿Title;Price;Currency;Affiliate_URL;Origin_Country;Ships_To_Regions\nTee;12,50;eur;https://acme.example/t;de;EU|UK';
     const r = parseCatalogueCsv(csv);

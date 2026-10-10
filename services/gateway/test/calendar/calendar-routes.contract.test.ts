@@ -50,6 +50,8 @@ function build(identity: Record<string, unknown> | null, overrides: Record<strin
       getUserCalendarHistory: rec('getUserCalendarHistory', [EVENT]),
       getCalendarGaps: rec('getCalendarGaps', [{ start: '2026-10-05T09:00:00.000Z', end: '2026-10-05T10:00:00.000Z', duration_minutes: 60 }]),
       checkConflicts: rec('checkConflicts', [EVENT]),
+      findFreeSlots: rec('findFreeSlots', [{ start: '2026-10-06T05:00:00.000Z', end: '2026-10-06T06:00:00.000Z', duration_minutes: 60, free_until: '2026-10-06T20:00:00.000Z' }]),
+      findConflicts: rec('findConflicts', [{ kind: 'own', id: 'e1', event_id: 'e1', title: 'Standup', start_time: '2026-10-05T07:00:00.000Z', end_time: '2026-10-05T07:30:00.000Z' }, { kind: 'external', id: 'google:1', event_id: 'google:1', title: null, start_time: '2026-10-05T07:15:00.000Z', end_time: '2026-10-05T08:00:00.000Z', source: 'google' }]),
       createCalendarEvent: rec('createCalendarEvent', EVENT),
       bulkCreateCalendarEvents: rec('bulkCreateCalendarEvents', [EVENT, { ...EVENT, id: 'e2' }]),
       updateCalendarEvent: rec('updateCalendarEvent', overrides.updateCalendarEvent === undefined ? EVENT : overrides.updateCalendarEvent),
@@ -169,8 +171,12 @@ describe('reads', () => {
       today: shape(await request(app).get(`${base}/events/today?timezone=Europe/Berlin`)),
       history: shape(await request(app).get(`${base}/events/history?days=9999&limit=9999`)),
       gaps: shape(await request(app).get(`${base}/events/gaps?date=2026-10-05`)),
+      slots: shape(await request(app).get(`${base}/events/gaps?duration=45&limit=2&from=2026-10-06T00:00:00Z&to=2026-10-09T00:00:00Z`)),
+      slots_bad_duration: shape(await request(app).get(`${base}/events/gaps?duration=1`)),
+      slots_bad_range: shape(await request(app).get(`${base}/events/gaps?from=2026-10-06T00:00:00Z&to=2026-12-09T00:00:00Z`)),
       conflicts_missing: shape(await request(app).get(`${base}/conflicts?start_time=2026-10-05T07:00:00Z`)),
-      conflicts: shape(await request(app).get(`${base}/conflicts?start_time=2026-10-05T07:00:00Z&end_time=2026-10-05T08:00:00Z`)),
+      conflicts_bad_window: shape(await request(app).get(`${base}/conflicts?start_time=2026-10-05T08:00:00Z&end_time=2026-10-05T07:00:00Z`)),
+      conflicts: shape(await request(app).get(`${base}/conflicts?start_time=2026-10-05T07:00:00Z&end_time=2026-10-05T08:00:00Z&exclude_event_id=e9`)),
     };
     expectGolden(G, 'reads', out);
     // The limits the routes clamp to, as passed to the services.

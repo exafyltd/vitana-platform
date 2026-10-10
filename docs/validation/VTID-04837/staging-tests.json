@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-04837",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/api/v1/partner-orgs/register",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "register now runs through services/partner-setup.ts; the route is still mounted and still refuses an unauthenticated caller before any write"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/api/v1/partner-onboarding/00000000-0000-0000-0000-000000000000/catalogue/products",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "product create now runs through the shared service; the route is still mounted behind its auth gate"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04837-partner-setup-idempotency.test.ts test/partner-orgs.test.ts test/partner-onboarding-catalogue.test.ts test/partner-onboarding.test.ts test/vtid-04471-partner-account-model.test.ts",
+      "cwd": "services/gateway",
+      "reason": "registering a business and adding products are writes in the shared production database, so the unchanged route behaviour and the new retry safety (same key returns the same org/product) are proven by these suites, not on staging"
+    }
+  ]
+}

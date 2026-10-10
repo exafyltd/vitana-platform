@@ -220,3 +220,18 @@ test('every other baseline state keeps its meaning', () => {
   assert.match(missing.problem, /not in this repository's history/);
   for (const b of [diverged, unknown, missing]) assert.equal(b.check, 'production baseline known');
 });
+
+test('VTID-04949: the nightly full run covers every valid suite of the service once', () => {
+  const ok = (vtid, service = 'community-app') => ({ vtid, service, tests: [{ kind: 'existing', ref: 'npm run test:gate', reason: 'a valid reason here' }] });
+  const manifests = {
+    'VTID-00003': ok('VTID-00003'),
+    'VTID-00001': ok('VTID-00001'),
+    'VTID-00002': ok('VTID-00002', 'gateway'),
+    'VTID-00004': { __parseError: 'Unexpected token' },
+    'VTID-00005': { vtid: 'VTID-00005', service: 'community-app', tests: [] },
+    'VTID-00006': null,
+  };
+  const r = lib.planFullRun({ service: 'community-app', manifests, alreadyRun: ['VTID-00003'] });
+  assert.deepEqual(r.suites.map((s) => s.vtid), ['VTID-00001']);
+  assert.deepEqual(r.invalid.map((i) => i.vtid), ['VTID-00004', 'VTID-00005']);
+});

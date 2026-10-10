@@ -47,6 +47,9 @@ import express, { Router, Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
 // VTID-04543: in-process cache for lookupPrimaryTenant.
 import { createPrimaryTenantCache } from '../orb/live/session/primary-tenant-cache';
+import { closeIfSessionGone } from '../orb/live/session/orphan-upstream-guard';
+import { sanitizeHideDiagnostics } from '../orb/live/session/hide-reasons';
+import { createCrossTaskForward, FORWARDED_HEADER, FORWARDED_STREAM_GRACE_MS, isCrossTaskForwardEnabled } from '../orb/live/session/cross-task-forward';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
@@ -206,12 +209,20 @@ import {
   RECEPTIONIST_KEY as RECEPTIONIST_PERSONA_KEY,
 } from '../services/persona-registry';
 import { dispatchVoiceFailureFireAndForget } from '../services/voice-self-healing-adapter';
+// VTID-04776: one voice_session_facts row per session (Voice Supervisor).
+import {
+  recordLiveSessionEnd,
+  updateVoiceSessionFacts,
+  noteFirstAudioOut,
+  stopEventContext,
+  toFactsProvider,
+} from '../services/voice-session-facts';
 import { buildVoiceOutcomeSignals } from '../services/jev/gates/voice-outcome-gate'; // VTID-04775
 import { fetchAdminBriefingBlock, isAdminRole } from '../services/admin-scanners/briefing';
 import { ADMIN_TOOL_HANDLERS, ADMIN_TOOL_NAMES, ADMIN_TOOL_SCHEMAS } from '../services/admin-voice-tools';
 // VTID-03848: BackOffice voice tools (surface-gated) + shared surface resolver.
 import { BACKOFFICE_TOOL_HANDLERS, BACKOFFICE_TOOL_NAMES } from '../services/backoffice-voice-tools';
-import { resolveOrbSurface, navigatorRoleForSurface, isWorkSurface } from '../orb/live/surface';
+import { isWorkSurface } from '../orb/live/surface';
 import { resolveAssistantProfile, clampRoleToProfile, type AssistantProfile } from '../orb/profile/assistant-profile';
 import { sessionServedRole, sessionServedSurface, workSurfaceGreetingFields } from '../orb/profile/session-profile';
 import {
@@ -305,20 +316,8 @@ import { ContextLens, createContextLens } from '../types/context-lens';
 import { scoreAndRankEvents, formatForVoice, EventRecord, EventSearchFilters, ScoredEventResults } from '../services/event-relevance-scoring';
 // VTID-01224: Conversation types for thread continuity
 import { ContextPack } from '../types/conversation';
-// VTID-NAV: Vitana Navigator — consult orchestration + action memory writer
-import {
-  consultNavigator,
-  formatConsultResultForLLM,
-  writeNavigatorActionMemory,
-  NavigatorConsultInput,
-} from '../services/navigator-consult';
-import {
-  lookupScreen as lookupNavScreen,
-  suggestSimilar as suggestNavSimilar,
-  getContent as getNavContent,
-  lookupByRoute as lookupNavByRoute,
-  lookupByAlias as lookupNavByAlias,
-} from '../lib/navigation-catalog';
+// VTID-NAV: action memory writer (VTID-04846: moved out of the retired navigator-consult)
+import { writeNavigatorActionMemory } from '../navigation/nav-action-memory';
 // VTID-01112: Context Assembly Engine (D20 Core Intelligence)
 import {
   getOrbContext,
@@ -369,6 +368,7 @@ import { writeFact, getCurrentFacts } from '../services/memory-facts-service';
 // VTID-01222: WebSocket server for client connections
 import WebSocket, { WebSocketServer } from 'ws';
 import { GoogleAuth } from 'google-auth-library';
+import { isGoogleAwsSupplierEnabled, getGoogleAccessTokenViaAwsSupplier } from '../lib/google-access-token';
 import { Server as HttpServer, IncomingMessage } from 'http';
 import { startLiveSessionForWs } from '../orb/live/session/ws-start-adapter';
 import type { IncomingHttpHeaders } from 'http';
@@ -1037,6 +1037,14 @@ export interface GeminiLiveSession {
   // stopped" and for "never successfully started" — two states that need
   // opposite answers here.
   stopEventEmitted?: boolean;
+  // VTID-04776: the last upstream close seen (Vertex ws close code / Nova
+  // close), so the session's stop and its voice_session_facts row can tell
+  // an upstream drop from a user end. `stallCount` counts watchdog stalls.
+  lastUpstreamCloseCode?: number | null;
+  lastUpstreamCloseAt?: number | null;
+  stallCount?: number;
+  // VTID-04776: last time the idle sweep refreshed facts.last_activity_at.
+  factsActivitySyncedAt?: number;
   // VTID-04353: transcript turns covered by the last finalizeLiveSession() —
   // makes the end-of-session memory commit + summary idempotent across the
   // several end paths that can fire for one conversation.
@@ -1364,6 +1372,10 @@ export interface GeminiLiveSession {
   guided_topic_resume?: boolean;
   /** VTID-04395: opened from Support → "report by voice" (support-report intake). */
   support_report?: boolean;
+  /** VTID-04840: opened from the commerce AI setup sheet ("Talk to Vitana"). */
+  commerce_setup?: boolean;
+  /** VTID-04951: "Ask Vitana" from a screen — the guide (FAQ / how-to) context. */
+  guide?: GuideContext | null;
   /** VTID-04430: the host app's build stamp; voice-filed tickets store it. */
   app_version?: string | null;
   // VTID-NAV: Cached memory pack from the first navigator_consult call this
@@ -1456,10 +1468,14 @@ export function classifyIdleSession(args: {
   return null;
 }
 
+// VTID-04776: how often a live session's facts.last_activity_at is refreshed.
+const FACTS_ACTIVITY_SYNC_MS = 5 * 60 * 1000;
+
 // Sweep every 60s, not every 5 min: a 5-minute idle budget checked on a
 // 5-minute interval yields up to 10 minutes of actual billed idle.
-setInterval(() => {
-  const now = Date.now();
+// VTID-04834: body exported (unchanged behaviour) so the once-per-session
+// stop latch is testable; the interval below only calls it.
+export function sweepIdleLiveSessions(now: number = Date.now()): number {
   let purged = 0;
   for (const [sid, s] of liveSessions) {
     const closeReason = classifyIdleSession({
@@ -1475,50 +1491,66 @@ setInterval(() => {
       // VTID-04353: an abandoned session (stop POST lost, tab killed) used to
       // be reaped with no memory commit at all.
       finalizeLiveSession(s, { sessionId: sid, reason: `idle_sweep_${closeReason}` });
-      // BOOTSTRAP-ORB-1007-AUDIT: emit session.stop so abandoned sessions
-      // (client closed tab / mobile killed app mid-conversation) show up in
-      // OASIS instead of just disappearing. Prior behaviour left a silent
-      // gap (~10 of 67 sessions / 24 h had no stop event — see diag runs).
-      emitLiveSessionEvent('vtid.live.session.stop', {
-        session_id: sid,
-        user_id: s.identity?.user_id || null,
-        tenant_id: s.identity?.tenant_id || null,
-        transport: s.clientWs ? 'websocket' : 'sse',
-        reason: closeReason,
-        // VTID-03510: idle_ms makes the saving auditable — it is the billed
-        // silence this sweep stopped paying for. Without it the only way to
-        // tell a 5-minute reap from a 32-minute one is duration_ms, which
-        // also includes the useful part of the session.
-        idle_ms: now - s.lastActivity.getTime(),
-        audio_in_chunks: s.audioInChunks,
-        audio_out_chunks: s.audioOutChunks,
-        duration_ms: Date.now() - s.createdAt.getTime(),
-        turn_count: s.turn_count,
-      }).catch(() => { });
-      s.stopEventEmitted = true; // VTID-03561
-      // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
-      // VTID-01994: pass session metrics so quality classifier can detect
-      // failures regardless of mode and route to investigator.
-      dispatchVoiceFailureFireAndForget({
-        sessionId: sid,
-        tenantScope: s.identity?.tenant_id || 'global',
-        metadata: { synthetic: (s as any).synthetic === true },
-        sessionMetrics: {
+      // VTID-04834: a session another end path already reported (the WS
+      // `stop_session` frame, a supersede, POST /live/session/stop) can still
+      // be sitting in liveSessions; reaping it must not book a second stop.
+      // Measured on prod: every WS `stop_session` was followed ~2 min later by
+      // an `idle_no_engagement` stop for the same conversation.
+      if (!s.stopEventEmitted) {
+        s.stopEventEmitted = true; // VTID-03561 — latched before the emit
+        // BOOTSTRAP-ORB-1007-AUDIT: emit session.stop so abandoned sessions
+        // (client closed tab / mobile killed app mid-conversation) show up in
+        // OASIS instead of just disappearing. Prior behaviour left a silent
+        // gap (~10 of 67 sessions / 24 h had no stop event — see diag runs).
+        emitLiveSessionEvent('vtid.live.session.stop', {
+          session_id: sid,
+          user_id: s.identity?.user_id || null,
+          tenant_id: s.identity?.tenant_id || null,
+          transport: s.clientWs ? 'websocket' : 'sse',
+          reason: closeReason,
+          // VTID-03510: idle_ms makes the saving auditable — it is the billed
+          // silence this sweep stopped paying for. Without it the only way to
+          // tell a 5-minute reap from a 32-minute one is duration_ms, which
+          // also includes the useful part of the session.
+          idle_ms: now - s.lastActivity.getTime(),
           audio_in_chunks: s.audioInChunks,
-          audio_in_forwarded: s.audioInForwarded, // VTID-VOICE-FWD (Track A)
           audio_out_chunks: s.audioOutChunks,
           duration_ms: Date.now() - s.createdAt.getTime(),
           turn_count: s.turn_count,
-        },
-        outcomeSignals: buildVoiceOutcomeSignals(s, `idle_sweep_${closeReason}`), // VTID-04775
-      });
+          ...stopEventContext(s, closeReason), // VTID-04776
+        }).catch(() => { });
+        recordLiveSessionEnd(s, sid, closeReason); // VTID-04776
+        // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
+        // VTID-01994: pass session metrics so quality classifier can detect
+        // failures regardless of mode and route to investigator.
+        dispatchVoiceFailureFireAndForget({
+          sessionId: sid,
+          tenantScope: s.identity?.tenant_id || 'global',
+          metadata: { synthetic: (s as any).synthetic === true },
+          sessionMetrics: {
+            audio_in_chunks: s.audioInChunks,
+            audio_in_forwarded: s.audioInForwarded, // VTID-VOICE-FWD (Track A)
+            audio_out_chunks: s.audioOutChunks,
+            duration_ms: Date.now() - s.createdAt.getTime(),
+            turn_count: s.turn_count,
+          },
+          outcomeSignals: buildVoiceOutcomeSignals(s, `idle_sweep_${closeReason}`), // VTID-04775
+        });
+      }
       s.active = false;
       liveSessions.delete(sid);
       purged++;
+    } else if (s.active && now - (s.factsActivitySyncedAt ?? s.createdAt.getTime()) >= FACTS_ACTIVITY_SYNC_MS) {
+      // VTID-04776: the Supervisor counts a session as live while its
+      // last_activity_at is recent; refresh it at most every 5 minutes.
+      s.factsActivitySyncedAt = now;
+      updateVoiceSessionFacts(sid, { last_activity_at: s.lastActivity.toISOString() });
     }
   }
   if (purged > 0) console.log(`[VTID-03510] Reaped ${purged} idle/expired live sessions (remaining: ${liveSessions.size})`);
-}, 60 * 1000);
+  return purged;
+}
+setInterval(() => { sweepIdleLiveSessions(); }, 60 * 1000);
 
 // =============================================================================
 // VTID-SESSION-LIMIT: Enforce single active ORB session per user
@@ -1582,17 +1614,22 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
     // Emit OASIS event (fire-and-forget)
     // VTID-NAV-TIMEJOURNEY: include user_id so fetchLastSessionInfo can find
     // this event when the user next opens the ORB.
+    // VTID-04834: once per session, like every other end path.
+    if (existingSession.stopEventEmitted) continue;
+    existingSession.stopEventEmitted = true; // VTID-03561 — latched before the emit
     emitLiveSessionEvent('vtid.live.session.stop', {
       session_id: sid,
       user_id: existingSession.identity?.user_id || null,
       tenant_id: existingSession.identity?.tenant_id || null,
+      transport: existingSession.clientWs ? 'websocket' : 'sse', // VTID-04834
       reason: 'superseded_by_new_session',
       audio_in_chunks: existingSession.audioInChunks,
       audio_out_chunks: existingSession.audioOutChunks,
       duration_ms: Date.now() - existingSession.createdAt.getTime(),
       turn_count: existingSession.turn_count,
+      ...stopEventContext(existingSession, 'superseded_by_new_session'), // VTID-04776
     }).catch(() => {});
-    existingSession.stopEventEmitted = true; // VTID-03561
+    recordLiveSessionEnd(existingSession, sid, 'superseded_by_new_session'); // VTID-04776
     // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
     // VTID-01994: pass session metrics for mode-independent quality classifier.
     dispatchVoiceFailureFireAndForget({
@@ -1659,6 +1696,7 @@ import {
   configureLiveSessionController,
   cleanupExpiredSessions,
   cleanupWsSession,
+  emitSseDisconnectStop, // VTID-04785
   handleLiveStreamEndTurn,
   handleLiveSessionStart,
   handleLiveSessionStop,
@@ -2061,6 +2099,8 @@ import {
 } from '../orb/live/prewarm/prewarm-fingerprint';
 import { personaVoiceAvailability } from '../orb/live/voice/specialist-voice-availability';
 import { getUserLocale } from '../i18n/server-locale';
+// VTID-04951: guide mode ("Ask Vitana" from a screen opens Vitana as that screen's FAQ guide).
+import { buildGuideModeBlock, guideOpenFrom, type GuideContext } from '../orb/live/guide/guide-context';
 import { registerRuleForLang } from '../i18n/llm-locale';
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
 import { startNovaSonicKeepWarm, startNovaSonicModelWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
@@ -2083,6 +2123,12 @@ import {
   resolveVertexLivePersonaVoice,
   enforceVertexVoiceGender,
 } from '../orb/live/upstream/vertex-serbian-bridge';
+// VTID-04813: the second narrow bridge, ru-only, its own switch. Same
+// caller-must-ask trap as the sr one above.
+import {
+  isVertexRussianBridgeEnabled,
+  isVertexRussianBridgeLanguage,
+} from '../orb/live/upstream/vertex-russian-bridge';
 import { bindUpstreamSessionHandlers, isVertexSharedHandlersEnabled } from '../orb/live/session/upstream-message-handler';
 import { createNovaWsFacade } from '../orb/live/upstream/nova-ws-facade';
 import type { UpstreamLiveClient } from '../orb/live/upstream/types';
@@ -2218,6 +2264,15 @@ const TOKEN_REFRESH_SKEW_MS = 5 * 60 * 1000;
 const TOKEN_DEFAULT_TTL_MS = 55 * 60 * 1000;
 
 async function fetchFreshAccessToken(): Promise<string> {
+  // VTID-04893: on ECS the Workload Identity config's own credential source
+  // (the EC2 metadata endpoint) is unreachable, so with the flag on the token
+  // comes from the shared module, which supplies the task role's credentials.
+  // Flag off = the GoogleAuth path below, unchanged.
+  if (isGoogleAwsSupplierEnabled()) {
+    const { token, expiresAt } = await getGoogleAccessTokenViaAwsSupplier();
+    cachedAccessToken = { token, expiresAt: expiresAt ?? Date.now() + TOKEN_DEFAULT_TTL_MS };
+    return token;
+  }
   if (!googleAuth) {
     throw new Error('Google Auth client not initialized');
   }
@@ -2272,7 +2327,7 @@ async function getAccessToken(): Promise<string> {
 // first use.
 if (googleAuth && VERTEX_PROJECT_ID) {
   void getAccessToken()
-    .then(() => console.log('[VTID-01219] ORB Voice access token prewarmed'))
+    .then(() => console.log(`[VTID-01219] ORB Voice access token prewarmed (auth=${isGoogleAwsSupplierEnabled() ? 'aws_supplier' : 'adc'})`))
     .catch((err: any) =>
       console.warn('[VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily):', err?.message));
 }
@@ -3452,33 +3507,11 @@ const ANONYMOUS_SAFE_TOOLS = new Set<string>([
 ]);
 
 /**
- * Derive the Navigator's role from the surface the user is currently in.
- * The ORB must never cross surfaces: mobile and vitanaland.com → community,
- * /admin/* inside the community app → admin, /command-hub/* → developer.
- * The DB's active_role is deliberately NOT consulted — a user's DB role can
- * legitimately be "developer" while they are browsing the community app, and
- * in that case the Navigator should still only surface community routes.
- */
-function deriveSurfaceRole(currentRoute: string | undefined | null): string {
-  // VTID-03848: one resolver for every surface decision (adds /backoffice).
-  return navigatorRoleForSurface(resolveOrbSurface({ currentRoute }));
-}
-
-/**
- * VTID-NAV: Handle navigator_consult tool call. Self-contained — does not
- * require an authenticated identity (anonymous sessions can still consult,
- * just with empty memory hints).
- */
-/**
- * VTID-NAV-UNIFIED: Single unified navigate tool handler.
- *
- * Replaces the old two-tool dance (navigator_consult → navigate_to_screen).
- * The LLM just passes the user's words. This function:
- * 1. Runs the consult (catalog scoring + KB search + memory hints)
- * 2. If a match is found: queues the orb_directive AND returns guidance text
- * 3. If no match: returns a clarification prompt
- *
- * Gemini never sees screen_ids. Never guesses. Just speaks the guidance.
+ * VTID-NAV-UNIFIED: the single navigate tool handler. The member's words go
+ * to the shared navigate tool, which the screen registry answers
+ * (VTID-04517 / VTID-04846): a clear "open" request queues the orb_directive,
+ * a "where" question offers the screen, anything unclear comes back as
+ * candidates or "nothing matches". Never guesses.
  */
 async function handleNavigate(
   session: GeminiLiveSession,
@@ -3489,7 +3522,7 @@ async function handleNavigate(
   // the model (observed on Nova Sonic, which can chain a second tool call
   // before ever emitting END_TURN — see the BOOTSTRAP-NOVA-SONIC-VOICE-NAV-FIX
   // comment on handleNavigateToScreen below) tries to re-open the Navigator
-  // anyway, short-circuit instead of re-running consultNavigator and risking
+  // anyway, short-circuit instead of resolving again and risking
   // a second, deeper disambiguation question stacked on top of the first.
   //
   // VTID-03583: scoped to the CURRENT TURN. This originally read the
@@ -3502,7 +3535,7 @@ async function handleNavigate(
     };
   }
   // PR 1.B-4: lifted to services/orb-tools-shared.ts:tool_navigate. Both
-  // pipelines now run the same consultNavigator + decision logic + directive
+  // pipelines now run the same registry resolver + decision logic + directive
   // payload construction + OASIS emit chain. Vertex post-processes the
   // result to: emit the directive immediately on its SSE/WS transport,
   // mutate session.pendingNavigation + session.current_route +
@@ -3524,7 +3557,7 @@ async function handleNavigate(
     'navigate',
     {
       question,
-      // VTID-04517: open vs. where — only read when NAV_V2_ENABLED.
+      // VTID-04517: open vs. where.
       intent: args.intent === 'open' ? 'open' : args.intent === 'where' ? 'where' : undefined,
       current_route: session.current_route ?? null,
       recent_routes: Array.isArray(session.recent_routes) ? session.recent_routes : [],
@@ -3632,70 +3665,10 @@ async function handleNavigate(
   return { success: true, result: withNavFailureNote(session, typeof r.text === 'string' ? r.text : '') };
 }
 
-// Legacy handler — kept for test imports but no longer called by the tool path
-async function handleNavigatorConsult(
-  session: GeminiLiveSession,
-  args: Record<string, unknown>
-): Promise<{ success: boolean; result: string; error?: string }> {
-  const hasIdentity = !!(session.identity?.tenant_id && session.identity?.user_id);
-  const question = String(args.question || '').trim();
-  if (!question) {
-    return { success: false, result: '', error: 'navigator_consult requires a non-empty question.' };
-  }
-
-  const surfaceRole = deriveSurfaceRole(session.current_route);
-
-  const consultInput: NavigatorConsultInput = {
-    question,
-    lang: session.lang || 'en',
-    identity: hasIdentity
-      ? {
-          user_id: session.identity!.user_id,
-          tenant_id: session.identity!.tenant_id as string,
-          role: surfaceRole,
-        }
-      : null,
-    is_anonymous: !!session.isAnonymous || !hasIdentity,
-    current_route: session.current_route,
-    recent_routes: session.recent_routes,
-    transcript_excerpt: session.inputTranscriptBuffer,
-    session_id: session.sessionId,
-    turn_number: session.turn_count,
-    conversation_start: session.createdAt.toISOString(),
-  };
-
-  const consultResult = await consultNavigator(consultInput);
-  const formatted = formatConsultResultForLLM(consultResult);
-
-  emitOasisEvent({
-    vtid: 'VTID-NAV-01',
-    type: 'orb.navigator.consulted',
-    source: 'orb-live-ws',
-    status: consultResult.confidence === 'low' ? 'warning' : 'info',
-    message: `navigator_consult: confidence=${consultResult.confidence}, primary=${consultResult.primary?.screen_id || 'none'}`,
-    payload: {
-      session_id: session.sessionId,
-      question,
-      primary_screen_id: consultResult.primary?.screen_id || null,
-      alternative_screen_id: consultResult.alternative?.screen_id || null,
-      confidence: consultResult.confidence,
-      confirmation_needed: consultResult.confirmation_needed,
-      kb_excerpt_count: consultResult.kb_excerpt_count,
-      memory_hint_count: consultResult.memory_hint_count,
-      ms_elapsed: consultResult.ms_elapsed,
-      lang: consultInput.lang,
-      is_anonymous: consultInput.is_anonymous,
-      blocked_reason: consultResult.blocked_reason || null,
-    },
-  }).catch(() => { /* ignore telemetry failure */ });
-
-  return { success: true, result: formatted };
-}
-
 /**
  * VTID-NAV: Handle navigate_to_screen tool call. Self-contained — does not
- * require an authenticated identity. Anonymous sessions are gated to
- * anonymous_safe screens by the catalog access check below.
+ * require an authenticated identity. Anonymous sessions are gated to public
+ * screens by the screen registry's access check (openScreen).
  */
 // VTID-NAV-TEST: Exported for integration test that verifies the full
 // navigate_to_screen → pendingNavigation → orb_directive dispatch flow
@@ -3932,6 +3905,13 @@ async function executeLiveApiToolInner(
   if (toolName === 'navigate_to_screen') {
     return await handleNavigateToScreen(session, args);
   }
+  // VTID-04814: the developer tool that opens a Command Hub panel goes
+  // through the same handler, so its directive actually reaches the widget
+  // (the generic tool dispatcher below never forwards one). Navigation is
+  // not privileged; the panels themselves keep their own access checks.
+  if (toolName === 'dev_open_hub_panel' && sessionServedSurface(session) === 'command-hub') {
+    return await handleNavigateToScreen(session, { screen_id: args.screen_id, reason: args.reason || 'dev_open_hub_panel' });
+  }
   // Legacy: navigator_consult was the consult-then-narrate path before the
   // unified `navigate` tool. Still routed to the unified handler for any
   // in-flight session that has the old declarations cached.
@@ -3985,6 +3965,12 @@ async function executeLiveApiToolInner(
       }
 
       case 'search_memory': {
+        // VTID-04798 (owner decision 2026-10-01): a work surface never reads the
+        // member's personal memory. The catalog no longer declares the tool
+        // there; this refuses a call the model makes anyway.
+        if (session.assistantProfile?.isWorkSurface) {
+          return { success: false, result: '', error: 'search_memory is not available on this surface' };
+        }
         // PR D-3: lifted to services/orb-tools-shared.ts.
         const SUPABASE_URL = process.env.SUPABASE_URL;
         const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -6085,6 +6071,10 @@ async function executeLiveApiToolInner(
           let intentKind = kindHint as any;
           if (!intentKind) {
             const cls = await classifyIntentKind(utterance);
+            // VTID-04879: Jev in shadow beside the classifier; never awaited, never changes the result.
+            void import('../services/jev/gates/community-class-a-gates')
+              .then((g) => g.shadowIntentKind({ utterance, existingKind: cls.intent_kind, existingConfidence: cls.confidence, tenantId: session.identity?.tenant_id, userId: session.identity?.user_id, sessionId: session.sessionId, source: 'post_intent' }))
+              .catch(() => undefined);
             if (!cls.intent_kind || cls.confidence < 0.7) {
               return {
                 success: true,
@@ -6530,10 +6520,9 @@ async function executeLiveApiToolInner(
       // VTID-02770: navigate_to_screen is routed at the top of handleToolCall
       // (line ~4064) directly to handleNavigateToScreen, so this switch case
       // is unreachable. The duplicated TARGET_ROUTES table that used to live
-      // here was deleted — the catalog (with aliases + entry_kind=overlay +
-      // param substitution) is the single source of truth. If you need to
-      // add a new target, add it as a catalog entry in navigation-catalog.ts,
-      // not here.
+      // here was deleted — the screen registry (vitana-v1
+      // src/navigation/registry/, VTID-04517) is the single source of truth.
+      // A new target is a registry screen, never an entry here.
 
       // VTID-DANCE-D11.B — pre-post candidate scan.
       case 'scan_existing_matches': {
@@ -6946,6 +6935,23 @@ async function executeLiveApiToolInner(
         return await runAskCommerceSpecialist(session, args ?? {});
       }
 
+      // VTID-04840: business ORB → draft the supplier's business from their
+      // website. Returns at once; the draft reaches the screen as an
+      // orb_directive and is only saved by the supplier's own tap there.
+      case 'draft_business_setup': {
+        const { runDraftBusinessSetup } = await import('../orb/live/tools/commerce-setup-tool');
+        return await runDraftBusinessSetup(session as any, args ?? {}, {
+          send: (message) => {
+            try {
+              if (session.sseResponse) session.sseResponse.write(`data: ${JSON.stringify(message)}\n\n`);
+              if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) session.clientWs.send(JSON.stringify(message));
+            } catch (err) {
+              console.warn(`[VTID-04840] commerce setup directive emit failed (non-fatal): ${(err as Error).message}`);
+            }
+          },
+        });
+      }
+
       case 'get_delegation_result': {
         const { runGetDelegationResult } = await import('../orb/live/tools/delegation-tools');
         return runGetDelegationResult(session, args ?? {});
@@ -7181,8 +7187,8 @@ When the user wants to send a message, share a link, text, invite or tell someon
 To show a screen, list or detail page, use the navigation tools — try before ever saying a page does not exist.`;
 
 /**
- * VTID-04521 — the navigator policy when the screen registry answers
- * (NAV_V2_ENABLED). Instructions to the model, so English for every session
+ * VTID-04521 — the navigator policy: the screen registry answers.
+ * Instructions to the model, so English for every session
  * language (§13b); the model replies in the member's language. It describes
  * the tools as they now behave: `navigate` with an intent, an offer that is
  * opened only on a yes, and a screen change that plays out after the reply.
@@ -7209,150 +7215,16 @@ Panels (a calendar, the Vitana Index, the wallet) open on top of the current scr
 
 /**
  * VTID-NAV-01: Vitana Navigator policy section appended to every system
- * instruction. Teaches the model when to call navigator_consult,
- * navigate_to_screen, or stay silent and answer in voice. EN/DE-aware.
+ * instruction. Teaches the model when to call navigate / navigate_to_screen
+ * or stay silent and answer in voice.
  */
 // A3 (orb-live-refactor): exported so the lifted buildLiveSystemInstruction
 // in orb/live/instruction/live-system-instruction.ts can call it. Same
 // behavior; only module-level visibility changes.
-export function buildNavigatorPolicySection(lang: string): string {
-  // VTID-04521: the screen registry answers navigation (NAV_V2_ENABLED).
-  if (process.env.NAV_V2_ENABLED === 'true') return NAVIGATOR_POLICY_V2;
-  const isDe = lang.startsWith('de');
-  if (isDe) {
-    return `
-
-=== VITANA NAVIGATOR — NAVIGATIONSMODUS ===
-Du bist der Navigationsführer für die Maxina Community. Die Community hat viele
-Bildschirme und Menschen können Dinge nicht alleine finden — sie zu führen ist
-eine deiner wichtigsten Aufgaben. Du hast zwei Werkzeuge:
-
-  • get_current_screen() — gibt den Bildschirm zurück auf dem der Nutzer
-    GERADE JETZT ist. RUFE DIESES TOOL AUF, wenn der Nutzer fragt "wo bin ich?",
-    "welcher Bildschirm ist das?", "was ist diese Seite?", "was kann ich
-    hier machen?". Antworte NIE aus dem Gedächtnis — rufe immer das Tool auf.
-
-  • navigate(question) — das Haupt-Navigations-Tool. Rufe es mit den Worten
-    des Nutzers auf und es erledigt ALLES: findet den richtigen Bildschirm,
-    durchsucht die Wissensdatenbank nach Anleitungen und leitet den Nutzer
-    automatisch weiter. Du musst keine Bildschirmnamen oder IDs kennen —
-    gib einfach die Frage weiter.
-
-WANN navigate() AUFRUFEN — NUR BEI EINDEUTIGER NAVIGATIONS-ABSICHT:
-
-Rufe navigate() NUR auf wenn der Nutzer tatsächlich IRGENDWOHIN GEHEN
-möchte — also ein klares Handlungsverb benutzt ("öffne", "zeig",
-"bring mich zu", "geh zu", "ich will sehen", "wo finde ich", "wo sind").
-Beispiele:
-   • "öffne mein Profil" → rufe navigate auf
-   • "öffne mein Wallet" → rufe navigate auf
-   • "wo sind die Podcasts" → rufe navigate auf
-   • "bring mich zu meinen Gesundheitsdaten" → rufe navigate auf
-   • "ich möchte ein Business aufbauen" → rufe navigate auf
-   • "zeig mir meine Gesundheitsdaten" → rufe navigate auf
-
-WANN navigate() **NICHT** AUFRUFEN — INFORMATIONS-Fragen beantworte
-gesprächig, OHNE zu navigieren. Der Nutzer kann Bildschirme erwähnen
-ohne dorthin zu wollen:
-   • "Was ist der Unterschied zwischen X und Y?" → VERGLEICH, erklären
-   • "Was ist X?" / "Was macht X?" → DEFINITION, erklären
-   • "Wofür ist X gut?" / "Warum gibt es X?" → ERKLÄRUNG
-   • "Wie funktioniert X?" → ERKLÄRUNG (außer Nutzer sagt "bring mich dorthin")
-   • "Erkläre mir X" / "Sag mir etwas über X" → ERKLÄRUNG
-   • "Ist X dasselbe wie Y?" → VERGLEICH, erklären
-   • Reiner Smalltalk ("wie geht es dir", "danke")
-   • Allgemeine Faktenfragen ("was ist Longevity?")
-
-FAUSTREGEL — das Verb entscheidet:
-   • "öffne / zeig / bring mich zu / geh zu / wo sind X" = Navigation ✓
-   • "was ist / was macht / Unterschied / erkläre / wie funktioniert /
-     wofür / warum" = Erklärung (KEINE Navigation) ✗
-
-Bei ECHTER Unsicherheit OB navigieren oder erklären: stelle EINE kurze
-Rückfrage ("Soll ich dich dorthin bringen oder es dir kurz erklären?")
-bevor du navigate() aufrufst. Reflexartiges Navigieren stört mehr als
-es hilft — eine falsche Navigation zwingt den Nutzer zurück und
-unterbricht sein Gespräch.
-
-WAS DU VON navigate() ZURÜCKBEKOMMST:
-   • GUIDANCE: eine hilfreiche Erklärung die du dem Nutzer vorsprechen
-     sollst. Beschreibe die Funktion, erkläre was er dort tun kann, und
-     lass ihn wissen dass du ihn dorthin bringst. Sei warm und hilfreich —
-     du bist sein persönlicher Begleiter.
-   • NAVIGATING_TO: der Bildschirm wohin er gebracht wird. Wenn das gesetzt
-     ist, schließt sich das Orb automatisch und leitet weiter nachdem du
-     fertig gesprochen hast. Sprich einfach die Anleitung natürlich.
-   • Wenn NAVIGATING_TO null ist, konnte das Backend keinen Treffer finden.
-     Frage den Nutzer was er sucht.
-
-NIEMALS rohe URLs oder Routenpfade aussprechen.`;
-  }
-
-  return `
-
-=== VITANA NAVIGATOR — NAVIGATION GUIDE MODE ===
-You are the navigation guide for the Maxina community. The community has many
-screens and people cannot find things on their own — guiding them is one of
-your most important jobs. You have two tools:
-
-  • get_current_screen() — returns the screen the user is looking at RIGHT
-    NOW. CALL THIS TOOL whenever the user asks any variant of "where am I?",
-    "which screen is this?", "what page am I on?", "what can I do here?".
-    NEVER answer those questions from memory — always call the tool. It is
-    also the right call after you\'ve navigated, if the user asks about
-    "this page". It is cheap and always returns the fresh answer.
-
-  • navigate(question) — the main navigation tool. Call it with the user's
-    words and it handles EVERYTHING: finds the right screen, searches the
-    knowledge base for guidance, and redirects the user automatically.
-    You do not need to know screen names or IDs — just pass the question.
-
-WHEN TO CALL navigate() — ONLY ON CLEAR NAVIGATION INTENT:
-
-Call navigate() ONLY when the user actually wants to GO somewhere — i.e.
-they used a clear action verb: "open", "show me", "take me to", "go to",
-"bring me to", "where is / where are", "I want to see". Examples:
-   • "open my profile" → call navigate
-   • "open my wallet" → call navigate
-   • "where are the podcasts" → call navigate
-   • "take me to my health data" → call navigate
-   • "I want to set up a business" → call navigate
-   • "show me my health data" → call navigate
-
-DO **NOT** call navigate() on INFORMATIONAL questions — answer them
-conversationally without navigating. Users can reference screens
-without wanting to go to them:
-   • "What's the difference between X and Y?" → COMPARISON, explain
-   • "What is X?" / "What does X do?" → DEFINITION, explain
-   • "What is X for?" / "Why does X exist?" → EXPLANATION
-   • "How does X work?" → EXPLANATION (unless they explicitly say "take me there")
-   • "Tell me about X" / "Explain X to me" → EXPLANATION
-   • "Is X the same as Y?" → COMPARISON, explain
-   • Pure small talk ("how are you", "thank you")
-   • General factual questions ("what is longevity?")
-
-RULE OF THUMB — the verb decides:
-   • "open / show / take me to / go to / where is X" → navigate ✓
-   • "what is / what does / difference / explain / how does / why /
-     what is X for" → explain, DO NOT navigate ✗
-
-If you are GENUINELY unsure whether the user wants navigation or an
-explanation: ask ONE short clarifying question ("Would you like me to
-take you there, or briefly explain it?") before calling navigate().
-Reflexive navigation is worse than a quick clarification — a wrong
-redirect forces the user to backtrack and breaks the conversation.
-
-WHAT YOU GET BACK from navigate():
-   • GUIDANCE: a helpful explanation you should speak to the user. Describe
-     the feature, explain what they can do there, and let them know you are
-     taking them there. Be warm and helpful — you are their personal guide.
-   • NAVIGATING_TO: the screen they are being taken to. If this is set,
-     the orb will close and redirect automatically after you finish speaking.
-     Just speak the guidance naturally.
-   • If NAVIGATING_TO is null, the backend could not find a match. Ask the
-     user to clarify what they are looking for.
-
-NEVER speak raw URLs or route paths.`;
+export function buildNavigatorPolicySection(_lang: string): string {
+  // VTID-04521 / VTID-04846: the screen registry answers navigation; the
+  // legacy EN/DE navigator policy went with the legacy navigator.
+  return NAVIGATOR_POLICY_V2;
 }
 
 /**
@@ -7844,6 +7716,8 @@ export function assembleOrbSetupEnvelope(
                           ? `\n\n${(session as any).lastTranscriptSection}`
                           : '')
                       + (((session as any).onboardingCohortBlock as string | undefined) ?? '')
+                      // VTID-04951: guide mode lasts the whole conversation, not just turn 1.
+                      + buildGuideModeBlock((session as any).guide)
                       // v3: SWAP-BACK WELCOME block — fires only when a
                       // specialist just returned the user. Drives Vitana's
                       // first turn (welcome + role-acknowledge + open or
@@ -8391,6 +8265,13 @@ async function connectToLiveAPI(
         enabled: isVertexSerbianBridgeEnabled(),
         languageSupported: isVertexSerbianBridgeLanguage(session.lang),
       },
+      // VTID-04813: precomputed identically, from its own pure predicates.
+      // A separate switch from Serbian's on purpose — see
+      // `vertex-russian-bridge.ts`.
+      vertexRussianBridge: {
+        enabled: isVertexRussianBridgeEnabled(),
+        languageSupported: isVertexRussianBridgeLanguage(session.lang),
+      },
     });
   } catch (e) {
     // VTID-03723: voice/canary config read failure must NOT block the
@@ -8442,8 +8323,17 @@ async function connectToLiveAPI(
   void emitOasisEvent({
     type: 'orb.upstream.provider.selected',
     vtid: 'VTID-02980',
+    // VTID-04785: service/status/message are NOT NULL in oasis_events; this
+    // emit omitted all three, so not one row ever landed.
+    source: 'gateway',
+    status: 'info',
+    message: `upstream provider selected: ${__upstreamDecision.provider} (${__upstreamDecision.reason})`,
     payload: {
       session_id: session.sessionId,
+      // VTID-04776: tenant/user so the provider choice can be cut by tenant.
+      tenant_id: session.identity?.tenant_id ?? null,
+      user_id: session.identity?.user_id ?? null,
+      lang: session.lang,
       provider: __upstreamDecision.provider,
       requested: __upstreamDecision.requested,
       reason: __upstreamDecision.reason,
@@ -8451,10 +8341,17 @@ async function connectToLiveAPI(
       canary: __upstreamDecision.canary,
     } as any,
   } as any).catch(() => { /* best-effort */ });
+  updateVoiceSessionFacts(session.sessionId, {
+    provider: toFactsProvider(__upstreamDecision.provider),
+    selection_reason: String(__upstreamDecision.reason ?? ''),
+  }); // VTID-04776
   if (__upstreamDecision.error) {
     void emitOasisEvent({
       type: 'orb.upstream.provider.selection_error',
       vtid: 'VTID-02980',
+      source: 'gateway', // VTID-04785: NOT NULL columns (see .selected above)
+      status: 'warning',
+      message: `upstream provider selection error: ${__upstreamDecision.error}`,
       payload: {
         session_id: session.sessionId,
         provider: __upstreamDecision.provider,
@@ -9018,8 +8915,12 @@ async function connectToLiveAPI(
         // VTID-04554: with ORB_PREWARM_FULL_CONTEXT_ENABLED the blind claim is
         // off; the cold branch claims only on a fingerprint match.
         const _prewarmFullContext = isPrewarmFullContextEnabled();
-        const _prewarmEligible = !!session.identity?.user_id && !isWorkSurface(sessionSurface) && _prewarmPersonaIsVitana;
-        const prewarmedNova = session.identity?.user_id && !isWorkSurface(sessionSurface) && _prewarmPersonaIsVitana && !_prewarmFullContext
+        // VTID-04951: a guide session carries a GUIDE MODE block in its system
+        // instruction; a pooled stream was opened with the generic one and could
+        // not take it, so guide sessions always cold-connect.
+        const _guideSession = !!(session as any).guide;
+        const _prewarmEligible = !!session.identity?.user_id && !isWorkSurface(sessionSurface) && _prewarmPersonaIsVitana && !_guideSession;
+        const prewarmedNova = session.identity?.user_id && !isWorkSurface(sessionSurface) && _prewarmPersonaIsVitana && !_guideSession && !_prewarmFullContext
           ? consumePrewarmedNovaSession(session.identity.user_id)
           : null;
         if (session.identity?.user_id && isWorkSurface(sessionSurface)) emitDiag(session, 'nova_prewarm_skipped_work_surface', { provider: 'nova_sonic', surface: sessionSurface });
@@ -9522,6 +9423,12 @@ async function connectToLiveAPI(
             reason: closeEvent.reason ?? null,
             initiated_locally: closeEvent.initiatedLocally,
           });
+          // VTID-04776: keep the close for the session's stop + facts row.
+          // A locally initiated close is our own teardown, never a drop.
+          session.lastUpstreamCloseCode = closeEvent.initiatedLocally
+            ? 1000
+            : (typeof closeEvent.code === 'number' ? closeEvent.code : 1006);
+          session.lastUpstreamCloseAt = Date.now();
           // Stop feeding silence into a dead stream (mirrors the Vertex ws
           // close handler's interval cleanup).
           clearUpstreamKeepalive(session);
@@ -10159,6 +10066,9 @@ async function connectToLiveAPI(
     ws.on('close', (code, reason) => {
       console.log(`[VTID-01219] Live API WebSocket closed for session ${session.sessionId}: code=${code}, reason=${reason}`);
       emitDiag(session, 'upstream_ws_close', { code, reason: reason?.toString() || '' });
+      // VTID-04776: keep the close code for the session's stop + facts row.
+      session.lastUpstreamCloseCode = typeof code === 'number' ? code : null;
+      session.lastUpstreamCloseAt = Date.now();
 
       // VTID-02047 voice channel-swap: when this close was triggered by a
       // persona swap (turn_complete handler closes upstream after Vitana's
@@ -10250,6 +10160,8 @@ async function connectToLiveAPI(
             tenant_id: session.identity.tenant_id,
             user_id: session.identity.user_id,
             session_id: session.sessionId,
+            work_surface: session.assistantProfile?.isWorkSurface === true,
+            served_role: session.active_role,
             turn_count: session.turn_count,
           });
         }
@@ -10572,6 +10484,8 @@ async function attemptTransparentReconnect(
       onInterrupted
     );
 
+    // VTID-04865: the member may have left during the reconnect.
+    if (closeIfSessionGone(newWs, session, session.sessionId, liveSessions, 'transparent_reconnect')) return false;
     session.upstreamWs = newWs;
     if (isPersonaSwap) notePersonaSwapConnected(session);
     // Reset loop counter — fresh upstream connection starts clean
@@ -10751,6 +10665,7 @@ function startResponseWatchdog(
     emitDiag(session, 'watchdog_fired', { reason, timeout_ms: timeoutMs });
 
     // Emit OASIS telemetry (fire-and-forget)
+    session.stallCount = (session.stallCount ?? 0) + 1; // VTID-04776
     emitLiveSessionEvent('orb.live.stall_detected', {
       session_id: session.sessionId,
       reason,
@@ -11075,6 +10990,8 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               // VTID-04395: only before the first turn — a transparent reconnect
               // later in the report must not re-open the intake.
               supportReportOpen: (session as any).support_report === true && (session.turn_count || 0) === 0,
+              // VTID-04951: the guide opens turn 1 only, like the support report.
+              guideOpen: guideOpenFrom(session as any),
               // VTID-04575: a reopen with its earlier turns continues that thread.
               reopenedWithHistory: (session as any)._reopenedWithHistory === true && (session.turn_count || 0) === 0,
               wakeBriefDecisionId: null,
@@ -11443,6 +11360,8 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       // VTID-04395: only before the first turn — a transparent reconnect
       // later in the report must not re-open the intake.
       supportReportOpen: (session as any).support_report === true && (session.turn_count || 0) === 0,
+      // VTID-04951: the guide opens turn 1 only, like the support report.
+      guideOpen: guideOpenFrom(session as any),
       // VTID-04575: a reopen with its earlier turns continues that thread.
       reopenedWithHistory: (session as any)._reopenedWithHistory === true && (session.turn_count || 0) === 0,
       // BOOTSTRAP-ORB-DAY-CLOSE: short opener (buildDayCloseOpenerLine) is now
@@ -16333,6 +16252,19 @@ async function warmBrainCacheForNextSession(
 }
 
 
+// VTID-05002: during a deploy overlap a request can land on the task that does
+// not hold the SSE session; forward it once to the owner (flag-gated, off by
+// default). See orb/live/session/cross-task-forward.ts.
+const orbSseCrossTaskForward = createCrossTaskForward({
+  hasSession: (id) => liveSessions.has(id),
+  getSessionId: (req) => {
+    const q = req.query.session_id;
+    if (typeof q === 'string' && q) return q;
+    const b = (req.body || {}) as { session_id?: unknown };
+    return typeof b.session_id === 'string' ? b.session_id : undefined;
+  },
+});
+
 /**
  * VTID-01155: POST /live/session/stop - Stop Gemini Live session
  * VTID-01226: Added requireAuthWithTenant middleware for multi-tenant auth
@@ -16349,7 +16281,7 @@ async function warmBrainCacheForNextSession(
  * - 403 FORBIDDEN: User doesn't own this session
  */
 // A8.2-complete: handler body lifted to orb/live/session/live-session-controller.ts.
-router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/live/session/stop', optionalAuth, orbSseCrossTaskForward, async (req: AuthenticatedRequest, res: Response) => {
   await handleLiveSessionStop(req, res);
 });
 
@@ -16364,7 +16296,10 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
  * Authenticated only — anonymous sessions have no durable identity to key on.
  * Fails soft: continuity is an optimization, never a hard dependency.
  *
- *   POST /api/v1/orb/session/continuity   { reason, ttl_minutes, value }
+ *   POST /api/v1/orb/session/continuity   { reason, ttl_minutes, value,
+ *                                           hide_reason?, ms_since_tap?, transport?, start_phase? }
+ *   (VTID-05001: the four optional fields say which close path ran; they are
+ *   allowlisted/clamped by sanitizeHideDiagnostics and only go into the event.)
  *   GET  /api/v1/orb/session/continuity   → { ok, continuity|null }
  *   DELETE /api/v1/orb/session/continuity → clear
  */
@@ -16401,7 +16336,7 @@ router.post('/session/continuity', optionalAuth, async (req: AuthenticatedReques
       source: 'orb-live',
       status: 'info',
       message: `orb continuity persisted (reason=${body.reason || 'hide'}, ttl=${ttl}m)`,
-      payload: { user_id: userId, reason: body.reason || 'hide', ttl_minutes: ttl, ok: r.ok },
+      payload: { user_id: userId, reason: body.reason || 'hide', ttl_minutes: ttl, ok: r.ok, ...sanitizeHideDiagnostics(body) },
       actor_id: userId,
       surface: 'orb',
     }).catch(() => {});
@@ -16433,25 +16368,15 @@ router.post('/session/:id/audio-ready', optionalAuth, async (req: AuthenticatedR
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'supabase_unavailable' });
   try {
-    const { writeOrbSessionState } = await import('../services/orb/orb-session-state');
-    // Short TTL: the ack is only meaningful within the session-start window.
-    const r = await writeOrbSessionState(
+    // VTID-04943: shared with the WebSocket transport's audio_ready.
+    const { recordAudioReadyAck } = await import('../services/orb/orb-session-state');
+    const r = await recordAudioReadyAck({
       supabase,
       userId,
-      'audio_ready_ack',
-      { session_id: sessionId, ready_at: new Date().toISOString() },
-      10, // minutes
-    );
-    void emitOasisEvent({
-      vtid: 'DEV-COMHU-0504',
-      type: 'orb.session.audio_ready.acked',
-      source: 'orb-live',
-      status: 'info',
-      message: `audio pipeline ready ack for session ${sessionId}`,
-      payload: { session_id: sessionId, user_id: userId, ok: r.ok, reason: r.reason },
-      actor_id: userId,
-      surface: 'orb',
-    }).catch(() => {});
+      sessionId,
+      transport: 'http',
+      emit: emitOasisEvent,
+    });
     return res.json({ ok: r.ok });
   } catch (e) {
     return res.status(200).json({ ok: false, reason: e instanceof Error ? e.message : String(e) });
@@ -16591,7 +16516,7 @@ router.delete('/session/continuity', optionalAuth, async (req: AuthenticatedRequ
  * - 400 TENANT_REQUIRED: No active_tenant_id in JWT app_metadata
  * - 403 FORBIDDEN: User doesn't own this session
  */
-router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/live/stream', optionalAuth, orbSseCrossTaskForward, async (req: AuthenticatedRequest, res: Response) => {
   console.log('[VTID-ORBC] GET /orb/live/stream');
 
   const sessionId = req.query.session_id as string;
@@ -16768,6 +16693,7 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       session,
       // Audio response handler - forward to client via SSE
       (audioB64: string, audioMime?: string) => {
+        noteFirstAudioOut(session); // VTID-04776: ttfa_ms, once per session
         // ORB-CONVERSATION-LATENCY: the first audio chunk out is the greeting —
         // it finalizes the establishment tracker (total = time_to_first_audio).
         // The greeting has no preceding user turn, so the per-turn tracker never
@@ -16829,6 +16755,8 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
 
     // Handle Live API connection result asynchronously
     liveApiPromise.then((ws) => {
+      // VTID-04865: the stream may have closed while the connect was in flight.
+      if (closeIfSessionGone(ws, session, sessionId, liveSessions, 'sse_connect')) return;
       session.upstreamWs = ws;
       console.log(`[VTID-01219] Live API WebSocket connected for session ${sessionId}`);
 
@@ -16970,18 +16898,45 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
   // same payload shape, same auto-clear-on-write-failure behavior.
   const heartbeat = startSseHeartbeat(res);
 
+  // VTID-05002: a stream that reached this (owning) task through another
+  // task's forward ends when THAT task stops at the end of a deploy, not
+  // because the client left. EventSource then reconnects with the same
+  // session_id, now straight to this task — so hold the session for a short
+  // grace instead of destroying a live conversation, and tear it down only if
+  // no new stream attached in that window.
+  const viaForward = !!req.get(FORWARDED_HEADER) && isCrossTaskForwardEnabled();
+
   // Handle client disconnect
   req.on('close', () => {
-    console.log(`[VTID-01155] Live stream disconnected: ${sessionId}`);
+    console.log(`[VTID-01155] Live stream disconnected: ${sessionId}${viaForward ? ' (forwarded stream)' : ''}`);
     heartbeat.clear();
     decrementConnection(clientIP);
     if (session.sseResponse === res) {
       session.sseResponse = null;
     }
+    if (viaForward) {
+      setTimeout(() => {
+        if (session.sseResponse && session.sseResponse !== res) {
+          console.log(`[orb-forward] VTID-05002 session=${sessionId.slice(0, 13)} kept: client reconnected after the forwarded stream ended`);
+          return;
+        }
+        teardownSseSession();
+      }, FORWARDED_STREAM_GRACE_MS);
+      return;
+    }
+    teardownSseSession();
+  });
 
+  const teardownSseSession = (): void => {
     // VTID-04353: memory + voice summary through the one idempotent finalize
     // (was a separate forced extraction racing POST /live/session/stop).
     finalizeLiveSession(session, { sessionId, reason: 'sse_disconnect' });
+
+    // VTID-04785: this handler deletes the session below, so it is the last
+    // place that can report the end — emit the stop + facts end (once, via
+    // the shared stopEventEmitted latch). Was silent: 82/107 prod SSE
+    // sessions (24 h) had no vtid.live.session.stop.
+    emitSseDisconnectStop(session, sessionId, 'sse_disconnect');
 
     // VTID-01219: Close upstream WebSocket on client disconnect
     if (session.upstreamWs) {
@@ -17003,7 +16958,7 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     clearExtractionState(sessionId);
     liveSessions.delete(sessionId);
     console.log(`[VTID-SESSION-LEAK-FIX] Cleaned up live session on SSE disconnect: ${sessionId} (remaining: ${liveSessions.size})`);
-  });
+  };
 });
 
 /**
@@ -17024,7 +16979,7 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
  * - 403 FORBIDDEN: User doesn't own this session
  */
 // A8.2-complete: handler body lifted to orb/live/session/live-session-controller.ts.
-router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/live/stream/send', optionalAuth, orbSseCrossTaskForward, async (req: AuthenticatedRequest, res: Response) => {
   await handleLiveStreamSend(req, res);
 });
 
@@ -17048,7 +17003,7 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
  * - 403 FORBIDDEN: User doesn't own this session
  */
 // A8.2: handler body lifted to orb/live/session/live-session-controller.ts.
-router.post('/live/stream/end-turn', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/live/stream/end-turn', optionalAuth, orbSseCrossTaskForward, async (req: AuthenticatedRequest, res: Response) => {
   await handleLiveStreamEndTurn(req, res);
 });
 
@@ -18102,7 +18057,10 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
         sendWsMessage(clientWs, { type: 'error', message: 'No active session.' });
         return;
       }
+      {
+      let wsGreeting: 'deferred_sent' | 'prebuffer_flushed' | 'already_released';
       if (liveSession.greetingDeferred && !liveSession.greetingSent && liveSession.upstreamWs) {
+        wsGreeting = 'deferred_sent';
         console.log(`[VTID-AUDIO-READY] Client audio_ready received — sending chime + deferred greeting for session ${liveSession.sessionId}`);
         // VTID-INSTANT-FEEDBACK: Send activation chime immediately so user hears
         // instant audio feedback while Gemini generates the real greeting (2-5s).
@@ -18130,6 +18088,7 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
         // gap to audio_out_first_chunk is the model's first-token time.
         liveSession.establishLatency?.mark('greeting_sent', { deferred: true });
       } else if (liveSession.prebufferGreetingAudio) {
+        wsGreeting = 'prebuffer_flushed';
         // DEV-COMHU-0513 — greeting pre-buffer: generation already started at
         // connect; the client is now ready, so release the held greeting audio
         // (chime first, then buffered chunks). This is the common case — the ack
@@ -18138,7 +18097,24 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
         console.log(`[GREETING-PREBUFFER] Client audio_ready received — flushing held greeting for session ${liveSession.sessionId}`);
         flushPrebufferedGreeting(liveSession, clientWs, 'audio_ready');
       } else {
+        wsGreeting = 'already_released';
         console.log(`[VTID-AUDIO-READY] audio_ready received but greeting already sent or not deferred: session=${liveSession.sessionId}`);
+      }
+      // VTID-04943: record the ack like the HTTP route does, after the greeting
+      // is released and without waiting on it. Anonymous sessions record nothing.
+      const ackUserId = liveSession.identity?.user_id;
+      if (ackUserId) {
+        void import('../services/orb/orb-session-state')
+          .then(({ recordAudioReadyAck }) => recordAudioReadyAck({
+            supabase: getSupabase(),
+            userId: ackUserId,
+            sessionId: liveSession.sessionId,
+            transport: 'ws',
+            greeting: wsGreeting,
+            emit: emitOasisEvent,
+          }))
+          .catch(() => { /* best-effort telemetry */ });
+      }
       }
       break;
 
@@ -18730,6 +18706,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       // Audio response handler - forward to client via WebSocket
       // FIX: Send raw PCM for Web Audio API scheduled playback (eliminates gaps between chunks)
       (audioB64: string, audioMime?: string) => {
+        noteFirstAudioOut(liveSession); // VTID-04776: ttfa_ms, once per session
         if (liveSession.establishLatency) {
           // BOOTSTRAP-NOVA-SONIC-VOICE: see the SSE audio handler's identical
           // comment — the tracker's Vertex default needs correcting once
@@ -18850,36 +18827,13 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
 
     console.log(`[VTID-01222] Live API connected for session ${sessionId}`);
 
-    // Emit OASIS event with context info
-    emitLiveSessionEvent('vtid.live.session.start', {
-      session_id: sessionId,
-      lang,
-      // VTID-03704 — `voice` here is the LIVE-API (Gemini-era) voice name and is
-      // NOT what Nova speaks with; Nova resolves its own id separately. Keeping
-      // it alone made "which voice did this user actually hear?" unanswerable,
-      // which is exactly what the pre/post-login voice report ran into. The
-      // three fields below are the ones that decide the audible voice.
-      voice: getLiveApiVoice(lang),
-      nova_voice: resolveNovaSonicVoiceOrFallback({ language: lang, persona: null }).voice,
-      nova_language_supported: isNovaSonicLanguageSupported(lang),
-      response_modalities: responseModalities,
-      transport: 'websocket',
-      // VTID-01224: Include context bootstrap info
-      authenticated: !!identity,
-      tenant_id: identity?.tenant_id || null,
-      user_id: identity?.user_id || null,
-      email: identity?.email || null,
-      user_agent: clientSession.userAgent,
-      origin: clientSession.originUrl,
-      context_bootstrap: {
-        included: !!contextInstruction,
-        latency_ms: contextBootstrapLatencyMs || 0,
-        skipped_reason: contextBootstrapSkippedReason || null,
-        memory_hits: contextPack?.memory_hits?.length || 0,
-        knowledge_hits: contextPack?.knowledge_hits?.length || 0,
-        tools_enabled: !!identity,
-      },
-    }).catch(() => { });
+    // VTID-04834: no `vtid.live.session.start` here any more. The shared
+    // controller (handleLiveSessionStart, reached via startLiveSessionForWs
+    // above) already emitted the one start event for this session; this
+    // second emit (transport:'websocket') made every WS session count twice.
+    // Its extra fields (nova_voice, nova_language_supported, the Live-API
+    // voice, context_bootstrap hit counts, authenticated) now ride on the
+    // controller's emit.
 
     // Send session_started + setupComplete (v1 client compatibility)
     // v1 VertexLiveService expects { setupComplete: true } before considering ready
@@ -19308,13 +19262,22 @@ function handleWsStopSession(clientSession: WsClientSession): void {
   console.log(`[VTID-01222] Stopping session: ${sessionId}`);
 
   if (liveSession) {
+    // VTID-04834: `sessionId` above is the `ws-<uuid>` SOCKET id. Since
+    // VTID-03471 the live session is keyed by its OWN id; this handler kept
+    // using the socket id, so its stop was filed under a key no start event
+    // ever used AND `liveSessions.delete(sessionId)` deleted nothing — the
+    // stopped session stayed in the map until the idle sweep reaped it and
+    // booked a SECOND stop (prod: every `ws_stop_session` stop carried a
+    // `ws-` id, followed ~2 min later by an `idle_no_engagement` stop for the
+    // live id). Same fix cleanupWsSession got in VTID-03471.
+    const liveSessionKey = liveSession.sessionId || sessionId;
     liveSession.active = false;
 
     // VTID-04353: commit memory + summary here too — this handler nulls
     // clientSession.liveSession, so the socket-close cleanup that follows
     // can no longer reach the transcript.
     finalizeLiveSession(liveSession, {
-      sessionId: liveSession.sessionId || sessionId,
+      sessionId: liveSessionKey,
       reason: 'ws_stop',
     });
 
@@ -19344,42 +19307,51 @@ function handleWsStopSession(clientSession: WsClientSession): void {
     // Emit OASIS event
     // VTID-NAV-TIMEJOURNEY: include user_id so fetchLastSessionInfo can find
     // this event when the user next opens the ORB.
-    emitLiveSessionEvent('vtid.live.session.stop', {
-      session_id: sessionId,
-      user_id: liveSession.identity?.user_id || null,
-      tenant_id: liveSession.identity?.tenant_id || null,
-      audio_in_chunks: liveSession.audioInChunks,
-      // VTID-VOICE-FWD (Track A): forwarded-only count for echo-robust quality
-      // classification. Kept alongside raw audio_in_chunks for back-compat.
-      audio_in_forwarded_chunks: liveSession.audioInForwarded,
-      audio_out_chunks: liveSession.audioOutChunks,
-      video_frames: liveSession.videoInFrames,
-      transport: 'websocket',
-      turn_count: liveSession.turn_count,
-      user_turns: liveSession.transcriptTurns.filter(t => t.role === 'user').length,
-      model_turns: liveSession.transcriptTurns.filter(t => t.role === 'assistant').length,
-    }).catch(() => { });
-    liveSession.stopEventEmitted = true; // VTID-03561
-    // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
-    // VTID-01994: pass session metrics for mode-independent quality classifier.
-    dispatchVoiceFailureFireAndForget({
-      sessionId,
-      tenantScope: liveSession.identity?.tenant_id || 'global',
-      metadata: { synthetic: (liveSession as any).synthetic === true },
-      sessionMetrics: {
+    // VTID-04834: once per session (the shared VTID-03561 latch), latched
+    // before the emit so a racing socket close cannot double-book.
+    if (!liveSession.stopEventEmitted) {
+      liveSession.stopEventEmitted = true;
+      emitLiveSessionEvent('vtid.live.session.stop', {
+        session_id: liveSessionKey,
+        user_id: liveSession.identity?.user_id || null,
+        tenant_id: liveSession.identity?.tenant_id || null,
         audio_in_chunks: liveSession.audioInChunks,
-        // VTID-VOICE-FWD (Track A): classifier reads this for the under-responds ratio.
-        audio_in_forwarded: liveSession.audioInForwarded,
+        // VTID-VOICE-FWD (Track A): forwarded-only count for echo-robust quality
+        // classification. Kept alongside raw audio_in_chunks for back-compat.
+        audio_in_forwarded_chunks: liveSession.audioInForwarded,
         audio_out_chunks: liveSession.audioOutChunks,
-        duration_ms: Date.now() - liveSession.createdAt.getTime(),
+        video_frames: liveSession.videoInFrames,
+        transport: 'websocket',
         turn_count: liveSession.turn_count,
         user_turns: liveSession.transcriptTurns.filter(t => t.role === 'user').length,
         model_turns: liveSession.transcriptTurns.filter(t => t.role === 'assistant').length,
-      },
-      outcomeSignals: buildVoiceOutcomeSignals(liveSession, 'ws_stop_session'), // VTID-04775
-    });
+        // VTID-04776: this stop had no reason and no duration. It is the
+        // client's explicit `stop_session` frame on the WS transport.
+        duration_ms: Date.now() - liveSession.createdAt.getTime(),
+        ...stopEventContext(liveSession, 'ws_stop_session'),
+      }).catch(() => { });
+      recordLiveSessionEnd(liveSession, liveSessionKey, 'ws_stop_session'); // VTID-04776
+      // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
+      // VTID-01994: pass session metrics for mode-independent quality classifier.
+      dispatchVoiceFailureFireAndForget({
+        sessionId: liveSessionKey,
+        tenantScope: liveSession.identity?.tenant_id || 'global',
+        metadata: { synthetic: (liveSession as any).synthetic === true },
+        sessionMetrics: {
+          audio_in_chunks: liveSession.audioInChunks,
+          // VTID-VOICE-FWD (Track A): classifier reads this for the under-responds ratio.
+          audio_in_forwarded: liveSession.audioInForwarded,
+          audio_out_chunks: liveSession.audioOutChunks,
+          duration_ms: Date.now() - liveSession.createdAt.getTime(),
+          turn_count: liveSession.turn_count,
+          user_turns: liveSession.transcriptTurns.filter(t => t.role === 'user').length,
+          model_turns: liveSession.transcriptTurns.filter(t => t.role === 'assistant').length,
+        },
+        outcomeSignals: buildVoiceOutcomeSignals(liveSession, 'ws_stop_session'), // VTID-04775
+      });
+    }
 
-    liveSessions.delete(sessionId);
+    liveSessions.delete(liveSessionKey);
   }
 
   clientSession.liveSession = null;
@@ -19414,3 +19386,8 @@ export default router;
 // capture exactly what each upstream receives (instruction + tool catalog).
 // Re-export only: no behaviour, no new code path.
 export { connectToLiveAPI as __connectToLiveAPIForTest };
+
+// VTID-04834 — test-only handle on the WS `stop_session` frame handler, so the
+// once-per-session stop contract is driven through the real code. Re-export
+// only: no behaviour, no new code path.
+export { handleWsStopSession as __handleWsStopSessionForTest };

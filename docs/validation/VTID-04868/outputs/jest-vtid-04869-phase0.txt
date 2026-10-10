@@ -1,0 +1,50 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04869-overview-phase0.test.ts
+  VTID-04869 fix 1: Overview uses the real router keys
+    ✓ no Overview code reads or writes state.activeModule / state.activeTab (7 ms)
+    ✓ nothing in app.js reads state.activeModule / state.activeTab any more (24 ms)
+    ✓ the 60 s dashboard poll is gated on currentModuleKey/currentTab (2 ms)
+    ✓ the 30 s Action Required poll is gated on currentModuleKey/currentTab (1 ms)
+    ✓ fetchActionRequired / fetchOverviewTimeseries re-render on the real keys (2 ms)
+  VTID-04869 fix 2: shared and fresh health paths both yield an array
+    ✓ the shared branch resolves to the mapped array, not a {status, value} wrapper (1 ms)
+    ✓ the parse step works for both shapes (1 ms)
+  VTID-04869 fix 3: no call to an undefined navigateTo()
+    ✓ navigateTo( is never called (it is not defined) (16 ms)
+    ✓ navigateToScreen sets the router keys, pushes the tab path and renders once (2 ms)
+    ✓ the live-metrics attention card and the VTID attention card navigate through it (2 ms)
+  VTID-04869 fix 4: no inline onclick strings in Overview renderers
+    ✓ no 'onclick=' in the Overview region (3 ms)
+    ✓ "View all" is a data-action link handled by a delegated listener (1 ms)
+  VTID-04869 fix 5: UNKNOWN instead of a fabricated all-clear
+    ✓ the status banner starts at UNKNOWN, not OPERATIONAL (1 ms)
+    ✓ the UNKNOWN banner has its own (grey) style (2 ms)
+    ✓ computeSystemStatus treats failed / unavailable / misconfigured as failures (8 ms)
+    ✓ computeSystemStatus returns unknown when nothing was measured (2 ms)
+    ✓ overviewHealthClass never calls an unrecognised status healthy (2 ms)
+    ✓ the health panel filters use the shared classification (1 ms)
+    ✓ a failed failures fetch is not "No failures" (1 ms)
+    ✓ a deployment without a service reads 'unknown', not 'gateway' (1 ms)
+    ✓ a missing pipeline summary is not "Pipeline running smoothly" (1 ms)
+  VTID-04869 fix 6: provider-neutral ORB card
+    ✓ no 'Vertex' label fallback and no Gemini/Vertex/Google badges (2 ms)
+    ✓ computeOrbSessionStats no longer derives Vertex/Gemini/Google flags (1 ms)
+    ✓ nothing still reads the removed ORB flags (1 ms)
+  VTID-04869 fix 7: labels say what the data covers
+    ✓ no claimed 24h / 7d window on data that has none (1 ms)
+  VTID-04869: asset version bumped
+    ✓ index.html loads app.js and styles.css at the VTID-04869 version (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       26 passed, 26 total
+Snapshots:   0 total
+Time:        0.748 s
+Ran all test suites matching /test\/command-hub\/vtid-04869-overview-phase0.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -90,6 +90,9 @@ export type GatewayI18nKey =
   | 'notif.signal_expired.title'
   | 'notif.signal_expired.body'
   | 'notif.reminder.title'
+  // VTID-04763: Audiobook daily "your episode for today" push
+  | 'notif.audiobook_daily.title'
+  | 'notif.audiobook_daily.body'
   // VTID-04338: calendar entry reminders ({title} already carries the entry's emoji)
   | 'notif.calendar_reminder.in_minutes'
   | 'notif.calendar_reminder.in_hours'
@@ -107,6 +110,14 @@ export type GatewayI18nKey =
   | 'email.partner_invite.role.org_admin'
   | 'email.partner_invite.role.staff'
   | 'email.partner_invite.role.professional'
+  // VTID-05029: digest email for important notifications a push never reached
+  | 'email.push_fallback.subject'
+  | 'email.push_fallback.greeting'
+  | 'email.push_fallback.intro'
+  | 'email.push_fallback.more'
+  | 'email.push_fallback.cta'
+  | 'email.push_fallback.why'
+  | 'email.push_fallback.settings'
   // VTID-03885: Partner Health Test Integration
   | 'notif.partner_test_status_changed.title'
   | 'notif.partner_test_status_changed.body'
@@ -115,6 +126,16 @@ export type GatewayI18nKey =
   // Live room goes live → notify everyone who tapped "Notify me" on the scheduled session.
   | 'notif.live_going_live.title'
   | 'notif.live_going_live.body'
+  // VTID-04905: live room starting / joined / ended / highlight notifications
+  | 'notif.live_room.untitled'
+  | 'notif.live_room_starting.title'
+  | 'notif.live_room_starting.body'
+  | 'notif.live_room_joined.title'
+  | 'notif.live_room_joined.body'
+  | 'notif.live_room_ended.title'
+  | 'notif.live_room_ended.body'
+  | 'notif.live_room_highlight.title'
+  | 'notif.live_room_highlight.body'
   // Social: someone liked or commented on your post (community feed + profile)
   | 'notif.post_like.title'
   | 'notif.post_like.body'
@@ -230,6 +251,9 @@ export type GatewayI18nKey =
   // listing
   | 'notif.listing_interest.title'
   | 'notif.listing_interest.body'
+  // VTID-04926: push to a member @mentioned in a group chat message (the body
+  // is the message itself).
+  | 'notif.chat_mention.title'
   // VTID-03604: nightly goodnight push — the "you didn't open ORB tonight"
   // counterpart to the spoken day-close. Fixed catalog text, not
   // LLM-composed: unlike the ORB voice path (CLAUDE.md NEVER-rule 41), a

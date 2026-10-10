@@ -122,7 +122,7 @@ describe('VTID-03763: _waitForGoodbyeEnd (signup/login close) bails on a stale g
     expect(block).toMatch(/\(function \(myGen\) \{/);
     expect(block).toMatch(/\}\)\(_s\._sessionGeneration\);\s*$/);
     const firstGenCheckIdx = block.indexOf('if (_s._sessionGeneration !== myGen) return;');
-    const hideIdx = block.indexOf('_hide();');
+    const hideIdx = block.search(/_hide\('[a-z_]+'\);/);
     expect(firstGenCheckIdx).toBeGreaterThan(-1);
     expect(hideIdx).toBeGreaterThan(-1);
     expect(firstGenCheckIdx).toBeLessThan(hideIdx);
@@ -161,7 +161,7 @@ describe('VTID-03763: _endGuidedTopicTeaching (VTID-03762 shared helper) bails o
   it('checks the generation guard before _hide() / the onGuidedTopicTeachingEnd callback', () => {
     const block = extractBlock('function _endGuidedTopicTeaching(topicId, reason) {');
     const firstGenCheckIdx = block.indexOf('if (_s._sessionGeneration !== myGen) return;');
-    const hideIdx = block.indexOf('_hide();');
+    const hideIdx = block.search(/_hide\('[a-z_]+'\);/);
     expect(firstGenCheckIdx).toBeGreaterThan(-1);
     expect(hideIdx).toBeGreaterThan(-1);
     expect(firstGenCheckIdx).toBeLessThan(hideIdx);

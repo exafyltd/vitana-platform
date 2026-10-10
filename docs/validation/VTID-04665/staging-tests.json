@@ -156,16 +156,6 @@
     },
     {
       "kind": "http",
-      "name": "a route whose table is missing now reads down (risk_mitigations does not exist)",
-      "path": "/api/v1/mitigation/health",
-      "expect_status": 200,
-      "expect_json": {
-        "ok": false,
-        "status": "down"
-      }
-    },
-    {
-      "kind": "http",
       "name": "liveness stays dependency-free (never tied to the database)",
       "path": "/alive",
       "expect_json": {

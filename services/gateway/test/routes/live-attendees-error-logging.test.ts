@@ -1,6 +1,11 @@
 /**
  * routes/live.ts — live_room_attendees error-visibility fix.
  *
+ * VTID-04905: the repository now reads the real table (live_room_attendance,
+ * keyed by live_room_id) — see test/vtid-04905-live-enter-exit.test.ts. The
+ * invariants pinned below (error destructured and logged, empty-array
+ * fallback) still hold for both call sites.
+ *
  * live_room_attendees does not exist in live Supabase (confirmed via
  * AURORA-B2-DEAD-CALLSITE-AUDIT.md's Addendum 9), so both call sites to
  * repo.fetchLiveRoomAttendeesExcluding() always fail today — silently,

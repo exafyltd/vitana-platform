@@ -10,9 +10,11 @@
  * - POST   /api/v1/live/rooms/:id/end      - End a live room
  * - POST   /api/v1/live/rooms/:id/join     - Join a live room (VTID-01228: with access control)
  * - POST   /api/v1/live/rooms/:id/leave    - Leave a live room
+ * - POST   /api/v1/live/rooms/:id/enter    - Enter the room's video: access check + meeting token (VTID-04905)
+ * - POST   /api/v1/live/rooms/:id/exit     - Leave the current session (VTID-04905)
  * - POST   /api/v1/live/rooms/:id/highlights - Add a highlight
  * - GET    /api/v1/live/rooms/:id/summary  - Get room summary
- * - POST   /api/v1/live/rooms/:id/daily    - Create Daily.co room (VTID-01228)
+ * - POST   /api/v1/live/rooms/:id/daily    - Create/refresh Daily.co room, host only (VTID-01228, VTID-04904)
  * - DELETE /api/v1/live/rooms/:id/daily    - Delete Daily.co room (VTID-01228)
  * - POST   /api/v1/community/meetups/:id/rsvp - RSVP to a meetup
  * - GET    /api/v1/live/health             - Health check
@@ -27,9 +29,9 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
-import { DailyClient } from '../services/daily-client';
+import { DailyClient, computeDailyRoomExpiry } from '../services/daily-client';
 // VTID-03107: Live Room hosting quota enforcement
-import { verifyAndExtractIdentity } from '../middleware/auth-supabase-jwt';
+import { verifyAndExtractIdentity, optionalAuth, requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import {
   checkEntitlement,
   recordUsage,
@@ -37,23 +39,55 @@ import {
 } from '../services/entitlement-service';
 import { RoomSessionManager } from '../services/room-session-manager';
 import Stripe from 'stripe';
-import rateLimit from 'express-rate-limit';
-import { notifyUserAsync, notifyUsersAsync } from '../services/notification-service';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { notifyUserAsync } from '../services/notification-service';
 import * as repo from './live-repository';
+import { tt, type GatewayI18nKey } from '../i18n/catalog';
+import { bulkGetUserLocales } from '../i18n/server-locale';
 
 const router = Router();
 
 // =============================================================================
 // VTID-01228: Rate Limiters
+// VTID-04904: keyed per verified user, not per IP
 // =============================================================================
 
 /**
- * Rate limiter for Daily.co room creation (expensive operation)
- * Limit: 5 requests per 15 minutes per IP
+ * VTID-04904 (B1): rate-limit key for the live-room limiters.
+ *
+ * Behind the ALB every member arrives with the same socket IP and the gateway
+ * sets no `trust proxy`, so a per-IP limiter is one bucket for the whole
+ * community. The key is therefore:
+ *   1. the user id `optionalAuth` VERIFIED from the JWT (req.identity), else
+ *   2. the first X-Forwarded-For hop, else
+ *   3. req.ip.
+ * A token that does not verify never sets req.identity, so a forged or
+ * expired token cannot mint its own bucket — it shares the IP bucket.
+ * optionalAuth must run before the limiter on every route that uses it.
+ */
+export function liveRateLimitKey(req: Request): string {
+  const userId = (req as AuthenticatedRequest).identity?.user_id;
+  if (userId) return `user:${userId}`;
+  const xff = req.headers['x-forwarded-for'];
+  const first = (Array.isArray(xff) ? xff[0] : xff || '').split(',')[0].trim();
+  if (first) return `ip:${ipKeyGenerator(first)}`;
+  return `ip:${ipKeyGenerator(req.ip || 'unknown')}`;
+}
+
+// The key generator reads X-Forwarded-For itself (see above); the library's
+// own "X-Forwarded-For without trust proxy" warning does not apply.
+const liveLimiterValidate = { xForwardedForHeader: false } as const;
+
+/**
+ * Rate limiter for the Daily.co room endpoint.
+ * VTID-04904: 30 requests per 15 minutes per user (was 5 per IP — every
+ * member behind the ALB shared those 5).
  */
 const dailyRoomLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5,
+  max: 30,
+  keyGenerator: liveRateLimitKey,
+  validate: liveLimiterValidate,
   message: { ok: false, error: 'RATE_LIMIT_EXCEEDED', message: 'Too many room creation requests' },
   standardHeaders: true,
   legacyHeaders: false
@@ -61,11 +95,13 @@ const dailyRoomLimiter = rateLimit({
 
 /**
  * Rate limiter for purchase requests (prevent abuse)
- * Limit: 10 requests per 15 minutes per IP
+ * Limit: 10 requests per 15 minutes per user (VTID-04904)
  */
 const purchaseLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10,
+  keyGenerator: liveRateLimitKey,
+  validate: liveLimiterValidate,
   message: { ok: false, error: 'RATE_LIMIT_EXCEEDED', message: 'Too many purchase requests' },
   standardHeaders: true,
   legacyHeaders: false
@@ -79,11 +115,13 @@ const sessionManager = new RoomSessionManager();
 
 /**
  * Rate limiter for session creation ("Go Live")
- * Limit: 5 requests per 15 minutes per IP
+ * Limit: 5 requests per 15 minutes per user (VTID-04904)
  */
 const sessionCreateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
+  keyGenerator: liveRateLimitKey,
+  validate: liveLimiterValidate,
   message: { ok: false, error: 'RATE_LIMIT_EXCEEDED', message: 'Too many session creation requests' },
   standardHeaders: true,
   legacyHeaders: false
@@ -154,7 +192,11 @@ const CreateSessionSchema = z.object({
   auto_admit: z.boolean().optional(),
   lobby_buffer_minutes: z.number().int().min(0).max(60).optional(),
   max_participants: z.number().int().min(1).max(10000).optional(),
-  metadata: z.record(z.any()).optional(),
+  // VTID-04905 (B8): stream_type is validated and written to the listing
+  // (was always 'audio'); other metadata keys pass through unchanged.
+  metadata: z.object({
+    stream_type: z.enum(['audio', 'video']).optional(),
+  }).catchall(z.any()).optional(),
   idempotency_key: z.string().optional(),
 });
 
@@ -174,6 +216,19 @@ const UserActionSchema = z.object({
 // =============================================================================
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * VTID-04905 (B8): ends_at for a new session when the host gave none —
+ * starts_at + metadata.duration_minutes (default 60). Without it the
+ * live → ended auto-transition never fires.
+ */
+export function defaultSessionEndsAt(payload: { starts_at: string; metadata?: Record<string, any> }): string | undefined {
+  const startsMs = Date.parse(payload.starts_at);
+  if (!Number.isFinite(startsMs)) return undefined;
+  const d = Number(payload.metadata?.duration_minutes);
+  const minutes = Number.isFinite(d) && d > 0 ? d : 60;
+  return new Date(startsMs + Math.round(minutes * 60_000)).toISOString();
+}
 
 /**
  * Extract Bearer token from Authorization header
@@ -275,6 +330,79 @@ async function emitLiveEvent(
     message,
     payload
   }).catch(err => console.warn(`[VTID-01090] Failed to emit ${type}:`, err.message));
+}
+
+/**
+ * VTID-04905: the room page the app routes (`/live/:id` had no route).
+ */
+export function liveRoomViewUrl(roomId: string): string {
+  return `/comm/live-rooms/${roomId}/view`;
+}
+
+/**
+ * VTID-04905: localized live-room notification fan-out. One locale lookup
+ * for all recipients, title/body from the gateway i18n catalog (server-side
+ * i18n rule), deep link to the room page. Recipients are deduped (attendance
+ * rows repeat per session).
+ */
+async function notifyLiveRoomLocalized(
+  supa: any,
+  userIds: string[],
+  tenantId: string,
+  type: string,
+  keys: { title: GatewayI18nKey; body: GatewayI18nKey },
+  roomId: string,
+  roomTitle: string | null | undefined,
+): Promise<number> {
+  const ids = [...new Set(userIds.filter(Boolean))];
+  if (ids.length === 0) return 0;
+  const locales = await bulkGetUserLocales(supa, ids);
+  for (const uid of ids) {
+    const lc = locales.get(uid);
+    const title = roomTitle || tt('notif.live_room.untitled', lc);
+    notifyUserAsync(uid, tenantId, type, {
+      title: tt(keys.title, lc, { title }),
+      body: tt(keys.body, lc, { title }),
+      data: { url: liveRoomViewUrl(roomId), room_id: roomId, entity_id: roomId },
+    }, supa);
+  }
+  return ids.length;
+}
+
+/**
+ * VTID-04905 (B6): recompute the listing's viewer counter from attendance
+ * (admitted, not left, not banned) via the existing live_room_get_counts
+ * RPC, and write it to community_live_streams. Service role — the listing
+ * has no member write policy. Best-effort: never fails the caller.
+ */
+async function syncViewerCount(roomId: string, sessionId: string): Promise<Record<string, unknown> | null> {
+  const creds = getSupabaseCredentials();
+  if (!creds) return null;
+  try {
+    const countsResult = await callRpc(creds.key, 'live_room_get_counts', { p_session_id: sessionId });
+    const counts = countsResult.ok && countsResult.data && typeof countsResult.data === 'object'
+      ? countsResult.data as Record<string, unknown>
+      : null;
+    if (!counts) return null;
+    const inRoom = Number(counts.in_room) || 0;
+    const resp = await fetch(`${creds.url}/rest/v1/community_live_streams?id=eq.${roomId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': creds.key,
+        'Authorization': `Bearer ${creds.key}`,
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({ viewer_count: inRoom })
+    });
+    if (!resp.ok) {
+      console.warn(`[VTID-04905] viewer_count sync failed for ${roomId}: ${resp.status}`);
+    }
+    return counts;
+  } catch (err: any) {
+    console.warn(`[VTID-04905] viewer_count sync exception for ${roomId}: ${err.message}`);
+    return null;
+  }
 }
 
 // =============================================================================
@@ -534,8 +662,6 @@ router.post('/rooms/:id/start', async (req: Request, res: Response) => {
 
         const subscriberIds = [...new Set((subs || []).map((s: any) => s.user_id as string))];
         if (subscriberIds.length > 0) {
-          const { tt } = await import('../i18n/catalog');
-          const { bulkGetUserLocales } = await import('../i18n/server-locale');
           const locales = await bulkGetUserLocales(supaN, subscriberIds);
           const streamTitle = (stream as any)?.title || '';
           for (const uid of subscriberIds) {
@@ -543,7 +669,7 @@ router.post('/rooms/:id/start', async (req: Request, res: Response) => {
             notifyUserAsync(uid, tenantId, 'live_room_starting', {
               title: tt('notif.live_going_live.title', lc),
               body: tt('notif.live_going_live.body', lc, { title: streamTitle }),
-              data: { url: '/community/live-rooms', room_id: roomId, entity_id: roomId },
+              data: { url: liveRoomViewUrl(roomId), room_id: roomId, entity_id: roomId },
             }, supaN);
           }
           console.log(`[Notifications] live go-live fan-out → ${subscriberIds.length} subscriber(s) for ${roomId}`);
@@ -665,35 +791,33 @@ router.post('/rooms/:id/end', async (req: Request, res: Response) => {
 
   console.log(`[VTID-01228] Live room ended: ${roomId} (session: ${result.data?.ended_session_id})`);
 
-  // Notify all attendees that the room ended (summary available)
+  // Notify everyone who attended the ended session (summary available).
+  // VTID-04905 (B9): attendance is live_room_attendance (scoped to the ended
+  // session), the host column is host_user_id, texts come from the catalog.
   try {
     const creds2 = getSupabaseCredentials();
     if (creds2) {
       const { createClient } = await import('@supabase/supabase-js');
       const supa = createClient(creds2.url, creds2.key);
 
-      const { data: room } = await repo.fetchLiveRoomTitleTenantUser(supa, roomId);
+      const { data: room } = await repo.fetchLiveRoomTitleTenantHost(supa, roomId);
 
       if (room?.tenant_id) {
-        // live_room_attendees does not exist in live Supabase (confirmed
-        // via AURORA-B2-DEAD-CALLSITE-AUDIT.md's Addendum 9) — this always
-        // fails today, so the "check out the summary" notification never
-        // sends. Logging so that's loud instead of indistinguishable from
-        // "nobody attended"; the empty-array fallback (and the underlying
-        // missing-table product decision) is deliberately unchanged.
-        const { data: attendees, error: attendeesErr } = await repo.fetchLiveRoomAttendeesExcluding(supa, roomId, room.user_id || '');
+        const endedSessionId = result.data?.ended_session_id || null;
+        const { data: attendees, error: attendeesErr } = await repo.fetchLiveRoomAttendeesExcluding(supa, roomId, room.host_user_id || '', endedSessionId);
         if (attendeesErr) {
           console.warn(`[Notifications] fetchLiveRoomAttendeesExcluding error (room_ended_summary will not send): ${attendeesErr.message}`);
         }
 
-        const attendeeIds = (attendees || []).map((a: any) => a.user_id);
-        if (attendeeIds.length > 0) {
-          notifyUsersAsync(attendeeIds, room.tenant_id, 'live_room_ended_summary', {
-            title: 'Room Summary Available',
-            body: `"${room.title || 'A live room'}" has ended. Check out the summary!`,
-            data: { url: `/live/${roomId}`, room_id: roomId, entity_id: roomId },
-          }, supa);
-        }
+        await notifyLiveRoomLocalized(
+          supa,
+          (attendees || []).map((a: any) => a.user_id),
+          room.tenant_id,
+          'live_room_ended_summary',
+          { title: 'notif.live_room_ended.title', body: 'notif.live_room_ended.body' },
+          roomId,
+          room.title,
+        );
       }
     }
   } catch (err: any) {
@@ -816,14 +940,14 @@ router.post('/rooms/:id/join', async (req: Request, res: Response) => {
       const { createClient } = await import('@supabase/supabase-js');
       const supa = createClient(creds.url, creds.key);
 
-      const { data: room } = await repo.fetchLiveRoomTitleTenantUser(supa, roomId);
+      const { data: room } = await repo.fetchLiveRoomTitleTenantHost(supa, roomId);
 
-      if (room?.tenant_id && room.user_id && room.user_id !== user_id) {
-        notifyUserAsync(room.user_id, room.tenant_id, 'someone_joined_live_room', {
-          title: 'Someone Joined Your Room',
-          body: `A new participant joined "${room.title || 'your live room'}".`,
-          data: { url: `/live/${roomId}`, room_id: roomId, entity_id: roomId },
-        }, supa);
+      if (room?.tenant_id && room.host_user_id && room.host_user_id !== user_id) {
+        await notifyLiveRoomLocalized(
+          supa, [room.host_user_id], room.tenant_id, 'someone_joined_live_room',
+          { title: 'notif.live_room_joined.title', body: 'notif.live_room_joined.body' },
+          roomId, room.title,
+        );
       }
     }
   } catch (err: any) {
@@ -906,19 +1030,284 @@ router.post('/rooms/:id/leave', async (req: Request, res: Response) => {
   });
 });
 
+/** VTID-04905: RPC join-gate errors → HTTP status for /enter. */
+const ENTER_ERROR_STATUS: Record<string, number> = {
+  PAYMENT_REQUIRED: 402,
+  BANNED: 403,
+  ROOM_FULL: 409,
+  HOST_NOT_PRESENT: 409,
+  ROOM_NOT_ACTIVE: 409,
+  SESSION_NOT_FOUND: 409,
+  ROOM_NOT_FOUND: 404,
+};
+
+/**
+ * POST /rooms/:id/enter -> POST /api/v1/live/rooms/:id/enter
+ *
+ * VTID-04905 (B5/B6): the only way into a live room's video.
+ *  1. Loads the room + its current session (live_rooms.current_session_id).
+ *  2. No session, or a scheduled one for a viewer → 409 NOT_LIVE. The HOST
+ *     entering a scheduled/lobby session starts it (existing host-only
+ *     transitions: OPEN_LOBBY → START).
+ *  3. Access: public → ok; `group` (paid) → requires a valid access grant,
+ *     else 402 PAYMENT_REQUIRED (also enforced again by the join RPC).
+ *  4. ensureRoom (private, exp follows the session), attendance via the
+ *     existing live_room_join_session RPC, then a meeting token — owner for
+ *     the host, participant for everyone else.
+ *  5. The listing's viewer_count is recomputed from attendance.
+ */
+router.post('/rooms/:id/enter', requireAuth, async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  const identity = (req as AuthenticatedRequest).identity!;
+  const token = getBearerToken(req)!;
+  console.log(`[VTID-04905] POST /live/rooms/${roomId}/enter`);
+  // OASIS: emitted through emitLiveEvent() ('live.room.entered') on success.
+  // impact-allow-no-oasis
+
+  if (!UUID_REGEX.test(roomId)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  if (!process.env.DAILY_API_KEY) {
+    console.error('[VTID-04905] DAILY_API_KEY is not set on this gateway — cannot enter live rooms');
+    return res.status(503).json({ ok: false, error: 'DAILY_NOT_CONFIGURED' });
+  }
+
+  try {
+    let stateResult = await sessionManager.getState(roomId, token);
+    if (!stateResult.ok || !stateResult.data?.room) {
+      const notFound = String(stateResult.error || '').includes('ROOM_NOT_FOUND') || !stateResult.data?.room;
+      return res.status(notFound ? 404 : 502).json({ ok: false, error: notFound ? 'ROOM_NOT_FOUND' : stateResult.error });
+    }
+
+    let room = stateResult.data.room;
+    let session = stateResult.data.session;
+    const isHost = room.host_user_id === identity.user_id;
+
+    if (!room.current_session_id || !session) {
+      return res.status(409).json({ ok: false, error: 'NOT_LIVE' });
+    }
+
+    // The host entering a scheduled/lobby session starts it.
+    if (isHost && (room.status === 'scheduled' || room.status === 'lobby')) {
+      const started = await sessionManager.startForHost(roomId, identity.user_id, token);
+      if (!started.ok) {
+        const code = started.error === 'NOT_HOST' ? 403 :
+          (started.error === 'CONFLICT' || started.error === 'INVALID_TRANSITION') ? 409 : 502;
+        return res.status(code).json({ ok: false, error: started.error, message: started.message });
+      }
+      await syncListingLive(roomId);
+      stateResult = await sessionManager.getState(roomId, token);
+      if (!stateResult.ok || !stateResult.data?.room || !stateResult.data?.session) {
+        return res.status(502).json({ ok: false, error: stateResult.error || 'STATE_RELOAD_FAILED' });
+      }
+      room = stateResult.data.room;
+      session = stateResult.data.session;
+    }
+
+    if (room.status !== 'live' && room.status !== 'lobby') {
+      return res.status(409).json({ ok: false, error: 'NOT_LIVE', status: room.status });
+    }
+
+    // Paid room: a valid access grant is required (host excepted).
+    if (!isHost && session.access_level === 'group' && stateResult.data.viewer?.has_access_grant !== true) {
+      return res.status(402).json({ ok: false, error: 'PAYMENT_REQUIRED' });
+    }
+
+    // Record attendance (join gate: ban, capacity, lobby, host presence).
+    const join = await sessionManager.joinSession(roomId, session.id, token);
+    if (!join.ok) {
+      const err = String(join.data?.error || join.error || 'JOIN_FAILED');
+      const code = ENTER_ERROR_STATUS[err] ?? 502;
+      return res.status(code).json({ ok: false, error: err === 'ROOM_NOT_ACTIVE' ? 'NOT_LIVE' : err });
+    }
+
+    const lobbyStatus = join.data?.lobby_status ?? null;
+    const counts = await syncViewerCount(roomId, session.id);
+
+    // Waiting in the lobby: no video yet, so no URL or token.
+    if (!isHost && lobbyStatus !== 'admitted') {
+      return res.json({ ok: true, is_host: false, lobby_status: lobbyStatus, session_id: session.id, counts });
+    }
+
+    const dailyClient = new DailyClient();
+    const dailyRoom = await dailyClient.ensureRoom(roomId, {
+      expiresAt: computeDailyRoomExpiry({ startsAt: session.starts_at, endsAt: session.ends_at }),
+    });
+
+    if (isHost) {
+      // Keep the stored Daily keys current (host-only RPC; merged, never replaced).
+      const metadata = await sessionManager.mergedRoomMetadata(roomId, token, {
+        daily_room_url: dailyRoom.roomUrl,
+        daily_room_name: dailyRoom.roomName,
+        daily_room_exp: dailyRoom.exp,
+        video_provider: 'daily_co',
+      });
+      const upd = await callRpc(token, 'live_room_update_metadata', { p_live_room_id: roomId, p_metadata: metadata });
+      if (!upd.ok) console.warn(`[VTID-04905] metadata update after enter failed for ${roomId}: ${upd.error}`);
+    }
+
+    const meetingToken = await dailyClient.createMeetingToken(dailyRoom.roomName, {
+      userId: identity.user_id,
+      isOwner: isHost,
+      exp: dailyRoom.exp,
+    });
+
+    await emitLiveEvent('live.room.entered', 'success', `User entered live room: ${roomId}`, {
+      live_room_id: roomId,
+      session_id: session.id,
+      is_host: isHost,
+      already_joined: join.data?.already_joined === true,
+    });
+
+    // First entry of a viewer → tell the host (localized, catalog keys).
+    if (!isHost && !join.data?.already_joined && !join.data?.reconnected) {
+      try {
+        const creds = getSupabaseCredentials();
+        if (creds) {
+          const { createClient } = await import('@supabase/supabase-js');
+          const supa = createClient(creds.url, creds.key);
+          const { data: hostRoom } = await repo.fetchLiveRoomTitleTenantHost(supa, roomId);
+          if (hostRoom?.tenant_id && hostRoom.host_user_id) {
+            await notifyLiveRoomLocalized(
+              supa, [hostRoom.host_user_id], hostRoom.tenant_id, 'someone_joined_live_room',
+              { title: 'notif.live_room_joined.title', body: 'notif.live_room_joined.body' },
+              roomId, session.session_title || hostRoom.title,
+            );
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[Notifications] someone_joined_live_room dispatch error: ${err.message}`);
+      }
+    }
+
+    return res.json({
+      ok: true,
+      daily_room_url: dailyRoom.roomUrl,
+      token: meetingToken.token,
+      is_host: isHost,
+      lobby_status: lobbyStatus,
+      session_id: session.id,
+      expires_at: dailyRoom.exp,
+      counts,
+    });
+  } catch (error: any) {
+    console.error('[VTID-04905] Error entering live room:', error);
+    return res.status(500).json({ ok: false, error: 'ENTER_FAILED', message: error.message });
+  }
+});
+
+/**
+ * POST /rooms/:id/exit -> POST /api/v1/live/rooms/:id/exit
+ *
+ * VTID-04905: records the leave for THIS session only — service-role update
+ * of live_room_attendance (room, current session, user, left_at IS NULL).
+ * The legacy live_room_leave RPC matches room + user only and is not used.
+ * Recomputes the listing's viewer_count. Idempotent.
+ */
+router.post('/rooms/:id/exit', requireAuth, async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  const identity = (req as AuthenticatedRequest).identity!;
+  const token = getBearerToken(req)!;
+  console.log(`[VTID-04905] POST /live/rooms/${roomId}/exit`);
+  // OASIS: emitted through emitLiveEvent() ('live.room.exited') when a leave is recorded.
+  // impact-allow-no-oasis
+
+  if (!UUID_REGEX.test(roomId)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  const creds = getSupabaseCredentials();
+  if (!creds) {
+    return res.status(500).json({ ok: false, error: 'Gateway misconfigured' });
+  }
+
+  try {
+    const stateResult = await callRpc(token, 'live_room_get_state', { p_room_id: roomId });
+    if (!stateResult.ok || !stateResult.data?.room) {
+      return res.status(404).json({ ok: false, error: 'ROOM_NOT_FOUND' });
+    }
+    const sessionId: string | null = stateResult.data.room.current_session_id || null;
+    if (!sessionId) {
+      return res.json({ ok: true, left: false, reason: 'NO_ACTIVE_SESSION' });
+    }
+
+    const filter = `live_room_id=eq.${roomId}&session_id=eq.${sessionId}` +
+      `&user_id=eq.${encodeURIComponent(identity.user_id)}&left_at=is.null`;
+    const resp = await fetch(`${creds.url}/rest/v1/live_room_attendance?${filter}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': creds.key,
+        'Authorization': `Bearer ${creds.key}`,
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify({ left_at: new Date().toISOString() })
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`[VTID-04905] exit attendance update failed: ${resp.status} - ${text}`);
+      return res.status(502).json({ ok: false, error: 'EXIT_FAILED' });
+    }
+    const rows = await resp.json().catch(() => []) as unknown[];
+    const left = Array.isArray(rows) && rows.length > 0;
+
+    const counts = await syncViewerCount(roomId, sessionId);
+
+    if (left) {
+      await emitLiveEvent('live.room.exited', 'success', `User exited live room: ${roomId}`, {
+        live_room_id: roomId,
+        session_id: sessionId,
+      });
+    }
+
+    return res.json({ ok: true, left, session_id: sessionId, counts });
+  } catch (error: any) {
+    console.error('[VTID-04905] Error exiting live room:', error);
+    return res.status(500).json({ ok: false, error: 'EXIT_FAILED', message: error.message });
+  }
+});
+
+/**
+ * VTID-04905: listing → live after the host started the session through
+ * /enter. Only called after the host-only transition RPCs succeeded.
+ */
+async function syncListingLive(roomId: string): Promise<void> {
+  const creds = getSupabaseCredentials();
+  if (!creds) return;
+  try {
+    await fetch(`${creds.url}/rest/v1/community_live_streams?id=eq.${roomId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': creds.key,
+        'Authorization': `Bearer ${creds.key}`,
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({ status: 'live', started_at: new Date().toISOString() })
+    });
+  } catch (err: any) {
+    console.warn(`[VTID-04905] community_live_streams sync (enter/start) failed: ${err.message}`);
+  }
+}
+
 /**
  * POST /rooms/:id/daily -> POST /api/v1/live/rooms/:id/daily
  *
  * VTID-01228: Create a Daily.co video room for a live room.
- * Only the room host can create the Daily.co room.
- * Idempotent: Returns existing room URL if already created.
+ * VTID-04904: host-only, verified from the JWT (resolves the old TODO).
+ * Non-hosts get 403 — viewers enter through POST /rooms/:id/enter, which
+ * checks access and issues their meeting token; no token-less URL is handed
+ * out. Every host call refreshes the room's `exp`/privacy (ensureRoom) and
+ * returns an owner meeting token, because rooms are private now.
  */
-router.post('/rooms/:id/daily', dailyRoomLimiter, async (req: Request, res: Response) => {
+router.post('/rooms/:id/daily', optionalAuth, dailyRoomLimiter, async (req: Request, res: Response) => {
   const roomId = req.params.id;
   console.log(`[VTID-01228] POST /live/rooms/${roomId}/daily`);
 
   const token = getBearerToken(req);
-  if (!token) {
+  const identity = (req as AuthenticatedRequest).identity;
+  if (!token || !identity?.user_id) {
     return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   }
 
@@ -926,8 +1315,13 @@ router.post('/rooms/:id/daily', dailyRoomLimiter, async (req: Request, res: Resp
     return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
   }
 
+  if (!process.env.DAILY_API_KEY) {
+    console.error('[VTID-04904] DAILY_API_KEY is not set on this gateway — Live Rooms video unavailable');
+    return res.status(503).json({ ok: false, error: 'DAILY_NOT_CONFIGURED' });
+  }
+
   try {
-    // Get room details to verify ownership and check if Daily.co room exists
+    // Get room details to verify ownership and read current metadata
     const roomResult = await callRpc(token, 'live_room_get', {
       p_live_room_id: roomId
     });
@@ -936,71 +1330,77 @@ router.post('/rooms/:id/daily', dailyRoomLimiter, async (req: Request, res: Resp
       return res.status(404).json({ ok: false, error: 'ROOM_NOT_FOUND' });
     }
 
-    // Verify user is the host
     const room = roomResult.data;
-    if (room.host_user_id !== req.headers['x-user-id']) {
-      // For now, we'll trust the token - in production, decode JWT to get user_id
-      // TODO: Extract user_id from JWT token
-      console.warn('[VTID-01228] Cannot verify host ownership without user_id in headers');
+    if (room.host_user_id !== identity.user_id) {
+      return res.status(403).json({ ok: false, error: 'NOT_HOST' });
     }
 
-    // Check if Daily.co room already exists (idempotent)
-    if (room.metadata?.daily_room_url) {
-      console.log(`[VTID-01228] Daily.co room already exists: ${room.metadata.daily_room_url}`);
-      return res.json({
-        ok: true,
-        daily_room_url: room.metadata.daily_room_url,
-        daily_room_name: room.metadata.daily_room_name,
-        already_existed: true
-      });
-    }
+    const roomMetadata: Record<string, any> =
+      room.metadata && typeof room.metadata === 'object' ? room.metadata : {};
 
-    // Create Daily.co room
-    const dailyClient = new DailyClient();
-    const dailyRoom = await dailyClient.createRoom({
-      roomId,
-      title: room.title,
-      expiresInHours: 24  // 24 hours expiration
+    // Expiry follows the current session when there is one.
+    const stateResult = await callRpc(token, 'live_room_get_state', { p_room_id: roomId });
+    const session = stateResult.ok ? stateResult.data?.session : null;
+    const expiresAt = computeDailyRoomExpiry({
+      startsAt: session?.starts_at || null,
+      endsAt: session?.ends_at || null,
+      durationMinutes: Number(roomMetadata.duration_minutes) || null,
     });
 
-    // Update room metadata with Daily.co room URL
+    const dailyClient = new DailyClient();
+    const dailyRoom = await dailyClient.ensureRoom(roomId, { expiresAt });
+    const alreadyExisted = roomMetadata.daily_room_url === dailyRoom.roomUrl;
+
+    // VTID-04904 (B4): the RPC replaces the whole column — send the merged object.
     const updateResult = await callRpc(token, 'live_room_update_metadata', {
       p_live_room_id: roomId,
       p_metadata: {
-        ...room.metadata,
+        ...roomMetadata,
         daily_room_url: dailyRoom.roomUrl,
         daily_room_name: dailyRoom.roomName,
+        daily_room_exp: dailyRoom.exp,
         video_provider: 'daily_co'
       }
     });
 
     if (!updateResult.ok) {
-      // Try to clean up the Daily.co room if metadata update fails
-      try {
-        await dailyClient.deleteRoom(dailyRoom.roomName);
-      } catch (cleanupErr) {
-        console.error('[VTID-01228] Failed to cleanup Daily.co room:', cleanupErr);
+      // Only clean up a room this call created — never one an earlier session uses.
+      if (!alreadyExisted && !roomMetadata.daily_room_name) {
+        try {
+          await dailyClient.deleteRoom(dailyRoom.roomName);
+        } catch (cleanupErr) {
+          console.error('[VTID-01228] Failed to cleanup Daily.co room:', cleanupErr);
+        }
       }
       return res.status(502).json({ ok: false, error: 'Failed to update room metadata' });
     }
 
-    // Emit OASIS event
-    await emitOasisEvent({
-      vtid: 'VTID-01228',
-      type: 'live.daily.created' as any,
-      source: 'live-gateway',
-      status: 'success',
-      message: `Daily.co room created for live room ${roomId}`,
-      payload: { room_id: roomId, daily_room_url: dailyRoom.roomUrl, daily_room_name: dailyRoom.roomName }
+    const meetingToken = await dailyClient.createMeetingToken(dailyRoom.roomName, {
+      userId: identity.user_id,
+      isOwner: true,
+      exp: dailyRoom.exp,
     });
 
-    console.log(`[VTID-01228] Daily.co room created: ${dailyRoom.roomUrl}`);
+    if (!alreadyExisted) {
+      await emitOasisEvent({
+        vtid: 'VTID-01228',
+        type: 'live.daily.created' as any,
+        source: 'live-gateway',
+        status: 'success',
+        message: `Daily.co room created for live room ${roomId}`,
+        payload: { room_id: roomId, daily_room_url: dailyRoom.roomUrl, daily_room_name: dailyRoom.roomName }
+      });
+      console.log(`[VTID-01228] Daily.co room created: ${dailyRoom.roomUrl}`);
+    }
 
     return res.json({
       ok: true,
       daily_room_url: dailyRoom.roomUrl,
       daily_room_name: dailyRoom.roomName,
-      already_existed: false
+      token: meetingToken.token,
+      is_host: true,
+      expires_at: dailyRoom.exp,
+      already_existed: alreadyExisted
     });
   } catch (error: any) {
     console.error('[VTID-01228] Error creating Daily.co room:', error);
@@ -1092,7 +1492,7 @@ router.delete('/rooms/:id/daily', async (req: Request, res: Response) => {
  * VTID-01228: Purchase access to a paid live room via Stripe.
  * Creates a Payment Intent for the room price.
  */
-router.post('/rooms/:id/purchase', purchaseLimiter, async (req: Request, res: Response) => {
+router.post('/rooms/:id/purchase', optionalAuth, purchaseLimiter, async (req: Request, res: Response) => {
   const roomId = req.params.id;
   console.log(`[VTID-01228] POST /live/rooms/${roomId}/purchase`);
 
@@ -1281,14 +1681,14 @@ router.post('/rooms/:id/highlights', async (req: Request, res: Response) => {
       let creatorId = '';
       try { creatorId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
 
-      const { data: room } = await repo.fetchLiveRoomTitleTenantUser(supa, roomId);
+      const { data: room } = await repo.fetchLiveRoomTitleTenantHost(supa, roomId);
 
-      if (room?.tenant_id && room.user_id && room.user_id !== creatorId) {
-        notifyUserAsync(room.user_id, room.tenant_id, 'live_room_highlight_added', {
-          title: 'Highlight Added',
-          body: `A highlight was added in "${room.title || 'your live room'}".`,
-          data: { url: `/live/${roomId}`, room_id: roomId, entity_id: roomId },
-        }, supa);
+      if (room?.tenant_id && room.host_user_id && room.host_user_id !== creatorId) {
+        await notifyLiveRoomLocalized(
+          supa, [room.host_user_id], room.tenant_id, 'live_room_highlight_added',
+          { title: 'notif.live_room_highlight.title', body: 'notif.live_room_highlight.body' },
+          roomId, room.title,
+        );
       }
     }
   } catch (err: any) {
@@ -1345,6 +1745,10 @@ router.get('/health', (_req: Request, res: Response) => {
   const creds = getSupabaseCredentials();
   const status = creds ? 'ok' : 'degraded';
 
+  // VTID-04904: presence of the Daily.co key only (never its value). Without
+  // it no live room can open video — an owner prerequisite on the task def.
+  const dailyConfigured = !!process.env.DAILY_API_KEY;
+
   return res.status(200).json({
     ok: true,
     status,
@@ -1352,11 +1756,13 @@ router.get('/health', (_req: Request, res: Response) => {
     version: '1.0.0',
     vtid: 'VTID-01090',
     timestamp: new Date().toISOString(),
+    daily_configured: dailyConfigured,
     capabilities: {
       create_room: !!creds,
       join_room: !!creds,
       add_highlight: !!creds,
-      relationship_graph: true
+      relationship_graph: true,
+      video_rooms: dailyConfigured
     },
     strength_increments: STRENGTH_INCREMENTS,
     dependencies: {
@@ -1569,7 +1975,7 @@ router.get('/rooms/:id/state', async (req: Request, res: Response) => {
  * "Go Live" — create a new session on a permanent room.
  * Host-only. Room must be idle.
  */
-router.post('/rooms/:id/sessions', sessionCreateLimiter, async (req: Request, res: Response) => {
+router.post('/rooms/:id/sessions', optionalAuth, sessionCreateLimiter, async (req: Request, res: Response) => {
   const roomId = req.params.id;
   console.log(`[VTID-01228] POST /live/rooms/${roomId}/sessions`);
 
@@ -1611,7 +2017,11 @@ router.post('/rooms/:id/sessions', sessionCreateLimiter, async (req: Request, re
     }
   }
 
-  const result = await sessionManager.createSession(roomId, validation.data, token);
+  // VTID-04905 (B8): a session always gets an end, so auto-end can fire:
+  // ends_at = starts_at + duration_minutes (default 60) unless given.
+  const sessionPayload = { ...validation.data, ends_at: validation.data.ends_at || defaultSessionEndsAt(validation.data) };
+
+  const result = await sessionManager.createSession(roomId, sessionPayload, token);
 
   if (!result.ok) {
     const statusCode =
@@ -1636,25 +2046,22 @@ router.post('/rooms/:id/sessions', sessionCreateLimiter, async (req: Request, re
       const { data: room } = await repo.fetchLiveRoomTitleTenant(supa, roomId);
 
       if (room?.tenant_id) {
-        // Get attendees who previously joined this room (potential followers).
-        // live_room_attendees does not exist in live Supabase (confirmed via
-        // AURORA-B2-DEAD-CALLSITE-AUDIT.md's Addendum 9) — this always fails
-        // today, so the "starting soon" follower notification never sends.
-        // Logging so that's loud instead of indistinguishable from "no
-        // followers"; the empty-array fallback is deliberately unchanged.
+        // Members who attended an earlier session of this room (followers).
+        // VTID-04905 (B9): live_room_attendance, catalog texts, room deep link.
         const { data: followers, error: followersErr } = await repo.fetchLiveRoomAttendeesExcluding(supa, roomId, hostId);
         if (followersErr) {
           console.warn(`[Notifications] fetchLiveRoomAttendeesExcluding error (live_room_starting will not send): ${followersErr.message}`);
         }
 
-        const followerIds = (followers || []).map((f: any) => f.user_id);
-        if (followerIds.length > 0) {
-          notifyUsersAsync(followerIds, room.tenant_id, 'live_room_starting', {
-            title: `${room.title || 'A Live Room'} is starting!`,
-            body: 'Join now before it fills up.',
-            data: { url: `/live/${roomId}`, room_id: roomId, entity_id: roomId },
-          }, supa);
-        }
+        await notifyLiveRoomLocalized(
+          supa,
+          (followers || []).map((f: any) => f.user_id),
+          room.tenant_id,
+          'live_room_starting',
+          { title: 'notif.live_room_starting.title', body: 'notif.live_room_starting.body' },
+          roomId,
+          validation.data.session_title || room.title,
+        );
       }
     }
   } catch (err: any) {
@@ -1691,7 +2098,7 @@ router.post('/rooms/:id/sessions', sessionCreateLimiter, async (req: Request, re
           title: validation.data.session_title || 'Live Session',
           created_by: userId,
           status: streamStatus,
-          stream_type: 'audio',
+          stream_type: validation.data.metadata?.stream_type || 'audio',
           cover_image_url: validation.data.metadata?.cover_image_url || null,
           description: validation.data.metadata?.description || null,
           started_at: streamStatus === 'live' ? new Date().toISOString() : null,
@@ -1718,6 +2125,15 @@ router.post('/rooms/:id/sessions', sessionCreateLimiter, async (req: Request, re
   } catch (err: any) {
     console.warn(`[VTID-01228] community_live_streams sync (create) exception: ${err.message}`);
   }
+
+  await emitOasisEvent({
+    vtid: 'VTID-04905',
+    type: 'live.session.created' as any,
+    source: 'live-gateway',
+    status: 'success',
+    message: `Live session ${result.idempotent ? 'reused' : 'created'} for room ${roomId} (${result.status})`,
+    payload: { room_id: roomId, session_id: result.sessionId, status: result.status, idempotent: result.idempotent },
+  });
 
   return res.status(201).json({
     ok: true,

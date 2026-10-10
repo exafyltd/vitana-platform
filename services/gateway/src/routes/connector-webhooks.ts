@@ -132,9 +132,13 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
 
       // On auth.revoked: flip inactive
       if (event.topic === 'connector.wearable.auth.revoked' && conn) {
+        // VTID-05030: the vendor revoked access — stored tokens are dead, wipe them.
         await repo.updateUserConnectionState(supabase, conn.id, {
           is_active: false,
           disconnected_at: new Date().toISOString(),
+          access_token: null,
+          refresh_token: null,
+          token_expires_at: null,
         });
       }
 

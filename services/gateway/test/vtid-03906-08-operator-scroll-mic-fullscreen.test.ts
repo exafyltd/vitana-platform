@@ -88,12 +88,16 @@ describe('VTID-03906: Operator chat scroll-jump + flicker fix', () => {
     expect(nearby).toContain('if (savedChatFocus) {');
   });
 
-  it('_actionRequiredTimer skips its 30s poll while the Operator popup is open', () => {
-    const idx = SOURCE.indexOf('state._actionRequiredTimer = setInterval(function () {');
+  it('the Overview 30s poll skips while the Operator popup is open', () => {
+    // VTID-04876: the Action Required timer became the ops/attention cockpit timer.
+    const idx = SOURCE.indexOf('state._opsAttentionTimer = setInterval(function () {');
     expect(idx).toBeGreaterThan(-1);
-    const end = SOURCE.indexOf('}, 30000);', idx);
+    const end = SOURCE.indexOf('}, OPS_ATTENTION_POLL_MS);', idx);
     const body = SOURCE.slice(idx, end);
-    expect(body).toContain("state.activeModule === 'overview' && state.activeTab === 'system-overview' && !state.isOperatorOpen");
+    // VTID-04869: the guard reads the router's real keys (currentModuleKey/
+    // currentTab); the old activeModule/activeTab were never set, so the
+    // poll never ran at all.
+    expect(body).toContain("state.currentModuleKey === 'overview' && state.currentTab === 'system-overview' && !state.isOperatorOpen");
   });
 });
 

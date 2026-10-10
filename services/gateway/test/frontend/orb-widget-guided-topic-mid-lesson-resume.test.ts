@@ -142,7 +142,7 @@ describe('orb-widget guided-topic mid-lesson resume via _guidedTopicInFlight (VT
   });
 
   it('_hide() clears _guidedTopicInFlight — a real close ends the overlay session', () => {
-    const body = extractFunctionBody(source, 'function _hide() {');
+    const body = extractFunctionBody(source, 'function _hide(reason) {');
     expect(body).toMatch(/_s\._guidedTopicInFlight = null;/);
   });
 });
@@ -341,7 +341,7 @@ describe('orb-widget guided-topic resume signal — _guidedTopicAudioDelivered (
   });
 
   it('_hide() clears it — a real close ends the overlay session', () => {
-    const body = extractFunctionBody(source, 'function _hide() {');
+    const body = extractFunctionBody(source, 'function _hide(reason) {');
     expect(body).toMatch(/_s\._guidedTopicAudioDelivered = false;/);
   });
 

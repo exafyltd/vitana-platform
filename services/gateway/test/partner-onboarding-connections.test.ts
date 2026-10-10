@@ -130,6 +130,8 @@ function wire(over: Partial<World> = {}): World {
       return { data: null, error: null };
     }
     const org = filter(c, 'partner_tenant.partner_organization_id');
+    // VTID-04953: the checklist counts the org's connections.
+    if (c.args[1]?.head) return { data: null, count: w.manifests.filter((x) => orgOf(x) === org).length, error: null };
     if (c.terminal === 'maybeSingle') {
       const m = w.manifests.find((x) => x.id === filter(c, 'id') && orgOf(x) === org);
       return { data: m ? { ...m } : null, error: null };
@@ -137,6 +139,8 @@ function wire(over: Partial<World> = {}): World {
     return { data: w.manifests.filter((x) => orgOf(x) === org), error: null };
   };
   handlers.oasis_events = () => ({ data: null, error: null });
+  handlers.merchants = () => ({ data: [], error: null });
+  handlers.products = () => ({ data: [], error: null });
   handlers.integration_version = () => ({ data: null, error: null });
   handlers.schema_source = () => ({ data: null, error: null });
   handlers.partner_onboarding_steps = (c) => {

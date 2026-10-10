@@ -71,9 +71,7 @@ jest.mock('../../src/services/orb-tools-shared', () => ({
   dispatchOrbToolForVertex: jest.fn(),
 }));
 
-jest.mock('../../src/services/navigator-consult', () => ({
-  consultNavigator: jest.fn(),
-  formatConsultResultForLLM: jest.fn(),
+jest.mock('../../src/navigation/nav-action-memory', () => ({
   writeNavigatorActionMemory: jest.fn().mockResolvedValue(undefined),
 }));
 
@@ -95,7 +93,7 @@ import {
 import type { SupabaseIdentity } from '../../src/middleware/auth-supabase-jwt';
 import { getSupabase } from '../../src/lib/supabase';
 import { dispatchOrbTool } from '../../src/services/orb-tools-shared';
-import { writeNavigatorActionMemory } from '../../src/services/navigator-consult';
+import { writeNavigatorActionMemory } from '../../src/navigation/nav-action-memory';
 import {
   fetchMemoryContextWithIdentity,
   fetchRecentOrbUserTurns,
@@ -880,39 +878,20 @@ describe('handleNavigateToScreen', () => {
 // =============================================================================
 
 describe('buildNavigatorPolicySection', () => {
-  it('returns the German block for lang="de"', () => {
-    const text = buildNavigatorPolicySection('de');
-    expect(text).toContain('=== VITANA NAVIGATOR — NAVIGATIONSMODUS ===');
-    expect(text).not.toContain('=== VITANA NAVIGATOR — NAVIGATION GUIDE MODE ===');
-  });
-
-  it('returns the German block for a regional variant like "de-DE" (startsWith match)', () => {
-    const text = buildNavigatorPolicySection('de-DE');
-    expect(text).toContain('=== VITANA NAVIGATOR — NAVIGATIONSMODUS ===');
-  });
-
-  it('returns the English block for lang="en"', () => {
-    const text = buildNavigatorPolicySection('en');
-    expect(text).toContain('=== VITANA NAVIGATOR — NAVIGATION GUIDE MODE ===');
+  // VTID-04846: one English policy for every session language (the model
+  // replies in the member's language); the legacy EN/DE navigator blocks
+  // went with the legacy navigator.
+  it.each(['de', 'de-DE', 'en', 'fr', ''])('returns the registry navigator policy for lang="%s"', (lang) => {
+    const text = buildNavigatorPolicySection(lang);
+    expect(text).toContain('=== VITANA NAVIGATOR — FINDING AND OPENING SCREENS ===');
     expect(text).not.toContain('NAVIGATIONSMODUS');
   });
 
-  it('falls back to the English block for a language with no dedicated translation (e.g. "fr")', () => {
-    const text = buildNavigatorPolicySection('fr');
-    expect(text).toContain('=== VITANA NAVIGATOR — NAVIGATION GUIDE MODE ===');
-  });
-
-  it('falls back to the English block for an empty string', () => {
-    const text = buildNavigatorPolicySection('');
-    expect(text).toContain('=== VITANA NAVIGATOR — NAVIGATION GUIDE MODE ===');
-  });
-
-  it('both language variants mention both tools (get_current_screen and navigate)', () => {
-    for (const lang of ['de', 'en']) {
-      const text = buildNavigatorPolicySection(lang);
-      expect(text).toContain('get_current_screen()');
-      expect(text).toContain('navigate(question)');
-    }
+  it('names all three navigation tools', () => {
+    const text = buildNavigatorPolicySection('en');
+    expect(text).toContain('get_current_screen()');
+    expect(text).toContain('navigate(question, intent)');
+    expect(text).toContain('navigate_to_screen(screen_id)');
   });
 });
 

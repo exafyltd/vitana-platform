@@ -1,0 +1,791 @@
+diff --git a/services/gateway/specs/dev-screen-inventory-v1.json b/services/gateway/specs/dev-screen-inventory-v1.json
+index 736a6b72..2785f271 100644
+--- a/services/gateway/specs/dev-screen-inventory-v1.json
++++ b/services/gateway/specs/dev-screen-inventory-v1.json
+@@ -4,7 +4,11 @@
+   "sidebar_navigation": [
+     "overview",
+     "admin",
++    "commerce",
++    "knowledge-base",
+     "assistant",
++    "conversation",
++    "voice",
+     "autonomy",
+     "operator",
+     "command-hub",
+@@ -21,15 +25,12 @@
+     "testing-qa",
+     "intelligence-memory-dev",
+     "docs",
++    "routines",
+     "feedback"
+   ],
+   "module_catalog": {
+     "overview": [
+-      "system-overview",
+-      "live-metrics",
+-      "recent-events",
+-      "errors-violations",
+-      "release-feed"
++      "system-overview"
+     ],
+     "admin": [
+       "users",
+@@ -37,20 +38,44 @@
+       "tenants",
+       "content-moderation",
+       "identity-access",
++      "analytics",
++      "billing-dashboard",
++      "billing-codes"
++    ],
++    "commerce": [
++      "overview",
++      "providers-onboarding",
++      "commissions-rewards",
++      "affiliate-programs",
+       "marketplace-shops",
+-      "marketplace-review",
+-      "analytics"
++      "marketplace-review"
++    ],
++    "knowledge-base": [
++      "checklist"
+     ],
+     "assistant": [
+       "overview",
+-      "orb-live",
+       "sessions",
+       "personality",
+       "experiments",
+-      "metrics",
+-      "awareness-registry",
+-      "awareness-test",
+-      "voice-tools"
++      "metrics"
++    ],
++    "conversation": [
++      "config",
++      "monitor",
++      "tools",
++      "simulator",
++      "awareness",
++      "journey-context",
++      "tool-catalog"
++    ],
++    "voice": [
++      "overview",
++      "segments",
++      "sessions",
++      "issues-healing",
++      "test-bench",
++      "providers"
+     ],
+     "autonomy": [
+       "autopilot-community",
+@@ -65,7 +90,8 @@
+       "task-queue",
+       "event-stream",
+       "deployments",
+-      "runbook"
++      "runbook",
++      "localization"
+     ],
+     "command-hub": [
+       "tasks",
+@@ -98,7 +124,9 @@
+       "runs",
+       "live",
+       "engine",
+-      "growth"
++      "growth",
++      "mission-alignment",
++      "orchestrator"
+     ],
+     "oasis": [
+       "events",
+@@ -141,8 +169,7 @@
+       "latency",
+       "errors",
+       "sse",
+-      "debug-panel",
+-      "voice-lab"
++      "debug-panel"
+     ],
+     "models-evaluations": [
+       "models",
+@@ -173,7 +200,11 @@
+       "architecture",
+       "workforce",
+       "system-knowledge",
+-      "specialists"
++      "manuals"
++    ],
++    "routines": [
++      "catalog",
++      "history"
+     ],
+     "feedback": [
+       "inbox",
+@@ -183,17 +214,17 @@
+     ]
+   },
+   "screen_inventory": {
+-    "total_screens": 117,
+-    "total_entries": 291,
+-    "last_synced": "2026-04-27",
++    "total_screens": 133,
++    "total_entries": 315,
++    "last_synced": "2026-10-08",
+     "source": "auto-regen via services/gateway/scripts/regen-screens-catalog.mjs",
+     "role_counts": {
+-      "DEVELOPER": 112,
++      "DEVELOPER": 133,
+       "COMMUNITY": 89,
+       "PATIENT": 9,
+       "PROFESSIONAL": 9,
+       "STAFF": 9,
+-      "ADMIN": 63
++      "ADMIN": 66
+     },
+     "screens": [
+       {
+@@ -203,34 +234,6 @@
+         "url_path": "/command-hub/overview/system-overview/",
+         "role": "DEVELOPER"
+       },
+-      {
+-        "screen_id": "DEV-LIVE_METRICS",
+-        "module": "Overview",
+-        "tab": "Live Metrics",
+-        "url_path": "/command-hub/overview/live-metrics/",
+-        "role": "DEVELOPER"
+-      },
+-      {
+-        "screen_id": "DEV-RECENT_EVENTS",
+-        "module": "Overview",
+-        "tab": "Recent Events",
+-        "url_path": "/command-hub/overview/recent-events/",
+-        "role": "DEVELOPER"
+-      },
+-      {
+-        "screen_id": "DEV-ERRORS_VIOLATIONS",
+-        "module": "Overview",
+-        "tab": "Errors & Violations",
+-        "url_path": "/command-hub/overview/errors-violations/",
+-        "role": "DEVELOPER"
+-      },
+-      {
+-        "screen_id": "DEV-RELEASE_FEED",
+-        "module": "Overview",
+-        "tab": "Release Feed",
+-        "url_path": "/command-hub/overview/release-feed/",
+-        "role": "DEVELOPER"
+-      },
+       {
+         "screen_id": "DEV-USERS",
+         "module": "Admin",
+@@ -267,38 +270,80 @@
+         "role": "DEVELOPER"
+       },
+       {
+-        "screen_id": "DEV-MARKETPLACE_SHOPS",
++        "screen_id": "DEV-ADMIN_ANALYTICS",
+         "module": "Admin",
+-        "tab": "Marketplace Shops",
+-        "url_path": "/command-hub/admin/marketplace-shops/",
++        "tab": "Analytics",
++        "url_path": "/command-hub/admin/analytics/",
+         "role": "DEVELOPER"
+       },
+       {
+-        "screen_id": "DEV-MARKETPLACE_REVIEW",
++        "screen_id": "DEV-BILLING_DASHBOARD",
+         "module": "Admin",
+-        "tab": "Marketplace Review",
+-        "url_path": "/command-hub/admin/marketplace-review/",
++        "tab": "Billing Dashboard",
++        "url_path": "/command-hub/admin/billing-dashboard/",
+         "role": "DEVELOPER"
+       },
+       {
+-        "screen_id": "DEV-ADMIN_ANALYTICS",
++        "screen_id": "DEV-BILLING_CODES",
+         "module": "Admin",
+-        "tab": "Analytics",
+-        "url_path": "/command-hub/admin/analytics/",
++        "tab": "Billing Codes",
++        "url_path": "/command-hub/admin/billing-codes/",
+         "role": "DEVELOPER"
+       },
+       {
+-        "screen_id": "DEV-ASSISTANT_OVERVIEW",
+-        "module": "Assistant",
++        "screen_id": "DEV-COMMERCE_OVERVIEW",
++        "module": "Commerce",
+         "tab": "Overview",
+-        "url_path": "/command-hub/assistant/overview/",
++        "url_path": "/command-hub/commerce/overview/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-PROVIDERS_ONBOARDING",
++        "module": "Commerce",
++        "tab": "Providers Onboarding",
++        "url_path": "/command-hub/commerce/providers-onboarding/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-COMMISSIONS_REWARDS",
++        "module": "Commerce",
++        "tab": "Commissions Rewards",
++        "url_path": "/command-hub/commerce/commissions-rewards/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-AFFILIATE_PROGRAMS",
++        "module": "Commerce",
++        "tab": "Affiliate Programs",
++        "url_path": "/command-hub/commerce/affiliate-programs/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-MARKETPLACE_SHOPS",
++        "module": "Commerce",
++        "tab": "Marketplace Shops",
++        "url_path": "/command-hub/commerce/marketplace-shops/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-MARKETPLACE_REVIEW",
++        "module": "Commerce",
++        "tab": "Marketplace Review",
++        "url_path": "/command-hub/commerce/marketplace-review/",
+         "role": "DEVELOPER"
+       },
+       {
+-        "screen_id": "DEV-ORB_LIVE",
++        "screen_id": "DEV-CHECKLIST",
++        "module": "Knowledge Base",
++        "tab": "Checklist",
++        "url_path": "/command-hub/knowledge-base/checklist/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-ASSISTANT_OVERVIEW",
+         "module": "Assistant",
+-        "tab": "ORB Live",
+-        "url_path": "/command-hub/assistant/orb-live/",
++        "tab": "Overview",
++        "url_path": "/command-hub/assistant/overview/",
+         "role": "DEVELOPER"
+       },
+       {
+@@ -330,24 +375,94 @@
+         "role": "DEVELOPER"
+       },
+       {
+-        "screen_id": "DEV-AWARENESS_REGISTRY",
+-        "module": "Assistant",
+-        "tab": "Awareness Registry",
+-        "url_path": "/command-hub/assistant/awareness-registry/",
++        "screen_id": "DEV-CONVERSATION_CONFIG",
++        "module": "Conversation",
++        "tab": "Config",
++        "url_path": "/command-hub/conversation/config/",
+         "role": "DEVELOPER"
+       },
+       {
+-        "screen_id": "DEV-AWARENESS_TEST",
+-        "module": "Assistant",
+-        "tab": "Awareness Test",
+-        "url_path": "/command-hub/assistant/awareness-test/",
++        "screen_id": "DEV-MONITOR",
++        "module": "Conversation",
++        "tab": "Monitor",
++        "url_path": "/command-hub/conversation/monitor/",
+         "role": "DEVELOPER"
+       },
+       {
+-        "screen_id": "DEV-VOICE_TOOLS",
+-        "module": "Assistant",
+-        "tab": "Voice Tools",
+-        "url_path": "/command-hub/assistant/voice-tools/",
++        "screen_id": "DEV-CONVERSATION_TOOLS",
++        "module": "Conversation",
++        "tab": "Tools",
++        "url_path": "/command-hub/conversation/tools/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-SIMULATOR",
++        "module": "Conversation",
++        "tab": "Simulator",
++        "url_path": "/command-hub/conversation/simulator/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-AWARENESS",
++        "module": "Conversation",
++        "tab": "Awareness",
++        "url_path": "/command-hub/conversation/awareness/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-JOURNEY_CONTEXT",
++        "module": "Conversation",
++        "tab": "Journey Context",
++        "url_path": "/command-hub/conversation/journey-context/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-TOOL_CATALOG",
++        "module": "Conversation",
++        "tab": "Tool Catalog",
++        "url_path": "/command-hub/conversation/tool-catalog/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-VOICE_OVERVIEW",
++        "module": "Voice",
++        "tab": "Overview",
++        "url_path": "/command-hub/voice/overview/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-SEGMENTS",
++        "module": "Voice",
++        "tab": "Segments",
++        "url_path": "/command-hub/voice/segments/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-VOICE_SESSIONS",
++        "module": "Voice",
++        "tab": "Sessions",
++        "url_path": "/command-hub/voice/sessions/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-ISSUES_HEALING",
++        "module": "Voice",
++        "tab": "Issues Healing",
++        "url_path": "/command-hub/voice/issues-healing/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-TEST_BENCH",
++        "module": "Voice",
++        "tab": "Test Bench",
++        "url_path": "/command-hub/voice/test-bench/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-PROVIDERS",
++        "module": "Voice",
++        "tab": "Providers",
++        "url_path": "/command-hub/voice/providers/",
+         "role": "DEVELOPER"
+       },
+       {
+@@ -427,6 +542,13 @@
+         "url_path": "/command-hub/operator/runbook/",
+         "role": "DEVELOPER"
+       },
++      {
++        "screen_id": "DEV-LOCALIZATION",
++        "module": "Operator",
++        "tab": "Localization",
++        "url_path": "/command-hub/operator/localization/",
++        "role": "DEVELOPER"
++      },
+       {
+         "screen_id": "DEV-TASKS",
+         "module": "Operations",
+@@ -602,6 +724,20 @@
+         "url_path": "/command-hub/autopilot/growth/",
+         "role": "DEVELOPER"
+       },
++      {
++        "screen_id": "DEV-MISSION_ALIGNMENT",
++        "module": "Autopilot",
++        "tab": "Mission Alignment",
++        "url_path": "/command-hub/autopilot/mission-alignment/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-ORCHESTRATOR",
++        "module": "Autopilot",
++        "tab": "Orchestrator",
++        "url_path": "/command-hub/autopilot/orchestrator/",
++        "role": "DEVELOPER"
++      },
+       {
+         "screen_id": "DEV-OASIS_EVENTS",
+         "module": "OASIS",
+@@ -819,13 +955,6 @@
+         "url_path": "/command-hub/diagnostics/debug-panel/",
+         "role": "DEVELOPER"
+       },
+-      {
+-        "screen_id": "DEV-VOICE_LAB",
+-        "module": "Diagnostics",
+-        "tab": "Voice LAB",
+-        "url_path": "/command-hub/diagnostics/voice-lab/",
+-        "role": "DEVELOPER"
+-      },
+       {
+         "screen_id": "DEV-MODELS",
+         "module": "Models & Evaluations",
+@@ -980,6 +1109,55 @@
+         "url_path": "/command-hub/docs/system-knowledge/",
+         "role": "DEVELOPER"
+       },
++      {
++        "screen_id": "DEV-MANUALS",
++        "module": "Docs",
++        "tab": "Manuals",
++        "url_path": "/command-hub/docs/manuals/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-ROUTINES_CATALOG",
++        "module": "Routines",
++        "tab": "Catalog",
++        "url_path": "/command-hub/routines/catalog/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-ROUTINES_HISTORY",
++        "module": "Routines",
++        "tab": "History",
++        "url_path": "/command-hub/routines/history/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-INBOX",
++        "module": "Feedback",
++        "tab": "Inbox",
++        "url_path": "/command-hub/feedback/inbox/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-HANDOFFS",
++        "module": "Feedback",
++        "tab": "Handoffs",
++        "url_path": "/command-hub/feedback/handoffs/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-KPIS",
++        "module": "Feedback",
++        "tab": "Kpis",
++        "url_path": "/command-hub/feedback/kpis/",
++        "role": "DEVELOPER"
++      },
++      {
++        "screen_id": "DEV-AUDIT",
++        "module": "Feedback",
++        "tab": "Audit",
++        "url_path": "/command-hub/feedback/audit/",
++        "role": "DEVELOPER"
++      },
+       {
+         "screen_id": "COM-LANDING",
+         "module": "Public",
+@@ -1940,17 +2118,17 @@
+         "role": "ADMIN"
+       },
+       {
+-        "screen_id": "ADM-CATALOG",
+-        "module": "Navigator",
+-        "tab": "Catalog",
+-        "url_path": "/admin/navigator",
++        "screen_id": "ADM-TICKETS",
++        "module": "Feedback",
++        "tab": "Tickets",
++        "url_path": "/admin/feedback/tickets",
+         "role": "ADMIN"
+       },
+       {
+-        "screen_id": "ADM-COVERAGE",
+-        "module": "Navigator",
+-        "tab": "Coverage",
+-        "url_path": "/admin/navigator/coverage",
++        "screen_id": "ADM-SPECIALISTS",
++        "module": "Feedback",
++        "tab": "Specialists",
++        "url_path": "/admin/feedback/specialists",
+         "role": "ADMIN"
+       },
+       {
+@@ -1960,13 +2138,6 @@
+         "url_path": "/admin/navigator/telemetry",
+         "role": "ADMIN"
+       },
+-      {
+-        "screen_id": "ADM-HISTORY",
+-        "module": "Navigator",
+-        "tab": "History",
+-        "url_path": "/admin/navigator/history",
+-        "role": "ADMIN"
+-      },
+       {
+         "screen_id": "ADM-PLANNING",
+         "module": "Autopilot",
+@@ -2080,10 +2251,10 @@
+         "role": "ADMIN"
+       },
+       {
+-        "screen_id": "ADM-COMPOSE",
++        "screen_id": "ADM-NOTIFICATIONS",
+         "module": "Notifications",
+-        "tab": "Compose",
+-        "url_path": "/admin/notifications/compose",
++        "tab": "Notifications",
++        "url_path": "/admin/notifications",
+         "role": "ADMIN"
+       },
+       {
+@@ -2094,31 +2265,24 @@
+         "role": "ADMIN"
+       },
+       {
+-        "screen_id": "ADM-TEMPLATES",
+-        "module": "Notifications",
+-        "tab": "Templates",
+-        "url_path": "/admin/notifications/templates",
+-        "role": "ADMIN"
+-      },
+-      {
+-        "screen_id": "ADM-SENT",
++        "screen_id": "ADM-NOTIFICATIONS_ACTIVITY",
+         "module": "Notifications",
+-        "tab": "Sent",
+-        "url_path": "/admin/notifications/sent",
++        "tab": "Activity",
++        "url_path": "/admin/notifications/activity",
+         "role": "ADMIN"
+       },
+       {
+-        "screen_id": "ADM-SUBSCRIPTIONS",
++        "screen_id": "ADM-COMPOSE",
+         "module": "Notifications",
+-        "tab": "Subscriptions",
+-        "url_path": "/admin/notifications/subscriptions",
++        "tab": "Send",
++        "url_path": "/admin/notifications/compose",
+         "role": "ADMIN"
+       },
+       {
+-        "screen_id": "ADM-PROVIDERS",
+-        "module": "Notifications",
+-        "tab": "Providers",
+-        "url_path": "/admin/notifications/providers",
++        "screen_id": "ADM-OVERVIEW",
++        "module": "Insights",
++        "tab": "Overview",
++        "url_path": "/admin/insights/overview",
+         "role": "ADMIN"
+       },
+       {
+@@ -2142,6 +2306,34 @@
+         "url_path": "/admin/insights/assistant-usage",
+         "role": "ADMIN"
+       },
++      {
++        "screen_id": "ADM-JOURNEYS",
++        "module": "Insights",
++        "tab": "Journeys",
++        "url_path": "/admin/insights/journeys",
++        "role": "ADMIN"
++      },
++      {
++        "screen_id": "ADM-FEATURES",
++        "module": "Insights",
++        "tab": "Features",
++        "url_path": "/admin/insights/features",
++        "role": "ADMIN"
++      },
++      {
++        "screen_id": "ADM-INTERESTS",
++        "module": "Insights",
++        "tab": "Interests",
++        "url_path": "/admin/insights/interests",
++        "role": "ADMIN"
++      },
++      {
++        "screen_id": "ADM-INSIGHTS_EVENTS",
++        "module": "Insights",
++        "tab": "Event Explorer",
++        "url_path": "/admin/insights/events",
++        "role": "ADMIN"
++      },
+       {
+         "screen_id": "ADM-AUTOPILOT_IMPACT",
+         "module": "Insights",
+@@ -2232,6 +2424,13 @@
+         "tab": "Data Rights",
+         "url_path": "/admin/audit/data-rights",
+         "role": "ADMIN"
++      },
++      {
++        "screen_id": "ADM-BACKOFFICE_DASHBOARD",
++        "module": "Back Office",
++        "tab": "Dashboard",
++        "url_path": "/backoffice/dashboard",
++        "role": "ADMIN"
+       }
+     ]
+   }
+diff --git a/services/gateway/src/frontend/command-hub/navigation-config.js b/services/gateway/src/frontend/command-hub/navigation-config.js
+index b79d6d44..c28465bd 100644
+--- a/services/gateway/src/frontend/command-hub/navigation-config.js
++++ b/services/gateway/src/frontend/command-hub/navigation-config.js
+@@ -12,11 +12,7 @@ export const NAVIGATION_CONFIG = [
+     module: "overview",
+     label: "Overview",
+     tabs: [
+-      { key: "system-overview", label: "System Overview" },
+-      { key: "live-metrics", label: "Live Metrics" },
+-      { key: "recent-events", label: "Recent Events" },
+-      { key: "errors-violations", label: "Errors & Violations" },
+-      { key: "release-feed", label: "Release Feed" }
++      { key: "system-overview", label: "System Overview" }
+     ]
+   },
+   {
+@@ -28,9 +24,28 @@ export const NAVIGATION_CONFIG = [
+       { key: "tenants", label: "Tenants" },
+       { key: "content-moderation", label: "Content Moderation" },
+       { key: "identity-access", label: "Identity Access" },
++      { key: "analytics", label: "Analytics" },
++      { key: "billing-dashboard", label: "Billing Dashboard" },
++      { key: "billing-codes", label: "Billing Codes" }
++    ]
++  },
++  {
++    module: "commerce",
++    label: "Commerce",
++    tabs: [
++      { key: "overview", label: "Overview" },
++      { key: "providers-onboarding", label: "Providers Onboarding" },
++      { key: "commissions-rewards", label: "Commissions Rewards" },
++      { key: "affiliate-programs", label: "Affiliate Programs" },
+       { key: "marketplace-shops", label: "Marketplace Shops" },
+-      { key: "marketplace-review", label: "Marketplace Review" },
+-      { key: "analytics", label: "Analytics" }
++      { key: "marketplace-review", label: "Marketplace Review" }
++    ]
++  },
++  {
++    module: "knowledge-base",
++    label: "Knowledge Base",
++    tabs: [
++      { key: "checklist", label: "Checklist" }
+     ]
+   },
+   {
+@@ -38,14 +53,35 @@ export const NAVIGATION_CONFIG = [
+     label: "Assistant",
+     tabs: [
+       { key: "overview", label: "Overview" },
+-      { key: "orb-live", label: "ORB Live" },
+       { key: "sessions", label: "Sessions" },
+       { key: "personality", label: "Personality" },
+       { key: "experiments", label: "Experiments" },
+-      { key: "metrics", label: "Metrics" },
+-      { key: "awareness-registry", label: "Awareness Registry" },
+-      { key: "awareness-test", label: "Awareness Test" },
+-      { key: "voice-tools", label: "Voice Tools" }
++      { key: "metrics", label: "Metrics" }
++    ]
++  },
++  {
++    module: "conversation",
++    label: "Conversation",
++    tabs: [
++      { key: "config", label: "Config" },
++      { key: "monitor", label: "Monitor" },
++      { key: "tools", label: "Tools" },
++      { key: "simulator", label: "Simulator" },
++      { key: "awareness", label: "Awareness" },
++      { key: "journey-context", label: "Journey Context" },
++      { key: "tool-catalog", label: "Tool Catalog" }
++    ]
++  },
++  {
++    module: "voice",
++    label: "Voice",
++    tabs: [
++      { key: "overview", label: "Overview" },
++      { key: "segments", label: "Segments" },
++      { key: "sessions", label: "Sessions" },
++      { key: "issues-healing", label: "Issues Healing" },
++      { key: "test-bench", label: "Test Bench" },
++      { key: "providers", label: "Providers" }
+     ]
+   },
+   {
+@@ -68,7 +104,8 @@ export const NAVIGATION_CONFIG = [
+       { key: "task-queue", label: "Task Queue" },
+       { key: "event-stream", label: "Event Stream" },
+       { key: "deployments", label: "Deployments" },
+-      { key: "runbook", label: "Runbook" }
++      { key: "runbook", label: "Runbook" },
++      { key: "localization", label: "Localization" }
+     ]
+   },
+   {
+@@ -117,7 +154,9 @@ export const NAVIGATION_CONFIG = [
+       { key: "runs", label: "Runs" },
+       { key: "live", label: "Live" },
+       { key: "engine", label: "Engine" },
+-      { key: "growth", label: "Growth" }
++      { key: "growth", label: "Growth" },
++      { key: "mission-alignment", label: "Mission Alignment" },
++      { key: "orchestrator", label: "Orchestrator" }
+     ]
+   },
+   {
+@@ -184,8 +223,7 @@ export const NAVIGATION_CONFIG = [
+       { key: "latency", label: "Latency" },
+       { key: "errors", label: "Errors" },
+       { key: "sse", label: "SSE" },
+-      { key: "debug-panel", label: "Debug Panel" },
+-      { key: "voice-lab", label: "Voice LAB" }
++      { key: "debug-panel", label: "Debug Panel" }
+     ]
+   },
+   {
+@@ -232,7 +270,15 @@ export const NAVIGATION_CONFIG = [
+       { key: "architecture", label: "Architecture" },
+       { key: "workforce", label: "Workforce" },
+       { key: "system-knowledge", label: "System Knowledge" },
+-      { key: "specialists", label: "Specialists" }
++      { key: "manuals", label: "Manuals" }
++    ]
++  },
++  {
++    module: "routines",
++    label: "Routines",
++    tabs: [
++      { key: "catalog", label: "Catalog" },
++      { key: "history", label: "History" }
+     ]
+   },
+   {
+@@ -240,9 +286,9 @@ export const NAVIGATION_CONFIG = [
+     label: "Feedback",
+     tabs: [
+       { key: "inbox", label: "Inbox" },
+-      { key: "handoffs", label: "Live Handoffs" },
+-      { key: "kpis", label: "KPIs" },
+-      { key: "audit", label: "Audit Log" }
++      { key: "handoffs", label: "Handoffs" },
++      { key: "kpis", label: "Kpis" },
++      { key: "audit", label: "Audit" }
+     ]
+   }
+ ];

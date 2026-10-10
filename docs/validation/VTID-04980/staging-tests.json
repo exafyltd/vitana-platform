@@ -1,0 +1,30 @@
+{
+  "vtid": "VTID-04980",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/mcp",
+      "expect_status": 200,
+      "expect_body_contains": "\"authorization_servers\"",
+      "reason": "the MCP endpoint the plugin points at publishes its sign-in metadata (read-only; staging reports its own host, so only the structure is checked)"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/mcp",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "reason": "an unsigned call to the plugin's MCP endpoint is refused with the sign-in challenge (read-only, nothing is sent that could write)"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04980-chatgpt-plugin-package.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the package manifests, skill and assets stay consistent with the live tool list"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+      ✕ starts all five providers before any of them finishes (3004 ms)
+    providers were not started concurrently
+    > 307 |           () => reject(new Error('providers were not started concurrently')),
+Tests:       1 failed, 8 skipped, 9 total

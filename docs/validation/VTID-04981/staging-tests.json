@@ -1,0 +1,4 @@
+{"vtid":"VTID-04981","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"existing","ref":"npx jest test/vtid-04981-consume-credits-lockdown.test.ts","cwd":"services/gateway","reason":"The change is a database permission (migration) and a CI guard; no gateway code changes. Staging shares the production database, so the permission itself is checked read-only after RUN-MIGRATION (has_function_privilege)."}
+]}

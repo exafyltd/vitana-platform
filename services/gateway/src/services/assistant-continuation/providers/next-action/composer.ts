@@ -32,6 +32,7 @@ import {
   recordDedupeSighting,
   DEFAULT_DEDUPE_WINDOW_MS,
 } from './dedupe-store';
+import { shadowNextAction } from '../../../jev/gates/community-ranking-gates';
 
 class CompositeNextActionComposer implements NextActionComposer {
   /**
@@ -92,6 +93,22 @@ class CompositeNextActionComposer implements NextActionComposer {
     const composeFinishedAt = new Date().toISOString();
 
     const ranked = rank(results);
+
+    // VTID-04883 (D2): Jev shadow of the slate. Fire-and-forget; the compose result never waits for it.
+    void shadowNextAction({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      surface: String(surface),
+      chosenSource: ranked.chosen ? ranked.chosen.source : null,
+      slate: results
+        .filter((r) => r.candidate)
+        .map((r) => ({
+          source: String(r.candidate!.source),
+          priority: r.candidate!.priority,
+          confidence: String(r.candidate!.confidence),
+          reasonCount: r.candidate!.reasons?.length ?? 0,
+        })),
+    }).catch(() => undefined);
 
     // VTID-03068: record the winner's dedupe_key sighting (fire-and-
     // forget). When the orb actually speaks the line, recording here

@@ -1,0 +1,6 @@
+$ npx tsc --noEmit -p services/gateway --ignoreDeprecations 6.0 (filtered to changed files)
+  no new errors in changed files (sandbox lacks node_modules/@types)
+$ node scripts/conversation/generate-flag-pins.mjs --check
+  current
+$ curl -sS -o /dev/null -w "%{http_code}" https://preview-aws-gateway.vitanaland.com/mcp   (before this change)
+  404 (no MCP endpoint existed)

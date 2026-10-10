@@ -1,0 +1,100 @@
+# PR-GATE — mechanical damage protection before merge (VTID-04950, plan E2;
+# vitana-platform twin of vitana-v1's VTID-04948 gate).
+#
+# scope guard · sparring record · test-weakening guard · red→green proof that a
+# fix's new Jest test fails on the base commit. Gateway type check, build and
+# the full Jest suite already gate PRs here (OASIS-PERSISTENCE, TEST-SUITE,
+# CICDL-GATEWAY-CI), so they are not repeated.
+#
+# Rollout: report-only. scripts/ci/pr-gate/config.json "enforce" makes it
+# blocking; setting it back to false is the owner's kill switch.
+
+name: PR-GATE
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BASE: ${{ github.event.pull_request.base.sha }}
+      HEAD: ${{ github.event.pull_request.head.sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Gate self-test
+        run: node --test scripts/ci/pr-gate/__tests__/*.test.mjs
+
+      - name: Live PR title
+        run: |
+          gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" --jq .title > "$RUNNER_TEMP/title.txt"
+          echo "PR_TITLE=$(cat "$RUNNER_TEMP/title.txt")" >> "$GITHUB_ENV"
+          echo "## PR-GATE — $(cat "$RUNNER_TEMP/title.txt")" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Scope guard
+        id: scope
+        continue-on-error: true
+        run: node scripts/ci/pr-gate/gate.mjs scope --base "$BASE" --head "$HEAD"
+
+      - name: Sparring record
+        id: sparring
+        continue-on-error: true
+        run: node scripts/ci/pr-gate/gate.mjs sparring --base "$BASE" --head "$HEAD"
+
+      - name: Test-weakening guard
+        id: weakening
+        continue-on-error: true
+        run: node scripts/ci/pr-gate/gate.mjs weakening --base "$BASE" --head "$HEAD"
+
+      - name: Gateway deps (only when a VTID in the title is a "fix")
+        run: |
+          for v in $(echo "$PR_TITLE" | grep -Eo 'VTID-[0-9]{4,5}' | sort -u); do
+            f="docs/validation/$v/scope.json"
+            if [ -f "$f" ] && [ "$(node -p "require('./$f').kind")" = "fix" ]; then
+              (cd services/gateway && npm ci --no-audit --no-fund >/dev/null); exit 0
+            fi
+          done
+          echo "no fix VTID — red→green will skip"
+
+      - name: Red→green proof (fixes)
+        id: redgreen
+        continue-on-error: true
+        run: node scripts/ci/pr-gate/gate.mjs red-green --base "$BASE" --head "$HEAD"
+
+      - name: Verdict
+        env:
+          OUTCOMES: >-
+            scope=${{ steps.scope.outcome }}
+            sparring=${{ steps.sparring.outcome }}
+            weakening=${{ steps.weakening.outcome }}
+            red-green=${{ steps.redgreen.outcome }}
+        run: |
+          FAILED=$(for o in $OUTCOMES; do case "$o" in *=success) ;; *) echo -n "${o%%=*} ";; esac; done)
+          ENFORCE=$(node -p "require('./scripts/ci/pr-gate/config.json').enforce === true")
+          if [ -z "$FAILED" ]; then echo "### ✅ PR-GATE passed" >> "$GITHUB_STEP_SUMMARY"; exit 0; fi
+          if [ "$ENFORCE" = "true" ]; then
+            echo "### ❌ PR-GATE failed: $FAILED" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::PR-GATE failed: $FAILED"
+            exit 1
+          fi
+          echo "### ⚠️ PR-GATE (report-only) would fail: $FAILED" >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning::PR-GATE report-only — would fail: $FAILED"

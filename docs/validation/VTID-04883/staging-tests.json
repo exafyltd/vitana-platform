@@ -1,0 +1,7 @@
+{"vtid":"VTID-04883","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"intents API (D3 call site) still auth-gated","path":"/api/v1/intents","method":"POST","expect_status":401,"rejected_probe":true},
+{"kind":"http","name":"member directory (D8 call site) still auth-gated","path":"/api/v1/community/members","expect_status":401},
+{"kind":"http","name":"jev decision route for a ranking decision still auth-gated","path":"/api/v1/jev/decisions/community_feed_pick","method":"POST","expect_status":401,"rejected_probe":true},
+{"kind":"existing","ref":"npx jest test/vtid-04883-community-ranking.test.ts","cwd":"services/gateway","reason":"The gates are inert on staging until JEV_COMMUNITY_ENABLED opens the member plane (held until the TypeSafe DPA), and reaching them needs a member action (posting an intent, a notification, a calendar run) that a read-only staging probe must not cause. Decisions, gating, sampling, state without names, agreement, fire-and-forget wiring after the final result, and the staging-only pins are proven by this suite."}
+]}

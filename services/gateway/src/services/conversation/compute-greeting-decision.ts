@@ -41,6 +41,7 @@
  */
 
 import type { OverviewPayload } from '../assistant-continuation/providers/new-day-overview-payload';
+import { buildGuideOpenTrigger, type GuideContext } from '../../orb/live/guide/guide-context';
 import {
   buildNewDayOverviewBlock,
   buildNewDayOverviewOpenerLine,
@@ -149,7 +150,10 @@ export type WakeOpener =
   | 'legacy_default'
   /** VTID-04560 — a work surface (Command Hub / admin / BackOffice /
    *  commerce) opens with its own role's opener; no member rung can win. */
-  | 'work_surface_open';
+  | 'work_surface_open'
+  /** VTID-04951 — the member tapped "Ask Vitana" on a screen: Vitana opens as
+   *  that screen's FAQ / how-to guide instead of the daily greeting. */
+  | 'guide_open';
 
 /**
  * VTID-04525 (Conversation hub B1) — every rung, in the order the type above
@@ -173,6 +177,7 @@ const WAKE_OPENER_ORDER: Record<WakeOpener, number> = {
   silenced_on_cadence: 12,
   legacy_default: 13,
   work_surface_open: 14,
+  guide_open: 15,
 };
 export const WAKE_OPENERS: readonly WakeOpener[] = (Object.keys(WAKE_OPENER_ORDER) as WakeOpener[])
   .sort((a, b) => WAKE_OPENER_ORDER[a] - WAKE_OPENER_ORDER[b]);
@@ -340,6 +345,14 @@ export interface GreetingDecisionContext {
    */
   supportReportOpen?: boolean;
   /**
+   * VTID-04951: the guide the member opened Vitana with ("Ask Vitana" on a
+   * screen, session-start fields `guide_feature`/`guide_state`/...), set only
+   * while no turn has run. The guide rung then opens as that screen's FAQ
+   * guide. Sits below an explicit support report and above a queued guided
+   * topic: an explicit tap on "ask Vitana" beats a topic that was only queued.
+   */
+  guideOpen?: GuideContext | null;
+  /**
    * VTID-04575: true when this session was started by the client with the
    * earlier turns of the same conversation (`transcript_history`) and nothing
    * has been said on it yet. The resume_thread rung then continues that thread.
@@ -397,6 +410,10 @@ export interface GreetingDecisionContext {
   /** Short factual lines the opener may lead with (system pulse / admin
    *  briefing). Facts, never finished sentences. */
   workSurfaceHighlights?: string[] | null;
+  /** VTID-04840: a task the session was opened for on its work surface.
+   *  `commerce_setup` — the supplier tapped "Talk to Vitana" in the AI setup
+   *  sheet, so the commerce opener asks for their website. */
+  workSurfaceTask?: 'commerce_setup' | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -704,9 +721,26 @@ const WORK_SURFACE_OPENER_INTENT: Record<string, string> = {
     'below (an approval waiting, an escalation). When nothing is pending, say so in fresh words. Then offer ' +
     'ONE concrete next step. Stay on business operations.',
   commerce:
-    'You are the business assistant for this partner organisation. Lead with the most important open item ' +
-    'from the facts below, or say in fresh words that nothing is open. Then offer ONE concrete next step. ' +
-    'Stay on the organisation\'s business work.',
+    'You are this supplier\'s onboarding guide and Vitanaland Commerce specialist. Lead with where they stand, ' +
+    'taken from the facts below: their business and the one step that comes next, or, when they have no ' +
+    'business yet, that you can set it up together. Then offer to take that ONE step with them now. ' +
+    'Stay on their business on Vitanaland.',
+};
+
+/**
+ * VTID-04840 — per-task opener intent on a work surface (English INTENT,
+ * NEVER rule 41). Facts are not used: the task is the whole opening.
+ */
+const WORK_SURFACE_TASK_INTENT: Record<string, { role: string; intent: string }> = {
+  commerce_setup: {
+    role: 'commerce',
+    intent:
+      'The user asked you, as their onboarding guide, to set up their business on Vitanaland with them. Briefly ' +
+      'say you will guide them through it, then ask for the address of their website so you can read it and ' +
+      'prepare the business and its products or services for them to check. Mention that nothing is saved until ' +
+      'they confirm it on the screen. As soon as they give an address, call draft_business_setup with it. If they ' +
+      'have no website, guide them through the screen one step at a time.',
+  },
 };
 
 /**
@@ -728,6 +762,25 @@ export function tryWorkSurfaceRung(ctx: GreetingDecisionContext): GreetingDecisi
     };
   }
   const role = ctx.workSurfaceRole || 'developer';
+  const task = ctx.workSurfaceTask ? WORK_SURFACE_TASK_INTENT[ctx.workSurfaceTask] : undefined;
+  if (task && task.role === role) {
+    const taskDirective =
+      `Open with ONE or TWO short spoken sentences, as audio. INTENT: ${task.intent} ` +
+      'Compose the wording yourself, fresh each time.';
+    return {
+      wakeOpener: 'work_surface_open',
+      directive: taskDirective,
+      diag: {
+        lang: ctx.lang,
+        prompt_len: taskDirective.length,
+        wake_opener: 'work_surface_open',
+        surface,
+        role,
+        task: ctx.workSurfaceTask,
+      },
+      effects: { markGreetingSent: true, armWatchdog: true },
+    };
+  }
   const intent = WORK_SURFACE_OPENER_INTENT[role] || WORK_SURFACE_OPENER_INTENT.developer;
   const highlights = (ctx.workSurfaceHighlights || [])
     .map((h) => (typeof h === 'string' ? h.replace(/\s+/g, ' ').trim() : ''))
@@ -1054,6 +1107,28 @@ function trySupportReportRung(ctx: GreetingDecisionContext): GreetingDecision | 
   };
 }
 
+/**
+ * VTID-04951 — "Ask Vitana" from a screen. The words are composed by the model
+ * from an English intent (buildGuideOpenTrigger), never a finished sentence.
+ */
+function tryGuideOpenRung(ctx: GreetingDecisionContext): GreetingDecision | null {
+  if (!ctx.guideOpen || ctx.isAnonymous) return null;
+  const trigger = buildGuideOpenTrigger(ctx.guideOpen);
+  return {
+    wakeOpener: 'guide_open',
+    directive: trigger,
+    diag: {
+      lang: ctx.lang,
+      prompt_len: trigger.length,
+      wake_opener: 'guide_open',
+      decision_id: ctx.wakeBriefDecisionId || null,
+      guide_feature: ctx.guideOpen.feature,
+      guide_state: ctx.guideOpen.state,
+    },
+    effects: { markGreetingSent: true, armWatchdog: true },
+  };
+}
+
 function tryGuidedTopicRung(ctx: GreetingDecisionContext): GreetingDecision | null {
   if (!ctx.guidedTopicNarrationContent || ctx.isAnonymous) return null;
   const od = ctx.openDecision;
@@ -1103,6 +1178,7 @@ export function overviewIndependentOpenerWins(ctx: GreetingDecisionContext): boo
   return (
     tryWorkSurfaceRung(ctx) !== null ||
     trySupportReportRung(ctx) !== null ||
+    tryGuideOpenRung(ctx) !== null ||
     tryGuidedTopicRung(ctx) !== null
   );
 }
@@ -1123,6 +1199,10 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
   // tapped topic: it outranks every briefing rung.
   const supportFast = trySupportReportRung(ctx);
   if (supportFast) return supportFast;
+
+  // VTID-04951 — "Ask Vitana" on a screen outranks a queued guided topic.
+  const guideFast = tryGuideOpenRung(ctx);
+  if (guideFast) return guideFast;
 
   const guidedFast = tryGuidedTopicRung(ctx);
   if (guidedFast) return guidedFast;
@@ -1148,10 +1228,11 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
     // from greeting-pools' buildFirstTimeWelcomeLine — a hardcoded spoken
     // sentence (NEVER-rule 41) in the verbatim-recitation shape the Nova
     // guardrail blocks (VTID-03797). Same content, stated as an intent.
+    // VTID-04760: the starting point is Episode 1 of the Audiobook.
     const welPrompt = buildOpeningIntentDirective(
       `${firstTimeNamePart(ctx.firstName)}This is their very first voice conversation. Welcome them warmly to Maxina, ` +
-        'introduce yourself as Vitana, their personal longevity assistant, say you will guide them step by step through their journey ' +
-        'and show them how everything works, and invite them to start their first session together.',
+        'introduce yourself as Vitana, their personal longevity assistant, reassure them there is no rush and nothing to figure out alone, ' +
+        'and invite them to start Episode 1 of their Audiobook, where you explain step by step how everything works and they only have to listen.',
       'short_welcome',
     );
     return {
@@ -1349,6 +1430,10 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
   // above day_close / newday_overview.
   const supportNormal = trySupportReportRung(ctx);
   if (supportNormal) return supportNormal;
+
+  // VTID-04951 — same position on the normal ladder (see computeSafeFastLadder).
+  const guideNormal = tryGuideOpenRung(ctx);
+  if (guideNormal) return guideNormal;
 
   const guidedNormal = tryGuidedTopicRung(ctx);
   if (guidedNormal) return guidedNormal;

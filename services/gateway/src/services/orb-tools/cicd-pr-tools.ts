@@ -7,6 +7,7 @@
  * triggerWorkflow/getWorkflowRuns/getWorkflowRunJobs), same functions the
  * existing cicd.ts routes already call — no new backend behaviour.
  */
+import { gatewayServiceAuthHeader } from '../../middleware/require-service-or-admin';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { developerGate, clampLimit, relAge, gatewayApiCall } from './developer-tools';
@@ -44,6 +45,7 @@ export const dev_create_pr: Handler = async (args, id) => {
   }
   const { ok, status, body } = await gatewayApiCall('/api/v1/github/create-pr', {
     method: 'POST',
+    headers: gatewayServiceAuthHeader(), // VTID-05019
     body: { vtid, title, body: String(args.body ?? ''), head, base: 'main' },
   });
   if (!ok) return { ok: true, result: { created: false, status, detail: body }, text: `Could not create the PR: ${String(body.error ?? `gateway returned ${status}`)}.` };
@@ -164,6 +166,7 @@ export const dev_safe_merge: Handler = async (args, id) => {
   }
   const { ok, status, body } = await gatewayApiCall('/api/v1/github/safe-merge', {
     method: 'POST',
+    headers: gatewayServiceAuthHeader(), // VTID-05019
     body: {
       vtid,
       pr_number: prNumber,

@@ -166,7 +166,7 @@ describe('checklist: a verification result is void once its facts change', () =>
     status: 'done',
     detail: { facts },
   });
-  const base = { acceptedTermsVersions: [], currentTermsVersion: null, memberCount: 1 };
+  const base = { acceptedTermsVersions: [], currentTermsVersion: null, memberCount: 1, catalogueSource: { connections: 0, completeOfferings: 0 } };
   const verificationStep = (steps: any[]) => buildChecklist({ org, storedSteps: steps, ...base }).steps.find((s) => s.key === 'verification');
 
   it('holds while the facts are unchanged', () => {

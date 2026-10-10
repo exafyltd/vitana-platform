@@ -1,7 +1,7 @@
 // impact-allow-no-test: pure data-access seam (thin Supabase query/RPC
-// wrappers, no independent request-handling behavior). Coverage note: NO
-// call site in milestone-service.ts has any test coverage today — no test
-// file in this repo imports or references this module.
+// wrappers, no independent request-handling behavior). Coverage note:
+// test/vtid-04878-reward-earning.test.ts mocks this module to cover
+// milestone-service.ts (VTID-04878).
 /**
  * services/milestone-service.ts — Aurora migration B1 data-access seam
  * (VTID-03702, Supabase→Aurora migration workstream — see
@@ -69,8 +69,17 @@ export async function countGroupRelationshipEdges(sb: SupabaseClient, tenantId: 
     .eq('target_type', 'group');
 }
 
+// VTID-04878: RSVPs live in global_event_participants (status 'attending').
+// community_meetup_attendance was never created, so first_event_rsvp could
+// never fire.
 export async function countRsvpMeetupAttendance(sb: SupabaseClient, userId: string) {
-  return sb.from('community_meetup_attendance').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('status', 'rsvp');
+  return sb.from('global_event_participants').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('status', 'attending');
+}
+
+// VTID-04878: onboarding_complete pays at signup (owner decision 2026-10-05) —
+// a primary tenant membership is the signal that the member signed up.
+export async function countPrimaryMemberships(sb: SupabaseClient, userId: string) {
+  return sb.from('user_tenants').select('user_id', { count: 'exact', head: true }).eq('user_id', userId).eq('is_primary', true);
 }
 
 export async function countAcceptedDailyMatches(sb: SupabaseClient, tenantId: string, userId: string) {

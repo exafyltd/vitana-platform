@@ -1,0 +1,40 @@
+Region:   eu-central-1
+Account:  472838866351
+Gateway:  https://gateway.vitanaland.com
+Test-contract gateway: https://preview-aws-gateway.vitanaland.com (internal token secret: vitana/gateway/staging/internal-token)
+Prod token secret:     vitana/gateway/prod/internal-token
+Jobs:     30
+Delete:   false
+Dry run:  true
+
+Would create/update 1 Lambda, 2 IAM roles, and 30 schedules:
+  autopilot-daily-match-delivery  (0 8 * * * Europe/Berlin)  -> /api/v1/automations/cron/AP-0101  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  autopilot-morning-briefing  (0 7 * * * Europe/Berlin)  -> /api/v1/automations/cron/AP-0501  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  autopilot-diary-reminder  (0 21 * * * Europe/Berlin)  -> /api/v1/automations/cron/AP-0505  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  autopilot-weekly-community-digest  (0 18 * * 0 Europe/Berlin)  -> /api/v1/automations/cron/AP-0502  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  autopilot-weekly-reflection  (0 20 * * 5 Europe/Berlin)  -> /api/v1/automations/cron/AP-0506  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  autopilot-group-recommendation-push  (0 10 * * 1 Europe/Berlin)  -> /api/v1/automations/cron/AP-0105  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  autopilot-social-alignment  (0 9 * * 1 Europe/Berlin)  -> /api/v1/automations/cron/AP-0107  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  autopilot-creator-digest  (0 18 * * 0 Europe/Berlin)  -> /api/v1/automations/cron/AP-0210  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  autopilot-trending-events  (0 18 * * 0 Europe/Berlin)  -> /api/v1/automations/cron/AP-0305  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  autopilot-wellness-check-in  (0 10 * * 3 Europe/Berlin)  -> /api/v1/automations/cron/AP-0604  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  autopilot-upcoming-events-today  (0 8 * * * Europe/Berlin)  -> /api/v1/automations/cron/AP-0510  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  autopilot-memory-routine-pattern-extraction  (30 3 * * * UTC)  -> /api/v1/automations/cron/AP-0906  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  autopilot-memory-relationship-graph-projection  (50 3 * * * UTC)  -> /api/v1/automations/cron/AP-0909  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  autopilot-memory-behavior-preference-inference  (40 4 * * * UTC)  -> /api/v1/automations/cron/AP-0908  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  autopilot-memory-health-correlation-insights  (55 4 * * * UTC)  -> /api/v1/automations/cron/AP-0912  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  autopilot-memory-user-model-synthesis  (35 * * * * UTC)  -> /api/v1/automations/cron/AP-0911  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  autopilot-memory-own-post-capture  (15 * * * * UTC)  -> /api/v1/automations/cron/AP-0913  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  autopilot-memory-embedding-backfill  (25 * * * * UTC)  -> /api/v1/automations/cron/AP-0910  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  autopilot-memory-daily-learning-digest  (10 * * * * UTC)  -> /api/v1/automations/cron/AP-0907  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  autopilot-memory-daily-learning-episode  (45 * * * * UTC)  -> /api/v1/automations/cron/AP-0914  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  autopilot-memory-diary-theme-rollup  (25 4 * * * UTC)  -> /api/v1/automations/cron/AP-0915  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  gateway-reminders-tick  (* * * * * UTC)  -> /api/v1/scheduled-notifications/reminders-tick  body={}  extra={"auth":"gateway_internal","token_secret_id":"vitana/gateway/prod/internal-token"}
+  gateway-reminders-sweeper  (*/5 * * * * UTC)  -> /api/v1/scheduled-notifications/reminders-sweeper  body={}  extra={"auth":"gateway_internal","token_secret_id":"vitana/gateway/prod/internal-token"}
+  gateway-daily-recompute  (0 2 * * * UTC)  -> /api/v1/scheduler/daily-recompute  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}
+  gateway-daily-pace-notifications  (0 * * * * UTC)  -> /api/v1/scheduled-notifications/daily-pace-notifications  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","token_secret_id":"vitana/gateway/prod/internal-token"}
+  gateway-night-push  (0 * * * * UTC)  -> /api/v1/scheduled-notifications/night-push  body={"tenant_id":"00000000-0000-0000-0000-000000000001"}  extra={"auth":"gateway_internal","token_secret_id":"vitana/gateway/prod/internal-token"}
+  gateway-test-contracts-scheduled-run  (*/15 * * * * UTC)  -> /api/v1/test-contracts/scheduled-run  body={}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  gateway-test-contracts-missing  (30 6 * * * UTC)  -> /api/v1/test-contracts/missing  body={}  extra={"method":"GET","auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  gateway-dev-memory-handoff-sweep  (20 * * * * UTC)  -> /api/v1/dev-memory/handoffs/sweep  body={}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}
+  gateway-community-autopilot-scan  (5 * * * * UTC)  -> /api/v1/autopilot/recommendations/community-scan  body={}  extra={"auth":"gateway_internal","gateway_url":"https://preview-aws-gateway.vitanaland.com"}

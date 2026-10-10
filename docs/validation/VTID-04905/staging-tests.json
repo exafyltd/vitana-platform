@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-04905",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "POST",
+      "name": "enter is mounted and refuses an unsigned caller before any handler work",
+      "path": "/api/v1/live/rooms/00000000-0000-4000-8000-000000000000/enter",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "POST",
+      "name": "exit is mounted and refuses an unsigned caller before any handler work",
+      "path": "/api/v1/live/rooms/00000000-0000-4000-8000-000000000000/exit",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04905-live-enter-exit.test.ts test/routes/live-attendees-error-logging.test.ts test/i18n/catalog-coverage.test.ts",
+      "cwd": "services/gateway",
+      "reason": "enter access matrix (public, paid without/with grant, not live, host starts a scheduled session, lobby wait, join-gate errors), exit scoped to the current session, viewer_count sync, auto-transitions guarded both ways, stream_type enum + ends_at default, repository column names and localized notification texts in every translated locale; entering a real room writes attendance in the production database, so it is proven here and by the owner's first real session, not on staging"
+    }
+  ]
+}

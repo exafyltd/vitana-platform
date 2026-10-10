@@ -16,7 +16,7 @@ Conceptual and philosophical foundation of the product. Written in the ORB's fir
 | 03 Programs and Methods | 5 | Longevity onboarding protocol, habit optimization, biomarker tracking, social longevity model, community amplification |
 | 04 Community and Bonds | 4 | Why belonging extends lifespan, intelligent matchmaking, longevity sessions, building vitality networks |
 | 05 Vitana Index | 4 | How the Index works (calculation detail), improving scores, zone explanations, data sources |
-| 06 Financial Longevity | 4 | Longevity economy, earning through wellness, credits/cash/VTN, responsible recommendations |
+| 06 Financial Longevity | 4 | Longevity economy, earning through wellness, credits/cash/VTNA, responsible recommendations |
 | 07 Maxina Experience | 4 | Maxina across Vitanaland, infinite memory role, ethical AI and privacy, the longevity journey |
 
 ### Part B: Feature Guides (Sections 08-20, ~89 articles including placeholders)
@@ -67,7 +67,7 @@ The Vitana Index makes longevity trackable. Trajectory over snapshots. Direction
 The Autopilot and Memory Garden enable deeply personal guidance, but user control and data privacy are treated as non-negotiable foundations. Tenant isolation at database level.
 
 ### 7. Financial-Health Alignment
-The longevity economy (credits, cash, VTN) aligns earning with health behaviors. Financial stress is treated as a longevity risk factor.
+The longevity economy (credits, cash, VTNA) aligns earning with health behaviors. Financial stress is treated as a longevity risk factor.
 
 ### 8. Accessibility
 "We refuse to make longevity elitist." The philosophy aims to make structured longevity accessible through guided systems and community support.
@@ -88,7 +88,7 @@ The knowledge base uses a controlled tag vocabulary split into:
 ## Status Values
 
 - `live` -- Feature available in production
-- `coming-soon` -- Planned feature (notably VTN tokens)
+- `coming-soon` -- Planned feature (notably VTNA tokens)
 
 ## Related Pages
 

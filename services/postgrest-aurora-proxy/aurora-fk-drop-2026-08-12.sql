@@ -1,3 +1,5 @@
+-- VTID-04880: nav_catalog* statements below are guarded with to_regclass -- those
+-- tables were archived to legacy_archive in Supabase and may be absent.
 ALTER TABLE messages DROP CONSTRAINT messages_parent_message_id_fkey;
 ALTER TABLE scheduled_posts DROP CONSTRAINT scheduled_posts_post_id_fkey;
 ALTER TABLE service_payments DROP CONSTRAINT service_payments_match_id_fkey;
@@ -20,7 +22,7 @@ ALTER TABLE typing_indicators DROP CONSTRAINT typing_indicators_tenant_id_fkey;
 ALTER TABLE messages DROP CONSTRAINT messages_tenant_id_fkey;
 ALTER TABLE messages DROP CONSTRAINT messages_thread_id_fkey;
 ALTER TABLE music_metadata DROP CONSTRAINT music_metadata_media_id_fkey;
-ALTER TABLE nav_catalog_i18n DROP CONSTRAINT nav_catalog_i18n_catalog_id_fkey;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_i18n') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE nav_catalog_i18n DROP CONSTRAINT nav_catalog_i18n_catalog_id_fkey$SQL04880$; END IF; END $NAV04880$;
 ALTER TABLE oasis_spec_approvals DROP CONSTRAINT oasis_spec_approvals_spec_id_fkey;
 ALTER TABLE oasis_spec_validations DROP CONSTRAINT oasis_spec_validations_spec_id_fkey;
 ALTER TABLE onboarding_invitations DROP CONSTRAINT onboarding_invitations_signup_attempt_id_fkey;

@@ -390,7 +390,7 @@ const BACKEND_KEYWORDS = [
   'request', 'response', 'authentication', 'authorization', 'JWT', 'OAuth',
   'CORS', 'rate limit', 'throttle', 'validation', 'sanitization',
   // Commerce & Token Logic
-  'credits', 'VTN', 'token', 'wallet logic', 'transaction processing',
+  'credits', 'VTNA', 'token', 'wallet logic', 'transaction processing',
   'payment gateway', 'stripe', 'billing', 'subscription', 'staking',
   'checkout', 'order processing', 'invoice', 'refund', 'pricing logic',
   // Business Logic

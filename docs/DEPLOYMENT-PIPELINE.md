@@ -269,6 +269,33 @@ same two channels.
 
 ---
 
+## 8a. Nightly full run, result reporting and the Gate 2 freshness rule (VTID-04949)
+
+- **Nightly full run.** `STAGING-VERIFY-NIGHTLY.yml` (02:17 UTC) reads which
+  commit staging serves for each service (`run.mjs stamp`). It dispatches
+  `STAGING-VERIFY.yml` with `full=true`, which also runs **every** other change
+  suite of that service, not only the prod..commit range. A later change that
+  breaks an older feature is then caught within a day, even when no new commit
+  touches it. The OASIS event carries `metadata.full=true`.
+- **Gate 2 freshness.** Before sending the ready message, the session checks
+  the newest `staging.verify.*` event with `metadata.full=true` for the
+  service. If it is older than 24 h, the session dispatches a full run first.
+- **Where the result lands.** Besides OASIS and the job summary, the `report`
+  job posts:
+  - a commit status (`staging-verify`, or `staging-verify/full` for the
+    nightly run) on the verified commit;
+  - one comment on the PR that merged it (not for the nightly run).
+
+  For vitana-v1 this needs the `VITANA_V1_STATUS_TOKEN` secret (statuses and
+  pull-requests write); without it the report is skipped with a notice and the
+  result stays in OASIS. A Claude Code session that ended before the result
+  can therefore be replaced by any later session or the Operator Chat, from
+  that evidence.
+- **Pre-merge tests (vitana-v1 `PR-GATE.yml`, VTID-04948).** The same staging
+  specs (smoke plus the change's own) run before merge against the PR's build
+  with the staging gateway, behind the same canonical `staging-guard.ts`.
+  Staging verification then confirms them on the deployed commit.
+
 ## 9. Status — what exists and what is being built
 
 | Piece | State |

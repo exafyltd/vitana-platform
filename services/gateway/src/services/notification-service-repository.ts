@@ -71,3 +71,10 @@ export async function fetchUserNotificationPreferences(sb: SupabaseClient, userI
 export async function insertUserNotification(sb: SupabaseClient, row: Record<string, unknown>) {
   return sb.from('user_notifications').insert(row).select('id').single();
 }
+
+// VTID-04962: best-effort delivery outcome. Written separately from
+// push_sent_at so a failure here (e.g. the column not yet migrated) never
+// stops a row from being marked handled.
+export async function setNotificationPushOutcome(sb: SupabaseClient, notificationId: string, outcome: string) {
+  return sb.from('user_notifications').update({ push_outcome: outcome }).eq('id', notificationId);
+}

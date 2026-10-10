@@ -1,0 +1,31 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/orb/context/compile-assistant-decision-context.test.ts
+  compileAssistantDecisionContext
+    happy path with all five provider overrides
+      ✓ attaches each provider output to its field (6 ms)
+    per-provider throw (acceptance #6)
+      ✓ pillar_momentum throws → null + others still flow (acceptance: B5) (2 ms)
+      ✓ interaction_style throws → null + others still flow (acceptance: B6) (1 ms)
+      ✓ all five providers throw → all null but no crash (1 ms)
+      ✓ one provider throws does not block the rest (continuity case)
+    provider returns null (acceptance #1)
+      ✓ attaches null + ok:true for all five (provider deliberately suppressed)
+    always returns a typed shape
+      ✓ all five source_health entries are always present
+      ✓ result has exactly six top-level keys (no leakage, no extras)
+    parallel execution
+      ✓ starts all five providers before any of them finishes (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       9 passed, 9 total
+Snapshots:   0 total
+Time:        0.557 s, estimated 1 s
+Ran all test suites matching /test\/orb\/context\/compile-assistant-decision-context.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

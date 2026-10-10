@@ -107,6 +107,21 @@ def _gw(ctx: RunContext) -> GatewayClient:
     return gw
 
 
+def _tool_body(gw: GatewayClient, name: str, args: dict[str, Any] | None) -> dict[str, Any]:
+    """Request body for POST /api/v1/orb/tool.
+
+    VTID-04881: carries the member's language, so the shared tools answer in it
+    (the route takes it into the identity after validating it). A session id is
+    deliberately NOT sent: the gateway keys per-session state on it, so a
+    client-supplied value could reach another user's session (plan sparring F9).
+    """
+    body: dict[str, Any] = {"name": name, "args": args or {}}
+    lang = getattr(gw, "identity_lang", None)
+    if isinstance(lang, str) and lang.strip():
+        body["lang"] = lang.strip()
+    return body
+
+
 async def _dispatch(ctx: RunContext, name: str, args: dict[str, Any] | None = None) -> dict[str, Any]:
     """Forward to the gateway's POST /api/v1/orb/tool dispatcher (VTID-LIVEKIT-TOOLS).
 
@@ -121,7 +136,7 @@ async def _dispatch(ctx: RunContext, name: str, args: dict[str, Any] | None = No
     # signal. Read + cleared per turn in the conversation_item hook.
     gw.last_tool_name = name
     gw.last_tool_args = args or None
-    return await gw.post("/api/v1/orb/tool", {"name": name, "args": args or {}})
+    return await gw.post("/api/v1/orb/tool", _tool_body(gw, name, args))
 
 
 async def _dispatch_with_directive(
@@ -148,7 +163,7 @@ async def _dispatch_with_directive(
     # (same as _dispatch) so the turn.responded emit carries the routing signal.
     gw.last_tool_name = name
     gw.last_tool_args = args or None
-    body = await gw.post("/api/v1/orb/tool", {"name": name, "args": args or {}})
+    body = await gw.post("/api/v1/orb/tool", _tool_body(gw, name, args))
     directive = extract_directive(body)
     if directive is not None:
         published = await publish_orb_directive(gw.room, directive)
@@ -1841,16 +1856,112 @@ async def find_perfect_practitioner(
 # ---------------------------------------------------------------------------
 
 
-@function_tool
-async def navigate_to_screen(context: RunContext, target: str) -> str:
-    """Navigate the user to a named screen.
+# VTID-04881: the entity ids navigate_to_screen forwards, under the gateway's
+# own names (live-tool-catalog.ts navigate_to_screen properties), so no
+# translation table can drift. A screen about one item opens only with its id;
+# without it the gateway answers missing_param and nothing is dispatched.
+NAVIGATE_TO_SCREEN_ENTITY_ARGS: tuple[str, ...] = (
+    "recipient_id",
+    "chat_group_id",
+    "groupId",
+    "roomId",
+    "match_id",
+    "intent_id",
+    "vitana_id",
+    "id",
+    "event_id",
+    "meetup_id",
+    "user_id",
+)
 
-    Cross-surface navigation (e.g. community user trying to go to /admin) is
-    rejected with an LLM-visible error per
-    memory/feedback_navigator_surface_scoping.md.
+# The member's own words travel with every navigation call (VTID-04629) — the
+# same text orb-live.ts injects server-side for Vertex/Nova as
+# transcript_excerpt. Never an LLM parameter.
+_TRANSCRIPT_EXCERPT_MAX = 500
+
+
+def _member_words(gw: GatewayClient) -> str:
+    text = getattr(gw, "last_user_text", None)
+    return text.strip()[:_TRANSCRIPT_EXCERPT_MAX] if isinstance(text, str) else ""
+
+
+def _track_route(gw: GatewayClient, body: Any) -> None:
+    """Keep GatewayClient.current_route / recent_routes in step after a navigation.
+
+    One rule for both navigation wrappers: nothing moves when the member was
+    already there or when only a panel opened over the current page; otherwise
+    the page route (base_route, else the route without its query) becomes
+    current and the previous one joins the 5-entry trail.
+    """
+    res = body.get("result") if isinstance(body, dict) else None
+    if not isinstance(res, dict) or res.get("already_there") or res.get("entry_kind") == "overlay":
+        return
+    route = res.get("base_route")
+    if not isinstance(route, str) or not route:
+        raw = res.get("route")
+        route = raw.split("?", 1)[0] if isinstance(raw, str) else None
+    if not isinstance(route, str) or not route:
+        return
+    previous = gw.current_route
+    gw.current_route = route
+    if previous and previous != route:
+        trail = [r for r in (gw.recent_routes or []) if r != previous]
+        gw.recent_routes = ([previous] + trail)[:5]
+
+
+@function_tool
+async def navigate_to_screen(
+    context: RunContext,
+    screen_id: str = "",
+    target: str = "",
+    reason: str = "",
+    keep_orb_open: bool = False,
+    recipient_id: str = "",
+    chat_group_id: str = "",
+    groupId: str = "",
+    roomId: str = "",
+    match_id: str = "",
+    intent_id: str = "",
+    vitana_id: str = "",
+    id: str = "",
+    event_id: str = "",
+    meetup_id: str = "",
+    user_id: str = "",
+) -> str:
+    """Open one screen by its exact screen_id.
+
+    Use it when you already have a screen_id: from a navigate result (POSSIBLE
+    SCREENS, or a "where" answer the member said yes to) or from another tool's
+    result. For anything the member says in their own words, call navigate.
+
+    A screen about one item needs that item's id, taken from an earlier tool
+    result — never guess one:
+    - INBOX.CONVERSATION: recipient_id (or chat_group_id for a group chat)
+    - COMM.GROUP_DETAIL: groupId
+    - COMM.LIVE_ROOM_VIEWER: roomId
+    - INTENTS.MATCH_DETAIL: match_id
+    - PROFILE.PUBLIC: vitana_id (without the @)
+    - PROFILE.WITH_MATCH: vitana_id and intent_id
+    - DISCOVER.PRODUCT_DETAIL, DISCOVER.PROVIDER_PROFILE, NEWS.DETAIL: id
+    - OVERLAY.EVENT_DRAWER: event_id; OVERLAY.MEETUP_DRAWER: meetup_id;
+      OVERLAY.PROFILE_PREVIEW: user_id
 
     Args:
-        target: Named screen identifier from the spec's navigation registry.
+        screen_id: The registry screen id, e.g. "INBOX.OVERVIEW".
+        target: Older name for screen_id. Leave empty when screen_id is set.
+        reason: Short reason for opening it (used if the id is not known).
+        keep_orb_open: Keep the voice orb open after navigating.
+        recipient_id: Conversation partner, for INBOX.CONVERSATION.
+        chat_group_id: Group chat, for INBOX.CONVERSATION.
+        groupId: Community group, for COMM.GROUP_DETAIL.
+        roomId: Live room, for COMM.LIVE_ROOM_VIEWER.
+        match_id: Match, for INTENTS.MATCH_DETAIL.
+        intent_id: Matched intent, for PROFILE.WITH_MATCH.
+        vitana_id: Member handle without @, for PROFILE.PUBLIC / PROFILE.WITH_MATCH.
+        id: Item id, for DISCOVER.PRODUCT_DETAIL, DISCOVER.PROVIDER_PROFILE, NEWS.DETAIL.
+        event_id: Event, for OVERLAY.EVENT_DRAWER.
+        meetup_id: Meetup, for OVERLAY.MEETUP_DRAWER.
+        user_id: Member, for OVERLAY.PROFILE_PREVIEW.
     """
     # PR 1.B-5: thread the gate inputs the shared dispatcher reads —
     # current_route (already-there dedup), is_mobile (viewport gate +
@@ -1858,71 +1969,76 @@ async def navigate_to_screen(context: RunContext, target: str) -> str:
     # any directive on the data channel; eagerly update gw.current_route
     # so the next get_current_screen / navigate_to_screen sees fresh state.
     gw = _gw(context)
-    body = await _dispatch_with_directive(
-        context,
-        "navigate_to_screen",
-        {
-            "target": target,
-            "current_route": gw.current_route,
-            "is_mobile": gw.is_mobile,
-            "is_anonymous": gw.is_anonymous,
-        },
-    )
-    res = body.get("result") if isinstance(body, dict) else None
-    if isinstance(res, dict) and not res.get("already_there"):
-        new_base = res.get("base_route") or (
-            res["route"].split("?", 1)[0] if isinstance(res.get("route"), str) else None
-        )
-        if isinstance(new_base, str) and new_base:
-            previous = gw.current_route
-            gw.current_route = new_base
-            if previous and previous != new_base:
-                trail = [r for r in (gw.recent_routes or []) if r != previous]
-                gw.recent_routes = ([previous] + trail)[:5]
+    supplied = locals()
+    args: dict[str, Any] = {
+        "current_route": gw.current_route,
+        "is_mobile": gw.is_mobile,
+        "is_anonymous": gw.is_anonymous,
+    }
+    if screen_id.strip():
+        args["screen_id"] = screen_id.strip()
+    if target.strip():
+        args["target"] = target.strip()
+    if reason.strip():
+        args["reason"] = reason.strip()
+    if keep_orb_open:
+        args["keep_orb_open"] = True
+    for name in NAVIGATE_TO_SCREEN_ENTITY_ARGS:
+        value = supplied.get(name)
+        if isinstance(value, str) and value.strip():
+            args[name] = value.strip()
+    words = _member_words(gw)
+    if words:
+        args["transcript_excerpt"] = words
+    body = await _dispatch_with_directive(context, "navigate_to_screen", args)
+    _track_route(gw, body)
     return summarize(body)
 
 
-# VTID-NAV-UNIFIED (PR 1.B-4) — free-text navigation. The user just speaks
-# their natural-language request (e.g. "take me to my matches", "show me
-# events this weekend", "open my diary") and consultNavigator's 8-step
-# resolution picks the right screen + speaks the guidance + emits an
-# orb_directive over the data channel for the frontend to apply.
+# VTID-NAV-UNIFIED (PR 1.B-4) / VTID-04881 — free-text navigation: the member's
+# own words plus open-or-where. The registry resolver picks the screen; a clear
+# "open" match emits an orb_directive over the data channel.
 @function_tool
-async def navigate(context: RunContext, question: str) -> str:
-    """Navigate the user to whatever screen best matches their natural-language
-    request. Use this whenever the user expresses a navigation intent in their
-    own words ("take me to my matches", "show me events this weekend", "where
-    are my reminders?", "open my diary"). The system picks the catalog screen,
-    redirects automatically, and you speak the guidance text it returns.
+async def navigate(context: RunContext, question: str, intent: str) -> str:
+    """Find the screen in the Vitana app that has what the member is asking
+    about, and open it or offer it. Pass the member's words; the backend knows
+    every screen, in every language.
 
-    Prefer this over `navigate_to_screen` when the user speaks free-text. Use
-    `navigate_to_screen` ONLY when you already have an exact screen_id in hand
-    (typically as the resolution of a previous `navigate` ambiguous decision).
+    Set intent:
+    - "open": they asked to see or go somewhere ("open my wallet", "show me the
+      news", "zeig mir meine Termine", "take me to…"). A clear match opens right
+      away — say one short sentence that you are taking them there.
+    - "where": they asked where something is or whether it exists ("where can I
+      see my lab results?", "wo finde ich…", "is there a page for…"). Nothing
+      opens: you get the screen, tell them what they will find there, and ask
+      whether to open it. On a yes, call navigate_to_screen with that screen_id
+      — never navigate again for the same request.
+
+    Do NOT call it for small talk or general knowledge questions. Never speak a
+    route or a screen_id aloud — use the title.
 
     Args:
-        question: The user's exact words describing where they want to go.
+        question: The member's whole request, word for word, in their language.
+        intent: "open" when they asked to open/show/go to it; "where" when they
+            asked where it is.
     """
     gw = _gw(context)
-    body = await _dispatch_with_directive(
-        context,
-        "navigate",
-        {
-            "question": question,
-            "current_route": gw.current_route,
-            "recent_routes": list(gw.recent_routes or []),
-        },
-    )
-    # Eagerly update GatewayClient state so the next get_current_screen call
-    # (or the next gate-checked navigate_to_screen call) sees the fresh route.
-    res = body.get("result") if isinstance(body, dict) else None
-    if isinstance(res, dict):
-        new_route = res.get("route")
-        if isinstance(new_route, str) and new_route:
-            previous = gw.current_route
-            gw.current_route = new_route
-            if previous and previous != new_route:
-                trail = [r for r in (gw.recent_routes or []) if r != previous]
-                gw.recent_routes = ([previous] + trail)[:5]
+    normalized = intent.strip().lower() if isinstance(intent, str) else ""
+    args: dict[str, Any] = {
+        "question": question,
+        # Anything but an explicit "open" is a question — same default as the
+        # gateway (orb-tools-shared.ts), so an unclear intent never navigates.
+        "intent": "open" if normalized == "open" else "where",
+        "current_route": gw.current_route,
+        "recent_routes": list(gw.recent_routes or []),
+        "is_mobile": gw.is_mobile,
+        "is_anonymous": gw.is_anonymous,
+    }
+    words = _member_words(gw)
+    if words:
+        args["transcript_excerpt"] = words
+    body = await _dispatch_with_directive(context, "navigate", args)
+    _track_route(gw, body)
     return summarize(body)
 
 

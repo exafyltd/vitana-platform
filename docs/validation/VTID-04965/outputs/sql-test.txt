@@ -1,0 +1,2 @@
+psql:../../../supabase/migrations/20261007200000_vtid_04965_live_room_reminder_calendar.sql:75: NOTICE:  trigger "trg_live_stream_subscription_calendar" for relation "public.live_stream_subscribers" does not exist, skipping
+PASS vtid-04965 live room calendar

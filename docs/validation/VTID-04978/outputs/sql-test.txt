@@ -1,0 +1,4 @@
+psql:../../../supabase/migrations/20261008150000_vtid_04978_reminders_in_calendar.sql:117: NOTICE:  trigger "trg_reminder_insert_calendar" for relation "public.reminders" does not exist, skipping
+psql:../../../supabase/migrations/20261008150000_vtid_04978_reminders_in_calendar.sql:124: NOTICE:  trigger "trg_reminder_update_calendar" for relation "public.reminders" does not exist, skipping
+psql:../../../supabase/migrations/20261008150000_vtid_04978_reminders_in_calendar.sql:135: NOTICE:  trigger "trg_reminder_delete_calendar" for relation "public.reminders" does not exist, skipping
+PASS vtid-04978 reminders in calendar

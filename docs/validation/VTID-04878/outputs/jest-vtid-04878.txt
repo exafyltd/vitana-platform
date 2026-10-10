@@ -1,0 +1,9 @@
+PASS test/routes/autopilot-recommendations-complete.test.ts
+PASS test/vtid-04878-reward-routes.test.ts
+PASS test/vtid-04878-reward-earning.test.ts
+PASS test/routes/autopilot-recommendations.test.ts
+PASS test/milestone-service.test.ts
+PASS test/vtid-04864-vtna-reward-rules.test.ts
+PASS test/vtid-04878-capped-reward-migration.test.ts
+Test Suites: 7 passed, 7 total
+Tests:       158 passed, 158 total

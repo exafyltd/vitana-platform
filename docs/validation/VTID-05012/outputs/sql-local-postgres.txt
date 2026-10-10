@@ -1,0 +1,2 @@
+VTID-05012 SQL assertions passed
+VTID-05012 rollback restores the VTID-04754 shape

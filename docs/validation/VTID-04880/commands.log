@@ -1,0 +1,17 @@
+# VTID-04880 — commands run (2026-10-05)
+cd services/gateway && npx tsc --noEmit -p .                                   # exit 0
+npx jest test/db-i18n test/vtid-04663-ops-health-checks.test.ts test/vtid-04517-staging-nav-v2-pinned.test.ts \
+  test/services/conversation/vtid-04525-conversation-flag-registry.test.ts test/scripts/check-migration-drift.test.ts \
+  test/navigation test/nav-redirect test/nav-golden test/orb/live/instruction test/orb/live/upstream/cascaded-persona-swap.test.ts
+                                                                               # 47 suites passed, 807 tests (aurora-integration skipped without a DB)
+AURORA_TEST_DATABASE_URL='postgres://postgres@127.0.0.1:55432/aurora_it?sslmode=disable' npx jest test/db-i18n/aurora-integration.test.ts
+                                                                               # 18/18 against local PostgreSQL 16.13
+npm run test:roles                                                             # 105/105 (rule 42h, domain atlas touched)
+npx jest --silent                                                              # see outputs/full-gateway-suite.txt
+node scripts/conversation/generate-flag-pins.mjs --check                       # current
+# migration dry-run on local PostgreSQL 16.13 only — see outputs/migration-dry-run.txt
+# read-only production checks (Supabase execute_sql, SELECT only): table sizes/rows, dependents
+#   (pg_depend/pg_proc/pg_trigger/pg_constraint/pg_policies), last write to nav_catalog_i18n,
+#   live ci_vital_systems_health() definition, journey_checklist completeness per locale
+# staging read-only: GET https://preview-aws-gateway.vitanaland.com/api/v1/ops/health/locale-coverage -> {"status":"ok","ga_locales":11}
+# ESLint: services/gateway has no ESLint config in this checkout (npm run lint cannot resolve one) — not run

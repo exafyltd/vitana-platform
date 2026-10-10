@@ -1,0 +1,29 @@
+{
+  "name": "vitanaland",
+  "version": "1.0.0",
+  "description": "Put your business on Vitanaland, a health and longevity community marketplace: create the business, fill in company details and add products or services from a conversation.",
+  "author": { "name": "EXAFY LTD", "url": "https://vitanaland.com" },
+  "homepage": "https://vitanaland.com/commerce",
+  "keywords": ["vitanaland", "supplier", "onboarding", "marketplace", "health", "longevity"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Vitanaland",
+    "shortDescription": "Set up your business on Vitanaland",
+    "longDescription": "Vitanaland is a health and longevity community marketplace. With this plugin a supplier can set up their business from a conversation: create the business, add company details, add products or services as hidden drafts, run the automatic business checks, connect an online shop and submit the business for review. The supplier signs in to their own Vitanaland account. Accepting the Partner Terms and everything that needs identity documents or payment details happens on Vitanaland, never in the chat.",
+    "developerName": "EXAFY LTD",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://vitanaland.com/commerce",
+    "privacyPolicyURL": "https://vitanaland.com/privacy",
+    "termsOfServiceURL": "https://vitanaland.com/terms",
+    "defaultPrompt": [
+      "Set up my business on Vitanaland",
+      "What is the status of my Vitanaland business?",
+      "Add a product to my Vitanaland business"
+    ],
+    "brandColor": "#111111",
+    "composerIcon": "./assets/composer-icon.png",
+    "logo": "./assets/logo.png"
+  }
+}

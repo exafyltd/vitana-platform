@@ -1,0 +1,5 @@
+{"vtid":"VTID-04818","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"jev admin stats still auth-gated (gate rows surface here)","path":"/api/v1/jev/admin/stats","expect_status":401},
+{"kind":"existing","ref":"npx jest test/vtid-04818-lesson-novelty.test.ts","cwd":"services/gateway","reason":"The gate runs when a lesson is about to be written to dev_agent_memory, which is a write a read-only staging probe must not cause. Recall, rule, modes and wiring are proven by this suite and the memory suites."}
+]}

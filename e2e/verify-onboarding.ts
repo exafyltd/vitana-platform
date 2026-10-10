@@ -14,7 +14,7 @@ const COMMUNITY_URL = process.env.COMMUNITY_URL || 'https://vitanaland.com';
 const SUPABASE_URL = 'https://inmkhvwdcuyhnxkgfvsb.supabase.co';
 const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlubWtodndkY3V5aG54a2dmdnNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU4NjY2MzcsImV4cCI6MjA3MTQ0MjYzN30._-QX8ZFgDsKgLM7eDlyc64vi73F-Hwc4ttnDPHjZgVw';
 const TEST_EMAIL = 'e2e-test@vitana.dev';
-const TEST_PASSWORD = 'VitanaE2eTest2026!';
+const TEST_PASSWORD = process.env.TEST_USER_PASSWORD ?? '';
 const SCREENSHOT_DIR = '/tmp/onboarding-verify';
 
 let browser: Browser;

@@ -54,6 +54,16 @@ function matchesServiceToken(token: string): boolean {
 }
 
 /**
+ * VTID-05019: the header an in-process caller sends to a route behind
+ * requireServiceOrAdmin. Empty when GATEWAY_SERVICE_TOKEN is unset, so the
+ * route answers 401 — loudly, never a silent pass.
+ */
+export function gatewayServiceAuthHeader(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const t = env.GATEWAY_SERVICE_TOKEN ?? '';
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
+/**
  * Require a valid GATEWAY_SERVICE_TOKEN OR an exafy_admin JWT.
  */
 export function requireServiceOrAdmin(

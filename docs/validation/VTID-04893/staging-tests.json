@@ -1,0 +1,19 @@
+{
+  "vtid": "VTID-04893",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after the change",
+      "path": "/alive",
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "existing",
+      "name": "Google token supplier, flag wiring and voice-flag registry",
+      "ref": "npx jest test/vtid-04893-google-aws-supplier.test.ts test/services/conversation/vtid-04525-conversation-flag-registry.test.ts test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The token exchange needs the Google-side binding of the ECS task role (owner step); no read-only HTTP probe on staging can show a token without exposing it. The suites pin the supplier, the signed AWS request built with no metadata call, the flag-gated orb-live path and the staging pin; the live proof is the staging log line 'access token prewarmed (auth=aws_supplier)' after the owner binds the role."
+    }
+  ]
+}

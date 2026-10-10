@@ -1485,6 +1485,9 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                 # absent (older livekit-agents versions).
                 if getattr(_ev, "is_final", True):
                     _mem_append("User", t)  # §11: accrue for session-end memory commit
+                    # VTID-04881: the navigation tools send the member's own
+                    # words with each call (transcript_excerpt), as Vertex does.
+                    gw.last_user_text = t
         except Exception:  # noqa: BLE001
             pass
         turn_state["user_text_len"] = text_len

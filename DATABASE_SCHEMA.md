@@ -43,6 +43,13 @@ CREATE TABLE vtid_ledger (
 - `GET /api/v1/vtid/list` - List VTIDs with filters
 - `GET /api/v1/tasks` - Get tasks for Task Board UI
 
+**Insert gate (VTID-04868):** every new row passes the BEFORE INSERT trigger
+`trg_plan_sparring_check` (Plan Sparring Gate, log mode — see
+`plan_sparring_sessions` below). `metadata.sparring_id` is unique across rows
+(partial index `vtid_ledger_sparring_id_unique`); after the hardening
+migration `20261004120000` a sparring id binds only together with
+`metadata.plan_hash` equal to the record's approved `final_plan_hash`.
+
 **Status Values:**
 - `scheduled` - Planned work
 - `in_progress` - Active work
@@ -260,6 +267,33 @@ ON CONFLICT (user_id) DO NOTHING;
 
 ---
 
+### Rule-45 exclusion in the database (VTID-04888)
+Accounts in `service_bot_accounts` ∪ `notification_test_actors` never reach a real member through Find-a-Match
+or the member profile lists. Migration `20261005120000_vtid_04888_rule45_intents_profiles.sql`:
+
+- **Intent RPCs** `search_intent_catalog_v2`, `compute_intent_matches_v2` and the uncalled v1
+  `search_intent_catalog`, `compute_intent_matches`: candidate pool and pool-size count carry
+  `NOT EXISTS (service_bot_accounts) AND NOT EXISTS (notification_test_actors)` on `ui.requester_user_id`;
+  `search_*` return no rows when `p_user_id` is excluded, `compute_*` return 0 when the source intent's
+  requester is excluded. All other lines are the live bodies captured in
+  `docs/validation/VTID-04888/live-functions-before.sql`.
+- **`is_excluded_account(uuid) → boolean`** (STABLE, SECURITY DEFINER). EXECUTE for `service_role` only, so a
+  client cannot probe which accounts are service/test accounts. Used by the triggers below.
+- **`trg_gcp_hide_excluded_accounts`** (BEFORE INSERT OR UPDATE on `global_community_profiles`): forces
+  `is_visible = false` for an excluded account. The vitana-v1 member list and the "new members" cards read
+  this table directly through RLS (`is_visible = true`), so this is what keeps them out.
+- **`trg_service_bot_hide_profile`** / **`trg_test_actor_hide_profile`** (AFTER INSERT on each allowlist): listing
+  an account hides its profile. Independent of the existing `trg_*_refresh_listings` triggers.
+- **`trg_intent_matches_skip_excluded`** (BEFORE INSERT on `intent_matches`): skips (RETURN NULL) any row whose
+  `intent_a_id`/`intent_b_id` requester or `external_target_id` (matchmaker profile fallback) is excluded.
+
+Data fix-up `data-fixups/20261005120100_vtid_04888_rule45_cleanup.sql` hid the excluded profiles, closed their open
+intents, removed their matchmaker rows and their candidates from real members' rows, and deleted the matches
+involving them (aborts if any `intent_events`/`intent_disputes`/`user_ratings`/`service_payments`/
+`match_notifications`/`autopilot_prompts` row points at one).
+
+---
+
 ### dev_agent_memory — handoffs + author — APPLIED 2026-09-23 (VTID-04407)
 **Purpose:** Phase 3 of `docs/MEMORY-SYSTEM-PLAN.md`. This gives each developer their own
 working state next to the repo-wide knowledge.
@@ -393,7 +427,8 @@ CREATE TABLE operator_threads (
   turns           INTEGER NOT NULL DEFAULT 0,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  last_message_at TIMESTAMPTZ
+  last_message_at TIMESTAMPTZ,
+  engine          TEXT NOT NULL DEFAULT 'llm' -- VTID-04975: 'llm' | 'kiro', set at creation, never updated
 );
 CREATE TABLE operator_messages (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -411,6 +446,74 @@ CREATE TABLE operator_messages (
 ```
 
 ---
+
+### voice_session_facts / voice_session_facts_hourly — committed, NOT yet applied (VTID-04776)
+
+One row per ORB voice session (SSE, WebSocket and LiveKit) — the per-session
+fact behind the Command Hub Voice Supervisor (`/api/v1/voice/supervisor/*`).
+Before it a session existed only as OASIS events with no tenant column, and the
+start/stop events carried no role, surface, language or provider. Migration
+`20261001120000_vtid_04776_voice_session_facts.sql` (additive, idempotent;
+apply with `RUN-MIGRATION.yml`). Verified against a local Postgres 16: applies
+twice cleanly, backfill idempotent, anon/authenticated refused.
+
+```sql
+CREATE TABLE voice_session_facts (
+  session_id         TEXT PRIMARY KEY,      -- live-<uuid> (gateway) / orb-<uuid> (LiveKit)
+  tenant_id          UUID NULL,
+  user_id            UUID NULL,
+  is_anonymous       BOOLEAN NOT NULL DEFAULT false,
+  surface            TEXT NULL,             -- vitanaland | command-hub | admin | backoffice | commerce
+  role               TEXT NULL,             -- role the Assistant Profile served
+  persona_key        TEXT NULL,
+  profile_resolution TEXT NULL,             -- declared | route | narrowed | unverified | anonymous
+  lang               TEXT NULL,
+  provider           TEXT NULL,             -- nova_sonic | cascade | vertex_serbian_bridge | livekit | unknown (CHECK)
+  selection_reason   TEXT NULL,
+  transport          TEXT NULL,             -- sse | ws | livekit (CHECK)
+  is_mobile          BOOLEAN NULL,
+  app_version        TEXT NULL,
+  entry              TEXT NULL,
+  started_at         TIMESTAMPTZ NOT NULL,
+  ended_at           TIMESTAMPTZ NULL,
+  last_activity_at   TIMESTAMPTZ NULL,      -- refreshed every 5 min while live
+  duration_ms        INTEGER NULL,
+  turn_count         INTEGER NULL,
+  user_turns         INTEGER NULL,
+  model_turns        INTEGER NULL,
+  audio_in_chunks    INTEGER NULL,
+  audio_out_chunks   INTEGER NULL,
+  ttfa_ms            INTEGER NULL,          -- session start -> first model audio
+  p50_turn_ms        INTEGER NULL,          -- reserved; not written yet
+  close_reason       TEXT NULL,
+  close_code         INTEGER NULL,          -- last upstream close code before the end
+  failure_class      TEXT NULL,             -- voice-failure-taxonomy class, NULL when healthy
+  outcome            TEXT NULL,             -- ok | silent | one_way | dropped | error | abandoned | active (CHECK)
+  stall_count        INTEGER NULL,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()   -- trigger-maintained
+);
+-- indexes: (started_at DESC), (tenant_id, started_at DESC), (surface, role, started_at DESC),
+--          (provider, started_at DESC), (lang, started_at DESC), partial (started_at DESC) WHERE ended_at IS NULL
+```
+
+- Written only by the gateway (`services/gateway/src/services/voice-session-facts.ts`),
+  fire-and-forget: start (session/start, LiveKit token mint), updates (provider
+  selected, first audio, member role resolved, activity heartbeat, orb-agent
+  start via `/api/v1/oasis/emit`), end (all five gateway stop paths, WS
+  cleanup, orb-agent stop). Kill switch `VOICE_SESSION_FACTS_ENABLED=false`.
+- `outcome` / `failure_class` come from `classifyVoiceSessionOutcome()` (reuses
+  `classifyQualityFromSessionStop` / `detectAudioOneWay`).
+- View `voice_session_facts_hourly` (`security_invoker`): per hour x tenant x
+  surface x role x provider x lang — sessions, ok/silent/one_way/dropped/error
+  counts, avg duration, p50/p95 ttfa (`percentile_cont`).
+- Function `voice_session_facts_backfill(p_since timestamptz) RETURNS int`:
+  best-effort rebuild from `oasis_events` (start/stop/profile.resolved/
+  provider.selected joined on `metadata->>session_id`), `ON CONFLICT DO NOTHING`,
+  `p_since` required and at most 30 days back. NOT run by the migration —
+  operator step after apply.
+- RLS on, no policies; `anon`/`authenticated` revoked on table and view;
+  `service_role` only (table, view, function).
 
 ### conversation_metrics_hourly — APPLIED 2026-09-23 (VTID-04371)
 
@@ -645,7 +748,81 @@ blocks. Kill switch: `CONNECTED_APPS_CALENDAR_PUSH=false`.
 
 ---
 
+### founding_members — Founding 1000 (VTID-04859, 2026-10-03)
+
+The first 1,000 members get a free Premium year (owner decision 2026-10-01,
+`docs/business-model/BUSINESS-MODEL.md` §11).
+
+```sql
+CREATE TABLE public.founding_members (
+  user_id        uuid PRIMARY KEY,
+  tenant_id      uuid NOT NULL,
+  seat_number    integer NOT NULL UNIQUE CHECK (seat_number BETWEEN 1 AND 1000),  -- signup order
+  grant_source   text NOT NULL,   -- founding_1000 | launch_auto_grant_2026 | stripe_active
+  granted_until  timestamptz,
+  value_cents    integer NOT NULL DEFAULT 11988,   -- 12 x EUR 9.99
+  celebrated_at  timestamptz,     -- the app showed the celebration
+  created_at     timestamptz NOT NULL DEFAULT now()
+);
+```
+
+- RLS: a member reads only their own row; no client writes.
+- `claim_founding_seat(p_user_id, p_tenant_id)` (service role): idempotent seat
+  + Premium until `max(current end, now + 365 days)`; never for
+  `service_bot_accounts` / `notification_test_actors` / the system bot; a
+  Stripe subscription is never overwritten; the launch grant is not extended;
+  `SOLD_OUT` after seat 1,000. Seats are serialised by an advisory lock.
+- Trigger `founding_seat_on_primary_membership` (AFTER INSERT ON
+  `user_tenants`, primary membership) claims the seat at signup and never
+  blocks the insert.
+- `mark_founding_celebrated(p_user_id)` (service role) sets `celebrated_at`.
+- The `FOUNDING` code (`founding_500`, 90 days) is deactivated.
+- Migration `20261003100000_vtid_04859_founding_1000.sql`.
+
 ### Wallet System (USD / Credits / VTNA) — added 2026-07-17
+
+> **VTID-04982 (2026-10-08): Rewards shop.** `reward_shop_items` (catalogue,
+> titles/descriptions per locale, `vtna_price`, `fulfilment` ship|event|digital,
+> `age_restricted`/`min_age`, `ships_to_countries`, `stock`/`reserved`),
+> `reward_shipping_fees` (country × EUR/USD flat fee) and `reward_orders`
+> (one row per redemption; statuses awaiting_shipping_payment → paid →
+> fulfilling → shipped → delivered, or cancelled/refunded; no birth date is
+> stored, only `age_confirmed_at`). Members read active items, fees and their
+> own orders; every write goes through `redeem_reward_item`,
+> `settle_reward_order_shipping`, `release_reward_reservation`,
+> `release_expired_reward_reservations` and `set_reward_order_status`
+> (service_role only). VTNA is debited from the earned bucket through
+> `credit_wallet(..., 'reward', 'reward_shop', 'reward_shop:<order id>')`.
+> Not rows in `products`, so nothing in Discover reads them. Migration
+> `20261008180000_vtid_04982_rewards_shop.sql`.
+
+> **VTID-04809 (2026-10-01, owner decision): `user_wallets.CREDITS` is the
+> canonical VTNA ledger.** 1 VTNA = 1 CREDIT = **EUR 0.01** (pegged to EUR;
+> the USD figure is a live ECB conversion). `user_wallets.earned_balance`
+> holds the earned part of the CREDITS balance (`CHECK 0 <= earned_balance
+> <= balance`); rewards (shop, subscription conversion) spend earned VTNA
+> only, every other debit can only reach `balance - earned_balance`.
+> `credit_wallet(p_tenant_id, p_user_id, p_amount, p_type, p_source,
+> p_source_event_id, p_description)` now exists and writes here: `reward` →
+> earned, `purchase` → purchased, negative amounts debit that bucket,
+> idempotent per (member, `p_source_event_id`) via
+> `wallet_transactions.idempotency_key`; `service_role` only. Members can no
+> longer write `user_wallets`/`wallet_transactions` directly and
+> `update_user_balance` refuses `'add'`. Migration
+> `20261001180000_vtid_04809_vtna_reward_ledger.sql`.
+>
+> **VTID-04981 (2026-10-08):** `fn_consume_credits` (VTID-03107 paywall
+> overage debit, SECURITY DEFINER, takes any `p_user_id`) is executable by
+> `service_role` only. It had been granted to `authenticated`, which let a
+> signed-in member debit another member's earned or purchased credits (never
+> used: 0 `paywall:%` debits). Behaviour for the gateway is unchanged.
+> Migration `20261008170000_vtid_04981_consume_credits_lockdown.sql`.
+>
+> **VTID-04988 (2026-10-08, owner decision):** earned VTNA is spent only on
+> rewards. `feature_entitlements.allowed_burn_buckets` no longer lists
+> `reward_credits` for any feature, and `fn_consume_credits` returns
+> `BUCKET_NOT_SPENDABLE` for that bucket without writing. Migration
+> `20261008190000_vtid_04988_earned_vtna_rewards_only.sql`.
 
 **This is the live, production system backing the wallet UI** (`useWallet.ts`
 in `vitana-v1` → `user_wallets` + RPCs below). It predates and is entirely
@@ -672,6 +849,7 @@ CREATE TABLE public.user_wallets (
   user_id UUID NOT NULL,
   currency_type TEXT NOT NULL,      -- 'USD' | 'VTNA' | 'CREDITS'
   balance NUMERIC(15,2) NOT NULL DEFAULT 0.00,   -- was 1000.00 until VTID wallet-reset
+  earned_balance NUMERIC(15,2) NOT NULL DEFAULT 0, -- VTID-04809: earned VTNA inside CREDITS
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(user_id, currency_type)
@@ -687,6 +865,8 @@ CREATE TABLE public.wallet_transactions (   -- old (2025-09) schema; still the l
   fees NUMERIC(15,2) DEFAULT 0.00,
   status TEXT DEFAULT 'pending',
   metadata JSONB,
+  idempotency_key TEXT,             -- VTID-04809: unique per (member, key)
+  credit_source TEXT,               -- VTID-04809: 'earned' | 'purchased'
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -717,6 +897,8 @@ CREATE TABLE public.wallet_balance_resets (   -- added VTID wallet-reset, 2026-0
 **Canonical exchange rate** (the only `is_active=true` rows in
 `exchange_rates`, matching `vitana-v1`'s `src/lib/exchangeRates.ts`):
 **1 USD = 100 CREDITS = 100 VTNA**, VTNA:CREDITS at 1:1 parity.
+VTID-04809 adds the EUR peg rows **1 EUR = 100 CREDITS = 100 VTNA**, which
+are the reference for every VTNA price shown to a member.
 
 **RPCs** (`get_user_balance`, `update_user_balance`, `initialize_user_wallet`,
 `process_wallet_exchange`, `process_wallet_transfer`,
@@ -888,7 +1070,118 @@ Every automation send carries `data.automation_id`.
 
 ---
 
+### plan_sparring_sessions / plan_sparring_config / plan_sparring_shadow_log — Plan Sparring Gate, LOG MODE (VTID-04868) — committed, NOT yet applied
+
+Every new plan is sparred by an independent partner before its VTID is
+allocated (owner decisions 2026-10-03/04). P1 ships the gate in **log mode**:
+nothing is blocked; each new VTID is recorded with what the gate would have
+decided. Migration `20261004110000_vtid_04868_plan_sparring_gate.sql`,
+hardened by `20261004120000_vtid_04868_plan_sparring_hardening.sql`
+(committed, NOT yet applied — signatures below are the post-hardening ones);
+rollback `docs/validation/VTID-04868/rollback.sql` (reverses both); tested on a
+throwaway Postgres by `scripts/ci/test-vtid-04868-plan-sparring.sh`.
+
+```sql
+CREATE TABLE public.plan_sparring_sessions (
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id            uuid NOT NULL,          -- producer correlation id (incident_id for autonomous producers)
+  plan_hash          text NOT NULL,          -- sha256 hex of the canonical plan text
+  final_plan_hash    text,                   -- sha256 hex of the approved final plan
+  producer           text NOT NULL,          -- claude-code | operator-chat | task-intake | self-healing | ...
+  change_class       text NOT NULL,          -- light | standard | expedited
+  trust_tier         text NOT NULL,          -- gateway | attested
+  base_ref           text,                   -- commit SHA the partner read code at
+  rounds             jsonb NOT NULL DEFAULT '[]',  -- append-only (plan_sparring_append_round)
+  verdict            text NOT NULL DEFAULT 'in_progress',  -- in_progress | converged | escalated | pending_human_approval
+  escalation_reasons text[] DEFAULT '{}',
+  model_log          jsonb DEFAULT '[]',     -- [{round, provider, model, latency_ms, input_tokens, output_tokens}]
+  human_approved_by  uuid,                   -- verified exafy_admin (gateway approve endpoint only)
+  human_approved_at  timestamptz,
+  approval_evidence  jsonb,
+  vtid               text UNIQUE,            -- bound by the vtid_ledger gate
+  created_at, updated_at timestamptz
+);
+CREATE TABLE public.plan_sparring_config (     -- single row, id = 1
+  id int PRIMARY KEY CHECK (id = 1), mode text NOT NULL DEFAULT 'log',  -- off | log | enforce
+  updated_at timestamptz
+);
+CREATE TABLE public.plan_sparring_shadow_log (
+  id bigint identity PRIMARY KEY, vtid text, sparring_id uuid,
+  outcome text NOT NULL,                       -- missing | invalid | ok | exempt
+  detail jsonb,                                -- {mode, reason, actor, session_user, exempt_reason, source, raw_sparring_id, plan_hash}
+  created_at timestamptz
+);
+```
+
+- **RLS on all three; no anon/authenticated grants or policies.** service_role:
+  SELECT everything; INSERT/UPDATE on sessions for every column **except
+  `rounds`** (and identity columns on UPDATE); no DELETE; config and shadow
+  log are read-only. The gateway's session INSERT therefore never names
+  `rounds` (the column default `[]` applies). Rounds are written only by
+  `plan_sparring_append_round(p_session uuid, p_round jsonb, p_expected_round int)`
+  (hardening; replaces the 2-arg version): under `SELECT … FOR UPDATE` it
+  raises SQLSTATE `PS409` (`round_conflict`) unless the session verdict is
+  `in_progress` and `p_expected_round` = current round count + 1, so two
+  racing appends of the same round cannot both land; it still refuses
+  (`SESSION_FROZEN`) once the session is approved or bound to a VTID.
+  service_role only.
+- `allocate_global_vtid(p_source text DEFAULT 'api', p_layer text DEFAULT 'DEV',
+  p_module text DEFAULT 'TASK', p_sparring_id uuid DEFAULT NULL,
+  p_plan_hash text DEFAULT NULL)` — 20261004110000 replaced the 3-arg version
+  with a 4-arg one; the hardening migration replaces that with this 5-arg one
+  (each drop + create in one transaction). Non-null `p_sparring_id` /
+  `p_plan_hash` land in `vtid_ledger.metadata.sparring_id` / `.plan_hash`.
+  Body: the bounded collision-skipping loop of `20260628120000` (up to 1000
+  `nextval()` draws until `VTID-XXXXX` is free, else `unique_violation`),
+  shell-row shape and `allocator_version 'VTID-0542'` unchanged,
+  `search_path = public, pg_temp`. EXECUTE: service_role only. Existing
+  3-named-arg callers are unaffected.
+- `submit_plan_sparring_record(p_plan_id, p_plan_hash, p_producer, p_change_class,
+  p_rounds, p_base_ref, p_final_plan_hash, p_model_log, p_escalation_reasons)`
+  — attested tier; always lands as `trust_tier='attested'`,
+  `verdict='pending_human_approval'`, no approval; idempotent on
+  (plan_id, plan_hash). service_role only.
+- **Trigger `trg_plan_sparring_check` BEFORE INSERT ON `vtid_ledger`** →
+  `plan_sparring_check()` (SECURITY INVOKER, so `current_user` is the inserting
+  role) → `_plan_sparring_gate_eval()` (SECURITY DEFINER). An existing VTID
+  (upsert) passes unlogged; mode `off` passes unlogged. A record is valid when
+  verdict is converged/escalated, `human_approved_by` and `final_plan_hash` are
+  set, `metadata.plan_hash` equals `final_plan_hash` (hardening; otherwise
+  `invalid` with reason `plan_hash_missing` / `plan_hash_mismatch`) and it is
+  unbound or bound to this VTID — it is locked `FOR UPDATE` and bound (`ok`). `metadata.sparring_exempt_reason` counts only for
+  `vitana_governance_owner` (`exempt`, break-glass). Otherwise `missing` /
+  `invalid`. **Log mode never raises** (an internal error becomes a WARNING),
+  and a sparring_id that did not verify is moved to
+  `metadata.sparring_id_unverified`. Enforce mode raises
+  (`insufficient_privilege`) unless `ok`/`exempt`, and fails closed on an
+  internal error. Enforce-mode rejections roll back with the insert, so they
+  are not in the shadow log — the caller gets the error.
+- Partial unique index `vtid_ledger_sparring_id_unique` on
+  `vtid_ledger((metadata->>'sparring_id')) WHERE NOT NULL`.
+- Role `vitana_governance_owner` NOLOGIN, granted to no one; may INSERT into
+  `vtid_ledger` (policy `vtid_ledger_governance_owner_insert`), use
+  `global_vtid_seq`, and read/update the config row.
+- **Accepted residual on Supabase:** `postgres` can disable the trigger, change
+  the config or grant itself the role — detected (hourly reconciler →
+  `vtid.plan_sparring.tamper_detected`), not prevented. Mode changes only by a
+  reviewed migration.
+
+---
+
 ## ⚠️ DEPRECATED / DO NOT USE
+
+### nav_catalog / nav_catalog_audit / nav_catalog_i18n — ARCHIVED to `legacy_archive` (VTID-04880)
+
+The legacy voice navigator's screen catalog. Nothing reads or writes these
+any more: the voice navigator reads the screen registry (vitana-v1
+`src/navigation/registry/`, published as `/nav-registry.json`) since
+VTID-04846, and the admin Catalog/Coverage/History pages were removed in
+VTID-04853. Migration `20261005090000_vtid_04880_archive_nav_catalog.sql`
+moves all three tables and their trigger function
+`nav_catalog_touch_updated_at()` into the `legacy_archive` schema. No rows are
+deleted; PostgREST no longer exposes them. The `nav_catalog_i18n.lang` FK to
+`supported_locales` is dropped so archived rows never block removing a locale.
+The rollback is in the migration header. Do not build anything new on them.
 
 ### VtidLedger (PascalCase)
 **Status:** ❌ DO NOT USE - Empty table, deprecated  
@@ -1165,6 +1458,15 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-10-10 | VTID-05029, **committed; applied via `RUN-MIGRATION.yml` before merge** (migration `20261010130000_vtid_05029_email_fallback.sql`, additive, idempotent): nullable `user_notifications.email_fallback_sent_at timestamptz` (row included in a fallback digest email Resend accepted; NULL = not emailed) and `user_notification_preferences.email_fallback_enabled boolean NOT NULL DEFAULT true` (member opt-out; `push_enabled=false` also suppresses). Partial indexes `idx_user_notifications_email_fallback_pending (created_at) WHERE email_fallback_sent_at IS NULL AND read_at IS NULL AND push_outcome IN ('no_device','fcm_error')` and `idx_user_notifications_email_fallback_sent (user_id, email_fallback_sent_at DESC) WHERE email_fallback_sent_at IS NOT NULL`. Written/read by `services/email/notification-email-fallback.ts` (inert until `EMAIL_FALLBACK_ENABLED=true` + Resend configured; never on staging). | Claude Code | VTID-05029 |
+| 2026-10-10 | VTID-05027, **committed; applied via `RUN-MIGRATION.yml` before merge** (migration `20261010120000_vtid_05027_push_reach_active.sql`, additive, read-only function): `push_reach_active(p_days int default 7)` → `(active, eligible, reached bigint)`. `active` = members who read a notification, opened the app (`user_device_session_log`) or sent a chat message in the window; `eligible` = active members with a recorded, non-`suppressed_*` `push_outcome`; `reached` = eligible members with a `delivered_*` outcome. Excludes `notification_test_actors` and `service_bot_accounts`. SECURITY DEFINER, `search_path=public`, EXECUTE for `service_role` only. Read by `GET /api/v1/ops/health/push-dispatch` (`active_reach_7d`; `degraded` / `active_member_reach_low` when ≥10 eligible and < 90 % reached). | Claude Code | VTID-05027 |
+| 2026-10-07 | VTID-04962, **committed; applied via `RUN-MIGRATION.yml` before merge** (migration `20261007190000_vtid_04962_user_notifications_push_outcome.sql`, additive, idempotent): nullable `user_notifications.push_outcome text` with CHECK `user_notifications_push_outcome_check` (`delivered_fcm`, `delivered_appilix`, `delivered_both`, `no_device`, `fcm_error`, `suppressed_type_disabled`, `suppressed_push_disabled`, `suppressed_dnd`, `dispatch_exception`; NULL = not recorded). Written best effort by `notifyUser()` and `POST /push-dispatch` after the push attempt; `push_sent_at` stays the handled marker and is still written first. Read by `GET /api/v1/ops/health/push-dispatch` (6h outcome counts, `degraded` / `fcm_send_errors` when FCM errors exceed 50% of ≥20 FCM attempts). | Claude Code | VTID-04962 |
+| 2026-10-05 | **VTID-04892 — Vitana Onboarding Assistant, slice 1 (shadow).** New tables (RLS on, service role writes only): `onboarding_coach_state` (one row per cohort member: stage d0…d61_90/done, pilot_stage_override, next_action_key, last_touch_at, snoozed_until, ignored_streak, opted_out_at; members read their own row), `onboarding_coach_decisions` (what the coach decided or would do, unique per member + local day + mode), `onboarding_touch_ledger` (one onboarding touch per member per local day, status pending/sent/failed, one retry). New functions (service role only): `claim_onboarding_touch(uuid, uuid, date, text, text)`, `finish_onboarding_touch(bigint, text)`. `user_proactive_touches.surface` CHECK widened to the presence pacer's 11 surfaces + `onboarding_coach` (NOT VALID then VALIDATE) — the four newer surfaces were previously rejected and never counted. Migration `20261005130000_vtid_04892_onboarding_coach.sql`. | Claude | VTID-04892 |
+| 2026-10-06 | VTID-04909, **applied 2026-10-06 10:40 UTC** via `RUN-MIGRATION.yml` run 37451365925 (VTID-04911; pre-check 0 versions / 0 acceptances; owner-approved; migration `20261006120000_vtid_04909_partner_terms_german_binding.sql`): partner terms become **German-binding**. `partner_terms_versions.binding_locale` default and CHECK `= 'de'`; `partner_terms_versions_binding_text` now requires `content.de` title + body; `publish_partner_terms_version()` hashes `sha256(UTF-8(content.de.title \|\| E'\\n' \|\| content.de.body_md))` (same construction, German substituted) and refuses without an English title + body (`PARTNER_TERMS_ENGLISH_MISSING`); new CHECK `partner_terms_acceptances_shown_locale_supported` (`de, en, es, sr, fr, pt-BR, ru, pl, ar, zh-CN, tr`); comments updated. The migration **refuses to run unless both tables hold 0 rows** (verified read-only 0/0 on 2026-10-06) and changes nothing when it refuses. Tested on a throwaway Postgres incl. the refusal (`scripts/ci/sql-tests/run-partner-terms-test.sh`, CI `SQL-PARTNER-TERMS`). Until applied, gateway draft writes (`binding_locale 'de'`) are refused by the old CHECK — no terms can be created meanwhile. | Claude Code | VTID-04909 |
+| 2026-10-04 | VTID-04868 hardening, **committed, NOT applied** (migration `20261004120000_vtid_04868_plan_sparring_hardening.sql`, review findings on PR #3899): `allocate_global_vtid` 4-arg dropped → 5-arg `(p_source, p_layer, p_module, p_sparring_id uuid DEFAULT NULL, p_plan_hash text DEFAULT NULL)` with the bounded 1000-step collision-skipping loop restored (service_role only); `_plan_sparring_gate_eval` binds a sparring id only when `metadata.plan_hash` = the session's `final_plan_hash` (`plan_hash_missing` / `plan_hash_mismatch` → `invalid`; log mode still never raises); `plan_sparring_append_round(uuid, jsonb)` dropped → `(uuid, jsonb, int p_expected_round)` raising SQLSTATE `PS409` on a stale/duplicate append or a non-`in_progress` session (service_role only). No table or config change. Rollback `docs/validation/VTID-04868/rollback.sql` reverses both VTID-04868 migrations. Tested twice + rollback on a throwaway Postgres (`scripts/ci/test-vtid-04868-plan-sparring.sh`). | Claude Code | VTID-04868 |
+| 2026-10-04 | VTID-04868, **applied live 2026-10-04 08:26 UTC (RUN-MIGRATION run 37188907901)** (migration `20261004110000_vtid_04868_plan_sparring_gate.sql`, Plan Sparring Gate P1, LOG MODE): tables `plan_sparring_sessions`, `plan_sparring_config` (row mode='log'), `plan_sparring_shadow_log` (RLS on, no anon/authenticated access); role `vitana_governance_owner` (NOLOGIN); `allocate_global_vtid` 3-arg dropped → 4-arg with `p_sparring_id uuid DEFAULT NULL` (service_role only); `submit_plan_sparring_record()`, `plan_sparring_append_round()`; BEFORE INSERT trigger `trg_plan_sparring_check` on `vtid_ledger` (log mode never raises); partial unique index `vtid_ledger_sparring_id_unique`. Rollback `docs/validation/VTID-04868/rollback.sql`. Tested twice + rollback on a throwaway Postgres (`scripts/ci/test-vtid-04868-plan-sparring.sh`). See the section above. | Claude Code | VTID-04868 |
+| 2026-10-01 | VTID-04798, **applied live** 2026-10-01 with the owner's go (migration `20261001160000_vtid_04798_memory_sensitivity.sql`, RUN-MIGRATION run 36895020174; verified: 457 fact rows and 65 items special_category, both triggers and constraints present): `memory_facts.sensitivity` and `memory_items.sensitivity` (text NOT NULL DEFAULT 'standard', CHECK in ('standard','special_category')) mark GDPR Art. 9 data. One rule decides it: immutable function `memory_sensitivity_of(text)` on the fact key / category key, applied by BEFORE INSERT/UPDATE triggers `trg_memory_facts_sensitivity` / `trg_memory_items_sensitivity` (they only ever raise to special_category) and by a backfill (measured 2026-10-01: 95 of 392 current fact keys, 457 fact rows, 65 items). `memory_items.sensitivity_flag` (VTID-01116, never written) is left as is. Tested on a throwaway Postgres: `scripts/ci/sql-tests/run-memory-sensitivity-test.sh` (CI `SQL-MEMORY-SENSITIVITY.yml`). | Claude Code | VTID-04798 |
+| 2026-10-01 | VTID-04776, **committed, NOT applied** (migration `20261001120000_vtid_04776_voice_session_facts.sql`, additive): table `voice_session_facts` (one row per ORB voice session, PK `session_id`; RLS on, service_role only), view `voice_session_facts_hourly` (security_invoker), trigger `trg_voice_session_facts_touch`, function `voice_session_facts_backfill(p_since)` (service_role, max 30 days back, not run by the migration). Read by `/api/v1/voice/supervisor/*` (VTID-04776/04778/04780). The gateway writes it fire-and-forget and logs loudly while the table is missing, so apply before relying on the Supervisor; then run the backfill for the history you want. | Claude Code | VTID-04776 |
 | 2026-09-28 | VTID-04674, **applied live** (`vtid_04674_notification_type_controls`, starting list approved by the owner in session): the admin switch per notification type. It adds `notification_type_controls` (+ audit, + daily block counts), `notification_categories.member_can_disable`, the decision functions, the BEFORE INSERT guard on `user_notifications`, two read models, index `idx_user_notifications_tenant_time`, and member categories `posts_reactions` and `tips_updates`. Starting state: 13 types ON for every tenant (the ones delivered in the last 30 days plus `reminder_due`); everything else OFF and registered as OFF on first send. Idempotent; tested twice against a local Postgres (`docs/validation/VTID-04674/`). Verified live read-only: 26 rows ON (13 types × 2 tenants), trigger enabled, categories extended, 0 blocks at apply time. | Claude Code | VTID-04674 |
 | 2026-09-26 | VTID-04668, **not yet applied** (migration `20260926160000_vtid_04668_recommendation_priority.sql`, additive): nullable `autopilot_recommendations.priority_score numeric` and `autopilot_recommendations.quality jsonb`, plus partial index `idx_autopilot_recommendations_dev_priority` on `(status, priority_score DESC) WHERE user_id IS NULL`. Written by the gateway for developer rows only (`user_id IS NULL`, not `community` / `operator_onramp`): `priority_score = value × confidence × success_odds / max(expected_cost_usd, 0.05)`; `quality = {version, value, confidence, success_odds, expected_cost_usd, expected_input_tokens, executable, basis, scored_at}` (VTID-04669 adds `review`, `review_attempts`, `review_last_attempt_at`). The same write maps `impact_score` (from value) and `effort_score` (from expected cost) so older readers keep working. Community rows keep NULL. Apply before the gateway code is deployed. | Claude Code | VTID-04668 |
 | 2026-09-26 | VTID-04624, **applied live** (`vtid_04624_operator_readonly_query`): function `operator_readonly_query(q text) RETURNS jsonb` (SECURITY INVOKER, EXECUTE granted to `service_role` only — revoked from public/anon/authenticated). Backs the Operator Console's `dev_run_sql_readonly` on the live database (owner decision 2026-09-26; the Aurora copy the tool was designed for has had no replication since the 2026-09-21 full load). Sets `transaction_read_only=on` and `lock_timeout=2s` before executing the statement as a subquery of a jsonb aggregate; the PostgREST login role caps each call at 8 s. Verified live in a rolled-back transaction: a read returns rows; an INSERT through a function, switching back to read-write and a stacked statement are all refused; `auth.users` is not readable by service_role. Migration `20260926110000_vtid_04624_operator_readonly_query.sql`. | Claude Code | VTID-04624 |
@@ -1179,6 +1481,7 @@ CREATE TABLE my_new_table (
 | 2026-09-23 | VTID-04431, **applied live**: function `support_resolution_search(p_query_embedding vector, p_tenant_id uuid, p_top_k int default 3, p_exclude_ticket_id text, p_min_similarity float8 default 0.35)` — read-only, `service_role` only; searches `memory_items` `support_ticket` rows with `active_role='support'` in ONE tenant and returns `(ticket_id, similarity, occurred_at)` only, never episode text. Used by the Sage/Devon/Mira drafters. | Claude Code | VTID-04431 |
 | 2026-09-23 | VTID-04441, **applied live**: table `memory_fact_forgotten (id, tenant_id, user_id, fact_key, value_hash, forgotten_at)`, unique on (tenant_id, user_id, fact_key, value_hash), RLS on, `service_role` only. One row per value a user forgot in the Memory Garden; `value_hash` is sha256 of the normalised value, the value is not kept. `rememberFact()` refuses an inferred write of a forgotten value; an explicit user statement clears the marker. | Claude Code | VTID-04441 |
 | 2026-09-23 | VTID-04407, **applied live**: `dev_agent_memory.author_user_id` + category `handoff` + `write_dev_memory(..., p_author_user_id)` (single overload, service_role only) + `recall_dev_memory()` excludes handoffs. | Claude Code | VTID-04407 |
+| 2026-10-05 | Partner terms lifecycle (VTID-04895): new `partner_terms_versions` (English binding, one published, immutable once published, re-acceptance baseline), `partner_terms_acceptances` gains `terms_version_id`, `content_sha256`, `shown_locale` and becomes append-only with a version/hash check, functions `publish_partner_terms_version` and `auth_session_is_delegated` (service role only). Migration `20261005130000_vtid_04895_partner_terms_lifecycle.sql`, tested on a throwaway Postgres (`scripts/ci/sql-tests/run-partner-terms-test.sh`, CI `SQL-PARTNER-TERMS`). **Applied to the live project 2026-10-05** on the platform owner's go-ahead, before merge (Migration Drift Check), via `RUN-MIGRATION.yml` (Management API) — the Supabase MCP `apply_migration` timed out twice with nothing applied. Post-checked read-only: table with RLS, 3 new acceptance columns, 3 triggers, both RPCs; browser roles cannot insert or publish, service_role can publish; 0 versions, 0 acceptances. | Claude | VTID-04895 |
 | 2026-09-24 | Onboarding engine storage (VTID-04478, spec §6.1/§6.2): `partner_onboarding_steps` (per-org status of the steps a dedicated endpoint decides) and `partner_terms_acceptances` (audit of a terms acceptance: version, user, time, IP, user agent). RLS on, member SELECT via `is_partner_org_member()`, writes revoked from anon/authenticated. Migration `20260924150000_vtid_04478_partner_onboarding_engine.sql`. **Applied to the live project 2026-09-24** on the platform owner's go-ahead, before merge (Migration Drift Check). Post-checked: both tables with RLS and the member SELECT policy. Browser roles keep only SELECT/REFERENCES/TRIGGER; INSERT/UPDATE/DELETE/TRUNCATE are revoked. TRUNCATE was added to the revoke during the apply, because Supabase's default grants include it and RLS does not cover it. | Claude | VTID-04478 |
 | 2026-09-24 | Partner account model (VTID-04471, spec §5.1/§5.2): `partner_organizations` gains `partner_type`, `lifecycle_state`, `legal_name`, `country`, `vat_id`, `website`, `trust_level`, the helpers `partner_org_status_for_lifecycle()` / `partner_org_vertical_for_type()` and `trg_partner_organizations_sync`; `merchants.partner_organization_id` and `partner_tenant.partner_organization_id` FKs with an idempotent backfill. Migrations `20260924130000_vtid_04471_partner_account_model.sql` + Prisma `20260924_vcaop_partner_org_link_0007`. **Applied to the live project 2026-09-24** on the platform owner's go-ahead, before the gateway change merged (`/register` and `/mine` select the new columns). Post-checked read-only: all 9 columns, 4 CHECKs, both FKs, the 3 functions and the trigger present, and the mappings correct. The backfill changed no rows (0 orgs, 0 owned merchants, 0 `partner_tenant` rows before and after). | Claude | VTID-04471 |
 | 2026-09-23 | VTID-04391, **applied live**: `memory_categories` row `daily_learning` (mapped to `uncategorized`) and partial unique index `uq_memory_items_daily_learning` on `memory_items (user_id, (content_json->>'date')) WHERE category_key = 'daily_learning'` — one daily learning per user per local date, written by AP-0914. | Claude Code | VTID-04391 |
@@ -1194,6 +1497,7 @@ CREATE TABLE my_new_table (
 | 2026-09-23 | Added `conversation_metrics_hourly` plus `conversation_metrics_rollup_hour()` / `conversation_metrics_backfill()` and the pg_cron job `conversation-metrics-hourly`. Migration `20260923140000_vtid_04371_conversation_metrics_hourly.sql` **applied to the live project 2026-09-23**; 168 h backfilled in 1.3 s; the heaviest part (24 h opener-repeat join) measured at 3.4 ms on index range scans. | Claude | VTID-04371 |
 | 2026-09-23 | Added `agent_runs` / `agent_run_steps` / `agent_run_signals` and the `agent_runs_unified` projection view; `agents_registry` agent-card columns + seed. Migration `20260923120000_vtid_04319_orchestrator_run_ledger.sql` **applied to the live project 2026-09-23** (additive; view unions 4,442 existing runs; anon/authenticated verified without SELECT). | Claude | VTID-04319 |
 | 2026-09-17 | Added `operator_threads` / `operator_messages` (server-side Operator Console threads + rolling summaries, W4b). Migration `20260917230000_vtid_04022_operator_threads.sql` **applied to the live project 2026-09-17 22:20 UTC** (Supabase MCP `apply_migration`; pre/post-checked, both tables empty, RLS + service_role policy + indexes present) because the Migration Drift Check requires it before merge; gateway code stays fail-open and inert until `OPERATOR_THREADS_ENABLED` is pinned. | Claude | VTID-04022 |
+| 2026-10-08 | Added `operator_threads.engine` (`TEXT NOT NULL DEFAULT 'llm'`, CHECK `llm`/`kiro`): which engine answers an Operator thread, set at creation, never updated. Migration `20261008120000_vtid_04975_operator_thread_engine.sql` (additive; gateway code reads/writes it fail-open, so safe in any order). Not applied to the live project by this change. | Claude | VTID-04975 |
 | 2026-09-17 | Commerce Partner Onboarding landing: marked the `partner_organizations`/roster/`patient_profiles` section APPLIED (Phase A, VTID-03957); documented `partner_organizations.commerce_vertical` (VTID-03974) and the VTID-03995 `get_my_permitted_roles()`/`set_role_preference()` changes — both migrations applied to the live project 2026-09-17 on the platform owner's explicit instruction, post-checked (column + CHECK + comment present; both function bodies replaced, `validate_role_assignment()` no longer called from `set_role_preference()`). | Claude | VTID-03996 |
 | 2026-09-17 | Added `service_bot_accounts` allowlist + guarded the VTID-03089 welcome-chat trigger and its `/auth/login` TS mirror against it. Two service/automation accounts (claude-code-agent, operator-autopilot) provisioned directly into `user_tenants` on 2026-09-16 fanned an identical intro DM out to 445 real community members — confirmed via read-only production query, nothing recalled. Migration `20260917084341_vtid_03990_service_bot_accounts_skip_welcome_chat.sql`. | Claude | VTID-03990 |
 | 2026-09-13 | `dev_autopilot_outcomes.source_type` CHECK widened from the original `('dev_autopilot','dev_autopilot_impact')` pair to the full executor-lane allowlist (`missing-test-scanner`, `test-contract-failure-scanner`, `dev_autopilot`, `dev_autopilot_impact`, `operator_onramp`) — migration `20260913100000_vtid_03844_outcomes_source_type_allowlist.sql`. The constraint had never followed VTID-02984's single allowlist or VTID-03820's `operator_onramp`, and `recordOutcome()` carried its own copy of the stale pair, so operator on-ramp executions produced no outcome rows at all (observed on staging 2026-09-13). A gateway test reads the migration and fails if its list drifts from `EXECUTABLE_RECOMMENDATION_SOURCE_TYPES`. Migration ships as a file; apply via `RUN-MIGRATION.yml`. | Claude | VTID-03844 |
@@ -1217,6 +1521,7 @@ CREATE TABLE my_new_table (
 | 2026-09-23 | New tables `calendar_google_sync`, `calendar_google_links`, `calendar_external_busy` for Google Calendar two-way sync (switched off). No tokens stored — they stay in `social_connections`. RLS on, no policies, no browser grants. | Claude | VTID-04372 |
 | 2026-09-24 | New tables `calendar_push_targets`, `calendar_push_links`: Outlook and iCloud calendar push into a member-owned "Vitanaland" calendar. RLS on, no policies, no browser grants. | Claude | VTID-04436 |
 | 2026-09-24 | `connected_app_settings.app_id` CHECK gains `outlook-contacts` (Outlook contacts import; rows land in `contacts` with `source='microsoft'`). | Claude | VTID-04449 |
+| 2026-10-06 | Triggers on `global_community_events` → `calendar_events`: the host gets an entry on create, edits to time/place/title move every live entry for the event, delete cancels them; future hosts backfilled. No table/column change. | Claude | VTID-04915 |
 | 2026-05-12 | Added `cover_url`, `cover_generated_at`, `cover_source` to `user_intents` for the Find-a-Match cover-photo flow (user upload OR server-side OpenAI Images generation OR curated fallback). Idx on `(requester_user_id, cover_generated_at)` for per-user rate-limit. | Claude | BOOTSTRAP-INTENT-COVER-GEN |
 | 2026-05-20 | Added `decision_policy` + `policy_render_block` (Phase B.1 of decision-contract refactor). Versioned, tenant-aware, time-bounded externalized policy values + localized render fragments. Schema only — no consumer reads yet (lands in Phase B.4). | Claude | VTID-03113 |
 | 2026-05-20 | Seeded Phase B vertical-proof rows: 5 `decision_policy` rows (session-recency bucket thresholds) + 64 `policy_render_block` rows (8 greeting buckets × 8 languages). English content authoritative; non-`en` rows carry `notes='seeded from en; awaiting translation'`. Still no consumer reads yet — that's Phase B.4. | Claude | VTID-03114 |
@@ -1242,6 +1547,15 @@ CREATE TABLE my_new_table (
 | 2026-09-29 | `confirm_recommendation_commission` also locks the `product_orders` row (`FOR UPDATE`) when it re-checks that the order is still a sale, so a decline that commits first prevents payment. It also re-checks the payee against `service_bot_accounts` and `notification_test_actors`: an account registered as one during the hold is closed `skipped_ineligible` (`reversal_reason='excluded_account'`), never paid. CREATE OR REPLACE only. Migration `20260929120400_vtid_04741_confirm_commission_order_lock_exclusions.sql`. | Claude | VTID-04741 |
 | 2026-09-29 | `reverse_recommendation_commission` also locks the `product_orders` row and reverses or reports only while the order is still `refunded`/`cancelled`/`chargeback`; otherwise it returns `order_not_reversing` and changes nothing. The caller's read can be stale if a later sync has moved the order back to `converted`. CREATE OR REPLACE only. Migration `20260929120500_vtid_04741_reverse_commission_order_recheck.sql`. | Claude | VTID-04741 |
 | 2026-09-29 | At payment, `confirm_recommendation_commission` refreshes `payout_amount_minor`, `currency` and `vitana_commission_cents` from the order's current `commission_cents` and `currency`, at the row's recorded `rate_applied` (never today's settings). A network can correct an order after the pending row was written. It returns `order_no_commission` when the order no longer carries a commission. CREATE OR REPLACE only. Migration `20260929120600_vtid_04741_confirm_commission_refresh_terms.sql`. | Claude | VTID-04741 |
+| 2026-10-01 | **VTID-04809 — `user_wallets.CREDITS` is the canonical VTNA ledger.** New `user_wallets.earned_balance` (CHECK `0 <= earned_balance <= balance`, CREDITS only); new `wallet_transactions.idempotency_key` (unique per member) and `credit_source` (`earned`/`purchased`). `credit_wallet()` re-created on this ledger with the signature its callers already used (it never existed live, so diary-streak, milestone, AP-0708, autopilot-completion and Stripe credit-pack credits were silently dropped). Closed two self-credit holes: dropped RLS policy `Users can update their own wallets` and revoked INSERT/UPDATE/DELETE/TRUNCATE on `user_wallets`/`wallet_transactions` from `anon`/`authenticated`; `update_user_balance` refuses `'add'` and is no longer executable by `anon`. EUR peg rows in `exchange_rates`. Migration `20261001180000_vtid_04809_vtna_reward_ledger.sql`. | Claude | VTID-04809 |
+| 2026-10-03 | **VTID-04864 — VTNA reward rules, no double payouts.** `complete_autopilot_recommendation()` re-created with its 10-VTNA reward for `onboarding_*` suggestions removed (the same first steps are paid once by the milestone service from the VTNA rule table, `services/gateway/src/services/rewards/vtna-reward-rules.ts`); `reward` in its response is now always 0. Migration `20261003130000_vtid_04864_autopilot_completion_no_double_reward.sql`. Also VTID-04860: `knowledge_docs` text rewritten VTN → VTNA (`20261003120000_vtid_04860_knowledge_docs_vtna_name.sql`). No table changes. | Claude | VTID-04864 / VTID-04860 |
+| 2026-10-03 | **VTID-04859 — Founding 1000.** New table `founding_members` (seat 1..1000 in signup order, grant source, granted_until, value_cents 11988, celebrated_at; RLS own-row read). New functions `claim_founding_seat(uuid, uuid)` and `mark_founding_celebrated(uuid)` (service role). New trigger `founding_seat_on_primary_membership` on `user_tenants`. Backfill seats every existing primary member in signup order and grants a Premium year where no Stripe subscription or launch grant exists. `redemption_codes.FOUNDING` (founding_500) deactivated. Migration `20261003100000_vtid_04859_founding_1000.sql`. | Claude | VTID-04859 |
+| 2026-10-05 | **VTID-04878 — VTNA earning pays.** New functions (service role only, no table changes): `claim_capped_reward(uuid, uuid, text, text, integer, integer, text, timestamptz)` pays one occurrence of a capped VTNA rule (`autopilot_action_done` 2/day, `live_room_15min` 3/week, `index_new_best` 1/week, UTC calendar windows) under a per-member+rule advisory lock, counting `wallet_transactions.metadata->>'source'` and crediting via `credit_wallet()` with key `<rule>:<ref>`; refuses test/service accounts. Read-only sweep candidates: `reward_sweep_is_excluded(uuid)`, `reward_sweep_members(uuid, integer)`, `reward_sweep_live_room_candidates(timestamptz)` (15 full minutes by timestamps — `live_room_attendance.duration_minutes` rounds), `reward_sweep_index_candidates(date)`. Migration `20261005100000_vtid_04878_claim_capped_reward.sql`. | Claude | VTID-04878 |
+| 2026-10-07 | Trigger `trg_live_stream_subscription_calendar` (live_stream_subscribers → calendar_events, `source_type='live_room'`) so Erinnern on a scheduled Live Room reaches the member's calendar; unsubscribe cancels it; one-time backfill for pending, future rooms. No table/column change. Migration `20261007200000_vtid_04965_live_room_reminder_calendar.sql`. | Claude | VTID-04965 |
+| 2026-10-08 | Triggers `trg_live_stream_host_calendar`, `trg_live_stream_change_calendar`, `trg_live_stream_delete_calendar` (community_live_streams → calendar_events, `source_type='live_room'`): a room's host gets an entry, edits move every live entry, cancel/no-date/delete cancels them (status is a whitelist: only `cancelled`). `trg_live_stream_subscription_calendar` replaced: the host's own entry survives their un-notify, re-notify revives at the current time. One-time host backfill. No table/column change. Migration `20261008130000_vtid_04976_live_room_follows_host.sql`. | Claude | VTID-04976 |
+| 2026-10-08 | `calendar_events.valid_source_type` CHECK now also allows `'reminder'`. Triggers `trg_reminder_insert_calendar`, `trg_reminder_update_calendar`, `trg_reminder_delete_calendar` (reminders → calendar_events): a one-shot member reminder (`created_via` voice/ui, `calendar_event_id` NULL, `recurrence_rule` NULL — enforced in each trigger's WHEN) gets a calendar row (`source_type='reminder'`, `reminder_offsets='{}'`); snooze moves it, completed marks `completion_status`, cancelled/failed/deleted cancels it. One-time backfill of pending future reminders. Migration `20261008150000_vtid_04978_reminders_in_calendar.sql`. | Claude | VTID-04978 |
+| 2026-10-09 | `calendar_events.valid_source_type` CHECK now also allows `'subscription'`. Triggers `trg_subscription_insert_calendar`, `trg_subscription_update_calendar`, `trg_subscription_delete_calendar` (user_subscriptions → calendar_events): one entry at `current_period_end` (metadata.kind `renews` for a Stripe subscription that will renew, `ends` for grants and cancel-at-period-end) and one `trial_ends` entry while trialing; moved/cancelled with status/date changes; `reminder_offsets='{}'` (no reminders). The trigger function catches every error so it can never block a billing write. One-time backfill. Migration `20261009090000_vtid_04994_subscription_dates_in_calendar.sql`. | Claude | VTID-04994 |
+| 2026-10-10 | `calendar_events.valid_source_type` CHECK now also allows `'test_result'`. Triggers `trg_test_result_insert_calendar`, `trg_test_result_update_calendar`, `trg_test_result_delete_calendar` (partner_health_test_orders → calendar_events): one entry per order at `expected_result_at` (15-minute span, `event_type='health'`, `metadata.kind='test_result_expected'`, title = test name only) while the order is ordered / sample_kit_shipped / sample_received / processing and the date is in the future; moved when the date changes, cancelled on result_ready / delivered / cancelled / failed / quarantined, a cleared or past date, or delete; `reminder_offsets='{}'`. The trigger function catches every error so it can never block an order write. One-time backfill. Migration `20261010100000_vtid_04997_test_results_in_calendar.sql`. | Claude | VTID-04997 |
 
 ---
 
@@ -1321,6 +1635,15 @@ Written by the gateway's `services/calendar-reminders.ts` loop (`CALENDAR_DEFAUL
 - `trg_calendar_dedupe_event_rsvp` — AFTER INSERT on `calendar_events` for rows carrying `metadata.meetup_id` from any other source → deletes the trigger-written `community_rsvp` row for the same user+event, so the web client's own row (which it knows how to delete) is the one that stays.
 - The older `trg_rsvp_calendar_sync` / `trg_rsvp_cancel_calendar_sync` on `event_attendance` remain; that table is unused (0 rows).
 
+### calendar_events ← global_community_events (VTID-04915 triggers)
+
+**Purpose:** the host of a community event gets it in their calendar, and changes to an event reach every attendee's entry. Migration `20261006140000_vtid_04915_community_event_host_and_time_sync.sql`. One function, `fn_community_event_to_calendar()` (SECURITY DEFINER, not executable by `anon`/`authenticated`):
+
+- `trg_community_event_host_calendar` — AFTER INSERT → one row for `created_by`, same shape as the VTID-04321 rows plus `metadata.host=true`; skipped without `start_time`/`created_by` or when the host already has a live row. A client-written row arriving later replaces it via `trg_calendar_dedupe_event_rsvp`.
+- `trg_community_event_change_calendar` — AFTER UPDATE OF `start_time, end_time, location, virtual_link, title, description`, only when one actually changed → one set-based UPDATE of every live (not cancelled) row matching `source_ref` or `metadata.meetup_id`. Cancelled rows stay cancelled. Reminders follow through the calendar reminder reconcile.
+- `trg_community_event_delete_calendar` — AFTER DELETE → one set-based cancel of every live row for the event.
+- Tested on a throwaway Postgres: `scripts/ci/sql-tests/vtid-04915-community-event-calendar.test.sql` (CI `SQL-COMMUNITY-EVENT-CALENDAR`).
+
 ### calendar_feed_tokens (VTID-04358)
 
 **Purpose:** the private iCalendar subscription link (`GET /api/v1/calendar/feed/<token>.ics`) that lets Apple/Google/Outlook subscribe to a user's Vitanaland calendar. Migration `20260923170000_vtid_04358_calendar_feed_tokens.sql`, applied live 2026-09-23.
@@ -1336,7 +1659,7 @@ RLS enabled with no policies; `ALL` revoked from `PUBLIC`/`anon`/`authenticated`
 
 ### calendar_google_sync / calendar_google_links / calendar_external_busy (VTID-04372)
 
-**Purpose:** Google Calendar two-way sync. Built, switched off (`CALENDAR_GOOGLE_SYNC_ENABLED` exactly `true` + the Google OAuth client). Push: the member's own community/personal entries go to a "Vitanaland" calendar the app creates in their Google account (scope `calendar.app.created`, so no other Google calendar is ever touched). Pull: only free/busy of their Google primary calendar (scope `calendar.freebusy`), shown as grey busy blocks. OAuth tokens are **not** here — they stay in `social_connections` (provider `google`). Migration `20260923180000_vtid_04372_calendar_google_sync.sql`, applied live 2026-09-23.
+**Purpose:** Google Calendar two-way sync. Switch pinned on in staging and production since VTID-04914 (owner decision 2026-10-06); it runs only once the Google OAuth client is also configured (`CALENDAR_GOOGLE_SYNC_ENABLED` exactly `true` + `GOOGLE_OAUTH_CLIENT_ID`/`SECRET`), otherwise `not_configured`. Push: the member's own community/personal entries go to a "Vitanaland" calendar the app creates in their Google account (scope `calendar.app.created`, so no other Google calendar is ever touched). Pull: only free/busy of their Google primary calendar (scope `calendar.freebusy`), shown as grey busy blocks. OAuth tokens are **not** here — they stay in `social_connections` (provider `google`). Migration `20260923180000_vtid_04372_calendar_google_sync.sql`, applied live 2026-09-23.
 
 `calendar_google_sync` — one row per member:
 
@@ -1977,6 +2300,15 @@ existing 90 sessions to 5-94. The `session` CHECK is now `BETWEEN 1 AND 94`.
 Existing `user_guided_journey_state.current_session` pointers (> 1) were
 shifted +4 so they keep referencing the same content. The current published
 snapshot was rewritten in place by the same migration.
+
+**VTID-04762 (Audiobook Season 0):** now **100 sessions / 260 topics**.
+Migration `20261001120000` prepended the six-episode Prolog (T255-T260,
+`chapter_id='prolog'`, shown as Season 0 of the Audiobook) at sessions 1-6 and
+shifted everything else to 7-100. The `session` CHECK is now
+`BETWEEN 1 AND 100`; `current_session` pointers > 1 shifted +6 (members who
+already started keep their place and the Prolog counts as heard); the current
+published snapshot was rewritten in place; English translation rows (incl.
+`vitana_voice_script`) ship with it and I18N-DB-SEED fills the other locales.
 
 ---
 
@@ -2842,8 +3174,27 @@ Written only by the gateway (service role); members read their own org's rows vi
 | `accepted_by` | UUID NOT NULL | |
 | `accepted_at` | TIMESTAMPTZ | |
 | `ip_address`, `user_agent` | TEXT | audit (spec §6.2) |
+| `terms_version_id` | UUID FK → partner_terms_versions | VTID-04895; `UNIQUE (partner_organization_id, terms_version_id)`; `terms_version` is filled from it on insert |
+| `content_sha256` | TEXT | VTID-04895; must equal the version's hash. VTID-04909 (applied 2026-10-06): the hash of the binding **German** text, whatever language was on screen |
+| `shown_locale` | TEXT | VTID-04895: `en` or `en+<locale>`. VTID-04909 (applied 2026-10-06): the BCP-47 code of the language on screen, CHECK in `de, en, es, sr, fr, pt-BR, ru, pl, ar, zh-CN, tr` |
 
-Written only by `POST /api/v1/partner-onboarding/:orgId/terms/accept`; members read their own org's rows (RLS).
+Written only by `POST /api/v1/partner-onboarding/:orgId/terms/accept`; members read their own org's rows (RLS). VTID-04895: new rows need `terms_version_id`, `content_sha256` and `shown_locale` (CHECK, NOT VALID); an insert must name the **published** version and its exact hash (trigger); the table is append-only (UPDATE/DELETE raise, except the cascade from deleting the organization).
+
+### partner_terms_versions (VTID-04895)
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID PK | |
+| `version` | TEXT UNIQUE | e.g. `2026-10` |
+| `status` | TEXT CHECK | `draft \| published \| superseded`; partial unique index: one `published` |
+| `requires_reacceptance` | BOOLEAN | material (true) vs editorial (false); the first published version is always true |
+| `binding_locale` | TEXT CHECK | `en` under VTID-04895 (owner decision 2026-10-05); **`de` since VTID-04909 was applied 2026-10-06** (owner decision 2026-10-06: German binding) |
+| `content` | JSONB | `{ <locale>: { title, body_md } }`. VTID-04909: keys are exact BCP-47 codes (`de, en, es, sr, fr, pt-BR, ru, pl, ar, zh-CN, tr`); `de` title and body required by the table, `en` required to publish |
+| `content_sha256` | TEXT | set at publish: sha256(binding title + `\n` + body) — English under VTID-04895, **German** since VTID-04909 was applied (2026-10-06); translations are never hashed |
+| `baseline_version_id` | UUID FK → self | set at publish: itself when material, else the previous version's baseline. Acceptance of any version with the current baseline counts |
+| `created_by`, `created_at`, `updated_at`, `published_by`, `published_at` | | |
+
+Immutable once published (trigger, also for the service role): drafts are edited while they stay drafts; draft → published sets only the publish fields; published → superseded changes only `status`; non-draft rows cannot be deleted. RLS: authenticated read published/superseded; no browser writes. Written by the exafy_admin API (`/api/v1/admin/partner-terms`) through `publish_partner_terms_version(p_id, p_actor)` (service role only). `auth_session_is_delegated(p_session_id)` (service role only) answers `direct \| delegated \| unknown` from `auth.sessions.oauth_client_id`; the accept route accepts only `direct`.
 
 ### partner_organization_members
 
@@ -2932,6 +3283,25 @@ owned by a test/service account) the database now maintains it:
 Helpers `supplier_listing_block(uuid)` and `refresh_supplier_listings(uuid)`
 are service_role only. Scenarios: `docs/validation/VTID-04769/`.
 
+
+### Discover categories as data (VTID-04783) — APPLIED 2026-10-01 (VTID-04783)
+
+Migration `20261001140000_vtid_04783_discover_categories.sql`.
+
+- `discover_categories(key PK, label_key, icon, sort_order, is_active)` and
+  `discover_subcategories(category_key FK, key, label_key, sort_order, is_active)`
+  — Discover's product categories. `label_key` is a frontend i18n key. Public
+  read (RLS select-all), service-role write. Adding a category is a row here
+  plus its label in the frontend catalogue.
+- `catalog_verticals.discover_category` (FK) — the Discover category a
+  supplier vertical lands in; NULL = none yet (services, until step C).
+- `trg_products_discover_category` (BEFORE INSERT/UPDATE OF category,
+  subcategory, merchant_id) — supplier products only (merchant linked to an
+  org or owned by a user): category becomes the vertical's Discover category;
+  a subcategory survives only if it belongs to that category. Network
+  products are untouched.
+- `discover_category_counts()` — active products per (category, subcategory)
+  in known categories; backs `GET /api/v1/discover/categories`.
 ---
 
 ## Memory — canonical stores, embeddings, health (VTID-04341 / 04342 / 04343 / 04345, 2026-09-23) — APPLIED to the live project
@@ -2942,6 +3312,9 @@ Plan and rationale: `docs/MEMORY-SYSTEM-PLAN.md`. Canonical user memory is two t
 |---|---|---|
 | `memory_facts` | Current key/value facts with provenance and supersession (`superseded_by IS NULL` = current). Written only through `write_fact()`. | `embedding vector(1024)`, `embedding_model = 'amazon.titan-embed-text-v2:0'` |
 | `memory_items` | Episodes (conversation turns today; session summaries, diary, daily learnings in later phases). | `embedding vector(1024)`, same model |
+
+- **Sensitivity (VTID-04798)** — every row of both tables carries `sensitivity`: `special_category` (health, religion, sexual orientation, ethnic origin, political opinion, genetic/biometric data; for this app also diet, intake, steps and the Vitana Index) or `standard`. The database sets it from the key (`memory_sensitivity_of`), whoever writes. `special_category` rows reach the member's own surfaces and the Health Coach only; anything that can show a row to another member reads `standard` only (the member ranker).
+- **Role scope** — `memory_items.active_role` (NULL = personal, VTID-04367). `memory_facts` is personal memory only: a conversation on a work surface (Command Hub, admin, BackOffice, commerce) writes no facts (VTID-04798).
 
 - **`write_fact(...)`** — if the current fact for (tenant, user, entity, fact_key) has the same value (trimmed, case-insensitive) and the incoming provenance is not stronger, returns the existing id and writes nothing. Strength: `user_*` 3 > `system_observed` 2 > `assistant_inferred` 1 > other 0. A different value, or a stronger source confirming the same value, supersedes as before.
 - **Embeddings** are written by the gateway only (`services/gateway/src/services/memory-embedding.ts`): on write (`memory_items`, fire-and-forget), async after `write_fact` (facts), and by the hourly AP-0910 backfill for anything left NULL. No fallback provider — a vector from another model is never written into these columns.
@@ -3128,7 +3501,41 @@ Functions: `jev_record_spend(tenant, plane, input_tokens, cost_usd)` (atomic
 increment, returns the tenant's month total), `jev_shadow_gate_stats(days)`
 (per-gate calls, decided, agreement rate, cost). Per-tenant control lives in
 `tenant_settings.feature_flags.jev = {enabled, planes[], monthly_budget_usd}`
-(no new column).
+(no new column). Since VTID-04857 the budget is compared with the sum of the
+tenant's `member`/`patient`/`partner_org` rows only (internal and
+system_autopilot are uncapped); member-content calls are counted under
+`member`. Budgets set by `data-fixups/20261003120000_vtid_04857_jev_community_budgets.sql`
+(maxina 50, alkalma 10).
+Since VTID-05012 (`20261009120000_vtid_05012_jev_gate_observability.sql`):
+`jev_outcome` also allows `'skipped'` — a gate that is on but ends without
+asking Jev (no evidence, an error) writes a $0 row with `skip_reason`
+(non-null exactly when `jev_outcome = 'skipped'`, CHECK
+`jev_shadow_decisions_skip_reason_check`); the partial unique index
+`uq_jev_shadow_skip (gate, subject_ref, skip_reason) WHERE jev_outcome =
+'skipped'` keeps one per subject and reason. `lean_agreed` (nullable) scores
+an abstained row's below-threshold answer against the real outcome; `agreed`
+stays decided-only. `jev_shadow_gate_stats(days)` now also returns `skipped`,
+`last_row_at`, `lean_compared`, `lean_agreed`, and `calls` excludes skipped
+rows. Rollback: `docs/validation/VTID-05012/rollback.sql`.
+Community Class A shadow rows (VTID-04879) use `plane = 'member'` and the
+subject types `community_utterance`, `community_marketplace_need`,
+`community_memory_turn` and `community_ticket`; `subject_ref` is a hash of
+session/turn ids, never member text or ids. No column change.
+Community ranking shadow rows (VTID-04883, D1–D3, D5–D8) also use `plane = 'member'`, with the
+subject types `community_calendar_run`, `community_next_action_compose`, `community_find_match`,
+`community_suggestion_batch`, `community_notification`, `community_feed_request` and
+`community_member_search`; `jev_verdict` holds the picked slot (`c1`…`c8`), the existing slot, the
+candidate count and a `truncated` flag — never candidate names or text. No column change.
+
+### Jev member daily quota (VTID-04872)
+Table: `jev_member_daily_counters` (PK `tenant_id, user_id, day`; `calls`,
+`updated_at`) — Class B community Jev calls per member per UTC day. Function
+`jev_member_quota_bump(tenant, user)` increments atomically and returns
+today's count. Service role only; RLS on with no client policies. `user_id`
+is the member's auth uuid, so `erase_user_data()` deletes the rows with the
+account. Limit `JEV_MEMBER_DAILY_QUOTA` (default 300), mode
+`JEV_MEMBER_QUOTA_MODE` (shadow by default; enforce refuses with a 429
+fallback). Rows older than a week carry no meaning.
 
 ## Account erasure — `erasure_registry`, `erase_user_data()` (VTID-04765, 2026-10-01) — NOT YET APPLIED
 
@@ -3152,3 +3559,116 @@ Seeded with the financial ledgers and order/payment records (HGB §257, AO §147
 - Retries foreign-key failures for up to 5 passes and sweeps again after delete triggers.
 - Returns `{deleted, retained, errors, passes}`. The edge function deletes the auth user only when `errors` is empty.
 - SECURITY DEFINER, `service_role` only. Tested on a throwaway Postgres: `scripts/ci/sql-tests/run-erase-user-data-test.sh` (CI: `SQL-ERASE-USER-DATA.yml`).
+
+## Command Hub Overview attention state — `ops_attention_state` (VTID-04876, 2026-10-04) — NOT YET APPLIED
+
+Migration `supabase/migrations/20261004130000_vtid_04876_ops_attention_state.sql`.
+Time-based hysteresis for `GET /api/v1/ops/attention` (Command Hub Overview,
+plan A Phase 1) for attention candidates whose source has no timestamp of its
+own. Written only by the gateway (`services/ops-attention.ts` via
+`services/ops-attention-reads.ts`, service role). RLS on with no client
+policies: service role only. Idempotent (`IF NOT EXISTS`).
+
+| Column | Type | Notes |
+|---|---|---|
+| `env` | text | PK part. `production` or `staging` (VITANA_ENV); CHECK constrained |
+| `fingerprint` | text | PK part. `<env>:<source>:<entity key>` |
+| `first_seen` | timestamptz | kept while observed; reset after 90 s unseen |
+| `last_seen` | timestamptz | latest observation |
+
+Index: `(env, last_seen)`. Staging writes `env='staging'` rows (owner
+decision 2026-10-04). A failed read or write never fails the response: the
+request falls back to "first seen at this request" and the response's
+`attention_state` source reports it. Rows unseen for more than a day carry
+no meaning and may be deleted.
+
+## Command Hub Overview Ack / Snooze — `ops_attention_acks` (VTID-04886, 2026-10-05) — NOT YET APPLIED
+
+Migration `supabase/migrations/20261005100000_vtid_04886_ops_attention_acks.sql`.
+One row per exafy_admin action on a `GET /api/v1/ops/attention` item (Command
+Hub Overview, plan A Phase 3, plan F5), keyed by the item's env-scoped
+fingerprint. Written only by the gateway (`POST /api/v1/ops/attention/ack` and
+`/snooze` → `services/ops-attention.ts` → `services/ops-attention-reads.ts`,
+service role). RLS on with no client policies: service role only. Idempotent
+(`IF NOT EXISTS`). Each write also emits OASIS `ops.attention.acked` /
+`ops.attention.snoozed`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid | PK, `gen_random_uuid()` |
+| `env` | text | `production` or `staging` (VITANA_ENV); CHECK constrained |
+| `fingerprint` | text | `<env>:<source>:<entity key>` (3–300 chars) |
+| `action` | text | `ack` (shown, de-emphasised) or `snooze` (hidden until expiry, counted) |
+| `reason` | text | NOT NULL, 3–500 chars after trimming |
+| `severity` | text | the item's severity when acted on (`P1`/`P2`/`P3`) |
+| `actor_user_id` | uuid | the exafy_admin's user id |
+| `actor_email` | text | the exafy_admin's email |
+| `vtid` | text | optional linked VTID (`VTID-\d{4,5}`) |
+| `created_at` | timestamptz | default `now()` |
+| `expires_at` | timestamptz | NOT NULL; CHECK `created_at < expires_at <= created_at + 24 h` |
+
+CHECK `ops_attention_acks_p1_never_snoozed`: no `snooze` row with severity
+`P1` (the route refuses it first with 400 `p1_not_snoozable`; a fingerprint
+snoozed at P2 that later reaches P1 is shown again). Indexes:
+`(env, expires_at DESC)` for the active read, `(env, fingerprint, created_at
+DESC)`. The latest unexpired row per fingerprint wins. Tested on a throwaway
+Postgres: `scripts/ci/sql-tests/run-ops-attention-acks-test.sh`.
+
+---
+
+## @mentions — comment `mentions`, `search_mention_candidates()`, mention notification types (VTID-04926)
+
+Migrations: `exafyltd/vitana-v1` `supabase/migrations/20261006140000_vtid_04926_mentions.sql`
+(tables/functions) and this repo's `supabase/migrations/20261006150000_vtid_04926_mention_notification_types.sql`
+(notification switches). Both idempotent; both tested on a throwaway Postgres 16.
+
+| Object | Change |
+|---|---|
+| `profile_post_comments.mentions`, `media_upload_comments.mentions` | new `jsonb NOT NULL DEFAULT '[]'` — `[{user_id, display_name}]`, same shape as `profile_posts.mentions`. Written by the client only when someone is tagged. |
+| `search_mention_candidates(p_query text, p_limit int)` | SECURITY DEFINER, `search_path=public`, granted to `authenticated` only. The only source the @mention picker uses for posts/comments (called over GET). Escapes `\ % _`, needs `auth.uid()`, excludes the caller, `notification_test_actors`, `service_bot_accounts`, and anyone who shares no tenant with the caller. Limit clamped 1–10. |
+| `_mention_recipient_ok(author, tagged)` | guard used by both dispatchers: not the author, not a test/service account, shares a tenant with the author. No client grant. |
+| `_dispatch_post_mention_notifications()` | redefined: adds the guard above and per-post dedupe; otherwise the VTID-03806 body. |
+| `_dispatch_comment_mention_notifications()` + `trg_notify_{profile_post,media_upload}_comment_mention` | AFTER INSERT, only when `mentions` is a non-empty array; sends `comment_mention` (EN/DE by `_notif_user_locale`), `data.url=/post/<post|media>/<id>`; skips the post owner and the parent comment's author (they already get `post_comment`/`comment_reply`). Fail-safe — a bad tag never blocks the comment. |
+| `notification_type_controls` | `chat_mention` and `comment_mention` ON for every tenant (an auto-registered OFF row is switched on; an admin's deliberate OFF is kept). |
+| `notification_categories.mapped_types` | `chat_mention` → `direct_messages`, `comment_mention` → `posts_reactions`. |
+
+Group chat mentions need no schema change: the gateway stores the sanitized
+list in `chat_messages.metadata.mentions` (`routes/chat-groups.ts`,
+`lib/chat-mentions.ts`).
+
+---
+
+## Event shares in the feed — `profile_posts.attached_ref_*`, `community_event_shared` (VTID-04916, 2026-10-07) — applied on merge
+
+Migration: `exafyltd/vitana-v1` `supabase/migrations/20261007100000_vtid_04916_profile_posts_event_attachment.sql`
+(applied by that repo's `apply-vtid-04916-event-share-posts-migration.yml` on merge). Idempotent; tested on a
+throwaway Postgres 16 (`scripts/sql-tests/run-event-share-posts-test.sh`, CI `SQL-EVENT-SHARE-POSTS`).
+
+| Object | Change |
+|---|---|
+| `profile_posts.attached_ref_type` | new `text`, `community_event` \| `live_room_session` (check `profile_posts_attached_ref_type_check`). The event a post shares. |
+| `profile_posts.attached_ref_id` | new `uuid` — `global_community_events.id` or `live_room_sessions.id`. Both columns set or both null (`profile_posts_attached_ref_pair_check`). |
+| `idx_profile_posts_one_share_per_event` | UNIQUE `(user_id, attached_ref_type, attached_ref_id) WHERE attached_ref_id IS NOT NULL` — one share per member per event. |
+| `profile_posts_guard_attached_ref()` + `trg_profile_posts_guard_attached_ref` | BEFORE INSERT/UPDATE. For `anon`/`authenticated` (read like `auth.role()`: `request.jwt.claim.role`, else `request.jwt.claims->>'role'`): an insert with a reference raises `ATTACH_VIA_GATEWAY`; an update keeps the old reference. Only the gateway (service role) writes it, from `POST /api/v1/calendar/events/:id/share-to-feed`. |
+| `notify_community_on_public_post()` | redefined. A post without a reference: the live body, unchanged. With one: type `community_event_shared` (EN "Join in?" / "<name> is going to \"<title>\""; DE "Kommst du mit?" / "<name> ist dabei: „<title>“"), `data` adds `ref_type`/`ref_id`, and a recipient who already got one for the same event in the last 24 h is skipped. |
+| `idx_user_notifications_event_shared` | `(user_id, (data->>'ref_id'), created_at DESC) WHERE type = 'community_event_shared'` — the 24 h lookup. |
+
+`community_event_shared` is in the gateway's notification catalog (`member`, `posts`); like every new type it
+starts OFF per tenant (VTID-04674) until an admin turns it on.
+
+## Kiro write confirmations — `kiro_mcp_confirmations` (VTID-05006, 2026-10-09) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261009180000_vtid_05006_kiro_mcp_confirmations.sql`. Service role only (RLS on, no policies; `anon`/`authenticated` revoked).
+
+| Column | Meaning |
+|---|---|
+| `id` | uuid PK |
+| `user_id` | the signed-in admin whose Kiro session asked (only they can answer) |
+| `thread_id` | the Operator Kiro thread |
+| `tool` | the Operator write tool Kiro called (e.g. `dev_create_pr`, `dev_push_kiro_branch`) |
+| `vtid` | the VTID the call is for (required for every Kiro write) |
+| `summary` | short human-readable description shown on the Allow/Deny card — never secrets or file contents |
+| `status` | `pending` → `allowed` \| `denied` \| `expired` (only a `pending` row moves; `expired` when the call went away or the 60 s window ran out) |
+| `created_at`, `decided_at` | timestamps |
+
+Index `idx_kiro_mcp_confirmations_pending (user_id, thread_id, created_at DESC) WHERE status = 'pending'`.

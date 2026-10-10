@@ -1,0 +1,4 @@
+$ mkdir -p integrations/chatgpt-plugin/vitanaland; write plugin.json mcp.json .mcp.json .codex-plugin/plugin.json skills/ assets/ (logo from vitana-v1 public/brand/vitanaland-connector-icon.png, 512x512)
+$ python3 json.load on all four manifests
+ok
+# jest cannot run in the session (registry.npmjs.org blocked); CI is the proof.

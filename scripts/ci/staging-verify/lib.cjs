@@ -385,7 +385,27 @@ function buildReadyMessage({ service, sha, outcome, results, plan, shipping, pro
   return lines.join('\n');
 }
 
+// VTID-04949 (plan C2): the nightly full run. Every change suite ever merged for
+// the service runs again (not just the prod..commit range), so a later change
+// that breaks an older feature is caught within a day even if no new commit
+// touches it. `alreadyRun` = the VTIDs the normal range run already covered.
+function planFullRun({ service, manifests, alreadyRun = [] }) {
+  const done = new Set(alreadyRun);
+  const suites = [];
+  const invalid = [];
+  for (const [vtid, m] of Object.entries(manifests).sort(([a], [b]) => a.localeCompare(b))) {
+    if (done.has(vtid) || !m) continue;
+    if (m.__parseError) { invalid.push({ vtid, errors: [m.__parseError] }); continue; }
+    if (m.service !== service) continue;
+    const v = validateManifest(m, { service });
+    if (!v.ok) { invalid.push({ vtid, errors: v.errors }); continue; }
+    suites.push({ vtid, tests: m.tests });
+  }
+  return { suites, invalid };
+}
+
 module.exports = {
+  planFullRun,
   PRODUCTION_HOSTS,
   STAGING_TARGETS,
   PRODUCTION_VERSION_SOURCES,

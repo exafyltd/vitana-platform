@@ -136,14 +136,24 @@ export function rpcRedeemCode(sb: any, args: { tenantId: string; userId: string;
 // GET /founding-status
 // ---------------------------------------------------------------------------
 
-export function fetchLatestFoundingCampaignCode(sb: any) {
+// VTID-04859: the Founding campaign is the first 1,000 members, seated
+// automatically at signup (founding_members); no code to redeem any more.
+export const FOUNDING_MAX_SEATS = 1000;
+
+export function countFoundingSeats(sb: any) {
+  return sb.from('founding_members').select('user_id', { count: 'exact', head: true });
+}
+
+export function fetchFoundingMember(sb: any, userId: string) {
   return sb
-    .from('redemption_codes')
-    .select('code, max_uses, uses_count, is_active, expires_at, campaign, metadata')
-    .eq('campaign', 'founding_500')
-    .order('created_at', { ascending: false })
-    .limit(1)
+    .from('founding_members')
+    .select('seat_number, grant_source, granted_until, value_cents, celebrated_at')
+    .eq('user_id', userId)
     .maybeSingle();
+}
+
+export function rpcMarkFoundingCelebrated(sb: any, userId: string) {
+  return sb.rpc('mark_founding_celebrated', { p_user_id: userId });
 }
 
 // ---------------------------------------------------------------------------

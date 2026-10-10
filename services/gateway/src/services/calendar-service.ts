@@ -16,6 +16,8 @@ import {
   CreateCalendarEventInput,
   getVisibleContexts,
 } from '../types/calendar';
+import { localParts, zonedTimeToEpoch } from './calendar-recurrence';
+import { quietWindowFromPrefs, type QuietWindow } from './calendar-reminders';
 
 const LOG_PREFIX = '[Calendar]';
 
@@ -172,6 +174,104 @@ export async function checkConflicts(
   return resp.json() as Promise<any>;
 }
 
+// =============================================================================
+// VTID-04995 — overlap warnings
+// =============================================================================
+
+export type ConflictKind = 'own' | 'busy' | 'external';
+
+/** One thing a proposed time overlaps. Busy/external carry no title, on purpose. */
+export interface ConflictItem {
+  kind: ConflictKind;
+  id: string;
+  event_id: string;
+  title: string | null;
+  start_time: string;
+  end_time: string;
+  source?: string;
+}
+
+/** Entries the system writes as information, not as time the member has committed. */
+const NON_COMMITMENT_SOURCES = new Set(['reminder', 'subscription', 'test_result']);
+const ONE_HOUR_MS = 60 * 60 * 1000;
+
+export interface ExternalBusyLike {
+  id: string;
+  event_id: string;
+  start_time: string;
+  end_time: string;
+  source?: string;
+}
+
+/**
+ * Pure: what a proposed [start, end) overlaps, given what the calendar screen
+ * shows (window items: own entries with recurrence expanded, other lenses as
+ * title-less busy blocks) and the member's external busy times.
+ *  - own: the member's confirmed entries in the active lens (title included)
+ *  - busy: another lens of the same member (time only)
+ *  - external: a busy block from a connected calendar (time only)
+ * Reminders and subscription dates never conflict; `excludeEventId` is the
+ * entry being edited or moved (all its occurrences).
+ */
+export function computeConflicts(
+  items: CalendarWindowItem[],
+  external: ExternalBusyLike[],
+  proposed: { start: string; end: string },
+  opts: { excludeEventId?: string } = {},
+): ConflictItem[] {
+  const pStart = Date.parse(proposed.start);
+  const pEnd = Date.parse(proposed.end);
+  if (Number.isNaN(pStart) || Number.isNaN(pEnd) || pEnd <= pStart) return [];
+
+  const overlaps = (start: string, end: string | null): { start: number; end: number } | null => {
+    const s = Date.parse(start);
+    if (Number.isNaN(s)) return null;
+    const parsedEnd = end ? Date.parse(end) : NaN;
+    const e = Number.isNaN(parsedEnd) ? s + ONE_HOUR_MS : parsedEnd;
+    return s < pEnd && e > pStart ? { start: s, end: e } : null;
+  };
+
+  const out: ConflictItem[] = [];
+  for (const it of items) {
+    if (opts.excludeEventId && it.event_id === opts.excludeEventId) continue;
+    const hit = overlaps(it.start_time, it.end_time);
+    if (!hit) continue;
+    if (it.busy || !it.event) {
+      out.push({ kind: 'busy', id: it.id, event_id: it.event_id, title: null, start_time: new Date(hit.start).toISOString(), end_time: new Date(hit.end).toISOString() });
+      continue;
+    }
+    if (it.event.status !== 'confirmed') continue;
+    if (NON_COMMITMENT_SOURCES.has(String(it.event.source_type))) continue;
+    out.push({ kind: 'own', id: it.id, event_id: it.event_id, title: it.event.title ?? null, start_time: new Date(hit.start).toISOString(), end_time: new Date(hit.end).toISOString() });
+  }
+  for (const x of external) {
+    const hit = overlaps(x.start_time, x.end_time);
+    if (!hit) continue;
+    out.push({ kind: 'external', id: x.id, event_id: x.event_id, title: null, start_time: new Date(hit.start).toISOString(), end_time: new Date(hit.end).toISOString(), source: x.source });
+  }
+  return out.sort((a, b) => a.start_time.localeCompare(b.start_time)).slice(0, 20);
+}
+
+/**
+ * Overlaps for a proposed window, composed exactly like the calendar screen:
+ * the window read plus the external busy blocks the window route adds on top.
+ */
+export async function findConflicts(
+  userId: string,
+  role: string | null,
+  startTime: string,
+  endTime: string,
+  opts: { excludeEventId?: string; userTimezone?: string } = {},
+): Promise<ConflictItem[]> {
+  const window = { from: startTime, to: endTime };
+  const { listExternalBusy } = await import('./calendar-google-sync');
+  const [items, external] = await Promise.all([
+    listCalendarWindow(userId, role, window, { includeBusy: true, userTimezone: opts.userTimezone }),
+    listExternalBusy(userId, window),
+  ]);
+  return computeConflicts(items, external, { start: startTime, end: endTime }, { excludeEventId: opts.excludeEventId });
+}
+
 /**
  * Find calendar gaps (free time slots) for a given day.
  */
@@ -223,6 +323,160 @@ export async function getCalendarGaps(
   }
 
   return gaps;
+}
+
+// =============================================================================
+// Find a time (VTID-04996)
+// =============================================================================
+
+export interface FreeSlot {
+  start: string;
+  end: string;
+  duration_minutes: number;
+  /** How long the free stretch this slot starts in lasts, so the UI can say "free until". */
+  free_until: string;
+}
+
+const SLOT_STEP_MS = 15 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+export const FREE_SLOT_MAX_DAYS = 14;
+export const FREE_SLOT_DEFAULT_DAY: QuietWindow = { startMin: 22 * 60, endMin: 7 * 60 };
+
+/** Awake spans of a local day, as [fromMin, toMin) pairs, given the member's quiet window. Pure. */
+export function awakeSpans(quiet: QuietWindow | null): Array<[number, number]> {
+  const q = quiet ?? FREE_SLOT_DEFAULT_DAY;
+  if (q.startMin > q.endMin) return [[q.endMin, q.startMin]]; // wraps midnight: quiet 22:00-07:00 → awake 07:00-22:00
+  return [[0, q.startMin], [q.endMin, 24 * 60]].filter(([a, b]) => b > a) as Array<[number, number]>;
+}
+
+/**
+ * Free stretches that fit `durationMin`, composed like the calendar screen:
+ * window items (own commitments, other lenses as busy) plus external busy,
+ * inside the member's waking hours (outside quiet hours; 07:00-22:00 when none
+ * are set), in the member's time zone. One slot per free stretch, starting on
+ * the next quarter hour. Pure; `now` only trims the past.
+ */
+export function computeFreeSlots(
+  items: CalendarWindowItem[],
+  external: ExternalBusyLike[],
+  opts: {
+    from: number;
+    to: number;
+    durationMin: number;
+    limit: number;
+    tz: string;
+    quiet: QuietWindow | null;
+    now: number;
+    excludeEventId?: string;
+  },
+): FreeSlot[] {
+  const durMs = opts.durationMin * 60_000;
+  if (!(durMs > 0) || !(opts.to > opts.from) || opts.to - opts.from > FREE_SLOT_MAX_DAYS * DAY_MS) return [];
+
+  const busy: Array<[number, number]> = [];
+  const push = (start: string, end: string | null) => {
+    const s = Date.parse(start);
+    if (Number.isNaN(s)) return;
+    const parsedEnd = end ? Date.parse(end) : NaN;
+    busy.push([s, Number.isNaN(parsedEnd) ? s + ONE_HOUR_MS : parsedEnd]);
+  };
+  for (const it of items) {
+    if (opts.excludeEventId && it.event_id === opts.excludeEventId) continue;
+    if (it.busy || !it.event) {
+      push(it.start_time, it.end_time);
+      continue;
+    }
+    if (it.event.status !== 'confirmed' || NON_COMMITMENT_SOURCES.has(String(it.event.source_type))) continue;
+    push(it.start_time, it.end_time);
+  }
+  for (const x of external) push(x.start_time, x.end_time);
+  busy.sort((a, b) => a[0] - b[0]);
+
+  const floor = Math.ceil(Math.max(opts.from, opts.now) / SLOT_STEP_MS) * SLOT_STEP_MS;
+  const spans = awakeSpans(opts.quiet);
+  const first = localParts(opts.from, opts.tz);
+  const out: FreeSlot[] = [];
+
+  for (let day = 0; day <= FREE_SLOT_MAX_DAYS && out.length < opts.limit; day++) {
+    const base = new Date(Date.UTC(first.y, first.mo - 1, first.d + day));
+    const y = base.getUTCFullYear();
+    const mo = base.getUTCMonth() + 1;
+    const d = base.getUTCDate();
+    for (const [a, b] of spans) {
+      let cursor = Math.max(zonedTimeToEpoch(y, mo, d, Math.floor(a / 60), a % 60, 0, opts.tz), floor);
+      const end = Math.min(b >= 24 * 60 ? zonedTimeToEpoch(y, mo, d + 1, 0, 0, 0, opts.tz) : zonedTimeToEpoch(y, mo, d, Math.floor(b / 60), b % 60, 0, opts.tz), opts.to);
+      if (end <= cursor) continue;
+      // Walk the free stretches between busy intervals inside [cursor, end).
+      for (const [bs, be] of busy) {
+        if (be <= cursor) continue;
+        if (bs >= end) break;
+        if (bs > cursor) {
+          const slot = tryFreeSlot(cursor, Math.min(bs, end), durMs, opts.durationMin);
+          if (slot) out.push(slot);
+        }
+        cursor = Math.max(cursor, be);
+        if (cursor >= end) break;
+      }
+      if (cursor < end) {
+        const slot = tryFreeSlot(cursor, end, durMs, opts.durationMin);
+        if (slot) out.push(slot);
+      }
+      if (out.length >= opts.limit) break;
+    }
+  }
+  return out.sort((x, y) => x.start.localeCompare(y.start)).slice(0, opts.limit);
+}
+
+function tryFreeSlot(from: number, until: number, durMs: number, durationMin: number): FreeSlot | null {
+  const start = Math.ceil(from / SLOT_STEP_MS) * SLOT_STEP_MS;
+  if (start + durMs > until) return null;
+  return {
+    start: new Date(start).toISOString(),
+    end: new Date(start + durMs).toISOString(),
+    duration_minutes: durationMin,
+    free_until: new Date(until).toISOString(),
+  };
+}
+
+/** The member's quiet window (notification Do-Not-Disturb), or null when off or unreadable. */
+export async function loadQuietWindow(userId: string): Promise<QuietWindow | null> {
+  const config = getSupabaseConfig();
+  if (!config) return null;
+  try {
+    const r = await fetch(
+      `${config.url}/rest/v1/user_notification_preferences?select=dnd_enabled,dnd_start_time,dnd_end_time&user_id=eq.${encodeURIComponent(userId)}&limit=1`,
+      { headers: headers(config.key) },
+    );
+    if (!r.ok) return null;
+    const rows = (await r.json()) as Array<{ dnd_enabled?: boolean; dnd_start_time?: string | null; dnd_end_time?: string | null }>;
+    return quietWindowFromPrefs(rows[0]);
+  } catch {
+    return null;
+  }
+}
+
+/** Free slots for a member, composed exactly like the calendar screen plus their quiet hours. */
+export async function findFreeSlots(
+  userId: string,
+  role: string | null,
+  opts: { from: Date; to: Date; durationMin: number; limit: number; userTimezone?: string },
+): Promise<FreeSlot[]> {
+  const window = { from: opts.from.toISOString(), to: opts.to.toISOString() };
+  const { listExternalBusy } = await import('./calendar-google-sync');
+  const [items, external, quiet] = await Promise.all([
+    listCalendarWindow(userId, role, window, { includeBusy: true, userTimezone: opts.userTimezone }),
+    listExternalBusy(userId, window),
+    loadQuietWindow(userId),
+  ]);
+  return computeFreeSlots(items, external, {
+    from: opts.from.getTime(),
+    to: opts.to.getTime(),
+    durationMin: opts.durationMin,
+    limit: opts.limit,
+    tz: opts.userTimezone || 'Europe/Berlin',
+    quiet,
+    now: Date.now(),
+  });
 }
 
 /**

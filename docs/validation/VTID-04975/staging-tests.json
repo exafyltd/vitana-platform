@@ -1,0 +1,66 @@
+{
+  "vtid": "VTID-04975",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "liveness answers (read-only)"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/operator/kiro/status",
+      "expect_status": 401,
+      "reason": "the new Kiro status route exists and refuses an unauthenticated caller (JSON 401, not an HTML 404); read-only, nothing written"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04975-kiro-engine.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the ACP client, permission broker and turn runner run in-process against a scripted fake kiro-cli"
+    },
+    {
+      "kind": "http",
+      "name": "Command Hub loads the Kiro-engine app.js",
+      "path": "/command-hub/",
+      "expect_status": 200,
+      "expect_content_type": "text/html",
+      "expect_body_contains": "app.js?v=20261109-vtid-05006"
+    },
+    {
+      "kind": "http",
+      "name": "served app.js has the Operator | Kiro switch, the Kiro workspace card and the approval cards",
+      "path": "/command-hub/app.js?v=20261109-vtid-05006",
+      "expect_status": 200,
+      "expect_content_type": "javascript",
+      "expect_body_contains": [
+        "function renderOperatorEngineSwitch",
+        "function renderKiroThreadPanel",
+        "function answerKiroPermission"
+      ]
+    },
+    {
+      "kind": "http",
+      "name": "served styles.css has the Kiro styles",
+      "path": "/command-hub/styles.css?v=20261109-vtid-05006",
+      "expect_status": 200,
+      "expect_content_type": "text/css",
+      "expect_body_contains": [
+        ".chat-engine-switch",
+        ".kiro-panel",
+        ".kiro-approval"
+      ]
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/command-hub/vtid-04975-kiro-operator-ui.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the Kiro UI functions run against a fake DOM and a mocked fetch"
+    }
+  ]
+}

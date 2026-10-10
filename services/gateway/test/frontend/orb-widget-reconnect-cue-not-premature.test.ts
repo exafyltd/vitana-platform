@@ -121,7 +121,7 @@ describe('orb-widget _audioEverHeardThisOpen lifecycle (VTID-03727 Codex fix)', 
   });
 
   it('IS reset by _hide() — a real close ends the overlay session', () => {
-    const idx = source.indexOf('function _hide() {');
+    const idx = source.indexOf('function _hide(reason) {');
     expect(idx).toBeGreaterThan(-1);
     const openIdx = source.indexOf('{', idx);
     let depth = 0, end = openIdx;

@@ -1,0 +1,56 @@
+# VTID-04886: commands run in the worktree /home/user/wt-04885 (branch wt/vtid-04885),
+# on top of the VTID-04885 commit. No live endpoint, database or AWS API was called.
+# Every test uses mocks (in-memory ack store, fake OASIS emitter). The migration ran
+# only on a throwaway local Postgres 16; the cockpit rendered offline, network aborted.
+
+# 1. Type check
+npx tsc --noEmit                                           # exit 2: the same 24 TS2742 lines in 5 untouched *-repository.ts files (symlinked node_modules artifact); 0 other errors (outputs/01-tsc.txt)
+npx tsc --noEmit --preserveSymlinks                        # exit 0 (outputs/01b-tsc-preserve-symlinks.txt)
+
+# 2. Migration on a throwaway Postgres (never Supabase/Aurora; the runner refuses those hosts)
+initdb -D /tmp/pg-vtid-04886/data -A trust -U postgres && pg_ctl -D /tmp/pg-vtid-04886/data -o '-k /tmp/pg-vtid-04886 -c listen_addresses=' start
+PGHOST=/tmp/pg-vtid-04886 PGUSER=postgres scripts/ci/sql-tests/run-ops-attention-acks-test.sh
+                                                           # migration applied twice (idempotent); every CHECK (24 h, reason, P1 snooze, action, env, vtid),
+                                                           #   RLS, grants and no-policy asserted: "all assertions passed" (outputs/09-sql-harness.txt)
+
+# 3. New and updated tests
+npx jest --ci test/vtid-04886-ops-attention-ack-route.test.ts test/vtid-04886-ops-attention-acks-timeline.test.ts \
+  test/command-hub/vtid-04886-overview-ack-timeline.test.ts test/vtid-04876-ops-attention-route.test.ts \
+  test/vtid-04876-ops-attention-aggregator.test.ts test/command-hub/vtid-04876-overview-cockpit.test.ts \
+  test/vtid-04885-ops-attention-phase2-adapters.test.ts
+                                                           # 7 suites, 113 tests passed (outputs/02-vtid-04886-tests.txt)
+
+# 4. Standing suites
+npm run test:operator -- --ci                              # rule 42e: 30 passed (outputs/03-test-operator.txt)
+npm run test:roles -- --ci                                 # rule 42h incl. atlas drift guard: 105 passed (outputs/04-test-roles.txt)
+
+# 5. Command Hub tests
+npx jest --ci test/command-hub test/scripts/command-hub-ownership-guard.test.ts test/vtid-04696-staging-checks-follow-asset-bumps.test.ts \
+  test/vtid-03917-overview-poll-no-full-rerender.test.ts test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts \
+  test/vtid-03925-pipeline-summary-loop-fix.test.ts test/vtid-03944-operator-popup-flicker-pollers.test.ts \
+  test/scripts/generate-command-hub-symbol-index.test.ts
+                                                           # 521 tests passed (outputs/05-command-hub-tests.txt)
+
+# 6. Gates run locally
+node scripts/ci/validator-path-guard.cjs --csp-added-lines <(git diff HEAD -- services/gateway/src/frontend/)
+                                                           # "No CSP pattern hits in added lines." (outputs/06-csp-added-lines.txt)
+node -e "require('./scripts/ci/validate-pr-locally.cjs').checkAcceptanceMapping('docs/validation/VTID-04886/acceptance.md')"
+                                                           # Acceptance mapping OK (outputs/08-acceptance-mapping.txt)
+node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(...)"   # staging-tests.json valid (POSTs are rejected_probe 401 only)
+node services/gateway/scripts/generate-command-hub-symbol-index.mjs && ... --check
+                                                           # in sync, 924 functions (outputs/10-symbol-index.txt)
+sed -i 's/20261028-vtid-04885/20261029-vtid-04886/g' index.html docs/validation/*/staging-tests.json   # VTID-04696
+
+# 7. Full gateway suite
+npx jest --ci                                              # exit 0: 1512 suites passed, 1 skipped; 24058 tests passed, 25 skipped, 6 todo; 126 snapshots
+                                                           #   (outputs/07-full-suite.summary.txt, outputs/07-full-suite.suites.txt)
+# find-dead-css-classes' "real repo" test --fix'es the .orb-config-value-* false positive during the run; restored afterwards.
+
+# 8. Visual check (offline): the real aggregator over fakes + an in-memory ack store (one snooze, one ack)
+#    computes the mock response (npx tsx scratchpad/mock-data.ts data3.json acks); the real cockpit code renders it
+#    in headless Chromium, every request aborted.
+node scratchpad/harness.js outputs data3.json p3          # desktop + mobile: no horizontal scroll, no target < 24px; P1 item: 1 Ack, 0 Snooze;
+                                                           #   Snooze on a P2 -> form -> POST /api/v1/ops/attention/snooze {fingerprint, reason, duration_minutes:60};
+                                                           #   "1 snoozed item(s) hidden" listed; 1 acked item de-emphasised; 5 timeline rows; 2 sparklines;
+                                                           #   fetch error -> every tile UNKNOWN
+                                                           #   (outputs/p3-cockpit-desktop.png, p3-cockpit-mobile.png, p3-ack-form.png, p3-cockpit-after-snooze.png, p3-cockpit-blind.png, p3-cockpit-filter-support.png)

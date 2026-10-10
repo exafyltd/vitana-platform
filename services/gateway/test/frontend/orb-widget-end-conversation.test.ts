@@ -98,14 +98,14 @@ describe('VTID-03824: orb_directive end_conversation handler', () => {
     expect(block).toMatch(/\(function \(myGen\) \{/);
     expect(block).toMatch(/if \(_s\._sessionGeneration !== myGen\) return;/);
     const genCheckIdx = block.indexOf('if (_s._sessionGeneration !== myGen) return;');
-    const hideIdx = block.lastIndexOf('_hide();');
+    const hideIdx = block.search(/_hide\('[a-z_]+'\);(?![\s\S]*_hide\('[a-z_]+'\);)/);
     expect(genCheckIdx).toBeGreaterThan(-1);
     expect(hideIdx).toBeGreaterThan(genCheckIdx);
   });
 
   it('calls _hide() to actually close the overlay, not just stop audio', () => {
     const block = extractHandlerBlock();
-    expect(block).toMatch(/_hide\(\);/);
+    expect(block).toMatch(/_hide\('[a-z_]+'\);/);
   });
 
   it('invokes an optional onConversationEnd host callback, defensively', () => {
@@ -116,7 +116,7 @@ describe('VTID-03824: orb_directive end_conversation handler', () => {
 
 describe('VTID-03824: conversationEnding flag cannot leak across sessions', () => {
   it('is reset to false inside _hide()', () => {
-    const block = extractBlock('function _hide() {');
+    const block = extractBlock('function _hide(reason) {');
     expect(block).toMatch(/_s\.conversationEnding = false;/);
   });
 

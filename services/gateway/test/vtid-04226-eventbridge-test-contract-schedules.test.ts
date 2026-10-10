@@ -53,10 +53,11 @@ describe('VTID-04226: EventBridge JOBS carry the two test-contract scanners', ()
     expect(script).toContain('TEST_CONTRACTS_GATEWAY_URL="${TEST_CONTRACTS_GATEWAY_URL:-https://preview-aws-gateway.vitanaland.com}"');
   });
 
-  it('keeps every pre-existing VTID-03766 job (25) and adds exactly 2', () => {
+  it('keeps every pre-existing VTID-03766 job (25, minus daily-feature-tip — VTID-04677) and adds exactly 2', () => {
     // +1: VTID-04391 AP-0914 daily learning episode. +1: VTID-04407 handoff sweep.
     // +1: VTID-04444 AP-0915 diary theme rollup. +1: VTID-04505 community scan.
-    expect(jobs.length).toBe(31);
+    // -1: VTID-04677 gateway-daily-feature-tip (owned by setup-eventbridge-daily-feature-tip.sh).
+    expect(jobs.length).toBe(30);
     expect(jobs.filter((l) => l.includes('/api/v1/automations/cron/AP-')).length).toBe(21);
   });
 
@@ -72,7 +73,8 @@ describe('VTID-04226: the shared Lambda can present X-Gateway-Internal without t
   it('reads the token from Secrets Manager at invoke time, cached, only for auth=gateway_internal jobs', () => {
     expect(lambda).toContain("require('@aws-sdk/client-secrets-manager')");
     expect(lambda).toContain('process.env.GATEWAY_INTERNAL_TOKEN_SECRET_ID');
-    expect(lambda).toContain("if (event && event.auth === 'gateway_internal') headers['X-Gateway-Internal'] = await internalToken();");
+    // VTID-04677: a job may name its own secret (production-gateway jobs use the prod token).
+    expect(lambda).toContain("if (event && event.auth === 'gateway_internal') headers['X-Gateway-Internal'] = await internalToken(event.token_secret_id);");
     expect(lambda).not.toMatch(/process\.env\.GATEWAY_INTERNAL_TOKEN\b/);
   });
 
@@ -107,7 +109,7 @@ describe('VTID-04226: scripts parse and dry-run', () => {
     }).toString();
     expect(out).toContain('gateway-test-contracts-scheduled-run  (*/15 * * * * UTC)  -> /api/v1/test-contracts/scheduled-run');
     expect(out).toContain('gateway-test-contracts-missing  (30 6 * * * UTC)  -> /api/v1/test-contracts/missing');
-    expect(out).toContain('Jobs:     31'); // +1: VTID-04444 AP-0915, +1: VTID-04505 community scan
+    expect(out).toContain('Jobs:     30'); // +1: VTID-04444 AP-0915, +1: VTID-04505 community scan, -1: VTID-04677 daily-feature-tip
   });
 
   it('the token provisioning script is dry-run by default and never defaults to prod', () => {

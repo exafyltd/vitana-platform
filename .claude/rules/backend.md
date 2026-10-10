@@ -161,6 +161,14 @@ checked with real `DescribeVoices` + `SynthesizeSpeech` calls in
 - **Russian is the quality floor and is unfixable inside Polly** —
   `Tatyana` **and** `Maxim` are both `standard`-only. There is no neural
   Russian voice at all, so this is a product limitation, not a config gap.
+  **Re-measured live 2026-09-29 and still true.** A member reported the
+  Russian voice as "like from a desperate old woman with zero energy",
+  which is an accurate description of that engine. VTID-04813 resolves it
+  by moving the Russian LIVE VOICE SESSION onto the Vertex/Gemini bridge
+  (§2e-vertex-russian-bridge) rather than by changing anything here:
+  `POLLY_VOICES.ru` stays, because `resolvePollyVoice('ru')` still serves
+  the non-conversational Russian TTS call sites (`/orb/tts`, reminder
+  pre-render, guided-topic narration), which do not go through Gemini Live.
 - **Six of nine languages can upgrade engine without changing voice.**
   `en`/Joanna, `de`/Vicki, `fr`/Lea, `es`/Lucia, `pt`/Camila, `pl`/Ola all
   support **`generative`** on the *same* voice id and are pinned to
@@ -396,9 +404,11 @@ on the gateway task role.
 ## 2e. ORB VOICE — NOVA SONIC (VTID-03501)
 
 **Voice runs on Amazon Nova Sonic (+ the Transcribe/Bedrock/Polly-or-Fish
-cascade for languages Nova can't speak) for every language except one —
-Serbian goes through a narrow, explicit Vertex Live bridge on a NEW GCP
-project instead, see §2e-vertex-serbian-bridge (VTID-04000).** GCP's
+cascade for languages Nova can't speak) for every language except two —
+Serbian (§2e-vertex-serbian-bridge, VTID-04000) and Russian
+(§2e-vertex-russian-bridge, VTID-04813) go through narrow, explicit Vertex
+Live bridges on a NEW GCP project instead. Each has its OWN switch and its
+OWN single-language predicate; neither is a widened language list.** GCP's
 2026-08-16 shutdown killed the GENERAL Vertex Live fallback outright — that
 part is unchanged and still true for every other language. `VERTEX_LIVE_
 UNAVAILABLE=true` (`orb-live.ts`) forces Nova through its own
@@ -623,6 +633,25 @@ binding, not hand-constructed, but the real signal is still the next real
 `oasis_events` and actually producing audio. Full detail: `docs/validation/
 VTID-04000/acceptance.md`.
 
+**⚠️ The WIF config's credential source does not work on ECS (VTID-04893).**
+`create-cred-config` generated an EC2-style `credential_source` (the EC2
+instance metadata endpoint). ECS Fargate does not serve that endpoint, so
+every `GoogleAuth` token request fails with `connect EINVAL`: CloudWatch
+shows the bridge's own token prewarm failing on staging (2026-10-02) and
+production (2026-09-28). `services/gateway/src/lib/google-access-token.ts`
+supplies the AWS credentials programmatically instead
+(`AwsSecurityCredentialsSupplier` on the AWS SDK default provider chain,
+which on ECS reads the task role), behind
+`GOOGLE_AUTH_AWS_SUPPLIER_ENABLED` (exact `true`; on for staging, prod
+still off). Proven 2026-10-05 from a Claude Code session with the
+`claude-code-aws-agent` IAM user's keys: token exchange succeeded and
+`texttospeech.googleapis.com` answered `voices.list`. **For ECS the Google
+side must also trust the task role** — the binding recorded above names one
+principal; the task role is an assumed-role session whose suffix changes per
+task, so bind it by attribute (`principalSet://…/attribute.aws_role/
+arn:aws:sts::472838866351:assumed-role/vitana-ecs-task-role`). Until that
+binding exists, the flag changes the error, not the outcome.
+
 **⚠️ Pre-existing parity gap, surfaced by this PR's own CI, not caused by
 it — read before flipping the flag.** This repo's `voice-pipeline-parity`
 scanner (report-only, runs on every gateway PR) flagged 13 `high`-severity
@@ -698,6 +727,113 @@ gets fixed some other way), the fix is one flag flip
 (`VERTEX_SERBIAN_BRIDGE_ENABLED=false`) plus deleting the GCP project and
 its WIF pool/provider/binding; the selector code can stay (inert, harmless)
 or be removed in a follow-up cleanup VTID.
+
+### 2e-vertex-russian-bridge. Russian voice — the SECOND Vertex bridge (VTID-04813)
+
+Owner decision 2026-10-01, from a live report: the Russian voice is "like
+from a desperate old woman with zero energy" → "replace Tatyana voice with
+a Google voice like for Serbian".
+
+**Why Polly cannot fix it.** `DescribeVoices(ru-RU)` in `eu-central-1`
+returns exactly `Tatyana` and `Maxim`, and BOTH are `standard`-engine only
+— no neural, no generative (re-measured live 2026-09-29; §2c has said this
+since VTID-03578). `ru` is the only language in `POLLY_VOICES` not on
+`neural`. No Polly setting closes that gap.
+
+**Why it reuses the Serbian bridge.** Gemini Live speaks Russian natively
+in one hop — `ru` is in Google's own Live API supported-language table (99
+languages, checked 2026-10-01) — and the Serbian bridge doing exactly this
+is already live in PRODUCTION (`VERTEX_SERBIAN_BRIDGE_ENABLED=true` is
+pinned in `AWS-PROD-DEPLOY-GATEWAY.yml`). Nothing new had to be
+provisioned: same GCP project, same WIF credential config, same
+`VERTEX_AI_LOCATION`. The live `decision_policy` row
+`voice.live_api.voice.ru` is already `{voice_name:"Aoede"}` — byte-identical
+to `sr`'s — and `Aoede` is female, so VTID-04445's persona voice-gender
+rule passes with no change.
+
+**A SEPARATE switch, not a widened gate.** `vertex-russian-bridge.ts` holds
+`isVertexRussianBridgeEnabled()` (`VERTEX_RUSSIAN_BRIDGE_ENABLED`, exact
+string `'true'`) and `isVertexRussianBridgeLanguage()` (`ru` only).
+`vertex-serbian-bridge.ts` is untouched — its own header promises its
+predicate is "never widened to a language list", and keeping Russian in its
+own file keeps that promise mechanically true. New
+`SelectionReason: 'vertex_russian_bridge'` so telemetry never reports a
+Russian session as a Serbian one. `tryVertexBridgeRescue()` checks both
+pairs; the two predicates are mutually exclusive by language, so order
+cannot change which fires.
+
+**On §2e-vertex-serbian-bridge's "do not promote past a small canary before
+the watchdog parity gap is closed".** That precondition offers two routes
+and the second one holds, verified in code rather than assumed: the
+gateway's own session reapers (`cleanupExpiredSessions()` in
+`session/live-session-controller.ts`, and the `wsClientSessions` sweep in
+`routes/orb-live.ts`) expire any session idle past `SESSION_TIMEOUT_MS`
+(30 min) every 5 minutes, and **neither looks at the provider** — a Vertex
+session is bounded by them exactly as a Nova session is. By volume this is
+not a promotion either: measured read-only in production `oasis_events`
+over the 30 days to 2026-10-01, `sr` ran 136 sessions and `ru` 18, so
+Russian is ~7.5x SMALLER than the language already on this bridge in
+production. The remaining parity items (the 7 OASIS topics, the
+reconnect/connection caps) are still open and still apply to both bridges.
+
+**Scope — only the live voice session moves.** `POLLY_VOICES.ru` is
+deliberately unchanged; see the §2c note above for which Russian TTS call
+sites still use Tatyana and why removing it would break them.
+
+**Same 90-day window and same exit as Serbian:** one flag flip
+(`VERTEX_RUSSIAN_BRIDGE_ENABLED=false`) reverts `ru` to the
+Transcribe→Bedrock→Polly cascade byte-for-byte, independently of Serbian.
+
+### 2e-audiobook-google. Audiobook narration — Google for `ru`/`sr`, Polly for the rest (VTID-05026)
+
+Phase 1 of the sparred plan in `docs/validation/VTID-04893/plan-sparring.md`
+(Phase 0, VTID-04893, is the task-role token module above). A third narrow
+use of the dedicated Google project, for **pre-rendered** Audiobook episodes
+(`GET /api/v1/journey/audiobook/topics/:id/audio`), not a live session.
+
+- **Voice table:** `services/guided-journey/audiobook-voices.ts`, Audiobook
+  only — the receptionist `POLLY_VOICES` is untouched. Polly `generative`:
+  en Tiffany, de Vicki, fr Ambre, es Lucia, pt Camila (pt-BR), pl Ola; Polly
+  `neural`: ar Hala, zh Zhiyu, tr Burcu (all verified live 2026-10-10:
+  Female, engine listed). Google Chirp 3 HD: `ru-RU-Chirp3-HD-Aoede`,
+  `sr-RS-Chirp3-HD-Aoede` (female per `voices.list`, picked 2026-10-10 with
+  the owner's delegation; alternatives via the admin-only
+  `GET /api/v1/voice/preview/google-voices?lang=ru|sr`).
+- **Switches:** `AUDIOBOOK_GOOGLE_RU_ENABLED`, `AUDIOBOOK_GOOGLE_SR_ENABLED`
+  — exact `true`, one file and one predicate each
+  (`audiobook-google-ru.ts`, `audiobook-google-sr.ts`), never a list. Off:
+  `ru` reads with Polly Tatyana (`standard`), `sr` answers 422.
+- **Cap:** `AUDIOBOOK_GOOGLE_DAILY_CHAR_CAP_PER_TASK` — characters per
+  gateway task per UTC day, in memory; unset/0 = Google narration off. An
+  APPROXIMATION (≈ cap × tasks; a deploy day can reach ~2×). At the cap
+  `ru`/`sr` answer 422 until 00:00 UTC; cached episodes still play.
+- **Auth:** `tts/google-narration.ts` builds the `@google-cloud/text-to-speech`
+  client on the task-role `AwsClient` ALWAYS (independent of
+  `GOOGLE_AUTH_AWS_SUPPLIER_ENABLED`). Requests are split on sentence
+  boundaries into ≤ 4,500 UTF-8 bytes (Google's limit is 5,000; Cyrillic is
+  2 bytes/char), rendered two at a time, joined in order.
+- **No fallback:** a Google failure or the cap answers 422
+  `narration_unavailable` — never Polly, never another language's voice.
+  `X-Audiobook-Voice-Provider` (`google`/`polly`) proves who read it.
+- **Cost:** one JSON log line per Google render
+  (`{"event":"audiobook_google_tts","chars":…}`) →
+  `scripts/aws/setup-audiobook-google-metric.sh` (metric
+  `Vitana/Audiobook AudiobookGoogleTtsChars` on staging + prod, daily prod
+  alarm to `vitana-alarms-prod`).
+- **Google-side trust (fixed 2026-10-10):** `vitanaland@…` had
+  `roles/iam.workloadIdentityUser` only for the IAM user
+  `claude-code-aws-agent`, so every ECS token exchange failed at
+  impersonation (`iam.serviceAccounts.getAccessToken` denied). The task role
+  is now bound by attribute:
+  `principalSet://…/vitana-aws-pool/attribute.aws_role/arn:aws:sts::472838866351:assumed-role/vitana-ecs-task-role`.
+- **Staging** sets both switches and the cap (1,040,000) through
+  `connected-apps.json`; **production** gets them through `env_overrides`
+  at PUBLISH, together with `GOOGLE_AUTH_AWS_SUPPLIER_ENABLED=true`.
+- **90-day window:** same as the bridges (ends ≈ 2026-12-16; a routine
+  reminds the owner 2026-12-06 to extend with Google or wire a new
+  provider). Turning both switches off returns `ru` to Tatyana and `sr` to 422.
+
+---
 
 ---
 
@@ -961,9 +1097,27 @@ Standing rules for any Commerce change:
    (merchant of record, tax, KYC, payout obligations are configuration set
    after legal/accounting confirmation). Earning participants are not
    employees.
-8. **Do not add a fifth wallet.** Member earnings belong in
-   `wallet_accounts`/`wallet_ledger_entries`; the legacy wallets are not
-   extended.
+8. **Do not add a fifth wallet.** Member cash earnings (commissions,
+   payouts — real EUR/USD) belong in `wallet_accounts`/`wallet_ledger_entries`.
+   **VTNA is the exception (VTID-04809, owner decision 2026-10-01):**
+   `user_wallets.CREDITS` is the canonical VTNA ledger, pegged at
+   1 VTNA = EUR 0.01. Every VTNA reward goes through `credit_wallet()`
+   (`p_type 'reward'`, a stable `p_source_event_id`), lands in
+   `earned_balance`, and only rewards (shop, subscription conversion) may
+   spend it — never paywall overage (VTID-04988: no feature's
+   `allowed_burn_buckets` lists `reward_credits`, and `fn_consume_credits`
+   refuses it). Never credit VTNA with `increment_wallet_balance()` or from the
+   client. **Repeatable, capped rewards (VTID-04878)** go through
+   `claim_capped_reward()` with the amount/cap/window from
+   `services/rewards/vtna-reward-rules.ts`, never through a bare
+   `credit_wallet()` call with a home-made counter. The reward sweep
+   (`services/rewards/reward-sweep.ts`) pays only on production
+   (`VITANA_ENV` must not be `staging`; staging shares the database).
+   **VTID-04944 (owner decision 2026-10-07):** `AWS-PROD-DEPLOY-GATEWAY.yml`
+   pins `REWARD_SWEEP_ENABLED` and `AUTOPILOT_ACTION_REWARD_ENABLED` to
+   `"true"`, so every production publish keeps payouts on. To switch them off,
+   dispatch with `env_overrides` setting both to `"false"`; the post-deploy
+   check then expects `false`.
 
 ---
 

@@ -30,6 +30,16 @@
  * the fetch keeps failing. The user's bearer token is also attached for
  * consistency with sibling fetches, though this alone does not make the
  * 401 go away (a separate backend routing gap, not fixed here).
+ *
+ * VTID-04887 (Overview Phase 4): fetchPipelineSummary() and the Overview
+ * panels it fed are deleted, and the backend gap is closed — the Command Hub
+ * reads GET /api/v1/ops/pipeline-summary (requireAdminAuth, in-process
+ * buildPipelineSummary()). This suite now pins that the looping fetcher stays
+ * gone and that the Operator Dashboard and Runbook use the admin route with
+ * the bearer token and cannot loop: their fetches run under
+ * Promise.allSettled, which never rejects, so `fetched` is always set. The
+ * third consumer, the Overview's Vitana Recommends panel, sets `fetched` in
+ * `finally` (test/command-hub/vtid-04887-overview-cleanup.test.ts).
  */
 
 import * as fs from 'fs';
@@ -47,69 +57,32 @@ function functionBody(source: string, signature: string): string {
   return source.slice(start, end);
 }
 
-describe('VTID-03925: fetchPipelineSummary() cannot loop forever on a persistent failure', () => {
-  it('sets state.overviewPipelineSummary.fetched = true unconditionally in the finally block', () => {
-    const body = functionBody(SOURCE, 'async function fetchPipelineSummary() {');
-    const financeIdx = body.lastIndexOf('} finally {');
-    expect(financeIdx).toBeGreaterThan(-1);
-    const financeBlock = body.slice(financeIdx);
-    expect(financeBlock).toContain('state.overviewPipelineSummary.fetched = true;');
+describe('VTID-03925 / VTID-04887: the looping Overview fetcher is gone', () => {
+  it('no fetchPipelineSummary() definition or call remains', () => {
+    expect(SOURCE).not.toMatch(/function\s+fetchPipelineSummary\s*\(/);
+    expect(SOURCE).not.toMatch(/\bfetchPipelineSummary\(/);
+    expect(SOURCE).not.toContain('state.overviewPipelineSummary');
   });
 
-  it('the try block no longer sets fetched = true itself (single source of truth: finally)', () => {
-    const body = functionBody(SOURCE, 'async function fetchPipelineSummary() {');
-    const tryIdx = body.indexOf('try {');
-    const catchIdx = body.indexOf('} catch (error) {');
-    expect(tryIdx).toBeGreaterThan(-1);
-    expect(catchIdx).toBeGreaterThan(tryIdx);
-    const tryBlock = body.slice(tryIdx, catchIdx);
-    expect(tryBlock).not.toContain('state.overviewPipelineSummary.fetched = true;');
-  });
-
-  it('attaches the bearer token via buildContextHeaders(), matching sibling fetchers', () => {
-    const body = functionBody(SOURCE, 'async function fetchPipelineSummary() {');
-    expect(body).toContain('buildContextHeaders(');
-    expect(body).toContain("fetchWT('/api/v1/autopilot/pipeline/summary', { headers: headers }, 12000)");
-  });
-
-  it('a successful response still populates the snapshot and clears any prior error', () => {
-    const body = functionBody(SOURCE, 'async function fetchPipelineSummary() {');
-    expect(body).toContain('state.overviewPipelineSummary.snapshot = data;');
-    expect(body).toContain('state.overviewPipelineSummary.error = null;');
-  });
-
-  it('a failure is still logged and recorded, not silently swallowed', () => {
-    const body = functionBody(SOURCE, 'async function fetchPipelineSummary() {');
-    expect(body).toContain("console.error('[Pipeline] Failed to fetch summary:', error);");
-    expect(body).toContain('state.overviewPipelineSummary.error = error.message;');
+  it('no browser code calls the service-token route any more', () => {
+    const code = SOURCE.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+    expect(code).not.toContain("'/api/v1/autopilot/pipeline/summary'");
   });
 });
 
-describe('VTID-03925: renderOverviewSystemView() guard this fix protects against', () => {
-  it('still only calls fetchPipelineSummary() when not already fetched/loading (guard unchanged)', () => {
-    const idx = SOURCE.indexOf('function renderOverviewSystemView() {');
-    expect(idx).toBeGreaterThan(-1);
-    const nearby = SOURCE.slice(idx, idx + 1500);
-    expect(nearby).toContain('if (!state.overviewPipelineSummary.fetched && !state.overviewPipelineSummary.loading) {');
-  });
-});
+describe('VTID-04887: the remaining pipeline-summary consumers', () => {
+  for (const fn of ['fetchOperatorDashboard', 'fetchOperatorRunbook']) {
+    it(`${fn}() reads the admin route with the bearer token`, () => {
+      const body = functionBody(SOURCE, `async function ${fn}() {`);
+      expect(body).toContain("fetch('/api/v1/ops/pipeline-summary', {");
+      expect(body).toContain("headers: buildContextHeaders({ Accept: 'application/json' })");
+    });
 
-describe('VTID-03925: downstream consumers stay null-safe with a permanently-null snapshot', () => {
-  it('renderOverviewSystemView\'s metrics grid null-guards every summary field it reads', () => {
-    const idx = SOURCE.indexOf('var summary = state.overviewPipelineSummary.snapshot;');
-    expect(idx).toBeGreaterThan(-1);
-    const nearby = SOURCE.slice(idx, idx + 4500);
-    expect(nearby).toContain('summary && summary.funnel');
-    expect(nearby).toContain('summary && summary.workers_active !== undefined');
-    expect(nearby).toContain('summary && summary.success_rate !== undefined');
-  });
-
-  it('renderVtidAttentionSection() null-guards the attention_queue array and returns null when empty', () => {
-    const idx = SOURCE.indexOf('function renderVtidAttentionSection() {');
-    expect(idx).toBeGreaterThan(-1);
-    const nearby = SOURCE.slice(idx, idx + 400);
-    expect(nearby).toContain('var summary = state.overviewPipelineSummary.snapshot;');
-    expect(nearby).toContain('summary && Array.isArray(summary.attention_queue)');
-    expect(nearby).toContain('if (queue.length === 0) return null;');
-  });
+    it(`${fn}() cannot loop: allSettled never rejects, so fetched is always set`, () => {
+      const body = functionBody(SOURCE, `async function ${fn}() {`);
+      expect(body).toContain('var results = await Promise.allSettled([');
+      expect(body).toMatch(/state\.operator(Dashboard|Runbook)\.fetched = true;/);
+      expect(body).toContain('if (state.operator');
+    });
+  }
 });

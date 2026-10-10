@@ -1,0 +1,5 @@
+# VTID-04824 — commands
+# before: step 1/2 19,951 · step 2/2 19,964 (of 20,000) — measured with PyYAML over each step's run: value
+# after:  step 1/2 19,951 · Jev step 2,821 · step 2/2 17,531
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # no change to the generated pins
+npx jest $(grep -rl AWS-PROD-DEPLOY-GATEWAY test) test/vtid-04754-jev-prod-workflow   (services/gateway)   # 81 suites, 987 tests passed (outputs/jest-workflow-suites.txt)

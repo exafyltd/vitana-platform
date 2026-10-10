@@ -1,0 +1,5 @@
+cd services/gateway
+npx jest test/services/memory-broker.test.ts test/services/memory/vtid-04877-recall-gate-latency.test.ts test/services/memory/vtid-04870-recall-stream-latency.test.ts   # 3 suites, 39 tests pass
+git show HEAD:services/gateway/src/services/memory-broker.ts > src/services/memory-broker.ts && npx jest test/services/memory-broker.test.ts -t VTID-04877   # old code: 4 failed (2 timeouts)
+npx tsc --noEmit -p .   # clean
+npx jest test/services/memory test/services/memory-broker test/services/memory-orchestrator test/services/context-pack-builder test/services/agent-profile test/orb   # 325 suites, 5138 passed

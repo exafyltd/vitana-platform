@@ -27,6 +27,7 @@ function input(over: Partial<ChecklistInput> = {}, org: Partial<ChecklistInput['
     acceptedTermsVersions: [],
     currentTermsVersion: '2026-09',
     memberCount: 1,
+    catalogueSource: { connections: 0, completeOfferings: 0 },
     ...over,
   };
 }
@@ -75,6 +76,11 @@ describe('buildChecklist', () => {
     expect(current.steps.find((s) => s.key === 'terms')!.status).toBe('done');
     const unpublished = buildChecklist(input({ currentTermsVersion: null, acceptedTermsVersions: ['2026-09'] }));
     expect(unpublished.steps.find((s) => s.key === 'terms')!).toMatchObject({ status: 'todo', missing: ['terms_not_published'] });
+    // VTID-04895: an earlier version sharing the current baseline (editorial update) counts; another baseline does not.
+    const editorial = buildChecklist(input({ acceptedTermsVersions: ['2026-08'], termsBaselineVersions: ['2026-08', '2026-09'] }));
+    expect(editorial.steps.find((s) => s.key === 'terms')!.status).toBe('done');
+    const material = buildChecklist(input({ acceptedTermsVersions: ['2026-01'], termsBaselineVersions: ['2026-09'] }));
+    expect(material.steps.find((s) => s.key === 'terms')!).toMatchObject({ status: 'todo', detail: { current_version: '2026-09' } });
   });
 
   it('reads stored rows only for non-derived steps', () => {
@@ -103,8 +109,9 @@ describe('buildChecklist', () => {
     const all = requiredSteps('affiliate_brand')
       .filter((k) => !DERIVED_STEPS.includes(k))
       .map((k) => ({ step_key: k, status: 'done' }));
+    // A connected partner: the stored mapping row (connections reconcile) counts.
     const c = buildChecklist(input(
-      { storedSteps: all, acceptedTermsVersions: ['2026-09'] },
+      { storedSteps: all, acceptedTermsVersions: ['2026-09'], catalogueSource: { connections: 1, completeOfferings: 0 } },
       { partner_type: 'affiliate_brand', ...COMPLETE_SHOP_COMPANY },
     ));
     expect(c.complete).toBe(true);

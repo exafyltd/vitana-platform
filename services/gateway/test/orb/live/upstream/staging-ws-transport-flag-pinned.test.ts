@@ -49,22 +49,38 @@ describe('VTID-03791: staging pins FEATURE_ORB_WS_TRANSPORT_ENV', () => {
     expect(strip).toContain('"FEATURE_ORB_WS_TRANSPORT_ENV"');
   });
 
-  it('is deliberately NOT pinned on the prod deploy workflow yet', () => {
-    // The 'ws' transport being turned on for real production traffic is a
-    // separate, later decision -- this VTID only unblocks it on staging,
-    // where VTID-03779's own prewarm/reuse mechanism is also staging-only.
-    const prodWorkflow = path.resolve(
-      __dirname,
-      '../../../../../../.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml',
+  // VTID-04934 — rollback of VTID-04866. VTID-04866 pinned prod to 'ws'
+  // (owner decision 2026-10-03) so a deploy's two-task overlap could not
+  // split a session. On prod it broke member Orb sessions instead: from
+  // 2026-10-04 to 2026-10-07 ~190 WebSocket sessions averaged ~2 s and none
+  // reached a user turn (11 of 15 did on SSE on 2026-10-03). Prod is pinned
+  // back to "off" (SSE); staging keeps "staging-only" so the failure can be
+  // reproduced there. Re-enabling is a new VTID with a device-verified fix.
+  describe('VTID-04866 rollback: prod pins FEATURE_ORB_WS_TRANSPORT_ENV to "off"', () => {
+    const prodYml = fs.readFileSync(
+      path.resolve(__dirname, '../../../../../../.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml'),
+      'utf8',
     );
-    const prodYml = fs.readFileSync(prodWorkflow, 'utf8');
-    // VTID-04098: assert the absence of the PIN, not of the string.
-    // The prod workflow now explains in a comment why this flag is
-    // deliberately left unpinned (FEATURE_ORB_WS_TRANSPORT_ENV only takes
-    // effect on the WebSocket session path, and prod resolves SSE), so a
-    // bare substring check would fail on the documentation of the very
-    // invariant it is protecting. What must never appear is the jq upsert.
-    expect(prodYml).not.toMatch(/\{name:"FEATURE_ORB_WS_TRANSPORT_ENV"/);
-    expect(prodYml).not.toMatch(/name:\s*"FEATURE_ORB_WS_TRANSPORT_ENV",\s*value:/);
+    const PIN = '{name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"off"}';
+
+    it('upserts the flag as "off" so WebSocket stays off on prod', () => {
+      expect(prodYml).toMatch(/\{name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"off"\}/);
+      expect(prodYml).not.toMatch(/\{name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"staging\+prod"\}/);
+      expect(prodYml).not.toMatch(/\{name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"staging-only"\}/);
+    });
+
+    it('strips the inherited value in the same jq block, so no duplicate key survives', () => {
+      const add = prodYml.indexOf(PIN);
+      const block = prodYml.slice(prodYml.lastIndexOf('.containerDefinitions[0].environment |=', add), add);
+      const strip = block.slice(0, block.indexOf('| not) ]'));
+      expect(strip).toContain('"FEATURE_ORB_WS_TRANSPORT_ENV"');
+    });
+
+    it('is pinned before env_overrides is applied, so a one-dispatch override still wins', () => {
+      const add = prodYml.indexOf(PIN);
+      const overrides = prodYml.indexOf('Applying env_overrides');
+      expect(add).toBeGreaterThan(0);
+      expect(overrides).toBeGreaterThan(add);
+    });
   });
 });

@@ -16,6 +16,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import * as repo from './orb-session-state-repository';
+import type { CicdOasisEvent } from '../../types/cicd';
 
 export type OrbSessionStateKey =
   | 'continuity'
@@ -288,6 +289,69 @@ export async function writeOrbSessionState(
     recordFailure('write', reason, nowMs);
     return { ok: false, reason };
   }
+}
+
+/**
+ * VTID-04943: record the client's audio-ready handshake. Shared by the HTTP
+ * route and the WebSocket transport (production voice runs on WS since
+ * VTID-04866; until this, only the HTTP route recorded the ack, so the
+ * morning check's acks_24h read 0). `ok` stays in the payload because
+ * ci_orb_session_state_health() counts acks by it. `emit` is injected so this
+ * module stays free of the OASIS emitter. Never throws.
+ */
+export async function recordAudioReadyAck(args: {
+  supabase: SupabaseClient | null | undefined;
+  userId: string | null | undefined;
+  sessionId: string;
+  transport: 'http' | 'ws';
+  greeting?: 'deferred_sent' | 'prebuffer_flushed' | 'already_released';
+  emit: (event: CicdOasisEvent) => Promise<unknown> | unknown;
+  nowMs?: number;
+}): Promise<{ ok: boolean; reason?: string }> {
+  const { supabase, userId, sessionId, transport, greeting, emit } = args;
+  if (!userId) return { ok: false, reason: 'anonymous_no_ack' };
+  if (!supabase) return { ok: false, reason: 'supabase_unavailable' };
+  const nowMs = args.nowMs ?? Date.now();
+  let r: { ok: boolean; reason?: string };
+  try {
+    r = await writeOrbSessionState(
+      supabase,
+      userId,
+      'audio_ready_ack',
+      { session_id: sessionId, ready_at: new Date(nowMs).toISOString() },
+      10, // minutes — only meaningful within the session-start window
+      nowMs,
+    );
+  } catch (e) {
+    r = { ok: false, reason: e instanceof Error ? e.message : String(e) };
+  }
+  // Fire-and-forget, as the HTTP route always did: the ack's caller never
+  // waits on telemetry.
+  try {
+    const pending = emit({
+      vtid: 'DEV-COMHU-0504',
+      type: 'orb.session.audio_ready.acked',
+      source: 'orb-live',
+      status: 'info',
+      message: `audio pipeline ready ack for session ${sessionId}`,
+      payload: {
+        session_id: sessionId,
+        user_id: userId,
+        ok: r.ok,
+        reason: r.reason,
+        transport,
+        ...(greeting ? { greeting } : {}),
+      },
+      actor_id: userId,
+      surface: 'orb',
+    });
+    if (pending && typeof (pending as Promise<unknown>).catch === 'function') {
+      (pending as Promise<unknown>).catch(() => {});
+    }
+  } catch {
+    /* telemetry is best-effort */
+  }
+  return r;
 }
 
 /** Delete a key (intentional forget — logout / account switch / reset). */

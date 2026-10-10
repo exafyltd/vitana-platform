@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-04953",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "the onboarding checklist route is mounted and refuses an unsigned caller",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/partner-onboarding/00000000-0000-0000-0000-000000000000",
+      "expect_status": 401
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04953-checklist-policy.test.ts test/vtid-04478-partner-onboarding-checklist.test.ts test/partner-onboarding.test.ts test/vtid-04933-partner-review.test.ts test/commerce-mcp.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the rule change is visible only on an authenticated supplier's checklist, which a read-only staging suite cannot create or sign in as; the suites pin the required steps, the derived mapping, the loader reads, the admin go-live path and the assistant guidance"
+    }
+  ]
+}

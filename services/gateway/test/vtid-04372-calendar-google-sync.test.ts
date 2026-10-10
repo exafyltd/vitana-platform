@@ -277,10 +277,13 @@ describe('wiring', () => {
     expect(before).toContain('if (includeBusy)');
   });
 
-  it('the loop is wired at boot and pinned on no environment yet', () => {
+  it('the loop is wired at boot and pinned on staging and production', () => {
     expect(src('index.ts')).toContain('startGoogleSyncLoop()');
+    // VTID-04914 (owner decision 2026-10-06): switched on in both
+    // environments; it stays not_configured until the Google OAuth client
+    // exists (vtid-04914-calendar-prod-gates.test.ts covers the wiring).
     for (const wf of ['AWS-STAGE-DEPLOY-GATEWAY.yml', 'AWS-PROD-DEPLOY-GATEWAY.yml']) {
-      expect(fs.readFileSync(path.join(ROOT, '.github/workflows', wf), 'utf8')).not.toContain('CALENDAR_GOOGLE_SYNC_ENABLED');
+      expect(fs.readFileSync(path.join(ROOT, '.github/workflows', wf), 'utf8')).toContain('{name:"CALENDAR_GOOGLE_SYNC_ENABLED", value:"true"}');
     }
   });
 

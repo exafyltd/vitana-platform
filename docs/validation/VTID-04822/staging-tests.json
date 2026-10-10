@@ -1,0 +1,5 @@
+{"vtid":"VTID-04822","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"jev admin stats still auth-gated (gate rows surface here)","path":"/api/v1/jev/admin/stats","expect_status":401},
+{"kind":"existing","ref":"npx jest test/vtid-04822-document-type-routing.test.ts","cwd":"services/gateway","reason":"The gate runs after a staff company document search (a signed-in exafy_admin Operator turn with a connected exafy.io drive), which a read-only staging probe must not cause. Decision, rule, modes, monthly dedupe, agreement and wiring are proven by this suite."}
+]}

@@ -1175,3 +1175,203 @@ describe('Contract: the emulated one-in-flight-execution index matches the migra
     expect([...statuses].sort()).toEqual([...INFLIGHT_UNIQUE_STATUSES].sort());
   });
 });
+
+// ---------------------------------------------------------------------------
+// VTID-05006: a Kiro session asks for an Operator write. The REAL MCP route,
+// gates, confirmation store (over the fake database) and Operator executor run;
+// only the admin lookup is stubbed (Supabase Auth's admin API is outside the
+// pipeline).
+// ---------------------------------------------------------------------------
+import kiroMcpRouter, { resetKiroMcpLimits, setKiroMcpAdminLookup } from '../src/routes/operator-kiro-mcp';
+import { mintKiroMcpToken } from '../src/services/kiro/kiro-mcp-token';
+
+describe('Kiro writes: held until the user answers in the thread (VTID-05006)', () => {
+  jest.setTimeout(30_000);
+  const KIRO_VTID = 'VTID-09001';
+  let mcp: express.Express;
+
+  beforeEach(() => {
+    Object.assign(process.env, { KIRO_MCP_ENABLED: 'true', KIRO_MCP_WRITE_ENABLED: 'true', GATEWAY_INTERNAL_TOKEN: 'pipeline-internal-token' });
+    setKiroMcpAdminLookup(async () => ({ admin: true, tenantId: null }));
+    resetKiroMcpLimits();
+    platform.insert('vtid_ledger', { vtid: KIRO_VTID, status: 'in_progress', spec_status: 'approved', title: 'Kiro write scenario' });
+    mcp = express();
+    mcp.use(express.json());
+    mcp.use('/api/v1/operator/kiro/mcp', kiroMcpRouter);
+  });
+  afterEach(() => {
+    setKiroMcpAdminLookup(null);
+    delete process.env.KIRO_MCP_WRITE_ENABLED;
+  });
+
+  const call = (name: string, args: Record<string, unknown>) =>
+    request(mcp).post('/api/v1/operator/kiro/mcp')
+      .set('Authorization', `Bearer ${mintKiroMcpToken(ADMIN_USER, 'kiro-thread-1')}`)
+      .send({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } });
+
+  async function pendingRow(): Promise<Row> {
+    const realSetTimeout = globalThis.setTimeout;
+    const deadline = Date.now() + 5_000;
+    for (;;) {
+      const r = platform.rows('kiro_mcp_confirmations').find((c) => c.status === 'pending');
+      if (r) return r;
+      if (Date.now() > deadline) throw new Error('no pending confirmation; rows=' + JSON.stringify(platform.rows('kiro_mcp_confirmations')) + ' unsupported=' + JSON.stringify(platform.unsupported) + ' ext=' + JSON.stringify(platform.externalCalls));
+      await new Promise((res) => realSetTimeout(res, 20));
+    }
+  }
+
+  async function answer(id: string, decision: 'allow' | 'deny') {
+    const token = await jwt(ADMIN_USER, true);
+    return request(app).post(`/api/v1/operator/kiro/confirmations/${id}`).set('Authorization', `Bearer ${token}`).send({ decision });
+  }
+
+  it('Allow: the card appears for the thread, the answer lands, the real executor runs, OASIS records it', async () => {
+    const pending = call('autopilot_cancel_execution', { vtid: KIRO_VTID });
+    const done = pending.then((r) => r);
+    const row = await pendingRow();
+    expect(row).toMatchObject({ user_id: ADMIN_USER, thread_id: 'kiro-thread-1', tool: 'autopilot_cancel_execution', vtid: KIRO_VTID });
+    const token = await jwt(ADMIN_USER, true);
+    const list = await request(app).get('/api/v1/operator/kiro/confirmations?thread_id=kiro-thread-1').set('Authorization', `Bearer ${token}`);
+    expect(list.body.pending.map((p: any) => p.id)).toEqual([row.id]);
+    expect((await answer(String(row.id), 'allow')).status).toBe(200);
+    const res = await done;
+    const text = res.body.result.content[0].text as string;
+    expect(text).not.toMatch(/^(Refused|Denied|No answer)/);
+    expect(platform.rows('kiro_mcp_confirmations')[0].status).toBe('allowed');
+    expect(topics()).toEqual(expect.arrayContaining(['operator.kiro.write_confirmed', 'operator.kiro.write_tool_called']));
+    // A second answer changes nothing.
+    expect((await answer(String(row.id), 'deny')).status).toBe(409);
+  });
+
+  it('Deny: nothing runs', async () => {
+    const done = call('autopilot_cancel_execution', { vtid: KIRO_VTID }).then((r) => r);
+    const row = await pendingRow();
+    expect((await answer(String(row.id), 'deny')).status).toBe(200);
+    const res = await done;
+    expect(res.body.result).toMatchObject({ isError: true, content: [{ text: 'Denied by the user. Nothing was done.' }] });
+  });
+
+  it('no open VTID: refused before anyone is asked', async () => {
+    const res = await call('autopilot_cancel_execution', { vtid: 'VTID-09999' });
+    expect(res.body.result.content[0].text).toBe('Refused: VTID-09999 does not exist. Nothing was done.');
+    expect(platform.rows('kiro_mcp_confirmations')).toHaveLength(0);
+  });
+
+  // VTID-05014: the same path to the second repo. The real push runs against the fake
+  // vitana-v1 repo, with the vitana-v1 token on every call and the platform repo untouched.
+  it('vitana-v1 push under Allow: one commit on the kiro branch, v1 token only, platform repo untouched', async () => {
+    process.env.FRONTEND_DEPLOY_TOKEN = 'pipeline-v1-token';
+    process.env.GITHUB_SAFE_MERGE_TOKEN = 'pipeline-platform-token';
+    const branch = `kiro/${ADMIN_USER.replace(/-/g, '').slice(0, 8)}/home-copy`;
+    const platformCalls = platform.github.calls.length;
+    const done = call('dev_push_kiro_branch', {
+      vtid: KIRO_VTID, repo: 'exafyltd/vitana-v1', branch, message: `${KIRO_VTID}: home copy`,
+      files: [{ path: 'src/pages/Home.tsx', content: 'export default 2;\n' }],
+    }).then((r) => r);
+    const row = await pendingRow();
+    expect(row).toMatchObject({ tool: 'dev_push_kiro_branch', vtid: KIRO_VTID });
+    expect(String(row.summary)).toContain(`exafyltd/vitana-v1:${branch}`);
+    expect((await answer(String(row.id), 'allow')).status).toBe(200);
+    const res = await done;
+    expect(res.body.result.isError).toBeFalsy();
+    expect(platform.githubV1.filesAt(branch)).toEqual({ 'src/pages/Home.tsx': 'export default 2;\n' });
+    expect(platform.githubV1.pushes).toEqual([expect.objectContaining({ branch, force: false })]);
+    expect(new Set(platform.githubV1.auths)).toEqual(new Set(['Bearer pipeline-v1-token']));
+    expect(platform.github.calls.length).toBe(platformCalls);
+    expect(topics()).toEqual(expect.arrayContaining(['operator.kiro.write_confirmed', 'operator.kiro.branch_pushed']));
+    delete process.env.FRONTEND_DEPLOY_TOKEN;
+  });
+
+  it('vitana-v1 push into supabase/: refused before anyone is asked', async () => {
+    process.env.FRONTEND_DEPLOY_TOKEN = 'pipeline-v1-token';
+    const branch = `kiro/${ADMIN_USER.replace(/-/g, '').slice(0, 8)}/edge-fn`;
+    const res = await call('dev_push_kiro_branch', {
+      vtid: KIRO_VTID, repo: 'exafyltd/vitana-v1', branch, message: `${KIRO_VTID}: fn`,
+      files: [{ path: 'supabase/functions/x/index.ts', content: 'x' }],
+    });
+    expect(res.body.result.isError).toBe(true);
+    expect(res.body.result.content[0].text).toMatch(/may not change supabase\/functions\/x\/index\.ts/);
+    expect(platform.githubV1.pushes).toHaveLength(0);
+    delete process.env.FRONTEND_DEPLOY_TOKEN;
+  });
+
+  it('writes switched off: the write tools are not offered and a call is unknown', async () => {
+    process.env.KIRO_MCP_WRITE_ENABLED = 'false';
+    const res = await call('dev_merge_pr', { vtid: KIRO_VTID, pr_number: 1 });
+    expect(res.body.error.message).toBe('Unknown tool: dev_merge_pr');
+    expect(platform.rows('kiro_mcp_confirmations')).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// VTID-05018: a Kiro thread whose Kiro session is gone (idle close, deploy,
+// another task) gets its stored turns back. The REAL chat route, thread store
+// (over the fake database), Kiro turn runner and ACP client run; only
+// `kiro-cli acp` is a scripted fake.
+// ---------------------------------------------------------------------------
+import { EventEmitter } from 'events';
+import { setKiroBackend, closeAllKiroSessions } from '../src/services/kiro/kiro-turn';
+
+describe('Kiro thread memory: a reopened session gets the thread back (VTID-05018)', () => {
+  const THREAD = 'a5018000-0000-4000-8000-000000000001';
+  const prompts: any[] = [];
+
+  function fakeKiro(): any {
+    const out = new EventEmitter();
+    const proc = new EventEmitter();
+    const send = (o: unknown) => out.emit('data', `${JSON.stringify(o)}\n`);
+    return {
+      stdout: out,
+      stdin: {
+        write: (line: string) => {
+          const msg = JSON.parse(line);
+          if (msg.method === 'initialize') send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1 } });
+          else if (msg.method === 'session/new') send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 'K1' } });
+          else if (msg.method === 'session/prompt') {
+            prompts.push(msg.params.prompt);
+            send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'K1', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'You asked me to wire GitHub, AWS and Supabase.' } } } });
+            send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } });
+          }
+          return true;
+        },
+        end: () => {},
+      },
+      kill() { proc.emit('exit'); },
+      on: (ev: string, cb: any) => proc.on(ev, cb),
+    };
+  }
+
+  beforeEach(() => {
+    prompts.length = 0;
+    Object.assign(process.env, { OPERATOR_THREADS_ENABLED: 'true', KIRO_ENGINE_ENABLED: 'true' });
+    setKiroBackend({ spawn: () => fakeKiro(), workspace: () => '/work/pipeline' });
+    platform.insert('operator_threads', { id: THREAD, user_id: ADMIN_USER, engine: 'kiro', title: 'Kiro wiring', created_at: new Date(Date.now() - 6 * 3600_000).toISOString() });
+    platform.insert('operator_messages', { id: 'm1', thread_id: THREAD, role: 'user', content: 'Wire GitHub, AWS and Supabase into the Operator.', created_at: new Date(Date.now() - 6 * 3600_000).toISOString() });
+    platform.insert('operator_messages', { id: 'm2', thread_id: THREAD, role: 'tool', tool_name: 'dev_search_codebase', content: '{"raw":"tool output"}', created_at: new Date(Date.now() - 6 * 3600_000 + 1_000).toISOString() });
+    platform.insert('operator_messages', { id: 'm3', thread_id: THREAD, role: 'assistant', content: 'Here is what is wired today.', created_at: new Date(Date.now() - 6 * 3600_000 + 2_000).toISOString() });
+  });
+  afterEach(() => {
+    closeAllKiroSessions();
+    setKiroBackend(null);
+    delete process.env.OPERATOR_THREADS_ENABLED;
+    delete process.env.KIRO_ENGINE_ENABLED;
+  });
+
+  it('6 h later in the same thread: Kiro\'s first prompt carries the earlier turns (no tool rows), then the message', async () => {
+    const res = await consoleTurn({ kind: 'jwt', token: await jwt(ADMIN_USER, true) }, 'Do you remember what I asked?', THREAD);
+    expect(res.status).toBe(200);
+    expect(prompts).toHaveLength(1);
+    const [history, message] = prompts[0];
+    expect(history.text).toContain('=== RESTORED THREAD HISTORY');
+    expect(history.text).toContain('User: Wire GitHub, AWS and Supabase into the Operator.');
+    expect(history.text).toContain('You (Kiro): Here is what is wired today.');
+    expect(history.text).not.toContain('tool output');
+    expect(message).toEqual({ type: 'text', text: 'Do you remember what I asked?' });
+  });
+
+  it('another user\'s thread is not restored into this user\'s session', async () => {
+    platform.rows('operator_threads').find((t) => t.id === THREAD)!.user_id = 'e2222222-2222-4222-8222-222222222222';
+    await consoleTurn({ kind: 'jwt', token: await jwt(ADMIN_USER, true) }, 'hello', THREAD);
+    for (const p of prompts) expect(JSON.stringify(p)).not.toContain('Wire GitHub');
+  });
+});

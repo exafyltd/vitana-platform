@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-04790",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive", "expect_status": 200 },
+    { "kind": "http", "name": "Approve & Fix (dispatch path) refuses an unauthenticated caller", "method": "POST", "path": "/api/v1/admin/feedback/tickets/00000000-0000-0000-0000-000000000000/approve", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/vtid-04790-deny-scope-glob.test.ts test/vtid-04456-customer-support-pipeline-regression.test.ts test/dev-autopilot-safety.test.ts test/autopilot-agent-scope-validate.test.ts test/vtid-04465-operator-pipeline-regression.test.ts", "cwd": "services/gateway",
+      "reason": "the scope rules decide whether a dispatch creates a recommendation and an execution; staging writes to the production database, so that is proven by the suites, not by a staging write" }
+  ]
+}

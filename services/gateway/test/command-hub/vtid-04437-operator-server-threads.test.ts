@@ -34,13 +34,15 @@ function load(opts: { state?: any; fetchImpl?: (url: string, init?: any) => Prom
   // eslint-disable-next-line no-new-func
   const api = new Function(
     'state', 'localStorage', 'fetch', 'buildContextHeaders', 'renderApp', 'switchOperatorThread',
-    'saveOperatorThreadsIndex', 'saveOperatorThreadHistory', 'window', 'console',
+    'saveOperatorThreadsIndex', 'saveOperatorThreadHistory', 'window', 'console', 'kiroReplyMeta',
     BLOCK + '\nreturn { mergeServerOperatorThreads, syncOperatorThreadsFromServer, loadOperatorThreadFromServer, dismissOperatorThreadId, loadDismissedOperatorThreadIds };',
   )(
     state, localStorage, fetchMock, () => ({ Authorization: 'Bearer t' }), () => { calls.renders++; },
     (id: string) => { calls.switched.push(id); state.operatorActiveThreadId = id; },
     (idx: any) => { calls.savedIndex = idx; }, (id: string, h: any) => { calls.savedHistory[id] = h; },
     {}, { warn: () => undefined, log: () => undefined },
+    // VTID-05003: the transcript loader keeps a reply's Kiro meta; not under test here.
+    () => undefined,
   );
   return { api, state, calls, fetchMock, storage };
 }

@@ -1,0 +1,11 @@
+    ✓ declares host, change and delete triggers on community_live_streams (6 ms)
+    ✓ the change trigger fires only when a watched column really changed (trigger-level WHEN) (2 ms)
+    ✓ status is a whitelist: only cancelled (or no date) cancels; times follow only while pending (1 ms)
+    ✓ only live entries are touched: an edit never revives a cancelled one (1 ms)
+    ✓ the host's own entry survives their un-notify, and the host flag survives their Erinnern (1 ms)
+    ✓ re-notify after a reschedule revives at the current time (1 ms)
+    ✓ skips registered service/test accounts as host, in the trigger and the backfill (1 ms)
+    ✓ is set-based (no loop, no network call) and not executable by clients (1 ms)
+    ✓ has a throwaway-Postgres behaviour test wired into CI (1 ms)
+Test Suites: 1 passed, 1 total
+Tests:       9 passed, 9 total

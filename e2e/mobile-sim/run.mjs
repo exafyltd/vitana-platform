@@ -100,7 +100,7 @@ async function main() {
     url: args.url,
     email: process.env.TEST_USER_EMAIL || 'e2e-test@vitana.dev',
     // Same fallback as e2e/fixtures/test-users.ts — shared e2e test account
-    password: process.env.TEST_USER_PASSWORD || 'VitanaE2eTest2026!',
+    password: process.env.TEST_USER_PASSWORD,
     beginRecording,
   };
 

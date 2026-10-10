@@ -23,10 +23,12 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { classifyIntentKind, type IntentKind } from './intent-classifier';
+import { shadowIntentKind } from './jev/gates/community-class-a-gates';
 import { extractIntent, friendlyMissingFields, type ExtractedIntent } from './intent-extractor';
 import { embedIntent } from './intent-embedding';
 import { computeForIntent, surfaceTopMatches } from './intent-matcher';
 import * as repo from './intent-find-match-repository';
+import { shadowMatchRerank } from './jev/gates/community-ranking-gates';
 
 const PARTNER_REVEAL_KINDS = new Set<IntentKind>(['partner_seek']);
 
@@ -201,6 +203,8 @@ export async function runFindMatch(
   let kind: IntentKind | undefined = kindHint;
   if (!kind) {
     const cls = await classifyIntentKind(utterance);
+    // VTID-04879: Jev in shadow beside the classifier; never awaited, never changes the result.
+    void shadowIntentKind({ utterance, existingKind: cls.intent_kind, existingConfidence: cls.confidence, tenantId: id.tenant_id, userId: id.user_id, sessionId: id.session_id, source: 'find_match' }).catch(() => undefined);
     if (!cls.intent_kind || cls.confidence < 0.7) {
       return {
         ok: true,
@@ -293,6 +297,18 @@ export async function runFindMatch(
           `[BOOTSTRAP-FIND-MATCH] exact-name short-circuit non-fatal: ${err instanceof Error ? err.message : 'unknown'}`,
         );
       }
+    }
+
+    // VTID-04883 (D3): Jev re-rank check of the SQL ranking (SQL #1 first). Skipped when the exact-name
+    // short-circuit chose the result. Fire-and-forget.
+    if (!exactPersonMatch) {
+      void shadowMatchRerank({
+        tenantId: id.tenant_id,
+        userId: id.user_id,
+        intentKind: kind,
+        category: extract.category ?? null,
+        candidates,
+      }).catch(() => undefined);
     }
 
     let postedIntentId: string | null = null;

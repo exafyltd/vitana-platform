@@ -2,7 +2,6 @@
  * VTID-03832 — the shared role constant that replaced five hand-copied lists.
  */
 import { VITANA_ROLES, VALID_ROLES, SUPER_ADMIN_ONLY_ROLES, ROLE_RANK, isVitanaRole } from '../src/constants/vitana-roles';
-import { VALID_ROLES as NAVIGATOR_ROLES } from '../src/routes/admin-navigator';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -23,9 +22,8 @@ describe('VTID-03832 vitana-roles constant', () => {
     expect(SUPER_ADMIN_ONLY_ROLES).not.toContain('backoffice');
   });
 
-  test('VALID_ROLES is a mutable mirror and admin-navigator re-exports the same set', () => {
+  test('VALID_ROLES is a mutable mirror', () => {
     expect(VALID_ROLES).toEqual([...VITANA_ROLES]);
-    expect([...NAVIGATOR_ROLES]).toEqual([...VITANA_ROLES]);
   });
 
   test('isVitanaRole guards', () => {

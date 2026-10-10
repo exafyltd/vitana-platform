@@ -55,6 +55,8 @@ import { devWorkerModel } from './dev-pipeline-models';
 import { executeKnowledgeSearch, KNOWLEDGE_SEARCH_TOOL_DEFINITION } from './knowledge-hub';
 // VTID-03835: Operator Console codebase read access (search + file read)
 import { searchCode, getFileContents } from './github-service';
+import { VITANA_REPOS, repoGitHubToken, isVitanaRepo } from './vitana-repos';
+import { gatewayServiceAuthHeader } from '../middleware/require-service-or-admin';
 import { getOperatorBootstrapPack } from './operator-bootstrap-pack';
 import { filterVitanaLogs, LOGS_DEFAULT_MINUTES, LOGS_MAX_MINUTES, LOGS_DEFAULT_LIMIT, LOGS_MAX_LIMIT } from './aws-cloudwatch-logs-readonly';
 import { buildRecallQuery } from './operator-threads';
@@ -105,6 +107,11 @@ export function setThreadIdentity(threadId: string, identity: { tenant_id: strin
   threadIdentityMap.set(threadId, identity);
   // Auto-cleanup after 30 minutes
   setTimeout(() => threadIdentityMap.delete(threadId), 30 * 60 * 1000);
+}
+
+/** VTID-05005: forget a thread's identity now (the Kiro tool adapter registers one per call). */
+export function clearThreadIdentity(threadId: string): void {
+  threadIdentityMap.delete(threadId);
 }
 const GOOGLE_GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
 
@@ -729,6 +736,18 @@ KNOWN BLIND SPOT: GitHub's code search index excludes any file over 384KB. servi
       description: 'Run a deep investigation (up to about two and a half minutes) when a question needs evidence from several places: code and its callers, git history, OASIS events, logs, database rows, live staging/production endpoints (GET only) or a screen\'s implementation. Returns findings with their sources. Read-only. Requires a signed-in developer.',
       parameters: { type: 'object', properties: { question: { type: 'string', description: 'The full question, with every name, id, time window and environment mentioned.' } }, required: ['question'] }
     },
+    // VTID-04821: Exafy company documents (Exafy Google Drive / OneDrive),
+    // reached only through the caller's own exafy.io account.
+    {
+      name: 'dev_company_docs_search',
+      description: 'Search Exafy company documents on the Exafy Google Drive and OneDrive the caller has connected with their exafy.io account. Returns file names, kinds, dates and links (never contents). If a drive is not connected, says so; offer dev_company_docs_connect. Read-only. Exafy staff (exafy_admin) only.',
+      parameters: { type: 'object', properties: { query: { type: 'string', description: 'What to look for: words in the document name or text.' } }, required: ['query'] }
+    },
+    {
+      name: 'dev_company_docs_connect',
+      description: 'Get the sign-in link that connects the caller\'s Exafy company drive (provider "google" for the Exafy Google Drive, "microsoft" for OneDrive) read-only. Only exafy.io accounts are searched afterwards. Exafy staff (exafy_admin) only.',
+      parameters: { type: 'object', properties: { provider: { type: 'string', description: '"google" (Exafy Drive, default) or "microsoft" (OneDrive).' } }, required: [] }
+    },
     // VTID-04116: Operator Console codebase intelligence — RepoWise. Closes
     // the gap the VTID-04002 gap analysis flagged: CLAUDE.md's mandatory
     // codebase-intelligence workflow had nothing installed anywhere to
@@ -1105,11 +1124,12 @@ NEVER claim a message was sent unless a call with confirmed=true returned ok. If
     },
     {
       name: 'dev_create_pr',
-      description: 'Create a GitHub pull request for a VTID branch.',
+      description: 'Create a GitHub pull request for a VTID branch, on exafyltd/vitana-platform (default) or exafyltd/vitana-v1.',
       parameters: {
         type: 'object',
         properties: {
           vtid: { type: 'string', description: 'The VTID this PR is for.' },
+          repo: { type: 'string', enum: ['exafyltd/vitana-platform', 'exafyltd/vitana-v1'], description: 'Repo to open the PR on. Defaults to exafyltd/vitana-platform.' },
           head_branch: { type: 'string', description: 'Branch to merge from.' },
           base_branch: { type: 'string', description: 'Branch to merge into. Defaults to main.' },
           title: { type: 'string', description: 'PR title.' },
@@ -1120,11 +1140,12 @@ NEVER claim a message was sent unless a call with confirmed=true returned ok. If
     },
     {
       name: 'dev_merge_pr',
-      description: 'Safe merge a PR with CI gate. Only merges if checks pass.',
+      description: 'Safe merge a PR with CI gate, on exafyltd/vitana-platform (default) or exafyltd/vitana-v1. Only merges if checks pass.',
       parameters: {
         type: 'object',
         properties: {
           vtid: { type: 'string', description: 'The VTID for this merge.' },
+          repo: { type: 'string', enum: ['exafyltd/vitana-platform', 'exafyltd/vitana-v1'], description: 'Repo the PR is on. Defaults to exafyltd/vitana-platform.' },
           pr_number: { type: 'integer', description: 'PR number to merge.' },
           merge_method: { type: 'string', enum: ['squash', 'merge', 'rebase'], description: 'Merge method. Defaults to squash.' }
         },
@@ -2777,9 +2798,11 @@ const OPERATOR_DEFAULT_REPO = 'exafyltd/vitana-platform';
 // FRONTEND_DEPLOY_TOKEN takes effect without a restart — same convention
 // as BEDROCK_ROLE_ARN (CLAUDE.md §2b) — rather than being frozen at
 // module-load time.
-const OPERATOR_ALLOWED_REPOS = ['exafyltd/vitana-platform', 'exafyltd/vitana-v1'] as const;
+// VTID-05014: the allowlist and the token now live in github-service
+// (VITANA_REPOS / repoGitHubToken) — one copy shared with the write paths.
+const OPERATOR_ALLOWED_REPOS = VITANA_REPOS;
 function operatorRepoToken(repo: string): string | undefined {
-  return repo === OPERATOR_DEFAULT_REPO ? undefined : process.env.FRONTEND_DEPLOY_TOKEN;
+  try { return isVitanaRepo(repo) ? repoGitHubToken(repo) : undefined; } catch { return undefined; }
 }
 
 function resolveOperatorRepo(requested: string | undefined): { repo: string; token?: string } | { error: string } {
@@ -3633,6 +3656,46 @@ async function executeDeveloperKnowledgeTool(
   }
 }
 
+/**
+ * VTID-04821: Exafy company documents. Only a verified exafy_admin on this
+ * request; each person searches their own connected exafy.io drives. Jev's
+ * relevance check (E1, shadow) runs after the result, never awaited.
+ */
+export async function executeCompanyDocsTool(
+  toolName: string,
+  args: Record<string, unknown>,
+  threadId: string,
+): Promise<ToolExecutionResult> {
+  const auth = getThreadAuth(threadId);
+  if (!auth || !auth.user_id || !auth.exafy_admin) return { ok: false, error: `${toolName} is for signed-in Exafy staff only` };
+  const tenantId = threadIdentityMap.get(threadId)?.tenant_id ?? null;
+  try {
+    const { getSupabase } = await import('../lib/supabase');
+    const sb = getSupabase();
+    if (!sb) return { ok: false, error: 'database unavailable' };
+    const docs = await import('./company-docs/company-docs');
+    if (toolName === 'dev_company_docs_connect') {
+      const provider = args.provider === 'microsoft' ? 'microsoft' : 'google';
+      if (!tenantId) return { ok: false, error: 'no active tenant on this session; sign in again' };
+      const r = await docs.companyDocsConnectUrl({ userId: auth.user_id, tenantId, provider, sb });
+      if (!r.ok) return { ok: false, error: r.error };
+      return { ok: true, data: { provider, auth_url: r.auth_url, note: `Sign in with your ${docs.companyDocsDomains().join(' / ')} account. Other accounts are never searched.` } };
+    }
+    const query = typeof args.query === 'string' ? args.query.trim().slice(0, 300) : '';
+    if (!query) return { ok: false, error: 'query is required' };
+    const { docs: found, sources } = await docs.searchCompanyDocs(auth.user_id, query, { sb });
+    if (found.length) {
+      const { isCompanyDocRelevanceOn, runCompanyDocRelevance } = await import('./jev/gates/company-doc-relevance-gate');
+      if (isCompanyDocRelevanceOn()) void runCompanyDocRelevance({ query, docs: found, tenantId });
+      const { isDocumentTypeRoutingOn, runDocumentTypeRouting } = await import('./jev/gates/document-type-gate');
+      if (isDocumentTypeRoutingOn()) void runDocumentTypeRouting({ docs: found, tenantId });
+    }
+    return { ok: true, data: { query, results: found, sources } };
+  } catch (e) {
+    return { ok: false, error: `${toolName} failed: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
 export async function executeTool(
   toolName: string,
   args: Record<string, unknown>,
@@ -3846,6 +3909,12 @@ export async function executeTool(
         result = await executeDeveloperKnowledgeTool(toolName, args as Record<string, unknown>, threadId);
         break;
 
+      // VTID-04821: Exafy company documents (staff only).
+      case 'dev_company_docs_search':
+      case 'dev_company_docs_connect':
+        result = await executeCompanyDocsTool(toolName, args as Record<string, unknown>, threadId);
+        break;
+
       // VTID-04229: Operator Console codebase index (S3 bundle)
       case 'dev_index_query':
       case 'dev_graph_path':
@@ -4031,11 +4100,11 @@ export async function executeTool(
         break;
 
       case 'dev_create_pr':
-        result = await executeDevCreatePr(args as { vtid: string; head_branch: string; base_branch?: string; title?: string; body?: string }, threadId);
+        result = await executeDevCreatePr(args as { vtid: string; repo?: string; head_branch: string; base_branch?: string; title?: string; body?: string }, threadId);
         break;
 
       case 'dev_merge_pr':
-        result = await executeDevMergePr(args as { vtid: string; pr_number: number; merge_method?: string }, threadId);
+        result = await executeDevMergePr(args as { vtid: string; repo?: string; pr_number: number; merge_method?: string }, threadId);
         break;
 
       case 'dev_deploy_service':
@@ -5669,23 +5738,21 @@ async function executeDevQueryOasisEvents(
  * Create a GitHub PR
  */
 async function executeDevCreatePr(
-  args: { vtid: string; head_branch: string; base_branch?: string; title?: string; body?: string },
+  args: { vtid: string; repo?: string; head_branch: string; base_branch?: string; title?: string; body?: string },
   threadId: string
 ): Promise<ToolExecutionResult> {
   try {
     const gatewayPort = process.env.PORT || '8080';
     const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/github/create-pr`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE!,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
+      // VTID-05019: the route requires the gateway service token (or an exafy_admin JWT).
+      headers: { 'Content-Type': 'application/json', ...gatewayServiceAuthHeader() },
       body: JSON.stringify({
         vtid: args.vtid,
-        repo: 'exafyltd/vitana-platform',
-        head_branch: args.head_branch,
-        base_branch: args.base_branch || 'main',
+        repo: args.repo || 'exafyltd/vitana-platform',
+        // VTID-05006: the route's schema (CreatePrRequestSchema) reads head/base.
+        head: args.head_branch,
+        base: args.base_branch || 'main',
         title: args.title || `${args.vtid}: ${args.head_branch}`,
         body: args.body || `PR created via Vitana Developer Assistant for ${args.vtid}`,
       }),
@@ -5714,23 +5781,21 @@ async function executeDevCreatePr(
  * Safe merge a PR
  */
 async function executeDevMergePr(
-  args: { vtid: string; pr_number: number; merge_method?: string },
+  args: { vtid: string; repo?: string; pr_number: number; merge_method?: string },
   threadId: string
 ): Promise<ToolExecutionResult> {
   try {
     const gatewayPort = process.env.PORT || '8080';
     const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/github/safe-merge`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE!,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
+      // VTID-05019: the route requires the gateway service token (or an exafy_admin JWT).
+      headers: { 'Content-Type': 'application/json', ...gatewayServiceAuthHeader() },
       body: JSON.stringify({
         vtid: args.vtid,
-        repo: 'exafyltd/vitana-platform',
+        repo: args.repo || 'exafyltd/vitana-platform',
         pr_number: args.pr_number,
-        merge_method: args.merge_method || 'squash',
+        // VTID-05006: the route's schema (SafeMergeRequestSchema) reads merge_strategy.
+        merge_strategy: args.merge_method || 'squash',
       }),
     });
 

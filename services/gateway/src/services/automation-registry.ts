@@ -598,7 +598,7 @@ const HEALTH_WELLNESS: AutomationDefinition[] = [
 ];
 
 // =============================================================================
-// AP-0700: Payments, Wallet & VTN
+// AP-0700: Payments, Wallet & VTNA
 // =============================================================================
 const PAYMENTS_WALLET: AutomationDefinition[] = [
   {
@@ -663,7 +663,7 @@ const PAYMENTS_WALLET: AutomationDefinition[] = [
     // Stays PLANNED: a token-launch automation is a one-time tokenomics/
     // treasury operation outside this session's scope — not a schema-drift
     // gap closable by fixing table/column names.
-    id: 'AP-0709', name: 'Vitana Token (VTN) Launch Automation', domain: 'payments-wallet-vtn',
+    id: 'AP-0709', name: 'Vitana Token (VTNA) Launch Automation', domain: 'payments-wallet-vtn',
     status: 'PLANNED', priority: 'P0', triggerType: 'manual',
     targetRoles: ALL_ROLES,
   },
@@ -834,9 +834,16 @@ const MEMORY_INTEL: AutomationDefinition[] = [
     // Drains the fact-embedding backlog (96% of live facts were unembedded,
     // blinding tier-2 semantic retrieval). Hourly, 100/run, cheap no-op when
     // the backlog is empty; new writes embed inline in the extractor.
+    //
+    // VTID-04786: a heartbeat job, not a cron. Its only trigger was the GCP
+    // Cloud Scheduler; the EventBridge replacement for the memory block was
+    // never applied, so it last ran 2026-07-06 and coverage sat at 4%. The
+    // in-process heartbeat loop (the VTID-04320 reminders precedent) fires it
+    // every 30 min; dedupeAcrossInstances keeps several gateway tasks from
+    // each running it. POST /automations/cron/AP-0910 still works.
     id: 'AP-0910', name: 'Memory Embedding Backfill', domain: 'memory-intelligence',
-    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
-    triggerConfig: { cronExpression: '25 * * * *' }, // hourly at :25
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 30, dedupeAcrossInstances: true },
     targetRoles: [...MEMBER_ROLES],
     handler: 'runMemoryEmbeddingBackfill',
   },

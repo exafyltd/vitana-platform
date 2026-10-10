@@ -1,0 +1,17 @@
+{
+  "vtid": "VTID-05014",
+  "files": [
+    "services/gateway/src/services/vitana-repos.ts",
+    "services/gateway/src/services/github-service.ts",
+    "services/gateway/src/routes/cicd.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/src/services/gemini-operator.ts",
+    "services/gateway/src/services/kiro/**",
+    "services/gateway/src/routes/operator.ts",
+    "services/gateway/test/vtid-05014-*.test.ts",
+    "services/gateway/test/vtid-05006-kiro-write-tools.test.ts",
+    "services/gateway/test/vtid-04465-operator-pipeline-regression.test.ts",
+    "services/gateway/test/operator-pipeline/fake-operator-platform.ts",
+    "docs/validation/VTID-05014/**"
+  ]
+}

@@ -119,7 +119,7 @@ describe('VTID-03800 (2) a narrated guided topic is one-shot and terminal', () =
       widget,
       'function _endGuidedTopicTeaching(topicId, reason) {',
     );
-    expect(body).toMatch(/_hide\(\);/);
+    expect(body).toMatch(/_hide\('[a-z_]+'\);/);
     expect(body).toMatch(/_cfg\.onGuidedTopicTeachingEnd\(topicId, reason\)/);
   });
 
@@ -158,7 +158,7 @@ describe('VTID-03800 narration flag lifecycle', () => {
   });
 
   it('is cleared by _hide, same lifecycle as _guidedTopicInFlight', () => {
-    const body = extractFunctionBody(widget, 'function _hide() {');
+    const body = extractFunctionBody(widget, 'function _hide(reason) {');
     expect(body).toMatch(/_s\._guidedTopicNarrated = false;/);
   });
 });

@@ -1,4 +1,6 @@
 -- Aurora RLS-parity restoration script (VTID-04084)
+-- VTID-04880: nav_catalog* statements below are guarded with to_regclass -- those
+-- tables were archived to legacy_archive in Supabase and may be absent.
 --
 -- Generated 2026-09-18 from a live snapshot of Supabase's actual
 -- pg_policies + pg_class.relrowsecurity for schema public. Restores the
@@ -377,9 +379,9 @@ ALTER TABLE public.monetization_cooldowns ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.monetization_signals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.mood_pattern_aggregates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.music_metadata ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.nav_catalog ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.nav_catalog_audit ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.nav_catalog_i18n ENABLE ROW LEVEL SECURITY;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE public.nav_catalog ENABLE ROW LEVEL SECURITY$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_audit') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE public.nav_catalog_audit ENABLE ROW LEVEL SECURITY$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_i18n') IS NOT NULL THEN EXECUTE $SQL04880$ALTER TABLE public.nav_catalog_i18n ENABLE ROW LEVEL SECURITY$SQL04880$; END IF; END $NAV04880$;
 ALTER TABLE public.news_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.normalized_event ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notification_categories ENABLE ROW LEVEL SECURITY;
@@ -1262,9 +1264,9 @@ CREATE POLICY monetization_signals_insert ON public.monetization_signals AS PERM
 CREATE POLICY mood_pattern_aggregates_tenant_user_select ON public.mood_pattern_aggregates AS PERMISSIVE FOR SELECT TO authenticated USING (((tenant_id = current_tenant_id()) AND (user_id = auth.uid())));
 CREATE POLICY "Users can manage music metadata" ON public.music_metadata AS PERMISSIVE FOR ALL TO public USING ((EXISTS ( SELECT 1    FROM media_uploads m   WHERE ((m.id = music_metadata.media_id) AND (m.user_id = auth.uid()))))) WITH CHECK ((EXISTS ( SELECT 1    FROM media_uploads m   WHERE ((m.id = music_metadata.media_id) AND (m.user_id = auth.uid())))));
 CREATE POLICY "Users can view music metadata" ON public.music_metadata AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1    FROM media_uploads m   WHERE ((m.id = music_metadata.media_id) AND (((m.status = 'approved'::text) AND (m.is_public = true)) OR (m.user_id = auth.uid()) OR (EXISTS ( SELECT 1            FROM memberships mb           WHERE ((mb.user_id = auth.uid()) AND (mb.role = ANY (ARRAY['staff'::tenant_role, 'admin'::tenant_role])) AND (mb.status = 'active'::text)))))))));
-CREATE POLICY admin_read_nav_catalog ON public.nav_catalog AS PERMISSIVE FOR SELECT TO authenticated USING (((((auth.jwt() -> 'app_metadata'::text) ->> 'exafy_admin'::text))::boolean IS TRUE));
-CREATE POLICY admin_read_nav_catalog_audit ON public.nav_catalog_audit AS PERMISSIVE FOR SELECT TO authenticated USING (((((auth.jwt() -> 'app_metadata'::text) ->> 'exafy_admin'::text))::boolean IS TRUE));
-CREATE POLICY admin_read_nav_catalog_i18n ON public.nav_catalog_i18n AS PERMISSIVE FOR SELECT TO authenticated USING (((((auth.jwt() -> 'app_metadata'::text) ->> 'exafy_admin'::text))::boolean IS TRUE));
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog') IS NOT NULL THEN EXECUTE $SQL04880$CREATE POLICY admin_read_nav_catalog ON public.nav_catalog AS PERMISSIVE FOR SELECT TO authenticated USING (((((auth.jwt() -> 'app_metadata'::text) ->> 'exafy_admin'::text))::boolean IS TRUE))$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_audit') IS NOT NULL THEN EXECUTE $SQL04880$CREATE POLICY admin_read_nav_catalog_audit ON public.nav_catalog_audit AS PERMISSIVE FOR SELECT TO authenticated USING (((((auth.jwt() -> 'app_metadata'::text) ->> 'exafy_admin'::text))::boolean IS TRUE))$SQL04880$; END IF; END $NAV04880$;
+DO $NAV04880$ BEGIN IF to_regclass('public.nav_catalog_i18n') IS NOT NULL THEN EXECUTE $SQL04880$CREATE POLICY admin_read_nav_catalog_i18n ON public.nav_catalog_i18n AS PERMISSIVE FOR SELECT TO authenticated USING (((((auth.jwt() -> 'app_metadata'::text) ->> 'exafy_admin'::text))::boolean IS TRUE))$SQL04880$; END IF; END $NAV04880$;
 CREATE POLICY authenticated_read_active_categories ON public.notification_categories AS PERMISSIVE FOR SELECT TO authenticated USING ((is_active = true));
 CREATE POLICY service_role_full_access_categories ON public.notification_categories AS PERMISSIVE FOR ALL TO public USING (true) WITH CHECK (true);
 CREATE POLICY "Staff can view all notification logs" ON public.notification_logs AS PERMISSIVE FOR SELECT TO authenticated USING (((EXISTS ( SELECT 1    FROM memberships m   WHERE ((m.user_id = auth.uid()) AND (m.role = ANY (ARRAY['admin'::tenant_role, 'staff'::tenant_role])) AND (m.status = 'active'::text)))) OR (COALESCE((((auth.jwt() -> 'app_metadata'::text) ->> 'exafy_admin'::text))::boolean, false) = true)));

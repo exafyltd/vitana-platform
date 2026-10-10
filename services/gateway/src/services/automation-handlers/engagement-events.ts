@@ -9,6 +9,8 @@
 import { AutomationContext } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
 import * as repo from './engagement-events-repository';
+// VTID-04677: the scheduled-notifications routes require X-Gateway-Internal.
+import { internalTokenHeaders } from '../../middleware/scheduled-notifications-auth';
 
 // =============================================================================
 // AP-0300: Events & Live Rooms
@@ -436,7 +438,7 @@ async function runMorningBriefing(ctx: AutomationContext) {
     const gatewayUrl = process.env.GATEWAY_INTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
     const resp = await fetch(`${gatewayUrl}/api/v1/scheduled-notifications/morning-briefing`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...internalTokenHeaders() },
       body: JSON.stringify({ tenant_id: tenantId }),
     });
 
@@ -462,7 +464,7 @@ async function runWeeklyCommunityDigest(ctx: AutomationContext) {
     const gatewayUrl = process.env.GATEWAY_INTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
     const resp = await fetch(`${gatewayUrl}/api/v1/scheduled-notifications/weekly-digest`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...internalTokenHeaders() },
       body: JSON.stringify({ tenant_id: tenantId }),
     });
 
@@ -556,7 +558,7 @@ async function runDiaryReminderSocial(ctx: AutomationContext) {
     const gatewayUrl = process.env.GATEWAY_INTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
     const resp = await fetch(`${gatewayUrl}/api/v1/scheduled-notifications/diary-reminder`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...internalTokenHeaders() },
       body: JSON.stringify({ tenant_id: tenantId }),
     });
 
@@ -582,7 +584,7 @@ async function runWeeklyReflection(ctx: AutomationContext) {
     const gatewayUrl = process.env.GATEWAY_INTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
     const resp = await fetch(`${gatewayUrl}/api/v1/scheduled-notifications/weekly-reflection`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...internalTokenHeaders() },
       body: JSON.stringify({ tenant_id: tenantId }),
     });
 
@@ -703,7 +705,7 @@ async function runUpcomingEventsToday(ctx: AutomationContext) {
     const gatewayUrl = process.env.GATEWAY_INTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
     const resp = await fetch(`${gatewayUrl}/api/v1/scheduled-notifications/upcoming-events`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...internalTokenHeaders() },
       body: JSON.stringify({ tenant_id: tenantId }),
     });
 

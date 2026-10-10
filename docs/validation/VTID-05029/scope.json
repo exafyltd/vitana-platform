@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-05029",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/email/notification-email-fallback.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/i18n/catalog.ts",
+    "services/gateway/src/i18n/locales/*.json",
+    "services/gateway/test/vtid-05029-*.test.ts",
+    "supabase/migrations/20261010130000_vtid_05029_email_fallback.sql",
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-05029/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
