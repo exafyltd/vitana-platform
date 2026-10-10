@@ -8,7 +8,9 @@
  * mirrored to OASIS, and the raw webhook is logged for audit.
  *
  * No auth — webhooks come from third parties. Security is via HMAC
- * signature in the connector's own verifyTerraSignature / equivalent.
+ * signature, verified over the RAW body (index.ts mounts express.raw on
+ * /api/v1/connectors/webhook) by connectors/runtime/webhook-signature.ts.
+ * Every verifier fails closed when its secret is unset (VTID-05031).
  */
 
 import { Router, Request, Response } from 'express';
@@ -77,7 +79,8 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
         payload: parsedPayload as object,
       });
     }
-    return res.status(500).json({ ok: false, error: message });
+    // VTID-05031: the exception text stays in the audit row, never in the response.
+    return res.status(500).json({ ok: false, error: 'handler_error' });
   }
 
   if (!result.valid) {

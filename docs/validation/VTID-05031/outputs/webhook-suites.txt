@@ -1,0 +1,34 @@
+$ npx jest test/vtid-05031-webhook-verification.test.ts test/connectors/doctorbox.test.ts
+    ✓ accepts the vendor scheme (6 ms)
+    ✓ accepts when any of several v1 signatures matches (1 ms)
+    ✓ rejects a tampered body and a wrong secret (1 ms)
+    ✓ rejects a timestamp outside ±300 s, in either direction (1 ms)
+    ✓ rejects a missing t, a missing v1, a missing header (1 ms)
+    ✓ fails closed without a secret (1 ms)
+    ✓ matches Svix's published test vector (1 ms)
+    ✓ accepts when one of several space-separated signatures matches (1 ms)
+    ✓ rejects a wrong id, a tampered body, a stale timestamp (1 ms)
+    ✓ rejects missing svix headers (1 ms)
+    ✓ fails closed without a secret
+    ✓ accepts a valid hex HMAC and rejects an invalid one (1 ms)
+    ✓ fails closed without a secret (1 ms)
+    ✓ Terra, Vital and DoctorBox reject every delivery when the secret is unset (1 ms)
+    ✓ no connector keeps a dev-mode verification bypass (2 ms)
+    ✓ index.ts mounts the raw body parser for the webhook route before express.json() (2 ms)
+    ✓ verifies over the exact bytes sent, even when they differ from JSON.stringify (48 ms)
+    ✓ answers 401 and logs the row for an invalid delivery (7 ms)
+    ✓ answers 401 when the secret is not configured (4 ms)
+    ✓ a handler exception answers 500 without the exception text (5 ms)
+    ✓ rejects every request when the secret is unset (fail closed, VTID-05031) (3 ms)
+    ✓ rejects an invalid signature when a secret is configured (1 ms)
+    ✓ accepts a valid signature when a secret is configured
+    ✓ rejects a payload with no external_order_ref
+    ✓ rejects when the partner is not registered (1 ms)
+    ✓ quarantines (never guesses) when no order matches the external_order_ref (1 ms)
+    ✓ maps a known raw status and delegates to recordStatusChange (1 ms)
+    ✓ rejects an unmapped raw status rather than guessing (1 ms)
+    ✓ delegates through the adapter + ingestPartnerResult (2 ms)
+    ✓ reports a quarantined outcome as valid (the webhook itself was legitimate)
+    ✓ rejects an unrecognized event type (10 ms)
+Test Suites: 2 passed, 2 total
+Tests:       31 passed, 31 total

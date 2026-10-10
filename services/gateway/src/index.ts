@@ -585,6 +585,14 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // JSON.parse()s this text itself after verifying the SNS signature.
   app.use('/api/v1/aws-alerts/sns', express.text({ type: '*/*', limit: '1mb' }));
 
+  // VTID-05031 (Health Hub D2): vendor webhooks are signed over the exact bytes
+  // sent. express.json() would hand the route a re-serialized object, so every
+  // genuine Terra/Vital(Svix)/DoctorBox signature could fail. Raw bytes here;
+  // routes/connector-webhooks.ts parses the JSON itself after verification.
+  // type '*/*' on purpose (unlike the Stripe mounts): the signature covers whatever
+  // bytes the vendor sent, whatever Content-Type it labels them with.
+  app.use('/api/v1/connectors/webhook', express.raw({ type: '*/*', limit: '2mb' }));
+
   // Middleware - IMPORTANT: JSON body parser must come before route handlers
   app.use(express.json({ limit: '2mb' }));
 
