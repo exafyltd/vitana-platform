@@ -14,19 +14,29 @@
  * with the owner's KIRO_API_KEY in that child's environment only. This file
  * never sees, stores or logs a key.
  */
-import { AcpClient, type AcpChild, type KiroModel, type KiroModelState, type KiroRunnerInfo } from './acp-client';
-import { mapAcpUpdate, type KiroTurnEventSink } from './kiro-events';
+import { AcpClient, KIRO_PROMPT_TIMEOUT_MS, type AcpChild, type KiroModel, type KiroModelState, type KiroRunnerInfo } from './acp-client';
+import { mapAcpUpdate, type KiroTurnEvent, type KiroTurnEventSink } from './kiro-events';
 import { makePermissionHandler } from './permission-broker';
 import { isKiroCreditError, setKiroCredits } from './credit-state';
 import { isKiroMcpEnabled } from './kiro-mcp-token';
+import { hashKiroReattachToken, isKiroReattachConfigured, kiroReattachToken, newKiroReattachNonce, type KiroReattachRecord } from './kiro-reattach-token';
 
-export interface KiroSpawnContext { userId: string | null; threadId: string }
+export interface KiroSpawnContext {
+  userId: string | null; threadId: string;
+  /** VTID-05068: the session's reattach token (backends that support reattach send it to the runner). */
+  reattachToken?: string | null;
+}
 
 export interface KiroBackend {
   /** Start `kiro-cli acp` for this user. The key goes into the child's env here, nowhere else. */
   spawn(ctx: KiroSpawnContext): Promise<AcpChild> | AcpChild;
   /** Isolated working directory for the session. */
   workspace(ctx: KiroSpawnContext): string;
+  /**
+   * VTID-05068: take over this user + thread's session whose gateway socket dropped, with the
+   * session's reattach token. Rejects when the runner refuses. Absent = sessions are not reattachable.
+   */
+  reattach?(ctx: KiroSpawnContext, token: string): Promise<AcpChild>;
 }
 
 /** VTID-04999: the signed-in user has no Kiro API key linked (the runner closed the session with 4401). */
@@ -51,6 +61,18 @@ export interface KiroTurnInput {
    * pick survives an idle close, a deploy or the reopen. Never a default: no pick, no call.
    */
   loadModelPick?: () => Promise<string | null>;
+  /**
+   * VTID-05068: told, at the start of every turn, the reattach identity (nonce + token hash,
+   * never the token) of the session the turn runs on; not called when the session is not
+   * reattachable. The run record stores it so another gateway task can take the turn over.
+   */
+  onReattach?: (r: KiroReattachRecord) => void;
+  /**
+   * VTID-05068: this turn was started by a gateway task that went away; its session was just
+   * reattached here (reattachKiroSession). Wait for the prompt that task sent instead of sending
+   * one; `priorReply` / `priorTools` are what the turn produced before the hand-over.
+   */
+  resume?: { priorReply: string; priorTools: Array<{ id: string; name: string; kind: string; status: string }> };
 }
 
 /**
@@ -156,6 +178,12 @@ interface KiroSession {
   runner: KiroRunnerInfo | null;
   /** VTID-05064: the session rules still have to go with the first prompt. */
   rulesPending: boolean;
+  /** VTID-05068: this session's reattach identity (null = not reattachable). */
+  reattach: KiroReattachRecord | null;
+  /** VTID-05068: a reattached session's answer to the prompt the previous gateway task sent. */
+  adoptedPrompt?: Promise<{ stopReason?: string }> | null;
+  /** VTID-05068: events replayed before the resumed turn attached its sink. */
+  earlyEvents?: KiroTurnEvent[];
 }
 
 /** VTID-05005: a session's tool pass lasts 1 h; an older session reopens at its next turn. */
@@ -195,9 +223,8 @@ function closeSession(threadId: string): void {
   s.client.close();
 }
 
-async function openSession(input: KiroTurnInput, b: KiroBackend): Promise<KiroSession> {
-  const ctx = { userId: input.userId, threadId: input.threadId };
-  const child = await b.spawn(ctx);
+/** An AcpClient on `child` whose notifications and permission cards reach the session's CURRENT turn sink. */
+function clientFor(child: AcpChild, threadId: string, userId: string | null): { client: AcpClient; holder: { session: KiroSession | null } } {
   // `holder` lets notifications and permission cards reach the CURRENT turn's sink.
   const holder: { session: KiroSession | null } = { session: null };
   const emit: KiroTurnEventSink = (e) => { try { holder.session?.emit(e); } catch { /* sink must never fail a turn */ } };
@@ -208,18 +235,88 @@ async function openSession(input: KiroTurnInput, b: KiroBackend): Promise<KiroSe
       const ev = mapAcpUpdate(params);
       if (ev) emit(ev);
     },
-    onPermissionRequest: makePermissionHandler({ threadId: input.threadId, userId: input.userId, emit }),
+    onPermissionRequest: makePermissionHandler({ threadId, userId, emit }),
   });
+  return { client, holder };
+}
+
+async function openSession(input: KiroTurnInput, b: KiroBackend): Promise<KiroSession> {
+  // VTID-05068: a session another gateway task can take over gets a reattach identity at spawn.
+  const nonce = b.reattach && isKiroReattachConfigured() ? newKiroReattachNonce() : null;
+  const token = nonce ? kiroReattachToken(nonce) : null;
+  const ctx: KiroSpawnContext = { userId: input.userId, threadId: input.threadId, ...(token ? { reattachToken: token } : {}) };
+  const child = await b.spawn(ctx);
+  const { client, holder } = clientFor(child, input.threadId, input.userId);
   try {
     await client.initialize();
     const { sessionId, models } = await client.openNewSession(b.workspace(ctx));
-    const session: KiroSession = { client, sessionId, userId: input.userId, emit: input.emit ?? (() => {}), idle: null, models, openedAt: Date.now(), runner: child.runner ?? null, rulesPending: true };
+    const session: KiroSession = {
+      client, sessionId, userId: input.userId, emit: input.emit ?? (() => {}), idle: null, models, openedAt: Date.now(), runner: child.runner ?? null, rulesPending: true,
+      reattach: nonce && token ? { nonce, tokenHash: hashKiroReattachToken(token) } : null,
+    };
     holder.session = session;
     return session;
   } catch (err) {
     client.close();
     throw err;
   }
+}
+
+export type ReattachKiroSessionResult =
+  | { ok: true }
+  | { ok: false; reason: 'not_supported' | 'session_exists' | 'token_mismatch' | 'refused' | 'error'; message?: string };
+
+/**
+ * VTID-05068: take over, on THIS gateway task, the Kiro session of a run another task started
+ * (its socket dropped in a deploy or a crash). The token is re-derived from the run's nonce and
+ * checked against the stored hash before it is presented. On success the session is this
+ * thread's session here, and its pending prompt is adopted: runKiroTurn({ resume }) waits for it.
+ * `refused` = the runner said no (wrong/expired token, no such session) — the caller falls back
+ * to the Phase 1 behaviour (interrupted).
+ */
+export async function reattachKiroSession(input: { threadId: string; userId: string | null; reattach: KiroReattachRecord }, env: NodeJS.ProcessEnv = process.env): Promise<ReattachKiroSessionResult> {
+  const b = backend;
+  if (!isKiroEngineEnabled(env) || !b || !b.reattach || !isKiroReattachConfigured(env)) return { ok: false, reason: 'not_supported' };
+  if (sessions.has(input.threadId)) return { ok: false, reason: 'session_exists' };
+  const token = kiroReattachToken(input.reattach.nonce, env);
+  if (!token || hashKiroReattachToken(token) !== input.reattach.tokenHash) return { ok: false, reason: 'token_mismatch' };
+  let child: AcpChild;
+  try { child = await b.reattach({ userId: input.userId, threadId: input.threadId }, token); } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, reason: (err as { name?: string })?.name === 'KiroReattachRefusedError' ? 'refused' : 'error', message };
+  }
+  const info = child.runner?.reattached ?? null;
+  const { client, holder } = clientFor(child, input.threadId, input.userId);
+  // Registered in the same tick the client is built: the replayed answer is read after this.
+  const promptId = info && info.pendingPrompts.length > 0 ? Math.max(...info.pendingPrompts) : null;
+  const adoptedPrompt = promptId !== null ? client.adopt<{ stopReason?: string }>(promptId, KIRO_PROMPT_TIMEOUT_MS) : null;
+  adoptedPrompt?.catch(() => undefined);
+  if (sessions.has(input.threadId)) { client.close(); return { ok: false, reason: 'session_exists' }; }
+  // Replayed events that arrive before the resumed turn attaches its sink are kept for it, in order.
+  const early: KiroTurnEvent[] = [];
+  const session: KiroSession = {
+    client, sessionId: info?.sessionId ?? '', userId: input.userId, emit: (e) => { early.push(e); }, earlyEvents: early, idle: null, models: null,
+    // The MCP pass was minted by the other task: a later turn opens a fresh session (history restore).
+    openedAt: 0, runner: child.runner ?? null, rulesPending: false, reattach: input.reattach, adoptedPrompt,
+  };
+  holder.session = session;
+  sessions.set(input.threadId, session);
+  touch(input.threadId, session);
+  return { ok: true };
+}
+
+/**
+ * VTID-05068: graceful shutdown — let this thread's session go for another gateway task (the
+ * runner keeps kiro-cli alive): no write, the turn waiting on it stays pending, never failed.
+ * False when the session is not reattachable (then nothing changes here).
+ */
+export function detachKiroSession(threadId: string): boolean {
+  const s = sessions.get(threadId);
+  if (!s || !s.reattach) return false;
+  if (!s.client.detach()) return false;
+  sessions.delete(threadId);
+  if (s.idle) clearTimeout(s.idle);
+  return true;
 }
 
 /**
@@ -264,6 +361,7 @@ export async function runKiroTurn(input: KiroTurnInput, env: NodeJS.ProcessEnv =
   }
   let session = sessions.get(input.threadId);
   if (session && session.userId !== input.userId) return result('error', 'This Kiro session belongs to another user.', { error: 'forbidden' });
+  if (input.resume) return resumeKiroTurn(input, session);
   if (session && isKiroMcpEnabled(env) && Date.now() - session.openedAt > KIRO_MCP_SESSION_MAX_MS) {
     closeSession(input.threadId);
     session = undefined;
@@ -309,6 +407,8 @@ export async function runKiroTurn(input: KiroTurnInput, env: NodeJS.ProcessEnv =
     workspaceNote = workspaceNoteFor(session.runner, history);
   }
   touch(input.threadId, session);
+  // VTID-05068: the run record keeps the session's reattach identity (never the token).
+  if (session.reattach && input.onReattach) { try { input.onReattach(session.reattach); } catch { /* recording must never fail a turn */ } }
 
   // Collect what the turn produced from the same events the console streams.
   let reply = '';
@@ -338,6 +438,45 @@ export async function runKiroTurn(input: KiroTurnInput, env: NodeJS.ProcessEnv =
     const msg = err instanceof Error ? err.message : String(err);
     if (isKiroCreditError(msg)) return noCredits(input.userId, 'error', msg);
     return result('error', 'Kiro turn failed.', { error: msg });
+  }
+}
+
+/**
+ * VTID-05068: finish a turn another gateway task started, on the session reattachKiroSession
+ * just took over here: collect the replayed and new events, wait for the adopted prompt's
+ * answer, and return the same result shape a normal turn does (the reply includes what the
+ * turn produced before the hand-over).
+ */
+async function resumeKiroTurn(input: KiroTurnInput, session: KiroSession | undefined): Promise<KiroTurnResult> {
+  if (!session || !session.adoptedPrompt) {
+    return result('error', 'Kiro turn could not be resumed after the gateway restart.', { error: 'kiro_resume_missing' });
+  }
+  const prior = input.resume!;
+  let reply = prior.priorReply;
+  const tools = new Map<string, { name: string; kind: string; status: string }>(prior.priorTools.map((t) => [t.id, { name: t.name, kind: t.kind, status: t.status }]));
+  const collect: KiroTurnEventSink = (e) => {
+    if (e.type === 'kiro.message_chunk') reply += e.text;
+    else if (e.type === 'kiro.tool_call') tools.set(e.tool_call_id, { name: e.title, kind: e.kind, status: e.status });
+    else if (e.type === 'kiro.tool_update') { const t = tools.get(e.tool_call_id); if (t) t.status = e.status || t.status; }
+    try { input.emit?.(e); } catch { /* sink must never fail a turn */ }
+  };
+  session.emit = collect;
+  for (const e of (session.earlyEvents ?? []).splice(0)) collect(e);
+  touch(input.threadId, session);
+  if (session.reattach && input.onReattach) { try { input.onReattach(session.reattach); } catch { /* never fails a turn */ } }
+  const adopted = session.adoptedPrompt;
+  session.adoptedPrompt = null;
+  try {
+    const r = await adopted;
+    const stopReason = String(r?.stopReason ?? 'end_turn');
+    collect({ type: 'kiro.turn_end', stop_reason: stopReason });
+    const dirty = session.runner?.dirty ?? null;
+    return result(statusForStopReason(stopReason), reply, { stop_reason: stopReason, kiro_model: null, kiro_reattached: true, ...(dirty ? { kiro_workspace_dirty: dirty } : {}) },
+      [...tools.values()].map((t) => ({ name: t.name, response: { kind: t.kind, status: t.status } })));
+  } catch (err) {
+    closeSession(input.threadId);
+    const msg = err instanceof Error ? err.message : String(err);
+    return result('error', 'Kiro turn failed.', { error: msg, kiro_reattached: true });
   }
 }
 

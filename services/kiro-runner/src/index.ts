@@ -5,7 +5,7 @@
 import fs from 'fs';
 import { SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { KeyStore } from './key-store';
-import { defaultWorkRoot, stopAllSessions } from './relay';
+import { REATTACH_DEFAULTS, defaultWorkRoot, stopAllSessions } from './relay';
 import { createRunnerServer } from './server';
 import { RepoMirrors } from './repo-mirrors';
 import { rescanParked, sweepParked } from './workspace-park';
@@ -52,6 +52,9 @@ const server = createRunnerServer({
     pingMs: 30_000,
     maxLineBytes: 1024 * 1024,
     maxBufferedBytes: 8 * 1024 * 1024,
+    // VTID-05068: a session whose gateway socket drops mid-turn waits this long for a reattach ("0" = end at once).
+    reattachMs: process.env.KIRO_RUNNER_REATTACH_MS === '0' ? 0 : intEnv('KIRO_RUNNER_REATTACH_MS', REATTACH_DEFAULTS.reattachMs),
+    reattachBufferBytes: intEnv('KIRO_RUNNER_REATTACH_BUFFER_BYTES', REATTACH_DEFAULTS.reattachBufferBytes),
   },
 }, store);
 

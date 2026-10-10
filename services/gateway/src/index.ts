@@ -1696,10 +1696,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
             },
             // VTID-05065: write every open Kiro run's events and mark this task's runs
             // interrupted (own 3 s bound, inside the shared 5 s drain).
+            // VTID-05068: running runs on a reattachable session are let go for the next task instead.
             async () => {
               const { drainKiroRunsForShutdown } = require('./services/kiro/kiro-runs');
               const r = await drainKiroRunsForShutdown(3_000);
-              console.log(`[VTID-05065] kiro-run drain: interrupted=${r.interrupted} timedOut=${r.timedOut}`);
+              console.log(`[VTID-05065] kiro-run drain: interrupted=${r.interrupted} detached=${r.detached} timedOut=${r.timedOut}`);
             },
           ],
         });
