@@ -166,7 +166,8 @@
       "guided_journey",
       "reminder",
       "subscription",
-      "test_result"
+      "test_result",
+      "audiobook"
     ],
     "event": [
       "personal",

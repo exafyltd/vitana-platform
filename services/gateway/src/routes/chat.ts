@@ -17,6 +17,7 @@ import {
   resolveVitanaId,
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
+import { buildInviteForChat, CALENDAR_INVITE_TYPE } from '../services/calendar-invite';
 import { createClient } from '@supabase/supabase-js';
 import { notifyUser } from '../services/notification-service';
 import { VITANA_BOT_USER_ID, isVitanaBot } from '../lib/vitana-bot';
@@ -70,14 +71,25 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
   }
 
   const msgType = typeof message_type === 'string' && message_type.length > 0 ? message_type : 'text';
-  const allowedTypes = new Set(['text', 'attachment', 'voice', 'voice_transcript']);
+  const allowedTypes = new Set(['text', 'attachment', 'voice', 'voice_transcript', CALENDAR_INVITE_TYPE]);
   if (!allowedTypes.has(msgType)) {
     return res.status(400).json({ ok: false, error: 'invalid_message_type' });
   }
 
   const rawContent = typeof content === 'string' ? content : '';
-  const trimmedContent = rawContent.trim();
-  const metadata = content_data && typeof content_data === 'object' ? (content_data as Record<string, unknown>) : {};
+  let trimmedContent = rawContent.trim();
+  let metadata: Record<string, unknown> = content_data && typeof content_data === 'object' ? (content_data as Record<string, unknown>) : {};
+
+  // VTID-04917: an invite card is built on the server from the sender's own
+  // calendar entry; the client sends only { entry_id }.
+  if (msgType === CALENDAR_INVITE_TYPE) {
+    const invite = await buildInviteForChat(identity.user_id, content_data);
+    if (!invite.ok) {
+      return res.status(invite.status).json({ ok: false, error: invite.error, ...(invite.reason ? { reason: invite.reason } : {}) });
+    }
+    metadata = { ...invite.metadata };
+    trimmedContent = invite.content;
+  }
   const attachments = Array.isArray((metadata as any).attachments) ? (metadata as any).attachments : [];
 
   if (msgType === 'text') {

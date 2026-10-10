@@ -1,5 +1,5 @@
 {
-  "_comment": "VTID-04458 \u2014 every calendar source file and the tests that protect it. calendar-coverage.guard.test.ts fails when a calendar file is added without an entry here, or when a listed test no longer exists or no longer imports the file. `via` names the module whose tests drive a thin data-access seam.",
+  "_comment": "VTID-04458 — every calendar source file and the tests that protect it. calendar-coverage.guard.test.ts fails when a calendar file is added without an entry here, or when a listed test no longer exists or no longer imports the file. `via` names the module whose tests drive a thin data-access seam.",
   "sources": {
     "src/types/calendar.ts": {
       "tests": [
@@ -140,6 +140,17 @@
     "src/services/calendar-share.ts": {
       "tests": [
         "test/vtid-04916-calendar-share.test.ts"
+      ]
+    },
+    "src/services/calendar-invite.ts": {
+      "tests": [
+        "test/vtid-04917-calendar-invite-audiobook.test.ts",
+        "test/vtid-04917-invite-routes.test.ts"
+      ]
+    },
+    "src/services/guided-journey/audiobook-calendar.ts": {
+      "tests": [
+        "test/vtid-04917-calendar-invite-audiobook.test.ts"
       ]
     }
   }
