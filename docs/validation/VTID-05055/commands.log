@@ -1,0 +1,9 @@
+# VTID-05055 — commands run locally (services/gateway unless noted); no network, no database
+npx jest test/admin-partner-health.test.ts test/partner-health-member.test.ts test/partner-health/link-confirmation.test.ts test/vtid-05055-member-link-migration.test.ts --verbose   # 4 suites, 83/83 -> outputs/jest-vtid-05055-suites.txt
+npx jest test/vtid-04560-role-separation-regression.test.ts test/partner-health-consent.test.ts test/partner-health/ingestion.test.ts test/partner-health/org-access.test.ts test/connectors test/i18n/catalog-coverage.test.ts test/vtid-04674-notification-controls.test.ts test/vtid-04674-notification-controls-wiring.test.ts <10 more suites importing i18n/catalog, notification-catalog or domain-atlas>   # 18 suites, 357/357 -> outputs/jest-regression-suites.txt
+npx jest test/vtid-04456-customer-support-pipeline-regression.test.ts                  # 25/25 -> outputs/jest-support-pipeline.txt
+npx jest <each acceptance.md TEST: line with its -t filter>                             # every filter runs >= 4 passing tests, 0 failures
+npx tsc --noEmit -p .                                                                   # exit 2: 41 errors, ALL TS2742 (inferred type not portable — the worktree's symlinked node_modules), none in touched files -> outputs/tsc.txt
+# repo root, after a local (unpushed) commit on local/d8:
+node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base origin/main --head HEAD --title "x (VTID-05055)"   # -> outputs/check-pr.txt
+IMPACT_SCAN_DRY_RUN=true node scripts/ci/dev-autopilot-impact-scan.mjs   # repo root: blocker=0 warning=0 info=0

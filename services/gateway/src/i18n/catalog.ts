@@ -123,6 +123,9 @@ export type GatewayI18nKey =
   | 'notif.partner_test_status_changed.body'
   | 'notif.partner_test_result_ready.title'
   | 'notif.partner_test_result_ready.body'
+  // VTID-05055: member confirms a partner link staff proposed
+  | 'notif.partner_link_request.title'
+  | 'notif.partner_link_request.body'
   // Live room goes live → notify everyone who tapped "Notify me" on the scheduled session.
   | 'notif.live_going_live.title'
   | 'notif.live_going_live.body'

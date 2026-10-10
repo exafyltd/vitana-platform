@@ -201,6 +201,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminPartnerReviewRouter = require('./routes/admin-partner-review').default;
   // VTID-03885: Partner Health Test Integration — self-service consent (grant/revoke/check)
   const partnerHealthConsentRouter = require('./routes/partner-health-consent').default;
+  // VTID-05055: member confirms/declines a partner link staff proposed
+  const partnerHealthMemberRouter = require('./routes/partner-health-member').default;
   // VTID-03932: Commerce Partner Onboarding — self-service partner org registration + roster
   const partnerOrgsRouter = require('./routes/partner-orgs').default;
   // VTID-04478: Commerce partner onboarding engine (checklist, submit, lifecycle)
@@ -1193,6 +1195,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/partner-review', adminPartnerReviewRouter, { owner: 'admin-partner-review' });
   // VTID-03885: Partner Health Test Integration self-service consent
   mountRouterSync(app, '/api/v1/partner-health/consent', partnerHealthConsentRouter, { owner: 'partner-health-consent' });
+  // VTID-05055: member-confirmed partner links (list / confirm / decline own requests)
+  mountRouterSync(app, '/api/v1/partner-health/member', partnerHealthMemberRouter, { owner: 'partner-health-member' });
   // VTID-03932: Commerce Partner Onboarding — self-service partner org registration + roster
   mountRouterSync(app, '/api/v1/partner-orgs', partnerOrgsRouter, { owner: 'partner-orgs' });
   // VTID-04478: Commerce partner onboarding engine

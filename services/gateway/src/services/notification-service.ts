@@ -147,6 +147,9 @@ export const TYPE_META: Record<string, TypeMeta> = {
   // lab_report_processed's OTHER caller (health-wellness.ts's "still being
   // analyzed" ping, which deliberately stays in-app-only).
   health_test_result_ready: { channel: 'push_and_inapp',  priority: 'p1', category: 'health' },
+  // VTID-05055: staff proposed a partner test result as the member's own —
+  // the member must confirm it in the app before any link/order exists.
+  partner_link_request:     { channel: 'push_and_inapp',  priority: 'p1', category: 'health' },
   wearable_data_synced:     { channel: 'silent',          priority: 'p3', category: 'health' },
   // Signals
   predictive_signal_detected:  { channel: 'push_and_inapp', priority: 'p0', category: 'signal' },
