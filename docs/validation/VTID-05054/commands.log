@@ -1,0 +1,4 @@
+cd services/gateway
+npx jest test/vtid-05054-lab-notice-and-webhook-purge.test.ts            # 9/9
+npx jest test/vtid-05054-lab-notice-and-webhook-purge.test.ts test/automation-role-targeting.test.ts test/services/automation-handlers-phase1-batch4.test.ts test/services/memory/diary.test.ts test/vtid-04349-automation-shadow.test.ts   # 5 suites, 72/72 (outputs/jest-suites.txt)
+npx tsc --noEmit -p .                                                    # clean

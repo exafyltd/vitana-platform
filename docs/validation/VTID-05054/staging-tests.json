@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05054",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05054-lab-notice-and-webhook-purge.test.ts",
+      "cwd": "services/gateway",
+      "reason": "AP-0607 sends no false notice and emits no health.biomarkers.stored; the 90-day webhook-log purge is off unless the flag is exactly 'true' and is never enabled by the staging workflow. Nothing to probe over HTTP: no route changes, and the purge deletes rows in the database staging shares with production."
+    }
+  ]
+}
