@@ -137,6 +137,8 @@
   "notif.partner_test_status_changed.body": "你的 {test_name} 有新进展。",
   "notif.partner_test_result_ready.title": "你的结果已就绪",
   "notif.partner_test_result_ready.body": "你的 {test_name} 结果（来自 {partner_name}）已经准备好了。让 Vitana 为你解读。",
+  "notif.partner_link_request.title": "这是你的检测吗？",
+  "notif.partner_link_request.body": "{partner_name} 有一份可能属于你的 {test_name} 结果。请在应用中确认。",
   "notif.feedback_resolved.title": "你的反馈已解决",
   "notif.feedback_resolved.body": "我们已修复你报告的问题（{ticket}）。感谢你帮助我们改进！",
   "email.partner_invite.subject": "邀请你加入 Vitanaland 上的 {org}",

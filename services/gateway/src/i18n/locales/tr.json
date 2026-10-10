@@ -137,6 +137,8 @@
   "notif.partner_test_status_changed.body": "{test_name} testinle ilgili bir güncelleme var.",
   "notif.partner_test_result_ready.title": "Sonuçların hazır",
   "notif.partner_test_result_ready.body": "{partner_name} tarafından yapılan {test_name} sonuçların hazır. Vitana'dan sana açıklamasını isteyebilirsin.",
+  "notif.partner_link_request.title": "Bu senin testin mi?",
+  "notif.partner_link_request.body": "{partner_name}, sana ait olabilecek bir {test_name} sonucuna sahip. Lütfen uygulamada onayla.",
   "notif.feedback_resolved.title": "Bildirimin çözüldü",
   "notif.feedback_resolved.body": "Bildirdiğin sorunu ({ticket}) düzelttik. Gelişmemize yardım ettiğin için teşekkürler!",
   "email.partner_invite.subject": "Vitanaland'de {org} davetiyesi",

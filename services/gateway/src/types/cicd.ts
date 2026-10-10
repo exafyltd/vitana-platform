@@ -1074,6 +1074,11 @@ export type CicdEventType =
   | 'health_test.status_changed'
   | 'health_test.result_ready'
   | 'health_test.result_quarantined'
+  // VTID-05055: member-confirmed partner links, audited staff reads, partner_key from the order
+  | 'health_test.staff_read'
+  | 'health_test.link_proposed'
+  | 'health_test.link_declined'
+  | 'health_test.partner_key_mismatch'
   // VTID-03932: Commerce Partner Onboarding — self-service partner org registration
   | 'partner_org.registered'
   | 'partner_org.member_invited'

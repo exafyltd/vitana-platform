@@ -137,6 +137,8 @@
   "notif.partner_test_status_changed.body": "Postoji ažuriranje za tvoj {test_name}.",
   "notif.partner_test_result_ready.title": "Tvoji rezultati su stigli",
   "notif.partner_test_result_ready.body": "Tvoji rezultati {test_name} od {partner_name} su spremni. Zamoli Vitanu da ti ih objasni.",
+  "notif.partner_link_request.title": "Da li je ovo tvoj test?",
+  "notif.partner_link_request.body": "{partner_name} ima rezultat za {test_name} koji bi mogao biti tvoj. Potvrdi ga u aplikaciji.",
   "notif.feedback_resolved.title": "Tvoja prijava je rešena",
   "notif.feedback_resolved.body": "Rešili smo problem koji si prijavio/la ({ticket}). Hvala što nam pomažeš da budemo bolji!",
   "email.partner_invite.subject": "Pozivnica za {org} na Vitanalandu",

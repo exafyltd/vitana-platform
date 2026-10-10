@@ -149,6 +149,8 @@ const ROWS: Row[] = [
   ['longevity_signal_alert', 'member', 'health', 'system', 'unverified', 'Longevity signal', 'Langlebigkeits-Signal', 'An important longevity signal.', 'Ein wichtiges Langlebigkeits-Signal.'],
   ['lab_report_processed', 'member', 'health', 'member_activity', 'unverified', 'Lab report processed', 'Laborbericht verarbeitet', 'An uploaded lab report was processed.', 'Ein hochgeladener Laborbericht wurde verarbeitet.'],
   ['health_test_result_ready', 'member', 'health', 'system', 'unverified', 'Test result ready', 'Testergebnis bereit', 'A partner lab test result is ready.', 'Ein Testergebnis eines Partnerlabors ist bereit.'],
+  // VTID-05055: the member confirms (or declines) a partner test result staff proposed as theirs.
+  ['partner_link_request', 'member', 'health', 'system', 'ready', 'Is this your test?', 'Ist das dein Test?', 'A partner lab result may belong to the member; they confirm or decline it in the app.', 'Ein Ergebnis eines Partnerlabors könnte zum Mitglied gehören; es bestätigt oder lehnt es in der App ab.'],
   ['partner_test_status_changed', 'member', 'health', 'system', 'unverified', 'Test status update', 'Test-Status', 'The status of a partner lab test changed.', 'Der Status eines Partnerlabor-Tests hat sich geändert.'],
   ['wearable_data_synced', 'member', 'health', 'system', 'unverified', 'Wearable synced (silent)', 'Wearable synchronisiert (still)', 'Silent: wearable data synced.', 'Still: Wearable-Daten synchronisiert.'],
   ['predictive_signal_detected', 'member', 'health', 'system', 'unverified', 'Health signal', 'Gesundheitssignal', 'A predictive health signal was detected.', 'Ein vorausschauendes Gesundheitssignal wurde erkannt.'],
