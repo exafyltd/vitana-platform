@@ -40,7 +40,7 @@ AC-6: Images, one shared helper for the Kiro and the Operator composer: Ctrl/Cmd
   TEST: services/gateway/test/command-hub/vtid-05067-kiro-console.test.ts
   UI: docs/validation/VTID-05067/outputs/b-queued-and-image-chips-mobile.png
 AC-7: `POST /api/v1/operator/media` is admin-only (401 JSON), owner-only (another admin's thread 403; GET re-signs for the owner only, 403 otherwise), recognises the type by magic bytes (svg, a GIF labelled PNG and text refused 415), refuses > 5 MB (413) and an empty body (400), stores at `<user_id>/<thread_id>/<uuid>.<ext>` in the private bucket and answers a 1-hour signed URL on the PUBLIC Supabase origin; the bucket script uses the Storage API and is idempotent.
-  TEST: services/gateway/test/vtid-05067-operator-media.test.ts
+  TEST: services/gateway/test/operator-media.test.ts
   CURL: staging GET /api/v1/operator/media/<uuid> without a token -> 401 application/json
 AC-8: Kiro gets the images as ACP image blocks `{ type: 'image', mimeType, data }` only when `initialize` advertised `agentCapabilities.promptCapabilities.image` (kept on the client); otherwise the prompt carries one line "The user attached N image(s) that this agent cannot view", nothing is read from storage, and a `kiro.images` run event + reply meta make the console show "Kiro can't see images in this version"; an unreadable image is said in the prompt. Never silently dropped.
   TEST: services/gateway/test/vtid-05067-kiro-acp-images.test.ts

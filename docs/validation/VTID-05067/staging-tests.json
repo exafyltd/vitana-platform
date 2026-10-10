@@ -54,7 +54,7 @@
     },
     {
       "kind": "existing",
-      "ref": "npx jest test/command-hub/vtid-05067-kiro-console.test.ts test/vtid-05067-operator-media.test.ts test/vtid-05067-kiro-acp-images.test.ts",
+      "ref": "npx jest test/command-hub/vtid-05067-kiro-console.test.ts test/operator-media.test.ts test/vtid-05067-kiro-acp-images.test.ts",
       "cwd": "services/gateway",
       "reason": "the console module (runs list, past runs, live run, reattach with after_seq and backoff, queue + Cancel, queue_full inline, Stop, interrupted -> Continue, approval answer, paste/drop/paperclip chips, text paste unchanged, upload then run with media ids), the media route (auth, owner, magic bytes, size, signed URL TTL, bucket script) and ACP image blocks vs the text fallback"
     },
