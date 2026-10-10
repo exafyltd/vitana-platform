@@ -40,7 +40,7 @@ BUCKET_PREFIX="vitana-storage-"
 
 # Same public/private split B6's inventory found live on Supabase
 # (docs/AURORA-B6-STORAGE-INVENTORY.md's per-bucket table).
-PUBLIC_BUCKETS=(avatars covers diary-photos intent-covers media media-uploads stream-recordings event-images media-music media-podcasts media-videos campaign-images community-marketplace-listings default-images media-thumbnails)
+PUBLIC_BUCKETS=(avatars covers diary-photos intent-covers media media-uploads stream-recordings event-images media-music media-podcasts media-videos campaign-images community-marketplace-listings default-images media-thumbnails reward-shop-images)
 PRIVATE_BUCKETS=(feedback-attachments chat-attachments health-reports voucher-pdfs)
 
 APPLY=0

@@ -796,6 +796,18 @@ CREATE TABLE public.founding_members (
 > Not rows in `products`, so nothing in Discover reads them. Migration
 > `20261008180000_vtid_04982_rewards_shop.sql`.
 
+> **VTID-05035 (2026-10-10): Rewards shop admin.** Storage bucket
+> `reward-shop-images` (public read, 1.4 MB per file, image/jpeg|png|webp;
+> no `storage.objects` policy for anon/authenticated, so members never write
+> to it) holds item photos under `items/<uuid>.<jpg|png|webp>`; their public
+> URLs go into `reward_shop_items.images`. Only the gateway (service role)
+> uploads, through `POST /api/v1/admin/rewards/items/image` (exafy_admin;
+> type checked by magic bytes). Also new for the admin screen:
+> `GET /api/v1/admin/rewards/shipping-fees` (all `reward_shipping_fees` rows)
+> and `DELETE /api/v1/admin/rewards/shipping-fees/:country/:currency`. No
+> table changes. Migration `20261010160000_vtid_05035_reward_shop_images_bucket.sql`;
+> the bucket is also in `PUBLIC_BUCKETS` of `scripts/aws/setup-storage-buckets.sh`.
+
 > **VTID-04809 (2026-10-01, owner decision): `user_wallets.CREDITS` is the
 > canonical VTNA ledger.** 1 VTNA = 1 CREDIT = **EUR 0.01** (pegged to EUR;
 > the USD figure is a live ECB conversion). `user_wallets.earned_balance`
