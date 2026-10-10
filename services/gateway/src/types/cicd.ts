@@ -1155,7 +1155,9 @@ export type CicdEventType =
   // VTID-05065: a Kiro run (one server-side turn) started, finished, or was interrupted (run id, thread id, status only; never message text)
   | 'operator.kiro.run_started'
   | 'operator.kiro.run_finished'
-  | 'operator.kiro.run_interrupted';
+  | 'operator.kiro.run_interrupted'
+  // VTID-05068: a running Kiro run was taken over by a new gateway task after a deploy (run id, thread id, status only)
+  | 'operator.kiro.run_reattached';
 
 export interface CicdOasisEvent {
   vtid: string;

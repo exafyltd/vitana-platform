@@ -3756,3 +3756,16 @@ Indexes `idx_kiro_runs_thread_created (thread_id, created_at DESC)`, `idx_kiro_r
 | `created_at` | timestamp |
 
 OASIS (`CicdEventType`): `operator.kiro.run_started`, `operator.kiro.run_finished`, `operator.kiro.run_interrupted` — payload `{ run_id, thread_id, status }` only, never message text.
+
+### Reattach columns on `kiro_runs` (VTID-05068, 2026-10-10) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261010220000_vtid_05068_kiro_run_reattach.sql` (additive, nullable). A running run whose gateway task goes away (deploy, crash) is taken over by another task through the kiro-runner's reattach (`/sessions/reattach`, header `X-Kiro-Reattach-Token`); only if the runner refuses is it marked `interrupted` as before.
+
+| Column | Meaning |
+|---|---|
+| `reattach_nonce` | random per Kiro session; the token is `HMAC-SHA256(HKDF(GATEWAY_INTERNAL_TOKEN), 'kiro-reattach:' + nonce)` and is **never stored** |
+| `reattach_token_hash` | hex sha256 of that token (checked before the token is presented; the runner keeps only the hash too) |
+| `reattach_expires_at` | end of the reattach window once the owning task let the session go on graceful shutdown (null while it runs; after a crash the window is counted from `last_heartbeat_at`) |
+| `turn_context` | how the turn was asked (`mode`, `channel`, `requestId`, `conversation_id`, `validatedVtid`, `attachments`), so the task that finishes it records the turn the same way |
+
+OASIS: `operator.kiro.run_reattached` — payload `{ run_id, thread_id, status }` only.

@@ -30,6 +30,20 @@
  * One running run per thread; up to 2 queued behind it (a third is refused,
  * `queue_full`); the next queued run starts when the current one ends.
  *
+ * VTID-05068 (Phase 3): runs survive a gateway deploy. A run on a reattachable
+ * Kiro session (kiro-runner backend, GATEWAY_INTERNAL_TOKEN set) stores the
+ * session's reattach identity (nonce + token hash, never the token). Graceful
+ * shutdown then LETS THE SESSION GO (runner socket closed 1001, kiro-cli stays
+ * alive) and marks the window on the row instead of `interrupted`; the next
+ * sweep of any task (boot, every 60 s) claims such a run (guarded UPDATE of
+ * gateway_task), reattaches the runner session with the re-derived token,
+ * continues the run's seq after the stored max, and finishes the turn through
+ * the same executor. A crashed task's run is tried the same way once its
+ * heartbeat is stale and the window is still open. Only if the runner refuses
+ * (or the token does not match) is the run marked `interrupted` — exactly the
+ * Phase 1 update and OASIS event. Runs on a non-reattachable session keep the
+ * Phase 1 behaviour unchanged.
+ *
  * Fail-open on the store: if kiro_runs cannot be written (migration not applied
  * yet, database error), the old /chat path still answers the turn in-process
  * and logs the error; the new run routes refuse (`store_unavailable`).
@@ -40,7 +54,8 @@
 import { randomUUID } from 'crypto';
 import type { KiroTurnEvent, KiroTurnEventSink } from './kiro-events';
 import { answerPermission } from './permission-broker';
-import { cancelKiroTurn } from './kiro-turn';
+import { cancelKiroTurn, detachKiroSession, reattachKiroSession, type KiroTurnInput } from './kiro-turn';
+import { kiroReattachWindowMs, type KiroReattachRecord } from './kiro-reattach-token';
 import { emitOasisEvent } from '../oasis-event-service';
 import type { CicdEventType } from '../../types/cicd';
 
@@ -89,7 +104,13 @@ export interface KiroRunTurn {
   validatedVtid?: string;
   channel?: string;
 }
-export interface KiroRunExecutorInput extends KiroRunTurn { threadId: string; userId: string | null; message: string; emit: KiroTurnEventSink }
+export interface KiroRunExecutorInput extends KiroRunTurn {
+  threadId: string; userId: string | null; message: string; emit: KiroTurnEventSink;
+  /** VTID-05068: pass to runKiroTurn — the run record keeps the session's reattach identity. */
+  onReattach?: (r: KiroReattachRecord) => void;
+  /** VTID-05068: pass to runKiroTurn — finish a turn another gateway task started (reattached session). */
+  resume?: KiroTurnInput['resume'];
+}
 /** The /chat outcome: HTTP status + the exact body /chat returns. */
 export interface KiroRunOutcome { status: number; body: Record<string, unknown> }
 export type KiroRunExecutor = (input: KiroRunExecutorInput) => Promise<KiroRunOutcome>;
@@ -172,7 +193,10 @@ export class KiroRunEventLog {
   /** Inserts sent to the store (for the volume check in tests). */
   inserts = 0;
 
-  constructor(readonly runId: string, private readonly write: KiroRunEventWriter | null = writeEventsToStore, private readonly limits = KIRO_RUN_LIMITS) {}
+  /** VTID-05068: `startSeq` = the last stored seq of a run another task started (a reattach continues it). */
+  constructor(readonly runId: string, private readonly write: KiroRunEventWriter | null = writeEventsToStore, private readonly limits = KIRO_RUN_LIMITS, startSeq = 0) {
+    this.seq = startSeq;
+  }
 
   get lastSeq(): number { return this.seq; }
 
@@ -311,6 +335,10 @@ interface LiveRun {
   cancelRequested: boolean;
   finished: boolean;
   patchChain: Promise<unknown>;
+  /** VTID-05068: the session's reattach identity, once written onto the row (null = not reattachable). */
+  reattach?: KiroReattachRecord | null;
+  /** VTID-05068: this run was taken over from another gateway task: the executor resumes it. */
+  resume?: KiroTurnInput['resume'];
 }
 
 const live = new Map<string, LiveRun>();
@@ -330,10 +358,11 @@ function localRunsOf(threadId: string): LiveRun[] {
   return [...live.values()].filter((r) => r.threadId === threadId && !r.finished).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
-async function emitRunOasis(type: Extract<CicdEventType, 'operator.kiro.run_started' | 'operator.kiro.run_finished' | 'operator.kiro.run_interrupted'>, row: { id: string; thread_id: string; status: string; user_id?: string | null }): Promise<void> {
-  const what = type === 'operator.kiro.run_started' ? 'started' : type === 'operator.kiro.run_finished' ? `finished (${row.status})` : 'interrupted';
+async function emitRunOasis(type: Extract<CicdEventType, 'operator.kiro.run_started' | 'operator.kiro.run_finished' | 'operator.kiro.run_interrupted' | 'operator.kiro.run_reattached'>, row: { id: string; thread_id: string; status: string; user_id?: string | null }): Promise<void> {
+  const what = type === 'operator.kiro.run_started' ? 'started' : type === 'operator.kiro.run_finished' ? `finished (${row.status})`
+    : type === 'operator.kiro.run_reattached' ? 'taken over by a new gateway task' : 'interrupted';
   await emitOasisEvent({
-    vtid: 'VTID-05065',
+    vtid: type === 'operator.kiro.run_reattached' ? 'VTID-05068' : 'VTID-05065',
     type,
     source: 'gateway-operator',
     status: type === 'operator.kiro.run_interrupted' ? 'warning' : row.status === 'failed' ? 'error' : 'info',
@@ -379,11 +408,33 @@ function onTurnEvent(run: LiveRun, e: KiroTurnEvent): void {
   }
 }
 
+/**
+ * VTID-05068: write the session's reattach identity (nonce + token hash, never the token) and
+ * how the turn was asked onto the run. Only once it is stored does shutdown treat the run as
+ * reattachable — a failed write (migration not applied yet) keeps the Phase 1 behaviour.
+ */
+function recordReattach(run: LiveRun, r: KiroReattachRecord): void {
+  if (!run.persisted || run.finished || (run.reattach && run.reattach.nonce === r.nonce)) return;
+  run.patchChain = run.patchChain.then(async () => {
+    if (run.finished) return;
+    const res = await rest(`kiro_runs?id=eq.${enc(run.id)}&status=${ACTIVE_IN}`, {
+      method: 'PATCH',
+      body: { reattach_nonce: r.nonce, reattach_token_hash: r.tokenHash, reattach_expires_at: null, turn_context: run.turn },
+    });
+    if (res.ok) run.reattach = r;
+    else console.error(`${LOG} kiro_runs reattach identity not stored (${res.status}): ${res.error}`);
+  });
+}
+
 async function execute(run: LiveRun): Promise<void> {
   let outcome: KiroRunOutcome;
   try {
     if (!executor) throw new Error('kiro run executor not registered');
-    outcome = await executor({ ...run.turn, threadId: run.threadId, userId: run.userId, message: run.message, emit: (e) => onTurnEvent(run, e) });
+    outcome = await executor({
+      ...run.turn, threadId: run.threadId, userId: run.userId, message: run.message, emit: (e) => onTurnEvent(run, e),
+      onReattach: (r) => recordReattach(run, r),
+      ...(run.resume ? { resume: run.resume } : {}),
+    });
   } catch (err) {
     console.error(`${LOG} kiro run ${run.id} failed:`, err instanceof Error ? err.message : err);
     outcome = { status: 500, body: { ok: false, error: 'Internal server error', details: err instanceof Error ? err.message : String(err) } };
@@ -714,15 +765,21 @@ export async function kiroRunsControlTick(): Promise<void> {
  * one OASIS event per row this UPDATE changed.
  */
 export async function sweepStaleKiroRuns(now: number = Date.now()): Promise<number> {
+  // VTID-05068: runs whose Kiro session can still be taken over are reattached first; only the
+  // rest (and those the runner refused, marked inside) become interrupted below.
+  const pass = await reattachOrphanedKiroRuns(now).catch((err) => {
+    console.warn(`${LOG} reattach pass failed:`, err instanceof Error ? err.message : err);
+    return { reattached: 0, refused: 0 };
+  });
   const cutoff = new Date(now - KIRO_RUN_LIMITS.staleMs).toISOString();
   const r = await rest<Array<{ id: string; thread_id: string; user_id: string }>>(
     `kiro_runs?status=${ACTIVE_IN}&last_heartbeat_at=lt.${enc(cutoff)}&gateway_task=neq.${enc(GATEWAY_TASK_ID)}&select=id,thread_id,user_id`,
     { method: 'PATCH', body: { status: 'interrupted', ended_at: new Date(now).toISOString(), pending_permission: null, error: 'gateway_task_lost' }, prefer: 'return=representation' },
   );
-  if (!r.ok) { console.error(`${LOG} kiro_runs sweep failed (${r.status}): ${r.error}`); return 0; }
+  if (!r.ok) { console.error(`${LOG} kiro_runs sweep failed (${r.status}): ${r.error}`); return pass.refused; }
   const rows = r.data ?? [];
   for (const row of rows) await emitRunOasis('operator.kiro.run_interrupted', { id: row.id, thread_id: row.thread_id, status: 'interrupted', user_id: row.user_id });
-  return rows.length;
+  return rows.length + pass.refused;
 }
 
 /**
@@ -730,20 +787,39 @@ export async function sweepStaleKiroRuns(now: number = Date.now()): Promise<numb
  * write every open run's events, mark this task's unfinished runs interrupted, one OASIS
  * event per row changed. Bounded by `boundMs` (3 s inside the shared 5 s drain).
  */
-export async function drainKiroRunsForShutdown(boundMs: number = KIRO_RUN_LIMITS.shutdownMs): Promise<{ interrupted: number; timedOut: boolean }> {
+export async function drainKiroRunsForShutdown(boundMs: number = KIRO_RUN_LIMITS.shutdownMs): Promise<{ interrupted: number; detached: number; timedOut: boolean }> {
   stopKiroRunTimers();
   let interrupted = 0;
+  let detached = 0;
   const work = (async () => {
     const mine = [...live.values()].filter((r) => !r.finished);
+    // VTID-05068: a running run on a reattachable session is let go for the next task, not interrupted.
+    // Its socket is closed (1001) FIRST, so no frame reaches this task after its events are written.
+    const handedOver = new Set<string>();
+    for (const run of mine) {
+      if (!run.persisted || !run.reattach || (run.status !== 'running' && run.status !== 'waiting_permission')) continue;
+      if (detachKiroSession(run.threadId)) handedOver.add(run.id);
+    }
     for (const run of mine) {
       run.finished = true;
+      if (handedOver.has(run.id)) { run.log.closeText(); continue; }
       run.status = 'interrupted';
       run.log.push('run.status', { status: 'interrupted' });
     }
     await Promise.all(mine.map((run) => run.log.drain().catch(() => undefined)));
-    if (mine.some((run) => run.persisted)) {
+    if (handedOver.size > 0) {
+      const ids = [...handedOver];
+      const r = await rest<Array<{ id: string }>>(
+        `kiro_runs?id=in.(${ids.map(enc).join(',')})&gateway_task=eq.${enc(GATEWAY_TASK_ID)}&status=${ACTIVE_IN}&select=id`,
+        { method: 'PATCH', body: { reattach_expires_at: new Date(Date.now() + kiroReattachWindowMs()).toISOString() }, prefer: 'return=representation' },
+      );
+      if (!r.ok) console.error(`${LOG} kiro_runs hand-over update failed (${r.status}): ${r.error}`);
+      detached = r.ok && Array.isArray(r.data) ? r.data.length : 0;
+    }
+    if (mine.some((run) => run.persisted && !handedOver.has(run.id))) {
+      const keep = handedOver.size > 0 ? `&id=not.in.(${[...handedOver].map(enc).join(',')})` : '';
       const r = await rest<Array<{ id: string; thread_id: string; user_id: string }>>(
-        `kiro_runs?gateway_task=eq.${enc(GATEWAY_TASK_ID)}&status=${ACTIVE_IN}&select=id,thread_id,user_id`,
+        `kiro_runs?gateway_task=eq.${enc(GATEWAY_TASK_ID)}&status=${ACTIVE_IN}${keep}&select=id,thread_id,user_id`,
         { method: 'PATCH', body: { status: 'interrupted', ended_at: new Date().toISOString(), pending_permission: null, error: 'gateway_shutdown' }, prefer: 'return=representation' },
       );
       if (!r.ok) console.error(`${LOG} kiro_runs shutdown update failed (${r.status}): ${r.error}`);
@@ -755,14 +831,120 @@ export async function drainKiroRunsForShutdown(boundMs: number = KIRO_RUN_LIMITS
     for (const run of mine) {
       live.delete(run.id);
       run.log.dispose();
-      run.resolve({ status: 503, body: { ok: false, error: 'kiro_run_interrupted', run_id: run.id } });
+      run.resolve({ status: 503, body: { ok: false, error: handedOver.has(run.id) ? 'kiro_run_handed_over' : 'kiro_run_interrupted', run_id: run.id } });
     }
   })();
   let timer: NodeJS.Timeout | null = null;
   const bound = new Promise<'timeout'>((r) => { timer = setTimeout(() => r('timeout'), Math.max(0, boundMs)); timer.unref?.(); });
   const res = await Promise.race([work.then(() => 'done' as const), bound]);
   if (timer) clearTimeout(timer);
-  return { interrupted, timedOut: res === 'timeout' };
+  return { interrupted, detached, timedOut: res === 'timeout' };
+}
+
+// ---------------------------------------------------------------------------
+// VTID-05068: take over runs another gateway task let go (deploy) or lost (crash)
+// ---------------------------------------------------------------------------
+
+interface OrphanRow {
+  id: string; thread_id: string; user_id: string; status: KiroRunStatus; message: string; gateway_task: string | null;
+  created_at: string; last_heartbeat_at: string | null;
+  reattach_nonce: string | null; reattach_token_hash: string | null; reattach_expires_at: string | null; turn_context: Record<string, unknown> | null;
+}
+
+/**
+ * Is this other task's unfinished run one to try a reattach for now? Let go on shutdown and
+ * inside its window; or (a crash) its heartbeat is stale and the window counted from the last
+ * heartbeat is still open.
+ */
+export function isReattachCandidate(row: Pick<OrphanRow, 'status' | 'reattach_nonce' | 'reattach_token_hash' | 'reattach_expires_at' | 'last_heartbeat_at'>, now: number, windowMs: number = kiroReattachWindowMs()): boolean {
+  if (windowMs <= 0 || !row.reattach_nonce || !row.reattach_token_hash) return false;
+  if (row.status !== 'running' && row.status !== 'waiting_permission') return false;
+  if (row.reattach_expires_at) return Date.parse(row.reattach_expires_at) > now;
+  const beat = row.last_heartbeat_at ? Date.parse(row.last_heartbeat_at) : NaN;
+  return Number.isFinite(beat) && beat < now - KIRO_RUN_LIMITS.staleMs && beat + windowMs > now;
+}
+
+/** The Phase 1 sweep's update for one run, guarded by this task's claim (same fields, same OASIS event). */
+async function interruptClaimed(row: OrphanRow, now: number): Promise<boolean> {
+  const r = await rest<Array<{ id: string }>>(
+    `kiro_runs?id=eq.${enc(row.id)}&gateway_task=eq.${enc(GATEWAY_TASK_ID)}&status=${ACTIVE_IN}&select=id`,
+    { method: 'PATCH', body: { status: 'interrupted', ended_at: new Date(now).toISOString(), pending_permission: null, error: 'gateway_task_lost' }, prefer: 'return=representation' },
+  );
+  const changed = r.ok && Array.isArray(r.data) && r.data.length > 0;
+  if (changed) await emitRunOasis('operator.kiro.run_interrupted', { id: row.id, thread_id: row.thread_id, status: 'interrupted', user_id: row.user_id });
+  return changed;
+}
+
+/** What the turn produced before the hand-over, from its stored events. */
+function priorOf(events: KiroRunEvent[]): NonNullable<KiroTurnInput['resume']> {
+  let priorReply = '';
+  const tools = new Map<string, { id: string; name: string; kind: string; status: string }>();
+  for (const ev of events) {
+    const p = ev.payload as Record<string, any>;
+    if (ev.type === 'kiro.message_chunk' && typeof p.text === 'string') priorReply += p.text;
+    else if (ev.type === 'kiro.tool_call' && typeof p.tool_call_id === 'string') tools.set(p.tool_call_id, { id: p.tool_call_id, name: String(p.title ?? ''), kind: String(p.kind ?? ''), status: String(p.status ?? '') });
+    else if (ev.type === 'kiro.tool_update' && typeof p.tool_call_id === 'string') { const t = tools.get(p.tool_call_id); if (t && p.status) t.status = String(p.status); }
+  }
+  return { priorReply, priorTools: [...tools.values()] };
+}
+
+/**
+ * Claim and reattach other tasks' runs that can still be taken over (see isReattachCandidate).
+ * Per run: a guarded claim (only one task wins), the token re-derived and checked against the
+ * stored hash, the runner session reattached, the run's seq continued after the stored max,
+ * and the turn finished through the same executor. Refused → `interrupted` exactly as the
+ * Phase 1 sweep marks it. Returns how many were reattached and how many refused.
+ */
+export async function reattachOrphanedKiroRuns(now: number = Date.now()): Promise<{ reattached: number; refused: number }> {
+  const out = { reattached: 0, refused: 0 };
+  if (!executor) return out;
+  const q = await rest<OrphanRow[]>(
+    `kiro_runs?status=in.(running,waiting_permission)&gateway_task=neq.${enc(GATEWAY_TASK_ID)}&reattach_nonce=not.is.null`
+    + '&select=id,thread_id,user_id,status,message,gateway_task,created_at,last_heartbeat_at,reattach_nonce,reattach_token_hash,reattach_expires_at,turn_context&order=created_at.asc&limit=20');
+  if (!q.ok || !q.data) return out; // e.g. the migration is not applied yet: the Phase 1 sweep decides
+  for (const row of q.data) {
+    if (!isReattachCandidate(row, now) || live.has(row.id)) continue;
+    const at = new Date(now).toISOString();
+    const claim = await rest<OrphanRow[]>(
+      `kiro_runs?id=eq.${enc(row.id)}&gateway_task=${row.gateway_task === null ? 'is.null' : `eq.${enc(row.gateway_task)}`}&status=in.(running,waiting_permission)&select=id`,
+      { method: 'PATCH', body: { gateway_task: GATEWAY_TASK_ID, last_heartbeat_at: at, reattach_expires_at: null }, prefer: 'return=representation' },
+    );
+    if (!claim.ok || !Array.isArray(claim.data) || claim.data.length === 0) continue; // another task took it
+    const r = await reattachKiroSession({ threadId: row.thread_id, userId: row.user_id || null, reattach: { nonce: row.reattach_nonce!, tokenHash: row.reattach_token_hash! } });
+    if (!r.ok) {
+      console.warn(`${LOG} kiro run ${row.id} not reattached (${r.reason}${r.message ? `: ${r.message}` : ''}); marked interrupted`);
+      if (await interruptClaimed(row, now)) out.refused += 1;
+      continue;
+    }
+    const events = await storedEvents(row.id, 0);
+    const lastSeq = events.length ? events[events.length - 1].seq : 0;
+    const ctx = (row.turn_context ?? {}) as Partial<KiroRunTurn>;
+    const turn: KiroRunTurn = {
+      requestId: typeof ctx.requestId === 'string' ? ctx.requestId : randomUUID(),
+      createdAt: typeof ctx.createdAt === 'string' ? ctx.createdAt : row.created_at,
+      attachments: Array.isArray(ctx.attachments) ? ctx.attachments : [],
+      mode: typeof ctx.mode === 'string' ? ctx.mode : 'chat',
+      ...(typeof ctx.conversation_id === 'string' ? { conversation_id: ctx.conversation_id } : {}),
+      ...(typeof ctx.validatedVtid === 'string' ? { validatedVtid: ctx.validatedVtid } : {}),
+      ...(typeof ctx.channel === 'string' ? { channel: ctx.channel } : {}),
+    };
+    let resolve!: (o: KiroRunOutcome) => void;
+    const done = new Promise<KiroRunOutcome>((res) => { resolve = res; });
+    const run: LiveRun = {
+      id: row.id, threadId: row.thread_id, userId: row.user_id || null, message: row.message, createdAt: row.created_at, turn,
+      status: 'running', log: new KiroRunEventLog(row.id, writeEventsToStore, KIRO_RUN_LIMITS, lastSeq), persisted: true,
+      done, resolve, pendingPerms: new Map(), cancelRequested: false, finished: false, patchChain: Promise.resolve(),
+      reattach: { nonce: row.reattach_nonce!, tokenHash: row.reattach_token_hash! }, resume: priorOf(events),
+    };
+    live.set(run.id, run);
+    // A card the old task showed is shown again by Kiro (the runner replays unanswered requests).
+    if (row.status === 'waiting_permission') void patchRun(run, { status: 'running', pending_permission: null });
+    run.log.push('run.reattached', { gateway_task: GATEWAY_TASK_ID });
+    await emitRunOasis('operator.kiro.run_reattached', { id: run.id, thread_id: run.threadId, status: 'running', user_id: run.userId });
+    out.reattached += 1;
+    void execute(run);
+  }
+  return out;
 }
 
 let timers: NodeJS.Timeout[] = [];
@@ -770,6 +952,7 @@ let timers: NodeJS.Timeout[] = [];
 /** Boot: sweep once, then heartbeat (30 s), sweep (60 s) and the control tick (2 s). All unref'd. */
 export function startKiroRunTimers(): void {
   if (timers.length) return;
+  // VTID-05068: the boot sweep first takes over runs a previous task let go (deploy) or lost.
   void sweepStaleKiroRuns().catch(() => undefined);
   const every = (ms: number, fn: () => Promise<unknown>) => {
     let busy = false;

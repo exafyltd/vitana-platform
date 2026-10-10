@@ -6,6 +6,13 @@
  *   PUT    /keys/:userId   { key }       link or replace
  *   DELETE /keys/:userId                 revoke now; ends that user's sessions
  *   WS     /sessions?user_id=&thread_id= one kiro-cli acp process
+ *   WS     /sessions/reattach?user_id=&thread_id=
+ *                                        VTID-05068: take over a session whose
+ *                                        gateway socket dropped; needs the
+ *                                        session's X-Kiro-Reattach-Token.
+ *                                        Refused: 4403 (token missing, wrong or
+ *                                        expired), 4404 (no session for this
+ *                                        user + thread).
  *
  * Everything but /alive needs `Authorization: Bearer <KIRO_RUNNER_TOKEN>`.
  * The service is private (Cloud Map only); the gateway is its only caller and
@@ -15,7 +22,7 @@ import http from 'http';
 import { timingSafeEqual } from 'crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { KeyStore, KeyUnavailableError, isPlausibleKey, isUserId } from './key-store';
-import { CLOSE, sessionCount, startRelay, stopUserSessions, type RelayLimits, type RelayOptions } from './relay';
+import { CLOSE, REATTACH_TOKEN_RE, detachedCount, sessionCount, sessionsOf, settleThread, startRelay, stopUserSessions, type RelayLimits, type RelayOptions } from './relay';
 import { dropUserParked, type ParkLimits } from './workspace-park';
 import type { RepoMirrors } from './repo-mirrors';
 
@@ -74,7 +81,7 @@ export function createRunnerServer(cfg: RunnerConfig, store: KeyStore): http.Ser
     const done = (status: number, body: unknown) => { send(res, status, body); log(`[kiro-runner] ${req.method} ${url.pathname.replace(/\/keys\/.+/, '/keys/:userId')} ${status}`); };
 
     if (req.method === 'GET' && url.pathname === '/alive') {
-      return done(200, { ok: true, service: 'kiro-runner', kiro_cli_version: cfg.kiroCliVersion, sessions: sessionCount() });
+      return done(200, { ok: true, service: 'kiro-runner', kiro_cli_version: cfg.kiroCliVersion, sessions: sessionCount(), detached: detachedCount() });
     }
     if (!tokenMatches(req.headers.authorization, cfg.token)) return done(401, { ok: false, error: 'unauthorized' });
 
@@ -111,11 +118,26 @@ export function createRunnerServer(cfg: RunnerConfig, store: KeyStore): http.Ser
       socket.write(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
       socket.destroy();
     };
-    if (url.pathname !== '/sessions') return reject(404, 'Not Found');
+    if (url.pathname !== '/sessions' && url.pathname !== '/sessions/reattach') return reject(404, 'Not Found');
     if (!tokenMatches(req.headers.authorization, cfg.token)) return reject(401, 'Unauthorized');
     const userId = url.searchParams.get('user_id') ?? '';
     const threadId = url.searchParams.get('thread_id') ?? '';
     if (!isUserId(userId) || !threadId || threadId.length > 200) return reject(400, 'Bad Request');
+    // VTID-05068: the session's reattach token, in a header (never the URL). Only its sha256 is kept.
+    const rawReattach = req.headers['x-kiro-reattach-token'];
+    const reattachToken = typeof rawReattach === 'string' && REATTACH_TOKEN_RE.test(rawReattach) ? rawReattach : '';
+
+    if (url.pathname === '/sessions/reattach') {
+      wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
+        const candidates = sessionsOf(userId, threadId);
+        if (candidates.length === 0) { ws.close(CLOSE.reattachNotFound, 'kiro_session_not_found'); log('[kiro-runner] reattach refused (no session)'); return; }
+        const s = reattachToken ? candidates.find((c) => c.matches(reattachToken)) : undefined;
+        if (!s) { ws.close(CLOSE.reattachRefused, 'kiro_reattach_refused'); log('[kiro-runner] reattach refused (token)'); return; }
+        s.reattach(ws);
+      });
+      return;
+    }
+
     // VTID-05005: the gateway-minted pass for the Operator's read tools. Opaque here; the gateway verifies it.
     const rawMcp = req.headers['x-kiro-mcp-token'];
     const mcpToken = typeof rawMcp === 'string' && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(rawMcp) && rawMcp.length <= 2048 ? rawMcp : '';
@@ -134,8 +156,10 @@ export function createRunnerServer(cfg: RunnerConfig, store: KeyStore): http.Ser
             return;
           }
           if (!key) { ws.close(CLOSE.keyMissing, 'kiro_key_missing'); return; }
+          // VTID-05068: a new session of this thread replaces its detached one, and gets its parked workspace.
+          await settleThread(userId, threadId);
           if (ws.readyState !== ws.OPEN) return;
-          startRelay({ ws, userId, threadId, key, mcp, mirrors: cfg.mirrors, park: cfg.park ?? null, workRoot: cfg.workRoot, limits: cfg.limits, kiroBin: cfg.kiroBin, spawnImpl: cfg.spawnImpl, log });
+          startRelay({ ws, userId, threadId, key, mcp, mirrors: cfg.mirrors, park: cfg.park ?? null, workRoot: cfg.workRoot, limits: cfg.limits, kiroBin: cfg.kiroBin, spawnImpl: cfg.spawnImpl, log, reattachToken: reattachToken || null });
         } finally {
           pending--;
         }
