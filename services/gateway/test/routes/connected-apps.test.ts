@@ -67,7 +67,10 @@ describe('connected-apps routes', () => {
     const a = app({ user_id: 'me' }, { importDeviceContacts, listApps: jest.fn(), syncApp: jest.fn(), connectApp: jest.fn(), disconnectApp: jest.fn() });
     const ok = await request(a).post('/x/android-contacts/import').send({ contacts: [{ name: ['Ana'] }] });
     expect(ok.body).toEqual({ ok: true, result: { imported: 1 } });
-    expect(importDeviceContacts).toHaveBeenCalledWith('me', [{ name: ['Ana'] }]);
+    // VTID-05057: the route also forwards how the phone handed contacts over and the region hint.
+    expect(importDeviceContacts).toHaveBeenCalledWith('me', [{ name: ['Ana'] }], { region: undefined, method: undefined });
+    await request(a).post('/x/android-contacts/import').send({ contacts: [{ name: ['Bo'] }], region: 'AT', method: 'vcf' });
+    expect(importDeviceContacts).toHaveBeenLastCalledWith('me', [{ name: ['Bo'] }], { region: 'AT', method: 'vcf' });
     expect((await request(a).post('/x/android-contacts/import').send({})).status).toBe(400);
   });
 
@@ -85,5 +88,15 @@ describe('connected-apps routes', () => {
     const r = await request(a).post('/x/outlook-calendar/sync');
     expect(r.status).toBe(502);
     expect(r.body).toEqual({ ok: false, error: 'upstream' });
+  });
+
+  it('VTID-05057: DELETE /android-contacts removes only the caller\'s phone contacts', async () => {
+    const removeDeviceContacts = jest.fn(async () => ({ ok: true }));
+    const a = app({ user_id: 'me', tenant_id: 't1' }, { removeDeviceContacts, listApps: jest.fn(), connectApp: jest.fn() });
+    const r = await request(a).delete('/x/android-contacts');
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ ok: true });
+    expect(removeDeviceContacts).toHaveBeenCalledWith('me');
+    expect((await request(app(null, { removeDeviceContacts })).delete('/x/android-contacts')).status).toBe(401);
   });
 });

@@ -1,0 +1,18 @@
+{
+  "vtid": "VTID-05057",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/connected-apps/contacts-import.ts",
+    "services/gateway/src/services/connected-apps/hub.ts",
+    "services/gateway/src/routes/connected-apps.ts",
+    "services/gateway/package.json",
+    "services/gateway/package-lock.json",
+    "services/gateway/test/vtid-05057-*.test.ts",
+    "services/gateway/test/routes/connected-apps.test.ts",
+    "supabase/migrations/20261010160000_vtid_05057_contacts_phone_matching.sql",
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-05057/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
