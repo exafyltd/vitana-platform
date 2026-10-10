@@ -131,6 +131,12 @@ describe('sseHeaders', () => {
     expect(next).toHaveBeenCalled();
   });
 
+  it('leaves the pipeline-tree stream alone: the route sets its own SSE headers after auth (VTID-05069)', () => {
+    const { res, next } = run('GET', '/api/v1/operator/runs/VTID-05069/stream');
+    expect(res.setHeader).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
+  });
+
   it('sets SSE headers on GET /stream paths', () => {
     const { res, next } = run('GET', '/api/v1/live/stream');
     expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/event-stream');
