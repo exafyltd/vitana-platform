@@ -784,6 +784,55 @@ sites still use Tatyana and why removing it would break them.
 (`VERTEX_RUSSIAN_BRIDGE_ENABLED=false`) reverts `ru` to the
 Transcribe→Bedrock→Polly cascade byte-for-byte, independently of Serbian.
 
+### 2e-audiobook-google. Audiobook narration — Google for `ru`/`sr`, Polly for the rest (VTID-05026)
+
+Phase 1 of the sparred plan in `docs/validation/VTID-04893/plan-sparring.md`
+(Phase 0, VTID-04893, is the task-role token module above). A third narrow
+use of the dedicated Google project, for **pre-rendered** Audiobook episodes
+(`GET /api/v1/journey/audiobook/topics/:id/audio`), not a live session.
+
+- **Voice table:** `services/guided-journey/audiobook-voices.ts`, Audiobook
+  only — the receptionist `POLLY_VOICES` is untouched. Polly `generative`:
+  en Tiffany, de Vicki, fr Ambre, es Lucia, pt Camila (pt-BR), pl Ola; Polly
+  `neural`: ar Hala, zh Zhiyu, tr Burcu (all verified live 2026-10-10:
+  Female, engine listed). Google Chirp 3 HD: `ru-RU-Chirp3-HD-Aoede`,
+  `sr-RS-Chirp3-HD-Aoede` (female per `voices.list`, picked 2026-10-10 with
+  the owner's delegation; alternatives via the admin-only
+  `GET /api/v1/voice/preview/google-voices?lang=ru|sr`).
+- **Switches:** `AUDIOBOOK_GOOGLE_RU_ENABLED`, `AUDIOBOOK_GOOGLE_SR_ENABLED`
+  — exact `true`, one file and one predicate each
+  (`audiobook-google-ru.ts`, `audiobook-google-sr.ts`), never a list. Off:
+  `ru` reads with Polly Tatyana (`standard`), `sr` answers 422.
+- **Cap:** `AUDIOBOOK_GOOGLE_DAILY_CHAR_CAP_PER_TASK` — characters per
+  gateway task per UTC day, in memory; unset/0 = Google narration off. An
+  APPROXIMATION (≈ cap × tasks; a deploy day can reach ~2×). At the cap
+  `ru`/`sr` answer 422 until 00:00 UTC; cached episodes still play.
+- **Auth:** `tts/google-narration.ts` builds the `@google-cloud/text-to-speech`
+  client on the task-role `AwsClient` ALWAYS (independent of
+  `GOOGLE_AUTH_AWS_SUPPLIER_ENABLED`). Requests are split on sentence
+  boundaries into ≤ 4,500 UTF-8 bytes (Google's limit is 5,000; Cyrillic is
+  2 bytes/char), rendered two at a time, joined in order.
+- **No fallback:** a Google failure or the cap answers 422
+  `narration_unavailable` — never Polly, never another language's voice.
+  `X-Audiobook-Voice-Provider` (`google`/`polly`) proves who read it.
+- **Cost:** one JSON log line per Google render
+  (`{"event":"audiobook_google_tts","chars":…}`) →
+  `scripts/aws/setup-audiobook-google-metric.sh` (metric
+  `Vitana/Audiobook AudiobookGoogleTtsChars` on staging + prod, daily prod
+  alarm to `vitana-alarms-prod`).
+- **Google-side trust (fixed 2026-10-10):** `vitanaland@…` had
+  `roles/iam.workloadIdentityUser` only for the IAM user
+  `claude-code-aws-agent`, so every ECS token exchange failed at
+  impersonation (`iam.serviceAccounts.getAccessToken` denied). The task role
+  is now bound by attribute:
+  `principalSet://…/vitana-aws-pool/attribute.aws_role/arn:aws:sts::472838866351:assumed-role/vitana-ecs-task-role`.
+- **Staging** sets both switches and the cap (1,040,000) through
+  `connected-apps.json`; **production** gets them through `env_overrides`
+  at PUBLISH, together with `GOOGLE_AUTH_AWS_SUPPLIER_ENABLED=true`.
+- **90-day window:** same as the bridges (ends ≈ 2026-12-16; a routine
+  reminds the owner 2026-12-06 to extend with Google or wire a new
+  provider). Turning both switches off returns `ru` to Tatyana and `sr` to 422.
+
 ---
 
 ---

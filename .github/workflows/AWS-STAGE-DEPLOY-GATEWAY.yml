@@ -371,6 +371,20 @@ jobs:
           fi
           mv "$F.tmp" "$F"
           jq -c '{env, sec: [.sec[].name]}' "$F"
+      # VTID-05026: Audiobook narration in Russian and Serbian by Google voices
+      # (plan: docs/validation/VTID-04893/plan-sparring.md, Phase 1). Two
+      # independent exact-'true' switches and the approximate per-task daily
+      # character cap (unset/0 = Google narration off). STAGING ONLY here;
+      # production gets them through env_overrides at PUBLISH. Rides on
+      # connected-apps.json (VTID-03788 size guard), merged by name in the roll
+      # step. Rollback: either switch to 'false' (ru back to Polly Tatyana, sr 422).
+      - name: Audiobook Google narration flags
+        run: |
+          set -euo pipefail
+          F="$RUNNER_TEMP/connected-apps.json"
+          jq -c '.env += [{name:"AUDIOBOOK_GOOGLE_RU_ENABLED", value:"true"}, {name:"AUDIOBOOK_GOOGLE_SR_ENABLED", value:"true"}, {name:"AUDIOBOOK_GOOGLE_DAILY_CHAR_CAP_PER_TASK", value:"1040000"}]' "$F" > "$F.tmp"
+          mv "$F.tmp" "$F"
+          jq -c '{env, sec: [.sec[].name]}' "$F"
       # VTID-04542 latency plan (comment kept outside the run: scalar, VTID-03788
       # size guard): four exact-'true' flags pinned on STAGING ONLY until re-measured
       # here, prod untouched -- Devon pre-connect (04549), cascade sentence streaming

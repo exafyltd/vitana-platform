@@ -1,25 +1,39 @@
-// VTID-04873 — every language reads its own Audiobook narration on staging.
+// VTID-05026 — who reads each Audiobook episode on staging.
 //
-// The bug: every non-German episode sent the German script to that
-// language's voice ("English TTS talks German"). A status code and a byte
-// count cannot tell German audio from English audio, which is how it shipped,
-// so this spec reads the gateway's own statement of which language the
-// narrated text is written in (X-Audiobook-Narration-Locale) for every one of
-// the eleven languages.
+// Russian and Serbian are read by Google voices (each behind its own switch,
+// both on in staging); the other nine languages by Amazon Polly. A status
+// code cannot tell the providers apart, so this spec reads the gateway's own
+// statement (X-Audiobook-Voice-Provider) for all eleven languages, and proves
+// Serbian — which had no voice at all before — now returns real audio in its
+// own language.
 //
 // Read-only: './staging-guard' (copied in by the runner) aborts every write;
 // the only POST is the sign-in itself. Requesting an episode renders audio on
-// the staging gateway and writes nothing to the database.
+// the staging gateway and writes nothing to the database. Google cost is
+// bounded by the per-task daily cap and by one topic per language.
+//
+// Timeout: a cold Google render of a ~2,000-character Russian lesson measured
+// 26.5 s (Serbian, 1,539 characters: 10.8 s) through the same client on
+// 2026-10-10, so each request gets 120 s.
 import { test, expect } from './staging-guard';
 
 const SUPABASE = 'https://inmkhvwdcuyhnxkgfvsb.supabase.co';
 const TOPIC = 'T251';
-// All eleven languages. Serbian gained its voice with VTID-05026 (Google,
-// behind its own switch, on in staging); until then it was checked for an
-// honest 422 instead.
-const VOICED = ['de', 'en', 'fr', 'es', 'pt', 'pl', 'tr', 'zh', 'ar', 'ru', 'sr'];
+const EXPECTED: Record<string, 'google' | 'polly'> = {
+  ru: 'google',
+  sr: 'google',
+  de: 'polly',
+  en: 'polly',
+  fr: 'polly',
+  es: 'polly',
+  pt: 'polly',
+  pl: 'polly',
+  tr: 'polly',
+  zh: 'polly',
+  ar: 'polly',
+};
 
-test('each language narrates in its own language, never German', async ({ request }) => {
+test('ru and sr are read by Google, the other nine by Polly', async ({ request }) => {
   test.setTimeout(900_000);
   const email = process.env.TEST_USER_EMAIL ?? '';
   const password = process.env.TEST_USER_PASSWORD ?? '';
@@ -53,18 +67,24 @@ test('each language narrates in its own language, never German', async ({ reques
   const auth = { Authorization: `Bearer ${session.access_token}` };
 
   const wrong: string[] = [];
-  for (const lang of VOICED) {
+  for (const [lang, provider] of Object.entries(EXPECTED)) {
     const res = await request.get(`${gateway}/api/v1/journey/audiobook/topics/${TOPIC}/audio?lang=${lang}`, {
       headers: auth,
-      // VTID-05026: a cold Google render (ru, sr) measured up to 26.5 s.
       timeout: 120_000,
     });
-    const got = res.headers()['x-audiobook-narration-locale'];
-    if (res.status() !== 200 || res.headers()['content-type'] !== 'audio/mpeg' || got !== lang) {
-      wrong.push(`${lang}: status ${res.status()}, narration ${got ?? '(none)'}`);
+    const h = res.headers();
+    const got = `${res.status()} ${h['content-type'] ?? '-'} provider=${h['x-audiobook-voice-provider'] ?? '-'} narration=${h['x-audiobook-narration-locale'] ?? '-'}`;
+    if (
+      res.status() !== 200 ||
+      h['content-type'] !== 'audio/mpeg' ||
+      h['x-audiobook-voice-provider'] !== provider ||
+      h['x-audiobook-narration-locale'] !== lang
+    ) {
+      const body = res.status() === 200 ? '' : ` ${(await res.text()).slice(0, 200)}`;
+      wrong.push(`${lang}: expected 200 audio/mpeg provider=${provider} narration=${lang}, got ${got}${body}`);
       continue;
     }
     expect((await res.body()).length, `${lang} audio is too short`).toBeGreaterThan(10_000);
   }
-  expect(wrong, 'languages not narrated in their own language').toEqual([]);
+  expect(wrong, 'languages read by the wrong provider, or not read').toEqual([]);
 });

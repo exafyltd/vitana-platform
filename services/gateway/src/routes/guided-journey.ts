@@ -260,11 +260,13 @@ router.post('/audiobook/reminder', requireAuth, async (req: AuthenticatedRequest
 });
 
 // VTID-04761 — Audiobook listening mode. The narration of ONE published topic
-// as MP3, read by Polly in the Vitana voice, for the My Journey player (plain
+// as MP3, read in the Vitana voice (Audiobook voice table, VTID-05026), for the My Journey player (plain
 // <audio>, no live voice session, no microphone).
 // GET /api/v1/journey/audiobook/topics/:topicId/audio?lang=de
-//   200 audio/mpeg | 404 topic_not_live | 422 narration_unavailable (no Polly
-//   voice for the language, e.g. sr — the player offers Vitana live instead)
+//   200 audio/mpeg | 404 topic_not_live | 422 narration_unavailable (no voice
+//   may read the language — sr with its Google switch off — or the Google
+//   render failed or hit the daily cap, VTID-05026; the player offers Vitana
+//   live instead, never another voice)
 //   | 422 narration_not_translated (VTID-04873: this topic has no narration in
 //   the requested language yet — never read the German text in another
 //   language's voice).
@@ -317,6 +319,9 @@ router.get('/audiobook/topics/:topicId/audio', requireAuth, async (req: Authenti
     // member's own browser keep it, never a shared cache.
     res.setHeader('Cache-Control', 'private, max-age=86400');
     res.setHeader('X-Audiobook-Cache', audio.cached ? 'hit' : 'miss');
+    // VTID-05026: who read the episode (`google` for ru/sr when their switch
+    // is on, `polly` otherwise), so staging verification can prove it.
+    res.setHeader('X-Audiobook-Voice-Provider', audio.provider);
     // VTID-04873: the language the narrated text is written in. Always equal
     // to `lang` here; exposed so staging verification can prove it.
     res.setHeader('X-Audiobook-Narration-Locale', seed.narrationLocale);

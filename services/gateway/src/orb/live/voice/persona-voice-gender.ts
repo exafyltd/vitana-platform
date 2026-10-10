@@ -98,6 +98,10 @@ export const POLLY_VOICE_GENDER: Readonly<Record<string, VoiceGender>> = {
   Jacek: 'male',
   Burcu: 'female',
   Filiz: 'female',
+  // VTID-05026 — Audiobook narration voices (generative engine). Live
+  // `DescribeVoices` in eu-central-1, 2026-10-10: both `Gender: Female`.
+  Tiffany: 'female',
+  Ambre: 'female',
 };
 
 /**
@@ -153,13 +157,25 @@ export const FISH_VOICE_GENDER: Readonly<Record<string, VoiceGender>> = {
   '5d29a99739c14d4ca3e4fe42193105b2': 'male', // 梓轩 Zixuan - Male Mandarin (Mainland)
 };
 
-export type VoiceCatalog = 'nova' | 'polly' | 'gemini' | 'fish';
+/**
+ * VTID-05026 — Google Cloud Text-to-Speech voices, keyed by the FULL voice
+ * name (the language is part of the voice: `sr-RS-Chirp3-HD-Aoede` is not
+ * `ru-RU-Chirp3-HD-Aoede`). Gender is Google's own `ssmlGender` from a live
+ * `voices.list` on 2026-10-10. Used for the Audiobook narration of ru and sr.
+ */
+export const GOOGLE_TTS_VOICE_GENDER: Readonly<Record<string, VoiceGender>> = {
+  'ru-RU-Chirp3-HD-Aoede': 'female',
+  'sr-RS-Chirp3-HD-Aoede': 'female',
+};
+
+export type VoiceCatalog = 'nova' | 'polly' | 'gemini' | 'fish' | 'google_tts';
 
 const CATALOGS: Record<VoiceCatalog, Readonly<Record<string, VoiceGender>>> = {
   nova: NOVA_VOICE_GENDER,
   polly: POLLY_VOICE_GENDER,
   gemini: GEMINI_VOICE_GENDER,
   fish: FISH_VOICE_GENDER,
+  google_tts: GOOGLE_TTS_VOICE_GENDER,
 };
 
 /**

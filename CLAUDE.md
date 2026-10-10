@@ -20,7 +20,15 @@ This file contains critical information for AI assistants working on the Vitana 
 > standard-engine `Tatyana`/`Maxim` — so the Russian voice quality is not
 > fixable inside Polly; owner decision 2026-10-01). Two languages, two
 > independent switches, two `ru`/`sr`-only predicates — never one widened
-> language list. Every other Vitana process still
+> language list. **A third narrow use (VTID-05026):** Audiobook narration
+> (pre-rendered My Journey episodes, not a live session) for `ru` and `sr` by
+> Google Cloud TTS on the same dedicated project, behind its own two switches
+> `AUDIOBOOK_GOOGLE_RU_ENABLED` / `AUDIOBOOK_GOOGLE_SR_ENABLED` and the
+> approximate per-task daily cap `AUDIOBOOK_GOOGLE_DAILY_CHAR_CAP_PER_TASK`
+> (unset/0 = off); every other language narrates on Polly (backend.md
+> §2e-audiobook-google). Same 90-day window (ends around 2026-12-16;
+> review reminder 2026-12-06): the owner then extends with Google or wires a
+> new provider for `ru`/`sr`. Every other Vitana process still
 > runs on AWS exclusively: no OASIS, no autopilot, no other agent, no Cloud
 > Run, no Cloud Scheduler on GCP anywhere else. Before touching any
 > `gcloud`/Cloud Run/Artifact Registry/GCP-project reference below, check
@@ -708,7 +716,12 @@ await page.reload();
     `VERTEX_RUSSIAN_BRIDGE_ENABLED=true` — each with its own
     single-language predicate, both narrowly gated in
     `upstream-provider-selector.ts` so no other language or session can
-    ever reach it. Do not reintroduce a Google call ANYWHERE else, and do
+    ever reach it. **Audiobook narration for `ru`/`sr` (VTID-05026) is the
+    third such use** — Google Cloud TTS on the same project, its own two
+    switches (`AUDIOBOOK_GOOGLE_RU_ENABLED`, `AUDIOBOOK_GOOGLE_SR_ENABLED`),
+    two single-language predicate files under `services/guided-journey/`,
+    and a per-task daily character cap; a failed or capped render answers
+    422, never another voice. Do not reintroduce a Google call ANYWHERE else, and do
     NOT add a third language by widening either predicate into a list: a
     new bridge language is a new switch, a new predicate and a new VTID,
     so turning one off never turns another off and deleting one stays a
