@@ -13,7 +13,8 @@
  *   /test-actor-guard     the VTID-03506 notification guard is installed + enabled
  *   /vtid-ledger          ci_ledger_integrity_check() finds nothing (7 days)
  *   /orb-session-ledger   ci_orb_session_state_health(): table present, no failed acks
- *   /push-dispatch        no unsent push older than 15 min / backlog under 25 (48 h window)
+ *   /push-dispatch        no unsent push older than 15 min / backlog under 25 (48 h window);
+ *                         active-member reach >= 90 % over 7 days (VTID-05027)
  *
  * Read-only. Public like the other health routes: aggregates only, no user
  * data. Every source is cached for CACHE_MS so a busy panel cannot turn into
@@ -160,15 +161,31 @@ export const PUSH_BACKLOG_MAX = 25;
  */
 export const PUSH_FCM_ERROR_RATIO_MAX = 0.5;
 export const PUSH_FCM_MIN_ATTEMPTS = 20;
+/**
+ * VTID-05027: share of ACTIVE members (last 7 days) whose push-eligible
+ * notifications reached at least one device. Below this, with enough
+ * eligible members to mean something, the check is degraded.
+ */
+export const PUSH_REACH_MIN_RATIO = 0.9;
+export const PUSH_REACH_MIN_ELIGIBLE = 10;
+
+export interface PushReach {
+  active: number;
+  eligible: number;
+  reached: number;
+}
 
 export function evalPushDispatch(
   rows: Array<{ created_at: string }>,
   now = Date.now(),
   outcomes?: Record<string, number>,
+  reach?: PushReach,
 ): OpsCheck {
   const oldestMin = rows.length ? Math.round((now - new Date(rows[0].created_at).getTime()) / 60000) : 0;
   const base: Record<string, unknown> = rows.length ? { unsent: rows.length, oldest_age_min: oldestMin } : { unsent: 0 };
   if (outcomes) base.outcomes = outcomes;
+  const reachRatio = reach && reach.eligible > 0 ? Math.round((reach.reached / reach.eligible) * 100) / 100 : null;
+  if (reach) base.active_reach_7d = { ...reach, ratio: reachRatio };
   if (rows.length && oldestMin > PUSH_DOWN_MIN) return { status: 'down', reason: 'push_dispatch_stalled', ...base };
   if (rows.length && (oldestMin > PUSH_STALE_MIN || rows.length > PUSH_BACKLOG_MAX)) {
     return { status: 'degraded', reason: 'push_backlog_growing', ...base };
@@ -179,6 +196,9 @@ export function evalPushDispatch(
     if (fcmAttempts >= PUSH_FCM_MIN_ATTEMPTS && fcmErrors / fcmAttempts > PUSH_FCM_ERROR_RATIO_MAX) {
       return { status: 'degraded', reason: 'fcm_send_errors', fcm_error_ratio: Math.round((fcmErrors / fcmAttempts) * 100) / 100, ...base };
     }
+  }
+  if (reach && reach.eligible >= PUSH_REACH_MIN_ELIGIBLE && reach.reached / reach.eligible < PUSH_REACH_MIN_RATIO) {
+    return { status: 'degraded', reason: 'active_member_reach_low', ...base };
   }
   return { status: 'ok', ...base };
 }
@@ -255,6 +275,7 @@ router.get('/push-dispatch', (_req: Request, res: Response) => { // public-route
       }),
       Date.now(),
       await cached('push_outcomes', loadPushOutcomes),
+      await cached('push_reach', loadPushReach),
     ),
   );
 });
@@ -279,6 +300,25 @@ async function loadPushOutcomes(): Promise<Record<string, number> | undefined> {
     const counts: Record<string, number> = {};
     for (const r of (data ?? []) as Array<{ push_outcome: string }>) counts[r.push_outcome] = (counts[r.push_outcome] ?? 0) + 1;
     return counts;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * VTID-05027: active-member push reach over 7 days (push_reach_active RPC).
+ * Undefined when it cannot be read (function not migrated yet, RPC error), so
+ * the field is omitted and never raises a false alarm.
+ */
+async function loadPushReach(): Promise<PushReach | undefined> {
+  const sb = getSupabase();
+  if (!sb) return undefined;
+  try {
+    const { data, error } = await sb.rpc('push_reach_active', { p_days: 7 });
+    if (error) return undefined;
+    const row = (Array.isArray(data) ? data[0] : data) as Partial<Record<keyof PushReach, number | string>> | null;
+    if (!row) return undefined;
+    return { active: Number(row.active ?? 0), eligible: Number(row.eligible ?? 0), reached: Number(row.reached ?? 0) };
   } catch {
     return undefined;
   }

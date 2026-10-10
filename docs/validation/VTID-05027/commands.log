@@ -1,0 +1,7 @@
+# VTID-05027 — commands run in the Claude Code session (2026-10-10)
+cd services/gateway && npx tsc --noEmit -p .                     # exit 0
+npx jest test/vtid-05027-push-reach-health.test.ts test/vtid-04962-push-health.test.ts test/vtid-04663-ops-health-checks.test.ts   # 3 suites, 33 passed
+node scripts/ci/pr-gate/gate.mjs scope|sparring|weakening        # pass
+node scripts/ci/pr-gate/gate.mjs red-green                       # skipped (kind feature)
+libpg-query parse(20261010120000_vtid_05027_push_reach_active.sql)   # parses OK, 7 statements
+function body run read-only against the shared database (SELECT only)  # active 16, eligible 15, reached 14 (ratio 0.93 → ok)
