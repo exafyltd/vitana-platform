@@ -9,3 +9,4 @@ npx jest (full gateway suite)                           # only the 5 contract sn
 # services/agents/orb-agent
 pytest tests                                            # 24 failures, identical set on main without this change (environment), 166 passed
 ruff check src/orb_agent/tools.py                       # 7 findings, identical on main
+ORB_TOOLS_PARITY_GATE=1 node scripts/orb-tools-lift-scanner.mjs   # exit 0 (repo root)

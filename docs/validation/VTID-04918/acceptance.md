@@ -15,8 +15,9 @@ OASIS_PROOF: `calendar.event.created`, `calendar.shared_to_feed` and `calendar.i
 
 ## Acceptance criteria
 
-AC-1: One implementation for every assistant path: `create_calendar_event`, `share_calendar_entry_to_feed` and `invite_to_calendar_entry` are handlers in the shared ORB_TOOL_REGISTRY, reached by the gateway live session, the LiveKit agent (POST /api/v1/orb/tool) and text chat.
+AC-1: One implementation for every assistant path: `create_calendar_event`, `share_calendar_entry_to_feed` and `invite_to_calendar_entry` are handlers in the shared ORB_TOOL_REGISTRY, reached by the gateway live session, the LiveKit agent (POST /api/v1/orb/tool) and text chat. The live session's own create_calendar_event arm delegates to the shared handler (no second implementation; ORB-TOOLS-LIFT-SCANNER parity gate).
   TEST: services/gateway/test/vtid-04918-calendar-assistant-parity.test.ts
+  TEST: services/gateway/test/vtid-04356-calendar-source-producers.test.ts
 AC-2: The shared guard holds in the handlers: nothing is created, posted or sent until `confirmed === true`, and never for a time that has passed (an event that has begun but not ended is still open). The preview returns what to read back; the wording is the model's (rule 41).
   TEST: services/gateway/test/vtid-04918-calendar-assistant-parity.test.ts
   TEST: services/gateway/test/vtid-04602-04604-go-live.test.ts

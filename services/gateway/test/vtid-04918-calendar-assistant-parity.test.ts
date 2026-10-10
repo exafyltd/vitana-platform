@@ -240,6 +240,11 @@ describe('one implementation for every path', () => {
     expect([...CALENDAR_SOCIAL_WRITE_TOOLS].sort()).toEqual(['create_calendar_event', 'invite_to_calendar_entry', 'share_calendar_entry_to_feed']);
     const live = read('routes/orb-live.ts');
     expect(live).toMatch(/CALENDAR_SOCIAL_WRITE_TOOLS\.includes\(toolName\)[\s\S]{0,200}memberHasSpoken\(session\)/);
+    // the live session's own create_calendar_event arm delegates too (no second implementation)
+    const arm = live.slice(live.indexOf("case 'create_calendar_event': {"), live.indexOf('VTID-01270A: Community & Events voice tools'));
+    expect(arm).toMatch(/memberHasSpoken\(session\)/);
+    expect(arm).toMatch(/dispatchOrbToolForVertex\(\s*'create_calendar_event'/);
+    expect(arm).not.toContain('createCalendarEvent(');
   });
 
   it('text chat offers the five calendar tools and runs them through the shared dispatcher', () => {
