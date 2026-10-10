@@ -236,3 +236,55 @@ BEGIN
   RAISE NOTICE 'ok: deletion is idempotent';
 END $$;
 RESET ROLE;
+
+-- ── 11. erase_user_data (VTID-04765) runs on Aurora, where auth.users does not exist
+CREATE TABLE public.erasure_registry (table_name text PRIMARY KEY, action text NOT NULL, reason text NOT NULL);
+INSERT INTO public.erasure_registry VALUES ('wallet_accounts', 'retain', 'test: statutory retention');
+INSERT INTO public.diary_entries (user_id, body) VALUES ('10000000-0000-0000-0000-000000000002', 'b''s entry');
+DO $$ BEGIN
+  IF to_regclass('auth.users') IS NOT NULL THEN RAISE EXCEPTION 'FAIL: the aurora test db must have no auth.users'; END IF;
+END $$;
+BEGIN;
+DELETE FROM public.auth_user_fk_map;
+SET LOCAL ROLE service_role;
+DO $$ BEGIN
+  BEGIN
+    PERFORM public.erase_user_data('10000000-0000-0000-0000-000000000002', true);
+    RAISE EXCEPTION 'FAIL: erase ran with an empty FK map';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM NOT LIKE '%auth_user_fk_map is empty%' THEN RAISE; END IF;
+    RAISE NOTICE 'ok: erase refuses to run with an empty FK map';
+  END;
+END $$;
+ROLLBACK;
+SET ROLE authenticated;
+DO $$ BEGIN
+  BEGIN
+    PERFORM public.erase_user_data('10000000-0000-0000-0000-000000000002', true);
+    RAISE EXCEPTION 'FAIL: a member could call erase_user_data';
+  EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'ok: members cannot call erase_user_data';
+  END;
+END $$;
+RESET ROLE;
+SET ROLE service_role;
+DO $$
+DECLARE
+  r jsonb;
+  b constant uuid := '10000000-0000-0000-0000-000000000002';
+BEGIN
+  r := public.erase_user_data(b, true);
+  IF (r -> 'deleted' ->> 'diary_entries')::int <> 1 OR NOT EXISTS (SELECT 1 FROM public.diary_entries WHERE user_id = b) THEN
+    RAISE EXCEPTION 'FAIL: dry run must count, not delete: %', r;
+  END IF;
+  r := public.erase_user_data(b);
+  IF r -> 'errors' <> '{}'::jsonb THEN RAISE EXCEPTION 'FAIL: erase reported errors: %', r; END IF;
+  IF EXISTS (SELECT 1 FROM public.diary_entries WHERE user_id = b) OR EXISTS (SELECT 1 FROM public.user_preferences WHERE user_id = b)
+     OR EXISTS (SELECT 1 FROM public.app_users WHERE user_id = b) THEN RAISE EXCEPTION 'FAIL: member rows left: %', r; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.wallet_accounts WHERE user_id = b) THEN RAISE EXCEPTION 'FAIL: retained table erased: %', r; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE user_id = b) OR NOT EXISTS (SELECT 1 FROM public.fk_a_parent WHERE user_id = b) THEN
+    RAISE EXCEPTION 'FAIL: tables that cascade from auth.users must be left to the deletion handler: %', r;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.user_preferences WHERE user_id = '10000000-0000-0000-0000-000000000003') THEN RAISE EXCEPTION 'FAIL: another member''s rows erased'; END IF;
+  RAISE NOTICE 'ok: erase_user_data on Aurora erased the member''s rows, kept retained and auth-cascade tables: %', r;
+END $$;
+RESET ROLE;
