@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04997",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04997-test-results-in-calendar-migration.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the platform part of VTID-04997 is a database migration (the expected date of a health test result appears in the member's calendar) plus one added value in the gateway source-type list and in the non-commitment set. Behaviour is proven on a throwaway Postgres (CI SQL-TEST-RESULTS-IN-CALENDAR, two mutation checks, including 'a failing mirror never blocks an order write'). Staging shares the production Supabase project, so verification never creates or edits a health test order."
+    }
+  ]
+}

@@ -165,7 +165,8 @@
       "goal_plan",
       "guided_journey",
       "reminder",
-      "subscription"
+      "subscription",
+      "test_result"
     ],
     "event": [
       "personal",

@@ -80,6 +80,15 @@ describe('computeFreeSlots (VTID-04996)', () => {
     expect(r[0].start).toBe('2026-10-05T05:00:00.000Z');
   });
 
+  it('an expected test-result date does not take time', () => {
+    const r = computeFreeSlots(
+      [own('t', '2026-10-05T05:00:00Z', '2026-10-05T06:00:00Z', { source_type: 'test_result' })],
+      [],
+      { ...base, limit: 1 },
+    );
+    expect(r[0].start).toBe('2026-10-05T05:00:00.000Z');
+  });
+
   it('the entry being moved does not block its own slot', () => {
     const items = [own('a', '2026-10-05T05:00:00Z', '2026-10-05T07:00:00Z')];
     expect(computeFreeSlots(items, [], { ...base, limit: 1 })[0].start).toBe('2026-10-05T07:00:00.000Z');

@@ -42,6 +42,11 @@ describe('computeConflicts (VTID-04995)', () => {
     expect(r).toEqual([]);
   });
 
+  it('an expected test-result date is information, not committed time: it never conflicts', () => {
+    const r = computeConflicts([own('t', '2026-10-05T09:00:00Z', '2026-10-05T09:15:00Z', { source_type: 'test_result' })], [], P);
+    expect(r).toEqual([]);
+  });
+
   it('the entry being edited or moved does not conflict with itself, whichever occurrence', () => {
     const r = computeConflicts([own('me', '2026-10-05T09:00:00Z', '2026-10-05T10:00:00Z'), own('x', '2026-10-05T09:10:00Z', '2026-10-05T09:20:00Z')], [], P, { excludeEventId: 'me' });
     expect(r.map((x) => x.event_id)).toEqual(['x']);
