@@ -278,6 +278,8 @@ async function runDailyReport(force: boolean): Promise<RunOutcome> {
  * `?force=true`.
  */
 router.post('/daily-report/run', requireApiKey, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: the OASIS event (screen.load.daily_report) is
+  // emitted inside runDailyReport() before anything else happens.
   const force = req.query.force === 'true' || req.query.force === '1';
   const day = utcDay(new Date());
   try {
