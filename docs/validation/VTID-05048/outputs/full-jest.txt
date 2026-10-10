@@ -1,0 +1,4 @@
+$ npx jest --silent   (full gateway suite)
+Test Suites: 7 failed, 1 skipped, 1592 passed, 1599 of 1600 total
+Tests:       7 failed, 25 skipped, 6 todo, 25531 passed, 25569 total
+The 7 failures are the SQL-migration replica tests (vtid-04809/04859/04868/04878/04981/04982/04988: "applies ... to a local Postgres replica") and fail identically on unmodified origin/main in this environment (no local Postgres): 7 failed, 66 passed.

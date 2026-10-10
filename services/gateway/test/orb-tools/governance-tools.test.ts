@@ -18,6 +18,7 @@ import {
 const DEV_ID: OrbToolIdentity = { user_id: 'u-dev', tenant_id: 't-1', role: 'developer' };
 const COMMUNITY_ID: OrbToolIdentity = { user_id: 'u-com', tenant_id: 't-1', role: 'community' };
 const ANON_ID: OrbToolIdentity = { user_id: '', tenant_id: null, role: 'developer' };
+const EXAFY_ID: OrbToolIdentity = { user_id: 'u-exafy', tenant_id: 't-1', role: 'exafy_admin' };
 
 function makeSb(): SupabaseClient {
   return {} as unknown as SupabaseClient;
@@ -131,8 +132,17 @@ describe('dev_get_control / dev_set_control', () => {
     expect(r.ok).toBe(false);
   });
 
+  // VTID-05048: the control write is requireServiceOrAdmin; only an
+  // exafy_admin session may drive it through voice.
+  it('dev_set_control refuses a non-exafy developer before any gateway call', async () => {
+    const fetchFn = mockFetch(200, { ok: true });
+    const r = await dev_set_control({ key: 'vtid_allocator_enabled', enabled: false, reason: 'incident', confirm: true }, DEV_ID, makeSb());
+    expect(r.ok).toBe(false);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
   it('dev_set_control requires confirmation', async () => {
-    const r = await dev_set_control({ key: 'vtid_allocator_enabled', enabled: false, reason: 'incident' }, DEV_ID, makeSb());
+    const r = await dev_set_control({ key: 'vtid_allocator_enabled', enabled: false, reason: 'incident' }, EXAFY_ID, makeSb());
     expect((r as { result: { requires_confirmation: boolean } }).result.requires_confirmation).toBe(true);
   });
 });

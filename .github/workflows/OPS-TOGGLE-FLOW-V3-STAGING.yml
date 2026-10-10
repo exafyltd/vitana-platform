@@ -2,8 +2,10 @@ name: OPS — Toggle Journey Conversation V2 flag on staging
 
 # Flips the `vitana_journey_conversation_v2_enabled` system control via the
 # STAGING gateway's governed controls endpoint. Runs from a GitHub runner
-# (Claude Code remote sessions have no gateway egress). Header-authed
-# (dev_admin). Commit-message markers:
+# (Claude Code remote sessions have no gateway egress). Authenticated with
+# the GATEWAY_SERVICE_TOKEN bearer — the controls write route is
+# requireServiceOrAdmin since VTID-05048 and ignores x-user-id/x-user-role.
+# Commit-message markers:
 #   [run-v2-flag]            → trigger this job
 #   [v2-off]                 → set the flag to false (default is true)
 # Staging-only: hits gateway-staging; never prod.
@@ -39,12 +41,13 @@ jobs:
       - name: Set the control
         env:
           DESIRED: ${{ (contains(github.event.head_commit.message, '[v2-off]') && 'false') || github.event.inputs.enabled || 'true' }}
+          GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
         run: |
           set -euo pipefail
+          [ -n "${GATEWAY_SERVICE_TOKEN:-}" ] || { echo "::error::GATEWAY_SERVICE_TOKEN repo secret is missing"; exit 1; }
           RESP=$(curl -sS -X POST "$STAGING_GATEWAY/api/v1/governance/controls/$CONTROL_KEY" \
             -H 'Content-Type: application/json' \
-            -H 'x-user-id: d.stevanovic@exafy.io' \
-            -H 'x-user-role: dev_admin' \
+            -H "Authorization: Bearer ${GATEWAY_SERVICE_TOKEN}" \
             -d "{\"enabled\": ${DESIRED}, \"reason\": \"Conversation Flow v3 staging voice test (VTID-03307)\"}")
           echo "$RESP"
           [ "$(echo "$RESP" | jq -r '.ok')" = "true" ] || { echo "::error::set failed: $RESP"; exit 1; }
@@ -54,8 +57,7 @@ jobs:
           DESIRED: ${{ (contains(github.event.head_commit.message, '[v2-off]') && 'false') || github.event.inputs.enabled || 'true' }}
         run: |
           set -euo pipefail
-          RESP=$(curl -sS "$STAGING_GATEWAY/api/v1/governance/controls/$CONTROL_KEY" \
-            -H 'x-user-id: d.stevanovic@exafy.io' -H 'x-user-role: dev_admin')
+          RESP=$(curl -sS "$STAGING_GATEWAY/api/v1/governance/controls/$CONTROL_KEY")
           echo "$RESP"
           # NB: jq '//' treats `false` as null, so derive the boolean explicitly.
           ENABLED=$(echo "$RESP" | jq -r 'if (.data.enabled) == true then "true" elif (.data.enabled) == false then "false" else "missing" end')
