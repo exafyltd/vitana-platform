@@ -1,0 +1,133 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.error
+    [reward-shop] shipping checkout failed for order o-2: stripe down
+
+      180 |     return { ok: true, order_id: orderId, status: 'awaiting_shipping_payment', vtna_amount: Number(r.vtna_amount), checkout_url: session.url ?? undefined, duplicate: !!r.duplicate };
+      181 |   } catch (err: any) {
+    > 182 |     console.error(`${LOG} shipping checkout failed for order ${orderId}: ${err?.message ?? err}`);
+          |             ^
+      183 |     await repo.rpcReleaseReservation(sb, orderId, 'checkout_failed');
+      184 |     return { ok: false, error: 'CHECKOUT_FAILED', status_code: 502 };
+      185 |   }
+
+      at redeem (src/services/rewards/reward-shop.ts:182:13)
+      at src/routes/rewards-shop.ts:94:18
+
+  console.error
+    [rewards-shop] item image upload failed: bucket not found
+
+      228 |     });
+      229 |     if (error) {
+    > 230 |       console.error(`[rewards-shop] item image upload failed: ${error.message}`);
+          |               ^
+      231 |       return res.status(500).json({ ok: false, error: 'IMAGE_UPLOAD_FAILED' });
+      232 |     }
+      233 |     const url = storagePublicUrl(REWARD_SHOP_IMAGE_BUCKET, path);
+
+      at src/routes/rewards-shop.ts:230:15
+
+  console.error
+    [rewards-shop] item image upload failed: network
+
+      234 |     return res.json({ ok: true, url, path });
+      235 |   } catch (err) {
+    > 236 |     console.error(`[rewards-shop] item image upload failed: ${err instanceof Error ? err.message : String(err)}`);
+          |             ^
+      237 |     return res.status(500).json({ ok: false, error: 'IMAGE_UPLOAD_FAILED' });
+      238 |   }
+      239 | });
+
+      at src/routes/rewards-shop.ts:236:13
+
+PASS test/vtid-05035-reward-shop-admin.test.ts
+  auth gate on every new route
+    ✓ POST image: 401 without auth, 403 for a non-exafy member
+    ✓ GET fees: 401 without auth, 403 for a non-exafy member
+    ✓ DELETE fee: 401 without auth, 403 for a non-exafy member
+  POST /api/v1/admin/rewards/items/image
+    ✓ accepts image/jpeg and stores it in reward-shop-images under items/<uuid>.[ 255, 216, 255, 224 ]
+    ✓ accepts image/png and stores it in reward-shop-images under items/<uuid>.[
+  137, 80, 78, 71,
+   13, 10, 26, 10
+]
+    ✓ accepts image/webp and stores it in reward-shop-images under items/<uuid>.[
+  82, 73, 70, 70, 36,  0,
+   0,  0, 87, 69, 66, 80,
+  86, 80, 56, 32
+]
+    ✓ two uploads never share a path
+    ✓ accepts exactly 1.4 MB
+    ✓ rejects a photo over 1.4 MB with 413 IMAGE_TOO_LARGE
+    ✓ rejects a declared type that does not match the magic bytes
+    ✓ rejects a type outside jpeg/png/webp even with matching bytes
+    ✓ rejects garbage: non-image bytes and non-base64 text
+    ✓ rejects missing data with 400 ARGS_REQUIRED
+    ✓ a storage error is a 500 IMAGE_UPLOAD_FAILED
+    ✓ a thrown storage error is a 500 IMAGE_UPLOAD_FAILED too
+  GET /api/v1/admin/rewards/shipping-fees
+    ✓ returns every fee row
+    ✓ a read error is a 500
+  DELETE /api/v1/admin/rewards/shipping-fees/:country/:currency
+    ✓ rejects de/EUR with 400 ARGS_REQUIRED
+    ✓ rejects DEU/EUR with 400 ARGS_REQUIRED
+    ✓ rejects D1/EUR with 400 ARGS_REQUIRED
+    ✓ rejects DE/eur with 400 ARGS_REQUIRED
+    ✓ rejects DE/GBP with 400 ARGS_REQUIRED
+    ✓ deletes DE/EUR
+    ✓ deletes US/USD
+    ✓ a database error is reported, not swallowed
+
+PASS test/vtid-04982-rewards-shop.test.ts
+  GET /api/v1/rewards/shop
+    ✓ needs a member; lists items with VTNA, EUR value, availability and affordability
+  POST /api/v1/rewards/shop/redeem
+    ✓ rejects bad input before touching the database
+    ✓ ship item: reserves, opens a Stripe Checkout for the shipping fee only, never takes a price from the client
+    ✓ a replay hands back the session already opened for the order
+    ✓ a failed checkout releases the hold
+    ✓ event item: paid in VTNA at once, OASIS rewards.shop.redeemed, no Stripe
+    ✓ maps INSUFFICIENT_BALANCE to 409
+    ✓ maps OUT_OF_STOCK to 409
+    ✓ maps UNDER_MIN_AGE to 403
+    ✓ maps AGE_CONFIRMATION_REQUIRED to 400
+    ✓ maps NOT_ELIGIBLE to 403
+    ✓ maps ITEM_NOT_AVAILABLE to 404
+    ✓ maps SHIPPING_NOT_AVAILABLE to 409
+  admin routes
+    ✓ are exafy_admin only
+    ✓ PATCH status accepts only fulfilment statuses and reports the transition
+    ✓ PUT item validates the price and fulfilment
+  billing webhook handlers
+    ✓ completed -> settle; paid emits shipping_paid, no refund
+    ✓ refunds the Stripe charge when the VTNA or the stock is gone
+    ✓ a database error throws so Stripe retries the webhook
+    ✓ expired -> release the hold once
+    ✓ billing.ts routes reward_shipping to the shop and handles checkout.session.expired
+  reservation sweep
+    ✓ runs only on production ECS
+    ✓ reports releases to OASIS and stays quiet when none
+  VTID-04982 migration
+    ✓ refuses to apply while fn_consume_credits is open to members, and keeps every function server-side
+    ✓ debits only earned VTNA through credit_wallet, never stores a birth date, refuses test accounts
+    ✓ applies twice and passes the SQL assertions
+
+Test Suites: 2 passed, 2 total
+Tests:       51 passed, 51 total
+Snapshots:   0 total
+Time:        3.02 s, estimated 7 s
+Ran all test suites matching /test\/vtid-05035-reward-shop-admin.test.ts|test\/vtid-04982-rewards-shop.test.ts/i.
