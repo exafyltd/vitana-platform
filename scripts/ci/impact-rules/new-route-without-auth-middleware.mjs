@@ -71,6 +71,10 @@ const AUTH_NAMES = [
   // ledger's write gate — GATEWAY_SERVICE_TOKEN or an exafy_admin JWT, same rule
   // as requireServiceOrAdmin, with a log-only rollout mode.
   'requireLedgerWriteAuth',
+  // requireServiceToken (routes/auth-bridge.ts, VTID-05023): the auth.users
+  // webhook's machine gate — GATEWAY_SERVICE_TOKEN only (timing-safe, fail
+  // closed when unset; admin JWTs deliberately not accepted). It IS auth.
+  'requireServiceToken',
   // requireSupervisorAccess (routes/voice-supervisor.ts, VTID-04776/VTID-04780):
   // requireAuth, then exafy_admin (all tenants) or a tenant admin forced to
   // their own tenant; everyone else 403. It IS auth.

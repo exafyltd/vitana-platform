@@ -26,9 +26,28 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { timingSafeEqual } from 'crypto';
 import { z } from 'zod';
 import { getAuthBridgeDeps, isUuid, provisionAuthUser, toBridgeAuthUser } from '../services/auth-bridge/auth-bridge';
+import { emitOasisEvent } from '../services/oasis-event-service';
 
 const router = Router();
 const LOG = '[VTID-05023 auth-bridge]';
+
+// Recorded only when Aurora actually changed (rows created, or a deletion processed). A failed
+// emit is logged and never fails the webhook: provisioning already committed.
+function recordTransition(type: 'auth_bridge.user.provisioned' | 'auth_bridge.user.deleted', userId: string, payload: Record<string, unknown>): void {
+  emitOasisEvent({
+    vtid: 'VTID-05023',
+    type,
+    source: 'gateway.auth-bridge',
+    status: 'success',
+    message: type === 'auth_bridge.user.provisioned' ? `member ${userId} provisioned on Aurora` : `member ${userId} cleaned up on Aurora`,
+    payload: { user_id: userId, via: 'webhook', ...payload },
+    actor_role: 'system',
+    surface: 'system',
+    vitana_id: null,
+  }).then((r) => {
+    if (!r.ok) console.error(`${LOG} OASIS ${type} for ${userId} not recorded: ${r.error}`);
+  }).catch((err) => console.error(`${LOG} OASIS ${type} for ${userId} not recorded: ${err?.message ?? err}`));
+}
 
 function tokenMatches(presented: string): boolean {
   const configured = process.env.GATEWAY_SERVICE_TOKEN ?? '';
@@ -89,6 +108,7 @@ router.post('/user-event', requireServiceToken, async (req: Request, res: Respon
       if (!isUuid(userId)) return res.status(400).json({ ok: false, error: 'DELETE needs old_record.id' });
       const result = await deps.store.handleDeletedUser(userId, 'webhook');
       console.log(`${LOG} deleted user ${userId}: ${JSON.stringify(result)}`);
+      recordTransition('auth_bridge.user.deleted', userId, { result });
       return res.json({ ok: true, action: 'deleted', user_id: userId, result });
     }
 
@@ -109,6 +129,9 @@ router.post('/user-event', requireServiceToken, async (req: Request, res: Respon
       `${LOG} ${event.type} ${user.id}: ${result.provisioned ? `provisioned [${result.created.join(', ')}]` : 'already provisioned'}` +
         (result.active_tenant_set ? `, active_tenant_id=${result.active_tenant_id}` : ''),
     );
+    if (result.provisioned) {
+      recordTransition('auth_bridge.user.provisioned', user.id, { event: event.type, created: result.created, active_tenant_set: result.active_tenant_set });
+    }
     return res.json({ ok: true, action: result.provisioned ? 'provisioned' : 'already_provisioned', user_id: user.id, result });
   } catch (err: any) {
     const message = err?.message ?? String(err);

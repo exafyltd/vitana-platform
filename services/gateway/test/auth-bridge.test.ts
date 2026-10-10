@@ -11,6 +11,10 @@ import request from 'supertest';
 import authBridgeRouter from '../src/routes/auth-bridge';
 import { setAuthBridgeDepsForTests } from '../src/services/auth-bridge/auth-bridge';
 import { FakeAuthBridge, TENANT } from './auth-bridge/fake-auth-bridge';
+import { emitOasisEvent } from '../src/services/oasis-event-service';
+
+jest.mock('../src/services/oasis-event-service', () => ({ emitOasisEvent: jest.fn().mockResolvedValue({ ok: true }) }));
+const emitted = emitOasisEvent as jest.MockedFunction<typeof emitOasisEvent>;
 
 const TOKEN = 'svc-token-for-tests';
 const UID = '10000000-0000-0000-0000-000000000001';
@@ -53,6 +57,8 @@ describe('VTID-05023 auth-bridge webhook endpoint', () => {
     process.env.GATEWAY_SERVICE_TOKEN = TOKEN;
     fake = new FakeAuthBridge();
     setAuthBridgeDepsForTests(fake.deps());
+    emitted.mockClear();
+    emitted.mockResolvedValue({ ok: true });
     jest.spyOn(console, 'log').mockImplementation(() => {});
     jest.spyOn(console, 'error').mockImplementation(() => {});
   });
@@ -194,6 +200,36 @@ describe('VTID-05023 auth-bridge webhook endpoint', () => {
       expect((await post(body)).status).toBe(200);
       expect((await post(body)).status).toBe(200);
       expect(fake.deleted.size).toBe(1);
+    });
+  });
+  describe('OASIS', () => {
+    it('records auth_bridge.user.provisioned once, only when Aurora changed', async () => {
+      await post(insertEvent());
+      await post(insertEvent());
+      expect(emitted).toHaveBeenCalledTimes(1);
+      expect(emitted.mock.calls[0][0]).toMatchObject({ vtid: 'VTID-05023', type: 'auth_bridge.user.provisioned', status: 'success', payload: expect.objectContaining({ user_id: UID }) });
+    });
+
+    it('records auth_bridge.user.deleted on DELETE', async () => {
+      await post(insertEvent());
+      emitted.mockClear();
+      const res = await post({ type: 'DELETE', schema: 'auth', table: 'users', record: null, old_record: { id: UID } });
+      expect(res.status).toBe(200);
+      expect(emitted).toHaveBeenCalledTimes(1);
+      expect(emitted.mock.calls[0][0]).toMatchObject({ type: 'auth_bridge.user.deleted', payload: expect.objectContaining({ user_id: UID }) });
+    });
+
+    it('a failed emit never fails the webhook', async () => {
+      emitted.mockRejectedValue(new Error('oasis down'));
+      const res = await post(insertEvent());
+      expect(res.status).toBe(200);
+      expect(res.body.action).toBe('provisioned');
+    });
+
+    it('no event for an ignored UPDATE or a refused call', async () => {
+      await post(insertEvent(), 'wrong');
+      await post({ type: 'UPDATE', record: { id: UID, email_confirmed_at: null }, old_record: { id: UID, email_confirmed_at: null } });
+      expect(emitted).not.toHaveBeenCalled();
     });
   });
 });

@@ -33,8 +33,8 @@ TEST: services/gateway/test/vtid-05023-outbound-http-worker.test.ts — outputs/
 AC-10: On Aurora, ensure_provisioned() creates exactly the rows Supabase's six auth.users triggers create, idempotently; the PostgREST db-pre-request hook is a no-op for read-only and null-uid requests, provisions an unprovisioned member before their first write, skips service accounts and never fails a request; deletion applies the auth.users FK actions from the exported map; erase_user_data() runs on Aurora (no auth.users) and leaves auth-cascade tables to the deletion handler; members cannot call any of these.
 TEST: scripts/aws/test/auth-bridge.sh (npm run test:auth-bridge) — outputs/auth-bridge.txt
 
-AC-11: The gateway side of the auth bridge: the service-token-gated user-event endpoint, the reconciler (off by default, never on staging), and ensureProvisioned() awaited by the eight post-sign-up write paths.
-TEST: services/gateway/test/vtid-05023-auth-bridge-{endpoint,reconciler,write-paths}.test.ts — outputs/gateway-auth-bridge-outbox.txt
+AC-11: The gateway side of the auth bridge: the service-token-gated user-event endpoint (records auth_bridge.user.provisioned / .deleted in OASIS when Aurora changed; a failed emit never fails the webhook), the reconciler (off by default, never on staging), and ensureProvisioned() awaited by the eight post-sign-up write paths.
+TEST: services/gateway/test/auth-bridge.test.ts, services/gateway/test/vtid-05023-auth-bridge-{reconciler,write-paths}.test.ts — outputs/gateway-auth-bridge-outbox.txt
 
 AC-12: Self-hosted Supabase Realtime on Aurora (part 7a) delivers RLS-filtered postgres_changes, broadcast and presence to @supabase/realtime-js on Host realtime.vitanaland.com, refuses member tokens on its management API, and the setup SQL runs as a non-superuser role; the prod deploy is a dispatch-only workflow.
 TEST: services/realtime-aurora/test/local-delivery.sh (npm run test:realtime-local) — outputs/realtime-local.txt

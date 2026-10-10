@@ -1077,6 +1077,9 @@ export type CicdEventType =
   | 'partner_org.member_joined'
   | 'partner_org.activated'
   | 'partner_org.registry_linked'
+  // VTID-05023: auth -> Aurora bridge (a member provisioned / cleaned up on Aurora)
+  | 'auth_bridge.user.provisioned'
+  | 'auth_bridge.user.deleted'
   // VTID-04478: Commerce partner onboarding engine
   | 'partner_org.onboarding_started'
   | 'partner_org.company_updated'
