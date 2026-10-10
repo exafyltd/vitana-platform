@@ -356,7 +356,7 @@ describe('Tenant Admin Overview Routes', () => {
   // --- GET /activity ---
 
   it('GET /activity filters out events tagged with another tenant\'s id', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     chainFor('oasis_events').mockResolvedValueOnce({
       data: [
         { id: 'e1', metadata: { tenant_id: TENANT_A }, created_at: '2026-07-27T10:00:00Z' },
@@ -377,7 +377,7 @@ describe('Tenant Admin Overview Routes', () => {
   });
 
   it('GET /activity excludes nova_instruction_debug_dump diag rows even without a tenant_id (VTID-03787)', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     chainFor('oasis_events').mockResolvedValueOnce({
       data: [
         { id: 'e1', metadata: { tenant_id: TENANT_A }, created_at: '2026-08-28T10:00:00Z' },
@@ -401,7 +401,7 @@ describe('Tenant Admin Overview Routes', () => {
   });
 
   it('GET /activity caps limit at 200', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     chainFor('oasis_events').mockResolvedValueOnce({ data: [], error: null });
 
     const res = await request(app)
@@ -415,7 +415,7 @@ describe('Tenant Admin Overview Routes', () => {
   // --- GET /alerts ---
 
   it('GET /alerts returns error/critical events from the last 24h', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     const alerts = [{ id: 'a1', status: 'error' }, { id: 'a2', status: 'critical' }];
     chainFor('oasis_events').mockResolvedValueOnce({ data: alerts, error: null });
 
@@ -431,7 +431,7 @@ describe('Tenant Admin Overview Routes', () => {
   });
 
   it('GET /alerts returns 500 when the query fails', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     chainFor('oasis_events').mockResolvedValueOnce({ data: null, error: { message: 'oasis query failed' } });
 
     const res = await request(app)
@@ -441,4 +441,23 @@ describe('Tenant Admin Overview Routes', () => {
     expect(res.status).toBe(500);
     expect(res.body.error).toBe('oasis query failed');
   });
+
+  // --- VTID-05042: /activity and /alerts are platform-only ---
+
+  it.each(['/activity', '/alerts'])(
+    'GET %s returns 403 PLATFORM_SCOPE_ONLY for a tenant admin of their own tenant, no query issued (VTID-05042)',
+    async (tail) => {
+      mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+      chainFor('oasis_events').mockResolvedValue({ data: [{ id: 'leak', metadata: {} }], error: null });
+
+      const res = await request(app)
+        .get(`/api/v1/admin/tenants/${TENANT_A}/overview${tail}`)
+        .set('Authorization', 'Bearer token');
+
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ ok: false, error: 'PLATFORM_SCOPE_ONLY' });
+      expect(mockSupabase.from).not.toHaveBeenCalled();
+    },
+  );
+
 });

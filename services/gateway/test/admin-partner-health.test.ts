@@ -5,7 +5,9 @@
 // instead of the retired requireTenantAdmin.
 //
 // Contract under test (mounted at /api/v1/admin/partner-health):
-//   - auth: 401 without an identity, 403 for a caller with no admin/org access
+//   - auth: 401 without an identity, 403 for a caller with no admin/org access,
+//     403 for a Vitana tenant admin on every route (VTID-05042 — tenant admins
+//     no longer get the unfiltered 'admin' scope; exafy_admin only)
 //   - GET /orders: happy path (admin); org-scoped filtering (staff/professional)
 //   - PATCH /orders/:id: 400 on result_ready (derived-state guard), 404 not
 //     found, 403 for an out-of-scope order, happy path (delegates to
@@ -38,6 +40,7 @@ const ADMIN_USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const STAFF_USER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const PROFESSIONAL_USER_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const OUTSIDER_USER_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+const TENANT_ADMIN_USER_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 const TENANT_ID = 'tenant-1';
 
 jest.mock('../src/middleware/auth-supabase-jwt', () => ({
@@ -48,6 +51,9 @@ jest.mock('../src/middleware/auth-supabase-jwt', () => ({
       'Bearer staff-1': { user_id: STAFF_USER_ID, tenant_id: null, exafy_admin: false },
       'Bearer professional-1': { user_id: PROFESSIONAL_USER_ID, tenant_id: null, exafy_admin: false },
       'Bearer outsider-1': { user_id: OUTSIDER_USER_ID, tenant_id: null, exafy_admin: false },
+      // VTID-05042: a Vitana tenant admin (user_tenants.active_role='admin' in
+      // tenant-2) with no partner-org membership and no exafy_admin flag.
+      'Bearer tenant-admin-1': { user_id: TENANT_ADMIN_USER_ID, tenant_id: 'tenant-2', exafy_admin: false },
     };
     if (!token || !byToken[token]) {
       return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
@@ -820,5 +826,73 @@ describe('POST /inbox/manual', () => {
       ['user-1', 'user-2'],
       'ambiguous_match',
     );
+  });
+});
+
+// VTID-05042 (Track S / S3, S-L): the tenant-admin branch of
+// requirePartnerHealthAccess granted the unfiltered { scope: 'admin' } to an
+// admin of ANY tenant, i.e. every tenant's lab orders and health results.
+// Removed: a tenant admin with no partner-org membership now gets 403 on all
+// seven routes and no order/inbox/result table is ever read or written.
+describe('VTID-05042 — tenant admin has no partner-health access', () => {
+  const DATA_TABLES = [
+    'partner_health_test_orders',
+    'partner_health_result_inbox',
+    'partner_customer_links',
+    'partner_registry',
+  ];
+  let touched: string[];
+
+  beforeEach(() => {
+    touched = [];
+    // If the old branch were still there it would find an admin row here.
+    tableHandlers.user_tenants = () => {
+      touched.push('user_tenants');
+      return { data: { active_role: 'admin' }, error: null };
+    };
+    tableHandlers.partner_organization_members = () => ({ data: [], error: null });
+    for (const t of DATA_TABLES) {
+      tableHandlers[t] = () => {
+        touched.push(t);
+        return { data: [], error: null };
+      };
+    }
+  });
+
+  // Every row has three entries: jest.each passes `done` for a missing arg.
+  const routes: Array<[string, string, any]> = [
+    ['get', '/orders', null],
+    ['patch', '/orders/order-1', { status: 'processing' }],
+    ['get', '/inbox', null],
+    ['get', '/candidates/inbox-1', null],
+    ['post', '/inbox/inbox-1/upload-result', { partner_key: 'doctorbox', payload: {} }],
+    ['post', '/inbox/manual', { partner_id: 'partner-a', raw_payload: {} }],
+    ['post', '/inbox/inbox-1/confirm-match', { order_id: 'order-1', matched_user_id: 'u', matched_tenant_id: 'tenant-1' }],
+  ];
+
+  it.each(routes)('%s %s → 403 FORBIDDEN, no data table touched', async (method, path, body) => {
+    let req = (request(makeApp()) as any)[method](`/api/v1/admin/partner-health${path}`)
+      .set('Authorization', 'Bearer tenant-admin-1');
+    if (body) req = req.send(body);
+    const r = await req;
+    expect(r.status).toBe(403);
+    expect(r.body).toMatchObject({ ok: false, error: 'FORBIDDEN' });
+    expect(touched).toEqual([]);
+    expect(recordStatusChangeMock).not.toHaveBeenCalled();
+    expect(ingestPartnerResultMock).not.toHaveBeenCalled();
+    expect(quarantineUnmatchedResultMock).not.toHaveBeenCalled();
+    expect(receiveResultMock).not.toHaveBeenCalled();
+  });
+
+  it('exafy_admin keeps the unfiltered admin scope (unchanged)', async () => {
+    tableHandlers.partner_health_test_orders = () => ({
+      data: [{ id: 'order-1', test_name: 'A', status: 'processing' }],
+      error: null,
+    });
+    const r = await request(makeApp())
+      .get('/api/v1/admin/partner-health/orders')
+      .set('Authorization', 'Bearer admin-1');
+    expect(r.status).toBe(200);
+    expect(r.body.orders).toHaveLength(1);
   });
 });

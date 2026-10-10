@@ -5,11 +5,13 @@
  *
  * Endpoints:
  *   GET /actions   — Admin action audit trail (grants, revokes, invites, settings changes)
- *   GET /access    — Access log (login events for tenant members)
+ *   GET /access    — Access log (OASIS auth events). VTID-05042: platform-only
+ *                    (exafy_admin) — oasis_events has no tenant_id column, so
+ *                    this cannot be filtered to one tenant.
  */
 
 import { Router, Response } from 'express';
-import { requireTenantAdmin } from '../../middleware/require-tenant-admin';
+import { requireTenantAdmin, requirePlatformScope } from '../../middleware/require-tenant-admin';
 import { AuthenticatedRequest } from '../../middleware/auth-supabase-jwt';
 import { getSupabase } from '../../lib/supabase';
 import * as repo from './audit-log-repository';
@@ -35,8 +37,8 @@ router.get('/actions', requireTenantAdmin, async (req: AuthenticatedRequest, res
   }
 });
 
-// GET /access — access log (tenant-scoped OASIS auth events)
-router.get('/access', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+// GET /access — access log (OASIS auth events; platform-wide, so exafy_admin only — VTID-05042)
+router.get('/access', requireTenantAdmin, requirePlatformScope, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });

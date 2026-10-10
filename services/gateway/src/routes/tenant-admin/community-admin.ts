@@ -9,10 +9,16 @@
  *   - live_rooms + live_room_sessions
  *   - products_catalog / services_catalog (creators)
  *   - community_memberships
+ *
+ * VTID-05042 tenant scope: live_rooms and community_memberships carry
+ * tenant_id and are filtered by the :tenantId in the URL. The global_community_*
+ * tables and creator_profiles have no tenant column (cross-tenant by design),
+ * so /meetups (GET + DELETE), /groups, /creators and /stats are
+ * exafy_admin-only (requirePlatformScope) until WS3 adds tenant_id.
  */
 
 import { Router, Response } from 'express';
-import { requireTenantAdmin } from '../../middleware/require-tenant-admin';
+import { requireTenantAdmin, requirePlatformScope } from '../../middleware/require-tenant-admin';
 import { AuthenticatedRequest } from '../../middleware/auth-supabase-jwt';
 import { getSupabase } from '../../lib/supabase';
 import * as repo from './community-admin-repository';
@@ -21,7 +27,7 @@ const router = Router({ mergeParams: true });
 
 // GET /meetups — community events from global_community_events
 // Includes organizer profile + ticket pricing from related tables
-router.get('/meetups', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/meetups', requireTenantAdmin, requirePlatformScope, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
@@ -74,7 +80,7 @@ router.get('/meetups', requireTenantAdmin, async (req: AuthenticatedRequest, res
 });
 
 // DELETE /meetups/:id — delete an event
-router.delete('/meetups/:id', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/meetups/:id', requireTenantAdmin, requirePlatformScope, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
@@ -89,7 +95,7 @@ router.delete('/meetups/:id', requireTenantAdmin, async (req: AuthenticatedReque
 });
 
 // GET /groups — community groups
-router.get('/groups', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/groups', requireTenantAdmin, requirePlatformScope, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
@@ -109,7 +115,7 @@ router.get('/groups', requireTenantAdmin, async (req: AuthenticatedRequest, res:
   }
 });
 
-// GET /live-rooms — live rooms + session data
+// GET /live-rooms — live rooms of this tenant (VTID-05042: tenant-filtered)
 router.get('/live-rooms', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const supabase = getSupabase();
@@ -117,7 +123,8 @@ router.get('/live-rooms', requireTenantAdmin, async (req: AuthenticatedRequest, 
 
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
 
-    const { data, error } = await repo.fetchRecentLiveRooms(supabase, limit);
+    const tenantId = req.params.tenantId || (req as any).targetTenantId;
+    const { data, error } = await repo.fetchRecentLiveRooms(supabase, tenantId, limit);
 
     if (error) {
       console.warn('[COMMUNITY-ADMIN] live_rooms query error:', error.message);
@@ -131,7 +138,7 @@ router.get('/live-rooms', requireTenantAdmin, async (req: AuthenticatedRequest, 
 });
 
 // GET /creators — creator/service profiles
-router.get('/creators', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/creators', requireTenantAdmin, requirePlatformScope, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
@@ -151,7 +158,7 @@ router.get('/creators', requireTenantAdmin, async (req: AuthenticatedRequest, re
   }
 });
 
-// GET /memberships — community membership stats
+// GET /memberships — community memberships of this tenant (VTID-05042: tenant-filtered)
 router.get('/memberships', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const supabase = getSupabase();
@@ -159,7 +166,8 @@ router.get('/memberships', requireTenantAdmin, async (req: AuthenticatedRequest,
 
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
 
-    const { data, error } = await repo.fetchRecentCommunityMemberships(supabase, limit);
+    const tenantId = req.params.tenantId || (req as any).targetTenantId;
+    const { data, error } = await repo.fetchRecentCommunityMemberships(supabase, tenantId, limit);
 
     if (error) {
       console.warn('[COMMUNITY-ADMIN] community_memberships query error:', error.message);
@@ -173,7 +181,7 @@ router.get('/memberships', requireTenantAdmin, async (req: AuthenticatedRequest,
 });
 
 // GET /stats — overview stats across all community tables
-router.get('/stats', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/stats', requireTenantAdmin, requirePlatformScope, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });

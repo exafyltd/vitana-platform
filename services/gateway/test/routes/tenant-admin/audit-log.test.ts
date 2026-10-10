@@ -259,8 +259,8 @@ describe('Tenant Admin Audit Log routes', () => {
 
   // --- GET /access ---
 
-  it('GET /access returns auth-topic OASIS events for an authenticated tenant admin', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+  it('GET /access returns auth-topic OASIS events for exafy_admin (VTID-05042: platform-only)', async () => {
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     const rows = [{ id: 'e1', topic: 'auth.login' }];
     chainFor('oasis_events').mockResolvedValue({ data: rows, error: null });
 
@@ -278,9 +278,8 @@ describe('Tenant Admin Audit Log routes', () => {
       'role.changed',
     ]);
     expect(chain.limit).toHaveBeenCalledWith(50);
-    // NOTE (documented current behavior, see suite report): oasis_events is
-    // NOT filtered by tenant here — cross-tenant login events are returned to
-    // any tenant admin. The middleware gates access, not the data.
+    // oasis_events has no tenant column, so this is platform-wide data —
+    // VTID-05042 restricts the route to exafy_admin (see the 403 test below).
   });
 
   it('GET /access is still denied cross-tenant at the middleware (403)', async () => {
@@ -294,8 +293,8 @@ describe('Tenant Admin Audit Log routes', () => {
     expect(mockSupabase.from).not.toHaveBeenCalledWith('oasis_events');
   });
 
-  it('GET /access returns 500 when the events query fails', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+  it('GET /access returns 500 when the events query fails (exafy_admin)', async () => {
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     chainFor('oasis_events').mockResolvedValue({ data: null, error: { message: 'boom' } });
 
     const res = await request(app)
@@ -305,4 +304,31 @@ describe('Tenant Admin Audit Log routes', () => {
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ ok: false, error: 'boom' });
   });
+
+  // --- VTID-05042: /access is platform-only ---
+
+  it('GET /access returns 403 PLATFORM_SCOPE_ONLY for a tenant admin of their own tenant, no query issued (VTID-05042)', async () => {
+    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    chainFor('oasis_events').mockResolvedValue({ data: [{ id: 'leak' }], error: null });
+
+    const res = await request(app)
+      .get(auditUrl(TENANT_A, '/access'))
+      .set('Authorization', 'Bearer t');
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ ok: false, error: 'PLATFORM_SCOPE_ONLY' });
+    expect(mockSupabase.from).not.toHaveBeenCalled();
+  });
+
+  it('GET /actions stays available to the tenant admin (unchanged, tenant-filtered)', async () => {
+    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    chainFor('tenant_admin_audit_log').mockResolvedValue({ data: [], error: null });
+
+    const res = await request(app)
+      .get(auditUrl(TENANT_A, '/actions'))
+      .set('Authorization', 'Bearer t');
+
+    expect(res.status).toBe(200);
+  });
+
 });

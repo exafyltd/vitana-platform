@@ -105,6 +105,13 @@ const tenantAdminClaims = (tenantId: string) => ({
   app_metadata: { active_tenant_id: tenantId, exafy_admin: false },
 });
 
+// VTID-05042: routes whose data has no tenant_id column are platform-only.
+const EXAFY_ADMIN_CLAIMS = {
+  sub: 'super-admin',
+  email: 'super@exafy.io',
+  app_metadata: { exafy_admin: true },
+};
+
 function mockVerifiedJwt(payload: object) {
   (jose.jwtVerify as jest.Mock).mockResolvedValue({ payload });
 }
@@ -175,7 +182,7 @@ describe('Content Moderation routes', () => {
   // --- GET /items ---
 
   it('GET /items lists uploads with default limit 50', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     const rows = [{ id: 'm-1', status: 'pending' }];
     chainFor('media_uploads').mockResolvedValue({ data: rows, error: null });
 
@@ -193,7 +200,7 @@ describe('Content Moderation routes', () => {
   });
 
   it('GET /items applies status + type filters and caps limit at 200', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     chainFor('media_uploads').mockResolvedValue({ data: [], error: null });
 
     const res = await request(app)
@@ -208,7 +215,7 @@ describe('Content Moderation routes', () => {
   });
 
   it('GET /items degrades to ok:true empty list on query error', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     chainFor('media_uploads').mockResolvedValue({ data: null, error: { message: 'oops' } });
 
     const res = await request(app)
@@ -220,7 +227,7 @@ describe('Content Moderation routes', () => {
   });
 
   it('GET /items returns 503 when the DB client is unavailable', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     mockGetSupabase.mockReturnValue(null as any);
 
     const res = await request(app)
@@ -234,7 +241,7 @@ describe('Content Moderation routes', () => {
   // --- GET /items/stats ---
 
   it('GET /items/stats aggregates counts by status and type', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     chainFor('media_uploads').mockResolvedValue({
       data: [
         { status: 'approved', media_type: 'music' },
@@ -261,7 +268,7 @@ describe('Content Moderation routes', () => {
   // --- GET /items/:id ---
 
   it('GET /items/:id returns the item with related metadata', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     const item = { id: 'm-1', status: 'pending', music_metadata: [] };
     chainFor('media_uploads').mockResolvedValue({ data: item, error: null });
 
@@ -279,7 +286,7 @@ describe('Content Moderation routes', () => {
   });
 
   it('GET /items/:id returns 404 when the item does not exist', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     chainFor('media_uploads').mockResolvedValue({ data: null, error: { message: 'no rows' } });
 
     const res = await request(app)
@@ -293,7 +300,7 @@ describe('Content Moderation routes', () => {
   // --- Moderation actions ---
 
   it('POST /items/:id/approve sets status=approved and is_public=true', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     const updated = { id: 'm-1', status: 'approved', is_public: true };
     chainFor('media_uploads').mockResolvedValue({ data: updated, error: null });
 
@@ -311,7 +318,7 @@ describe('Content Moderation routes', () => {
   });
 
   it('POST /items/:id/reject sets status=rejected and is_public=false', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     const updated = { id: 'm-1', status: 'rejected', is_public: false };
     chainFor('media_uploads').mockResolvedValue({ data: updated, error: null });
 
@@ -326,7 +333,7 @@ describe('Content Moderation routes', () => {
   });
 
   it('POST /items/:id/flag sets status=flagged without touching is_public', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     const updated = { id: 'm-1', status: 'flagged' };
     chainFor('media_uploads').mockResolvedValue({ data: updated, error: null });
 
@@ -341,7 +348,7 @@ describe('Content Moderation routes', () => {
   });
 
   it('POST /items/:id/flag returns 404 when the update matches no row', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     chainFor('media_uploads').mockResolvedValue({ data: null, error: { message: 'no rows' } });
 
     const res = await request(app)
@@ -351,4 +358,29 @@ describe('Content Moderation routes', () => {
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('NOT_FOUND');
   });
+
+  // --- VTID-05042: media_uploads has no tenant_id → platform-only ---
+
+  it.each([
+    ['get', '/items'],
+    ['get', '/items/stats'],
+    ['get', '/items/item-1'],
+    ['post', '/items/item-1/approve'],
+    ['post', '/items/item-1/reject'],
+    ['post', '/items/item-1/flag'],
+  ])(
+    '%s %s returns 403 PLATFORM_SCOPE_ONLY for a tenant admin of their own tenant, no query issued (VTID-05042)',
+    async (method, tail) => {
+      mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+
+      const res = await (request(app) as any)[method](url(TENANT_A, tail))
+        .set('Authorization', 'Bearer t');
+
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ ok: false, error: 'PLATFORM_SCOPE_ONLY' });
+      expect(mockSupabase.from).not.toHaveBeenCalled();
+      expect(chainFor('media_uploads').update).not.toHaveBeenCalled();
+    },
+  );
+
 });
