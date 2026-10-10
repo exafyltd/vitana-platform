@@ -1,0 +1,127 @@
+# AWS-REHEARSAL-AURORA-CLONE — the Aurora clone for the VTID-05023 part-10
+# staging rehearsal (docs/validation/VTID-05023/rehearsal.md).
+#
+#   create  copy-on-write clone of vitana-aurora-prod as vitana-aurora-rehearsal
+#           (same subnet group, security groups, KMS key; its own copy of the
+#           cluster parameter group; one writer of the source writer's class;
+#           Data API on; an RDS-managed master secret of its own), waits until
+#           available. Re-running on an existing clone changes nothing.
+#   delete  deletes vitana-aurora-rehearsal (instances, cluster with
+#           --skip-final-snapshot, its parameter group). `confirm` must be the
+#           exact clone name; any other identifier is refused.
+#   status  read-only describe.
+#
+# Every AWS call goes through scripts/aws/rehearsal-clone.sh, whose mutation
+# guard refuses any call that targets anything but the clone: the production
+# cluster may appear only as the restore's --source-db-cluster-identifier. Tested
+# by `bash scripts/aws/test/rehearsal-clone.sh` (fake aws, no network), which also
+# checks that this file makes no AWS call of its own besides the identity check.
+#
+# workflow_dispatch ONLY, required `reason`. Nothing here prints a secret.
+# Required repository secret: AWS_PROD_ROLE_ARN (OIDC).
+name: AWS Rehearsal Aurora Clone (VTID-05023 part 10)
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for this run — required'
+        required: true
+      action:
+        description: 'create | delete | status'
+        required: true
+        type: choice
+        options: [status, create, delete]
+        default: status
+      confirm:
+        description: 'delete only: type vitana-aurora-rehearsal'
+        required: false
+        default: ''
+      logical_replication:
+        description: 'create only: rds.logical_replication=1 in the clone''s own parameter group (part 7a / 12(i) rehearsal)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write # aws-actions/configure-aws-credentials OIDC
+
+concurrency:
+  group: aws-rehearsal-aurora-clone
+  cancel-in-progress: false
+
+jobs:
+  clone:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      AWS_REGION: eu-central-1
+      AWS_ACCOUNT_ID: '472838866351'
+      AWS_PAGER: ''
+      CLONE_ID: vitana-aurora-rehearsal
+      RUN_REASON: ${{ inputs.reason }}
+      ACTION: ${{ inputs.action }}
+      CONFIRM: ${{ inputs.confirm }}
+      LOGICAL_REPLICATION: ${{ inputs.logical_replication }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          if [ -z "${RUN_REASON// /}" ]; then echo "::error::reason is required"; exit 1; fi
+          case "$ACTION" in create|delete|status) ;; *) echo "::error::action must be create, delete or status"; exit 1 ;; esac
+          if [ "$ACTION" = delete ] && [ "$CONFIRM" != "$CLONE_ID" ]; then
+            echo "::error::delete needs confirm=$CLONE_ID (got '$CONFIRM'). Nothing else can be deleted by this workflow."; exit 1
+          fi
+
+      - name: Guard self-test (fake aws, no network)
+        run: bash scripts/aws/test/rehearsal-clone.sh
+
+      - name: Configure AWS credentials (GitHub OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Account/region guard (472838866351 / eu-central-1)
+        run: |
+          set -euo pipefail
+          ACCT=$(aws sts get-caller-identity --query Account --output text)
+          [ "$ACCT" = "$AWS_ACCOUNT_ID" ] || { echo "::error::Assumed role is in account $ACCT, expected $AWS_ACCOUNT_ID"; exit 1; }
+          [ "$AWS_REGION" = eu-central-1 ] || { echo "::error::region must be eu-central-1"; exit 1; }
+
+      - name: Run ${{ inputs.action }}
+        run: |
+          set -euo pipefail
+          ARGS=()
+          if [ "$ACTION" = create ] && [ "$LOGICAL_REPLICATION" = true ]; then ARGS+=(--logical-replication); fi
+          if [ "$ACTION" = delete ]; then ARGS+=(--identifier "$CONFIRM"); fi
+          bash scripts/aws/rehearsal-clone.sh "$ACTION" "${ARGS[@]}" | tee "$RUNNER_TEMP/out.txt"
+
+      - name: Status after the run
+        if: always()
+        run: bash scripts/aws/rehearsal-clone.sh status | tee "$RUNNER_TEMP/status.txt" || true
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Aurora rehearsal clone — ${ACTION}"
+            echo
+            echo "- Reason: ${RUN_REASON}"
+            echo "- Clone: \`${CLONE_ID}\` (source \`vitana-aurora-prod\` is only ever read)"
+            echo "- Logical replication requested: ${LOGICAL_REPLICATION}"
+            echo
+            echo '### Output'
+            echo '```'
+            cat "$RUNNER_TEMP/out.txt" 2>/dev/null || echo "(no output)"
+            echo '```'
+            echo '### Status now'
+            echo '```'
+            cat "$RUNNER_TEMP/status.txt" 2>/dev/null || echo "(no status)"
+            echo '```'
+            echo
+            echo "Next steps: docs/validation/VTID-05023/rehearsal.md, \"How to run the rehearsal\"."
+          } >> "$GITHUB_STEP_SUMMARY"
