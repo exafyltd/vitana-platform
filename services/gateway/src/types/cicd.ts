@@ -1048,6 +1048,12 @@ export type CicdEventType =
   | 'voice.latency.handoff'
   | 'voice.latency.client'
   | 'screen.latency.measured'       // per-route TTFB / Server-Timing breakdown from gateway
+  // VTID-05062: one in-app navigation from the vitana-v1 RUM nav beacon
+  // (SCREEN_READY ms, nav first|return, first-viewport images re-fetched).
+  | 'screen.nav.measured'
+  // VTID-05062: once-per-UTC-day production screen-load report (budgets +
+  // build check), written by POST /api/v1/frontend/screen-load/daily-report/run.
+  | 'screen.load.daily_report'
   // VTID-SCREEN-LOAD-01: scheduled Playwright job's per-screen load-time
   // result — independent of FEATURE_LATENCY_TELEMETRY_ENV, always live so
   // Command Hub Overview has a signal even while RUM stays staging-only.

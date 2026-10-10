@@ -24,3 +24,18 @@ export async function fetchRecentScreenLoadHealthEvents(sb: SupabaseClient, topi
     .order('created_at', { ascending: false })
     .limit(200);
 }
+
+/**
+ * VTID-05062: newest `screen.load.daily_report` event, optionally for one
+ * UTC report day (metadata.report_date). Read-only.
+ */
+export async function fetchLatestDailyReportEvent(
+  sb: SupabaseClient,
+  topic: string,
+  opts: { reportDate?: string; env?: string } = {},
+) {
+  let q = sb.from('oasis_events').select('created_at, metadata').eq('topic', topic);
+  if (opts.env) q = q.eq('metadata->>env', opts.env);
+  if (opts.reportDate) q = q.eq('metadata->>report_date', opts.reportDate);
+  return q.order('created_at', { ascending: false }).limit(1);
+}

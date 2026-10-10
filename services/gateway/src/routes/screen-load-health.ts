@@ -1,16 +1,17 @@
 /**
  * Screen Load Time — synthetic basic test (VTID-SCREEN-LOAD-01).
  *
- * The frontend already ships a Real User Monitoring beacon (vitana-v1
- * src/lib/rum.ts → POST /api/v1/rum/beacon → `screen.latency.measured` OASIS
- * events), but that pipe is gated `staging-only` — production traffic never
- * reaches it, so there is currently no way to answer "how long do screens
- * take to load" from real data.
+ * The frontend also ships a Real User Monitoring beacon (vitana-v1
+ * src/lib/rum.ts → POST /api/v1/rum/beacon → `screen.latency.measured` and,
+ * since VTID-05062, `screen.nav.measured` OASIS events). That pipe is gated
+ * by FEATURE_LATENCY_TELEMETRY_ENV, which is `staging+prod` — real members'
+ * production devices report into it; the daily report below reads it.
  *
  * This route is a second, independent signal: a scheduled Playwright job
  * (e2e/community-mobile/shared/screen-load-timing.spec.ts, run on a cron via
- * .github/workflows/SCREEN-LOAD-TIMING.yml) loads a handful of key mobile
- * screens against production and POSTs each measured load time here. Each
+ * .github/workflows/SCREEN-LOAD-TIMING.yml) cold-loads a handful of key
+ * mobile screens against STAGING (VTID-04648 — browser suites never run
+ * against production) and POSTs each measured load time here. Each
  * result becomes a `screen.load.synthetic_test` OASIS event — same event
  * store, same table, different topic, so it survives independent of the RUM
  * feature flag.
@@ -20,6 +21,13 @@
  * "basic test" health endpoint returns, so it slots into the existing
  * Overview service-health grid (fetchServiceHealth in command-hub/app.js)
  * with zero special-casing on the frontend.
+ *
+ * VTID-05062 adds the daily PRODUCTION report (services/screen-load-daily-report.ts):
+ *   POST /daily-report/run — service-token only, once per UTC day (idempotent;
+ *     `?force=true` re-runs), called by .github/workflows/SCREEN-LOAD-DAILY.yml.
+ *     Emits `screen.load.daily_report` and posts one Google Chat summary.
+ *   GET  /daily-report     — latest report in the same health shape.
+ * Both coexist with /health (the synthetic cold-load job), which is unchanged.
  */
 
 import { Router, Request, Response } from 'express';
@@ -27,6 +35,15 @@ import { z } from 'zod';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { getSupabase } from '../lib/supabase';
 import * as repo from './screen-load-health-repository';
+import { notifyGChat } from '../services/self-healing-snapshot-service';
+import { VITANA_ENV } from '../env';
+import {
+  DAILY_REPORT_TOPIC,
+  buildDailyReport,
+  createLiveDailyReportDeps,
+  utcDay,
+  type DailyReport,
+} from '../services/screen-load-daily-report';
 
 const VTID = 'VTID-SCREEN-LOAD-01';
 const TOPIC = 'screen.load.synthetic_test';
@@ -202,6 +219,154 @@ router.get('/health', async (_req: Request, res: Response) => { // public-route
   });
 });
 
+// ---------------------------------------------------------------------------
+// VTID-05062 — daily production screen-load report
+// ---------------------------------------------------------------------------
+
+const DAILY_VTID = 'VTID-05062';
+// The daily job runs once per UTC day; a report older than this means the
+// schedule (or its auth) is broken, so GET /daily-report reads 'down'.
+const DAILY_REPORT_STALE_MS = 36 * 60 * 60 * 1000;
+
+type RunOutcome =
+  | { ok: true; created: boolean; report: DailyReport; gchat?: { ok: boolean; webhook_set: boolean } }
+  | { ok: false; status: number; error: string; detail?: string };
+
+// Two concurrent run calls on the same task share one build (and one GChat
+// post). Across tasks the workflow's own concurrency group serialises runs.
+let inFlightRun: { day: string; promise: Promise<RunOutcome> } | null = null;
+
+async function runDailyReport(force: boolean): Promise<RunOutcome> {
+  const sb = getSupabase();
+  if (!sb) return { ok: false, status: 503, error: 'supabase_unconfigured' };
+
+  const now = new Date();
+  const today = utcDay(now);
+
+  if (!force) {
+    const { data, error } = await repo.fetchLatestDailyReportEvent(sb, DAILY_REPORT_TOPIC, {
+      reportDate: today,
+      env: VITANA_ENV,
+    });
+    if (error) return { ok: false, status: 500, error: 'query_failed', detail: error.message };
+    if (data && data.length > 0 && data[0].metadata) {
+      return { ok: true, created: false, report: data[0].metadata as unknown as DailyReport };
+    }
+  }
+
+  const report = await buildDailyReport(createLiveDailyReportDeps(sb, now));
+  const emitted = await emitOasisEvent({
+    vtid: DAILY_VTID,
+    type: DAILY_REPORT_TOPIC,
+    source: 'gateway/screen-load-daily-report',
+    status: report.status === 'green' ? 'success' : report.status === 'red' ? 'error' : 'info',
+    message: `Screen loading ${report.report_date}: ${report.status}${report.worst ? ` (worst ${report.worst.screen})` : ''}`,
+    payload: report as unknown as Record<string, unknown>,
+  });
+  if (!emitted.ok) {
+    // Not recorded → the next call would build again; do not post to GChat
+    // for a report the idempotency check cannot see.
+    return { ok: false, status: 500, error: 'emit_failed', detail: emitted.error };
+  }
+  const gchat = await notifyGChat(report.gchat_text);
+  if (!gchat.ok) {
+    // The report is recorded, so a plain re-run would find it and post
+    // nothing: fail the run loudly instead of losing the day's alert. The
+    // workflow goes red; re-dispatch it with force=true to re-post.
+    return {
+      ok: false,
+      status: 502,
+      error: 'gchat_failed',
+      detail: gchat.webhook_set
+        ? 'report recorded; Google Chat post failed — re-run with force=true'
+        : 'report recorded; Google Chat webhook not configured — re-run with force=true once it is',
+    };
+  }
+  return { ok: true, created: true, report, gchat: { ok: gchat.ok, webhook_set: gchat.webhook_set } };
+}
+
+/**
+ * POST /daily-report/run — service token only (same gate as /report).
+ * Idempotent per UTC day: returns today's report if one exists, unless
+ * `?force=true`.
+ */
+router.post('/daily-report/run', requireApiKey, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: the OASIS event (screen.load.daily_report) is
+  // emitted inside runDailyReport() before anything else happens.
+  const force = req.query.force === 'true' || req.query.force === '1';
+  const day = utcDay(new Date());
+  try {
+    let outcome: RunOutcome;
+    if (!force && inFlightRun && inFlightRun.day === day) {
+      outcome = await inFlightRun.promise;
+      if (outcome.ok) outcome = { ok: true, created: false, report: outcome.report };
+    } else {
+      const promise = runDailyReport(force);
+      inFlightRun = { day, promise };
+      try {
+        outcome = await promise;
+      } finally {
+        if (inFlightRun?.promise === promise) inFlightRun = null;
+      }
+    }
+    if (!outcome.ok) {
+      return res.status(outcome.status).json({ ok: false, error: outcome.error, detail: outcome.detail });
+    }
+    return res.status(200).json({
+      ok: true,
+      created: outcome.created,
+      status: outcome.report.status,
+      health: outcome.report.health,
+      report: outcome.report,
+      ...(outcome.gchat ? { gchat: outcome.gchat } : {}),
+    });
+  } catch (err) {
+    console.error('[screen-load-health] daily report failed:', err);
+    return res.status(500).json({ ok: false, error: 'daily_report_failed', detail: (err as Error)?.message });
+  }
+});
+
+/**
+ * GET /daily-report — latest daily report in the Command Hub health shape.
+ * Unauthenticated like /health: aggregate numbers only, nothing sensitive.
+ */
+router.get('/daily-report', async (_req: Request, res: Response) => { // public-route
+  const sb = getSupabase();
+  if (!sb) {
+    return res.status(200).json({ status: 'down', reason: 'supabase_unconfigured' });
+  }
+  const { data, error } = await repo.fetchLatestDailyReportEvent(sb, DAILY_REPORT_TOPIC, { env: VITANA_ENV });
+  if (error) {
+    return res.status(200).json({ status: 'down', reason: 'query_failed', detail: error.message });
+  }
+  const row = data && data.length > 0 ? data[0] : null;
+  const report = (row?.metadata ?? null) as unknown as DailyReport | null;
+  if (!row || !report || !report.health) {
+    return res.status(200).json({
+      status: 'down',
+      reason: 'no_report',
+      message: 'No daily screen-load report yet — see the SCREEN-LOAD-DAILY workflow.',
+    });
+  }
+  const ageMs = Date.now() - new Date(row.created_at).getTime();
+  const stale = ageMs > DAILY_REPORT_STALE_MS;
+  return res.status(200).json({
+    status: stale ? 'down' : report.health,
+    ...(stale
+      ? { reason: 'report_stale', message: `Last daily report is ${Math.round(ageMs / 3600000)}h old — the SCREEN-LOAD-DAILY schedule is not running.` }
+      : {}),
+    checked_at: new Date().toISOString(),
+    report_status: report.status,
+    report_date: report.report_date,
+    generated_at: report.generated_at,
+    worst: report.worst,
+    build: report.build,
+    lcp_p75_ms: report.lcp_p75_ms,
+    screens: report.screens,
+    budgets: report.budgets,
+  });
+});
+
 /**
  * GET / — router status/self-description only, no data. Mirrors the
  * convention other routers use.
@@ -214,6 +379,8 @@ router.get('/', (_req: Request, res: Response) => { // public-route
     endpoints: [
       'POST /api/v1/frontend/screen-load/report',
       'GET /api/v1/frontend/screen-load/health',
+      'POST /api/v1/frontend/screen-load/daily-report/run',
+      'GET /api/v1/frontend/screen-load/daily-report',
     ],
     timestamp: new Date().toISOString(),
   });
