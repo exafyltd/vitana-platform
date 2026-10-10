@@ -11,6 +11,8 @@ jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
     req.identity = { user_id: 'user-1', tenant_id: 'tenant-1' };
     next();
   },
+  // VTID-05048: POST / now resolves the tenant through requireTenant.
+  requireTenant: (_req: any, _res: any, next: any) => next(),
 }));
 
 const mockGetSupabase = jest.fn();

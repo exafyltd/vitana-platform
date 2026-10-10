@@ -19,7 +19,7 @@
 
 import { Router, Request, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
-import { optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import { optionalAuth, requireTenant, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import {
   createReminder,
   softDeleteReminders,
@@ -52,15 +52,13 @@ function getUserId(req: Request): string | null {
   return null;
 }
 
+// VTID-05048: the tenant comes only from the verified identity. requireTenant
+// (on the route that writes a tenant) fills it from the primary user_tenants
+// row when the JWT carries none (Cognito tokens). The X-Tenant-ID /
+// X-Vitana-Tenant headers and the DEFAULT_TENANT_ID fallback are gone — any
+// caller could set them.
 function getTenantId(req: Request): string {
-  const ident = (req as AuthenticatedRequest).identity;
-  if (ident?.tenant_id) return ident.tenant_id;
-  return (
-    req.get('X-Tenant-ID') ||
-    req.get('X-Vitana-Tenant') ||
-    process.env.DEFAULT_TENANT_ID ||
-    '00000000-0000-0000-0000-000000000000'
-  );
+  return (req as AuthenticatedRequest).identity!.tenant_id!;
 }
 
 // Apply optionalAuth to every route on this router — it populates
@@ -100,7 +98,7 @@ function getLang(req: Request): string {
 // =============================================================================
 // POST /reminders — create
 // =============================================================================
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', requireTenant, async (req: Request, res: Response) => {
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });

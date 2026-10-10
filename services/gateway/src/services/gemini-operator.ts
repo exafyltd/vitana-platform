@@ -5536,11 +5536,9 @@ async function executeDevApproveSpec(
     const gatewayPort = process.env.PORT || '8080';
     const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/specs/${args.vtid}/approve`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
+      // VTID-05048: the approve route is requireServiceOrAdmin — send the
+      // gateway service token, not the Supabase service key.
+      headers: { 'Content-Type': 'application/json', ...gatewayServiceAuthHeader() },
       body: JSON.stringify({ approved_by: 'developer_assistant' }),
     });
 

@@ -1,0 +1,24 @@
+{
+  "vtid": "VTID-05048",
+  "files": [
+    ".github/workflows/OPS-TOGGLE-FLOW-V3-STAGING.yml",
+    "services/gateway/src/controllers/governance-controller.ts",
+    "services/gateway/src/middleware/require-service-or-admin.ts",
+    "services/gateway/src/routes/automations.ts",
+    "services/gateway/src/routes/autopilot-prompts.ts",
+    "services/gateway/src/routes/governance-controls.ts",
+    "services/gateway/src/routes/governance.ts",
+    "services/gateway/src/routes/reminders.ts",
+    "services/gateway/src/routes/specs.ts",
+    "services/gateway/src/services/gemini-operator.ts",
+    "services/gateway/src/services/orb-tools/admin-governance-tools.ts",
+    "services/gateway/src/services/orb-tools/governance-tools.ts",
+    "services/gateway/test/vtid-05048-s4-caller-identity.test.ts",
+    "services/gateway/test/routes/autopilot-prompts.test.ts",
+    "services/gateway/test/routes/automations-wallet-balance.test.ts",
+    "services/gateway/test/routes/reminders-snooze.test.ts",
+    "services/gateway/test/orb-tools/governance-tools.test.ts",
+    "services/gateway/test/orb-tools/admin-governance-tools.test.ts",
+    "docs/validation/VTID-05048/**"
+  ]
+}
