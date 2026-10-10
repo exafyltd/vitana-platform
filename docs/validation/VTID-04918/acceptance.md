@@ -44,3 +44,9 @@ AC-9: The community role lists the real calendar tools; the never-built get_cale
 - reschedule_event keeps its one-step flow on voice; text chat asks for confirmation first. Both refuse a past time.
 - `calendar.event.created` for a voice-created entry is now emitted by the shared handler (vtid VTID-04918, same payload fields incl. session_id, plus `via`) instead of inline in orb-live.ts (VTID-01155). The report-only voice-pipeline parity scan therefore lists it as missing_in_vertex; it is emitted on that path through the dispatcher.
 - Only the community role's stale `get_calendar_today/week` entries (plan: `assistant-role-registry.ts:116-117`) were replaced; the patient role's and the staging synthetic list's are untouched.
+
+## Follow-up (Codex review on #4015)
+- share_calendar_entry_to_feed: a confirmed call must carry `is_public`; leaving it out answers `STATUS: needs_visibility` and posts nothing, so a post approved as private can never fall back to public.
+  TEST: services/gateway/test/vtid-04918-calendar-assistant-parity.test.ts
+- The live session's memberHasSpoken gate also covers reschedule_event, cancel_event and complete_event.
+  TEST: services/gateway/test/vtid-04918-calendar-assistant-parity.test.ts
