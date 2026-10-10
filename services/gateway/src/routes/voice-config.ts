@@ -335,10 +335,7 @@ router.post(
 // Read-only: the female Google voices for an Audiobook narration language,
 // for the owner's audition. Refuses every other language.
 // ---------------------------------------------------------------------------
-router.get(
-  '/voice/preview/google-voices',
-  requireAuthWithTenant,
-  async (req: AuthenticatedRequest, res: Response) => {
+router.get('/voice/preview/google-voices', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
     if (!req.identity?.exafy_admin) {
       return res.status(403).json({ ok: false, error: 'exafy_admin role required', vtid: VTID });
     }
@@ -364,8 +361,7 @@ router.get(
     } catch (e) {
       return res.status(502).json({ ok: false, error: (e as Error).message, vtid: VTID });
     }
-  },
-);
+});
 
 function clampRate(n: unknown): number {
   const v = typeof n === 'number' ? n : parseFloat(String(n ?? 1.0));
