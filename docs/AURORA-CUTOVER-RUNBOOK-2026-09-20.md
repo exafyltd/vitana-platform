@@ -288,6 +288,18 @@ whether the frontend repoint happens in the same freeze window or as a
 fast-follow, since a gap between the two repoints is a real split-brain
 risk (gateway on Aurora, browser still writing Supabase).
 
+**Update 2026-10-10 (VTID-05023, option B):** the public endpoint is now
+built by two governed, `workflow_dispatch`-only workflows instead of by hand:
+`AWS-PROD-DEPLOY-POSTGREST-AURORA-PROXY.yml` (separate prod service
+`vitana-postgrest-aurora-proxy-prod`, task family
+`vitana-postgrest-aurora-prod`, pinned `commit_sha`) and
+`AWS-PROD-SETUP-POSTGREST-AURORA-PROXY-EDGE.yml` (target group, ALB host rule
+priority 8, Cloudflare CNAME + WAF/bot skip for `data.vitanaland.com`; refuses
+without a PASS privilege-parity report < 24 h old). They supersede the
+hand-run draft `scripts/aws/setup-postgrest-aurora-proxy-public.sh`, which was
+deleted (hand-run `aws` changes violate rule 17). The staging service
+`vitana-postgrest-aurora-proxy` stays staging-only.
+
 ---
 
 ## The freeze window
