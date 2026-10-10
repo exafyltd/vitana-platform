@@ -20,7 +20,6 @@
  *   TERRA_WEBHOOK_SECRET — used to verify webhook signatures (HMAC-SHA256)
  */
 
-import { createHmac, timingSafeEqual } from 'crypto';
 import type {
   Connector,
   ConnectorContext,
@@ -30,6 +29,7 @@ import type {
   FetchRequest,
 } from '../types';
 import { revokeRequest } from './revoke-http';
+import { headerValue, verifyTerra } from '../runtime/webhook-signature';
 
 const TERRA_API_BASE = 'https://api.tryterra.co/v2';
 
@@ -48,32 +48,6 @@ function terraHeaders(): Record<string, string> | null {
     'dev-id': creds.dev_id,
     'Content-Type': 'application/json',
   };
-}
-
-function verifyTerraSignature(raw_body: string, signature_header: string | undefined): boolean {
-  const secret = process.env.TERRA_WEBHOOK_SECRET;
-  if (!secret) {
-    console.warn('[terra] TERRA_WEBHOOK_SECRET not set — skipping signature verification');
-    return true; // dev mode
-  }
-  if (!signature_header) return false;
-
-  // Terra signature header format: "t=<timestamp>,v1=<hmac-sha256-hex>"
-  const parts = signature_header.split(',').reduce((acc, kv) => {
-    const [k, v] = kv.split('=');
-    if (k && v) acc[k.trim()] = v.trim();
-    return acc;
-  }, {} as Record<string, string>);
-
-  const timestamp = parts.t;
-  const expected = parts.v1;
-  if (!timestamp || !expected) return false;
-
-  const signedPayload = `${timestamp}.${raw_body}`;
-  const computed = createHmac('sha256', secret).update(signedPayload).digest('hex');
-
-  if (computed.length !== expected.length) return false;
-  return timingSafeEqual(Buffer.from(computed), Buffer.from(expected));
 }
 
 // ==================== Normalization helpers ====================
@@ -271,11 +245,15 @@ const terraConnector: Connector = {
         ? req.body.toString('utf8')
         : JSON.stringify(req.body);
 
-    const sig_header = req.headers['terra-signature'] ?? req.headers['Terra-Signature'];
-    const sigStr = Array.isArray(sig_header) ? sig_header[0] : sig_header;
-    const valid = verifyTerraSignature(raw_body, sigStr);
-    if (!valid) {
-      return { valid: false, events: [], error: 'signature_invalid' };
+    // VTID-05031 (Health Hub D2): vendor scheme, raw bytes, timestamp
+    // tolerance, any v1 may match, fail closed without a secret.
+    const verdict = verifyTerra(
+      raw_body,
+      headerValue(req.headers['terra-signature']),
+      process.env.TERRA_WEBHOOK_SECRET,
+    );
+    if (!verdict.ok) {
+      return { valid: false, events: [], error: verdict.error };
     }
 
     let payload: TerraWebhookPayload;

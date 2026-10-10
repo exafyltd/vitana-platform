@@ -15,7 +15,7 @@ Owner approval (Gate 1): 2026-10-10. Plan PRs merged: vitana-platform #3984, vit
 |---|---|---|---|---|---|
 | 1 | Phase 0 / D12: remove wearable-derived condition labels from commerce, CI purpose boundary | Health Hub | merged — PR #3988; staging verification, then Gate 2 | VTID-05025 | — |
 | 2 | Phase 0 / D1: token access and encryption, revoke on disconnect (+ OAuth callback error codes) | Health Hub | in review (sparred, 2 rounds, converged); grants migration applied after Gate 2 | VTID-05030 | — |
-| 3 | Phase 0 / D2: vendor-correct webhook verification, fail closed | Health Hub | queued | — | — |
+| 3 | Phase 0 / D2: vendor-correct webhook verification, fail closed | Health Hub | in review (sparred, 2 rounds, converged) | VTID-05031 | webhook secrets not wired in staging/prod task defs (deliveries rejected until provisioned) |
 | 4 | Phase 0 / D3–D5, D7, D8: fake cards, privacy switches, erasure gaps, false lab notice, partner-health confirmations | Health Hub | queued | — | — |
 | 5 | G1 / 0T: test environment (Aurora test cluster + proxy, free-tier test Supabase project) | both | queued | — | AWS admin (cluster, ECS Exec/ssmmessages fix) |
 | 6 | G2: Firebase push project health or replacement | Native app | queued | — | owner: Firebase/GCP project ownership |

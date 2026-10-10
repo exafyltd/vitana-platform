@@ -19,7 +19,6 @@
  *   VITAL_REGION         — 'us' (default) or 'eu'
  */
 
-import { createHmac, timingSafeEqual } from 'crypto';
 import type {
   Connector,
   ConnectorContext,
@@ -27,6 +26,7 @@ import type {
   WebhookRequest,
 } from '../types';
 import { revokeRequest } from './revoke-http';
+import { headerValue, verifySvix } from '../runtime/webhook-signature';
 
 function vitalBaseUrl(): string {
   const region = process.env.VITAL_REGION ?? 'us';
@@ -43,31 +43,6 @@ function vitalHeaders(): Record<string, string> | null {
     'Content-Type': 'application/json',
     Accept: 'application/json',
   };
-}
-
-function verifyVitalSignature(raw_body: string, sig_header: string | undefined): boolean {
-  const secret = process.env.VITAL_WEBHOOK_SECRET;
-  if (!secret) {
-    console.warn('[vital] VITAL_WEBHOOK_SECRET not set — skipping signature verification (dev mode)');
-    return true;
-  }
-  if (!sig_header) return false;
-
-  // Vital uses SVIX for webhooks. Format: "v1,<base64sig> v1,<base64sig>..."
-  // We accept any matching signature.
-  const parts = sig_header.split(' ');
-  const computed = createHmac('sha256', secret).update(raw_body).digest('base64');
-  for (const p of parts) {
-    const [scheme, sig] = p.split(',');
-    if (scheme === 'v1' && sig) {
-      const sigBuf = Buffer.from(sig);
-      const computedBuf = Buffer.from(computed);
-      if (sigBuf.length === computedBuf.length && timingSafeEqual(sigBuf, computedBuf)) {
-        return true;
-      }
-    }
-  }
-  return false;
 }
 
 // ==================== Normalization ====================
@@ -205,10 +180,19 @@ const vitalConnector: Connector = {
         ? req.body.toString('utf8')
         : JSON.stringify(req.body);
 
-    const sig_header = req.headers['svix-signature'] ?? req.headers['vital-signature'];
-    const sigStr = Array.isArray(sig_header) ? sig_header[0] : sig_header;
-    const valid = verifyVitalSignature(raw_body, sigStr);
-    if (!valid) return { valid: false, events: [], error: 'signature_invalid' };
+    // VTID-05031 (Health Hub D2): Vital (Junction) delivers through Svix —
+    // signed content is `${svix-id}.${svix-timestamp}.${raw}`, keyed by the
+    // base64-decoded secret. Fail closed without a secret.
+    const verdict = verifySvix(
+      raw_body,
+      {
+        id: headerValue(req.headers['svix-id']),
+        timestamp: headerValue(req.headers['svix-timestamp']),
+        signature: headerValue(req.headers['svix-signature']),
+      },
+      process.env.VITAL_WEBHOOK_SECRET,
+    );
+    if (!verdict.ok) return { valid: false, events: [], error: verdict.error };
 
     let payload: VitalWebhookPayload;
     try {
