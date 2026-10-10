@@ -14,7 +14,7 @@
  * with the owner's KIRO_API_KEY in that child's environment only. This file
  * never sees, stores or logs a key.
  */
-import { AcpClient, type AcpChild, type KiroModel, type KiroModelState, type KiroRunnerInfo } from './acp-client';
+import { AcpClient, type AcpChild, type AcpImage, type KiroModel, type KiroModelState, type KiroRunnerInfo } from './acp-client';
 import { mapAcpUpdate, type KiroTurnEventSink } from './kiro-events';
 import { makePermissionHandler } from './permission-broker';
 import { isKiroCreditError, setKiroCredits } from './credit-state';
@@ -51,6 +51,18 @@ export interface KiroTurnInput {
    * pick survives an idle close, a deploy or the reopen. Never a default: no pick, no call.
    */
   loadModelPick?: () => Promise<string | null>;
+  /**
+   * VTID-05067: how many images the user attached, and how to read them (base64). Called only
+   * when Kiro advertised image input at initialize; otherwise the prompt gets one text line
+   * saying the images could not be viewed, and a `kiro.images` event tells the console.
+   */
+  imageCount?: number;
+  loadImages?: () => Promise<AcpImage[]>;
+}
+
+/** VTID-05067: the line the prompt carries instead of images this kiro-cli cannot view (agent text, not user-facing). */
+export function imagesUnsupportedLine(n: number): string {
+  return `The user attached ${n} image(s) that this agent cannot view.`;
 }
 
 /**
@@ -325,14 +337,31 @@ export async function runKiroTurn(input: KiroTurnInput, env: NodeJS.ProcessEnv =
     // VTID-05064: the first prompt of a session carries the session rules, then any restored history, as ONE leading block.
     const context = [session.rulesPending ? KIRO_SESSION_RULES : null, restored?.text ?? null].filter((x): x is string => !!x).join('\n\n');
     session.rulesPending = false;
-    const { stopReason } = context
-      ? await session.client.prompt(session.sessionId, input.message, undefined, context)
-      : await session.client.prompt(session.sessionId, input.message);
+    // VTID-05067: attached images go as ACP image blocks only when Kiro said it accepts them.
+    const imageCount = Math.max(0, input.imageCount ?? 0);
+    let message = input.message;
+    let images: AcpImage[] | undefined;
+    let imageDelivery: 'sent' | 'unsupported' | 'unreadable' | null = null;
+    if (imageCount > 0) {
+      if (session.client.acceptsImages() && input.loadImages) {
+        images = await input.loadImages().catch(() => []);
+        imageDelivery = images.length >= imageCount ? 'sent' : 'unreadable';
+        if (images.length < imageCount) message = `${message}\n\n(${imageCount - images.length} attached image(s) could not be loaded.)`;
+      } else {
+        imageDelivery = 'unsupported';
+        message = `${message}\n\n${imagesUnsupportedLine(imageCount)}`;
+      }
+      collect({ type: 'kiro.images', count: imageCount, delivery: imageDelivery, sent: images?.length ?? 0 });
+    }
+    const imagesArg = images && images.length > 0 ? images : undefined;
+    const { stopReason } = context || imagesArg
+      ? await session.client.prompt(session.sessionId, message, undefined, context || undefined, imagesArg)
+      : await session.client.prompt(session.sessionId, message);
     collect({ type: 'kiro.turn_end', stop_reason: stopReason });
     const recovered = session.creditsChanged === true;
     session.creditsChanged = false;
     const dirty = session.runner?.dirty ?? null;
-    return result(statusForStopReason(stopReason), reply, { stop_reason: stopReason, kiro_model: session.models?.current ?? null, ...(recovered ? { credits_changed: true } : {}), ...(restored ? { kiro_history_restored: restored.count } : {}), ...(modelRestore ? { kiro_model_restore: modelRestore } : {}), ...(workspaceNote ? { kiro_workspace: workspaceNote } : {}), ...(dirty ? { kiro_workspace_dirty: dirty } : {}) }, [...tools.values()].map((t) => ({ name: t.name, response: { kind: t.kind, status: t.status } })));
+    return result(statusForStopReason(stopReason), reply, { stop_reason: stopReason, kiro_model: session.models?.current ?? null, ...(recovered ? { credits_changed: true } : {}), ...(restored ? { kiro_history_restored: restored.count } : {}), ...(modelRestore ? { kiro_model_restore: modelRestore } : {}), ...(workspaceNote ? { kiro_workspace: workspaceNote } : {}), ...(dirty ? { kiro_workspace_dirty: dirty } : {}), ...(imageDelivery ? { kiro_images: imageDelivery, kiro_images_count: imageCount } : {}) }, [...tools.values()].map((t) => ({ name: t.name, response: { kind: t.kind, status: t.status } })));
   } catch (err) {
     closeSession(input.threadId);
     const msg = err instanceof Error ? err.message : String(err);

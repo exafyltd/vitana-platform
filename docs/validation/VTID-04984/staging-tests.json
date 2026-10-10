@@ -3,8 +3,8 @@
   "service": "gateway",
   "tests": [
     { "kind": "http", "target": "gateway", "method": "GET", "path": "/api/v1/operator/kiro/sessions/00000000-0000-0000-0000-000000000000/models", "expect_status": 401, "reason": "the Kiro models route exists and refuses an unauthenticated caller (JSON 401); read-only" },
-    { "kind": "http", "name": "Command Hub loads the Kiro model-selection app.js", "path": "/command-hub/", "expect_status": 200, "expect_content_type": "text/html", "expect_body_contains": "app.js?v=20261110-vtid-05064" },
-    { "kind": "http", "name": "served app.js has the Kiro model dropdown", "path": "/command-hub/app.js?v=20261110-vtid-05064", "expect_status": 200, "expect_content_type": "javascript", "expect_body_contains": ["function renderKiroModelSelect", "function selectKiroModel"] },
+    { "kind": "http", "name": "Command Hub loads the Kiro model-selection app.js", "path": "/command-hub/", "expect_status": 200, "expect_content_type": "text/html", "expect_body_contains": "app.js?v=20261111-vtid-05067" },
+    { "kind": "http", "name": "served app.js has the Kiro model dropdown", "path": "/command-hub/app.js?v=20261111-vtid-05067", "expect_status": 200, "expect_content_type": "javascript", "expect_body_contains": ["function renderKiroModelSelect", "function selectKiroModel"] },
     { "kind": "existing", "ref": "npx jest test/vtid-04984-kiro-model-selection.test.ts test/command-hub/vtid-04984-kiro-model-select.test.ts", "cwd": "services/gateway", "reason": "model parsing, switching through Kiro and the dropdown run against a scripted fake kiro-cli and a fake DOM" }
   ]
 }

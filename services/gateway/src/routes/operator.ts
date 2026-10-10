@@ -48,6 +48,8 @@ import { getKiroCredits, kiroDefaultEngine } from '../services/kiro/credit-state
 registerKiroBackendFromEnv();
 import type { KiroTurnEvent, KiroTurnEventSink } from '../services/kiro/kiro-events';
 import { startKiroRun, setKiroRunExecutor, answerPersistedPermission, LEGACY_KIRO_FRAME_TYPES, type KiroRunExecutorInput } from '../services/kiro/kiro-runs';
+// VTID-05067: images pasted into the console (operator_media + private bucket operator-media).
+import { getOperatorMedia, readOperatorMediaBase64, loadOperatorMediaForUser, OPERATOR_MEDIA_LIMITS } from '../services/operator-media';
 import { extractAndRecordTurnMemory, isTurnMemoryEnabled } from '../services/operator-turn-memory';
 import { writeDevMemory } from '../services/dev-agent-memory';
 // VTID-03851: verified-caller marker for autopilot_execute_task (set or
@@ -289,6 +291,7 @@ export async function latestKiroModelPick(threadId: string, userId: string | nul
 async function runKiroChatTurn(a: {
   requestId: string; threadId: string; createdAt: string; message: string;
   attachments: Array<{ oasis_ref: string; kind: string }>; mode: string;
+  media?: Array<{ media_id: string; mime_type: string }>;
   conversation_id?: string; validatedVtid: string | undefined; userId: string | null;
   isAdmin: boolean; channel?: string; emit?: KiroTurnEventSink;
 }): Promise<OperatorChatTurnOutcome> {
@@ -298,7 +301,7 @@ async function runKiroChatTurn(a: {
     threadId: a.threadId,
     userId: a.userId,
     message: a.message,
-    turn: { requestId: a.requestId, createdAt: a.createdAt, attachments: a.attachments, mode: a.mode, conversation_id: a.conversation_id, validatedVtid: a.validatedVtid, channel: a.channel },
+    turn: { requestId: a.requestId, createdAt: a.createdAt, attachments: a.attachments, media: a.media, mode: a.mode, conversation_id: a.conversation_id, validatedVtid: a.validatedVtid, channel: a.channel },
     // Only the frame types the console has always received; run.status and answers are run-route only.
     listener: emit ? (ev) => { if (LEGACY_KIRO_FRAME_TYPES.has(ev.type)) emit({ type: ev.type, ...ev.payload } as KiroTurnEvent); } : undefined,
   });
@@ -329,7 +332,18 @@ async function executeKiroChatTurn(a: KiroRunExecutorInput): Promise<OperatorCha
   // VTID-05060: the developer's own last pick in Kiro's drop-down for this thread, from the
   // operator.kiro.model_selected event the model route already records (owner's own, newest).
   const loadModelPick = (): Promise<string | null> => latestKiroModelPick(a.threadId, a.userId);
-  const result = await runKiroTurn({ threadId: a.threadId, userId: a.userId, message: a.message, emit: a.emit, loadHistory, loadModelPick });
+  // VTID-05067: the run's images, read from storage only if Kiro accepts image input.
+  const media = a.media ?? [];
+  const loadImages = async () => {
+    const out: Array<{ mimeType: string; data: string }> = [];
+    for (const m of media) {
+      const row = await getOperatorMedia(m.media_id);
+      const img = row && row.user_id === a.userId ? await readOperatorMediaBase64(row) : null;
+      if (img) out.push(img);
+    }
+    return out;
+  };
+  const result = await runKiroTurn({ threadId: a.threadId, userId: a.userId, message: a.message, imageCount: media.length, loadImages, emit: a.emit, loadHistory, loadModelPick });
   // VTID-05003: a used-up Kiro Power seat is a governed state transition, logged once per change.
   if (result.meta.kiro_status === 'no_credits' && result.meta.credits_changed === true) {
     await emitOasisEvent({
@@ -449,6 +463,13 @@ export async function runOperatorChatTurn(
     // down (assistantEventResult / oasis_ref). VTID-03851 only added
     // optionalAuth on the registration line; no new state mutation here.
     const callerIdentity = (req as AuthenticatedRequest).identity;
+    // VTID-05067: images attached by media id must be the caller's own, at most 4 per message.
+    const mediaIds = [...new Set(attachments.map((a) => a.media_id).filter((x): x is string => typeof x === 'string'))];
+    if (mediaIds.length > OPERATOR_MEDIA_LIMITS.maxPerMessage) {
+      return { status: 400, body: { ok: false, error: 'too_many_attachments', max: OPERATOR_MEDIA_LIMITS.maxPerMessage } };
+    }
+    const mediaRows = mediaIds.length > 0 ? await loadOperatorMediaForUser(mediaIds, callerIdentity?.user_id ?? null) : { ok: true as const, media: [] };
+    if (!mediaRows.ok) return { status: 400, body: { ok: false, error: mediaRows.error === 'too_many' ? 'too_many_attachments' : 'invalid_attachment' } };
     if (callerIdentity?.user_id) {
       setThreadAuth(threadId, { user_id: callerIdentity.user_id, exafy_admin: callerIdentity.exafy_admin === true });
     } else {
@@ -577,6 +598,7 @@ export async function runOperatorChatTurn(
     if (threadEngine === 'kiro') {
       return runKiroChatTurn({
         requestId, threadId, createdAt, message, attachments, mode, conversation_id,
+        media: mediaRows.media.map((m) => ({ media_id: m.id, mime_type: m.mime_type })),
         validatedVtid, userId: callerIdentity?.user_id ?? null, isAdmin: geminiUserRole === 'admin',
         channel: opts.channel,
         // Kiro events are additive frame types; the stream route writes `type` as the frame name.
@@ -589,7 +611,14 @@ export async function runOperatorChatTurn(
     const threadSummary = isOperatorThreadsEnabled() ? await getThreadSummary(threadId).catch(() => null) : null;
     // VTID-04816 (Jev A10, shadow): which lane the message asks for, judged beside the turn.
     const routeCheck = isOperatorRouteOn() ? runOperatorRoute({ threadId, message, developerTools: geminiUserRole === 'admin' }) : null;
+    // VTID-05067: the pasted images go to the model as image blocks (the router's `images`, VTID-03496).
+    const turnImages: Array<{ mimeType: string; base64: string }> = [];
+    for (const m of mediaRows.media) {
+      const img = await readOperatorMediaBase64(m);
+      if (img) turnImages.push({ mimeType: img.mimeType, base64: img.data });
+    }
     let geminiResult = await processWithGemini({
+      images: turnImages.length > 0 ? turnImages : undefined,
       text: message,
       threadId,
       attachments: attachments.map(a => ({ oasis_ref: a.oasis_ref, kind: a.kind })),
@@ -632,6 +661,7 @@ export async function runOperatorChatTurn(
         `time, do not narrate or describe the call in your reply text.]`;
       try {
         const retryResult = await processWithGemini({
+          images: turnImages.length > 0 ? turnImages : undefined,
           text: retryText,
           threadId,
           attachments: attachments.map(a => ({ oasis_ref: a.oasis_ref, kind: a.kind })),

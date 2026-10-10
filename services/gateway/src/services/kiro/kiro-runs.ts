@@ -84,6 +84,8 @@ export interface KiroRunTurn {
   requestId: string;
   createdAt: string;
   attachments: Array<{ oasis_ref: string; kind: string }>;
+  /** VTID-05067: the images the run was sent with (operator_media ids, the caller's own). */
+  media?: Array<{ media_id: string; mime_type: string }>;
   mode: string;
   conversation_id?: string;
   validatedVtid?: string;
@@ -134,12 +136,32 @@ async function rest<T>(path: string, init: { method?: string; body?: unknown; pr
 
 const enc = encodeURIComponent;
 export const KIRO_RUN_COLUMNS = 'id,thread_id,user_id,status,message,reply,stop_reason,kiro_model,workspace,error,pending_permission,cancel_requested_at,gateway_task,created_at,started_at,ended_at,last_heartbeat_at';
+/**
+ * VTID-05067: the same columns plus `attachments`. Reads try this first and fall back to
+ * KIRO_RUN_COLUMNS when the column is not there yet (migration not applied), so the runs
+ * list keeps working either way.
+ */
+export const KIRO_RUN_COLUMNS_WITH_MEDIA = `${KIRO_RUN_COLUMNS},attachments`;
+/** When the attachments column was last found missing (0 = not known missing); re-tried after 5 min. */
+let mediaColumnMissingAt = 0;
+
+async function selectRuns<T>(query: (cols: string) => string): Promise<{ ok: boolean; status: number; data?: T; error?: string }> {
+  if (!mediaColumnMissingAt || Date.now() - mediaColumnMissingAt > 5 * 60_000) {
+    const r = await rest<T>(query(KIRO_RUN_COLUMNS_WITH_MEDIA));
+    if (r.ok) { mediaColumnMissingAt = 0; return r; }
+    if (!(r.status === 400 && /attachments/.test(r.error ?? ''))) return r;
+    mediaColumnMissingAt = Date.now();
+  }
+  return rest<T>(query(KIRO_RUN_COLUMNS));
+}
 
 export interface KiroRunRow {
   id: string; thread_id: string; user_id: string; status: KiroRunStatus; message: string;
   reply: string | null; stop_reason: string | null; kiro_model: string | null; workspace: Record<string, unknown> | null;
   error: string | null; pending_permission: Record<string, unknown> | null; cancel_requested_at: string | null;
   gateway_task: string | null; created_at: string; started_at: string | null; ended_at: string | null; last_heartbeat_at: string | null;
+  /** VTID-05067: [{ media_id, mime_type }] or null (absent before the migration). */
+  attachments?: Array<{ media_id: string; mime_type: string }> | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -484,6 +506,8 @@ export function startKiroRun(input: {
       body: {
         id, thread_id: input.threadId, user_id: input.userId ?? '', status, message: input.message,
         gateway_task: GATEWAY_TASK_ID, created_at: now, last_heartbeat_at: now, ...(status === 'running' ? { started_at: now } : {}),
+        // VTID-05067: written only when the run has images, so a gateway ahead of the migration is unaffected.
+        ...(input.turn.media && input.turn.media.length > 0 ? { attachments: input.turn.media } : {}),
       },
     });
     if (!ins.ok) {
@@ -514,11 +538,12 @@ function localRow(run: LiveRun): KiroRunRow {
     id: run.id, thread_id: run.threadId, user_id: run.userId ?? '', status: run.status, message: run.message, reply: null, stop_reason: null,
     kiro_model: null, workspace: null, error: null, pending_permission: [...run.pendingPerms.values()].pop() ?? null, cancel_requested_at: null,
     gateway_task: GATEWAY_TASK_ID, created_at: run.createdAt, started_at: null, ended_at: null, last_heartbeat_at: null,
+    attachments: run.turn.media && run.turn.media.length > 0 ? run.turn.media : null,
   };
 }
 
 export async function getKiroRun(runId: string): Promise<KiroRunRow | null> {
-  const r = await rest<KiroRunRow[]>(`kiro_runs?id=eq.${enc(runId)}&select=${KIRO_RUN_COLUMNS}&limit=1`);
+  const r = await selectRuns<KiroRunRow[]>((cols) => `kiro_runs?id=eq.${enc(runId)}&select=${cols}&limit=1`);
   if (r.ok && r.data && r.data[0]) return r.data[0];
   const l = live.get(runId);
   return l ? localRow(l) : null;
@@ -526,7 +551,7 @@ export async function getKiroRun(runId: string): Promise<KiroRunRow | null> {
 
 /** The caller's latest runs of one thread, newest first. */
 export async function listKiroRuns(threadId: string, userId: string, limit = KIRO_RUN_LIMITS.listLimit): Promise<KiroRunRow[] | null> {
-  const r = await rest<KiroRunRow[]>(`kiro_runs?thread_id=eq.${enc(threadId)}&user_id=eq.${enc(userId)}&select=${KIRO_RUN_COLUMNS}&order=created_at.desc&limit=${limit}`);
+  const r = await selectRuns<KiroRunRow[]>((cols) => `kiro_runs?thread_id=eq.${enc(threadId)}&user_id=eq.${enc(userId)}&select=${cols}&order=created_at.desc&limit=${limit}`);
   return r.ok ? (r.data ?? []) : null;
 }
 
@@ -799,4 +824,5 @@ export function resetKiroRunsForTests(): void {
   for (const r of live.values()) r.log.dispose();
   live.clear();
   threadLocks.clear();
+  mediaColumnMissingAt = 0;
 }

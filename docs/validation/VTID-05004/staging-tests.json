@@ -8,12 +8,12 @@
       "path": "/command-hub/",
       "expect_status": 200,
       "expect_content_type": "text/html",
-      "expect_body_contains": "app.js?v=20261110-vtid-05064"
+      "expect_body_contains": "app.js?v=20261111-vtid-05067"
     },
     {
       "kind": "http",
       "name": "served app.js confirms a linked key and keeps Replace/Revoke behind Manage key",
-      "path": "/command-hub/app.js?v=20261110-vtid-05064",
+      "path": "/command-hub/app.js?v=20261111-vtid-05067",
       "expect_status": 200,
       "expect_content_type": "javascript",
       "expect_body_contains": [

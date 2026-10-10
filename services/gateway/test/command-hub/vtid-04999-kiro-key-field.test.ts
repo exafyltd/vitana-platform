@@ -13,7 +13,7 @@ import { join } from 'path';
 const FE = join(__dirname, '../../src/frontend/command-hub');
 const APP_JS = readFileSync(join(FE, 'app.js'), 'utf8');
 const CSS = readFileSync(join(FE, 'styles.css'), 'utf8');
-const BLOCK = APP_JS.slice(APP_JS.indexOf('var KIRO_TOOL_STATUS'), APP_JS.indexOf('function renderOperatorLiveTranscript() {'));
+const BLOCK = APP_JS.slice(APP_JS.indexOf('function operatorThreadEngine(thread) {'), APP_JS.indexOf('function renderOperatorLiveTranscript() {'));
 
 class El {
   tag: string; className = ''; textContent = ''; title = ''; value = ''; type = ''; placeholder = ''; autocomplete = '';

@@ -26,7 +26,9 @@ export const OperatorChatMessageSchema = z.object({
   message: z.string().min(1, "Message is required"),
   attachments: z.array(z.object({
     oasis_ref: z.string(),
-    kind: z.enum(['image', 'video', 'file'])
+    kind: z.enum(['image', 'video', 'file']),
+    // VTID-05067: an image stored through POST /api/v1/operator/media (the caller's own; ≤ 4 per message).
+    media_id: z.string().uuid().optional(),
   })).optional().default([]),
   // VTID-0531: Extended fields
   threadId: z.string().uuid().optional(),

@@ -61,7 +61,7 @@ export const DOMAIN_ATLAS: readonly AtlasDomain[] = [
     title: 'Agents, orchestrator and the Operator Console',
     summary:
       'The Operator Console (text + voice) with its tool loop, bootstrap pack, threads and turn memory; the orchestrator\'s agent-as-tool specialists and delegation jobs; the worker-runner execution plane and its claim allowlist; the agent registry and dev_agent_memory.',
-    routes: [/^operator$/, /^operator-kiro-mcp$/, /^operator-kiro-runs$/, /^orchestrator$/, /^worker-orchestrator$/, /^agents-registry$/, /^pillar-agents/, /^dev-memory$/, /^jev-decisions$/, /^board-adapter$/, /^admin\/ai-integrations/],
+    routes: [/^operator$/, /^operator-kiro-mcp$/, /^operator-kiro-runs$/, /^operator-media$/,/^orchestrator$/, /^worker-orchestrator$/, /^agents-registry$/, /^pillar-agents/, /^dev-memory$/, /^jev-decisions$/, /^board-adapter$/, /^admin\/ai-integrations/],
     code: ['services/gemini-operator.ts', 'services/operator-*.ts', 'orb/delegation/', 'services/dev-agent-memory.ts', 'services/llm-stage-tool-loop.ts', 'services/jev/'],
     tables: ['operator_threads', 'operator_messages', 'dev_agent_memory', 'agent_runs', 'agents_registry', 'vtid_ledger'],
     flags: ['OPERATOR_EXECUTION_ONRAMP_ENABLED', 'OPERATOR_BOOTSTRAP_PACK_ENABLED', 'OPERATOR_THREADS_ENABLED', 'OPERATOR_TURN_MEMORY_ENABLED', 'ORCHESTRATOR_DELEGATION_PERSIST_ENABLED', 'JEV_DECISIONS_ENABLED'],

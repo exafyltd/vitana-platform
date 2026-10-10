@@ -2182,9 +2182,7 @@ body {
 }
 
 .chat-engine-option:focus-visible,
-.chat-engine-end-btn:focus-visible,
-.kiro-approval-btn:focus-visible,
-.kiro-stop-btn:focus-visible {
+.chat-engine-end-btn:focus-visible {
   outline: 2px solid #2a7bff;
   outline-offset: 1px;
 }
@@ -2424,95 +2422,7 @@ body {
   line-height: 1.35;
 }
 
-.kiro-approval {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem 0.75rem;
-  margin: 0.35rem 0;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid #6b4fc8;
-  border-radius: 8px;
-  background: rgba(107, 79, 200, 0.12);
-  font-style: normal;
-}
-
-/* VTID-05006: a Kiro write (PR, merge, autopilot, approval, branch push) waiting on Allow/Deny */
-.kiro-approval--write {
-  border-inline-start: 3px solid #e0b25b;
-}
-
-.kiro-approval--allowed { border-color: #3f6b3f; background: rgba(127, 181, 127, 0.08); }
-.kiro-approval--denied,
-.kiro-approval--expired,
-.kiro-approval--error { border-color: #6b3f3f; background: rgba(217, 119, 111, 0.08); }
-
-.kiro-approval-text {
-  flex: 1 1 14rem;
-  min-width: 0;
-  color: #e6e1ff;
-  font-size: 0.82rem;
-  overflow-wrap: anywhere;
-}
-
-.kiro-approval-actions {
-  display: flex;
-  gap: 0.4rem;
-}
-
-.kiro-approval-btn {
-  min-width: 64px;
-  min-height: 32px;
-  padding: 0.25rem 0.7rem;
-  border: 1px solid #4a5260;
-  border-radius: 6px;
-  background: transparent;
-  color: #e0e0e0;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-
-.kiro-approval-btn--allow {
-  border-color: #2a7bff;
-  background: #2a7bff;
-  color: #fff;
-}
-
-.kiro-approval-result {
-  color: #9aa0a6;
-  font-size: 0.78rem;
-}
-
-.kiro-live-text {
-  margin: 0.35rem 0;
-  padding: 0.6rem 0.9rem;
-  border-radius: 10px;
-  background: #23272e;
-  color: #e0e0e0;
-  font-size: 0.9rem;
-  font-style: normal;
-  line-height: 1.3rem;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.kiro-stop-btn {
-  align-self: flex-start;
-  min-height: 28px;
-  margin-top: 0.3rem;
-  padding: 0.2rem 0.75rem;
-  border: 1px solid #6b3f3f;
-  border-radius: 6px;
-  background: transparent;
-  color: #e3a39c;
-  font-size: 0.75rem;
-  cursor: pointer;
-}
-
-.kiro-stop-btn:hover {
-  background: rgba(217, 119, 111, 0.12);
-}
+/* VTID-05067: the Kiro approval cards, live reply and Stop moved to kiro-console.css (the Kiro console module). */
 
 /* VTID-05064: the console's one running turn is in another thread */
 .chat-turn-elsewhere {

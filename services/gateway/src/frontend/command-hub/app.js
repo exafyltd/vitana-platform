@@ -1150,7 +1150,8 @@ function switchOperatorThread(threadId) {
             followExecIds: msg.followExecIds,
             channel: msg.channel,
             meta: msg.kiroMeta,
-            isError: msg.isError // VTID-05064: a failed turn's error line is persisted too
+            isError: msg.isError, // VTID-05064: a failed turn's error line is persisted too
+            media: msg.media // VTID-05067: image media ids (thumbnails re-signed per view)
         };
     });
     reattachFollowedExecutions(state.chatMessages);
@@ -1487,7 +1488,8 @@ function renderOperatorThreadRow(thread) {
     meta.className = 'chat-session-row-meta';
     meta.textContent = formatRelativeTime(thread.updatedAt);
     // VTID-05064: the console's one running turn is in this thread.
-    if (state.chatSending && state.chatTurnThreadId === thread.id) {
+    // VTID-05067: …or a Kiro run of this thread is queued or running (kiro-console.js).
+    if ((state.chatSending && state.chatTurnThreadId === thread.id) || kiroThreadBusy(thread.id)) {
         const running = document.createElement('span');
         running.className = 'chat-thread-running';
         running.setAttribute('role', 'status');
@@ -1627,7 +1629,8 @@ function initOperatorChatSession() {
                 followExecIds: msg.followExecIds,
                 channel: msg.channel,
                 meta: msg.kiroMeta, // VTID-05064: Kiro badge / stopped-early marker survive a reload
-                isError: msg.isError
+                isError: msg.isError,
+                media: msg.media // VTID-05067: image media ids (thumbnails re-signed per view)
             };
         });
         // VTID-04104: a page reload landing on a thread with a still-running
@@ -2384,6 +2387,8 @@ function doLogout() {
     localStorage.removeItem('vitana.userEmail');
     // VTID-04999: no Kiro key draft or key status outlives the signed-in user.
     resetKiroKeyState();
+    // VTID-05067: no Kiro run stream, queue or pasted image outlives the signed-in user.
+    if (window.KiroConsole) window.KiroConsole.reset();
 
     // Destroy VitanaOrb widget on logout
     if (window.VitanaOrb) window.VitanaOrb.destroy();
@@ -4138,7 +4143,6 @@ const state = {
     operatorThreads: [], // Array of { id, title, conversationId, createdAt, updatedAt, engine? } — engine 'kiro' (VTID-04975), absent = Operator
     kiroStatus: null, // VTID-04975: GET /api/v1/operator/kiro/status once per page load; null = not known yet
     kiroModels: {}, // VTID-04984: { [threadId]: { loaded, models: [{id,name,description}], current } } — Kiro's own model list per session
-    chatLiveKiro: { text: '', tools: [], permissions: [] }, // VTID-04975: a Kiro turn's streamed text, tool lines and approval cards
     operatorActiveThreadId: null,
     // VTID-03949: sessions sidebar + double-click-to-rename state
     operatorSessionsSidebarCollapsed: false,
@@ -23653,6 +23657,36 @@ function describeToolActivity(tr) {
     return label;
 }
 
+/**
+ * VTID-03907: the voice-dictation mic button (Web Speech API) beside a chat textarea.
+ * VTID-05067: one builder for the Operator composer and the Kiro console composer.
+ */
+function renderOperatorMicButton(textarea, inputContainer) {
+    const micBtn = document.createElement('button');
+    micBtn.type = 'button';
+    var dictationSupported = operatorDictationSupported();
+    micBtn.className = 'chat-mic-btn' + (state.chatDictationActive ? ' chat-mic-btn--active' : '');
+    micBtn.disabled = !dictationSupported;
+    micBtn.title = !dictationSupported
+        ? 'Voice dictation is not supported in this browser'
+        : (state.chatDictationActive ? 'Stop voice dictation' : 'Start voice dictation');
+    micBtn.setAttribute('aria-label', micBtn.title);
+    micBtn.innerHTML = ICON_MIC_SVG;
+    micBtn.onclick = () => {
+        if (!dictationSupported) return;
+        if (state.chatDictationActive) {
+            stopOperatorDictation();
+            micBtn.classList.remove('chat-mic-btn--active');
+            micBtn.title = 'Start voice dictation';
+        } else {
+            startOperatorDictation(textarea, micBtn);
+            micBtn.title = 'Stop voice dictation';
+        }
+    };
+    if (inputContainer) inputContainer.appendChild(micBtn);
+    return micBtn;
+}
+
 function renderOperatorChat() {
     const container = document.createElement('div');
     container.className = 'chat-container';
@@ -23709,6 +23743,14 @@ function renderOperatorChat() {
 
     container.appendChild(titleBar);
 
+    // VTID-05067: a Kiro thread's chat pane (its runs, the live run, approval cards,
+    // Stop, the queue, images and the composer) belongs to kiro-console.js.
+    if (activeOperatorEngine() === 'kiro' && window.KiroConsole && state.operatorActiveThreadId) {
+        initKiroConsoleHost();
+        container.appendChild(window.KiroConsole.renderPane(state.operatorActiveThreadId, { legacyMessages: state.chatMessages }));
+        return container;
+    }
+
     // Messages area
     const messages = document.createElement('div');
     messages.className = 'chat-messages';
@@ -23764,6 +23806,10 @@ function renderOperatorChat() {
             // rendered as a wall of literal asterisks/backticks before this.
             bubble.appendChild(renderManualMarkdown(msg.content || msg.text || ''));
             appendReplyWithKiroNotices(messages, bubble, isSent ? null : msg); // VTID-05064
+            // VTID-05067: the message's images, through signed URLs fetched per view (never stored).
+            if (Array.isArray(msg.media) && msg.media.length > 0 && window.KiroConsole) {
+                messages.appendChild(window.KiroConsole.renderMediaThumbs(msg.media, isSent ? 'kiro-run-media' : ''));
+            }
 
             // VTID-03822: surface which tools ran on this turn (already present
             // on the message object since sendChatMessage's response handling —
@@ -23903,6 +23949,16 @@ function renderOperatorChat() {
         container.appendChild(attachmentsPreview);
     }
 
+    // VTID-05067: pasted / dropped / picked images, shared helper with the Kiro console.
+    var imageTray = window.KiroConsole && state.operatorActiveThreadId ? window.KiroConsole.imageTray(state.operatorActiveThreadId) : null;
+    if (imageTray) {
+        imageTray.onChange = function () { renderApp(); };
+        var trayChips = imageTray.renderChips();
+        trayChips.classList.add('chat-image-tray');
+        container.appendChild(trayChips);
+        imageTray.bindDrop(container);
+    }
+
     // Input area
     const inputContainer = document.createElement('div');
     inputContainer.className = 'chat-input-container';
@@ -23938,6 +23994,14 @@ function renderOperatorChat() {
             // Create file input
             const fileInput = document.createElement('input');
             fileInput.type = 'file';
+            // VTID-05067: images go to the image tray (stored on Send through /operator/media).
+            if (kind === 'image' && imageTray) {
+                fileInput.accept = 'image/png,image/jpeg,image/webp,image/gif';
+                fileInput.multiple = true;
+                fileInput.onchange = function () { imageTray.addFiles(fileInput.files); };
+                fileInput.click();
+                return;
+            }
             if (kind === 'image') fileInput.accept = 'image/*';
             else if (kind === 'video') fileInput.accept = 'video/*';
 
@@ -23981,31 +24045,12 @@ function renderOperatorChat() {
         // Only reset typing flag when user leaves the input
         state.chatIsTyping = false;
     };
+    // VTID-05067: Ctrl/Cmd+V of an image adds a chip; a text paste is unchanged.
+    if (imageTray) imageTray.bindPaste(textarea);
     inputContainer.appendChild(textarea);
 
     // VTID-03907: Voice dictation mic button (Web Speech API)
-    const micBtn = document.createElement('button');
-    micBtn.type = 'button';
-    var dictationSupported = operatorDictationSupported();
-    micBtn.className = 'chat-mic-btn' + (state.chatDictationActive ? ' chat-mic-btn--active' : '');
-    micBtn.disabled = !dictationSupported;
-    micBtn.title = !dictationSupported
-        ? 'Voice dictation is not supported in this browser'
-        : (state.chatDictationActive ? 'Stop voice dictation' : 'Start voice dictation');
-    micBtn.setAttribute('aria-label', micBtn.title);
-    micBtn.innerHTML = ICON_MIC_SVG;
-    micBtn.onclick = () => {
-        if (!dictationSupported) return;
-        if (state.chatDictationActive) {
-            stopOperatorDictation();
-            micBtn.classList.remove('chat-mic-btn--active');
-            micBtn.title = 'Start voice dictation';
-        } else {
-            startOperatorDictation(textarea, micBtn);
-            micBtn.title = 'Stop voice dictation';
-        }
-    };
-    inputContainer.appendChild(micBtn);
+    renderOperatorMicButton(textarea, inputContainer);
 
     // Send button
     const sendBtn = document.createElement('button');
@@ -24090,8 +24135,9 @@ function updateOperatorLiveTranscriptDom() {
 }
 
 function applyOperatorTurnFrame(frame) {
-    // VTID-04975: Kiro frames have their own handler.
-    if (frame.event && frame.event.indexOf('kiro.') === 0) { applyKiroTurnFrame(frame); return; }
+    // VTID-05067: Kiro turns are runs shown by kiro-console.js; kiro.* frames never reach here
+    // from the console (a Kiro thread does not send through /chat/stream any more).
+    if (frame.event && frame.event.indexOf('kiro.') === 0) return;
     var d = frame.data || {};
     if (frame.event === 'tool.call') {
         state.chatLiveTranscript[d.index] = {
@@ -24160,13 +24206,7 @@ async function streamOperatorTurn(payload) {
 async function requestOperatorTurn(payload) {
     state.chatLiveTranscript = [];
     state.chatLiveModelTurns = [];
-    resetKiroLiveTranscript();
-    // VTID-05006: while a Kiro turn runs, its write requests wait on an Allow/Deny here.
-    // VTID-05064: this runs synchronously from sendChatMessage() right after it
-    // set state.chatTurnThreadId = state.operatorActiveThreadId (no await in
-    // between), so the active id here IS the turn's thread. The poll captures
-    // it once and keeps polling that thread if the user switches away.
-    if (activeOperatorEngine() === 'kiro') startKiroConfirmationPoll(state.operatorActiveThreadId);
+    // VTID-05067: Kiro write confirmations (VTID-05006) are polled by kiro-console.js while a run runs.
     try {
         return await streamOperatorTurn(payload);
     } catch (err) {
@@ -24185,8 +24225,6 @@ async function requestOperatorTurn(payload) {
             throw new Error('Chat request failed: ' + response.status);
         }
         return await response.json();
-    } finally {
-        stopKiroConfirmationPoll();
     }
 }
 
@@ -24470,8 +24508,10 @@ function renderAutopilotLiveStepsPanel(execId) {
 // existing thread's engine whatever the request says. Kiro reads and
 // searches on its own; before it edits or runs anything it asks, and the ask
 // shows here as an approval card. No answer in time means denied.
-
-var KIRO_TOOL_STATUS = { completed: 'ok', failed: 'failed' };
+//
+// VTID-05067: a Kiro thread's chat pane (runs, live run, approval cards, Stop,
+// queue, images) is owned by kiro-console.js (window.KiroConsole). This block
+// keeps the engine switch, status, model picker, key card and the host wiring.
 
 function operatorThreadEngine(thread) {
     return thread && thread.engine === 'kiro' ? 'kiro' : 'llm';
@@ -24483,7 +24523,24 @@ function activeOperatorEngine() {
 }
 
 function canChangeOperatorEngine() {
-    return state.chatMessages.length === 0 && !state.chatSending;
+    // VTID-05067: a Kiro thread's turns are runs (kiro-console.js), not chatMessages.
+    return state.chatMessages.length === 0 && !state.chatSending && !kiroConsoleHasRuns(state.operatorActiveThreadId);
+}
+
+/** VTID-05067: the Kiro console module (kiro-console.js), when loaded. */
+function kiroConsole() {
+    return typeof window !== 'undefined' && window.KiroConsole ? window.KiroConsole : null;
+}
+
+function kiroConsoleHasRuns(threadId) {
+    var kc = kiroConsole();
+    return !!(threadId && kc && kc.hasRuns(threadId));
+}
+
+/** VTID-05067: the sidebar spinner — a Kiro run of this thread is queued or running. */
+function kiroThreadBusy(threadId) {
+    var kc = kiroConsole();
+    return !!(threadId && kc && kc.isThreadBusy(threadId));
 }
 
 function kiroIsConnected() {
@@ -24620,117 +24677,94 @@ function continueInOperator(sourceMsg) {
     renderApp();
 }
 
-function resetKiroLiveTranscript() {
-    state.chatLiveKiro = { text: '', tools: [], permissions: [] };
+/**
+ * VTID-05067: a Kiro run ended (kiro-console.js). Its session may be new, so the
+ * model list is re-read (VTID-04984), for the run's own thread.
+ */
+function onKiroRunFinished(threadId) {
+    if (state.kiroModels && threadId) delete state.kiroModels[threadId];
 }
 
-function applyKiroTurnFrame(frame) {
-    var d = frame.data || {};
-    var live = state.chatLiveKiro;
-    if (frame.event === 'kiro.message_chunk') {
-        live.text += d.text || '';
-    } else if (frame.event === 'kiro.tool_call') {
-        live.tools.push({ id: d.tool_call_id, title: d.title || d.kind || 'Tool', kind: d.kind, status: 'running' });
-    } else if (frame.event === 'kiro.tool_update') {
-        var tool = live.tools.find(function (t) { return t.id === d.tool_call_id; });
-        if (tool) {
-            tool.status = KIRO_TOOL_STATUS[d.status] || tool.status;
-            if (d.title) tool.title = d.title;
-        }
-    } else if (frame.event === 'kiro.permission_request') {
-        live.permissions.push({ id: d.request_id, title: d.title || 'A tool', kind: d.kind, expires_at: d.expires_at, answer: null });
-    } else {
-        // VTID-04984: after a turn, re-read Kiro's model list (the session may be new).
-        // VTID-05064: the turn's own thread, which may no longer be on screen.
-        if (frame.event === 'kiro.turn_end' && state.kiroModels) delete state.kiroModels[state.chatTurnThreadId || state.operatorActiveThreadId];
-        return;
-    }
-    updateOperatorLiveTranscriptDom();
-}
-
-function kiroLiveHasContent() {
-    var live = state.chatLiveKiro;
-    return !!(live && (live.text || live.tools.length || live.permissions.length));
-}
-
-// VTID-05006: a Kiro write (PR, merge, autopilot, approval, branch push) waits for the
-// signed-in user's Allow. The gateway holds the call and keeps the request in the
-// database, so this polls only while a Kiro turn is running and shows each one
-// as an approval card next to Kiro's own permission requests.
-var _kiroConfirmPoll = null;
-function startKiroConfirmationPoll(threadId) {
-    stopKiroConfirmationPoll();
-    if (!threadId || !state.authToken) return;
-    var tick = async function () {
-        try {
-            var res = await fetch('/api/v1/operator/kiro/confirmations?thread_id=' + encodeURIComponent(threadId), { headers: buildContextHeaders({}) });
-            if (!res.ok) return;
-            var body = await res.json();
-            var live = state.chatLiveKiro;
-            if (!live || !Array.isArray(body.pending)) return;
-            var added = false;
-            body.pending.forEach(function (c) {
-                var id = 'confirm:' + c.id;
-                if (live.permissions.some(function (p) { return p.id === id; })) return;
-                live.permissions.push({ id: id, confirmationId: c.id, write: true, title: c.summary || c.tool, kind: 'make a change' + (c.vtid ? ' (' + c.vtid + ')' : ''), answer: null });
-                added = true;
+/**
+ * VTID-05067: what kiro-console.js needs from the page. Called before every
+ * renderPane() (cheap: it only copies references).
+ */
+function initKiroConsoleHost() {
+    if (!kiroConsole()) return;
+    kiroConsole().init({
+        fetch: function (url, init) { return fetch(url, init); },
+        headers: function (extra) { return buildContextHeaders(extra || {}); },
+        renderApp: function () { renderApp(); },
+        activeThreadId: function () { return state.operatorActiveThreadId; },
+        getDraft: function () { return state.chatInputValue || ''; },
+        setDraft: function (v) { state.chatInputValue = v; state.chatIsTyping = !!v; },
+        renderMarkdown: function (md) { return renderManualMarkdown(md); },
+        renderEmptyPanel: function () { return renderKiroThreadPanel(); },
+        renderLegacyMessage: renderKiroLegacyMessage,
+        renderMic: function (textarea) { return renderOperatorMicButton(textarea, null); },
+        bindMessagesScroll: function (el) {
+            // VTID-04106: same stick-to-bottom tracking as the Operator transcript.
+            el.addEventListener('scroll', function () {
+                state.chatStickToBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 80;
             });
-            if (added) updateOperatorLiveTranscriptDom();
-        } catch (e) {
-            console.warn('[VTID-05006] Kiro confirmation poll failed:', e);
-        }
-    };
-    tick();
-    _kiroConfirmPoll = setInterval(tick, 2000);
-}
-function stopKiroConfirmationPoll() {
-    if (_kiroConfirmPoll) clearInterval(_kiroConfirmPoll);
-    _kiroConfirmPoll = null;
-}
-
-async function answerKiroPermission(requestId, allow) {
-    var card = state.chatLiveKiro.permissions.find(function (p) { return p.id === requestId; });
-    if (!card || card.answer) return;
-    card.answer = 'sending';
-    updateOperatorLiveTranscriptDom();
-    if (card.write) {
-        try {
-            var wr = await fetch('/api/v1/operator/kiro/confirmations/' + encodeURIComponent(card.confirmationId), {
-                method: 'POST',
-                headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
-                body: JSON.stringify({ decision: allow ? 'allow' : 'deny' })
-            });
-            card.answer = wr.ok ? (allow ? 'allowed' : 'denied') : (wr.status === 409 ? 'expired' : 'error');
-        } catch (e) {
-            card.answer = 'error';
-        }
-        updateOperatorLiveTranscriptDom();
-        return;
-    }
-    try {
-        var res = await fetch('/api/v1/operator/kiro/permissions/' + encodeURIComponent(requestId), {
-            method: 'POST',
-            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ allow: allow })
-        });
-        card.answer = res.ok ? (allow ? 'allowed' : 'denied') : (res.status === 404 ? 'expired' : 'error');
-    } catch (e) {
-        card.answer = 'error';
-    }
-    updateOperatorLiveTranscriptDom();
+        },
+        stickToBottom: function () { return state.chatStickToBottom !== false; },
+        onSent: onKiroMessageSent,
+        onRunFinished: function (threadId) { onKiroRunFinished(threadId); },
+        continueInOperator: function (text) {
+            startNewOperatorThread({ engine: 'llm' });
+            state.chatInputValue = text || '';
+            renderApp();
+        },
+        kiroModelName: function (id) { return kiroModelName(id); },
+        toast: function (m, t) { showToast(m, t || 'info'); }
+    });
 }
 
-async function stopKiroTurn() {
-    // VTID-05064: cancel the running turn's thread, not whichever thread is on screen.
-    var turnThreadId = state.chatTurnThreadId || state.operatorActiveThreadId;
-    if (!turnThreadId) return;
-    try {
-        await fetch('/api/v1/operator/kiro/sessions/' + encodeURIComponent(turnThreadId) + '/cancel', {
-            method: 'POST', headers: buildContextHeaders({})
-        });
-    } catch (e) {
-        console.warn('[VTID-04975] Kiro cancel failed:', e);
+/** VTID-05067: the first Kiro message fixes the thread's engine and names the thread. */
+function onKiroMessageSent(threadId, text) {
+    var thread = (state.operatorThreads || []).find(function (t) { return t.id === threadId; });
+    if (!thread) return;
+    thread.engine = 'kiro';
+    thread.engineChosen = true;
+    thread.updatedAt = Date.now();
+    if (!thread.title || thread.title === 'New conversation') {
+        var clean = String(text || '').trim().replace(/\s+/g, ' ');
+        if (clean) thread.title = clean.length > 40 ? clean.slice(0, 40) + '…' : clean;
     }
+    state.chatStickToBottom = true;
+    saveOperatorThreadsIndex(state.operatorThreads);
+}
+
+/**
+ * VTID-05067: a turn of a Kiro thread from before its oldest listed run (stored
+ * history), drawn by kiro-console.js above the runs.
+ */
+function renderKiroLegacyMessage(region, msg) {
+    var isSent = msg.type === 'user' || msg.type === 'sent';
+    var bubble = document.createElement('div');
+    bubble.className = 'message-bubble ' + (isSent ? 'message-sent' : 'message-reply') + (msg.isError || msg.error ? ' message-error' : '');
+    bubble.appendChild(renderManualMarkdown(msg.content || msg.text || ''));
+    appendReplyWithKiroNotices(region, bubble, isSent ? null : msg);
+    if (Array.isArray(msg.media) && msg.media.length > 0 && kiroConsole()) {
+        region.appendChild(kiroConsole().renderMediaThumbs(msg.media, isSent ? 'kiro-run-media' : ''));
+    }
+    var meta = document.createElement('div');
+    meta.className = 'message-meta' + (isSent ? ' message-meta--sent' : '');
+    var time = document.createElement('span');
+    time.className = 'timestamp';
+    time.textContent = formatRelativeTime(msg.ts) || msg.timestamp || '';
+    time.title = msg.timestamp || '';
+    meta.appendChild(time);
+    if (msg.meta && msg.meta.engine === 'kiro' && msg.meta.kiro_model) {
+        var kiroBadge = document.createElement('span');
+        kiroBadge.className = 'message-cost-badge';
+        kiroBadge.textContent = 'Kiro \u00b7 ' + kiroModelName(msg.meta.kiro_model);
+        meta.appendChild(kiroBadge);
+    }
+    var fallback = !isSent ? renderKiroFallbackAction(msg) : null;
+    if (fallback) meta.appendChild(fallback);
+    region.appendChild(meta);
 }
 
 async function endKiroSession() {
@@ -24794,7 +24828,8 @@ function renderKiroModelSelect(threadId) {
     var select = document.createElement('select');
     select.className = 'chat-kiro-model-select';
     select.setAttribute('aria-label', 'Kiro model');
-    select.disabled = !!state.chatSending;
+    // VTID-05067: not while a Kiro run of this thread is queued or running.
+    select.disabled = !!state.chatSending || kiroThreadBusy(threadId);
     entry.models.forEach(function (m) {
         var opt = document.createElement('option');
         opt.value = m.id;
@@ -24821,7 +24856,7 @@ function renderOperatorEngineSwitch() {
         // VTID-04984: Kiro's own models for this session.
         var modelSelect = renderKiroModelSelect(state.operatorActiveThreadId);
         if (modelSelect) fixed.appendChild(modelSelect);
-        if (!state.chatSending) {
+        if (!state.chatSending && !kiroThreadBusy(state.operatorActiveThreadId)) {
             var end = document.createElement('button');
             end.type = 'button';
             end.className = 'chat-engine-end-btn';
@@ -25073,64 +25108,6 @@ function renderKiroThreadPanel() {
     return panel;
 }
 
-/** Kiro's part of the live transcript: streamed text, tool lines, approval cards, Stop. */
-function appendKiroLiveTranscript(wrap) {
-    var live = state.chatLiveKiro;
-    if (!live || activeOperatorEngine() !== 'kiro') return;
-    live.tools.forEach(function (tool) {
-        var line = document.createElement('div');
-        line.className = 'chat-tool-activity-line chat-tool-activity-line--' + tool.status;
-        var marker = tool.status === 'ok' ? '✓ ' : tool.status === 'failed' ? '✗ ' : '… ';
-        line.textContent = marker + tool.title + (tool.status === 'running' ? ' (running)' : '');
-        wrap.appendChild(line);
-    });
-    // Kiro's own words first, then what it is waiting on you for, right above Stop.
-    if (live.text) {
-        var text = document.createElement('div');
-        text.className = 'kiro-live-text';
-        text.textContent = live.text;
-        wrap.appendChild(text);
-    }
-    live.permissions.forEach(function (p) {
-        var card = document.createElement('div');
-        // Literal class names, so the dead-CSS matcher (find-dead-css-classes.mjs) sees them used.
-        var answerClass = { allowed: 'kiro-approval--allowed', denied: 'kiro-approval--denied', expired: 'kiro-approval--expired', error: 'kiro-approval--error' }[p.answer];
-        card.className = 'kiro-approval' + (p.write ? ' kiro-approval--write' : '') + (answerClass ? ' ' + answerClass : '');
-        card.setAttribute('role', 'group');
-        card.setAttribute('aria-label', p.write ? 'Kiro asks to make a change' : 'Kiro asks for permission');
-        var what = document.createElement('div');
-        what.className = 'kiro-approval-text';
-        what.textContent = 'Kiro wants to ' + (p.kind ? p.kind + ': ' : '') + p.title;
-        card.appendChild(what);
-        if (!p.answer) {
-            var actions = document.createElement('div');
-            actions.className = 'kiro-approval-actions';
-            [[true, 'Allow'], [false, 'Deny']].forEach(function (a) {
-                var b = document.createElement('button');
-                b.type = 'button';
-                b.className = 'kiro-approval-btn' + (a[0] ? ' kiro-approval-btn--allow' : '');
-                b.textContent = a[1];
-                b.onclick = function () { answerKiroPermission(p.id, a[0]); };
-                actions.appendChild(b);
-            });
-            card.appendChild(actions);
-        } else {
-            var done = document.createElement('div');
-            done.className = 'kiro-approval-result';
-            done.textContent = { sending: 'Sending…', allowed: 'Allowed', denied: 'Denied', expired: 'Expired — denied', error: 'Could not send — Kiro will deny it' }[p.answer] || p.answer;
-            card.appendChild(done);
-        }
-        wrap.appendChild(card);
-    });
-    var stop = document.createElement('button');
-    stop.type = 'button';
-    stop.className = 'kiro-stop-btn';
-    stop.textContent = 'Stop';
-    stop.title = 'Stop Kiro’s current turn';
-    stop.onclick = function () { stopKiroTurn(); };
-    wrap.appendChild(stop);
-}
-
 /**
  * VTID-05064: shown in place of the live transcript on any thread other than
  * the one the console's running turn belongs to. Clicking opens that thread.
@@ -25184,11 +25161,8 @@ function renderOperatorLiveTranscript() {
         var thinking = document.createElement('div');
         thinking.className = 'chat-tool-activity-line chat-tool-activity-line--running';
         thinking.textContent = String.fromCodePoint(0x2026) + ' Thinking';
-        // VTID-04975: a Kiro turn that is already streaming is not "Thinking".
-        if (!kiroLiveHasContent()) wrap.appendChild(thinking);
+        wrap.appendChild(thinking);
     }
-    // VTID-04975: a Kiro thread's streamed work, approval cards and Stop.
-    appendKiroLiveTranscript(wrap);
     return wrap;
 }
 
@@ -25207,6 +25181,12 @@ async function sendChatMessage() {
     if (!messageText) return;
     // VTID-05003: a still-loading Kiro default decides this thread's engine before the first send.
     if (!(await waitForKiroDefault())) return;
+    // VTID-05067: a Kiro thread sends through a run (kiro-console.js), never through /chat.
+    if (activeOperatorEngine() === 'kiro' && window.KiroConsole && state.operatorActiveThreadId) {
+        initKiroConsoleHost();
+        window.KiroConsole.send(state.operatorActiveThreadId);
+        return;
+    }
 
     // VTID-04106: re-arm auto-scroll on every send, regardless of where the
     // user was scrolled beforehand — see the VTID-0539 anchor check in
@@ -25280,12 +25260,32 @@ async function sendChatMessage() {
         return; // Don't send to backend - this was just title capture
     }
 
+    // VTID-05067: pasted / dropped images are stored first (POST /operator/media), then sent by id.
+    var turnMedia = [];
+    var llmImageTray = window.KiroConsole && state.operatorActiveThreadId ? window.KiroConsole.imageTray(state.operatorActiveThreadId) : null;
+    if (llmImageTray && llmImageTray.hasImages()) {
+        state.chatSending = true;
+        renderApp();
+        try {
+            initKiroConsoleHost();
+            turnMedia = await llmImageTray.upload(state.operatorActiveThreadId);
+        } catch (uploadErr) {
+            state.chatSending = false;
+            showToast((uploadErr && uploadErr.message) || 'The images could not be uploaded', 'error');
+            renderApp();
+            return;
+        }
+    }
+    var turnMediaIds = turnMedia.map(function (m) { return m.media_id; });
+
     // VTID-01027: Add user message to session history
     var userHistoryEntry = {
         role: 'user',
         content: messageText,
         ts: now.getTime()
     };
+    // VTID-05067: media ids only (signed URLs are fetched per view, never stored).
+    if (turnMediaIds.length > 0) userHistoryEntry.media = turnMediaIds;
     state.operatorChatHistory.push(userHistoryEntry);
     saveOperatorThreadHistory(state.operatorActiveThreadId, state.operatorChatHistory);
     touchActiveOperatorThread();
@@ -25296,7 +25296,8 @@ async function sendChatMessage() {
         content: messageText,
         timestamp: timestamp,
         ts: now.getTime(),
-        attachments: [...state.chatAttachments]
+        attachments: [...state.chatAttachments],
+        media: turnMediaIds.length > 0 ? turnMediaIds : undefined
     });
 
     // Prepare attachments for API
@@ -25304,6 +25305,9 @@ async function sendChatMessage() {
         oasis_ref: a.oasis_ref,
         kind: a.kind
     }));
+    // VTID-05067: the stored images go to the model as image blocks.
+    turnMedia.forEach(function (m) { attachments.push({ oasis_ref: m.oasis_ref, kind: 'image', media_id: m.media_id }); });
+    if (llmImageTray && turnMedia.length > 0) { llmImageTray.onChange = function () {}; llmImageTray.clear(); }
 
     // VTID-01027: Build context from history (excluding the message we just added)
     var contextHistory = state.operatorChatHistory.slice(0, -1);
