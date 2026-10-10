@@ -1,0 +1,6 @@
+npx tsc --noEmit -> 0
+npx jest test/vtid-05047-cicd-routes-auth.test.ts test/vtid-05019-cicd-pr-routes-auth.test.ts -> 78 passed
+npx jest (full, with change) -> 25560 passed, 0 failed, 25 skipped, 6 todo
+npx jest (full, base origin/main + new test) -> new test fails 41 (gap reproduced), no other diff
+validateManifest(staging-tests.json) -> ok
+staging baseline read-only GET: /api/v1/cicd/approvals 200, /lock-status 200 (open, gap confirmed), /health 200
