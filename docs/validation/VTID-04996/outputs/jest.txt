@@ -1,0 +1,7 @@
+PASS test/vtid-04996-calendar-find-a-time.test.ts
+PASS test/calendar/calendar-coverage.guard.test.ts
+PASS test/vtid-04995-calendar-conflicts.test.ts
+PASS test/calendar/calendar-logic.golden.test.ts
+PASS test/calendar/calendar-routes.contract.test.ts
+Test Suites: 5 passed, 5 total
+Tests:       134 passed, 134 total

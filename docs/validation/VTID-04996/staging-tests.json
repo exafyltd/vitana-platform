@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04996",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04996-calendar-find-a-time.test.ts",
+      "cwd": "services/gateway",
+      "reason": "GET /api/v1/calendar/events/gaps gains duration/from/to/limit and answers with free slots. It is an authenticated read; staging shares the production database and has no member entries to assert on, so the behaviour is pinned by the pure computeFreeSlots unit tests (busy composition incl. external, quiet hours, local-day/DST, past trimmed, range caps) and the route contract/golden."
+    }
+  ]
+}

@@ -27,7 +27,8 @@
         "test/calendar/calendar-routes.contract.test.ts",
         "test/vtid-04331-calendar-data-model.test.ts",
         "test/vtid-04374-calendar-maintenance.test.ts",
-        "test/vtid-04995-calendar-conflicts.test.ts"
+        "test/vtid-04995-calendar-conflicts.test.ts",
+        "test/vtid-04996-calendar-find-a-time.test.ts"
       ]
     },
     "src/services/calendar-recurrence.ts": {
