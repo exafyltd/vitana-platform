@@ -16,3 +16,23 @@ Part A of the sparred plan in `plan-sparring.md` (Part B, the one-tap app flow, 
 ## Not done here
 - Applying the migration to the shared database: at Gate 2, via `RUN-MIGRATION.yml`.
 - A member phone-verification flow (SMS provider decision) — separate plan.
+
+## Acceptance criteria
+
+AC-1 Imported numbers are normalised to E.164 in the importer's region (national, `00`, `+`, spaces).
+TEST: services/gateway/test/vtid-05057-contacts-phone-matching.test.ts — "phone normalisation" (3 cases)
+
+AC-2 A contact links to a member by number only when the number is verified and the member is discoverable; never a test/service account; never the importer.
+TEST: services/gateway/test/vtid-05057-contacts-phone-matching.test.ts — "links a contact to a verified, discoverable member…", "never matches the importer to themselves"
+
+AC-3 Before the migration is applied the import still succeeds, finds no phone matches and never writes the missing column.
+TEST: services/gateway/test/vtid-05057-contacts-phone-matching.test.ts — "before the migration: …"
+
+AC-4 Device import forwards `method` (picker | vcf | native, anything else → picker) and `region`; `DELETE /android-contacts` removes only the caller's phone contacts and emits `connected_app.contacts_removed`.
+TEST: services/gateway/test/vtid-05057-contacts-phone-matching.test.ts — "hub + route"; services/gateway/test/routes/connected-apps.test.ts
+
+AC-5 The migration adds columns without a rewrite, mirrors verification from auth.users, and both older phone matchers require a verified, discoverable number and skip test/service accounts; re-running it and rolling it back are safe.
+TEST: docs/validation/VTID-05057/migration-test.sql on a throwaway local Postgres 16 (outputs/migration-test.txt); services/gateway/test/vtid-05057-contacts-phone-matching.test.ts — "migration"
+
+AC-6 Existing contacts-import behaviour is unchanged (collisions, Google/Outlook/iCloud, Android import).
+TEST: services/gateway/test/vtid-04439-contacts-import-collisions.test.ts, test/vtid-04402-connected-apps.test.ts, test/vtid-04449-outlook-contacts.test.ts (outputs/jest.txt)
