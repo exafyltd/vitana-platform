@@ -797,13 +797,16 @@ async def share_calendar_entry_to_feed(
 
     Compose a short post in the member's language. Two steps: call without
     `confirmed` first, read the event and the post text back and ask; call
-    again with the same entry and text and confirmed=True only after they say yes.
+    again with the same entry, text and is_public and confirmed=True only after
+    they say yes.
 
     Args:
         entry_id: The calendar entry id, if known.
         title_query: Fuzzy title to find the entry when entry_id is unknown.
         text: The post text in the member's language.
-        is_public: False keeps the post visible to the member only.
+        is_public: False keeps the post visible to the member only, True shows
+            it to the community. Required with confirmed=True — send what the
+            member approved.
         confirmed: True ONLY after the member confirmed.
     """
     body = await _dispatch(context, "share_calendar_entry_to_feed", {
