@@ -488,10 +488,111 @@ export function requireExafyAdmin(
   next();
 }
 
+// ---------------------------------------------------------------------------
+// VTID-05043 (Track S / S3): the tenant in the token must be one the user
+// belongs to. `app_metadata.active_tenant_id` is a claim the user's own
+// session carries; before this check requireTenant/requireAuthWithTenant
+// trusted it as-is and only consulted user_tenants when it was absent.
+//
+// - Checked only when the tenant came from the token (a tenant resolved from
+//   the user's primary user_tenants row is a membership by definition) and
+//   the caller is not exafy_admin.
+// - Positive results are cached 60 s per (user, tenant); negatives are never
+//   cached, so a newly joined member passes on the next request. No gateway
+//   route deletes user_tenants rows today, so a removed member keeps access
+//   for at most the cache window (accepted residual, plan §Round-1 F7).
+// - Lookup error/timeout → 503 TENANT_CHECK_UNAVAILABLE (fail closed, loud).
+// - TENANT_MEMBERSHIP_CHECK_MODE=log does the same lookup, emits the
+//   structured warning and lets the request through. It exists only for the
+//   deploy window and is removed once `enforce` has run clean for 7 days.
+//   Anything else (including unset) means `enforce`.
+// ---------------------------------------------------------------------------
+
+const TENANT_MEMBERSHIP_CACHE_TTL_MS = 60 * 1000;
+const tenantMembershipCache = new Map<string, number>();
+
+type MembershipLookup = 'member' | 'not_member' | 'unavailable';
+
+function tenantMembershipCheckMode(): 'enforce' | 'log' {
+  return process.env.TENANT_MEMBERSHIP_CHECK_MODE === 'log' ? 'log' : 'enforce';
+}
+
+async function lookupTenantMembership(userId: string, tenantId: string): Promise<MembershipLookup> {
+  const key = `${userId}:${tenantId}`;
+  const expiresAt = tenantMembershipCache.get(key);
+  if (expiresAt !== undefined) {
+    if (expiresAt > Date.now()) return 'member';
+    tenantMembershipCache.delete(key);
+  }
+
+  const supabase = getSupabase();
+  if (!supabase) return 'unavailable';
+
+  const timeout = abortAfter(AUTH_LOOKUP_TIMEOUT_MS);
+  try {
+    const { data, error } = await repo.fetchMembershipForUserTenant(supabase, userId, tenantId, timeout.signal);
+    if (error) return 'unavailable';
+    if (!data) return 'not_member';
+    tenantMembershipCache.set(key, Date.now() + TENANT_MEMBERSHIP_CACHE_TTL_MS);
+    return 'member';
+  } catch {
+    return 'unavailable';
+  } finally {
+    timeout.clear();
+  }
+}
+
+/** VTID-05043: drop every cached membership (tests; an admin removing a member). */
+export function clearTenantMembershipCache(): void {
+  tenantMembershipCache.clear();
+}
+
+/**
+ * VTID-05043: answer a request whose token names a tenant the caller is not a
+ * member of. Returns true when the request may continue.
+ */
+function applyTenantMembershipResult(
+  req: AuthenticatedRequest,
+  res: Response,
+  lookup: MembershipLookup
+): boolean {
+  if (lookup === 'member') return true;
+
+  const mode = tenantMembershipCheckMode();
+  const detail = {
+    user_id: req.identity!.user_id,
+    tenant_id: req.identity!.tenant_id,
+    route: `${req.method} ${(req.originalUrl || req.url || '').split('?')[0]}`,
+    mode,
+  };
+
+  if (lookup === 'unavailable') {
+    console.warn(JSON.stringify({ event: 'tenant_membership_check_unavailable', vtid: 'VTID-05043', ...detail }));
+    if (mode === 'log') return true;
+    res.status(503).json({
+      ok: false,
+      error: 'TENANT_CHECK_UNAVAILABLE',
+      message: 'Tenant membership could not be verified. Please retry.',
+    });
+    return false;
+  }
+
+  console.warn(JSON.stringify({ event: 'tenant_membership_mismatch', vtid: 'VTID-05043', ...detail }));
+  if (mode === 'log') return true;
+  res.status(403).json({
+    ok: false,
+    error: 'TENANT_NOT_MEMBER',
+    message: 'You are not a member of the active tenant.',
+  });
+  return false;
+}
+
 /**
  * VTID-01186: Middleware: Require tenant_id in JWT.
  * Must be used AFTER requireAuth middleware.
  * Returns 400 if tenant_id is null/missing in JWT app_metadata.
+ * VTID-05043: a tenant taken from the token must be one the caller belongs to
+ * (403 TENANT_NOT_MEMBER), unless the caller is exafy_admin.
  */
 export async function requireTenant(
   req: AuthenticatedRequest,
@@ -505,6 +606,12 @@ export async function requireTenant(
       message: 'Authentication required',
     });
     return;
+  }
+
+  // VTID-05043: tenant from the token → the caller must be a member of it.
+  if (req.identity.tenant_id && !req.identity.exafy_admin) {
+    const lookup = await lookupTenantMembership(req.identity.user_id, req.identity.tenant_id);
+    if (!applyTenantMembershipResult(req, res, lookup)) return;
   }
 
   // If tenant_id missing from JWT, resolve from user_tenants table
@@ -589,7 +696,13 @@ export async function requireAuthWithTenant(
   // VTID-01967 + VTID-01186, parallelized (VTID-03972): these two lookups are
   // independent (vitana_id from app_users, tenant from user_tenants) and were
   // previously awaited sequentially, stacking their timeouts. Run concurrently.
+  // VTID-05043: a tenant from the token is checked for membership (exafy_admin
+  // exempt), concurrently with the vitana_id lookup — no added serial latency.
   const needsTenantLookup = !req.identity.tenant_id;
+  const membershipLookup: Promise<MembershipLookup> =
+    !needsTenantLookup && !req.identity.exafy_admin
+      ? lookupTenantMembership(req.identity.user_id, req.identity.tenant_id!)
+      : Promise.resolve('member');
   const tenantLookup = needsTenantLookup
     ? (async () => {
         const supabase = getSupabase();
@@ -614,11 +727,14 @@ export async function requireAuthWithTenant(
       })()
     : Promise.resolve();
 
-  const [vitanaId] = await Promise.all([
+  const [vitanaId, , membership] = await Promise.all([
     resolveVitanaId(result.identity.user_id),
     tenantLookup,
+    membershipLookup,
   ]);
   req.identity.vitana_id = vitanaId;
+
+  if (!applyTenantMembershipResult(req, res, membership)) return;
 
   // Still no tenant after DB lookup → reject
   if (!req.identity.tenant_id) {
