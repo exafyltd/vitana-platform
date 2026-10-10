@@ -9,6 +9,9 @@
 
 export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; prod: string | null }> = {
   APP_URL: { staging: "https://preview-aws.vitanaland.com", prod: null },
+  AUDIOBOOK_GOOGLE_DAILY_CHAR_CAP_PER_TASK: { staging: "1040000", prod: null },
+  AUDIOBOOK_GOOGLE_RU_ENABLED: { staging: "true", prod: null },
+  AUDIOBOOK_GOOGLE_SR_ENABLED: { staging: "true", prod: null },
   AURORA_CA_BUNDLE_PATH: { staging: "/app/certs/rds-combined-ca-bundle.pem", prod: null },
   AUTOMATIONS_DELIVERY_MODE: { staging: "shadow", prod: null },
   AUTOPILOT_ACTION_REWARD_ENABLED: { staging: "true", prod: "true" },

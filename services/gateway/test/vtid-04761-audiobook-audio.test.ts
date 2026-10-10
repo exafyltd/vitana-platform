@@ -25,8 +25,8 @@ const content = (script: string) => ({
 }) as any;
 
 function fakeSynth(failOnCall?: number) {
-  const calls: Array<{ text: string; lang: string; format: string }> = [];
-  const fn = jest.fn(async (opts: { text: string; lang: string; format: 'mp3' | 'pcm' }) => {
+  const calls: Array<{ text: string; lang: string; format: string; voiceOverride?: unknown }> = [];
+  const fn = jest.fn(async (opts: { text: string; lang: string; format: 'mp3' | 'pcm'; voiceOverride?: unknown }) => {
     calls.push(opts);
     if (failOnCall !== undefined && calls.length === failOnCall) return null;
     return {
@@ -46,7 +46,17 @@ describe('synthesizeAudiobookTopicMp3', () => {
     const out = await synthesizeAudiobookTopicMp3(content('Hallo und willkommen.'), 'de', { synthesize: fn as any, store: null });
     expect(out?.mp3.toString()).toBe('MP3[1]');
     expect(out?.cached).toBe(false);
-    expect(calls).toEqual([{ text: 'Hallo und willkommen.', lang: 'de', format: 'mp3' }]);
+    // VTID-05026: the Audiobook voice table's entry (Vicki, generative) is
+    // passed explicitly instead of the receptionist voice.
+    expect(calls).toEqual([
+      {
+        text: 'Hallo und willkommen.',
+        lang: 'de',
+        format: 'mp3',
+        voiceOverride: { voiceId: 'Vicki', engine: 'generative', languageCode: 'de-DE' },
+      },
+    ]);
+    expect(out?.provider).toBe('polly');
   });
 
   it('joins a long script chunk by chunk into one file', async () => {
@@ -67,7 +77,7 @@ describe('synthesizeAudiobookTopicMp3', () => {
     expect(put).not.toHaveBeenCalled();
   });
 
-  it('returns null for a language Polly has no voice for (sr)', async () => {
+  it('returns null for sr while its Google switch is off', async () => {
     const { fn } = fakeSynth();
     expect(await synthesizeAudiobookTopicMp3(content('Zdravo.'), 'sr', { synthesize: fn as any, store: null })).toBeNull();
     expect(fn).not.toHaveBeenCalled();

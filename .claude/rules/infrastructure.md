@@ -206,6 +206,12 @@ VERTEX_SERBIAN_BRIDGE_ENABLED=true
 # Off by default; `false` reverts ru to the Transcribe->Bedrock->Polly
 # cascade byte-for-byte, independently of sr.
 VERTEX_RUSSIAN_BRIDGE_ENABLED=true
+# Audiobook narration by Google TTS for ru / sr (VTID-05026, backend.md
+# §2e-audiobook-google). Two separate exact-'true' switches; the cap is
+# characters per task per UTC day (approximate; unset/0 = Google off).
+AUDIOBOOK_GOOGLE_RU_ENABLED=true
+AUDIOBOOK_GOOGLE_SR_ENABLED=true
+AUDIOBOOK_GOOGLE_DAILY_CHAR_CAP_PER_TASK=1040000
 GOOGLE_CLOUD_PROJECT=<new-project-id>
 VERTEX_AI_LOCATION=us-central1
 GCP_SERVICE_ACCOUNT_JSON=xxx

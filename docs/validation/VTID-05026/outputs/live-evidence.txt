@@ -1,0 +1,37 @@
+VTID-05026 live evidence, 2026-10-10, Claude Code session (read-only unless noted)
+
+1. Staging /vitana/gateway, fresh tasks 08:45, 08:56, 09:10 UTC:
+   "[VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily): Permission
+    'iam.serviceAccounts.getAccessToken' denied on resource (or it may not exist)."
+   0 x "access token prewarmed" in the last 2.5 days.
+
+2. Google IAM policy of vitanaland@project-da3eb05a-c86e-47cb-85f (read):
+   roles/iam.workloadIdentityUser members before:
+     principal://…/vitana-aws-pool/subject/arn:aws:iam::472838866351:user/claude-code-aws-agent
+   WRITE (owner-delegated, etag-guarded, other bindings unchanged), added:
+     principalSet://iam.googleapis.com/projects/20926255361/locations/global/workloadIdentityPools/vitana-aws-pool/attribute.aws_role/arn:aws:sts::472838866351:assumed-role/vitana-ecs-task-role
+   setIamPolicy 200; read back: 4 roles, other 3 unchanged.
+
+3. Google voices.list (female), through lib/google-access-token:
+   ru-RU 200: ru-RU-Chirp3-HD-Aoede Kore Leda Zephyr, Standard-A C E, Wavenet-A C E
+   sr-RS 200: sr-RS-Chirp3-HD-Achernar Aoede Autonoe Callirrhoe Despina Erinome Gacrux Kore
+              Laomedeia Leda Pulcherrima Sulafat Vindemiatrix Zephyr, Standard-B
+
+4. Cold render through synthesizeGoogleNarrationMp3 (same client the gateway uses):
+   ru chars 2001 bytes 3651 ms 26502 chunks 1 mp3 572736
+   sr chars 1539 bytes 2749 ms 10797 chunks 1 mp3 435456
+
+5. Polly DescribeVoices, eu-central-1:
+   Tiffany en-US Female [generative]       Ambre fr-FR Female [generative]
+   Vicki de-DE Female [generative, neural, standard]
+   Lucia es-ES Female [generative, neural, standard]
+   Camila pt-BR Female [generative, neural, standard]
+   Ola pl-PL Female [generative, neural]
+   Hala ar-AE Female [neural]  Zhiyu cmn-CN Female [neural, standard]  Burcu tr-TR Female [neural]
+   Tatyana ru-RU Female [standard]
+
+6. CloudWatch (WRITE): alarm vitana-audiobook-google-tts-chars-daily-high created.
+   put-metric-filter on /vitana/gateway and /vitana/gateway-awsdr: AccessDenied for
+   claude-code-aws-agent (no logs:PutMetricFilter) — owner runs the script with --apply.
+
+7. Impact scan, local (IMPACT_SCAN_BASE=origin/main): blocker=0 warning=0 info=0.

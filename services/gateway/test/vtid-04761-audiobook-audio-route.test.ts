@@ -82,16 +82,26 @@ describe('GET /api/v1/journey/audiobook/topics/:topicId/audio', () => {
 
   it('200 audio/mpeg, private cache, in the requested language', async () => {
     mockSeed.mockImplementation(translatedSeed);
-    mockSynth.mockResolvedValue({ mp3: Buffer.from('ID3fake'), cached: true });
+    mockSynth.mockResolvedValue({ mp3: Buffer.from('ID3fake'), cached: true, provider: 'polly' });
     const res = await request(app()).get(`${AUDIO}?lang=en`).set('Authorization', 'Bearer valid-user');
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toBe('audio/mpeg');
     expect(res.headers['cache-control']).toBe('private, max-age=86400');
     expect(res.headers['x-audiobook-cache']).toBe('hit');
     expect(res.headers['x-audiobook-narration-locale']).toBe('en');
+    expect(res.headers['x-audiobook-voice-provider']).toBe('polly');
     expect(mockSeed.mock.calls[0][1]).toBe('T001');
     expect(mockSeed.mock.calls[0][3]).toBe('en');
     expect(mockSynth.mock.calls[0][1]).toBe('en');
+  });
+
+  it('VTID-05026: X-Audiobook-Voice-Provider names who read the episode (google for sr)', async () => {
+    mockSeed.mockImplementation(translatedSeed);
+    mockSynth.mockResolvedValue({ mp3: Buffer.from('ID3sr'), cached: false, provider: 'google' });
+    const res = await request(app()).get(`${AUDIO}?lang=sr`).set('Authorization', 'Bearer valid-user');
+    expect(res.status).toBe(200);
+    expect(res.headers['x-audiobook-voice-provider']).toBe('google');
+    expect(res.headers['x-audiobook-narration-locale']).toBe('sr');
   });
 
   it('VTID-04873: 422 narration_not_translated — German text is never read in another language\'s voice', async () => {
@@ -104,7 +114,7 @@ describe('GET /api/v1/journey/audiobook/topics/:topicId/audio', () => {
 
   it('an unknown language falls back to German', async () => {
     mockSeed.mockResolvedValue(seed);
-    mockSynth.mockResolvedValue({ mp3: Buffer.from('x'), cached: false });
+    mockSynth.mockResolvedValue({ mp3: Buffer.from('x'), cached: false, provider: 'polly' });
     await request(app()).get(`${AUDIO}?lang=xx`).set('Authorization', 'Bearer valid-user');
     expect(mockSeed.mock.calls[0][3]).toBe('de');
   });
