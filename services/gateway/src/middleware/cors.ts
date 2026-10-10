@@ -96,6 +96,8 @@ export function sseHeaders(req: Request, res: Response, next: NextFunction) {
   // SSE headers after requireAdminAuth; labelling its 401/403/404 JSON replies text/event-stream
   // failed STAGING-VERIFY ("expected application/json").
   if (req.path.startsWith('/api/v1/operator/kiro/runs/')) return next();
+  // VTID-05069: the same for the pipeline-tree stream (GET /api/v1/operator/runs/:vtid/stream).
+  if (req.path.startsWith('/api/v1/operator/runs/')) return next();
   // VTID-04695: "/events" alone is not a stream. Every GET under /events is
   // a JSON route (OASIS events, universal-cart, product analytics,
   // voice-lab debug; calendar is exempted above) and res.json() keeps a Content-Type already
