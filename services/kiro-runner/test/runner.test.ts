@@ -12,6 +12,8 @@ import WebSocket from 'ws';
 import { KeyStore, isPlausibleKey, onlyRunnerReadsPolicy, type SecretsClient } from '../src/key-store';
 import { createRunnerServer, tokenMatches } from '../src/server';
 import { childEnv, mcpServersFor, MCP_PROXY_PATH, rewriteCwd, sessionCount, stopAllSessions, READY_FRAME } from '../src/relay';
+import { PARK_MARKER, park, parkedCount, rescanParked, resetParked, sweepParked, takeParked } from '../src/workspace-park';
+import { promptRequestId, responseId } from '../src/relay';
 
 const FAKE = path.join(__dirname, 'fixtures/fake-kiro-cli.js');
 const TOKEN = 'runner-token-abc';
@@ -57,13 +59,15 @@ const auth = { Authorization: `Bearer ${TOKEN}` };
 const http = (method: string, p: string, body?: unknown, headers: Record<string, string> = auth) =>
   fetch(`http://${base}${p}`, { method, headers: { 'Content-Type': 'application/json', ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
 
-function open(userId = U1, thread = 't1', extra: Record<string, string> = {}): Promise<{ ws: WebSocket; frames: any[]; closed: Promise<{ code: number; reason: string }>; ready: Promise<void> }> {
+function open(userId = U1, thread = 't1', extra: Record<string, string> = {}): Promise<{ ws: WebSocket; frames: any[]; runner: any[]; closed: Promise<{ code: number; reason: string }>; ready: Promise<void> }> {
   const ws = new WebSocket(`ws://${base}/sessions?user_id=${userId}&thread_id=${thread}`, { headers: { ...auth, ...extra } });
   const frames: any[] = [];
   let onReady: () => void; const ready = new Promise<void>((r) => { onReady = r; });
   const closed = new Promise<{ code: number; reason: string }>((r) => ws.on('close', (code, reason) => r({ code, reason: String(reason) })));
-  ws.on('message', (d) => { const s = String(d); if (s === READY_FRAME) onReady(); else frames.push(JSON.parse(s)); });
-  return Promise.resolve({ ws, frames, closed, ready });
+  // VTID-05064: runner status frames ({kiro_runner: ...}) are kept apart from the relayed JSON-RPC frames.
+  const runner: any[] = [];
+  ws.on('message', (d) => { const s = String(d); if (s === READY_FRAME) onReady(); else { const m = JSON.parse(s); (m && m.kiro_runner ? runner : frames).push(m); } });
+  return Promise.resolve({ ws, frames, runner, closed, ready });
 }
 const waitFor = async (fn: () => boolean, ms = 3000) => { const t = Date.now(); while (!fn()) { if (Date.now() - t > ms) throw new Error('timeout'); await new Promise((r) => setTimeout(r, 10)); } };
 
@@ -405,5 +409,107 @@ describe('mcp-proxy cancellation (VTID-05006)', () => {
     expect(aborted).toBe(true);
     expect(inFlight.has('42')).toBe(false);
     expect(outs[0]).toMatchObject({ id: 42, error: { message: expect.stringContaining('unreachable') } });
+  });
+});
+
+describe('parked workspaces (VTID-05064)', () => {
+  const parkLimits = { ttlMs: 60_000, maxParked: 20 };
+  const git = (cwd: string, ...a: string[]) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { cwd });
+  beforeEach(async () => { resetParked(); await start({ park: parkLimits }); await http('PUT', `/keys/${U1}`, { key: 'k' }); });
+  afterEach(() => resetParked());
+
+  async function sessionDir(s: Awaited<ReturnType<typeof open>>): Promise<string> {
+    await s.ready;
+    s.ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'session/new', params: { cwd: '/x', mcpServers: [] } }));
+    await waitFor(() => s.frames.length >= 1);
+    return s.frames[0].result.echo_cwd;
+  }
+  function repoIn(dir: string, dirty: boolean): void {
+    const r = path.join(dir, 'repo-a');
+    fs.mkdirSync(r);
+    execFileSync('git', ['init', '-q', '-b', 'main', r]);
+    fs.writeFileSync(path.join(r, 'a.txt'), 'one\n');
+    git(r, 'add', '.'); git(r, 'commit', '-qm', 'init');
+    if (dirty) fs.writeFileSync(path.join(r, 'a.txt'), 'edited\n');
+  }
+
+  it('a dirty workspace survives the session and the same thread gets it back; another thread starts fresh', async () => {
+    const s1 = await open(U1, 'thread-a');
+    const dir = await sessionDir(s1);
+    expect(s1.runner).toEqual([{ kiro_runner: 'workspace', state: 'fresh' }]);
+    repoIn(dir, true);
+    s1.ws.close();
+    await waitFor(() => fs.existsSync(path.join(dir, PARK_MARKER)));
+    expect(parkedCount()).toBe(1);
+
+    const other = await open(U1, 'thread-b');
+    expect(await sessionDir(other)).not.toBe(dir);
+    expect(other.runner[0]).toEqual({ kiro_runner: 'workspace', state: 'fresh' });
+
+    const s2 = await open(U1, 'thread-a');
+    expect(await sessionDir(s2)).toBe(dir);
+    expect(s2.runner[0]).toEqual({ kiro_runner: 'workspace', state: 'restored' });
+    expect(fs.readFileSync(path.join(dir, 'repo-a', 'a.txt'), 'utf8')).toBe('edited\n');
+    expect(fs.existsSync(path.join(dir, PARK_MARKER))).toBe(false);
+    expect(parkedCount()).toBe(0);
+    // Nothing leaks into the next test: close and wait for the re-park.
+    s2.ws.close(); other.ws.close();
+    await waitFor(() => fs.existsSync(path.join(dir, PARK_MARKER)));
+  });
+
+  it('a clean workspace is removed as before', async () => {
+    const s = await open(U1, 'thread-c');
+    const dir = await sessionDir(s);
+    repoIn(dir, false);
+    s.ws.close();
+    await waitFor(() => !fs.existsSync(dir));
+    expect(takeParked(U1, 'thread-c')).toBeNull();
+  });
+
+  it('each prompt response is preceded by the workspace state', async () => {
+    const s = await open(U1, 'thread-d');
+    const dir = await sessionDir(s);
+    repoIn(dir, true);
+    s.ws.send(JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'session/prompt', params: { sessionId: 'S1', prompt: [{ type: 'text', text: 'hello' }] } }));
+    await waitFor(() => s.frames.some((f) => f.id === 7));
+    expect(s.runner).toContainEqual({ kiro_runner: 'workspace_state', dirty: ['repo-a'] });
+    s.ws.close();
+    await waitFor(() => fs.existsSync(path.join(dir, PARK_MARKER)));
+  });
+
+  it('a revoked key removes that user’s parked workspace', async () => {
+    const s = await open(U1, 'thread-e');
+    const dir = await sessionDir(s);
+    repoIn(dir, true);
+    s.ws.close();
+    await waitFor(() => fs.existsSync(path.join(dir, PARK_MARKER)));
+    await http('DELETE', `/keys/${U1}`);
+    await waitFor(() => !fs.existsSync(dir));
+    expect(takeParked(U1, 'thread-e')).toBeNull();
+  });
+
+  it('retention TTL and the parked cap remove the oldest; a restart rescans the markers', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kiro-park-'));
+    const mk = (n: string) => { const d = path.join(root, n); fs.mkdirSync(d); return d; };
+    const log: string[] = [];
+    park(mk('a'), U1, 't-a', { ttlMs: 1000, maxParked: 2 }, (m) => log.push(m), 1_000);
+    park(mk('b'), U1, 't-b', { ttlMs: 1000, maxParked: 2 }, (m) => log.push(m), 2_000);
+    park(mk('c'), U1, 't-c', { ttlMs: 1000, maxParked: 2 }, (m) => log.push(m), 3_000);
+    expect(parkedCount()).toBe(2);
+    expect(log.some((l) => l.includes('over the parked cap'))).toBe(true);
+    await waitFor(() => !fs.existsSync(path.join(root, 'a')));
+    resetParked();
+    expect(rescanParked(root, { ttlMs: 10_000_000_000_000, maxParked: 20 }, () => {})).toBe(2);
+    expect(sweepParked({ ttlMs: 1000, maxParked: 20 }, () => {}, 3_500)).toBe(1);
+    expect(parkedCount()).toBe(1);
+    expect(takeParked(U1, 't-c')).toBe(path.join(root, 'c'));
+    expect(takeParked(U1, 't-c')).toBeNull();
+  });
+
+  it('helpers recognise prompt requests and responses only', () => {
+    expect(promptRequestId(JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: {} }))).toBe('3');
+    expect(promptRequestId(JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'session/new', params: {} }))).toBeNull();
+    expect(responseId(JSON.stringify({ jsonrpc: '2.0', id: 3, result: {} }))).toBe('3');
+    expect(responseId(JSON.stringify({ jsonrpc: '2.0', method: 'session/update', params: {} }))).toBeNull();
   });
 });

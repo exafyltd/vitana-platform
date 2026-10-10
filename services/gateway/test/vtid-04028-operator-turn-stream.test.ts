@@ -306,7 +306,8 @@ describe('VTID-04028 Command Hub client', () => {
     expect(apply).toContain("frame.event === 'tool.result'");
     expect(apply).toContain('state.chatLiveTranscript[d.index]');
     expect(APP_JS).toContain('chatLiveTranscript: [],');
-    expect(APP_JS).toContain('if (state.chatSending) {\n        messages.appendChild(renderOperatorLiveTranscript());');
+    // VTID-05064: only in the thread the running turn belongs to.
+    expect(APP_JS).toContain('if (state.chatSending && state.operatorActiveThreadId === state.chatTurnThreadId) {\n        messages.appendChild(renderOperatorLiveTranscript());');
     expect(fnBody('renderOperatorLiveTranscript')).toContain("chat-tool-activity-line--' + (entry.status || 'running')");
   });
 

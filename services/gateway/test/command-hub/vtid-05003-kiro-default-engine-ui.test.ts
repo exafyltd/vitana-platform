@@ -106,7 +106,8 @@ describe('VTID-05003 fallback survives reloads', () => {
   it('history entries carry it and both restore paths put it back on the message', () => {
     expect(APP_JS).toContain('kiroMeta: kiroReplyMeta(result.meta)');
     expect(APP_JS).toContain('kiroMeta: kiroReplyMeta(m.meta)');
-    expect(APP_JS.match(/meta: msg\.kiroMeta/g)).toHaveLength(2);
+    // VTID-05064: the page-load restore (initOperatorChatSession) puts it back too — three restore paths.
+    expect(APP_JS.match(/meta: msg\.kiroMeta/g)).toHaveLength(3);
     expect(APP_JS).toContain('if (!(await waitForKiroDefault())) return;');
   });
 });

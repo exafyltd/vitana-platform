@@ -233,6 +233,41 @@ export async function recordOperatorTurn(input: RecordTurnInput, env: NodeJS.Pro
   }
 }
 
+/**
+ * VTID-05064: create the thread row when the message is SENT (turns 0, no messages), so a
+ * reload while the first turn still runs keeps the thread in the server list. An existing row
+ * is left untouched (ignore-duplicates). recordOperatorTurn stays the only writer of messages
+ * and of the turn count. Never throws.
+ */
+export async function ensureOperatorThread(input: Pick<RecordTurnInput, 'threadId' | 'identity' | 'userText' | 'engine'>, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
+  if (!isOperatorThreadsEnabled(env)) return false;
+  const s = getSupa();
+  if (!s) return false;
+  try {
+    const now = new Date().toISOString();
+    const r = await rest(s, 'operator_threads?on_conflict=id', {
+      method: 'POST',
+      prefer: 'resolution=ignore-duplicates,return=minimal',
+      body: {
+        id: input.threadId,
+        user_id: normalizeUserId(input.identity?.user_id),
+        tenant_id: input.identity?.tenant_id || null,
+        role: input.identity?.role || null,
+        title: deriveThreadTitle(input.userText),
+        ...(input.engine === 'kiro' ? { engine: 'kiro' } : {}),
+        turns: 0,
+        created_at: now,
+        updated_at: now,
+        last_message_at: now,
+      },
+    });
+    return r.ok;
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} ensureOperatorThread error:`, err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
 export interface StoredThreadMessage {
   id: string;
   role: 'user' | 'assistant' | 'tool';

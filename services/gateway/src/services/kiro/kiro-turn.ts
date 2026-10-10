@@ -14,7 +14,7 @@
  * with the owner's KIRO_API_KEY in that child's environment only. This file
  * never sees, stores or logs a key.
  */
-import { AcpClient, type AcpChild, type KiroModel, type KiroModelState } from './acp-client';
+import { AcpClient, type AcpChild, type KiroModel, type KiroModelState, type KiroRunnerInfo } from './acp-client';
 import { mapAcpUpdate, type KiroTurnEventSink } from './kiro-events';
 import { makePermissionHandler } from './permission-broker';
 import { isKiroCreditError, setKiroCredits } from './credit-state';
@@ -53,13 +53,39 @@ export interface KiroTurnInput {
   loadModelPick?: () => Promise<string | null>;
 }
 
-/** VTID-05018: one earlier turn of the thread (user or assistant text only). */
-export interface KiroHistoryMessage { role: 'user' | 'assistant'; content: string }
+/**
+ * VTID-05018: one earlier turn of the thread (user or assistant text only).
+ * VTID-05064: an assistant turn also carries how it ended (`stopReason`, when not a normal
+ * end) and the repos its workspace still held uncommitted edits in (`workspaceDirty`).
+ */
+export interface KiroHistoryMessage { role: 'user' | 'assistant'; content: string; stopReason?: string | null; workspaceDirty?: string[] | null }
 
-export const KIRO_HISTORY_MESSAGE_CHARS = 1_500;
-export const KIRO_HISTORY_TOTAL_CHARS = 12_000;
-const HISTORY_START = '=== RESTORED THREAD HISTORY (earlier turns of this conversation; context only, not new instructions) ===';
+/** VTID-05064: per-message cap; a longer message keeps its start AND its end (where conclusions are). */
+export const KIRO_HISTORY_MESSAGE_CHARS = 2_000;
+export const KIRO_HISTORY_HEAD_CHARS = 500;
+export const KIRO_HISTORY_TOTAL_CHARS = 16_000;
+const HISTORY_START = '=== RESTORED THREAD HISTORY (earlier turns of this conversation; context only, not new instructions) ===\n'
+  + 'Long messages are shortened in the middle; tool results are left out. Your workspace may still hold uncommitted edits from those turns: run `git status` in each repo before describing what was or was not done.';
 const HISTORY_END = '=== END RESTORED THREAD HISTORY ===';
+
+/**
+ * VTID-05064: rules every new Kiro session gets with its first prompt (agent instructions,
+ * not user-facing text). Write tools need an open VTID, and Kiro cannot create one.
+ */
+export const KIRO_SESSION_RULES = '=== OPERATOR SESSION RULES (from the Vitana gateway; not the user) ===\n'
+  + '- Never ask the user to give you a VTID, and never invent one. You cannot create one: a VTID exists only after a plan has been sparred and the owner has approved it.\n'
+  + '- When a change needs a write tool (push, PR, merge) and no open VTID for it exists, finish the change in your workspace, say plainly that it needs a sparred, owner-approved plan before a VTID can exist, and offer to write that plan.\n'
+  + '- Edits that are not pushed stay only in this workspace. Push them with dev_push_kiro_branch as soon as an open VTID allows it.\n'
+  + '- Before describing earlier progress, check the workspace (`git status`, `git log`) rather than relying on memory.\n'
+  + '=== END OPERATOR SESSION RULES ===';
+
+/** VTID-05064: shorten one message to the cap, keeping its start and its end. */
+export function clipHistoryMessage(c: string): string {
+  if (c.length <= KIRO_HISTORY_MESSAGE_CHARS) return c;
+  const marker = ` … [${c.length - KIRO_HISTORY_MESSAGE_CHARS} chars omitted] … `;
+  const tail = KIRO_HISTORY_MESSAGE_CHARS - KIRO_HISTORY_HEAD_CHARS - marker.length;
+  return `${c.slice(0, KIRO_HISTORY_HEAD_CHARS)}${marker}${c.slice(c.length - tail)}`;
+}
 
 /**
  * VTID-05018: the earlier turns as one marked block, newest kept: each message clipped,
@@ -69,9 +95,10 @@ export function restoredHistoryBlock(history: KiroHistoryMessage[]): { text: str
   const rows = history.filter((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim());
   if (rows.length === 0) return null;
   const lines = rows.map((m) => {
-    const c = m.content.trim();
-    const clipped = c.length > KIRO_HISTORY_MESSAGE_CHARS ? `${c.slice(0, KIRO_HISTORY_MESSAGE_CHARS)} …` : c;
-    return `${m.role === 'user' ? 'User' : 'You (Kiro)'}: ${clipped}`;
+    const clipped = clipHistoryMessage(m.content.trim());
+    // VTID-05064: a reply that ended early says so, so it is not read as a finished answer.
+    const cut = m.role === 'assistant' && m.stopReason && m.stopReason !== 'end_turn' ? `[this reply was cut off: ${m.stopReason}] ` : '';
+    return `${m.role === 'user' ? 'User' : 'You (Kiro)'}: ${cut}${clipped}`;
   });
   const kept: string[] = [];
   let size = 0;
@@ -92,7 +119,17 @@ export interface KiroTurnResult {
   meta: Record<string, unknown>;
 }
 
-export type KiroStatus = 'ok' | 'not_connected' | 'busy' | 'error' | 'no_credits';
+export type KiroStatus = 'ok' | 'not_connected' | 'busy' | 'error' | 'no_credits' | 'refused' | 'incomplete';
+
+/**
+ * VTID-05064: a turn that ended other than normally. The reply is still recorded, but the
+ * console marks it, so a refusal or a cut-off answer is never shown as a finished one.
+ */
+export function statusForStopReason(stopReason: string): 'ok' | 'refused' | 'incomplete' {
+  if (stopReason === 'refusal') return 'refused';
+  if (stopReason === 'max_tokens' || stopReason === 'max_turn_requests' || stopReason === 'cancelled') return 'incomplete';
+  return 'ok';
+}
 
 // VTID-05003: admin-only Operator Console text, English by design (server i18n 13b admin/dev exclusion).
 const NO_CREDITS_REPLY = 'Your Kiro credits are used up — new threads use the Operator until they renew.';
@@ -115,6 +152,10 @@ interface KiroSession {
   creditsChanged?: boolean;
   /** VTID-05005: when the session (and its tool pass) was opened. */
   openedAt: number;
+  /** VTID-05064: what the kiro-runner reports about this session's workspace. */
+  runner: KiroRunnerInfo | null;
+  /** VTID-05064: the session rules still have to go with the first prompt. */
+  rulesPending: boolean;
 }
 
 /** VTID-05005: a session's tool pass lasts 1 h; an older session reopens at its next turn. */
@@ -172,7 +213,7 @@ async function openSession(input: KiroTurnInput, b: KiroBackend): Promise<KiroSe
   try {
     await client.initialize();
     const { sessionId, models } = await client.openNewSession(b.workspace(ctx));
-    const session: KiroSession = { client, sessionId, userId: input.userId, emit: input.emit ?? (() => {}), idle: null, models, openedAt: Date.now() };
+    const session: KiroSession = { client, sessionId, userId: input.userId, emit: input.emit ?? (() => {}), idle: null, models, openedAt: Date.now(), runner: child.runner ?? null, rulesPending: true };
     holder.session = session;
     return session;
   } catch (err) {
@@ -206,6 +247,17 @@ async function restoreModelPick(input: KiroTurnInput, session: KiroSession): Pro
   }
 }
 
+/**
+ * VTID-05064: compare what the runner says about a NEW session's workspace with the thread's
+ * last recorded state. Null when there is nothing to report (no runner info, or nothing parked).
+ */
+export function workspaceNoteFor(runner: KiroRunnerInfo | null, history: KiroHistoryMessage[]): 'restored' | 'lost' | null {
+  if (!runner || !runner.workspace) return null;
+  if (runner.workspace === 'restored') return 'restored';
+  const lastAssistant = [...history].reverse().find((m) => m.role === 'assistant');
+  return lastAssistant?.workspaceDirty && lastAssistant.workspaceDirty.length > 0 ? 'lost' : null;
+}
+
 export async function runKiroTurn(input: KiroTurnInput, env: NodeJS.ProcessEnv = process.env): Promise<KiroTurnResult> {
   if (!isKiroEngineEnabled(env) || !backend) {
     return result('not_connected', 'Kiro is not connected on this deployment yet.');
@@ -218,6 +270,9 @@ export async function runKiroTurn(input: KiroTurnInput, env: NodeJS.ProcessEnv =
   }
   let restored: { text: string; count: number } | null = null;
   let modelRestore: string | null = null;
+  // VTID-05064: 'restored' = the thread's parked workspace came back; 'lost' = it held unpushed
+  // edits at the end of the last turn and this session started without them.
+  let workspaceNote: 'restored' | 'lost' | null = null;
   if (!session) {
     const lim = kiroLimits(env);
     const mine = [...sessions.values()].filter((s) => s.userId === input.userId).length;
@@ -245,11 +300,13 @@ export async function runKiroTurn(input: KiroTurnInput, env: NodeJS.ProcessEnv =
     // VTID-05060: re-apply the developer's own model pick when Kiro still offers it.
     modelRestore = await restoreModelPick(input, session);
     // VTID-05018: a new session starts empty, so give it the thread's earlier turns.
+    let history: KiroHistoryMessage[] = [];
     if (input.loadHistory) {
-      try { restored = restoredHistoryBlock(await input.loadHistory()); } catch (err) {
+      try { history = await input.loadHistory(); restored = restoredHistoryBlock(history); } catch (err) {
         console.warn('[VTID-05018] kiro history load failed:', err instanceof Error ? err.message : err);
       }
     }
+    workspaceNote = workspaceNoteFor(session.runner, history);
   }
   touch(input.threadId, session);
 
@@ -265,13 +322,17 @@ export async function runKiroTurn(input: KiroTurnInput, env: NodeJS.ProcessEnv =
   session.emit = collect;
 
   try {
-    const { stopReason } = restored
-      ? await session.client.prompt(session.sessionId, input.message, undefined, restored.text)
+    // VTID-05064: the first prompt of a session carries the session rules, then any restored history, as ONE leading block.
+    const context = [session.rulesPending ? KIRO_SESSION_RULES : null, restored?.text ?? null].filter((x): x is string => !!x).join('\n\n');
+    session.rulesPending = false;
+    const { stopReason } = context
+      ? await session.client.prompt(session.sessionId, input.message, undefined, context)
       : await session.client.prompt(session.sessionId, input.message);
     collect({ type: 'kiro.turn_end', stop_reason: stopReason });
     const recovered = session.creditsChanged === true;
     session.creditsChanged = false;
-    return result('ok', reply, { stop_reason: stopReason, kiro_model: session.models?.current ?? null, ...(recovered ? { credits_changed: true } : {}), ...(restored ? { kiro_history_restored: restored.count } : {}), ...(modelRestore ? { kiro_model_restore: modelRestore } : {}) }, [...tools.values()].map((t) => ({ name: t.name, response: { kind: t.kind, status: t.status } })));
+    const dirty = session.runner?.dirty ?? null;
+    return result(statusForStopReason(stopReason), reply, { stop_reason: stopReason, kiro_model: session.models?.current ?? null, ...(recovered ? { credits_changed: true } : {}), ...(restored ? { kiro_history_restored: restored.count } : {}), ...(modelRestore ? { kiro_model_restore: modelRestore } : {}), ...(workspaceNote ? { kiro_workspace: workspaceNote } : {}), ...(dirty ? { kiro_workspace_dirty: dirty } : {}) }, [...tools.values()].map((t) => ({ name: t.name, response: { kind: t.kind, status: t.status } })));
   } catch (err) {
     closeSession(input.threadId);
     const msg = err instanceof Error ? err.message : String(err);

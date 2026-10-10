@@ -17,7 +17,16 @@ export interface AcpChild {
   stdout: Pick<Readable, 'on'>;
   kill(): void;
   on(event: 'exit' | 'error', cb: (...args: any[]) => void): unknown;
+  /** VTID-05064: what the kiro-runner reported about this session's workspace (remote backend only). */
+  runner?: KiroRunnerInfo;
 }
+
+/**
+ * VTID-05064: the runner's status frames. `workspace`: the session reopened the thread's
+ * parked workspace ('restored') or started empty ('fresh'). `dirty`: repos with uncommitted
+ * edits, as of the latest finished prompt (null until the first one).
+ */
+export interface KiroRunnerInfo { workspace: 'restored' | 'fresh' | null; dirty: string[] | null }
 
 export interface AcpPermissionOption { optionId: string; name?: string; kind?: string }
 export interface AcpPermissionRequest {
