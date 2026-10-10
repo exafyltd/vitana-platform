@@ -1,0 +1,97 @@
+{
+  "containerDefinitions": [
+    {
+      "name": "orb-agent",
+      "image": "472838866351.dkr.ecr.eu-central-1.amazonaws.com/vitana/orb-agent:0d55b18047bf",
+      "cpu": 0,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "hostPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "GATEWAY_URL",
+          "value": "<redacted>"
+        },
+        {
+          "name": "DB_READER_HOST",
+          "value": "<redacted>"
+        },
+        {
+          "name": "REDIS_HOST",
+          "value": "<redacted>"
+        },
+        {
+          "name": "AWS_REGION",
+          "value": "eu-central-1"
+        },
+        {
+          "name": "ENV",
+          "value": "<redacted>"
+        },
+        {
+          "name": "DB_HOST",
+          "value": "<redacted>"
+        }
+      ],
+      "mountPoints": [],
+      "volumesFrom": [],
+      "secrets": [
+        {
+          "name": "SUPABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/prod/url"
+        },
+        {
+          "name": "SUPABASE_SERVICE_ROLE",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/prod/service-role-key"
+        },
+        {
+          "name": "LIVEKIT_URL",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/api-key/livekit-cloud-url-aAIoG0"
+        },
+        {
+          "name": "LIVEKIT_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/api-key/livekit-cloud-key-nWw6H5"
+        },
+        {
+          "name": "LIVEKIT_API_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/api-key/livekit-cloud-secret-rMt0rz"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/vitana/orb-agent",
+          "awslogs-region": "eu-central-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "python3 -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/alive', timeout=3).status==200 else 1)\""
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 20
+      },
+      "systemControls": []
+    }
+  ],
+  "family": "vitana-orb-agent",
+  "taskRoleArn": "arn:aws:iam::472838866351:role/vitana-ecs-task-role",
+  "executionRoleArn": "arn:aws:iam::472838866351:role/vitana-ecs-task-execution-role",
+  "networkMode": "awsvpc",
+  "volumes": [],
+  "placementConstraints": [],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "512",
+  "memory": "1024"
+}

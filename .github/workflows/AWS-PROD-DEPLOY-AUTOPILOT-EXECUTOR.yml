@@ -57,6 +57,16 @@ on:
       reason:
         description: 'Reason for this AWS autopilot-executor deploy — required'
         required: true
+      # VTID-05023 part 9: Supabase -> Aurora data backend switch (scripts/aws/taskdef-data-backend.py).
+      data_backend:
+        description: 'keep (default) = leave the live task def as it is; aurora = SUPABASE_URL -> vitana/supabase/prod/url-aurora-proxy; supabase = original refs (rollback)'
+        required: false
+        type: choice
+        options:
+          - keep
+          - supabase
+          - aurora
+        default: 'keep'
       aws_region:
         description: 'AWS region'
         required: false
@@ -164,6 +174,8 @@ jobs:
           # needs a one-time manual update; nothing else in this workflow
           # depends on resolving it dynamically.
           DEEPSEEK_SECRET_ARN: arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/deepseek-api-key-iErwBo
+          DATA_BACKEND: ${{ inputs.data_backend || 'keep' }}
+          DATA_BACKEND_AURORA_URL_SECRET_ARN: ${{ vars.SUPABASE_URL_AURORA_PROXY_PROD_ARN }}
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
@@ -228,6 +240,13 @@ jobs:
                 | .containerDefinitions[0].secrets |= [ (. // [])[] | select(.name != "DB_PASSWORD") ]
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          # VTID-05023 part 9: data_backend (keep = byte-for-byte passthrough).
+          DB_SCRIPT=scripts/aws/taskdef-data-backend.py
+          if [ -f "$DB_SCRIPT" ]; then
+            NEW_DEF=$(printf '%s' "$NEW_DEF" | python3 "$DB_SCRIPT" --backend "$DATA_BACKEND" --service autopilot-executor --resolve --summary "$GITHUB_STEP_SUMMARY")
+          elif [ "$DATA_BACKEND" != keep ]; then
+            echo "::error::data_backend=$DATA_BACKEND needs $DB_SCRIPT, which this commit predates"; exit 1
+          fi
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered $NEW_ARN — the next RunTask dispatch (dispatchExecutorJobAws) picks this up automatically."
 
@@ -238,6 +257,7 @@ jobs:
             echo "## autopilot-executor (AWS) deploy"
             echo "- Image: \`${{ steps.build.outputs.image }}\`"
             echo "- Reason: ${{ env.DEPLOY_REASON }}"
+            echo "- Data backend input: ${{ inputs.data_backend || 'keep' }}"
             echo "- VTID: VTID-03415"
             echo "- No ECS service to roll — next RunTask dispatch picks up the new revision."
           } >> "$GITHUB_STEP_SUMMARY"

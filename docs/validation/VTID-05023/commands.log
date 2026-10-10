@@ -14,3 +14,11 @@ npm run test:reverse-cdc               # PASS
 npm run test:realtime-local            # see outputs/realtime-local.txt
 npm run test:aurora-migrations                                  # part 8: 13 checks + 18 splitter tests PASS (local initdb, fake aws) — outputs/aurora-migrations.txt
 shellcheck -S warning scripts/aws/aurora-apply-migration.sh scripts/aws/test/aurora-apply-migration.sh  # clean
+# part 9 (data_backend switch + CI REST base), 2026-10-10
+aws ecs describe-services / describe-task-definition (read-only)   # 7 live task defs -> sanitized fixtures scripts/aws/test/fixtures/taskdefs/
+aws secretsmanager describe-secret (ARN only)                      # url-aurora-proxy prod+staging: ResourceNotFound (created in the window); aurora/prod/database-url, supabase/prod/url exist
+python3 -m unittest discover -s scripts/aws/test -p 'test_*.py'    # Ran 59 tests, OK (31 new in test_taskdef_data_backend.py)
+bash dryrun.sh (workflow NEW_DEF plumbing, every fixture)          # keep identical, round trip exact x7 — outputs/data-backend.txt
+actionlint 1.7.7 on the 20 changed workflows vs their base         # no new findings (only the tool's outdated 10-input message text and pre-existing narration_* inputs differ)
+cd services/gateway && npx jest <149 suites reading workflow files> # 149 suites, 1976 tests passed (vtid-03958/03961 input count 24 -> 25 on purpose)
+grep -c 'vars.DATA_REST_URL || secrets.SUPABASE_URL' .github/workflows/*.yml  # 21 references; secrets.SUPABASE_URL total 29 (unchanged)

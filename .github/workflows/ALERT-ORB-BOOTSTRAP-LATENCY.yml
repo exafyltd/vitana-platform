@@ -49,7 +49,9 @@ jobs:
     steps:
       - name: Fetch recent ORB context-bootstrap latencies
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
+          # is https://data.vitanaland.com (Aurora) after the flip.
+          SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set -euo pipefail

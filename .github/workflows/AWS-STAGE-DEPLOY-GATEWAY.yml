@@ -55,6 +55,16 @@ on:
         description: 'Public gateway URL for post-deploy verification'
         required: false
         default: 'https://preview-aws-gateway.vitanaland.com'
+      # VTID-05023 part 9: staging's own switch (never touches prod).
+      data_backend:
+        description: 'keep (default; every push) = leave SUPABASE_URL as is; aurora = vitana/supabase/staging/url-aurora-proxy + SUPABASE_PUBLIC_URL; supabase = original staging ref'
+        required: false
+        type: choice
+        options:
+          - keep
+          - supabase
+          - aurora
+        default: 'keep'
       # BOOTSTRAP-NOVA-SONIC-VOICE: per-dispatch canary overrides. Empty =
       # fall back to the AWS_STAGE_NOVA_SONIC_* repository variables, so the
       # push-triggered deploys keep reading the durable vars config.
@@ -401,8 +411,12 @@ jobs:
       # same ERP-bridge-style pattern as SEC_SQL_RO above. Absent => untouched
       # (OPERATOR_MACHINE_AUTH_ENABLED stays whatever it already was on the
       # task def, never forced off); present => enabled + wired as a secret.
-      - name: Register task-definition revision + roll the service
-        id: roll
+      # VTID-05023 part 9: this step builds the task definition; the next step
+      # (id: roll) applies data_backend and registers + rolls. Push deploys have
+      # no inputs -> keep, so a dispatched aurora/supabase switch is carried
+      # forward by every later push (the live task def is the base).
+      - name: Register task-definition revision + roll the service (1/2 — build the task definition)
+        id: taskdef
         env:
           # BOOTSTRAP-NOVA-SONIC-VOICE: Nova canary configuration prefers
           # environment-scoped repository VARIABLES when set (not secrets —
@@ -1263,6 +1277,24 @@ jobs:
                 | .containerDefinitions[0].secrets |= ( [ .[] | select(.name as $n | $CA[0].sec | map(.name) | index($n) | not) ] + $CA[0].sec )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          printf '%s' "$NEW_DEF" > "$RUNNER_TEMP/new-task-def.json"
+      # VTID-05023 part 9: register + roll split out of the step above (which is
+      # at the VTID-03788 20,000-char limit) so the data_backend switch fits.
+      # keep (every push) passes the task definition through byte for byte.
+      - name: Register task-definition revision + roll the service
+        id: roll
+        env:
+          DATA_BACKEND: ${{ inputs.data_backend || 'keep' }}
+          DATA_BACKEND_AURORA_URL_SECRET_ARN: ${{ vars.SUPABASE_URL_AURORA_PROXY_STAGING_ARN }}
+        run: |
+          set -e
+          NEW_DEF="$(cat "$RUNNER_TEMP/new-task-def.json")"
+          DB_SCRIPT=scripts/aws/taskdef-data-backend.py
+          if [ -f "$DB_SCRIPT" ]; then
+            NEW_DEF=$(printf '%s' "$NEW_DEF" | python3 "$DB_SCRIPT" --backend "$DATA_BACKEND" --service gateway-staging --resolve --summary "$GITHUB_STEP_SUMMARY")
+          elif [ "$DATA_BACKEND" != keep ]; then
+            echo "::error::data_backend=$DATA_BACKEND needs $DB_SCRIPT, which this commit predates"; exit 1
+          fi
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered $NEW_ARN"
@@ -1358,7 +1390,9 @@ jobs:
       - name: Emit OASIS event + software_versions row (best-effort)
         if: always()
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
+          # is https://data.vitanaland.com (Aurora) after the flip.
+          SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
           SUPABASE_SVC: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           SHA: ${{ steps.commit.outputs.sha }}
           SHORT: ${{ steps.commit.outputs.short }}
@@ -1396,6 +1430,7 @@ jobs:
         run: |
           {
             echo "## AWS staging gateway deploy"
+            echo "- Data backend input: ${{ inputs.data_backend || 'keep' }}"
             echo "- Image: \`${{ steps.build.outputs.image }}\`"
             echo "- Commit: \`${{ steps.commit.outputs.sha }}\`"
             echo "- Verified live at: ${{ env.GATEWAY_URL }}"

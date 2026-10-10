@@ -168,7 +168,9 @@ jobs:
       # additional round trip, six more report rows.
       - name: '5-12. Database + governance health (RPCs)'
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
+          # is https://data.vitanaland.com (Aurora) after the flip.
+          SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set +e
@@ -343,7 +345,9 @@ jobs:
       # duplicating the check (CLAUDE.md ALWAYS 9).
       - name: '16. ORB session-state health (VTID-03480 regression guard)'
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
+          # is https://data.vitanaland.com (Aurora) after the flip.
+          SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set +e
@@ -376,7 +380,9 @@ jobs:
       # ALERT-OASIS-LEDGER-INTEGRITY.yml.
       - name: '17. OASIS ledger integrity (VTID-03516 regression guard)'
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
+          # is https://data.vitanaland.com (Aurora) after the flip.
+          SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set +e
@@ -483,7 +489,9 @@ jobs:
       # 3h, and no same-value fact churn (VTID-04341 regression guard).
       - name: '21. Memory system health (VTID-04345)'
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
+          # is https://data.vitanaland.com (Aurora) after the flip.
+          SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set +e

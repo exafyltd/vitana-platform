@@ -56,9 +56,13 @@ jobs:
       - name: Run graduation recommender
         working-directory: services/gateway
         env:
-          STAGING_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
+          # is https://data.vitanaland.com (Aurora) after the flip.
+          STAGING_SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
           STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
+          # is https://data.vitanaland.com (Aurora) after the flip.
+          SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           GRADUATION_DRY_RUN: ${{ inputs.dry_run == 'true' && '1' || '0' }}
         run: npx tsx scripts/graduation-recommender.ts

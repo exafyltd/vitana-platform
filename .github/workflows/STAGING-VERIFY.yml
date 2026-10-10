@@ -172,7 +172,9 @@ jobs:
       - name: Record result in OASIS
         if: always() && steps.verify.outcome != 'skipped'
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
+          # is https://data.vitanaland.com (Aurora) after the flip.
+          SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
           SUPABASE_SVC: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           RESULTS: ${{ runner.temp }}/staging-verify/results.json
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

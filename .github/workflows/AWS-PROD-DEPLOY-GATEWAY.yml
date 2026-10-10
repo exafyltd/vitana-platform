@@ -253,6 +253,16 @@ on:
           - rebuild-main
           - env-only
         default: 'promote-staging'
+      # VTID-05023 part 9: input 25 of 25 (GitHub's ceiling) — retire one before adding another.
+      data_backend:
+        description: 'keep (default) = leave SUPABASE_URL as the live task def has it; aurora = SUPABASE_URL -> vitana/supabase/prod/url-aurora-proxy + SUPABASE_PUBLIC_URL; supabase = original refs (rollback)'
+        required: false
+        type: choice
+        options:
+          - keep
+          - supabase
+          - aurora
+        default: 'keep'
       expected_commit:
         description: 'promote-staging only: full commit SHA the operator expects staging to be serving — run fails if staging moved (set automatically by the Command Hub PUBLISH button)'
         required: false
@@ -1128,6 +1138,42 @@ jobs:
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Calendar gates pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name | startswith("CALENDAR_")) | .name]')"
 
+      - name: Build task-definition (data backend — VTID-05023)
+        # VTID-05023 part 9 (Supabase -> Aurora, option B). One shared script,
+        # scripts/aws/taskdef-data-backend.py (tests: scripts/aws/test/
+        # test_taskdef_data_backend.py), used by every prod deploy workflow.
+        #   keep (default; PUBLISH never passes this input): the file is passed
+        #     through byte for byte, so whatever backend the live task def is on
+        #     is carried forward.
+        #   aurora: SUPABASE_URL -> vitana/supabase/prod/url-aurora-proxy (value:
+        #     the INTERNAL proxy, http://postgrest-aurora-prod.vitana.internal:8080
+        #     — /rest/v1 from Aurora, /auth /storage /functions /realtime passed
+        #     through to Supabase) and SUPABASE_PUBLIC_URL=https://inmkhvwdcuyhnxkgfvsb.supabase.co
+        #     for every member-visible URL (R1(b), src/lib/supabase-public-url.ts).
+        #   supabase: the original vitana/supabase/prod/url ref, SUPABASE_PUBLIC_URL
+        #     removed (rollback).
+        # Applied to the file derived from THIS service's (vitana-gateway-awsdr)
+        # live task def in every deploy mode — promote-staging takes only the
+        # image from staging; the script refuses any other task family.
+        # This role has no secretsmanager:Describe* (VTID-03880): the script
+        # tries describe-secret and on AccessDenied uses the repository variable
+        # SUPABASE_URL_AURORA_PROXY_PROD_ARN; a secret that does not exist, or
+        # neither, fails here before anything is registered.
+        env:
+          DATA_BACKEND: ${{ inputs.data_backend || 'keep' }}
+          DATA_BACKEND_AURORA_URL_SECRET_ARN: ${{ vars.SUPABASE_URL_AURORA_PROXY_PROD_ARN }}
+        run: |
+          set -euo pipefail
+          F=/tmp/vitana-new-task-def.json
+          DB_SCRIPT=scripts/aws/taskdef-data-backend.py
+          if [ ! -f "$DB_SCRIPT" ]; then
+            if [ "$DATA_BACKEND" != keep ]; then echo "::error::data_backend=$DATA_BACKEND needs $DB_SCRIPT, which this ref predates"; exit 1; fi
+            echo "data_backend=keep (script not in this ref) - task definition unchanged"; exit 0
+          fi
+          python3 "$DB_SCRIPT" --backend "$DATA_BACKEND" --service gateway --resolve \
+            --summary "$GITHUB_STEP_SUMMARY" < "$F" > "$F.next"
+          mv "$F.next" "$F"
+
       - name: Build task-definition (2/2 — optional overrides) + register + roll the service
         id: roll
         env:
@@ -1644,7 +1690,9 @@ jobs:
       - name: Emit OASIS event + software_versions row (best-effort)
         if: always()
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # VTID-05023 part 9: REST base. Repo variable DATA_REST_URL (unset =
+          # unchanged) is https://data.vitanaland.com after the Aurora flip.
+          SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
           SUPABASE_SVC: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           SHA: ${{ steps.source.outputs.sha }}
           SHORT: ${{ steps.source.outputs.short }}
@@ -1687,6 +1735,7 @@ jobs:
           {
             echo "## AWS Production (DR) gateway deploy"
             echo "- Mode: ${{ steps.source.outputs.mode }}"
+            echo "- Data backend input: ${{ inputs.data_backend || 'keep' }} (resulting refs: see the data backend lines above)"
             echo "- Image: \`${{ steps.source.outputs.image || steps.build.outputs.image }}\`"
             echo "- Commit: \`${{ steps.source.outputs.sha }}\`"
             echo "- Verified live at: ${{ env.GATEWAY_URL }}"
