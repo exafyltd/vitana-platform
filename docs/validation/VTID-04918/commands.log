@@ -1,0 +1,12 @@
+# VTID-04918 — local checks (services/gateway unless noted)
+npx tsc --noEmit -p .                                   # 0 errors
+npx jest test/vtid-04918-calendar-assistant-parity.test.ts   # 19 passed
+npm run test:calendar                                   # 27 suites, 498 passed
+npm run test:roles                                      # 105 passed
+npm run test:operator                                   # 40 passed
+npm run test:support                                    # 87 passed
+npx jest (full gateway suite)                           # only the 5 contract snapshots/lane map this change moves failed; updated with -u (catalog + tool count, system instruction tool list, replay deferred_tool_count) and operator lanes added
+# services/agents/orb-agent
+pytest tests                                            # 24 failures, identical set on main without this change (environment), 166 passed
+ruff check src/orb_agent/tools.py                       # 7 findings, identical on main
+ORB_TOOLS_PARITY_GATE=1 node scripts/orb-tools-lift-scanner.mjs   # exit 0 (repo root)

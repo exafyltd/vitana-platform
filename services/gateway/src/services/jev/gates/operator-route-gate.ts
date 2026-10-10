@@ -44,6 +44,9 @@ export const TOOL_LANES: Record<string, OperatorLane> = {
   search_community: 'community', search_events: 'community', get_user_matches: 'community', get_wearable_metrics: 'community',
   open_discover_feed: 'community', search_marketplace_products: 'community', send_chat_message: 'community', resolve_recipient: 'community',
   recall_conversation_at_time: 'community', get_recommendations: 'community',
+  // VTID-04918: the member's calendar from text chat.
+  create_calendar_event: 'community', reschedule_event: 'community', cancel_event: 'community',
+  share_calendar_entry_to_feed: 'community', invite_to_calendar_entry: 'community',
 };
 
 /** The lane a finished turn took: the most frequent lane of its tool calls (first wins a tie); none → answer only; unknown tools only → null. */

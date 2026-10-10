@@ -93,6 +93,8 @@ import { getThreadAuth, isExecuteTaskAuthorized, describeExecuteTaskRefusal } fr
 import { executeReviewExecution, executeApproveExecution, executeRejectExecution } from './operator-approval-tools';
 import { executeActivateRecommendation } from './operator-recommendation-tools';
 import { executeCancelExecution } from './operator-cancel-tool';
+import { CALENDAR_MGMT_TOOL_DECLARATIONS } from './orb-tools/calendar-management-tools';
+import { calendarTextToolDeclarations, textCalendarConfirmation } from './orb-tools/calendar-social-tools';
 
 // Environment config
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -1192,7 +1194,10 @@ NEVER claim a message was sent unless a call with confirmed=true returned ok. If
       name: 'dev_lock_status',
       description: 'Check deploy concurrency lock status.',
       parameters: { type: 'object', properties: {}, required: [] }
-    }
+    },
+    // VTID-04918: the member's calendar from text chat — create, move, cancel,
+    // share to the feed, invite someone. Same shared handlers and guard as voice.
+    ...calendarTextToolDeclarations(CALENDAR_MGMT_TOOL_DECLARATIONS),
   ]
 };
 
@@ -4058,6 +4063,44 @@ export async function executeTool(
             role: sendIdentity.role ?? 'community',
             vitana_id: sendIdentity.vitana_id ?? null,
             // Use the thread id as the rate-limit session key for text chat.
+            session_id: threadId,
+          },
+          sb,
+        );
+        result = r.ok
+          ? { ok: true, data: { ...((r as { result?: Record<string, unknown> }).result ?? {}), message: (r as { text?: string }).text } }
+          : { ok: false, error: (r as { error: string }).error };
+        break;
+      }
+
+      // VTID-04918: calendar write tools from text chat, through the shared registry.
+      case 'create_calendar_event':
+      case 'reschedule_event':
+      case 'cancel_event':
+      case 'share_calendar_entry_to_feed':
+      case 'invite_to_calendar_entry': {
+        const calIdentity = threadIdentityMap.get(threadId);
+        if (!calIdentity?.user_id) {
+          result = { ok: false, error: 'User context not available for the calendar' };
+          break;
+        }
+        const calArgs = { ...(args as Record<string, unknown>) };
+        if (calIdentity.user_timezone && !calArgs.timezone) calArgs.timezone = calIdentity.user_timezone;
+        const notYet = textCalendarConfirmation(toolName, calArgs);
+        if (notYet) {
+          result = { ok: true, data: { stage: 'awaiting_confirmation', message: notYet } };
+          break;
+        }
+        const { dispatchOrbTool } = await import('./orb-tools-shared');
+        const sb = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE!);
+        const r = await dispatchOrbTool(
+          toolName,
+          calArgs,
+          {
+            user_id: calIdentity.user_id,
+            tenant_id: calIdentity.tenant_id ?? null,
+            role: calIdentity.role ?? 'community',
+            vitana_id: calIdentity.vitana_id ?? null,
             session_id: threadId,
           },
           sb,

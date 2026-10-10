@@ -4684,112 +4684,39 @@ async function executeLiveApiToolInner(
       // =====================================================================
 
       case 'create_calendar_event': {
-        const title = (args.title as string) || '';
-        const eventStart = (args.start_time as string) || '';
-        const eventEnd = (args.end_time as string) || '';
-        const description = (args.description as string) || '';
-        const location = (args.location as string) || '';
-        const eventType = (args.event_type as string) || 'personal';
-        const role = sessionServedRole(session) || 'community';
-        const userId = session.identity.user_id;
-
-        if (!title || !eventStart) {
-          return {
-            success: false,
-            result: 'I need at least a title and start time to create a calendar event.',
-            error: 'Missing required fields: title and start_time',
-          };
-        }
-
-        // VTID-04604: never on the model's own initiative, never unconfirmed, never in the past.
+        // VTID-04918: one implementation for every assistant path — the shared
+        // handler (services/orb-tools/calendar-social-tools.ts) creates the
+        // entry and runs the request-checkable guard (confirmed, not in the
+        // past). Only the live session knows whether the member has spoken
+        // (VTID-04604), so that half stays here.
         {
           const { checkVoiceCalendarWrite, memberHasSpoken } = await import('../orb/live/tools/calendar-write-guard');
-          const refusal = checkVoiceCalendarWrite({
-            memberHasSpoken: memberHasSpoken(session),
-            confirmed: args.confirmed,
-            startTime: eventStart,
-            nowMs: Date.now(),
-          });
-          if (refusal) return { success: false, result: refusal, error: refusal.split('.')[0] };
-        }
-
-        try {
-          const { createCalendarEvent, checkConflicts } = await import('../services/calendar-service');
-          const { toWritableRoleContext } = await import('../types/calendar');
-
-          // Check for conflicts first
-          const effectiveEndTime = eventEnd || new Date(new Date(eventStart).getTime() + 60 * 60 * 1000).toISOString();
-          const conflicts = await checkConflicts(userId, role, eventStart, effectiveEndTime);
-
-          const event = await createCalendarEvent(userId, {
-            title,
-            start_time: eventStart,
-            end_time: effectiveEndTime,
-            description: description || undefined,
-            location: location || undefined,
-            event_type: eventType as any,
-            status: 'confirmed',
-            priority: 'medium',
-            // VTID-04356: one mapping for every writer — professional and
-            // backoffice used to fall through to the community view here.
-            role_context: toWritableRoleContext(role),
-            source_type: 'assistant',
-            priority_score: 50,
-            wellness_tags: [],
-            metadata: { created_via: 'orb_voice' },
-            is_recurring: false,
-          });
-
-          if (!event) {
-            return {
-              success: false,
-              result: 'I wasn\'t able to save the event to your calendar. Please try again.',
-              error: 'createCalendarEvent returned null',
-            };
+          if (!memberHasSpoken(session)) {
+            const refusal = checkVoiceCalendarWrite({ memberHasSpoken: false, confirmed: args.confirmed, startTime: String(args.start_time ?? ''), nowMs: Date.now() })!;
+            return { success: false, result: refusal, error: refusal.split('.')[0] };
           }
-
-          // Emit OASIS event
-          emitOasisEvent({
-            vtid: 'VTID-01155',
-            type: 'calendar.event.created' as any,
-            source: 'orb-live-voice',
-            status: 'info',
-            message: `Voice-created calendar event: ${event.title}`,
-            payload: {
-              event_id: event.id,
-              user_id: userId,
-              event_type: event.event_type,
-              session_id: session.sessionId,
-            },
-          }).catch(() => {});
-
-          const userTz = session.clientContext?.timezone || 'UTC';
-          const startFormatted = new Date(eventStart).toLocaleString('en-US', {
-            weekday: 'short', month: 'short', day: 'numeric',
-            hour: '2-digit', minute: '2-digit', hour12: true,
-            timeZone: userTz,
-          });
-          const endFormatted = new Date(effectiveEndTime).toLocaleTimeString('en-US', {
-            hour: '2-digit', minute: '2-digit', hour12: true,
-            timeZone: userTz,
-          });
-
-          let result = `Event created successfully!\n- Title: ${event.title}\n- When: ${startFormatted} – ${endFormatted}`;
-          if (event.location) result += `\n- Where: ${event.location}`;
-          if (conflicts.length > 0) {
-            result += `\n\nNote: There ${conflicts.length === 1 ? 'is 1 existing event' : `are ${conflicts.length} existing events`} during this time slot.`;
-          }
-
-          console.log(`[Calendar] create_calendar_event executed: "${event.title}" at ${eventStart}, ${Date.now() - startTime}ms`);
-          return { success: true, result };
-        } catch (calErr: any) {
-          console.warn(`[Calendar] create_calendar_event failed: ${calErr.message}`);
-          return {
-            success: false,
-            result: 'I had trouble creating the event. Please try again in a moment.',
-            error: calErr.message,
-          };
         }
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'create_calendar_event',
+          { ...(args ?? {}), timezone: session.clientContext?.timezone || undefined },
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: sessionServedRole(session) || session.identity?.role || null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            session_id: session.sessionId,
+            thread_id: session.thread_id || session.sessionId,
+            turn_number: session.turn_count,
+          },
+          createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE),
+        );
       }
 
       // =====================================================================
@@ -7045,6 +6972,17 @@ async function executeLiveApiToolInner(
           const { createClient } = await import('@supabase/supabase-js');
           const { ORB_TOOL_NAMES, dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
           if (ORB_TOOL_NAMES.includes(toolName)) {
+            // VTID-04918: the calendar write tools never run before the member
+            // has said a word (the request-checkable half of the guard lives in
+            // the shared handlers; only the live session knows this half).
+            const { CALENDAR_SOCIAL_WRITE_TOOLS } = await import('../services/orb-tools/calendar-social-tools');
+            if (CALENDAR_SOCIAL_WRITE_TOOLS.includes(toolName)) {
+              const { memberHasSpoken } = await import('../orb/live/tools/calendar-write-guard');
+              if (!memberHasSpoken(session)) {
+                const refusal = 'STATUS: not_done. The member has not asked for anything yet in this session. Never act on their calendar, feed or chats on your own initiative.';
+                return { success: false, result: refusal, error: 'STATUS: not_done' };
+              }
+            }
             const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
             const dispatched = await dispatchOrbToolForVertex(
               toolName,

@@ -3160,6 +3160,82 @@ If there are conflicts, name the overlapping events and suggest checking another
         },
       },
       {
+        "description": "Share an upcoming community event or live room from the member's calendar to their community feed, as a post with the event card.
+WHEN TO CALL: "post my yoga meetup to the feed", "tell everyone I'm going", "Teil das Event im Feed".
+Only events and live rooms can be shared — never a private entry. The member must ask for it.
+Compose a short, friendly post text in the member's language (du-form in German) or use their words.
+Two steps: call without confirmed to get the preview; read the event and the post text back and ask;
+call again with the same entry_id and text and confirmed=true only after the member says yes. Never claim it was posted unless the result says STATUS: shared.",
+        "name": "share_calendar_entry_to_feed",
+        "parameters": {
+          "properties": {
+            "confirmed": {
+              "description": "true ONLY after the member explicitly confirmed the read-back.",
+              "type": "boolean",
+            },
+            "entry_id": {
+              "description": "The calendar entry id (UUID), if known.",
+              "type": "string",
+            },
+            "is_public": {
+              "description": "false to keep the post visible to the member only. Defaults to public.",
+              "type": "boolean",
+            },
+            "text": {
+              "description": "The post text, in the member's language (max 2000 characters). May be empty.",
+              "type": "string",
+            },
+            "timezone": {
+              "description": "IANA timezone for times, e.g. "Europe/Berlin".",
+              "type": "string",
+            },
+            "title_query": {
+              "description": "Fuzzy title to find the member's entry when entry_id is unknown.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Invite another community member to an entry in the member's calendar: sends an invite card into their direct chat, which they answer with yes / maybe / no.
+WHEN TO CALL: "invite Maria to my run on Saturday", "Lad Jonas zum Meetup ein".
+Works for an upcoming community event, live room, or the member's own one-off entry — not a series, nothing finished or cancelled.
+First resolve the person with resolve_recipient and pass their user id as recipient_user_id.
+Two steps: call without confirmed to get the preview; tell the member which entry goes to whom and ask;
+call again with the same arguments and confirmed=true only after they say yes. Never claim it was sent unless the result says STATUS: sent.",
+        "name": "invite_to_calendar_entry",
+        "parameters": {
+          "properties": {
+            "confirmed": {
+              "description": "true ONLY after the member explicitly confirmed.",
+              "type": "boolean",
+            },
+            "entry_id": {
+              "description": "The calendar entry id (UUID), if known.",
+              "type": "string",
+            },
+            "recipient_user_id": {
+              "description": "The invited person's user id (UUID) from resolve_recipient.",
+              "type": "string",
+            },
+            "timezone": {
+              "description": "IANA timezone for times, e.g. "Europe/Berlin".",
+              "type": "string",
+            },
+            "title_query": {
+              "description": "Fuzzy title to find the member's entry when entry_id is unknown.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "recipient_user_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
         "description": "Push an existing reminder out by N minutes (default 10, max 1440).
 CALL WHEN the user says 'snooze it', 'remind me again in 15 minutes',
 'verschieb die Erinnerung', 'erinnere mich später nochmal'.
@@ -16154,6 +16230,82 @@ If there are conflicts, name the overlapping events and suggest checking another
           },
           "required": [
             "start_time",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Share an upcoming community event or live room from the member's calendar to their community feed, as a post with the event card.
+WHEN TO CALL: "post my yoga meetup to the feed", "tell everyone I'm going", "Teil das Event im Feed".
+Only events and live rooms can be shared — never a private entry. The member must ask for it.
+Compose a short, friendly post text in the member's language (du-form in German) or use their words.
+Two steps: call without confirmed to get the preview; read the event and the post text back and ask;
+call again with the same entry_id and text and confirmed=true only after the member says yes. Never claim it was posted unless the result says STATUS: shared.",
+        "name": "share_calendar_entry_to_feed",
+        "parameters": {
+          "properties": {
+            "confirmed": {
+              "description": "true ONLY after the member explicitly confirmed the read-back.",
+              "type": "boolean",
+            },
+            "entry_id": {
+              "description": "The calendar entry id (UUID), if known.",
+              "type": "string",
+            },
+            "is_public": {
+              "description": "false to keep the post visible to the member only. Defaults to public.",
+              "type": "boolean",
+            },
+            "text": {
+              "description": "The post text, in the member's language (max 2000 characters). May be empty.",
+              "type": "string",
+            },
+            "timezone": {
+              "description": "IANA timezone for times, e.g. "Europe/Berlin".",
+              "type": "string",
+            },
+            "title_query": {
+              "description": "Fuzzy title to find the member's entry when entry_id is unknown.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Invite another community member to an entry in the member's calendar: sends an invite card into their direct chat, which they answer with yes / maybe / no.
+WHEN TO CALL: "invite Maria to my run on Saturday", "Lad Jonas zum Meetup ein".
+Works for an upcoming community event, live room, or the member's own one-off entry — not a series, nothing finished or cancelled.
+First resolve the person with resolve_recipient and pass their user id as recipient_user_id.
+Two steps: call without confirmed to get the preview; tell the member which entry goes to whom and ask;
+call again with the same arguments and confirmed=true only after they say yes. Never claim it was sent unless the result says STATUS: sent.",
+        "name": "invite_to_calendar_entry",
+        "parameters": {
+          "properties": {
+            "confirmed": {
+              "description": "true ONLY after the member explicitly confirmed.",
+              "type": "boolean",
+            },
+            "entry_id": {
+              "description": "The calendar entry id (UUID), if known.",
+              "type": "string",
+            },
+            "recipient_user_id": {
+              "description": "The invited person's user id (UUID) from resolve_recipient.",
+              "type": "string",
+            },
+            "timezone": {
+              "description": "IANA timezone for times, e.g. "Europe/Berlin".",
+              "type": "string",
+            },
+            "title_query": {
+              "description": "Fuzzy title to find the member's entry when entry_id is unknown.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "recipient_user_id",
           ],
           "type": "object",
         },
