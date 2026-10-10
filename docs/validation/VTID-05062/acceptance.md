@@ -35,6 +35,22 @@ emits `screen.load.daily_report` before it posts to GChat; both topics are regis
 `services/gateway/src/types/cicd.ts`. Verify after deploy (read-only):
 `SELECT topic, status, created_at FROM oasis_events WHERE topic IN ('screen.nav.measured','screen.load.daily_report') ORDER BY created_at DESC LIMIT 5;`
 
+## Route evidence
+
+ROUTE_MOUNT: `screenLoadHealthRouter` (existing) is mounted at `/api/v1/frontend/screen-load` in
+`services/gateway/src/index.ts` (`mountRouterSync(app, '/api/v1/frontend/screen-load', screenLoadHealthRouter, …)`,
+unchanged); this PR adds `GET /daily-report` and `POST /daily-report/run` to that router. The nav beacon
+reuses the existing `POST /api/v1/rum/beacon`.
+
+FINAL_URL: `https://preview-aws-gateway.vitanaland.com/api/v1/frontend/screen-load/daily-report` and
+`…/daily-report/run` (staging); production is the same paths on the production gateway after PUBLISH.
+
+CURL_PROOF: read-only, after the staging deploy, STAGING-VERIFY runs the probes in `staging-tests.json`:
+anonymous `GET /api/v1/frontend/screen-load/daily-report` must answer `200 application/json` with a
+`"status"` field (the health shape, not an HTML 404), and anonymous `POST …/daily-report/run` must answer
+`401 application/json` (a rejected probe — `requireApiKey` refuses it before anything runs, so nothing is
+written). The authorized run path (OASIS emit, GChat post, idempotency) is proven by Jest only (rule 48).
+
 ## Read-only posture
 
 No test targets production. The daily run is an operational report over existing telemetry: one GET of the
