@@ -513,3 +513,180 @@ describe('parked workspaces (VTID-05064)', () => {
     expect(responseId(JSON.stringify({ jsonrpc: '2.0', method: 'session/update', params: {} }))).toBeNull();
   });
 });
+
+// VTID-05068: a session whose gateway socket drops mid-turn survives for a reattach.
+import { CLOSE, REATTACH_DEFAULTS, detachedCount, hashReattachToken, sessionsOf } from '../src/relay';
+
+describe('reattach after a gateway drop (VTID-05068)', () => {
+  const TOK = 'r'.repeat(43);
+  const OTHER_TOK = 's'.repeat(43);
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  function reopen(userId = U1, thread = 't1', token: string | null = TOK) {
+    const headers: Record<string, string> = { ...auth, ...(token ? { 'X-Kiro-Reattach-Token': token } : {}) };
+    const ws = new WebSocket(`ws://${base}/sessions/reattach?user_id=${userId}&thread_id=${thread}`, { headers });
+    const frames: any[] = []; const runner: any[] = []; const raw: string[] = [];
+    const closed = new Promise<{ code: number; reason: string }>((r) => ws.on('close', (code, reason) => r({ code, reason: String(reason) })));
+    ws.on('message', (d) => { const s = String(d); raw.push(s); const m = JSON.parse(s); (m && m.kiro_runner ? runner : frames).push(m); });
+    return { ws, frames, runner, raw, closed };
+  }
+  /** A session with the reattach token, its ACP session opened, and a prompt running. */
+  async function running(prompt: string, thread = 't1', token: string | null = TOK) {
+    const s = await open(U1, thread, token ? { 'X-Kiro-Reattach-Token': token } : {});
+    await s.ready;
+    s.ws.send(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/x', mcpServers: [] } }));
+    await waitFor(() => s.frames.some((f) => f.id === 2));
+    s.ws.send(JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: 'S1', prompt: [{ type: 'text', text: prompt }] } }));
+    return s;
+  }
+  const text = (f: any) => f?.params?.update?.content?.text;
+
+  beforeEach(async () => { await start({ limits: { ...limits, reattachMs: 5_000 } }); await http('PUT', `/keys/${U1}`, { key: 'k' }); });
+
+  it('a socket that drops mid-turn keeps kiro-cli alive; the reattach gets the buffered frames in order, then the session goes on', async () => {
+    const s = await running('timed:3:4');
+    await waitFor(() => s.frames.some((f) => text(f) === 'before'));
+    s.ws.terminate(); // no close frame: what a gateway task that dies looks like
+    await waitFor(() => detachedCount() === 1);
+    expect(sessionCount()).toBe(1);
+    expect(await (await http('GET', '/alive', undefined, {})).json()).toMatchObject({ sessions: 1, detached: 1 });
+    await sleep(300); // kiro-cli finishes its turn while nobody listens
+    const r = reopen();
+    await waitFor(() => r.frames.some((f) => f.id === 3));
+    expect(r.runner[0]).toEqual({ kiro_runner: 'reattached', session_id: 'S1', pending_prompts: ['3'], replayed: 5 });
+    // In order: the three chunks, the workspace state, the prompt's answer.
+    const order = r.raw.slice(1).map((x) => JSON.parse(x)).map((m) => m.kiro_runner ?? m.id ?? text(m).slice(0, 8));
+    expect(order).toEqual(['during-1', 'during-2', 'during-3', 'workspace_state', 3]);
+    expect(detachedCount()).toBe(0);
+    // The same kiro-cli answers the next prompt on the new socket.
+    r.ws.send(JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'session/prompt', params: { sessionId: 'S1', prompt: [{ type: 'text', text: 'hello' }] } }));
+    await waitFor(() => r.frames.some((f) => f.id === 4));
+    expect(sessionCount()).toBe(1);
+    r.ws.close(1000);
+    await waitFor(() => sessionCount() === 0);
+  });
+
+  it('without a token, between turns, or when the gateway closes it on purpose (1000), a drop ends the session as before', async () => {
+    const none = await running('silent', 'tn', null);
+    await waitFor(() => sessionCount() === 1);
+    none.ws.terminate();
+    await waitFor(() => sessionCount() === 0);
+
+    const idleTurn = await open(U1, 'ti', { 'X-Kiro-Reattach-Token': TOK });
+    await idleTurn.ready;
+    idleTurn.ws.terminate();
+    await waitFor(() => sessionCount() === 0);
+
+    const onPurpose = await running('silent', 'tp');
+    await waitFor(() => sessionCount() === 1);
+    onPurpose.ws.close(1000);
+    await waitFor(() => sessionCount() === 0);
+    expect(detachedCount()).toBe(0);
+  });
+
+  it('a wrong or missing token is refused (4403) and the session keeps waiting; another user or thread finds nothing (4404); the window expires', async () => {
+    const s = await running('silent');
+    await waitFor(() => sessionCount() === 1);
+    s.ws.terminate();
+    await waitFor(() => detachedCount() === 1);
+    expect(await reopen(U1, 't1', OTHER_TOK).closed).toEqual({ code: CLOSE.reattachRefused, reason: 'kiro_reattach_refused' });
+    expect(await reopen(U1, 't1', null).closed).toEqual({ code: 4403, reason: 'kiro_reattach_refused' });
+    expect(await reopen(U2, 't1').closed).toEqual({ code: CLOSE.reattachNotFound, reason: 'kiro_session_not_found' });
+    expect(await reopen(U1, 'other-thread').closed).toEqual({ code: 4404, reason: 'kiro_session_not_found' });
+    expect(detachedCount()).toBe(1);
+    const [session] = sessionsOf(U1, 't1');
+    expect(session.matches(TOK)).toBe(true);
+    expect(session.matches(TOK, Date.now() + 5_001)).toBe(false); // valid only inside the window after the drop
+    expect(session.matches(OTHER_TOK)).toBe(false);
+    // The runner keeps only the hash.
+    expect(hashReattachToken(TOK)).toHaveLength(32);
+    expect(logs.join('\n')).not.toContain(TOK);
+    const r = reopen();
+    await waitFor(() => r.runner.length === 1);
+    expect(r.runner[0]).toMatchObject({ kiro_runner: 'reattached', pending_prompts: ['3'], replayed: 0 });
+    r.ws.close(1000);
+    await waitFor(() => sessionCount() === 0);
+  });
+
+  it('nobody reattaches within the window: the session ends (and a later reattach finds nothing)', async () => {
+    stopAllSessions(); await new Promise((r) => server.close(() => r(null)));
+    await start({ limits: { ...limits, reattachMs: 150 } });
+    await http('PUT', `/keys/${U1}`, { key: 'k' });
+    const s = await running('silent');
+    await waitFor(() => sessionCount() === 1);
+    s.ws.terminate();
+    await waitFor(() => detachedCount() === 1);
+    await waitFor(() => sessionCount() === 0, 2000);
+    expect(logs.some((l) => l.includes('kiro_reattach_window_expired'))).toBe(true);
+    expect(await reopen().closed).toEqual({ code: 4404, reason: 'kiro_session_not_found' });
+  });
+
+  it('more than the buffer cap of output while detached ends the session', async () => {
+    stopAllSessions(); await new Promise((r) => server.close(() => r(null)));
+    await start({ limits: { ...limits, reattachMs: 5_000, reattachBufferBytes: 10_000 } });
+    await http('PUT', `/keys/${U1}`, { key: 'k' });
+    const s = await running('timed:5:4000');
+    await waitFor(() => s.frames.some((f) => text(f) === 'before'));
+    s.ws.terminate();
+    await waitFor(() => detachedCount() === 1);
+    await waitFor(() => sessionCount() === 0, 2000);
+    expect(logs.some((l) => l.includes('kiro_reattach_buffer_full'))).toBe(true);
+    expect(REATTACH_DEFAULTS).toEqual({ reattachMs: 600_000, reattachBufferBytes: 2 * 1024 * 1024 });
+  });
+
+  it('a permission request the dead gateway never answered is sent again to the new socket', async () => {
+    const s = await running('ask');
+    await waitFor(() => s.frames.some((f) => f.method === 'session/request_permission'));
+    s.ws.terminate();
+    await waitFor(() => detachedCount() === 1);
+    const r = reopen();
+    await waitFor(() => r.frames.some((f) => f.method === 'session/request_permission'));
+    expect(r.runner[0]).toMatchObject({ replayed: 1, pending_prompts: ['3'] });
+    r.ws.send(JSON.stringify({ jsonrpc: '2.0', id: 77, result: { outcome: { outcome: 'selected', optionId: 'allow' } } }));
+    await waitFor(() => r.frames.some((f) => f.id === 3));
+    expect(r.frames.map(text).filter(Boolean)).toEqual(['answered:allow']);
+    r.ws.close(1000);
+  });
+
+  it('idle and lifetime timers keep running while detached', async () => {
+    stopAllSessions(); await new Promise((r) => server.close(() => r(null)));
+    await start({ limits: { ...limits, reattachMs: 60_000, idleMs: 200 } });
+    await http('PUT', `/keys/${U1}`, { key: 'k' });
+    const a = await running('silent');
+    await waitFor(() => sessionCount() === 1);
+    a.ws.terminate();
+    await waitFor(() => sessionCount() === 0, 2000);
+    expect(logs.some((l) => l.includes('kiro_session_idle'))).toBe(true);
+
+    stopAllSessions(); await new Promise((r) => server.close(() => r(null)));
+    await start({ limits: { ...limits, reattachMs: 60_000, maxSessionMs: 400 } });
+    await http('PUT', `/keys/${U1}`, { key: 'k' });
+    const b = await running('silent');
+    await waitFor(() => sessionCount() === 1);
+    b.ws.terminate();
+    await waitFor(() => detachedCount() === 1);
+    await waitFor(() => sessionCount() === 0, 2000);
+    expect(logs.some((l) => l.includes('kiro_session_max_lifetime'))).toBe(true);
+  });
+
+  it('a new session of the thread replaces its detached one; a reattach to a still-attached session closes the old socket 4409', async () => {
+    const s = await running('silent');
+    await waitFor(() => sessionCount() === 1);
+    s.ws.terminate();
+    await waitFor(() => detachedCount() === 1);
+    const fresh = await open(U1, 't1', { 'X-Kiro-Reattach-Token': OTHER_TOK });
+    await fresh.ready;
+    expect(sessionCount()).toBe(1);
+    expect(detachedCount()).toBe(0);
+    expect(logs.some((l) => l.includes('kiro_session_replaced'))).toBe(true);
+
+    fresh.ws.send(JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: 'S1', prompt: [{ type: 'text', text: 'silent' }] } }));
+    await sleep(50);
+    const r = reopen(U1, 't1', OTHER_TOK);
+    expect(await fresh.closed).toEqual({ code: CLOSE.takenOver, reason: 'kiro_session_taken_over' });
+    await waitFor(() => r.runner.length === 1);
+    expect(sessionCount()).toBe(1);
+    r.ws.close(1000);
+    await waitFor(() => sessionCount() === 0);
+  });
+});

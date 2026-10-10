@@ -1934,7 +1934,8 @@ describe('Kiro runs (VTID-05065)', () => {
     const s = openStream(id, admin);
     await waitFor(() => s.frames.some((f) => f.event === 'kiro.message_chunk'), 'running');
     const r = await drainKiroRunsForShutdown(3_000);
-    expect(r).toEqual({ interrupted: 1, timedOut: false });
+    // VTID-05068: `detached` counts runs let go for the next task; this backend cannot reattach, so 0.
+    expect(r).toEqual({ interrupted: 1, detached: 0, timedOut: false });
     await s.ended;
     expect(s.frames[s.frames.length - 1]).toMatchObject({ event: 'run.status', data: { status: 'interrupted' } });
     expect(run(id)).toMatchObject({ status: 'interrupted', error: 'gateway_shutdown' });
@@ -2049,5 +2050,280 @@ describe('Kiro runs (VTID-05065)', () => {
     // …and the turn has a run record.
     expect(platform.rows('kiro_runs')).toHaveLength(1);
     expect(platform.rows('kiro_runs')[0]).toMatchObject({ thread_id: THREAD, status: 'completed', reply: 'old path' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// VTID-05068: runs survive a gateway deploy. The REAL run service, chat-turn
+// executor, Kiro turn runner, ACP client and token derivation run over the fake
+// database; the kiro-runner is a fake whose kiro-cli "process" outlives its
+// gateway socket (buffering output while detached) and checks the reattach
+// token, exactly as services/kiro-runner/src/relay.ts does (pinned there by
+// the runner's own vitest suite).
+// ---------------------------------------------------------------------------
+import { createHash } from 'crypto';
+import { detachKiroSession } from '../src/services/kiro/kiro-turn';
+import { KiroReattachRefusedError } from '../src/services/kiro/remote-backend';
+
+describe('Kiro runs survive a gateway deploy (VTID-05068)', () => {
+  const THREAD = 'a5068000-0000-4000-8000-000000000001';
+  const realSetTimeout = globalThis.setTimeout;
+  const sleep = (ms: number) => new Promise<void>((r) => realSetTimeout(r, ms));
+  const savedLimits = { ...KIRO_RUN_LIMITS };
+  function deferred() { let resolve!: () => void; const promise = new Promise<void>((r) => { resolve = r; }); return { promise, resolve }; }
+  async function waitFor(cond: () => boolean, what: string, ms = 8_000): Promise<void> {
+    const deadline = Date.now() + ms;
+    while (!cond()) { if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`); await sleep(5); }
+  }
+
+  interface Ctl { chunk(t: string): void; tool(id: string, title: string): void; toolDone(id: string): void; ask(title: string): Promise<any> }
+  type Handler = (k: Ctl) => Promise<string>;
+
+  /** One kiro-cli process on the fake runner: it outlives a dropped socket and buffers meanwhile. */
+  class FakeKiroProcess {
+    sink: EventEmitter | null = null;
+    buffer: string[] = [];
+    promptIds = new Set<number>();
+    pendingAtDrop: number[] = [];
+    replies = new Map<number, (r: any) => void>();
+    openAsks = new Map<number, string>();
+    ended = false;
+    endedHow: string | null = null;
+    dropped = 0;
+    nextReq = 700;
+    constructor(readonly userId: string, readonly threadId: string, readonly tokenHash: string | null, readonly handlers: Handler[]) {}
+    send(o: unknown): void {
+      if (this.ended) return;
+      const line = JSON.stringify(o);
+      if (this.sink) this.sink.emit('data', `${line}\n`); else this.buffer.push(line);
+    }
+    handle(line: string): void {
+      const msg = JSON.parse(line);
+      const upd = (update: Record<string, unknown>) => this.send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'KD', update } });
+      if (msg.method === 'initialize') this.send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1 } });
+      else if (msg.method === 'session/new') this.send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 'KD' } });
+      else if (msg.method === 'session/prompt') {
+        this.promptIds.add(msg.id);
+        const handler = this.handlers.shift() ?? (async (k: Ctl) => { k.chunk('done'); return 'end_turn'; });
+        const ctl: Ctl = {
+          chunk: (t) => upd({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: t } }),
+          tool: (id, title) => upd({ sessionUpdate: 'tool_call', toolCallId: id, title, kind: 'read', status: 'pending' }),
+          toolDone: (id) => upd({ sessionUpdate: 'tool_call_update', toolCallId: id, status: 'completed' }),
+          ask: (title) => new Promise((res) => {
+            const id = this.nextReq++;
+            this.replies.set(id, res);
+            const req = { jsonrpc: '2.0', id, method: 'session/request_permission', params: { sessionId: 'KD', toolCall: { toolCallId: `tc${id}`, title, kind: 'edit' }, options: [{ optionId: 'allow', kind: 'allow_once' }, { optionId: 'deny', kind: 'reject_once' }] } };
+            this.openAsks.set(id, JSON.stringify(req));
+            this.send(req);
+          }),
+        };
+        void handler(ctl).then((stopReason) => { this.promptIds.delete(msg.id); this.send({ jsonrpc: '2.0', id: msg.id, result: { stopReason } }); });
+      } else if (msg.id !== undefined && !msg.method) {
+        this.openAsks.delete(msg.id);
+        const r = this.replies.get(msg.id);
+        if (r) { this.replies.delete(msg.id); r(msg.result); }
+      }
+    }
+    /** The gateway socket dropped (a detach, or a dead task). */
+    drop(): void { if (!this.sink) return; this.sink = null; this.dropped += 1; this.pendingAtDrop = [...this.promptIds]; }
+    end(how: string): void { this.ended = true; this.endedHow = how; this.sink = null; }
+    child(reattached: boolean): any {
+      const out = new EventEmitter();
+      const proc = new EventEmitter();
+      const runner: any = { workspace: reattached ? null : 'fresh', dirty: null, reattached: null };
+      if (reattached) {
+        runner.reattached = { sessionId: 'KD', pendingPrompts: this.pendingAtDrop };
+        // Like the runner: unanswered requests first, then the buffer — handed over a tick later (socketAsAcpChild).
+        const replay = [...this.openAsks.values(), ...this.buffer.splice(0)];
+        setImmediate(() => { for (const l of replay) out.emit('data', `${l}\n`); this.sink = out; });
+      } else {
+        this.sink = out;
+      }
+      return {
+        stdout: out,
+        stdin: { write: (line: string) => { this.handle(line); return true; }, end: () => this.end('closed_by_gateway') },
+        kill: () => this.end('closed_by_gateway'),
+        detach: () => this.drop(),
+        on: (ev: string, cb: any) => proc.on(ev, cb),
+        runner,
+      };
+    }
+  }
+
+  const fake = { procs: [] as FakeKiroProcess[], handlers: [] as Handler[], tokensSeen: [] as string[], refuse: null as null | 4403 | 4404 };
+  const backend = {
+    workspace: () => '/work/reattach',
+    spawn: (ctx: { userId: string | null; threadId: string; reattachToken?: string | null }) => {
+      if (ctx.reattachToken) fake.tokensSeen.push(ctx.reattachToken);
+      const p = new FakeKiroProcess(ctx.userId ?? '', ctx.threadId, ctx.reattachToken ? createHash('sha256').update(ctx.reattachToken).digest('hex') : null, fake.handlers);
+      fake.procs.push(p);
+      return p.child(false);
+    },
+    reattach: async (ctx: { userId: string | null; threadId: string }, token: string) => {
+      const p = fake.procs.find((x) => !x.ended && x.userId === ctx.userId && x.threadId === ctx.threadId);
+      if (fake.refuse === 4404 || !p) throw new KiroReattachRefusedError(4404, 'kiro_session_not_found');
+      if (fake.refuse === 4403 || createHash('sha256').update(token).digest('hex') !== p.tokenHash) throw new KiroReattachRefusedError(4403, 'kiro_reattach_refused');
+      return p.child(true);
+    },
+  };
+
+  let admin = '';
+  const run = (id: string) => platform.rows('kiro_runs').find((r) => r.id === id)!;
+  const runEvents = (id: string) => platform.rows('kiro_run_events').filter((e) => e.run_id === id).sort((a, b) => a.seq - b.seq);
+  const isDone = (id: string) => ['completed', 'refused', 'incomplete', 'failed', 'cancelled', 'interrupted'].includes(run(id)?.status);
+  async function startRun(message: string) {
+    return request(app).post('/api/v1/operator/kiro/runs').set('Authorization', `Bearer ${admin}`).send({ thread_id: THREAD, message });
+  }
+  /** A running run whose session is reattachable and whose first text is stored. */
+  async function runningRun(gate: Promise<void>, ask = false): Promise<string> {
+    fake.handlers.push(async (k) => {
+      k.chunk('before the deploy. ');
+      await gate;
+      if (ask) { const r = await k.ask('Edit services/gateway/src/a.ts'); k.chunk(r.outcome.outcome === 'selected' ? 'edited. ' : 'not edited. '); }
+      k.tool('t1', 'Read a file');
+      k.chunk('after the deploy.');
+      k.toolDone('t1');
+      return 'end_turn';
+    });
+    const res = await startRun('finish the upload endpoint');
+    expect(res.status).toBe(202);
+    const id = res.body.run_id as string;
+    await waitFor(() => !!run(id).reattach_nonce && runEvents(id).some((e) => e.type === 'kiro.message_chunk'), 'reattach identity and first text stored');
+    return id;
+  }
+  /** The deploy: this task drains (lets the session go); the current process then plays the NEW task. */
+  async function deployDrain(id: string) {
+    const r = await drainKiroRunsForShutdown(3_000);
+    expect(r).toEqual({ interrupted: 0, detached: 1, timedOut: false });
+    run(id).gateway_task = 'old-task-before-deploy';
+  }
+
+  beforeAll(() => { Object.assign(KIRO_RUN_LIMITS, { coalesceMs: 20, flushMs: 20, streamPollMs: 20 }); });
+  afterAll(() => { Object.assign(KIRO_RUN_LIMITS, savedLimits); });
+  beforeEach(async () => {
+    fake.procs.length = 0; fake.handlers.length = 0; fake.tokensSeen.length = 0; fake.refuse = null;
+    Object.assign(process.env, { OPERATOR_THREADS_ENABLED: 'true', KIRO_ENGINE_ENABLED: 'true', GATEWAY_INTERNAL_TOKEN: 'pipeline-internal-token' });
+    setKiroBackend(backend as any);
+    app.use('/api/v1/operator/kiro/runs', kiroRunsRouter);
+    admin = await jwt(ADMIN_USER, true);
+  });
+  afterEach(async () => {
+    closeAllKiroSessions();
+    await platform.settle().catch(() => undefined);
+    resetKiroRunsForTests();
+    setKiroBackend(null);
+    delete process.env.OPERATOR_THREADS_ENABLED;
+    delete process.env.KIRO_ENGINE_ENABLED;
+    delete process.env.GATEWAY_INTERNAL_TOKEN;
+  });
+
+  it('a deploy mid-run: the old task lets the session go, the new task reattaches it, and the run completes with contiguous seq, one reply and no interrupted event', async () => {
+    const gate = deferred();
+    const id = await runningRun(gate.promise);
+    // The row holds the nonce and the token hash — never the token the runner got.
+    const token = fake.tokensSeen[0];
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(run(id).reattach_token_hash).toBe(createHash('sha256').update(token).digest('hex'));
+    expect(JSON.stringify(run(id))).not.toContain(token);
+    expect(run(id).turn_context).toMatchObject({ mode: expect.any(String) });
+
+    await deployDrain(id);
+    const proc = fake.procs[0];
+    expect(proc).toMatchObject({ ended: false, dropped: 1 }); // the runner kept kiro-cli alive
+    expect(run(id).status).toBe('running');
+    expect(Date.parse(run(id).reattach_expires_at)).toBeGreaterThan(Date.now() + 9 * 60_000);
+    const seqBefore = runEvents(id).map((e) => e.seq);
+
+    // Kiro keeps working while no gateway task listens: its output is buffered by the runner.
+    gate.resolve();
+    await waitFor(() => proc.buffer.length >= 4, 'output buffered while detached');
+
+    // The new task's boot sweep: reattach first.
+    expect(await sweepStaleKiroRuns()).toBe(0);
+    await waitFor(() => isDone(id), 'reattached run finished');
+    await platform.settle();
+    expect(run(id)).toMatchObject({ status: 'completed', reply: 'before the deploy. after the deploy.', stop_reason: 'end_turn', gateway_task: GATEWAY_TASK_ID });
+    const seqs = runEvents(id).map((e) => e.seq);
+    expect(seqs).toEqual(seqs.map((_, i) => i + 1));
+    expect(seqs.slice(0, seqBefore.length)).toEqual(seqBefore);
+    const types = runEvents(id).map((e) => e.type);
+    expect(types[seqBefore.length]).toBe('run.reattached');
+    expect(types).toEqual(expect.arrayContaining(['kiro.tool_call', 'kiro.tool_update', 'kiro.turn_end']));
+    expect(runEvents(id).filter((e) => e.type === 'kiro.message_chunk').map((e) => e.payload.text).join('')).toBe('before the deploy. after the deploy.');
+    expect(runEvents(id).filter((e) => e.type === 'run.status').map((e) => e.payload.status)).toEqual(['running', 'completed']);
+    expect(platform.events('operator.kiro.run_reattached').filter((e) => e.metadata?.run_id === id)).toHaveLength(1);
+    expect(platform.events('operator.kiro.run_interrupted')).toHaveLength(0);
+    // The turn is recorded once, by the task that finished it.
+    const assistant = platform.rows('operator_messages').filter((m) => m.thread_id === THREAD && m.role === 'assistant');
+    expect(assistant.map((m) => m.content)).toEqual(['before the deploy. after the deploy.']);
+    // The same kiro-cli process answered the turn: no second spawn.
+    expect(fake.procs).toHaveLength(1);
+  });
+
+  it('an approval card open at the deploy is shown again by the reattached session and answered there', async () => {
+    const gate = deferred();
+    const id = await runningRun(gate.promise, true);
+    gate.resolve();
+    await waitFor(() => run(id).status === 'waiting_permission', 'card open on the old task');
+    await deployDrain(id);
+    expect(await sweepStaleKiroRuns()).toBe(0);
+    await waitFor(() => run(id).status === 'waiting_permission' && run(id).gateway_task === GATEWAY_TASK_ID && !!run(id).pending_permission, 'card again on the new task');
+    const reqId = run(id).pending_permission.request_id as string;
+    const ans = await request(app).post(`/api/v1/operator/kiro/permissions/${reqId}`).set('Authorization', `Bearer ${admin}`).send({ allow: true });
+    expect(ans.status).toBe(200);
+    await waitFor(() => isDone(id), 'finished');
+    await platform.settle();
+    expect(run(id)).toMatchObject({ status: 'completed', reply: 'before the deploy. edited. after the deploy.' });
+  });
+
+  it('the runner refuses the reattach (session gone, or token rejected): the run is interrupted exactly as in Phase 1', async () => {
+    for (const code of [4404, 4403] as const) {
+      const gate = deferred();
+      const id = await runningRun(gate.promise);
+      await deployDrain(id);
+      fake.refuse = code;
+      expect(await sweepStaleKiroRuns()).toBe(1);
+      expect(run(id)).toMatchObject({ status: 'interrupted', error: 'gateway_task_lost', pending_permission: null, gateway_task: GATEWAY_TASK_ID });
+      expect(run(id).ended_at).toBeTruthy();
+      expect(platform.events('operator.kiro.run_interrupted').filter((e) => e.metadata?.run_id === id)).toHaveLength(1);
+      expect(platform.events('operator.kiro.run_reattached').filter((e) => e.metadata?.run_id === id)).toHaveLength(0);
+      // A second sweep changes nothing.
+      expect(await sweepStaleKiroRuns()).toBe(0);
+      fake.refuse = null;
+      for (const p of fake.procs) p.end('test');
+      gate.resolve();
+      closeAllKiroSessions();
+      await platform.settle();
+      resetKiroRunsForTests();
+    }
+  });
+
+  it('a crashed task (no drain): once its heartbeat is stale the run is reattached inside the window; past the window it is interrupted as before', async () => {
+    const gate = deferred();
+    const id = await runningRun(gate.promise);
+    // The task dies: its socket drops, nothing is written.
+    expect(detachKiroSession(THREAD)).toBe(true);
+    resetKiroRunsForTests();
+    Object.assign(run(id), { gateway_task: 'crashed-task', last_heartbeat_at: new Date(Date.now() - 60_000).toISOString() });
+    // Heartbeat not stale yet: nothing happens.
+    expect(await sweepStaleKiroRuns()).toBe(0);
+    expect(run(id).status).toBe('running');
+    run(id).last_heartbeat_at = new Date(Date.now() - 3 * 60_000).toISOString();
+    gate.resolve();
+    expect(await sweepStaleKiroRuns()).toBe(0);
+    await waitFor(() => isDone(id), 'reattached after a crash');
+    await platform.settle();
+    expect(run(id)).toMatchObject({ status: 'completed', reply: 'before the deploy. after the deploy.' });
+
+    // Past the window (heartbeat 11 min old, no hand-over mark): the Phase 1 sweep, no reattach.
+    const gate2 = deferred();
+    const id2 = await runningRun(gate2.promise);
+    expect(detachKiroSession(THREAD)).toBe(true);
+    resetKiroRunsForTests();
+    Object.assign(run(id2), { gateway_task: 'crashed-task', last_heartbeat_at: new Date(Date.now() - 11 * 60_000).toISOString() });
+    expect(await sweepStaleKiroRuns()).toBe(1);
+    expect(run(id2)).toMatchObject({ status: 'interrupted', error: 'gateway_task_lost', gateway_task: 'crashed-task' });
+    expect(platform.events('operator.kiro.run_reattached').filter((e) => e.metadata?.run_id === id2)).toHaveLength(0);
+    gate2.resolve();
   });
 });
