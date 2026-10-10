@@ -1,0 +1,32 @@
+name: AURORA-PRIVILEGE-PARITY-UNIT
+run-name: 'Aurora privilege-parity unit tests [${{ github.head_ref || github.ref_name }}]'
+
+# VTID-05023 part 0: unit tests for scripts/aws/aurora-privilege-parity.py over
+# fixture catalogs. No AWS, no database, no secrets: the gate's live read of
+# Aurora is run by hand per the cutover runbook ("Part 0"), never from CI.
+on:
+  pull_request:
+    paths:
+      - 'scripts/aws/aurora-privilege-parity*'
+      - 'scripts/aws/test/**'
+      - '.github/workflows/AURORA-PRIVILEGE-PARITY-UNIT.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/aws/aurora-privilege-parity*'
+      - 'scripts/aws/test/**'
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run unit tests
+        run: python3 -m unittest discover -s scripts/aws/test -p 'test_*.py' -v

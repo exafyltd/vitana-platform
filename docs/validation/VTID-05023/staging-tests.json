@@ -1,0 +1,40 @@
+{
+ "vtid": "VTID-05023",
+ "service": "gateway",
+ "tests": [
+  {
+   "kind": "http",
+   "name": "gateway alive after the change",
+   "path": "/alive",
+   "expect_status": 200
+  },
+  {
+   "kind": "existing",
+   "ref": "npm run test:proxy-routing",
+   "cwd": ".",
+   "reason": "The PostgREST-Aurora proxy's nginx routing has no staging endpoint yet (the prod proxy and its public host come from the dispatch-only workflows of VTID-05023). This builds the real image and proves both audiences against a mock Supabase: internal passthrough of auth/storage/functions/realtime (websocket upgrade, 30 MB upload, 50 MB functions cap), /rest to PostgREST, 501 for unknown paths; on the public host only /rest and /alive, and no request reaches Supabase. It fails on the previous config."
+  },
+  {
+   "kind": "existing",
+   "ref": "npm run test:aurora-parity",
+   "cwd": ".",
+   "reason": "Part 0 privilege-parity gate: diff and fix generation over fixture catalogs (anon EXECUTE on increment_wallet_balance flagged and revoked, RLS off fixed, statement_timeout mismatch, quoting). The gate itself runs against the Aurora clone and Aurora, never as a staging test."
+  },
+  {
+   "kind": "http",
+   "name": "GET /auth/config hands the browser the public Supabase URL (R1(b))",
+   "path": "/api/v1/auth/config",
+   "expect_status": 200,
+   "expect_json": {
+    "ok": true,
+    "supabase_url": "https://inmkhvwdcuyhnxkgfvsb.supabase.co"
+   }
+  },
+  {
+   "kind": "existing",
+   "ref": "npx jest test/lib/supabase-public-url.test.ts test/vtid-05023-supabase-public-url-cutover.test.ts test/vtid-05023-public-url-guard.test.ts",
+   "cwd": "services/gateway",
+   "reason": "R1(b) gateway part: SUPABASE_PUBLIC_URL. With SUPABASE_URL on the internal proxy origin and SUPABASE_PUBLIC_URL on supabase.co, storage public URLs, signed URLs, the video thumbnail URL and GET /auth/config come out on the public origin and never contain the internal host; a guard fails on any new getPublicUrl/createSignedUrl call site not routed through the helper. Staging still runs with SUPABASE_URL on supabase.co, so the HTTP probe above proves today's value is unchanged."
+  }
+ ]
+}

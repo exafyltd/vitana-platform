@@ -18,6 +18,7 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
+import { getSupabasePublicUrl } from '../lib/supabase-public-url';
 import { notifyUserAsync } from '../services/notification-service';
 import { generatePersonalRecommendations } from '../services/recommendation-engine';
 import { sendWelcomeChatMessages } from '../services/welcome-chat-service';
@@ -57,7 +58,9 @@ router.get('/config', (_req: Request, res: Response) => {
   console.log('[VTID-01186] GET /auth/config - Returning Supabase config');
   return res.status(200).json({
     ok: true,
-    supabase_url: supabaseUrl,
+    // VTID-05023 R1(b): the browser initializes supabase-js with this, so it
+    // must be the public Supabase URL, never the gateway's internal proxy.
+    supabase_url: getSupabasePublicUrl() || supabaseUrl,
     supabase_anon_key: supabaseAnonKey,
   });
 });

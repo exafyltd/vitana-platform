@@ -1,5 +1,60 @@
 # Supabase → Aurora Cutover Runbook — 2026-09-21 14:00 CEST
 
+
+> **UPDATE 2026-10-05 (VTID-04755) — read before the 2026-10-10 00:00 CEST window.**
+> - The Aurora cluster was restored from backup (2026-10-01) after a KMS key-access
+>   loss; endpoints are unchanged. New RDS-managed master secret:
+>   `rds!cluster-4dab93b8…` — the old `rds!cluster-eba8a4f2…` ARNs below are dead.
+> - The freeze (Step 4) and restore-grants (Step 8) scripts run on **Supabase**,
+>   not Aurora (their own headers say so); the psql lines below are corrected.
+> - Aurora-side SQL runs through the RDS Data API with
+>   `scripts/aws/aurora-run-sql.sh <file>` (needs `aws rds enable-http-endpoint`).
+> - **Step 1 is superseded** by `aurora-cutover-vector-preload.sql` (before the
+>   load: calendar_events `valid_source_type` synced to Supabase, vector indexes
+>   dropped, 13 vector columns staged as text) and
+>   `aurora-cutover-vector-postload.sql` (after the load: cast back, recreate
+>   indexes). The 2026-10-05 rehearsal failed exactly these tables without it.
+> - **New Step 5b**, after the final load: `aurora-cutover-vector-postload.sql`,
+>   then `aurora-cutover-recreate-foreign-keys.sql` (355 FKs; Aurora had 0, so
+>   PostgREST embedded selects would fail). Must run AFTER the load — TRUNCATE
+>   fails on FK-referenced tables.
+> - The final load uses task `vitana-fullload-final-catchup`
+>   (`arn:aws:dms:eu-central-1:472838866351:task:HBS7QKNHKFFT5GK6WDMK5236CA`).
+> - **UPDATE 2026-10-09: schema drift.** A full column diff showed Aurora is
+>   missing 79 columns, 8 tables and 20 views that Supabase has (later
+>   migrations never reached Aurora). **New Step 0**, before the pre-load:
+>   `aurora-cutover-schema-sync.sql`. **New last step**, after the FKs:
+>   `aurora-cutover-schema-sync-views.sql`. Both can be re-run, and both were
+>   tested twice against a scratch Postgres built from Aurora's real columns.
+>   `signup_funnel` is not created: it joins `auth.users`, which Aurora does
+>   not have. Still open: 16 enum columns that are varchar on Aurora, and 2
+>   nullability differences. `aurora-cutover-fix-6-tables.sh` runs every step
+>   in order.
+> - **Embedding backfill (new step after `aurora-cutover-after-load.sh`):**
+>   `python3 aurora-cutover-embedding-backfill.py`. It reads Supabase read-only
+>   through its REST API (GETs only, service-role key; the DB network allow-list
+>   admits only DMS) and writes to Aurora through the Data
+>   API, 25 rows per transaction with `session_replication_role = replica`, so
+>   no trigger restamps rows. It then compares counts per column, restores the
+>   2 NOT NULLs and rebuilds the 3 IVFFlat indexes. It can be re-run. Tested
+>   end to end against scratch Postgres: values byte-identical, trigger
+>   suppressed.
+> - **Embedding backfill, first real run 2026-10-10: passed.** All 7,942 copied
+>   in about 4.5 minutes, and the counts match Supabase on all 13 columns. NOT
+>   NULL is restored on both columns and the 3 IVFFlat indexes are rebuilt. On
+>   the switch night it runs after the freeze, so nothing is missed.
+> - **DRESS REHEARSAL 2026-10-09 22:00Z — passed (no connection switch, no
+>   freeze).** The full DMS load took 20 min (21:46–22:06Z): 663 tables, 0
+>   errors. Then `aurora-cutover-after-load.sh` ran the post-load, 358 FKs and
+>   19 views (`ALL DONE`, about 22:45Z after three script fixes). Open before
+>   the real switch: (1) **embeddings** — DMS truncated all 7,942 of them on
+>   the source read, so Aurora has none. They need a separate backfill from
+>   Supabase, after which `NOT NULL` goes back on
+>   `dev_agent_memory.embedding` and `memory_embeddings.embedding`;
+>   (2) `signup_funnel` view; (3) realtime, storage, edge functions and a
+>   public endpoint for the PostgREST proxy; (4) 16 enum columns that are
+>   varchar on Aurora.
+
 > **VTID-04880 (2026-10-05):** `nav_catalog`, `nav_catalog_audit` and
 > `nav_catalog_i18n` no longer live in Supabase `public`. They were archived
 > into the `legacy_archive` schema with the legacy voice navigator
@@ -242,6 +297,18 @@ whether the frontend repoint happens in the same freeze window or as a
 fast-follow, since a gap between the two repoints is a real split-brain
 risk (gateway on Aurora, browser still writing Supabase).
 
+**Update 2026-10-10 (VTID-05023, option B):** the public endpoint is now
+built by two governed, `workflow_dispatch`-only workflows instead of by hand:
+`AWS-PROD-DEPLOY-POSTGREST-AURORA-PROXY.yml` (separate prod service
+`vitana-postgrest-aurora-proxy-prod`, task family
+`vitana-postgrest-aurora-prod`, pinned `commit_sha`) and
+`AWS-PROD-SETUP-POSTGREST-AURORA-PROXY-EDGE.yml` (target group, ALB host rule
+priority 8, Cloudflare CNAME + WAF/bot skip for `data.vitanaland.com`; refuses
+without a PASS privilege-parity report < 24 h old). They supersede the
+hand-run draft `scripts/aws/setup-postgrest-aurora-proxy-public.sh`, which was
+deleted (hand-run `aws` changes violate rule 17). The staging service
+`vitana-postgrest-aurora-proxy` stays staging-only.
+
 ---
 
 ## The freeze window
@@ -257,7 +324,7 @@ took 15.5-16 min for the whole dataset.
 ### Step 4 — Freeze writes
 
 ```bash
-psql "$AURORA_ADMIN_URL"   # or via RDS Data API, statement-by-statement
+psql "$SUPABASE_ADMIN_URL"   # SUPABASE (the source), not Aurora -- see the script header
 \i scripts/aws/aurora-cutover-freeze-writes.sql
 ```
 
@@ -356,7 +423,7 @@ Supabase's. Never create it while DMS is still writing `vtid_ledger`. Details:
 ### Step 8 — Unfreeze
 
 ```bash
-psql "$AURORA_ADMIN_URL"
+psql "$SUPABASE_ADMIN_URL"   # SUPABASE, not Aurora
 \i scripts/aws/aurora-cutover-restore-grants.sql
 ```
 
@@ -418,3 +485,68 @@ gaps (pgvector tables, `products`/`knowledge_docs` uncertainty) explicitly
 accepted and documented, backfilling them after. Either is better than
 freezing writes before the pre-freeze steps are actually done — a freeze
 with no clear unblock plan just extends downtime for no benefit.
+
+---
+
+## Part 0 — privilege parity gate (VTID-05023)
+
+The PostgREST-Aurora proxy must never give `anon`, `authenticated` or
+`service_role` more on Aurora than they have on Supabase (sparring finding
+F1: `setup-aurora-postgrest-grants.sh` grants ALL to anon, Supabase's anon
+RPC lockdown incl. `increment_wallet_balance` is not on Aurora, tables
+without RLS). This gate checks that, and nothing member-facing goes public
+until it passes.
+
+**When it runs**
+1. **Against the Aurora clone first** (N7): before the staging data host
+   serves anything in the part-10 rehearsal, with `--cluster <clone id>`.
+2. **Before the public host goes live**: `data.vitanaland.com` stays dark
+   until `--check --strict` exits 0 against `vitana-aurora-prod`.
+3. **After every final load** (and its after-load / embedding steps), in the
+   window, before any flip. A DMS load can recreate tables and so drop RLS
+   and grants; a pass from before the load does not count.
+
+**How**
+1. Take the Supabase snapshot read-only: run
+   `scripts/aws/aurora-privilege-parity-snapshot.sql` (one SELECT, one JSON
+   document) and save the result as `supabase-snapshot.json`. A client with a
+   small result limit can use the chunked form:
+   `python3 scripts/aws/aurora-privilege-parity.py --print-chunk-sql 0:99`
+   (save the rows as a JSON list; the script reassembles them and checks the
+   md5).
+2. Check Aurora (reads the same SQL through the RDS Data API, cluster's
+   MasterUserSecret, account/region guarded; the only statement it sends is
+   that SELECT):
+   ```bash
+   python3 scripts/aws/aurora-privilege-parity.py --check --strict \
+     --supabase-snapshot supabase-snapshot.json \
+     --cluster vitana-aurora-prod --role-map postgres=<aurora owner role> \
+     --save-aurora-snapshot aurora-snapshot.json \
+     --report docs/validation/VTID-05023/privilege-parity-report.json
+   ```
+   Exit 1 on any EXTRA grant (table, column, routine, default privilege,
+   role membership), any RLS mismatch, any role-setting mismatch
+   (`statement_timeout` anon 3s / authenticated 8s) or role-attribute
+   mismatch. MISSING only warns without `--strict`; at the public-host and
+   window gates always use `--strict`.
+3. On failure, write the fix (the script never executes it):
+   `... --fix --out privilege-parity-fix.sql` (same inputs, or
+   `--aurora-snapshot aurora-snapshot.json`). Review it, run it with
+   `scripts/aws/aurora-run-sql.sh privilege-parity-fix.sql` using a
+   credential that owns the objects, then **run `--check --strict` again**.
+   A REVOKE by a role that is neither owner nor grantor is a silent no-op in
+   PostgreSQL, so only the re-check proves the fix landed.
+
+**What it does not change on its own**
+- Statements that would make Aurora *less* restrictive (disable RLS where
+  Supabase has none, reset a role setting Supabase does not have) are written
+  as comments; uncomment after review or pass `--allow-loosen`.
+- Objects owned by an extension (pgvector, postgis) are reported, not gated
+  (`--include-extension-objects` to gate them). `MAINTAIN` (PG17+) is
+  reported, never fixed.
+- A table-level REVOKE also removes that privilege's column grants; the fix
+  file grants Supabase's column grants back after the REVOKE.
+
+Tests: `python3 -m unittest discover -s scripts/aws/test -p 'test_*.py'`
+(fixture catalogs, no network), run in CI by
+`AURORA-PRIVILEGE-PARITY-UNIT.yml`.

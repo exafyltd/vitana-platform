@@ -1,0 +1,7 @@
+# VTID-05023 — commands run for this evidence pack (2026-10-10, local, no network services)
+bash services/postgrest-aurora-proxy/test/routing.sh            # 15/15 PASS (docker, mock HTTPS Supabase)
+python3 -m unittest discover -s scripts/aws/test -p 'test_*.py' # Ran 28 tests, OK
+cd services/gateway && npx jest test/lib/supabase-public-url.test.ts test/vtid-05023-supabase-public-url-cutover.test.ts test/vtid-05023-public-url-guard.test.ts  # 3 suites, 22 tests passed
+npx --prefix services/gateway tsc --noEmit -p services/gateway/tsconfig.json   # no errors in changed files
+python3 -c "import yaml; yaml.safe_load(open(f))" for both new workflows       # parse OK
+node scripts/ci/staging-verify/run.mjs check-pr --service gateway ...          # change suite present and valid

@@ -1,0 +1,4 @@
+$ npm run test:aurora-parity
+Ran 28 tests in 0.039s
+
+OK

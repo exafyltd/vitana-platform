@@ -3,7 +3,9 @@
   "private": true,
   "packageManager": "pnpm@9.0.0",
   "scripts": {
-    "check": "echo ok"
+    "check": "echo ok",
+    "test:proxy-routing": "bash services/postgrest-aurora-proxy/test/routing.sh",
+    "test:aurora-parity": "python3 -m unittest discover -s scripts/aws/test -p 'test_*.py'"
   },
   "devDependencies": {
     "prisma": "^6.18.0"

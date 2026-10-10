@@ -22,6 +22,7 @@
  */
 
 import { getSupabase } from '../../lib/supabase';
+import { toPublicSupabaseUrl } from '../../lib/supabase-public-url';
 import { s3Download, s3Upload, s3Remove, s3PublicUrl, s3List, s3SignedUrl } from '../../providers/s3-storage';
 
 export type StorageProviderName = 'supabase' | 's3';
@@ -76,7 +77,11 @@ export function storagePublicUrl(bucket: string, path: string): string {
   if (getStorageProvider() === 's3') return s3PublicUrl(bucket, path);
   const supabase = getSupabase();
   if (!supabase) throw new Error('Supabase client unavailable');
-  return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+  // VTID-05023 R1(b): supabase-js builds this from the client's SUPABASE_URL,
+  // which becomes the VPC-only PostgREST-Aurora proxy at the cutover. The URL
+  // is stored in rows and rendered by members' browsers, so it must carry the
+  // public Supabase origin.
+  return toPublicSupabaseUrl(supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl);
 }
 
 /**
@@ -119,5 +124,7 @@ export async function storageSignedUrl(
   if (!supabase) return { url: null, error: new Error('Supabase client unavailable') };
   const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, expiresInSeconds);
   if (error || !data) return { url: null, error: error ? new Error(error.message) : new Error('createSignedUrl returned no data') };
-  return { url: data.signedUrl, error: null };
+  // VTID-05023 R1(b): the signed URL is handed to a member / a third party,
+  // so it must be on the public Supabase origin, not the internal proxy.
+  return { url: toPublicSupabaseUrl(data.signedUrl), error: null };
 }

@@ -1,0 +1,448 @@
+# AWS-PROD-DEPLOY-POSTGREST-AURORA-PROXY — build the PostgREST-Aurora proxy
+# (nginx sidecar from services/postgrest-aurora-proxy/) at a PINNED commit,
+# push it to ECR as prod-<sha12>, and roll the PRODUCTION ECS service
+# `vitana-postgrest-aurora-proxy-prod` (VTID-05023, plan part 1c; sparring
+# findings F5 + F6).
+#
+# Why a separate prod service: the existing `vitana-postgrest-aurora-proxy`
+# service (task family `vitana-postgrest-aurora-staging`) is auto-deployed on
+# push by AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml. A member-facing
+# endpoint must never be rolled by a staging workflow (CLAUDE.md rules 17 and
+# 46–50), so production gets its own service, task family and Cloud Map name,
+# deployed only from here.
+#
+# What this workflow does (idempotent — re-running with the same commit is
+# safe):
+#   1. checks out EXACTLY `commit_sha` and refuses unless it is already on
+#      origin/main;
+#   2. builds + pushes `vitana/postgrest-aurora-proxy:prod-<sha12>` (an existing
+#      tag is reused, never overwritten);
+#   3. registers a revision of task family `vitana-postgrest-aurora-prod` —
+#      the first time derived from the staging family's latest revision, after
+#      that from its own latest — with the production JWT secret, PostgREST
+#      pool/row limits, PUBLIC_HOST, 1 vCPU / 2 GB and an /alive container
+#      health check on the proxy;
+#   4. creates the service (2 tasks, Cloud Map `postgrest-aurora-prod` in the
+#      staging registry's namespace, deployment circuit breaker with rollback)
+#      when missing, otherwise rolls it;
+#   5. registers Application Auto Scaling (min 2, max 6, CPU target 60 %);
+#   6. waits for stability and proves the PRIMARY deployment runs the image
+#      just built on >= 2 RUNNING + HEALTHY tasks (no public URL to curl here —
+#      the ALB/DNS edge is AWS-PROD-SETUP-POSTGREST-AURORA-PROXY-EDGE.yml).
+#
+# It refuses to touch any ECS service or task family whose name does not end
+# in `-prod`. It does not touch the staging service, the gateway's
+# SUPABASE_URL, the ALB, or DNS.
+#
+# workflow_dispatch ONLY, required `reason`, never on push (CLAUDE.md §16).
+#
+# Required repository secret: AWS_PROD_ROLE_ARN (GitHub OIDC deploy role).
+# Required Secrets Manager entries (eu-central-1):
+#   vitana/aurora/prod/postgrest-authenticator-uri  -> PGRST_DB_URI
+#   vitana/supabase/prod/jwt-secret                 -> PGRST_JWT_SECRET
+# The task EXECUTION role (inherited from the staging family) must be allowed
+# secretsmanager:GetSecretValue on vitana/supabase/prod/jwt-secret; a
+# best-effort preflight below checks this with iam:SimulatePrincipalPolicy.
+
+name: AWS Prod Deploy PostgREST-Aurora Proxy (ECS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for this PRODUCTION postgrest-aurora-proxy deploy — required'
+        required: true
+      commit_sha:
+        description: 'Full 40-char commit SHA to deploy (must already be on main)'
+        required: true
+      pgrst_db_pool:
+        description: 'PGRST_DB_POOL per task (size against Aurora max_connections x max tasks)'
+        required: false
+        default: '20'
+
+permissions:
+  contents: read
+  id-token: write # aws-actions/configure-aws-credentials OIDC
+
+concurrency:
+  group: aws-prod-deploy-postgrest-aurora-proxy
+  cancel-in-progress: false
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      AWS_REGION: eu-central-1
+      AWS_ACCOUNT_ID: '472838866351'
+      AWS_PAGER: ''
+      ECR_REPOSITORY: vitana/postgrest-aurora-proxy
+      ECS_CLUSTER: Vitana-ECS-Cluster
+      ECS_SERVICE: vitana-postgrest-aurora-proxy-prod
+      TASK_FAMILY: vitana-postgrest-aurora-prod
+      STAGING_TASK_FAMILY: vitana-postgrest-aurora-staging
+      STAGING_REGISTRY_ID: srv-n7dhq5dwhkmhy7ky
+      CLOUDMAP_SERVICE_NAME: postgrest-aurora-prod
+      SUBNETS: subnet-0ff45a2051c5e5482,subnet-0c786864a28a5a821
+      SECURITY_GROUP: sg-0fbcf7b59b1f0d685
+      PROXY_CONTAINER: proxy
+      POSTGREST_CONTAINER: postgrest
+      PUBLIC_HOST: data.vitanaland.com
+      SECRET_DB_URI: vitana/aurora/prod/postgrest-authenticator-uri
+      SECRET_JWT: vitana/supabase/prod/jwt-secret
+      LOG_GROUP: /ecs/vitana-postgrest-aurora-prod
+      ASG_MIN: '2'
+      ASG_MAX: '6'
+      ASG_CPU_TARGET: '60'
+      DEPLOY_REASON: ${{ inputs.reason }}
+      PIN: ${{ inputs.commit_sha }}
+      PGRST_DB_POOL: ${{ inputs.pgrst_db_pool }}
+    steps:
+      - name: Validate inputs and prod-only targets
+        run: |
+          set -euo pipefail
+          if ! echo "$PIN" | grep -qE '^[0-9a-f]{40}$'; then
+            echo "::error::commit_sha must be a full 40-character lowercase SHA, got '$PIN'"; exit 1
+          fi
+          if [ -z "${DEPLOY_REASON// /}" ]; then
+            echo "::error::reason is required"; exit 1
+          fi
+          if ! echo "$PGRST_DB_POOL" | grep -qE '^[0-9]+$' || [ "$PGRST_DB_POOL" -lt 1 ] || [ "$PGRST_DB_POOL" -gt 100 ]; then
+            echo "::error::pgrst_db_pool must be an integer 1..100, got '$PGRST_DB_POOL'"; exit 1
+          fi
+          case "$ECS_SERVICE" in *-prod) ;; *) echo "::error::Refusing: service '$ECS_SERVICE' does not end in -prod"; exit 1 ;; esac
+          case "$TASK_FAMILY" in *-prod) ;; *) echo "::error::Refusing: task family '$TASK_FAMILY' does not end in -prod"; exit 1 ;; esac
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 0
+
+      - name: Pinned commit must already be on main
+        id: commit
+        run: |
+          set -euo pipefail
+          HEAD_SHA=$(git rev-parse HEAD)
+          if [ "$HEAD_SHA" != "$PIN" ]; then
+            echo "::error::checked out $HEAD_SHA, expected $PIN"; exit 1
+          fi
+          git fetch -q origin main
+          if ! git merge-base --is-ancestor "$PIN" origin/main; then
+            echo "::error::commit_sha $PIN is not on main — only commits that already landed on main may be deployed to production"; exit 1
+          fi
+          echo "Deploying pinned commit $PIN (main HEAD is $(git rev-parse origin/main))"
+          echo "short=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials (GitHub OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Account/region guard (472838866351 / eu-central-1)
+        run: |
+          set -euo pipefail
+          ACCT=$(aws sts get-caller-identity --query Account --output text)
+          if [ "$ACCT" != "$AWS_ACCOUNT_ID" ]; then
+            echo "::error::Assumed role is in account $ACCT, expected $AWS_ACCOUNT_ID"; exit 1
+          fi
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Preflight — ECR repo, secrets, Cloud Map namespace, existing state
+        id: pre
+        run: |
+          set -euo pipefail
+          aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null \
+            || { echo "::error::ECR repository '$ECR_REPOSITORY' not found"; exit 1; }
+
+          # Secret ARNs only — values are never read by this workflow.
+          SEC_DB=$(aws secretsmanager describe-secret --secret-id "$SECRET_DB_URI" --query ARN --output text 2>/dev/null || true)
+          SEC_JWT=$(aws secretsmanager describe-secret --secret-id "$SECRET_JWT" --query ARN --output text 2>/dev/null || true)
+          for PAIR in "$SECRET_DB_URI=$SEC_DB" "$SECRET_JWT=$SEC_JWT"; do
+            V=${PAIR#*=}
+            if [ -z "$V" ] || [ "$V" = None ]; then
+              echo "::error::Secret '${PAIR%%=*}' missing in Secrets Manager — refusing to register a task definition that cannot start"; exit 1
+            fi
+          done
+          echo "sec_db=$SEC_DB" >> "$GITHUB_OUTPUT"
+          echo "sec_jwt=$SEC_JWT" >> "$GITHUB_OUTPUT"
+
+          NS_ID=$(aws servicediscovery get-service --id "$STAGING_REGISTRY_ID" --query Service.NamespaceId --output text)
+          if [ -z "$NS_ID" ] || [ "$NS_ID" = None ]; then
+            echo "::error::Could not resolve the Cloud Map namespace of $STAGING_REGISTRY_ID"; exit 1
+          fi
+          NS_NAME=$(aws servicediscovery get-namespace --id "$NS_ID" --query Namespace.Name --output text)
+          echo "Cloud Map namespace: $NS_ID ($NS_NAME)"
+          echo "ns_id=$NS_ID" >> "$GITHUB_OUTPUT"
+          echo "ns_name=$NS_NAME" >> "$GITHUB_OUTPUT"
+
+          STATUS=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            --query 'services[0].status' --output text 2>/dev/null || true)
+          if [ "$STATUS" = ACTIVE ]; then
+            echo "service_exists=true" >> "$GITHUB_OUTPUT"
+            echo "Service $ECS_SERVICE exists (ACTIVE) — will roll it"
+          elif [ "$STATUS" = DRAINING ]; then
+            echo "::error::Service $ECS_SERVICE is DRAINING — wait until it is INACTIVE, then re-run"; exit 1
+          else
+            echo "service_exists=false" >> "$GITHUB_OUTPUT"
+            echo "Service $ECS_SERVICE does not exist — will create it"
+          fi
+
+      - name: Build and push proxy image (prod-<sha12>; an existing tag is reused, never overwritten)
+        id: build
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          SHORT: ${{ steps.commit.outputs.short }}
+        run: |
+          set -euo pipefail
+          TAG="prod-$SHORT"
+          IMAGE="$REGISTRY/$ECR_REPOSITORY:$TAG"
+          if aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$TAG" >/dev/null 2>&1; then
+            echo "Image $IMAGE already in ECR — reusing it (same commit)"
+          else
+            docker build -t "$IMAGE" services/postgrest-aurora-proxy
+            docker push "$IMAGE"
+          fi
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure CloudWatch log group
+        run: |
+          set -euo pipefail
+          EXISTING=$(aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP" \
+            --query "logGroups[?logGroupName=='$LOG_GROUP'] | length(@)" --output text)
+          if [ "$EXISTING" = 0 ]; then
+            aws logs create-log-group --log-group-name "$LOG_GROUP"
+            echo "Created $LOG_GROUP"
+          fi
+          aws logs put-retention-policy --log-group-name "$LOG_GROUP" --retention-in-days 30
+
+      - name: Register task-definition revision (family vitana-postgrest-aurora-prod)
+        id: td
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+          SEC_DB: ${{ steps.pre.outputs.sec_db }}
+          SEC_JWT: ${{ steps.pre.outputs.sec_jwt }}
+        run: |
+          set -euo pipefail
+          if aws ecs describe-task-definition --task-definition "$TASK_FAMILY" >/dev/null 2>&1; then
+            BASE="$TASK_FAMILY"
+            echo "Deriving from the prod family's own latest revision"
+          else
+            BASE="$STAGING_TASK_FAMILY"
+            echo "First prod revision — deriving from the staging family's latest revision"
+          fi
+          aws ecs describe-task-definition --task-definition "$BASE" --query taskDefinition > base-td.json
+          echo "Base: $(jq -r .taskDefinitionArn base-td.json)"
+
+          for C in "$PROXY_CONTAINER" "$POSTGREST_CONTAINER"; do
+            N=$(jq --arg C "$C" '[.containerDefinitions[] | select(.name == $C)] | length' base-td.json)
+            [ "$N" = 1 ] || { echo "::error::Base task definition has $N containers named '$C' (expected 1)"; exit 1; }
+          done
+
+          # setenv/setsecret: replace-or-append one name in an env/secret list.
+          jq \
+            --arg FAMILY "$TASK_FAMILY" \
+            --arg IMG "$IMAGE" \
+            --arg PX "$PROXY_CONTAINER" \
+            --arg PG "$POSTGREST_CONTAINER" \
+            --arg PUBLIC_HOST "$PUBLIC_HOST" \
+            --arg POOL "$PGRST_DB_POOL" \
+            --arg SEC_DB "$SEC_DB" \
+            --arg SEC_JWT "$SEC_JWT" \
+            --arg LOG_GROUP "$LOG_GROUP" \
+            --arg REGION "$AWS_REGION" '
+              def setenv($n; $v): ([ (. // [])[] | select(.name != $n) ] + [ {name: $n, value: $v} ]);
+              def setsecret($n; $v): ([ (. // [])[] | select(.name != $n) ] + [ {name: $n, valueFrom: $v} ]);
+              .family = $FAMILY
+              | .cpu = "1024"
+              | .memory = "2048"
+              | .containerDefinitions |= map(
+                  if .name == $PX then
+                    .image = $IMG
+                    | .environment = (.environment | setenv("PUBLIC_HOST"; $PUBLIC_HOST))
+                    | .healthCheck = {
+                        command: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/alive || exit 1"],
+                        interval: 15, timeout: 5, retries: 3, startPeriod: 15 }
+                  elif .name == $PG then
+                    .environment = (.environment
+                      | setenv("PGRST_DB_POOL"; $POOL)
+                      | setenv("PGRST_DB_MAX_ROWS"; "1000")
+                      | setenv("PGRST_DB_POOL_ACQUISITION_TIMEOUT"; "10"))
+                    | .secrets = (.secrets
+                      | setsecret("PGRST_DB_URI"; $SEC_DB)
+                      | setsecret("PGRST_JWT_SECRET"; $SEC_JWT))
+                  else . end
+                  | if .logConfiguration.logDriver == "awslogs" then
+                      .logConfiguration.options["awslogs-group"] = $LOG_GROUP
+                      | .logConfiguration.options["awslogs-region"] = $REGION
+                    else . end)
+              | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                    .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
+            ' base-td.json > new-td.json
+
+          # Print the shape (names, env and secret NAMES only — valueFrom ARNs and values omitted).
+          jq '{family, cpu, memory, executionRoleArn, taskRoleArn,
+               containers: [.containerDefinitions[] | {name, image,
+                 env: [.environment[]? | .name + "=" + .value],
+                 secrets: [.secrets[]? | .name], healthCheck: (.healthCheck.command // null)}]}' new-td.json
+
+          # The execution role pulls the secrets; make sure it is allowed to (best effort).
+          EXEC_ROLE=$(jq -r '.executionRoleArn // empty' new-td.json)
+          if [ -z "$EXEC_ROLE" ]; then
+            echo "::error::Base task definition has no executionRoleArn — secrets could not be injected"; exit 1
+          fi
+          if DECISION=$(aws iam simulate-principal-policy --policy-source-arn "$EXEC_ROLE" \
+                --action-names secretsmanager:GetSecretValue --resource-arns "$SEC_JWT" "$SEC_DB" \
+                --query 'EvaluationResults[].EvalDecision' --output text 2>/dev/null); then
+            for D in $DECISION; do
+              if [ "$D" != allowed ]; then
+                echo "::error::Execution role $EXEC_ROLE is not allowed secretsmanager:GetSecretValue on the prod secrets ($DECISION). Grant it, then re-run."; exit 1
+              fi
+            done
+            echo "Execution role may read both secrets"
+          else
+            echo "::warning::Could not run iam:SimulatePrincipalPolicy — execution-role secret access not pre-checked (a failure will surface as tasks that never start; the circuit breaker stops the rollout)."
+          fi
+
+          NEW_ARN=$(aws ecs register-task-definition --cli-input-json file://new-td.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered $NEW_ARN"
+          echo "arn=$NEW_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure Cloud Map service postgrest-aurora-prod
+        id: cloudmap
+        if: steps.pre.outputs.service_exists != 'true'
+        env:
+          NS_ID: ${{ steps.pre.outputs.ns_id }}
+        run: |
+          set -euo pipefail
+          ARN=$(aws servicediscovery list-services \
+            --filters "Name=NAMESPACE_ID,Values=$NS_ID,Condition=EQ" \
+            --query "Services[?Name=='$CLOUDMAP_SERVICE_NAME'].Arn | [0]" --output text)
+          if [ -z "$ARN" ] || [ "$ARN" = None ]; then
+            ARN=$(aws servicediscovery create-service --name "$CLOUDMAP_SERVICE_NAME" --namespace-id "$NS_ID" \
+              --dns-config "RoutingPolicy=MULTIVALUE,DnsRecords=[{Type=A,TTL=10}]" \
+              --health-check-custom-config FailureThreshold=1 \
+              --query Service.Arn --output text)
+            echo "Created Cloud Map service $ARN"
+          else
+            echo "Cloud Map service exists: $ARN"
+          fi
+          echo "arn=$ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Create the prod service (first run only)
+        if: steps.pre.outputs.service_exists != 'true'
+        env:
+          TD_ARN: ${{ steps.td.outputs.arn }}
+          REGISTRY_ARN: ${{ steps.cloudmap.outputs.arn }}
+        run: |
+          set -euo pipefail
+          case "$ECS_SERVICE" in *-prod) ;; *) echo "::error::Refusing: '$ECS_SERVICE' does not end in -prod"; exit 1 ;; esac
+          aws ecs create-service --cluster "$ECS_CLUSTER" --service-name "$ECS_SERVICE" \
+            --task-definition "$TD_ARN" --desired-count 2 --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SECURITY_GROUP],assignPublicIp=DISABLED}" \
+            --service-registries "registryArn=$REGISTRY_ARN" \
+            --deployment-configuration "deploymentCircuitBreaker={enable=true,rollback=true},maximumPercent=200,minimumHealthyPercent=100" \
+            --enable-ecs-managed-tags --propagate-tags SERVICE \
+            --tags key=vtid,value=VTID-05023 key=environment,value=production \
+            --query 'service.serviceArn' --output text
+          echo "Created $ECS_SERVICE (2 tasks)"
+
+      - name: Roll the existing prod service
+        if: steps.pre.outputs.service_exists == 'true'
+        env:
+          TD_ARN: ${{ steps.td.outputs.arn }}
+        run: |
+          set -euo pipefail
+          case "$ECS_SERVICE" in *-prod) ;; *) echo "::error::Refusing: '$ECS_SERVICE' does not end in -prod"; exit 1 ;; esac
+          # desiredCount is left to Application Auto Scaling (min 2).
+          aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
+            --task-definition "$TD_ARN" \
+            --deployment-configuration "deploymentCircuitBreaker={enable=true,rollback=true},maximumPercent=200,minimumHealthyPercent=100" \
+            --query 'service.serviceArn' --output text
+          echo "Rolling $ECS_SERVICE to $TD_ARN"
+
+      - name: Application Auto Scaling (min 2, max 6, CPU 60 %)
+        run: |
+          set -euo pipefail
+          RID="service/$ECS_CLUSTER/$ECS_SERVICE"
+          aws application-autoscaling register-scalable-target --service-namespace ecs \
+            --resource-id "$RID" --scalable-dimension ecs:service:DesiredCount \
+            --min-capacity "$ASG_MIN" --max-capacity "$ASG_MAX"
+          aws application-autoscaling put-scaling-policy --service-namespace ecs \
+            --resource-id "$RID" --scalable-dimension ecs:service:DesiredCount \
+            --policy-name "$ECS_SERVICE-cpu$ASG_CPU_TARGET" --policy-type TargetTrackingScaling \
+            --target-tracking-scaling-policy-configuration \
+            "{\"TargetValue\":$ASG_CPU_TARGET,\"PredefinedMetricSpecification\":{\"PredefinedMetricType\":\"ECSServiceAverageCPUUtilization\"},\"ScaleOutCooldown\":60,\"ScaleInCooldown\":300}" \
+            --query 'PolicyARN' --output text
+          echo "Scalable target $RID: $ASG_MIN..$ASG_MAX, CPU target $ASG_CPU_TARGET %"
+
+      - name: Wait for services-stable
+        run: |
+          set -euo pipefail
+          # Two waits = up to ~20 min; a circuit-breaker rollback also ends "stable",
+          # which is why the next step checks the PRIMARY deployment explicitly.
+          aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            || aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
+
+      - name: Smoke — PRIMARY runs the new image on >= 2 RUNNING + HEALTHY tasks
+        env:
+          TD_ARN: ${{ steps.td.outputs.arn }}
+          IMAGE: ${{ steps.build.outputs.image }}
+        run: |
+          set -euo pipefail
+          PRIMARY=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            --query 'services[0].deployments[?status==`PRIMARY`] | [0].[taskDefinition,rolloutState]' --output text)
+          read -r P_TD P_STATE <<< "$PRIMARY"
+          echo "PRIMARY: $P_TD ($P_STATE)"
+          [ "$P_TD" = "$TD_ARN" ] || { echo "::error::PRIMARY deployment is $P_TD, not the revision just registered ($TD_ARN) — the circuit breaker likely rolled back"; exit 1; }
+          [ "$P_STATE" = COMPLETED ] || { echo "::error::PRIMARY rolloutState is $P_STATE, expected COMPLETED"; exit 1; }
+          IMG=$(aws ecs describe-task-definition --task-definition "$P_TD" \
+            --query "taskDefinition.containerDefinitions[?name=='$PROXY_CONTAINER'].image | [0]" --output text)
+          [ "$IMG" = "$IMAGE" ] || { echo "::error::PRIMARY proxy image is $IMG, expected $IMAGE"; exit 1; }
+          echo "Proxy image matches: $IMG"
+
+          for i in $(seq 1 12); do
+            TASKS=$(aws ecs list-tasks --cluster "$ECS_CLUSTER" --service-name "$ECS_SERVICE" \
+              --desired-status RUNNING --query 'taskArns' --output text)
+            GOOD=0; TOTAL=0
+            if [ -n "$TASKS" ] && [ "$TASKS" != None ]; then
+              # shellcheck disable=SC2086 # word-splitting the task ARN list is intended
+              while read -r T_TD T_LAST T_HEALTH; do
+                TOTAL=$((TOTAL + 1))
+                if [ "$T_TD" = "$TD_ARN" ] && [ "$T_LAST" = RUNNING ] && [ "$T_HEALTH" = HEALTHY ]; then
+                  GOOD=$((GOOD + 1))
+                fi
+              done < <(aws ecs describe-tasks --cluster "$ECS_CLUSTER" --tasks $TASKS \
+                         --query 'tasks[].[taskDefinitionArn,lastStatus,healthStatus]' --output text)
+            fi
+            echo "Attempt $i: $GOOD of $TOTAL tasks RUNNING + HEALTHY on the new revision"
+            if [ "$GOOD" -ge 2 ]; then
+              echo "OK: proxy container health check (/alive) passing on $GOOD tasks"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::Fewer than 2 RUNNING + HEALTHY tasks on $TD_ARN"
+          exit 1
+
+      - name: Summary
+        if: success()
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+          TD_ARN: ${{ steps.td.outputs.arn }}
+          NS_NAME: ${{ steps.pre.outputs.ns_name }}
+        run: |
+          {
+            echo "## postgrest-aurora-proxy PRODUCTION deploy"
+            echo "- Commit: \`$PIN\`"
+            echo "- Image: \`$IMAGE\`"
+            echo "- Task definition: \`$TD_ARN\`"
+            echo "- Service: \`$ECS_SERVICE\` (Cloud Map \`$CLOUDMAP_SERVICE_NAME.$NS_NAME\`)"
+            echo "- PGRST_DB_POOL=$PGRST_DB_POOL, PGRST_DB_MAX_ROWS=1000, autoscaling $ASG_MIN..$ASG_MAX @ CPU $ASG_CPU_TARGET %"
+            echo "- Reason: $DEPLOY_REASON"
+            echo "- Not touched: the staging service, the gateway's SUPABASE_URL, the ALB and DNS (edge: AWS-PROD-SETUP-POSTGREST-AURORA-PROXY-EDGE.yml)."
+          } >> "$GITHUB_STEP_SUMMARY"
