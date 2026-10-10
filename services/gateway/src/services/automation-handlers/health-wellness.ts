@@ -8,6 +8,7 @@
 import { AutomationContext } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
 import * as repo from './health-wellness-repository';
+import { emitOasisEvent } from '../oasis-event-service';
 
 // ── AP-0601: PHI Redaction Gate ─────────────────────────────
 async function runPhiRedactionGate(ctx: AutomationContext) {
@@ -72,26 +73,27 @@ async function runWellnessCheckIn(ctx: AutomationContext) {
 }
 
 // ── AP-0607: Lab Report Ingestion & Biomarker Extraction ────
+// VTID-05054 (Health Hub D7): no lab-report parser exists yet. The member is
+// told nothing and health.biomarkers.stored is NOT emitted — telling them the
+// report "is being analyzed" was false, and the event would start AP-0608 on
+// biomarkers that were never extracted. The run is recorded honestly instead;
+// the notice (as an i18n catalog key) and the event return with the parser.
 async function runLabReportIngestion(ctx: AutomationContext) {
   const payload = ctx.run.metadata as any;
   const { user_id, report_id } = payload || {};
   if (!user_id || !report_id) return { usersAffected: 0, actionsTaken: 0 };
 
-  const { supabase, tenantId } = ctx;
+  ctx.log(`Lab report ${report_id} for user ${user_id}: no parser yet — nothing sent, no event emitted`);
+  await emitOasisEvent({
+    vtid: 'VTID-05054',
+    type: 'health.lab_report.parse_unavailable',
+    source: 'automation-executor',
+    status: 'info',
+    message: `AP-0607: lab report ${report_id} not parsed (no parser); member not notified`,
+    payload: { user_id, report_id },
+  }).catch(() => {});
 
-  ctx.log(`Processing lab report ${report_id} for user ${user_id}`);
-
-  // Notify user that processing started
-  ctx.notify(user_id, 'lab_report_processed', {
-    title: 'Lab Report Received',
-    body: 'Your lab report is being analyzed. Results will be ready soon.',
-    data: { url: '/health/reports', report_id },
-  });
-
-  // Trigger daily recompute to incorporate new data
-  await ctx.emitEvent('health.biomarkers.stored', { user_id, report_id });
-
-  return { usersAffected: 1, actionsTaken: 2 };
+  return { usersAffected: 0, actionsTaken: 0 };
 }
 
 // ── AP-0608: Biomarker Trend Analysis ───────────────────────

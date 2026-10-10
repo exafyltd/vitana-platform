@@ -1744,6 +1744,28 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Automations engine initialization failed (non-fatal):', error);
       }
 
+      // VTID-05054 (Health Hub D5): 90-day retention purge of connector_webhooks_log.
+      // Off unless CONNECTOR_WEBHOOK_LOG_PURGE_ENABLED === 'true' (production only —
+      // staging shares the database). Idempotent, so every instance may run it.
+      try {
+        const purge = require('./services/connector-webhook-log-purge');
+        if (purge.isWebhookLogPurgeEnabled()) {
+          const { getSupabase: getPurgeSupabase } = require('./lib/supabase');
+          const purgeDb = getPurgeSupabase();
+          const runPurge = () => {
+            if (!purgeDb) return;
+            purge.purgeConnectorWebhookLog(purgeDb).then((r: { ok: boolean; deleted: number; error?: string }) => {
+              console.log(`[webhook-log-purge] ok=${r.ok} deleted=${r.deleted}${r.error ? ` error=${r.error}` : ''}`);
+            }).catch((err: unknown) => console.warn('[webhook-log-purge] error', err));
+          };
+          runPurge();
+          setInterval(runPurge, purge.WEBHOOK_LOG_PURGE_INTERVAL_MS);
+          console.log('🧹 connector_webhooks_log 90-day purge enabled (daily)');
+        }
+      } catch (error) {
+        console.warn('⚠️ connector_webhooks_log purge setup failed (non-fatal):', error);
+      }
+
       // VTID-01250: Start Heartbeat Loop for autopilot automations
       try {
         const heartbeatEnabled = process.env.AUTOPILOT_HEARTBEAT_ENABLED === 'true';

@@ -941,6 +941,9 @@ export type CicdEventType =
   | 'connector.wearable.workout.recorded'
   | 'connector.wearable.other'
   | 'wearable.metrics.read'
+  // VTID-05054 (Health Hub D7/D5)
+  | 'health.lab_report.parse_unavailable'
+  | 'connector.webhook_log.purged'
   // VTID-05030 (Health Hub D1): wearable token storage + vendor revoke
   | 'connector.wearable.token_storage_unavailable'
   | 'connector.wearable.vendor_revoke'
