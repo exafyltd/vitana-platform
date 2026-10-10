@@ -136,3 +136,32 @@ export async function requireTenantAdmin(
   (req as any).targetTenantId = targetTenantId;
   next();
 }
+
+/**
+ * VTID-05042: platform-scope guard for tenant-admin routes whose data has no
+ * tenant_id column yet (oasis_events, global_community_*, creator_profiles,
+ * media_uploads). Such a route cannot be filtered to one tenant, so it is
+ * exafy_admin-only until WS3 adds the column. Must run AFTER
+ * requireTenantAdmin (reuses the identity it attached); a tenant admin gets
+ * 403 PLATFORM_SCOPE_ONLY and the handler — and therefore every query — is
+ * never reached.
+ */
+export function requirePlatformScope(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): void {
+  if (req.identity?.exafy_admin === true) {
+    next();
+    return;
+  }
+  console.warn(
+    `[require-tenant-admin] Platform scope required: user ${req.identity?.user_id ?? 'unknown'} ` +
+    `(tenant ${req.identity?.tenant_id ?? 'none'}) on ${req.method} ${req.originalUrl}`
+  );
+  res.status(403).json({
+    ok: false,
+    error: 'PLATFORM_SCOPE_ONLY',
+    message: 'This data is not tenant-scoped yet and is available to platform administrators only.',
+  });
+}

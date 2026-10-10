@@ -11,6 +11,9 @@
  *     (including missing user_tenants membership row)
  *   - allow: attaches req.identity + req.targetTenantId and calls next()
  *   - fail closed: missing service-role config denies (403), never allows
+ *   - requirePlatformScope (VTID-05042): after requireTenantAdmin, a tenant
+ *     admin gets 403 PLATFORM_SCOPE_ONLY and the handler never runs;
+ *     exafy_admin passes
  */
 
 import request from 'supertest';
@@ -45,7 +48,7 @@ process.env.SUPABASE_URL = 'http://localhost:54321';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { requireTenantAdmin } = require('../../src/middleware/require-tenant-admin');
+const { requireTenantAdmin, requirePlatformScope } = require('../../src/middleware/require-tenant-admin');
 
 const supaMock = (jest.requireMock('@supabase/supabase-js') as any).__mock;
 
@@ -60,6 +63,10 @@ app.get('/t/:tenantId/members', requireTenantAdmin, (req: any, res) => {
 app.get('/own', requireTenantAdmin, (req: any, res) => {
   res.json({ ok: true, target: req.targetTenantId });
 });
+const platformHandler = jest.fn((_req: any, res: any) => res.json({ ok: true }));
+app.get('/t/:tenantId/platform', requireTenantAdmin, requirePlatformScope, (req: any, res: any) =>
+  platformHandler(req, res),
+);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -256,5 +263,54 @@ describe('requireTenantAdmin middleware', () => {
     // getCallerRole returns null without config → role check fails → deny
     expect(res.status).toBe(403);
     expect(res.body.error).toBe('FORBIDDEN');
+  });
+});
+
+describe('requirePlatformScope (VTID-05042)', () => {
+  beforeEach(() => {
+    process.env.SUPABASE_JWT_SECRET = 'test-jwt-secret';
+    delete process.env.LOVABLE_JWT_SECRET;
+    delete process.env.SUPABASE_AUTH_JWKS_URL;
+    mockInvalidJwt();
+    supaMock.single.mockResolvedValue({ data: null, error: { message: 'No rows' } });
+  });
+
+  it('403 PLATFORM_SCOPE_ONLY for an admin of their own tenant; handler never runs', async () => {
+    mockVerifiedJwt(claims());
+    mockAdminRole();
+
+    const res = await request(app)
+      .get('/t/tenant-a/platform')
+      .set('Authorization', 'Bearer good-token');
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ ok: false, error: 'PLATFORM_SCOPE_ONLY' });
+    expect(platformHandler).not.toHaveBeenCalled();
+  });
+
+  it('passes exafy_admin through to the handler', async () => {
+    mockVerifiedJwt(
+      claims({ sub: 'super-1', app_metadata: { active_tenant_id: 'tenant-a', exafy_admin: true } }),
+    );
+
+    const res = await request(app)
+      .get('/t/tenant-b/platform')
+      .set('Authorization', 'Bearer good-token');
+
+    expect(res.status).toBe(200);
+    expect(platformHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it('a non-admin member is still stopped by requireTenantAdmin first (403 FORBIDDEN)', async () => {
+    mockVerifiedJwt(claims());
+    supaMock.single.mockResolvedValue({ data: { active_role: 'community' }, error: null });
+
+    const res = await request(app)
+      .get('/t/tenant-a/platform')
+      .set('Authorization', 'Bearer good-token');
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('FORBIDDEN');
+    expect(platformHandler).not.toHaveBeenCalled();
   });
 });

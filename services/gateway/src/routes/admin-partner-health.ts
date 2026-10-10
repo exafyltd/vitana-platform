@@ -2,12 +2,16 @@
  * VTID-03885 — Partner Health Test Integration: admin portal routes.
  * VTID-03932 — generalized (Commerce Partner Onboarding Phase 1) so a
  * partner org's OWN staff/professional members can use these same
- * handlers for their org's orders, not just a Vitana tenant admin.
+ * handlers for their org's orders, not just a Vitana platform admin.
  *
  * Mounted at /api/v1/admin/partner-health. Gated by
  * requirePartnerHealthAccess, which grants either:
- *   - { scope: 'admin' }: exafy_admin or Vitana tenant admin — sees/acts on
- *     everything, byte-for-byte the original VTID-03885 behavior.
+ *   - { scope: 'admin' }: exafy_admin only — sees/acts on everything,
+ *     byte-for-byte the original VTID-03885 behavior. VTID-05042: a Vitana
+ *     tenant admin no longer gets this scope — the order/inbox queries carry
+ *     no tenant predicate, so 'admin' scope meant every tenant's lab orders
+ *     and health results. The DoctorBox fallback UI is Exafy-operated (owner
+ *     decision, Track S plan S3 §3); tenant admins now get 403.
  *   - { scope: 'org' }: a partner_organization_members row — org_admin/
  *     staff get full access to their org's linked partner_registry rows;
  *     professional gets access ONLY to orders assigned to them
@@ -68,9 +72,11 @@ interface PartnerHealthRequest extends AuthenticatedRequest {
 
 /**
  * VTID-03932: replaces the old requireTenantAdmin gate. Grants
- * { scope: 'admin' } to exafy_admin/Vitana tenant admins (unchanged
- * behavior) or { scope: 'org' } to a partner org's own staff/professional
- * member. 403s only when the caller is neither.
+ * { scope: 'admin' } to exafy_admin or { scope: 'org' } to a partner org's
+ * own staff/professional member. 403s when the caller is neither.
+ * VTID-05042: the former tenant-admin branch (user_tenants.active_role =
+ * 'admin' in ANY tenant → unfiltered 'admin' scope) is removed — it was a
+ * cross-tenant read/write of health data.
  */
 async function requirePartnerHealthAccess(req: Request, res: Response, next: NextFunction) {
   const supabase = getSupabase();
@@ -84,26 +90,13 @@ async function requirePartnerHealthAccess(req: Request, res: Response, next: Nex
     return next();
   }
 
-  if (identity.tenant_id) {
-    const { data: tenantRow } = await supabase
-      .from('user_tenants')
-      .select('active_role')
-      .eq('user_id', identity.user_id)
-      .eq('tenant_id', identity.tenant_id)
-      .maybeSingle();
-    if ((tenantRow as { active_role?: string } | null)?.active_role === 'admin') {
-      (req as PartnerHealthRequest).partnerHealthAccess = { scope: 'admin' };
-      return next();
-    }
-  }
-
   const orgAccess = await resolveOrgHealthAccess(supabase, identity.user_id);
   if (orgAccess) {
     (req as PartnerHealthRequest).partnerHealthAccess = orgAccess;
     return next();
   }
 
-  return res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'Requires Vitana tenant-admin access or membership in a partner organization.' });
+  return res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'Requires platform-admin access or membership in a partner organization.' });
 }
 
 function getAccess(req: Request): PartnerHealthAccess {

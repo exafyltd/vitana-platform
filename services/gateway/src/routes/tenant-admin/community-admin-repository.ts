@@ -57,8 +57,9 @@ export async function countCommunityGroups(sb: SupabaseClient) {
 
 // ==================== live_rooms ====================
 
-export async function fetchRecentLiveRooms(sb: SupabaseClient, limit: number) {
-  return sb.from('live_rooms').select('*').order('created_at', { ascending: false }).limit(limit);
+// VTID-05042: tenant-filtered — the route's :tenantId, for exafy_admin too.
+export async function fetchRecentLiveRooms(sb: SupabaseClient, tenantId: string, limit: number) {
+  return sb.from('live_rooms').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(limit);
 }
 
 export async function countLiveRooms(sb: SupabaseClient) {
@@ -73,8 +74,9 @@ export async function fetchRecentCreatorProfiles(sb: SupabaseClient, limit: numb
 
 // ==================== community_memberships ====================
 
-export async function fetchRecentCommunityMemberships(sb: SupabaseClient, limit: number) {
-  return sb.from('community_memberships').select('*').order('created_at', { ascending: false }).limit(limit);
+// VTID-05042: tenant-filtered — the route's :tenantId, for exafy_admin too.
+export async function fetchRecentCommunityMemberships(sb: SupabaseClient, tenantId: string, limit: number) {
+  return sb.from('community_memberships').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(limit);
 }
 
 // ==================== global_community_group_members ====================
