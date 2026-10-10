@@ -195,6 +195,15 @@ JOBS=(
   # only scans members whose local hour is 07 or 17, and writes nothing unless
   # COMMUNITY_AUTOPILOT_SCAN_ENABLED=true on the target gateway. Staging first.
   "gateway-community-autopilot-scan|5 * * * *|UTC|/api/v1/autopilot/recommendations/community-scan|{}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$TEST_CONTRACTS_GATEWAY_URL\"}"
+  # VTID-05039 — Vitana Onboarding Assistant coach, SHADOW mode (VTID-04892):
+  # once a day, production gateway only (the staging gateway answers 409 —
+  # it shares this database). Records what Vitana would do per new member,
+  # sends nothing. Daily, not hourly: one decision per member per local day,
+  # and one tick_completed OASIS event a day instead of 24. The route enforces
+  # X-Gateway-Internal itself. Off: FEATURE_ONBOARDING_ASSISTANT_ENV=off on
+  # the gateway (the tick then answers {mode:"off"}); full silence: re-run
+  # with --only gateway-onboarding-coach-tick --delete.
+  "gateway-onboarding-coach-tick|17 6 * * *|UTC|/api/v1/scheduled-notifications/onboarding-coach-tick|{}|{\"auth\":\"gateway_internal\",\"token_secret_id\":\"$PROD_INTERNAL_TOKEN_SECRET_ID\"}"
 )
 
 # VTID-04352: --only narrows JOBS to the requested name prefixes.
