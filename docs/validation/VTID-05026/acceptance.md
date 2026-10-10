@@ -43,6 +43,12 @@ TEST: services/gateway/test/vtid-05026-audiobook-voices.test.ts ("staging wiring
 - Changed: `POST /api/v1/voice/preview` (`google_tts` limited to ru/sr; Polly `voice`/`engine`).
 - New: `GET /api/v1/voice/preview/google-voices?lang=ru|sr` (exafy_admin, read-only).
 
+ROUTE_MOUNT: services/gateway/src/routes/voice-config.ts, mounted by `mountRouterSync(app, '/api/v1', voiceConfigRouter, { owner: 'voice-config' })` in services/gateway/src/index.ts (unchanged); the new handler is `router.get('/voice/preview/google-voices', requireAuthWithTenant, …)` with an exafy_admin check. services/gateway/src/routes/guided-journey.ts stays mounted at /api/v1/journey (unchanged).
+
+FINAL_URL: /api/v1/voice/preview/google-voices?lang={ru|sr} ; /api/v1/journey/audiobook/topics/{topicId}/audio?lang={locale}
+
+CURL_PROOF: in-process HTTP against the mounted routers (supertest), outputs/tests.txt — "GET /api/v1/voice/preview/google-voices" 401 unauthenticated / 403 non-admin / 400 for any language but ru/sr / 200 female voices with the pinned one; "X-Audiobook-Voice-Provider names who read the episode (google for sr)". STAGING-VERIFY probes the deployed routes: google-voices anonymous → 401, episode anonymous → 401, signed-in per language → provider + narration locale (staging-tests.json).
+
 ## OASIS
 
 No new OASIS event (NEVER-rule 10). Cost is tracked from the per-render log line by the CloudWatch metric filter (`scripts/aws/setup-audiobook-google-metric.sh`).
