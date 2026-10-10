@@ -1,0 +1,4 @@
+{"vtid":"VTID-05023","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive (this change does not touch the gateway)","path":"/alive","expect_status":200},
+{"kind":"existing","ref":"bash services/postgrest-aurora-proxy/test/routing.sh","cwd":".","reason":"The change is the PostgREST-Aurora proxy's nginx routing. The proxy has no public endpoint yet (the next step of VTID-05023), so a staging HTTP probe cannot reach it. This builds the real image and proves every route against a mock Supabase: auth, storage, functions, realtime websocket upgrade, a 30 MB upload, the 50 MB functions cap, /rest to PostgREST, and 501 for unknown paths. It fails on the previous config."}
+]}
