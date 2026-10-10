@@ -8,7 +8,7 @@ ROUTE_MOUNT: none new. `POST /api/v1/operator/chat` (existing) passes a history 
 
 FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/operator/chat (staging; behaviour proven by tests, a real Kiro turn writes thread rows).
 
-CURL_PROOF: unauthenticated POST /api/v1/operator/chat stays refused (401 application/json) — the route's auth is unchanged.
+CURL_PROOF: GET /api/v1/operator/threads/<id>/messages (the transcript the restore reads) without a caller answers 401 application/json.
 
 OASIS_PROOF: the existing assistant chat event now carries `kiro_history_restored: <n>` in its metadata when a reopened session got the thread back.
 
@@ -20,4 +20,4 @@ AC-2: A live session never loads history; a failed or empty load leaves the turn
   TEST: services/gateway/test/vtid-05018-kiro-thread-memory.test.ts
 AC-3: End to end through the real chat route and thread store: a Kiro thread with stored turns and no live session restores them (no tool rows); another user's thread is never restored.
   TEST: services/gateway/test/vtid-04465-operator-pipeline-regression.test.ts
-  CURL: staging POST /api/v1/operator/chat without a caller -> 401 application/json
+  CURL: staging GET /api/v1/operator/threads/<id>/messages without a caller -> 401 application/json
