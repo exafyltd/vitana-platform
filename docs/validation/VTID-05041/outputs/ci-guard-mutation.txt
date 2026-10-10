@@ -1,0 +1,3 @@
+    ✕ no later migration grants the locked functions to members again or re-adds email to the profile lookup (14 ms)
+    ✕ a migration newer than S2 that creates a SECURITY DEFINER function revokes PUBLIC and anon, or says why not (4 ms)
+Tests:       2 failed, 6 skipped, 8 total

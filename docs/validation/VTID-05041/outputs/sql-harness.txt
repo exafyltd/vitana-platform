@@ -1,0 +1,2 @@
+order guard: S2 refused before VTID-04981 and rolled back
+VTID-05041: all assertions passed
