@@ -1,0 +1,3 @@
+node scripts/ci/kiro-steering/guard.cjs . -> kiro-steering: OK
+node --test scripts/ci/kiro-steering/guard.test.cjs -> # pass 7 # fail 0 
+PR-GATE.yml parses as YAML -> ok
