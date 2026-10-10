@@ -464,3 +464,68 @@ gaps (pgvector tables, `products`/`knowledge_docs` uncertainty) explicitly
 accepted and documented, backfilling them after. Either is better than
 freezing writes before the pre-freeze steps are actually done — a freeze
 with no clear unblock plan just extends downtime for no benefit.
+
+---
+
+## Part 0 — privilege parity gate (VTID-05023)
+
+The PostgREST-Aurora proxy must never give `anon`, `authenticated` or
+`service_role` more on Aurora than they have on Supabase (sparring finding
+F1: `setup-aurora-postgrest-grants.sh` grants ALL to anon, Supabase's anon
+RPC lockdown incl. `increment_wallet_balance` is not on Aurora, tables
+without RLS). This gate checks that, and nothing member-facing goes public
+until it passes.
+
+**When it runs**
+1. **Against the Aurora clone first** (N7): before the staging data host
+   serves anything in the part-10 rehearsal, with `--cluster <clone id>`.
+2. **Before the public host goes live**: `data.vitanaland.com` stays dark
+   until `--check --strict` exits 0 against `vitana-aurora-prod`.
+3. **After every final load** (and its after-load / embedding steps), in the
+   window, before any flip. A DMS load can recreate tables and so drop RLS
+   and grants; a pass from before the load does not count.
+
+**How**
+1. Take the Supabase snapshot read-only: run
+   `scripts/aws/aurora-privilege-parity-snapshot.sql` (one SELECT, one JSON
+   document) and save the result as `supabase-snapshot.json`. A client with a
+   small result limit can use the chunked form:
+   `python3 scripts/aws/aurora-privilege-parity.py --print-chunk-sql 0:99`
+   (save the rows as a JSON list; the script reassembles them and checks the
+   md5).
+2. Check Aurora (reads the same SQL through the RDS Data API, cluster's
+   MasterUserSecret, account/region guarded; the only statement it sends is
+   that SELECT):
+   ```bash
+   python3 scripts/aws/aurora-privilege-parity.py --check --strict \
+     --supabase-snapshot supabase-snapshot.json \
+     --cluster vitana-aurora-prod --role-map postgres=<aurora owner role> \
+     --save-aurora-snapshot aurora-snapshot.json \
+     --report docs/validation/VTID-05023/privilege-parity-report.json
+   ```
+   Exit 1 on any EXTRA grant (table, column, routine, default privilege,
+   role membership), any RLS mismatch, any role-setting mismatch
+   (`statement_timeout` anon 3s / authenticated 8s) or role-attribute
+   mismatch. MISSING only warns without `--strict`; at the public-host and
+   window gates always use `--strict`.
+3. On failure, write the fix (the script never executes it):
+   `... --fix --out privilege-parity-fix.sql` (same inputs, or
+   `--aurora-snapshot aurora-snapshot.json`). Review it, run it with
+   `scripts/aws/aurora-run-sql.sh privilege-parity-fix.sql` using a
+   credential that owns the objects, then **run `--check --strict` again**.
+   A REVOKE by a role that is neither owner nor grantor is a silent no-op in
+   PostgreSQL, so only the re-check proves the fix landed.
+
+**What it does not change on its own**
+- Statements that would make Aurora *less* restrictive (disable RLS where
+  Supabase has none, reset a role setting Supabase does not have) are written
+  as comments; uncomment after review or pass `--allow-loosen`.
+- Objects owned by an extension (pgvector, postgis) are reported, not gated
+  (`--include-extension-objects` to gate them). `MAINTAIN` (PG17+) is
+  reported, never fixed.
+- A table-level REVOKE also removes that privilege's column grants; the fix
+  file grants Supabase's column grants back after the REVOKE.
+
+Tests: `python3 -m unittest discover -s scripts/aws/test -p 'test_*.py'`
+(fixture catalogs, no network), run in CI by
+`AURORA-PRIVILEGE-PARITY-UNIT.yml`.
