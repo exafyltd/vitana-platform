@@ -54,6 +54,7 @@
 >   (2) `signup_funnel` view; (3) realtime, storage, edge functions and a
 >   public endpoint for the PostgREST proxy; (4) 16 enum columns that are
 >   varchar on Aurora.
+
 > **VTID-04880 (2026-10-05):** `nav_catalog`, `nav_catalog_audit` and
 > `nav_catalog_i18n` no longer live in Supabase `public`. They were archived
 > into the `legacy_archive` schema with the legacy voice navigator
