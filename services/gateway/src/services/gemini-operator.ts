@@ -5829,11 +5829,8 @@ async function executeDevDeployService(
     const gatewayPort = process.env.PORT || '8080';
     const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/deploy/service`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE!,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
+      // VTID-05047: the route requires the gateway service token (or an exafy_admin JWT).
+      headers: { 'Content-Type': 'application/json', ...gatewayServiceAuthHeader() },
       body: JSON.stringify({
         service: args.service,
         vtid: args.vtid || 'VTID-DEV-ASSIST',
@@ -5929,10 +5926,8 @@ async function executeDevLockStatus(threadId: string): Promise<ToolExecutionResu
   try {
     const gatewayPort = process.env.PORT || '8080';
     const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/cicd/lock-status`, {
-      headers: {
-        apikey: SUPABASE_SERVICE_ROLE!,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
+      // VTID-05047: the route requires the gateway service token (or an exafy_admin JWT).
+      headers: { ...gatewayServiceAuthHeader() },
     });
 
     const result = await resp.json() as any;

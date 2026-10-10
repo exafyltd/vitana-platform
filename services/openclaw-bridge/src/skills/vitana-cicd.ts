@@ -67,10 +67,10 @@ function getSupabase() {
   return createClient(url, key);
 }
 
-// VTID-05019: the gateway's create-pr / safe-merge routes require its service token.
-function prRouteAuth(path: string): Record<string, string> {
+// VTID-05019/VTID-05047: every cicd route this skill calls (except /cicd/health) requires the gateway's service token.
+function prRouteAuth(_path: string): Record<string, string> {
   const t = process.env.GATEWAY_SERVICE_TOKEN ?? '';
-  return t && (path === '/github/create-pr' || path === '/github/safe-merge') ? { Authorization: `Bearer ${t}` } : {};
+  return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
 async function callGateway(path: string, method: 'GET' | 'POST', body?: Record<string, unknown>): Promise<unknown> {

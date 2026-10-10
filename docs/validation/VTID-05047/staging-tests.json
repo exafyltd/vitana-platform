@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05047",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "target": "gateway", "name": "approvals list refuses an anonymous caller", "method": "GET", "path": "/api/v1/cicd/approvals", "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "http", "target": "gateway", "name": "lock-status refuses an anonymous caller", "method": "GET", "path": "/api/v1/cicd/lock-status", "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "http", "target": "gateway", "name": "cicd health stays public", "method": "GET", "path": "/api/v1/cicd/health", "expect_status": 200, "expect_content_type": "application/json" },
+    { "kind": "http", "target": "gateway", "name": "autonomous-pr-merge refuses an invalid caller", "method": "POST", "path": "/api/v1/github/autonomous-pr-merge", "rejected_probe": true, "expect_status": 401, "expect_content_type": "application/json", "reason": "POST only as a rejected probe (invalid bearer); nothing is merged" },
+    { "kind": "http", "target": "gateway", "name": "deploy/service refuses an invalid caller", "method": "POST", "path": "/api/v1/deploy/service", "rejected_probe": true, "expect_status": 401, "expect_content_type": "application/json", "reason": "POST only as a rejected probe (invalid bearer); nothing is deployed" },
+    { "kind": "existing", "ref": "npx jest test/vtid-05047-cicd-routes-auth.test.ts test/vtid-05019-cicd-pr-routes-auth.test.ts", "cwd": "services/gateway", "reason": "the gate on all nine routes and three prefixes, /health public, every caller sending the service token" }
+  ]
+}
