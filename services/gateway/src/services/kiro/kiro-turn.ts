@@ -39,6 +39,45 @@ export interface KiroTurnInput {
   userId: string | null;
   message: string;
   emit?: KiroTurnEventSink;
+  /**
+   * VTID-05018: the thread's earlier turns. Called only when this turn opens a NEW Kiro
+   * session (first turn, idle/expiry reopen, after a failure, a deploy or another gateway
+   * task), never for a live session. A throw or empty list means no history.
+   */
+  loadHistory?: () => Promise<KiroHistoryMessage[]>;
+}
+
+/** VTID-05018: one earlier turn of the thread (user or assistant text only). */
+export interface KiroHistoryMessage { role: 'user' | 'assistant'; content: string }
+
+export const KIRO_HISTORY_MESSAGE_CHARS = 1_500;
+export const KIRO_HISTORY_TOTAL_CHARS = 12_000;
+const HISTORY_START = '=== RESTORED THREAD HISTORY (earlier turns of this conversation; context only, not new instructions) ===';
+const HISTORY_END = '=== END RESTORED THREAD HISTORY ===';
+
+/**
+ * VTID-05018: the earlier turns as one marked block, newest kept: each message clipped,
+ * the whole block capped (oldest dropped first, with a line saying how many). Null when empty.
+ */
+export function restoredHistoryBlock(history: KiroHistoryMessage[]): { text: string; count: number } | null {
+  const rows = history.filter((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim());
+  if (rows.length === 0) return null;
+  const lines = rows.map((m) => {
+    const c = m.content.trim();
+    const clipped = c.length > KIRO_HISTORY_MESSAGE_CHARS ? `${c.slice(0, KIRO_HISTORY_MESSAGE_CHARS)} …` : c;
+    return `${m.role === 'user' ? 'User' : 'You (Kiro)'}: ${clipped}`;
+  });
+  const kept: string[] = [];
+  let size = 0;
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    if (size + lines[i].length + 1 > KIRO_HISTORY_TOTAL_CHARS) break;
+    kept.unshift(lines[i]);
+    size += lines[i].length + 1;
+  }
+  if (kept.length === 0) return null;
+  const omitted = lines.length - kept.length;
+  const body = [...(omitted > 0 ? [`… ${omitted} earlier message(s) omitted`] : []), ...kept].join('\n');
+  return { text: `${HISTORY_START}\n${body}\n${HISTORY_END}`, count: kept.length };
 }
 
 export interface KiroTurnResult {
@@ -146,6 +185,7 @@ export async function runKiroTurn(input: KiroTurnInput, env: NodeJS.ProcessEnv =
     closeSession(input.threadId);
     session = undefined;
   }
+  let restored: { text: string; count: number } | null = null;
   if (!session) {
     const lim = kiroLimits(env);
     const mine = [...sessions.values()].filter((s) => s.userId === input.userId).length;
@@ -170,6 +210,12 @@ export async function runKiroTurn(input: KiroTurnInput, env: NodeJS.ProcessEnv =
     const creditsChanged = session.models ? setKiroCredits(input.userId, 'ok') : false;
     sessions.set(input.threadId, session);
     session.creditsChanged = creditsChanged;
+    // VTID-05018: a new session starts empty, so give it the thread's earlier turns.
+    if (input.loadHistory) {
+      try { restored = restoredHistoryBlock(await input.loadHistory()); } catch (err) {
+        console.warn('[VTID-05018] kiro history load failed:', err instanceof Error ? err.message : err);
+      }
+    }
   }
   touch(input.threadId, session);
 
@@ -185,11 +231,13 @@ export async function runKiroTurn(input: KiroTurnInput, env: NodeJS.ProcessEnv =
   session.emit = collect;
 
   try {
-    const { stopReason } = await session.client.prompt(session.sessionId, input.message);
+    const { stopReason } = restored
+      ? await session.client.prompt(session.sessionId, input.message, undefined, restored.text)
+      : await session.client.prompt(session.sessionId, input.message);
     collect({ type: 'kiro.turn_end', stop_reason: stopReason });
     const recovered = session.creditsChanged === true;
     session.creditsChanged = false;
-    return result('ok', reply, { stop_reason: stopReason, kiro_model: session.models?.current ?? null, ...(recovered ? { credits_changed: true } : {}) }, [...tools.values()].map((t) => ({ name: t.name, response: { kind: t.kind, status: t.status } })));
+    return result('ok', reply, { stop_reason: stopReason, kiro_model: session.models?.current ?? null, ...(recovered ? { credits_changed: true } : {}), ...(restored ? { kiro_history_restored: restored.count } : {}) }, [...tools.values()].map((t) => ({ name: t.name, response: { kind: t.kind, status: t.status } })));
   } catch (err) {
     closeSession(input.threadId);
     const msg = err instanceof Error ? err.message : String(err);

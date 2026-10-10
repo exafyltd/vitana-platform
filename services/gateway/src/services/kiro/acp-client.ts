@@ -209,8 +209,10 @@ export class AcpClient {
 
   /** Resolves with the stop reason when the turn finishes. */
   /** VTID-05005: a turn runs as long as Kiro works (tools included), not the 30 s request default. */
-  async prompt(sessionId: string, text: string, timeoutMs: number = KIRO_PROMPT_TIMEOUT_MS): Promise<{ stopReason: string }> {
-    const r = await this.request<{ stopReason?: string }>('session/prompt', { sessionId, prompt: [{ type: 'text', text }] }, timeoutMs);
+  /** VTID-05018: `context`, when given, is sent as its own leading block (restored thread history). */
+  async prompt(sessionId: string, text: string, timeoutMs: number = KIRO_PROMPT_TIMEOUT_MS, context?: string): Promise<{ stopReason: string }> {
+    const prompt = context ? [{ type: 'text', text: context }, { type: 'text', text }] : [{ type: 'text', text }];
+    const r = await this.request<{ stopReason?: string }>('session/prompt', { sessionId, prompt }, timeoutMs);
     return { stopReason: String(r?.stopReason ?? 'end_turn') };
   }
 

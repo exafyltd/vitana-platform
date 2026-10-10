@@ -184,7 +184,8 @@ describe('wiring (source check)', () => {
   it('a Kiro turn may outlast the 30 s request default (tools run inside it)', () => {
     const acp = read('services/gateway/src/services/kiro/acp-client.ts');
     expect(acp).toContain('export const KIRO_PROMPT_TIMEOUT_MS = 15 * 60_000;');
-    expect(acp).toMatch(/'session\/prompt', \{ sessionId, prompt: \[\{ type: 'text', text \}\] \}, timeoutMs\)/);
+    // VTID-05018: the prompt may carry a leading restored-history block; the timeout still applies.
+    expect(acp).toMatch(/'session\/prompt', \{ sessionId, prompt \}, timeoutMs\)/);
     expect(read('services/kiro-runner/src/mcp-proxy.ts')).toContain('const TIMEOUT_MS = 115_000;');
   });
 
