@@ -1,0 +1,30 @@
+# VTID-05070 — commands run in this session (worktree of exafyltd/vitana-platform, branch claude/amazing-ride-wipu1l-p5 from origin/main bec05342)
+
+git fetch origin main && git checkout -B claude/amazing-ride-wipu1l-p5 origin/main
+
+# kiro-browser (new)
+cd services/kiro-browser && npm install --no-audit --no-fund          # creates package-lock.json (playwright-core 1.58.2)
+npx playwright-core install chromium-headless-shell                   # local only, for the real-Chromium tests
+npx tsc --noEmit -p .
+npx vitest run                                                        # 52 passed, 4 skipped (real Chromium off)
+KIRO_BROWSER_REAL_CHROMIUM=1 npx vitest run                           # 56 passed
+node -e "require('playwright-core').chromium.launch({headless:true,chromiumSandbox:true})..."   # FAILED here: "Chromium sandboxing failed!" (root in a nested sandbox; Fargate proof is post-deploy)
+curl -sSI https://mcr.microsoft.com/v2/playwright/manifests/v1.58.2-noble   # docker-content-digest sha256:6446946a1d9fd62d9ae501312a2d76a43ee688542b21622056a372959b65d63d
+docker build -t kiro-browser:local services/kiro-browser             # not possible here: no Docker daemon (the PR's CI build job builds and smoke-tests it)
+
+# kiro-runner
+cd services/kiro-runner && npx tsc --noEmit -p . && npx vitest run    # 46 passed
+
+# gateway
+cd services/gateway
+npx tsc --noEmit -p .                                                 # clean (TS2742 noise only from the worktree's symlinked node_modules)
+npx jest test/vtid-05070-kiro-screenshots.test.ts                     # 20 passed
+npx jest test/vtid-04465-operator-pipeline-regression.test.ts test/vtid-04456-customer-support-pipeline-regression.test.ts test/feedback-pipeline.test.ts test/vtid-04332-report-to-specialist-status-contract.test.ts test/vtid-04445-persona-voice-gender.test.ts test/vtid-04560-role-separation-regression.test.ts   # 250 passed
+npx jest <all Kiro suites + vtid-05017 base images>                   # 221 passed
+npx jest                                                              # full suite — outputs/local-checks.txt
+
+# workflows / scripts
+python3 jqcheck.py .github/workflows/AWS-STAGE-DEPLOY-KIRO-RUNNER.yml  # the workflow's own jq on a sample task def: sidecar on (with/without password) and off
+python3 jqcheck.py .github/workflows/AWS-PROD-DEPLOY-KIRO-RUNNER.yml
+bash -n scripts/aws/setup-kiro-runner.sh
+node -e "lib.validateManifest(docs/validation/VTID-05070/staging-tests.json, {vtid:'VTID-05070', service:'gateway'})"   # {"ok":true,"errors":[]}

@@ -75,6 +75,23 @@ export function allowKiroMcpCall(userId: string, now = Date.now()): boolean {
 }
 export function resetKiroMcpLimits(): void { windows.clear(); adminCache.clear(); }
 
+/**
+ * VTID-05070: the same caller checks as the MCP route (feature on, a valid pass for this
+ * environment, still exafy_admin, rate limit), for the Kiro screenshot media route.
+ */
+export async function checkKiroMcpCaller(header: string | undefined): Promise<
+  { ok: true; userId: string; threadId: string; tenantId: string | null } | { ok: false; status: number; error: string }
+> {
+  if (!isKiroMcpEnabled()) return { ok: false, status: 404, error: 'KIRO_MCP_DISABLED' };
+  if (!header || !header.startsWith('Bearer ')) return { ok: false, status: 401, error: 'missing token' };
+  const check = verifyKiroMcpToken(header.slice(7));
+  if (!check.ok) return check.reason === 'unconfigured' ? { ok: false, status: 503, error: 'kiro mcp is not configured on this gateway' } : { ok: false, status: 401, error: `invalid token (${check.reason})` };
+  const status = await adminStatus(check.claims.userId);
+  if (!status.admin) return { ok: false, status: 403, error: 'exafy_admin required' };
+  if (!allowKiroMcpCall(check.claims.userId)) return { ok: false, status: 429, error: 'too many tool calls; slow down' };
+  return { ok: true, userId: check.claims.userId, threadId: check.claims.threadId, tenantId: status.tenantId };
+}
+
 const rpcError = (res: Response, status: number, code: number, message: string) =>
   res.status(status).json({ jsonrpc: '2.0', id: null, error: { code, message } });
 

@@ -37,7 +37,7 @@
  * Admin-only Operator Console data. OASIS payloads carry run id, thread id and
  * status only — never message text.
  */
-import { randomUUID } from 'crypto';
+import { randomInt, randomUUID } from 'crypto';
 import type { KiroTurnEvent, KiroTurnEventSink } from './kiro-events';
 import { answerPermission } from './permission-broker';
 import { cancelKiroTurn } from './kiro-turn';
@@ -397,6 +397,8 @@ async function finish(run: LiveRun, status: KiroRunStatus, outcome: KiroRunOutco
   run.log.closeText();
   const fields = runFieldsForOutcome(outcome);
   run.status = status;
+  // VTID-05070: events another task left for this run (a screenshot) land before the end.
+  if (run.persisted) await drainKiroRunInbox([run]);
   await patchRun(run, { status, ...fields, pending_permission: null, ended_at: new Date().toISOString() });
   run.log.push('run.status', { status, ...(fields.stop_reason ? { stop_reason: fields.stop_reason } : {}), ...(fields.error ? { error: fields.error } : {}) });
   await run.log.drain();
@@ -672,6 +674,77 @@ export async function followKiroRun(runId: string, afterSeq: number, onEvent: Ki
 }
 
 // ---------------------------------------------------------------------------
+// VTID-05070: events from outside the turn (a Kiro screenshot stored by the media route)
+// ---------------------------------------------------------------------------
+
+/** At most this many screenshots (`kiro.image` events) per run. */
+export const KIRO_RUN_SCREENSHOT_LIMIT = 10;
+/**
+ * An event for a run another gateway task owns is written as an INBOX row: the same table,
+ * type `<type>.inbox`, a NEGATIVE seq (never replayed: streams read seq > after_seq >= 0).
+ * The owning task's control tick (every 2 s) and its finish() re-emit inbox rows as real
+ * events in seq order, flush them, then delete the inbox rows. No schema change.
+ */
+const INBOX = '.inbox';
+
+/** The user's current (running or waiting) run of the thread: this task's first, else the store's. */
+export async function activeKiroRunFor(threadId: string, userId: string): Promise<{ id: string; local: boolean } | null> {
+  const l = localRunsOf(threadId).find((r) => r.userId === userId && r.status !== 'queued');
+  if (l) return { id: l.id, local: true };
+  const r = await rest<Array<{ id: string }>>(
+    `kiro_runs?thread_id=eq.${enc(threadId)}&user_id=eq.${enc(userId)}&status=in.(running,waiting_permission)&select=id&order=created_at.desc&limit=1`);
+  return r.ok && r.data && r.data[0] ? { id: r.data[0].id, local: false } : null;
+}
+
+/** How many `type` events the run has: this task's log plus the store (stored rows and inbox rows). Null = unknown. */
+export async function countKiroRunEvents(runId: string, type: string): Promise<number | null> {
+  const l = live.get(runId);
+  if (l && !l.persisted) return l.log.events.filter((e) => e.type === type).length;
+  const types = l ? `eq.${type}${INBOX}` : `in.(${type},${type}${INBOX})`;
+  const r = await rest<Array<{ seq: number }>>(`kiro_run_events?run_id=eq.${enc(runId)}&type=${types}&select=seq&limit=1000`);
+  if (!r.ok) return null;
+  return (r.data ?? []).length + (l ? l.log.events.filter((e) => e.type === type).length : 0);
+}
+
+/** Append one event to a run: in order right here when this task owns it, else through the inbox. */
+export async function appendKiroRunEvent(runId: string, type: string, payload: Record<string, unknown>): Promise<{ ok: true; via: 'local' | 'inbox'; seq: number | null } | { ok: false; error: string }> {
+  const l = live.get(runId);
+  if (l && !l.finished) {
+    const ev = l.log.push(type, payload);
+    return { ok: true, via: 'local', seq: ev.seq };
+  }
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const seq = -(1 + randomInt(2 ** 31 - 2));
+    const r = await rest('kiro_run_events', { method: 'POST', body: { run_id: runId, seq, type: `${type}${INBOX}`, payload, created_at: new Date().toISOString() } });
+    if (r.ok) return { ok: true, via: 'inbox', seq: null };
+    if (r.status !== 409) return { ok: false, error: r.error ?? `store_${r.status}` };
+  }
+  return { ok: false, error: 'inbox_conflict' };
+}
+
+/** Re-emit the inbox rows of these (owned, persisted) runs as real events, then remove them. */
+async function drainKiroRunInbox(runs: LiveRun[]): Promise<number> {
+  const owned = runs.filter((r) => r.persisted);
+  if (owned.length === 0) return 0;
+  const r = await rest<Array<{ run_id: string; seq: number; type: string; payload: Record<string, unknown> | null; created_at: string }>>(
+    `kiro_run_events?run_id=in.(${owned.map((x) => x.id).join(',')})&seq=lt.0&select=run_id,seq,type,payload,created_at&order=created_at.asc&limit=100`);
+  if (!r.ok || !r.data || r.data.length === 0) return 0;
+  const done = new Map<string, number[]>();
+  for (const row of r.data) {
+    const run = live.get(row.run_id);
+    if (!run || !row.type.endsWith(INBOX)) continue;
+    run.log.push(row.type.slice(0, -INBOX.length), row.payload ?? {});
+    done.set(row.run_id, [...(done.get(row.run_id) ?? []), row.seq]);
+  }
+  for (const [runId, seqs] of done) {
+    await live.get(runId)?.log.flush();
+    const d = await rest(`kiro_run_events?run_id=eq.${enc(runId)}&seq=in.(${seqs.join(',')})`, { method: 'DELETE' });
+    if (!d.ok) console.error(`${LOG} kiro_run_events inbox delete failed (${d.status}): ${d.error}`);
+  }
+  return [...done.values()].reduce((n, s) => n + s.length, 0);
+}
+
+// ---------------------------------------------------------------------------
 // Liveness: heartbeat, control tick, sweep, shutdown
 // ---------------------------------------------------------------------------
 
@@ -705,6 +778,8 @@ export async function kiroRunsControlTick(): Promise<void> {
     const reqId = row.pending_permission?.request_id;
     if (answer && typeof reqId === 'string' && run.pendingPerms.has(reqId)) answerPermission(reqId, run.userId, answer.allow === true);
   }
+  // VTID-05070: events another gateway task left for these runs (screenshots stored there).
+  await drainKiroRunInbox(mine.filter((x) => !x.finished));
   for (const threadId of new Set(mine.filter((x) => x.status === 'queued').map((x) => x.threadId))) await pumpThread(threadId);
 }
 

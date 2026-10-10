@@ -77,6 +77,7 @@ export const KIRO_SESSION_RULES = '=== OPERATOR SESSION RULES (from the Vitana g
   + '- When a change needs a write tool (push, PR, merge) and no open VTID for it exists, finish the change in your workspace, say plainly that it needs a sparred, owner-approved plan before a VTID can exist, and offer to write that plan.\n'
   + '- Edits that are not pushed stay only in this workspace. Push them with dev_push_kiro_branch as soon as an open VTID allows it.\n'
   + '- Before describing earlier progress, check the workspace (`git status`, `git log`) rather than relying on memory.\n'
+  + '- After a UI change is on staging, screenshot it at desktop and mobile with browser_screenshot (when you have it; staging only, read-only) before asking to publish.\n'
   + '=== END OPERATOR SESSION RULES ===';
 
 /** VTID-05064: shorten one message to the cap, keeping its start and its end. */

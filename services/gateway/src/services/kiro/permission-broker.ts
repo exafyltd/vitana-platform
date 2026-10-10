@@ -17,6 +17,8 @@
  * their own DB-backed Allow in the MCP route, which dispatches by its own tool
  * name, not by this title.
  *
+ * VTID-05070: plus exactly `Running: @vitana-browser/browser_screenshot` (KIRO_BROWSER_TOOL_TITLE).
+ *
  * Every answer (user or timeout) is reported as a `kiro.permission_answer`
  * event so a run record can show it and clear its pending card.
  */
@@ -33,11 +35,20 @@ export const KIRO_MCP_TOOL_TITLE = /^Running: @vitana\/([a-z0-9_]+)$/;
 const TRUSTED_READ_TOOLS = new Set<string>(KIRO_MCP_READ_TOOLS);
 
 /**
+ * VTID-05070: the one tool of the runner's `vitana-browser` MCP server — read-only by
+ * construction (staging hosts only, production refused, every non-GET aborted except the
+ * test user's sign-in, enforced in the kiro-browser sidecar). Trusted on EXACTLY this title
+ * with kind `other`; any other title from that server still asks.
+ */
+export const KIRO_BROWSER_TOOL_TITLE = 'Running: @vitana-browser/browser_screenshot';
+
+/**
  * VTID-05065: the Operator read tool this permission request runs, or null when it is not
  * exactly one (wrong kind, other title format, unknown or write tool name).
  */
 export function trustedKiroReadTool(req: Pick<AcpPermissionRequest, 'title' | 'kind'>): string | null {
   if (req.kind !== 'other') return null;
+  if (req.title === KIRO_BROWSER_TOOL_TITLE) return 'browser_screenshot';
   const m = KIRO_MCP_TOOL_TITLE.exec(req.title);
   return m && TRUSTED_READ_TOOLS.has(m[1]) ? m[1] : null;
 }

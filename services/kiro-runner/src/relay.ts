@@ -21,6 +21,7 @@ import { StringDecoder } from 'string_decoder';
 import type { WebSocket } from 'ws';
 import type { RepoMirrors } from './repo-mirrors';
 import { dirtyRepos, park, takeParked, type ParkLimits } from './workspace-park';
+import { browserConfigFromEnv, browserServerEntry, openBrowserSession, type BrowserConfig, type BrowserSession } from './browser';
 
 export const CLOSE = {
   normal: 1000,
@@ -63,6 +64,8 @@ export interface RelayOptions {
   mirrors?: RepoMirrors | null;
   /** VTID-05064: keep a workspace with uncommitted work for the thread's next session (null = always remove). */
   park?: ParkLimits | null;
+  /** VTID-05070: the kiro-browser sidecar (undefined = from KIRO_BROWSER_URL/KIRO_BROWSER_REGISTRY_TOKEN; null = off). */
+  browser?: BrowserConfig | null;
   workRoot: string;
   limits: RelayLimits;
   kiroBin?: string;
@@ -102,8 +105,13 @@ export const MCP_PROXY_PATH = path.join(__dirname, 'mcp-proxy.js');
  * VTID-05005: the MCP servers a session gets — decided here, never by the gateway.
  * Exactly the `vitana` relay when this session has a pass, otherwise none.
  */
-export function mcpServersFor(mcp: McpConfig | null | undefined): unknown[] {
+export function mcpServersFor(
+  mcp: McpConfig | null | undefined,
+  browser?: { cfg: BrowserConfig; session: BrowserSession } | null,
+): unknown[] {
   if (!mcp || !mcp.gatewayUrl || !mcp.token) return [];
+  // VTID-05070: plus `vitana-browser` when this task has the screenshot sidecar.
+  const extra = browser ? [browserServerEntry(browser.cfg, browser.session)] : [];
   return [{
     name: 'vitana',
     command: process.execPath,
@@ -112,7 +120,7 @@ export function mcpServersFor(mcp: McpConfig | null | undefined): unknown[] {
       { name: 'VITANA_MCP_URL', value: `${mcp.gatewayUrl.replace(/\/+$/, '')}/api/v1/operator/kiro/mcp` },
       { name: 'VITANA_MCP_TOKEN', value: mcp.token },
     ],
-  }];
+  }, ...extra];
 }
 
 /**
@@ -155,7 +163,10 @@ export function startRelay(o: RelayOptions): RelaySession {
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
-  const servers = mcpServersFor(o.mcp);
+  // VTID-05070: a per-session browser token, registered with the sidecar, removed at the end.
+  const browserCfg = o.browser === undefined ? browserConfigFromEnv() : o.browser;
+  const browser = browserCfg && o.mcp?.gatewayUrl && o.mcp.token ? { cfg: browserCfg, session: openBrowserSession(browserCfg, o.mcp.token, log) } : null;
+  const servers = mcpServersFor(o.mcp, browser);
   if (o.mirrors) void o.mirrors.addWorktrees(dir);
   let ended = false;
   let idle: NodeJS.Timeout | null = null;
@@ -171,6 +182,7 @@ export function startRelay(o: RelayOptions): RelaySession {
     if (ended) return;
     ended = true;
     sessions.delete(id);
+    browser?.session.close();
     if (idle) clearTimeout(idle);
     clearTimeout(lifetime);
     clearInterval(ping);

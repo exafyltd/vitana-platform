@@ -1,0 +1,30 @@
+VTID-05070 local checks — 2026-10-10, worktree of origin/main bec05342
+
+services/kiro-browser
+  npx tsc --noEmit -p .                                  ok
+  npx vitest run                                         52 passed, 4 skipped (real Chromium off)
+  KIRO_BROWSER_REAL_CHROMIUM=1 npx vitest run            56 passed (3 files) — real Chromium headless shell 145 / Playwright 1.58.2:
+     ✓ a normal staging page is screenshotted at 1400x900
+     ✓ a server redirect to production is never followed to production, and nothing is returned
+     ✓ a page's POST is aborted in the browser and never reaches the server
+     ✓ a meta refresh to another host is aborted at the network level
+  chromiumSandbox:true launch in this container          FAILED ("Chromium sandboxing failed!" — root in a nested sandbox; NOT the Fargate answer)
+  docker build services/kiro-browser                     not run: no Docker daemon in this session (CI build job builds + smoke-tests it)
+
+services/kiro-runner
+  npx tsc --noEmit -p .                                  ok
+  npx vitest run                                         Test Files 2 passed; Tests 46 passed (36 existing + 10 new)
+
+services/gateway
+  npx tsc --noEmit -p .                                  clean (only TS2742 noise caused by the worktree's symlinked node_modules)
+  npx jest test/vtid-05070-kiro-screenshots.test.ts      20 passed
+  test:operator + test:support + test:roles suites       250 passed (6 suites; incl. the new "Kiro screenshot (VTID-05070)" pipeline scenario)
+  all Kiro suites + vtid-05017 base images                221 passed (13 suites)
+  npx jest (full)                                         Test Suites: 4 failed, 1 skipped, 1618 passed; Tests: 26027 passed, 25 skipped, 6 todo
+     the 4 failing suites under full-parallel load: events.ingest, scripts/secret-exposure-scanner, acceptance-gate,
+     vtid-04981-consume-credits-lockdown — none touches a changed file; re-run on their own: all 4 PASS (load/timing flakes)
+
+workflows / scripts
+  workflow jq programs (staging + production) run on a sample task definition: sidecar on with password, on without, off — ok
+  bash -n scripts/aws/setup-kiro-runner.sh               ok
+  staging-tests.json validateManifest                    {"ok":true,"errors":[]}

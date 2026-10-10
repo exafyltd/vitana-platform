@@ -45,6 +45,17 @@
 #
 #   status      Prints what exists, and whether a user's key is linked.
 #
+#   VTID-05070 (the kiro-browser screenshot sidecar, a second container of the runner task):
+#   provision also creates the ECR repo `vitana/kiro-browser`, the registry token secret
+#   `vitana/kiro-runner/<env>/browser-registry-token` (generated once, never printed; the
+#   runner and the sidecar share it) and lets the execution role read
+#   `vitana/kiro-runner/<env>/browser-*`.
+#
+#   set-browser-password  Stores the E2E test user's password as
+#               `vitana/kiro-runner/<env>/browser-test-user-password` (hidden prompt, 0600 temp
+#               file, never argv). Only the kiro-browser container gets it, as an ECS secret;
+#               the runner and kiro-cli never do. Without it, screenshots are signed out.
+#
 # WHAT IT DOES NOT DO
 #
 #   - --env staging never touches production names (no *-awsdr); --env production
@@ -58,6 +69,7 @@
 #   scripts/aws/setup-kiro-runner.sh [--env staging|production] provision --apply
 #   scripts/aws/setup-kiro-runner.sh [--env staging|production] link-user --user-id <uuid> --apply
 #   scripts/aws/setup-kiro-runner.sh [--env staging|production] status [--user-id <uuid>]
+#   scripts/aws/setup-kiro-runner.sh [--env staging|production] set-browser-password --apply
 #   (scripts/aws/setup-kiro-runner-staging.sh is the staging shortcut.)
 #
 # Requires: aws CLI v2 (admin on 472838866351), jq, openssl.
@@ -80,6 +92,9 @@ case "$ENV_NAME" in
 esac
 CONTAINER="kiro-runner"
 ECR_REPO="vitana/kiro-runner"                 # one repo: production promotes the staging-verified image
+ECR_BROWSER_REPO="vitana/kiro-browser"        # VTID-05070 sidecar; promoted the same way
+SECRET_BROWSER_REGISTRY="vitana/kiro-runner/${ENV_NAME}/browser-registry-token"
+SECRET_BROWSER_PASSWORD="vitana/kiro-runner/${ENV_NAME}/browser-test-user-password"
 SECRET_TOKEN="vitana/kiro-runner/${ENV_NAME}/runner-token"
 KEY_PREFIX="vitana/kiro/${ENV_NAME}/users"
 NAMESPACE="vitana.internal"
@@ -103,7 +118,7 @@ die()  { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 need() { type -P "$1" >/dev/null 2>&1 || die "missing tool: $1"; }
 aws()  { command aws --region "$REGION" "$@"; }
 
-case "$CMD" in provision|link-user|status) ;; *) sed -n '2,64p' "$0" | sed 's/^# \{0,1\}//'; exit 2;; esac
+case "$CMD" in provision|link-user|status|set-browser-password) ;; *) sed -n '2,75p' "$0" | sed 's/^# \{0,1\}//'; exit 2;; esac
 need aws; need jq; need openssl
 if [ "$ENV_NAME" = "staging" ]; then
   [[ "$SERVICE" == *awsdr* || "$SERVICE" == *prod* ]] && die "refusing a prod-looking service name for staging"
@@ -164,6 +179,23 @@ provision() {
   TOKEN_ARN=$(aws secretsmanager describe-secret --secret-id "$SECRET_TOKEN" --query ARN --output text 2>/dev/null || echo "arn:aws:secretsmanager:${REGION}:${ACCOUNT_ID}:secret:${SECRET_TOKEN}-*")
   EXEC_POLICY=$(jq -nc --arg a "$TOKEN_ARN" '{Version:"2012-10-17",Statement:[{Effect:"Allow",Action:["secretsmanager:GetSecretValue"],Resource:[$a]}]}')
   run aws iam put-role-policy --role-name "$EXEC_ROLE_NAME" --policy-name "kiro-runner-token-${ENV_NAME}" --policy-document "$EXEC_POLICY"
+
+  say "-- 5b. VTID-05070 kiro-browser sidecar: ECR repo $ECR_BROWSER_REPO, registry token, execution-role read"
+  if aws ecr describe-repositories --repository-names "$ECR_BROWSER_REPO" >/dev/null 2>&1; then say "   ECR repo exists"
+  else run aws ecr create-repository --repository-name "$ECR_BROWSER_REPO" \
+         --image-scanning-configuration scanOnPush=true --image-tag-mutability MUTABLE \
+         --tags Key=vtid,Value=VTID-05070 Key=env,Value=${ENV_NAME} >/dev/null; fi
+  if aws secretsmanager describe-secret --secret-id "$SECRET_BROWSER_REGISTRY" >/dev/null 2>&1; then say "   registry token exists (never rotated by this script)"
+  elif [ "$APPLY" = 1 ]; then
+    BTOKEN=$(openssl rand -base64 48 | tr -d '/+=\n' | cut -c1-48)
+    aws secretsmanager create-secret --name "$SECRET_BROWSER_REGISTRY" --description "VTID-05070 kiro-runner -> kiro-browser registry token (${ENV_NAME})" \
+      --secret-string "$BTOKEN" --tags Key=vtid,Value=VTID-05070 >/dev/null
+    unset BTOKEN
+    say "   [apply] created $SECRET_BROWSER_REGISTRY (48 random chars; value not printed)"
+  else plan "create $SECRET_BROWSER_REGISTRY with a 48-char random value"; fi
+  BROWSER_POLICY=$(jq -nc --arg a "arn:aws:secretsmanager:${REGION}:${ACCOUNT_ID}:secret:vitana/kiro-runner/${ENV_NAME}/browser-*" \
+    '{Version:"2012-10-17",Statement:[{Effect:"Allow",Action:["secretsmanager:GetSecretValue"],Resource:[$a]}]}')
+  run aws iam put-role-policy --role-name "$EXEC_ROLE_NAME" --policy-name "kiro-browser-secrets-${ENV_NAME}" --policy-document "$BROWSER_POLICY"
 
   say "-- 6. Security group: $SG_SERVICES :$PORT from itself (gateway -> runner)"
   if aws ec2 describe-security-group-rules --filters "Name=group-id,Values=$SG_SERVICES" \
@@ -242,6 +274,9 @@ provision() {
     say ""
     say "Production gateway wiring: set the repository variable (the prod deploy role cannot look up secrets):"
     say "   gh variable set KIRO_RUNNER_PROD_TOKEN_ARN --repo exafyltd/vitana-platform --body '$PARN'"
+    BARN=$(aws secretsmanager describe-secret --secret-id "$SECRET_BROWSER_REGISTRY" --query ARN --output text 2>/dev/null || echo "<after-apply>")
+    say "VTID-05070 (only when the owner enables the screenshot sidecar in production):"
+    say "   gh variable set KIRO_BROWSER_PROD_REGISTRY_TOKEN_ARN --repo exafyltd/vitana-platform --body '$BARN'"
   fi
   say ""
   say "Next: dispatch AWS-STAGE-DEPLOY-KIRO-RUNNER.yml (or push under services/kiro-runner/**) to build and roll the runner,"
@@ -279,6 +314,34 @@ link_user() {
 }
 
 # ----------------------------------------------------------------------------
+# VTID-05070: the E2E test user's password, for the kiro-browser sidecar only.
+set_browser_password() {
+  while [ $# -gt 0 ]; do case "$1" in --apply) APPLY=1; shift;; *) die "unknown flag $1";; esac; done
+  say "== kiro-browser test-user password -> $SECRET_BROWSER_PASSWORD (apply=$APPLY) =="
+  if [ "$APPLY" != 1 ]; then plan "read the password with a hidden prompt and store it as $SECRET_BROWSER_PASSWORD"; return 0; fi
+  [ -t 0 ] || die "run this in an interactive terminal (the password is read with a hidden prompt)"
+  local PW=""
+  read -rs -p "E2E test user password (input hidden): " PW; printf '\n'
+  [ -n "$PW" ] || die "no password entered"
+  local TMP; TMP=$(umask 077; mktemp)
+  trap 'rm -f "$TMP"' RETURN
+  printf '%s' "$PW" > "$TMP"; PW=""
+  if aws secretsmanager describe-secret --secret-id "$SECRET_BROWSER_PASSWORD" >/dev/null 2>&1; then
+    aws secretsmanager put-secret-value --secret-id "$SECRET_BROWSER_PASSWORD" --secret-string "file://$TMP" >/dev/null
+    say "   replaced"
+  else
+    aws secretsmanager create-secret --name "$SECRET_BROWSER_PASSWORD" --description "VTID-05070 E2E test user password for the kiro-browser sidecar (${ENV_NAME})" \
+      --secret-string "file://$TMP" --tags Key=vtid,Value=VTID-05070 >/dev/null
+    say "   created"
+  fi
+  rm -f "$TMP"
+  if [ "$ENV_NAME" = "production" ]; then
+    say "   gh variable set KIRO_BROWSER_PROD_PASSWORD_ARN --repo exafyltd/vitana-platform --body '$(aws secretsmanager describe-secret --secret-id "$SECRET_BROWSER_PASSWORD" --query ARN --output text)'"
+  fi
+  say "   Value not printed. The next runner deploy gives it to the kiro-browser container only."
+}
+
+# ----------------------------------------------------------------------------
 status() {
   local USER_ID=""
   while [ $# -gt 0 ]; do case "$1" in --user-id) USER_ID="$2"; shift 2;; *) die "unknown flag $1";; esac; done
@@ -287,6 +350,9 @@ status() {
   aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" --query 'services[0].{status:status,desired:desiredCount,running:runningCount,taskDef:taskDefinition}' --output table 2>/dev/null || say "ECS service: missing"
   aws secretsmanager describe-secret --secret-id "$SECRET_TOKEN" --query 'Name' --output text 2>/dev/null || say "secret missing: $SECRET_TOKEN"
   aws iam get-role --role-name "$TASK_ROLE_NAME" --query 'Role.Arn' --output text 2>/dev/null || say "role missing: $TASK_ROLE_NAME"
+  aws ecr describe-repositories --repository-names "$ECR_BROWSER_REPO" --query 'repositories[0].repositoryUri' --output text 2>/dev/null || say "ECR (kiro-browser): missing"
+  aws secretsmanager describe-secret --secret-id "$SECRET_BROWSER_REGISTRY" --query 'Name' --output text 2>/dev/null || say "secret missing: $SECRET_BROWSER_REGISTRY"
+  aws secretsmanager describe-secret --secret-id "$SECRET_BROWSER_PASSWORD" --query 'Name' --output text 2>/dev/null || say "secret missing (screenshots signed out): $SECRET_BROWSER_PASSWORD"
   if [ -n "$USER_ID" ]; then
     aws secretsmanager describe-secret --secret-id "$KEY_PREFIX/$USER_ID" --query '{name:Name,changed:LastChangedDate}' --output table 2>/dev/null || say "no key linked for $USER_ID"
   fi
@@ -296,4 +362,5 @@ case "$CMD" in
   provision) [ "${1:-}" = "--apply" ] && APPLY=1; provision;;
   link-user) link_user "$@";;
   status) status "$@";;
+  set-browser-password) set_browser_password "$@";;
 esac

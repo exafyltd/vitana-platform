@@ -17,6 +17,20 @@
 #   AWS_STAGING_ACCESS_KEY_ID / AWS_STAGING_SECRET_ACCESS_KEY
 # Required Secrets Manager entry (eu-central-1):
 #   vitana/kiro-runner/staging/runner-token   -> KIRO_RUNNER_TOKEN
+#
+# VTID-05070: the kiro-browser SIDECAR (services/kiro-browser — read-only staging
+# screenshots for Kiro) is a SECOND container of the SAME task definition, on the
+# task's shared localhost: the runner gets KIRO_BROWSER_URL=http://127.0.0.1:8090 and
+# the registry token; the sidecar alone gets the E2E test user's password. It is added
+# when its ECR repo `vitana/kiro-browser` and the secret
+#   vitana/kiro-runner/staging/browser-registry-token -> KIRO_BROWSER_REGISTRY_TOKEN (both containers)
+# exist (scripts/aws/setup-kiro-runner.sh provision --apply creates both); otherwise the
+# runner deploys WITHOUT it and the job says so (::warning), never silently half-wired.
+# Optional: vitana/kiro-runner/staging/browser-test-user-password (setup-kiro-runner.sh
+# set-browser-password) -> KIRO_BROWSER_TEST_USER_PASSWORD, sidecar only; absent = signed-out
+# screenshots only. Chromium starts SANDBOX-FIRST; the `browser_no_sandbox` dispatch input
+# (default false) is the documented fallback if Fargate refuses the sandbox — read the
+# "kiro-browser start" lines this job prints after the roll.
 
 name: AWS Stage Deploy Kiro Runner (ECS)
 
@@ -25,16 +39,23 @@ on:
     branches: [main]
     paths:
       - 'services/kiro-runner/**'
+      - 'services/kiro-browser/**'
       - '.github/workflows/AWS-STAGE-DEPLOY-KIRO-RUNNER.yml'
   pull_request:
     paths:
       - 'services/kiro-runner/**'
+      - 'services/kiro-browser/**'
       - '.github/workflows/AWS-STAGE-DEPLOY-KIRO-RUNNER.yml'
   workflow_dispatch:
     inputs:
       reason:
         description: 'Reason for this AWS staging kiro-runner deploy'
         required: true
+      browser_no_sandbox:
+        description: 'VTID-05070 fallback: start the kiro-browser sidecar Chromium WITHOUT its sandbox (only if the sandbox-first start failed on Fargate)'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -52,6 +73,11 @@ env:
   ECS_SERVICE: vitana-kiro-runner
   SECRET_TOKEN: vitana/kiro-runner/staging/runner-token
   KEY_PREFIX: vitana/kiro/staging/users
+  # VTID-05070: the kiro-browser sidecar.
+  ECR_BROWSER_REPOSITORY: vitana/kiro-browser
+  SECRET_BROWSER_REGISTRY: vitana/kiro-runner/staging/browser-registry-token
+  SECRET_BROWSER_PASSWORD: vitana/kiro-runner/staging/browser-test-user-password
+  BROWSER_SUPABASE_URL: https://inmkhvwdcuyhnxkgfvsb.supabase.co
 
 jobs:
   test:
@@ -63,6 +89,12 @@ jobs:
           node-version: '20'
       - name: Install, typecheck, unit tests
         working-directory: services/kiro-runner
+        run: |
+          npm ci --no-audit --no-fund
+          npx tsc --noEmit -p .
+          npm test
+      - name: kiro-browser sidecar — install, typecheck, unit tests (VTID-05070)
+        working-directory: services/kiro-browser
         run: |
           npm ci --no-audit --no-fund
           npx tsc --noEmit -p .
@@ -86,6 +118,27 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' localhost:18080/keys/0adc6ff6-acb0-4dca-99d0-295211a40e3e)" = "401"
           docker exec kr kiro-cli acp --help | head -1
           docker rm -f kr
+      - name: Build the kiro-browser sidecar image (pinned Playwright base) and record its size (VTID-05070)
+        run: |
+          set -e
+          docker build -t kiro-browser:ci services/kiro-browser
+          SIZE=$(docker image inspect kiro-browser:ci --format '{{.Size}}')
+          echo "kiro-browser image size: $((SIZE / 1024 / 1024)) MiB" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Sidecar smoke — read-only root, non-root, 127.0.0.1 only, sandbox-first start reported
+        run: |
+          set -e
+          docker run -d --name kb --read-only --tmpfs /tmp \
+            -e KIRO_BROWSER_REGISTRY_TOKEN=ci-registry-token-0123456789 \
+            -e KIRO_MEDIA_GATEWAY_URL=https://preview-aws-gateway.vitanaland.com kiro-browser:ci
+          for _ in $(seq 1 30); do docker exec kb node dist/healthcheck.js && break; sleep 1; done
+          docker exec kb node dist/healthcheck.js
+          test "$(docker exec kb id -un)" = "pwuser"
+          sleep 5
+          # Under Docker's default seccomp profile the sandbox may be refused; that is the
+          # answer for Docker, not for Fargate (proved on the first staging roll below).
+          docker exec kb node -e "fetch('http://127.0.0.1:8090/alive').then(r=>r.json()).then(b=>console.log('kiro-browser /alive (docker):',JSON.stringify(b.browser)))" | tee -a "$GITHUB_STEP_SUMMARY"
+          docker logs kb 2>&1 | grep -E '^\[kiro-browser\]' | head -5
+          docker rm -f kb
 
   build-push-deploy:
     needs: build
@@ -141,7 +194,36 @@ jobs:
           docker push "$REGISTRY/${{ env.ECR_REPOSITORY }}:staging-latest"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
+      - name: VTID-05070 — kiro-browser sidecar image + secrets (or deploy without it, loudly)
+        id: browser
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -e
+          REG_ARN=$(aws secretsmanager describe-secret --secret-id "${{ env.SECRET_BROWSER_REGISTRY }}" --query ARN --output text 2>/dev/null || true)
+          if ! aws ecr describe-repositories --repository-names "${{ env.ECR_BROWSER_REPOSITORY }}" >/dev/null 2>&1 \
+             || [ -z "$REG_ARN" ] || [ "$REG_ARN" = "None" ]; then
+            echo "::warning::kiro-browser sidecar NOT deployed: ECR repo '${{ env.ECR_BROWSER_REPOSITORY }}' or secret '${{ env.SECRET_BROWSER_REGISTRY }}' missing — run scripts/aws/setup-kiro-runner-staging.sh provision --apply. Kiro gets no screenshot tool on this deploy."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          PW_ARN=$(aws secretsmanager describe-secret --secret-id "${{ env.SECRET_BROWSER_PASSWORD }}" --query ARN --output text 2>/dev/null || true)
+          if [ -z "$PW_ARN" ] || [ "$PW_ARN" = "None" ]; then
+            echo "::warning::'${{ env.SECRET_BROWSER_PASSWORD }}' missing: screenshots are signed-out only (setup-kiro-runner-staging.sh set-browser-password --apply)."
+            PW_ARN=""
+          fi
+          BIMG="$REGISTRY/${{ env.ECR_BROWSER_REPOSITORY }}:staging-${{ steps.commit.outputs.short }}"
+          docker build -t "$BIMG" services/kiro-browser
+          docker push "$BIMG"
+          { echo "enabled=true"; echo "image=$BIMG"; echo "registry_arn=$REG_ARN"; echo "password_arn=$PW_ARN"; } >> "$GITHUB_OUTPUT"
+
       - name: Register task-definition revision + roll the service (desiredCount 1)
+        env:
+          BROWSER_ENABLED: ${{ steps.browser.outputs.enabled }}
+          BROWSER_IMAGE: ${{ steps.browser.outputs.image }}
+          BROWSER_REG_ARN: ${{ steps.browser.outputs.registry_arn }}
+          BROWSER_PW_ARN: ${{ steps.browser.outputs.password_arn }}
+          BROWSER_NO_SANDBOX: ${{ inputs.browser_no_sandbox == true && 'true' || 'false' }}
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
@@ -149,8 +231,11 @@ jobs:
           TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
             --query 'services[0].taskDefinition' --output text)
           echo "Current task definition: $TD_ARN"
+          # CLAUDE.md ALWAYS 16: the LIVE task definition is read and edited, never rebuilt from scratch.
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
-            | jq --arg IMG "$IMAGE" --arg SEC_TOKEN "$SEC_TOKEN" --arg PREFIX "${{ env.KEY_PREFIX }}" --arg REGION "${{ env.TARGET_AWS_REGION }}" --arg MCPURL "${{ env.MCP_GATEWAY_URL }}" '
+            | jq --arg IMG "$IMAGE" --arg SEC_TOKEN "$SEC_TOKEN" --arg PREFIX "${{ env.KEY_PREFIX }}" --arg REGION "${{ env.TARGET_AWS_REGION }}" --arg MCPURL "${{ env.MCP_GATEWAY_URL }}" \
+                 --arg BON "${BROWSER_ENABLED:-false}" --arg BIMG "$BROWSER_IMAGE" --arg REG "$BROWSER_REG_ARN" --arg PW "$BROWSER_PW_ARN" \
+                 --arg NOSB "$BROWSER_NO_SANDBOX" --arg SUPA "${{ env.BROWSER_SUPABASE_URL }}" '
                 .taskRoleArn as $ROLE
                 | if ($ROLE // "" | endswith("/vitana-kiro-runner-task-role")) then . else error("task role is not vitana-kiro-runner-task-role") end
                 | .containerDefinitions[0].image = $IMG
@@ -166,11 +251,36 @@ jobs:
                       | [ .[] | select(.name | IN("KIRO_RUNNER_TOKEN") | not) ]
                       + [ {name:"KIRO_RUNNER_TOKEN", valueFrom:$SEC_TOKEN} ] )
                 | .containerDefinitions[0].healthCheck = {command:["CMD","node","/app/dist/healthcheck.js"], interval:30, timeout:5, retries:3, startPeriod:20}
+                # VTID-05070: the kiro-browser sidecar, a second container of THIS task definition
+                # (shared localhost). Stripped first, so turning it off removes it cleanly.
+                | .containerDefinitions = [ .containerDefinitions[0] ]
+                | .containerDefinitions[0].environment |= [ .[] | select(.name | IN("KIRO_BROWSER_URL") | not) ]
+                | .containerDefinitions[0].secrets |= [ .[] | select(.name | IN("KIRO_BROWSER_REGISTRY_TOKEN") | not) ]
+                | .volumes = [ (.volumes // [])[] | select(.name != "kiro-browser-tmp") ]
+                | if $BON == "true" then
+                    .containerDefinitions[0].environment += [ {name:"KIRO_BROWSER_URL",            value:"http://127.0.0.1:8090"} ]
+                    | .containerDefinitions[0].secrets += [ {name:"KIRO_BROWSER_REGISTRY_TOKEN", valueFrom:$REG} ]
+                    | .volumes += [ {name:"kiro-browser-tmp"} ]
+                    | .cpu = (if ((.cpu // "0") | tonumber) < 2048 then "2048" else .cpu end)
+                    | .memory = (if ((.memory // "0") | tonumber) < 4096 then "4096" else .memory end)
+                    | .containerDefinitions += [ {
+                        name:"kiro-browser", image:$BIMG, essential:false, memory:1536,
+                        readonlyRootFilesystem:true,
+                        mountPoints:[ {sourceVolume:"kiro-browser-tmp", containerPath:"/tmp", readOnly:false} ],
+                        environment:[ {name:"KIRO_BROWSER_PORT", value:"8090"}, {name:"KIRO_MEDIA_GATEWAY_URL", value:$MCPURL},
+                                      {name:"KIRO_BROWSER_SUPABASE_URL", value:$SUPA}, {name:"KIRO_BROWSER_NO_SANDBOX", value:$NOSB} ],
+                        secrets:( [ {name:"KIRO_BROWSER_REGISTRY_TOKEN", valueFrom:$REG} ]
+                                  + (if $PW == "" then [] else [ {name:"KIRO_BROWSER_TEST_USER_PASSWORD", valueFrom:$PW} ] end) ),
+                        logConfiguration:( .containerDefinitions[0].logConfiguration
+                                           | if . == null then null else .options["awslogs-stream-prefix"] = "kiro-browser" end ),
+                        healthCheck:{command:["CMD","node","/app/dist/healthcheck.js"], interval:30, timeout:5, retries:3, startPeriod:30}
+                      } ]
+                  else . end
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
-          echo "Registered $NEW_ARN"
+          echo "Registered $NEW_ARN (kiro-browser sidecar: ${BROWSER_ENABLED:-false}; no-sandbox fallback: $BROWSER_NO_SANDBOX)"
           aws ecs update-service --cluster "${{ env.ECS_CLUSTER }}" --service "${{ env.ECS_SERVICE }}" \
             --task-definition "$NEW_ARN" --desired-count 1 >/dev/null
           aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"
@@ -194,3 +304,20 @@ jobs:
           done
           [ "$H" = "HEALTHY" ] || { echo "::error::kiro-runner task is not HEALTHY ($H)"; exit 1; }
           printf -- '- Reason: %s\n' "$DEPLOY_REASON"
+
+      - name: VTID-05070 — kiro-browser sidecar status + the Fargate sandbox result (informational)
+        if: steps.browser.outputs.enabled == 'true'
+        run: |
+          set +e
+          TASK=$(aws ecs list-tasks --cluster "${{ env.ECS_CLUSTER }}" --service-name "${{ env.ECS_SERVICE }}" --desired-status RUNNING --query 'taskArns[0]' --output text)
+          aws ecs describe-tasks --cluster "${{ env.ECS_CLUSTER }}" --tasks "$TASK" \
+            --query 'tasks[0].containers[?name==`kiro-browser`].{status:lastStatus,health:healthStatus,image:image}' --output table
+          # One start line: "chromium <v> started (sandbox on)" or "chromium did not start with the sandbox: ...".
+          sleep 30
+          TDA=$(aws ecs describe-tasks --cluster "${{ env.ECS_CLUSTER }}" --tasks "$TASK" --query 'tasks[0].taskDefinitionArn' --output text)
+          LG=$(aws ecs describe-task-definition --task-definition "$TDA" \
+            --query 'taskDefinition.containerDefinitions[?name==`kiro-browser`].logConfiguration.options."awslogs-group" | [0]' --output text)
+          aws logs filter-log-events --log-group-name "$LG" --log-stream-name-prefix kiro-browser --filter-pattern '"[kiro-browser]"' \
+            --start-time $(( ($(date +%s) - 900) * 1000 )) --query 'events[].message' --output text 2>/dev/null \
+            | tr '\t' '\n' | grep -E 'chromium|listening' | tail -5 | sed 's/^/kiro-browser start: /' | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 0

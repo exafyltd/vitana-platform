@@ -11,6 +11,16 @@
 # Until then the preflight fails loudly by design.
 #
 # Auth: GitHub OIDC (AWS_PROD_ROLE_ARN), like every AWS-PROD-DEPLOY-*.yml.
+#
+# VTID-05070: the kiro-browser screenshot sidecar is mirrored here but OFF BY DEFAULT —
+# only the `enable_browser` input adds it (a second container of the same task definition,
+# as on staging; without the input every production deploy removes it). It promotes the
+# staging-built vitana/kiro-browser:staging-<sha12> by re-tag, like the runner, and takes
+# its secrets by full ARN from repository variables (the prod role cannot look secrets up):
+#   KIRO_BROWSER_PROD_REGISTRY_TOKEN_ARN  (required when enabled)
+#   KIRO_BROWSER_PROD_PASSWORD_ARN        (optional; unset = signed-out screenshots only)
+# The sidecar refuses every production host by itself; production enablement is still a
+# separate, owner-approved decision (screenshots are of STAGING even from the prod runner).
 
 name: AWS Prod Deploy Kiro Runner (ECS)
 
@@ -23,6 +33,16 @@ on:
       commit_sha:
         description: 'The staging-verified commit whose kiro-runner image to promote (full SHA)'
         required: true
+      enable_browser:
+        description: 'VTID-05070: add the kiro-browser screenshot sidecar (off by default; owner-approved only)'
+        type: boolean
+        required: false
+        default: false
+      browser_no_sandbox:
+        description: 'VTID-05070 fallback: kiro-browser Chromium without its sandbox (only if proven necessary on staging)'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -44,6 +64,11 @@ env:
   # The prod deploy role has no secretsmanager:Describe*, so the token is referenced by the
   # full ARN the setup script prints, stored as a repository variable (same as the gateway).
   KIRO_TOKEN_ARN: ${{ vars.KIRO_RUNNER_PROD_TOKEN_ARN }}
+  # VTID-05070: the kiro-browser sidecar (only with the enable_browser input).
+  ECR_BROWSER_REPOSITORY: vitana/kiro-browser
+  BROWSER_REG_ARN: ${{ vars.KIRO_BROWSER_PROD_REGISTRY_TOKEN_ARN }}
+  BROWSER_PW_ARN: ${{ vars.KIRO_BROWSER_PROD_PASSWORD_ARN }}
+  BROWSER_SUPABASE_URL: https://inmkhvwdcuyhnxkgfvsb.supabase.co
 
 jobs:
   promote:
@@ -94,16 +119,52 @@ jobs:
           REGISTRY="$(aws sts get-caller-identity --query Account --output text).dkr.ecr.${{ env.TARGET_AWS_REGION }}.amazonaws.com"
           echo "image=$REGISTRY/${{ env.ECR_REPOSITORY }}:prod-$SHORT" >> "$GITHUB_OUTPUT"
 
+      - name: VTID-05070 — kiro-browser sidecar (only with enable_browser; re-tag the staging image)
+        id: browser
+        env:
+          ENABLE_BROWSER: ${{ inputs.enable_browser == true && 'true' || 'false' }}
+        run: |
+          set -e
+          if [ "$ENABLE_BROWSER" != "true" ]; then echo "enabled=false" >> "$GITHUB_OUTPUT"; echo "kiro-browser sidecar: off (default)"; exit 0; fi
+          case "$BROWSER_REG_ARN" in
+            arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/kiro-runner/production/browser-registry-token-*) ;;
+            *) echo "::error::enable_browser needs the repository variable KIRO_BROWSER_PROD_REGISTRY_TOKEN_ARN (setup-kiro-runner.sh --env production provision --apply prints it)."; exit 1 ;;
+          esac
+          case "$BROWSER_PW_ARN" in
+            "") ;;
+            arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/kiro-runner/production/browser-test-user-password-*) ;;
+            *) echo "::error::KIRO_BROWSER_PROD_PASSWORD_ARN is not the production browser password secret."; exit 1 ;;
+          esac
+          SHORT="${{ steps.inputs.outputs.short }}"
+          aws ecr describe-images --repository-name "${{ env.ECR_BROWSER_REPOSITORY }}" --image-ids imageTag="staging-$SHORT" >/dev/null 2>&1 \
+            || { echo "::error::No staging kiro-browser image staging-$SHORT — only a staging-built image can be promoted."; exit 1; }
+          MANIFEST=$(aws ecr batch-get-image --repository-name "${{ env.ECR_BROWSER_REPOSITORY }}" \
+            --image-ids imageTag="staging-$SHORT" --query 'images[0].imageManifest' --output text)
+          MT=$(aws ecr batch-get-image --repository-name "${{ env.ECR_BROWSER_REPOSITORY }}" \
+            --image-ids imageTag="staging-$SHORT" --query 'images[0].imageManifestMediaType' --output text)
+          aws ecr put-image --repository-name "${{ env.ECR_BROWSER_REPOSITORY }}" --image-tag "prod-$SHORT" \
+            --image-manifest "$MANIFEST" --image-manifest-media-type "$MT" >/dev/null 2>&1 \
+            || aws ecr describe-images --repository-name "${{ env.ECR_BROWSER_REPOSITORY }}" --image-ids imageTag="prod-$SHORT" >/dev/null
+          REGISTRY="$(aws sts get-caller-identity --query Account --output text).dkr.ecr.${{ env.TARGET_AWS_REGION }}.amazonaws.com"
+          { echo "enabled=true"; echo "image=$REGISTRY/${{ env.ECR_BROWSER_REPOSITORY }}:prod-$SHORT"; } >> "$GITHUB_OUTPUT"
+
       - name: Register task-definition revision + roll the service (desiredCount 1)
+        env:
+          BROWSER_ENABLED: ${{ steps.browser.outputs.enabled }}
+          BROWSER_IMAGE: ${{ steps.browser.outputs.image }}
+          BROWSER_NO_SANDBOX: ${{ inputs.browser_no_sandbox == true && 'true' || 'false' }}
         run: |
           set -e
           IMAGE="${{ steps.image.outputs.image }}"
           SEC_TOKEN="$KIRO_TOKEN_ARN"
           TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
             --query 'services[0].taskDefinition' --output text)
+          # CLAUDE.md ALWAYS 16: the LIVE task definition is read and edited, never rebuilt from scratch.
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
             | jq --arg IMG "$IMAGE" --arg SEC_TOKEN "$SEC_TOKEN" --arg PREFIX "${{ env.KEY_PREFIX }}" \
-                 --arg REGION "${{ env.TARGET_AWS_REGION }}" --arg MCPURL "${{ env.MCP_GATEWAY_URL }}" --arg SUFFIX "${{ env.TASK_ROLE_SUFFIX }}" '
+                 --arg REGION "${{ env.TARGET_AWS_REGION }}" --arg MCPURL "${{ env.MCP_GATEWAY_URL }}" --arg SUFFIX "${{ env.TASK_ROLE_SUFFIX }}" \
+                 --arg BON "${BROWSER_ENABLED:-false}" --arg BIMG "$BROWSER_IMAGE" --arg REG "$BROWSER_REG_ARN" --arg PW "$BROWSER_PW_ARN" \
+                 --arg NOSB "$BROWSER_NO_SANDBOX" --arg SUPA "${{ env.BROWSER_SUPABASE_URL }}" '
                 .taskRoleArn as $ROLE
                 | if ($ROLE // "" | endswith($SUFFIX)) then . else error("task role is not the production kiro-runner role") end
                 | .containerDefinitions[0].image = $IMG
@@ -119,11 +180,36 @@ jobs:
                       | [ .[] | select(.name | IN("KIRO_RUNNER_TOKEN") | not) ]
                       + [ {name:"KIRO_RUNNER_TOKEN", valueFrom:$SEC_TOKEN} ] )
                 | .containerDefinitions[0].healthCheck = {command:["CMD","node","/app/dist/healthcheck.js"], interval:30, timeout:5, retries:3, startPeriod:20}
+                # VTID-05070: the kiro-browser sidecar, a second container of THIS task definition
+                # (shared localhost). Stripped first, so turning it off removes it cleanly.
+                | .containerDefinitions = [ .containerDefinitions[0] ]
+                | .containerDefinitions[0].environment |= [ .[] | select(.name | IN("KIRO_BROWSER_URL") | not) ]
+                | .containerDefinitions[0].secrets |= [ .[] | select(.name | IN("KIRO_BROWSER_REGISTRY_TOKEN") | not) ]
+                | .volumes = [ (.volumes // [])[] | select(.name != "kiro-browser-tmp") ]
+                | if $BON == "true" then
+                    .containerDefinitions[0].environment += [ {name:"KIRO_BROWSER_URL",            value:"http://127.0.0.1:8090"} ]
+                    | .containerDefinitions[0].secrets += [ {name:"KIRO_BROWSER_REGISTRY_TOKEN", valueFrom:$REG} ]
+                    | .volumes += [ {name:"kiro-browser-tmp"} ]
+                    | .cpu = (if ((.cpu // "0") | tonumber) < 2048 then "2048" else .cpu end)
+                    | .memory = (if ((.memory // "0") | tonumber) < 4096 then "4096" else .memory end)
+                    | .containerDefinitions += [ {
+                        name:"kiro-browser", image:$BIMG, essential:false, memory:1536,
+                        readonlyRootFilesystem:true,
+                        mountPoints:[ {sourceVolume:"kiro-browser-tmp", containerPath:"/tmp", readOnly:false} ],
+                        environment:[ {name:"KIRO_BROWSER_PORT", value:"8090"}, {name:"KIRO_MEDIA_GATEWAY_URL", value:$MCPURL},
+                                      {name:"KIRO_BROWSER_SUPABASE_URL", value:$SUPA}, {name:"KIRO_BROWSER_NO_SANDBOX", value:$NOSB} ],
+                        secrets:( [ {name:"KIRO_BROWSER_REGISTRY_TOKEN", valueFrom:$REG} ]
+                                  + (if $PW == "" then [] else [ {name:"KIRO_BROWSER_TEST_USER_PASSWORD", valueFrom:$PW} ] end) ),
+                        logConfiguration:( .containerDefinitions[0].logConfiguration
+                                           | if . == null then null else .options["awslogs-stream-prefix"] = "kiro-browser" end ),
+                        healthCheck:{command:["CMD","node","/app/dist/healthcheck.js"], interval:30, timeout:5, retries:3, startPeriod:30}
+                      } ]
+                  else . end
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
-          echo "Registered $NEW_ARN"
+          echo "Registered $NEW_ARN (kiro-browser sidecar: ${BROWSER_ENABLED:-false})"
           aws ecs update-service --cluster "${{ env.ECS_CLUSTER }}" --service "${{ env.ECS_SERVICE }}" \
             --task-definition "$NEW_ARN" --desired-count 1 >/dev/null
           aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"

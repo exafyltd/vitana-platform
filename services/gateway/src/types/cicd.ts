@@ -1155,7 +1155,9 @@ export type CicdEventType =
   // VTID-05065: a Kiro run (one server-side turn) started, finished, or was interrupted (run id, thread id, status only; never message text)
   | 'operator.kiro.run_started'
   | 'operator.kiro.run_finished'
-  | 'operator.kiro.run_interrupted';
+  | 'operator.kiro.run_interrupted'
+  // VTID-05070: Kiro stored a staging screenshot (run id, thread id, media id, viewport, size; never the URL or image)
+  | 'operator.kiro.screenshot_stored';
 
 export interface CicdOasisEvent {
   vtid: string;

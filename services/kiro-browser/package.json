@@ -1,0 +1,20 @@
+{
+  "name": "@vitana/kiro-browser",
+  "version": "0.1.0",
+  "private": true,
+  "description": "VTID-05070: read-only staging screenshot sidecar of the kiro-runner task (Playwright Chromium on 127.0.0.1:8090)",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "playwright-core": "1.58.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

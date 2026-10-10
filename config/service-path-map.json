@@ -84,11 +84,12 @@
     },
     "kiro-runner": {
       "paths": [
-        "services/kiro-runner/"
+        "services/kiro-runner/",
+        "services/kiro-browser/"
       ],
       "cloud_run_service": "kiro-runner",
       "deployable": true,
-      "$comment": "VTID-04999: AWS ECS staging service vitana-kiro-runner via AWS-STAGE-DEPLOY-KIRO-RUNNER.yml (no Cloud Run \u2014 key kept for schema compatibility)"
+      "$comment": "VTID-04999: AWS ECS staging service vitana-kiro-runner via AWS-STAGE-DEPLOY-KIRO-RUNNER.yml (no Cloud Run \u2014 key kept for schema compatibility). VTID-05070: services/kiro-browser is the screenshot sidecar, a second container of the same task definition, deployed by the same workflow."
     }
   },
   "shared": {

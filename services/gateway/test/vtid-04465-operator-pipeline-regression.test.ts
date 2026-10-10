@@ -2050,4 +2050,96 @@ describe('Kiro runs (VTID-05065)', () => {
     expect(platform.rows('kiro_runs')).toHaveLength(1);
     expect(platform.rows('kiro_runs')[0]).toMatchObject({ thread_id: THREAD, status: 'completed', reply: 'old path' });
   });
+  // VTID-05070: Kiro takes a staging screenshot. The tool title is auto-allowed (no card); the
+  // kiro-browser sidecar stores the PNG with the session's pass; the run gets a `kiro.image`
+  // event that streams live and replays from the store; an image stored by ANOTHER gateway task
+  // reaches the run through the inbox; the 11th screenshot of a run is refused.
+  it('Kiro screenshot (VTID-05070): auto-allowed title, kiro.image event live and on replay, cross-task inbox, 10 per run', async () => {
+    const { default: mediaRouter } = await import('../src/routes/operator-kiro-media');
+    const { setKiroMediaStore } = await import('../src/services/kiro/kiro-media-store');
+    const { appendKiroRunEvent } = await import('../src/services/kiro/kiro-runs');
+    const saved = { mcp: process.env.KIRO_MCP_ENABLED, internal: process.env.GATEWAY_INTERNAL_TOKEN };
+    Object.assign(process.env, { KIRO_MCP_ENABLED: 'true', GATEWAY_INTERNAL_TOKEN: 'pipeline-internal-token' });
+    setKiroMcpAdminLookup(async () => ({ admin: true, tenantId: null }));
+    resetKiroMcpLimits();
+    const objects = new Map<string, Buffer>();
+    setKiroMediaStore({
+      put: async (p, b) => { objects.set(p, b); return { error: null }; },
+      sign: async (p) => ({ url: objects.has(p) ? `https://signed.example/${p}` : null, error: null }),
+    });
+    const media = express();
+    media.use(express.json());
+    media.use('/api/v1/operator/kiro/media', mediaRouter);
+    const png = (w: number, h: number) => {
+      const b = Buffer.alloc(40);
+      b.writeUInt32BE(0x89504e47, 0); b.writeUInt32BE(0x0d0a1a0a, 4); b.writeUInt32BE(13, 8); b.write('IHDR', 12, 'ascii');
+      b.writeUInt32BE(w, 16); b.writeUInt32BE(h, 20);
+      return b;
+    };
+    const pass = mintKiroMcpToken(ADMIN_USER, THREAD)!;
+    const upload = (viewport = 'desktop') => request(media).post(`/api/v1/operator/kiro/media?viewport=${viewport}&page_url=${encodeURIComponent('https://preview-aws.vitanaland.com/settings')}`)
+      .set('Authorization', `Bearer ${pass}`).set('Content-Type', 'image/png').send(png(1400, 900));
+    try {
+      const gate = deferred();
+      let stored: any = null;
+      kiro.handlers.push(async (k) => {
+        const answer = await k.ask('Running: @vitana-browser/browser_screenshot', 'other');
+        if (answer.outcome.optionId === 'allow') stored = (await upload()).body;
+        k.chunk('looked at it');
+        await gate.promise;
+        return 'end_turn';
+      });
+      const id = (await startRun('screenshot the settings page')).body.run_id as string;
+      const s = openStream(id, admin);
+      await waitFor(() => s.frames.some((f) => f.event === 'kiro.image'), 'kiro.image live');
+      // No approval card: the browser tool's exact title is trusted like the read tools.
+      expect(s.frames.some((f) => f.event === 'kiro.permission_request')).toBe(false);
+      expect(stored).toMatchObject({ ok: true, run_id: id, width: 1400, height: 900, event_appended: true });
+      const live = s.frames.find((f) => f.event === 'kiro.image')!;
+      expect(live.data).toMatchObject({ media_id: stored.media_id, viewport: 'desktop', width: 1400, height: 900, page_url: 'https://preview-aws.vitanaland.com/settings' });
+      expect([...objects.keys()]).toEqual([`kiro/${ADMIN_USER}/${THREAD}/${stored.media_id}.png`]);
+      const quota = await request(media).get('/api/v1/operator/kiro/media/quota').set('Authorization', `Bearer ${pass}`);
+      expect(quota.body).toEqual({ ok: true, run_id: id, used: 1, limit: 10, remaining: 9 });
+
+      // An image stored by another gateway task arrives through the inbox and the control tick.
+      const inbox = await appendKiroRunEvent('b5070000-0000-4000-8000-000000000001', 'kiro.image', { media_id: 'x' });
+      expect(inbox).toMatchObject({ ok: true, via: 'inbox' });
+      const row = platform.rows('kiro_run_events').find((e) => e.run_id === 'b5070000-0000-4000-8000-000000000001')!;
+      expect(row.seq).toBeLessThan(0);
+      expect(row.type).toBe('kiro.image.inbox');
+      platform.insert('kiro_run_events', { run_id: id, seq: -42, type: 'kiro.image.inbox', payload: { media_id: 'from-other-task', viewport: 'mobile' }, created_at: new Date().toISOString() });
+      await kiroRunsControlTick();
+      await waitFor(() => s.frames.some((f) => f.event === 'kiro.image' && f.data.media_id === 'from-other-task'), 'inbox image live');
+      expect(platform.rows('kiro_run_events').some((e) => e.run_id === id && e.seq === -42)).toBe(false);
+
+      // The cap: 2 so far; 8 more are accepted, the 11th is refused with the exact message.
+      for (let i = 0; i < 8; i += 1) expect((await upload('mobile')).status).toBe(201);
+      const eleventh = await upload();
+      expect(eleventh.status).toBe(429);
+      expect(eleventh.body).toEqual({ ok: false, error: 'screenshot limit reached for this run' });
+
+      gate.resolve();
+      await s.ended;
+      await waitFor(() => isDone(id), 'finished');
+      await platform.settle();
+      // Replay from the store alone (a reload): every image is there, in seq order, positive seqs only.
+      const replay = openStream(id, admin);
+      await replay.ended;
+      const images = replay.frames.filter((f) => f.event === 'kiro.image');
+      expect(images).toHaveLength(10);
+      expect(images[0].data.media_id).toBe(stored.media_id);
+      expect(seqs(replay.frames)).toEqual([...seqs(replay.frames)].sort((a, b) => a - b));
+      expect(platform.events('operator.kiro.screenshot_stored')).toHaveLength(9);
+      // Auth: no pass 401, a broken pass 401, no running run 409, a non-PNG 415.
+      expect((await request(media).get('/api/v1/operator/kiro/media/quota')).status).toBe(401);
+      expect((await request(media).get('/api/v1/operator/kiro/media/quota').set('Authorization', 'Bearer x.y')).status).toBe(401);
+      expect((await upload()).status).toBe(409);
+    } finally {
+      setKiroMediaStore(null);
+      setKiroMcpAdminLookup(null);
+      process.env.KIRO_MCP_ENABLED = saved.mcp; process.env.GATEWAY_INTERNAL_TOKEN = saved.internal;
+      if (saved.mcp === undefined) delete process.env.KIRO_MCP_ENABLED;
+      if (saved.internal === undefined) delete process.env.GATEWAY_INTERNAL_TOKEN;
+    }
+  });
 });

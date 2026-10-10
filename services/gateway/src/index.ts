@@ -852,6 +852,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/operator/kiro/mcp', require('./routes/operator-kiro-mcp').default, { owner: 'operator-kiro-mcp' });
   // VTID-05065: Kiro runs — one server-side record per Kiro turn, replayable stream.
   mountRouterSync(app, '/api/v1/operator/kiro/runs', require('./routes/operator-kiro-runs').default, { owner: 'operator-kiro-runs' });
+  // VTID-05070: Kiro's staging screenshots (the sidecar stores them with the session pass).
+  mountRouterSync(app, '/api/v1/operator/kiro/media', require('./routes/operator-kiro-media').default, { owner: 'operator-kiro-media' });
   mountRouterSync(app, '/api/v1/operator', operatorRouter, { owner: 'operator' });
 
   // VTID-0526-D: Telemetry routes with stage counters

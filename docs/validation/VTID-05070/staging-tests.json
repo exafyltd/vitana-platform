@@ -1,0 +1,53 @@
+{
+  "vtid": "VTID-05070",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "the Kiro screenshot quota route exists and refuses a caller without the session pass",
+      "path": "/api/v1/operator/kiro/media/quota",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "route mounted at /api/v1/operator/kiro/media (KIRO_MCP_ENABLED=true on staging); read-only GET without a token is refused before any lookup"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "the Kiro screenshot upload route exists and refuses a caller without a valid pass",
+      "method": "POST",
+      "rejected_probe": true,
+      "path": "/api/v1/operator/kiro/media?viewport=desktop&page_url=https%3A%2F%2Fpreview-aws.vitanaland.com%2F",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "the probe carries an invalid bearer token; the pass check rejects it before the body is read or anything is stored"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "the console re-sign route for Kiro screenshots exists and is admin-only",
+      "path": "/api/v1/operator/kiro/media/00000000-0000-4000-8000-000000000000/00000000-0000-4000-8000-000000000000",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "requireAdminAuth answers JSON 401 to an unauthenticated read-only GET"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05070-kiro-screenshots.test.ts test/vtid-04465-operator-pipeline-regression.test.ts",
+      "cwd": "services/gateway",
+      "reason": "media route auth with the Kiro session pass, PNG/size/viewport refusals, owner-only re-sign, the trusted title end to end through the ACP client and the broker, session rule, wiring and both runner deploy workflows (their jq run on a task definition); the pipeline scenario: auto-allowed title in a real run, kiro.image live and on replay, the cross-task inbox, 10 per run"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx vitest run",
+      "cwd": "services/kiro-runner",
+      "reason": "the vitana-browser relay is attached only with KIRO_BROWSER_URL and a pass, carries only the localhost URL and a per-session token, registers and removes the token with the sidecar, never reaches kiro-cli's env; the relay's tools/list and tools/call"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx vitest run",
+      "cwd": "services/kiro-browser",
+      "reason": "the sidecar guard: staging hosts only, production refused (also at DNS level), non-GET aborted except the Supabase sign-in, navigation off staging aborted, WebSockets closed, a redirect off staging never screenshotted, 10 per run with the exact error, 30 s per page, registry auth, sign-in with the password only in this container"
+    }
+  ]
+}

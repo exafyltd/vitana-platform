@@ -3756,3 +3756,13 @@ Indexes `idx_kiro_runs_thread_created (thread_id, created_at DESC)`, `idx_kiro_r
 | `created_at` | timestamp |
 
 OASIS (`CicdEventType`): `operator.kiro.run_started`, `operator.kiro.run_finished`, `operator.kiro.run_interrupted` — payload `{ run_id, thread_id, status }` only, never message text.
+
+**VTID-05070 (no schema change):** `kiro_run_events.type` also takes `kiro.image` — a staging screenshot Kiro took
+(`{ media_id, viewport, width, height, page_url, url, url_expires_at }`; at most 10 per run). An event for a run that
+ANOTHER gateway task owns is written as an **inbox row**: same table, type `<type>.inbox`, a **negative** `seq`
+(random, never replayed — streams read `seq > after_seq >= 0`). The owning task's control tick (every 2 s) and its
+finish re-emit inbox rows as real events (positive `seq`, in order), flush them, then delete the inbox rows.
+The image itself is in the private Storage bucket `operator-media` at `kiro/<user_id>/<thread_id>/<uuid>.png`
+(gateway service role only; 1 h signed URLs; the bucket is created by the Phase 2 setup script through the
+Storage API). OASIS: `operator.kiro.screenshot_stored` `{ run_id, thread_id, media_id, viewport, width, height, bytes, event }`
+— never the URL or the image.
