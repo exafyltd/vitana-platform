@@ -3672,3 +3672,18 @@ Migration: `supabase/migrations/20261009180000_vtid_05006_kiro_mcp_confirmations
 | `created_at`, `decided_at` | timestamps |
 
 Index `idx_kiro_mcp_confirmations_pending (user_id, thread_id, created_at DESC) WHERE status = 'pending'`.
+
+---
+
+## Calendar invites in the messenger + the audiobook entry (VTID-04917, 2026-10-10) — applied after merge via RUN-MIGRATION
+
+Migration: `supabase/migrations/20261010150000_vtid_04917_audiobook_source_type.sql` (constraint only, idempotent).
+
+| Object | Change |
+|---|---|
+| `calendar_events.valid_source_type` | adds `'audiobook'` (every existing value kept). Mirrored in `CALENDAR_SOURCE_TYPES` (`services/gateway/src/types/calendar.ts`). |
+| `calendar_events` (data) | One recurring row per member with an audiobook reminder: `source_type 'audiobook'`, `source_ref_type 'audiobook_reminder'`, `source_ref_id` = the member's id, `rrule 'FREQ=DAILY'`, `timezone` = theirs, `reminder_offsets '{}'` (no calendar push — the audiobook dispatcher stays the only sender), 20 min long. Written/cancelled by the gateway when the reminder is set/cleared (`POST /api/v1/journey/audiobook/reminder`). No backfill: 0 members had the reminder set on 2026-10-10. |
+| `chat_messages` (data) | `message_type 'calendar_invite'` is now accepted by `POST /api/v1/chat/send` and `POST /api/v1/chat/groups/:id/send`. The client sends `content_data { entry_id }` only; the stored `metadata` is built by the gateway from the sender's own entry: `{ kind:'calendar_invite', v:2, ref_type: community_event \| live_room_session \| calendar_entry, ref_id, title, start_time, end_time, location }`. |
+| `calendar_invite_responses` (existing, vitana-v1) | Answers to v2 invites are written by the gateway (`POST /api/v1/calendar/invites/:messageId/respond`), one row per member per message (`on_conflict message_id,user_id`). |
+| `global_event_participants` (existing) | "I'm in" on a free community event inserts the same `attending` row the app writes; the calendar entry comes from `trg_event_participation_calendar`. A paid or full event is never joined from a chat card. |
+| `calendar_events` (data) | "I'm in" on an invite to a member's own plan writes a copy: `source_type 'invite'`, `source_ref_type 'calendar_invite'`, `source_ref_id` = the message id; "No" cancels it. |

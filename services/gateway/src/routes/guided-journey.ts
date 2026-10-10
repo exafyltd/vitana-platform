@@ -28,6 +28,7 @@ import {
   parseReminderPref,
 } from '../services/guided-journey/guided-journey-state';
 import { recordSessionListen } from '../services/guided-journey/journey-index-award';
+import { syncAudiobookCalendarEntry } from '../services/guided-journey/audiobook-calendar';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import type { JourneyMode } from '../types/guided-journey';
 import { getOrbTopicSeed } from '../services/guided-journey/checklist-service';
@@ -239,6 +240,9 @@ router.post('/audiobook/reminder', requireAuth, async (req: AuthenticatedRequest
   }
   try {
     const state = await setAudiobookReminder(client, userId, pref);
+    // VTID-04917: the reminder shows in the member's calendar (one daily
+    // entry, no calendar push of its own). Never fails the reminder.
+    const calendar = await syncAudiobookCalendarEntry(userId, pref);
     // A member opting in to / out of a daily push is a real state transition.
     void emitOasisEvent({
       vtid: 'VTID-04763',
@@ -250,7 +254,7 @@ router.post('/audiobook/reminder', requireAuth, async (req: AuthenticatedRequest
       message: pref
         ? `Audiobook daily reminder set for ${pref.time} (${pref.tz})`
         : 'Audiobook daily reminder switched off',
-      payload: { user_id: userId, time: pref?.time ?? null, tz: pref?.tz ?? null },
+      payload: { user_id: userId, time: pref?.time ?? null, tz: pref?.tz ?? null, calendar },
     });
     return res.json({ ok: true, state, vtid: 'VTID-04763' });
   } catch (err: any) {

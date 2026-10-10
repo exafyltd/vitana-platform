@@ -15,7 +15,11 @@ describe('VTID-04997: expected test-result dates in the calendar', () => {
   it("the source-type CHECK lists 'test_result' and the gateway list has it", () => {
     expect(CALENDAR_SOURCE_TYPES).toContain('test_result');
     const check = SQL.slice(SQL.indexOf('ADD CONSTRAINT valid_source_type'), SQL.indexOf('-- 2. One helper'));
-    for (const t of CALENDAR_SOURCE_TYPES) expect(check).toContain(`'${t}'`);
+    expect(check).toContain("'test_result'");
+    // Every value this migration allows is a known type. Full parity with the
+    // gateway list is pinned against the NEWEST constraint migration by
+    // vtid-04331-calendar-data-model.test.ts (VTID-04917 added 'audiobook' after this one).
+    for (const t of check.match(/'[a-z_]+'/g) ?? []) expect(CALENDAR_SOURCE_TYPES).toContain(t.slice(1, -1));
   });
 
   it('declares insert, update and delete triggers on partner_health_test_orders', () => {

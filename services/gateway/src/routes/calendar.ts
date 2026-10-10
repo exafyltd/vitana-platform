@@ -44,6 +44,7 @@ import {
 import { completeSourceForCalendarEvent } from '../services/calendar-producers';
 import { z } from 'zod';
 import { isShareableEntry, listSharedPostIds, shareCalendarEntryToFeed, shareRefOf, SHARE_TEXT_MAX } from '../services/calendar-share';
+import { buildInviteFromEntry, getInviteState, respondToInvite, INVITE_RESPONSES } from '../services/calendar-invite';
 
 // Pillar keys — must match the 5 canonical Vitana pillars.
 const PILLAR_KEYS = ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'] as const;
@@ -892,6 +893,76 @@ router.post('/events/:id/share-to-feed', async (req: Request, res: Response) => 
     return res.json({ ok: true, data: { post_id: result.post_id } });
   } catch (err: any) {
     console.error(`${LOG_PREFIX} POST /events/:id/share-to-feed error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// VTID-04917 — invites sent through the messenger
+//   GET  /events/:id/invite-preview → can this entry be invited to, and the
+//        card it would make (the app shows it before sending; nothing is sent)
+//   GET  /invites/:messageId        → { my_response, counts, is_sender }
+//   POST /invites/:messageId/respond { response: accepted|maybe|declined }
+//        → { response, action, path? }   (action: joined | open_event |
+//          open_room | added | removed | recorded)
+// The invite itself is sent with the chat send routes (message_type
+// 'calendar_invite', content_data { entry_id }); its card is built on the
+// server from the sender's own entry. Only the DM recipient or a member of
+// the group can answer, never the sender.
+// =============================================================================
+router.get('/events/:id/invite-preview', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const entry = await getOwnCalendarEvent(req.params.id, userId);
+    const result = await buildInviteFromEntry(userId, entry as any);
+    if (!result.ok) {
+      return res.status(result.status).json({ ok: false, error: result.error, ...(result.reason ? { reason: result.reason } : {}) });
+    }
+    return res.json({ ok: true, data: result.metadata });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /events/:id/invite-preview error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+router.get('/invites/:messageId', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const state = await getInviteState(userId, req.params.messageId);
+    if (!state) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+    return res.json({ ok: true, data: state });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /invites/:messageId error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+const InviteRespondSchema = z.object({ response: z.enum(INVITE_RESPONSES) }).strict();
+
+router.post('/invites/:messageId/respond', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const parsed = InviteRespondSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ ok: false, error: 'INVALID_BODY', issues: parsed.error.issues });
+
+    const result = await respondToInvite(userId, req.params.messageId, parsed.data.response);
+    if (!result.ok) return res.status(result.status).json({ ok: false, error: result.error });
+
+    emitOasisEvent({
+      vtid: 'VTID-04917',
+      type: 'calendar.invite.responded' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: `Calendar invite ${result.response} (${result.action})`,
+      payload: { user_id: userId, message_id: req.params.messageId, response: result.response, action: result.action },
+    }).catch(() => {});
+
+    return res.json({ ok: true, data: { response: result.response, action: result.action, ...(result.path ? { path: result.path } : {}) } });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /invites/:messageId/respond error:`, err.message);
     return res.status(500).json({ ok: false, error: 'Internal error' });
   }
 });
