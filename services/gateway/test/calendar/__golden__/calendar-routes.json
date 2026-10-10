@@ -731,6 +731,39 @@
         "count": 1
       }
     },
+    "slots": {
+      "status": 200,
+      "type": "application/json",
+      "body": {
+        "ok": true,
+        "data": [
+          {
+            "start": "2026-10-06T05:00:00.000Z",
+            "end": "2026-10-06T06:00:00.000Z",
+            "duration_minutes": 60,
+            "free_until": "2026-10-06T20:00:00.000Z"
+          }
+        ],
+        "count": 1,
+        "mode": "slots"
+      }
+    },
+    "slots_bad_duration": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "duration (5-720 min), limit (1-10) and a from/to range of at most 14 days are required"
+      }
+    },
+    "slots_bad_range": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "duration (5-720 min), limit (1-10) and a from/to range of at most 14 days are required"
+      }
+    },
     "conflicts_missing": {
       "status": 400,
       "type": "application/json",
@@ -828,6 +861,20 @@
         "u1",
         null,
         "2026-10-05T00:00:00.000Z"
+      ]
+    ],
+    [
+      "findFreeSlots",
+      [
+        "u1",
+        null,
+        {
+          "from": "2026-10-06T00:00:00.000Z",
+          "to": "2026-10-09T00:00:00.000Z",
+          "durationMin": 45,
+          "limit": 2,
+          "userTimezone": "Europe/Berlin"
+        }
       ]
     ],
     [

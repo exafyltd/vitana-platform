@@ -29,6 +29,7 @@ import {
   getUserCalendarHistory,
   getCalendarGaps,
   findConflicts,
+  findFreeSlots,
   createCalendarEvent,
   bulkCreateCalendarEvents,
   updateCalendarEvent,
@@ -521,6 +522,28 @@ router.get('/events/gaps', async (req: Request, res: Response) => {
     if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
 
     const role = getActiveRole(req);
+
+    // VTID-04996: "find a time". Any of duration/from/to/limit switches to slot
+    // search over the same busy time the calendar shows, inside the member's
+    // waking hours. Without them the day-gap answer is unchanged.
+    const q = req.query;
+    if (q.duration !== undefined || q.from !== undefined || q.to !== undefined || q.limit !== undefined) {
+      const durationMin = q.duration === undefined ? 60 : Number(q.duration);
+      const limit = q.limit === undefined ? 3 : Number(q.limit);
+      const from = q.from === undefined ? new Date() : new Date(String(q.from));
+      const to = q.to === undefined ? new Date(from.getTime() + 7 * 86_400_000) : new Date(String(q.to));
+      if (
+        !Number.isFinite(durationMin) || durationMin < 5 || durationMin > 12 * 60 ||
+        !Number.isInteger(limit) || limit < 1 || limit > 10 ||
+        Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) ||
+        to <= from || to.getTime() - from.getTime() > 14 * 86_400_000
+      ) {
+        return res.status(400).json({ ok: false, error: 'duration (5-720 min), limit (1-10) and a from/to range of at most 14 days are required' });
+      }
+      const slots = await findFreeSlots(userId, role, { from, to, durationMin, limit, userTimezone: await resolveUserTimezone(userId) });
+      return res.json({ ok: true, data: slots, count: slots.length, mode: 'slots' });
+    }
+
     const dateStr = req.query.date as string;
     const date = dateStr ? new Date(dateStr) : new Date();
     const gaps = await getCalendarGaps(userId, role, date);
