@@ -53,7 +53,7 @@ const server = createRunnerServer({
     maxLineBytes: 1024 * 1024,
     maxBufferedBytes: 8 * 1024 * 1024,
     // VTID-05068: a session whose gateway socket drops mid-turn waits this long for a reattach ("0" = end at once).
-    reattachMs: process.env.KIRO_RUNNER_REATTACH_MS === '0' ? 0 : intEnv('KIRO_RUNNER_REATTACH_MS', REATTACH_DEFAULTS.reattachMs),
+    reattachMs: (process.env.KIRO_RUNNER_REATTACH_MS ?? '600000') === '0' ? 0 : intEnv('KIRO_RUNNER_REATTACH_MS', REATTACH_DEFAULTS.reattachMs),
     reattachBufferBytes: intEnv('KIRO_RUNNER_REATTACH_BUFFER_BYTES', REATTACH_DEFAULTS.reattachBufferBytes),
   },
 }, store);
