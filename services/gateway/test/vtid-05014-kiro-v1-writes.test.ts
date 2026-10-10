@@ -50,7 +50,8 @@ const push = (repo: string, p: string) => ({ repo, branch, message: 'VTID-05014:
 const ENV0 = { ...process.env };
 
 beforeEach(() => {
-  process.env = { ...ENV0, GITHUB_SAFE_MERGE_TOKEN: 'platform-token', FRONTEND_DEPLOY_TOKEN: 'v1-token' };
+  // VTID-05019: create-pr / safe-merge require the gateway service token.
+  process.env = { ...ENV0, GITHUB_SAFE_MERGE_TOKEN: 'platform-token', FRONTEND_DEPLOY_TOKEN: 'v1-token', GATEWAY_SERVICE_TOKEN: 'svc-05014' };
   for (const f of Object.values(gh)) (f as jest.Mock).mockReset();
   gh.detectServiceFromFiles.mockReturnValue(null);
 });
@@ -155,13 +156,13 @@ describe('/create-pr and /safe-merge', () => {
   it('/create-pr opens on vitana-v1 with the v1 token; platform call unchanged; a third repo is refused', async () => {
     gh.createPullRequest.mockResolvedValue({ number: 5, html_url: 'https://x/5' });
     const base = { vtid: 'VTID-05014', title: 'VTID-05014: x', body: 'b', head: branch };
-    const r1 = await request(app).post('/api/v1/github/create-pr').send({ ...base, repo: V1 });
+    const r1 = await request(app).post('/api/v1/github/create-pr').set('Authorization', 'Bearer svc-05014').send({ ...base, repo: V1 });
     expect(r1.status).toBe(201);
     expect(gh.createPullRequest).toHaveBeenLastCalledWith(V1, base.title, 'b', branch, 'main', 'v1-token');
-    const r2 = await request(app).post('/api/v1/github/create-pr').send(base);
+    const r2 = await request(app).post('/api/v1/github/create-pr').set('Authorization', 'Bearer svc-05014').send(base);
     expect(r2.status).toBe(201);
     expect(gh.createPullRequest).toHaveBeenLastCalledWith(PLATFORM, base.title, 'b', branch, 'main');
-    const r3 = await request(app).post('/api/v1/github/create-pr').send({ ...base, repo: 'someone/else' });
+    const r3 = await request(app).post('/api/v1/github/create-pr').set('Authorization', 'Bearer svc-05014').send({ ...base, repo: 'someone/else' });
     expect(r3.status).toBe(403);
     expect(gh.createPullRequest).toHaveBeenCalledTimes(2);
   });
@@ -170,12 +171,12 @@ describe('/create-pr and /safe-merge', () => {
     gh.getPrStatus.mockResolvedValue({ pr: { state: 'open', base: { ref: 'main' }, head: { ref: branch }, title: 'VTID-05014: x', mergeable: true }, checks: [], allPassed: true });
     gh.evaluateGovernance.mockResolvedValue({ decision: 'approved', files_touched: ['src/pages/Home.tsx'], services_impacted: [], blocked_reasons: [] });
     gh.mergePullRequest.mockResolvedValue({ sha: 'm1', merged: true, message: 'ok' });
-    const r = await request(app).post('/api/v1/github/safe-merge').send({ vtid: 'VTID-05014', repo: V1, pr_number: 5, merge_strategy: 'squash' });
+    const r = await request(app).post('/api/v1/github/safe-merge').set('Authorization', 'Bearer svc-05014').send({ vtid: 'VTID-05014', repo: V1, pr_number: 5, merge_strategy: 'squash' });
     expect(r.status).toBe(200);
     expect(gh.getPrStatus).toHaveBeenCalledWith(V1, 5, 'v1-token');
     expect(gh.evaluateGovernance).toHaveBeenCalledWith(V1, 5, 'VTID-05014', 'v1-token');
     expect(gh.mergePullRequest).toHaveBeenCalledWith(V1, 5, expect.any(String), 'squash', 'v1-token');
-    const bad = await request(app).post('/api/v1/github/safe-merge').send({ vtid: 'VTID-05014', repo: 'someone/else', pr_number: 5 });
+    const bad = await request(app).post('/api/v1/github/safe-merge').set('Authorization', 'Bearer svc-05014').send({ vtid: 'VTID-05014', repo: 'someone/else', pr_number: 5 });
     expect(bad.status).toBe(403);
     expect(bad.body.reason).toBe('unauthorized_repo');
   });
@@ -183,7 +184,7 @@ describe('/create-pr and /safe-merge', () => {
   it('/safe-merge still refuses a vitana-v1 PR that governance blocks (workflow change)', async () => {
     gh.getPrStatus.mockResolvedValue({ pr: { state: 'open', base: { ref: 'main' }, head: { ref: branch }, title: 'VTID-05014: x', mergeable: true }, checks: [], allPassed: true });
     gh.evaluateGovernance.mockResolvedValue({ decision: 'blocked', files_touched: ['.github/workflows/DEPLOY.yml'], services_impacted: [], blocked_reasons: ['Sensitive path'] });
-    const r = await request(app).post('/api/v1/github/safe-merge').send({ vtid: 'VTID-05014', repo: V1, pr_number: 5 });
+    const r = await request(app).post('/api/v1/github/safe-merge').set('Authorization', 'Bearer svc-05014').send({ vtid: 'VTID-05014', repo: V1, pr_number: 5 });
     expect(r.status).toBe(403);
     expect(gh.mergePullRequest).not.toHaveBeenCalled();
   });

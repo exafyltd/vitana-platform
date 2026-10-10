@@ -14,6 +14,7 @@
  * - Deterministic: strict event → transition mapping
  */
 
+import { gatewayServiceAuthHeader } from '../middleware/require-service-or-admin';
 import { emitOasisEvent } from './oasis-event-service';
 import { isAutopilotExecutionArmed } from './system-controls-service';
 import {
@@ -669,7 +670,8 @@ async function triggerMerge(vtid: string, event: OasisEvent): Promise<ActionResu
   try {
     const response = await fetch(`${gatewayUrl}/api/v1/cicd/safe-merge`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // VTID-05019: safe-merge requires the gateway service token.
+      headers: { 'Content-Type': 'application/json', ...gatewayServiceAuthHeader() },
       body: JSON.stringify({
         vtid,
         pr_number: runState.pr_number,
