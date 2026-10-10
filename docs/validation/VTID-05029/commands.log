@@ -1,0 +1,6 @@
+# VTID-05029 — commands run in the Claude Code session (2026-10-10)
+cd services/gateway && npx tsc --noEmit -p .                     # exit 0
+npx jest test/vtid-05029-email-fallback.test.ts test/i18n         # 88 passed (13 new)
+npx jest <20 suites that read src/index.ts>                       # 371 passed
+node scripts/ci/pr-gate/gate.mjs scope|sparring|weakening        # pass
+libpg-query parse(20261010130000_vtid_05029_email_fallback.sql)  # parses OK, 8 statements

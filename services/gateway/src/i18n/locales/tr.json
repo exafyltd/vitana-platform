@@ -183,5 +183,12 @@
   "autopilot.auto.event_rsvp_referral.title": "Davet edildiğin etkinliğe kaydol",
   "autopilot.auto.event_rsvp_referral.summary": "Bir etkinlik davetiyle geldin. Yerini ayırmak için kaydol.",
   "autopilot.auto.share_milestone.title": "Başarını paylaş: {milestone}",
-  "autopilot.auto.share_milestone.summary": "Bir dönüm noktasına ulaştın. Toplulukla paylaş — gönderiyi yayınlanmadan önce göreceksin."
+  "autopilot.auto.share_milestone.summary": "Bir dönüm noktasına ulaştın. Toplulukla paylaş — gönderiyi yayınlanmadan önce göreceksin.",
+  "email.push_fallback.subject": "Vitanaland'de bir şey kaçırdın",
+  "email.push_fallback.greeting": "Merhaba,",
+  "email.push_fallback.intro": "bu bildirimler telefonuna ulaşmadı:",
+  "email.push_fallback.more": "… ve {count} tane daha",
+  "email.push_fallback.cta": "Uygulamada aç",
+  "email.push_fallback.why": "Bu e-postayı, hiçbir anlık bildirim sana ulaşmadığı için alıyorsun. Bunu istediğin zaman değiştirebilirsin:",
+  "email.push_fallback.settings": "Bildirim ayarları"
 }

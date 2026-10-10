@@ -1,0 +1,5 @@
+tsc --noEmit (services/gateway): exit 0
+jest: vtid-05029-email-fallback (13) + test/i18n (75) — 88 passed; index.ts-reading suites — 371 passed
+pr-gate: scope ✅ (20 files in scope), sparring ✅, weakening ✅, migrations lint ✅ (parser checked separately), red-green ➖ (feature)
+libpg-query: 20261010130000_vtid_05029_email_fallback.sql parses OK, 8 statements
+ar.json deliberately untouched: catalog-coverage requires ar to stay honestly untranslated (tt falls back to EN)

@@ -110,6 +110,14 @@ export type GatewayI18nKey =
   | 'email.partner_invite.role.org_admin'
   | 'email.partner_invite.role.staff'
   | 'email.partner_invite.role.professional'
+  // VTID-05029: digest email for important notifications a push never reached
+  | 'email.push_fallback.subject'
+  | 'email.push_fallback.greeting'
+  | 'email.push_fallback.intro'
+  | 'email.push_fallback.more'
+  | 'email.push_fallback.cta'
+  | 'email.push_fallback.why'
+  | 'email.push_fallback.settings'
   // VTID-03885: Partner Health Test Integration
   | 'notif.partner_test_status_changed.title'
   | 'notif.partner_test_status_changed.body'
