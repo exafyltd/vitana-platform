@@ -35,7 +35,7 @@ export const TOOL_LANES: Record<string, OperatorLane> = {
   dev_get_task_detail: 'task_management', dev_list_approvals: 'task_management', dev_list_tasks: 'task_management', dev_quality_check: 'task_management',
   dev_reject_item: 'task_management', dev_validate_spec: 'task_management', discover_oasis_tasks: 'task_management', oasis_analyze_vtid: 'task_management',
   dev_search_codebase: 'code_lookup', dev_read_file: 'code_lookup', dev_repowise: 'code_lookup', dev_graphify: 'code_lookup', dev_graph_path: 'code_lookup',
-  dev_index_query: 'code_lookup', dev_domain_atlas: 'code_lookup', dev_deep_dive: 'code_lookup', dev_get_risk: 'code_lookup', knowledge_search: 'code_lookup',
+  dev_index_query: 'code_lookup', dev_domain_atlas: 'code_lookup', dev_resume_vtid: 'code_lookup', dev_deep_dive: 'code_lookup', dev_get_risk: 'code_lookup', knowledge_search: 'code_lookup',
   run_code: 'code_lookup', dev_company_docs_search: 'code_lookup', dev_company_docs_connect: 'code_lookup',
   dev_aws_ecs_status: 'ops_diagnostics', dev_cloudwatch_logs: 'ops_diagnostics', dev_ecs_tasks: 'ops_diagnostics', dev_db_query: 'ops_diagnostics',
   dev_run_sql_readonly: 'ops_diagnostics', dev_query_oasis_events: 'ops_diagnostics', investigate_failure: 'ops_diagnostics', dev_cicd_health: 'ops_diagnostics',

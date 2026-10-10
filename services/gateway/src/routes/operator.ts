@@ -37,6 +37,7 @@ import { isOperatorRouteOn, recordOperatorRouteOutcome, runOperatorRoute } from 
 import { processWithGemini, type OperatorTurnEventSink } from '../services/gemini-operator';
 import { getThreadEngine, getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn, listOperatorThreadMessages, listOperatorThreads } from '../services/operator-threads';
 import { runKiroTurn, cancelKiroTurn, closeKiroSession, isKiroEngineEnabled, openKiroSessionCount, listKiroModels, setKiroModel, type KiroHistoryMessage } from '../services/kiro/kiro-turn';
+import { getSupabase, supa } from '../services/dev-autopilot-execute'; // VTID-05060
 import { answerPermission } from '../services/kiro/permission-broker';
 import { registerKiroBackendFromEnv, runnerConfig, kiroKeyRequest, kiroKeyLinked, clearKiroKeyCache } from '../services/kiro/remote-backend';
 import { confirmationStore, decideConfirmation } from '../services/kiro/kiro-mcp-confirmations';
@@ -260,6 +261,18 @@ interface OperatorChatTurnOutcome {
   body: Record<string, unknown>;
 }
 
+/** VTID-05060: the newest operator.kiro.model_selected pick by this user for this thread, or null. */
+export async function latestKiroModelPick(threadId: string, userId: string | null): Promise<string | null> {
+  if (!userId) return null;
+  const s = getSupabase();
+  if (!s) return null;
+  const q = `/rest/v1/oasis_events?type=eq.operator.kiro.model_selected&actor_id=eq.${encodeURIComponent(userId)}`
+    + `&payload->>thread_id=eq.${encodeURIComponent(threadId)}&select=payload&order=created_at.desc&limit=1`;
+  const r = await supa<Array<{ payload?: { model_id?: unknown } }>>(s, q);
+  const id = r.ok && r.data && r.data[0] ? r.data[0].payload?.model_id : null;
+  return typeof id === 'string' && id ? id : null;
+}
+
 /**
  * VTID-04975: one operator chat turn answered by Kiro. Same reply shape as the
  * LLM path; the thread is recorded with engine 'kiro' (no rolling summary — the
@@ -282,7 +295,10 @@ async function runKiroChatTurn(a: {
       .filter((m) => m.role === 'user' || m.role === 'assistant')
       .map((m) => ({ role: m.role as 'user' | 'assistant', content: String(m.content ?? '') }));
   };
-  const result = await runKiroTurn({ threadId: a.threadId, userId: a.userId, message: a.message, emit: a.emit, loadHistory });
+  // VTID-05060: the developer's own last pick in Kiro's drop-down for this thread, from the
+  // operator.kiro.model_selected event the model route already records (owner's own, newest).
+  const loadModelPick = (): Promise<string | null> => latestKiroModelPick(a.threadId, a.userId);
+  const result = await runKiroTurn({ threadId: a.threadId, userId: a.userId, message: a.message, emit: a.emit, loadHistory, loadModelPick });
   // VTID-05003: a used-up Kiro Power seat is a governed state transition, logged once per change.
   if (result.meta.kiro_status === 'no_credits' && result.meta.credits_changed === true) {
     await emitOasisEvent({

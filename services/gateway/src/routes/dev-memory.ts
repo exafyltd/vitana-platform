@@ -3,6 +3,7 @@
  *
  *   GET  /morning-pack     the owner's handoffs + the week's knowledge + VTIDs in progress
  *   POST /handoffs/sweep   write handoffs for Operator threads that went quiet (hourly cron)
+ *   GET  /resume/:vtid     where one VTID stands: ledger, PRs, evidence, notes, deploy (VTID-05060)
  *
  * Auth. /morning-pack accepts three callers:
  *   - an exafy_admin session (the pack is filtered to the caller's own handoffs);
@@ -20,6 +21,7 @@ import { requireAdminAuth, AuthenticatedRequest } from '../middleware/auth-supab
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { buildMorningPack } from '../services/dev-memory/morning-pack';
 import { runHandoffSweep } from '../services/dev-memory/handoff';
+import { buildResumePack, VTID_RE } from '../services/dev-memory/resume-pack';
 import type { DevMemoryRepo } from '../services/dev-agent-memory';
 
 const router = Router();
@@ -78,6 +80,17 @@ router.get('/morning-pack', requireDevMemoryAccess, async (req: Request, res: Re
   const r = await buildMorningPack({ repo: parseRepo(req.query.repo), authorUserId: author });
   if (!r.ok) return res.status(503).json({ ok: false, error: r.error });
   if (req.query.format === 'text') return res.type('text/plain').send(r.pack.text);
+  return res.json({ ok: true, pack: r.pack });
+});
+
+// VTID-05060: the resume pack for one VTID. Same callers as /morning-pack (auth runs first).
+// ?format=text returns the start prompt followed by its instructions block.
+router.get('/resume/:vtid', requireDevMemoryAccess, async (req: Request, res: Response) => {
+  const vtid = String(req.params.vtid || '').toUpperCase();
+  if (!VTID_RE.test(vtid)) return res.status(400).json({ ok: false, error: 'INVALID_VTID' });
+  const r = await buildResumePack(vtid);
+  if (!r.ok) return res.status(r.error === 'not_found' ? 404 : 503).json({ ok: false, error: r.error });
+  if (req.query.format === 'text') return res.type('text/plain').send(`${r.pack.text}\n\n## Instructions\n${r.pack.instructions}\n`);
   return res.json({ ok: true, pack: r.pack });
 });
 

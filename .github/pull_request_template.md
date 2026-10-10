@@ -14,6 +14,16 @@ _Brief description of what this PR accomplishes._
 
 ---
 
+## 🔁 Handoff (optional — VTID-05060)
+
+_If the work stops before merge, say where: `scripts/dev/resume-vtid.sh <VTID>` and the Operator's `dev_resume_vtid` show the first 1,500 characters of this body to whoever picks it up._
+
+- **Where it stopped:**
+- **Open:**
+- **Next:**
+
+---
+
 ## ✅ Changes
 
 - [ ] Item 1

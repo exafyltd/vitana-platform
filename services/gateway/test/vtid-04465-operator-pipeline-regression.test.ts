@@ -1375,3 +1375,68 @@ describe('Kiro thread memory: a reopened session gets the thread back (VTID-0501
     for (const p of prompts) expect(JSON.stringify(p)).not.toContain('Wire GitHub');
   });
 });
+
+// ---------------------------------------------------------------------------
+// VTID-05060: the developer picks the Kiro model (Auto or one from Kiro's own
+// drop-down). When the thread's Kiro session reopens, the REAL chat route
+// reads the last operator.kiro.model_selected pick from OASIS (fake database)
+// and the REAL turn runner re-applies it through ACP before the prompt.
+// ---------------------------------------------------------------------------
+describe('Kiro model pick: a reopened session keeps the developer\'s model (VTID-05060)', () => {
+  const THREAD = 'a5060000-0000-4000-8000-000000000001';
+  const sent: any[] = [];
+
+  function fakeKiro(): any {
+    const out = new EventEmitter();
+    const proc = new EventEmitter();
+    const send = (o: unknown) => out.emit('data', `${JSON.stringify(o)}\n`);
+    return {
+      stdout: out,
+      stdin: {
+        write: (line: string) => {
+          const msg = JSON.parse(line);
+          sent.push(msg);
+          if (msg.method === 'initialize') send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1 } });
+          else if (msg.method === 'session/new') send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 'K2', models: { availableModels: [{ modelId: 'auto', name: 'Auto' }, { modelId: 'claude-opus-5.5', name: 'Claude Opus 5.5' }], currentModelId: 'auto' } } });
+          else if (msg.method === 'session/set_model') send({ jsonrpc: '2.0', id: msg.id, result: {} });
+          else if (msg.method === 'session/prompt') send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } });
+          return true;
+        },
+        end: () => {},
+      },
+      kill() { proc.emit('exit'); },
+      on: (ev: string, cb: any) => proc.on(ev, cb),
+    };
+  }
+
+  beforeEach(() => {
+    sent.length = 0;
+    Object.assign(process.env, { OPERATOR_THREADS_ENABLED: 'true', KIRO_ENGINE_ENABLED: 'true' });
+    setKiroBackend({ spawn: () => fakeKiro(), workspace: () => '/work/pipeline' });
+    platform.insert('operator_threads', { id: THREAD, user_id: ADMIN_USER, engine: 'kiro', title: 'Model pick', created_at: new Date(Date.now() - 3600_000).toISOString() });
+  });
+  afterEach(() => {
+    closeAllKiroSessions();
+    setKiroBackend(null);
+    delete process.env.OPERATOR_THREADS_ENABLED;
+    delete process.env.KIRO_ENGINE_ENABLED;
+  });
+
+  it('the developer\'s last pick is re-applied before the first prompt of the new session', async () => {
+    platform.insert('oasis_events', { id: 'e1', type: 'operator.kiro.model_selected', actor_id: ADMIN_USER, payload: { thread_id: THREAD, model_id: 'auto' }, created_at: new Date(Date.now() - 1800_000).toISOString() });
+    platform.insert('oasis_events', { id: 'e2', type: 'operator.kiro.model_selected', actor_id: ADMIN_USER, payload: { thread_id: THREAD, model_id: 'claude-opus-5.5' }, created_at: new Date(Date.now() - 600_000).toISOString() });
+    const res = await consoleTurn({ kind: 'jwt', token: await jwt(ADMIN_USER, true) }, 'continue', THREAD);
+    expect(res.status).toBe(200);
+    const methods = sent.map((m) => m.method);
+    const setModel = sent.find((m) => m.method === 'session/set_model');
+    expect(setModel?.params).toEqual({ sessionId: 'K2', modelId: 'claude-opus-5.5' });
+    expect(methods.indexOf('session/set_model')).toBeLessThan(methods.indexOf('session/prompt'));
+  });
+
+  it('no pick on record (or another user\'s pick) changes nothing: Kiro\'s own default stays', async () => {
+    platform.insert('oasis_events', { id: 'e3', type: 'operator.kiro.model_selected', actor_id: 'e2222222-2222-4222-8222-222222222222', payload: { thread_id: THREAD, model_id: 'claude-opus-5.5' }, created_at: new Date().toISOString() });
+    const res = await consoleTurn({ kind: 'jwt', token: await jwt(ADMIN_USER, true) }, 'continue', THREAD);
+    expect(res.status).toBe(200);
+    expect(sent.some((m) => m.method === 'session/set_model')).toBe(false);
+  });
+});

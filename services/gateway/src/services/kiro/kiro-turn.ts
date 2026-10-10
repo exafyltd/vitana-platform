@@ -45,6 +45,12 @@ export interface KiroTurnInput {
    * task), never for a live session. A throw or empty list means no history.
    */
   loadHistory?: () => Promise<KiroHistoryMessage[]>;
+  /**
+   * VTID-05060: the model the developer last picked for this thread in Kiro's own drop-down
+   * (null = no pick on record). Called only when this turn opens a NEW Kiro session, so the
+   * pick survives an idle close, a deploy or the reopen. Never a default: no pick, no call.
+   */
+  loadModelPick?: () => Promise<string | null>;
 }
 
 /** VTID-05018: one earlier turn of the thread (user or assistant text only). */
@@ -175,6 +181,31 @@ async function openSession(input: KiroTurnInput, b: KiroBackend): Promise<KiroSe
   }
 }
 
+/**
+ * VTID-05060: on a NEW session, switch to the model the developer last picked for this thread,
+ * through the same client call setKiroModel uses. Returns null when there is nothing to report
+ * (no pick on record, or the pick is already current); 'applied:<id>' when switched;
+ * 'unavailable:<id>' when Kiro no longer offers it (Kiro's model stays, the badge shows it);
+ * 'failed:<id>' when Kiro rejected the switch. Never throws: the turn goes on either way.
+ */
+async function restoreModelPick(input: KiroTurnInput, session: KiroSession): Promise<string | null> {
+  if (!input.loadModelPick || !session.models) return null;
+  let pick: string | null = null;
+  try { pick = await input.loadModelPick(); } catch (err) {
+    console.warn('[VTID-05060] kiro model pick lookup failed:', err instanceof Error ? err.message : err);
+    return null;
+  }
+  if (!pick || pick === session.models.current) return null;
+  if (!session.models.models.some((m) => m.id === pick)) return `unavailable:${pick}`;
+  try {
+    session.models = await session.client.setModel(session.sessionId, session.models, pick);
+    return `applied:${pick}`;
+  } catch (err) {
+    console.warn('[VTID-05060] kiro model restore failed:', err instanceof Error ? err.message : err);
+    return `failed:${pick}`;
+  }
+}
+
 export async function runKiroTurn(input: KiroTurnInput, env: NodeJS.ProcessEnv = process.env): Promise<KiroTurnResult> {
   if (!isKiroEngineEnabled(env) || !backend) {
     return result('not_connected', 'Kiro is not connected on this deployment yet.');
@@ -186,6 +217,7 @@ export async function runKiroTurn(input: KiroTurnInput, env: NodeJS.ProcessEnv =
     session = undefined;
   }
   let restored: { text: string; count: number } | null = null;
+  let modelRestore: string | null = null;
   if (!session) {
     const lim = kiroLimits(env);
     const mine = [...sessions.values()].filter((s) => s.userId === input.userId).length;
@@ -210,6 +242,8 @@ export async function runKiroTurn(input: KiroTurnInput, env: NodeJS.ProcessEnv =
     const creditsChanged = session.models ? setKiroCredits(input.userId, 'ok') : false;
     sessions.set(input.threadId, session);
     session.creditsChanged = creditsChanged;
+    // VTID-05060: re-apply the developer's own model pick when Kiro still offers it.
+    modelRestore = await restoreModelPick(input, session);
     // VTID-05018: a new session starts empty, so give it the thread's earlier turns.
     if (input.loadHistory) {
       try { restored = restoredHistoryBlock(await input.loadHistory()); } catch (err) {
@@ -237,7 +271,7 @@ export async function runKiroTurn(input: KiroTurnInput, env: NodeJS.ProcessEnv =
     collect({ type: 'kiro.turn_end', stop_reason: stopReason });
     const recovered = session.creditsChanged === true;
     session.creditsChanged = false;
-    return result('ok', reply, { stop_reason: stopReason, kiro_model: session.models?.current ?? null, ...(recovered ? { credits_changed: true } : {}), ...(restored ? { kiro_history_restored: restored.count } : {}) }, [...tools.values()].map((t) => ({ name: t.name, response: { kind: t.kind, status: t.status } })));
+    return result('ok', reply, { stop_reason: stopReason, kiro_model: session.models?.current ?? null, ...(recovered ? { credits_changed: true } : {}), ...(restored ? { kiro_history_restored: restored.count } : {}), ...(modelRestore ? { kiro_model_restore: modelRestore } : {}) }, [...tools.values()].map((t) => ({ name: t.name, response: { kind: t.kind, status: t.status } })));
   } catch (err) {
     closeSession(input.threadId);
     const msg = err instanceof Error ? err.message : String(err);

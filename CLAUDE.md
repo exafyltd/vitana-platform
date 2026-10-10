@@ -804,6 +804,13 @@ Procedure, in order of preference:
    number and do not silently proceed without one.
 6. One VTID per distinct piece of work. Two unrelated fixes requested in
    the same message get two VTIDs, not one shared across both.
+7. **Picking up an existing VTID** (from Claude Code, Kiro IDE or the
+   Operator): `scripts/dev/resume-vtid.sh <VTID>` or the Operator tool
+   `dev_resume_vtid` show its ledger row, PRs, evidence, notes and deploy
+   state — continue that VTID, never allocate a new one for it. A session
+   that stops before merge writes "Where it stopped / Open / Next" in its
+   PR body (the template's Handoff section); the resume pack shows it.
+   (VTID-05060)
 
 ### VTID Format
 - Pattern: `VTID-XXXXX` (5 digits, zero-padded)
