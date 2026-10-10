@@ -292,7 +292,9 @@ import {
 // VTID-ORBC: Added AuthSource for dual JWT support
 import {
   optionalAuth,
+  requireAuth,
   requireAuthWithTenant,
+  requireExafyAdmin,
   AuthenticatedRequest,
   verifyAndExtractIdentity,
   SupabaseIdentity,
@@ -15315,6 +15317,11 @@ router.get('/debug/brain-instruction', requireAuthWithTenant, async (req: Authen
   if (userId !== identity?.user_id && !identity?.exafy_admin) {
     return res.status(403).json({ ok: false, error: 'FORBIDDEN_USER_SCOPE' });
   }
+  // VTID-05040: the tenant is scoped the same way — a member cannot render
+  // their instruction under another tenant's context.
+  if (tenantId !== identity?.tenant_id && !identity?.exafy_admin) {
+    return res.status(403).json({ ok: false, error: 'FORBIDDEN_TENANT_SCOPE' });
+  }
   try {
     const { buildBrainSystemInstruction } = await import('../services/vitana-brain');
     // brain-parity-allow: debug endpoint that renders the brain instruction itself.
@@ -15530,108 +15537,16 @@ router.get('/debug/intent', async (req: Request, res: Response) => {
 });
 
 /**
- * VTID-01155: GET /debug/tts - TTS Debug Endpoint
- *
- * Tests Google Cloud TTS with Gemini model and returns detailed debug info.
- * Helps diagnose why TTS might be failing.
- *
- * Query params:
- * - text: Text to speak (optional, defaults to "Hello, this is a test")
- * - lang: Language code (optional, defaults to "en")
- *
- * Response:
- * {
- *   "ok": true/false,
- *   "tts_client_ready": true/false,
- *   "voice": "Kore",
- *   "audio_bytes": 12345,
- *   "error": "..." (if failed)
- * }
+ * VTID-01155: GET /debug/tts — was a Google Cloud TTS probe.
  */
-router.get('/debug/tts', async (req: Request, res: Response) => {
-  console.log('[VTID-01155] Debug TTS endpoint accessed');
-
-  const testText = (req.query.text as string) || 'Hello, this is a TTS test.';
-  const lang = normalizeLang((req.query.lang as string) || 'en');
-  const voiceConfig = getGeminiTtsVoice(lang);
-
-  const debugResult: Record<string, unknown> = {
-    timestamp: new Date().toISOString(),
-    tts_client_ready: !!ttsClient,
-    model: 'gemini-2.5-flash-tts',
-    voice: voiceConfig.name,
-    language_code: voiceConfig.languageCode,
-    lang: lang,
-    test_text: testText,
-    test_text_length: testText.length
-  };
-
-  if (!ttsClient) {
-    return res.status(200).json({
-      ok: false,
-      ...debugResult,
-      error: 'Google Cloud TTS client not initialized'
-    });
-  }
-
-  try {
-    console.log(`[VTID-01155] Debug TTS: testing Cloud TTS with voice=${voiceConfig.name}, lang=${voiceConfig.languageCode}`);
-
-    // VTID-02857: speakingRate read from system_config['tts.speaking_rate']
-    const __vc = await getVoiceConfig();
-    const request: protos.google.cloud.texttospeech.v1.ISynthesizeSpeechRequest = {
-      input: { text: testText },
-      voice: {
-        languageCode: voiceConfig.languageCode,
-        name: voiceConfig.name,
-        // @ts-ignore - modelName is supported but types may be outdated
-        modelName: 'gemini-2.5-flash-tts'
-      },
-      audioConfig: {
-        audioEncoding: 'MP3' as any,
-        speakingRate: __vc.tts.speaking_rate,
-        pitch: 0
-      }
-    };
-
-    debugResult.request = request;
-
-    const [response] = await ttsClient.synthesizeSpeech(request);
-
-    debugResult.has_audio_content = !!response.audioContent;
-
-    if (!response.audioContent) {
-      return res.status(200).json({
-        ok: false,
-        ...debugResult,
-        error: 'No audio content in response'
-      });
-    }
-
-    const audioBytes = Buffer.isBuffer(response.audioContent)
-      ? response.audioContent.length
-      : (response.audioContent as Uint8Array).length;
-
-    debugResult.audio_bytes = audioBytes;
-
-    // Success!
-    return res.status(200).json({
-      ok: true,
-      ...debugResult,
-      message: 'Google Cloud TTS with Gemini model working correctly'
-    });
-
-  } catch (err: any) {
-    console.error('[VTID-01155] Debug TTS error:', err.message);
-    return res.status(200).json({
-      ok: false,
-      ...debugResult,
-      error: err.message,
-      error_code: err.code,
-      error_details: err.details,
-      stack: err.stack?.substring(0, 500)
-    });
-  }
+// VTID-05040: disabled. It was anonymous and called Google Cloud TTS, which is
+// decommissioned outside the sr/ru bridges. Admin-gated so probes stay meaningful.
+router.get('/debug/tts', requireAuth, requireExafyAdmin, (_req: Request, res: Response) => {
+  return res.status(503).json({
+    ok: false,
+    error: 'DEBUG_ROUTE_DISABLED',
+    reason: 'Google Cloud TTS is decommissioned outside the sr/ru bridges',
+  });
 });
 
 // =============================================================================
@@ -15666,7 +15581,8 @@ router.get('/debug/tts', async (req: Request, res: Response) => {
  *   "timestamp": "ISO"
  * }
  */
-router.get('/debug/context-bootstrap', async (req: Request, res: Response) => {
+// VTID-05040: exafy_admin only — the response carries the member's memory and full context.
+router.get('/debug/context-bootstrap', requireAuth, requireExafyAdmin, async (req: Request, res: Response) => {
   console.log('[VTID-01225] Debug context-bootstrap endpoint accessed');
 
   // Build identity from query params or use DEV_IDENTITY

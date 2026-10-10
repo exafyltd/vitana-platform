@@ -1,0 +1,62 @@
+{
+  "vtid": "VTID-05040",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "context-bootstrap anon rejected",
+      "method": "GET",
+      "path": "/api/v1/orb/debug/context-bootstrap?user_id=00000000-0000-0000-0000-000000000000",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "expect_json": { "error": "UNAUTHENTICATED" },
+      "reason": "anonymous GET is refused before the handler; before the fix it returned the member's memory and full context"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "debug tts anon rejected",
+      "method": "GET",
+      "path": "/api/v1/orb/debug/tts",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "expect_json": { "error": "UNAUTHENTICATED" },
+      "reason": "anonymous GET is refused; no Google Cloud TTS call is reachable"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "brain-instruction anon rejected",
+      "method": "GET",
+      "path": "/api/v1/orb/debug/brain-instruction",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "pre-existing requireAuthWithTenant gate still holds; the new tenant-scope check is proven in Jest"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "debug memory hidden off-sandbox",
+      "method": "GET",
+      "path": "/api/v1/orb/debug/memory",
+      "expect_status": 404,
+      "reason": "isDevSandbox() is false on staging (VITANA_ENV=staging)"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "debug intent hidden off-sandbox",
+      "method": "GET",
+      "path": "/api/v1/orb/debug/intent?text=hi",
+      "expect_status": 404,
+      "reason": "isDevSandbox() is false on staging (VITANA_ENV=staging)"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/routes/s1-debug-route-gates.test.ts",
+      "cwd": "services/gateway",
+      "reason": "admin-allowed / member-403 / tenant-scope paths need a JWT; proven in CI with mocked auth (mutation-checked), plus the drift guard"
+    }
+  ]
+}
