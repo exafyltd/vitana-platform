@@ -105,6 +105,13 @@ const MAX_CONSECUTIVE_TOOL_CALLS_FALLBACK = 5;
 // not a tuning knob operators need to adjust per-tenant.
 export const LOOP_GUARD_HARD_CEILING_EXTRA_CALLS = 10;
 
+// VTID-04771: when a tool call takes longer than this threshold the result
+// payload carries a speak_guidance filler intent so the model produces
+// audio immediately rather than going silent while it processes the data.
+// 300 ms is well below the 816 ms observed in the model_under_responds
+// incident and above the ~50 ms fast-path tools (memory reads, etc.).
+const TOOL_FILLER_THRESHOLD_MS_FALLBACK = 300;
+
 // ---------------------------------------------------------------------------
 // Accessor functions — call these instead of importing the old `const`.
 // ---------------------------------------------------------------------------
@@ -169,6 +176,14 @@ export function getMaxConsecutiveToolCalls(): number {
   return getPolicyResolver().getValue<number>(
     POLICY_KEYS.VOICE_LOOP_GUARD_MAX_CONSECUTIVE_TOOL_CALLS,
     { defaultValue: MAX_CONSECUTIVE_TOOL_CALLS_FALLBACK },
+  );
+}
+
+// VTID-04771: tool filler threshold accessor.
+export function getToolFillerThresholdMs(): number {
+  return getPolicyResolver().getValue<number>(
+    POLICY_KEYS.VOICE_TOOL_FILLER_THRESHOLD_MS,
+    { defaultValue: TOOL_FILLER_THRESHOLD_MS_FALLBACK },
   );
 }
 

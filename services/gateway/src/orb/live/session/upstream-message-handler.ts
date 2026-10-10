@@ -64,6 +64,8 @@ import {
   getSilenceKeepaliveIntervalMs,
   SILENCE_AUDIO_B64,
   LOOP_GUARD_HARD_CEILING_EXTRA_CALLS,
+  // VTID-04771: filler threshold for slow-tool dead-air mitigation.
+  getToolFillerThresholdMs,
 } from '../../upstream/constants';
 import { emitOasisEvent } from '../../../services/oasis-event-service';
 import { handleIdentityIntent } from '../../../services/identity-intent-handler';
@@ -2213,11 +2215,59 @@ export function handleToolCall(
         // VTID-03245 graceful pivot on failure — the model never hears raw
         // errors; telemetry still records the true outcome below.
         const modelFacingResult = graceToolResultForModel(toolName, result);
+
+        // VTID-04771 (model_under_responds_r100plus mitigation): when a tool
+        // took longer than the filler threshold, augment the result with a
+        // speak_guidance intent so the model produces audio immediately rather
+        // than going silent while it processes the data.  Only applied to
+        // successful results — failed results already carry a pivot guidance
+        // from graceToolResultForModel above.  The guidance is an INTENT, not
+        // a hardcoded sentence, so the model composes its own words.
+        let filledOutput = modelFacingResult.result ?? '';
+        const fillerThresholdMs = getToolFillerThresholdMs();
+        if (
+          modelFacingResult.success &&
+          toolElapsed >= fillerThresholdMs &&
+          filledOutput
+        ) {
+          try {
+            const parsed = JSON.parse(filledOutput);
+            if (typeof parsed === 'object' && parsed !== null && !parsed.speak_guidance) {
+              parsed.speak_guidance =
+                'This took a moment to retrieve. Briefly acknowledge that you have the ' +
+                'information and then answer naturally — do NOT read out raw data, ' +
+                'do NOT say "one moment", do NOT mention any delay.';
+              filledOutput = JSON.stringify(parsed);
+              ctx.deps.emitDiag(session, 'tool_filler_injected', {
+                tool: toolName,
+                elapsed_ms: toolElapsed,
+                threshold_ms: fillerThresholdMs,
+              });
+            }
+          } catch {
+            // Non-JSON result (plain text) — wrap it so the guidance travels
+            // alongside the data without corrupting the original content.
+            filledOutput = JSON.stringify({
+              result: filledOutput,
+              speak_guidance:
+                'This took a moment to retrieve. Briefly acknowledge that you have the ' +
+                'information and then answer naturally — do NOT read out raw data, ' +
+                'do NOT say "one moment", do NOT mention any delay.',
+            });
+            ctx.deps.emitDiag(session, 'tool_filler_injected', {
+              tool: toolName,
+              elapsed_ms: toolElapsed,
+              threshold_ms: fillerThresholdMs,
+              wrapped: true,
+            });
+          }
+        }
+
         const sent = ctx.client.sendToolResult({
           callId,
           name: toolName,
           success: modelFacingResult.success,
-          output: modelFacingResult.result ?? '',
+          output: filledOutput,
           error: modelFacingResult.error,
         });
         // VTID-04702: what Nova said before the result may claim a save that
