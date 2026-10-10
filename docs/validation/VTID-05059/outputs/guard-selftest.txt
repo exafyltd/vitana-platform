@@ -2,51 +2,57 @@ TAP version 13
 # Subtest: a matching layout passes
 ok 1 - a matching layout passes
   ---
-  duration_ms: 3.637134
+  duration_ms: 4.185947
   type: 'test'
   ...
 # Subtest: a rules file without a twin fails
 ok 2 - a rules file without a twin fails
   ---
-  duration_ms: 1.090764
+  duration_ms: 1.402019
   type: 'test'
   ...
 # Subtest: globs that differ from paths fail
 ok 3 - globs that differ from paths fail
   ---
-  duration_ms: 0.922543
+  duration_ms: 1.978349
   type: 'test'
   ...
 # Subtest: a link to a missing file fails
 ok 4 - a link to a missing file fails
   ---
-  duration_ms: 3.012118
+  duration_ms: 0.491724
   type: 'test'
   ...
 # Subtest: no always file linking CLAUDE.md fails
 ok 5 - no always file linking CLAUDE.md fails
   ---
-  duration_ms: 0.986889
+  duration_ms: 0.990612
   type: 'test'
   ...
 # Subtest: the twin must be fileMatch
 ok 6 - the twin must be fileMatch
   ---
-  duration_ms: 0.992714
+  duration_ms: 1.100196
   type: 'test'
   ...
 # Subtest: this repository passes
 ok 7 - this repository passes
   ---
-  duration_ms: 1.454815
+  duration_ms: 1.666239
   type: 'test'
   ...
-1..7
-# tests 7
+# Subtest: the Kiro notes say plan sparring is never skipped and how to load context
+ok 8 - the Kiro notes say plan sparring is never skipped and how to load context
+  ---
+  duration_ms: 0.309175
+  type: 'test'
+  ...
+1..8
+# tests 8
 # suites 0
-# pass 7
+# pass 8
 # fail 0
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 100.305401
+# duration_ms 98.920266

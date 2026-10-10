@@ -45,3 +45,9 @@ test('the twin must be fileMatch', () => {
 test('this repository passes', () => {
   assert.deepStrictEqual(check(path.resolve(__dirname, '..', '..', '..')), []);
 });
+test('the Kiro notes say plan sparring is never skipped and how to load context', () => {
+  const notes = fs.readFileSync(path.resolve(__dirname, '..', '..', '..', '.kiro', 'steering', 'vitana-kiro-notes.md'), 'utf8');
+  assert.match(notes, /^---\ninclusion: always\n---/);
+  assert.match(notes, /Plan sparring is never skipped/);
+  assert.match(notes, /resume-vtid\.sh/);
+});
