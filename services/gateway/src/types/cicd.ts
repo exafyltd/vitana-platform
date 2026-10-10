@@ -742,6 +742,7 @@ export type CicdEventType =
   // VTID-02934: Autopilot recommendation activation
   | 'autopilot.recommendation.activated'
   | 'autopilot.recommendation.activation_bridge_failed' // VTID-04657
+  | 'autopilot.recommendation.draft_updated' // VTID-04706
   | 'autopilot.recommendation.quality_reviewed' // VTID-04669
   | 'autopilot.recommendations.weekly_summary' // VTID-04670
   // VTID-02935: Mission Alignment warnings — fired when a recommendation

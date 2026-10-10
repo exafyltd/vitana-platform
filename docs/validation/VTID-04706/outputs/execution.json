@@ -1,0 +1,29 @@
+{
+  "vtid": "VTID-04706",
+  "execution_id": "0c22626e-2b06-4a82-9c5e-d288cb844e1b",
+  "finding_id": "8500f760-1afe-41c9-aad4-63a86e39904b",
+  "plan_version": 1,
+  "branch": "dev-autopilot/0c22626e",
+  "base_branch": "main",
+  "llm": {
+    "provider": "bedrock",
+    "model": "eu.anthropic.claude-sonnet-4-6"
+  },
+  "ticket_number": null,
+  "files": [
+    {
+      "path": "services/gateway/src/routes/autopilot-recommendations.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/types/cicd.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/vtid-04706-draft-oasis-event.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-28T18:25:57.332Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}
