@@ -41,6 +41,7 @@ import {
   DEFAULT_READINESS_BY_TIME
 } from '../types/situational-awareness';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { requireAuth, requireExafyAdmin } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
 
@@ -413,7 +414,8 @@ router.post('/override', async (req: Request, res: Response) => {
  *
  * Get debug snapshot of last situational decision for a user.
  */
-router.get('/debug', (req: Request, res: Response) => {
+// VTID-05040: exafy_admin only — the snapshot exposes other users' cached decisions.
+router.get('/debug', requireAuth, requireExafyAdmin, (req: Request, res: Response) => {
   console.log(`[${VTID}] GET /situational/debug`);
 
   const userId = (req.query.user_id as string) || '00000000-0000-0000-0000-000000000099';

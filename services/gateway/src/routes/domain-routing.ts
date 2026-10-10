@@ -36,6 +36,7 @@ import {
   IntelligenceDomain
 } from '../types/domain-routing';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { requireAuth, requireExafyAdmin } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
 
@@ -236,7 +237,8 @@ router.post('/quick', async (req: Request, res: Response) => {
  * Get debug snapshot of last routing decision for a session.
  * For development and audit purposes.
  */
-router.get('/debug', (req: Request, res: Response) => {
+// VTID-05040: exafy_admin only — the snapshot exposes other users' cached decisions.
+router.get('/debug', requireAuth, requireExafyAdmin, (req: Request, res: Response) => {
   console.log('[VTID-01114] GET /routing/debug');
 
   const sessionId = (req.query.session_id as string) || 'default';
