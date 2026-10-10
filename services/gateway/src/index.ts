@@ -1816,6 +1816,21 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Notification email fallback loop initialization failed (non-fatal):', error);
       }
 
+      // VTID-05023 part 6: outbox sender for the two triggers that call pg_net on
+      // Supabase (Aurora has no pg_net; scripts/aws/aurora-cutover-outbox.sql).
+      // Inert unless OUTBOUND_HTTP_WORKER_ENABLED=true, and never on staging.
+      try {
+        const { startOutboundHttpWorker } = require('./services/outbound-http-worker');
+        const { getSupabase: getOutboxSupabase } = require('./lib/supabase');
+        if (startOutboundHttpWorker(() => getOutboxSupabase())) {
+          console.log('📤 Outbound HTTP outbox worker started (VTID-05023)');
+        } else {
+          console.log('⏸️ Outbound HTTP outbox worker disabled — set OUTBOUND_HTTP_WORKER_ENABLED=true (never on staging)');
+        }
+      } catch (error) {
+        console.warn('⚠️ Outbound HTTP outbox worker initialization failed (non-fatal):', error);
+      }
+
       // VTID-04338: default reminders for calendar entries — reconciles the
       // reminders table against upcoming entries every minute.
       try {

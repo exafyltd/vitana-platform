@@ -35,6 +35,18 @@
    "ref": "npx jest test/lib/supabase-public-url.test.ts test/vtid-05023-supabase-public-url-cutover.test.ts test/vtid-05023-public-url-guard.test.ts",
    "cwd": "services/gateway",
    "reason": "R1(b) gateway part: SUPABASE_PUBLIC_URL. With SUPABASE_URL on the internal proxy origin and SUPABASE_PUBLIC_URL on supabase.co, storage public URLs, signed URLs, the video thumbnail URL and GET /auth/config come out on the public origin and never contain the internal host; a guard fails on any new getPublicUrl/createSignedUrl call site not routed through the helper. Staging still runs with SUPABASE_URL on supabase.co, so the HTTP probe above proves today's value is unchanged."
+  },
+  {
+   "kind": "existing",
+   "ref": "npm run test:aurora-cron-outbox",
+   "cwd": ".",
+   "reason": "Part 6 side effects (side-effects.md A + B). Nothing here runs on staging or touches a live database: on a throwaway local Postgres it applies scripts/aws/aurora-cutover-outbox.sql and aurora-cutover-cron.sql line by line, twice, and proves the Aurora trigger functions queue the Supabase URL/headers/body with secret references only, RLS keeps anon/authenticated out, the claim/complete/fail RPCs (SKIP LOCKED, lease, backoff, 5 attempts), the 21 cron jobs with byte-exact commands and schedules, the Supabase unschedule + rollback (all 25 jobs back identical, triggers re-enabled), the cluster-params script against a fake aws (dry run changes nothing, --apply never reboots), and that the scheduled-edge-calls workflow parses. WITH_PG_CRON=1 adds real pg_cron in docker."
+  },
+  {
+   "kind": "existing",
+   "ref": "npx jest test/vtid-05023-outbound-http-worker.test.ts",
+   "cwd": "services/gateway",
+   "reason": "Part 6 outbox sender (services/gateway/src/services/outbound-http-worker.ts): claim, send, retry with backoff, final after 5 attempts, idempotency per row id, header-reference resolution from an allowlist, allowed destinations only, no secret in logs or last_error. The worker ships off (OUTBOUND_HTTP_WORKER_ENABLED unset, never on staging), so there is nothing to probe on staging; the /alive probe above proves the gateway still boots with the new wiring."
   }
  ]
 }
