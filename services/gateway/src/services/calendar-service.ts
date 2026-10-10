@@ -192,7 +192,7 @@ export interface ConflictItem {
 }
 
 /** Entries the system writes as information, not as time the member has committed. */
-const NON_COMMITMENT_SOURCES = new Set(['reminder', 'subscription']);
+const NON_COMMITMENT_SOURCES = new Set(['reminder', 'subscription', 'test_result']);
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
 export interface ExternalBusyLike {
