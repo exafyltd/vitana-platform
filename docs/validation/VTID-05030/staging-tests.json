@@ -1,0 +1,24 @@
+{
+  "vtid": "VTID-05030",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "wearables connections refuses an anonymous caller",
+      "path": "/api/v1/wearables/connections",
+      "expect_status": 401
+    },
+    {
+      "kind": "playwright",
+      "spec": "e2e/staging/vtid-05030-connection-tokens.staging.spec.ts",
+      "cwd": "e2e"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05030-connection-tokens.test.ts",
+      "cwd": "services/gateway",
+      "reason": "sealed-only token storage, fail-closed connect, error codes in the callback, wipe-then-revoke disconnect, the auth.revoked wipe, vendor revoke request shapes and the grants migration contract"
+    }
+  ]
+}

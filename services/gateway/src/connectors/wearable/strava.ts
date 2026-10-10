@@ -21,6 +21,7 @@ import type {
   WebhookRequest,
   OAuthConfig,
 } from '../types';
+import { revokeRequest } from './revoke-http';
 import { buildAuthorizeUrl, exchangeCodeForTokens, refreshOAuth2Token } from '../runtime/oauth2';
 
 const OAUTH_CONFIG: OAuthConfig = {
@@ -57,6 +58,16 @@ const stravaConnector: Connector = {
   auth_type: 'oauth2',
   capabilities: ['workouts.read', 'activity.read', 'profile.read'],
   oauth: OAUTH_CONFIG,
+
+  // VTID-05030: deauthorize this app for the athlete.
+  async revokeAccess(input) {
+    if (!input.access_token) return { status: 'no_token' };
+    return revokeRequest('https://www.strava.com/oauth/deauthorize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ access_token: input.access_token }).toString(),
+    });
+  },
 
   async initialize(): Promise<void> {
     if (!stravaCreds()) {

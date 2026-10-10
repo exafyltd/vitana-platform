@@ -29,6 +29,7 @@ import type {
   TokenPair,
   FetchRequest,
 } from '../types';
+import { revokeRequest } from './revoke-http';
 
 const TERRA_API_BASE = 'https://api.tryterra.co/v2';
 
@@ -210,6 +211,17 @@ const terraConnector: Connector = {
   display_name: 'Terra',
   auth_type: 'sdk_bridge', // Terra's own hosted widget + iOS SDK handle auth
   capabilities: ['sleep.read', 'activity.read', 'workouts.read', 'hr.read', 'hrv.read', 'body.read'],
+
+  // VTID-05030: deauthenticate the Terra user (documented). Widget rows never
+  // hold OAuth tokens here; the identifier is the Terra user_id stored by the
+  // auth.completed webhook. 404 = the user is already gone at Terra.
+  async revokeAccess(input) {
+    if (!input.provider_user_id) return { status: 'no_token' };
+    const headers = terraHeaders();
+    if (!headers) return { status: 'unsupported', detail: 'not_configured' };
+    const url = `${TERRA_API_BASE}/auth/deauthenticateUser?user_id=${encodeURIComponent(input.provider_user_id)}`;
+    return revokeRequest(url, { method: 'DELETE', headers }, [404]);
+  },
 
   async initialize(): Promise<void> {
     if (!getTerraCreds()) {

@@ -54,6 +54,12 @@ const ouraConnector: Connector = {
   capabilities: ['sleep.read', 'activity.read', 'hrv.read', 'readiness.read'],
   oauth: OAUTH_CONFIG,
 
+  // VTID-05030: Oura documents no token-revocation endpoint (checked
+  // 2026-10-10), so nothing is called; local tokens are still cleared.
+  async revokeAccess() {
+    return { status: 'unsupported', detail: 'no_vendor_endpoint' };
+  },
+
   async initialize(): Promise<void> {
     if (!ouraCreds()) {
       console.warn('[oura] OURA_CLIENT_ID/SECRET not set — connector present but inactive');
