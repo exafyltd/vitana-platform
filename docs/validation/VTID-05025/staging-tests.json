@@ -1,0 +1,25 @@
+{
+  "vtid": "VTID-05025",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "guest Discover feed still serves (guest health context path)",
+      "path": "/api/v1/discover/feed?limit=5",
+      "expect_status": 200,
+      "expect_json": { "ok": true }
+    },
+    {
+      "kind": "playwright",
+      "spec": "e2e/staging/vtid-05025-commerce-health-boundary.staging.spec.ts",
+      "cwd": "e2e"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05025-commerce-health-boundary.test.ts test/limitations-filter.test.ts test/shopping-agent.test.ts",
+      "cwd": "services/gateway",
+      "reason": "opt-in wearable loading, option-aware cache, no device-derived condition, the commerce source scan and the hide-only property of the safety filter"
+    }
+  ]
+}
