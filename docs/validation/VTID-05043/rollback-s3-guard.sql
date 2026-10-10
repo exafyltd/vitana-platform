@@ -1,4 +1,4 @@
--- VTID-05043 rollback for Migration A (20261010170000_vtid_05043_s3_membership_side_effect_guard.sql).
+-- VTID-05043 rollback for Migration A (20261010180000_vtid_05043_s3_membership_side_effect_guard.sql).
 -- Recreates the four primary-membership triggers on public.user_tenants exactly as captured live
 -- before apply (live-before.sql: WHEN ((new.is_primary = true)), same names, same functions) and
 -- drops the helper. tenants.open_signup is kept (inert once Migration C is rolled back).

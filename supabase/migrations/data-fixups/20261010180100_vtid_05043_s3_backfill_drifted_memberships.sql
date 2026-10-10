@@ -2,7 +2,7 @@
 -- can see in `memberships` the matching `user_tenants` row, and clear any active_tenant_id claim
 -- that points at a tenant the user is not a member of.
 --
--- Requires Migration A (20261010170000_vtid_05043_s3_membership_side_effect_guard.sql):
+-- Requires Migration A (20261010180000_vtid_05043_s3_membership_side_effect_guard.sql):
 -- tenants.open_signup and the side-effect guard on the four primary-membership triggers.
 --
 -- Why: the gateway membership check (VTID-05043 PR3) answers "is this user a member of the

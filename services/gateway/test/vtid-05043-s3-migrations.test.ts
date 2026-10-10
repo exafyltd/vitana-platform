@@ -12,9 +12,9 @@ const stripComments = (sql: string) =>
     .filter((l) => !l.trim().startsWith('--'))
     .join('\n');
 
-const A_PATH = 'supabase/migrations/20261010170000_vtid_05043_s3_membership_side_effect_guard.sql';
-const B_PATH = 'supabase/migrations/data-fixups/20261010170100_vtid_05043_s3_backfill_drifted_memberships.sql';
-const C_PATH = 'supabase/migrations/20261010170200_vtid_05043_s3_switch_tenant_open_signup_only.sql';
+const A_PATH = 'supabase/migrations/20261010180000_vtid_05043_s3_membership_side_effect_guard.sql';
+const B_PATH = 'supabase/migrations/data-fixups/20261010180100_vtid_05043_s3_backfill_drifted_memberships.sql';
+const C_PATH = 'supabase/migrations/20261010180200_vtid_05043_s3_switch_tenant_open_signup_only.sql';
 const EVIDENCE = 'docs/validation/VTID-05043';
 
 const A = stripComments(read(A_PATH));

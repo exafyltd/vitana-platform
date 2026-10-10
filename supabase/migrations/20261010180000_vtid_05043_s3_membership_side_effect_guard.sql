@@ -1,7 +1,7 @@
 -- VTID-05043 (Track S / S3, Migration A of 3): membership side-effect guard + tenants.open_signup.
 --
--- Apply order: A (this file) -> B (data-fixups/20261010170100_vtid_05043_s3_backfill_drifted_memberships.sql)
---              -> C (20261010170200_vtid_05043_s3_switch_tenant_open_signup_only.sql),
+-- Apply order: A (this file) -> B (data-fixups/20261010180100_vtid_05043_s3_backfill_drifted_memberships.sql)
+--              -> C (20261010180200_vtid_05043_s3_switch_tenant_open_signup_only.sql),
 -- in one RUN-MIGRATION session, after the owner approves (staging shares the production database).
 --
 -- 1. public.membership_side_effects_suppressed() reads the transaction-local setting

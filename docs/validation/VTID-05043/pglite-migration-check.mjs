@@ -13,9 +13,9 @@ import path from 'path';
 const repo = process.argv[2];
 if (!repo) { console.error('usage: node run.mjs <repo-root>'); process.exit(2); }
 const read = (p) => fs.readFileSync(path.join(repo, p), 'utf8');
-const A = read('supabase/migrations/20261010170000_vtid_05043_s3_membership_side_effect_guard.sql');
-const B = read('supabase/migrations/data-fixups/20261010170100_vtid_05043_s3_backfill_drifted_memberships.sql');
-const C = read('supabase/migrations/20261010170200_vtid_05043_s3_switch_tenant_open_signup_only.sql');
+const A = read('supabase/migrations/20261010180000_vtid_05043_s3_membership_side_effect_guard.sql');
+const B = read('supabase/migrations/data-fixups/20261010180100_vtid_05043_s3_backfill_drifted_memberships.sql');
+const C = read('supabase/migrations/20261010180200_vtid_05043_s3_switch_tenant_open_signup_only.sql');
 const RB_C = read('docs/validation/VTID-05043/rollback-s3-switch-tenant.sql');
 const RB_B = read('docs/validation/VTID-05043/rollback-s3-backfill.sql');
 const RB_A = read('docs/validation/VTID-05043/rollback-s3-guard.sql');

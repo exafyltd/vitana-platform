@@ -1,4 +1,4 @@
--- VTID-05043 rollback for Migration C (20261010170200_vtid_05043_s3_switch_tenant_open_signup_only.sql).
+-- VTID-05043 rollback for Migration C (20261010180200_vtid_05043_s3_switch_tenant_open_signup_only.sql).
 -- Restores the switch_to_tenant_by_slug body captured read-only from production before apply
 -- (live-before.sql, 2026-10-10) and its previous grants (PUBLIC, anon, authenticated).
 -- Note: the restored body is the live one, which raises on every call (it reads tenant_record.id,

@@ -1,4 +1,4 @@
--- VTID-05043 rollback for Migration B (data-fixups/20261010170100_vtid_05043_s3_backfill_drifted_memberships.sql).
+-- VTID-05043 rollback for Migration B (data-fixups/20261010180100_vtid_05043_s3_backfill_drifted_memberships.sql).
 -- Uses the snapshot tables B left in legacy_archive (kept 30 days):
 --   * deletes exactly the user_tenants rows B inserted (same (tenant, user) as a snapshot row and
 --     created in B's transaction: created_at = captured_at). DELETE fires no insert trigger.
