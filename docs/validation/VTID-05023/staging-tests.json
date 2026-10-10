@@ -71,6 +71,12 @@
    "ref": "npm run test:reverse-cdc",
    "cwd": ".",
    "reason": "Parts 8b + 12(i): the Aurora->Supabase CDC tasks have no staging counterpart (they run only in the window, against production Supabase) and must not be exercised on staging. On a throwaway local Postgres this proves supabase-cutover-reverse-cdc-triggers.sql disables every public user trigger (FK and non-public triggers untouched, snapshot not overwritten on re-run), that a row applied the way DMS applies it fires no notification and keeps its updated_at, and that the rollback restores every trigger's exact prior state (O, D, A) and refuses without a snapshot; with a fake aws it proves aurora-to-supabase-cdc.sh builds the 5-table storage-auth and the all-other-tables rollback mappings, creates a CDC-only task without starting it, sets no replica mode, and never puts a password on a command line or leaves it on disk."
+  },
+  {
+   "kind": "existing",
+   "ref": "npm run test:aurora-migrations",
+   "cwd": ".",
+   "reason": "Part 8 migration workflows to Aurora. Nothing here runs on staging or touches a live database: migrations reach Aurora only through RUN-MIGRATION.yml with MIGRATION_TARGET=aurora, a window step. On a throwaway local Postgres with a fake aws CLI it proves scripts/aws/aurora-apply-migration.sh: a good file commits all statements in one Data API transaction (the file's BEGIN/COMMIT dropped) and sends NOTIFY pgrst afterwards; a failing 3rd statement or a failure at COMMIT leaves the database unchanged and exits non-zero naming the statement; non-transactional statements are refused without --allow-non-transactional; dry run, psql meta-commands, a top-level ROLLBACK, a wrong account and MIGRATION_FREEZE=true make no rds-data call. The pgrst DDL watch, applied twice line by line, notifies on CREATE/ALTER/DROP. Both workflows parse and resolve input > MIGRATION_TARGET > supabase and fail fast under MIGRATION_FREEZE. The splitter is unit-tested on comments, quoting and dollar quotes, swept over every supabase/migrations file, and matches psql (statement count and pg_dump --schema-only) on 15 real migrations."
   }
  ]
 }

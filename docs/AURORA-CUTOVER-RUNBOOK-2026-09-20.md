@@ -606,3 +606,61 @@ erasure step fails there until the function is adapted.
 Tests: `npm run test:auth-bridge` (throwaway Postgres; CI
 `SQL-AUTH-BRIDGE.yml`) and
 `npx jest test/vtid-05023-auth-bridge-*.test.ts` in `services/gateway`.
+
+## Part 8 — migrations (VTID-05023)
+
+`RUN-MIGRATION.yml` and `MIGRATION-DRIFT-CHECK.yml` choose their database
+from the repo variable `MIGRATION_TARGET` (`supabase` when unset — the
+Supabase path is unchanged) or the dispatch input `target`
+(`default`/`supabase`/`aurora`; anything but `default` overrides the
+variable). On `aurora`:
+
+- `RUN-MIGRATION.yml` prints the statement plan with no credentials
+  (`scripts/aws/aurora-apply-migration.sh --dry-run`), then assumes
+  `AWS_PROD_ROLE_ARN` over OIDC and applies the file over the RDS Data API:
+  all statements in one Data API transaction; any failure (also at COMMIT)
+  rolls back and fails the run naming the statement; then
+  `NOTIFY pgrst, 'reload schema'`. Files with psql meta-commands
+  (`\set ...`) or a top-level `ROLLBACK` are refused; `CREATE INDEX
+  CONCURRENTLY` and other non-transactional statements need a file of their
+  own or the `allow_non_transactional` input (statement by statement, no
+  rollback).
+- `MIGRATION-DRIFT-CHECK.yml` reads the same public-table inventory as
+  `ci_schema_inventory()` from Aurora with one read-only SELECT over the
+  Data API and checks it against the same baseline. Pull-request runs need
+  the OIDC role's trust policy to accept this repo's pull_request subject;
+  otherwise they fail at the credentials step while the target is `aurora`.
+- `APPLY-FB061-DEBOUNCER-FIX.yml` applies no SQL and is unchanged.
+
+**Order in the window**
+1. **Schema freeze** — at the start of the final load (Step 5), after
+   checking that no `RUN-MIGRATION` run is in progress:
+   `gh variable set MIGRATION_FREEZE --body true --repo exafyltd/vitana-platform`.
+   Both workflows then fail fast, for either target: no migration is applied
+   between the final load and the flip, so the loaded schema is the schema
+   that goes live.
+2. **DDL watch** — after the final load has finished, as the master user
+   (needs `rds_superuser`):
+   `scripts/aws/aurora-run-sql.sh scripts/aws/aurora-pgrst-ddl-watch.sql`.
+   Idempotent. Verify read-only:
+   `SELECT evtname, evtevent, evtenabled FROM pg_event_trigger WHERE evtname LIKE 'pgrst%'`
+   → `pgrst_watch` (ddl_command_end) and `pgrst_drop_watch` (sql_drop), both `O`.
+3. **Flip** (with Step 7):
+   `gh variable set MIGRATION_TARGET --body aurora --repo exafyltd/vitana-platform`.
+4. **Unfreeze** (with Step 8):
+   `gh variable delete MIGRATION_FREEZE --repo exafyltd/vitana-platform`.
+   Dispatch the drift check once by hand
+   (`gh workflow run MIGRATION-DRIFT-CHECK.yml --repo exafyltd/vitana-platform -f target=aurora`)
+   and see it green before the nightly run relies on it.
+
+**Rollback**: `gh variable delete MIGRATION_TARGET` (back to supabase). The
+event triggers can stay; to remove them:
+`DROP EVENT TRIGGER IF EXISTS pgrst_watch; DROP EVENT TRIGGER IF EXISTS pgrst_drop_watch;`.
+
+**Limits**: `ALTER TYPE ... ADD VALUE` runs inside the transaction (PG ≥ 12),
+but the new value cannot be used before COMMIT — split such a file in two.
+One Data API call is limited to 45 s and 64 KB of SQL; a longer statement
+fails the run and rolls back.
+
+Tests: `npm run test:aurora-migrations` (throwaway Postgres and a fake
+`aws`; the splitter is also compared with psql on 15 real migration files).

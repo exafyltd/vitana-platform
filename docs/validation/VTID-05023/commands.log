@@ -12,3 +12,5 @@ npm run test:auth-bridge               # PASS (incl. erase_user_data on Aurora)
 npm run test:reverse-cdc               # PASS
 (cd services/gateway && npx jest test/vtid-05023-outbound-http-worker.test.ts test/vtid-05023-auth-bridge-endpoint.test.ts test/vtid-05023-auth-bridge-reconciler.test.ts test/vtid-05023-auth-bridge-write-paths.test.ts)   # 68/68
 npm run test:realtime-local            # see outputs/realtime-local.txt
+npm run test:aurora-migrations                                  # part 8: 13 checks + 18 splitter tests PASS (local initdb, fake aws) — outputs/aurora-migrations.txt
+shellcheck -S warning scripts/aws/aurora-apply-migration.sh scripts/aws/test/aurora-apply-migration.sh  # clean

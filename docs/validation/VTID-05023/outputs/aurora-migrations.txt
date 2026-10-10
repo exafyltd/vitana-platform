@@ -1,0 +1,22 @@
+ok: good file: 4 statements committed in one transaction, BEGIN/COMMIT dropped, NOTIFY pgrst after commit
+ok: statement 3 fails: exit 1, statement named, rolled back, database unchanged, no NOTIFY
+ok: failure at COMMIT: exit 1, nothing applied
+ok: mixed transactional/non-transactional file refused without the flag, no AWS call
+ok: --allow-non-transactional: statements run one by one without a transaction
+ok: all-non-transactional file runs without a transaction and without the flag
+ok: --dry-run prints the plan and calls nothing
+ok: psql meta-command and top-level ROLLBACK refused before any AWS call
+ok: wrong account and MIGRATION_FREEZE=true stop before any rds-data call
+ok: Data API 'not enabled yet' is retried
+ok: DDL watch applied twice line by line; NOTIFY pgrst on CREATE/ALTER/DROP, none for a temp table
+ok: workflows parse, run blocks pass bash -n, target = input > MIGRATION_TARGET > supabase, MIGRATION_FREEZE=true fails both
+== splitter unit tests, migration sweep, psql equivalence
+.
+  psql vs splitter identical for 15 migrations: 20260123000000_vtid_01208_llm_routing_policy.sql, 20260522000001_VTID_03025_livekit_hourly_tests.sql, 20260418000000_vtid_02200_marketplace_sources_config.sql, 20260521000001_VTID_02955_test_contracts_fix.sql, 20261008180000_vtid_04982_rewards_shop.sql, 20260928200100_vtid_04718_overload_detection_data_layer.sql, 20251120000000_init_governance.sql, 20260923140000_vtid_04371_conversation_metrics_hourly.sql, 20260731180000_VTID_03461_watcher_lessons_rules.sql, 20260618120000_BOOTSTRAP_resolver_match_quality_dominant.sql, 20260812140200_VTID_03623_resolver_drift_fix_chat_peer_flag.sql, 20260913000002_vtid_03832_role_functions.sql, 20260117150000_vtid_01181_governance_controls.sql, 20260928200300_vtid_04720_preference_modeling_data_layer.sql, 20260429210000_vtid_02632_phase_8_consolidator.sql
+.................
+----------------------------------------------------------------------
+Ran 18 tests in 48.230s
+
+OK
+ok: test_aurora_sql_split.py
+PASS vtid-05023 aurora migrations (13 checks)
