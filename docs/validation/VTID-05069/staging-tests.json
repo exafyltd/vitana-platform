@@ -1,0 +1,93 @@
+{
+  "vtid": "VTID-05069",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "the run view route exists and is admin-only",
+      "path": "/api/v1/operator/runs/VTID-05065",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "route mounted at /api/v1/operator/runs behind requireAdminAuth (JSON 401, not an HTML 404); read-only GET without a token"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "the run view stream route exists and is admin-only",
+      "path": "/api/v1/operator/runs/VTID-05065/stream",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "the SSE route refuses an unauthenticated caller before any lookup; read-only"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "the by-thread route exists and is admin-only",
+      "path": "/api/v1/operator/runs/by-thread/staging-verify-probe",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "linked-VTID lookup refuses an unauthenticated caller; read-only"
+    },
+    {
+      "kind": "http",
+      "name": "Command Hub loads the pipeline tree before app.js",
+      "path": "/command-hub/",
+      "expect_status": 200,
+      "expect_content_type": "text/html",
+      "expect_body_contains": [
+        "pipeline-tree.js?v=20261112-vtid-05069",
+        "pipeline-tree.css?v=20261112-vtid-05069",
+        "app.js?v=20261112-vtid-05069"
+      ]
+    },
+    {
+      "kind": "http",
+      "name": "served pipeline-tree.js has the run card, the thread dot and the stream reader",
+      "path": "/command-hub/pipeline-tree.js?v=20261112-vtid-05069",
+      "expect_status": 200,
+      "expect_content_type": "javascript",
+      "expect_body_contains": [
+        "function renderThreadCards",
+        "function threadDot",
+        "function renderGate2",
+        "/api/v1/operator/runs"
+      ]
+    },
+    {
+      "kind": "http",
+      "name": "served pipeline-tree.css has the status icons and the phone layout",
+      "path": "/command-hub/pipeline-tree.css?v=20261112-vtid-05069",
+      "expect_status": 200,
+      "expect_content_type": "text/css",
+      "expect_body_contains": [
+        ".pt-ic--running",
+        ".pt-gate",
+        "@media (max-width: 700px)"
+      ]
+    },
+    {
+      "kind": "http",
+      "name": "served app.js calls the two pipeline tree hooks",
+      "path": "/command-hub/app.js?v=20261112-vtid-05069",
+      "expect_status": 200,
+      "expect_content_type": "javascript",
+      "expect_body_contains": [
+        "window.PipelineTree.renderThreadCards(state.operatorActiveThreadId)",
+        "window.PipelineTree.threadDot(thread.id)"
+      ]
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/operator-runs-view.test.ts",
+      "cwd": "services/gateway",
+      "reason": "buildRunView over fixture sources for the three mock states and a finished run, failing sources marked unknown, the GitHub search budget and 30 s cache, VTID validation, thread linking, the SSE follow loop and the route auth"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/command-hub/vtid-05069-pipeline-tree.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the run card renderer on the server's own views of the three states (fake DOM), the SSE frame parser, the app.js hooks, index.html loading, CSP and styles"
+    }
+  ]
+}
