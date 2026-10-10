@@ -1,0 +1,44 @@
+== test secrets (random, this run only)
+== build the Postgres stand-in (postgres:17 + wal2json, TLS-only password logins)
+== build the Realtime image from services/realtime-aurora
+== Aurora baseline: API roles, auth.uid(), stub rds_replication, probe table with RLS
+== scripts/aws/aurora-realtime-setup.sql (all but the @tables lines), as the master user
+   applied 16 statements
+NOTICE:  role "realtime_admin" has already been granted membership in role "rds_replication" by role "postgres"
+NOTICE:  schema "_realtime" already exists, skipping
+NOTICE:  schema "realtime" already exists, skipping
+NOTICE:  role "realtime_admin" has already been granted membership in role "supabase_realtime_admin" by role "postgres"
+NOTICE:  role "realtime_admin" has already been granted membership in role "anon" by role "postgres"
+NOTICE:  role "realtime_admin" has already been granted membership in role "authenticated" by role "postgres"
+NOTICE:  role "realtime_admin" has already been granted membership in role "service_role" by role "postgres"
+   re-applied (idempotent)
+== the production @tables part, in a scratch database with the 33 table names
+PASS 33-table publication + replica identities applied twice, verify block green
+PASS primary-key precondition refuses chat_groups without a key
+== start Realtime (production env shape; DB over TLS as non-superuser realtime_admin)
+   /healthcheck 200 after 4s
+PASS management API rejects the anon key (member secret) (403)
+PASS management API rejects a service_role token (member secret) (403)
+PASS management API accepts the separate API secret (200)
+PASS tenant health (API secret) for tenant 'realtime' (200)
+PASS REST broadcast with the anon key via Host realtime.vitanaland.com (202)
+PASS websocket upgrade, anon key, Host realtime.vitanaland.com (101)
+PASS websocket upgrade, forged token (other secret) (401)
+PASS websocket upgrade, Host whose first label is not the tenant (404)
+== @supabase/realtime-js@2.80.0 client
+PASS postgres_changes channel SUBSCRIBED (tenant from Host header, member JWT accepted)
+PASS postgres_changes subscription registered (system: Subscribed to PostgreSQL)
+PASS INSERT delivered to the subscriber (commit_timestamp 2026-10-10T11:12:18.807Z)
+PASS RLS: user A did not receive user B's row
+PASS UPDATE delivered with old and new row (REPLICA IDENTITY FULL)
+PASS broadcast round trip (ack + self echo)
+PASS presence track + sync
+   wal2json logical slots held by Realtime: 1
+== restart Realtime (seeds.exs upsert path on an existing tenant), deliver again
+   /healthcheck 200 after 3s
+PASS postgres_changes channel SUBSCRIBED (tenant from Host header, member JWT accepted)
+PASS postgres_changes subscription registered (system: Subscribed to PostgreSQL)
+PASS INSERT delivered to the subscriber (commit_timestamp 2026-10-10T11:12:32.683Z)
+PASS RLS: user A did not receive user B's row
+ALL PASS: realtime-aurora local delivery
+exit=0
