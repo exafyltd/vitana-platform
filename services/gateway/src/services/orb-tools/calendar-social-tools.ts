@@ -39,6 +39,14 @@ export const CALENDAR_SOCIAL_WRITE_TOOLS: readonly string[] = [
   'create_calendar_event',
   'share_calendar_entry_to_feed',
   'invite_to_calendar_entry',
+  // Calendar mutations from calendar-management-tools.ts reach the same
+  // generic arm and are gated the same way (Codex review on #4015).
+  'reschedule_event',
+  'cancel_event',
+  'complete_event',
+  // The connected (Google) calendar: the live session's capability arm
+  // checks this list too (Codex review on #4026).
+  'add_to_calendar',
 ];
 
 function strArg(args: OrbToolArgs, key: string): string {
@@ -179,13 +187,27 @@ export async function tool_share_calendar_entry_to_feed(
     const text = strArg(args, 'text').slice(0, SHARE_TEXT_MAX);
     const isPublic = args.is_public !== false;
 
+    // The visibility the member approved must be sent again with the
+    // confirmation: a confirmed call that leaves it out would otherwise fall
+    // back to public and publish a post the member approved as private.
+    if (args.confirmed === true && typeof args.is_public !== 'boolean') {
+      return {
+        ok: true,
+        result: { stage: 'awaiting_confirmation', entry_id: entry.id, title: entry.title, start_time: entry.start_time, text, needs: 'is_public' },
+        text:
+          'STATUS: needs_visibility. Nothing was posted. Call again with the same entry_id and text, confirmed=true, ' +
+          'and is_public set to exactly what the member approved (false = only them, true = the community).',
+      };
+    }
+
     if (args.confirmed !== true) {
       return {
         ok: true,
         result: { stage: 'awaiting_confirmation', entry_id: entry.id, title: entry.title, start_time: entry.start_time, text, is_public: isPublic },
         text:
           'STATUS: needs_confirmation. Nothing was posted. Read the event and the post text back to the member in your own words ' +
-          'and ask whether to post it; call again with the same entry_id and text and confirmed=true only after they say yes.',
+          'and say who will see it (is_public); ask whether to post it; call again with the same entry_id, text and is_public ' +
+          'and confirmed=true only after they say yes.',
       };
     }
     const refusal = checkCalendarWriteRequest({ confirmed: true, startTime: entry.start_time, endTime: entry.end_time, nowMs: Date.now() });
@@ -405,14 +427,15 @@ export const CALENDAR_SOCIAL_TOOL_DECLARATIONS: Array<Record<string, unknown>> =
       'Only events and live rooms can be shared — never a private entry. The member must ask for it.',
       'Compose a short, friendly post text in the member\'s language (du-form in German) or use their words.',
       'Two steps: call without confirmed to get the preview; read the event and the post text back and ask;',
-      'call again with the same entry_id and text and confirmed=true only after the member says yes. Never claim it was posted unless the result says STATUS: shared.',
+      'call again with the same entry_id, text and is_public and confirmed=true only after the member says yes (is_public is required on that call).',
+      'Never claim it was posted unless the result says STATUS: shared.',
     ].join('\n'),
     parameters: {
       type: 'object',
       properties: {
         ...ENTRY_PROPS,
         text: { type: 'string', description: 'The post text, in the member\'s language (max 2000 characters). May be empty.' },
-        is_public: { type: 'boolean', description: 'false to keep the post visible to the member only. Defaults to public.' },
+        is_public: { type: 'boolean', description: 'false keeps the post visible to the member only, true shows it to the community. Required with confirmed=true — send what the member approved.' },
         confirmed: { type: 'boolean', description: 'true ONLY after the member explicitly confirmed the read-back.' },
       },
       required: [],
