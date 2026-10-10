@@ -9,3 +9,4 @@ cd services/gateway && npx tsc --noEmit -p tsconfig.json                        
 npx jest test/vtid-05038-alle-beisammen-enrollment.test.ts                        # 8 passed (outputs/jest-alle-beisammen.txt)
 # mutation: migration file removed -> drift guard reads the VTID-03990 body -> 3 tests fail (restored)
 node docs/validation/VTID-05038/pglite-welcome-trigger-check.mjs supabase/migrations/20260917084341_vtid_03990_service_bot_accounts_skip_welcome_chat.sql supabase/migrations/20261010160000_vtid_05038_welcome_trigger_enrollment_restore.sql   # 23 PASS (outputs/pglite-welcome-trigger.txt)
+# production migration: RUN-MIGRATION.yml run 38046327642 -> success; read-only post-check (outputs/post-migration-check.txt): 0 real members missing, 243 in the group, 0 welcome messages

@@ -14,7 +14,7 @@ AC-3 Migration `20261010160000_vtid_05038_welcome_trigger_enrollment_restore.sql
 TEST: docs/validation/VTID-05038/pglite-welcome-trigger-check.mjs (outputs/pglite-welcome-trigger.txt)
 
 AC-4 After `RUN-MIGRATION.yml` applies it to production (before merge; the owner's Gate 1 approval covers exactly this migration): read-only SQL shows 0 real primary members missing from "Alle Beisammen" and the live function body carries the metadata cap and the VTID-05038 marker.
-TEST: outputs/post-migration-check.txt
+TEST: docs/validation/VTID-05038/outputs/post-migration-check.txt
 
 Out of scope (recorded): the English-only welcome DM text (existing i18n gap; changing what members receive needs its own decision); why the login path missed members who did log in (the trigger is the primary path; the backfill closes the gap).
 
