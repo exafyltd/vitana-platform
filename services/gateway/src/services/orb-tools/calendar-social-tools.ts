@@ -44,6 +44,9 @@ export const CALENDAR_SOCIAL_WRITE_TOOLS: readonly string[] = [
   'reschedule_event',
   'cancel_event',
   'complete_event',
+  // The connected (Google) calendar: the live session's capability arm
+  // checks this list too (Codex review on #4026).
+  'add_to_calendar',
 ];
 
 function strArg(args: OrbToolArgs, key: string): string {

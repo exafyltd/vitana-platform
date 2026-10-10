@@ -249,9 +249,12 @@ describe('one implementation for every path', () => {
   });
 
   it('the live session adds memberHasSpoken for every calendar write tool', () => {
-    // every calendar mutation reaching the generic arm, incl. reschedule/cancel/complete (Codex review on #4015)
-    expect([...CALENDAR_SOCIAL_WRITE_TOOLS].sort()).toEqual(['cancel_event', 'complete_event', 'create_calendar_event', 'invite_to_calendar_entry', 'reschedule_event', 'share_calendar_entry_to_feed']);
     const live = read('routes/orb-live.ts');
+    // every calendar mutation reaching the generic arm, incl. reschedule/cancel/complete (Codex review on #4015)
+    expect([...CALENDAR_SOCIAL_WRITE_TOOLS].sort()).toEqual(['add_to_calendar', 'cancel_event', 'complete_event', 'create_calendar_event', 'invite_to_calendar_entry', 'reschedule_event', 'share_calendar_entry_to_feed']);
+    // add_to_calendar has its own capability arm; it checks the same list before dispatching
+    const capArm = live.slice(live.indexOf("case 'add_to_calendar':"), live.indexOf('BOOTSTRAP-ORB-DELEGATION-ROUTE', live.indexOf("case 'add_to_calendar':")));
+    expect(capArm).toMatch(/CALENDAR_SOCIAL_WRITE_TOOLS\.includes\(toolName\)[\s\S]{0,200}memberHasSpoken\(session\)[\s\S]*dispatchOrbToolForVertex\(/);
     expect(live).toMatch(/CALENDAR_SOCIAL_WRITE_TOOLS\.includes\(toolName\)[\s\S]{0,200}memberHasSpoken\(session\)/);
     // the live session's own create_calendar_event arm delegates too (no second implementation)
     const arm = live.slice(live.indexOf("case 'create_calendar_event': {"), live.indexOf('VTID-01270A: Community & Events voice tools'));

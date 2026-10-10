@@ -48,5 +48,5 @@ AC-9: The community role lists the real calendar tools; the never-built get_cale
 ## Follow-up (Codex review on #4015)
 - share_calendar_entry_to_feed: a confirmed call must carry `is_public`; leaving it out answers `STATUS: needs_visibility` and posts nothing, so a post approved as private can never fall back to public.
   TEST: services/gateway/test/vtid-04918-calendar-assistant-parity.test.ts
-- The live session's memberHasSpoken gate also covers reschedule_event, cancel_event and complete_event.
+- The live session's memberHasSpoken gate also covers reschedule_event, cancel_event and complete_event, and add_to_calendar (connected Google calendar) in its own capability arm.
   TEST: services/gateway/test/vtid-04918-calendar-assistant-parity.test.ts
