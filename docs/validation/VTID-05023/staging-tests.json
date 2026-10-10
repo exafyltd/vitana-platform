@@ -85,6 +85,12 @@
    "ref": "npm run test:aurora-migrations",
    "cwd": ".",
    "reason": "Part 8 migration workflows to Aurora. Nothing here runs on staging or touches a live database: migrations reach Aurora only through RUN-MIGRATION.yml with MIGRATION_TARGET=aurora, a window step. On a throwaway local Postgres with a fake aws CLI it proves scripts/aws/aurora-apply-migration.sh: a good file commits all statements in one Data API transaction (the file's BEGIN/COMMIT dropped) and sends NOTIFY pgrst afterwards; a failing 3rd statement or a failure at COMMIT leaves the database unchanged and exits non-zero naming the statement; non-transactional statements are refused without --allow-non-transactional; dry run, psql meta-commands, a top-level ROLLBACK, a wrong account and MIGRATION_FREEZE=true make no rds-data call. The pgrst DDL watch, applied twice line by line, notifies on CREATE/ALTER/DROP. Both workflows parse and resolve input > MIGRATION_TARGET > supabase and fail fast under MIGRATION_FREEZE. The splitter is unit-tested on comments, quoting and dollar quotes, swept over every supabase/migrations file, and matches psql (statement count and pg_dump --schema-only) on 15 real migrations."
+  },
+  {
+   "kind": "existing",
+   "ref": "npm run test:rehearsal-clone",
+   "cwd": ".",
+   "reason": "Part 10 prep: the Aurora clone workflow is dispatch-only and creates nothing on merge. With a fake aws (no network) this proves create never modifies vitana-aurora-prod (production appears only as the restore and parameter-group source), the clone gets its own parameter group copy, delete refuses vitana-aurora-prod and every other name before any AWS call and refuses an untagged cluster, dry runs change nothing, and the workflow makes no AWS call of its own besides the account check; mutation-checked five ways."
   }
  ]
 }

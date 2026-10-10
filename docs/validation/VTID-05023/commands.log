@@ -22,3 +22,4 @@ bash dryrun.sh (workflow NEW_DEF plumbing, every fixture)          # keep identi
 actionlint 1.7.7 on the 20 changed workflows vs their base         # no new findings (only the tool's outdated 10-input message text and pre-existing narration_* inputs differ)
 cd services/gateway && npx jest <149 suites reading workflow files> # 149 suites, 1976 tests passed (vtid-03958/03961 input count 24 -> 25 on purpose)
 grep -c 'vars.DATA_REST_URL || secrets.SUPABASE_URL' .github/workflows/*.yml  # 21 references; secrets.SUPABASE_URL total 29 (unchanged)
+npm run test:rehearsal-clone   # part 10 prep: 67 passed, 0 failed (fake aws)

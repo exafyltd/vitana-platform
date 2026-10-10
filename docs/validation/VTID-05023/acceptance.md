@@ -57,3 +57,6 @@ TEST: scripts/aws/test/test_taskdef_data_backend.py (npm run test:aurora-parity)
 
 AC-17 (part 9): Every GitHub workflow step that calls Supabase REST through `secrets.SUPABASE_URL` (20 steps in 15 workflows) uses `${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}`; with `DATA_REST_URL` unset nothing changes. Calls to /auth, /storage, /functions, the deliberate Supabase side of the identity-drift alarm, the part-8 migration workflows and dead GCP-era workflows are left as they are, each listed with its reason.
 TEST: inventory in docs/validation/VTID-05023/other-services.md §3; `grep -c 'vars.DATA_REST_URL || secrets.SUPABASE_URL'` = 21 references, `secrets.SUPABASE_URL` total unchanged at 29 (commands.log)
+
+AC-18 (part 10 prep): The rehearsal clone is created and deleted only through the dispatch-only AWS-REHEARSAL-AURORA-CLONE.yml and scripts/aws/rehearsal-clone.sh, which can never modify or delete vitana-aurora-prod; the staging background-loop inventory (39 loops, 36 with a switch) and the rehearsal overlay are recorded in rehearsal.md.
+TEST: scripts/aws/test/rehearsal-clone.sh (npm run test:rehearsal-clone) — 67 passed, 0 failed
