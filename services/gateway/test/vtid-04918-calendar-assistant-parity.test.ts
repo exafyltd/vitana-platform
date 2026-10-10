@@ -155,13 +155,25 @@ describe('share_calendar_entry_to_feed (Phase 2 service, assistant entry point)'
   it('confirmed: the same service the app uses shares it; its refusals are named', async () => {
     (shareCalendarEntryToFeed as jest.Mock).mockResolvedValueOnce({ ok: true, post_id: 'post-1', ref: { ref_type: 'community_event', ref_id: GCE } });
     const { sb } = fakeSb({ calendar_events: [entry()] });
-    const r = await tool_share_calendar_entry_to_feed({ entry_id: 'ev-1', text: 'Kommst du mit?', confirmed: true }, ME, sb);
+    const r = await tool_share_calendar_entry_to_feed({ entry_id: 'ev-1', text: 'Kommst du mit?', is_public: true, confirmed: true }, ME, sb);
     expect(r).toMatchObject({ ok: true, result: { shared: true, post_id: 'post-1' } });
     expect(shareCalendarEntryToFeed).toHaveBeenCalledWith(ME.user_id, expect.objectContaining({ id: 'ev-1' }), { text: 'Kommst du mit?', is_public: true });
 
     (shareCalendarEntryToFeed as jest.Mock).mockResolvedValueOnce({ ok: false, status: 409, error: 'ALREADY_SHARED', post_id: 'post-1' });
-    const again = await tool_share_calendar_entry_to_feed({ entry_id: 'ev-1', confirmed: true }, ME, sb);
+    const again = await tool_share_calendar_entry_to_feed({ entry_id: 'ev-1', is_public: true, confirmed: true }, ME, sb);
     expect((again as { text: string }).text).toMatch(/^STATUS: already_shared/);
+  });
+
+  it('a post approved as private stays private: the confirmation must carry the visibility', async () => {
+    const { sb } = fakeSb({ calendar_events: [entry()] });
+    const preview = await tool_share_calendar_entry_to_feed({ entry_id: 'ev-1', text: 'Nur für mich', is_public: false }, ME, sb);
+    expect(preview).toMatchObject({ ok: true, result: { stage: 'awaiting_confirmation', is_public: false } });
+    const missing = await tool_share_calendar_entry_to_feed({ entry_id: 'ev-1', text: 'Nur für mich', confirmed: true }, ME, sb);
+    expect((missing as { text: string }).text).toMatch(/^STATUS: needs_visibility/);
+    expect(shareCalendarEntryToFeed).not.toHaveBeenCalled();
+    (shareCalendarEntryToFeed as jest.Mock).mockResolvedValueOnce({ ok: true, post_id: 'post-2', ref: { ref_type: 'community_event', ref_id: GCE } });
+    await tool_share_calendar_entry_to_feed({ entry_id: 'ev-1', text: 'Nur für mich', is_public: false, confirmed: true }, ME, sb);
+    expect(shareCalendarEntryToFeed).toHaveBeenCalledWith(ME.user_id, expect.objectContaining({ id: 'ev-1' }), { text: 'Nur für mich', is_public: false });
   });
 });
 
@@ -237,8 +249,12 @@ describe('one implementation for every path', () => {
   });
 
   it('the live session adds memberHasSpoken for every calendar write tool', () => {
-    expect([...CALENDAR_SOCIAL_WRITE_TOOLS].sort()).toEqual(['create_calendar_event', 'invite_to_calendar_entry', 'share_calendar_entry_to_feed']);
     const live = read('routes/orb-live.ts');
+    // every calendar mutation reaching the generic arm, incl. reschedule/cancel/complete (Codex review on #4015)
+    expect([...CALENDAR_SOCIAL_WRITE_TOOLS].sort()).toEqual(['add_to_calendar', 'cancel_event', 'complete_event', 'create_calendar_event', 'invite_to_calendar_entry', 'reschedule_event', 'share_calendar_entry_to_feed']);
+    // add_to_calendar has its own capability arm; it checks the same list before dispatching
+    const capArm = live.slice(live.indexOf("case 'add_to_calendar':"), live.indexOf('BOOTSTRAP-ORB-DELEGATION-ROUTE', live.indexOf("case 'add_to_calendar':")));
+    expect(capArm).toMatch(/CALENDAR_SOCIAL_WRITE_TOOLS\.includes\(toolName\)[\s\S]{0,200}memberHasSpoken\(session\)[\s\S]*dispatchOrbToolForVertex\(/);
     expect(live).toMatch(/CALENDAR_SOCIAL_WRITE_TOOLS\.includes\(toolName\)[\s\S]{0,200}memberHasSpoken\(session\)/);
     // the live session's own create_calendar_event arm delegates too (no second implementation)
     const arm = live.slice(live.indexOf("case 'create_calendar_event': {"), live.indexOf('VTID-01270A: Community & Events voice tools'));
