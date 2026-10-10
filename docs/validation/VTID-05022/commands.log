@@ -1,0 +1,6 @@
+# VTID-05022 — commands run to produce the evidence (2026-10-10)
+git fetch origin main && git checkout -B claude/zealous-pasteur-i0czi8 origin/main
+sha256sum <(awk '/<!-- plan:begin -->/{f=1;next}/<!-- plan:end -->/{f=0}f' docs/MULTI-TENANT-PLAN.md)   # -> outputs/plan-body-hash.txt
+cd services/gateway && node node_modules/.bin/jest test/vtid-04019-no-token-prefixes-in-docs.test.ts      # -> outputs/vtid-04019-docs-credential-scan.txt (1269 passed)
+git diff --name-only origin/main...HEAD                                                                   # -> outputs/changed-files.txt
+node scripts/ci/validator-path-guard.cjs <changed files> gateway_backend <pr body>                        # local dry run of the path-ownership guard
