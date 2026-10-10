@@ -9,6 +9,7 @@
  *   - tts: anonymous 401, member 403, exafy_admin 503 DEBUG_ROUTE_DISABLED, no TTS call
  *   - brain-instruction: another tenant 403 FORBIDDEN_TENANT_SCOPE, own tenant 200
  *   - memory / intent: 404 off the dev sandbox
+ *   - routing/debug and situational/debug: anonymous 401, member 403, exafy_admin 200
  * plus a drift guard: every `debug` route registration under src/routes and
  * src/index.ts is gated or explicitly allowlisted with a reason.
  */
@@ -73,11 +74,26 @@ jest.mock('@google-cloud/text-to-speech', () => ({
   protos: {},
 }));
 
+const mockComputeSituationalAwareness = jest.fn();
+jest.mock('../../src/services/d32-situational-awareness-engine', () => ({
+  computeSituationalAwareness: (...args: any[]) => mockComputeSituationalAwareness(...args),
+  scoreActions: jest.fn(),
+  overrideSituation: jest.fn(),
+  verifyBundleIntegrity: () => true,
+  VTID: 'VTID-01126',
+  ENGINE_VERSION: 'd32-v1.0.0',
+  DEFAULT_SITUATIONAL_CONFIG: { confidence_threshold: 50 },
+}));
+
 import orbLiveRouter from '../../src/routes/orb-live';
+import domainRoutingRouter from '../../src/routes/domain-routing';
+import situationalRouter from '../../src/routes/situational-awareness';
 
 const app = express();
 app.use(express.json());
 app.use('/api/v1/orb', orbLiveRouter);
+app.use('/api/v1/routing', domainRoutingRouter);
+app.use('/api/v1/situational', situationalRouter);
 
 beforeEach(() => {
   mockIdentity = null;
@@ -182,6 +198,80 @@ describe('dev-sandbox-only debug routes', () => {
   });
 });
 
+describe('GET /api/v1/routing/debug', () => {
+  const SESSION = 's1-debug-session';
+
+  beforeAll(async () => {
+    // Seed the debug cache through the (unchanged) compute route.
+    const res = await request(app).post('/api/v1/routing/compute')
+      .send({ current_message: 'how did I sleep', session: { session_id: SESSION } });
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects an anonymous caller with 401 and lists no sessions', async () => {
+    const res = await request(app).get(`/api/v1/routing/debug?session_id=${SESSION}`);
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('UNAUTHENTICATED');
+    expect(res.body.snapshot).toBeUndefined();
+    expect(res.body.available_sessions).toBeUndefined();
+  });
+
+  it('rejects a member with 403', async () => {
+    mockIdentity = MEMBER;
+    const res = await request(app).get(`/api/v1/routing/debug?session_id=${SESSION}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('serves an exafy_admin', async () => {
+    mockIdentity = ADMIN;
+    const res = await request(app).get(`/api/v1/routing/debug?session_id=${SESSION}`);
+    expect(res.status).toBe(200);
+    expect(res.body.session_id).toBe(SESSION);
+  });
+});
+
+describe('GET /api/v1/situational/debug', () => {
+  beforeAll(async () => {
+    mockComputeSituationalAwareness.mockResolvedValue({
+      ok: true,
+      bundle: {
+        bundle_id: 'b1', bundle_hash: 'h1', computed_at: '2026-10-10T00:00:00.000Z', computation_duration_ms: 1,
+        situation_vector: {
+          overall_confidence: 80,
+          time_context: { time_window: 'morning' },
+          availability_context: { availability_level: 'available' },
+          readiness_context: { energy_level: 'high' },
+        },
+        action_envelope: { active_tags: [], allowed_actions: [], blocked_actions: [] },
+        sources: {}, metadata: {},
+      },
+    });
+    const res = await request(app).post('/api/v1/situational/compute').send({ user_id: MEMBER.user_id });
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects an anonymous caller with 401 and lists no users', async () => {
+    const res = await request(app).get(`/api/v1/situational/debug?user_id=${MEMBER.user_id}`);
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('UNAUTHENTICATED');
+    expect(res.body.situation_vector).toBeUndefined();
+    expect(res.body.available_users).toBeUndefined();
+  });
+
+  it('rejects a member with 403', async () => {
+    mockIdentity = MEMBER;
+    const res = await request(app).get(`/api/v1/situational/debug?user_id=${MEMBER.user_id}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('serves an exafy_admin', async () => {
+    mockIdentity = ADMIN;
+    const res = await request(app).get(`/api/v1/situational/debug?user_id=${MEMBER.user_id}`);
+    expect(res.status).toBe(200);
+    expect(res.body.situation_vector.overall_confidence).toBe(80);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Drift guard: a new ungated debug route fails CI.
 // ---------------------------------------------------------------------------
@@ -200,8 +290,6 @@ const ALLOWLIST: Record<string, string> = {
   'index.ts GET /debug/vtid-0600-check': 'build/route diagnostic, no member data (WS0 inventory cleanup)',
   'index.ts GET /debug/vtid-0538-routes': 'route listing, no member data (WS0 inventory cleanup)',
   'index.ts GET /debug/vtid-0529': 'build/route diagnostic, no member data (WS0 inventory cleanup)',
-  'routes/domain-routing.ts GET /debug': 'TEMPORARY — gated in the second VTID-05040 commit',
-  'routes/situational-awareness.ts GET /debug': 'TEMPORARY — gated in the second VTID-05040 commit',
 };
 
 // Routers whose every route is gated by a router-level `router.use(<middleware>)`.
@@ -255,7 +343,12 @@ describe('debug-route drift guard', () => {
   });
 
   it('the gated routes named by VTID-05040 are not on the allowlist', () => {
-    for (const key of ['routes/orb-live.ts GET /debug/context-bootstrap', 'routes/orb-live.ts GET /debug/tts']) {
+    for (const key of [
+      'routes/orb-live.ts GET /debug/context-bootstrap',
+      'routes/orb-live.ts GET /debug/tts',
+      'routes/domain-routing.ts GET /debug',
+      'routes/situational-awareness.ts GET /debug',
+    ]) {
       expect(ALLOWLIST[key]).toBeUndefined();
       expect(routes.find((r) => r.key === key)?.gated).toBe(true);
     }

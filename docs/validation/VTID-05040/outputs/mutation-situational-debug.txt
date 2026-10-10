@@ -1,0 +1,6 @@
+      ✕ rejects an anonymous caller with 401 (VTID-05040) (8 ms)
+    ✕ rejects an anonymous caller with 401 and lists no users (7 ms)
+    ✕ rejects a member with 403 (5 ms)
+    ✕ every debug route is gated or allowlisted with a reason (3 ms)
+    ✕ the gated routes named by VTID-05040 are not on the allowlist (1 ms)
+Tests:       5 failed, 51 passed, 56 total

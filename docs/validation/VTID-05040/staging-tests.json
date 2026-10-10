@@ -10,7 +10,9 @@
       "path": "/api/v1/orb/debug/context-bootstrap?user_id=00000000-0000-0000-0000-000000000000",
       "expect_status": 401,
       "expect_content_type": "application/json",
-      "expect_json": { "error": "UNAUTHENTICATED" },
+      "expect_json": {
+        "error": "UNAUTHENTICATED"
+      },
       "reason": "anonymous GET is refused before the handler; before the fix it returned the member's memory and full context"
     },
     {
@@ -21,7 +23,9 @@
       "path": "/api/v1/orb/debug/tts",
       "expect_status": 401,
       "expect_content_type": "application/json",
-      "expect_json": { "error": "UNAUTHENTICATED" },
+      "expect_json": {
+        "error": "UNAUTHENTICATED"
+      },
       "reason": "anonymous GET is refused; no Google Cloud TTS call is reachable"
     },
     {
@@ -53,8 +57,34 @@
       "reason": "isDevSandbox() is false on staging (VITANA_ENV=staging)"
     },
     {
+      "kind": "http",
+      "target": "gateway",
+      "name": "routing debug anon rejected",
+      "method": "GET",
+      "path": "/api/v1/routing/debug",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "expect_json": {
+        "error": "UNAUTHENTICATED"
+      },
+      "reason": "anonymous GET is refused; before the fix it listed cached routing sessions"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "situational debug anon rejected",
+      "method": "GET",
+      "path": "/api/v1/situational/debug",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "expect_json": {
+        "error": "UNAUTHENTICATED"
+      },
+      "reason": "anonymous GET is refused; before the fix it listed cached user-id prefixes"
+    },
+    {
       "kind": "existing",
-      "ref": "npx jest test/routes/s1-debug-route-gates.test.ts",
+      "ref": "npx jest test/routes/s1-debug-route-gates.test.ts test/routes/situational-awareness.test.ts",
       "cwd": "services/gateway",
       "reason": "admin-allowed / member-403 / tenant-scope paths need a JWT; proven in CI with mocked auth (mutation-checked), plus the drift guard"
     }
