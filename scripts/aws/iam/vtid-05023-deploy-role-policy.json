@@ -1,0 +1,311 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EcsServicesAndTaskDefs",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:CreateService",
+        "ecs:UpdateService",
+        "ecs:DescribeServices",
+        "ecs:RegisterTaskDefinition",
+        "ecs:DescribeTaskDefinition",
+        "ecs:ListTasks",
+        "ecs:DescribeTasks",
+        "ecs:TagResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "PassEcsRoles",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": [
+        "arn:aws:iam::472838866351:role/vitana-ecs-task-execution-role",
+        "arn:aws:iam::472838866351:role/vitana-ecs-task-role"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "ecs-tasks.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "CloudMap",
+      "Effect": "Allow",
+      "Action": [
+        "servicediscovery:CreateService",
+        "servicediscovery:GetService",
+        "servicediscovery:ListServices",
+        "servicediscovery:GetNamespace",
+        "servicediscovery:TagResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "Autoscaling",
+      "Effect": "Allow",
+      "Action": [
+        "application-autoscaling:RegisterScalableTarget",
+        "application-autoscaling:PutScalingPolicy",
+        "application-autoscaling:DescribeScalableTargets",
+        "application-autoscaling:DescribeScalingPolicies"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AutoscalingServiceLinkedRole",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "arn:aws:iam::472838866351:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/*",
+      "Condition": {
+        "StringLike": {
+          "iam:AWSServiceName": "ecs.application-autoscaling.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "AlbTargetGroupsAndRules",
+      "Effect": "Allow",
+      "Action": [
+        "elasticloadbalancing:CreateTargetGroup",
+        "elasticloadbalancing:CreateRule",
+        "elasticloadbalancing:ModifyTargetGroup",
+        "elasticloadbalancing:ModifyTargetGroupAttributes",
+        "elasticloadbalancing:AddTags",
+        "elasticloadbalancing:DescribeTargetGroups",
+        "elasticloadbalancing:DescribeRules",
+        "elasticloadbalancing:DescribeTargetHealth",
+        "elasticloadbalancing:DescribeLoadBalancers",
+        "elasticloadbalancing:DescribeListeners"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "Logs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:PutRetentionPolicy",
+        "logs:DescribeLogGroups",
+        "logs:TagResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EcrNewRepos",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:CreateRepository",
+        "ecr:DescribeRepositories",
+        "ecr:DescribeImages",
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
+        "ecr:PutImage",
+        "ecr:BatchGetImage",
+        "ecr:TagResource"
+      ],
+      "Resource": [
+        "arn:aws:ecr:eu-central-1:472838866351:repository/vitana/postgrest-aurora-proxy",
+        "arn:aws:ecr:eu-central-1:472838866351:repository/vitana/realtime-aurora"
+      ]
+    },
+    {
+      "Sid": "EcrAuth",
+      "Effect": "Allow",
+      "Action": "ecr:GetAuthorizationToken",
+      "Resource": "*"
+    },
+    {
+      "Sid": "SecretsDescribe",
+      "Effect": "Allow",
+      "Action": "secretsmanager:DescribeSecret",
+      "Resource": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/*"
+    },
+    {
+      "Sid": "SecretsReadForVerification",
+      "Effect": "Allow",
+      "Action": "secretsmanager:GetSecretValue",
+      "Resource": [
+        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/prod/anon-key*"
+      ]
+    },
+    {
+      "Sid": "RealtimeSecretsCreate",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:CreateSecret",
+        "secretsmanager:TagResource"
+      ],
+      "Resource": [
+        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/realtime/prod/*",
+        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/prod/realtime-admin-password*"
+      ]
+    },
+    {
+      "Sid": "RandomPassword",
+      "Effect": "Allow",
+      "Action": "secretsmanager:GetRandomPassword",
+      "Resource": "*"
+    },
+    {
+      "Sid": "Ec2Read",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSubnets"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "RdsRead",
+      "Effect": "Allow",
+      "Action": [
+        "rds:DescribeDBClusters",
+        "rds:DescribeDBInstances",
+        "rds:DescribeDBClusterParameters",
+        "rds:DescribeDBClusterParameterGroups",
+        "rds:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DataApiMigrations",
+      "Effect": "Allow",
+      "Action": [
+        "rds-data:ExecuteStatement",
+        "rds-data:BeginTransaction",
+        "rds-data:CommitTransaction",
+        "rds-data:RollbackTransaction"
+      ],
+      "Resource": [
+        "arn:aws:rds:eu-central-1:472838866351:cluster:vitana-aurora-prod",
+        "arn:aws:rds:eu-central-1:472838866351:cluster:vitana-aurora-rehearsal"
+      ]
+    },
+    {
+      "Sid": "DataApiMasterSecret",
+      "Effect": "Allow",
+      "Action": "secretsmanager:GetSecretValue",
+      "Resource": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:rds!cluster-*",
+      "Condition": {
+        "StringEquals": {
+          "secretsmanager:ResourceTag/aws:rds:primaryDBClusterArn": [
+            "arn:aws:rds:eu-central-1:472838866351:cluster:vitana-aurora-prod",
+            "arn:aws:rds:eu-central-1:472838866351:cluster:vitana-aurora-rehearsal"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "RehearsalCloneOnly",
+      "Effect": "Allow",
+      "Action": [
+        "rds:RestoreDBClusterToPointInTime",
+        "rds:CreateDBInstance",
+        "rds:ModifyDBCluster",
+        "rds:EnableHttpEndpoint",
+        "rds:DeleteDBInstance",
+        "rds:DeleteDBCluster",
+        "rds:AddTagsToResource",
+        "rds:CopyDBClusterParameterGroup",
+        "rds:ModifyDBClusterParameterGroup"
+      ],
+      "Resource": [
+        "arn:aws:rds:eu-central-1:472838866351:cluster:vitana-aurora-rehearsal",
+        "arn:aws:rds:eu-central-1:472838866351:db:vitana-aurora-rehearsal*",
+        "arn:aws:rds:eu-central-1:472838866351:cluster-pg:vitana-aurora-rehearsal*"
+      ]
+    },
+    {
+      "Sid": "RehearsalRestoreSource",
+      "Effect": "Allow",
+      "Action": [
+        "rds:RestoreDBClusterToPointInTime",
+        "rds:CopyDBClusterParameterGroup"
+      ],
+      "Resource": [
+        "arn:aws:rds:eu-central-1:472838866351:cluster:vitana-aurora-prod",
+        "arn:aws:rds:eu-central-1:472838866351:cluster-pg:*",
+        "arn:aws:rds:eu-central-1:472838866351:subgrp:*",
+        "arn:aws:rds:eu-central-1:472838866351:og:*"
+      ]
+    },
+    {
+      "Sid": "RehearsalKms",
+      "Effect": "Allow",
+      "Action": [
+        "kms:DescribeKey",
+        "kms:CreateGrant"
+      ],
+      "Resource": "arn:aws:kms:eu-central-1:472838866351:key/*",
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": "rds.eu-central-1.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "ScheduledEdgeCalls",
+      "Effect": "Allow",
+      "Action": [
+        "events:CreateEventBus",
+        "events:DescribeEventBus",
+        "events:CreateConnection",
+        "events:UpdateConnection",
+        "events:DescribeConnection",
+        "events:CreateApiDestination",
+        "events:UpdateApiDestination",
+        "events:DescribeApiDestination",
+        "events:PutRule",
+        "events:PutTargets",
+        "events:DescribeRule",
+        "scheduler:CreateSchedule",
+        "scheduler:UpdateSchedule",
+        "scheduler:GetSchedule"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EventsConnectionSecret",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:CreateSecret",
+        "secretsmanager:UpdateSecret",
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:PutSecretValue"
+      ],
+      "Resource": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:events!connection/vitana-supabase-edge-calls/*"
+    },
+    {
+      "Sid": "ScheduledEdgeCallsRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:GetRole",
+        "iam:PutRolePolicy",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:TagRole",
+        "iam:PassRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::472838866351:role/vitana-scheduler-edge-calls",
+        "arn:aws:iam::472838866351:role/vitana-eventbridge-edge-calls-invoke"
+      ]
+    },
+    {
+      "Sid": "ParityReportRead",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::REPLACE_WITH_PARITY_REPORT_BUCKET/*"
+    },
+    {
+      "Sid": "SimulateExecRole",
+      "Effect": "Allow",
+      "Action": "iam:SimulatePrincipalPolicy",
+      "Resource": "arn:aws:iam::472838866351:role/vitana-ecs-task-execution-role"
+    }
+  ]
+}
