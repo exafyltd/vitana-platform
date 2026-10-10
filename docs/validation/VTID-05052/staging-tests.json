@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05052",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05052-welcome-greeting-health-test-accounts.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the change is a CI-only SQL function, not gateway code; nothing on staging serves it. The contract test and the local Postgres harness are the gate; the read-only RPC call after the migration is applied is the final check"
+    }
+  ]
+}
