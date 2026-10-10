@@ -25465,7 +25465,7 @@ async function sendChatMessage() {
                 type: 'system',
                 content: errorContent,
                 timestamp: new Date(errorTs).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-                ts: errorTs,
+                ts: Date.now(),
                 isError: true
             });
         } else {

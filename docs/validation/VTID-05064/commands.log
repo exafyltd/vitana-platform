@@ -1,0 +1,14 @@
+# services/kiro-runner
+npx tsc --noEmit -p . && npx vitest run            # 36 passed (3 runs)
+npm run build                                      # ok
+# services/gateway
+npx tsc --noEmit -p .                              # clean
+npx jest <Kiro + command-hub + operator-turn-stream + asset-bump + ownership-guard suites>   # 55 suites, 800 passed
+npm run test:operator                              # 41 passed
+npm run test:support                               # 87 passed
+npm run test:roles                                 # 105 passed
+npx jest test/vtid-03947-message-copy-timestamp.test.ts test/command-hub/vtid-05064-operator-turn-thread.test.ts   # 40 passed
+node --check src/frontend/command-hub/app.js       # ok
+# repo root
+node scripts/ci/validator-path-guard.cjs <changed files> gateway_backend <body>   # APPROVED (kiro-runner + guard script reported as not judged)
+node -e "validateManifest(docs/validation/VTID-05064/staging-tests.json)"         # ok
