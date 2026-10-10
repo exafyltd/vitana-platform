@@ -125,6 +125,12 @@ describe('sseHeaders', () => {
     return { res, next };
   }
 
+  it('leaves the Kiro run stream alone: the route sets its own SSE headers after auth (VTID-05065)', () => {
+    const { res, next } = run('GET', '/api/v1/operator/kiro/runs/00000000-0000-4000-8000-000000000000/stream');
+    expect(res.setHeader).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
+  });
+
   it('sets SSE headers on GET /stream paths', () => {
     const { res, next } = run('GET', '/api/v1/live/stream');
     expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/event-stream');
