@@ -1526,3 +1526,528 @@ describe('Kiro model pick: a reopened session keeps the developer\'s model (VTID
     expect(sent.some((m) => m.method === 'session/set_model')).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// VTID-05065: a Kiro turn is a server-side RUN. The REAL run routes, run
+// service, chat-turn executor, permission broker, Kiro turn runner and ACP
+// client run over the fake database; the SSE streams are read over a real
+// HTTP socket (so a stream can be dropped mid-run); only `kiro-cli acp` is a
+// scripted fake whose turns the test steps through.
+// ---------------------------------------------------------------------------
+import * as http from 'http';
+import type { AddressInfo } from 'net';
+import kiroRunsRouter from '../src/routes/operator-kiro-runs';
+import {
+  KIRO_RUN_LIMITS, drainKiroRunsForShutdown, sweepStaleKiroRuns, resetKiroRunsForTests, answerPersistedPermission,
+  kiroRunsControlTick, kiroRunsHeartbeatTick, GATEWAY_TASK_ID,
+} from '../src/services/kiro/kiro-runs';
+
+describe('Kiro runs (VTID-05065)', () => {
+  const THREAD = 'a5065000-0000-4000-8000-000000000001';
+  const OTHER_ADMIN = 'f3333333-3333-4333-8333-333333333333';
+  const realSetTimeout = globalThis.setTimeout;
+  const sleep = (ms: number) => new Promise<void>((r) => realSetTimeout(r, ms));
+  const savedLimits = { ...KIRO_RUN_LIMITS };
+
+  interface Ctl {
+    chunk(t: string): void; tool(id: string, title: string, kind: string): void; toolDone(id: string): void;
+    ask(title: string, kind: string): Promise<any>; cancelled: Promise<void>;
+  }
+  type Handler = (k: Ctl) => Promise<string>;
+  const kiro = { prompts: [] as any[], handlers: [] as Handler[], replies: new Map<number, (r: any) => void>(), cancels: 0, permissionReplies: [] as any[] };
+
+  function deferred() { let resolve!: () => void; const promise = new Promise<void>((r) => { resolve = r; }); return { promise, resolve }; }
+
+  function runsKiro(): any {
+    const out = new EventEmitter();
+    const proc = new EventEmitter();
+    const send = (o: unknown) => out.emit('data', `${JSON.stringify(o)}\n`);
+    let cancel: (() => void) | null = null;
+    let nextReq = 900;
+    const upd = (update: Record<string, unknown>) => send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'KR', update } });
+    return {
+      stdout: out,
+      stdin: {
+        write: (line: string) => {
+          const msg = JSON.parse(line);
+          if (msg.method === 'initialize') send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1 } });
+          else if (msg.method === 'session/new') send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 'KR' } });
+          else if (msg.method === 'session/cancel') { kiro.cancels += 1; cancel?.(); }
+          else if (msg.method === 'session/prompt') {
+            kiro.prompts.push(msg.params.prompt);
+            const handler = kiro.handlers.shift() ?? (async (k: Ctl) => { k.chunk('done'); return 'end_turn'; });
+            const c = deferred();
+            cancel = c.resolve;
+            const ctl: Ctl = {
+              chunk: (t) => upd({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: t } }),
+              tool: (id, title, kind) => upd({ sessionUpdate: 'tool_call', toolCallId: id, title, kind, status: 'pending' }),
+              toolDone: (id) => upd({ sessionUpdate: 'tool_call_update', toolCallId: id, status: 'completed' }),
+              ask: (title, kind) => new Promise((res) => {
+                const id = nextReq++;
+                kiro.replies.set(id, res);
+                send({ jsonrpc: '2.0', id, method: 'session/request_permission', params: { sessionId: 'KR', toolCall: { toolCallId: `tc${id}`, title, kind }, options: [{ optionId: 'allow', kind: 'allow_once' }, { optionId: 'deny', kind: 'reject_once' }] } });
+              }),
+              cancelled: c.promise,
+            };
+            void handler(ctl).then((stopReason) => send({ jsonrpc: '2.0', id: msg.id, result: { stopReason } }));
+          } else if (msg.id !== undefined && !msg.method) {
+            kiro.permissionReplies.push(msg.result);
+            const r = kiro.replies.get(msg.id);
+            if (r) { kiro.replies.delete(msg.id); r(msg.result); }
+          }
+          return true;
+        },
+        end: () => {},
+      },
+      kill() { proc.emit('exit'); },
+      on: (ev: string, cb: any) => proc.on(ev, cb),
+    };
+  }
+
+  interface Frame { id: number | null; event: string; data: any }
+  function openStream(runId: string, token: string, afterSeq = 0) {
+    const frames: Frame[] = [];
+    let status = 0;
+    let contentType = '';
+    let resolveEnd!: () => void;
+    const ended = new Promise<void>((r) => { resolveEnd = r; });
+    const req = http.request({ host: '127.0.0.1', port, path: `/api/v1/operator/kiro/runs/${runId}/stream?after_seq=${afterSeq}`, method: 'GET', headers: { Authorization: `Bearer ${token}` } }, (res) => {
+      status = res.statusCode || 0;
+      contentType = String(res.headers['content-type'] || '');
+      let buf = '';
+      res.setEncoding('utf8');
+      res.on('data', (c: string) => {
+        buf += c;
+        let i: number;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const raw = buf.slice(0, i);
+          buf = buf.slice(i + 2);
+          const f: Frame = { id: null, event: 'message', data: null };
+          let isFrame = false;
+          for (const line of raw.split('\n')) {
+            if (line.startsWith('id: ')) { f.id = Number(line.slice(4)); isFrame = true; }
+            else if (line.startsWith('event: ')) { f.event = line.slice(7); isFrame = true; }
+            else if (line.startsWith('data: ')) { f.data = JSON.parse(line.slice(6)); isFrame = true; }
+          }
+          if (isFrame) frames.push(f);
+        }
+      });
+      res.on('end', () => resolveEnd());
+      res.on('close', () => resolveEnd());
+    });
+    req.on('error', () => resolveEnd());
+    req.end();
+    openRequests.push(req);
+    return { frames, ended, close: () => req.destroy(), get status() { return status; }, get contentType() { return contentType; } };
+  }
+  const openRequests: http.ClientRequest[] = [];
+
+  async function waitFor(cond: () => boolean, what: string, ms = 8_000): Promise<void> {
+    const deadline = Date.now() + ms;
+    while (!cond()) {
+      if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+      await sleep(5);
+    }
+  }
+
+  let server: http.Server;
+  let port = 0;
+  let admin = '';
+  let other = '';
+
+  async function startRun(message: string, token = admin, threadId = THREAD) {
+    return request(app).post('/api/v1/operator/kiro/runs').set('Authorization', `Bearer ${token}`).send({ thread_id: threadId, message });
+  }
+  const run = (id: string) => platform.rows('kiro_runs').find((r) => r.id === id)!;
+  const runEvents = (id: string) => platform.rows('kiro_run_events').filter((e) => e.run_id === id).sort((a, b) => a.seq - b.seq);
+  const seqs = (frames: Frame[]) => frames.filter((f) => f.id !== null).map((f) => f.id as number);
+  const isDone = (id: string) => ['completed', 'refused', 'incomplete', 'failed', 'cancelled', 'interrupted'].includes(run(id)?.status);
+
+  beforeAll(() => { Object.assign(KIRO_RUN_LIMITS, { coalesceMs: 20, flushMs: 20, streamPollMs: 20 }); });
+  afterAll(() => { Object.assign(KIRO_RUN_LIMITS, savedLimits); });
+
+  beforeEach(async () => {
+    kiro.prompts.length = 0;
+    kiro.handlers.length = 0;
+    kiro.replies.clear();
+    kiro.cancels = 0;
+    kiro.permissionReplies.length = 0;
+    Object.assign(process.env, { OPERATOR_THREADS_ENABLED: 'true', KIRO_ENGINE_ENABLED: 'true' });
+    setKiroBackend({ spawn: () => runsKiro(), workspace: () => '/work/runs' });
+    app.use('/api/v1/operator/kiro/runs', kiroRunsRouter);
+    server = app.listen(0);
+    port = (server.address() as AddressInfo).port;
+    admin = await jwt(ADMIN_USER, true);
+    other = await jwt(OTHER_ADMIN, true);
+  });
+  afterEach(async () => {
+    closeAllKiroSessions();
+    await platform.settle().catch(() => undefined);
+    resetKiroRunsForTests();
+    setKiroBackend(null);
+    // A stream a failing scenario left open must not hold the server (or the suite) open.
+    for (const r of openRequests.splice(0)) r.destroy();
+    server.closeAllConnections?.();
+    await new Promise<void>((r) => server.close(() => r()));
+    delete process.env.OPERATOR_THREADS_ENABLED;
+    delete process.env.KIRO_ENGINE_ENABLED;
+  });
+
+  it('start → 202 at once; the stream carries the whole turn in seq order and ends on the terminal status; row, events and OASIS agree', async () => {
+    const gate = deferred();
+    kiro.handlers.push(async (k) => { k.chunk('part one '); await gate.promise; k.tool('t1', 'Read a file', 'read'); k.chunk('part two'); k.toolDone('t1'); return 'end_turn'; });
+    const res = await startRun('look at the upload endpoint');
+    expect(res.status).toBe(202);
+    expect(res.body).toMatchObject({ ok: true, status: 'running' });
+    const id = res.body.run_id as string;
+    // Returned before the turn finished.
+    expect(run(id)).toMatchObject({ status: 'running', thread_id: THREAD, user_id: ADMIN_USER, gateway_task: GATEWAY_TASK_ID });
+    const s = openStream(id, admin);
+    await waitFor(() => s.frames.some((f) => f.event === 'kiro.message_chunk'), 'first text');
+    gate.resolve();
+    await s.ended;
+    expect(s.status).toBe(200);
+    expect(s.contentType).toContain('text/event-stream');
+    const ids = seqs(s.frames);
+    expect(ids).toEqual(ids.map((_, i) => i + 1));
+    expect(s.frames[0]).toMatchObject({ event: 'run.status', data: { status: 'running' } });
+    expect(s.frames[s.frames.length - 1]).toMatchObject({ event: 'run.status', data: { status: 'completed' } });
+    expect(s.frames.map((f) => f.event)).toEqual(expect.arrayContaining(['kiro.tool_call', 'kiro.tool_update', 'kiro.turn_end']));
+    expect(s.frames.filter((f) => f.event === 'kiro.message_chunk').map((f) => f.data.text).join('')).toBe('part one part two');
+    await waitFor(() => isDone(id), 'run row terminal');
+    await platform.settle();
+    expect(run(id)).toMatchObject({ status: 'completed', reply: 'part one part two', stop_reason: 'end_turn', pending_permission: null });
+    expect(run(id).ended_at).toBeTruthy();
+    expect(runEvents(id).map((e) => e.seq)).toEqual(ids);
+    // The turn is recorded exactly as the old path records it.
+    expect(platform.rows('operator_messages').filter((m) => m.thread_id === THREAD).map((m) => m.role)).toEqual(expect.arrayContaining(['user', 'assistant']));
+    for (const t of ['operator.kiro.run_started', 'operator.kiro.run_finished']) {
+      const evs = platform.events(t).filter((e) => e.metadata?.run_id === id);
+      expect(evs).toHaveLength(1);
+      expect(evs[0].metadata).toMatchObject({ run_id: id, thread_id: THREAD });
+      expect(JSON.stringify(evs[0])).not.toContain('upload endpoint');
+    }
+    expect(platform.events('operator.kiro.run_finished').find((e) => e.metadata?.run_id === id)!.metadata.status).toBe('completed');
+  });
+
+  it('a dropped stream reattaches with after_seq (nothing lost, nothing twice); a second listener sees the same events; a finished run replays from the store', async () => {
+    const g1 = deferred();
+    const g2 = deferred();
+    kiro.handlers.push(async (k) => { k.chunk('step one '); await g1.promise; k.tool('t1', 'Search code', 'search'); await g2.promise; k.chunk('step two'); k.toolDone('t1'); return 'end_turn'; });
+    const id = (await startRun('two steps')).body.run_id as string;
+    const second = openStream(id, admin);
+    const first = openStream(id, admin);
+    await waitFor(() => first.frames.some((f) => f.event === 'kiro.message_chunk'), 'first text on stream 1');
+    first.close();
+    await first.ended;
+    const lastSeen = Math.max(...seqs(first.frames));
+    g1.resolve();
+    // Events happen while nobody of stream 1 listens.
+    await waitFor(() => second.frames.some((f) => f.event === 'kiro.tool_call'), 'tool call on stream 2');
+    const again = openStream(id, admin, lastSeen);
+    await waitFor(() => again.frames.some((f) => f.event === 'kiro.tool_call'), 'replayed tool call');
+    g2.resolve();
+    await Promise.all([again.ended, second.ended]);
+    const all = seqs(second.frames);
+    expect(all).toEqual(all.map((_, i) => i + 1));
+    expect([...seqs(first.frames), ...seqs(again.frames)]).toEqual(all);
+    expect(seqs(again.frames)[0]).toBe(lastSeen + 1);
+    expect([...first.frames, ...again.frames].map((f) => [f.id, f.event])).toEqual(second.frames.map((f) => [f.id, f.event]));
+    await waitFor(() => isDone(id), 'run finished');
+    await platform.settle();
+    // After the run: a fresh listener replays it from kiro_run_events alone.
+    const replay = openStream(id, admin, 0);
+    await replay.ended;
+    expect(replay.frames.map((f) => [f.id, f.event, JSON.stringify(f.data)])).toEqual(second.frames.map((f) => [f.id, f.event, JSON.stringify(f.data)]));
+    // Last-Event-ID style resume from the middle.
+    const tail = openStream(id, admin, all[all.length - 2]);
+    await tail.ended;
+    expect(seqs(tail.frames)).toEqual([all[all.length - 1]]);
+  });
+
+  it('an approval card is persisted on the run, shown to two listeners, and answered from the second through the existing route', async () => {
+    kiro.handlers.push(async (k) => { const r = await k.ask('Edit services/gateway/src/a.ts', 'edit'); k.chunk(r.outcome.outcome === 'selected' ? 'edited' : 'not edited'); return 'end_turn'; });
+    const id = (await startRun('edit a file')).body.run_id as string;
+    const a = openStream(id, admin);
+    const b = openStream(id, admin);
+    await waitFor(() => a.frames.some((f) => f.event === 'kiro.permission_request') && b.frames.some((f) => f.event === 'kiro.permission_request'), 'card on both');
+    const card = b.frames.find((f) => f.event === 'kiro.permission_request')!.data;
+    await waitFor(() => run(id).status === 'waiting_permission', 'waiting_permission persisted');
+    expect(run(id).pending_permission).toMatchObject({ request_id: card.request_id, title: 'Edit services/gateway/src/a.ts', kind: 'edit' });
+    // Another admin cannot answer it.
+    const denied = await request(app).post(`/api/v1/operator/kiro/permissions/${card.request_id}`).set('Authorization', `Bearer ${other}`).send({ allow: true });
+    expect(denied.status).toBe(403);
+    const ans = await request(app).post(`/api/v1/operator/kiro/permissions/${card.request_id}`).set('Authorization', `Bearer ${admin}`).send({ allow: true });
+    expect(ans.status).toBe(200);
+    await Promise.all([a.ended, b.ended]);
+    for (const s of [a, b]) {
+      expect(s.frames.find((f) => f.event === 'kiro.permission_answer')!.data).toMatchObject({ request_id: card.request_id, allow: true, by: 'user' });
+      expect(s.frames.filter((f) => f.event === 'run.status').map((f) => f.data.status)).toEqual(['running', 'waiting_permission', 'running', 'completed']);
+    }
+    expect(kiro.permissionReplies[0]).toEqual({ outcome: { outcome: 'selected', optionId: 'allow' } });
+    await waitFor(() => isDone(id), 'run finished');
+    await platform.settle();
+    expect(run(id)).toMatchObject({ status: 'completed', reply: 'edited', pending_permission: null });
+    expect(platform.events('operator.kiro.permission_answered')).toHaveLength(1);
+  });
+
+  it('an answer written from another gateway task reaches Kiro through the owning task\'s control tick', async () => {
+    kiro.handlers.push(async (k) => { const r = await k.ask('Run shell command', 'execute'); k.chunk(r.outcome.outcome === 'selected' ? 'ran' : 'skipped'); return 'end_turn'; });
+    const id = (await startRun('run it')).body.run_id as string;
+    await waitFor(() => run(id).status === 'waiting_permission', 'waiting_permission');
+    const reqId = run(id).pending_permission.request_id as string;
+    expect(await answerPersistedPermission(reqId, OTHER_ADMIN, false)).toEqual({ ok: false, error: 'forbidden' });
+    expect(await answerPersistedPermission(reqId, ADMIN_USER, false)).toEqual({ ok: true });
+    expect(run(id).pending_permission.answer).toMatchObject({ allow: false });
+    expect(kiro.permissionReplies).toHaveLength(0);
+    await kiroRunsControlTick();
+    await waitFor(() => isDone(id), 'run finished');
+    await platform.settle();
+    expect(kiro.permissionReplies[0]).toEqual({ outcome: { outcome: 'cancelled' } });
+    expect(run(id)).toMatchObject({ status: 'completed', reply: 'skipped', pending_permission: null });
+  });
+
+  it('the existing permission route answers a card waiting in a run on another gateway task (written onto the run record)', async () => {
+    platform.insert('kiro_runs', { id: 'b5065000-0000-4000-8000-0000000000d1', thread_id: THREAD, user_id: ADMIN_USER, status: 'waiting_permission', message: 'm', gateway_task: 'other-task', last_heartbeat_at: new Date().toISOString(), pending_permission: { request_id: 'q-remote', title: 'Edit a.ts', kind: 'edit' } });
+    const foreign = await request(app).post('/api/v1/operator/kiro/permissions/q-remote').set('Authorization', `Bearer ${other}`).send({ allow: true });
+    expect(foreign.status).toBe(403);
+    const res = await request(app).post('/api/v1/operator/kiro/permissions/q-remote').set('Authorization', `Bearer ${admin}`).send({ allow: true });
+    expect(res.status).toBe(200);
+    expect(run('b5065000-0000-4000-8000-0000000000d1').pending_permission).toMatchObject({ request_id: 'q-remote', answer: { allow: true } });
+    expect((await request(app).post('/api/v1/operator/kiro/permissions/q-unknown').set('Authorization', `Bearer ${admin}`).send({ allow: true })).status).toBe(404);
+  });
+
+  it('a cancel written from another gateway task stops the run through the owning task\'s control tick', async () => {
+    kiro.handlers.push(async (k) => { k.chunk('busy'); await k.cancelled; return 'cancelled'; });
+    const id = (await startRun('stop me elsewhere')).body.run_id as string;
+    await waitFor(() => kiro.prompts.length === 1, 'prompt sent');
+    run(id).cancel_requested_at = new Date().toISOString();
+    expect(kiro.cancels).toBe(0);
+    await kiroRunsControlTick();
+    await waitFor(() => isDone(id), 'cancelled');
+    await platform.settle();
+    expect(kiro.cancels).toBe(1);
+    expect(run(id).status).toBe('cancelled');
+  });
+
+  it('the heartbeat is ONE update over this task\'s unfinished runs; other tasks\' rows are untouched', async () => {
+    const gate = deferred();
+    kiro.handlers.push(async (k) => { k.chunk('x'); await gate.promise; return 'end_turn'; });
+    const id = (await startRun('beat')).body.run_id as string;
+    const old = new Date(Date.now() - 10 * 60_000).toISOString();
+    platform.insert('kiro_runs', { id: 'b5065000-0000-4000-8000-0000000000e1', thread_id: 'a5065000-0000-4000-8000-0000000000e0', user_id: ADMIN_USER, status: 'running', message: 'm', gateway_task: 'other-task', last_heartbeat_at: old });
+    run(id).last_heartbeat_at = old;
+    const before = platform.restCalls.filter((c) => c.method === 'PATCH' && c.table === 'kiro_runs').length;
+    expect(await kiroRunsHeartbeatTick()).toBe(true);
+    expect(platform.restCalls.filter((c) => c.method === 'PATCH' && c.table === 'kiro_runs').length).toBe(before + 1);
+    expect(Date.parse(run(id).last_heartbeat_at)).toBeGreaterThan(Date.now() - 5_000);
+    expect(run('b5065000-0000-4000-8000-0000000000e1').last_heartbeat_at).toBe(old);
+    // This task's own run is never swept, even with an old heartbeat.
+    run(id).last_heartbeat_at = old;
+    expect(await sweepStaleKiroRuns()).toBe(1);
+    expect(run(id).status).toBe('running');
+    gate.resolve();
+    await waitFor(() => isDone(id), 'finished');
+    await platform.settle();
+  });
+
+  it('Kiro\'s own MCP read tool (recorded title, kind other) runs without a card; a write tool still asks', async () => {
+    kiro.handlers.push(async (k) => {
+      const r = await k.ask('Running: @vitana/dev_read_file', 'other');
+      k.chunk(`read:${r.outcome.optionId ?? 'none'}`);
+      return 'end_turn';
+    });
+    const id = (await startRun('read a file')).body.run_id as string;
+    const s = openStream(id, admin);
+    await s.ended;
+    expect(s.frames.some((f) => f.event === 'kiro.permission_request')).toBe(false);
+    expect(s.frames.filter((f) => f.event === 'run.status').map((f) => f.data.status)).toEqual(['running', 'completed']);
+    expect(kiro.permissionReplies[0]).toEqual({ outcome: { outcome: 'selected', optionId: 'allow' } });
+    await waitFor(() => isDone(id), 'run finished');
+    await platform.settle();
+    expect(run(id).reply).toBe('read:allow');
+
+    kiro.handlers.push(async (k) => { await k.ask('Running: @vitana/dev_create_pr', 'other'); return 'end_turn'; });
+    const id2 = (await startRun('open a PR')).body.run_id as string;
+    await waitFor(() => run(id2).status === 'waiting_permission', 'write tool asks');
+    expect(run(id2).pending_permission.title).toBe('Running: @vitana/dev_create_pr');
+    await request(app).post(`/api/v1/operator/kiro/permissions/${run(id2).pending_permission.request_id}`).set('Authorization', `Bearer ${admin}`).send({ allow: false });
+    await waitFor(() => isDone(id2), 'second run finished');
+    await platform.settle();
+  });
+
+  it('a run sent while one runs is queued, starts by itself when the first ends; a third queued run is refused (queue_full)', async () => {
+    const gate = deferred();
+    kiro.handlers.push(async (k) => { k.chunk('first'); await gate.promise; return 'end_turn'; });
+    kiro.handlers.push(async (k) => { k.chunk('second'); return 'end_turn'; });
+    kiro.handlers.push(async (k) => { k.chunk('third'); return 'end_turn'; });
+    const r1 = await startRun('one');
+    const r2 = await startRun('two');
+    const r3 = await startRun('three');
+    const r4 = await startRun('four');
+    expect([r1.body.status, r2.body.status, r3.body.status]).toEqual(['running', 'queued', 'queued']);
+    expect(r4.status).toBe(409);
+    expect(r4.body).toEqual({ ok: false, error: 'queue_full' });
+    expect(platform.rows('kiro_runs')).toHaveLength(3);
+    expect(run(r2.body.run_id).started_at ?? null).toBeNull();
+    const list = await request(app).get(`/api/v1/operator/kiro/runs?thread_id=${THREAD}`).set('Authorization', `Bearer ${admin}`);
+    expect(list.body.runs.map((r: any) => r.status)).toEqual(['queued', 'queued', 'running']);
+    gate.resolve();
+    await waitFor(() => isDone(r3.body.run_id), 'third run finished');
+    await platform.settle();
+    expect(kiro.prompts.map((p) => p[p.length - 1].text)).toEqual(['one', 'two', 'three']);
+    expect([r1, r2, r3].map((r) => run(r.body.run_id).status)).toEqual(['completed', 'completed', 'completed']);
+    expect([r1, r2, r3].map((r) => run(r.body.run_id).reply)).toEqual(['first', 'second', 'third']);
+    expect(platform.events('operator.kiro.run_started')).toHaveLength(3);
+  });
+
+  it('cancel: a queued run is cancelled at once; a running run ends cancelled through Kiro\'s own cancel; only the owner may cancel', async () => {
+    kiro.handlers.push(async (k) => { k.chunk('working'); await k.cancelled; return 'cancelled'; });
+    const r1 = await startRun('long job');
+    const r2 = await startRun('next job');
+    expect(r2.body.status).toBe('queued');
+    const foreign = await request(app).post(`/api/v1/operator/kiro/runs/${r2.body.run_id}/cancel`).set('Authorization', `Bearer ${other}`);
+    expect(foreign.status).toBe(403);
+    const c2 = await request(app).post(`/api/v1/operator/kiro/runs/${r2.body.run_id}/cancel`).set('Authorization', `Bearer ${admin}`);
+    expect(c2.body).toEqual({ ok: true, status: 'cancelled' });
+    expect(run(r2.body.run_id).status).toBe('cancelled');
+    const s = openStream(r1.body.run_id, admin);
+    await waitFor(() => s.frames.some((f) => f.event === 'kiro.message_chunk'), 'running');
+    const c1 = await request(app).post(`/api/v1/operator/kiro/runs/${r1.body.run_id}/cancel`).set('Authorization', `Bearer ${admin}`);
+    expect(c1.body).toEqual({ ok: true, status: 'cancelling' });
+    await s.ended;
+    expect(kiro.cancels).toBe(1);
+    expect(s.frames[s.frames.length - 1]).toMatchObject({ event: 'run.status', data: { status: 'cancelled', stop_reason: 'cancelled' } });
+    await waitFor(() => isDone(r1.body.run_id), 'run row cancelled');
+    await platform.settle();
+    expect(run(r1.body.run_id).status).toBe('cancelled');
+    // The cancelled queued run never reached Kiro.
+    expect(kiro.prompts).toHaveLength(1);
+    const late = await request(app).post(`/api/v1/operator/kiro/runs/${r1.body.run_id}/cancel`).set('Authorization', `Bearer ${admin}`);
+    expect(late.status).toBe(409);
+    expect(platform.events('operator.kiro.run_finished').map((e) => e.metadata.status).sort()).toEqual(['cancelled', 'cancelled']);
+  });
+
+  it('graceful shutdown marks this task\'s running run interrupted at once (one OASIS event), the stream ends, and a late turn end changes nothing', async () => {
+    kiro.handlers.push(async (k) => { k.chunk('halfway'); await new Promise(() => undefined); return 'end_turn'; });
+    const id = (await startRun('a long task')).body.run_id as string;
+    const s = openStream(id, admin);
+    await waitFor(() => s.frames.some((f) => f.event === 'kiro.message_chunk'), 'running');
+    const r = await drainKiroRunsForShutdown(3_000);
+    expect(r).toEqual({ interrupted: 1, timedOut: false });
+    await s.ended;
+    expect(s.frames[s.frames.length - 1]).toMatchObject({ event: 'run.status', data: { status: 'interrupted' } });
+    expect(run(id)).toMatchObject({ status: 'interrupted', error: 'gateway_shutdown' });
+    // The halfway text was written before the task went away.
+    expect(runEvents(id).some((e) => e.type === 'kiro.message_chunk' && e.payload.text === 'halfway')).toBe(true);
+    // The process ends: the session dies, the executor finishes late — the run stays interrupted.
+    closeAllKiroSessions();
+    await platform.settle();
+    expect(run(id).status).toBe('interrupted');
+    expect(platform.events('operator.kiro.run_interrupted').filter((e) => e.metadata?.run_id === id)).toHaveLength(1);
+  });
+
+  it('a run whose row another task already ended (its sweep) is never overwritten by the late finish here', async () => {
+    const gate = deferred();
+    kiro.handlers.push(async (k) => { k.chunk('late'); await gate.promise; return 'end_turn'; });
+    const id = (await startRun('slow')).body.run_id as string;
+    await waitFor(() => kiro.prompts.length === 1, 'prompt sent');
+    Object.assign(run(id), { status: 'interrupted', error: 'gateway_task_lost' });
+    gate.resolve();
+    await waitFor(() => platform.events('operator.kiro.run_finished').length === 1, 'local finish');
+    await platform.settle();
+    expect(run(id)).toMatchObject({ status: 'interrupted', error: 'gateway_task_lost' });
+    expect(run(id).reply ?? null).toBeNull();
+  });
+
+  it('the sweep marks another task\'s stale run interrupted exactly once (guarded update, one OASIS event); fresh and finished runs are untouched', async () => {
+    const old = new Date(Date.now() - 5 * 60_000).toISOString();
+    platform.insert('kiro_runs', { id: 'b5065000-0000-4000-8000-00000000000a', thread_id: THREAD, user_id: ADMIN_USER, status: 'running', message: 'x', gateway_task: 'dead-task', last_heartbeat_at: old });
+    platform.insert('kiro_runs', { id: 'b5065000-0000-4000-8000-00000000000b', thread_id: THREAD, user_id: ADMIN_USER, status: 'waiting_permission', message: 'y', gateway_task: 'live-task', last_heartbeat_at: new Date().toISOString() });
+    platform.insert('kiro_runs', { id: 'b5065000-0000-4000-8000-00000000000c', thread_id: THREAD, user_id: ADMIN_USER, status: 'completed', message: 'z', gateway_task: 'dead-task', last_heartbeat_at: old });
+    expect(await sweepStaleKiroRuns()).toBe(1);
+    expect(await sweepStaleKiroRuns()).toBe(0);
+    expect(run('b5065000-0000-4000-8000-00000000000a')).toMatchObject({ status: 'interrupted', error: 'gateway_task_lost' });
+    expect(run('b5065000-0000-4000-8000-00000000000b').status).toBe('waiting_permission');
+    expect(run('b5065000-0000-4000-8000-00000000000c').status).toBe('completed');
+    const evs = platform.events('operator.kiro.run_interrupted');
+    expect(evs).toHaveLength(1);
+    expect(evs[0].metadata).toMatchObject({ run_id: 'b5065000-0000-4000-8000-00000000000a', thread_id: THREAD, status: 'interrupted' });
+    // A listener of the swept run is told how it ended.
+    const s = openStream('b5065000-0000-4000-8000-00000000000a', admin);
+    await s.ended;
+    expect(s.frames[s.frames.length - 1]).toMatchObject({ event: 'run.status', data: { status: 'interrupted' } });
+  });
+
+  it('continue after interrupted: a new run on the same thread opens a new session with the thread\'s history', async () => {
+    platform.insert('operator_threads', { id: THREAD, user_id: ADMIN_USER, engine: 'kiro', title: 'Upload', created_at: new Date(Date.now() - 3600_000).toISOString() });
+    platform.insert('operator_messages', { id: 'h1', thread_id: THREAD, role: 'user', content: 'Enable paste of images.', created_at: new Date(Date.now() - 3600_000).toISOString() });
+    platform.insert('operator_messages', { id: 'h2', thread_id: THREAD, role: 'assistant', content: 'The upload endpoint needs a size limit.', created_at: new Date(Date.now() - 3599_000).toISOString() });
+    kiro.handlers.push(async (k) => { k.chunk('started'); await new Promise(() => undefined); return 'end_turn'; });
+    const first = (await startRun('go on')).body.run_id as string;
+    await waitFor(() => runEvents(first).length > 0 || run(first).status === 'running', 'running');
+    await waitFor(() => kiro.prompts.length === 1, 'first prompt');
+    await drainKiroRunsForShutdown(3_000);
+    closeAllKiroSessions(); // the new gateway task has no Kiro session
+    await platform.settle();
+    expect(run(first).status).toBe('interrupted');
+    kiro.handlers.push(async (k) => { k.chunk('continuing'); return 'end_turn'; });
+    const res = await startRun('continue');
+    expect(res.body.status).toBe('running');
+    await waitFor(() => isDone(res.body.run_id), 'continued run finished');
+    await platform.settle();
+    const [ctx, msg] = kiro.prompts[1];
+    expect(ctx.text).toContain('=== RESTORED THREAD HISTORY');
+    expect(ctx.text).toContain('You (Kiro): The upload endpoint needs a size limit.');
+    expect(msg).toEqual({ type: 'text', text: 'continue' });
+    expect(run(res.body.run_id)).toMatchObject({ status: 'completed', reply: 'continuing' });
+  });
+
+  it('owner checks: unauthenticated 401 JSON, a non-admin 403, another admin cannot read, stream, list or use the thread; bad ids 400', async () => {
+    kiro.handlers.push(async (k) => { k.chunk('mine'); return 'end_turn'; });
+    const id = (await startRun('private')).body.run_id as string;
+    await waitFor(() => isDone(id), 'finished');
+    await platform.settle();
+    const anon = await request(app).get('/api/v1/operator/kiro/runs');
+    expect(anon.status).toBe(401);
+    expect(anon.headers['content-type']).toContain('application/json');
+    const member = await request(app).get(`/api/v1/operator/kiro/runs/${id}`).set('Authorization', `Bearer ${await jwt(MEMBER_USER, false)}`);
+    expect(member.status).toBe(403);
+    expect((await request(app).get(`/api/v1/operator/kiro/runs/${id}`).set('Authorization', `Bearer ${other}`)).status).toBe(403);
+    const mine = await request(app).get(`/api/v1/operator/kiro/runs/${id}`).set('Authorization', `Bearer ${admin}`);
+    expect(mine.body.run).toMatchObject({ id, status: 'completed', reply: 'mine' });
+    const foreignStream = openStream(id, other);
+    await foreignStream.ended;
+    expect(foreignStream.status).toBe(403);
+    expect(foreignStream.frames).toHaveLength(0);
+    const otherList = await request(app).get(`/api/v1/operator/kiro/runs?thread_id=${THREAD}`).set('Authorization', `Bearer ${other}`);
+    expect(otherList.body.runs).toEqual([]);
+    const hijack = await startRun('let me in', other);
+    expect(hijack.status).toBe(403);
+    expect((await request(app).get('/api/v1/operator/kiro/runs/not-a-uuid').set('Authorization', `Bearer ${admin}`)).status).toBe(400);
+    expect((await request(app).get('/api/v1/operator/kiro/runs?thread_id=x').set('Authorization', `Bearer ${admin}`)).status).toBe(400);
+    expect((await startRun('', admin)).status).toBe(400);
+    expect((await request(app).get(`/api/v1/operator/kiro/runs/b5065000-0000-4000-8000-0000000000ff`).set('Authorization', `Bearer ${admin}`)).status).toBe(404);
+    // An LLM thread is not a Kiro run's thread.
+    platform.insert('operator_threads', { id: 'a5065000-0000-4000-8000-0000000000aa', user_id: ADMIN_USER, engine: 'llm', title: 'LLM' });
+    expect((await startRun('x', admin, 'a5065000-0000-4000-8000-0000000000aa')).status).toBe(409);
+  });
+
+  it('the old /chat/stream path runs through a run and still sends only the frames it always sent', async () => {
+    kiro.handlers.push(async (k) => { k.chunk('old '); k.tool('t1', 'Read a file', 'read'); k.toolDone('t1'); k.chunk('path'); return 'end_turn'; });
+    const res = await request(app).post('/api/v1/operator/chat/stream')
+      .set('Authorization', `Bearer ${admin}`)
+      .send({ message: 'hello', mode: 'chat', threadId: THREAD, engine: 'kiro' });
+    await platform.settle();
+    const events = [...res.text.matchAll(/^event: (.+)$/gm)].map((m) => m[1]);
+    expect(events[0]).toBe('turn.started');
+    expect(events.slice(-2)).toEqual(['reply', 'done']);
+    expect(new Set(events)).toEqual(new Set(['turn.started', 'kiro.message_chunk', 'kiro.tool_call', 'kiro.tool_update', 'kiro.turn_end', 'reply', 'done']));
+    expect(res.text).not.toMatch(/"seq":/);
+    const reply = JSON.parse(/event: reply\ndata: (.+)\n/.exec(res.text)![1]);
+    expect(reply).toMatchObject({ ok: true, reply: 'old path', threadId: THREAD, meta: { engine: 'kiro', kiro_status: 'ok' } });
+    // …and the turn has a run record.
+    expect(platform.rows('kiro_runs')).toHaveLength(1);
+    expect(platform.rows('kiro_runs')[0]).toMatchObject({ thread_id: THREAD, status: 'completed', reply: 'old path' });
+  });
+});

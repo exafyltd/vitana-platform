@@ -46,7 +46,8 @@ import { getKiroCredits, kiroDefaultEngine } from '../services/kiro/credit-state
 
 // VTID-04999: run Kiro on the private kiro-runner when the engine and the runner are configured.
 registerKiroBackendFromEnv();
-import type { KiroTurnEventSink } from '../services/kiro/kiro-events';
+import type { KiroTurnEvent, KiroTurnEventSink } from '../services/kiro/kiro-events';
+import { startKiroRun, setKiroRunExecutor, answerPersistedPermission, LEGACY_KIRO_FRAME_TYPES, type KiroRunExecutorInput } from '../services/kiro/kiro-runs';
 import { extractAndRecordTurnMemory, isTurnMemoryEnabled } from '../services/operator-turn-memory';
 import { writeDevMemory } from '../services/dev-agent-memory';
 // VTID-03851: verified-caller marker for autopilot_execute_task (set or
@@ -278,6 +279,12 @@ export async function latestKiroModelPick(threadId: string, userId: string | nul
  * LLM path; the thread is recorded with engine 'kiro' (no rolling summary — the
  * conversation lives in the Kiro session) and the reply is logged to OASIS.
  * The user's message was already logged by the caller.
+ *
+ * VTID-05065: the turn now runs as a server-side RUN (services/kiro/kiro-runs.ts):
+ * this starts one (or queues it behind the thread's current run) and waits for it,
+ * forwarding the run's events as the same frames the console has always received.
+ * The reply body is the one executeKiroChatTurn returns, unchanged. A client that
+ * disconnects stops the frames, not the run.
  */
 async function runKiroChatTurn(a: {
   requestId: string; threadId: string; createdAt: string; message: string;
@@ -286,6 +293,24 @@ async function runKiroChatTurn(a: {
   isAdmin: boolean; channel?: string; emit?: KiroTurnEventSink;
 }): Promise<OperatorChatTurnOutcome> {
   if (!a.isAdmin) return { status: 403, body: { ok: false, error: 'kiro_requires_admin' } };
+  const emit = a.emit;
+  const started = await startKiroRun({
+    threadId: a.threadId,
+    userId: a.userId,
+    message: a.message,
+    turn: { requestId: a.requestId, createdAt: a.createdAt, attachments: a.attachments, mode: a.mode, conversation_id: a.conversation_id, validatedVtid: a.validatedVtid, channel: a.channel },
+    // Only the frame types the console has always received; run.status and answers are run-route only.
+    listener: emit ? (ev) => { if (LEGACY_KIRO_FRAME_TYPES.has(ev.type)) emit({ type: ev.type, ...ev.payload } as KiroTurnEvent); } : undefined,
+  });
+  if (!started.ok) return { status: started.error === 'queue_full' ? 409 : 503, body: { ok: false, error: started.error } };
+  return started.done;
+}
+
+/**
+ * VTID-05065: the Kiro chat turn itself (formerly the body of runKiroChatTurn), run by
+ * kiro-runs.ts for every run — the old /chat path and the run routes share it.
+ */
+async function executeKiroChatTurn(a: KiroRunExecutorInput): Promise<OperatorChatTurnOutcome> {
   // VTID-05018: if Kiro has to open a new session for this thread, it gets the thread's earlier
   // turns (this user's thread only; the current message is recorded after the turn).
   const loadHistory = async (): Promise<KiroHistoryMessage[]> => {
@@ -379,6 +404,9 @@ async function runKiroChatTurn(a: {
     },
   };
 }
+
+// VTID-05065: every Kiro run executes the one chat-turn implementation above.
+setKiroRunExecutor(executeKiroChatTurn);
 
 export async function runOperatorChatTurn(
   req: Request,
@@ -867,7 +895,9 @@ router.get('/kiro/status', requireAdminAuth, async (req: AuthenticatedRequest, r
 router.post('/kiro/permissions/:requestId', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
   const parsed = z.object({ allow: z.boolean() }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, error: 'INVALID_BODY' });
-  const r = answerPermission(req.params.requestId, req.identity?.user_id ?? null, parsed.data.allow);
+  let r: { ok: true } | { ok: false; error: 'not_found' | 'forbidden' } = answerPermission(req.params.requestId, req.identity?.user_id ?? null, parsed.data.allow);
+  // VTID-05065: the card may wait in a run on another gateway task — answer it on the run record.
+  if (!r.ok && r.error === 'not_found') r = await answerPersistedPermission(req.params.requestId, req.identity?.user_id ?? null, parsed.data.allow);
   if (!r.ok) return res.status(r.error === 'forbidden' ? 403 : 404).json({ ok: false, error: r.error });
   // Every approval decision is a governed state transition: no key, no prompt, no tool arguments.
   await emitOasisEvent({

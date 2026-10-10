@@ -1,0 +1,36 @@
+{
+  "vtid": "VTID-05065",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "the Kiro run list route exists and is admin-only",
+      "path": "/api/v1/operator/kiro/runs?thread_id=00000000-0000-4000-8000-000000000000",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "route mounted at /api/v1/operator/kiro/runs behind requireAdminAuth; read-only GET without a token"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "the Kiro run stream route exists and is admin-only",
+      "path": "/api/v1/operator/kiro/runs/00000000-0000-4000-8000-000000000000/stream?after_seq=0",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "the SSE replay route refuses an unauthenticated caller before any lookup; read-only"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04465-operator-pipeline-regression.test.ts -t VTID-05065",
+      "cwd": "services/gateway",
+      "reason": "the real run routes, run service and chat-turn executor over the fake database: start and stream to the end, drop and reattach with after_seq, second listener, approval card answered from a second listener and from another task, read tool without a card, queue and queue_full, cancel running and queued, shutdown and sweep mark interrupted once, continue restores history, owner checks, old /chat/stream frames unchanged"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05065-kiro-runs.test.ts test/vtid-04975-kiro-engine.test.ts test/vtid-05018-kiro-thread-memory.test.ts",
+      "cwd": "services/gateway",
+      "reason": "event coalescing, seq order, batched inserts and their flush triggers, status mapping, owner checks at the service, the recorded read-tool title pin, wiring and migration checks; the Kiro turn runner and thread memory unchanged"
+    }
+  ]
+}

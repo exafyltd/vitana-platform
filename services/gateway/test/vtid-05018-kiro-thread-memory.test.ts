@@ -136,9 +136,12 @@ describe('runKiroTurn restores history only when it opens a new session', () => 
 });
 
 describe('route wiring (source check)', () => {
-  it('runKiroChatTurn passes the caller\'s own thread, user/assistant rows only, limit 60', () => {
+  // VTID-05065: the turn body moved from runKiroChatTurn (now: start a run and wait) to
+  // executeKiroChatTurn, which every Kiro run executes.
+  it('executeKiroChatTurn passes the caller\'s own thread, user/assistant rows only, limit 60', () => {
     const src = fs.readFileSync(path.join(__dirname, '../src/routes/operator.ts'), 'utf8');
-    const fn = src.slice(src.indexOf('async function runKiroChatTurn'), src.indexOf('async function runKiroChatTurn') + 2_500);
+    const fn = src.slice(src.indexOf('async function executeKiroChatTurn'), src.indexOf('async function executeKiroChatTurn') + 2_500);
+    expect(src.indexOf('async function executeKiroChatTurn')).toBeGreaterThan(-1);
     expect(fn).toMatch(/listOperatorThreadMessages\(a\.threadId, \{ userId: a\.userId, limit: 60 \}\)/);
     expect(fn).toMatch(/m\.role === 'user' \|\| m\.role === 'assistant'/);
     // VTID-05060 added loadModelPick after loadHistory; loadHistory must still be passed.

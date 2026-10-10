@@ -3715,3 +3715,44 @@ Migration: `supabase/migrations/20261010150000_vtid_04917_audiobook_source_type.
 | `calendar_invite_responses` (existing, vitana-v1) | Answers to v2 invites are written by the gateway (`POST /api/v1/calendar/invites/:messageId/respond`), one row per member per message (`on_conflict message_id,user_id`). |
 | `global_event_participants` (existing) | "I'm in" on a free community event inserts the same `attending` row the app writes; the calendar entry comes from `trg_event_participation_calendar`. A paid or full event is never joined from a chat card. |
 | `calendar_events` (data) | "I'm in" on an invite to a member's own plan writes a copy: `source_type 'invite'`, `source_ref_type 'calendar_invite'`, `source_ref_id` = the message id; "No" cancels it. |
+
+---
+
+## Kiro runs — `kiro_runs`, `kiro_run_events` (VTID-05065, 2026-10-10) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261010210000_vtid_05065_kiro_runs.sql`. Service role only (RLS on, no policies; `anon`/`authenticated` revoked). Written by the gateway (`services/gateway/src/services/kiro/kiro-runs.ts`), read through `/api/v1/operator/kiro/runs` (exafy_admin, the run's own user only).
+
+`kiro_runs` — one row per Kiro turn in the Command Hub Operator:
+
+| Column | Meaning |
+|---|---|
+| `id` | uuid PK (minted by the gateway) |
+| `thread_id` | the Operator Kiro thread (`operator_threads.id`, text) |
+| `user_id` | the signed-in admin who started the run (text; only they can read, stream or cancel it) |
+| `status` | `queued` \| `running` \| `waiting_permission` → `completed` \| `refused` \| `incomplete` \| `failed` \| `cancelled` \| `interrupted`. Every status write is guarded by the unfinished statuses, so a finished run never changes again. |
+| `message` | the developer's message |
+| `reply` | Kiro's reply (when finished) |
+| `stop_reason` | Kiro's stop reason (`end_turn`, `refusal`, `max_tokens`, `cancelled`, …) |
+| `kiro_model` | the model the turn ran on |
+| `workspace` | `{ kiro_workspace, kiro_workspace_dirty }` from the turn (VTID-05064), or null |
+| `error` | why a run failed (`busy`, `not_connected`, `no_credits`, `error: …`, `gateway_shutdown`, `gateway_task_lost`) |
+| `pending_permission` | the open approval card `{ request_id, tool_call_id, title, kind, expires_at }` (null when none); an answer from another gateway task is written into it as `answer: { allow, at }` |
+| `cancel_requested_at` | set when the owner cancels a run that another gateway task is running |
+| `gateway_task` | the gateway process (random id at boot) that runs the turn |
+| `created_at` | queue order |
+| `started_at`, `ended_at`, `last_heartbeat_at` | timestamps; the owning task refreshes `last_heartbeat_at` every 30 s, and any task's sweep marks another task's unfinished run with a heartbeat older than 2 min `interrupted` |
+
+Indexes `idx_kiro_runs_thread_created (thread_id, created_at DESC)`, `idx_kiro_runs_status_heartbeat (status, last_heartbeat_at)`.
+
+`kiro_run_events` — the run's events in order:
+
+| Column | Meaning |
+|---|---|
+| `id` | bigserial PK |
+| `run_id` | `kiro_runs.id` (cascade delete) |
+| `seq` | 1, 2, 3 … per run, assigned by the owning gateway task; `UNIQUE (run_id, seq)` |
+| `type` | `kiro.message_chunk` (coalesced: one per 500 ms or 2 KB), `kiro.tool_call`, `kiro.tool_update`, `kiro.permission_request`, `kiro.permission_answer`, `kiro.turn_end`, `run.status` |
+| `payload` | the event's fields (the frame data the console receives) |
+| `created_at` | timestamp |
+
+OASIS (`CicdEventType`): `operator.kiro.run_started`, `operator.kiro.run_finished`, `operator.kiro.run_interrupted` — payload `{ run_id, thread_id, status }` only, never message text.

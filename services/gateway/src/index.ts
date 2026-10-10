@@ -850,6 +850,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-05005: the Operator's read tools for Kiro sessions (MCP). Before the operator
   // router so its own auth (the session pass) applies, not the console's.
   mountRouterSync(app, '/api/v1/operator/kiro/mcp', require('./routes/operator-kiro-mcp').default, { owner: 'operator-kiro-mcp' });
+  // VTID-05065: Kiro runs — one server-side record per Kiro turn, replayable stream.
+  mountRouterSync(app, '/api/v1/operator/kiro/runs', require('./routes/operator-kiro-runs').default, { owner: 'operator-kiro-runs' });
   mountRouterSync(app, '/api/v1/operator', operatorRouter, { owner: 'operator' });
 
   // VTID-0526-D: Telemetry routes with stage counters
@@ -1692,10 +1694,25 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
               const r = await emitShutdownStopsForLiveSessions('server_shutdown', 4_500);
               console.log(`[VTID-04835] live-session drain: emitted=${r.emitted} skipped=${r.skipped} timedOut=${r.timedOut}`);
             },
+            // VTID-05065: write every open Kiro run's events and mark this task's runs
+            // interrupted (own 3 s bound, inside the shared 5 s drain).
+            async () => {
+              const { drainKiroRunsForShutdown } = require('./services/kiro/kiro-runs');
+              const r = await drainKiroRunsForShutdown(3_000);
+              console.log(`[VTID-05065] kiro-run drain: interrupted=${r.interrupted} timedOut=${r.timedOut}`);
+            },
           ],
         });
       } catch (error) {
         console.warn('⚠️ Graceful shutdown handler installation failed (non-fatal):', error);
+      }
+
+      // VTID-05065: Kiro run liveness — boot sweep, heartbeat 30 s, sweep 60 s, control 2 s (unref'd).
+      try {
+        const { startKiroRunTimers } = require('./services/kiro/kiro-runs');
+        startKiroRunTimers();
+      } catch (error) {
+        console.warn('⚠️ Kiro run timers failed to start (non-fatal):', error);
       }
 
       // VTID-01178: Initialize autopilot controller (ensure VTIDs exist in ledger)
