@@ -710,6 +710,11 @@ CREATE TABLE apple_account_credentials (
 - `contacts.source` / `contacts.external_id` + unique index `(user_id, source, external_id)` — imported contacts de-duplicate per source (`google`, `icloud`, `android`); hand-added contacts keep both NULL.
 - `calendar_external_busy.source` CHECK allows `'google','microsoft','apple'` — Outlook and iCloud busy times show as grey blocks too. Times only, never titles.
 
+**Phone matching (VTID-05057, `20261010160000_vtid_05057_contacts_phone_matching.sql`, applied at Gate 2):**
+- `contacts.contact_phone_e164 TEXT[] NOT NULL DEFAULT '{}'` (+ GIN index) — every number of an imported contact in E.164, normalised by the gateway importer (`libphonenumber-js`, region from the import request, default DE). Also kept in `metadata.phones_e164`.
+- `profiles.phone_e164 TEXT`, `profiles.phone_verified BOOLEAN NOT NULL DEFAULT false`, `profiles.discoverable_by_phone BOOLEAN NOT NULL DEFAULT true` — `phone_verified`/`phone_e164` are set only by trigger `on_auth_user_phone_verification` on `auth.users` (`phone` set AND `phone_confirmed_at` not null). A number typed into a profile never matches.
+- `match_existing_contacts()` (trigger `on_phone_verified`, now on `phone_e164`/`phone_verified`/`discoverable_by_phone`) and `check_phone_on_platform()` match only a verified, discoverable member and skip `service_bot_accounts` / `notification_test_actors`. Rollback: `docs/validation/VTID-05057/rollback.down.sql`.
+
 **Rules:** tokens stay in `social_connections` (Google, Microsoft) or here encrypted (Apple). Turning an app off deletes what it left in Vitanaland (busy rows; imported contacts only when the member ticks it); turning the provider's last app off releases the grant (Google refresh token revoked, Microsoft tokens dropped, Apple credentials deleted).
 
 ### calendar_push_targets / calendar_push_links — Outlook + iCloud calendar push — APPLIED 2026-09-24 (VTID-04436)
@@ -1534,6 +1539,7 @@ CREATE TABLE my_new_table (
 | 2026-09-23 | New tables `calendar_google_sync`, `calendar_google_links`, `calendar_external_busy` for Google Calendar two-way sync (switched off). No tokens stored — they stay in `social_connections`. RLS on, no policies, no browser grants. | Claude | VTID-04372 |
 | 2026-09-24 | New tables `calendar_push_targets`, `calendar_push_links`: Outlook and iCloud calendar push into a member-owned "Vitanaland" calendar. RLS on, no policies, no browser grants. | Claude | VTID-04436 |
 | 2026-09-24 | `connected_app_settings.app_id` CHECK gains `outlook-contacts` (Outlook contacts import; rows land in `contacts` with `source='microsoft'`). | Claude | VTID-04449 |
+| 2026-10-10 | `contacts.contact_phone_e164`; `profiles.phone_e164`, `phone_verified`, `discoverable_by_phone`; trigger `on_auth_user_phone_verification` on `auth.users`; `match_existing_contacts()` / `check_phone_on_platform()` match only verified, discoverable members (contacts phone matching). | Claude | VTID-05057 |
 | 2026-10-06 | Triggers on `global_community_events` → `calendar_events`: the host gets an entry on create, edits to time/place/title move every live entry for the event, delete cancels them; future hosts backfilled. No table/column change. | Claude | VTID-04915 |
 | 2026-05-12 | Added `cover_url`, `cover_generated_at`, `cover_source` to `user_intents` for the Find-a-Match cover-photo flow (user upload OR server-side OpenAI Images generation OR curated fallback). Idx on `(requester_user_id, cover_generated_at)` for per-user rate-limit. | Claude | BOOTSTRAP-INTENT-COVER-GEN |
 | 2026-05-20 | Added `decision_policy` + `policy_render_block` (Phase B.1 of decision-contract refactor). Versioned, tenant-aware, time-bounded externalized policy values + localized render fragments. Schema only — no consumer reads yet (lands in Phase B.4). | Claude | VTID-03113 |

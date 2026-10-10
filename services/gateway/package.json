@@ -61,6 +61,7 @@
     "ioredis": "^5.10.1",
     "jose": "^5.10.0",
     "js-yaml": "^4.1.0",
+    "libphonenumber-js": "1.11.18",
     "livekit-server-sdk": "^2.15.2",
     "marked": "^12.0.2",
     "node-fetch": "^3.3.2",

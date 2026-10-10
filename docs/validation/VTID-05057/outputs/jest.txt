@@ -1,0 +1,414 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [jev] JEV_COMPANY_DOC_RELEVANCE_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isCompanyDocRelevanceOn (src/services/jev/gates/company-doc-relevance-gate.ts:32:21)
+      at Object.<anonymous> (test/vtid-04821-company-doc-search.test.ts:175:37)
+
+  console.warn
+    [jev] company_doc_relevance failed: Cannot read properties of null (reading 'name')
+
+      106 |     );
+      107 |   } catch (err: any) {
+    > 108 |     console.warn(`[jev] ${COMPANY_DOC_RELEVANCE_GATE} failed: ${err?.message || err}`);
+          |             ^
+      109 |     return null;
+      110 |   }
+      111 | }
+
+      at runCompanyDocRelevance (src/services/jev/gates/company-doc-relevance-gate.ts:108:13)
+      at Object.<anonymous> (test/vtid-04821-company-doc-search.test.ts:195:40)
+
+PASS test/vtid-04821-company-doc-search.test.ts
+  VTID-04821 company accounts only
+    ✓ default domain is exafy.io; COMPANY_DOCS_DOMAINS overrides (8 ms)
+    ✓ d.stevanovic@exafy.io → true (1 ms)
+    ✓ J.Tadic@EXAFY.IO → true
+    ✓ someone@gmail.com → false (1 ms)
+    ✓ x@mail.exafy.io → false (1 ms)
+    ✓ x@exafy.io.evil.com → false
+    ✓ exafy.io → false
+    ✓ null → false (1 ms)
+    ✓ read-only files scopes; the granted list must cover them (1 ms)
+    ✓ search terms are escaped for Drive and Graph
+  VTID-04821 search
+    ✓ searches the Exafy Drive and OneDrive; names, kinds, dates and links only (3 ms)
+    ✓ a private account, a missing scope or no connection is never searched (1 ms)
+    ✓ one provider failing never hides the other (1 ms)
+    ✓ connect keeps the scopes the connection already has (2 ms)
+  VTID-04821 Jev relevance gate
+    ✓ company_doc_relevance: business data, internal plane, redacted, one choice question (2 ms)
+    ✓ input: numbered in provider order, short kinds, dates; never ids or links (1 ms)
+    ✓ off (default, typo), no tenant or no results: nothing asked or written (25 ms)
+    ✓ Jev picks d1 → agreed with provider rank 1: true (7 ms)
+    ✓ Jev picks d2 → agreed with provider rank 1: false (2 ms)
+    ✓ Jev picks none → agreed with provider rank 1: false (1 ms)
+    ✓ Jev down → fallback row; never throws (3 ms)
+  VTID-04821 wiring and pins
+    ✓ both tools are declared, dispatched, staff-only and in a router lane (9 ms)
+    ✓ never on the member Connected Apps screen (1 ms)
+    ✓ both gateways pin shadow, never enforce (4 ms)
+
+PASS test/vtid-04436-calendar-push.test.ts
+  Outlook mapping
+    ✓ a single entry is written in UTC, with no reminder of its own and shown as busy (29 ms)
+    ✓ a repeating entry keeps its own zone and wall-clock time (3 ms)
+    ✓ covers every rule shape the app writes (2 ms)
+    ✓ an entry without an end gets 30 minutes (1 ms)
+  iCloud mapping
+    ✓ a single entry is a UTC VEVENT with a stable UID and escaped text (3 ms)
+    ✓ a repeating entry carries the rule unchanged and its local time with TZID (1 ms)
+    ✓ folds long lines at 75 octets without splitting a character
+    ✓ the hash ignores DTSTAMP, so an unchanged entry is not rewritten every sync (1 ms)
+  planExternalPush
+    ✓ creates new, updates changed, leaves unchanged, deletes gone and no-longer-pushed (2 ms)
+    ✓ an entry the provider cannot represent is not created (and a stale copy is removed) (1 ms)
+  writers
+    ✓ Outlook: creates the Vitanaland calendar once, then writes only into it (34 ms)
+    ✓ Outlook: an existing Vitanaland calendar (earlier connection) is reused, not duplicated (18 ms)
+    ✓ Outlook: the member deleted the Vitanaland calendar → forget it and say so; next sync recreates (52 ms)
+    ✓ Outlook: an entry deleted in Vitanaland is deleted from Outlook, and a 404 there is fine (25 ms)
+    ✓ iCloud: MKCALENDAR a Vitanaland collection under the calendar home, then PUT one .ics per entry (21 ms)
+    ✓ iCloud: an existing collection (405 on MKCALENDAR) is reused (15 ms)
+    ✓ iCloud: a revoked app-specific password surfaces as AppleAuthError (30 ms)
+  busy pull skips the Vitanaland calendar
+    ✓ Outlook: pushed events (and occurrences of a pushed series) are not busy blocks (2 ms)
+    ✓ iCloud: the Vitanaland collection is never queried for busy times (2 ms)
+  wiring
+    ✓ the Outlook and iCloud calendar syncs push first, then pull without their own calendar
+    ✓ turning a calendar app off forgets the push state for that provider
+    ✓ CONNECTED_APPS_CALENDAR_PUSH=false is the kill switch; anything else is on
+  migration
+    ✓ two service-role-only tables, one link per provider per entry (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/calendar/calendar-logic.golden.test.ts
+  recurrence
+    ✓ parses every rule shape the valid_rrule CHECK allows, and rejects the rest (15 ms)
+    ✓ expands daily-across-dst-berlin (26 ms)
+    ✓ expands daily-spring-forward-new-york (5 ms)
+    ✓ expands monthly-on-the-31st (6 ms)
+    ✓ expands weekly-byday-interval-2 (6 ms)
+    ✓ expands weekly-no-byday-uses-start-weekday (5 ms)
+    ✓ expands count-stops-series (5 ms)
+    ✓ expands count-with-window-starting-mid-series (5 ms)
+    ✓ expands until-stops-series (4 ms)
+    ✓ expands no-timezone-uses-fallback (4 ms)
+    ✓ expands invalid-timezone-uses-fallback (3 ms)
+    ✓ expands occurrence-overlapping-window-start-is-kept (4 ms)
+    ✓ expands limit-caps-results (3 ms)
+    ✓ expands bad-rule-or-window-gives-nothing (2 ms)
+    ✓ converts wall-clock times in both directions, DST gaps resolving forward (5 ms)
+  calendar window
+    ✓ role community, busy blocks on (9 ms)
+    ✓ role developer, busy blocks on (5 ms)
+    ✓ role admin, busy blocks on (4 ms)
+    ✓ role professional, busy blocks on (5 ms)
+    ✓ role super_admin, busy blocks on (5 ms)
+    ✓ role null, busy blocks on (5 ms)
+    ✓ role community, busy blocks off (4 ms)
+    ✓ a busy block never carries anything identifying (4 ms)
+    ✓ role visibility and write context (3 ms)
+    ✓ summary shape the assistant reads (1 ms)
+  move rules
+    ✓ pins which entries a member may move (5 ms)
+  reminders
+    ✓ default rules and emoji per entry kind (4 ms)
+    ✓ what fires, without quiet hours (14 ms)
+    ✓ what fires, with quiet hours 22:00–07:00 (defaults move, explicit ones stay) (30 ms)
+    ✓ the text each reminder says (26 ms)
+    ✓ quiet-hours parsing and window math (7 ms)
+    ✓ reminder keys and the loop switch (3 ms)
+  external calendars
+    ✓ which entries leave Vitanaland at all (4 ms)
+    ✓ Google event bodies (2 ms)
+    ✓ Google push plan: create, update, delete, orphan (2 ms)
+    ✓ Google free/busy is cleaned and merged (1 ms)
+    ✓ Outlook (Graph) event bodies and repeat rules (9 ms)
+    ✓ iCloud iCalendar objects (4 ms)
+    ✓ shared push plan for Outlook and iCloud (5 ms)
+    ✓ subscription (.ics) feed (4 ms)
+  work lenses
+    ✓ who gets which lens (1 ms)
+    ✓ source rows become read-only entries (4 ms)
+  maintenance and helpers
+    ✓ rescheduler: is the day over, and the next slot (9 ms)
+    ✓ today is the user's local today (5 ms)
+    ✓ producers only rewrite what changed (3 ms)
+    ✓ 90-day journey stage by day (2 ms)
+  request contracts
+    ✓ create (7 ms)
+    ✓ update, list and complete (6 ms)
+    ✓ allowed values match the database CHECK lists (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04402-connected-apps.test.ts
+  catalogue
+    ✓ lists exactly the ten apps the Connected Apps screen shows (4 ms)
+    ✓ each app asks only for its own scopes (1 ms)
+    ✓ scopesCover reads Microsoft scopes with or without the resource prefix, and broader grants (1 ms)
+  computeAppState
+    ✓ a pre-hub Google token that covers the app counts as on; one that does not stays off (1 ms)
+    ✓ an explicit toggle wins over the token (1 ms)
+    ✓ on but the grant is gone or missing a scope → needs_reconnect (1 ms)
+    ✓ Apple is on only with stored credentials that last worked (1 ms)
+    ✓ an app this stack cannot serve is never on (2 ms)
+    ✓ dueApps: calendars every 15 min, contacts daily, oldest first, capped (3 ms)
+  toggle flows
+    ✓ Outlook Mail with no Microsoft grant → consent URL for its scopes, signed state naming the app (26 ms)
+    ✓ a second Google app asks for its scopes plus the ones already on (no app is dropped) (19 ms)
+    ✓ when the token already covers the app, one tap turns it on (no consent) (6 ms)
+    ✓ an app the stack cannot serve refuses with not_configured (5 ms)
+    ✓ Apple needs an Apple ID + app-specific password before anything is stored (5 ms)
+    ✓ Apple: a rejected password is reported and nothing is stored; a good one is stored encrypted (10 ms)
+    ✓ turning off the last Microsoft app releases the grant and clears Outlook busy times (7 ms)
+    ✓ turning off one Google app keeps the grant while another is still on (4 ms)
+    ✓ the grant callback turns the app on only when the member granted every scope (3 ms)
+    ✓ Outlook calendar sync writes busy times only (no titles) and records the result (21 ms)
+    ✓ assistant gate: Gmail switched off hides Google from email.read (6 ms)
+    ✓ Android: picked contacts are imported, de-duplicated and the app turned on (53 ms)
+  contacts import
+    ✓ normalizes: trims, drops invalid e-mails and short phones, needs a name or a way to reach them (1 ms)
+    ✓ device ids are stable and order-independent
+  microsoft
+    ✓ Graph local times are read as UTC (1 ms)
+    ✓ refresh stores the rotated refresh token (1 ms)
+    ✓ email.read maps Outlook messages; a missing scope names the app to turn on (2 ms)
+    ✓ the token exchange keeps the scopes the provider granted, and Microsoft profiles normalize (4 ms)
+  iCloud parsing
+    ✓ reads DAV multistatus with any namespace prefix (1 ms)
+    ✓ parses VEVENTs: times, all-day, duration, transparent and cancelled (3 ms)
+    ✓ parses vCards: FN, N fallback, grouped EMAIL/TEL (1 ms)
+    ✓ IMAP: decodes RFC 2047 headers and parses FETCH header literals (2 ms)
+  wiring
+    ✓ is mounted, its loop starts at boot, and the resolver consults the toggles (2 ms)
+  migration
+    ✓ new tables are service-role only; microsoft/apple busy sources and the contacts upsert key exist (1 ms)
+
+  console.warn
+    [contacts-import] phone matching unavailable: db GET profiles 400: {"code":"42703"}
+
+      137 |     }
+      138 |   } catch (err: any) {
+    > 139 |     console.warn(`[contacts-import] phone matching unavailable: ${err?.message}`);
+          |             ^
+      140 |     return new Map();
+      141 |   }
+      142 |   return out;
+
+      at phoneMatches (src/services/connected-apps/contacts-import.ts:139:13)
+          at async Promise.all (index 1)
+      at Object.importContacts (src/services/connected-apps/contacts-import.ts:182:30)
+      at Object.<anonymous> (test/vtid-05057-contacts-phone-matching.test.ts:97:15)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04449-outlook-contacts.test.ts
+  catalogue
+    ✓ Outlook Contacts is a Microsoft contacts app asking only for Contacts.Read (3 ms)
+    ✓ a broader Contacts.ReadWrite grant covers it (1 ms)
+    ✓ the migration allows the new id and keeps the other nine (1 ms)
+  fetchOutlookContacts
+    ✓ follows every page and keeps names, e-mails and all phone numbers (18 ms)
+    ✓ a missing permission is reported as permission_not_granted (24 ms)
+  hub
+    ✓ sync imports Outlook contacts into `contacts` with source microsoft (56 ms)
+    ✓ turning it off with removeData deletes only the Outlook-imported contacts (22 ms)
+    ✓ the background tick picks it up (3 ms)
+  Microsoft connector contacts.read
+    ✓ lists and filters the address book (2 ms)
+    ✓ a missing scope points the member at Outlook Contacts (1 ms)
+
+PASS test/vtid-05057-contacts-phone-matching.test.ts
+  phone normalisation
+    ✓ reads national numbers in the region and keeps international ones (16 ms)
+    ✓ drops what is not a phone number (3 ms)
+    ✓ region hints: country codes and locales, default DE (2 ms)
+  importContacts — phone matching
+    ✓ links a contact to a verified, discoverable member by number; asks only for those (27 ms)
+    ✓ never matches the importer to themselves (3 ms)
+    ✓ before the migration: no phone matches, no unknown column written, import succeeds (24 ms)
+    ✓ reports how many contacts were over the cap (122 ms)
+  migration
+    ✓ adds columns without a table rewrite and mirrors verification from auth.users (1 ms)
+    ✓ both older phone matchers require a verified, discoverable number and skip test/service accounts (2 ms)
+  hub + route
+    ✓ device import passes the method and reads national numbers in the region hint (30 ms)
+    ✓ an unknown method is recorded as picker (36 ms)
+    ✓ removing phone contacts deletes only this member's android rows and records it (15 ms)
+    ✓ the route exposes DELETE /android-contacts before the /:id routes (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.error
+    [connected-apps-api] connect gmail failed: db down: secret detail
+
+       96 |     return res.json(r);
+       97 |   } catch (err: any) {
+    >  98 |     console.error(`${LOG} connect ${req.params.id} failed: ${err?.message}`);
+          |             ^
+       99 |     return res.status(500).json({ ok: false, error: 'internal_error' });
+      100 |   }
+      101 | });
+
+      at src/routes/connected-apps.ts:98:13
+
+PASS test/vtid-04507-staging-connected-apps-oauth-wiring.test.ts
+  VTID-04507: staging wires Connected Apps sign-in
+    ✓ resolves the config in its own step, before the task definition is registered (2 ms)
+    ✓ pins the public URLs the OAuth redirect and return are built from (1 ms)
+    ✓ probes GOOGLE_OAUTH_CLIENT_ID from vitana/gateway/staging/google-oauth-client-id (1 ms)
+    ✓ probes GOOGLE_OAUTH_CLIENT_SECRET from vitana/gateway/staging/google-oauth-client-secret (1 ms)
+    ✓ probes MICROSOFT_OAUTH_CLIENT_ID from vitana/gateway/staging/microsoft-oauth-client-id (1 ms)
+    ✓ probes MICROSOFT_OAUTH_CLIENT_SECRET from vitana/gateway/staging/microsoft-oauth-client-secret (1 ms)
+    ✓ probes AI_CREDENTIALS_ENC_KEY from vitana/gateway/staging/credentials-enc-key (1 ms)
+    ✓ probes with describe-secret and never exits when a secret is absent (2 ms)
+    ✓ merges the file into the task definition with one slurpfile clause (1 ms)
+    ✓ does not touch the production workflow (2 ms)
+    ✓ ships an executable setup script covering the same five secrets (3 ms)
+  VTID-04507: the jq merge
+    ✓ replaces stale values and keeps unrelated entries and absent secrets as they were (15 ms)
+    ✓ with no secrets provisioned, only pins the two URLs (11 ms)
+
+PASS test/vtid-04450-apple-mail-send.test.ts
+  smtpSend
+    ✓ STARTTLS comes before the password; AUTH PLAIN; From is the Apple ID (5 ms)
+    ✓ refuses to authenticate on a server without STARTTLS (29 ms)
+    ✓ a rejected app-specific password is an AppleAuthError (2 ms)
+    ✓ a non-iCloud sender is named, not swallowed (1 ms)
+    ✓ rejected recipients are dropped; all rejected fails before DATA (2 ms)
+  message
+    ✓ is UTF-8 text in base64, subject encoded only when needed, ends the DATA with a lone dot (2 ms)
+  parseRecipients
+    ✓ splits, de-duplicates, validates and caps (6 ms)
+  Apple connector email.send
+    ✓ is offered, and sends through iCloud SMTP (6 ms)
+    ✓ needs to and subject (2 ms)
+    ✓ a non-iCloud sender comes back with a hint to fix it (4 ms)
+    ✓ the catalogue lets Apple Mail serve email.send (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04473-jev-staging-wiring.test.ts
+  VTID-04473 Jev staging wiring
+    ✓ probes the staging secret with describe-secret and tolerates its absence (6 ms)
+    ✓ the key is a secret reference, never a plain env value
+    ✓ the flag is always written: true with the key, false without (1 ms)
+    ✓ runs after connected-apps.json is written and before the task definition is registered
+    ✓ community stays off everywhere (1 ms)
+
+PASS test/routes/connected-apps.test.ts
+  connected-apps routes
+    ✓ needs a verified member (84 ms)
+    ✓ acts only for the caller, rejects unknown apps, passes Apple credentials through (74 ms)
+    ✓ sync refuses an app that is off (71 ms)
+    ✓ disconnect forwards remove_data only when it is exactly true (65 ms)
+    ✓ android import is not read as an app id, and hub refusals keep their status (59 ms)
+    ✓ a thrown hub error is a 500 JSON body, never a leaked message (43 ms)
+    ✓ a failed sync is a 502 with the hub result (48 ms)
+    ✓ VTID-05057: DELETE /android-contacts removes only the caller's phone contacts (83 ms)
+
+PASS test/vtid-04439-contacts-import-collisions.test.ts
+  resolveCollisions
+    ✓ skips a contact whose phone a hand-added contact already has (6 ms)
+    ✓ two contacts in one import with the same phone: the first stays, the second is skipped
+    ✓ the same member reached from another source is not added twice (1 ms)
+    ✓ a contact re-synced from its own source keeps its phone and member
+    ✓ contacts without phone or member never clash
+  importContacts
+    ✓ writes only the rows that cannot clash, and reports the rest as already present (33 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04923-daily-key-wiring.test.ts
+  VTID-04923 Daily key wiring
+    ✓ staging probes its own secret and tolerates its absence (1 ms)
+    ✓ staging wires it as a secret reference into connected-apps.json, never a plain value (1 ms)
+    ✓ staging step runs after the Jev step and before the task definition is registered
+    ✓ production uses the full prod ARN (with suffix), strip-then-add, as a secret (7 ms)
+
+PASS test/vtid-05009-dev-memory-pack-token-wiring.test.ts
+  VTID-05009 DEV_MEMORY_PACK_TOKEN wiring
+    ✓ staging resolves the secret by name and wires it only when it exists (4 ms)
+    ✓ staging resolves it before the task definition is built (it rides connected-apps.json) (1 ms)
+    ✓ prod wires it only from the repo variable, strips any old ref, and rejects a foreign ARN (1 ms)
+    ✓ the SessionStart hook is registered and the hook never fails the session (1 ms)
+
+Test Suites: 13 passed, 13 total
+Tests:       203 passed, 203 total
+Snapshots:   0 total
+Time:        2.675 s, estimated 4 s
+Ran all test suites matching /test\/vtid-04439-contacts-import-collisions.test.ts|test\/vtid-04473-jev-staging-wiring.test.ts|test\/orb\/live\/characterization\/__snapshots__\/system-instruction.characterization.test.ts.snap|test\/orb\/live\/characterization\/__snapshots__\/tool-catalog.characterization.test.ts.snap|test\/vtid-04821-company-doc-search.test.ts|test\/vtid-04450-apple-mail-send.test.ts|test\/vtid-05009-dev-memory-pack-token-wiring.test.ts|test\/vtid-05057-contacts-phone-matching.test.ts|test\/vtid-04402-connected-apps.test.ts|test\/vtid-04436-calendar-push.test.ts|test\/vtid-04923-daily-key-wiring.test.ts|test\/vtid-04449-outlook-contacts.test.ts|test\/vtid-04507-staging-connected-apps-oauth-wiring.test.ts|test\/calendar\/calendar-logic.golden.test.ts|test\/calendar\/manifest.json|test\/routes\/connected-apps.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
