@@ -1801,6 +1801,21 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Audiobook daily reminder loop initialization failed (non-fatal):', error);
       }
 
+      // VTID-05029: email digest for important notifications a push never
+      // reached. Inert unless EMAIL_FALLBACK_ENABLED=true AND Resend is
+      // configured, and never on staging (shared production database).
+      try {
+        const { startEmailFallbackLoop } = require('./services/email/notification-email-fallback');
+        const { getSupabase: getEmailFallbackSupabase } = require('./lib/supabase');
+        if (startEmailFallbackLoop(() => getEmailFallbackSupabase())) {
+          console.log('📧 Notification email fallback loop started');
+        } else {
+          console.log('⏸️ Notification email fallback loop disabled — needs EMAIL_FALLBACK_ENABLED=true, RESEND_API_KEY + EMAIL_FROM, and a non-staging env');
+        }
+      } catch (error) {
+        console.warn('⚠️ Notification email fallback loop initialization failed (non-fatal):', error);
+      }
+
       // VTID-04338: default reminders for calendar entries — reconciles the
       // reminders table against upcoming entries every minute.
       try {
