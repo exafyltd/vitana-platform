@@ -86,6 +86,7 @@ const createChain = () => {
     limit: jest.fn(() => chain),
     single: jest.fn(() => chain),
     maybeSingle: jest.fn(() => chain),
+    abortSignal: jest.fn(() => chain),
     then: jest.fn((resolve: (v: any) => any, reject?: (e: any) => any) => {
       const value = responseQueue.length > 0 ? responseQueue.shift() : defaultData;
       if (value && value.__throw) {
@@ -369,11 +370,28 @@ function mockActiveProviderRow(
   }
 }
 
+/**
+ * VTID-05043: the route's own Supabase client is unavailable, while the auth
+ * middleware (which fails closed with 503 when it cannot check membership)
+ * still reaches the database — exercises the route's degraded path.
+ */
+function routeSupabaseUnavailable() {
+  mockGetSupabase.mockImplementation(() => {
+    // The nearest src/ frame is the caller of getSupabase().
+    const caller = (new Error().stack ?? '').split('\n').find((l) => /[\\/]src[\\/]/.test(l)) ?? '';
+    return (caller.includes('auth-supabase-jwt') ? mockSupabase : null) as any;
+  });
+}
+
 describe('orb-livekit routes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     for (const chain of Object.values(tableChains)) chain.mockReset();
     mockGetSupabase.mockReturnValue(mockSupabase as any);
+    // VTID-05043: requireTenant/requireAuthWithTenant check that the token's
+    // tenant is a user_tenants membership. Every fixture caller belongs to
+    // the tenant in its token (TENANT_A by default).
+    chainFor('user_tenants').mockResolvedValue({ data: { tenant_id: TENANT_A }, error: null });
     mockToJwt.mockResolvedValue('mock.livekit.jwt');
     mockEmitOasisEvent.mockResolvedValue({ ok: true });
     mockCommitSessionMemory.mockReturnValue({ committed: true });
@@ -1485,7 +1503,7 @@ describe('orb-livekit routes', () => {
     it('returns null config when supabase is unavailable', async () => {
       const uid = freshUserId();
       const token = await signToken({ sub: uid, tenantId: TENANT_A });
-      mockGetSupabase.mockReturnValue(null as any);
+      routeSupabaseUnavailable();
       const res = await request(app)
         .get('/api/v1/agents/vitana/voice-config')
         .set('Authorization', `Bearer ${token}`);
@@ -1542,7 +1560,7 @@ describe('orb-livekit routes', () => {
     it('500 when supabase is unavailable', async () => {
       const uid = freshUserId();
       const token = await signToken({ sub: uid, tenantId: TENANT_A });
-      mockGetSupabase.mockReturnValue(null as any);
+      routeSupabaseUnavailable();
       const res = await request(app)
         .put('/api/v1/agents/vitana/voice-config')
         .set('Authorization', `Bearer ${token}`)

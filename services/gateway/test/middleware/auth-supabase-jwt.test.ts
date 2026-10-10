@@ -14,6 +14,10 @@
  *   - requireTenant / requireAuthWithTenant: tenant from JWT, DB fallback via
  *     user_tenants(is_primary), else 400 TENANT_REQUIRED.
  *   - resolveVitanaId: cached per user, invalidateVitanaIdCache busts the cache.
+ *   - VTID-05043: a tenant taken from the JWT must be a user_tenants membership
+ *     (403 TENANT_NOT_MEMBER), exafy_admin exempt, 503 on lookup failure,
+ *     TENANT_MEMBERSHIP_CHECK_MODE=log lets it through with a warning, 60 s
+ *     positive cache, negatives never cached.
  */
 
 import request from 'supertest';
@@ -77,6 +81,7 @@ import {
   resolveVitanaId,
   invalidateVitanaIdCache,
   verifyAndExtractIdentity,
+  clearTenantMembershipCache,
 } from '../../src/middleware/auth-supabase-jwt';
 import { upsertActiveDay } from '../../src/services/guide/active-usage';
 
@@ -140,6 +145,8 @@ describe('auth-supabase-jwt middleware', () => {
     for (const chain of Object.values(tableChains)) chain.mockReset();
     mockGetSupabase.mockReturnValue(mockSupabase as any);
     mockInvalidJwt();
+    clearTenantMembershipCache();
+    delete process.env.TENANT_MEMBERSHIP_CHECK_MODE;
   });
 
   // =========================================================================
@@ -488,8 +495,9 @@ describe('auth-supabase-jwt middleware', () => {
   // =========================================================================
 
   describe('requireTenant', () => {
-    it('passes when the JWT carries active_tenant_id', async () => {
+    it('passes when the JWT carries active_tenant_id the user is a member of', async () => {
       mockVerifiedJwt(claims(uniqueSub('t-jwt')));
+      chainFor('user_tenants').mockResolvedValue({ data: { tenant_id: 'tenant-1' }, error: null });
       const res = await request(app).get('/tenant').set('Authorization', 'Bearer good');
       expect(res.status).toBe(200);
       expect(res.body.identity.tenant_id).toBe('tenant-1');
@@ -525,8 +533,9 @@ describe('auth-supabase-jwt middleware', () => {
       expect(res.body.error).toBe('UNAUTHENTICATED');
     });
 
-    it('allows a valid token with a tenant in the JWT', async () => {
+    it('allows a valid token with a tenant in the JWT the user is a member of', async () => {
       mockVerifiedJwt(claims(uniqueSub('at-ok')));
+      chainFor('user_tenants').mockResolvedValue({ data: { tenant_id: 'tenant-1' }, error: null });
       const res = await request(app).get('/auth-tenant').set('Authorization', 'Bearer good');
       expect(res.status).toBe(200);
       expect(res.body.identity.tenant_id).toBe('tenant-1');
@@ -539,6 +548,160 @@ describe('auth-supabase-jwt middleware', () => {
       const res = await request(app).get('/auth-tenant').set('Authorization', 'Bearer good');
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('TENANT_REQUIRED');
+    });
+  });
+
+  // =========================================================================
+  // VTID-05043: tenant claim must be a membership
+  // =========================================================================
+
+  describe.each([
+    ['requireTenant', '/tenant'],
+    ['requireAuthWithTenant', '/auth-tenant'],
+  ])('%s — tenant membership check (VTID-05043)', (_name, path) => {
+    let warn: jest.SpyInstance;
+    beforeEach(() => {
+      warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+    afterEach(() => warn.mockRestore());
+
+    const membershipQueried = () =>
+      chainFor('user_tenants').eq.mock.calls.some((c: any[]) => c[0] === 'tenant_id' && c[1] === 'tenant-1');
+
+    it('claim tenant + membership row → next(), looked up by (user_id, tenant_id)', async () => {
+      const sub = uniqueSub('m-member');
+      mockVerifiedJwt(claims(sub));
+      chainFor('user_tenants').mockResolvedValue({ data: { tenant_id: 'tenant-1' }, error: null });
+
+      const res = await request(app).get(path).set('Authorization', 'Bearer good');
+      expect(res.status).toBe(200);
+      expect(res.body.identity.tenant_id).toBe('tenant-1');
+      expect(chainFor('user_tenants').eq).toHaveBeenCalledWith('user_id', sub);
+      expect(membershipQueried()).toBe(true);
+      expect(chainFor('user_tenants').maybeSingle).toHaveBeenCalled();
+    });
+
+    it('claim tenant without membership → 403 TENANT_NOT_MEMBER + structured warning', async () => {
+      const sub = uniqueSub('m-stranger');
+      mockVerifiedJwt(claims(sub));
+      chainFor('user_tenants').mockResolvedValue({ data: null, error: null });
+
+      const res = await request(app).get(path).set('Authorization', 'Bearer good');
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ ok: false, error: 'TENANT_NOT_MEMBER' });
+      const logged = warn.mock.calls.map((c) => String(c[0])).find((m) => m.includes('tenant_membership_mismatch'));
+      expect(logged).toBeDefined();
+      expect(JSON.parse(logged!)).toMatchObject({
+        event: 'tenant_membership_mismatch',
+        user_id: sub,
+        tenant_id: 'tenant-1',
+        route: `GET ${path}`,
+        mode: 'enforce',
+      });
+    });
+
+    it('exafy_admin with a claim tenant it is not a member of → next(), no lookup', async () => {
+      mockVerifiedJwt(claims(uniqueSub('m-exafy'), { app_metadata: { active_tenant_id: 'tenant-1', exafy_admin: true } }));
+      chainFor('user_tenants').mockResolvedValue({ data: null, error: null });
+
+      const res = await request(app).get(path).set('Authorization', 'Bearer good');
+      expect(res.status).toBe(200);
+      expect(res.body.identity.tenant_id).toBe('tenant-1');
+      expect(membershipQueried()).toBe(false);
+    });
+
+    it('no claim → primary fallback unchanged, no membership lookup', async () => {
+      mockVerifiedJwt(claims(uniqueSub('m-noclaim'), { app_metadata: {} }));
+      chainFor('user_tenants').mockResolvedValue({ data: { tenant_id: 'tenant-primary' }, error: null });
+
+      const res = await request(app).get(path).set('Authorization', 'Bearer good');
+      expect(res.status).toBe(200);
+      expect(res.body.identity.tenant_id).toBe('tenant-primary');
+      expect(chainFor('user_tenants').eq).toHaveBeenCalledWith('is_primary', true);
+      expect(chainFor('user_tenants').maybeSingle).not.toHaveBeenCalled();
+    });
+
+    it('lookup throws → 503 TENANT_CHECK_UNAVAILABLE (fail closed)', async () => {
+      mockVerifiedJwt(claims(uniqueSub('m-throw')));
+      mockSupabase.from.mockImplementation((table: string) => {
+        if (table === 'user_tenants') throw new Error('The operation was aborted');
+        return chainFor(table);
+      });
+      try {
+        const res = await request(app).get(path).set('Authorization', 'Bearer good');
+        expect(res.status).toBe(503);
+        expect(res.body).toMatchObject({ ok: false, error: 'TENANT_CHECK_UNAVAILABLE' });
+      } finally {
+        mockSupabase.from.mockImplementation((table: string) => chainFor(table));
+      }
+    });
+
+    it('lookup returns an error → 503; Supabase not configured → 503', async () => {
+      mockVerifiedJwt(claims(uniqueSub('m-err')));
+      chainFor('user_tenants').mockResolvedValue({ data: null, error: { message: 'boom' } });
+      expect((await request(app).get(path).set('Authorization', 'Bearer good')).status).toBe(503);
+
+      mockVerifiedJwt(claims(uniqueSub('m-nosb')));
+      mockGetSupabase.mockReturnValue(null as any);
+      expect((await request(app).get(path).set('Authorization', 'Bearer good')).status).toBe(503);
+    });
+
+    it('log mode → non-member passes with the warning, after the same lookup', async () => {
+      process.env.TENANT_MEMBERSHIP_CHECK_MODE = 'log';
+      const sub = uniqueSub('m-log');
+      mockVerifiedJwt(claims(sub));
+      chainFor('user_tenants').mockResolvedValue({ data: null, error: null });
+
+      const res = await request(app).get(path).set('Authorization', 'Bearer good');
+      expect(res.status).toBe(200);
+      expect(membershipQueried()).toBe(true);
+      const logged = warn.mock.calls.map((c) => String(c[0])).find((m) => m.includes('tenant_membership_mismatch'));
+      expect(JSON.parse(logged!)).toMatchObject({ user_id: sub, tenant_id: 'tenant-1', mode: 'log' });
+    });
+
+    it('an unknown mode value means enforce', async () => {
+      process.env.TENANT_MEMBERSHIP_CHECK_MODE = 'off';
+      mockVerifiedJwt(claims(uniqueSub('m-off')));
+      chainFor('user_tenants').mockResolvedValue({ data: null, error: null });
+      expect((await request(app).get(path).set('Authorization', 'Bearer good')).status).toBe(403);
+    });
+
+    it('positive result is cached: two calls issue one membership lookup', async () => {
+      mockVerifiedJwt(claims(uniqueSub('m-cache')));
+      chainFor('user_tenants').mockResolvedValue({ data: { tenant_id: 'tenant-1' }, error: null });
+
+      expect((await request(app).get(path).set('Authorization', 'Bearer good')).status).toBe(200);
+      expect((await request(app).get(path).set('Authorization', 'Bearer good')).status).toBe(200);
+      expect(chainFor('user_tenants').maybeSingle).toHaveBeenCalledTimes(1);
+    });
+
+    it('negative result is not cached: a member who just joined passes on the next call', async () => {
+      mockVerifiedJwt(claims(uniqueSub('m-join')));
+      chainFor('user_tenants')
+        .mockResolvedValueOnce({ data: null, error: null })
+        .mockResolvedValue({ data: { tenant_id: 'tenant-1' }, error: null });
+
+      expect((await request(app).get(path).set('Authorization', 'Bearer good')).status).toBe(403);
+      expect((await request(app).get(path).set('Authorization', 'Bearer good')).status).toBe(200);
+      expect(chainFor('user_tenants').maybeSingle).toHaveBeenCalledTimes(2);
+    });
+
+    it('the cache expires after 60 s', async () => {
+      const now = Date.now();
+      const spy = jest.spyOn(Date, 'now').mockReturnValue(now);
+      try {
+        mockVerifiedJwt(claims(uniqueSub('m-ttl')));
+        chainFor('user_tenants').mockResolvedValue({ data: { tenant_id: 'tenant-1' }, error: null });
+        await request(app).get(path).set('Authorization', 'Bearer good');
+        spy.mockReturnValue(now + 59_000);
+        await request(app).get(path).set('Authorization', 'Bearer good');
+        expect(chainFor('user_tenants').maybeSingle).toHaveBeenCalledTimes(1);
+        spy.mockReturnValue(now + 61_000);
+        await request(app).get(path).set('Authorization', 'Bearer good');
+        expect(chainFor('user_tenants').maybeSingle).toHaveBeenCalledTimes(2);
+      } finally {
+        spy.mockRestore();
+      }
     });
   });
 
