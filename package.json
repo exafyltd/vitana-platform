@@ -8,7 +8,8 @@
     "test:aurora-parity": "python3 -m unittest discover -s scripts/aws/test -p 'test_*.py'",
     "test:aurora-cron-outbox": "bash scripts/ci/test-vtid-05023-aurora-cron-outbox.sh",
     "test:auth-bridge": "bash scripts/aws/test/auth-bridge.sh",
-    "test:realtime-local": "bash services/realtime-aurora/test/local-delivery.sh"
+    "test:realtime-local": "bash services/realtime-aurora/test/local-delivery.sh",
+    "test:reverse-cdc": "bash scripts/aws/test/reverse-cdc.sh"
   },
   "devDependencies": {
     "prisma": "^6.18.0"

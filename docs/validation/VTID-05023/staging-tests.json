@@ -65,6 +65,12 @@
    "ref": "npm run test:realtime-local",
    "cwd": ".",
    "reason": "Part 7a: the self-hosted Realtime server has no staging endpoint (it is deployed only by the dispatch-only AWS-PROD-DEPLOY-REALTIME-AURORA.yml after the Aurora reboot). This builds the real image (pinned supabase/realtime v2.134.10 + Vitana seeds.exs) and runs it against a local Postgres 17 with logical decoding, wal2json and TLS-only logins, after applying scripts/aws/aurora-realtime-setup.sql unchanged as a non-superuser role: management API refuses member tokens (separate secret), websocket upgrade 101/401/404 by token and Host, and a @supabase/realtime-js client on Host realtime.vitanaland.com receives an RLS-filtered INSERT, an UPDATE with the old row, broadcast and presence, again after a restart. It also applies the 33-table publication part twice and checks the primary-key precondition."
+  },
+  {
+   "kind": "existing",
+   "ref": "npm run test:reverse-cdc",
+   "cwd": ".",
+   "reason": "Parts 8b + 12(i): the Aurora->Supabase CDC tasks have no staging counterpart (they run only in the window, against production Supabase) and must not be exercised on staging. On a throwaway local Postgres this proves supabase-cutover-reverse-cdc-triggers.sql disables every public user trigger (FK and non-public triggers untouched, snapshot not overwritten on re-run), that a row applied the way DMS applies it fires no notification and keeps its updated_at, and that the rollback restores every trigger's exact prior state (O, D, A) and refuses without a snapshot; with a fake aws it proves aurora-to-supabase-cdc.sh builds the 5-table storage-auth and the all-other-tables rollback mappings, creates a CDC-only task without starting it, sets no replica mode, and never puts a password on a command line or leaves it on disk."
   }
  ]
 }
