@@ -2,10 +2,13 @@
 # Routing test for the PostgREST-Aurora proxy's nginx config (VTID-05023).
 # Builds the proxy image and runs it against a mock HTTPS "Supabase" (an nginx
 # that echoes the request back) on a private docker network. No AWS, no real
-# Supabase. Proves: /auth, /storage, /functions and /realtime (with the
-# WebSocket upgrade) reach Supabase with the right Host, large storage uploads
-# pass, functions keep their 50 MB cap, unknown paths answer 501, and /rest
-# goes to the local PostgREST upstream (502 here: no sidecar in this test).
+# Supabase. Proves both audiences:
+#  INTERNAL (default server, the gateway): /auth, /storage, /functions and
+#    /realtime (WebSocket upgrade) reach Supabase with the right Host, large
+#    uploads pass, functions keep their 50 MB cap, unknown paths answer 501,
+#    /rest goes to the local PostgREST upstream (502 here: no sidecar).
+#  PUBLIC (Host: data.vitanaland.com): only /rest and /alive; auth, storage,
+#    functions and realtime answer 404 and never reach Supabase.
 # Usage: bash services/postgrest-aurora-proxy/test/routing.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -44,5 +47,14 @@ check "storage 30MB upload"   "len=31457280" -X POST --data-binary @<(head -c 31
 check "functions 50MB cap"    "413" -o /dev/null -w "%{http_code}" -X POST --data-binary @<(head -c 60000000 /dev/zero) "$U/functions/v1/x"
 check "rest goes to PostgREST" "502" -o /dev/null -w "%{http_code}" "$U/rest/v1/profiles"
 check "unknown path 501"      "not_implemented" "$U/nope"
+PH="Host: data.vitanaland.com"
+before=$(docker logs "mock-$$" 2>/dev/null | grep -c '"' || true)
+check "public: /alive"         "ok"  -H "$PH" "$U/alive"
+check "public: rest to PostgREST" "502" -o /dev/null -w "%{http_code}" -H "$PH" "$U/rest/v1/profiles"
+for p in /auth/v1/token /storage/v1/object/public/a/b.png /functions/v1/ai-chat /realtime/v1/websocket; do
+  check "public: $p blocked"   "404" -o /dev/null -w "%{http_code}" -H "$PH" "$U$p"
+done
+after=$(docker logs "mock-$$" 2>/dev/null | grep -c '"' || true)
+if [ "$before" = "$after" ]; then echo "PASS public host never reached Supabase"; else echo "FAIL public host reached Supabase ($before -> $after requests)"; fail=1; fi
 docker rmi -f "pgproxy-routing-$$" >/dev/null 2>&1 || true
 exit $fail

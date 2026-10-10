@@ -13,7 +13,9 @@ COPY nginx.conf.template /etc/nginx/nginx.conf.template
 
 # SUPABASE_AUTH_HOST is injected at container start (e.g. inmkhvwdcuyhnxkgfvsb.supabase.co).
 ENV SUPABASE_AUTH_HOST=""
+# Host name of the public server block (/rest/v1 only), VTID-05023.
+ENV PUBLIC_HOST="data.vitanaland.com"
 
 EXPOSE 8080
 
-CMD ["/bin/sh", "-c", "envsubst '$${SUPABASE_AUTH_HOST}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'"]
+CMD ["/bin/sh", "-c", "envsubst '$${SUPABASE_AUTH_HOST} $${PUBLIC_HOST}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'"]
