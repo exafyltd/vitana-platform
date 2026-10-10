@@ -3780,3 +3780,15 @@ Index `idx_operator_media_user_thread (user_id, thread_id, created_at DESC)`.
 **Storage bucket `operator-media`** — private (`public: false`), 5 MB file limit, png/jpeg/webp/gif only, no client policies (gateway service role only). Created once, idempotently, through the Storage API (`POST /storage/v1/bucket`, never an INSERT into `storage.buckets`) by `scripts/supabase/setup-operator-media-bucket.mjs` — run it from the `SETUP-OPERATOR-MEDIA-BUCKET.yml` workflow_dispatch job (`dry_run=true` first), or locally with `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE` set. An existing private bucket is left alone; an existing PUBLIC one is refused (exit 2) for a person to decide. Deleting old images (retention) is a logged follow-up, not part of VTID-05067.
 
 OASIS (`CicdEventType`): `operator.media.uploaded` — payload `{ media_id, thread_id, mime_type, size_bytes }` only, never the bytes. A Kiro run's image delivery is a run event `kiro.images` `{ count, delivery: sent | unsupported | unreadable, sent }` in `kiro_run_events`.
+### Reattach columns on `kiro_runs` (VTID-05068, 2026-10-10) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261010220000_vtid_05068_kiro_run_reattach.sql` (additive, nullable). A running run whose gateway task goes away (deploy, crash) is taken over by another task through the kiro-runner's reattach (`/sessions/reattach`, header `X-Kiro-Reattach-Token`); only if the runner refuses is it marked `interrupted` as before.
+
+| Column | Meaning |
+|---|---|
+| `reattach_nonce` | random per Kiro session; the token is `HMAC-SHA256(HKDF(GATEWAY_INTERNAL_TOKEN), 'kiro-reattach:' + nonce)` and is **never stored** |
+| `reattach_token_hash` | hex sha256 of that token (checked before the token is presented; the runner keeps only the hash too) |
+| `reattach_expires_at` | end of the reattach window once the owning task let the session go on graceful shutdown (null while it runs; after a crash the window is counted from `last_heartbeat_at`) |
+| `turn_context` | how the turn was asked (`mode`, `channel`, `requestId`, `conversation_id`, `validatedVtid`, `attachments`), so the task that finishes it records the turn the same way |
+
+OASIS: `operator.kiro.run_reattached` — payload `{ run_id, thread_id, status }` only.

@@ -343,7 +343,8 @@ async function executeKiroChatTurn(a: KiroRunExecutorInput): Promise<OperatorCha
     }
     return out;
   };
-  const result = await runKiroTurn({ threadId: a.threadId, userId: a.userId, message: a.message, imageCount: media.length, loadImages, emit: a.emit, loadHistory, loadModelPick });
+  // VTID-05068: onReattach / resume let a run survive a gateway deploy (kiro-runs.ts).
+  const result = await runKiroTurn({ onReattach: a.onReattach, resume: a.resume, threadId: a.threadId, userId: a.userId, message: a.message, imageCount: media.length, loadImages, emit: a.emit, loadHistory, loadModelPick });
   // VTID-05003: a used-up Kiro Power seat is a governed state transition, logged once per change.
   if (result.meta.kiro_status === 'no_credits' && result.meta.credits_changed === true) {
     await emitOasisEvent({

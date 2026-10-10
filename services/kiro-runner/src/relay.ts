@@ -11,12 +11,27 @@
  * - Bounds of its own: idle and absolute timeouts, a ping, a line cap and a
  *   send-buffer cap. A slow or vanished gateway never makes the runner buffer
  *   without limit or keep a process alive.
+ * - VTID-05068 (runs survive a gateway deploy): a session the gateway opened
+ *   with a reattach token (`X-Kiro-Reattach-Token`, only its sha256 is kept
+ *   here) that loses its socket while a prompt is running is DETACHED instead
+ *   of ended: kiro-cli keeps working for `reattachMs` (KIRO_RUNNER_REATTACH_MS,
+ *   default 10 min) and its output is buffered (cap `reattachBufferBytes`,
+ *   2 MB; past it the session ends). A new socket for the same user + thread
+ *   presenting the same token within the window takes the session over and
+ *   gets, in order: one `reattached` status frame (the ACP session id and the
+ *   prompt request ids still unanswered at the drop), the agent requests the
+ *   old socket never answered, then the buffered frames. A close with 1000 /
+ *   1005 (the gateway ended the session on purpose), a session without a
+ *   token, or a drop between turns ends the session exactly as before.
+ *   Refusals (server.ts): 4403 kiro_reattach_refused (missing / wrong /
+ *   expired token), 4404 kiro_session_not_found (no such session for this
+ *   user + thread). A socket replaced by a reattach closes 4409.
  */
 import { spawn as nodeSpawn, type ChildProcess } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import { StringDecoder } from 'string_decoder';
 import type { WebSocket } from 'ws';
 import type { RepoMirrors } from './repo-mirrors';
@@ -31,7 +46,18 @@ export const CLOSE = {
   idle: 4408,
   maxLifetime: 4410,
   busy: 4429,
+  /** VTID-05068: reattach refused — token missing, wrong, or its window is over. */
+  reattachRefused: 4403,
+  /** VTID-05068: no session of this user + thread to reattach to. */
+  reattachNotFound: 4404,
+  /** VTID-05068: this socket was replaced by a reattach with the session's token. */
+  takenOver: 4409,
 } as const;
+
+/** VTID-05068: how long a dropped session waits for its gateway, and how much it buffers meanwhile. */
+export const REATTACH_DEFAULTS = { reattachMs: 10 * 60_000, reattachBufferBytes: 2 * 1024 * 1024 } as const;
+/** VTID-05068: the token format the gateway mints (base64url of an HMAC-SHA256). */
+export const REATTACH_TOKEN_RE = /^[A-Za-z0-9_-]{32,128}$/;
 
 /** The first frame the runner sends once Kiro is started: the gateway waits for it. */
 export const READY_FRAME = JSON.stringify({ kiro_runner: 'ready' });
@@ -43,6 +69,13 @@ export const READY_FRAME = JSON.stringify({ kiro_runner: 'ready' });
  */
 export const workspaceFrame = (state: 'restored' | 'fresh') => JSON.stringify({ kiro_runner: 'workspace', state });
 export const workspaceStateFrame = (dirty: string[]) => JSON.stringify({ kiro_runner: 'workspace_state', dirty });
+/**
+ * VTID-05068: the first frame a reattached socket gets: the ACP session id, the session/prompt
+ * request ids still unanswered when the old socket dropped (their answers may be in the replay),
+ * and how many frames are replayed after this one.
+ */
+export const reattachedFrame = (sessionId: string | null, pendingPrompts: string[], replayed: number) =>
+  JSON.stringify({ kiro_runner: 'reattached', session_id: sessionId, pending_prompts: pendingPrompts, replayed });
 
 export interface RelayLimits {
   idleMs: number;
@@ -50,6 +83,10 @@ export interface RelayLimits {
   pingMs: number;
   maxLineBytes: number;
   maxBufferedBytes: number;
+  /** VTID-05068: how long a dropped session is kept for a reattach (0 = never, end at once as before). */
+  reattachMs?: number;
+  /** VTID-05068: output buffered while detached; past it the session ends. */
+  reattachBufferBytes?: number;
 }
 
 export interface RelayOptions {
@@ -65,15 +102,51 @@ export interface RelayOptions {
   park?: ParkLimits | null;
   workRoot: string;
   limits: RelayLimits;
+  /** VTID-05068: the session's reattach token (only its sha256 is kept). None = the session ends when its socket drops. */
+  reattachToken?: string | null;
   kiroBin?: string;
   spawnImpl?: typeof nodeSpawn;
   log?: (msg: string) => void;
 }
 
-export interface RelaySession { id: string; userId: string; threadId: string; stop(code: number, reason: string): void }
+export interface RelaySession {
+  id: string; userId: string; threadId: string;
+  stop(code: number, reason: string): void;
+  /** VTID-05068: the socket dropped and the session waits for a reattach. */
+  isDetached(): boolean;
+  /** VTID-05068: does `token` reattach this session now (right token, inside the window)? */
+  matches(token: string, now?: number): boolean;
+  /** VTID-05068: hand the session to `ws` (call only after matches()). */
+  reattach(ws: WebSocket): void;
+  /** Resolves once the session has ended and its workspace was removed or parked. */
+  done: Promise<void>;
+}
 
 const sessions = new Map<string, RelaySession>();
+/** VTID-05068: sessions that ended and are still deciding whether to park (key: user + thread). */
+const settling = new Map<string, Promise<void>>();
+const threadKey = (userId: string, threadId: string) => `${userId}\u0000${threadId}`;
 export function sessionCount(): number { return sessions.size; }
+export function detachedCount(): number { return [...sessions.values()].filter((s) => s.isDetached()).length; }
+/** VTID-05068: the live sessions of one user + thread (a reattach picks the one its token matches). */
+export function sessionsOf(userId: string, threadId: string): RelaySession[] {
+  return [...sessions.values()].filter((s) => s.userId === userId && s.threadId === threadId);
+}
+/**
+ * VTID-05068: before a NEW session of a thread starts: end the thread's detached session (nobody
+ * reattached it; a new session replaces it) and wait until any ended session of the thread has
+ * parked its workspace, so the new session gets the parked edits instead of a fresh directory.
+ */
+export async function settleThread(userId: string, threadId: string): Promise<void> {
+  const waits: Promise<void>[] = [];
+  for (const s of sessionsOf(userId, threadId)) if (s.isDetached()) { s.stop(CLOSE.normal, 'kiro_session_replaced'); waits.push(s.done); }
+  const p = settling.get(threadKey(userId, threadId));
+  if (p) waits.push(p);
+  await Promise.all(waits);
+}
+
+/** VTID-05068: sha256 of a reattach token (what the session keeps). */
+export function hashReattachToken(token: string): Buffer { return createHash('sha256').update(token, 'utf8').digest(); }
 export function stopUserSessions(userId: string, code: number = CLOSE.normal, reason = 'kiro_key_revoked'): number {
   let n = 0;
   for (const s of [...sessions.values()]) if (s.userId === userId) { s.stop(code, reason); n++; }
@@ -165,28 +238,96 @@ export function startRelay(o: RelayOptions): RelaySession {
   // VTID-05064: ids of session/prompt requests; their responses are preceded by a workspace_state frame.
   const promptIds = new Set<string>();
   let outChain: Promise<void> = Promise.resolve();
-  const sendOut = (line: string) => { outChain = outChain.then(() => { if (!ended && o.ws.readyState === o.ws.OPEN) o.ws.send(line); }); };
+
+  // VTID-05068: the socket can change (a reattach); kiro-cli's output goes to the CURRENT one,
+  // or into the buffer while the session waits for its gateway.
+  const reattachMs = o.limits.reattachMs ?? REATTACH_DEFAULTS.reattachMs;
+  const bufferCap = o.limits.reattachBufferBytes ?? REATTACH_DEFAULTS.reattachBufferBytes;
+  const tokenHash = o.reattachToken && reattachMs > 0 ? hashReattachToken(o.reattachToken) : null;
+  let ws: WebSocket = o.ws;
+  let attached = true;
+  let detachedAt = 0;
+  let detachTimer: NodeJS.Timeout | null = null;
+  let pendingAtDrop: string[] = [];
+  const buffered: string[] = [];
+  let bufferedBytes = 0;
+  let acpSessionId: string | null = null;
+  const sessionRequestIds = new Set<string>();
+  /** Agent → gateway requests (permission cards) not answered yet; `delivered` = a socket got them. */
+  const openRequests = new Map<string, { line: string; delivered: boolean }>();
+
+  let doneResolve!: () => void;
+  const done = new Promise<void>((r) => { doneResolve = r; });
+
+  const isOpen = (sock: WebSocket) => sock.readyState === sock.OPEN;
+  /** VTID-05068: what a reattach needs from kiro-cli's output — its open requests and the ACP session id. */
+  const noteOutgoing = (line: string) => {
+    if (!tokenHash) return;
+    if (line.includes('"method"')) {
+      try { const m = JSON.parse(line); if (m && m.method && m.id !== undefined) openRequests.set(String(m.id), { line, delivered: false }); } catch { /* not JSON-RPC */ }
+    }
+    if (sessionRequestIds.size > 0 && line.includes('"sessionId"')) {
+      try {
+        const m = JSON.parse(line);
+        if (m && !m.method && m.id !== undefined && sessionRequestIds.delete(String(m.id)) && typeof m.result?.sessionId === 'string') acpSessionId = m.result.sessionId;
+      } catch { /* not JSON */ }
+    }
+  };
+  const markDelivered = (line: string) => {
+    if (openRequests.size === 0 || !line.includes('"method"')) return;
+    for (const r of openRequests.values()) if (r.line === line) r.delivered = true;
+  };
+  /** Send to the current socket; while detached (or while the socket is going away) buffer it instead. */
+  const deliver = (line: string) => {
+    if (ended) return;
+    if (attached && isOpen(ws)) { ws.send(line); markDelivered(line); return; }
+    if (!tokenHash) return; // no reattach possible: dropped, as before
+    buffered.push(line);
+    bufferedBytes += Buffer.byteLength(line);
+    if (bufferedBytes > bufferCap) end(CLOSE.tooBig, 'kiro_reattach_buffer_full');
+  };
+  const sendOut = (line: string) => { outChain = outChain.then(() => deliver(line)); };
 
   const end = (code: number, reason: string) => {
     if (ended) return;
     ended = true;
     sessions.delete(id);
     if (idle) clearTimeout(idle);
+    if (detachTimer) clearTimeout(detachTimer);
     clearTimeout(lifetime);
     clearInterval(ping);
+    buffered.length = 0;
+    bufferedBytes = 0;
     try { child.kill('SIGTERM'); } catch { /* already gone */ }
     const hard = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* gone */ } }, 5000);
     hard.unref?.();
-    try { if (o.ws.readyState === o.ws.OPEN) o.ws.close(code, reason); } catch { /* closing */ }
+    try { if (attached && isOpen(ws)) ws.close(code, reason); } catch { /* closing */ }
     log(`[kiro-runner] session ${id} ended (${code} ${reason})`);
     // VTID-05064: uncommitted work survives the session (never on a revoked key).
     const keep = o.park && reason !== 'kiro_key_revoked' ? o.park : null;
-    if (!keep) { fs.rm(dir, { recursive: true, force: true }, () => {}); return; }
-    void dirtyRepos(dir).then((dirty) => {
+    if (!keep) { fs.rm(dir, { recursive: true, force: true }, () => {}); doneResolve(); return; }
+    const key = threadKey(o.userId, o.threadId);
+    const parking: Promise<void> = dirtyRepos(dir).then((dirty) => {
       if (dirty.length === 0) { fs.rm(dir, { recursive: true, force: true }, () => {}); return; }
       park(dir, o.userId, o.threadId, keep, log);
       log(`[kiro-runner] session ${id} parked its workspace (uncommitted: ${dirty.join(', ')})`);
-    });
+    }).catch(() => undefined).finally(() => { if (settling.get(key) === parking) settling.delete(key); doneResolve(); });
+    settling.set(key, parking);
+  };
+
+  /**
+   * VTID-05068: the current socket is gone. Kept for a reattach only when the session has a token,
+   * a prompt is running, and the gateway did not end it on purpose (1000 / 1005); else ended as before.
+   */
+  const onSocketGone = (sock: WebSocket, code: number, reason: string) => {
+    if (ended || sock !== ws || !attached) return;
+    if (!tokenHash || code === 1000 || code === 1005 || promptIds.size === 0) { end(CLOSE.normal, reason); return; }
+    attached = false;
+    detachedAt = Date.now();
+    pendingAtDrop = [...promptIds];
+    detachTimer = setTimeout(() => end(CLOSE.normal, 'kiro_reattach_window_expired'), reattachMs);
+    detachTimer.unref?.();
+    log(`[kiro-runner] session ${id} detached (${code} ${reason}); kept ${Math.round(reattachMs / 1000)} s for a reattach`);
   };
 
   const touch = () => {
@@ -197,12 +338,12 @@ export function startRelay(o: RelayOptions): RelaySession {
   const lifetime = setTimeout(() => end(CLOSE.maxLifetime, 'kiro_session_max_lifetime'), o.limits.maxSessionMs);
   lifetime.unref?.();
   const ping = setInterval(() => {
-    if (!alive) { end(CLOSE.normal, 'gateway_gone'); return; }
+    if (!attached) return; // VTID-05068: nothing to ping while detached
+    if (!alive) { const sock = ws; onSocketGone(sock, 1006, 'gateway_gone'); try { sock.terminate(); } catch { /* gone */ } return; }
     alive = false;
-    try { o.ws.ping(); } catch { end(CLOSE.normal, 'gateway_gone'); }
+    try { ws.ping(); } catch { onSocketGone(ws, 1006, 'gateway_gone'); }
   }, o.limits.pingMs);
   ping.unref?.();
-  o.ws.on('pong', () => { alive = true; });
 
   // Decode across chunk boundaries so a multi-byte character split between two chunks survives.
   const decoder = new StringDecoder('utf8');
@@ -219,14 +360,16 @@ export function startRelay(o: RelayOptions): RelaySession {
         if (firstNoise) { firstNoise = false; log(`[kiro-runner] session ${id} kiro-cli said: ${line.slice(0, 200)}`); }
         continue;
       }
-      if (o.ws.bufferedAmount > o.limits.maxBufferedBytes) { end(CLOSE.tooBig, 'kiro_gateway_too_slow'); return; }
+      if (attached && ws.bufferedAmount > o.limits.maxBufferedBytes) { end(CLOSE.tooBig, 'kiro_gateway_too_slow'); return; }
       touch();
+      noteOutgoing(line);
       const promptId = promptIds.size > 0 ? responseId(line) : null;
       if (promptId !== null && promptIds.delete(promptId)) {
         // VTID-05064: tell the gateway, before the turn ends, whether this workspace holds unpushed edits.
         outChain = outChain.then(async () => {
           const dirty = await dirtyRepos(dir);
-          if (!ended && o.ws.readyState === o.ws.OPEN) { o.ws.send(workspaceStateFrame(dirty)); o.ws.send(line); }
+          deliver(workspaceStateFrame(dirty));
+          deliver(line);
         });
       } else {
         sendOut(line);
@@ -238,19 +381,63 @@ export function startRelay(o: RelayOptions): RelaySession {
   child.on('error', (err) => { log(`[kiro-runner] session ${id} spawn error: ${err.message}`); end(CLOSE.kiroExited, 'kiro_exited'); });
   child.on('exit', (code) => end(CLOSE.kiroExited, `kiro_exited_${code ?? 'signal'}`));
 
-  o.ws.on('message', (data, isBinary) => {
-    if (isBinary || ended) return;
-    touch();
-    alive = true;
-    const text = String(data);
-    const pid = promptRequestId(text);
-    if (pid !== null) promptIds.add(pid);
-    child.stdin?.write(`${rewriteCwd(text, dir, servers)}\n`);
-  });
-  o.ws.on('close', () => end(CLOSE.normal, 'gateway_closed'));
-  o.ws.on('error', () => end(CLOSE.normal, 'gateway_error'));
+  const wire = (sock: WebSocket) => {
+    sock.on('pong', () => { if (sock === ws) alive = true; });
+    sock.on('message', (data, isBinary) => {
+      if (isBinary || ended || sock !== ws) return;
+      touch();
+      alive = true;
+      const text = String(data);
+      const pid = promptRequestId(text);
+      if (pid !== null) promptIds.add(pid);
+      if (tokenHash) {
+        // VTID-05068: what a reattach needs — the ACP session id, and which agent requests got an answer.
+        if (text.includes('session/new') || text.includes('session/load')) {
+          try {
+            const m = JSON.parse(text);
+            if (m && (m.method === 'session/new' || m.method === 'session/load') && m.id !== undefined) sessionRequestIds.add(String(m.id));
+            if (m && m.method === 'session/load' && typeof m.params?.sessionId === 'string') acpSessionId = m.params.sessionId;
+          } catch { /* not JSON */ }
+        }
+        if (openRequests.size > 0) { const rid = responseId(text); if (rid !== null) openRequests.delete(rid); }
+      }
+      child.stdin?.write(`${rewriteCwd(text, dir, servers)}\n`);
+    });
+    sock.on('close', (code) => onSocketGone(sock, code, 'gateway_closed'));
+    sock.on('error', () => onSocketGone(sock, 1006, 'gateway_error'));
+  };
+  wire(o.ws);
 
-  const session: RelaySession = { id, userId: o.userId, threadId: o.threadId, stop: end };
+  const matches = (token: string, now: number = Date.now()): boolean => {
+    if (ended || !tokenHash || typeof token !== 'string' || !REATTACH_TOKEN_RE.test(token)) return false;
+    if (!attached && now - detachedAt > reattachMs) return false;
+    return timingSafeEqual(hashReattachToken(token), tokenHash);
+  };
+
+  const reattach = (next: WebSocket) => {
+    if (ended) { try { next.close(CLOSE.reattachNotFound, 'kiro_session_not_found'); } catch { /* closing */ } return; }
+    const pending = attached ? [...promptIds] : pendingAtDrop;
+    const old = ws;
+    const wasAttached = attached;
+    ws = next;
+    attached = true;
+    alive = true;
+    if (detachTimer) { clearTimeout(detachTimer); detachTimer = null; }
+    // A socket still attached (its gateway task has not noticed it is being replaced) is closed — not the session.
+    if (wasAttached && old !== next) { try { old.close(CLOSE.takenOver, 'kiro_session_taken_over'); } catch { /* closing */ } }
+    wire(next);
+    const replay = [
+      ...[...openRequests.values()].filter((r) => r.delivered).map((r) => r.line),
+      ...buffered.splice(0),
+    ];
+    bufferedBytes = 0;
+    next.send(reattachedFrame(acpSessionId, pending, replay.length));
+    for (const line of replay) { next.send(line); markDelivered(line); }
+    touch();
+    log(`[kiro-runner] session ${id} reattached (${replay.length} frame(s) replayed)`);
+  };
+
+  const session: RelaySession = { id, userId: o.userId, threadId: o.threadId, stop: end, isDetached: () => !ended && !attached, matches, reattach, done };
   sessions.set(id, session);
   touch();
   o.ws.send(workspaceFrame(reused ? 'restored' : 'fresh'));

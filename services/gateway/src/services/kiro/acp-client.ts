@@ -19,6 +19,11 @@ export interface AcpChild {
   on(event: 'exit' | 'error', cb: (...args: any[]) => void): unknown;
   /** VTID-05064: what the kiro-runner reported about this session's workspace (remote backend only). */
   runner?: KiroRunnerInfo;
+  /**
+   * VTID-05068: let go of the runner socket WITHOUT ending the session (close 1001), so another
+   * gateway task can reattach it. Remote backend only.
+   */
+  detach?(): void;
 }
 
 /**
@@ -26,7 +31,14 @@ export interface AcpChild {
  * parked workspace ('restored') or started empty ('fresh'). `dirty`: repos with uncommitted
  * edits, as of the latest finished prompt (null until the first one).
  */
-export interface KiroRunnerInfo { workspace: 'restored' | 'fresh' | null; dirty: string[] | null }
+export interface KiroRunnerInfo {
+  workspace: 'restored' | 'fresh' | null; dirty: string[] | null;
+  /**
+   * VTID-05068: set on a REATTACHED session — the ACP session id and the session/prompt request
+   * ids (sent by the gateway task that dropped) still unanswered when its socket dropped.
+   */
+  reattached?: { sessionId: string | null; pendingPrompts: number[] } | null;
+}
 
 export interface AcpPermissionOption { optionId: string; name?: string; kind?: string }
 export interface AcpPermissionRequest {
@@ -114,6 +126,8 @@ export class AcpClient {
   private closed = false;
   /** VTID-05067: the agent's capabilities from the initialize response (null until initialized). */
   agentCapabilities: AcpAgentCapabilities | null = null;
+  /** VTID-05068: let go for another gateway task — pending requests stay unanswered here, never failed. */
+  private detached = false;
 
   constructor(private readonly child: AcpChild, private readonly opts: AcpClientOptions = {}) {
     child.stdout.on('data', (chunk: Buffer | string) => this.onData(String(chunk)));
@@ -175,6 +189,7 @@ export class AcpClient {
 
   private failAll(err: Error): void {
     this.closed = true;
+    if (this.detached) return;
     for (const [id, p] of this.pending) {
       if (p.timer) clearTimeout(p.timer);
       p.reject(err);
@@ -242,6 +257,35 @@ export class AcpClient {
     for (const img of images ?? []) prompt.push({ type: 'image', mimeType: img.mimeType, data: img.data });
     const r = await this.request<{ stopReason?: string }>('session/prompt', { sessionId, prompt }, timeoutMs);
     return { stopReason: String(r?.stopReason ?? 'end_turn') };
+  }
+
+  /**
+   * VTID-05068: wait for the answer to request `id` that an EARLIER client (another gateway
+   * task) sent on this same kiro-cli session; the runner replays that answer after a reattach.
+   * Register before the replayed frames are read. Later ids of this client never collide.
+   */
+  adopt<T = any>(id: number, timeoutMs: number): Promise<T> {
+    if (this.closed) return Promise.reject(new AcpError('ACP connection closed'));
+    if (id >= this.nextId) this.nextId = id + 1;
+    return new Promise<T>((resolve, reject) => {
+      const timer = timeoutMs > 0 ? setTimeout(() => { this.pending.delete(id); reject(new AcpError('ACP adopted request timed out')); }, timeoutMs) : null;
+      timer?.unref?.();
+      this.pending.set(id, { resolve, reject, timer });
+    });
+  }
+
+  /**
+   * VTID-05068: this gateway task is going away and another one will reattach the session:
+   * stop writing, keep every pending request unanswered (the turn is not failed here), and
+   * close the runner socket with "going away" so the runner keeps kiro-cli alive.
+   */
+  detach(): boolean {
+    if (this.closed || !this.child.detach) return false;
+    this.detached = true;
+    this.closed = true;
+    for (const p of this.pending.values()) if (p.timer) clearTimeout(p.timer);
+    try { this.child.detach(); } catch { /* closing */ }
+    return true;
   }
 
   cancel(sessionId: string): void {
