@@ -42,4 +42,5 @@ AC-9: The community role lists the real calendar tools; the never-built get_cale
 - Text chat's tools live in `services/gemini-operator.ts` (that is the text-DM path: `processConversationTurn` → `processWithGemini`); `vitana-brain.ts`'s `buildBrainToolDefinitions`/`executeBrainTool`, named in the plan, have no callers.
 - Assistant invites go to direct chats only (a person resolved by resolve_recipient). Group invites stay in the app's picker.
 - reschedule_event keeps its one-step flow on voice; text chat asks for confirmation first. Both refuse a past time.
+- `calendar.event.created` for a voice-created entry is now emitted by the shared handler (vtid VTID-04918, same payload fields incl. session_id, plus `via`) instead of inline in orb-live.ts (VTID-01155). The report-only voice-pipeline parity scan therefore lists it as missing_in_vertex; it is emitted on that path through the dispatcher.
 - Only the community role's stale `get_calendar_today/week` entries (plan: `assistant-role-registry.ts:116-117`) were replaced; the patient role's and the staging synthetic list's are untouched.

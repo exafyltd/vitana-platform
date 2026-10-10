@@ -133,7 +133,7 @@ export async function tool_create_calendar_event(args: OrbToolArgs, id: OrbToolI
       source: 'orb-tools',
       status: 'info',
       message: `Assistant-created calendar event: ${event.title}`,
-      payload: { event_id: event.id, user_id: id.user_id, via: 'assistant' },
+      payload: { event_id: event.id, user_id: id.user_id, event_type: event.event_type, session_id: id.session_id ?? null, via: 'assistant' },
     }).catch(() => {});
     const tz = resolveTimezone(args);
     return {
