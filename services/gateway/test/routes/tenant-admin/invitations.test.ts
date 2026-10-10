@@ -62,7 +62,13 @@ const createChain = () => {
 const tableChains: Record<string, ReturnType<typeof createChain>> = {};
 const chainFor = (table: string) => (tableChains[table] ??= createChain());
 
-const mockSupabase = { from: jest.fn((table: string) => chainFor(table)) };
+// VTID-05044: accept looks the caller (and, for developer/infra, the inviter)
+// up in auth.users via the service client.
+const mockGetUserById = jest.fn();
+const mockSupabase = {
+  from: jest.fn((table: string) => chainFor(table)),
+  auth: { admin: { getUserById: (id: string) => mockGetUserById(id) } },
+};
 const mockGetSupabase = jest.fn(() => mockSupabase as any);
 
 jest.mock('../../../src/lib/supabase', () => ({
@@ -129,6 +135,26 @@ function mockVerifiedJwt(payload: object) {
   (jose.jwtVerify as jest.Mock).mockResolvedValue({ payload });
 }
 
+/** auth.users rows by id; unknown ids resolve to { user: null }. */
+function mockAuthUsers(users: Record<string, object>) {
+  mockGetUserById.mockImplementation(async (id: string) => ({ data: { user: users[id] ?? null }, error: null }));
+}
+
+const CONFIRMED_MEMBER = { id: 'member-1', email: 'member@example.com', email_confirmed_at: '2026-01-01T00:00:00Z', app_metadata: {} };
+const TENANT_ADMIN_INVITER = { id: 'admin-a', email: 'admin-a@example.com', email_confirmed_at: '2026-01-01T00:00:00Z', app_metadata: { exafy_admin: false } };
+const EXAFY_INVITER = { id: 'exafy-1', email: 'ops@exafy.io', email_confirmed_at: '2026-01-01T00:00:00Z', app_metadata: { exafy_admin: true } };
+
+const futureExpiry = () => new Date(Date.now() + 7 * 86400_000).toISOString();
+const pendingInvitation = (overrides: object = {}) => ({
+  id: INVITE_ID,
+  tenant_id: TENANT_A,
+  email: 'member@example.com',
+  roles: ['community'],
+  invited_by: 'admin-a',
+  expires_at: futureExpiry(),
+  ...overrides,
+});
+
 function mockInvalidJwt() {
   (jose.jwtVerify as jest.Mock).mockRejectedValue(new Error('signature verification failed'));
 }
@@ -140,6 +166,8 @@ describe('Tenant Admin Invitations Routes', () => {
     for (const chain of Object.values(tableChains)) chain.mockReset();
     mockGetSupabase.mockReturnValue(mockSupabase as any);
     mockUserTenantsSingle.mockResolvedValue({ data: { active_role: 'admin' }, error: null });
+    mockGetUserById.mockReset();
+    mockAuthUsers({ 'member-1': CONFIRMED_MEMBER, 'admin-a': TENANT_ADMIN_INVITER, 'exafy-1': EXAFY_INVITER });
     mockInvalidJwt();
   });
 
@@ -454,17 +482,10 @@ describe('Tenant Admin Invitations Routes', () => {
 
   it('accept: creates membership + grants roles for the invitation\'s tenant only', async () => {
     mockVerifiedJwt(MEMBER_CLAIMS);
-    const futureExpiry = new Date(Date.now() + 7 * 86400_000).toISOString();
-    chainFor('tenant_invitations').mockResolvedValueOnce({
-      data: {
-        id: INVITE_ID,
-        tenant_id: TENANT_A,
-        roles: ['community', 'professional'],
-        invited_by: 'admin-a',
-        expires_at: futureExpiry,
-      },
-      error: null,
-    });
+    const invite = pendingInvitation({ roles: ['community', 'professional'] });
+    chainFor('tenant_invitations').mockResolvedValueOnce({ data: invite, error: null });
+    // VTID-05044: the atomic claim wins
+    chainFor('tenant_invitations').mockResolvedValueOnce({ data: invite, error: null });
     // No existing membership
     chainFor('user_tenants').mockResolvedValueOnce({ data: null, error: { code: 'PGRST116', message: 'No rows' } });
 
@@ -494,10 +515,18 @@ describe('Tenant Admin Invitations Routes', () => {
       granted_by: 'admin-a',
     });
     expect(upsertCalls[1][0]).toMatchObject({ role: 'professional', tenant_id: TENANT_A });
-    // Invitation marked accepted by this user
-    expect(chainFor('tenant_invitations').update).toHaveBeenCalledWith(
+    // Invitation claimed by this user, conditionally on still being pending
+    const inv = chainFor('tenant_invitations');
+    expect(inv.update).toHaveBeenCalledWith(
       expect.objectContaining({ accepted_by: 'member-1', accepted_at: expect.any(String) })
     );
+    expect(inv.is).toHaveBeenCalledWith('accepted_at', null);
+    expect(inv.is).toHaveBeenCalledWith('revoked_at', null);
+    expect(inv.gt).toHaveBeenCalledWith('expires_at', expect.any(String));
+    // VTID-05044: the claim happens before anything is granted
+    const claimOrder = (inv.update as jest.Mock).mock.invocationCallOrder[0];
+    expect((chainFor('user_tenants').insert as jest.Mock).mock.invocationCallOrder[0]).toBeGreaterThan(claimOrder);
+    expect((chainFor('user_permitted_roles').upsert as jest.Mock).mock.invocationCallOrder[0]).toBeGreaterThan(claimOrder);
   });
 
   it('accept: returns 500 (not a silent membership reset) when the existing-membership check errors', async () => {
@@ -509,17 +538,7 @@ describe('Tenant Admin Invitations Routes', () => {
     // PGRST116 ("no rows") is .single()'s normal "not yet a member" shape
     // and must NOT be treated as an error (see the success test above).
     mockVerifiedJwt(MEMBER_CLAIMS);
-    const futureExpiry = new Date(Date.now() + 7 * 86400_000).toISOString();
-    chainFor('tenant_invitations').mockResolvedValueOnce({
-      data: {
-        id: INVITE_ID,
-        tenant_id: TENANT_A,
-        roles: ['community'],
-        invited_by: 'admin-a',
-        expires_at: futureExpiry,
-      },
-      error: null,
-    });
+    chainFor('tenant_invitations').mockResolvedValueOnce({ data: pendingInvitation(), error: null });
     chainFor('user_tenants').mockResolvedValueOnce({ data: null, error: { code: '500', message: 'lookup failed' } });
 
     const res = await request(app)
@@ -530,5 +549,243 @@ describe('Tenant Admin Invitations Routes', () => {
     expect(res.body.ok).toBe(false);
     expect(chainFor('user_tenants').insert).not.toHaveBeenCalled();
     expect(chainFor('user_permitted_roles').upsert).not.toHaveBeenCalled();
+    // ...and the invitation is not consumed either
+    expect(chainFor('tenant_invitations').update).not.toHaveBeenCalled();
+  });
+
+  // --- VTID-05044 (Track S / S4): invitation role allowlist ---
+
+  describe('VTID-05044 create: role allowlist', () => {
+    const EXAFY_CLAIMS = {
+      sub: 'exafy-1',
+      email: 'ops@exafy.io',
+      app_metadata: { active_tenant_id: TENANT_A, exafy_admin: true },
+    };
+
+    function mockCreateSucceeds(roles: string[]) {
+      const chain = chainFor('tenant_invitations');
+      chain.mockResolvedValueOnce({ data: null, error: { code: 'PGRST116', message: 'No rows' } });
+      chain.mockResolvedValueOnce({ data: { id: INVITE_ID, email: 'x@example.com', roles, token: 't' }, error: null });
+      return chain;
+    }
+
+    it.each(['developer', 'infra'])('a tenant admin cannot invite as %s (403, no insert)', async (role) => {
+      mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+
+      const res = await request(app)
+        .post(`/api/v1/admin/tenants/${TENANT_A}/invitations`)
+        .set('Authorization', 'Bearer token')
+        .send({ email: 'x@example.com', roles: ['community', role] });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('ROLE_NOT_GRANTABLE');
+      expect(chainFor('tenant_invitations').insert).not.toHaveBeenCalled();
+    });
+
+    it('an exafy_admin can invite as developer (201)', async () => {
+      mockVerifiedJwt(EXAFY_CLAIMS);
+      const chain = mockCreateSucceeds(['developer']);
+
+      const res = await request(app)
+        .post(`/api/v1/admin/tenants/${TENANT_A}/invitations`)
+        .set('Authorization', 'Bearer token')
+        .send({ email: 'x@example.com', roles: ['developer'] });
+
+      expect(res.status).toBe(201);
+      expect(chain.insert).toHaveBeenCalledWith(expect.objectContaining({ roles: ['developer'], invited_by: 'exafy-1' }));
+    });
+
+    it.each([['bogus'], ['commerce'], [42]])('an unknown role (%p) is refused with 400 INVALID_ROLE', async (role) => {
+      mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+
+      const res = await request(app)
+        .post(`/api/v1/admin/tenants/${TENANT_A}/invitations`)
+        .set('Authorization', 'Bearer token')
+        .send({ email: 'x@example.com', roles: ['community', role] });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('INVALID_ROLE');
+      expect(res.body.valid_roles).toEqual(expect.arrayContaining(['community', 'admin', 'backoffice']));
+      expect(chainFor('tenant_invitations').insert).not.toHaveBeenCalled();
+    });
+
+    it.each(['backoffice', 'admin'])('a tenant admin can invite as %s (201)', async (role) => {
+      mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+      const chain = mockCreateSucceeds([role]);
+
+      const res = await request(app)
+        .post(`/api/v1/admin/tenants/${TENANT_A}/invitations`)
+        .set('Authorization', 'Bearer token')
+        .send({ email: 'x@example.com', roles: [role] });
+
+      expect(res.status).toBe(201);
+      expect(chain.insert).toHaveBeenCalledWith(expect.objectContaining({ roles: [role] }));
+    });
+
+    it('duplicate roles are stored once', async () => {
+      mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+      const chain = mockCreateSucceeds(['community', 'staff']);
+
+      const res = await request(app)
+        .post(`/api/v1/admin/tenants/${TENANT_A}/invitations`)
+        .set('Authorization', 'Bearer token')
+        .send({ email: 'x@example.com', roles: ['community', 'staff', 'community'] });
+
+      expect(res.status).toBe(201);
+      expect(chain.insert).toHaveBeenCalledWith(expect.objectContaining({ roles: ['community', 'staff'] }));
+    });
+  });
+
+  // --- VTID-05044 (Track S / S4): accept requires the invited, confirmed email ---
+
+  describe('VTID-05044 accept: email binding, legacy roles, atomic claim', () => {
+    function expectNothingGranted() {
+      expect(chainFor('tenant_invitations').update).not.toHaveBeenCalled();
+      expect(chainFor('user_tenants').insert).not.toHaveBeenCalled();
+      expect(chainFor('user_permitted_roles').upsert).not.toHaveBeenCalled();
+    }
+
+    it('a caller whose email differs from the invitation gets 403 EMAIL_MISMATCH and the invite stays pending', async () => {
+      mockVerifiedJwt(MEMBER_CLAIMS);
+      chainFor('tenant_invitations').mockResolvedValueOnce({
+        data: pendingInvitation({ email: 'someone-else@example.com' }),
+        error: null,
+      });
+
+      const res = await request(app)
+        .post('/api/v1/admin/invitations/accept/tok-123')
+        .set('Authorization', 'Bearer member-token');
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('EMAIL_MISMATCH');
+      expect(mockGetUserById).toHaveBeenCalledWith('member-1');
+      expectNothingGranted();
+    });
+
+    it('a case-only difference in the email is accepted (200)', async () => {
+      mockVerifiedJwt(MEMBER_CLAIMS);
+      mockAuthUsers({ 'member-1': { ...CONFIRMED_MEMBER, email: 'Member@Example.COM' } });
+      const invite = pendingInvitation();
+      chainFor('tenant_invitations').mockResolvedValueOnce({ data: invite, error: null });
+      chainFor('tenant_invitations').mockResolvedValueOnce({ data: invite, error: null });
+      chainFor('user_tenants').mockResolvedValueOnce({ data: null, error: { code: 'PGRST116', message: 'No rows' } });
+
+      const res = await request(app)
+        .post('/api/v1/admin/invitations/accept/tok-123')
+        .set('Authorization', 'Bearer member-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(chainFor('user_permitted_roles').upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it('an unconfirmed email gets 403 EMAIL_UNVERIFIED', async () => {
+      mockVerifiedJwt(MEMBER_CLAIMS);
+      mockAuthUsers({ 'member-1': { ...CONFIRMED_MEMBER, email_confirmed_at: null } });
+      chainFor('tenant_invitations').mockResolvedValueOnce({ data: pendingInvitation(), error: null });
+
+      const res = await request(app)
+        .post('/api/v1/admin/invitations/accept/tok-123')
+        .set('Authorization', 'Bearer member-token');
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('EMAIL_UNVERIFIED');
+      expectNothingGranted();
+    });
+
+    it('a legacy invite carrying infra from a non-exafy inviter gets 409 INVITATION_ROLES_INVALID', async () => {
+      mockVerifiedJwt(MEMBER_CLAIMS);
+      chainFor('tenant_invitations').mockResolvedValueOnce({
+        data: pendingInvitation({ roles: ['community', 'infra'], invited_by: 'admin-a' }),
+        error: null,
+      });
+
+      const res = await request(app)
+        .post('/api/v1/admin/invitations/accept/tok-123')
+        .set('Authorization', 'Bearer member-token');
+
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe('INVITATION_ROLES_INVALID');
+      expect(mockGetUserById).toHaveBeenCalledWith('admin-a');
+      expectNothingGranted();
+    });
+
+    it('a legacy invite carrying an unknown role gets 409 INVITATION_ROLES_INVALID', async () => {
+      mockVerifiedJwt(MEMBER_CLAIMS);
+      chainFor('tenant_invitations').mockResolvedValueOnce({
+        data: pendingInvitation({ roles: ['bogus'] }),
+        error: null,
+      });
+
+      const res = await request(app)
+        .post('/api/v1/admin/invitations/accept/tok-123')
+        .set('Authorization', 'Bearer member-token');
+
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe('INVITATION_ROLES_INVALID');
+      expectNothingGranted();
+    });
+
+    it('an infra invite from an exafy_admin inviter is honoured (200)', async () => {
+      mockVerifiedJwt(MEMBER_CLAIMS);
+      const invite = pendingInvitation({ roles: ['infra'], invited_by: 'exafy-1' });
+      chainFor('tenant_invitations').mockResolvedValueOnce({ data: invite, error: null });
+      chainFor('tenant_invitations').mockResolvedValueOnce({ data: invite, error: null });
+      chainFor('user_tenants').mockResolvedValueOnce({ data: { id: 'm1' }, error: null });
+
+      const res = await request(app)
+        .post('/api/v1/admin/invitations/accept/tok-123')
+        .set('Authorization', 'Bearer member-token');
+
+      expect(res.status).toBe(200);
+      expect(chainFor('user_permitted_roles').upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'infra', granted_by: 'exafy-1' }),
+        expect.anything(),
+      );
+    });
+
+    it('double accept: the second request loses the claim with 409 ALREADY_USED and grants nothing', async () => {
+      mockVerifiedJwt(MEMBER_CLAIMS);
+      const invite = pendingInvitation({ roles: ['community'] });
+      const inv = chainFor('tenant_invitations');
+      // request 1: fetch, claim wins
+      inv.mockResolvedValueOnce({ data: invite, error: null });
+      inv.mockResolvedValueOnce({ data: invite, error: null });
+      chainFor('user_tenants').mockResolvedValueOnce({ data: null, error: { code: 'PGRST116', message: 'No rows' } });
+      // request 2: fetch still saw it pending (race), conditional claim matches no row
+      inv.mockResolvedValueOnce({ data: invite, error: null });
+      inv.mockResolvedValueOnce({ data: null, error: null });
+      chainFor('user_tenants').mockResolvedValueOnce({ data: null, error: { code: 'PGRST116', message: 'No rows' } });
+
+      const first = await request(app)
+        .post('/api/v1/admin/invitations/accept/tok-123')
+        .set('Authorization', 'Bearer member-token');
+      expect(first.status).toBe(200);
+
+      const insertsAfterFirst = (chainFor('user_tenants').insert as jest.Mock).mock.calls.length;
+      const upsertsAfterFirst = (chainFor('user_permitted_roles').upsert as jest.Mock).mock.calls.length;
+
+      const second = await request(app)
+        .post('/api/v1/admin/invitations/accept/tok-123')
+        .set('Authorization', 'Bearer member-token');
+
+      expect(second.status).toBe(409);
+      expect(second.body.error).toBe('ALREADY_USED');
+      expect((chainFor('user_tenants').insert as jest.Mock).mock.calls.length).toBe(insertsAfterFirst);
+      expect((chainFor('user_permitted_roles').upsert as jest.Mock).mock.calls.length).toBe(upsertsAfterFirst);
+    });
+
+    it('a failed caller lookup is a 500, never a grant', async () => {
+      mockVerifiedJwt(MEMBER_CLAIMS);
+      mockGetUserById.mockResolvedValue({ data: { user: null }, error: { message: 'auth down' } });
+      chainFor('tenant_invitations').mockResolvedValueOnce({ data: pendingInvitation(), error: null });
+
+      const res = await request(app)
+        .post('/api/v1/admin/invitations/accept/tok-123')
+        .set('Authorization', 'Bearer member-token');
+
+      expect(res.status).toBe(500);
+      expectNothingGranted();
+    });
   });
 });
