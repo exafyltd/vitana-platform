@@ -136,6 +136,7 @@ describe('route wiring (source check)', () => {
     const fn = src.slice(src.indexOf('async function runKiroChatTurn'), src.indexOf('async function runKiroChatTurn') + 2_500);
     expect(fn).toMatch(/listOperatorThreadMessages\(a\.threadId, \{ userId: a\.userId, limit: 60 \}\)/);
     expect(fn).toMatch(/m\.role === 'user' \|\| m\.role === 'assistant'/);
-    expect(fn).toMatch(/runKiroTurn\(\{[^}]*loadHistory \}\)/);
+    // VTID-05060 added loadModelPick after loadHistory; loadHistory must still be passed.
+    expect(fn).toMatch(/runKiroTurn\(\{[^}]*\bloadHistory\b[^}]*\}\)/);
   });
 });

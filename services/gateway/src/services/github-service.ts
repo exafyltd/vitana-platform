@@ -181,6 +181,63 @@ export async function searchCode(
 }
 
 /**
+ * VTID-05060: pull requests whose title names `term` (e.g. a VTID) across one
+ * or more repos, newest first — one GitHub search call (`/search/issues`,
+ * `type:pr`, one `repo:` qualifier per repo). Read-only.
+ */
+export interface GitHubPrSearchHit {
+  repo: string;
+  number: number;
+  title: string;
+  state: 'open' | 'closed';
+  merged: boolean;
+  html_url: string;
+  body: string;
+  updated_at: string;
+}
+
+export async function searchPullRequests(
+  term: string,
+  repos: readonly string[],
+  opts: { tokenOverride?: string; signal?: AbortSignal } = {}
+): Promise<GitHubPrSearchHit[]> {
+  const q = encodeURIComponent([`"${term}"`, 'in:title', 'type:pr', ...repos.map((r) => `repo:${r}`)].join(' '));
+  const result = await githubRequest<{ items: any[] }>(
+    `/search/issues?q=${q}&sort=updated&order=desc&per_page=10`,
+    opts.signal ? { signal: opts.signal } : {},
+    opts.tokenOverride
+  );
+  return (result.items || []).map((i: any) => ({
+    repo: String(i.repository_url || '').replace(/^.*\/repos\//, ''),
+    number: i.number,
+    title: i.title,
+    state: i.state === 'open' ? 'open' : 'closed',
+    merged: Boolean(i.pull_request?.merged_at),
+    html_url: i.html_url,
+    body: typeof i.body === 'string' ? i.body : '',
+    updated_at: i.updated_at,
+  }));
+}
+
+/**
+ * VTID-05060: GitHub compare status of `head` against `base`
+ * (`ahead` | `behind` | `identical` | `diverged`). Read-only.
+ */
+export async function compareStatus(
+  repo: string,
+  base: string,
+  head: string,
+  opts: { tokenOverride?: string; signal?: AbortSignal } = {}
+): Promise<string> {
+  const r = await githubRequest<{ status: string }>(
+    `/repos/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}?per_page=1`,
+    opts.signal ? { signal: opts.signal } : {},
+    opts.tokenOverride
+  );
+  return r.status;
+}
+
+/**
  * VTID-03835: Read-only file content read via the GitHub Contents API.
  * Defaults `ref` to `main` — there is no live checkout on the gateway
  * container to read from, so a branch/tag/SHA ref is the only option.

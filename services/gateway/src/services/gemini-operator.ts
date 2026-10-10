@@ -731,6 +731,12 @@ KNOWN BLIND SPOT: GitHub's code search index excludes any file over 384KB. servi
       description: 'The map of Vitanaland: with no domain, one line per part of the system; with a domain or topic (voice, autopilot, agents, oasis, deploy, llm, memory, community, support, health, commerce, payments, admin, backoffice, infra), its code locations, tables, flags and docs. Read-only. Developer/admin role only.',
       parameters: { type: 'object', properties: { domain: { type: 'string', description: 'A domain key or a topic.' } }, required: [] }
     },
+    // VTID-05060: pick up an existing VTID in a fresh thread.
+    {
+      name: 'dev_resume_vtid',
+      description: 'Where one VTID stands, to continue it in this thread: its ledger row, its pull requests in both repos (state, branch, merge commit, PR body), its evidence (acceptance.md, the approved plan), handoff notes, and whether its merge commit is on staging and production. Use when the developer says "resume VTID-…" or "continue VTID-…". Continue that VTID; never allocate a new one for it. Read-only. Developer/admin role only.',
+      parameters: { type: 'object', properties: { vtid: { type: 'string', description: 'The VTID, e.g. "VTID-05047".' } }, required: ['vtid'] }
+    },
     {
       name: 'dev_deep_dive',
       description: 'Run a deep investigation (up to about two and a half minutes) when a question needs evidence from several places: code and its callers, git history, OASIS events, logs, database rows, live staging/production endpoints (GET only) or a screen\'s implementation. Returns findings with their sources. Read-only. Requires a signed-in developer.',
@@ -3901,6 +3907,18 @@ export async function executeTool(
           threadId
         );
         break;
+
+      // VTID-05060: the resume pack (read-only; the instructions block is left out, the
+      // Operator already carries the governance rules).
+      case 'dev_resume_vtid': {
+        const { buildResumePack } = await import('./dev-memory/resume-pack');
+        const vtid = String((args as { vtid?: unknown }).vtid ?? '').trim().toUpperCase();
+        const r = await buildResumePack(vtid);
+        result = r.ok
+          ? { ok: true, data: { vtid, resume: r.pack.text, unavailable: r.pack.unavailable } }
+          : { ok: false, error: r.error === 'invalid_vtid' ? 'vtid must look like VTID-12345' : r.error === 'not_found' ? `${vtid} is not in the VTID ledger` : 'the resume pack is unavailable right now' };
+        break;
+      }
 
       // VTID-04564: the developer knowledge + deep dive, shared with voice.
       case 'dev_system_status':

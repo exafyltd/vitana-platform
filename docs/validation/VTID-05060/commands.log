@@ -1,0 +1,7 @@
+npx tsc --noEmit -> 0
+npx jest test/vtid-05060-resume-and-model-pick.test.ts -> 21 passed
+npx jest test/vtid-04465-operator-pipeline-regression.test.ts -> 40 passed (VTID-05060 scenario fails with the restore call removed: mutation-checked)
+npx jest test/vtid-05018-kiro-thread-memory.test.ts test/vtid-05005-kiro-dev-tools-mcp.test.ts test/vtid-04560-role-separation-regression.test.ts -> green
+npx jest (full) -> 25876 passed, 0 failed, 25 skipped, 6 todo
+validateManifest(staging-tests.json) -> ok
+bash -n scripts/dev/resume-vtid.sh -> ok; bad id -> usage, exit 2

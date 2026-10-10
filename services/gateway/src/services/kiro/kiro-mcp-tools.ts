@@ -31,6 +31,8 @@ export const KIRO_MCP_READ_TOOLS = [
   'knowledge_search',
   // VTID-05006: what Kiro needs to find the approvals it may act on
   'dev_list_approvals', 'dev_approval_count',
+  // VTID-05060: pick up an existing VTID
+  'dev_resume_vtid',
 ] as const;
 
 export type KiroMcpToolName = (typeof KIRO_MCP_READ_TOOLS)[number];
