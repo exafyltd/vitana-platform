@@ -197,13 +197,16 @@ export interface GitHubPrSearchHit {
 }
 
 export async function searchPullRequests(
-  term: string,
+  term: string | readonly string[],
   repos: readonly string[],
-  opts: { tokenOverride?: string; signal?: AbortSignal } = {}
+  opts: { tokenOverride?: string; signal?: AbortSignal; perPage?: number } = {}
 ): Promise<GitHubPrSearchHit[]> {
-  const q = encodeURIComponent([`"${term}"`, 'in:title', 'type:pr', ...repos.map((r) => `repo:${r}`)].join(' '));
+  // VTID-05069: several terms → one batched search (`"a" OR "b"`), one call for a whole thread.
+  const terms = (typeof term === 'string' ? [term] : [...term]).map((t) => `"${t}"`).join(' OR ');
+  const q = encodeURIComponent([terms, 'in:title', 'type:pr', ...repos.map((r) => `repo:${r}`)].join(' '));
+  const perPage = Math.min(100, Math.max(1, opts.perPage ?? 10));
   const result = await githubRequest<{ items: any[] }>(
-    `/search/issues?q=${q}&sort=updated&order=desc&per_page=10`,
+    `/search/issues?q=${q}&sort=updated&order=desc&per_page=${perPage}`,
     opts.signal ? { signal: opts.signal } : {},
     opts.tokenOverride
   );
@@ -337,11 +340,29 @@ export async function getCombinedStatus(
 export async function getCheckRuns(
   repo: string,
   ref: string,
-  tokenOverride?: string
+  tokenOverride?: string,
+  opts: { perPage?: number } = {}
 ): Promise<{ check_runs: GitHubCheckRun[] }> {
+  // VTID-05069: optional per_page (GitHub's default page is 30 check runs).
+  const qs = opts.perPage ? `?per_page=${Math.min(100, Math.max(1, opts.perPage))}` : '';
   return githubRequest<{ check_runs: GitHubCheckRun[] }>(
-    `/repos/${repo}/commits/${ref}/check-runs`, {}, tokenOverride
+    `/repos/${repo}/commits/${ref}/check-runs${qs}`, {}, tokenOverride
   );
+}
+
+/**
+ * VTID-05069: the commits of a pull request, oldest first (one page of up to
+ * 100). Read-only; the pipeline view counts fix-forward pushes from it.
+ */
+export async function getPullRequestCommits(
+  repo: string,
+  prNumber: number,
+  tokenOverride?: string
+): Promise<Array<{ sha: string; date: string | null }>> {
+  const r = await githubRequest<Array<{ sha: string; commit?: { committer?: { date?: string } } }>>(
+    `/repos/${repo}/pulls/${prNumber}/commits?per_page=100`, {}, tokenOverride
+  );
+  return (Array.isArray(r) ? r : []).map((c) => ({ sha: c.sha, date: c.commit?.committer?.date ?? null }));
 }
 
 /**
@@ -620,14 +641,22 @@ export async function getCommitsBetween(
   base: string,
   head: string,
   limit = 5,
+  // VTID-05069: `files: false` skips the per-commit file lookups (one compare call in all).
+  opts: { files?: boolean; tokenOverride?: string } = {},
 ): Promise<Array<{ sha: string; message: string; files: string[] }>> {
   const r = await githubRequest<{ commits?: Array<{ sha: string; commit?: { message?: string } }> }>(
     `/repos/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
+    {},
+    opts.tokenOverride,
   );
   const commits = (r.commits || []).slice().reverse().slice(0, Math.max(0, limit));
   const out: Array<{ sha: string; message: string; files: string[] }> = [];
   for (const c of commits) {
     let files: string[] = [];
+    if (opts.files === false) {
+      out.push({ sha: c.sha, message: (c.commit?.message || '').split('\n')[0].slice(0, 300), files });
+      continue;
+    }
     try {
       const d = await githubRequest<{ files?: Array<{ filename: string }> }>(`/repos/${repo}/commits/${encodeURIComponent(c.sha)}`);
       files = (d.files || []).map((f) => f.filename).slice(0, 60);
@@ -784,7 +813,8 @@ export async function triggerRepositoryDispatch(
  */
 export async function getWorkflowRuns(
   repo: string,
-  workflowId: string
+  workflowId: string,
+  tokenOverride?: string
 ): Promise<{
   workflow_runs: Array<{
     id: number;
@@ -792,6 +822,9 @@ export async function getWorkflowRuns(
     conclusion: string | null;
     html_url: string;
     created_at: string;
+    // VTID-05069: already in GitHub's response; typed for the pipeline view.
+    head_sha?: string;
+    head_branch?: string | null;
   }>;
 }> {
   return githubRequest<{
@@ -801,8 +834,10 @@ export async function getWorkflowRuns(
       conclusion: string | null;
       html_url: string;
       created_at: string;
+      head_sha?: string;
+      head_branch?: string | null;
     }>;
-  }>(`/repos/${repo}/actions/workflows/${workflowId}/runs?per_page=5`);
+  }>(`/repos/${repo}/actions/workflows/${workflowId}/runs?per_page=5`, {}, tokenOverride);
 }
 
 /**

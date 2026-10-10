@@ -1495,6 +1495,8 @@ function renderOperatorThreadRow(thread) {
         running.title = 'A turn is running in this thread';
         meta.appendChild(running);
     }
+    // VTID-05069: run status dot from the thread's latest linked VTID (pipeline-tree.js).
+    if (window.PipelineTree) meta.appendChild(window.PipelineTree.threadDot(thread.id));
     if (operatorThreadEngine(thread) === 'kiro') {
         const tag = document.createElement('span');
         tag.className = 'chat-engine-tag';
@@ -23881,6 +23883,8 @@ function renderOperatorChat() {
     } else if (state.chatSending && state.chatTurnThreadId) {
         messages.appendChild(renderChatTurnElsewhereBanner());
     }
+    // VTID-05069: live pipeline tree of the thread's VTIDs (pipeline-tree.js).
+    if (window.PipelineTree && state.operatorActiveThreadId) messages.appendChild(window.PipelineTree.renderThreadCards(state.operatorActiveThreadId));
 
     container.appendChild(messages);
 
