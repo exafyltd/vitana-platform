@@ -43,6 +43,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   DEV_AUTOPILOT_WATCHER_LIVE: { staging: "true", prod: "true" },
   ERP_BRIDGE_URL: { staging: "dynamic", prod: null },
   FEATURE_LATENCY_TELEMETRY_ENV: { staging: "staging-only", prod: "staging+prod" },
+  FEATURE_ONBOARDING_ASSISTANT_ENV: { staging: null, prod: "staging+prod" },
   FEATURE_ORB_BRAIN_CACHE_ENV: { staging: "staging+prod", prod: "staging+prod" },
   FEATURE_ORB_FAST_START_ENV: { staging: "staging+prod", prod: "staging+prod" },
   FEATURE_ORB_GREETING_TTS_BRIDGE_ENV: { staging: "off", prod: null },
@@ -164,4 +165,5 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   VERTEX_RUSSIAN_BRIDGE_ENABLED: { staging: "true", prod: "true" },
   VERTEX_SERBIAN_BRIDGE_ENABLED: { staging: "true", prod: "true" },
   VITANA_ENV: { staging: "staging", prod: null },
+  VOA_ROLLOUT_DATE: { staging: null, prod: "2026-10-10" },
 };
