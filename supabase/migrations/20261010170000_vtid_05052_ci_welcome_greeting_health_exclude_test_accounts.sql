@@ -18,6 +18,11 @@
 -- 20260805160000 in the same Supabase project.
 --
 -- Idempotent: CREATE OR REPLACE with the same signature.
+--
+-- No gateway/worker code change: the only callers are the CI workflows
+-- (ALERT-WELCOME-GREETING-HEALTH, SMOKE-WELCOME-GREETING, MORNING-SYSTEM-
+-- HEALTH-CHECK), which read the same keys.
+-- impact-allow-solo-migration
 
 CREATE OR REPLACE FUNCTION public.ci_welcome_greeting_health()
 RETURNS json
