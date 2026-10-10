@@ -1,0 +1,44 @@
+{
+  "vtid": "VTID-05044",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "invitation accept refuses an anonymous caller",
+      "method": "POST",
+      "path": "/api/v1/admin/invitations/accept/s4-probe-invalid",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "POST only as a rejected probe (no bearer); requireAuth refuses before any lookup, nothing is accepted"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "invitation create refuses an anonymous caller",
+      "method": "POST",
+      "path": "/api/v1/admin/tenants/00000000-0000-4000-8000-000000000000/invitations",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "POST only as a rejected probe (no bearer, nil-UUID tenant); requireTenantAdmin refuses, nothing is created"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "billing admin metrics refuses an anonymous caller",
+      "method": "GET",
+      "path": "/api/v1/billing/admin/metrics",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "read-only GET; exafy_admin-only dashboard"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/routes/tenant-admin/invitations.test.ts test/routes/billing-repository.test.ts test/routes/billing-admin-metrics.test.ts",
+      "cwd": "services/gateway",
+      "reason": "invitation role allowlist, email-bound atomic accept, and the cross-tenant marketing budget metric"
+    }
+  ]
+}

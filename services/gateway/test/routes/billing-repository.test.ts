@@ -263,10 +263,20 @@ describe('billing-repository', () => {
       expect(sb.calls).toContainEqual({ method: 'gte', args: ['redeemed_at', 'SINCE'] });
     });
 
-    it('fetchTenantSettingsFeatureFlags reads a single row', async () => {
-      const sb = makeSupabaseStub({ data: null });
-      await repo.fetchTenantSettingsFeatureFlags(sb as any);
+    it('fetchTenantSettingsFeatureFlags reads every tenant row, never a single row (VTID-05044)', async () => {
+      // .maybeSingle() errored as soon as a second tenant_settings row existed,
+      // and the dashboard silently showed a null marketing budget.
+      const rows = [
+        { tenant_id: 't1', feature_flags: { marketing_budget_eur_remaining_cents: 100 } },
+        { tenant_id: 't2', feature_flags: {} },
+      ];
+      const sb = makeSupabaseStub({ data: rows });
+      const result = await repo.fetchTenantSettingsFeatureFlags(sb as any);
       expect(sb.from).toHaveBeenCalledWith('tenant_settings');
+      expect(sb.calls).toContainEqual({ method: 'select', args: ['tenant_id, feature_flags'] });
+      expect(sb.chain.maybeSingle).not.toHaveBeenCalled();
+      expect(sb.chain.single).not.toHaveBeenCalled();
+      expect(result.data).toEqual(rows);
     });
   });
 });
