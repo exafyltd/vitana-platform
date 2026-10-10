@@ -4244,16 +4244,44 @@ async function activationReaperTick(): Promise<void> {
 // they fall out of the ledger entirely.
 const ALLOCATED_REAPER_GRACE_MS = 10 * 60 * 1000; // 10 min — well past the
 // happy-path allocate→update latency, even on a slow Supabase day.
+const SPARRING_BOUND_WARN_AGE_MS = 60 * 60 * 1000; // 1 h
+
+// VTID-05061: a shell allocated with a Plan Sparring binding is a deliberate,
+// owner-approved allocation, never an orphan — the reaper tombstoned
+// VTID-05045/05046 while their title UPDATE was still timing out. Both keys
+// are excluded on purpose (an unverified binding still references a sparring
+// record). plan_hash always travels with sparring_id (routes/vtid.ts
+// parseSparringBinding), so filtering on the two sparring keys is sufficient.
+const REAPER_NOT_SPARRING_BOUND =
+  `&metadata->>sparring_id=is.null&metadata->>sparring_id_unverified=is.null`;
+const REAPER_PLACEHOLDER_TITLE =
+  `&or=(title.is.null,title.eq.Allocated%20-%20Pending%20Title,title.eq.Pending%20Title)`;
 
 async function allocatedOrphanReaperTick(): Promise<void> {
   const s = getSupabase();
   if (!s) return;
 
+  // VTID-05061: sparring-bound shells are skipped, not reaped; surface the
+  // ones that stay untitled for over an hour (log only, no OASIS event).
+  const warnCutoff = new Date(Date.now() - SPARRING_BOUND_WARN_AGE_MS).toISOString();
+  const boundR = await supa<Array<{ vtid: string }>>(
+    s,
+    `/rest/v1/vtid_ledger?status=eq.allocated&created_at=lt.${warnCutoff}` +
+    // Two OR groups (binding present, placeholder title) ANDed in one tree.
+    `&and=(or(metadata->>sparring_id.not.is.null,metadata->>sparring_id_unverified.not.is.null),` +
+    `or(title.is.null,title.eq.Allocated%20-%20Pending%20Title,title.eq.Pending%20Title))` +
+    `&select=vtid&limit=50`,
+  );
+  if (boundR.ok && boundR.data && boundR.data.length > 0) {
+    console.warn(`${LOG_PREFIX} reaper: skipped ${boundR.data.length} sparring-bound shell(s) older than 1h`);
+  }
+
   const cutoff = new Date(Date.now() - ALLOCATED_REAPER_GRACE_MS).toISOString();
   const orphansR = await supa<Array<{ vtid: string; created_at: string; title: string | null }>>(
     s,
     `/rest/v1/vtid_ledger?status=eq.allocated&created_at=lt.${cutoff}` +
-    `&or=(title.is.null,title.eq.Allocated%20-%20Pending%20Title,title.eq.Pending%20Title)` +
+    REAPER_PLACEHOLDER_TITLE +
+    REAPER_NOT_SPARRING_BOUND +
     `&select=vtid,created_at,title&limit=50`,
   );
   if (!orphansR.ok || !orphansR.data || orphansR.data.length === 0) return;
@@ -4267,7 +4295,9 @@ async function allocatedOrphanReaperTick(): Promise<void> {
     // reaper was the one write site in the repo that didn't match it,
     // leaving reaper-deleted rows permanently non-terminal.
     const now = new Date().toISOString();
-    await supa(s, `/rest/v1/vtid_ledger?vtid=eq.${orphan.vtid}&status=eq.allocated`, {
+    // VTID-05061: same binding guard on the write, so a row that gained a
+    // sparring binding between SELECT and PATCH is never tombstoned.
+    await supa(s, `/rest/v1/vtid_ledger?vtid=eq.${orphan.vtid}&status=eq.allocated${REAPER_NOT_SPARRING_BOUND}`, {
       method: 'PATCH',
       headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({
