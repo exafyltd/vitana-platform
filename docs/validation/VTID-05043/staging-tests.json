@@ -8,6 +8,23 @@
       "ref": "npx jest test/vtid-05043-s3-migrations.test.ts",
       "cwd": "services/gateway",
       "reason": "Staging shares the production database, so migrations A, B and C are applied only at the production step (RUN-MIGRATION, after owner approval); their execution was verified against PGlite (docs/validation/VTID-05043/migration-check.md) and this suite pins the guard, the asserts, the open_signup check, the grants and the rollbacks. Post-apply evidence: post-apply-checks.sql (read-only)."
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "tenant-scoped read route still refuses an invalid caller",
+      "method": "GET",
+      "path": "/api/v1/memory/garden/entries",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "GET with an invalid bearer; requireAuthWithTenant rejects before the membership check or any handler"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/middleware/auth-supabase-jwt.test.ts test/routes/orb-livekit.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the membership check on requireTenant and requireAuthWithTenant: member, non-member 403, exafy bypass, primary fallback, 503 fail-closed, log mode, 60 s positive cache, negatives not cached"
     }
   ]
 }
