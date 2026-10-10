@@ -1,0 +1,50 @@
+# services/gateway
+npx tsc --noEmit -p .                                                    # clean
+npx jest test/vtid-05065-kiro-runs.test.ts                               # 38 passed
+npx jest test/vtid-04465-operator-pipeline-regression.test.ts -t VTID-05065   # 16 passed
+npm run test:operator                                                    # 57 passed
+npm run test:support                                                     # 87 passed (4 suites)
+npm run test:roles                                                       # 105 passed
+npx jest test/vtid-04975 test/vtid-05018 test/vtid-05006 test/vtid-04999 test/vtid-05003 test/vtid-04984 test/vtid-05005 test/vtid-05014 test/vtid-05060   # 10 suites, 155 passed
+npx jest test/command-hub                                                # 39 suites, 581 passed
+npx jest --silent                                                        # 1620 suites passed (1 skipped), 26068 passed, 25 skipped, 6 todo
+python3 mutate.py                                                        # 34/34 mutations killed (scratch script, not committed)
+# repo root
+node scripts/ci/validator-path-guard.cjs <changed files> gateway_backend # APPROVED (migration, DATABASE_SCHEMA.md reported as not judged)
+node -e "validateManifest(docs/validation/VTID-05065/staging-tests.json, { vtid: 'VTID-05065', service: 'gateway' })"   # { ok: true, errors: [] }
+
+# Mutation check (each line of implementation reverted/broken alone, then the named suite run)
+coalesce off                          KILLED  vtid-05065 unit (2 failed)
+byte threshold off                    KILLED  vtid-05065 unit
+push does not close text              KILLED  vtid-05065 unit
+batch size trigger off                KILLED  vtid-05065 unit
+failed insert dropped                 KILLED  vtid-05065 unit
+dedupe off                            KILLED  harness -t VTID-05065
+memory replay off                     KILLED  harness (3 failed)
+live switch off                       KILLED  harness (5 failed)
+terminal does not end stream          KILLED  harness (6 failed, 30 s timeouts)
+read tool trust off                   KILLED  harness
+regex unanchored                      KILLED  vtid-05065 unit (2 failed)
+trust any name                        KILLED  vtid-05065 unit (3 failed)
+trust any kind                        KILLED  vtid-05065 unit (2 failed)
+permission answer not reported        KILLED  harness
+waiting_permission not persisted      KILLED  harness (3 failed)
+sweep guard off                       KILLED  harness
+sweep includes own task               KILLED  harness
+sweep OASIS emitted twice             KILLED  harness
+shutdown no db update                 KILLED  harness (2 failed)
+finish not guarded                    KILLED  harness
+no pump after finish                  KILLED  harness
+queue_full off                        KILLED  harness
+never queue                           KILLED  harness (2 failed)
+cancel queued off                     KILLED  harness
+cancel status not mapped              KILLED  vtid-05065 unit
+status map ok wrong                   KILLED  vtid-05065 unit
+control tick cancel off               KILLED  harness
+control tick answer off               KILLED  harness
+heartbeat off                         KILLED  harness
+owner check off                       KILLED  harness
+thread ownership off                  KILLED  harness
+legacy frame filter off               KILLED  harness
+persisted answer fallback off         KILLED  harness
+run events not written                KILLED  harness (4 failed)

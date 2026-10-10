@@ -616,9 +616,12 @@ async function storedEvents(runId: string, afterSeq: number): Promise<KiroRunEve
 
 /**
  * Deliver the run's events after `afterSeq`, in seq order, each once, until a terminal
- * status event (or `isClosed()`). A run live in this task: subscribe first (buffer), replay
- * the store, then this task's in-memory events, then the buffer, then live. A run on another
- * task (or already finished): replay the store, then poll it.
+ * status event (or `isClosed()`). A run live in this task: subscribe first, replay the
+ * store, then this task's in-memory log (which holds every event emitted while the store
+ * replay was in flight, so nothing needs a separate buffer), then live — the switch from
+ * the log to live is synchronous, so no event falls between them, and `seq <= lastSent`
+ * drops anything seen twice. A run on another task (or already finished): replay the
+ * store, then poll it.
  */
 export async function followKiroRun(runId: string, afterSeq: number, onEvent: KiroRunListener, isClosed: () => boolean): Promise<void> {
   let lastSent = afterSeq;
@@ -631,18 +634,16 @@ export async function followKiroRun(runId: string, afterSeq: number, onEvent: Ki
     if (isTerminalEvent(ev)) { ended = true; wake?.(); }
   };
   const run = live.get(runId);
-  let buffering = true;
-  const buffer: KiroRunEvent[] = [];
+  let replaying = true;
+  // Events emitted while replaying are in run.log.events, sent right after the store replay.
   const unsubscribe = run && !run.finished
-    ? run.log.subscribe((ev) => { if (buffering) buffer.push(ev); else send(ev); })
+    ? run.log.subscribe((ev) => { if (!replaying) send(ev); })
     : null;
   try {
     for (const ev of await storedEvents(runId, lastSent)) send(ev);
     if (unsubscribe && run) {
       for (const ev of [...run.log.events]) send(ev);
-      for (const ev of buffer) send(ev);
-      buffering = false;
-      if (!ended && run.finished) for (const ev of [...run.log.events]) send(ev);
+      replaying = false;
       while (!ended && !isClosed()) {
         await new Promise<void>((r) => {
           wake = r;
