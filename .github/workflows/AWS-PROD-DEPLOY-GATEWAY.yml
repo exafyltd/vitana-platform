@@ -1050,6 +1050,32 @@ jobs:
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Autopilot reward pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "AUTOPILOT_ACTION_REWARD_ENABLED")]')"
 
+      - name: Build task-definition (onboarding coach shadow mode on)
+        # VTID-05039 (sparred plan, owner approved 2026-10-10): the Vitana
+        # Onboarding Assistant's coach (VTID-04892) runs in SHADOW mode in
+        # production — once a day it records what Vitana would do for each new
+        # member and sends nothing. Pinned here so a publish never loses or
+        # resurrects it by accident (the VTID-03513/04127 lesson).
+        #   FEATURE_ONBOARDING_ASSISTANT_ENV  staging+prod; staging still
+        #     resolves disabled-on-staging first (it shares this database).
+        #   VOA_ROLLOUT_DATE  ONE-TIME OWNER DECISION, not a per-deploy toggle:
+        #     the cohort anchor (members who joined from this date - 30 days).
+        #     Changing it changes who is in the cohort.
+        #   VOA_MODE is deliberately NOT set (= shadow; there is no live mode).
+        # Off: dispatch with env_overrides={"FEATURE_ONBOARDING_ASSISTANT_ENV":"off"}
+        # (applied in 2/2, after this step). The daily schedule then still
+        # fires and gets {mode:"off"}; full silence also needs
+        # scripts/aws/setup-eventbridge-cron-migration.sh --only gateway-onboarding-coach-tick --delete
+        run: |
+          set -e
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name | IN("FEATURE_ONBOARDING_ASSISTANT_ENV","VOA_ROLLOUT_DATE") | not) ]
+                + [ {name:"FEATURE_ONBOARDING_ASSISTANT_ENV", value:"staging+prod"},
+                    {name:"VOA_ROLLOUT_DATE", value:"2026-10-10"} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Onboarding coach pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name | IN("FEATURE_ONBOARDING_ASSISTANT_ENV","VOA_ROLLOUT_DATE","VOA_MODE"))]')"
+
       - name: Build task-definition (reminders dispatch on)
         # VTID-04963: production runs the reminders tick + sweeper (and the
         # audiobook daily reminder) in-process. Until now only STAGING did —
