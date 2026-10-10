@@ -23,8 +23,8 @@
 # Retries are OFF (MaximumRetryAttempts 0), like pg_net's fire-and-forget — EventBridge's
 # default of 185 retries over 24 h would send a reminder more than once.
 #
-# Job 4: its command is NOT in git (TODO in side-effects.md). Its resources are created only
-# when `run_api_tests_body` is given — copy the body read-only from the live job first:
+# Job 4 (read live 2026-10-10): POST run-api-tests with body {} and the PUBLIC anon key as Bearer
+# (the same publishable key the app bundles). Pass run_api_tests_body='{}' to create it:
 #   SELECT command FROM cron.job WHERE jobname = 'run-api-integration-tests';
 # and check its headers match the connection (Authorization: Bearer <anon key>). The owner
 # may also drop job 4 (a test runner); then leave the input empty.

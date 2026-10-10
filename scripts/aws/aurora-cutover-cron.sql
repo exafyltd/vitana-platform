@@ -71,13 +71,12 @@ SELECT cron.schedule('conversation-metrics-hourly', '7 * * * *', E'SELECT public
 -- job 33 purge-memory-transcript-turns (20260923160000_vtid_04387_memory_transcript_turns.sql)
 SELECT cron.unschedule(jobid) FROM cron.job WHERE jobname = 'purge-memory-transcript-turns';
 SELECT cron.schedule('purge-memory-transcript-turns', '17 3 * * *', $cron$SELECT public.purge_memory_transcript_turns(90);$cron$);
--- TODO(VTID-05023) job 15 vitana_id_mirror_reconcile_daily (15 3 * * *): NOT in either repo.
---   Missing: the exact command text (inventory shows vitana_id_mirror_reconcile()) and the
---   function public.vitana_id_mirror_reconcile() itself. Copy both read-only from the clone:
---   SELECT schedule, command FROM cron.job WHERE jobname = 'vitana_id_mirror_reconcile_daily';
---   then add the unschedule/schedule pair here. Not guessed.
--- TODO(VTID-05023) job 16 intent_matches_archive_daily (30 3 * * *): NOT in either repo.
---   Missing: the exact command text (inventory shows intent_matches_archive_old()) and the
---   function public.intent_matches_archive_old() itself. Copy both read-only from the clone:
---   SELECT schedule, command FROM cron.job WHERE jobname = 'intent_matches_archive_daily';
---   then add the unschedule/schedule pair here. Not guessed.
+-- job 15 vitana_id_mirror_reconcile_daily and job 16 intent_matches_archive_daily: command, schedule
+-- and function bodies read live (read-only) from Supabase 2026-10-10 (pg_get_functiondef), flattened
+-- to one line each; neither exists in git, so they are created here before scheduling.
+CREATE OR REPLACE FUNCTION public.vitana_id_mirror_reconcile() RETURNS integer LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $function$ DECLARE v_drift int; BEGIN SELECT count(*) INTO v_drift FROM public.app_users a JOIN public.profiles p USING (user_id) WHERE a.vitana_id IS DISTINCT FROM p.vitana_id; IF v_drift > 0 THEN INSERT INTO public.oasis_events (topic, vtid, status, message, metadata) VALUES ('vitana_id.mirror.drift', 'VTID-DANCE-D8', 'warning', format('Mirror trigger drift detected: %s rows', v_drift), jsonb_build_object('drift_count', v_drift, 'detected_at', now())); END IF; RETURN v_drift; END; $function$;
+SELECT cron.unschedule(jobid) FROM cron.job WHERE jobname = 'vitana_id_mirror_reconcile_daily';
+SELECT cron.schedule('vitana_id_mirror_reconcile_daily', '15 3 * * *', $cron$ SELECT public.vitana_id_mirror_reconcile() $cron$);
+CREATE OR REPLACE FUNCTION public.intent_matches_archive_old() RETURNS integer LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $function$ DECLARE v_archived int := 0; BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='intent_matches_archive') THEN RAISE NOTICE 'intent_matches_archive table missing — skipping'; RETURN 0; END IF; WITH moved AS (DELETE FROM public.intent_matches im WHERE im.state IN ('closed','fulfilled','declined') AND im.created_at < now() - interval '90 days' RETURNING im.*) INSERT INTO public.intent_matches_archive SELECT * FROM moved; GET DIAGNOSTICS v_archived = ROW_COUNT; RETURN v_archived; END; $function$;
+SELECT cron.unschedule(jobid) FROM cron.job WHERE jobname = 'intent_matches_archive_daily';
+SELECT cron.schedule('intent_matches_archive_daily', '30 3 * * *', $cron$ SELECT public.intent_matches_archive_old() $cron$);
