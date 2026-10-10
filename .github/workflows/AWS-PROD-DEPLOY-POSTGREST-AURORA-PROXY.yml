@@ -21,7 +21,11 @@
 #      the first time derived from the staging family's latest revision, after
 #      that from its own latest — with the production JWT secret, PostgREST
 #      pool/row limits, PUBLIC_HOST, 1 vCPU / 2 GB and an /alive container
-#      health check on the proxy;
+#      health check on the proxy, and PGRST_DB_PRE_REQUEST =
+#      public.provisioning_pre_request (VTID-05023 part 4, auth bridge lazy
+#      layer). ORDER: scripts/aws/aurora-cutover-auth-bridge.sql must already
+#      be on Aurora — PostgREST fails every request while the pre-request
+#      function is missing;
 #   4. creates the service (2 tasks, Cloud Map `postgrest-aurora-prod` in the
 #      staging registry's namespace, deployment circuit breaker with rollback)
 #      when missing, otherwise rolls it;
@@ -270,7 +274,8 @@ jobs:
                     .environment = (.environment
                       | setenv("PGRST_DB_POOL"; $POOL)
                       | setenv("PGRST_DB_MAX_ROWS"; "1000")
-                      | setenv("PGRST_DB_POOL_ACQUISITION_TIMEOUT"; "10"))
+                      | setenv("PGRST_DB_POOL_ACQUISITION_TIMEOUT"; "10")
+                      | setenv("PGRST_DB_PRE_REQUEST"; "public.provisioning_pre_request"))
                     | .secrets = (.secrets
                       | setsecret("PGRST_DB_URI"; $SEC_DB)
                       | setsecret("PGRST_JWT_SECRET"; $SEC_JWT))
@@ -442,7 +447,7 @@ jobs:
             echo "- Image: \`$IMAGE\`"
             echo "- Task definition: \`$TD_ARN\`"
             echo "- Service: \`$ECS_SERVICE\` (Cloud Map \`$CLOUDMAP_SERVICE_NAME.$NS_NAME\`)"
-            echo "- PGRST_DB_POOL=$PGRST_DB_POOL, PGRST_DB_MAX_ROWS=1000, autoscaling $ASG_MIN..$ASG_MAX @ CPU $ASG_CPU_TARGET %"
+            echo "- PGRST_DB_POOL=$PGRST_DB_POOL, PGRST_DB_MAX_ROWS=1000, PGRST_DB_PRE_REQUEST=public.provisioning_pre_request, autoscaling $ASG_MIN..$ASG_MAX @ CPU $ASG_CPU_TARGET %"
             echo "- Reason: $DEPLOY_REASON"
             echo "- Not touched: the staging service, the gateway's SUPABASE_URL, the ALB and DNS (edge: AWS-PROD-SETUP-POSTGREST-AURORA-PROXY-EDGE.yml)."
           } >> "$GITHUB_STEP_SUMMARY"

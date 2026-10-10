@@ -3700,3 +3700,43 @@ Migration: `supabase/migrations/20261010150000_vtid_04917_audiobook_source_type.
 | `calendar_invite_responses` (existing, vitana-v1) | Answers to v2 invites are written by the gateway (`POST /api/v1/calendar/invites/:messageId/respond`), one row per member per message (`on_conflict message_id,user_id`). |
 | `global_event_participants` (existing) | "I'm in" on a free community event inserts the same `attending` row the app writes; the calendar entry comes from `trg_event_participation_calendar`. A paid or full event is never joined from a chat card. |
 | `calendar_events` (data) | "I'm in" on an invite to a member's own plan writes a copy: `source_type 'invite'`, `source_ref_type 'calendar_invite'`, `source_ref_id` = the message id; "No" cancels it. |
+
+---
+
+## Auth -> Aurora bridge — `ensure_provisioned()`, `provisioning_pre_request()`, `auth_user_fk_map`, `auth_bridge_deleted_users` (VTID-05023 part 4) — AURORA ONLY, applied in the cutover window
+
+After the cutover GoTrue (`auth.users`) stays on Supabase and `public` lives on Aurora, which has no `auth.users`. The six Supabase sign-up triggers on `auth.users` are disabled at the flip (`scripts/aws/supabase-cutover-auth-bridge.sql`; reverse: `…-rollback.sql`) and the same provisioning runs on Aurora. DDL: `scripts/aws/aurora-cutover-auth-bridge.sql` (one statement per line, `aurora-run-sql.sh`). Tested on throwaway Postgres: `npm run test:auth-bridge` (CI: `SQL-AUTH-BRIDGE.yml`).
+
+### `ensure_provisioned(p_user_id uuid, p_email text, p_raw_user_meta jsonb, p_created_at timestamptz) returns jsonb`
+- Reproduces `handle_new_user`, `generate_maxina_discount_code`, `initialize_user_preferences`, `provision_wallet_accounts`, `provision_platform_user`, `initialize_user_journey` (same rows, same defaults, trigger order).
+- Idempotent: per-user advisory lock, guarded inserts; a user with both `app_users` and `profiles` rows is returned untouched.
+- Returns `{user_id, created[], provisioned, active_tenant_id}`; the gateway writes `active_tenant_id` into GoTrue `app_metadata` when missing (what `handle_new_user`'s `UPDATE auth.users` did).
+- SECURITY DEFINER, `service_role` only.
+
+### `provisioning_pre_request() returns void`
+PostgREST `db-pre-request` (`PGRST_DB_PRE_REQUEST`). No-op when `transaction_read_only = on`, `auth.uid()` is null, the role is not `authenticated`, an `app_users` row exists (one PK lookup), or the user is in `service_bot_accounts` / `notification_test_actors`. Otherwise calls `ensure_provisioned()` from the JWT (`email`, `user_metadata`); a failure is a WARNING, never a failed request. EXECUTE: anon, authenticated, service_role (PostgREST calls it for every role).
+
+### `auth_bridge_unprovisioned(p_user_ids uuid[]) returns setof uuid`
+The ids with no `app_users` row, registered test/service accounts excluded (the gateway reconciler). `service_role` only.
+
+### auth_user_fk_map
+| Column | Type | Notes |
+|---|---|---|
+| `table_name`, `column_name` | text, PK | a public column that had a FK to `auth.users(id)` on Supabase |
+| `on_delete` | text | `confdeltype`: a, r, c, n, d |
+| `loaded_at` | timestamptz | |
+
+Loaded from Supabase's live `pg_constraint` by `scripts/aws/supabase-auth-fk-map-export.sql` right before the window. RLS on, `service_role` only.
+
+### auth_bridge_deleted_users
+| Column | Type | Notes |
+|---|---|---|
+| `user_id` | uuid PK | the deleted auth user |
+| `source` | text | `webhook` \| `reconciler` |
+| `result` | jsonb | what `auth_bridge_handle_deleted_user()` changed |
+| `processed_at` | timestamptz | |
+
+RLS on, `service_role` only.
+
+### `auth_bridge_handle_deleted_user(p_user_id uuid, p_source text) returns jsonb`
+What `DELETE FROM auth.users` did on Supabase: the kept `before_auth_user_delete_cleanup_contacts` cleanup (phone-less inbound `contacts`), then each `auth_user_fk_map` action (CASCADE delete, SET NULL, SET DEFAULT; NO ACTION / RESTRICT rows are reported in `blocked`, not touched), with FK-ordered retries; atomic; refuses an empty map; records the result in `auth_bridge_deleted_users`. `app_users` has no FK to `auth.users`, so it stays, as before. `service_role` only.

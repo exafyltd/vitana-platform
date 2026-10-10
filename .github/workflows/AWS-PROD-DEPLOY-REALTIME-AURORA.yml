@@ -1,0 +1,783 @@
+# AWS-PROD-DEPLOY-REALTIME-AURORA — self-hosted Supabase Realtime on ECS,
+# reading Aurora `vitana-aurora-prod` through logical replication, served at
+# wss://realtime.vitanaland.com/socket (VTID-05023, plan part 7a; sparring
+# findings N6 and R3). Setup, env and the reasons behind every choice:
+# services/realtime-aurora/README.md.
+#
+# Two phases, both dispatch-only with a required `reason`:
+#
+#   phase=secrets — creates, ONCE, the generated secrets the server and the
+#     Aurora login role need (an existing secret is never read, rotated or
+#     overwritten by a re-run):
+#       vitana/realtime/prod/db-enc-key          DB_ENC_KEY (16 chars)
+#       vitana/realtime/prod/secret-key-base     SECRET_KEY_BASE (64 chars)
+#       vitana/realtime/prod/api-jwt-secret      API_JWT_SECRET + METRICS_JWT_SECRET
+#                                                (management API; never the member secret)
+#       vitana/aurora/prod/realtime-admin-password  realtime_admin's password
+#     Then the operator runs, from CloudShell:
+#       bash scripts/aws/aurora-run-sql.sh scripts/aws/aurora-realtime-setup.sql
+#       bash scripts/aws/aurora-realtime-set-password.sh
+#
+#   phase=deploy — refuses unless
+#       * logical_replication_confirmed=true (the operator confirms the
+#         owner-approved reboot made rds.logical_replication=1 effective; the
+#         workflow also reads the cluster parameter group and the members'
+#         parameter-group status),
+#       * setup_sql_applied=true (both scripts above ran),
+#       * parity_report is a part-0 privilege-parity report: status PASS,
+#         generated_at < 24 h (same gate as the data-host edge workflow);
+#     then, idempotently:
+#       1. checks out EXACTLY commit_sha (must be on main) and builds
+#          services/realtime-aurora (pinned supabase/realtime digest + Vitana
+#          seeds.exs) into ECR vitana/realtime-aurora:prod-<sha12>;
+#       2. registers task family vitana-realtime-aurora-prod (port 4000,
+#          /healthcheck container health check, nofile 100000);
+#       3. target group vitana-tg-realtime-prod (ip, HTTP 4000, /healthcheck);
+#       4. service vitana-realtime-aurora-prod: ONE task, same subnets and
+#          security group as vitana-postgrest-aurora-proxy-prod, deployments
+#          stop the old task before starting the new one (two unclustered
+#          Realtime nodes must never serve the tenant at once — README);
+#       5. listener rule priority 9 on vitana-alb-prod: host + paths
+#          /socket, /socket/*, /api/broadcast, /api/broadcast/* only (the
+#          management API is never routed to the internet);
+#       6. Cloudflare proxied CNAME + WAF/bot skip rule for the host;
+#       7. verification through https://<host>: a websocket upgrade with the
+#          anon key answers 101, one with a forged token answers 401, and
+#          /api/tenants is not routed to Realtime.
+#
+# Security group: the service SG must allow TCP 4000 from the ALB's security
+# group(s). Editing security groups is not done here; when the rule is missing
+# the exact command is printed and the run stops before anything is created.
+#
+# Required repository secrets: AWS_PROD_ROLE_ARN (OIDC), CLOUDFLARE_API_TOKEN.
+
+name: AWS Prod Deploy Realtime-Aurora (ECS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for this PRODUCTION realtime-aurora change — required'
+        required: true
+      phase:
+        description: 'secrets = create the generated secrets once; deploy = build, roll, wire the edge'
+        required: true
+        type: choice
+        options: [secrets, deploy]
+        default: secrets
+      commit_sha:
+        description: 'deploy: full 40-char commit SHA to build (must already be on main)'
+        required: false
+        default: ''
+      logical_replication_confirmed:
+        description: 'deploy: I confirm rds.logical_replication=1 is ACTIVE on vitana-aurora-prod (reboot done)'
+        required: false
+        type: boolean
+        default: false
+      setup_sql_applied:
+        description: 'deploy: aurora-realtime-setup.sql and aurora-realtime-set-password.sh ran OK'
+        required: false
+        type: boolean
+        default: false
+      parity_report:
+        description: 'deploy: S3 URI of the privilege-parity JSON report (status PASS, generated_at < 24h)'
+        required: false
+        default: ''
+      host:
+        description: 'Public host (single-label vitanaland.com subdomain; its first label is the tenant id)'
+        required: false
+        default: 'realtime.vitanaland.com'
+
+permissions:
+  contents: read
+  id-token: write # aws-actions/configure-aws-credentials OIDC
+
+concurrency:
+  group: aws-prod-deploy-realtime-aurora
+  cancel-in-progress: false
+
+jobs:
+  realtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      AWS_REGION: eu-central-1
+      AWS_ACCOUNT_ID: '472838866351'
+      AWS_PAGER: ''
+      ECR_REPOSITORY: vitana/realtime-aurora
+      ECS_CLUSTER: Vitana-ECS-Cluster
+      ECS_SERVICE: vitana-realtime-aurora-prod
+      TASK_FAMILY: vitana-realtime-aurora-prod
+      CONTAINER: realtime
+      CONTAINER_PORT: '4000'
+      PROXY_SERVICE: vitana-postgrest-aurora-proxy-prod
+      PROXY_TASK_FAMILY: vitana-postgrest-aurora-prod
+      AURORA_CLUSTER: vitana-aurora-prod
+      DB_NAME: vitana
+      DB_USER: realtime_admin
+      TG_NAME: vitana-tg-realtime-prod
+      VPC_ID: vpc-05958f035e596fe64
+      ALB_NAME: vitana-alb-prod
+      LISTENER_ARN: arn:aws:elasticloadbalancing:eu-central-1:472838866351:listener/app/vitana-alb-prod/3d60b7c377e63d95/48eba68d49c39439
+      RULE_PRIORITY: '9'
+      ALB_DNS: vitana-alb-prod-1579322953.eu-central-1.elb.amazonaws.com
+      CF_ZONE: 859c786db63e634e0ee36065e8a06e20
+      CF_RULE_REF: vitana_realtime_host_skip
+      LOG_GROUP: /ecs/vitana-realtime-aurora-prod
+      SECRET_JWT: vitana/supabase/prod/jwt-secret
+      SECRET_ANON: vitana/supabase/prod/anon-key
+      SECRET_ENC: vitana/realtime/prod/db-enc-key
+      SECRET_SKB: vitana/realtime/prod/secret-key-base
+      SECRET_API: vitana/realtime/prod/api-jwt-secret
+      SECRET_DBPW: vitana/aurora/prod/realtime-admin-password
+      DEPLOY_REASON: ${{ inputs.reason }}
+      PHASE: ${{ inputs.phase }}
+      PIN: ${{ inputs.commit_sha }}
+      LR_CONFIRMED: ${{ inputs.logical_replication_confirmed }}
+      SQL_APPLIED: ${{ inputs.setup_sql_applied }}
+      PARITY_REPORT: ${{ inputs.parity_report }}
+      HOST: ${{ inputs.host }}
+    steps:
+      - name: Validate inputs, gates and prod-only targets
+        id: v
+        run: |
+          set -euo pipefail
+          if [ -z "${DEPLOY_REASON// /}" ]; then echo "::error::reason is required"; exit 1; fi
+          case "$PHASE" in secrets|deploy) ;; *) echo "::error::phase must be secrets or deploy, got '$PHASE'"; exit 1 ;; esac
+          case "$ECS_SERVICE" in *-prod) ;; *) echo "::error::Refusing: service '$ECS_SERVICE' does not end in -prod"; exit 1 ;; esac
+          case "$TASK_FAMILY" in *-prod) ;; *) echo "::error::Refusing: task family '$TASK_FAMILY' does not end in -prod"; exit 1 ;; esac
+          if ! echo "$HOST" | grep -qE '^[a-z0-9]([a-z0-9-]*[a-z0-9])?\.vitanaland\.com$'; then
+            echo "::error::host must be a single-label vitanaland.com subdomain, got '$HOST'"; exit 1
+          fi
+          case "$HOST" in
+            gateway.vitanaland.com|www.vitanaland.com|data.vitanaland.com|dr-*|preview-*)
+              echo "::error::Refusing: '$HOST' is (or looks like) an existing service host"; exit 1 ;;
+          esac
+          # Realtime derives the tenant from the first DNS label of the Host header.
+          echo "tenant=${HOST%%.*}" >> "$GITHUB_OUTPUT"
+          if [ "$PHASE" = deploy ]; then
+            if ! echo "$PIN" | grep -qE '^[0-9a-f]{40}$'; then
+              echo "::error::commit_sha must be a full 40-character lowercase SHA for phase=deploy, got '$PIN'"; exit 1
+            fi
+            if [ "$LR_CONFIRMED" != true ]; then
+              echo "::error::logical_replication_confirmed must be true: confirm rds.logical_replication=1 is active on $AURORA_CLUSTER after the approved reboot"; exit 1
+            fi
+            if [ "$SQL_APPLIED" != true ]; then
+              echo "::error::setup_sql_applied must be true: run aurora-realtime-setup.sql and aurora-realtime-set-password.sh first (README)"; exit 1
+            fi
+            if ! echo "$PARITY_REPORT" | grep -qE '^s3://[a-z0-9.-]+/.+\.json$'; then
+              echo "::error::parity_report must be an s3://bucket/key.json URI, got '$PARITY_REPORT'"; exit 1
+            fi
+          fi
+
+      - uses: actions/checkout@v4
+        if: inputs.phase == 'deploy'
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 0
+
+      - name: Pinned commit must already be on main
+        id: commit
+        if: inputs.phase == 'deploy'
+        run: |
+          set -euo pipefail
+          HEAD_SHA=$(git rev-parse HEAD)
+          [ "$HEAD_SHA" = "$PIN" ] || { echo "::error::checked out $HEAD_SHA, expected $PIN"; exit 1; }
+          git fetch -q origin main
+          if ! git merge-base --is-ancestor "$PIN" origin/main; then
+            echo "::error::commit_sha $PIN is not on main — only commits that already landed on main may be deployed to production"; exit 1
+          fi
+          test -f services/realtime-aurora/Dockerfile || { echo "::error::services/realtime-aurora/Dockerfile missing at $PIN"; exit 1; }
+          test -f services/realtime-aurora/seeds.exs || { echo "::error::services/realtime-aurora/seeds.exs missing at $PIN"; exit 1; }
+          echo "short=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials (GitHub OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Account/region guard (472838866351 / eu-central-1)
+        run: |
+          set -euo pipefail
+          ACCT=$(aws sts get-caller-identity --query Account --output text)
+          [ "$ACCT" = "$AWS_ACCOUNT_ID" ] || { echo "::error::Assumed role is in account $ACCT, expected $AWS_ACCOUNT_ID"; exit 1; }
+
+      - name: Generated secrets — create once, never rotate or overwrite
+        id: secrets
+        run: |
+          set -euo pipefail
+          umask 077
+          # Sets ARN_OUT. Secret values are never printed (and masked as defence in depth).
+          ensure_secret() { # name, length, description
+            local name=$1 len=$2 desc=$3 arn val f
+            arn=$(aws secretsmanager describe-secret --secret-id "$name" --query ARN --output text 2>/dev/null || true)
+            if [ -n "$arn" ] && [ "$arn" != None ]; then
+              echo "Exists (left untouched, not rotated): $name"
+            else
+              val=$(aws secretsmanager get-random-password --password-length "$len" \
+                --exclude-punctuation --require-each-included-type --query RandomPassword --output text)
+              echo "::add-mask::$val"
+              f=$(mktemp); printf '%s' "$val" > "$f"; unset val
+              arn=$(aws secretsmanager create-secret --name "$name" --description "$desc" \
+                --secret-string "file://$f" \
+                --tags Key=vtid,Value=VTID-05023 Key=environment,Value=production Key=service,Value=realtime-aurora \
+                --query ARN --output text)
+              rm -f "$f"
+              echo "Created: $name"
+            fi
+            ARN_OUT=$arn
+          }
+          ensure_secret "$SECRET_ENC" 16 "Realtime DB_ENC_KEY (AES key for tenant settings in _realtime). Never rotate without re-seeding (README)."; ENC=$ARN_OUT
+          ensure_secret "$SECRET_SKB" 64 "Realtime SECRET_KEY_BASE (Phoenix)."; SKB=$ARN_OUT
+          ensure_secret "$SECRET_API" 48 "Realtime API_JWT_SECRET/METRICS_JWT_SECRET (management API). Must differ from the Supabase JWT secret."; API=$ARN_OUT
+          ensure_secret "$SECRET_DBPW" 40 "Aurora login role realtime_admin. Applied as a SCRAM verifier by scripts/aws/aurora-realtime-set-password.sh."; DBPW=$ARN_OUT
+          {
+            echo "enc=$ENC"; echo "skb=$SKB"; echo "api=$API"; echo "dbpw=$DBPW"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Phase secrets — next steps
+        if: inputs.phase == 'secrets'
+        run: |
+          {
+            echo "## realtime-aurora — phase=secrets done"
+            echo "Secrets present: \`$SECRET_ENC\`, \`$SECRET_SKB\`, \`$SECRET_API\`, \`$SECRET_DBPW\` (existing ones untouched)."
+            echo ""
+            echo "Next, from CloudShell in $AWS_ACCOUNT_ID / $AWS_REGION, after the approved reboot made rds.logical_replication=1 active:"
+            echo '1. `bash scripts/aws/aurora-run-sql.sh scripts/aws/aurora-realtime-setup.sql`'
+            echo '2. `bash scripts/aws/aurora-realtime-set-password.sh`'
+            echo "3. Re-run this workflow with phase=deploy, a pinned commit_sha, logical_replication_confirmed=true, setup_sql_applied=true and a fresh parity_report."
+            echo "- Reason: $DEPLOY_REASON"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Part-0 gate — privilege-parity report is PASS and < 24 h old
+        if: inputs.phase == 'deploy'
+        run: |
+          set -euo pipefail
+          DIR=$(mktemp -d)
+          aws s3 cp --only-show-errors "$PARITY_REPORT" "$DIR/parity.json"
+          jq -e . "$DIR/parity.json" >/dev/null 2>&1 || { echo "::error::$PARITY_REPORT is not valid JSON"; exit 1; }
+          STATUS=$(jq -r '.status // empty' "$DIR/parity.json")
+          GEN=$(jq -r '.generated_at // empty' "$DIR/parity.json")
+          echo "Parity report: status=$STATUS generated_at=$GEN"
+          [ "$STATUS" = PASS ] || { echo "::error::Privilege-parity report status is '$STATUS', not PASS"; exit 1; }
+          GEN_EPOCH=$(date -u -d "$GEN" +%s 2>/dev/null || true)
+          [ -n "$GEN_EPOCH" ] || { echo "::error::generated_at '$GEN' is not a parseable timestamp"; exit 1; }
+          AGE=$(( $(date -u +%s) - GEN_EPOCH ))
+          [ "$AGE" -ge -300 ] || { echo "::error::generated_at is in the future ($GEN)"; exit 1; }
+          [ "$AGE" -le 86400 ] || { echo "::error::Privilege-parity report is $((AGE / 3600)) h old (limit 24 h)"; exit 1; }
+          echo "Part-0 gate passed (report age $((AGE / 60)) min)"
+          rm -rf "$DIR"
+
+      - name: Preflight — Aurora logical replication, network, security groups, IAM
+        id: pre
+        if: inputs.phase == 'deploy'
+        env:
+          SEC_ENC: ${{ steps.secrets.outputs.enc }}
+          SEC_SKB: ${{ steps.secrets.outputs.skb }}
+          SEC_API: ${{ steps.secrets.outputs.api }}
+          SEC_DBPW: ${{ steps.secrets.outputs.dbpw }}
+        run: |
+          set -euo pipefail
+          # Aurora: endpoint, port, and rds.logical_replication actually in effect.
+          read -r DB_HOST DB_PORT PG_GROUP <<< "$(aws rds describe-db-clusters --db-cluster-identifier "$AURORA_CLUSTER" \
+            --query 'DBClusters[0].[Endpoint,Port,DBClusterParameterGroup]' --output text)"
+          [ -n "$DB_HOST" ] && [ "$DB_HOST" != None ] || { echo "::error::Could not resolve the writer endpoint of $AURORA_CLUSTER"; exit 1; }
+          LR=$(aws rds describe-db-cluster-parameters --db-cluster-parameter-group-name "$PG_GROUP" \
+            --query "Parameters[?ParameterName=='rds.logical_replication'].ParameterValue | [0]" --output text)
+          if [ "$LR" != 1 ]; then
+            echo "::error::rds.logical_replication is '$LR' in cluster parameter group $PG_GROUP (need 1, then the approved reboot)"; exit 1
+          fi
+          NOT_SYNC=$(aws rds describe-db-clusters --db-cluster-identifier "$AURORA_CLUSTER" \
+            --query "DBClusters[0].DBClusterMembers[?DBClusterParameterGroupStatus!='in-sync'].[DBInstanceIdentifier,DBClusterParameterGroupStatus]" --output text)
+          if [ -n "$NOT_SYNC" ]; then
+            echo "::error::Cluster members whose parameter group is not in-sync (reboot pending?): $NOT_SYNC"; exit 1
+          fi
+          OPL=$(aws rds describe-db-cluster-parameters --db-cluster-parameter-group-name "$PG_GROUP" \
+            --query "Parameters[?ParameterName=='output_plugin_libraries'].ParameterValue | [0]" --output text 2>/dev/null || true)
+          echo "Aurora $DB_HOST:$DB_PORT, parameter group $PG_GROUP: rds.logical_replication=1, members in-sync, output_plugin_libraries=${OPL:-n/a}"
+          echo "db_host=$DB_HOST" >> "$GITHUB_OUTPUT"
+          echo "db_port=$DB_PORT" >> "$GITHUB_OUTPUT"
+
+          # Network: the same subnets and SG as the PostgREST-Aurora prod service (already reaches Aurora).
+          NET=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$PROXY_SERVICE" \
+            --query 'services[0].[status, networkConfiguration.awsvpcConfiguration]' --output json)
+          [ "$(echo "$NET" | jq -r '.[0]')" = ACTIVE ] || { echo "::error::$PROXY_SERVICE is not ACTIVE — its network configuration is the template here"; exit 1; }
+          SUBNETS=$(echo "$NET" | jq -r '.[1].subnets | join(",")')
+          SGS=$(echo "$NET" | jq -r '.[1].securityGroups | join(",")')
+          [ -n "$SUBNETS" ] && [ -n "$SGS" ] || { echo "::error::Could not read subnets/SGs of $PROXY_SERVICE"; exit 1; }
+          echo "Subnets: $SUBNETS  Security groups: $SGS"
+          echo "subnets=$SUBNETS" >> "$GITHUB_OUTPUT"
+          echo "sgs=$SGS" >> "$GITHUB_OUTPUT"
+
+          # SG: TCP 4000 from the ALB's SG(s) must already be allowed (not edited here).
+          ALB_SGS=$(aws elbv2 describe-load-balancers --names "$ALB_NAME" --query 'LoadBalancers[0].SecurityGroups' --output json)
+          ALLOWED=$(aws ec2 describe-security-groups --group-ids ${SGS//,/ } --output json | jq --argjson alb "$ALB_SGS" --argjson p "$CONTAINER_PORT" '
+            [ .SecurityGroups[].IpPermissions[]
+              | select(.IpProtocol == "-1" or (.IpProtocol == "tcp" and .FromPort <= $p and .ToPort >= $p))
+              | .UserIdGroupPairs[]?.GroupId | select(. as $g | $alb | index($g)) ] | length')
+          if [ "$ALLOWED" = 0 ]; then
+            FIRST_SG=${SGS%%,*}; FIRST_ALB=$(echo "$ALB_SGS" | jq -r '.[0]')
+            echo "::error::Security group(s) $SGS do not allow TCP $CONTAINER_PORT from the ALB security group(s) $(echo "$ALB_SGS" | jq -c .)."
+            {
+              echo "### :no_entry: Security-group rule missing — nothing was created"
+              echo "Add (by review, then re-run):"
+              echo '```'
+              echo "aws ec2 authorize-security-group-ingress --region $AWS_REGION --group-id $FIRST_SG \\"
+              echo "  --ip-permissions 'IpProtocol=tcp,FromPort=$CONTAINER_PORT,ToPort=$CONTAINER_PORT,UserIdGroupPairs=[{GroupId=$FIRST_ALB,Description=\"VTID-05023 ALB to realtime-aurora\"}]'"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "SG allows TCP $CONTAINER_PORT from the ALB"
+
+          # Execution role: the PostgREST prod family's (already pulls the prod JWT secret).
+          EXEC_ROLE=$(aws ecs describe-task-definition --task-definition "$PROXY_TASK_FAMILY" --query 'taskDefinition.executionRoleArn' --output text)
+          [ -n "$EXEC_ROLE" ] && [ "$EXEC_ROLE" != None ] || { echo "::error::$PROXY_TASK_FAMILY has no executionRoleArn"; exit 1; }
+          SEC_JWT=$(aws secretsmanager describe-secret --secret-id "$SECRET_JWT" --query ARN --output text)
+          if DECISION=$(aws iam simulate-principal-policy --policy-source-arn "$EXEC_ROLE" \
+                --action-names secretsmanager:GetSecretValue \
+                --resource-arns "$SEC_JWT" "$SEC_ENC" "$SEC_SKB" "$SEC_API" "$SEC_DBPW" \
+                --query 'EvaluationResults[].[EvalResourceName,EvalDecision]' --output text 2>/dev/null); then
+            if echo "$DECISION" | awk '{print $2}' | grep -vqx allowed; then
+              echo "::error::Execution role $EXEC_ROLE may not read every secret:"; echo "$DECISION"
+              {
+                echo "### :no_entry: Execution role cannot read the realtime secrets — nothing was created"
+                echo "Grant \`secretsmanager:GetSecretValue\` to \`$EXEC_ROLE\` on:"
+                echo "$DECISION" | awk '$2 != "allowed" {print "- `" $1 "`"}'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+            echo "Execution role may read all six secrets"
+          else
+            echo "::warning::iam:SimulatePrincipalPolicy not permitted — secret access not pre-checked (a failure surfaces as a task that never starts; the circuit breaker stops the rollout)."
+          fi
+          echo "exec_role=$EXEC_ROLE" >> "$GITHUB_OUTPUT"
+          echo "sec_jwt=$SEC_JWT" >> "$GITHUB_OUTPUT"
+
+          # Existing service state.
+          STATUS=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            --query 'services[0].status' --output text 2>/dev/null || echo MISSING)
+          case "$STATUS" in
+            ACTIVE) echo "service_exists=true" >> "$GITHUB_OUTPUT"; echo "Service $ECS_SERVICE exists — will roll it" ;;
+            DRAINING) echo "::error::$ECS_SERVICE is DRAINING — wait until INACTIVE, then re-run"; exit 1 ;;
+            *) echo "service_exists=false" >> "$GITHUB_OUTPUT"; echo "Service $ECS_SERVICE does not exist — will create it" ;;
+          esac
+
+      - name: Login to Amazon ECR
+        id: ecr
+        if: inputs.phase == 'deploy'
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push the image (prod-<sha12>; an existing tag is reused, never overwritten)
+        id: build
+        if: inputs.phase == 'deploy'
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          SHORT: ${{ steps.commit.outputs.short }}
+        run: |
+          set -euo pipefail
+          if ! aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null 2>&1; then
+            aws ecr create-repository --repository-name "$ECR_REPOSITORY" --image-tag-mutability IMMUTABLE \
+              --image-scanning-configuration scanOnPush=true \
+              --tags Key=vtid,Value=VTID-05023 Key=environment,Value=production >/dev/null
+            echo "Created ECR repository $ECR_REPOSITORY (immutable tags, scan on push)"
+          fi
+          TAG="prod-$SHORT"
+          IMAGE="$REGISTRY/$ECR_REPOSITORY:$TAG"
+          if aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$TAG" >/dev/null 2>&1; then
+            echo "Image $IMAGE already in ECR — reusing it (same commit)"
+          else
+            docker build --pull -t "$IMAGE" services/realtime-aurora
+            docker push "$IMAGE"
+          fi
+          DIGEST=$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$TAG" \
+            --query 'imageDetails[0].imageDigest' --output text)
+          # The task definition pins the digest, not the tag.
+          echo "image=$REGISTRY/$ECR_REPOSITORY@$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Image $IMAGE = $DIGEST"
+
+      - name: Ensure CloudWatch log group
+        if: inputs.phase == 'deploy'
+        run: |
+          set -euo pipefail
+          EXISTING=$(aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP" \
+            --query "logGroups[?logGroupName=='$LOG_GROUP'] | length(@)" --output text)
+          [ "$EXISTING" != 0 ] || { aws logs create-log-group --log-group-name "$LOG_GROUP"; echo "Created $LOG_GROUP"; }
+          aws logs put-retention-policy --log-group-name "$LOG_GROUP" --retention-in-days 30
+
+      - name: Register task-definition revision (family vitana-realtime-aurora-prod)
+        id: td
+        if: inputs.phase == 'deploy'
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+          TENANT: ${{ steps.v.outputs.tenant }}
+          DB_HOST: ${{ steps.pre.outputs.db_host }}
+          DB_PORT: ${{ steps.pre.outputs.db_port }}
+          EXEC_ROLE: ${{ steps.pre.outputs.exec_role }}
+          SEC_JWT: ${{ steps.pre.outputs.sec_jwt }}
+          SEC_ENC: ${{ steps.secrets.outputs.enc }}
+          SEC_SKB: ${{ steps.secrets.outputs.skb }}
+          SEC_API: ${{ steps.secrets.outputs.api }}
+          SEC_DBPW: ${{ steps.secrets.outputs.dbpw }}
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg FAMILY "$TASK_FAMILY" --arg C "$CONTAINER" --arg IMG "$IMAGE" --arg EXEC "$EXEC_ROLE" \
+            --arg LOG_GROUP "$LOG_GROUP" --arg REGION "$AWS_REGION" --argjson PORT "$CONTAINER_PORT" \
+            --arg TENANT "$TENANT" --arg DB_HOST "$DB_HOST" --arg DB_PORT "$DB_PORT" \
+            --arg DB_NAME "$DB_NAME" --arg DB_USER "$DB_USER" \
+            --arg SEC_JWT "$SEC_JWT" --arg SEC_ENC "$SEC_ENC" --arg SEC_SKB "$SEC_SKB" \
+            --arg SEC_API "$SEC_API" --arg SEC_DBPW "$SEC_DBPW" --arg DNS_NODES "''" '
+            def env: to_entries | map({name: .key, value: .value});
+            {
+              family: $FAMILY,
+              requiresCompatibilities: ["FARGATE"],
+              networkMode: "awsvpc",
+              cpu: "1024",
+              memory: "2048",
+              runtimePlatform: {operatingSystemFamily: "LINUX", cpuArchitecture: "X86_64"},
+              executionRoleArn: $EXEC,
+              containerDefinitions: [{
+                name: $C,
+                image: $IMG,
+                essential: true,
+                portMappings: [{containerPort: $PORT, protocol: "tcp", name: "realtime-http"}],
+                ulimits: [{name: "nofile", softLimit: 100000, hardLimit: 100000}],
+                stopTimeout: 30,
+                environment: ({
+                  PORT: ($PORT | tostring),
+                  APP_NAME: "realtime",
+                  SEED_SELF_HOST: "true",
+                  SELF_HOST_TENANT_NAME: $TENANT,
+                  DB_HOST: $DB_HOST, DB_PORT: $DB_PORT, DB_NAME: $DB_NAME, DB_USER: $DB_USER,
+                  DB_SSL: "true", TENANT_DB_SSL: "true",
+                  DB_AFTER_CONNECT_QUERY: "SET search_path TO _realtime",
+                  DB_IP_VERSION: "ipv4", REALTIME_IP_VERSION: "ipv4",
+                  ERL_AFLAGS: "-proto_dist inet_tcp", ECTO_IPV6: "false",
+                  CLUSTER_STRATEGIES: "POSTGRES", DNS_NODES: $DNS_NODES,
+                  RLIMIT_NOFILE: "100000",
+                  RUN_JANITOR: "true", DISABLE_HEALTHCHECK_LOGGING: "true", LOG_LEVEL: "info",
+                  MAX_CONNECTIONS: "16384",
+                  TENANT_MAX_CONCURRENT_USERS: "10000",
+                  TENANT_MAX_EVENTS_PER_SECOND: "1000",
+                  TENANT_MAX_JOINS_PER_SECOND: "500",
+                  TENANT_MAX_CHANNELS_PER_CLIENT: "100",
+                  TENANT_MAX_BYTES_PER_SECOND: "1000000"
+                } | env),
+                secrets: [
+                  {name: "DB_PASSWORD", valueFrom: $SEC_DBPW},
+                  {name: "DB_ENC_KEY", valueFrom: $SEC_ENC},
+                  {name: "SECRET_KEY_BASE", valueFrom: $SEC_SKB},
+                  {name: "API_JWT_SECRET", valueFrom: $SEC_API},
+                  {name: "METRICS_JWT_SECRET", valueFrom: $SEC_API},
+                  {name: "TENANT_JWT_SECRET", valueFrom: $SEC_JWT}
+                ],
+                healthCheck: {
+                  command: ["CMD-SHELL", "curl -sf -o /dev/null http://127.0.0.1:4000/healthcheck || exit 1"],
+                  interval: 15, timeout: 5, retries: 3, startPeriod: 180
+                },
+                logConfiguration: {
+                  logDriver: "awslogs",
+                  options: {"awslogs-group": $LOG_GROUP, "awslogs-region": $REGION, "awslogs-stream-prefix": "realtime"}
+                }
+              }],
+              tags: [{key: "vtid", value: "VTID-05023"}, {key: "environment", value: "production"}]
+            }' > new-td.json
+          # Shape only — env values are not secret; secret names, never valueFrom ARNs or values.
+          jq '{family, cpu, memory, executionRoleArn, containers: [.containerDefinitions[] | {name, image,
+               env: [.environment[] | .name + "=" + .value], secrets: [.secrets[] | .name], healthCheck: .healthCheck.command}]}' new-td.json
+          NEW_ARN=$(aws ecs register-task-definition --cli-input-json file://new-td.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered $NEW_ARN"
+          echo "arn=$NEW_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Target group vitana-tg-realtime-prod (ip, HTTP 4000, /healthcheck)
+        id: tg
+        if: inputs.phase == 'deploy'
+        run: |
+          set -euo pipefail
+          TG=$(aws elbv2 describe-target-groups --names "$TG_NAME" --query 'TargetGroups[0].TargetGroupArn' --output text 2>/dev/null || true)
+          if [ -z "$TG" ] || [ "$TG" = None ]; then
+            TG=$(aws elbv2 create-target-group --name "$TG_NAME" --protocol HTTP --port "$CONTAINER_PORT" \
+              --vpc-id "$VPC_ID" --target-type ip --health-check-protocol HTTP --health-check-path /healthcheck \
+              --health-check-interval-seconds 15 --healthy-threshold-count 2 --unhealthy-threshold-count 3 \
+              --matcher HttpCode=200 --tags Key=vtid,Value=VTID-05023 Key=environment,Value=production \
+              --query 'TargetGroups[0].TargetGroupArn' --output text)
+            echo "Created $TG"
+          else
+            read -r T_TYPE T_PORT T_VPC T_PATH <<< "$(aws elbv2 describe-target-groups --target-group-arns "$TG" \
+              --query 'TargetGroups[0].[TargetType,Port,VpcId,HealthCheckPath]' --output text)"
+            if [ "$T_TYPE" != ip ] || [ "$T_PORT" != "$CONTAINER_PORT" ] || [ "$T_VPC" != "$VPC_ID" ]; then
+              echo "::error::Existing $TG_NAME is $T_TYPE:$T_PORT in $T_VPC — expected ip:$CONTAINER_PORT in $VPC_ID; fix by review, not overwrite"; exit 1
+            fi
+            [ "$T_PATH" = /healthcheck ] || { aws elbv2 modify-target-group --target-group-arn "$TG" --health-check-path /healthcheck >/dev/null; echo "Health-check path reset to /healthcheck (was $T_PATH)"; }
+            echo "Exists $TG"
+          fi
+          # Websockets: give connected members time to be moved off a draining task.
+          aws elbv2 modify-target-group-attributes --target-group-arn "$TG" \
+            --attributes Key=deregistration_delay.timeout_seconds,Value=30 >/dev/null
+          echo "arn=$TG" >> "$GITHUB_OUTPUT"
+
+      - name: Create the service (first run) or roll it — one task, stop-before-start
+        if: inputs.phase == 'deploy'
+        env:
+          TD_ARN: ${{ steps.td.outputs.arn }}
+          TG: ${{ steps.tg.outputs.arn }}
+          SUBNETS: ${{ steps.pre.outputs.subnets }}
+          SGS: ${{ steps.pre.outputs.sgs }}
+          EXISTS: ${{ steps.pre.outputs.service_exists }}
+        run: |
+          set -euo pipefail
+          case "$ECS_SERVICE" in *-prod) ;; *) echo "::error::Refusing: '$ECS_SERVICE' does not end in -prod"; exit 1 ;; esac
+          # maximumPercent=100 / minimumHealthyPercent=0: the old task stops before the new one
+          # starts. Two Realtime nodes that are not clustered (README) must never hold the
+          # tenant's replication slot at once. Clients reconnect on their own (~1-2 min gap).
+          DEPLOY_CFG="deploymentCircuitBreaker={enable=true,rollback=true},maximumPercent=100,minimumHealthyPercent=0"
+          if [ "$EXISTS" != true ]; then
+            aws ecs create-service --cluster "$ECS_CLUSTER" --service-name "$ECS_SERVICE" \
+              --task-definition "$TD_ARN" --desired-count 1 --launch-type FARGATE \
+              --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SGS],assignPublicIp=DISABLED}" \
+              --load-balancers "targetGroupArn=$TG,containerName=$CONTAINER,containerPort=$CONTAINER_PORT" \
+              --health-check-grace-period-seconds 240 \
+              --deployment-configuration "$DEPLOY_CFG" \
+              --enable-ecs-managed-tags --propagate-tags SERVICE \
+              --tags key=vtid,value=VTID-05023 key=environment,value=production \
+              --query 'service.serviceArn' --output text
+            echo "Created $ECS_SERVICE (1 task)"
+          else
+            LBS=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" --query 'services[0].loadBalancers' --output json)
+            if ! echo "$LBS" | jq -e --arg TG "$TG" 'length == 1 and .[0].targetGroupArn == $TG' >/dev/null; then
+              echo "::error::$ECS_SERVICE load balancers are $LBS, expected exactly $TG — refusing to change them"; exit 1
+            fi
+            # desiredCount stays 1 (single tenant node, README "Scaling").
+            aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
+              --task-definition "$TD_ARN" --desired-count 1 \
+              --deployment-configuration "$DEPLOY_CFG" \
+              --query 'service.serviceArn' --output text
+            echo "Rolling $ECS_SERVICE to $TD_ARN"
+          fi
+
+      - name: Wait for stability; PRIMARY runs the new revision, 1 task RUNNING + HEALTHY, target healthy
+        if: inputs.phase == 'deploy'
+        env:
+          TD_ARN: ${{ steps.td.outputs.arn }}
+          TG: ${{ steps.tg.outputs.arn }}
+        run: |
+          set -euo pipefail
+          aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            || aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
+          read -r P_TD P_STATE <<< "$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            --query 'services[0].deployments[?status==`PRIMARY`] | [0].[taskDefinition,rolloutState]' --output text)"
+          echo "PRIMARY: $P_TD ($P_STATE)"
+          [ "$P_TD" = "$TD_ARN" ] || { echo "::error::PRIMARY is $P_TD, not $TD_ARN — the circuit breaker likely rolled back (see $LOG_GROUP)"; exit 1; }
+          [ "$P_STATE" = COMPLETED ] || { echo "::error::PRIMARY rolloutState is $P_STATE"; exit 1; }
+          for i in $(seq 1 20); do
+            TASKS=$(aws ecs list-tasks --cluster "$ECS_CLUSTER" --service-name "$ECS_SERVICE" --desired-status RUNNING --query 'taskArns' --output text)
+            GOOD=0
+            if [ -n "$TASKS" ] && [ "$TASKS" != None ]; then
+              # shellcheck disable=SC2086 # word-splitting the task ARN list is intended
+              GOOD=$(aws ecs describe-tasks --cluster "$ECS_CLUSTER" --tasks $TASKS \
+                --query "length(tasks[?taskDefinitionArn=='$TD_ARN' && lastStatus=='RUNNING' && healthStatus=='HEALTHY'])" --output text)
+            fi
+            STATES=$(aws elbv2 describe-target-health --target-group-arn "$TG" --query 'TargetHealthDescriptions[].TargetHealth.State' --output text)
+            echo "Attempt $i: $GOOD healthy task(s) on the new revision; targets: ${STATES:-none}"
+            if [ "$GOOD" -ge 1 ] && [ "$(echo "$STATES" | tr '\t' '\n' | grep -c '^healthy$' || true)" -ge 1 ]; then exit 0; fi
+            sleep 15
+          done
+          echo "::error::No RUNNING + HEALTHY task with a healthy target on $TD_ARN"; exit 1
+
+      - name: Listener rule (priority 9) — host + /socket and /api/broadcast paths only
+        if: inputs.phase == 'deploy'
+        env:
+          TG: ${{ steps.tg.outputs.arn }}
+        run: |
+          set -euo pipefail
+          # 1 host value + 4 path values = the ALB maximum of 5 condition values per rule.
+          PATHS='["/socket","/socket/*","/api/broadcast","/api/broadcast/*"]'
+          RULES=$(aws elbv2 describe-rules --listener-arn "$LISTENER_ARN" --output json)
+          MINE=$(echo "$RULES" | jq --arg H "$HOST" '[.Rules[] | select(any(.Conditions[]?; .Field == "host-header" and ((.HostHeaderConfig.Values // .Values // []) | index($H))))]')
+          COUNT=$(echo "$MINE" | jq length)
+          if [ "$COUNT" -gt 1 ]; then
+            echo "::error::$COUNT rules already match host $HOST — resolve by review"; exit 1
+          elif [ "$COUNT" = 1 ]; then
+            FWD=$(echo "$MINE" | jq -r '.[0].Actions[] | select(.Type == "forward") | (.TargetGroupArn // .ForwardConfig.TargetGroups[0].TargetGroupArn)')
+            PRIO=$(echo "$MINE" | jq -r '.[0].Priority')
+            HAVE=$(echo "$MINE" | jq -c '[.[0].Conditions[] | select(.Field == "path-pattern") | (.PathPatternConfig.Values // .Values)[]] | sort')
+            if [ "$FWD" != "$TG" ]; then
+              echo "::error::Existing rule for $HOST (priority $PRIO) forwards to $FWD, not $TG — refusing to overwrite"; exit 1
+            fi
+            if [ "$HAVE" != "$(echo "$PATHS" | jq -c sort)" ]; then
+              echo "::error::Existing rule for $HOST (priority $PRIO) has paths $HAVE, expected $(echo "$PATHS" | jq -c sort) — fix by review"; exit 1
+            fi
+            echo "Rule exists (priority $PRIO) -> $TG"
+          else
+            TAKEN=$(echo "$RULES" | jq -r --arg P "$RULE_PRIORITY" '[.Rules[] | select(.Priority == $P)] | length')
+            [ "$TAKEN" = 0 ] || { echo "::error::Priority $RULE_PRIORITY is taken on the listener — pick a free priority < 10 by review"; exit 1; }
+            COND=$(jq -nc --arg H "$HOST" --argjson P "$PATHS" \
+              '[{Field: "host-header", HostHeaderConfig: {Values: [$H]}}, {Field: "path-pattern", PathPatternConfig: {Values: $P}}]')
+            aws elbv2 create-rule --listener-arn "$LISTENER_ARN" --priority "$RULE_PRIORITY" \
+              --conditions "$COND" --actions "Type=forward,TargetGroupArn=$TG" \
+              --tags Key=vtid,Value=VTID-05023 Key=environment,Value=production \
+              --query 'Rules[0].RuleArn' --output text
+            echo "Created rule $HOST $PATHS -> $TG at priority $RULE_PRIORITY"
+          fi
+
+      - name: Cloudflare proxied CNAME
+        if: inputs.phase == 'deploy'
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ -n "${CF_TOKEN:-}" ] || { echo "::error::CLOUDFLARE_API_TOKEN secret is not set"; exit 1; }
+          API="https://api.cloudflare.com/client/v4/zones/$CF_ZONE/dns_records"
+          AUTH=(-H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json")
+          RESP=$(curl -sS --fail-with-body "${AUTH[@]}" "$API?name=$HOST")
+          echo "$RESP" | jq -e '.success == true' >/dev/null || { echo "::error::Cloudflare lookup failed: $(echo "$RESP" | jq -c .errors)"; exit 1; }
+          N=$(echo "$RESP" | jq '.result | length')
+          if [ "$N" = 0 ]; then
+            BODY=$(jq -nc --arg n "$HOST" --arg c "$ALB_DNS" \
+              '{type:"CNAME", name:$n, content:$c, proxied:true, ttl:1, comment:"VTID-05023 self-hosted Realtime on Aurora (prod)"}')
+            OUT=$(curl -sS --fail-with-body -X POST "${AUTH[@]}" "$API" -d "$BODY")
+            echo "$OUT" | jq -e '.success == true' >/dev/null || { echo "::error::Cloudflare create failed: $(echo "$OUT" | jq -c .errors)"; exit 1; }
+            echo "Created CNAME $HOST -> $ALB_DNS (proxied; Cloudflare proxies websockets)"
+          elif [ "$N" = 1 ]; then
+            read -r TYPE CONTENT PROXIED ID <<< "$(echo "$RESP" | jq -r '.result[0] | [.type, .content, (.proxied|tostring), .id] | @tsv')"
+            if [ "$TYPE" != CNAME ] || [ "$CONTENT" != "$ALB_DNS" ]; then
+              echo "::error::$HOST already exists as $TYPE -> $CONTENT — refusing to overwrite a record this workflow did not create"; exit 1
+            fi
+            if [ "$PROXIED" != true ]; then
+              OUT=$(curl -sS --fail-with-body -X PATCH "${AUTH[@]}" "$API/$ID" -d '{"proxied":true}')
+              echo "$OUT" | jq -e '.success == true' >/dev/null || { echo "::error::Cloudflare patch failed: $(echo "$OUT" | jq -c .errors)"; exit 1; }
+              echo "Turned proxying on for $HOST"
+            else
+              echo "CNAME exists: $HOST -> $ALB_DNS (proxied)"
+            fi
+          else
+            echo "::error::$N DNS records named $HOST — resolve by review"; exit 1
+          fi
+
+      - name: Cloudflare — skip WAF / bot / rate-limit challenges for the realtime host
+        id: cfskip
+        if: inputs.phase == 'deploy'
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -uo pipefail
+          # A challenge page cannot be answered inside a websocket handshake: every
+          # member connection would fail. Same rule shape as the data host's.
+          API="https://api.cloudflare.com/client/v4/zones/$CF_ZONE/rulesets"
+          AUTH=(-H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json")
+          EXPR="(http.host eq \"$HOST\")"
+          RULE=$(jq -nc --arg e "$EXPR" --arg ref "$CF_RULE_REF" --arg h "$HOST" '{
+            ref: $ref, enabled: true, expression: $e, action: "skip",
+            description: ("VTID-05023: websocket host " + $h + " - no browser challenges (self-hosted Realtime)"),
+            action_parameters: {
+              ruleset: "current",
+              phases: ["http_ratelimit", "http_request_firewall_managed", "http_request_sbfm"],
+              products: ["bic", "hot", "securityLevel", "uaBlock", "zoneLockdown"]
+            },
+            logging: { enabled: true },
+            position: { before: "" }
+          }')
+          manual() {
+            echo "::warning::Cloudflare skip rule for $HOST was NOT applied automatically ($1). Apply it by hand before any client uses the host."
+            {
+              echo "### :warning: Manual Cloudflare step required — WAF/bot skip for \`$HOST\`"
+              echo "Reason: $1"
+              echo ""
+              echo "Cloudflare dashboard -> vitanaland.com -> Security -> WAF -> Custom rules -> Create rule:"
+              echo "1. Name: \`VTID-05023 realtime host skip\`"
+              echo "2. Expression: \`$EXPR\`"
+              echo "3. Action: **Skip** -> *All remaining custom rules*, *All rate limiting rules*, *All managed rules*, *All Super Bot Fight Mode rules*, *Browser Integrity Check*, *Security Level*, *User Agent Blocking*, *Zone Lockdown*, *Hotlink Protection*; *Log matching requests* on."
+              echo "4. Place it **first** and deploy. Network -> WebSockets must be On for the zone."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "applied=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          ENTRY=$(curl -sS "${AUTH[@]}" "$API/phases/http_request_firewall_custom/entrypoint")
+          if echo "$ENTRY" | jq -e '.success == true' >/dev/null 2>&1; then
+            RS_ID=$(echo "$ENTRY" | jq -r '.result.id')
+            if echo "$ENTRY" | jq -e --arg ref "$CF_RULE_REF" 'any(.result.rules[]?; .ref == $ref)' >/dev/null; then
+              echo "Skip rule $CF_RULE_REF already present in ruleset $RS_ID"
+              echo "applied=true" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+            OUT=$(curl -sS -X POST "${AUTH[@]}" "$API/$RS_ID/rules" -d "$RULE")
+          elif echo "$ENTRY" | jq -e 'any(.errors[]?; .code == 10003)' >/dev/null 2>&1 \
+               || echo "$ENTRY" | jq -e '.errors[]? | select(.message | test("not found"; "i"))' >/dev/null 2>&1; then
+            BODY=$(jq -nc --argjson r "$RULE" '{rules: [ $r | del(.position) ]}')
+            OUT=$(curl -sS -X PUT "${AUTH[@]}" "$API/phases/http_request_firewall_custom/entrypoint" -d "$BODY")
+          else
+            manual "reading the custom-rules entrypoint failed: $(echo "$ENTRY" | jq -c '.errors // "no JSON response"' 2>/dev/null || echo 'no JSON response')"
+          fi
+          if echo "$OUT" | jq -e '.success == true' >/dev/null 2>&1; then
+            echo "Skip rule $CF_RULE_REF applied for $HOST"; echo "applied=true" >> "$GITHUB_OUTPUT"
+          else
+            manual "Rulesets API rejected the rule: $(echo "$OUT" | jq -c '.errors // "no JSON response"' 2>/dev/null || echo 'no JSON response')"
+          fi
+
+      - name: Verify through wss://<host>/socket (anon key -> 101, forged token -> 401)
+        if: inputs.phase == 'deploy'
+        run: |
+          set -euo pipefail
+          umask 077
+          CFG=$(mktemp); BAD=$(mktemp)
+          trap 'rm -f "$CFG" "$BAD"' EXIT
+          ANON=$(aws secretsmanager get-secret-value --secret-id "$SECRET_ANON" --query SecretString --output text)
+          echo "::add-mask::$ANON"
+          KEY=$(head -c 16 /dev/urandom | base64)
+          upgrade_cfg() { # file, token — curl config, so the token never appears on a command line
+            {
+              echo "url = \"https://$HOST/socket/websocket?apikey=$2&vsn=1.0.0\""
+              echo 'http1.1'
+              echo 'header = "Connection: Upgrade"'
+              echo 'header = "Upgrade: websocket"'
+              echo 'header = "Sec-WebSocket-Version: 13"'
+              echo "header = \"Sec-WebSocket-Key: $KEY\""
+              echo 'output = "/dev/null"'
+              echo 'max-time = 8'
+            } > "$1"
+          }
+          upgrade_cfg "$CFG" "$ANON"; unset ANON
+          # A well-formed token signed with a different secret.
+          FORGED=$(python3 -c 'import base64,hmac,hashlib,json,os
+          b=lambda d: base64.urlsafe_b64encode(json.dumps(d).encode()).rstrip(b"=")
+          h,p=b({"alg":"HS256","typ":"JWT"}),b({"role":"anon","iss":"supabase","exp":4102444800})
+          print((h+b"."+p+b"."+base64.urlsafe_b64encode(hmac.new(os.urandom(32),h+b"."+p,hashlib.sha256).digest()).rstrip(b"=")).decode())')
+          upgrade_cfg "$BAD" "$FORGED"
+          code() { curl -s -K "$1" -w '%{http_code}' 2>/dev/null || true; }
+          for i in $(seq 1 40); do
+            C=$(code "$CFG"); [ "$C" = 101 ] && break
+            echo "Attempt $i: websocket upgrade -> $C (DNS/edge may still be propagating)"; sleep 15
+          done
+          FAIL=0
+          C=$(code "$CFG")
+          if [ "$C" = 101 ]; then echo "PASS anon key upgrade -> 101 (tenant '${HOST%%.*}' found, member JWT secret matches)"; else echo "::error::anon key upgrade -> $C (want 101)"; FAIL=1; fi
+          C=$(code "$BAD")
+          # v2.134.10 answers 401 (local delivery test); 403 accepted for older/newer images.
+          case "$C" in 401|403) echo "PASS forged token upgrade -> $C" ;; *) echo "::error::forged token upgrade -> $C (want 401/403)"; FAIL=1 ;; esac
+          C=$(curl -s -o /dev/null -m 10 -w '%{http_code}' "https://$HOST/api/tenants" || true)
+          if [ "$C" != 200 ] && [ "$C" != 403 ]; then echo "PASS /api/tenants is not routed to Realtime ($C)"; else echo "::error::/api/tenants -> $C: the management API is reachable from the internet"; FAIL=1; fi
+          exit "$FAIL"
+
+      - name: Summary
+        if: always() && inputs.phase == 'deploy'
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+          TAG: ${{ steps.build.outputs.tag }}
+          TD_ARN: ${{ steps.td.outputs.arn }}
+          TG: ${{ steps.tg.outputs.arn }}
+          CF_SKIP: ${{ steps.cfskip.outputs.applied }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          {
+            echo "## realtime-aurora PRODUCTION deploy — $HOST ($JOB_STATUS)"
+            echo "- Commit: \`$PIN\` · image \`${TAG:-n/a}\` = \`${IMAGE:-n/a}\`"
+            echo "- Task definition: \`${TD_ARN:-n/a}\` · service \`$ECS_SERVICE\` (1 task) · target group \`${TG:-n/a}\`"
+            echo "- Listener rule priority $RULE_PRIORITY: host $HOST, paths /socket, /socket/*, /api/broadcast, /api/broadcast/*"
+            echo "- Cloudflare: proxied CNAME -> \`$ALB_DNS\`; WAF/bot skip applied automatically: ${CF_SKIP:-not reached}"
+            echo "- Parity report: \`$PARITY_REPORT\` · logical replication confirmed: $LR_CONFIRMED · setup SQL applied: $SQL_APPLIED"
+            echo "- Reason: $DEPLOY_REASON"
+            echo "- No app client uses this host until the app's realtimeChannel() helper ships (plan part 7a, vitana-v1)."
+          } >> "$GITHUB_STEP_SUMMARY"

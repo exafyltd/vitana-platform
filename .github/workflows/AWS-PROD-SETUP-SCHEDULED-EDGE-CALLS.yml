@@ -1,0 +1,244 @@
+# AWS-PROD-SETUP-SCHEDULED-EDGE-CALLS — the two Supabase pg_cron jobs that make HTTP
+# calls (docs/validation/VTID-05023/side-effects.md section A, jobs 1 and 4), rebuilt on
+# AWS so they keep firing once Supabase's pg_cron is switched off. VTID-05023 part 6.
+#
+#   job 1 appointment-reminders-hourly  0 * * * *     POST .../functions/v1/send-appointment-reminder
+#   job 4 run-api-integration-tests     */15 * * * *  POST .../functions/v1/run-api-tests
+#
+# EventBridge Scheduler cannot target an API destination directly (a real
+# ValidationException, found under VTID-03676 — see setup-eventbridge-push-dispatch.sh), so:
+#   Scheduler schedule (UTC cron) -> custom event bus vitana-scheduled-edge-calls
+#     -> rule (one per job) -> API destination (the edge function URL)
+#        through connection vitana-supabase-edge-calls (Authorization header from Secrets Manager).
+#
+# What Supabase sends today (vitana-v1 migration 20251009211816_...sql, job 1):
+#   headers  Content-Type: application/json, Authorization: Bearer <anon key>
+#   body     {"triggered_by": "cron", "timestamp": now()}
+# Here the Authorization value is "Bearer " + the secret named by `auth_secret_name`
+# (default vitana/supabase/prod/anon-key), stored only inside the EventBridge connection
+# (which keeps it in its own Secrets Manager secret). It is masked and passed through a
+# 0600 file, never on a command line or in the log. Content-Type application/json is
+# EventBridge's default for a JSON body. The body is the same object; "timestamp" is the
+# event time (ISO 8601 UTC, second precision) instead of Postgres now().
+# Retries are OFF (MaximumRetryAttempts 0), like pg_net's fire-and-forget — EventBridge's
+# default of 185 retries over 24 h would send a reminder more than once.
+#
+# Job 4 (read live 2026-10-10): POST run-api-tests with body {} and the PUBLIC anon key as Bearer
+# (the same publishable key the app bundles). Pass run_api_tests_body='{}' to create it:
+#   SELECT command FROM cron.job WHERE jobname = 'run-api-integration-tests';
+# and check its headers match the connection (Authorization: Bearer <anon key>). The owner
+# may also drop job 4 (a test runner); then leave the input empty.
+#
+# NO DOUBLE FIRING: schedules are created DISABLED (`enable` defaults to false). Enable them
+# only in the cutover window, AFTER scripts/aws/supabase-cutover-unschedule.sql has
+# unscheduled the Supabase jobs; enabling requires typing the confirmation below. Re-running
+# with enable=false disables them again (the rollback path).
+#
+# Idempotent: every resource is created or updated in place. workflow_dispatch ONLY,
+# required `reason`, GitHub OIDC (secrets.AWS_PROD_ROLE_ARN), account/region guard.
+
+name: AWS Prod Setup Scheduled Edge Calls (EventBridge)
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for this PRODUCTION change — required'
+        required: true
+      auth_secret_name:
+        description: 'Secrets Manager secret NAME holding the bearer token for the Authorization header (never the value)'
+        required: true
+        default: 'vitana/supabase/prod/anon-key'
+      enable:
+        description: 'Enable the schedules (false = create/update them DISABLED)'
+        type: boolean
+        required: true
+        default: false
+      confirm_supabase_jobs_unscheduled:
+        description: 'Required when enable=true: type SUPABASE-JOBS-1-4-UNSCHEDULED'
+        required: false
+        default: ''
+      run_api_tests_body:
+        description: 'Job 4 JSON body, copied from the live cron.job command (empty = skip job 4)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write # aws-actions/configure-aws-credentials OIDC
+
+concurrency:
+  group: aws-prod-setup-scheduled-edge-calls
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AWS_REGION: eu-central-1
+      AWS_ACCOUNT_ID: '472838866351'
+      AWS_PAGER: ''
+      BUS_NAME: vitana-scheduled-edge-calls
+      EVENT_SOURCE: vitana.scheduled-edge-calls
+      CONNECTION_NAME: vitana-supabase-edge-calls
+      INVOKE_ROLE: vitana-eventbridge-edge-calls-invoke
+      SCHEDULER_ROLE: vitana-scheduler-edge-calls
+      EDGE_BASE: https://inmkhvwdcuyhnxkgfvsb.supabase.co/functions/v1
+      DEPLOY_REASON: ${{ inputs.reason }}
+      AUTH_SECRET_NAME: ${{ inputs.auth_secret_name }}
+      ENABLE: ${{ inputs.enable }}
+      CONFIRM: ${{ inputs.confirm_supabase_jobs_unscheduled }}
+      RUN_API_TESTS_BODY: ${{ inputs.run_api_tests_body }}
+    steps:
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          if [ -z "${DEPLOY_REASON// /}" ]; then echo "::error::reason is required"; exit 1; fi
+          if ! printf '%s' "$AUTH_SECRET_NAME" | grep -qE '^[A-Za-z0-9/_+=.@-]{1,512}$'; then
+            echo "::error::auth_secret_name must be a Secrets Manager secret name"; exit 1
+          fi
+          if [ "$ENABLE" = "true" ] && [ "$CONFIRM" != "SUPABASE-JOBS-1-4-UNSCHEDULED" ]; then
+            echo "::error::enable=true needs confirm_supabase_jobs_unscheduled=SUPABASE-JOBS-1-4-UNSCHEDULED (run scripts/aws/supabase-cutover-unschedule.sql first, or both sides fire)"; exit 1
+          fi
+          if [ -n "$RUN_API_TESTS_BODY" ] && ! printf '%s' "$RUN_API_TESTS_BODY" | jq -e 'type == "object"' >/dev/null; then
+            echo "::error::run_api_tests_body must be a JSON object"; exit 1
+          fi
+
+      - name: Configure AWS credentials (GitHub OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Account/region guard (472838866351 / eu-central-1)
+        run: |
+          set -euo pipefail
+          ACCT=$(aws sts get-caller-identity --query Account --output text)
+          [ "$ACCT" = "$AWS_ACCOUNT_ID" ] || { echo "::error::Assumed role is in account $ACCT, expected $AWS_ACCOUNT_ID"; exit 1; }
+          [ "$AWS_REGION" = "eu-central-1" ] || { echo "::error::region must be eu-central-1"; exit 1; }
+
+      - name: Event bus
+        run: |
+          set -euo pipefail
+          aws events describe-event-bus --name "$BUS_NAME" >/dev/null 2>&1 \
+            || aws events create-event-bus --name "$BUS_NAME" >/dev/null
+          echo "BUS_ARN=$(aws events describe-event-bus --name "$BUS_NAME" --query Arn --output text)" >> "$GITHUB_ENV"
+
+      - name: Connection (Authorization header from Secrets Manager — never echoed)
+        run: |
+          set -euo pipefail
+          umask 077
+          DIR=$(mktemp -d)
+          TOKEN=$(aws secretsmanager get-secret-value --secret-id "$AUTH_SECRET_NAME" --query SecretString --output text)
+          echo "::add-mask::$TOKEN"
+          [ -n "$TOKEN" ] && [ "$TOKEN" != "None" ] || { echo "::error::secret $AUTH_SECRET_NAME is empty"; exit 1; }
+          jq -n --arg v "Bearer $TOKEN" '{ApiKeyAuthParameters: {ApiKeyName: "Authorization", ApiKeyValue: $v}}' > "$DIR/auth.json"
+          unset TOKEN
+          if aws events describe-connection --name "$CONNECTION_NAME" >/dev/null 2>&1; then
+            aws events update-connection --name "$CONNECTION_NAME" --authorization-type API_KEY \
+              --auth-parameters "file://$DIR/auth.json" >/dev/null
+          else
+            aws events create-connection --name "$CONNECTION_NAME" --authorization-type API_KEY \
+              --description "VTID-05023: Supabase edge functions called on a schedule (was pg_cron + pg_net)" \
+              --auth-parameters "file://$DIR/auth.json" >/dev/null
+          fi
+          rm -rf "$DIR"
+          for i in $(seq 1 30); do
+            STATE=$(aws events describe-connection --name "$CONNECTION_NAME" --query ConnectionState --output text)
+            [ "$STATE" = "AUTHORIZED" ] && break
+            echo "connection state $STATE, waiting ($i/30)"; sleep 5
+          done
+          [ "$STATE" = "AUTHORIZED" ] || { echo "::error::connection not AUTHORIZED (state $STATE)"; exit 1; }
+          echo "CONNECTION_ARN=$(aws events describe-connection --name "$CONNECTION_NAME" --query ConnectionArn --output text)" >> "$GITHUB_ENV"
+
+      - name: API destinations
+        run: |
+          set -euo pipefail
+          upsert_dest() { # name url
+            if aws events describe-api-destination --name "$1" >/dev/null 2>&1; then
+              aws events update-api-destination --name "$1" --connection-arn "$CONNECTION_ARN" \
+                --invocation-endpoint "$2" --http-method POST --invocation-rate-limit-per-second 1 >/dev/null
+            else
+              aws events create-api-destination --name "$1" --connection-arn "$CONNECTION_ARN" \
+                --invocation-endpoint "$2" --http-method POST --invocation-rate-limit-per-second 1 >/dev/null
+            fi
+            aws events describe-api-destination --name "$1" --query ApiDestinationArn --output text
+          }
+          echo "DEST_REMINDER_ARN=$(upsert_dest vitana-edge-send-appointment-reminder "$EDGE_BASE/send-appointment-reminder")" >> "$GITHUB_ENV"
+          if [ -n "$RUN_API_TESTS_BODY" ]; then
+            echo "DEST_API_TESTS_ARN=$(upsert_dest vitana-edge-run-api-tests "$EDGE_BASE/run-api-tests")" >> "$GITHUB_ENV"
+          else
+            echo "::warning::run_api_tests_body empty — job 4 (run-api-integration-tests) NOT created. TODO: copy its body from the live cron.job, or record the drop in side-effects.md."
+          fi
+
+      - name: IAM roles (rule -> API destination, scheduler -> bus)
+        run: |
+          set -euo pipefail
+          DIR=$(mktemp -d)
+          trust() { jq -n --arg svc "$1" --arg acct "$AWS_ACCOUNT_ID" \
+            '{Version:"2012-10-17",Statement:[{Effect:"Allow",Principal:{Service:$svc},Action:"sts:AssumeRole",Condition:{StringEquals:{"aws:SourceAccount":$acct}}}]}'; }
+          ensure_role() { # name service
+            trust "$2" > "$DIR/trust.json"
+            if aws iam get-role --role-name "$1" >/dev/null 2>&1; then
+              aws iam update-assume-role-policy --role-name "$1" --policy-document "file://$DIR/trust.json"
+            else
+              aws iam create-role --role-name "$1" --assume-role-policy-document "file://$DIR/trust.json" \
+                --description "VTID-05023 scheduled edge calls" >/dev/null
+            fi
+          }
+          ensure_role "$INVOKE_ROLE" events.amazonaws.com
+          DESTS=$(jq -cn --arg a "$DEST_REMINDER_ARN" --arg b "${DEST_API_TESTS_ARN:-}" '[$a, $b] | map(select(. != ""))')
+          jq -n --argjson r "$DESTS" '{Version:"2012-10-17",Statement:[{Effect:"Allow",Action:"events:InvokeApiDestination",Resource:$r}]}' > "$DIR/invoke.json"
+          aws iam put-role-policy --role-name "$INVOKE_ROLE" --policy-name invoke-edge-destinations --policy-document "file://$DIR/invoke.json"
+          ensure_role "$SCHEDULER_ROLE" scheduler.amazonaws.com
+          jq -n --arg bus "$BUS_ARN" '{Version:"2012-10-17",Statement:[{Effect:"Allow",Action:"events:PutEvents",Resource:$bus}]}' > "$DIR/put.json"
+          aws iam put-role-policy --role-name "$SCHEDULER_ROLE" --policy-name put-edge-call-events --policy-document "file://$DIR/put.json"
+          echo "INVOKE_ROLE_ARN=$(aws iam get-role --role-name "$INVOKE_ROLE" --query Role.Arn --output text)" >> "$GITHUB_ENV"
+          echo "SCHEDULER_ROLE_ARN=$(aws iam get-role --role-name "$SCHEDULER_ROLE" --query Role.Arn --output text)" >> "$GITHUB_ENV"
+          sleep 10 # IAM propagation before the targets/schedules reference the roles
+
+      - name: Rules and schedules
+        run: |
+          set -euo pipefail
+          DIR=$(mktemp -d)
+          STATE=$([ "$ENABLE" = "true" ] && echo ENABLED || echo DISABLED)
+          # name cron(EventBridge) dest_arn input_template
+          setup_job() {
+            local name="$1" expr="$2" dest="$3" template="$4"
+            jq -n --arg src "$EVENT_SOURCE" --arg dt "$name" '{source:[$src],"detail-type":[$dt]}' > "$DIR/pattern.json"
+            aws events put-rule --name "vitana-edge-$name" --event-bus-name "$BUS_NAME" \
+              --event-pattern "file://$DIR/pattern.json" --state ENABLED \
+              --description "VTID-05023: was Supabase pg_cron job $name" >/dev/null
+            jq -n --arg id "$name" --arg arn "$dest" --arg role "$INVOKE_ROLE_ARN" --arg tpl "$template" \
+              '[{Id:$id,Arn:$arn,RoleArn:$role,
+                 InputTransformer:{InputPathsMap:{time:"$.time"},InputTemplate:$tpl},
+                 RetryPolicy:{MaximumRetryAttempts:0,MaximumEventAgeInSeconds:60}}]' > "$DIR/targets.json"
+            aws events put-targets --rule "vitana-edge-$name" --event-bus-name "$BUS_NAME" \
+              --targets "file://$DIR/targets.json" >/dev/null
+            jq -n --arg arn "$BUS_ARN" --arg role "$SCHEDULER_ROLE_ARN" --arg dt "$name" --arg src "$EVENT_SOURCE" \
+              '{Arn:$arn,RoleArn:$role,EventBridgeParameters:{DetailType:$dt,Source:$src},Input:"{}",
+                RetryPolicy:{MaximumRetryAttempts:0,MaximumEventAgeInSeconds:60}}' > "$DIR/target.json"
+            local verb=create-schedule
+            aws scheduler get-schedule --name "vitana-edge-$name" >/dev/null 2>&1 && verb=update-schedule
+            aws scheduler "$verb" --name "vitana-edge-$name" \
+              --schedule-expression "$expr" --schedule-expression-timezone UTC \
+              --flexible-time-window Mode=OFF --state "$STATE" \
+              --description "VTID-05023: was Supabase pg_cron job $name" \
+              --target "file://$DIR/target.json" >/dev/null
+            echo "vitana-edge-$name: $expr UTC -> $STATE"
+          }
+          # job 1: 0 * * * *  ->  cron(0 * * * ? *). Body as Supabase: {"triggered_by":"cron","timestamp":<time>}
+          setup_job appointment-reminders-hourly 'cron(0 * * * ? *)' "$DEST_REMINDER_ARN" \
+            '{"triggered_by": "cron", "timestamp": <time>}'
+          # job 4: */15 * * * *  ->  cron(0/15 * * * ? *). Body from the input (copied from the live job).
+          if [ -n "${DEST_API_TESTS_ARN:-}" ]; then
+            setup_job run-api-integration-tests 'cron(0/15 * * * ? *)' "$DEST_API_TESTS_ARN" \
+              "$(printf '%s' "$RUN_API_TESTS_BODY" | jq -c .)"
+          fi
+          {
+            echo "### Scheduled edge calls (VTID-05023)"
+            echo "- reason: $DEPLOY_REASON"
+            echo "- schedules: **$STATE**"
+            echo "- job 4: $([ -n "${DEST_API_TESTS_ARN:-}" ] && echo created || echo 'SKIPPED (no body given)')"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -5,3 +5,10 @@ cd services/gateway && npx jest test/lib/supabase-public-url.test.ts test/vtid-0
 npx --prefix services/gateway tsc --noEmit -p services/gateway/tsconfig.json   # no errors in changed files
 python3 -c "import yaml; yaml.safe_load(open(f))" for both new workflows       # parse OK
 node scripts/ci/staging-verify/run.mjs check-pr --service gateway ...          # change suite present and valid
+
+# 2026-10-10 parts 4, 6, 7a, 8b
+npm run test:aurora-cron-outbox        # PASS: 20 checks
+npm run test:auth-bridge               # PASS (incl. erase_user_data on Aurora)
+npm run test:reverse-cdc               # PASS
+(cd services/gateway && npx jest test/vtid-05023-outbound-http-worker.test.ts test/vtid-05023-auth-bridge-endpoint.test.ts test/vtid-05023-auth-bridge-reconciler.test.ts test/vtid-05023-auth-bridge-write-paths.test.ts)   # 68/68
+npm run test:realtime-local            # see outputs/realtime-local.txt
