@@ -30,12 +30,12 @@
       "path": "/command-hub/",
       "expect_status": 200,
       "expect_content_type": "text/html",
-      "expect_body_contains": "app.js?v=20261111-vtid-05067"
+      "expect_body_contains": "app.js?v=20261113-vtid-05067"
     },
     {
       "kind": "http",
       "name": "served app.js has the Operator | Kiro switch and the Kiro workspace card",
-      "path": "/command-hub/app.js?v=20261111-vtid-05067",
+      "path": "/command-hub/app.js?v=20261113-vtid-05067",
       "expect_status": 200,
       "expect_content_type": "javascript",
       "expect_body_contains": [
@@ -46,7 +46,7 @@
     {
       "kind": "http",
       "name": "served styles.css has the Kiro styles",
-      "path": "/command-hub/styles.css?v=20261111-vtid-05067",
+      "path": "/command-hub/styles.css?v=20261113-vtid-05067",
       "expect_status": 200,
       "expect_content_type": "text/css",
       "expect_body_contains": [
@@ -57,7 +57,7 @@
     {
       "kind": "http",
       "name": "served kiro-console.js has the approval cards (moved from app.js by VTID-05067)",
-      "path": "/command-hub/kiro-console.js?v=20261111-vtid-05067",
+      "path": "/command-hub/kiro-console.js?v=20261113-vtid-05067",
       "expect_status": 200,
       "expect_content_type": "javascript",
       "expect_body_contains": [
@@ -68,7 +68,7 @@
     {
       "kind": "http",
       "name": "served kiro-console.css has the approval card styles (moved from styles.css by VTID-05067)",
-      "path": "/command-hub/kiro-console.css?v=20261111-vtid-05067",
+      "path": "/command-hub/kiro-console.css?v=20261113-vtid-05067",
       "expect_status": 200,
       "expect_content_type": "text/css",
       "expect_body_contains": [

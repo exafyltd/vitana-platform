@@ -8,7 +8,7 @@ ROUTE_MOUNT: `/api/v1/operator/media` (new file `services/gateway/src/routes/ope
 
 FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/operator/media (staging); the module at https://preview-aws-gateway.vitanaland.com/command-hub/kiro-console.js.
 
-CURL_PROOF: unauthenticated `GET /api/v1/operator/media/<uuid>` answers 401 application/json; unauthenticated `POST /api/v1/operator/media?thread_id=<uuid>` is rejected 401 application/json by the auth gate before any handler; `GET /command-hub/kiro-console.js` serves the module with the paste handler and the after_seq reattach; `GET /command-hub/` references `kiro-console.js`/`.css` and `app.js` at `?v=20261111-vtid-05067` (`staging-tests.json`, read-only).
+CURL_PROOF: unauthenticated `GET /api/v1/operator/media/<uuid>` answers 401 application/json; unauthenticated `POST /api/v1/operator/media?thread_id=<uuid>` is rejected 401 application/json by the auth gate before any handler; `GET /command-hub/kiro-console.js` serves the module with the paste handler and the after_seq reattach; `GET /command-hub/` references `kiro-console.js`/`.css` and `app.js` at `?v=20261113-vtid-05067` (`staging-tests.json`, read-only).
 
 OASIS_PROOF: `operator.media.uploaded` — vtid VTID-05067, source `gateway-operator`, declared in the `CicdEventType` union; payload `{ media_id, thread_id, mime_type, size_bytes }` only, never the bytes. How a Kiro run took its images is a run event `kiro.images` `{ count, delivery: sent | unsupported | unreadable, sent }` in `kiro_run_events` (not an OASIS topic).
 
@@ -48,7 +48,7 @@ AC-8: Kiro gets the images as ACP image blocks `{ type: 'image', mimeType, data 
   UI: docs/validation/VTID-05067/outputs/c-interrupted-continue-refused-mobile.png
 AC-9: A run with a pasted image reaches Kiro as an image block end to end (media route → run → executor → ACP), another admin's image is refused (400 invalid_attachment), more than 4 is refused (400 too_many_attachments) before a run exists; an Operator (LLM) turn's image reaches the model through the router's `images`.
   TEST: services/gateway/test/vtid-04465-operator-pipeline-regression.test.ts
-AC-10: CSP and accessibility: external files only (no inline script/style, no innerHTML, no CDN), `?v=20261111-vtid-05067` on app.js, styles.css, kiro-console.js/.css; every class the module uses is styled; buttons carry labels (Attach images, Remove image N, Cancel this queued message), alerts use role=alert, the runs region is aria-live polite, focus-visible outlines; no horizontal overflow at 390 px; the sidebar is untouched; no new screen (the existing Operator Console chat pane).
+AC-10: CSP and accessibility: external files only (no inline script/style, no innerHTML, no CDN), `?v=20261113-vtid-05067` on app.js, styles.css, kiro-console.js/.css; every class the module uses is styled; buttons carry labels (Attach images, Remove image N, Cancel this queued message), alerts use role=alert, the runs region is aria-live polite, focus-visible outlines; no horizontal overflow at 390 px; the sidebar is untouched; no new screen (the existing Operator Console chat pane).
   TEST: services/gateway/test/command-hub/vtid-05067-kiro-console.test.ts
   TEST: services/gateway/test/scripts/command-hub-ownership-guard.test.ts
   UI: docs/validation/VTID-05067/outputs/a-runs-live-permission-mobile.png

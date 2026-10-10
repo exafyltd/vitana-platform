@@ -294,13 +294,13 @@ describe('VTID-05064 styles, cache bump, ownership guard', () => {
 
   // Bumped past VTID-05064 by later Command Hub changes (VTID-05067); never back to an older build.
   it('bumps app.js and styles.css together', () => {
-    const app = (INDEX_HTML.match(/\/command-hub\/app\.js\?v=([^"']+)/) || [])[1] || '';
-    const css = (INDEX_HTML.match(/\/command-hub\/styles\.css\?v=([^"']+)/) || [])[1] || '';
-    expect(app >= '20261110-vtid-05064').toBe(true);
-    expect(css).toBe(app);
+    // At-or-after: a later Command Hub change (VTID-05069) bumps the same string for both.
+    const ver = (INDEX_HTML.match(/app\.js\?v=([0-9]{8}-[^"]+)"/) || [])[1] || '';
+    expect(ver >= '20261110-vtid-05064').toBe(true);
+    expect(INDEX_HTML).toContain('/command-hub/styles.css?v=' + ver);
   });
 
   it('is allowlisted in the Command Hub ownership guard', () => {
-    expect(GUARD).toMatch(/ALLOWED_VTID_PATTERN = \/[^;\n]*VTID-05064\|/);
+    expect(GUARD).toMatch(/ALLOWED_VTID_PATTERN = \/[^\n]*VTID-05064\|/);
   });
 });

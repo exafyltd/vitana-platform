@@ -557,10 +557,10 @@ describe('VTID-05067 paste / drop images', () => {
 
 describe('VTID-05067 wiring', () => {
   it('index.html loads the module and its styles (external, before app.js) with the bumped ?v=', () => {
-    expect(INDEX_HTML).toContain('<link rel="stylesheet" href="/command-hub/kiro-console.css?v=20261111-vtid-05067" />');
-    expect(INDEX_HTML).toContain('<script src="/command-hub/kiro-console.js?v=20261111-vtid-05067"></script>');
-    expect(INDEX_HTML).toContain('/command-hub/app.js?v=20261111-vtid-05067');
-    expect(INDEX_HTML).toContain('/command-hub/styles.css?v=20261111-vtid-05067');
+    expect(INDEX_HTML).toContain('<link rel="stylesheet" href="/command-hub/kiro-console.css?v=20261113-vtid-05067" />');
+    expect(INDEX_HTML).toContain('<script src="/command-hub/kiro-console.js?v=20261113-vtid-05067"></script>');
+    expect(INDEX_HTML).toContain('/command-hub/app.js?v=20261113-vtid-05067');
+    expect(INDEX_HTML).toContain('/command-hub/styles.css?v=20261113-vtid-05067');
     expect(INDEX_HTML.indexOf('kiro-console.js')).toBeLessThan(INDEX_HTML.indexOf('/command-hub/app.js'));
   });
 
