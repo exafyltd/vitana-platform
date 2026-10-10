@@ -16,10 +16,17 @@ import { Router, Request, Response } from 'express';
 import * as jose from 'jose';
 import { getSupabase } from '../lib/supabase';
 import { getConnector, listConnectors } from '../connectors';
+import type { RevokeAccessResult } from '../connectors/types';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { isTokenCryptoConfigured, openToken, sealToken } from '../lib/connection-token-crypto';
 import * as repo from './wearables-repository';
 
 const router = Router();
+
+/** VTID-05030: the callback redirects carry a fixed code, never an exception message. */
+function callbackErrorUrl(connectorId: string, code: string): string {
+  return `${process.env.FRONTEND_PUBLIC_URL ?? 'https://vitanaland.com'}/ecosystem?wearable=error&provider=${encodeURIComponent(connectorId)}&reason=${encodeURIComponent(code)}`;
+}
 
 function getUser(req: Request): { user_id: string; tenant_id: string | null } | null {
   const authHeader = req.headers.authorization;
@@ -176,9 +183,9 @@ router.get('/callback/:connector', async (req: Request, res: Response) => {
   const error_param = typeof req.query.error === 'string' ? req.query.error : null;
 
   if (error_param) {
-    // User denied or provider errored — redirect to frontend with error flag
-    const redirectUrl = `${process.env.FRONTEND_PUBLIC_URL ?? 'https://vitanaland.com'}/ecosystem?wearable=error&provider=${connectorId}&reason=${encodeURIComponent(error_param)}`;
-    return res.redirect(302, redirectUrl);
+    // User denied or provider errored — redirect to frontend with error flag.
+    // The provider's `error` param is an OAuth error code (RFC 6749 §4.1.2.1).
+    return res.redirect(302, callbackErrorUrl(connectorId, error_param));
   }
   if (!code || !state) {
     return res.status(400).json({ ok: false, error: 'Missing code or state' });
@@ -195,8 +202,28 @@ router.get('/callback/:connector', async (req: Request, res: Response) => {
 
   const redirectUri = `${process.env.GATEWAY_PUBLIC_URL ?? gatewayBaseUrl()}/api/v1/wearables/callback/${connectorId}`;
 
+  // VTID-05030 (Health Hub D1): tokens are only ever stored sealed. Without
+  // the key, nothing is stored and the member gets a fixed error code.
+  if (!isTokenCryptoConfigured()) {
+    console.error(`[wearables/callback/${connectorId}] token encryption key not configured — refusing to store tokens`);
+    await emitOasisEvent({
+      vtid: 'VTID-05030',
+      type: 'connector.wearable.token_storage_unavailable',
+      source: 'gateway',
+      status: 'error',
+      message: `Wearable connect refused for ${connectorId}: token encryption not configured`,
+      payload: { connector_id: connectorId },
+    }).catch(() => {});
+    return res.redirect(302, callbackErrorUrl(connectorId, 'storage_unavailable'));
+  }
+
   try {
     const result = await connector.exchangeCode(code, redirectUri);
+    const sealedAccess = sealToken(result.tokens.access_token);
+    const sealedRefresh = result.tokens.refresh_token ? sealToken(result.tokens.refresh_token) : null;
+    if (!sealedAccess || (result.tokens.refresh_token && !sealedRefresh)) {
+      return res.redirect(302, callbackErrorUrl(connectorId, 'storage_unavailable'));
+    }
 
     // Persist user_connections row
     await repo.upsertOAuthConnection(supabase, {
@@ -209,8 +236,8 @@ router.get('/callback/:connector', async (req: Request, res: Response) => {
       display_name: result.profile?.display_name ?? null,
       avatar_url: result.profile?.avatar_url ?? null,
       profile_url: result.profile?.profile_url ?? null,
-      access_token: result.tokens.access_token,
-      refresh_token: result.tokens.refresh_token ?? null,
+      access_token: sealedAccess,
+      refresh_token: sealedRefresh,
       token_expires_at: result.tokens.expires_at ?? null,
       scopes_granted: result.tokens.scopes_granted ?? [],
       capabilities_granted: connector.capabilities,
@@ -226,8 +253,8 @@ router.get('/callback/:connector', async (req: Request, res: Response) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[wearables/callback/${connectorId}]`, message);
-    const errorUrl = `${process.env.FRONTEND_PUBLIC_URL ?? 'https://vitanaland.com'}/ecosystem?wearable=error&provider=${connectorId}&reason=${encodeURIComponent(message)}`;
-    return res.redirect(302, errorUrl);
+    // VTID-05030: never put the exception text in the URL — a fixed code only.
+    return res.redirect(302, callbackErrorUrl(connectorId, 'exchange_failed'));
   }
 });
 
@@ -240,11 +267,76 @@ router.post('/disconnect/:connector', async (req: Request, res: Response) => {
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
   const connectorId = req.params.connector;
-  const { error } = await repo.disconnectUserConnection(supabase, user.user_id, connectorId);
 
+  // VTID-05030 (Health Hub D1): read what the vendor revoke needs, wipe the
+  // stored tokens FIRST, then revoke at the vendor (bounded). Local state is
+  // safe even if the vendor hangs or fails; a vendor failure never blocks the
+  // disconnect.
+  const { data: rows } = await repo.fetchConnectionsForDisconnect(supabase, user.user_id, connectorId);
+  const { error } = await repo.disconnectUserConnection(supabase, user.user_id, connectorId);
   if (error) return res.status(500).json({ ok: false, error: error.message });
-  res.json({ ok: true, connector: connectorId });
+
+  const connector = getConnector(connectorId);
+  const revoke = await revokeAtVendor(connector, (rows ?? []) as DisconnectRow[]);
+  await emitOasisEvent({
+    vtid: 'VTID-05030',
+    type: 'connector.wearable.vendor_revoke',
+    source: 'gateway',
+    status: revoke.status === 'failed' ? 'warning' : 'info',
+    message: `Vendor revoke for ${connectorId}: ${revoke.status}`,
+    payload: { user_id: user.user_id, connector_id: connectorId, ...revoke },
+  }).catch(() => {});
+
+  res.json({ ok: true, connector: connectorId, vendor_revoke: revoke.status });
 });
+
+interface DisconnectRow {
+  id: string;
+  access_token: string | null;
+  refresh_token: string | null;
+  provider_user_id: string | null;
+  provider_username: string | null;
+}
+
+export const VENDOR_REVOKE_TIMEOUT_MS = 5_000;
+
+/**
+ * VTID-05030: revoke every connection row for this connector at the vendor,
+ * within one total time bound. Terra/Vital widget rows never hold OAuth tokens
+ * in user_connections; their identifier is provider_user_id (and, for Vital,
+ * the provider slug the auth.completed webhook stores in provider_username).
+ */
+export async function revokeAtVendor(
+  connector: ReturnType<typeof getConnector>,
+  rows: DisconnectRow[],
+  timeoutMs: number = VENDOR_REVOKE_TIMEOUT_MS,
+): Promise<RevokeAccessResult> {
+  if (!connector?.revokeAccess) return { status: 'unsupported' };
+  if (rows.length === 0) return { status: 'no_token' };
+  const revokeAll = async (): Promise<RevokeAccessResult> => {
+    let last: RevokeAccessResult = { status: 'no_token' };
+    for (const row of rows) {
+      const r = await connector.revokeAccess!({
+        access_token: openToken(row.access_token),
+        refresh_token: openToken(row.refresh_token),
+        provider_user_id: row.provider_user_id,
+        provider_slug: row.provider_username,
+      });
+      if (r.status === 'failed') return r;
+      if (r.status === 'ok' || last.status === 'no_token') last = r;
+    }
+    return last;
+  };
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<RevokeAccessResult>((resolve) => {
+    timer = setTimeout(() => resolve({ status: 'failed', detail: 'timeout' }), timeoutMs);
+  });
+  try {
+    return await Promise.race([revokeAll().catch(() => ({ status: 'failed' as const, detail: 'error' })), timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 // ==================== GET /connections ====================
 

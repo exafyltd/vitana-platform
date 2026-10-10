@@ -19,6 +19,7 @@ import type {
   TokenPair,
   OAuthConfig,
 } from '../types';
+import { revokeRequest } from './revoke-http';
 import { buildAuthorizeUrl, exchangeCodeForTokens, refreshOAuth2Token } from '../runtime/oauth2';
 
 const OAUTH_CONFIG: OAuthConfig = {
@@ -58,6 +59,23 @@ const fitbitConnector: Connector = {
   auth_type: 'oauth2',
   capabilities: ['sleep.read', 'activity.read', 'hr.read', 'profile.read'],
   oauth: OAUTH_CONFIG,
+
+  // VTID-05030: RFC 7009 revoke (documented). The legacy Fitbit Web API was
+  // deprecated in September 2026, so this is best-effort.
+  async revokeAccess(input) {
+    const token = input.refresh_token ?? input.access_token;
+    if (!token) return { status: 'no_token' };
+    const creds = fitbitCreds();
+    if (!creds) return { status: 'unsupported', detail: 'not_configured' };
+    return revokeRequest('https://api.fitbit.com/oauth2/revoke', {
+      method: 'POST',
+      headers: {
+        Authorization: basicAuthHeader(creds.id, creds.secret),
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ token }).toString(),
+    });
+  },
 
   async initialize(): Promise<void> {
     if (!fitbitCreds()) {

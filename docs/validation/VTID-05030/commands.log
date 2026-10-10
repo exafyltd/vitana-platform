@@ -1,0 +1,7 @@
+# VTID-05030 — commands run locally (services/gateway unless noted)
+npx jest test/vtid-05030-connection-tokens.test.ts      # 28/28 -> outputs/connection-tokens-suite.txt
+# mutation check (3 protections reverted one by one, then restored): 5 tests fail -> outputs/mutation-check.txt
+npx jest <7 suites importing the wearables/connector modules>   # 92/92 -> outputs/regression-suites.txt
+npx tsc --noEmit -p .                                   # exit 0
+node scripts/ci/staging-verify/run.mjs check-pr ...     # (repo root) change suite valid
+# live DB, read-only: grants + token row counts         -> outputs/live-grants-before.txt

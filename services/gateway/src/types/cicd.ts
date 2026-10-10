@@ -941,6 +941,9 @@ export type CicdEventType =
   | 'connector.wearable.workout.recorded'
   | 'connector.wearable.other'
   | 'wearable.metrics.read'
+  // VTID-05030 (Health Hub D1): wearable token storage + vendor revoke
+  | 'connector.wearable.token_storage_unavailable'
+  | 'connector.wearable.vendor_revoke'
   // VTID-02300: Phase 3 outbound action consent events
   | 'connector.action.requested'
   | 'connector.action.executed'

@@ -1,0 +1,3 @@
+$ npx jest $(grep -rlE "routes/wearables|connector-webhooks|connectors/wearable|connectors/types|ai-credential-crypto|connectors'" test)
+Test Suites: 7 passed, 7 total
+Tests:       92 passed, 92 total
