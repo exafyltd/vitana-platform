@@ -23,3 +23,21 @@ TEST: .github/workflows/AWS-PROD-DEPLOY-POSTGREST-AURORA-PROXY.yml and AWS-PROD-
 
 AC-7: The change suite for staging verification is present and valid.
 TEST: docs/validation/VTID-05023/staging-tests.json — outputs/check-pr.txt
+
+AC-8: Every Supabase-side side effect has an Aurora/AWS replacement: the 21 plain-SQL cron jobs on Aurora pg_cron with identical names, schedules and commands; the 2 HTTP cron jobs as disabled EventBridge schedules; the 2 pg_net triggers queue into an Aurora outbox with secret references only; the Supabase unschedule is snapshotted and its rollback restores all 25 jobs byte-identical.
+TEST: scripts/ci/test-vtid-05023-aurora-cron-outbox.sh (npm run test:aurora-cron-outbox) — outputs/aurora-cron-outbox.txt
+
+AC-9: The gateway's outbox sender (off by default) claims, sends, retries with backoff, gives up after 5 attempts, is idempotent per row, resolves header references from an allowlist, sends only to allowed destinations and never logs a secret.
+TEST: services/gateway/test/vtid-05023-outbound-http-worker.test.ts — outputs/gateway-auth-bridge-outbox.txt
+
+AC-10: On Aurora, ensure_provisioned() creates exactly the rows Supabase's six auth.users triggers create, idempotently; the PostgREST db-pre-request hook is a no-op for read-only and null-uid requests, provisions an unprovisioned member before their first write, skips service accounts and never fails a request; deletion applies the auth.users FK actions from the exported map; erase_user_data() runs on Aurora (no auth.users) and leaves auth-cascade tables to the deletion handler; members cannot call any of these.
+TEST: scripts/aws/test/auth-bridge.sh (npm run test:auth-bridge) — outputs/auth-bridge.txt
+
+AC-11: The gateway side of the auth bridge: the service-token-gated user-event endpoint, the reconciler (off by default, never on staging), and ensureProvisioned() awaited by the eight post-sign-up write paths.
+TEST: services/gateway/test/vtid-05023-auth-bridge-{endpoint,reconciler,write-paths}.test.ts — outputs/gateway-auth-bridge-outbox.txt
+
+AC-12: Self-hosted Supabase Realtime on Aurora (part 7a) delivers RLS-filtered postgres_changes, broadcast and presence to @supabase/realtime-js on Host realtime.vitanaland.com, refuses member tokens on its management API, and the setup SQL runs as a non-superuser role; the prod deploy is a dispatch-only workflow.
+TEST: services/realtime-aurora/test/local-delivery.sh (npm run test:realtime-local) — outputs/realtime-local.txt
+
+AC-13: After the flip, Supabase Storage's chat-attachment and voucher-PDF policies keep current data through a CDC-only Aurora->Supabase task for their 5 tables (and the T+2h rollback task for every other public table); replicated rows fire no Supabase trigger (all public user triggers snapshotted and disabled, exact rollback); tasks are created but never started by the script and no password reaches a command line.
+TEST: scripts/aws/test/reverse-cdc.sh (npm run test:reverse-cdc) — outputs/reverse-cdc.txt
