@@ -3757,6 +3757,29 @@ Indexes `idx_kiro_runs_thread_created (thread_id, created_at DESC)`, `idx_kiro_r
 
 OASIS (`CicdEventType`): `operator.kiro.run_started`, `operator.kiro.run_finished`, `operator.kiro.run_interrupted` — payload `{ run_id, thread_id, status }` only, never message text.
 
+## Operator Console images — `operator_media`, `kiro_runs.attachments`, Storage bucket `operator-media` (VTID-05067, 2026-10-11) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261011090000_vtid_05067_operator_media.sql`. Service role only (RLS on, no policies; `anon`/`authenticated` revoked). Written by the gateway (`services/gateway/src/services/operator-media.ts`) through `POST /api/v1/operator/media` (exafy_admin); read back only by the uploading admin (`GET /api/v1/operator/media/:id`, a fresh 1-hour signed URL per view — URLs are never stored).
+
+`operator_media` — one row per image pasted, dropped or picked into the Operator Console:
+
+| Column | Meaning |
+|---|---|
+| `id` | uuid PK (minted by the gateway; the `media_id` the console sends) |
+| `user_id` | the admin who uploaded it (text; the only reader) |
+| `thread_id` | the Operator thread it was uploaded for (text) |
+| `object_path` | `<user_id>/<thread_id>/<id>.<ext>` in the bucket `operator-media` (unique) |
+| `mime_type` | `image/png` \| `image/jpeg` \| `image/webp` \| `image/gif` — recognised by magic bytes, never by name |
+| `size_bytes` | 1 … 5 242 880 (5 MB) |
+| `created_at` | timestamp |
+
+Index `idx_operator_media_user_thread (user_id, thread_id, created_at DESC)`.
+
+`kiro_runs.attachments` (jsonb, nullable) — the images a Kiro run was sent with, `[{ media_id, mime_type }]`; written only when a run has images (at most 4 per message, the caller's own). The gateway reads it with a fallback to the column list without it, so runs keep listing before the migration is applied.
+
+**Storage bucket `operator-media`** — private (`public: false`), 5 MB file limit, png/jpeg/webp/gif only, no client policies (gateway service role only). Created once, idempotently, through the Storage API (`POST /storage/v1/bucket`, never an INSERT into `storage.buckets`) by `scripts/supabase/setup-operator-media-bucket.mjs` — run it from the `SETUP-OPERATOR-MEDIA-BUCKET.yml` workflow_dispatch job (`dry_run=true` first), or locally with `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE` set. An existing private bucket is left alone; an existing PUBLIC one is refused (exit 2) for a person to decide. Deleting old images (retention) is a logged follow-up, not part of VTID-05067.
+
+OASIS (`CicdEventType`): `operator.media.uploaded` — payload `{ media_id, thread_id, mime_type, size_bytes }` only, never the bytes. A Kiro run's image delivery is a run event `kiro.images` `{ count, delivery: sent | unsupported | unreadable, sent }` in `kiro_run_events`.
 ### Reattach columns on `kiro_runs` (VTID-05068, 2026-10-10) — applied after merge via `RUN-MIGRATION.yml`
 
 Migration: `supabase/migrations/20261010220000_vtid_05068_kiro_run_reattach.sql` (additive, nullable). A running run whose gateway task goes away (deploy, crash) is taken over by another task through the kiro-runner's reattach (`/sessions/reattach`, header `X-Kiro-Reattach-Token`); only if the runner refuses is it marked `interrupted` as before.

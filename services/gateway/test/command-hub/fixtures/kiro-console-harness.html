@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kiro console harness (VTID-05067, local only)</title>
+  <!-- VTID-05067: LOCAL visual harness for kiro-console.js — never served in production
+       (it lives under test/, not src/frontend). Loads the real Command Hub styles and the
+       real module; all gateway calls are answered by kiro-console-harness.js. -->
+  <link rel="stylesheet" href="../../../src/frontend/command-hub/styles.css" />
+  <link rel="stylesheet" href="../../../src/frontend/command-hub/kiro-console.css" />
+  <link rel="stylesheet" href="kiro-console-harness.css" />
+</head>
+<body>
+  <div id="root"></div>
+  <script src="../../../src/frontend/command-hub/kiro-console.js"></script>
+  <script src="kiro-console-harness.js"></script>
+</body>
+</html>

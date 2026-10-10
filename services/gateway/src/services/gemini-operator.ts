@@ -28,7 +28,7 @@ import { randomUUID } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 // VTID-03579: operator LLM calls go through the router (Bedrock primary,
 // DeepSeek fallback) — never a provider named in this file.
-import { callViaRouter, type LLMRouterMessage, type LLMRouterTool, type LLMUsage } from './llm-router';
+import { callViaRouter, type LLMRouterImage, type LLMRouterMessage, type LLMRouterTool, type LLMUsage } from './llm-router';
 // VTID-04031: token usage + estimated cost per model call, folded into the reply meta.
 import { turnUsageFields, summarizeTurnCost, type ModelTurnCost } from './operator-turn-cost';
 // VTID-03892: the Operator's own engineering memory (VTID-03889) — separate
@@ -4489,6 +4489,8 @@ async function callVertexWithTools(
   // tools returned and can call more.
   toolTranscript: LLMRouterMessage[] = [],
   service = 'gemini-operator',
+  // VTID-05067: images the user pasted into the Operator Console (first plan call only).
+  images?: LLMRouterImage[],
 ): Promise<{
   reply: string;
   toolCalls?: GeminiToolCall[];
@@ -4566,6 +4568,7 @@ async function callVertexWithTools(
     // text). Matches the router-wide default instead of a narrower one.
     maxTokens: 8000,
     tools: routerTools,
+    ...(images && images.length > 0 ? { images } : {}),
     history: [
       ...conversationHistory.map((m) => ({ role: m.role, content: m.content }) as LLMRouterMessage),
       ...toolTranscript,
@@ -4804,8 +4807,11 @@ export async function processWithGemini(input: {
   // VTID-04028: live turn events (model turns, tool calls/results) for the
   // streaming route. Optional; a missing sink means no emission at all.
   onEvent?: OperatorTurnEventSink;
+  // VTID-05067: images pasted into the Operator Console, sent with the first (plan) model call
+  // as image blocks (Bedrock/Anthropic adapters, VTID-03496).
+  images?: LLMRouterImage[];
 }): Promise<GeminiOperatorResponse> {
-  const { text, threadId, attachments = [], context = {}, conversationHistory = [], conversationId, systemInstruction, userRole, threadSummary, onEvent } = input;
+  const { text, threadId, attachments = [], context = {}, conversationHistory = [], conversationId, systemInstruction, userRole, threadSummary, onEvent, images } = input;
 
   // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: soft bypass detection at the
   // shared executor. Emits memory.orchestrator.bypass_detected (never throws
@@ -4856,7 +4862,7 @@ export async function processWithGemini(input: {
       // VTID-01106: Pass custom system instruction if provided (for ORB memory context)
       // VTID-DEV-ASSIST: Pass userRole to filter tool definitions by authorization
       const planStartedAt = Date.now();
-      const vertexResponse = await callVertexWithTools(text, threadId, conversationHistory, systemInstruction, undefined, userRole, memoryContextBlock);
+      const vertexResponse = await callVertexWithTools(text, threadId, conversationHistory, systemInstruction, undefined, userRole, memoryContextBlock, [], 'gemini-operator', images);
       emitTurnEvent(onEvent, {
         type: 'model.turn',
         stage: 'plan',
@@ -4930,7 +4936,7 @@ export async function processWithGemini(input: {
           const nextStartedAt = Date.now();
           let next: Awaited<ReturnType<typeof callVertexWithTools>>;
           try {
-            next = await callVertexWithTools(OPERATOR_CONTINUE_PROMPT, threadId, conversationHistory, systemInstruction, undefined, userRole, memoryContextBlock, transcript, 'gemini-operator-continue');
+            next = await callVertexWithTools(OPERATOR_CONTINUE_PROMPT, threadId, conversationHistory, systemInstruction, undefined, userRole, memoryContextBlock, transcript, 'gemini-operator-continue', images);
           } catch (contErr: any) {
             console.warn(`[VTID-04628] operator continuation round ${rounds + 1} failed, answering from the tool results: ${contErr?.message}`);
             break;

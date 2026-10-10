@@ -202,6 +202,10 @@ export class OperatorPlatform extends FakePlatform {
       if (url.origin === new URL(FAKE_SUPABASE_URL).origin && url.pathname.startsWith('/rest/v1/')) {
         return this.rest(url, method, init);
       }
+      // VTID-05067: Supabase Storage (the operator-media bucket), in memory.
+      if (url.origin === new URL(FAKE_SUPABASE_URL).origin && url.pathname.startsWith('/storage/v1/')) {
+        return this.storage(url, method, init);
+      }
       if (url.hostname === 'api.github.com') {
         const gh = url.pathname.startsWith(`/repos/${this.githubV1.repo}/`) ? this.githubV1 : this.github;
         return gh.handle(method, url, init.body ? JSON.parse(String(init.body)) : undefined, this.headerMap(init).authorization || '');
@@ -212,6 +216,33 @@ export class OperatorPlatform extends FakePlatform {
       this.inflight -= 1;
     }
   };
+
+  /** VTID-05067: Storage objects by "<bucket>/<path>". */
+  readonly storageObjects = new Map<string, { contentType: string; bytes: Buffer }>();
+
+  private storage(url: URL, method: string, init: any): Response {
+    const p = decodeURIComponent(url.pathname);
+    if (p.startsWith('/storage/v1/object/sign/') && method === 'POST') {
+      const key = p.slice('/storage/v1/object/sign/'.length);
+      if (!this.storageObjects.has(key)) return this.json(400, { error: 'not_found' });
+      return this.json(200, { signedURL: `/object/sign/${key}?token=fake` });
+    }
+    if (p.startsWith('/storage/v1/object/')) {
+      const key = p.slice('/storage/v1/object/'.length);
+      if (method === 'POST') {
+        const body = init.body;
+        const bytes = Buffer.isBuffer(body) ? body : body instanceof Uint8Array ? Buffer.from(body) : Buffer.from(String(body ?? ''));
+        this.storageObjects.set(key, { contentType: this.headerMap(init)['content-type'] || '', bytes });
+        return this.json(200, { Key: key });
+      }
+      if (method === 'GET') {
+        const o = this.storageObjects.get(key);
+        return o ? new Response(o.bytes, { status: 200, headers: { 'Content-Type': o.contentType } }) : this.json(400, { error: 'not_found' });
+      }
+    }
+    this.unsupported.push(`storage: ${method} ${p}`);
+    return this.json(405, { message: 'storage call not supported by the fake' });
+  }
 
   private headerMap(init: any): Record<string, string> {
     const out: Record<string, string> = {};

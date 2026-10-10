@@ -3,7 +3,9 @@
  * Mounted at /api/v1/operator/kiro/runs. exafy_admin only; a run is visible to, and
  * cancellable by, the user who started it (user id from the verified identity only).
  *
- *   POST /                       { thread_id, message, engine? } → 202 { run_id, status }
+ *   POST /                       { thread_id, message, engine?, attachments? } → 202 { run_id, status }
+ *                                (VTID-05067: attachments = up to 4 of the caller's own
+ *                                operator_media ids; 400 too_many_attachments / invalid_attachment)
  *                                (running, or queued behind the thread's current run;
  *                                409 queue_full when 2 are already queued)
  *   GET  /?thread_id=            the caller's latest 20 runs of that thread
@@ -25,6 +27,7 @@ import {
 } from '../services/kiro/kiro-runs';
 import { ensureOperatorThread, isOperatorThreadsEnabled } from '../services/operator-threads';
 import { ingestChatMessageEvent } from '../services/operator-service';
+import { loadOperatorMediaForUser, operatorMediaOasisRef, OPERATOR_MEDIA_LIMITS } from '../services/operator-media';
 
 const router = Router();
 
@@ -36,6 +39,8 @@ const StartBody = z.object({
   thread_id: uuid,
   message: z.string().trim().min(1).max(KIRO_RUN_MESSAGE_MAX_CHARS),
   engine: z.literal('kiro').optional(),
+  // VTID-05067: images pasted / dropped into the composer (POST /api/v1/operator/media first).
+  attachments: z.array(uuid).optional().default([]),
 });
 
 function caller(req: AuthenticatedRequest): string | null {
@@ -47,7 +52,10 @@ router.post('/', requireAdminAuth, async (req: AuthenticatedRequest, res: Respon
   if (!parsed.success) return res.status(400).json({ ok: false, error: 'INVALID_BODY' });
   const userId = caller(req);
   if (!userId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
-  const { thread_id: threadId, message } = parsed.data;
+  const { thread_id: threadId, message, attachments } = parsed.data;
+  if (new Set(attachments).size > OPERATOR_MEDIA_LIMITS.maxPerMessage) {
+    return res.status(400).json({ ok: false, error: 'too_many_attachments', max: OPERATOR_MEDIA_LIMITS.maxPerMessage });
+  }
 
   // The thread must be the caller's own Kiro thread (or a new one).
   const own = await kiroThreadOwnership(threadId);
@@ -55,6 +63,9 @@ router.post('/', requireAdminAuth, async (req: AuthenticatedRequest, res: Respon
     return res.status(403).json({ ok: false, error: 'forbidden' });
   }
   if (own.engine && own.engine !== 'kiro') return res.status(409).json({ ok: false, error: 'thread_not_kiro' });
+  // Every image must exist and be the caller's own.
+  const media = await loadOperatorMediaForUser(attachments, userId);
+  if (!media.ok) return res.status(400).json({ ok: false, error: media.error === 'too_many' ? 'too_many_attachments' : 'invalid_attachment' });
 
   // impact-allow-no-oasis: the run itself emits operator.kiro.run_started/run_finished
   // (kiro-runs.ts) and the turn records the chat events, exactly like POST /chat.
@@ -62,13 +73,17 @@ router.post('/', requireAdminAuth, async (req: AuthenticatedRequest, res: Respon
     await ensureOperatorThread({ threadId, identity: { user_id: userId, role: 'admin' }, userText: message, engine: 'kiro' });
   }
   const requestId = randomUUID();
-  await ingestChatMessageEvent({ threadId, role: 'operator', mode: 'chat', message, attachmentsCount: 0, metadata: { channel: 'kiro_run', request_id: requestId } });
+  await ingestChatMessageEvent({ threadId, role: 'operator', mode: 'chat', message, attachmentsCount: media.media.length, metadata: { channel: 'kiro_run', request_id: requestId } });
 
   const started = await startKiroRun({
     threadId,
     userId,
     message,
-    turn: { requestId, createdAt: new Date().toISOString(), attachments: [], mode: 'chat' },
+    turn: {
+      requestId, createdAt: new Date().toISOString(), mode: 'chat',
+      attachments: media.media.map((m) => ({ oasis_ref: operatorMediaOasisRef(m.id), kind: 'image' })),
+      media: media.media.map((m) => ({ media_id: m.id, mime_type: m.mime_type })),
+    },
     requirePersisted: true,
   });
   if (!started.ok) {

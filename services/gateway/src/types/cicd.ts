@@ -1157,7 +1157,9 @@ export type CicdEventType =
   | 'operator.kiro.run_finished'
   | 'operator.kiro.run_interrupted'
   // VTID-05068: a running Kiro run was taken over by a new gateway task after a deploy (run id, thread id, status only)
-  | 'operator.kiro.run_reattached';
+  | 'operator.kiro.run_reattached'
+  // VTID-05067: an image pasted into the Operator Console was stored (media id, thread id, type, size; never the bytes)
+  | 'operator.media.uploaded';
 
 export interface CicdOasisEvent {
   vtid: string;

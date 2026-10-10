@@ -1,0 +1,68 @@
+{
+  "vtid": "VTID-05067",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "the Command Hub serves the Kiro console module with the image paste handler",
+      "path": "/command-hub/kiro-console.js?v=20261113-vtid-05067",
+      "expect_status": 200,
+      "expect_content_type": "javascript",
+      "expect_body_contains": ["VTID-05067", "root.KiroConsole = {", "bindPaste: function (textarea)", "'/stream?after_seq=' + r.lastSeq"],
+      "reason": "the new external module is shipped and is the one with paste/drop images and the after_seq reattach; read-only GET of a static file"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "the Command Hub page loads the Kiro console before app.js (cache-bust bumped)",
+      "path": "/command-hub/",
+      "expect_status": 200,
+      "expect_content_type": "text/html",
+      "expect_body_contains": ["/command-hub/kiro-console.js?v=20261113-vtid-05067", "/command-hub/kiro-console.css?v=20261113-vtid-05067", "/command-hub/app.js?v=20261113-vtid-05067"],
+      "reason": "index.html on staging references the module, its styles and the bumped app.js; read-only"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "the Kiro console styles are served",
+      "path": "/command-hub/kiro-console.css?v=20261113-vtid-05067",
+      "expect_status": 200,
+      "expect_content_type": "text/css",
+      "expect_body_contains": [".kiro-image-chip", ".kiro-run-steps", ".kiro-approval"],
+      "reason": "the external stylesheet (CSP: no inline styles) is shipped; read-only"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "the media route exists and is admin-only (read)",
+      "path": "/api/v1/operator/media/00000000-0000-4000-8000-000000000000",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "GET /api/v1/operator/media/:id mounted behind requireAdminAuth; unauthenticated read-only GET answers 401 JSON (not an HTML 404)"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "POST",
+      "rejected_probe": true,
+      "name": "the media upload refuses an unauthenticated caller before any handler",
+      "path": "/api/v1/operator/media?thread_id=00000000-0000-4000-8000-000000000000",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "POST /api/v1/operator/media is rejected by the auth gate before the body is read or anything is stored"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/command-hub/vtid-05067-kiro-console.test.ts test/operator-media.test.ts test/vtid-05067-kiro-acp-images.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the console module (runs list, past runs, live run, reattach with after_seq and backoff, queue + Cancel, queue_full inline, Stop, interrupted -> Continue, approval answer, paste/drop/paperclip chips, text paste unchanged, upload then run with media ids), the media route (auth, owner, magic bytes, size, signed URL TTL, bucket script) and ACP image blocks vs the text fallback"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04465-operator-pipeline-regression.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the operator pipeline end to end, including a Kiro run with a pasted image reaching Kiro as an image block (and the text line without image input) and an Operator turn whose image reaches the model"
+    }
+  ]
+}

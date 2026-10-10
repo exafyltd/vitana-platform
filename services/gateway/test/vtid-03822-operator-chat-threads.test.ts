@@ -104,8 +104,9 @@ describe('Operator chat message rendering (VTID-03822)', () => {
     expect(start).toBeGreaterThan(-1);
     // VTID-03949 grew the session title bar above the messages loop by
     // ~1.5KB, pushing this block further into the function; VTID-04309's
-    // voice-turn tag added ~0.5KB more.
-    const body = SOURCE.slice(start, start + 6500);
+    // voice-turn tag added ~0.5KB more; VTID-05067's Kiro-pane hand-off and
+    // image thumbnails ~1KB more.
+    const body = SOURCE.slice(start, start + 8000);
     expect(body).toContain('if (msg.toolResults && msg.toolResults.length > 0)');
     expect(body).toContain('describeToolActivity(tr)');
   });

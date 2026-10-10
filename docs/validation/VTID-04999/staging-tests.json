@@ -4,8 +4,8 @@
   "tests": [
     { "kind": "http", "target": "gateway", "method": "GET", "path": "/api/v1/operator/kiro/key", "expect_status": 401, "reason": "the Kiro API key route exists and refuses an unauthenticated caller (JSON 401); read-only" },
     { "kind": "http", "target": "gateway", "method": "GET", "path": "/api/v1/operator/kiro/status", "expect_status": 401, "reason": "the Kiro status route (now also reporting runner_configured) refuses an unauthenticated caller; read-only" },
-    { "kind": "http", "name": "Command Hub loads the Kiro key-field app.js", "path": "/command-hub/", "expect_status": 200, "expect_content_type": "text/html", "expect_body_contains": "app.js?v=20261112-vtid-05069" },
-    { "kind": "http", "name": "served app.js has the Kiro API key field", "path": "/command-hub/app.js?v=20261112-vtid-05069", "expect_status": 200, "expect_content_type": "javascript", "expect_body_contains": ["function renderKiroKeyControls", "function linkKiroKey", "function revokeKiroKey"] },
+    { "kind": "http", "name": "Command Hub loads the Kiro key-field app.js", "path": "/command-hub/", "expect_status": 200, "expect_content_type": "text/html", "expect_body_contains": "app.js?v=20261113-vtid-05067" },
+    { "kind": "http", "name": "served app.js has the Kiro API key field", "path": "/command-hub/app.js?v=20261113-vtid-05067", "expect_status": 200, "expect_content_type": "javascript", "expect_body_contains": ["function renderKiroKeyControls", "function linkKiroKey", "function revokeKiroKey"] },
     { "kind": "existing", "ref": "npx jest test/vtid-04999-kiro-runner-backend.test.ts test/command-hub/vtid-04999-kiro-key-field.test.ts", "cwd": "services/gateway", "reason": "the remote backend runs a real AcpClient turn over a real WebSocket runner; key forwarding, identity-only user id, no key in OASIS events, prod guard; the key field against a fake DOM" }
   ]
 }

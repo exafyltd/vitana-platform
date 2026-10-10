@@ -1,0 +1,489 @@
+/*
+ * VTID-05067 — the Kiro console (kiro-console.js): one owner of the Kiro view in the
+ * Operator Console. Runs (message, images, steps, reply, end marker), the live run's
+ * approval cards and Stop, queued messages, and the image chips shared with the
+ * Operator composer. Colours from styles.css :root tokens where they exist. External
+ * file (CSP), loaded by index.html with a ?v= cache-bust.
+ */
+
+.kiro-console {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.kiro-console.kiro-drop-active {
+  outline: 2px dashed var(--color-accent);
+  outline-offset: -6px;
+}
+
+.kiro-console-messages {
+  flex: 1;
+}
+
+.kiro-console-runs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.kiro-console-error,
+.kiro-composer-notice,
+.kiro-image-error {
+  align-self: stretch;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid #6b3f3f;
+  border-radius: 6px;
+  background: rgba(217, 119, 111, 0.1);
+  color: #f1b8b1;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+/* --- one run ----------------------------------------------------------- */
+
+.kiro-run {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.55);
+}
+
+.kiro-run:last-child {
+  border-bottom: none;
+}
+
+.kiro-run-message {
+  white-space: pre-wrap;
+}
+
+.kiro-run-reply {
+  overflow-wrap: anywhere;
+}
+
+.kiro-run-reply--live {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.kiro-run-media {
+  align-self: flex-end;
+  justify-content: flex-end;
+}
+
+.kiro-media-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  max-width: 80%;
+}
+
+.kiro-media-thumb {
+  display: block;
+  width: 72px;
+  height: 72px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--color-sidebar-bg);
+}
+
+.kiro-media-thumb:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.kiro-media-thumb-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.kiro-media-thumb--missing {
+  opacity: 0.5;
+}
+
+.kiro-images-note {
+  align-self: flex-end;
+  max-width: 80%;
+  color: var(--color-operator);
+  font-size: 0.72rem;
+  text-align: end;
+}
+
+.kiro-run-steps {
+  align-self: stretch;
+  min-width: 0;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: rgba(30, 41, 59, 0.55);
+}
+
+.kiro-run-steps-summary {
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  font-size: 0.76rem;
+  min-height: 24px;
+  line-height: 24px;
+}
+
+.kiro-run-steps-summary:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.kiro-run-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kiro-step {
+  overflow-wrap: anywhere;
+}
+
+.kiro-step--permission .kiro-approval {
+  margin: 0.15rem 0;
+}
+
+.kiro-working {
+  align-self: flex-start;
+}
+
+.kiro-run-live-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.kiro-reconnecting {
+  color: var(--color-operator);
+  font-size: 0.74rem;
+}
+
+.kiro-run-marker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  align-self: flex-start;
+  max-width: 100%;
+  padding-inline-start: 0.5rem;
+  border-inline-start: 2px solid var(--color-text-secondary);
+  color: var(--color-text-secondary);
+  font-size: 0.74rem;
+  overflow-wrap: anywhere;
+}
+
+.kiro-run-marker--failed {
+  border-inline-start-color: #d9776f;
+  color: #f1b8b1;
+}
+
+.kiro-run-marker-text {
+  min-width: 0;
+}
+
+.kiro-run-marker--cancelled {
+  font-style: italic;
+}
+
+.kiro-run-marker--interrupted {
+  border-inline-start-color: var(--color-operator);
+  color: var(--color-text-primary);
+}
+
+.kiro-continue-btn,
+.kiro-queued-cancel {
+  min-height: 28px;
+  padding: 0.2rem 0.75rem;
+  border: 1px solid var(--color-accent);
+  border-radius: 6px;
+  background: transparent;
+  color: #bfdbfe;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.kiro-continue-btn:hover:not(:disabled),
+.kiro-queued-cancel:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.15);
+}
+
+.kiro-continue-btn:disabled,
+.kiro-queued-cancel:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.kiro-run-meta {
+  align-self: flex-start;
+}
+
+.kiro-queued {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  align-self: flex-end;
+  max-width: 100%;
+  color: var(--color-text-secondary);
+  font-size: 0.74rem;
+}
+
+.kiro-queued-label {
+  min-width: 0;
+}
+
+.kiro-run--queued .kiro-run-message {
+  opacity: 0.75;
+}
+
+/* --- composer ------------------------------------------------------------ */
+
+.kiro-composer {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.kiro-composer-extras {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0 1.5rem;
+}
+
+.kiro-composer-extras:empty {
+  display: none;
+}
+
+.kiro-composer-notice {
+  margin-top: 0.4rem;
+}
+
+.kiro-composer-input {
+  align-items: flex-end;
+  min-width: 0;
+}
+
+.kiro-composer-textarea {
+  min-width: 0;
+}
+
+.kiro-send-btn {
+  flex-shrink: 0;
+}
+
+.kiro-image-tray {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.kiro-image-tray:empty {
+  display: none;
+}
+
+.kiro-image-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.45rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kiro-image-chip {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--color-sidebar-bg);
+}
+
+.kiro-image-chip-thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.kiro-image-chip-remove {
+  position: absolute;
+  top: 2px;
+  inset-inline-end: 2px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(248, 250, 252, 0.4);
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.85);
+  color: var(--color-text-primary);
+  font-size: 0.7rem;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.kiro-image-chip-remove:hover {
+  background: #7f1d1d;
+}
+
+.kiro-attach {
+  position: relative;
+  display: flex;
+  align-self: flex-end;
+}
+
+.kiro-attach-btn {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text-primary);
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.kiro-attach-icon {
+  line-height: 1;
+}
+
+.kiro-attach-btn:hover {
+  border-color: var(--color-accent);
+}
+
+/* the real file input stays out of sight; the paperclip button opens it */
+.kiro-attach-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.kiro-continue-btn:focus-visible,
+.kiro-queued-cancel:focus-visible,
+.kiro-attach-btn:focus-visible,
+.kiro-image-chip-remove:focus-visible,
+.kiro-approval-btn:focus-visible,
+.kiro-stop-btn:focus-visible {
+  outline: 2px solid #2a7bff;
+  outline-offset: 1px;
+}
+
+/* --- approval cards, Stop (moved from styles.css, VTID-04975 / VTID-05006) --- */
+
+.kiro-approval {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+  margin: 0.35rem 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #6b4fc8;
+  border-radius: 8px;
+  background: rgba(107, 79, 200, 0.12);
+  font-style: normal;
+}
+
+/* VTID-05006: a Kiro write (PR, merge, autopilot, approval, branch push) waiting on Allow/Deny */
+.kiro-approval--write {
+  border-inline-start: 3px solid #e0b25b;
+}
+
+.kiro-approval--allowed { border-color: #3f6b3f; background: rgba(127, 181, 127, 0.08); }
+.kiro-approval--denied,
+.kiro-approval--expired,
+.kiro-approval--error { border-color: #6b3f3f; background: rgba(217, 119, 111, 0.08); }
+
+.kiro-approval-text {
+  flex: 1 1 14rem;
+  min-width: 0;
+  color: #e6e1ff;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.kiro-approval-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.kiro-approval-btn {
+  min-width: 64px;
+  min-height: 32px;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid #4a5260;
+  border-radius: 6px;
+  background: transparent;
+  color: #e0e0e0;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.kiro-approval-btn--allow {
+  border-color: #2a7bff;
+  background: #2a7bff;
+  color: #fff;
+}
+
+.kiro-approval-result {
+  color: #9aa0a6;
+  font-size: 0.78rem;
+}
+
+
+
+.kiro-stop-btn {
+  align-self: flex-start;
+  min-height: 28px;
+  margin-top: 0.3rem;
+  padding: 0.2rem 0.75rem;
+  border: 1px solid #6b3f3f;
+  border-radius: 6px;
+  background: transparent;
+  color: #e3a39c;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.kiro-stop-btn:hover {
+  background: rgba(217, 119, 111, 0.12);
+}
+
+@media (max-width: 640px) {
+  .kiro-composer-extras { padding: 0 0.75rem; }
+  .kiro-composer-input { gap: 0.4rem; padding: 0.6rem 0.75rem; }
+  .kiro-composer-input .chat-send-btn { padding: 0.6rem 0.9rem; }
+  .kiro-media-thumbs { max-width: 100%; }
+  .kiro-media-thumb { width: 56px; height: 56px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kiro-working { animation: none; }
+}

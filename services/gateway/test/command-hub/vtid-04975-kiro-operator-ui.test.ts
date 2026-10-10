@@ -11,14 +11,21 @@
  * AC-5 Stop and End session call the cancel / close routes for the active thread.
  * AC-6 wiring: the request carries engine 'kiro' only for a Kiro thread, a
  *      server thread's engine is kept, Kiro frames route to their handler.
+ *
+ * VTID-05067: AC-3/AC-4 and Stop moved with the Kiro view into kiro-console.js
+ * (one owner of the Kiro view); their behaviour is pinned by
+ * test/command-hub/vtid-05067-kiro-console.test.ts. This suite keeps what
+ * stayed in app.js (engine switch, workspace card, End session, status) and
+ * checks that the moved code is gone from app.js.
  */
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
 const FE = join(__dirname, '../../src/frontend/command-hub');
 const APP_JS = readFileSync(join(FE, 'app.js'), 'utf8');
-const CSS = readFileSync(join(FE, 'styles.css'), 'utf8');
-const START = APP_JS.indexOf('var KIRO_TOOL_STATUS');
+// VTID-05067: the approval-card / Stop rules moved to kiro-console.css.
+const CSS = readFileSync(join(FE, 'styles.css'), 'utf8') + readFileSync(join(FE, 'kiro-console.css'), 'utf8');
+const START = APP_JS.indexOf('function operatorThreadEngine(thread) {');
 const END = APP_JS.indexOf('function renderOperatorLiveTranscript() {');
 const BLOCK = APP_JS.slice(START, END);
 
@@ -40,7 +47,6 @@ function load(over: { kiroStatus?: any; messages?: number; sending?: boolean; en
     authToken: 'tok', operatorThreads: [thread], operatorActiveThreadId: 'T1',
     chatMessages: new Array(over.messages ?? 0).fill({}), chatSending: !!over.sending,
     kiroStatus: over.kiroStatus === undefined ? { ok: true, enabled: true } : over.kiroStatus,
-    chatLiveKiro: { text: '', tools: [], permissions: [] },
   };
   const calls = { renders: 0, saves: 0, liveUpdates: 0, toasts: [] as string[] };
   const fetchMock = jest.fn(over.fetchImpl ?? (async () => ({ ok: true, status: 200, json: async () => ({ ok: true }) })));
@@ -48,7 +54,7 @@ function load(over: { kiroStatus?: any; messages?: number; sending?: boolean; en
   const api = new Function(
     'state', 'document', 'fetch', 'buildContextHeaders', 'renderApp', 'saveOperatorThreadsIndex',
     'updateOperatorLiveTranscriptDom', 'showToast', 'console',
-    BLOCK + '\nreturn { activeOperatorEngine, setActiveOperatorEngine, renderOperatorEngineSwitch, renderKiroThreadPanel, applyKiroTurnFrame, appendKiroLiveTranscript, answerKiroPermission, stopKiroTurn, endKiroSession, kiroLiveHasContent, resetKiroLiveTranscript, fetchKiroStatus };',
+    BLOCK + '\nreturn { activeOperatorEngine, setActiveOperatorEngine, renderOperatorEngineSwitch, renderKiroThreadPanel, endKiroSession, fetchKiroStatus };',
   )(
     state, { createElement: (t: string) => new El(t) }, fetchMock, (h: any) => ({ Authorization: 'Bearer tok', ...h }),
     () => { calls.renders++; }, () => { calls.saves++; }, () => { calls.liveUpdates++; },
@@ -110,75 +116,25 @@ describe('VTID-04975 Kiro workspace card', () => {
   });
 });
 
-describe('VTID-04975 live Kiro transcript', () => {
-  it('builds streamed text, tool lines and approval cards from kiro.* frames', () => {
-    const { api, state, calls } = load({ engine: 'kiro' });
-    api.applyKiroTurnFrame({ event: 'kiro.message_chunk', data: { text: 'Hello ' } });
-    api.applyKiroTurnFrame({ event: 'kiro.tool_call', data: { tool_call_id: 'a', title: 'Read src/x.ts', kind: 'read', status: 'pending' } });
-    api.applyKiroTurnFrame({ event: 'kiro.tool_update', data: { tool_call_id: 'a', status: 'completed' } });
-    api.applyKiroTurnFrame({ event: 'kiro.permission_request', data: { request_id: 'r1', title: 'Edit src/x.ts', kind: 'edit', expires_at: 'x' } });
-    api.applyKiroTurnFrame({ event: 'kiro.message_chunk', data: { text: 'world' } });
-    api.applyKiroTurnFrame({ event: 'kiro.turn_end', data: { stop_reason: 'end_turn' } });
-    expect(calls.liveUpdates).toBe(5);
-    expect(state.chatLiveKiro.text).toBe('Hello world');
-    expect(state.chatLiveKiro.tools[0]).toMatchObject({ title: 'Read src/x.ts', status: 'ok' });
-    const wrap = new El('div');
-    api.appendKiroLiveTranscript(wrap);
-    expect(wrap.find('chat-tool-activity-line--ok')[0].textContent).toMatch(/Read src\/x\.ts/);
-    const card = wrap.find('kiro-approval')[0];
-    expect(card.text()).toMatch(/Kiro wants to edit: Edit src\/x\.ts/);
-    expect(card.find('kiro-approval-btn').map((b) => b.textContent)).toEqual(['Allow', 'Deny']);
-    expect(wrap.find('kiro-live-text')[0].textContent).toBe('Hello world');
-    expect(wrap.find('kiro-stop-btn')).toHaveLength(1);
-    expect(api.kiroLiveHasContent()).toBe(true);
-    api.resetKiroLiveTranscript();
-    expect(api.kiroLiveHasContent()).toBe(false);
-  });
-
-  it('adds nothing to an Operator thread', () => {
-    const { api } = load();
-    const wrap = new El('div');
-    api.appendKiroLiveTranscript(wrap);
-    expect(wrap.children).toHaveLength(0);
+describe('VTID-04975 live Kiro transcript (moved to kiro-console.js, VTID-05067)', () => {
+  it('app.js no longer builds the live Kiro transcript, approval cards or Stop itself', () => {
+    for (const gone of ['function applyKiroTurnFrame(', 'function appendKiroLiveTranscript(', 'function answerKiroPermission(', 'function stopKiroTurn(', 'function resetKiroLiveTranscript(', 'chatLiveKiro']) {
+      expect(APP_JS).not.toContain(gone);
+    }
+    const mod = readFileSync(join(FE, 'kiro-console.js'), 'utf8');
+    for (const kept of ['function foldRun(events)', 'function renderApproval(opts)', "'kiro-stop-btn'", "'/api/v1/operator/kiro/permissions/' + encodeURIComponent(requestId)"]) {
+      expect(mod).toContain(kept);
+    }
   });
 });
 
 describe('VTID-04975 Kiro actions', () => {
-  it('Allow posts the answer with auth headers and shows the outcome', async () => {
-    const { api, state, fetchMock } = load({ engine: 'kiro' });
-    api.applyKiroTurnFrame({ event: 'kiro.permission_request', data: { request_id: 'r 1', title: 'Run tests', kind: 'execute' } });
-    await api.answerKiroPermission('r 1', true);
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('/api/v1/operator/kiro/permissions/r%201');
-    expect(init.method).toBe('POST');
-    expect(init.headers.Authorization).toBe('Bearer tok');
-    expect(JSON.parse(init.body)).toEqual({ allow: true });
-    expect(state.chatLiveKiro.permissions[0].answer).toBe('allowed');
-    await api.answerKiroPermission('r 1', false);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('an expired card reads Expired, a network error reads as denied', async () => {
-    const gone = load({ engine: 'kiro', fetchImpl: async () => ({ ok: false, status: 404 }) });
-    gone.api.applyKiroTurnFrame({ event: 'kiro.permission_request', data: { request_id: 'r', title: 't' } });
-    await gone.api.answerKiroPermission('r', false);
-    expect(gone.state.chatLiveKiro.permissions[0].answer).toBe('expired');
-    const down = load({ engine: 'kiro', fetchImpl: async () => { throw new Error('offline'); } });
-    down.api.applyKiroTurnFrame({ event: 'kiro.permission_request', data: { request_id: 'r', title: 't' } });
-    await down.api.answerKiroPermission('r', true);
-    const wrap = new El('div');
-    down.api.appendKiroLiveTranscript(wrap);
-    expect(wrap.find('kiro-approval-result')[0].textContent).toMatch(/Kiro will deny it/);
-  });
-
-  it('Stop and End session call the cancel and close routes for the active thread', async () => {
+  // VTID-05067: Stop cancels the current RUN (kiro-console.js, POST /runs/:id/cancel).
+  it('End session calls the close route for the active thread', async () => {
     const { api, fetchMock, calls } = load({ engine: 'kiro' });
-    await api.stopKiroTurn();
     await api.endKiroSession();
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/operator/kiro/sessions/T1/cancel');
-    expect(fetchMock.mock.calls[0][1].method).toBe('POST');
-    expect(fetchMock.mock.calls[1][0]).toBe('/api/v1/operator/kiro/sessions/T1');
-    expect(fetchMock.mock.calls[1][1].method).toBe('DELETE');
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/operator/kiro/sessions/T1');
+    expect(fetchMock.mock.calls[0][1].method).toBe('DELETE');
     expect(calls.toasts).toEqual(['Kiro session ended']);
   });
 
@@ -196,15 +152,17 @@ describe('VTID-04975 wiring (source check)', () => {
   it('the request names the engine only for a Kiro thread', () => {
     expect(APP_JS).toContain("engine: activeOperatorEngine() === 'kiro' ? 'kiro' : undefined,");
   });
-  it('Kiro frames go to their own handler and reset with each turn', () => {
-    expect(APP_JS).toContain("if (frame.event && frame.event.indexOf('kiro.') === 0) { applyKiroTurnFrame(frame); return; }");
-    expect(APP_JS.indexOf('resetKiroLiveTranscript();')).toBeGreaterThan(APP_JS.indexOf('async function requestOperatorTurn(payload) {'));
+  // VTID-05067: a Kiro thread's pane and sends belong to kiro-console.js; the LLM stream ignores kiro.* frames.
+  it('a Kiro thread hands its chat pane and its sends to kiro-console.js', () => {
+    expect(APP_JS).toContain("if (frame.event && frame.event.indexOf('kiro.') === 0) return;");
+    expect(APP_JS).toContain("container.appendChild(window.KiroConsole.renderPane(state.operatorActiveThreadId, { legacyMessages: state.chatMessages }));");
+    expect(APP_JS).toContain('window.KiroConsole.send(state.operatorActiveThreadId);');
   });
   it('a server thread keeps its engine, and a Kiro thread shows its tag and workspace card', () => {
     expect(APP_JS).toContain("if (st.engine === 'kiro') local.engine = 'kiro';");
     expect(APP_JS).toContain("if (st.engine === 'kiro') thread.engine = 'kiro';");
     expect(APP_JS).toContain("tag.className = 'chat-engine-tag';");
-    expect(APP_JS).toContain("messages.appendChild(renderKiroThreadPanel());");
+    expect(APP_JS).toContain("renderEmptyPanel: function () { return renderKiroThreadPanel(); },");
   });
   it('every class the block uses has a rule in styles.css', () => {
     const classes = new Set<string>();

@@ -28,16 +28,16 @@
       "path": "/command-hub/",
       "expect_status": 200,
       "expect_content_type": "text/html",
-      "expect_body_contains": "app.js?v=20261112-vtid-05069"
+      "expect_body_contains": "app.js?v=20261113-vtid-05067"
     },
     {
       "kind": "http",
-      "name": "served app.js shows Kiro write requests as Allow/Deny cards",
-      "path": "/command-hub/app.js?v=20261112-vtid-05069",
+      "name": "served kiro-console.js shows Kiro write requests as Allow/Deny cards (moved from app.js by VTID-05067)",
+      "path": "/command-hub/kiro-console.js?v=20261113-vtid-05067",
       "expect_status": 200,
       "expect_content_type": "javascript",
       "expect_body_contains": [
-        "function startKiroConfirmationPoll",
+        "function updateConfirmationPoll(t)",
         "kiro-approval--write"
       ]
     },

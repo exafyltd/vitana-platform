@@ -1537,6 +1537,7 @@ describe('Kiro model pick: a reopened session keeps the developer\'s model (VTID
 import * as http from 'http';
 import type { AddressInfo } from 'net';
 import kiroRunsRouter from '../src/routes/operator-kiro-runs';
+import operatorMediaRouter from '../src/routes/operator-media';
 import {
   KIRO_RUN_LIMITS, drainKiroRunsForShutdown, sweepStaleKiroRuns, resetKiroRunsForTests, answerPersistedPermission,
   kiroRunsControlTick, kiroRunsHeartbeatTick, GATEWAY_TASK_ID,
@@ -1554,7 +1555,8 @@ describe('Kiro runs (VTID-05065)', () => {
     ask(title: string, kind: string): Promise<any>; cancelled: Promise<void>;
   }
   type Handler = (k: Ctl) => Promise<string>;
-  const kiro = { prompts: [] as any[], handlers: [] as Handler[], replies: new Map<number, (r: any) => void>(), cancels: 0, permissionReplies: [] as any[] };
+  // VTID-05067: `caps` = the agentCapabilities the fake kiro-cli advertises at initialize.
+  const kiro = { prompts: [] as any[], handlers: [] as Handler[], replies: new Map<number, (r: any) => void>(), cancels: 0, permissionReplies: [] as any[], caps: undefined as Record<string, unknown> | undefined };
 
   function deferred() { let resolve!: () => void; const promise = new Promise<void>((r) => { resolve = r; }); return { promise, resolve }; }
 
@@ -1570,7 +1572,7 @@ describe('Kiro runs (VTID-05065)', () => {
       stdin: {
         write: (line: string) => {
           const msg = JSON.parse(line);
-          if (msg.method === 'initialize') send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1 } });
+          if (msg.method === 'initialize') send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1, ...(kiro.caps ? { agentCapabilities: kiro.caps } : {}) } });
           else if (msg.method === 'session/new') send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 'KR' } });
           else if (msg.method === 'session/cancel') { kiro.cancels += 1; cancel?.(); }
           else if (msg.method === 'session/prompt') {
@@ -1658,6 +1660,9 @@ describe('Kiro runs (VTID-05065)', () => {
   async function startRun(message: string, token = admin, threadId = THREAD) {
     return request(app).post('/api/v1/operator/kiro/runs').set('Authorization', `Bearer ${token}`).send({ thread_id: threadId, message });
   }
+  async function startRunWith(message: string, attachments: string[], token = admin, threadId = THREAD) {
+    return request(app).post('/api/v1/operator/kiro/runs').set('Authorization', `Bearer ${token}`).send({ thread_id: threadId, message, attachments });
+  }
   const run = (id: string) => platform.rows('kiro_runs').find((r) => r.id === id)!;
   const runEvents = (id: string) => platform.rows('kiro_run_events').filter((e) => e.run_id === id).sort((a, b) => a.seq - b.seq);
   const seqs = (frames: Frame[]) => frames.filter((f) => f.id !== null).map((f) => f.id as number);
@@ -1672,9 +1677,11 @@ describe('Kiro runs (VTID-05065)', () => {
     kiro.replies.clear();
     kiro.cancels = 0;
     kiro.permissionReplies.length = 0;
+    kiro.caps = undefined;
     Object.assign(process.env, { OPERATOR_THREADS_ENABLED: 'true', KIRO_ENGINE_ENABLED: 'true' });
     setKiroBackend({ spawn: () => runsKiro(), workspace: () => '/work/runs' });
     app.use('/api/v1/operator/kiro/runs', kiroRunsRouter);
+    app.use('/api/v1/operator/media', operatorMediaRouter); // VTID-05067
     server = app.listen(0);
     port = (server.address() as AddressInfo).port;
     admin = await jwt(ADMIN_USER, true);
@@ -2034,6 +2041,56 @@ describe('Kiro runs (VTID-05065)', () => {
     expect((await startRun('x', admin, 'a5065000-0000-4000-8000-0000000000aa')).status).toBe(409);
   });
 
+  // VTID-05067: a screenshot pasted into the Kiro composer is stored through the media route
+  // and reaches Kiro as an ACP image block — only when kiro-cli advertises image input.
+  it('a run with a pasted image reaches Kiro as image blocks; without image input Kiro gets one text line and the console is told', async () => {
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('fake-screenshot-bytes')]);
+    const up = await request(app).post(`/api/v1/operator/media?thread_id=${THREAD}`).set('Authorization', `Bearer ${admin}`).set('Content-Type', 'image/png').send(png);
+    expect(up.status).toBe(201);
+    const mediaId = up.body.media_id as string;
+    expect(platform.storageObjects.get(`operator-media/${ADMIN_USER}/${THREAD}/${mediaId}.png`)!.bytes.equals(png)).toBe(true);
+    expect(platform.rows('operator_media')).toEqual([expect.objectContaining({ id: mediaId, user_id: ADMIN_USER, thread_id: THREAD, mime_type: 'image/png' })]);
+    expect(platform.events('operator.media.uploaded')).toHaveLength(1);
+    // Another admin cannot attach it.
+    const foreign = await startRunWith('look at mine', [mediaId], other, 'a5067000-0000-4000-8000-0000000000f1');
+    expect(foreign.status).toBe(400);
+    expect(foreign.body.error).toBe('invalid_attachment');
+
+    kiro.caps = { promptCapabilities: { image: true } };
+    kiro.handlers.push(async (k) => { k.chunk('I see the broken layout'); return 'end_turn'; });
+    const res = await startRunWith('what is wrong on this screen?', [mediaId]);
+    expect(res.status).toBe(202);
+    const id = res.body.run_id as string;
+    const s = openStream(id, admin);
+    await s.ended;
+    await waitFor(() => isDone(id), 'run finished');
+    await platform.settle();
+    const prompt = kiro.prompts[0];
+    expect(prompt.filter((b: any) => b.type === 'image')).toEqual([{ type: 'image', mimeType: 'image/png', data: png.toString('base64') }]);
+    expect(prompt.find((b: any) => b.type === 'text' && b.text === 'what is wrong on this screen?')).toBeTruthy();
+    expect(s.frames.find((f) => f.event === 'kiro.images')!.data).toMatchObject({ count: 1, delivery: 'sent', sent: 1 });
+    expect(run(id)).toMatchObject({ status: 'completed', reply: 'I see the broken layout', attachments: [{ media_id: mediaId, mime_type: 'image/png' }] });
+    const list = await request(app).get(`/api/v1/operator/kiro/runs?thread_id=${THREAD}`).set('Authorization', `Bearer ${admin}`);
+    expect(list.body.runs[0].attachments).toEqual([{ media_id: mediaId, mime_type: 'image/png' }]);
+
+    // A kiro-cli without image input: no image block, one line, and the console is told.
+    closeAllKiroSessions();
+    kiro.caps = { promptCapabilities: { image: false } };
+    kiro.handlers.push(async (k) => { k.chunk('I cannot view images'); return 'end_turn'; });
+    const res2 = await startRunWith('and now?', [mediaId]);
+    await waitFor(() => isDone(res2.body.run_id), 'second run finished');
+    await platform.settle();
+    const p2 = kiro.prompts[1];
+    expect(p2.some((b: any) => b.type === 'image')).toBe(false);
+    expect(p2[p2.length - 1]).toEqual({ type: 'text', text: 'and now?\n\nThe user attached 1 image(s) that this agent cannot view.' });
+    expect(runEvents(res2.body.run_id).find((e) => e.type === 'kiro.images')!.payload).toMatchObject({ delivery: 'unsupported', count: 1 });
+    // More than 4 images per message is refused before a run exists.
+    const many = await startRunWith('five', [mediaId, 'c5067000-0000-4000-8000-000000000002', 'c5067000-0000-4000-8000-000000000003', 'c5067000-0000-4000-8000-000000000004', 'c5067000-0000-4000-8000-000000000005']);
+    expect(many.status).toBe(400);
+    expect(many.body.error).toBe('too_many_attachments');
+    expect(platform.rows('kiro_runs')).toHaveLength(2);
+  });
+
   it('the old /chat/stream path runs through a run and still sends only the frames it always sent', async () => {
     kiro.handlers.push(async (k) => { k.chunk('old '); k.tool('t1', 'Read a file', 'read'); k.toolDone('t1'); k.chunk('path'); return 'end_turn'; });
     const res = await request(app).post('/api/v1/operator/chat/stream')
@@ -2050,6 +2107,34 @@ describe('Kiro runs (VTID-05065)', () => {
     // …and the turn has a run record.
     expect(platform.rows('kiro_runs')).toHaveLength(1);
     expect(platform.rows('kiro_runs')[0]).toMatchObject({ thread_id: THREAD, status: 'completed', reply: 'old path' });
+  });
+});
+
+// VTID-05067: a screenshot pasted into the Operator (LLM) composer reaches the model as an
+// image block through the router's `images` (the Bedrock/Anthropic adapters, VTID-03496).
+describe('Operator turn with a pasted image (VTID-05067)', () => {
+  const THREAD = 'a5067000-0000-4000-8000-0000000000b1';
+
+  it('the image is stored, attached by media id, and handed to the model; another admin\'s image is refused', async () => {
+    app.use('/api/v1/operator/media', operatorMediaRouter);
+    const admin = await jwt(ADMIN_USER, true);
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('operator-screenshot')]);
+    const up = await request(app).post(`/api/v1/operator/media?thread_id=${THREAD}`).set('Authorization', `Bearer ${admin}`).set('Content-Type', 'image/png').send(png);
+    expect(up.status).toBe(201);
+    let seen: any = null;
+    model.operatorPlan.push((ctx: ModelCallCtx) => { seen = ctx.opts.images; return text('The button overlaps the header.'); });
+    const res = await request(app).post('/api/v1/operator/chat').set('Authorization', `Bearer ${admin}`)
+      .send({ message: 'what is wrong here?', threadId: THREAD, attachments: [{ oasis_ref: up.body.oasis_ref, kind: 'image', media_id: up.body.media_id }] });
+    await platform.settle();
+    expect(res.status).toBe(200);
+    expect(res.body.reply).toContain('The button overlaps the header.');
+    expect(seen).toEqual([{ mimeType: 'image/png', base64: png.toString('base64') }]);
+
+    const other = await jwt('f3333333-3333-4333-8333-333333333333', true);
+    const refused = await request(app).post('/api/v1/operator/chat').set('Authorization', `Bearer ${other}`)
+      .send({ message: 'peek', threadId: 'a5067000-0000-4000-8000-0000000000b2', attachments: [{ oasis_ref: 'x', kind: 'image', media_id: up.body.media_id }] });
+    expect(refused.status).toBe(400);
+    expect(refused.body.error).toBe('invalid_attachment');
   });
 });
 

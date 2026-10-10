@@ -854,6 +854,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/operator/kiro/runs', require('./routes/operator-kiro-runs').default, { owner: 'operator-kiro-runs' });
   // VTID-05069: the live pipeline tree of a VTID (read-only run view + SSE).
   mountRouterSync(app, '/api/v1/operator/runs', require('./routes/operator-runs').default, { owner: 'operator-runs' });
+  // VTID-05067: images pasted / dropped into the Operator Console (private bucket, owner-only, signed URLs).
+  mountRouterSync(app, '/api/v1/operator/media', require('./routes/operator-media').default, { owner: 'operator-media' });
   mountRouterSync(app, '/api/v1/operator', operatorRouter, { owner: 'operator' });
 
   // VTID-0526-D: Telemetry routes with stage counters

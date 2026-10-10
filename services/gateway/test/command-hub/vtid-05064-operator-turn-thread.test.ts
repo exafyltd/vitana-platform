@@ -166,13 +166,13 @@ describe('VTID-05064 syncOperatorVoiceTurns', () => {
 });
 
 // ---- Kiro block: Stop, turn_end, stopped-early / workspace-lost, the banner ----
-const KIRO_BLOCK = APP_JS.slice(APP_JS.indexOf('var KIRO_TOOL_STATUS'), APP_JS.indexOf('function renderOperatorLiveTranscript() {'));
+const KIRO_BLOCK = APP_JS.slice(APP_JS.indexOf('function operatorThreadEngine(thread) {'), APP_JS.indexOf('function renderOperatorLiveTranscript() {'));
 
 function loadKiro(over: any = {}) {
   const state: any = {
     authToken: 'tok', operatorThreads: [{ id: 'T1', title: 'Fix login', engine: 'kiro' }, { id: 'T2', title: 'Other' }],
     operatorActiveThreadId: 'T2', chatTurnThreadId: 'T1', chatSending: true, chatMessages: [],
-    kiroModels: { T1: { loaded: true }, T2: { loaded: true } }, chatLiveKiro: { text: '', tools: [], permissions: [] }, ...over,
+    kiroModels: { T1: { loaded: true }, T2: { loaded: true } }, ...over,
   };
   const switched: string[] = [];
   const fetchMock = jest.fn(async () => ({ ok: true, status: 200, json: async () => ({ ok: true }) }));
@@ -180,7 +180,7 @@ function loadKiro(over: any = {}) {
   const api = new Function(
     'state', 'document', 'fetch', 'buildContextHeaders', 'renderApp', 'saveOperatorThreadsIndex',
     'updateOperatorLiveTranscriptDom', 'showToast', 'console', 'switchOperatorThread',
-    KIRO_BLOCK + '\nreturn { stopKiroTurn, applyKiroTurnFrame, kiroReplyMeta, renderKiroStoppedEarly, renderKiroWorkspaceLost, renderChatTurnElsewhereBanner, appendReplyWithKiroNotices };',
+    KIRO_BLOCK + '\nreturn { onKiroRunFinished, kiroReplyMeta, renderKiroStoppedEarly, renderKiroWorkspaceLost, renderChatTurnElsewhereBanner, appendReplyWithKiroNotices };',
   )(
     state, { createElement: (t: string) => new El(t) }, fetchMock, (h: any) => h, () => undefined, () => undefined,
     () => undefined, () => undefined, { warn: () => undefined }, (id: string) => { switched.push(id); },
@@ -189,21 +189,11 @@ function loadKiro(over: any = {}) {
 }
 
 describe('VTID-05064 Kiro actions follow the turn thread', () => {
-  it('Stop cancels the turn thread, not the thread on screen', async () => {
-    const { api, fetchMock } = loadKiro();
-    await api.stopKiroTurn();
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/operator/kiro/sessions/T1/cancel');
-  });
-
-  it('Stop falls back to the active thread when no turn thread is recorded', async () => {
-    const { api, fetchMock } = loadKiro({ chatTurnThreadId: null });
-    await api.stopKiroTurn();
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/operator/kiro/sessions/T2/cancel');
-  });
-
-  it('kiro.turn_end resets the turn thread model list only', () => {
+  // VTID-05067: Stop now cancels the run itself (POST /runs/:id/cancel, kiro-console.js —
+  // pinned in vtid-05067-kiro-console.test.ts), so it can never hit another thread.
+  it('a finished run resets its own thread\'s model list only', () => {
     const { api, state } = loadKiro();
-    api.applyKiroTurnFrame({ event: 'kiro.turn_end', data: {} });
+    api.onKiroRunFinished('T1');
     expect(Object.keys(state.kiroModels)).toEqual(['T2']);
   });
 
@@ -302,6 +292,7 @@ describe('VTID-05064 styles, cache bump, ownership guard', () => {
     expect(CSS).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.chat-thread-running \{\s*animation: none;/);
   });
 
+  // Bumped past VTID-05064 by later Command Hub changes (VTID-05067); never back to an older build.
   it('bumps app.js and styles.css together', () => {
     // At-or-after: a later Command Hub change (VTID-05069) bumps the same string for both.
     const ver = (INDEX_HTML.match(/app\.js\?v=([0-9]{8}-[^"]+)"/) || [])[1] || '';

@@ -110,6 +110,12 @@ interface Pending { resolve: (v: any) => void; reject: (e: Error) => void; timer
 
 export const ACP_PROTOCOL_VERSION = 1;
 
+/** VTID-05067: one image for a prompt (ACP ContentBlock::Image — base64 data + MIME type). */
+export interface AcpImage { mimeType: string; data: string }
+
+/** VTID-05067: what the agent said it accepts in a prompt (initialize → agentCapabilities). */
+export interface AcpAgentCapabilities { promptCapabilities?: { image?: boolean; audio?: boolean; embeddedContext?: boolean }; [k: string]: unknown }
+
 /** VTID-05005: how long one Kiro turn may run; the user can Stop it sooner. */
 export const KIRO_PROMPT_TIMEOUT_MS = 15 * 60_000;
 
@@ -118,6 +124,8 @@ export class AcpClient {
   private buf = '';
   private readonly pending = new Map<number, Pending>();
   private closed = false;
+  /** VTID-05067: the agent's capabilities from the initialize response (null until initialized). */
+  agentCapabilities: AcpAgentCapabilities | null = null;
   /** VTID-05068: let go for another gateway task — pending requests stay unanswered here, never failed. */
   private detached = false;
 
@@ -203,7 +211,16 @@ export class AcpClient {
   }
 
   async initialize(): Promise<unknown> {
-    return this.request('initialize', { protocolVersion: ACP_PROTOCOL_VERSION, clientCapabilities: {} });
+    const r = await this.request<Record<string, unknown> | undefined>('initialize', { protocolVersion: ACP_PROTOCOL_VERSION, clientCapabilities: {} });
+    // VTID-05067: kept so a prompt only carries image blocks when the agent accepts them.
+    const caps = r && typeof r === 'object' ? r.agentCapabilities : undefined;
+    this.agentCapabilities = caps && typeof caps === 'object' ? (caps as AcpAgentCapabilities) : {};
+    return r;
+  }
+
+  /** VTID-05067: the agent advertised image input (agentCapabilities.promptCapabilities.image === true). */
+  acceptsImages(): boolean {
+    return this.agentCapabilities?.promptCapabilities?.image === true;
   }
 
   async newSession(cwd: string, mcpServers: unknown[] = []): Promise<string> {
@@ -234,8 +251,10 @@ export class AcpClient {
   /** Resolves with the stop reason when the turn finishes. */
   /** VTID-05005: a turn runs as long as Kiro works (tools included), not the 30 s request default. */
   /** VTID-05018: `context`, when given, is sent as its own leading block (restored thread history). */
-  async prompt(sessionId: string, text: string, timeoutMs: number = KIRO_PROMPT_TIMEOUT_MS, context?: string): Promise<{ stopReason: string }> {
-    const prompt = context ? [{ type: 'text', text: context }, { type: 'text', text }] : [{ type: 'text', text }];
+  /** VTID-05067: `images`, when given, follow the message as ACP image blocks (callers check acceptsImages()). */
+  async prompt(sessionId: string, text: string, timeoutMs: number = KIRO_PROMPT_TIMEOUT_MS, context?: string, images?: AcpImage[]): Promise<{ stopReason: string }> {
+    const prompt: Array<Record<string, unknown>> = context ? [{ type: 'text', text: context }, { type: 'text', text }] : [{ type: 'text', text }];
+    for (const img of images ?? []) prompt.push({ type: 'image', mimeType: img.mimeType, data: img.data });
     const r = await this.request<{ stopReason?: string }>('session/prompt', { sessionId, prompt }, timeoutMs);
     return { stopReason: String(r?.stopReason ?? 'end_turn') };
   }
