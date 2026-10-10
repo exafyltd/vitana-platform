@@ -268,6 +268,69 @@ LOW.
 `;
 
 // =============================================================================
+// VTID-04772: model_under_responds — redesign_pipeline track (LiveKit POC)
+//
+// The Architecture Investigator produced a `redesign_pipeline` recommendation
+// for the `model_under_responds_r100plus` signature. This spec captures the
+// code-level steps that can be implemented autonomously; the pure-investigation
+// and resource-allocation steps are flagged as human decisions.
+//
+// Governance: never reintroduces a Google/Vertex dependency outside the
+// Serbian bridge. The POC uses AWS-hosted STT/LLM/TTS only.
+// =============================================================================
+
+const SPEC_MODEL_UNDER_RESPONDS = `# SELF-HEAL: ORB Voice model_under_responds — redesign_pipeline POC scaffold (VTID-04772)
+
+## Goal
+The \`model_under_responds_r100plus\` signature (audio_in_forwarded ≥ 100 chunks, audio_out/audio_in_forwarded ratio < 0.2, turn_count ≥ 1) is recurrent and un-patchable within the current black-box vendor path. This spec scaffolds the proof-of-concept (POC) infrastructure for a modular LiveKit Agents pipeline so engineering can evaluate it without touching the production voice path.
+
+The POC is strictly additive: it lives behind a feature flag (\`LIVEKIT_POC_ENABLED\`), never replaces the existing Nova Sonic / cascade / Serbian-bridge paths, and is never auto-enabled in production.
+
+## Non-negotiable Governance Rules Touched
+- CLAUDE.md NEVER rule 1: Never invent new projects or services without a VTID — this spec is gated to VTID-04772.
+- CLAUDE.md NEVER rule 33: Never override AI routing rules — the POC is flag-gated and does not alter \`llm_routing_policy\`.
+- CLAUDE.md ALWAYS rule 10a: Always use Claude via AWS Bedrock — the POC LLM stage must use Bedrock, never direct Anthropic API.
+- CLAUDE.md NEVER rule 3: Never reintroduce a Google/Vertex dependency outside the Serbian bridge — the POC must not add any Vertex/Gemini dependency.
+
+## Scope
+Add a \`services/gateway/src/orb/live/poc/livekit-poc-config.ts\` module that:
+1. Reads the \`LIVEKIT_POC_ENABLED\` env var (default false).
+2. Reads \`LIVEKIT_POC_URL\`, \`LIVEKIT_POC_API_KEY\`, \`LIVEKIT_POC_API_SECRET\` for the LiveKit server coordinates.
+3. Exports a typed \`LiveKitPocConfig\` interface and a \`getLiveKitPocConfig()\` function that returns the config or null when the flag is off or any required var is missing.
+4. Exports \`isLiveKitPocEnabled()\` — a cheap synchronous check for callers that need a boolean guard.
+
+This module is the single integration point future POC work will import. It does NOT connect to LiveKit, spawn agents, or alter any existing route — it is configuration scaffolding only.
+
+## Files to Modify
+- \`services/gateway/src/orb/live/poc/livekit-poc-config.ts\` (new file)
+- \`services/gateway/test/livekit-poc-config.test.ts\` (new test file)
+
+## Changes
+1. Create \`services/gateway/src/orb/live/poc/livekit-poc-config.ts\` with the interface and two exported functions described in Scope.
+2. Create \`services/gateway/test/livekit-poc-config.test.ts\` covering: flag-off returns null, flag-on with all vars returns config, flag-on with missing vars returns null.
+
+## Acceptance Criteria
+- \`tsc --noEmit\` passes with no new errors.
+- \`livekit-poc-config.test.ts\` passes: all three scenarios green.
+- \`isLiveKitPocEnabled()\` returns false when \`LIVEKIT_POC_ENABLED\` is unset or \`'false'\`.
+- \`getLiveKitPocConfig()\` returns null when any of the three coordinate vars is missing even if the flag is on.
+- No existing test suite is broken.
+
+## Verification Steps
+1. Run \`npx tsc --noEmit\` in \`services/gateway\`.
+2. Run \`jest test/livekit-poc-config.test.ts\`.
+3. Grep the new file for any \`vertex\`, \`gemini\`, \`gcp\`, \`google\` references — must be zero.
+4. Confirm \`LIVEKIT_POC_ENABLED\` is not set in any \`.env\` file or ECS task definition (it must default to off).
+
+## Rollback Plan
+The new file is never imported by any existing route or service. Deleting it is a complete rollback with no runtime impact.
+
+## Risk Level
+LOW — additive config scaffolding only, behind a flag that defaults to off. No existing code path is modified.
+`;
+
+
+// =============================================================================
 // Public API
 // =============================================================================
 
@@ -286,6 +349,9 @@ const SPEC_TABLE: Partial<Record<VoiceFailureClass, () => VoiceSpecHint>> = {
     specWithHash(SPEC_TTS_FAILED_STUB, 'Defer to fallback path + Sentinel (no-op)', false),
   'voice.session_leak': () =>
     specWithHash(SPEC_SESSION_LEAK_STUB, 'Defer to SSE-close path + Sentinel (no-op)', false),
+  // VTID-04772: redesign_pipeline track for recurrent model_under_responds
+  'voice.model_under_responds': () =>
+    specWithHash(SPEC_MODEL_UNDER_RESPONDS, 'LiveKit POC config scaffold (flag-gated, additive)', false),
 };
 
 /**
