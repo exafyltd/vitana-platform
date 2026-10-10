@@ -59,6 +59,12 @@
    "ref": "npm run test:auth-bridge",
    "cwd": ".",
    "reason": "Part 4 auth->Aurora bridge, Aurora side, on throwaway local Postgres (no staging database runs the bridge before the window): the real scripts/aws/aurora-cutover-auth-bridge.sql applied twice over Aurora's auth shim; ensure_provisioned() creates exactly the rows Supabase's six auth.users triggers create (verbatim copies, diffed row by row) and a second call creates nothing; the PostgREST db-pre-request hook is a no-op in a read-only (GET) transaction and for a null uid or service_role, an unprovisioned member's GET succeeds, their first write succeeds after the hook provisions (and fails on the app_users FK without it), service accounts are skipped, a provisioning failure never fails the request; deletion applies CASCADE / SET NULL / the contacts cleanup, reports NO ACTION rows, refuses an empty FK map and is idempotent; members cannot execute the service-role functions."
+  },
+  {
+   "kind": "existing",
+   "ref": "npm run test:realtime-local",
+   "cwd": ".",
+   "reason": "Part 7a: the self-hosted Realtime server has no staging endpoint (it is deployed only by the dispatch-only AWS-PROD-DEPLOY-REALTIME-AURORA.yml after the Aurora reboot). This builds the real image (pinned supabase/realtime v2.134.10 + Vitana seeds.exs) and runs it against a local Postgres 17 with logical decoding, wal2json and TLS-only logins, after applying scripts/aws/aurora-realtime-setup.sql unchanged as a non-superuser role: management API refuses member tokens (separate secret), websocket upgrade 101/401/404 by token and Host, and a @supabase/realtime-js client on Host realtime.vitanaland.com receives an RLS-filtered INSERT, an UPDATE with the old row, broadcast and presence, again after a restart. It also applies the 33-table publication part twice and checks the primary-key precondition."
   }
  ]
 }
