@@ -11,6 +11,7 @@ import path from 'path';
 import { naturalLanguageService } from '../services/natural-language-service';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { createUserSupabaseClient } from '../lib/supabase-user';
+import { getSupabasePublicOrigin } from '../lib/supabase-public-url';
 import * as repo from './command-hub-repository';
 
 import { withDependencyHealth } from '../services/dependency-probe';
@@ -69,8 +70,9 @@ router.get('/', (req: Request, res: Response) => {
     // CSP compliant - no inline scripts or styles
     // VTID-01230-FIX: img-src allows Supabase storage (avatar_url) and data: URIs.
     // Without this, avatar background-image was blocked by default-src 'self'.
-    const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseDomain = supabaseUrl ? new URL(supabaseUrl).origin : '';
+    // VTID-05023 R1(b): the browser loads avatars from the PUBLIC Supabase
+    // origin, not the gateway's internal SUPABASE_URL proxy.
+    const supabaseDomain = getSupabasePublicOrigin() || '';
     res.setHeader('Content-Security-Policy',
       `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; connect-src 'self' https://*.livekit.cloud wss://*.livekit.cloud; img-src 'self' ${supabaseDomain} https: data: blob:; media-src 'self' data:`);
     const htmlPath = path.join(__dirname, '../frontend/command-hub/index.html');
@@ -181,8 +183,9 @@ router.get('/*', (req: Request, res: Response, next: Function) => {
     // VTID-01230-FIX: img-src allows Supabase storage (avatar_url) and data: URIs.
     // style-src allows inline styles (app.js uses .style.cssText everywhere).
     // Without this, avatars were blocked and many render functions threw CSP errors.
-    const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseDomain = supabaseUrl ? new URL(supabaseUrl).origin : '';
+    // VTID-05023 R1(b): the browser loads avatars from the PUBLIC Supabase
+    // origin, not the gateway's internal SUPABASE_URL proxy.
+    const supabaseDomain = getSupabasePublicOrigin() || '';
     res.setHeader('Content-Security-Policy',
       `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; connect-src 'self' https://*.livekit.cloud wss://*.livekit.cloud; img-src 'self' ${supabaseDomain} https: data: blob:; media-src 'self' data:`);
     const htmlPath = path.join(__dirname, '../frontend/command-hub/index.html');

@@ -160,6 +160,11 @@ VTID_ALLOCATOR_ENABLED=true|false
 ### Optional
 ```bash
 NODE_ENV=production|development|test
+# VTID-05023 R1(b): public Supabase base for every URL the gateway hands outward
+# (storage public/signed URLs, GET /auth/config, Command Hub CSP). Defaults to
+# SUPABASE_URL. Must be set to https://<project>.supabase.co once SUPABASE_URL
+# is repointed to the internal PostgREST-Aurora proxy (src/lib/supabase-public-url.ts).
+SUPABASE_PUBLIC_URL=https://xxx.supabase.co
 # Command Hub PUBLISH-button frontend promotion (exafyltd/vitana-v1). Without it,
 # gateway still publishes; response reports frontend_promote.ok=false.
 FRONTEND_DEPLOY_TOKEN=<PAT with actions:write on exafyltd/vitana-v1>
