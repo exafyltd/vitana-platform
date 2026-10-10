@@ -452,6 +452,9 @@ describe('parked workspaces (VTID-05064)', () => {
     expect(fs.readFileSync(path.join(dir, 'repo-a', 'a.txt'), 'utf8')).toBe('edited\n');
     expect(fs.existsSync(path.join(dir, PARK_MARKER))).toBe(false);
     expect(parkedCount()).toBe(0);
+    // Nothing leaks into the next test: close and wait for the re-park.
+    s2.ws.close(); other.ws.close();
+    await waitFor(() => fs.existsSync(path.join(dir, PARK_MARKER)));
   });
 
   it('a clean workspace is removed as before', async () => {
@@ -470,6 +473,8 @@ describe('parked workspaces (VTID-05064)', () => {
     s.ws.send(JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'session/prompt', params: { sessionId: 'S1', prompt: [{ type: 'text', text: 'hello' }] } }));
     await waitFor(() => s.frames.some((f) => f.id === 7));
     expect(s.runner).toContainEqual({ kiro_runner: 'workspace_state', dirty: ['repo-a'] });
+    s.ws.close();
+    await waitFor(() => fs.existsSync(path.join(dir, PARK_MARKER)));
   });
 
   it('a revoked key removes that user’s parked workspace', async () => {
@@ -477,7 +482,7 @@ describe('parked workspaces (VTID-05064)', () => {
     const dir = await sessionDir(s);
     repoIn(dir, true);
     s.ws.close();
-    await waitFor(() => parkedCount() === 1);
+    await waitFor(() => fs.existsSync(path.join(dir, PARK_MARKER)));
     await http('DELETE', `/keys/${U1}`);
     await waitFor(() => !fs.existsSync(dir));
     expect(takeParked(U1, 'thread-e')).toBeNull();
