@@ -7,6 +7,7 @@
     "services/gateway/src/routes/connected-apps.ts",
     "services/gateway/package.json",
     "services/gateway/package-lock.json",
+    "services/gateway/pnpm-lock.yaml",
     "services/gateway/test/vtid-05057-*.test.ts",
     "services/gateway/test/routes/connected-apps.test.ts",
     "supabase/migrations/20261010160000_vtid_05057_contacts_phone_matching.sql",
