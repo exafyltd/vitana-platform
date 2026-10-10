@@ -6,7 +6,8 @@
     "check": "echo ok",
     "test:proxy-routing": "bash services/postgrest-aurora-proxy/test/routing.sh",
     "test:aurora-parity": "python3 -m unittest discover -s scripts/aws/test -p 'test_*.py'",
-    "test:aurora-cron-outbox": "bash scripts/ci/test-vtid-05023-aurora-cron-outbox.sh"
+    "test:aurora-cron-outbox": "bash scripts/ci/test-vtid-05023-aurora-cron-outbox.sh",
+    "test:auth-bridge": "bash scripts/aws/test/auth-bridge.sh"
   },
   "devDependencies": {
     "prisma": "^6.18.0"

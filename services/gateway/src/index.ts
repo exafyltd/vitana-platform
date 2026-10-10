@@ -219,6 +219,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminCommunityMarketplaceRouter = require('./routes/admin-community-marketplace').default;
   // VTID-02000: Internal scheduler-authed sync trigger (shared secret, no user JWT)
   const internalMarketplaceSyncRouter = require('./routes/internal-marketplace-sync').default;
+  // VTID-05023 part 4: auth.users webhook -> Aurora provisioning (service token only)
+  const authBridgeRouter = require('./routes/auth-bridge').default;
   // VTID-02000: User limitations CRUD + impact counter
   const userLimitationsRouter = require('./routes/user-limitations').default;
   // VTID-02000: Wearables waitlist (Phase 0 stub — still works alongside Phase 1 connector flow)
@@ -1208,6 +1210,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // BOOTSTRAP-CMDHUB-I18N-OPS: i18n operations (locale status + workflow dispatch)
   mountRouterSync(app, '/api/v1/admin/i18n-ops', adminI18nOpsRouter, { owner: 'admin-i18n-ops' });
   mountRouterSync(app, '/api/v1/internal/marketplace', internalMarketplaceSyncRouter, { owner: 'marketplace-sync' });
+  mountRouterSync(app, '/api/v1/internal/auth-bridge', authBridgeRouter, { owner: 'auth-bridge' });
 
   // VTID-02000: User limitations + impact counter (user-facing /ecosystem/preferences)
   mountRouterSync(app, '/api/v1/user/limitations', userLimitationsRouter, { owner: 'user-limitations' });
@@ -1829,6 +1832,18 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ Outbound HTTP outbox worker initialization failed (non-fatal):', error);
+      }
+      // VTID-05023 part 4: auth -> Aurora bridge reconciliation (every 5 min).
+      // Off unless AUTH_BRIDGE_RECONCILE_ENABLED=true; never on staging.
+      try {
+        const { startAuthBridgeReconcileLoop } = require('./services/auth-bridge/auth-bridge-reconciler');
+        if (startAuthBridgeReconcileLoop()) {
+          console.log('🔁 Auth bridge reconciliation loop started (VTID-05023)');
+        } else {
+          console.log('⏸️ Auth bridge reconciliation loop disabled — set AUTH_BRIDGE_RECONCILE_ENABLED=true (production, after the cutover) to enable');
+        }
+      } catch (error) {
+        console.warn('⚠️ Auth bridge reconciliation loop initialization failed (non-fatal):', error);
       }
 
       // VTID-04338: default reminders for calendar entries — reconciles the

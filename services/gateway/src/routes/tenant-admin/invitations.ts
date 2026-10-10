@@ -17,6 +17,7 @@ import { getSupabase } from '../../lib/supabase';
 import { requireTenantAdmin } from '../../middleware/require-tenant-admin';
 import { requireAuth, AuthenticatedRequest } from '../../middleware/auth-supabase-jwt';
 import * as repo from '../../services/tenant-invitations/tenant-invitations-repository';
+import { ensureProvisioned } from '../../services/auth-bridge/auth-bridge';
 
 const router = Router({ mergeParams: true }); // mergeParams to access :tenantId from parent
 
@@ -168,6 +169,10 @@ acceptRouter.post('/accept/:token', requireAuth, async (req: AuthenticatedReques
     }
 
     const userId = req.identity!.user_id;
+
+    // VTID-05023 part 4: a brand-new member's app_users row (user_tenants FK)
+    // exists before the membership insert below.
+    await ensureProvisioned(userId);
 
     // Ensure user has a user_tenants row for this tenant.
     // .single() reports PGRST116 ("no rows") for the normal "not yet a

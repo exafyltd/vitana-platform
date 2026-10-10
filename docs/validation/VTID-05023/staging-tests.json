@@ -47,6 +47,18 @@
    "ref": "npx jest test/vtid-05023-outbound-http-worker.test.ts",
    "cwd": "services/gateway",
    "reason": "Part 6 outbox sender (services/gateway/src/services/outbound-http-worker.ts): claim, send, retry with backoff, final after 5 attempts, idempotency per row id, header-reference resolution from an allowlist, allowed destinations only, no secret in logs or last_error. The worker ships off (OUTBOUND_HTTP_WORKER_ENABLED unset, never on staging), so there is nothing to probe on staging; the /alive probe above proves the gateway still boots with the new wiring."
+  },
+  {
+   "kind": "existing",
+   "ref": "npx jest test/vtid-05023-auth-bridge-endpoint.test.ts test/vtid-05023-auth-bridge-reconciler.test.ts test/vtid-05023-auth-bridge-write-paths.test.ts",
+   "cwd": "services/gateway",
+   "reason": "Part 4 auth->Aurora bridge, gateway side. POST /api/v1/internal/auth-bridge/user-event has no member-visible staging behaviour and must not be exercised on staging (staging shares production's Supabase; every call writes). The suite proves the service-token gate (401 without/with a wrong token and whenever GATEWAY_SERVICE_TOKEN is unset), INSERT and confirm-UPDATE provisioning with active_tenant_id written back only when missing, other UPDATEs ignored, DELETE cleanup, idempotency and loud 500s; the reconciler (provisions missing users created since AUTH_BRIDGE_RECONCILE_SINCE, pages GoTrue to the end, cleans users deleted on Supabase only after a GoTrue 404, aborts on a failed page, caps deletions, off by default and never on staging); ensureProvisioned() (inert unless AUTH_BRIDGE_ENABLED=true, cached, never throws); and that the eight post-sign-up write paths await it before their first member write."
+  },
+  {
+   "kind": "existing",
+   "ref": "npm run test:auth-bridge",
+   "cwd": ".",
+   "reason": "Part 4 auth->Aurora bridge, Aurora side, on throwaway local Postgres (no staging database runs the bridge before the window): the real scripts/aws/aurora-cutover-auth-bridge.sql applied twice over Aurora's auth shim; ensure_provisioned() creates exactly the rows Supabase's six auth.users triggers create (verbatim copies, diffed row by row) and a second call creates nothing; the PostgREST db-pre-request hook is a no-op in a read-only (GET) transaction and for a null uid or service_role, an unprovisioned member's GET succeeds, their first write succeeds after the hook provisions (and fails on the app_users FK without it), service accounts are skipped, a provisioning failure never fails the request; deletion applies CASCADE / SET NULL / the contacts cleanup, reports NO ACTION rows, refuses an empty FK map and is idempotent; members cannot execute the service-role functions."
   }
  ]
 }
