@@ -1,0 +1,29 @@
+{
+  "vtid": "VTID-04770",
+  "execution_id": "f2541b54-8e07-4cd4-8d57-b514c5ebf5c8",
+  "finding_id": "605ceba8-cf72-40e7-9c36-934e08880a3a",
+  "plan_version": 1,
+  "branch": "dev-autopilot/f2541b54",
+  "base_branch": "main",
+  "llm": {
+    "provider": "bedrock",
+    "model": "eu.anthropic.claude-sonnet-4-6"
+  },
+  "ticket_number": null,
+  "files": [
+    {
+      "path": "services/gateway/src/services/voice-recurrence-sentinel.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/voice-recurrence-sentinel.test.ts",
+      "action": "modify"
+    },
+    {
+      "path": "docs/BEDROCK-TRANSPORT-MIGRATION-RUNBOOK.md",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-10-01T10:04:46.384Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}
