@@ -1,0 +1,70 @@
+ok   A: four triggers on user_tenants
+ok   A: every trigger carries the guard: CREATE TRIGGER founding_seat_on_primary_membership AFTER INSERT ON public.user_tenants FOR EACH ROW WHEN (((new.is_primary = true) AND (NOT membership_side_effects_suppressed()))) EXECUTE FUNCTION claim_founding_seat_on_membership()
+ok   A: timing unchanged
+ok   A: open_signup = {alkalma, maxina}
+ok   A: guard off by default
+ok   A: re-run is clean (still four triggers)
+ok   B: inserted 15 drifted memberships (15)
+ok   B: 0 side effects (welcome, seat, onboarding, live room) for the backfill
+ok   B: the 12 users without a primary got one
+ok   B: users who had a primary get a non-primary row
+ok   B: welcome_chat_sent = true for all 15
+ok   B: nobody else touched
+ok   B: orphaned memberships of deleted accounts left alone
+ok   B: inactive legacy membership not backfilled
+ok   B: drift snapshot = 15 + 2 orphans
+ok   B: bad claim reset to the primary tenant
+ok   B: bad claim without membership removed, other metadata kept
+ok   B: exafy_admin claim untouched
+ok   B: a claim made valid by the backfill is untouched
+ok   B: claims snapshot = 2
+ok   B: suppression setting gone after COMMIT
+ok   B: guard off after COMMIT
+ok   B: second run fails loudly (snapshot exists): relation "bak_s3_drift_20261010" already exists
+ok   B: failed re-run changed nothing
+ok   primary insert outside the fix-up fires all 4 side effects
+ok   primary insert with the transaction-local setting fires nothing
+ok   C: anon cannot execute
+ok   C: authenticated can execute
+ok   C: still SECURITY DEFINER
+ok   C: non-member -> closed tenant raises 42501 TENANT_NOT_JOINABLE
+ok   C: ...and wrote no membership
+ok   C: ...and did not move the claim
+ok   C: no auth.uid() raises 42501
+ok   C: unknown slug raises
+ok   C: new user joins alkalma (open signup)
+ok   C: first membership is primary, community
+ok   C: legacy membership written
+ok   C: role preference community
+ok   C: claim -> alkalma
+ok   C: a real new primary member fires the 4 side effects (intended)
+ok   C: one audit row
+ok   C: same user joins maxina
+ok   C: second membership is NOT primary
+ok   C: non-primary join fires nothing
+ok   C: claim -> maxina
+ok   C: repeat call succeeds
+ok   C: repeat call -> 0 rows updated in auth.users
+ok   C: repeat call -> 0 audit rows added
+ok   C: repeat call -> no membership rows added
+ok   C: existing member of a closed tenant switches
+ok   C: ...with one audit row (claim changed)
+ok   C: ...and no legacy membership written
+ok   C: exafy_admin switches to a tenant it is not a member of
+ok   C: ...without becoming a member
+ok   C: backfilled member switches to their tenant
+ok   rollback C: live body restored verbatim (raises on missing id, as before): record "tenant_record" has no field "id"
+ok   rollback C: anon grant restored
+ok   rollback B: exactly the 15 backfilled rows deleted
+ok   rollback B: memberships created later are kept
+ok   rollback B: welcome_chat_sent restored
+ok   rollback B: removed claim restored
+ok   rollback A: original WHEN restored
+ok   rollback A: helper dropped
+ok   rollback A: triggers fire unguarded again
+ok   B aborts when a drifted membership is in a closed tenant
+ok   ...and writes nothing
+ok   B aborts above 30 drifted memberships
+ok   B aborts when a real auth user would be left without a membership
+ok   B aborts above 50 bad claims
+ALL MIGRATION CHECKS PASSED
