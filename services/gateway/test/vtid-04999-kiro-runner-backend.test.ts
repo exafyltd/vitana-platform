@@ -182,3 +182,16 @@ describe('routes and guards (source check)', () => {
     expect(prod).toContain('http://kiro-runner-prod.vitana.internal:8080');
   });
 });
+
+describe('VTID-05064: runner status frames', () => {
+  it('are applied to the runner info and never reach the ACP stream', () => {
+    const { applyRunnerFrame } = jest.requireActual('../src/services/kiro/remote-backend');
+    const info = { workspace: null, dirty: null } as any;
+    expect(applyRunnerFrame('{"kiro_runner":"workspace","state":"restored"}', info)).toBe(true);
+    expect(info.workspace).toBe('restored');
+    expect(applyRunnerFrame('{"kiro_runner":"workspace_state","dirty":["vitana-platform",3]}', info)).toBe(true);
+    expect(info.dirty).toEqual(['vitana-platform']);
+    expect(applyRunnerFrame('{"jsonrpc":"2.0","id":1,"result":{}}', info)).toBe(false);
+    expect(applyRunnerFrame('{"kiro_runner":', info)).toBe(false);
+  });
+});

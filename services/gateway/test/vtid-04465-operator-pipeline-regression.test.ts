@@ -1377,6 +1377,92 @@ describe('Kiro thread memory: a reopened session gets the thread back (VTID-0501
 });
 
 // ---------------------------------------------------------------------------
+// VTID-05064: a Kiro turn the model cut off (stopReason 'refusal') is recorded
+// as 'refused', not 'ok'; the thread row exists as soon as the message is sent;
+// the next reopened session sees that reply labelled as cut off, gets the
+// session rules, and is told when unpushed edits of the last turn were lost.
+// ---------------------------------------------------------------------------
+describe('Kiro early stops and lost workspaces are visible (VTID-05064)', () => {
+  const THREAD = 'a5064000-0000-4000-8000-000000000001';
+  const prompts: any[] = [];
+  let stopReason = 'refusal';
+  let runner: { workspace: 'restored' | 'fresh' | null; dirty: string[] | null } = { workspace: 'fresh', dirty: ['vitana-platform'] };
+  let rowAtPrompt: Row | undefined;
+
+  function fakeKiro(): any {
+    const out = new EventEmitter();
+    const proc = new EventEmitter();
+    const send = (o: unknown) => out.emit('data', `${JSON.stringify(o)}\n`);
+    return {
+      runner,
+      stdout: out,
+      stdin: {
+        write: (line: string) => {
+          const msg = JSON.parse(line);
+          if (msg.method === 'initialize') send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1 } });
+          else if (msg.method === 'session/new') send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 'K5' } });
+          else if (msg.method === 'session/prompt') {
+            prompts.push(msg.params.prompt);
+            const row = platform.rows('operator_threads').find((t) => t.id === THREAD);
+            if (!rowAtPrompt && row) rowAtPrompt = { ...row };
+            send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'K5', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Let me look at the upload endpoint' } } } });
+            send({ jsonrpc: '2.0', id: msg.id, result: { stopReason } });
+          }
+          return true;
+        },
+        end: () => {},
+      },
+      kill() { proc.emit('exit'); },
+      on: (ev: string, cb: any) => proc.on(ev, cb),
+    };
+  }
+
+  beforeEach(() => {
+    prompts.length = 0;
+    rowAtPrompt = undefined;
+    stopReason = 'refusal';
+    runner = { workspace: 'fresh', dirty: ['vitana-platform'] };
+    Object.assign(process.env, { OPERATOR_THREADS_ENABLED: 'true', KIRO_ENGINE_ENABLED: 'true' });
+    setKiroBackend({ spawn: () => fakeKiro(), workspace: () => '/work/pipeline' });
+  });
+  afterEach(() => {
+    closeAllKiroSessions();
+    setKiroBackend(null);
+    delete process.env.OPERATOR_THREADS_ENABLED;
+    delete process.env.KIRO_ENGINE_ENABLED;
+  });
+
+  it('a refused turn is recorded as refused; the thread row existed before the turn ended; the next session is told', async () => {
+    const res = await request(app).post('/api/v1/operator/chat')
+      .set('Authorization', `Bearer ${await jwt(ADMIN_USER, true)}`)
+      .send({ message: 'enable paste of images', mode: 'chat', threadId: THREAD, engine: 'kiro' });
+    await platform.settle();
+    expect(res.status).toBe(200);
+    // Thread row created at send, before Kiro answered.
+    expect(rowAtPrompt).toBeDefined();
+    expect(rowAtPrompt!.turns).toBe(0);
+    // First prompt of the session: the rules, then the message.
+    expect(prompts[0][0].text).toContain('=== OPERATOR SESSION RULES');
+    const assistant = platform.rows('operator_messages').find((m) => m.thread_id === THREAD && m.role === 'assistant')!;
+    expect(assistant.meta).toMatchObject({ kiro_status: 'refused', stop_reason: 'refusal', kiro_workspace_dirty: ['vitana-platform'] });
+
+    // The session closes (idle); the runner starts the next one without the parked workspace.
+    closeAllKiroSessions();
+    stopReason = 'end_turn';
+    runner = { workspace: 'fresh', dirty: [] };
+    const res2 = await request(app).post('/api/v1/operator/chat')
+      .set('Authorization', `Bearer ${await jwt(ADMIN_USER, true)}`)
+      .send({ message: 'what is the status', mode: 'chat', threadId: THREAD });
+    await platform.settle();
+    expect(res2.status).toBe(200);
+    expect(prompts[1][0].text).toContain('You (Kiro): [this reply was cut off: refusal] Let me look at the upload endpoint');
+    const last = platform.rows('operator_messages').filter((m) => m.thread_id === THREAD && m.role === 'assistant').pop()!;
+    expect(last.meta).toMatchObject({ kiro_status: 'ok', kiro_workspace: 'lost' });
+    expect(platform.rows('oasis_events').some((e) => JSON.stringify(e).includes('operator.kiro.parked_workspace_lost'))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // VTID-05060: the developer picks the Kiro model (Auto or one from Kiro's own
 // drop-down). When the thread's Kiro session reopens, the REAL chat route
 // reads the last operator.kiro.model_selected pick from OASIS (fake database)

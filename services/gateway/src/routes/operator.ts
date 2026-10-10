@@ -35,7 +35,7 @@ import { processMessage } from '../services/ai-orchestrator';
 import { isOperatorRouteOn, recordOperatorRouteOutcome, runOperatorRoute } from '../services/jev/gates/operator-route-gate';
 // VTID-0536: Gemini Operator Tools Bridge
 import { processWithGemini, type OperatorTurnEventSink } from '../services/gemini-operator';
-import { getThreadEngine, getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn, listOperatorThreadMessages, listOperatorThreads } from '../services/operator-threads';
+import { ensureOperatorThread, getThreadEngine, getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn, listOperatorThreadMessages, listOperatorThreads } from '../services/operator-threads';
 import { runKiroTurn, cancelKiroTurn, closeKiroSession, isKiroEngineEnabled, openKiroSessionCount, listKiroModels, setKiroModel, type KiroHistoryMessage } from '../services/kiro/kiro-turn';
 import { getSupabase, supa } from '../services/dev-autopilot-execute'; // VTID-05060
 import { answerPermission } from '../services/kiro/permission-broker';
@@ -293,7 +293,13 @@ async function runKiroChatTurn(a: {
     if (!r.ok) return [];
     return r.messages
       .filter((m) => m.role === 'user' || m.role === 'assistant')
-      .map((m) => ({ role: m.role as 'user' | 'assistant', content: String(m.content ?? '') }));
+      .map((m) => {
+        // VTID-05064: how an assistant turn ended and whether it left unpushed edits.
+        const meta = (m.meta ?? {}) as Record<string, unknown>;
+        const stop = typeof meta.stop_reason === 'string' ? meta.stop_reason : null;
+        const dirty = Array.isArray(meta.kiro_workspace_dirty) ? (meta.kiro_workspace_dirty as unknown[]).filter((x): x is string => typeof x === 'string') : null;
+        return { role: m.role as 'user' | 'assistant', content: String(m.content ?? ''), ...(stop ? { stopReason: stop } : {}), ...(dirty ? { workspaceDirty: dirty } : {}) };
+      });
   };
   // VTID-05060: the developer's own last pick in Kiro's drop-down for this thread, from the
   // operator.kiro.model_selected event the model route already records (owner's own, newest).
@@ -314,6 +320,22 @@ async function runKiroChatTurn(a: {
     }).catch(() => {});
   }
 
+  // VTID-05064: the thread's parked workspace came back, or its unpushed edits are gone.
+  if (result.meta.kiro_workspace === 'restored' || result.meta.kiro_workspace === 'lost') {
+    const lost = result.meta.kiro_workspace === 'lost';
+    await emitOasisEvent({
+      vtid: 'VTID-05064',
+      type: lost ? 'operator.kiro.parked_workspace_lost' : 'operator.kiro.workspace_restored',
+      source: 'gateway-operator',
+      status: lost ? 'warning' : 'info',
+      message: lost ? 'Unpushed Kiro edits of this thread were lost (runner restarted or retention expired)' : 'Kiro reopened this thread\'s workspace with its unpushed edits',
+      actor_id: a.userId ?? undefined,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: { thread_id: a.threadId },
+    }).catch(() => {});
+  }
+
   if (isOperatorThreadsEnabled()) {
     recordOperatorTurn({
       threadId: a.threadId,
@@ -322,7 +344,14 @@ async function runKiroChatTurn(a: {
       reply: result.reply,
       tools: result.toolResults.map((tr) => ({ name: tr.name, result: JSON.stringify(tr.response ?? {}) })),
       engine: 'kiro',
-      meta: { conversation_id: a.conversation_id || null, request_id: a.requestId, engine: 'kiro', kiro_status: result.meta.kiro_status ?? null, ...(a.channel ? { channel: a.channel } : {}) },
+      meta: {
+        conversation_id: a.conversation_id || null, request_id: a.requestId, engine: 'kiro', kiro_status: result.meta.kiro_status ?? null,
+        // VTID-05064: kept so a later session can tell a cut-off reply and lost unpushed edits.
+        ...(result.meta.stop_reason ? { stop_reason: result.meta.stop_reason } : {}),
+        ...(result.meta.kiro_workspace ? { kiro_workspace: result.meta.kiro_workspace } : {}),
+        ...(Array.isArray(result.meta.kiro_workspace_dirty) ? { kiro_workspace_dirty: result.meta.kiro_workspace_dirty } : {}),
+        ...(a.channel ? { channel: a.channel } : {}),
+      },
     }).catch((err) => console.warn('[VTID-04975] kiro thread record failed:', err instanceof Error ? err.message : err));
   }
 
@@ -510,7 +539,14 @@ export async function runOperatorChatTurn(
     // VTID-04975: an existing thread keeps the engine it was created with; the
     // request's `engine` only picks it for a NEW thread. A Kiro thread leaves
     // here — everything below is the unchanged LLM path.
-    if (((await getThreadEngine(threadId)) ?? validation.data.engine ?? 'llm') === 'kiro') {
+    const threadEngine = (await getThreadEngine(threadId)) ?? validation.data.engine ?? 'llm';
+    // VTID-05064: the thread exists server-side from the moment the message is sent, so a
+    // reload while the first turn runs still lists it. Awaited (one upsert) so the row is there
+    // before the turn; never throws.
+    if (isOperatorThreadsEnabled()) {
+      await ensureOperatorThread({ threadId, identity: { user_id: callerIdentity?.user_id || null, role: geminiUserRole || null }, userText: message, engine: threadEngine === 'kiro' ? 'kiro' : undefined });
+    }
+    if (threadEngine === 'kiro') {
       return runKiroChatTurn({
         requestId, threadId, createdAt, message, attachments, mode, conversation_id,
         validatedVtid, userId: callerIdentity?.user_id ?? null, isAdmin: geminiUserRole === 'admin',

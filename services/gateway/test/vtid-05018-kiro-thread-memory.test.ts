@@ -15,6 +15,7 @@ import type { AcpChild } from '../src/services/kiro/acp-client';
 import {
   setKiroBackend, runKiroTurn, closeKiroSession, closeAllKiroSessions,
   restoredHistoryBlock, KIRO_HISTORY_MESSAGE_CHARS, KIRO_HISTORY_TOTAL_CHARS, type KiroHistoryMessage,
+  KIRO_SESSION_RULES, clipHistoryMessage, statusForStopReason, workspaceNoteFor,
 } from '../src/services/kiro/kiro-turn';
 
 function fakeChild(): AcpChild & { written: any[] } {
@@ -116,17 +117,21 @@ describe('runKiroTurn restores history only when it opens a new session', () => 
   });
 
   it('a failed or empty load does not break the turn', async () => {
+    // VTID-05064: a new session's first prompt still carries the session rules (and no history).
     const r1 = await runKiroTurn({ threadId: 't3', userId: 'u1', message: 'x', loadHistory: async () => { throw new Error('store down'); } }, ENV);
     expect(r1.meta.kiro_status).toBe('ok');
-    expect(prompts()[0]).toEqual([{ type: 'text', text: 'x' }]);
+    expect(prompts()[0]).toEqual([{ type: 'text', text: KIRO_SESSION_RULES }, { type: 'text', text: 'x' }]);
     const r2 = await runKiroTurn({ threadId: 't4', userId: 'u1', message: 'y', loadHistory: async () => [] }, ENV);
     expect(r2.meta.kiro_status).toBe('ok');
-    expect(prompts()[1]).toEqual([{ type: 'text', text: 'y' }]);
+    expect(prompts()[1]).toEqual([{ type: 'text', text: KIRO_SESSION_RULES }, { type: 'text', text: 'y' }]);
   });
 
   it('no loader (other callers): unchanged behaviour', async () => {
     await runKiroTurn({ threadId: 't5', userId: 'u1', message: 'z' }, ENV);
-    expect(prompts()[0]).toEqual([{ type: 'text', text: 'z' }]);
+    expect(prompts()[0]).toEqual([{ type: 'text', text: KIRO_SESSION_RULES }, { type: 'text', text: 'z' }]);
+    // Only the first prompt of the session carries them.
+    await runKiroTurn({ threadId: 't5', userId: 'u1', message: 'z2' }, ENV);
+    expect(prompts()[1]).toEqual([{ type: 'text', text: 'z2' }]);
   });
 });
 
@@ -138,5 +143,51 @@ describe('route wiring (source check)', () => {
     expect(fn).toMatch(/m\.role === 'user' \|\| m\.role === 'assistant'/);
     // VTID-05060 added loadModelPick after loadHistory; loadHistory must still be passed.
     expect(fn).toMatch(/runKiroTurn\(\{[^}]*\bloadHistory\b[^}]*\}\)/);
+  });
+});
+
+
+describe('VTID-05064: history keeps conclusions, marks cut-off replies, and Kiro gets session rules', () => {
+  it('a long message keeps its start AND its end, within the cap', () => {
+    const long = 'START ' + 'a'.repeat(5_000) + ' CONCLUSION: recommend option B';
+    const c = clipHistoryMessage(long);
+    expect(c.length).toBeLessThanOrEqual(KIRO_HISTORY_MESSAGE_CHARS);
+    expect(c.startsWith('START ')).toBe(true);
+    expect(c.endsWith('CONCLUSION: recommend option B')).toBe(true);
+    expect(c).toMatch(/\[\d+ chars omitted\]/);
+    expect(clipHistoryMessage('short')).toBe('short');
+  });
+
+  it('a reply that ended early is labelled in the restored block; the header says it is shortened', () => {
+    const b = restoredHistoryBlock([
+      { role: 'user', content: 'fix the paste' },
+      { role: 'assistant', content: 'Let me look at the upload endpoint', stopReason: 'refusal' },
+      { role: 'assistant', content: 'Done.', stopReason: 'end_turn' },
+    ])!;
+    expect(b.text).toContain('You (Kiro): [this reply was cut off: refusal] Let me look');
+    expect(b.text).toContain('You (Kiro): Done.');
+    expect(b.text).toContain('git status');
+  });
+
+  it('the rules forbid asking for a VTID and say what to do instead', () => {
+    expect(KIRO_SESSION_RULES).toMatch(/Never ask the user to give you a VTID/);
+    expect(KIRO_SESSION_RULES).toMatch(/offer to write that plan/);
+  });
+
+  it('stop reasons map to statuses', () => {
+    expect(statusForStopReason('end_turn')).toBe('ok');
+    expect(statusForStopReason('refusal')).toBe('refused');
+    expect(statusForStopReason('max_tokens')).toBe('incomplete');
+    expect(statusForStopReason('cancelled')).toBe('incomplete');
+  });
+
+  it('workspace note: restored, lost only when the last turn left unpushed edits', () => {
+    const dirtyHist: KiroHistoryMessage[] = [{ role: 'user', content: 'x' }, { role: 'assistant', content: 'edited', workspaceDirty: ['vitana-platform'] }];
+    const cleanHist: KiroHistoryMessage[] = [{ role: 'assistant', content: 'pushed', workspaceDirty: [] }];
+    expect(workspaceNoteFor({ workspace: 'restored', dirty: null }, dirtyHist)).toBe('restored');
+    expect(workspaceNoteFor({ workspace: 'fresh', dirty: null }, dirtyHist)).toBe('lost');
+    expect(workspaceNoteFor({ workspace: 'fresh', dirty: null }, cleanHist)).toBeNull();
+    expect(workspaceNoteFor(null, dirtyHist)).toBeNull();
+    expect(workspaceNoteFor({ workspace: null, dirty: null }, dirtyHist)).toBeNull();
   });
 });

@@ -14,7 +14,7 @@
  */
 import { EventEmitter } from 'events';
 import WebSocket from 'ws';
-import type { AcpChild } from './acp-client';
+import type { AcpChild, KiroRunnerInfo } from './acp-client';
 import { isKiroMcpEnabled, mintKiroMcpToken } from './kiro-mcp-token';
 import { KiroKeyMissingError, setKiroBackend, type KiroBackend, type KiroSpawnContext } from './kiro-turn';
 
@@ -33,11 +33,30 @@ function startFailure(code: number, reason: string): Error {
   return new Error(reason || `kiro-runner closed (${code})`);
 }
 
+/**
+ * VTID-05064: apply a runner status frame ({"kiro_runner": ...}) to `info`. Returns true when
+ * the frame was one (it is then kept out of the ACP stream), false for anything else.
+ */
+export function applyRunnerFrame(text: string, info: KiroRunnerInfo): boolean {
+  if (!text.startsWith('{"kiro_runner"')) return false;
+  let m: any;
+  try { m = JSON.parse(text); } catch { return false; }
+  if (!m || typeof m.kiro_runner !== 'string') return false;
+  if (m.kiro_runner === 'workspace' && (m.state === 'restored' || m.state === 'fresh')) info.workspace = m.state;
+  if (m.kiro_runner === 'workspace_state' && Array.isArray(m.dirty)) info.dirty = m.dirty.filter((x: unknown): x is string => typeof x === 'string').slice(0, 10);
+  return true;
+}
+
 /** Wrap an open runner socket as the child process AcpClient expects. */
-export function socketAsAcpChild(ws: WebSocket): AcpChild {
+export function socketAsAcpChild(ws: WebSocket, runner: KiroRunnerInfo = { workspace: null, dirty: null }): AcpChild {
   const stdout = new EventEmitter();
   const proc = new EventEmitter();
-  ws.on('message', (data, isBinary) => { if (!isBinary) stdout.emit('data', `${String(data)}\n`); });
+  ws.on('message', (data, isBinary) => {
+    if (isBinary) return;
+    const text = String(data);
+    if (applyRunnerFrame(text, runner)) return;
+    stdout.emit('data', `${text}\n`);
+  });
   ws.on('close', (code) => proc.emit('exit', code));
   ws.on('error', (err) => proc.emit('error', err));
   return {
@@ -52,6 +71,7 @@ export function socketAsAcpChild(ws: WebSocket): AcpChild {
     stdout: stdout as unknown as AcpChild['stdout'],
     kill: () => { try { ws.close(1000); } catch { /* closing */ } },
     on: (event, cb) => proc.on(event, cb),
+    runner,
   };
 }
 
@@ -75,12 +95,15 @@ export function createRemoteKiroBackend(cfg: RemoteBackendConfig): KiroBackend {
       let settled = false;
       const timer = setTimeout(() => { if (!settled) { settled = true; ws.terminate(); reject(new Error('kiro-runner did not start Kiro in time')); } }, OPEN_TIMEOUT_MS);
       timer.unref?.();
+      // VTID-05064: the runner's `workspace` frame comes before READY.
+      const runner: KiroRunnerInfo = { workspace: null, dirty: null };
       const onFirst = (data: WebSocket.RawData) => {
-        if (String(data) !== RUNNER_READY_FRAME) return;
+        const text = String(data);
+        if (text !== RUNNER_READY_FRAME) { applyRunnerFrame(text, runner); return; }
         settled = true;
         clearTimeout(timer);
         ws.off('message', onFirst);
-        resolve(socketAsAcpChild(ws));
+        resolve(socketAsAcpChild(ws, runner));
       };
       ws.on('message', onFirst);
       ws.once('close', (code, reason) => { if (!settled) { settled = true; clearTimeout(timer); reject(startFailure(code, String(reason))); } });

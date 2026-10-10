@@ -20,6 +20,7 @@ import { randomUUID } from 'crypto';
 import { StringDecoder } from 'string_decoder';
 import type { WebSocket } from 'ws';
 import type { RepoMirrors } from './repo-mirrors';
+import { dirtyRepos, park, takeParked, type ParkLimits } from './workspace-park';
 
 export const CLOSE = {
   normal: 1000,
@@ -34,6 +35,14 @@ export const CLOSE = {
 
 /** The first frame the runner sends once Kiro is started: the gateway waits for it. */
 export const READY_FRAME = JSON.stringify({ kiro_runner: 'ready' });
+/**
+ * VTID-05064: runner status frames, never JSON-RPC (no `jsonrpc`/`id`/`method`, so an
+ * older gateway's ACP client ignores them). `workspace` comes BEFORE the READY frame
+ * (an older gateway waits for READY and drops everything else until then);
+ * `workspace_state` comes right before each session/prompt response.
+ */
+export const workspaceFrame = (state: 'restored' | 'fresh') => JSON.stringify({ kiro_runner: 'workspace', state });
+export const workspaceStateFrame = (dirty: string[]) => JSON.stringify({ kiro_runner: 'workspace_state', dirty });
 
 export interface RelayLimits {
   idleMs: number;
@@ -52,6 +61,8 @@ export interface RelayOptions {
   mcp?: McpConfig | null;
   /** VTID-05006: shared repo mirrors; each session gets its own worktrees (never blocks the start). */
   mirrors?: RepoMirrors | null;
+  /** VTID-05064: keep a workspace with uncommitted work for the thread's next session (null = always remove). */
+  park?: ParkLimits | null;
   workRoot: string;
   limits: RelayLimits;
   kiroBin?: string;
@@ -119,10 +130,23 @@ export function rewriteCwd(line: string, dir: string, mcpServers: unknown[] = []
   return line;
 }
 
+/** VTID-05064: the JSON-RPC id of a session/prompt request, else null. */
+export function promptRequestId(line: string): string | null {
+  if (!line.includes('session/prompt')) return null;
+  try { const m = JSON.parse(line); return m && m.method === 'session/prompt' && m.id !== undefined ? String(m.id) : null; } catch { return null; }
+}
+
+/** VTID-05064: the id of a JSON-RPC response (result or error, no method), else null. */
+export function responseId(line: string): string | null {
+  try { const m = JSON.parse(line); return m && !m.method && m.id !== undefined && ('result' in m || 'error' in m) ? String(m.id) : null; } catch { return null; }
+}
+
 export function startRelay(o: RelayOptions): RelaySession {
   const log = o.log ?? ((m: string) => console.log(m));
   const id = randomUUID();
-  const dir = path.join(o.workRoot, id);
+  // VTID-05064: the thread's parked workspace (uncommitted edits from its last session), else a fresh one.
+  const reused = o.park ? takeParked(o.userId, o.threadId) : null;
+  const dir = reused ?? path.join(o.workRoot, id);
   fs.mkdirSync(path.join(dir, '.tmp'), { recursive: true, mode: 0o700 });
 
   const child: ChildProcess = (o.spawnImpl ?? nodeSpawn)(o.kiroBin ?? 'kiro-cli', ['acp'], {
@@ -138,6 +162,10 @@ export function startRelay(o: RelayOptions): RelaySession {
   let alive = true;
   let buf = '';
   let firstNoise = true;
+  // VTID-05064: ids of session/prompt requests; their responses are preceded by a workspace_state frame.
+  const promptIds = new Set<string>();
+  let outChain: Promise<void> = Promise.resolve();
+  const sendOut = (line: string) => { outChain = outChain.then(() => { if (!ended && o.ws.readyState === o.ws.OPEN) o.ws.send(line); }); };
 
   const end = (code: number, reason: string) => {
     if (ended) return;
@@ -150,8 +178,15 @@ export function startRelay(o: RelayOptions): RelaySession {
     const hard = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* gone */ } }, 5000);
     hard.unref?.();
     try { if (o.ws.readyState === o.ws.OPEN) o.ws.close(code, reason); } catch { /* closing */ }
-    fs.rm(dir, { recursive: true, force: true }, () => {});
     log(`[kiro-runner] session ${id} ended (${code} ${reason})`);
+    // VTID-05064: uncommitted work survives the session (never on a revoked key).
+    const keep = o.park && reason !== 'kiro_key_revoked' ? o.park : null;
+    if (!keep) { fs.rm(dir, { recursive: true, force: true }, () => {}); return; }
+    void dirtyRepos(dir).then((dirty) => {
+      if (dirty.length === 0) { fs.rm(dir, { recursive: true, force: true }, () => {}); return; }
+      park(dir, o.userId, o.threadId, keep, log);
+      log(`[kiro-runner] session ${id} parked its workspace (uncommitted: ${dirty.join(', ')})`);
+    });
   };
 
   const touch = () => {
@@ -186,7 +221,16 @@ export function startRelay(o: RelayOptions): RelaySession {
       }
       if (o.ws.bufferedAmount > o.limits.maxBufferedBytes) { end(CLOSE.tooBig, 'kiro_gateway_too_slow'); return; }
       touch();
-      o.ws.send(line);
+      const promptId = promptIds.size > 0 ? responseId(line) : null;
+      if (promptId !== null && promptIds.delete(promptId)) {
+        // VTID-05064: tell the gateway, before the turn ends, whether this workspace holds unpushed edits.
+        outChain = outChain.then(async () => {
+          const dirty = await dirtyRepos(dir);
+          if (!ended && o.ws.readyState === o.ws.OPEN) { o.ws.send(workspaceStateFrame(dirty)); o.ws.send(line); }
+        });
+      } else {
+        sendOut(line);
+      }
     }
     if (Buffer.byteLength(buf) > o.limits.maxLineBytes) end(CLOSE.tooBig, 'kiro_line_too_long');
   });
@@ -198,7 +242,10 @@ export function startRelay(o: RelayOptions): RelaySession {
     if (isBinary || ended) return;
     touch();
     alive = true;
-    child.stdin?.write(`${rewriteCwd(String(data), dir, servers)}\n`);
+    const text = String(data);
+    const pid = promptRequestId(text);
+    if (pid !== null) promptIds.add(pid);
+    child.stdin?.write(`${rewriteCwd(text, dir, servers)}\n`);
   });
   o.ws.on('close', () => end(CLOSE.normal, 'gateway_closed'));
   o.ws.on('error', () => end(CLOSE.normal, 'gateway_error'));
@@ -206,8 +253,9 @@ export function startRelay(o: RelayOptions): RelaySession {
   const session: RelaySession = { id, userId: o.userId, threadId: o.threadId, stop: end };
   sessions.set(id, session);
   touch();
+  o.ws.send(workspaceFrame(reused ? 'restored' : 'fresh'));
   o.ws.send(READY_FRAME);
-  log(`[kiro-runner] session ${id} started for thread ${o.threadId.slice(0, 64)}`);
+  log(`[kiro-runner] session ${id} started for thread ${o.threadId.slice(0, 64)}${reused ? ' (parked workspace restored)' : ''}`);
   return session;
 }
 

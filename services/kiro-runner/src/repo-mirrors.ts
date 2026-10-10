@@ -90,6 +90,7 @@ export class RepoMirrors {
       const target = path.join(sessionDir, r.name);
       try {
         if (!fs.existsSync(sessionDir)) return; // the session already ended
+        if (fs.existsSync(target)) return; // VTID-05064: a reused (parked) workspace keeps its own checkout
         await git(['worktree', 'add', '--detach', target, 'origin/main'], this.mirrorDir(r.name));
         added.push(r.name);
       } catch (e) {

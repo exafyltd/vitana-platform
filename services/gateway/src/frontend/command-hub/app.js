@@ -659,6 +659,8 @@ function buildOperatorChatContext(history) {
     // Iterate from end (newest) to beginning (oldest)
     for (var i = history.length - 1; i >= 0 && context.length < MAX_MESSAGES; i--) {
         var msg = history[i];
+        // VTID-05064: a persisted error line is console UI, not a model turn.
+        if (msg.isError) continue;
         var content = msg.content || '';
 
         // Check if adding this message would exceed character limit
@@ -793,6 +795,22 @@ function touchActiveOperatorThread() {
 }
 
 /**
+ * VTID-05064: a turn finished in a thread that is no longer on screen. Its
+ * entries go into THAT thread's stored history (the same storage
+ * switchOperatorThread() restores from); the thread on screen is untouched.
+ */
+function appendToStoredOperatorThread(threadId, entries) {
+    var thread = (state.operatorThreads || []).find(function (t) { return t.id === threadId; });
+    if (!thread) return; // deleted while the turn ran — nothing to write back into
+    var history = getOperatorThreadHistory(threadId);
+    (entries || []).forEach(function (e) { if (e) history.push(e); });
+    saveOperatorThreadHistory(threadId, history);
+    thread.updatedAt = Date.now();
+    if (thread.title === 'New conversation') thread.title = deriveOperatorThreadTitle(history);
+    saveOperatorThreadsIndex(state.operatorThreads);
+}
+
+/**
  * Create a new, empty conversation thread and make it active. This is the
  * "New conversation" action clearOperatorChatSession() (VTID-01027) was
  * written for but never wired to any UI element — it now runs as part of
@@ -840,58 +858,146 @@ function notifyOrbOperatorThread() {
 }
 
 /**
- * VTID-04309: pull voice turns recorded server-side for the active thread
- * into the console transcript (and its saved history), newest after the
- * last one already merged. Called after each voice turn, when a voice
- * session ends, and when a thread is opened. Never throws.
+ * VTID-05064: the key a local transcript entry and a server message are
+ * matched on when the local entry carries no server id yet: role + the
+ * first 500 characters of the whitespace-normalised content. Never a
+ * timestamp — local ts is the browser's Date.now(), and the server may clip
+ * long content (operator-threads.ts clipMessage, 6,000 chars).
  */
-var _operatorVoiceSyncInFlight = false;
+var OPERATOR_MESSAGE_MATCH_CHARS = 500;
+function normalizeOperatorMessageText(content) {
+    return String(content || '').replace(/\s+/g, ' ').trim();
+}
+function operatorMessageMatchKey(role, content) {
+    return role + ':' + normalizeOperatorMessageText(content).slice(0, OPERATOR_MESSAGE_MATCH_CHARS);
+}
+
+/**
+ * VTID-05064: pure merge of a thread's server transcript into its local
+ * history. Server user/assistant rows already present locally — by stored
+ * server id, else by operatorMessageMatchKey() — are not added again; a local
+ * entry matched by content gets the server id stored on it, so the next sync
+ * matches it by id. Each local entry matches at most one server row. A local
+ * reply may also carry lines the console appended after the server's text
+ * (the "Task created" confirmation), so a local entry whose normalised
+ * content STARTS WITH the server's first 500 characters matches too. Missing
+ * rows are appended in server order. Mutates and returns `history`.
+ */
+function mergeServerOperatorMessages(history, serverMessages) {
+    var local = history || [];
+    var knownIds = {};
+    local.forEach(function (h) { if (h && h.serverMessageId) knownIds[h.serverMessageId] = true; });
+    var pool = local.filter(function (h) {
+        return h && !h.serverMessageId && !h.isError && (h.role === 'user' || h.role === 'assistant');
+    });
+    var added = [];
+    var matched = 0;
+    (serverMessages || []).forEach(function (m) {
+        if (!m || !m.id || knownIds[m.id]) return;
+        if ((m.role !== 'user' && m.role !== 'assistant') || !m.content) return;
+        var key = operatorMessageMatchKey(m.role, m.content);
+        var head = normalizeOperatorMessageText(m.content).slice(0, OPERATOR_MESSAGE_MATCH_CHARS);
+        var idx = -1;
+        for (var i = 0; i < pool.length; i++) {
+            if (operatorMessageMatchKey(pool[i].role, pool[i].content) === key) { idx = i; break; }
+        }
+        if (idx === -1 && head) {
+            for (var j = 0; j < pool.length; j++) {
+                if (pool[j].role === m.role && normalizeOperatorMessageText(pool[j].content).indexOf(head) === 0) { idx = j; break; }
+            }
+        }
+        knownIds[m.id] = true;
+        if (idx !== -1) {
+            pool[idx].serverMessageId = m.id;
+            pool[idx].serverCreatedAt = m.created_at;
+            pool.splice(idx, 1);
+            matched++;
+            return;
+        }
+        var channel = m.meta && m.meta.channel ? m.meta.channel : undefined;
+        var entry = {
+            role: m.role,
+            content: m.content,
+            ts: Date.parse(m.created_at) || Date.now(),
+            channel: channel,
+            serverMessageId: m.id,
+            serverCreatedAt: m.created_at,
+            kiroMeta: kiroReplyMeta(m.meta)
+        };
+        local.push(entry);
+        added.push(entry);
+    });
+    return { history: local, added: added, matched: matched };
+}
+
+/**
+ * VTID-04309 / VTID-05064: pull the active thread's server transcript into
+ * the console (and its saved history). Since VTID-05064 this merges EVERY
+ * user/assistant row the server has and the browser does not — typed turns
+ * from another device or tab, voice turns (channel voice / voice_delegate,
+ * VTID-04310) — matched per mergeServerOperatorMessages(). The name is kept
+ * for its existing callers. The first sync of a thread in this page load
+ * reads the whole transcript (paged — the route returns at most 200 rows
+ * oldest-first); later ones read only rows newer than the newest server row
+ * already merged. Called after each voice turn, when a voice session ends,
+ * on every thread open and once after page load. Skipped while this
+ * thread's own turn is in flight (its reply is appended by sendChatMessage).
+ * Never throws.
+ */
+var OPERATOR_THREAD_MESSAGES_PAGE = 200;
+var _operatorThreadSyncInFlight = {};
+var _operatorThreadFullySynced = {};
 async function syncOperatorVoiceTurns() {
     var threadId = state.operatorActiveThreadId;
-    if (!threadId || _operatorVoiceSyncInFlight || !state.authToken) return;
-    _operatorVoiceSyncInFlight = true;
+    if (!threadId || _operatorThreadSyncInFlight[threadId] || !state.authToken) return;
+    if (state.chatSending && state.chatTurnThreadId === threadId) return;
+    _operatorThreadSyncInFlight[threadId] = true;
     try {
-        var history = state.operatorChatHistory || [];
-        var seen = {};
-        var lastVoiceIso = null;
-        history.forEach(function (h) {
-            if (h.serverMessageId) seen[h.serverMessageId] = true;
-            if (h.serverCreatedAt && (!lastVoiceIso || h.serverCreatedAt > lastVoiceIso)) lastVoiceIso = h.serverCreatedAt;
-        });
-        var url = '/api/v1/operator/threads/' + encodeURIComponent(threadId) + '/messages'
-            + (lastVoiceIso ? '?since=' + encodeURIComponent(lastVoiceIso) : '');
-        var res = await fetch(url, { headers: buildContextHeaders({}) });
-        if (!res.ok) return;
-        var body = await res.json();
-        if (threadId !== state.operatorActiveThreadId) return; // user switched meanwhile
-        var added = 0;
-        (body.messages || []).forEach(function (m) {
-            // voice = spoken turns; voice_delegate = the Operator turn the
-            // voice assistant handed a request to (VTID-04310).
-            var channel = m && m.meta ? m.meta.channel : null;
-            if (!m || seen[m.id] || (channel !== 'voice' && channel !== 'voice_delegate')) return;
-            if (m.role !== 'user' && m.role !== 'assistant') return;
-            var ts = Date.parse(m.created_at) || Date.now();
-            history.push({ role: m.role, content: m.content, ts: ts, channel: channel, serverMessageId: m.id, serverCreatedAt: m.created_at });
-            state.chatMessages.push({
-                type: m.role === 'user' ? 'user' : 'system',
-                content: m.content,
-                timestamp: new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-                ts: ts,
-                channel: channel
+        var since = null;
+        if (_operatorThreadFullySynced[threadId]) {
+            (state.operatorChatHistory || []).forEach(function (h) {
+                if (h && h.serverCreatedAt && (!since || h.serverCreatedAt > since)) since = h.serverCreatedAt;
             });
-            added++;
+        }
+        var serverMessages = [];
+        for (var page = 0; page < 10; page++) {
+            var url = '/api/v1/operator/threads/' + encodeURIComponent(threadId) + '/messages'
+                + (since ? '?since=' + encodeURIComponent(since) : '');
+            var res = await fetch(url, { headers: buildContextHeaders({}) });
+            if (!res.ok) return;
+            var body = await res.json();
+            var batch = Array.isArray(body.messages) ? body.messages : [];
+            serverMessages = serverMessages.concat(batch);
+            if (batch.length < OPERATOR_THREAD_MESSAGES_PAGE || !batch[batch.length - 1].created_at) break;
+            since = batch[batch.length - 1].created_at;
+        }
+        if (threadId !== state.operatorActiveThreadId) return; // user switched meanwhile
+        if (state.chatSending && state.chatTurnThreadId === threadId) return; // a turn started meanwhile
+        _operatorThreadFullySynced[threadId] = true;
+        var history = state.operatorChatHistory || [];
+        var merged = mergeServerOperatorMessages(history, serverMessages);
+        merged.added.forEach(function (h) {
+            state.chatMessages.push({
+                type: h.role === 'user' ? 'user' : 'system',
+                content: h.content,
+                timestamp: new Date(h.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                ts: h.ts,
+                channel: h.channel,
+                meta: h.kiroMeta
+            });
         });
-        if (added > 0) {
+        if (merged.added.length > 0 || merged.matched > 0) {
             state.operatorChatHistory = history;
             saveOperatorThreadHistory(threadId, history);
+        }
+        if (merged.added.length > 0) {
             touchActiveOperatorThread();
             renderApp();
         }
     } catch (e) {
-        console.warn('[VTID-04309] voice turn sync failed:', e);
+        console.warn('[VTID-05064] thread transcript sync failed:', e);
     } finally {
-        _operatorVoiceSyncInFlight = false;
+        _operatorThreadSyncInFlight[threadId] = false;
     }
 }
 
@@ -1043,13 +1149,15 @@ function switchOperatorThread(threadId) {
             ts: msg.ts,
             followExecIds: msg.followExecIds,
             channel: msg.channel,
-            meta: msg.kiroMeta
+            meta: msg.kiroMeta,
+            isError: msg.isError // VTID-05064: a failed turn's error line is persisted too
         };
     });
     reattachFollowedExecutions(state.chatMessages);
     notifyOrbOperatorThread();
     renderApp();
     // VTID-04437: an empty local history means the thread lives server-side.
+    // VTID-05064: otherwise merge every server turn this browser has not seen.
     if (history.length === 0) loadOperatorThreadFromServer(thread.id);
     else syncOperatorVoiceTurns();
 }
@@ -1378,6 +1486,15 @@ function renderOperatorThreadRow(thread) {
     const meta = document.createElement('div');
     meta.className = 'chat-session-row-meta';
     meta.textContent = formatRelativeTime(thread.updatedAt);
+    // VTID-05064: the console's one running turn is in this thread.
+    if (state.chatSending && state.chatTurnThreadId === thread.id) {
+        const running = document.createElement('span');
+        running.className = 'chat-thread-running';
+        running.setAttribute('role', 'status');
+        running.setAttribute('aria-label', 'Turn running');
+        running.title = 'A turn is running in this thread';
+        meta.appendChild(running);
+    }
     if (operatorThreadEngine(thread) === 'kiro') {
         const tag = document.createElement('span');
         tag.className = 'chat-engine-tag';
@@ -1507,7 +1624,10 @@ function initOperatorChatSession() {
                 content: msg.content,
                 timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
                 ts: msg.ts,
-                followExecIds: msg.followExecIds
+                followExecIds: msg.followExecIds,
+                channel: msg.channel,
+                meta: msg.kiroMeta, // VTID-05064: Kiro badge / stopped-early marker survive a reload
+                isError: msg.isError
             };
         });
         // VTID-04104: a page reload landing on a thread with a still-running
@@ -1516,6 +1636,8 @@ function initOperatorChatSession() {
         reattachFollowedExecutions(state.chatMessages);
         console.log('[VTID-03822] Restored', history.length, 'messages from thread', active.id);
     }
+    // VTID-05064: once after page load, merge the server turns this browser has not seen.
+    syncOperatorVoiceTurns();
 }
 
 /**
@@ -4002,6 +4124,7 @@ const state = {
     chatInputValue: '',
     chatAttachments: [], // Array of { oasis_ref, kind, name }
     chatSending: false,
+    chatTurnThreadId: null, // VTID-05064: the thread the in-flight turn was sent in (one running turn per console); null when idle
     chatLiveTranscript: [], // VTID-04028: tool.call/tool.result frames of the turn in flight
     chatLiveModelTurns: [], // VTID-04028: model.turn frames of the turn in flight
     operatorExecFollow: {}, // VTID-04033: { [execution_id]: { es, steps, terminal, streamError, error, tool } } — executions the console follows after queueing them
@@ -23640,7 +23763,7 @@ function renderOperatorChat() {
             // plain text — replies routinely come back with markdown, which
             // rendered as a wall of literal asterisks/backticks before this.
             bubble.appendChild(renderManualMarkdown(msg.content || msg.text || ''));
-            messages.appendChild(bubble);
+            appendReplyWithKiroNotices(messages, bubble, isSent ? null : msg); // VTID-05064
 
             // VTID-03822: surface which tools ran on this turn (already present
             // on the message object since sendChatMessage's response handling —
@@ -23751,8 +23874,12 @@ function renderOperatorChat() {
 
     // VTID-04028: while a streamed turn runs, show its tool-call transcript
     // live under the transcript (replaces the bare "Sending..." wait).
-    if (state.chatSending) {
+    // VTID-05064: only in the thread the turn runs in; any other thread shows
+    // a one-line pointer to it instead.
+    if (state.chatSending && state.operatorActiveThreadId === state.chatTurnThreadId) {
         messages.appendChild(renderOperatorLiveTranscript());
+    } else if (state.chatSending && state.chatTurnThreadId) {
+        messages.appendChild(renderChatTurnElsewhereBanner());
     }
 
     container.appendChild(messages);
@@ -23943,6 +24070,10 @@ function parseSseFrames(buffer) {
 // already uses for polling (VTID-01151's updateApprovalsBadge) — mutate
 // only the one DOM node that actually changed.
 function updateOperatorLiveTranscriptDom() {
+    // VTID-05064: the turn runs in a thread that is not on screen — its frames
+    // keep accumulating in state, but there is no live transcript to update
+    // (and a full renderApp() per streamed frame would be wasted work).
+    if (state.chatTurnThreadId && state.operatorActiveThreadId !== state.chatTurnThreadId) return;
     var existing = document.querySelector('.chat-tool-activity--live');
     if (!existing) {
         // Not mounted yet (first frame of the turn) — do one real render so
@@ -24031,6 +24162,10 @@ async function requestOperatorTurn(payload) {
     state.chatLiveModelTurns = [];
     resetKiroLiveTranscript();
     // VTID-05006: while a Kiro turn runs, its write requests wait on an Allow/Deny here.
+    // VTID-05064: this runs synchronously from sendChatMessage() right after it
+    // set state.chatTurnThreadId = state.operatorActiveThreadId (no await in
+    // between), so the active id here IS the turn's thread. The poll captures
+    // it once and keeps polling that thread if the user switches away.
     if (activeOperatorEngine() === 'kiro') startKiroConfirmationPoll(state.operatorActiveThreadId);
     try {
         return await streamOperatorTurn(payload);
@@ -24413,7 +24548,44 @@ async function waitForKiroDefault() {
 /** VTID-05003: the part of a reply's meta the fallback action and Kiro badge need, persisted with history. */
 function kiroReplyMeta(meta) {
     if (!meta || meta.engine !== 'kiro') return undefined;
-    return { engine: 'kiro', kiro_status: meta.kiro_status || null, kiro_model: meta.kiro_model || null };
+    var kept = { engine: 'kiro', kiro_status: meta.kiro_status || null, kiro_model: meta.kiro_model || null };
+    // VTID-05064: why Kiro stopped early, and whether earlier uncommitted edits were lost — only when present.
+    if (meta.stop_reason && KIRO_STOPPED_EARLY_STATUSES[meta.kiro_status]) kept.stop_reason = String(meta.stop_reason);
+    if (meta.kiro_workspace === 'lost') kept.kiro_workspace = 'lost';
+    return kept;
+}
+
+/** VTID-05064: a Kiro reply that ended before Kiro finished the work. */
+var KIRO_STOPPED_EARLY_STATUSES = { refused: true, incomplete: true };
+function renderKiroStoppedEarly(msg) {
+    if (!msg || !msg.meta || msg.meta.engine !== 'kiro' || !KIRO_STOPPED_EARLY_STATUSES[msg.meta.kiro_status]) return null;
+    var el = document.createElement('div');
+    el.className = 'kiro-stopped-early';
+    el.textContent = 'Kiro stopped early: ' + (msg.meta.stop_reason || msg.meta.kiro_status);
+    return el;
+}
+
+/**
+ * VTID-05064: appends a transcript bubble with its Kiro notices — the
+ * workspace-lost notice above the reply, the stopped-early marker under it.
+ * `msg` is null for a sent (user) bubble, which never carries either.
+ */
+function appendReplyWithKiroNotices(messages, bubble, msg) {
+    var lost = renderKiroWorkspaceLost(msg);
+    if (lost) messages.appendChild(lost);
+    messages.appendChild(bubble);
+    var stopped = renderKiroStoppedEarly(msg);
+    if (stopped) messages.appendChild(stopped);
+}
+
+/** VTID-05064: the runner lost this thread's earlier uncommitted Kiro edits. */
+function renderKiroWorkspaceLost(msg) {
+    if (!msg || !msg.meta || msg.meta.engine !== 'kiro' || msg.meta.kiro_workspace !== 'lost') return null;
+    var el = document.createElement('div');
+    el.className = 'kiro-workspace-lost';
+    el.setAttribute('role', 'note');
+    el.textContent = 'Earlier uncommitted Kiro edits in this thread were lost (runner restarted or retention expired).';
+    return el;
 }
 
 /** VTID-05003: the gateway's default engine for new threads (Kiro while this user's Kiro Power seat can serve). */
@@ -24469,7 +24641,8 @@ function applyKiroTurnFrame(frame) {
         live.permissions.push({ id: d.request_id, title: d.title || 'A tool', kind: d.kind, expires_at: d.expires_at, answer: null });
     } else {
         // VTID-04984: after a turn, re-read Kiro's model list (the session may be new).
-        if (frame.event === 'kiro.turn_end' && state.kiroModels) delete state.kiroModels[state.operatorActiveThreadId];
+        // VTID-05064: the turn's own thread, which may no longer be on screen.
+        if (frame.event === 'kiro.turn_end' && state.kiroModels) delete state.kiroModels[state.chatTurnThreadId || state.operatorActiveThreadId];
         return;
     }
     updateOperatorLiveTranscriptDom();
@@ -24548,9 +24721,11 @@ async function answerKiroPermission(requestId, allow) {
 }
 
 async function stopKiroTurn() {
-    if (!state.operatorActiveThreadId) return;
+    // VTID-05064: cancel the running turn's thread, not whichever thread is on screen.
+    var turnThreadId = state.chatTurnThreadId || state.operatorActiveThreadId;
+    if (!turnThreadId) return;
     try {
-        await fetch('/api/v1/operator/kiro/sessions/' + encodeURIComponent(state.operatorActiveThreadId) + '/cancel', {
+        await fetch('/api/v1/operator/kiro/sessions/' + encodeURIComponent(turnThreadId) + '/cancel', {
             method: 'POST', headers: buildContextHeaders({})
         });
     } catch (e) {
@@ -24956,6 +25131,26 @@ function appendKiroLiveTranscript(wrap) {
     wrap.appendChild(stop);
 }
 
+/**
+ * VTID-05064: shown in place of the live transcript on any thread other than
+ * the one the console's running turn belongs to. Clicking opens that thread.
+ * Admin console text, English by design (same as the other Kiro strings).
+ */
+function renderChatTurnElsewhereBanner() {
+    var turnThreadId = state.chatTurnThreadId;
+    var thread = (state.operatorThreads || []).find(function (t) { return t.id === turnThreadId; });
+    var title = (thread && thread.title) || 'another conversation';
+    var banner = document.createElement('button');
+    banner.type = 'button';
+    banner.className = 'chat-turn-elsewhere';
+    // An Operator (non-Kiro) thread's turn is named as such rather than as Kiro.
+    var who = thread && operatorThreadEngine(thread) !== 'kiro' ? 'The Operator' : 'Kiro';
+    banner.textContent = who + ' is working in “' + title + '” — open it';
+    banner.title = 'Open the conversation with the running turn';
+    banner.onclick = function () { switchOperatorThread(turnThreadId); };
+    return banner;
+}
+
 function renderOperatorLiveTranscript() {
     var wrap = document.createElement('div');
     wrap.className = 'chat-tool-activity chat-tool-activity--live';
@@ -25118,6 +25313,10 @@ async function sendChatMessage() {
     state.chatInputValue = '';
     state.chatAttachments = [];
     state.chatSending = true;
+    // VTID-05064: the reply (or error) belongs to the thread it was sent in,
+    // even if another thread is on screen when it arrives.
+    state.chatTurnThreadId = state.operatorActiveThreadId;
+    var turnThreadId = state.chatTurnThreadId;
     renderApp();
 
     // VTID-0526-D: Scroll to bottom after user message (safe - typing flag is reset)
@@ -25165,6 +25364,9 @@ async function sendChatMessage() {
         // VTID-0537: Use the reply from the Gemini Operator Tools Bridge
         let replyContent = result.reply || 'No response received';
 
+        // VTID-05064: is the turn's thread still the one on screen?
+        var turnOnScreen = state.operatorActiveThreadId === turnThreadId;
+
         // VTID-0537: Check if a task was created via tools
         const hasCreatedTask = result.createdTask && result.createdTask.vtid;
 
@@ -25188,8 +25390,10 @@ async function sendChatMessage() {
                 vtid: createdVtid
             });
 
-            // VTID-01041: If title is placeholder, prompt user for title
-            if (needsTitlePrompt) {
+            // VTID-01041: If title is placeholder, prompt user for title.
+            // VTID-05064: only when the reply lands on screen — otherwise the
+            // next message typed in an unrelated thread would become the title.
+            if (needsTitlePrompt && turnOnScreen) {
                 // Store the VTID awaiting title input
                 state.pendingTitleVtid = createdVtid;
                 state.pendingTitleRetryCount = 0;
@@ -25214,8 +25418,15 @@ async function sendChatMessage() {
             followExecIds: turnFollowExecIds,
             kiroMeta: kiroReplyMeta(result.meta) // VTID-05003: keeps the fallback action across reloads
         };
+        // VTID-05064: the reply is saved into the thread the turn was sent in
+        // (turnThreadId). If the user has switched to another thread, only
+        // that thread's stored history changes — never the one on screen.
+        if (!turnOnScreen) {
+            appendToStoredOperatorThread(turnThreadId, [assistantHistoryEntry]);
+            return;
+        }
         state.operatorChatHistory.push(assistantHistoryEntry);
-        saveOperatorThreadHistory(state.operatorActiveThreadId, state.operatorChatHistory);
+        saveOperatorThreadHistory(turnThreadId, state.operatorChatHistory);
         touchActiveOperatorThread();
 
         state.chatMessages.push({
@@ -25241,22 +25452,37 @@ async function sendChatMessage() {
         console.error('[Operator] Chat error:', error);
         // VTID-01041: Explicit failure confirmation with emoji
         var errorContent = String.fromCodePoint(0x274C) + ' Task creation failed: ' + error.message;
-        state.chatMessages.push({
-            type: 'system',
-            content: errorContent,
-            timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-            ts: Date.now(),
-            isError: true
-        });
+        var errorTs = Date.now();
+        // VTID-05064: the error is persisted into the turn's own thread, so it
+        // is still there after a thread switch or reload (restored as isError;
+        // buildOperatorChatContext() leaves it out of the model's context).
+        var errorHistoryEntry = { role: 'assistant', content: errorContent, ts: errorTs, isError: true };
+        if (state.operatorActiveThreadId === turnThreadId) {
+            state.operatorChatHistory.push(errorHistoryEntry);
+            saveOperatorThreadHistory(turnThreadId, state.operatorChatHistory);
+            touchActiveOperatorThread();
+            state.chatMessages.push({
+                type: 'system',
+                content: errorContent,
+                timestamp: new Date(errorTs).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                ts: errorTs,
+                isError: true
+            });
+        } else {
+            appendToStoredOperatorThread(turnThreadId, [errorHistoryEntry]);
+        }
     } finally {
         state.chatSending = false;
+        state.chatTurnThreadId = null; // VTID-05064: the console's one running turn is over
+        // VTID-05064: a reply that landed in another thread does not scroll this one.
+        var finishedOnScreen = state.operatorActiveThreadId === turnThreadId;
         renderApp();
 
         // VTID-0526-D: Single rAF for scroll + conditional focus after message complete
         requestAnimationFrame(function () {
             // Scroll to bottom to show the reply
             var messagesContainer = document.querySelector('.chat-messages');
-            if (messagesContainer) {
+            if (messagesContainer && finishedOnScreen) {
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
             // Only re-focus if input lost focus during send

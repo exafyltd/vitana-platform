@@ -1148,7 +1148,10 @@ export type CicdEventType =
   | 'operator.kiro.write_tool_called'
   | 'operator.kiro.write_confirmed'
   | 'operator.kiro.write_denied'
-  | 'operator.kiro.branch_pushed';
+  | 'operator.kiro.branch_pushed'
+  // VTID-05064: a thread's parked Kiro workspace (unpushed edits) came back, or was lost (thread id only)
+  | 'operator.kiro.workspace_restored'
+  | 'operator.kiro.parked_workspace_lost';
 
 export interface CicdOasisEvent {
   vtid: string;

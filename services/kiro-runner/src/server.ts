@@ -16,6 +16,7 @@ import { timingSafeEqual } from 'crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { KeyStore, KeyUnavailableError, isPlausibleKey, isUserId } from './key-store';
 import { CLOSE, sessionCount, startRelay, stopUserSessions, type RelayLimits, type RelayOptions } from './relay';
+import { dropUserParked, type ParkLimits } from './workspace-park';
 import type { RepoMirrors } from './repo-mirrors';
 
 export interface RunnerConfig {
@@ -30,6 +31,8 @@ export interface RunnerConfig {
   mcpGatewayUrl?: string;
   /** VTID-05006: shared repo mirrors (none = sessions start without the repos). */
   mirrors?: RepoMirrors | null;
+  /** VTID-05064: keep workspaces with uncommitted work for the thread's next session (unset = remove at end). */
+  park?: ParkLimits | null;
   log?: (msg: string) => void;
 }
 
@@ -92,6 +95,7 @@ export function createRunnerServer(cfg: RunnerConfig, store: KeyStore): http.Ser
       if (req.method === 'DELETE') {
         await store.delete(userId);
         const ended = stopUserSessions(userId);
+        dropUserParked(userId, log);
         return done(200, { ok: true, linked: false, updated_at: null, sessions_ended: ended });
       }
       return done(405, { ok: false, error: 'method_not_allowed' });
@@ -131,7 +135,7 @@ export function createRunnerServer(cfg: RunnerConfig, store: KeyStore): http.Ser
           }
           if (!key) { ws.close(CLOSE.keyMissing, 'kiro_key_missing'); return; }
           if (ws.readyState !== ws.OPEN) return;
-          startRelay({ ws, userId, threadId, key, mcp, mirrors: cfg.mirrors, workRoot: cfg.workRoot, limits: cfg.limits, kiroBin: cfg.kiroBin, spawnImpl: cfg.spawnImpl, log });
+          startRelay({ ws, userId, threadId, key, mcp, mirrors: cfg.mirrors, park: cfg.park ?? null, workRoot: cfg.workRoot, limits: cfg.limits, kiroBin: cfg.kiroBin, spawnImpl: cfg.spawnImpl, log });
         } finally {
           pending--;
         }
