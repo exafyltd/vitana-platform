@@ -269,6 +269,19 @@ async function runDailyReport(force: boolean): Promise<RunOutcome> {
     return { ok: false, status: 500, error: 'emit_failed', detail: emitted.error };
   }
   const gchat = await notifyGChat(report.gchat_text);
+  if (!gchat.ok) {
+    // The report is recorded, so a plain re-run would find it and post
+    // nothing: fail the run loudly instead of losing the day's alert. The
+    // workflow goes red; re-dispatch it with force=true to re-post.
+    return {
+      ok: false,
+      status: 502,
+      error: 'gchat_failed',
+      detail: gchat.webhook_set
+        ? 'report recorded; Google Chat post failed — re-run with force=true'
+        : 'report recorded; Google Chat webhook not configured — re-run with force=true once it is',
+    };
+  }
   return { ok: true, created: true, report, gchat: { ok: gchat.ok, webhook_set: gchat.webhook_set } };
 }
 

@@ -176,6 +176,21 @@ describe('POST /daily-report/run — idempotent per UTC day', () => {
     expect(res.body.error).toBe('emit_failed');
     expect(mockGChat).not.toHaveBeenCalled();
   });
+
+  it('Google Chat post fails → 502 so the workflow goes red (the day\'s alert is never silently lost)', async () => {
+    mockGChat.mockResolvedValueOnce({ ok: false, webhook_set: true, status: 500 });
+    const res = await request(app()).post(RUN).set('Authorization', `Bearer ${TOKEN}`).send({});
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe('gchat_failed');
+    expect(res.body.detail).toContain('force=true');
+  });
+
+  it('Google Chat webhook unset → 502 as well', async () => {
+    mockGChat.mockResolvedValueOnce({ ok: false, webhook_set: false, status: 0 });
+    const res = await request(app()).post(RUN).set('Authorization', `Bearer ${TOKEN}`).send({});
+    expect(res.status).toBe(502);
+    expect(res.body.detail).toContain('not configured');
+  });
 });
 
 describe('GET /daily-report', () => {
