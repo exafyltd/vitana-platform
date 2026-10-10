@@ -1,5 +1,13 @@
 # VTID-05057 — contacts: match members by verified phone (E.164)
 
+
+ROUTE_MOUNT: new `DELETE /android-contacts` on the connected-apps router (mounted at `/api/v1/connected-apps`, index.ts:901, `requireAuth` on the whole router); declared before the `/:id/...` routes. `POST /android-contacts/import` is unchanged in mount and auth (body gains optional `method`, `region`).
+
+FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/connected-apps/android-contacts (staging).
+
+CURL_PROOF: anonymous DELETE of `/api/v1/connected-apps/android-contacts` and anonymous POST of `/api/v1/connected-apps/android-contacts/import` answer 401 application/json (staging-tests.json rejected probes). Authenticated behaviour is proven by Jest (rule 48: no writes on staging).
+
+OASIS_PROOF: `connected_app.contacts_removed` is emitted on removal (asserted in test/vtid-05057-contacts-phone-matching.test.ts); `connected_app.contacts_imported` unchanged.
 Part A of the sparred plan in `plan-sparring.md` (Part B, the one-tap app flow, is VTID-05058 in exafyltd/vitana-v1).
 
 ## What changed
