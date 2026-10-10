@@ -45,6 +45,7 @@ jest.mock('../src/connectors', () => ({
 }));
 
 import * as repo from '../src/routes/wearables-repository';
+import { emitOasisEvent } from '../src/services/oasis-event-service';
 import wearablesRouter, { revokeAtVendor } from '../src/routes/wearables';
 import { openToken, sealToken, SEALED_TOKEN_PREFIX } from '../src/lib/connection-token-crypto';
 import terra from '../src/connectors/wearable/terra';
@@ -152,6 +153,9 @@ describe('GET /callback/:connector (VTID-05030)', () => {
     expect(res.headers.location).toContain('reason=storage_unavailable');
     expect(fakeConnector.exchangeCode).not.toHaveBeenCalled();
     expect(mockedRepo.upsertOAuthConnection).not.toHaveBeenCalled();
+    expect(emitOasisEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ vtid: 'VTID-05030', type: 'connector.wearable.token_storage_unavailable', status: 'error' }),
+    );
   });
 
   it('an exchange failure redirects with a fixed code, never the exception text', async () => {
@@ -192,6 +196,14 @@ describe('POST /disconnect/:connector (VTID-05030)', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, connector: 'fakefit', vendor_revoke: 'ok' });
     expect(order).toEqual(['wipe', 'revoke']);
+    expect(emitOasisEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        vtid: 'VTID-05030',
+        type: 'connector.wearable.vendor_revoke',
+        status: 'info',
+        payload: expect.objectContaining({ connector_id: 'fakefit', status: 'ok' }),
+      }),
+    );
     expect(fakeConnector.revokeAccess).toHaveBeenCalledWith({
       access_token: 'raw-access',
       refresh_token: 'raw-refresh',
@@ -206,6 +218,9 @@ describe('POST /disconnect/:connector (VTID-05030)', () => {
     const res = await request(app()).post('/api/v1/wearables/disconnect/fakefit').set('Authorization', bearer('user-1'));
     expect(res.status).toBe(200);
     expect(res.body.vendor_revoke).toBe('failed');
+    expect(emitOasisEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'connector.wearable.vendor_revoke', status: 'warning' }),
+    );
     expect(mockedRepo.disconnectUserConnection).toHaveBeenCalledWith(expect.anything(), 'user-1', 'fakefit');
   });
 

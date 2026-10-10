@@ -26,3 +26,6 @@ TEST: e2e/staging/vtid-05030-connection-tokens.staging.spec.ts (run by STAGING-V
 
 AC-9 No regression in the suites that exercise the touched modules, and the gateway type-checks.
 TEST: npx jest test/vtid-05030-connection-tokens.test.ts and the 7 suites that import the wearables/connector modules; npx tsc --noEmit -p .
+
+OASIS_PROOF: two new OASIS event types (`connector.wearable.vendor_revoke` — info, or warning on vendor failure — on every disconnect; `connector.wearable.token_storage_unavailable` — error — when a connect is refused for a missing key), both added to `CicdEventType` in `services/gateway/src/types/cicd.ts`. Emission with type, VTID, status and payload is asserted in the callback and disconnect tests.
+TEST: npx jest test/vtid-05030-connection-tokens.test.ts -t "storage_unavailable|wipes the tokens before revoking|vendor failure still disconnects"
