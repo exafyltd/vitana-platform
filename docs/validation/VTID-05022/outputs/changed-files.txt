@@ -1,0 +1,7 @@
+docs/MULTI-TENANT-PLAN.md
+docs/validation/VTID-05022/acceptance.md
+docs/validation/VTID-05022/commands.log
+docs/validation/VTID-05022/outputs/changed-files.txt
+docs/validation/VTID-05022/outputs/plan-body-hash.txt
+docs/validation/VTID-05022/outputs/vtid-04019-docs-credential-scan.txt
+docs/validation/VTID-05022/plan-sparring.md
