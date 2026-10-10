@@ -7045,6 +7045,17 @@ async function executeLiveApiToolInner(
           const { createClient } = await import('@supabase/supabase-js');
           const { ORB_TOOL_NAMES, dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
           if (ORB_TOOL_NAMES.includes(toolName)) {
+            // VTID-04918: the calendar write tools never run before the member
+            // has said a word (the request-checkable half of the guard lives in
+            // the shared handlers; only the live session knows this half).
+            const { CALENDAR_SOCIAL_WRITE_TOOLS } = await import('../services/orb-tools/calendar-social-tools');
+            if (CALENDAR_SOCIAL_WRITE_TOOLS.includes(toolName)) {
+              const { memberHasSpoken } = await import('../orb/live/tools/calendar-write-guard');
+              if (!memberHasSpoken(session)) {
+                const refusal = 'STATUS: not_done. The member has not asked for anything yet in this session. Never act on their calendar, feed or chats on your own initiative.';
+                return { success: false, result: refusal, error: 'STATUS: not_done' };
+              }
+            }
             const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
             const dispatched = await dispatchOrbToolForVertex(
               toolName,

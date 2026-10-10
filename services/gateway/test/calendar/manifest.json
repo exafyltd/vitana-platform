@@ -142,6 +142,11 @@
         "test/vtid-04916-calendar-share.test.ts"
       ]
     },
+    "src/services/orb-tools/calendar-social-tools.ts": {
+      "tests": [
+        "test/vtid-04918-calendar-assistant-parity.test.ts"
+      ]
+    },
     "src/services/calendar-invite.ts": {
       "tests": [
         "test/vtid-04917-calendar-invite-audiobook.test.ts",

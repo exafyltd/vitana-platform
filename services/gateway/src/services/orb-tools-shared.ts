@@ -42,6 +42,8 @@ import { resolvePillarKey } from '../lib/vitana-pillars';
 import { SUPERLATIVES_TOOL_HANDLERS, SUPERLATIVES_TOOL_DECLARATIONS } from './orb-tools/superlatives-tools';
 import { DIARY_MEMORY_TOOL_HANDLERS, DIARY_MEMORY_TOOL_DECLARATIONS } from './orb-tools/diary-memory-tools';
 import { CALENDAR_MGMT_TOOL_HANDLERS, CALENDAR_MGMT_TOOL_DECLARATIONS } from './orb-tools/calendar-management-tools';
+// VTID-04918: calendar create / share to feed / invite — one implementation for every assistant path.
+import { CALENDAR_SOCIAL_TOOL_HANDLERS, CALENDAR_SOCIAL_TOOL_DECLARATIONS } from './orb-tools/calendar-social-tools';
 import { REMINDERS_CLOCK_TOOL_HANDLERS, REMINDERS_CLOCK_TOOL_DECLARATIONS } from './orb-tools/reminders-clock-tools';
 import { GROUPS_EVENTS_TOOL_HANDLERS, GROUPS_EVENTS_TOOL_DECLARATIONS } from './orb-tools/groups-events-tools';
 import { CHAT_PRIVACY_TOOL_HANDLERS, CHAT_PRIVACY_TOOL_DECLARATIONS } from './orb-tools/chat-privacy-tools';
@@ -5350,6 +5352,7 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   ...SUPERLATIVES_TOOL_HANDLERS,
   ...DIARY_MEMORY_TOOL_HANDLERS,
   ...CALENDAR_MGMT_TOOL_HANDLERS,
+  ...CALENDAR_SOCIAL_TOOL_HANDLERS,
   ...REMINDERS_CLOCK_TOOL_HANDLERS,
   ...GROUPS_EVENTS_TOOL_HANDLERS,
   ...CHAT_PRIVACY_TOOL_HANDLERS,
@@ -5418,6 +5421,7 @@ export const NEW_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = [
   ...SUPERLATIVES_TOOL_DECLARATIONS,
   ...DIARY_MEMORY_TOOL_DECLARATIONS,
   ...CALENDAR_MGMT_TOOL_DECLARATIONS,
+  ...CALENDAR_SOCIAL_TOOL_DECLARATIONS,
   ...REMINDERS_CLOCK_TOOL_DECLARATIONS,
   ...GROUPS_EVENTS_TOOL_DECLARATIONS,
   ...CHAT_PRIVACY_TOOL_DECLARATIONS,

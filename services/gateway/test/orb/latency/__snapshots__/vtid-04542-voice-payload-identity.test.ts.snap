@@ -891,9 +891,9 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "instruction_bytes": 20129,
   "instruction_sha256": "59c6e5ebed4201717adf8b73a0bded5556f4fa616f26cd34792a5498ffe49a24",
   "provider": "cascaded",
-  "tool_count": 296,
-  "tools_bytes": 222053,
-  "tools_sha256": "e12cdedd92ac8a23b54dadf259fd920436bf1a712f01653066366e06937a240e",
+  "tool_count": 298,
+  "tools_bytes": 224855,
+  "tools_sha256": "4c4fbc4cf0d1aa2456c008a5bf28aba7adcfc9d599c4bbf706922648a5e1821f",
   "voice": "polly:ru",
 }
 `;
@@ -1158,6 +1158,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "find_free_slot",
   "get_event_details",
   "check_calendar_conflicts",
+  "share_calendar_entry_to_feed",
+  "invite_to_calendar_entry",
   "snooze_reminder",
   "update_reminder",
   "acknowledge_reminder",

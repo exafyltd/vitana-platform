@@ -30,6 +30,32 @@ export function checkVoiceCalendarWrite(ctx: CalendarWriteContext): string | nul
   if (!ctx.memberHasSpoken) {
     return 'STATUS: not_created. The member has not asked for anything yet in this session. Never create calendar events on your own initiative; only when the member asks, and only after they confirm the details.';
   }
+  return checkCalendarWriteRequest(ctx);
+}
+
+export interface CalendarWriteRequest {
+  /** The model's `confirmed` argument. */
+  confirmed: unknown;
+  /** Start time (ISO 8601) of the event being written. */
+  startTime: string;
+  /**
+   * VTID-04918: end time (ISO 8601) when the write is about an existing entry
+   * (share, invite) — an event that has begun but not ended is still open.
+   * Omitted for a new event, which must not start in the past.
+   */
+  endTime?: string | null;
+  /** Clock, ms. */
+  nowMs: number;
+}
+
+/**
+ * VTID-04918 — the request-checkable half of the guard: explicit
+ * confirmation and a time that has not passed. Shared by every assistant path
+ * (gateway live session, the LiveKit agent through POST /api/v1/orb/tool, and
+ * text chat), so it holds wherever the tool is called from. The live session
+ * adds memberHasSpoken on top (only it has that state).
+ */
+export function checkCalendarWriteRequest(ctx: CalendarWriteRequest): string | null {
   if (ctx.confirmed !== true) {
     return 'STATUS: needs_confirmation. Nothing was created. Read the title, date and time back to the member in your own words and ask them to confirm; call again with confirmed=true only after they say yes.';
   }
@@ -37,7 +63,9 @@ export function checkVoiceCalendarWrite(ctx: CalendarWriteContext): string | nul
   if (!Number.isFinite(start)) {
     return 'STATUS: not_created. The start time is not a valid date. Ask the member when the event should take place.';
   }
-  if (start < ctx.nowMs - PAST_START_TOLERANCE_MS) {
+  const end = ctx.endTime ? Date.parse(ctx.endTime) : NaN;
+  const last = Number.isFinite(end) ? end : start;
+  if (last < ctx.nowMs - PAST_START_TOLERANCE_MS) {
     return 'STATUS: not_created. That start time is in the past. Check today\'s date and ask the member for the correct date and time.';
   }
   return null;

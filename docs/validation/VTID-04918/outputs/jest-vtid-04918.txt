@@ -1,0 +1,30 @@
+    ✓ refuses a time that has passed, but an event still running is open (1 ms)
+    ✓ the live session still refuses before the member has spoken (1 ms)
+  create_calendar_event (shared handler)
+    ✓ creates nothing until confirmed, and never in the past (2 ms)
+    ✓ writes an assistant entry for the member once confirmed (20 ms)
+  share_calendar_entry_to_feed (Phase 2 service, assistant entry point)
+    ✓ posts nothing until confirmed, and the preview carries the text to read back (3 ms)
+    ✓ a private entry is never shared (1 ms)
+    ✓ confirmed: the same service the app uses shares it; its refusals are named (2 ms)
+  invite_to_calendar_entry (Phase 3 card, assistant entry point)
+    ✓ needs a resolved person, never the member themselves (1 ms)
+    ✓ sends nothing until confirmed (2 ms)
+    ✓ an entry the card builder refuses is named and nothing is sent (2 ms)
+    ✓ confirmed: the server-built card goes into the direct chat and the person gets the chat push (4 ms)
+    ✓ the send quota holds (1 ms)
+  reschedule_event never moves into the past
+    ✓ refuses a past new_start before touching the calendar (1 ms)
+  one implementation for every path
+    ✓ the shared registry carries the three handlers and declares only the two new tools (2 ms)
+    ✓ the live session adds memberHasSpoken for every calendar write tool (5 ms)
+    ✓ text chat offers the five calendar tools and runs them through the shared dispatcher (5 ms)
+    ✓ the LiveKit agent writes through the shared dispatcher, never the raw calendar route (9 ms)
+    ✓ the community role lists the real calendar tools, not the never-built get_calendar_* names (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       19 passed, 19 total
+Snapshots:   0 total
+Time:        0.755 s, estimated 1 s
+Ran all test suites matching /test\/vtid-04918-calendar-assistant-parity.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

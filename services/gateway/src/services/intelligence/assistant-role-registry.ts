@@ -113,8 +113,9 @@ export const ROLE_PROFILES: Readonly<Record<AssistantRole, AssistantRoleProfile>
     tool_allowlist: [
       'get_today_plan',
       'get_recent_memory',
-      'get_calendar_today',
-      'get_calendar_week',
+      // VTID-04918: the real calendar tools (the get_calendar_today/week names
+      // that stood here were never implemented by any assistant path).
+      'search_calendar',
       'get_autopilot_recommendations',
       'get_pillar_status',
       'get_vitana_index_overview',
@@ -124,6 +125,10 @@ export const ROLE_PROFILES: Readonly<Record<AssistantRole, AssistantRoleProfile>
       'send_chat_message',
       'remember',
       'create_calendar_event',
+      'reschedule_event',
+      'cancel_event',
+      'share_calendar_entry_to_feed',
+      'invite_to_calendar_entry',
       'post_intent',
     ],
     tool_denylist: [
