@@ -31,22 +31,28 @@ import { emitOasisEvent } from '../services/oasis-event-service';
 const router = Router();
 const LOG = '[VTID-05023 auth-bridge]';
 
-// Recorded only when Aurora actually changed (rows created, or a deletion processed). A failed
-// emit is logged and never fails the webhook: provisioning already committed.
-function recordTransition(type: 'auth_bridge.user.provisioned' | 'auth_bridge.user.deleted', userId: string, payload: Record<string, unknown>): void {
-  emitOasisEvent({
+// OASIS: recorded only when Aurora actually changed (rows created, or a deletion
+// processed). A failed emit is logged and never fails the webhook: the change
+// already committed.
+type Transition = 'auth_bridge.user.provisioned' | 'auth_bridge.user.deleted';
+function transitionEvent(type: Transition, userId: string, payload: Record<string, unknown>) {
+  return {
     vtid: 'VTID-05023',
     type,
     source: 'gateway.auth-bridge',
-    status: 'success',
+    status: 'success' as const,
     message: type === 'auth_bridge.user.provisioned' ? `member ${userId} provisioned on Aurora` : `member ${userId} cleaned up on Aurora`,
     payload: { user_id: userId, via: 'webhook', ...payload },
-    actor_role: 'system',
-    surface: 'system',
+    actor_role: 'system' as const,
+    surface: 'system' as const,
     vitana_id: null,
-  }).then((r) => {
-    if (!r.ok) console.error(`${LOG} OASIS ${type} for ${userId} not recorded: ${r.error}`);
-  }).catch((err) => console.error(`${LOG} OASIS ${type} for ${userId} not recorded: ${err?.message ?? err}`));
+  };
+}
+function emitFailed(type: Transition, userId: string) {
+  return (r: { ok: boolean; error?: string } | Error) => {
+    const error = r instanceof Error ? r.message : r.ok ? null : r.error;
+    if (error !== null) console.error(`${LOG} OASIS ${type} for ${userId} not recorded: ${error}`);
+  };
 }
 
 function tokenMatches(presented: string): boolean {
@@ -108,7 +114,8 @@ router.post('/user-event', requireServiceToken, async (req: Request, res: Respon
       if (!isUuid(userId)) return res.status(400).json({ ok: false, error: 'DELETE needs old_record.id' });
       const result = await deps.store.handleDeletedUser(userId, 'webhook');
       console.log(`${LOG} deleted user ${userId}: ${JSON.stringify(result)}`);
-      recordTransition('auth_bridge.user.deleted', userId, { result });
+      void emitOasisEvent(transitionEvent('auth_bridge.user.deleted', userId, { result }))
+        .then(emitFailed('auth_bridge.user.deleted', userId), emitFailed('auth_bridge.user.deleted', userId));
       return res.json({ ok: true, action: 'deleted', user_id: userId, result });
     }
 
@@ -130,7 +137,8 @@ router.post('/user-event', requireServiceToken, async (req: Request, res: Respon
         (result.active_tenant_set ? `, active_tenant_id=${result.active_tenant_id}` : ''),
     );
     if (result.provisioned) {
-      recordTransition('auth_bridge.user.provisioned', user.id, { event: event.type, created: result.created, active_tenant_set: result.active_tenant_set });
+      void emitOasisEvent(transitionEvent('auth_bridge.user.provisioned', user.id, { event: event.type, created: result.created, active_tenant_set: result.active_tenant_set }))
+        .then(emitFailed('auth_bridge.user.provisioned', user.id), emitFailed('auth_bridge.user.provisioned', user.id));
     }
     return res.json({ ok: true, action: result.provisioned ? 'provisioned' : 'already_provisioned', user_id: user.id, result });
   } catch (err: any) {
