@@ -66,6 +66,7 @@ import {
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import githubService from '../services/github-service';
+import { requireServiceOrAdmin } from '../middleware/require-service-or-admin';
 import { repoGitHubToken } from '../services/vitana-repos';
 import cicdEvents from '../services/oasis-event-service';
 import cicdLockManager from '../services/cicd-lock-manager';
@@ -228,7 +229,8 @@ function handleZodError(error: ZodError, res: Response) {
 
 // ==================== POST /create-pr ====================
 // Mounted at /api/v1/github -> final path: /api/v1/github/create-pr
-router.post('/create-pr', async (req: Request, res: Response) => {
+// VTID-05019: only the gateway's own callers (service token) or an exafy_admin may open a PR.
+router.post('/create-pr', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const validation = CreatePrRequestSchema.safeParse(req.body);
     if (!validation.success) {
@@ -296,7 +298,8 @@ router.post('/create-pr', async (req: Request, res: Response) => {
 
 // ==================== POST /safe-merge ====================
 // Mounted at /api/v1/github -> final path: /api/v1/github/safe-merge
-router.post('/safe-merge', async (req: Request, res: Response) => {
+// VTID-05019: only the gateway's own callers (service token) or an exafy_admin may merge.
+router.post('/safe-merge', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const validation = SafeMergeRequestSchema.safeParse(req.body);
     if (!validation.success) {

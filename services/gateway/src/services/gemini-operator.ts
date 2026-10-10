@@ -56,6 +56,7 @@ import { executeKnowledgeSearch, KNOWLEDGE_SEARCH_TOOL_DEFINITION } from './know
 // VTID-03835: Operator Console codebase read access (search + file read)
 import { searchCode, getFileContents } from './github-service';
 import { VITANA_REPOS, repoGitHubToken, isVitanaRepo } from './vitana-repos';
+import { gatewayServiceAuthHeader } from '../middleware/require-service-or-admin';
 import { getOperatorBootstrapPack } from './operator-bootstrap-pack';
 import { filterVitanaLogs, LOGS_DEFAULT_MINUTES, LOGS_MAX_MINUTES, LOGS_DEFAULT_LIMIT, LOGS_MAX_LIMIT } from './aws-cloudwatch-logs-readonly';
 import { buildRecallQuery } from './operator-threads';
@@ -5744,11 +5745,8 @@ async function executeDevCreatePr(
     const gatewayPort = process.env.PORT || '8080';
     const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/github/create-pr`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE!,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
+      // VTID-05019: the route requires the gateway service token (or an exafy_admin JWT).
+      headers: { 'Content-Type': 'application/json', ...gatewayServiceAuthHeader() },
       body: JSON.stringify({
         vtid: args.vtid,
         repo: args.repo || 'exafyltd/vitana-platform',
@@ -5790,11 +5788,8 @@ async function executeDevMergePr(
     const gatewayPort = process.env.PORT || '8080';
     const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/github/safe-merge`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE!,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
+      // VTID-05019: the route requires the gateway service token (or an exafy_admin JWT).
+      headers: { 'Content-Type': 'application/json', ...gatewayServiceAuthHeader() },
       body: JSON.stringify({
         vtid: args.vtid,
         repo: args.repo || 'exafyltd/vitana-platform',

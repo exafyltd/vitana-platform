@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05019",
+  "files": [
+    "services/gateway/src/routes/cicd.ts",
+    "services/gateway/src/middleware/require-service-or-admin.ts",
+    "services/gateway/src/services/gemini-operator.ts",
+    "services/gateway/src/services/autopilot-event-loop.ts",
+    "services/gateway/src/services/orb-tools/cicd-pr-tools.ts",
+    "services/openclaw-bridge/src/skills/vitana-cicd.ts",
+    "services/gateway/test/vtid-05019-cicd-pr-routes-auth.test.ts",
+    "services/gateway/test/vtid-05014-kiro-v1-writes.test.ts",
+    "docs/validation/VTID-05019/**"
+  ]
+}
