@@ -49,3 +49,5 @@ AC-9: Every run route is admin-only and owner-only: unauthenticated 401 JSON, no
 ## Mutation check
 
 34 single-line mutations of the implementation (coalescing, byte threshold, text-before-event order, batch trigger, retry of a failed insert, replay dedupe, in-memory replay, live switch, stream end on terminal, read-tool trust and its anchors/name/kind checks, permission answer report, waiting_permission persistence, sweep guard and own-task exclusion, OASIS once, shutdown update, guarded finish, pump after finish, queue/queue_full, cancel queued/running/cross-task, status mapping, control-tick answer, heartbeat, owner and thread-ownership checks, legacy frame filter, persisted-answer fallback, event writes): every one fails at least one test. Details: `outputs/local-checks.txt`.
+AC-R: The runs routes answer 401 without a caller, 403 for another user's run or thread, 400 on invalid input, 409 queue_full / thread_not_kiro, 503 when the store is down, and stream SSE frames with ids from after_seq / Last-Event-ID.
+  TEST: services/gateway/test/operator-kiro-runs.test.ts
