@@ -31,6 +31,14 @@
    }
   },
   {
+   "kind": "http",
+   "name": "auth-bridge webhook is mounted and refuses a call without the service token (rejected write probe)",
+   "method": "POST",
+   "path": "/api/v1/internal/auth-bridge/user-event",
+   "rejected_probe": true,
+   "expect_status": 401
+  },
+  {
    "kind": "existing",
    "ref": "npx jest test/lib/supabase-public-url.test.ts test/vtid-05023-supabase-public-url-cutover.test.ts test/vtid-05023-public-url-guard.test.ts",
    "cwd": "services/gateway",
