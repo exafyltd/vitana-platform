@@ -17,3 +17,8 @@ TEST: npx jest test/vtid-05031-webhook-verification.test.ts -t "POST /api/v1/con
 
 AC-6 No regression in the connector, webhook and partner-health suites; the gateway type-checks.
 TEST: npx jest test/connectors test/vtid-05031-webhook-verification.test.ts and the suites importing connector-webhooks/connectors/partner-health; npx tsc --noEmit -p .
+
+ROUTE_MOUNT: no new route. `services/gateway/src/index.ts` adds only a body parser, `app.use('/api/v1/connectors/webhook', express.raw({ type: '*/*', limit: '2mb' }))`, before `express.json()`, in front of the existing route `POST /api/v1/connectors/webhook/:connectorId` (`routes/connector-webhooks.ts`, mounted at `/api/v1/connectors` by `mountRouterSync`).
+FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/connectors/webhook/:connectorId (existing URL, unchanged)
+CURL_PROOF: deliberately not curled against staging or production — every POST to this route writes an audit row to `connector_webhooks_log` in the database staging shares with production (CLAUDE.md rule 48). The equivalent proof runs in-process with supertest over the same parser order: "verifies over the exact bytes sent, even when they differ from JSON.stringify" (200), invalid signature (401 + audit row), unset secret (401), handler error (500 without the message).
+TEST: npx jest test/vtid-05031-webhook-verification.test.ts -t "POST /api/v1/connectors/webhook"
