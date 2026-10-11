@@ -3,6 +3,7 @@
  *   #a  a thread with 2 past runs + a live running run with steps and an open approval card
  *   #b  a queued message (with Cancel) and a pasted-image chip row in the composer
  *   #c  an interrupted run with Continue, a refused run, and "Kiro can't see images"
+ *   #d  VTID-05071: a run stopped by an expired approval (named, with Continue) + a waiting run ("Needs your OK")
  * Every gateway call is answered here; no network. */
 (function () {
     'use strict';
@@ -46,6 +47,10 @@
             row({ id: 'r1', status: 'refused', created_at: at(0), stop_reason: 'refusal', message: 'Delete the production database backups.', reply: 'I won\'t delete production backups. If you want to free space, I can list the oldest snapshots for you to review.' }),
             row({ id: 'r2', status: 'completed', created_at: at(4), message: 'What is wrong on this screen?', reply: 'I can only read your text: this kiro-cli version does not accept images. Describe what you see and I will look in the code.', kiro_model: 'claude-sonnet-4.5', attachments: [{ media_id: 'm2', mime_type: 'image/png' }] }),
             row({ id: 'r3', status: 'interrupted', created_at: at(9), error: 'gateway_shutdown', message: 'Refactor the media route into its own service and add tests.' })
+        ],
+        d: [
+            row({ id: 'r5', status: 'completed', created_at: at(0), message: 'Keep Chat; replace Live Ticker and History. Four tabs?', reply: 'Yes: **Chat**, **Deploy Health**, **Errors**, **Decisions** — Live Ticker\'s live status and Active Executions fold into Deploy Health.', kiro_model: 'claude-sonnet-4.5' }),
+            row({ id: 'r6', status: 'refused', stop_reason: 'refusal', created_at: at(2), message: 'agreed' })
         ]
     };
 
@@ -85,7 +90,18 @@
             frame(3, 'kiro.message_chunk', { text: 'Moving the upload handler into services/operator-media.ts' }),
             frame(4, 'run.status', { status: 'interrupted' })
         ],
-        r4: [frame(1, 'run.status', { status: 'queued' })]
+        r4: [frame(1, 'run.status', { status: 'queued' })],
+        r5: [frame(1, 'run.status', { status: 'running' }), frame(2, 'run.status', { status: 'completed' })],
+        r6: [
+            frame(1, 'run.status', { status: 'running' }),
+            frame(2, 'kiro.message_chunk', { text: 'Let me confirm the exact backend data the new screens will call.' }),
+            frame(3, 'kiro.tool_call', { tool_call_id: 't1', title: 'Running: cd /tmp && grep -noE "/api/v1/[a-zA-Z0-9/_:{}-]+" app.js | grep -iE "operator|approv|deploy" | sort -u', kind: 'execute', status: 'pending' }),
+            frame(4, 'kiro.permission_request', { request_id: 'q9', tool_call_id: 't1', title: 'Running: cd /tmp && grep -noE "/api/v1/[a-zA-Z0-9/_:{}-]+" app.js | grep -iE "operator|approv|deploy" | sort -u', kind: 'other', expires_at: at(12) }),
+            frame(5, 'run.status', { status: 'waiting_permission' }),
+            frame(6, 'kiro.permission_answer', { request_id: 'q9', allow: false, by: 'timeout' }),
+            frame(7, 'kiro.turn_end', { stop_reason: 'refusal' }),
+            frame(8, 'run.status', { status: 'refused', stop_reason: 'refusal' })
+        ]
     };
 
     function streamResponse(frames, keepOpen) {
@@ -127,13 +143,15 @@
         head.appendChild(el('button', 'chat-sessions-new-btn', '+ New chat'));
         side.appendChild(head);
         var list = el('div', 'chat-sessions-list');
-        var title = scenario === 'b' ? 'Settings layout' : scenario === 'c' ? 'Media route refactor' : 'Upload size limit';
+        var title = scenario === 'b' ? 'Settings layout' : scenario === 'c' ? 'Media route refactor' : scenario === 'd' ? 'Improve Operator Console' : 'Upload size limit';
         [[title, true], ['Weekly digest copy', false], ['Partner onboarding copy', false]].forEach(function (r, i) {
             var rowEl = el('div', 'chat-session-row' + (i === 0 ? ' chat-session-row--active' : ''));
             var info = el('div', 'chat-session-row-info');
             info.appendChild(el('div', 'chat-session-row-title', r[0]));
             var meta = el('div', 'chat-session-row-meta', i === 0 ? 'just now' : (i * 2) + 'h ago');
             if (r[1] && window.KiroConsole.isThreadBusy(THREAD)) { var sp = el('span', 'chat-thread-running'); sp.setAttribute('role', 'status'); sp.setAttribute('aria-label', 'Turn running'); meta.appendChild(sp); }
+            // VTID-05071: the same hook app.js adds to each thread row.
+            if (r[1]) meta.appendChild(window.KiroConsole.waitingBadge(THREAD));
             meta.appendChild(el('span', 'chat-engine-tag', 'Kiro'));
             info.appendChild(meta);
             rowEl.appendChild(info);
@@ -144,7 +162,7 @@
 
         var chat = el('div', 'chat-container');
         var bar = el('div', 'chat-session-title-bar');
-        bar.appendChild(el('div', 'chat-session-title-bar-text', scenario === 'b' ? 'Settings layout' : scenario === 'c' ? 'Media route refactor' : 'Upload size limit'));
+        bar.appendChild(el('div', 'chat-session-title-bar-text', title));
         var fixed = el('div', 'chat-engine-fixed');
         fixed.appendChild(el('span', 'chat-engine-badge', 'Kiro'));
         var sel = el('select', 'chat-kiro-model-select');

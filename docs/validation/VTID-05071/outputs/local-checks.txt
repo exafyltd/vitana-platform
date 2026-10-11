@@ -1,0 +1,8 @@
+cd services/kiro-runner && npx vitest run                                  # 45 passed
+cd services/gateway && npx tsc --noEmit -p .                               # clean
+cd services/gateway && npx jest test/vtid-05071 test/vtid-05018            # 21 passed
+cd services/gateway && npx jest test/command-hub                           # 42 suites, 620 passed
+cd services/gateway && npm run test:operator                               # 64 passed
+cd services/gateway && npm run test:support                                # 87 passed
+cd services/gateway && npm run test:roles                                  # 105 passed
+cd services/gateway && node scripts/generate-command-hub-symbol-index.mjs --check

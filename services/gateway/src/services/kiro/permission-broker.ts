@@ -4,7 +4,7 @@
  * Kiro asks permission (ACP session/request_permission) before a tool runs.
  * Policy: read/search/think tools are allowed without asking; anything else
  * becomes an approval card for the session owner and is DENIED when nobody
- * answers within KIRO_PERMISSION_TIMEOUT_MS (default 120 s). If kiro-cli never
+ * answers within KIRO_PERMISSION_TIMEOUT_MS (default 600 s since VTID-05071; was 120 s). If kiro-cli never
  * emits permission requests, nothing here runs and write/exec stay off at the
  * runner (Phase 2: read-only trust flags).
  *
@@ -25,7 +25,8 @@ import type { AcpPermissionHandler, AcpPermissionOption, AcpPermissionRequest } 
 import type { KiroTurnEventSink } from './kiro-events';
 import { KIRO_MCP_READ_TOOLS } from './kiro-mcp-read-tools';
 
-export const KIRO_PERMISSION_TIMEOUT_MS_DEFAULT = 120_000;
+// VTID-05071: 10 min (was 2): a user who stepped away can still answer; still inside the 15-min prompt timeout.
+export const KIRO_PERMISSION_TIMEOUT_MS_DEFAULT = 600_000;
 const AUTO_ALLOW_KINDS = new Set(['read', 'search', 'think']);
 
 /** VTID-05065: kiro-cli's title for a call to one of the gateway's MCP tools (server name `vitana`). */

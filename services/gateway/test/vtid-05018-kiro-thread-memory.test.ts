@@ -152,7 +152,7 @@ describe('route wiring (source check)', () => {
 
 describe('VTID-05064: history keeps conclusions, marks cut-off replies, and Kiro gets session rules', () => {
   it('a long message keeps its start AND its end, within the cap', () => {
-    const long = 'START ' + 'a'.repeat(5_000) + ' CONCLUSION: recommend option B';
+    const long = 'START ' + 'a'.repeat(12_000) + ' CONCLUSION: recommend option B'; // VTID-05071: over the 6,000 cap
     const c = clipHistoryMessage(long);
     expect(c.length).toBeLessThanOrEqual(KIRO_HISTORY_MESSAGE_CHARS);
     expect(c.startsWith('START ')).toBe(true);
