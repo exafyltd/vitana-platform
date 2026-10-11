@@ -1,0 +1,251 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20261011141017
+Username: SURFACE8\dstev
+RunAs User: SURFACE8\dstev
+Configuration Name: 
+Machine: SURFACE8 (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -File C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1
+Process ID: 19044
+PSVersion: 5.1.26100.9444
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.9444
+BuildVersion: 10.0.26100.9444
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+
+=== 1. Push any pending fixes ===
+
+
+committed pending changes on VTID-05063-taskapi-auth
+To https://github.com/exafyltd/vitana-v1.git
+   0178b0949..1cecfd064  VTID-05063-taskapi-auth -> VTID-05063-taskapi-auth
+Everything up-to-date
+
+=== 2. Wait for CI on both PRs ===
+gh : no checks reported on the 'VTID-05063-taskapi-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...pi-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[v1] no checks reported yet
+[v1] 1 checks: 1 pending, 0 failed
+[v1] 1 checks: 1 pending, 0 failed
+[v1] 1 checks: 1 pending, 0 failed
+[v1] 1 checks: 1 pending, 0 failed
+[v1] 1 checks: 1 pending, 0 failed
+[v1] 1 checks: 1 pending, 0 failed
+[v1] 1 checks: 1 pending, 0 failed
+[v1] 1 checks: 0 pending, 0 failed
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+gh : no checks reported on the 'VTID-05063-ledger-read-auth' branch
+At C:\Users\dstev\vitana-platform-1\.agents\tasks\gateway-ledger-read-auth\ship\ship.ps1:65 char:16
++ ...      $raw = gh pr checks $pr --repo $repo --json name,bucket,link 2>$ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no checks repor...ad-auth' branch:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[platform] no checks reported yet
+PS>TerminatingError(): "The pipeline has been stopped."
+>> TerminatingError(): "The pipeline has been stopped."
+>> TerminatingError(): "The pipeline has been stopped."
+>> $global:?
+True

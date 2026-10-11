@@ -1,0 +1,72 @@
+{
+  "verdict": "CHANGES_REQUESTED",
+  "blockers": [
+    {
+      "id": "B1",
+      "file": "scripts/ci/command-hub-ownership-guard.js",
+      "line": 1042,
+      "summary": "VTID-05063 is not in ALLOWED_VTID_PATTERN but the change edits services/gateway/src/frontend/command-hub/app.js and debug.html, so the Path Ownership Guard (COMMAND-HUB-GUARDRAILS.yml:44) exits 1. Add VTID-05063 to the pattern with the usual history comment."
+    }
+  ],
+  "majors": [
+    {
+      "id": "M1",
+      "file": "services/gateway/src/frontend/command-hub/index.html",
+      "line": 17,
+      "summary": "app.js was edited but app.js?v= and styles.css?v= were not bumped (still 20261109-vtid-05006). index.ts:1603-1611 serves .js with a one-year immutable cache, so operators keep the old app.js without buildContextHeaders() and the interceptor guard; enforce would then 401 or log them out. Bump both ?v= values together and add index.html to the scope."
+    }
+  ],
+  "minors": [
+    {
+      "id": "m1",
+      "file": "docs/validation/VTID-05063/plan-sparring.md",
+      "line": 11,
+      "summary": "No owner-approval line (lib.mjs:157 needs /owner approval/i) and no docs/validation/VTID-05063/scope.json; PR-GATE is report-only (enforce=false) so it only warns."
+    },
+    {
+      "id": "m2",
+      "file": "scripts/ci/impact-rules/new-route-without-auth-middleware.mjs",
+      "line": 74,
+      "summary": "Out-of-plan edit adding requireLedgerReadAuth to the auth allow-list. Needed and benign; record it in scope.json and the PR text."
+    },
+    {
+      "id": "m3",
+      "file": "services/gateway/src/frontend/command-hub/debug.html",
+      "line": 25,
+      "summary": "debug.html is 404ed at serve time (command-hub-backup-denylist.ts:31, index.ts:1591), so the bearer fix is inert and the plan's served-static-file claim is wrong. Correct the docs; consider reverting the edit to shrink the Command Hub guard footprint."
+    },
+    {
+      "id": "m4",
+      "file": "services/gateway/test/vtid-05063-ledger-read-auth.test.ts",
+      "line": 315,
+      "summary": "Boot-line wiring test anchors on the first 'app.listen(PORT', which is the redirector listener at index.ts:53, so it does not prove the call is inside the main listen callback (index.ts:1664). Anchor on 'const server = app.listen(PORT'."
+    },
+    {
+      "id": "m5",
+      "file": "docs/validation/VTID-05063/commands.log",
+      "line": 1,
+      "summary": "Raw caller-grep output, the dynamic-path .github/scripts grep and a measured register-step size are missing. Size is only a computed bound (at most 19,784) and only ten of the planned 37 lines were re-indented; the whitespace-only claim cannot be diffed here."
+    },
+    {
+      "id": "m6",
+      "file": "scripts/ci/vtid-auto-close.cjs",
+      "line": 146,
+      "summary": "Warning text still mentions only LEDGER_WRITE_AUTH_MODE=enforce; the read now needs the token under LEDGER_READ_AUTH_MODE=enforce too."
+    },
+    {
+      "id": "m7",
+      "file": "services/gateway/src/middleware/auth-supabase-jwt.ts",
+      "line": 337,
+      "summary": "possible: optionalAuth logs a line per verified ES256 JWT; the read gate now runs it on every Command Hub poll (5 s and 20 s), adding log volume in log and enforce mode. Watch CloudWatch volume in the log-mode window."
+    },
+    {
+      "id": "m8",
+      "file": "services/gateway/specs/command-hub-symbol-index.json",
+      "line": 1,
+      "summary": "possible: symbol index not regenerated after the app.js edit (earlier Command Hub VTIDs did). No CI gate found; navigation aid only."
+    }
+  ],
+  "counts": { "blockers": 1, "majors": 1, "minors": 8 },
+  "reviewed": "by reading only; no git, no execution",
+  "review_doc": ".agents/tasks/gateway-ledger-read-auth/platform-review.md"
+}

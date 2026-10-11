@@ -1,0 +1,60 @@
+{
+  "vtid": "VTID-05063",
+  "round": 1,
+  "verdict": "ESCALATED",
+  "blast_radius_widened": false,
+  "blockers": [],
+  "majors": [
+    {
+      "id": "M1",
+      "confidence": "confirmed",
+      "file": "docs/validation/*/staging-tests.json (VTID-05006, 05004, 05003, 04999, 04984, 04975, 04887, 04886, 04885, 04876, 04869, 04836, 04779 and possibly more)",
+      "ref": "services/gateway/src/frontend/command-hub/index.html:7,17; scripts/ci/staging-verify/lib.cjs planRange/planFullRun",
+      "issue": "Older staging suites assert expect_body_contains 'app.js?v=20261109-vtid-05006' on the HTML paths; after the bump to 20261110-vtid-05063 they fail STAGING-VERIFY (in-range VTIDs) and the nightly full run.",
+      "fix": "Replace the old value with 20261110-vtid-05063 in every expect_body_contains that targets an HTML path (/command-hub/, /command-hub/overview/live-metrics/, /command-hub/voice/test-bench/); leave the app.js/styles.css path probes alone; re-grep for zero HTML-path hits; add docs/validation/*/staging-tests.json to scope.json paths (precedent: VTID-05003/05004/05006)."
+    }
+  ],
+  "minors": [
+    {
+      "id": "m1",
+      "confidence": "confirmed",
+      "file": "docs/validation/VTID-05063/scope.json:1",
+      "issue": "Wrong schema: uses 'files' and has no 'kind'; scripts/ci/pr-gate/lib.mjs validateScope requires kind (fix|feature|refactor|infra|docs) and non-empty 'paths'. PR-GATE reports invalid scope.json (report-only, enforce=false).",
+      "fix": "Rename files to paths, add kind 'feature' (not 'fix'), add docs/validation/*/staging-tests.json. JSON parses; all listed non-glob paths exist."
+    },
+    {
+      "id": "m2",
+      "confidence": "confirmed",
+      "file": ".github/workflows/VALIDATOR-CHECK.yml (PR body)",
+      "issue": "Workflow triggers on gateway src/test/docs-validation changes and exits 11 without VALIDATION_PROFILE in the PR body; command_hub_frontend profile would reject the route files.",
+      "fix": "PR body carries 'VALIDATION_PROFILE: gateway_backend' plus the required markers and the scope-addition list."
+    },
+    {
+      "id": "m3",
+      "confidence": "possible",
+      "file": "docs/validation/VTID-05063/plan-sparring.md (Owner approval section)",
+      "issue": "Approval line cites an owner reply 'yes' that cannot be matched to the verbatim owner messages available to the workflow; scope-addition paragraph says 'sparred in one round' without recording the verdict.",
+      "fix": "Cite the plan hash and the owner instruction by text; append this verdict and the M1 follow-up."
+    },
+    {
+      "id": "m4",
+      "confidence": "confirmed",
+      "file": "services/gateway/src/frontend/command-hub/debug.html",
+      "issue": "Edit is inert (/debug.html is denylisted) and enlarges the Command Hub footprint.",
+      "fix": "Optional: revert the debug.html edit and drop it from scope.json."
+    }
+  ],
+  "checked_ok": [
+    "command-hub-ownership-guard.js:1045 regex is a single literal ending /i; and existing guard tests still parse it",
+    "index.html app.js?v and styles.css?v are equal (20261110-vtid-05063) and satisfy all gateway tests (>= / > / pattern checks)",
+    "impact-rule allow-list entry at new-route-without-auth-middleware.mjs:74-77",
+    "vtid-auto-close.cjs:146 warning text only",
+    "boot-line test anchor 'const server = app.listen(PORT' matches index.ts:1664 once",
+    "no token value in scope.json, guard comment, approval text or warning string"
+  ],
+  "not_verified": [
+    "anything requiring execution (jest, tsc, node --check)",
+    "whether M1 VTIDs are inside the production..staging range today",
+    "scope.json completeness against the real git diff"
+  ]
+}
