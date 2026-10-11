@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { buildStageTimeline, defaultStageTimeline, mapRawToStage, type TimelineEvent, type StageTimelineEntry } from '../lib/stage-mapping';
+// VTID-05063: the ledger's read routes require the service token or an admin JWT.
+import { requireLedgerReadAuth } from '../middleware/ledger-read-auth';
 
 export const router = Router();
 
@@ -25,7 +27,7 @@ export const router = Router();
  * - task_type: mirrors module (for existing UI code)
  * - description: uses summary if available, otherwise title
  */
-router.get('/api/v1/tasks', async (req: Request, res: Response) => {
+router.get('/api/v1/tasks', requireLedgerReadAuth, async (req: Request, res: Response) => {
   try {
     const svcKey = process.env.SUPABASE_SERVICE_ROLE;
     const supabaseUrl = process.env.SUPABASE_URL;
@@ -203,7 +205,7 @@ router.get('/api/v1/tasks', async (req: Request, res: Response) => {
  * VTID-0527: Returns detail for a specific VTID with stageTimeline.
  * Includes stage timeline built from telemetry events.
  */
-router.get('/api/v1/vtid/:vtid', async (req: Request, res: Response) => {
+router.get('/api/v1/vtid/:vtid', requireLedgerReadAuth, async (req: Request, res: Response) => {
   try {
     const { vtid } = req.params;
     const svcKey = process.env.SUPABASE_SERVICE_ROLE;
@@ -319,7 +321,7 @@ router.get('/api/v1/vtid/:vtid', async (req: Request, res: Response) => {
  * - elapsedMs: Milliseconds since execution started
  * - recentEvents: Last 5 events (newest first)
  */
-router.get('/api/v1/vtid/:vtid/execution-status', async (req: Request, res: Response) => {
+router.get('/api/v1/vtid/:vtid/execution-status', requireLedgerReadAuth, async (req: Request, res: Response) => {
   try {
     const { vtid } = req.params;
     const svcKey = process.env.SUPABASE_SERVICE_ROLE;

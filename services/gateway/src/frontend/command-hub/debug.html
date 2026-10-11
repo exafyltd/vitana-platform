@@ -22,7 +22,9 @@ function addLog(msg, type='info') {
 async function testTasksAPI() {
     addLog('Testing GET /api/v1/tasks...');
     try {
-        const res = await fetch('/api/v1/tasks');
+        // VTID-05063: ledger reads need the Command Hub login (stored by app.js).
+        const token = localStorage.getItem('vitana.authToken');
+        const res = await fetch('/api/v1/tasks', { headers: token ? { Authorization: 'Bearer ' + token } : {} });
         const data = await res.json();
         addLog(`✅ Tasks API response: ${JSON.stringify(data).substring(0, 200)}...`, 'success');
         addLog(`   Found ${data.data?.length || 0} tasks`, 'info');

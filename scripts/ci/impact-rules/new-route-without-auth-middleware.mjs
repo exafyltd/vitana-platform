@@ -71,6 +71,9 @@ const AUTH_NAMES = [
   // ledger's write gate — GATEWAY_SERVICE_TOKEN or an exafy_admin JWT, same rule
   // as requireServiceOrAdmin, with a log-only rollout mode.
   'requireLedgerWriteAuth',
+  // requireLedgerReadAuth (middleware/ledger-read-auth, VTID-05063): the same
+  // credential rule on the ledger's read routes, same log-only rollout mode.
+  'requireLedgerReadAuth',
   // requireSupervisorAccess (routes/voice-supervisor.ts, VTID-04776/VTID-04780):
   // requireAuth, then exafy_admin (all tenants) or a tenant admin forced to
   // their own tenant; everyone else 403. It IS auth.

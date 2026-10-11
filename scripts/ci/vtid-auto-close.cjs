@@ -69,8 +69,10 @@ function rowAction(row) {
   return { act: true, why: `was ${row.status}` };
 }
 
-async function readRow(gateway, vtid, fetchImpl) {
+async function readRow(gateway, vtid, fetchImpl, token) {
   const res = await fetchImpl(`${gateway}/api/v1/oasis/tasks/${vtid}`, {
+    // VTID-05063: the ledger's read routes require the gateway service token too.
+    headers: authHeader(token),
     signal: AbortSignal.timeout(20000),
   });
   if (res.status === 404) return null;
@@ -115,7 +117,7 @@ async function autoClose({ gateway, pr, token = '', fetchImpl = fetch, log = con
   }
   for (const vtid of vtids) {
     try {
-      const row = await readRow(gateway, vtid, fetchImpl);
+      const row = await readRow(gateway, vtid, fetchImpl, token);
       const action = rowAction(row);
       if (!action.act) {
         results.push({ vtid, outcome: 'left', detail: action.why });
@@ -141,7 +143,7 @@ async function main() {
     ref: process.env.PR_REF || 'unknown PR',
   };
   const token = process.env.GATEWAY_SERVICE_TOKEN || '';
-  if (!token) console.log('::warning::GATEWAY_SERVICE_TOKEN is not set — the completion route will reject the close once LEDGER_WRITE_AUTH_MODE=enforce.');
+  if (!token) console.log('::warning::GATEWAY_SERVICE_TOKEN is not set — the completion route will reject the close once LEDGER_WRITE_AUTH_MODE=enforce, and the ledger read will be rejected once LEDGER_READ_AUTH_MODE=enforce.');
   const results = await autoClose({ gateway, pr, token });
   const summary = process.env.GITHUB_STEP_SUMMARY;
   if (summary && results.length) {

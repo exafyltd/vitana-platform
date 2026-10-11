@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05063",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "vtid health stays open on the gated vtid router", "path": "/api/v1/vtid/health", "expect_status": 200 },
+    { "kind": "http", "name": "build-info stays open", "path": "/api/v1/admin/build-info", "expect_status": 200 },
+    { "kind": "existing", "ref": "npx jest test/vtid-05063-ledger-read-auth.test.ts test/vtid-05063-ledger-read-routes.test.ts test/vtid-05063-ledger-read-self-calls.test.ts test/vtid-05063-command-hub-ledger-read-headers.test.ts test/vtid-04727-ledger-write-auth.test.ts", "cwd": "services/gateway", "reason": "step A ships the read gate in log mode, so a staging probe cannot tell gated from ungated; the enforce, log, off, hygiene, boot-line, per-route wiring, CORS order, self-call header and Command Hub header behaviour is proven by these suites. No anonymous Tier 1 probe is added here (F20): it would break STAGING-VERIFY once step B pins enforce" },
+    { "kind": "existing", "ref": "npx jest test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts test/vtid-04677-scheduled-notifications-auth.test.ts", "cwd": "services/gateway", "reason": "the staging register step changed (strip-list entry plus whitespace-only re-indent); these suites check bash syntax, the 20,000-char run cap and the strip-list contiguity" }
+  ]
+}

@@ -785,7 +785,16 @@ Procedure, in order of preference:
    **Since VTID-04727 it needs `Authorization: Bearer <GATEWAY_SERVICE_TOKEN>`
    or an `exafy_admin` JWT** (enforced on staging; production logs
    unauthenticated calls until it is flipped to enforce). A session without
-   either uses path 2.
+   either uses path 2. **Since VTID-05063 the ledger's READ routes need the
+   same credential** (`/api/v1/oasis/tasks*`, `/api/v1/oasis/vtid-ledger`,
+   `/api/v1/vtid/{list,projection,allocator/status,:vtid}`,
+   `/api/v1/tasks`, `/api/v1/vtid/:vtid/execution-status`, the board and
+   `/api/v1/approvals/{pending,count}`; switch `LEDGER_READ_AUTH_MODE`,
+   default `log` everywhere until step B pins staging `enforce`).
+   `/api/v1/vtid/health` stays open. A session without a token reads the
+   ledger with Supabase `execute_sql` on `vtid_ledger` instead. Not closed
+   yet (Tier 2 follow-up): the OASIS event reads, `GET /api/v1/specs/:vtid`
+   and `GET /api/v1/ops/health/vtid-ledger` still answer anonymously.
 2. **Direct Supabase RPC** (when the gateway isn't reachable, e.g. a
    Claude Code session without a live gateway endpoint): call
    `allocate_global_vtid(p_source, p_layer, p_module)` via the Supabase

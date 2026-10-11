@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { buildStageTimeline, defaultStageTimeline, type TimelineEvent, type StageTimelineEntry } from '../lib/stage-mapping';
+// VTID-05063: the ledger's read routes require the service token or an admin JWT.
+import { requireLedgerReadAuth } from '../middleware/ledger-read-auth';
 
 export const oasisVtidLedgerRouter = Router();
 
@@ -27,7 +29,7 @@ function getSupabaseConfig() {
   return { supabaseUrl, svcKey };
 }
 
-oasisVtidLedgerRouter.get('/api/v1/oasis/vtid-ledger', async (req: Request, res: Response) => {
+oasisVtidLedgerRouter.get('/api/v1/oasis/vtid-ledger', requireLedgerReadAuth, async (req: Request, res: Response) => {
   try {
     // Parse and validate query params
     const limitParam = req.query.limit as string | undefined;

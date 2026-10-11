@@ -163,6 +163,11 @@ console.log('🔥 COMMAND HUB BUNDLE: VTID-01174 LIVE 🔥');
         var resp = await origFetch(input, init);
         if (resp.status !== 401) return resp;
         if (!isExtendedSessionRole(getActiveRole())) return resp;
+        // VTID-05063: a request sent without an Authorization header cannot
+        // succeed on replay (the replay below only refreshes an existing
+        // header), so do not spend the single-use refresh token on it.
+        var origHeaders = (init && init.headers) || (typeof input !== 'string' && input && input.headers) || {};
+        if (!new Headers(origHeaders).has('Authorization')) return resp;
 
         var newToken = await performRefresh();
         if (!newToken) return resp;
@@ -5455,7 +5460,7 @@ async function fetchVtidProjection(append) {
         var pagination = state.vtidProjection.pagination;
         var offset = append ? pagination.offset : 0;
 
-        var response = await fetch('/api/v1/vtid/projection?limit=' + pagination.limit + '&offset=' + offset);
+        var response = await fetch('/api/v1/vtid/projection?limit=' + pagination.limit + '&offset=' + offset, { headers: buildContextHeaders() });
         if (!response.ok) {
             throw new Error('VTID projection fetch failed: ' + response.status);
         }
@@ -12679,7 +12684,7 @@ async function fetchTasks() {
 
     try {
         var response = await fetch('/api/v1/commandhub/board?limit=50', {
-            headers: state.authToken ? { 'Authorization': 'Bearer ' + state.authToken } : {}
+            headers: buildContextHeaders()
         });
         console.log('[BOOT-DIAG] fetchTasks response status=' + response.status);
         if (!response.ok) throw new Error('Command Hub board fetch failed: ' + response.status);
@@ -12791,7 +12796,7 @@ async function fetchVtidDetail(vtid) {
     state.selectedTaskDetailLoading = true;
 
     try {
-        const response = await fetch('/api/v1/vtid/' + encodeURIComponent(vtid));
+        const response = await fetch('/api/v1/vtid/' + encodeURIComponent(vtid), { headers: buildContextHeaders() });
         if (!response.ok) {
             throw new Error('VTID detail fetch failed: ' + response.status);
         }
@@ -12826,7 +12831,7 @@ async function fetchExecutionStatus(vtid) {
     console.log('[VTID-01209] Fetching execution status:', vtid);
 
     try {
-        const response = await fetch('/api/v1/vtid/' + encodeURIComponent(vtid) + '/execution-status');
+        const response = await fetch('/api/v1/vtid/' + encodeURIComponent(vtid) + '/execution-status', { headers: buildContextHeaders() });
         if (!response.ok) {
             throw new Error('Execution status fetch failed: ' + response.status);
         }
@@ -12913,7 +12918,7 @@ async function fetchActiveExecutions() {
 
     try {
         // First get in-progress tasks
-        const tasksResponse = await fetch('/api/v1/commandhub/board?limit=50');
+        const tasksResponse = await fetch('/api/v1/commandhub/board?limit=50', { headers: buildContextHeaders() });
         if (!tasksResponse.ok) {
             throw new Error('Tasks fetch failed: ' + tasksResponse.status);
         }
@@ -12937,7 +12942,7 @@ async function fetchActiveExecutions() {
         for (var i = 0; i < inProgressTasks.length; i++) {
             var task = inProgressTasks[i];
             try {
-                var response = await fetch('/api/v1/vtid/' + encodeURIComponent(task.vtid) + '/execution-status');
+                var response = await fetch('/api/v1/vtid/' + encodeURIComponent(task.vtid) + '/execution-status', { headers: buildContextHeaders() });
                 if (response.ok) {
                     var result = await response.json();
                     if (result.ok && result.data) {
@@ -22437,7 +22442,7 @@ async function fetchOasisVtidDetail(vtid) {
     try {
         // Fetch VTID detail and events in parallel
         var [detailResp, eventsResp] = await Promise.all([
-            fetch('/api/v1/vtid/' + encodeURIComponent(vtid)),
+            fetch('/api/v1/vtid/' + encodeURIComponent(vtid), { headers: buildContextHeaders() }),
             fetch('/api/v1/events?vtid=' + encodeURIComponent(vtid) + '&limit=100')
         ]);
 
@@ -30747,7 +30752,7 @@ async function fetchOperatorTaskQueue() {
     renderApp();
 
     try {
-        var response = await fetch('/api/v1/tasks?status=pending,in_progress,scheduled,blocked,failed&limit=50');
+        var response = await fetch('/api/v1/tasks?status=pending,in_progress,scheduled,blocked,failed&limit=50', { headers: buildContextHeaders() });
         if (!response.ok) throw new Error('Task queue fetch failed: ' + response.status);
 
         var data = await response.json();
@@ -30958,7 +30963,7 @@ async function fetchOperatorDashboard() {
                 if (!r.ok) throw new Error('Heartbeat: ' + r.status);
                 return r.json();
             }),
-            fetch('/api/v1/approvals/pending?limit=5').then(function (r) {
+            fetch('/api/v1/approvals/pending?limit=5', { headers: buildContextHeaders() }).then(function (r) {
                 if (!r.ok) throw new Error('Approvals: ' + r.status);
                 return r.json();
             })
@@ -31556,7 +31561,7 @@ async function fetchOperatorDeployments() {
                 if (!r.ok) throw new Error('Deployments: ' + r.status);
                 return r.json();
             }),
-            fetch('/api/v1/approvals/pending?limit=20').then(function (r) {
+            fetch('/api/v1/approvals/pending?limit=20', { headers: buildContextHeaders() }).then(function (r) {
                 if (!r.ok) throw new Error('Approvals: ' + r.status);
                 return r.json();
             })

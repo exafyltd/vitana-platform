@@ -5,5 +5,5 @@
 {"kind":"http","name":"tool-routing dry run is labelled for what it is","path":"/command-hub/app.js?v=20261109-vtid-05006","expect_status":200,"expect_content_type":"javascript","expect_body_contains":"Tool-routing dry run (gateway)"},
 {"kind":"http","name":"Test Contracts is a Testing & QA tab","path":"/command-hub/app.js?v=20261109-vtid-05006","expect_status":200,"expect_content_type":"javascript","expect_body_contains":"{ \"key\": \"test-contracts\", \"path\": \"/command-hub/testing-qa/test-contracts/\" }"},
 {"kind":"http","name":"the TTS sweep / echo gate bench embedded in Test Bench is served","path":"/command-hub/orb-voice-bench.html","expect_status":200,"expect_content_type":"text/html","expect_body_contains":"ORB Voice Bench"},
-{"kind":"http","name":"the Voice Test Bench deep link serves the SPA","path":"/command-hub/voice/test-bench/","expect_status":200,"expect_content_type":"text/html","expect_body_contains":"app.js?v=20261109-vtid-05006"}
+{"kind":"http","name":"the Voice Test Bench deep link serves the SPA","path":"/command-hub/voice/test-bench/","expect_status":200,"expect_content_type":"text/html","expect_body_contains":"app.js?v=20261110-vtid-05063"}
 ]}

@@ -190,7 +190,7 @@ describe('VTID-04727 wiring', () => {
     for (const w of writes) expect(w).toContain('requireLedgerWriteAuth');
   });
 
-  it('read routes stay open (out of scope for this VTID)', () => {
+  it('read routes do not carry the write gate (VTID-05063 gates them with requireLedgerReadAuth)', () => {
     const reads = tasks.match(/oasisTasksRouter\.get\([^\n]*/g) ?? [];
     expect(reads.length).toBeGreaterThan(0);
     for (const r of reads) expect(r).not.toContain('requireLedgerWriteAuth');
