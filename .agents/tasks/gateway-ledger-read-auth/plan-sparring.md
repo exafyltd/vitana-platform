@@ -6,29 +6,28 @@ Recorded by: SCRIBE (recording only, plan substance unchanged)
 
 ## Final verdict
 
-**ESCALATED** (machine verdict file sparring-verdict.json: verdict=escalated, round=3 of cap 3).
+**CONVERGED** (machine verdict file sparring-verdict.json: verdict=converged, round=4). The round-3 ESCALATED verdict (F20 major, F21 minor open at cap) went to the owner; the owner elected to apply the reviewer's own recommended fixes as written and re-spar. Revision 4 applied both fixes; round 4 closed F20 and F21 with no new findings.
 
-- Plan hash (sha256 of the text between the plan markers, LF, UTF-8, no trailing newline; computed by the scribe because the plan.md plan_hash line still reads "PENDING (recomputed in finalize)"): `cc873442955182f743873f958ca461e745bc5720193fcacb7343b9e9d1019686`
-- Body non-ASCII character count (hash definition requires ASCII only): 0
-- Note: the hash is computed over revision 3 of the plan. The sparring reviewer's round 1 and 2 hashes (fe44de27..., 4437abac...) belong to earlier revisions.
+- Plan hash (sha256 of the text between the plan markers, LF, UTF-8, ASCII only, no trailing newline): `44e339f79ba891a5b99f7a552409eff30c207d890dbd49b223cd32f54a7c1af8`. This now matches the `plan_hash:` line in plan.md (revision 4; the earlier `PENDING` placeholder has been replaced).
+- Body non-ASCII character count (hash definition requires ASCII only): 0.
+- Note: this hash is computed over revision 4 of the plan (the F20/F21 corrections). The scribe's earlier revision-3 hash `cc873442...` and the reviewer's round 1/2 hashes (fe44de27..., 4437abac...) belong to earlier revisions and no longer match.
 
-### Open / disputed items for the owner (side by side)
+### Resolved items (were open at the round-3 escalation)
 
-| Item | Reviewer position (round 3) | Planner position | Status |
+| Item | Reviewer position | Planner response (round 4) | Status |
 |---|---|---|---|
-| F20 [major] STAGING-VERIFY runs the suite of every VTID between production and the verified commit (run.mjs:324-328, lib.cjs:197-229); plan 2c says the opposite. After step B, unpublished anonymous-200 Tier 1 probes (step A's own suite, or VTID-04727 staging-tests.json:8) would fail STAGING-VERIFY and block Gate 2. | Correct 2c; keep step A's staging-tests.json to health probes plus kind:existing jest refs; step B merges only after step A and the 04727 commit are in production (or the 04727 probe is confirmed outside the range). Recommended: accept as written. | No planner response: round 3 was the final round (cap reached) and the plan text still carries the old 2c wording and work-plan step 9 "anonymous reads still 200". | OPEN |
-| F21 [minor] Section 2a cites app.js:~104; the vitana.authToken write is at app.js:125. | Change the reference to app.js:125. | No planner response (cosmetic). | OPEN |
+| F20 [major] STAGING-VERIFY runs the suite of every VTID between production and the verified commit (run.mjs:325-328, lib.cjs:197-229); plan 2c said the opposite. After step B, unpublished anonymous-200 Tier 1 probes (step A's own suite, or VTID-04727 staging-tests.json:8) would fail STAGING-VERIFY and block Gate 2. | Correct 2c; keep step A's staging-tests.json to health probes plus kind:existing jest refs; step B merges only after step A and the 04727 commit are in production (or the 04727 probe is confirmed outside the range). | ACCEPTED, fix applied. Section 2c rewritten to the real behaviour with the run.mjs/lib.cjs cites; step A suite limited to health probes plus kind:existing jest refs; explicit ordering constraint added to section 2c and work-plan step 9; the "anonymous reads still 200" wording in work-plan step 9 corrected to log-mode-only. | CLOSED |
+| F21 [minor] Section 2a cites app.js:~104; the vitana.authToken write is at app.js:125 (verified in performRefresh). | Change the reference to app.js:125. | ACCEPTED, fix applied. Section 2a reference changed to app.js:125. | CLOSED |
 
-Reviewer question outstanding: is the VTID-04727 commit already in production? (decides whether the 04727 probe can break step B.)
+Reviewer question from round 3 (is the VTID-04727 commit already in production?) is now folded into the plan as the step B ordering constraint (section 2c, work-plan step 9), to be resolved at implementation time by reading the production baseline; it is no longer an open sparring item.
 
-Per owner-preapproval.md an escalated verdict is outside the pre-approval, so this comes back to the owner.
+### Open owner decisions carried in the plan (for the single Gate 1 approval message)
 
-### Open owner decisions carried in the plan
+These are owner decisions, not sparring findings, and were not re-argued with the partner. A CONVERGED verdict means `owner-preapproval.md` applies; the owner still gets the single Gate 1 approval message for:
 
 - D1: scope of "every access": phase 1 closes Tier 1 (13 route groups); Tier 2 (events incl. SSE, specs/:vtid, ops/health/vtid-ledger, self-healing, orchestrator, operator reads) and write-side lifecycle/terminalize gaps are a committed phase 2. Residual exposure stands until then.
 - D2/D3: who may read: service token or exafy_admin JWT only; operators without the claim get 403; Cognito identities hardcoded exafy_admin false.
 - D9: whether to open a VTID for the write-side gaps and the anonymous next_vtid RPC call on GET /api/v1/vtid/health.
-- Plus (from the escalation): accept the F20 fix as written, or order one more sparring pass.
 
 ## Files in scope
 
@@ -38,7 +37,7 @@ See plan section 6 (reproduced inside the plan body below). Summary: NEW service
 
 See plan section 5 (inside the plan body below): unit/route/wiring/supertest tests for the new middleware, self-call tests, Command Hub static test, workflow wiring and size tests, vitest for vitana-v1, staging curl matrix (no-token column automated). Commands from services/gateway: npm run typecheck, npm run build, targeted npx jest then full npx jest; repo root node --test for CI scripts; vitana-v1 npm run test:unit, build, lint.
 
-## Final plan (revision 3, copied between the markers)
+## Final plan (revision 4, hash 44e339f79ba891a5b99f7a552409eff30c207d890dbd49b223cd32f54a7c1af8; see plan.md for the authoritative body between the markers)
 
 <!-- final-plan:begin -->
  and ending at the last character of the line before `
@@ -307,12 +306,24 @@ NOT CONVERGED, ESCALATED (round 3 of 3, cap reached). Open: F20 [major], F21 [mi
 
 ## Round 3: planner responses
 
-None. The cap of 3 rounds was reached; F20 and F21 stay open and are escalated to the owner.
+At the cap-3 escalation F20 and F21 were left open with no response, so the escalated verdict went to the owner. The owner elected to apply the reviewer's own recommended fixes as written and re-spar (recorded below). Revision 4 then answered both:
+
+- F20 [major] ACCEPTED. Verified against the runner sources (run.mjs:325-328, lib.cjs:197-229): STAGING-VERIFY runs the change-suite of every VTID in the production..verified-commit range, not only the current PR's VTID. Fix applied as recommended: (1) section 2c rewritten to the real behaviour with the line cites, replacing the stale "runs only the current PR's VTID file and the smoke set" assumption; (2) step A's staging-tests.json kept to health probes plus kind:existing jest references (no anonymous-200 ledger assertion); (3) explicit ordering constraint added to section 2c and work-plan step 9 (step B merges only after step A and the VTID-04727 commit are both in production, or after confirming the 04727 anonymous-200 probe is outside the replayed range). The "anonymous reads still 200" wording in work-plan step 9 was corrected to log-mode-only. Plan text only, no application/source change.
+- F21 [minor] ACCEPTED. Verified the vitana.authToken write is at app.js:125 (in performRefresh); section 2a reference changed from app.js:~104 to app.js:125.
+
+## Round 4: reviewer disposition
+
+Round 4 (same reviewer, against revision 4, hash 44e339f79ba891a5b99f7a552409eff30c207d890dbd49b223cd32f54a7c1af8). F16-F19 remain closed; F20 CLOSED (fix applied as recommended, verified against run.mjs:325-328, lib.cjs:197-229, VTID-04727/staging-tests.json:8); F21 CLOSED (app.js:125 verified). No new blocker or major introduced. Verdict: CONVERGED. Full text in sparring-review.md round 4.
+
+## Round 4: planner responses
+
+No open findings to answer: round 4 raised none. The owner questions D1, D2/D3 and D9 remain for the single Gate 1 approval message; they are owner decisions, not sparring findings.
 
 ## Machine verdict
 
-verdict: escalated
-round: 3
-findings: F16 closed, F17 closed, F18 closed, F19 closed, F20 open (major), F21 open (minor)
+verdict: converged
+round: 4
+plan_hash: 44e339f79ba891a5b99f7a552409eff30c207d890dbd49b223cd32f54a7c1af8
+findings: F16 closed, F17 closed, F18 closed, F19 closed, F20 closed (major, fix applied), F21 closed (minor, fix applied)
 
-owner_approval: APPROVED 2026-10-09 in Kiro chat session, owner reply "yes" to the escalated plan, plan hash cc873442955182f743873f958ca461e745bc5720193fcacb7343b9e9d1019686. Approved with: F20 fix accepted as written (step A suite = health probes + jest refs only; step B merges only after step A and VTID-04727 are in production), F21 line ref corrected during implementation, D1 phased (Tier 1 now, Tier 2 + write-side gaps as committed phase 2), D2/D3 reads limited to GATEWAY_SERVICE_TOKEN or exafy_admin JWT, D9 separate follow-up VTID for write-side gaps. Step D (production enforce dispatch outside PUBLISH) requires a separate explicit owner go at that moment.
+owner_approval: APPROVED 2026-10-09 in Kiro chat session, owner reply "yes" to the escalated plan, plan hash cc873442955182f743873f958ca461e745bc5720193fcacb7343b9e9d1019686. Approved with: F20 fix accepted as written (step A suite = health probes + jest refs only; step B merges only after step A and VTID-04727 are in production), F21 line ref corrected during implementation, D1 phased (Tier 1 now, Tier 2 + write-side gaps as committed phase 2), D2/D3 reads limited to GATEWAY_SERVICE_TOKEN or exafy_admin JWT, D9 separate follow-up VTID for write-side gaps. Step D (production enforce dispatch outside PUBLISH) requires a separate explicit owner go at that moment. The owner-approved fixes have now been applied and re-sparred to CONVERGED at plan hash 44e339f79ba891a5b99f7a552409eff30c207d890dbd49b223cd32f54a7c1af8; the owner approval above was given for exactly these fixes.

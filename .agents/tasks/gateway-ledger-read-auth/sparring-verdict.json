@@ -1,13 +1,14 @@
 ﻿{
-  "verdict": "escalated",
+  "verdict": "converged",
+  "plan_hash": "44e339f79ba891a5b99f7a552409eff30c207d890dbd49b223cd32f54a7c1af8",
   "findings": [
     {"id":"F16","severity":"blocker","status":"closed","claim":"Staging register-step size mitigation (re-indent jq arrays) verified: 37 lines, reclaim 888 chars, whitespace-only."},
     {"id":"F17","severity":"minor","status":"closed","claim":"Strip entry placement keeps vtid-04677 test line 215 contiguity."},
     {"id":"F18","severity":"minor","status":"closed","claim":"gemini-operator wording and service-token note verified."},
     {"id":"F19","severity":"minor","status":"closed","claim":"Section 2f grep extended; gateway-client.ts:133 listed dormant."},
-    {"id":"F20","severity":"major","status":"open","claim":"STAGING-VERIFY runs the change suite of every VTID between production and the verified commit (run.mjs:324-328, lib.cjs:197-229); plan 2c asserts the opposite. After step B, unpublished anonymous-200 Tier 1 probes (step A's own suite, or VTID-04727 staging-tests.json:8) fail STAGING-VERIFY and block Gate 2.","suggestion":"Correct 2c; keep step A's staging-tests.json to health probes plus kind:existing jest refs; step B merges only after step A and the 04727 commit are in production (or the 04727 probe is confirmed outside the range)."},
-    {"id":"F21","severity":"minor","status":"open","claim":"Section 2a cites app.js:~104; the vitana.authToken write is at app.js:125.","suggestion":"Change the reference to app.js:125."}
+    {"id":"F20","severity":"major","status":"closed","claim":"STAGING-VERIFY runs the change suite of every VTID between production and the verified commit (run.mjs:325-328, lib.cjs:197-229); plan 2c previously asserted the opposite.","resolution":"Section 2c rewritten to STAGING-VERIFY's real behaviour; step A staging-tests.json kept to health probes plus kind:existing jest refs; explicit ordering constraint added (step B merges only after step A and the VTID-04727 commit are in production, or after confirming the 04727 anonymous-200 probe is outside the production..verified-commit range); work-plan step 9 corrected (log-mode-only 200, no anonymous-200 ledger assertion in staging-tests.json)."},
+    {"id":"F21","severity":"minor","status":"closed","claim":"Section 2a cited app.js:~104; the vitana.authToken write is at app.js:125.","resolution":"Reference changed to app.js:125."}
   ],
-  "reviewDoc": "c:/Users/dstev/vitana-platform-1/.agents/tasks/gateway-ledger-read-auth\\sparring-review.md",
-  "round": 3
+  "reviewDoc": "c:/Users/dstev/vitana-platform-1/.worktrees/vtid-05063-sparring-converge/.agents/tasks/gateway-ledger-read-auth/sparring-review.md",
+  "round": 4
 }

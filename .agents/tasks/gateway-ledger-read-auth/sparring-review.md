@@ -201,3 +201,32 @@ Suggestion: change the reference to `app.js:125`.
 ## Verdict
 
 NOT CONVERGED, ESCALATED (round 3 of 3, cap reached). Open: F20 [major], F21 [minor]. F16 closed; F17-F19 closed. F20 is a text-and-ordering fix that does not need a new design, but the cap is spent, so the owner decides at Gate 1 whether to accept the fix as written in the Suggestion (recommended) or order one more pass. What the owner must decide: (a) accept the F20 fix (step A's suite has no anonymous Tier 1 200 probe, and step B waits until A and 04727 are published), plus the D1, D2/D3 and D9 questions already in the plan. Per `owner-preapproval.md`, an `escalated` verdict is outside the pre-approval, so it comes back to the owner.
+
+---
+
+# Round 4 (owner elected to accept the F20 fix as written and apply it, then re-spar)
+
+Plan under review: revision 4, body between `<!-- plan:begin -->` and `<!-- plan:end -->`. The `plan_hash:` line now reads `44e339f79ba891a5b99f7a552409eff30c207d890dbd49b223cd32f54a7c1af8`; I recomputed it over the LF, UTF-8, ASCII-only text between the markers (no trailing newline) and it matches. Body non-ASCII count: 0. Read-only review: no gateway, AWS or network call, no test suite run.
+
+Context: the escalated round-3 verdict went to the owner. The owner elected to apply the reviewer's own recommended F20 fix (and the F21 fix) as written and run a fresh pass, rather than order a redesign. This round checks only that the two open findings are closed by the revision and that nothing new was introduced.
+
+## Verified premises (round 4)
+
+- STAGING-VERIFY runs the change suite of every VTID between the production baseline and the verified commit, not just the current PR's VTID → TRUE. `run.mjs:325` `commitsBetween(baseline.rangeFrom, sha)`; `:326-328` extract every VTID from each commit subject, load each VTID's `staging-tests.json`, and `for (const s of plan.suites) runSuite(...)`. `lib.cjs:197-229` (`planRange`) iterates every commit and pushes every valid manifest's `tests` into `suites`. The `planRange` header comment itself reads "every commit between production and the verified commit".
+- `kind: existing` is a valid staging-tests manifest test type (an `npm run <script>`, `npx jest <paths>` or `npx vitest run <paths>` reference) → TRUE (`lib.cjs` `validateTest` `existing` case). So the plan's "health probes plus kind:existing jest references" is a buildable step A suite.
+- `docs/validation/VTID-04727/staging-tests.json:8` is "task reads stay open", an anonymous `GET /api/v1/oasis/tasks/VTID-04727` with `expect_status: 200` → TRUE. Under staging `enforce` this probe returns 401 and fails if the 04727 commit is still in the production..verified-commit range, exactly as F20 states.
+- The `vitana.authToken` write is at `app.js:125` (`localStorage.setItem('vitana.authToken', data.access_token)` inside `performRefresh`), not ~104 → TRUE.
+
+## Disposition of earlier findings
+
+- F16, F17, F18, F19 [closed in round 3]: unchanged, still closed. No regression in the revision-4 text.
+- F20 [major]: CLOSED. Section 2c now states STAGING-VERIFY's real behaviour with the `run.mjs:325`/`lib.cjs:197-229` cites and drops the stale "runs only the current PR's VTID file and the smoke set" assumption. It keeps step A's `staging-tests.json` to health probes plus `kind: existing` jest references (no anonymous-200 ledger assertion), and adds the explicit ordering constraint: step B merges only after step A and the VTID-04727 commit are both in production, OR after confirming the 04727 anonymous-200 probe is outside the replayed range. Work-plan step 9 was corrected to match (log-mode-only 200, ordering constraint, no anonymous-200 ledger assertion in staging-tests.json). The fix matches the round-3 Suggestion exactly; it is plan text only, no application/source change.
+- F21 [minor]: CLOSED. Section 2a now cites `app.js:125`.
+
+## Findings (new in round 4)
+
+None. The revision is confined to the two text/ordering corrections the reviewer recommended; it does not alter the owner directive, the owner questions (D1, D2/D3, D9), the scope, or the design. No new blocker or major is introduced.
+
+## Verdict
+
+CONVERGED (round 4). No open or disputed blocker or major: F16-F19 closed, F20 closed (fix applied as recommended), F21 closed. The owner questions D1, D2/D3 and D9 remain for the single Gate 1 approval message; they are owner decisions, not sparring findings, and are not re-argued with the partner. Plan hash under this verdict: `44e339f79ba891a5b99f7a552409eff30c207d890dbd49b223cd32f54a7c1af8`.
