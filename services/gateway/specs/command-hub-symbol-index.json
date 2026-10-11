@@ -2,8 +2,1622 @@
   "generated_by": "services/gateway/scripts/generate-command-hub-symbol-index.mjs",
   "generated_at": "2026-10-11",
   "note": "function name -> line range index for the Command Hub frontend *.js files, all nesting depths. Regenerate with the generator script; do not hand-edit.",
-  "total_functions": 945,
+  "total_functions": 1106,
   "files": {
+    "orb-widget.js": [
+      {
+        "name": "_currentPlaybackRate",
+        "kind": "function",
+        "startLine": 43,
+        "bodyStartLine": 43,
+        "endLine": 47,
+        "lineCount": 5
+      },
+      {
+        "name": "_pcmRateFromMime",
+        "kind": "function",
+        "startLine": 57,
+        "bodyStartLine": 57,
+        "endLine": 61,
+        "lineCount": 5
+      },
+      {
+        "name": "_isTokenExpired",
+        "kind": "function",
+        "startLine": 120,
+        "bodyStartLine": 120,
+        "endLine": 131,
+        "lineCount": 12
+      },
+      {
+        "name": "_jwtSub",
+        "kind": "function",
+        "startLine": 136,
+        "bodyStartLine": 136,
+        "endLine": 144,
+        "lineCount": 9
+      },
+      {
+        "name": "_injectStyles",
+        "kind": "function",
+        "startLine": 541,
+        "bodyStartLine": 541,
+        "endLine": 748,
+        "lineCount": 208
+      },
+      {
+        "name": "_playChime",
+        "kind": "function",
+        "startLine": 764,
+        "bodyStartLine": 764,
+        "endLine": 782,
+        "lineCount": 19
+      },
+      {
+        "name": "_playReadyBeep",
+        "kind": "function",
+        "startLine": 784,
+        "bodyStartLine": 784,
+        "endLine": 797,
+        "lineCount": 14
+      },
+      {
+        "name": "_playErrorTone",
+        "kind": "function",
+        "startLine": 799,
+        "bodyStartLine": 799,
+        "endLine": 811,
+        "lineCount": 13
+      },
+      {
+        "name": "_startCtxKeepAlive",
+        "kind": "function",
+        "startLine": 822,
+        "bodyStartLine": 822,
+        "endLine": 837,
+        "lineCount": 16
+      },
+      {
+        "name": "_stopCtxKeepAlive",
+        "kind": "function",
+        "startLine": 839,
+        "bodyStartLine": 839,
+        "endLine": 844,
+        "lineCount": 6
+      },
+      {
+        "name": "_unlockPlaybackCtxFromGesture",
+        "kind": "function",
+        "startLine": 878,
+        "bodyStartLine": 878,
+        "endLine": 907,
+        "lineCount": 30
+      },
+      {
+        "name": "_installGestureAudioUnlock",
+        "kind": "function",
+        "startLine": 914,
+        "bodyStartLine": 914,
+        "endLine": 930,
+        "lineCount": 17
+      },
+      {
+        "name": "_beaconAudioBlocked",
+        "kind": "function",
+        "startLine": 949,
+        "bodyStartLine": 949,
+        "endLine": 970,
+        "lineCount": 22
+      },
+      {
+        "name": "_announceAudioBlocked",
+        "kind": "function",
+        "startLine": 977,
+        "bodyStartLine": 977,
+        "endLine": 1003,
+        "lineCount": 27
+      },
+      {
+        "name": "_clearAudioBlocked",
+        "kind": "function",
+        "startLine": 1005,
+        "bodyStartLine": 1005,
+        "endLine": 1038,
+        "lineCount": 34
+      },
+      {
+        "name": "_resolveCaptionLocale",
+        "kind": "function",
+        "startLine": 1087,
+        "bodyStartLine": 1087,
+        "endLine": 1093,
+        "lineCount": 7
+      },
+      {
+        "name": "_loc",
+        "kind": "function",
+        "startLine": 1097,
+        "bodyStartLine": 1097,
+        "endLine": 1101,
+        "lineCount": 5
+      },
+      {
+        "name": "_caption",
+        "kind": "function",
+        "startLine": 1206,
+        "bodyStartLine": 1206,
+        "endLine": 1206,
+        "lineCount": 1
+      },
+      {
+        "name": "_pickLang",
+        "kind": "function",
+        "startLine": 1333,
+        "bodyStartLine": 1333,
+        "endLine": 1333,
+        "lineCount": 1
+      },
+      {
+        "name": "_alertClipBaseUrl",
+        "kind": "function",
+        "startLine": 1335,
+        "bodyStartLine": 1335,
+        "endLine": 1341,
+        "lineCount": 7
+      },
+      {
+        "name": "_preloadAlertClips",
+        "kind": "function",
+        "startLine": 1347,
+        "bodyStartLine": 1347,
+        "endLine": 1378,
+        "lineCount": 32
+      },
+      {
+        "name": "_wsFallbackLatched",
+        "kind": "function",
+        "startLine": 1393,
+        "bodyStartLine": 1393,
+        "endLine": 1397,
+        "lineCount": 5
+      },
+      {
+        "name": "_latchWsFallback",
+        "kind": "function",
+        "startLine": 1399,
+        "bodyStartLine": 1399,
+        "endLine": 1405,
+        "lineCount": 7
+      },
+      {
+        "name": "_useWsTransport",
+        "kind": "function",
+        "startLine": 1409,
+        "bodyStartLine": 1409,
+        "endLine": 1419,
+        "lineCount": 11
+      },
+      {
+        "name": "_fetchServerTransport",
+        "kind": "function",
+        "startLine": 1424,
+        "bodyStartLine": 1424,
+        "endLine": 1437,
+        "lineCount": 14
+      },
+      {
+        "name": "_closeWs",
+        "kind": "function",
+        "startLine": 1441,
+        "bodyStartLine": 1441,
+        "endLine": 1448,
+        "lineCount": 8
+      },
+      {
+        "name": "_prewarmContext",
+        "kind": "function",
+        "startLine": 1458,
+        "bodyStartLine": 1458,
+        "endLine": 1471,
+        "lineCount": 14
+      },
+      {
+        "name": "_prewarmBootstrap",
+        "kind": "function",
+        "startLine": 1473,
+        "bodyStartLine": 1473,
+        "endLine": 1479,
+        "lineCount": 7
+      },
+      {
+        "name": "_prewarmNovaWs",
+        "kind": "function",
+        "startLine": 1498,
+        "bodyStartLine": 1498,
+        "endLine": 1548,
+        "lineCount": 51
+      },
+      {
+        "name": "stale",
+        "kind": "function",
+        "startLine": 1509,
+        "bodyStartLine": 1509,
+        "endLine": 1509,
+        "lineCount": 1
+      },
+      {
+        "name": "drop",
+        "kind": "function",
+        "startLine": 1510,
+        "bodyStartLine": 1510,
+        "endLine": 1514,
+        "lineCount": 5
+      },
+      {
+        "name": "_playAlert",
+        "kind": "function",
+        "startLine": 1554,
+        "bodyStartLine": 1554,
+        "endLine": 1573,
+        "lineCount": 20
+      },
+      {
+        "name": "_announceDisconnect",
+        "kind": "function",
+        "startLine": 1575,
+        "bodyStartLine": 1575,
+        "endLine": 1702,
+        "lineCount": 128
+      },
+      {
+        "name": "_clearDisconnect",
+        "kind": "function",
+        "startLine": 1704,
+        "bodyStartLine": 1704,
+        "endLine": 1742,
+        "lineCount": 39
+      },
+      {
+        "name": "_shouldResumeGuidedTopic",
+        "kind": "function",
+        "startLine": 1766,
+        "bodyStartLine": 1766,
+        "endLine": 1771,
+        "lineCount": 6
+      },
+      {
+        "name": "_resetAndReconnect",
+        "kind": "function",
+        "startLine": 1776,
+        "bodyStartLine": 1776,
+        "endLine": 1857,
+        "lineCount": 82
+      },
+      {
+        "name": "_latNow",
+        "kind": "function",
+        "startLine": 1874,
+        "bodyStartLine": 1874,
+        "endLine": 1879,
+        "lineCount": 6
+      },
+      {
+        "name": "_latBegin",
+        "kind": "function",
+        "startLine": 1882,
+        "bodyStartLine": 1882,
+        "endLine": 1896,
+        "lineCount": 15
+      },
+      {
+        "name": "_latSessionAttempt",
+        "kind": "function",
+        "startLine": 1901,
+        "bodyStartLine": 1901,
+        "endLine": 1909,
+        "lineCount": 9
+      },
+      {
+        "name": "_latMark",
+        "kind": "function",
+        "startLine": 1913,
+        "bodyStartLine": 1913,
+        "endLine": 1920,
+        "lineCount": 8
+      },
+      {
+        "name": "_latNote",
+        "kind": "function",
+        "startLine": 1922,
+        "bodyStartLine": 1922,
+        "endLine": 1928,
+        "lineCount": 7
+      },
+      {
+        "name": "_latFirstAudio",
+        "kind": "function",
+        "startLine": 1931,
+        "bodyStartLine": 1931,
+        "endLine": 1941,
+        "lineCount": 11
+      },
+      {
+        "name": "_latEntry",
+        "kind": "function",
+        "startLine": 1943,
+        "bodyStartLine": 1943,
+        "endLine": 1951,
+        "lineCount": 9
+      },
+      {
+        "name": "_latFlush",
+        "kind": "function",
+        "startLine": 1953,
+        "bodyStartLine": 1953,
+        "endLine": 1976,
+        "lineCount": 24
+      },
+      {
+        "name": "_signalAudioReady",
+        "kind": "function",
+        "startLine": 2000,
+        "bodyStartLine": 2000,
+        "endLine": 2066,
+        "lineCount": 67
+      },
+      {
+        "name": "send",
+        "kind": "function",
+        "startLine": 2004,
+        "bodyStartLine": 2004,
+        "endLine": 2026,
+        "lineCount": 23
+      },
+      {
+        "name": "_playAudio",
+        "kind": "function",
+        "startLine": 2068,
+        "bodyStartLine": 2068,
+        "endLine": 2087,
+        "lineCount": 20
+      },
+      {
+        "name": "_processQueue",
+        "kind": "function",
+        "startLine": 2089,
+        "bodyStartLine": 2089,
+        "endLine": 2274,
+        "lineCount": 186
+      },
+      {
+        "name": "_sessionStart",
+        "kind": "async function",
+        "startLine": 2280,
+        "bodyStartLine": 2280,
+        "endLine": 2845,
+        "lineCount": 566
+      },
+      {
+        "name": "_sessionStartWs",
+        "kind": "function",
+        "startLine": 2863,
+        "bodyStartLine": 2863,
+        "endLine": 3033,
+        "lineCount": 171
+      },
+      {
+        "name": "armStartTimer",
+        "kind": "function",
+        "startLine": 2895,
+        "bodyStartLine": 2895,
+        "endLine": 2903,
+        "lineCount": 9
+      },
+      {
+        "name": "bail",
+        "kind": "function",
+        "startLine": 2905,
+        "bodyStartLine": 2905,
+        "endLine": 2914,
+        "lineCount": 10
+      },
+      {
+        "name": "sendStart",
+        "kind": "function",
+        "startLine": 2995,
+        "bodyStartLine": 2995,
+        "endLine": 3002,
+        "lineCount": 8
+      },
+      {
+        "name": "_sessionStop",
+        "kind": "async function",
+        "startLine": 3035,
+        "bodyStartLine": 3035,
+        "endLine": 3168,
+        "lineCount": 134
+      },
+      {
+        "name": "_handleMessage",
+        "kind": "function",
+        "startLine": 3174,
+        "bodyStartLine": 3174,
+        "endLine": 4048,
+        "lineCount": 875
+      },
+      {
+        "name": "_waitForAudioEnd",
+        "kind": "iife",
+        "startLine": 3355,
+        "bodyStartLine": 3355,
+        "endLine": 3546,
+        "lineCount": 192
+      },
+      {
+        "name": "_armIdleNudge",
+        "kind": "iife",
+        "startLine": 3529,
+        "bodyStartLine": 3529,
+        "endLine": 3543,
+        "lineCount": 15
+      },
+      {
+        "name": "check",
+        "kind": "iife",
+        "startLine": 3530,
+        "bodyStartLine": 3530,
+        "endLine": 3542,
+        "lineCount": 13
+      },
+      {
+        "name": "_waitForGoodbyeEnd",
+        "kind": "iife",
+        "startLine": 3720,
+        "bodyStartLine": 3720,
+        "endLine": 3745,
+        "lineCount": 26
+      },
+      {
+        "name": "_waitForNavReady",
+        "kind": "iife",
+        "startLine": 3834,
+        "bodyStartLine": 3834,
+        "endLine": 3883,
+        "lineCount": 50
+      },
+      {
+        "name": "_waitForFarewellEnd",
+        "kind": "iife",
+        "startLine": 3941,
+        "bodyStartLine": 3941,
+        "endLine": 3959,
+        "lineCount": 19
+      },
+      {
+        "name": "_waitForCsSpeechEnd",
+        "kind": "iife",
+        "startLine": 3988,
+        "bodyStartLine": 3988,
+        "endLine": 4004,
+        "lineCount": 17
+      },
+      {
+        "name": "_startAudioCapture",
+        "kind": "async function",
+        "startLine": 4054,
+        "bodyStartLine": 4054,
+        "endLine": 4310,
+        "lineCount": 257
+      },
+      {
+        "name": "_silentFrame",
+        "kind": "function",
+        "startLine": 4336,
+        "bodyStartLine": 4336,
+        "endLine": 4343,
+        "lineCount": 8
+      },
+      {
+        "name": "_encodeFrame",
+        "kind": "function",
+        "startLine": 4345,
+        "bodyStartLine": 4345,
+        "endLine": 4353,
+        "lineCount": 9
+      },
+      {
+        "name": "_sendAudio",
+        "kind": "function",
+        "startLine": 4382,
+        "bodyStartLine": 4382,
+        "endLine": 4392,
+        "lineCount": 11
+      },
+      {
+        "name": "_flushPreRollOrdered",
+        "kind": "function",
+        "startLine": 4399,
+        "bodyStartLine": 4399,
+        "endLine": 4421,
+        "lineCount": 23
+      },
+      {
+        "name": "_sendAudioNow",
+        "kind": "function",
+        "startLine": 4423,
+        "bodyStartLine": 4423,
+        "endLine": 4471,
+        "lineCount": 49
+      },
+      {
+        "name": "_handleStaleSessionInstance",
+        "kind": "function",
+        "startLine": 4490,
+        "bodyStartLine": 4490,
+        "endLine": 4523,
+        "lineCount": 34
+      },
+      {
+        "name": "_registerAudioSendFailure",
+        "kind": "function",
+        "startLine": 4527,
+        "bodyStartLine": 4527,
+        "endLine": 4539,
+        "lineCount": 13
+      },
+      {
+        "name": "_buildContextUpdate",
+        "kind": "function",
+        "startLine": 4548,
+        "bodyStartLine": 4548,
+        "endLine": 4556,
+        "lineCount": 9
+      },
+      {
+        "name": "_scheduleContextUpdate",
+        "kind": "function",
+        "startLine": 4557,
+        "bodyStartLine": 4557,
+        "endLine": 4563,
+        "lineCount": 7
+      },
+      {
+        "name": "_sendContextUpdate",
+        "kind": "function",
+        "startLine": 4564,
+        "bodyStartLine": 4564,
+        "endLine": 4586,
+        "lineCount": 23
+      },
+      {
+        "name": "_sendInterrupt",
+        "kind": "function",
+        "startLine": 4588,
+        "bodyStartLine": 4588,
+        "endLine": 4605,
+        "lineCount": 18
+      },
+      {
+        "name": "_shuffled",
+        "kind": "function",
+        "startLine": 4650,
+        "bodyStartLine": 4650,
+        "endLine": 4657,
+        "lineCount": 8
+      },
+      {
+        "name": "_buildThinkingQueue",
+        "kind": "function",
+        "startLine": 4661,
+        "bodyStartLine": 4661,
+        "endLine": 4668,
+        "lineCount": 8
+      },
+      {
+        "name": "_clearPendingThinking",
+        "kind": "function",
+        "startLine": 4672,
+        "bodyStartLine": 4672,
+        "endLine": 4676,
+        "lineCount": 5
+      },
+      {
+        "name": "_enterPendingThinking",
+        "kind": "function",
+        "startLine": 4689,
+        "bodyStartLine": 4689,
+        "endLine": 4718,
+        "lineCount": 30
+      },
+      {
+        "name": "_startThinkingProgress",
+        "kind": "function",
+        "startLine": 4720,
+        "bodyStartLine": 4720,
+        "endLine": 4739,
+        "lineCount": 20
+      },
+      {
+        "name": "_startWatchdog",
+        "kind": "function",
+        "startLine": 4745,
+        "bodyStartLine": 4745,
+        "endLine": 4760,
+        "lineCount": 16
+      },
+      {
+        "name": "_stopWatchdog",
+        "kind": "function",
+        "startLine": 4762,
+        "bodyStartLine": 4762,
+        "endLine": 4767,
+        "lineCount": 6
+      },
+      {
+        "name": "_resetWatchdog",
+        "kind": "function",
+        "startLine": 4769,
+        "bodyStartLine": 4769,
+        "endLine": 4771,
+        "lineCount": 3
+      },
+      {
+        "name": "_startBackgroundWatchdog",
+        "kind": "function",
+        "startLine": 4791,
+        "bodyStartLine": 4791,
+        "endLine": 4824,
+        "lineCount": 34
+      },
+      {
+        "name": "_stopBackgroundWatchdog",
+        "kind": "function",
+        "startLine": 4826,
+        "bodyStartLine": 4826,
+        "endLine": 4831,
+        "lineCount": 6
+      },
+      {
+        "name": "_speakingStateWatchdog",
+        "kind": "function",
+        "startLine": 4854,
+        "bodyStartLine": 4854,
+        "endLine": 4909,
+        "lineCount": 56
+      },
+      {
+        "name": "_startSpeakingWatchdog",
+        "kind": "function",
+        "startLine": 4911,
+        "bodyStartLine": 4911,
+        "endLine": 4914,
+        "lineCount": 4
+      },
+      {
+        "name": "_stopSpeakingWatchdog",
+        "kind": "function",
+        "startLine": 4916,
+        "bodyStartLine": 4916,
+        "endLine": 4921,
+        "lineCount": 6
+      },
+      {
+        "name": "_renderFab",
+        "kind": "function",
+        "startLine": 4927,
+        "bodyStartLine": 4927,
+        "endLine": 4940,
+        "lineCount": 14
+      },
+      {
+        "name": "_renderOverlay",
+        "kind": "function",
+        "startLine": 4942,
+        "bodyStartLine": 4942,
+        "endLine": 5022,
+        "lineCount": 81
+      },
+      {
+        "name": "_setOrbState",
+        "kind": "function",
+        "startLine": 5035,
+        "bodyStartLine": 5035,
+        "endLine": 5074,
+        "lineCount": 40
+      },
+      {
+        "name": "_setStatus",
+        "kind": "function",
+        "startLine": 5083,
+        "bodyStartLine": 5083,
+        "endLine": 5090,
+        "lineCount": 8
+      },
+      {
+        "name": "_updateUI",
+        "kind": "function",
+        "startLine": 5092,
+        "bodyStartLine": 5092,
+        "endLine": 5114,
+        "lineCount": 23
+      },
+      {
+        "name": "_toggleMute",
+        "kind": "function",
+        "startLine": 5120,
+        "bodyStartLine": 5120,
+        "endLine": 5145,
+        "lineCount": 26
+      },
+      {
+        "name": "_wipeIdentityBoundState",
+        "kind": "function",
+        "startLine": 5159,
+        "bodyStartLine": 5159,
+        "endLine": 5183,
+        "lineCount": 25
+      },
+      {
+        "name": "_refreshToken",
+        "kind": "function",
+        "startLine": 5185,
+        "bodyStartLine": 5185,
+        "endLine": 5242,
+        "lineCount": 58
+      },
+      {
+        "name": "_show",
+        "kind": "function",
+        "startLine": 5244,
+        "bodyStartLine": 5244,
+        "endLine": 5278,
+        "lineCount": 35
+      },
+      {
+        "name": "_suppressSoundscape",
+        "kind": "function",
+        "startLine": 5291,
+        "bodyStartLine": 5291,
+        "endLine": 5305,
+        "lineCount": 15
+      },
+      {
+        "name": "_restoreSoundscape",
+        "kind": "function",
+        "startLine": 5307,
+        "bodyStartLine": 5307,
+        "endLine": 5322,
+        "lineCount": 16
+      },
+      {
+        "name": "_hideDiag",
+        "kind": "function",
+        "startLine": 5338,
+        "bodyStartLine": 5338,
+        "endLine": 5349,
+        "lineCount": 12
+      },
+      {
+        "name": "_persistContinuity",
+        "kind": "function",
+        "startLine": 5351,
+        "bodyStartLine": 5351,
+        "endLine": 5382,
+        "lineCount": 32
+      },
+      {
+        "name": "_clearContinuity",
+        "kind": "function",
+        "startLine": 5385,
+        "bodyStartLine": 5385,
+        "endLine": 5394,
+        "lineCount": 10
+      },
+      {
+        "name": "_touchGuidedTopicActivity",
+        "kind": "function",
+        "startLine": 5439,
+        "bodyStartLine": 5439,
+        "endLine": 5442,
+        "lineCount": 4
+      },
+      {
+        "name": "_endGuidedTopicTeaching",
+        "kind": "function",
+        "startLine": 5450,
+        "bodyStartLine": 5450,
+        "endLine": 5493,
+        "lineCount": 44
+      },
+      {
+        "name": "_waitForGuidedTeachingAudioDrained",
+        "kind": "iife",
+        "startLine": 5468,
+        "bodyStartLine": 5468,
+        "endLine": 5492,
+        "lineCount": 25
+      },
+      {
+        "name": "_hide",
+        "kind": "function",
+        "startLine": 5495,
+        "bodyStartLine": 5495,
+        "endLine": 5609,
+        "lineCount": 115
+      },
+      {
+        "name": "_reset",
+        "kind": "function",
+        "startLine": 5613,
+        "bodyStartLine": 5613,
+        "endLine": 5625,
+        "lineCount": 13
+      },
+      {
+        "name": "_cancelPendingNav",
+        "kind": "function",
+        "startLine": 5637,
+        "bodyStartLine": 5637,
+        "endLine": 5641,
+        "lineCount": 5
+      },
+      {
+        "name": "_runNavDirective",
+        "kind": "function",
+        "startLine": 5643,
+        "bodyStartLine": 5643,
+        "endLine": 5701,
+        "lineCount": 59
+      },
+      {
+        "name": "_waitDrain",
+        "kind": "iife",
+        "startLine": 5648,
+        "bodyStartLine": 5648,
+        "endLine": 5700,
+        "lineCount": 53
+      },
+      {
+        "name": "_sendNavResult",
+        "kind": "function",
+        "startLine": 5703,
+        "bodyStartLine": 5703,
+        "endLine": 5723,
+        "lineCount": 21
+      },
+      {
+        "name": "_isClosingForNav",
+        "kind": "function",
+        "startLine": 5732,
+        "bodyStartLine": 5732,
+        "endLine": 5734,
+        "lineCount": 3
+      },
+      {
+        "name": "_attemptReconnect",
+        "kind": "function",
+        "startLine": 5765,
+        "bodyStartLine": 5765,
+        "endLine": 5931,
+        "lineCount": 167
+      },
+      {
+        "name": "_enterStuckState",
+        "kind": "function",
+        "startLine": 5939,
+        "bodyStartLine": 5939,
+        "endLine": 5973,
+        "lineCount": 35
+      },
+      {
+        "name": "_activateFallbackMode",
+        "kind": "function",
+        "startLine": 5981,
+        "bodyStartLine": 5981,
+        "endLine": 5993,
+        "lineCount": 13
+      },
+      {
+        "name": "_sendFallbackMessage",
+        "kind": "async function",
+        "startLine": 5995,
+        "bodyStartLine": 5995,
+        "endLine": 6043,
+        "lineCount": 49
+      }
+    ],
+    "pipeline-tree.js": [
+      {
+        "name": "nowMs",
+        "kind": "function",
+        "startLine": 67,
+        "bodyStartLine": 67,
+        "endLine": 67,
+        "lineCount": 1
+      },
+      {
+        "name": "uiOf",
+        "kind": "function",
+        "startLine": 69,
+        "bodyStartLine": 69,
+        "endLine": 72,
+        "lineCount": 4
+      },
+      {
+        "name": "headers",
+        "kind": "function",
+        "startLine": 74,
+        "bodyStartLine": 74,
+        "endLine": 80,
+        "lineCount": 7
+      },
+      {
+        "name": "hhmm",
+        "kind": "function",
+        "startLine": 83,
+        "bodyStartLine": 83,
+        "endLine": 89,
+        "lineCount": 7
+      },
+      {
+        "name": "duration",
+        "kind": "function",
+        "startLine": 91,
+        "bodyStartLine": 91,
+        "endLine": 100,
+        "lineCount": 10
+      },
+      {
+        "name": "ago",
+        "kind": "function",
+        "startLine": 102,
+        "bodyStartLine": 102,
+        "endLine": 109,
+        "lineCount": 8
+      },
+      {
+        "name": "mk",
+        "kind": "function",
+        "startLine": 112,
+        "bodyStartLine": 112,
+        "endLine": 117,
+        "lineCount": 6
+      },
+      {
+        "name": "statusIcon",
+        "kind": "function",
+        "startLine": 119,
+        "bodyStartLine": 119,
+        "endLine": 126,
+        "lineCount": 8
+      },
+      {
+        "name": "link",
+        "kind": "function",
+        "startLine": 128,
+        "bodyStartLine": 128,
+        "endLine": 134,
+        "lineCount": 7
+      },
+      {
+        "name": "button",
+        "kind": "function",
+        "startLine": 136,
+        "bodyStartLine": 136,
+        "endLine": 142,
+        "lineCount": 7
+      },
+      {
+        "name": "renderCard",
+        "kind": "function",
+        "startLine": 151,
+        "bodyStartLine": 151,
+        "endLine": 206,
+        "lineCount": 56
+      },
+      {
+        "name": "renderNode",
+        "kind": "function",
+        "startLine": 208,
+        "bodyStartLine": 208,
+        "endLine": 254,
+        "lineCount": 47
+      },
+      {
+        "name": "renderGate2",
+        "kind": "function",
+        "startLine": 256,
+        "bodyStartLine": 256,
+        "endLine": 283,
+        "lineCount": 28
+      },
+      {
+        "name": "parseSse",
+        "kind": "function",
+        "startLine": 287,
+        "bodyStartLine": 287,
+        "endLine": 303,
+        "lineCount": 17
+      },
+      {
+        "name": "scheduleLoad",
+        "kind": "function",
+        "startLine": 306,
+        "bodyStartLine": 306,
+        "endLine": 314,
+        "lineCount": 9
+      },
+      {
+        "name": "pump",
+        "kind": "function",
+        "startLine": 316,
+        "bodyStartLine": 316,
+        "endLine": 327,
+        "lineCount": 12
+      },
+      {
+        "name": "done",
+        "kind": "function",
+        "startLine": 326,
+        "bodyStartLine": 326,
+        "endLine": 326,
+        "lineCount": 1
+      },
+      {
+        "name": "loadThread",
+        "kind": "function",
+        "startLine": 329,
+        "bodyStartLine": 329,
+        "endLine": 347,
+        "lineCount": 19
+      },
+      {
+        "name": "threadViews",
+        "kind": "function",
+        "startLine": 349,
+        "bodyStartLine": 349,
+        "endLine": 353,
+        "lineCount": 5
+      },
+      {
+        "name": "wantsStream",
+        "kind": "function",
+        "startLine": 356,
+        "bodyStartLine": 356,
+        "endLine": 360,
+        "lineCount": 5
+      },
+      {
+        "name": "syncStreams",
+        "kind": "function",
+        "startLine": 362,
+        "bodyStartLine": 362,
+        "endLine": 371,
+        "lineCount": 10
+      },
+      {
+        "name": "stopStream",
+        "kind": "function",
+        "startLine": 373,
+        "bodyStartLine": 373,
+        "endLine": 378,
+        "lineCount": 6
+      },
+      {
+        "name": "startStream",
+        "kind": "function",
+        "startLine": 380,
+        "bodyStartLine": 380,
+        "endLine": 415,
+        "lineCount": 36
+      },
+      {
+        "name": "read",
+        "kind": "function",
+        "startLine": 391,
+        "bodyStartLine": 391,
+        "endLine": 408,
+        "lineCount": 18
+      },
+      {
+        "name": "post",
+        "kind": "function",
+        "startLine": 418,
+        "bodyStartLine": 418,
+        "endLine": 423,
+        "lineCount": 6
+      },
+      {
+        "name": "stopRun",
+        "kind": "function",
+        "startLine": 425,
+        "bodyStartLine": 425,
+        "endLine": 438,
+        "lineCount": 14
+      },
+      {
+        "name": "openPublish",
+        "kind": "function",
+        "startLine": 440,
+        "bodyStartLine": 440,
+        "endLine": 450,
+        "lineCount": 11
+      },
+      {
+        "name": "cardFor",
+        "kind": "function",
+        "startLine": 453,
+        "bodyStartLine": 453,
+        "endLine": 472,
+        "lineCount": 20
+      },
+      {
+        "name": "fillCards",
+        "kind": "function",
+        "startLine": 474,
+        "bodyStartLine": 474,
+        "endLine": 479,
+        "lineCount": 6
+      },
+      {
+        "name": "renderThreadCards",
+        "kind": "function",
+        "startLine": 482,
+        "bodyStartLine": 482,
+        "endLine": 494,
+        "lineCount": 13
+      },
+      {
+        "name": "dotStatus",
+        "kind": "function",
+        "startLine": 496,
+        "bodyStartLine": 496,
+        "endLine": 499,
+        "lineCount": 4
+      },
+      {
+        "name": "paintDot",
+        "kind": "function",
+        "startLine": 501,
+        "bodyStartLine": 501,
+        "endLine": 506,
+        "lineCount": 6
+      },
+      {
+        "name": "threadDot",
+        "kind": "function",
+        "startLine": 509,
+        "bodyStartLine": 509,
+        "endLine": 518,
+        "lineCount": 10
+      },
+      {
+        "name": "refreshDom",
+        "kind": "function",
+        "startLine": 520,
+        "bodyStartLine": 520,
+        "endLine": 527,
+        "lineCount": 8
+      },
+      {
+        "name": "ensureTicker",
+        "kind": "function",
+        "startLine": 529,
+        "bodyStartLine": 529,
+        "endLine": 545,
+        "lineCount": 17
+      }
+    ],
+    "kiro-console.js": [
+      {
+        "name": "init",
+        "kind": "function",
+        "startLine": 80,
+        "bodyStartLine": 80,
+        "endLine": 82,
+        "lineCount": 3
+      },
+      {
+        "name": "el",
+        "kind": "function",
+        "startLine": 87,
+        "bodyStartLine": 87,
+        "endLine": 92,
+        "lineCount": 6
+      },
+      {
+        "name": "button",
+        "kind": "function",
+        "startLine": 94,
+        "bodyStartLine": 94,
+        "endLine": 100,
+        "lineCount": 7
+      },
+      {
+        "name": "replaceNode",
+        "kind": "function",
+        "startLine": 102,
+        "bodyStartLine": 102,
+        "endLine": 106,
+        "lineCount": 5
+      },
+      {
+        "name": "isTerminal",
+        "kind": "function",
+        "startLine": 108,
+        "bodyStartLine": 108,
+        "endLine": 110,
+        "lineCount": 3
+      },
+      {
+        "name": "parseSse",
+        "kind": "function",
+        "startLine": 115,
+        "bodyStartLine": 115,
+        "endLine": 133,
+        "lineCount": 19
+      },
+      {
+        "name": "foldRun",
+        "kind": "function",
+        "startLine": 138,
+        "bodyStartLine": 138,
+        "endLine": 191,
+        "lineCount": 54
+      },
+      {
+        "name": "threadState",
+        "kind": "function",
+        "startLine": 198,
+        "bodyStartLine": 198,
+        "endLine": 207,
+        "lineCount": 10
+      },
+      {
+        "name": "runStatus",
+        "kind": "function",
+        "startLine": 209,
+        "bodyStartLine": 209,
+        "endLine": 213,
+        "lineCount": 5
+      },
+      {
+        "name": "upsertRun",
+        "kind": "function",
+        "startLine": 215,
+        "bodyStartLine": 215,
+        "endLine": 230,
+        "lineCount": 16
+      },
+      {
+        "name": "activeRun",
+        "kind": "function",
+        "startLine": 232,
+        "bodyStartLine": 232,
+        "endLine": 238,
+        "lineCount": 7
+      },
+      {
+        "name": "isThreadBusy",
+        "kind": "function",
+        "startLine": 240,
+        "bodyStartLine": 240,
+        "endLine": 244,
+        "lineCount": 5
+      },
+      {
+        "name": "isThreadWaiting",
+        "kind": "function",
+        "startLine": 247,
+        "bodyStartLine": 247,
+        "endLine": 255,
+        "lineCount": 9
+      },
+      {
+        "name": "waitingBadge",
+        "kind": "function",
+        "startLine": 258,
+        "bodyStartLine": 258,
+        "endLine": 264,
+        "lineCount": 7
+      },
+      {
+        "name": "updateTabTitle",
+        "kind": "function",
+        "startLine": 268,
+        "bodyStartLine": 268,
+        "endLine": 275,
+        "lineCount": 8
+      },
+      {
+        "name": "hasRuns",
+        "kind": "function",
+        "startLine": 277,
+        "bodyStartLine": 277,
+        "endLine": 280,
+        "lineCount": 4
+      },
+      {
+        "name": "loadThread",
+        "kind": "function",
+        "startLine": 285,
+        "bodyStartLine": 285,
+        "endLine": 315,
+        "lineCount": 31
+      },
+      {
+        "name": "scheduleListRefresh",
+        "kind": "function",
+        "startLine": 317,
+        "bodyStartLine": 317,
+        "endLine": 321,
+        "lineCount": 5
+      },
+      {
+        "name": "reloadRun",
+        "kind": "function",
+        "startLine": 323,
+        "bodyStartLine": 323,
+        "endLine": 328,
+        "lineCount": 6
+      },
+      {
+        "name": "applyFrame",
+        "kind": "function",
+        "startLine": 333,
+        "bodyStartLine": 333,
+        "endLine": 346,
+        "lineCount": 14
+      },
+      {
+        "name": "readStream",
+        "kind": "function",
+        "startLine": 348,
+        "bodyStartLine": 348,
+        "endLine": 364,
+        "lineCount": 17
+      },
+      {
+        "name": "pump",
+        "kind": "function",
+        "startLine": 353,
+        "bodyStartLine": 353,
+        "endLine": 362,
+        "lineCount": 10
+      },
+      {
+        "name": "follow",
+        "kind": "function",
+        "startLine": 366,
+        "bodyStartLine": 366,
+        "endLine": 420,
+        "lineCount": 55
+      },
+      {
+        "name": "done",
+        "kind": "function",
+        "startLine": 369,
+        "bodyStartLine": 369,
+        "endLine": 380,
+        "lineCount": 12
+      },
+      {
+        "name": "retry",
+        "kind": "function",
+        "startLine": 381,
+        "bodyStartLine": 381,
+        "endLine": 388,
+        "lineCount": 8
+      },
+      {
+        "name": "connect",
+        "kind": "function",
+        "startLine": 389,
+        "bodyStartLine": 389,
+        "endLine": 418,
+        "lineCount": 30
+      },
+      {
+        "name": "stopFollowing",
+        "kind": "function",
+        "startLine": 422,
+        "bodyStartLine": 422,
+        "endLine": 428,
+        "lineCount": 7
+      },
+      {
+        "name": "loadEvents",
+        "kind": "function",
+        "startLine": 431,
+        "bodyStartLine": 431,
+        "endLine": 444,
+        "lineCount": 14
+      },
+      {
+        "name": "startRun",
+        "kind": "function",
+        "startLine": 449,
+        "bodyStartLine": 449,
+        "endLine": 477,
+        "lineCount": 29
+      },
+      {
+        "name": "send",
+        "kind": "function",
+        "startLine": 479,
+        "bodyStartLine": 479,
+        "endLine": 503,
+        "lineCount": 25
+      },
+      {
+        "name": "cancelRun",
+        "kind": "function",
+        "startLine": 505,
+        "bodyStartLine": 505,
+        "endLine": 526,
+        "lineCount": 22
+      },
+      {
+        "name": "stop",
+        "kind": "function",
+        "startLine": 528,
+        "bodyStartLine": 528,
+        "endLine": 532,
+        "lineCount": 5
+      },
+      {
+        "name": "continueRun",
+        "kind": "function",
+        "startLine": 534,
+        "bodyStartLine": 534,
+        "endLine": 546,
+        "lineCount": 13
+      },
+      {
+        "name": "answerPermission",
+        "kind": "function",
+        "startLine": 548,
+        "bodyStartLine": 548,
+        "endLine": 563,
+        "lineCount": 16
+      },
+      {
+        "name": "updateConfirmationPoll",
+        "kind": "function",
+        "startLine": 567,
+        "bodyStartLine": 567,
+        "endLine": 593,
+        "lineCount": 27
+      },
+      {
+        "name": "answerConfirmation",
+        "kind": "function",
+        "startLine": 595,
+        "bodyStartLine": 595,
+        "endLine": 608,
+        "lineCount": 14
+      },
+      {
+        "name": "imageTray",
+        "kind": "function",
+        "startLine": 615,
+        "bodyStartLine": 615,
+        "endLine": 766,
+        "lineCount": 152
+      },
+      {
+        "name": "mediaUrl",
+        "kind": "function",
+        "startLine": 771,
+        "bodyStartLine": 771,
+        "endLine": 785,
+        "lineCount": 15
+      },
+      {
+        "name": "renderMediaThumbs",
+        "kind": "function",
+        "startLine": 788,
+        "bodyStartLine": 788,
+        "endLine": 804,
+        "lineCount": 17
+      },
+      {
+        "name": "renderApproval",
+        "kind": "function",
+        "startLine": 813,
+        "bodyStartLine": 813,
+        "endLine": 829,
+        "lineCount": 17
+      },
+      {
+        "name": "renderToolLine",
+        "kind": "function",
+        "startLine": 831,
+        "bodyStartLine": 831,
+        "endLine": 834,
+        "lineCount": 4
+      },
+      {
+        "name": "renderReply",
+        "kind": "function",
+        "startLine": 836,
+        "bodyStartLine": 836,
+        "endLine": 841,
+        "lineCount": 6
+      },
+      {
+        "name": "renderEndMarker",
+        "kind": "function",
+        "startLine": 843,
+        "bodyStartLine": 843,
+        "endLine": 892,
+        "lineCount": 50
+      },
+      {
+        "name": "renderRun",
+        "kind": "function",
+        "startLine": 894,
+        "bodyStartLine": 894,
+        "endLine": 1002,
+        "lineCount": 109
+      },
+      {
+        "name": "renderRunsRegion",
+        "kind": "function",
+        "startLine": 1004,
+        "bodyStartLine": 1004,
+        "endLine": 1029,
+        "lineCount": 26
+      },
+      {
+        "name": "renderComposerExtras",
+        "kind": "function",
+        "startLine": 1031,
+        "bodyStartLine": 1031,
+        "endLine": 1040,
+        "lineCount": 10
+      },
+      {
+        "name": "renderComposer",
+        "kind": "function",
+        "startLine": 1042,
+        "bodyStartLine": 1042,
+        "endLine": 1080,
+        "lineCount": 39
+      },
+      {
+        "name": "renderPane",
+        "kind": "function",
+        "startLine": 1086,
+        "bodyStartLine": 1086,
+        "endLine": 1106,
+        "lineCount": 21
+      },
+      {
+        "name": "scheduleRender",
+        "kind": "function",
+        "startLine": 1108,
+        "bodyStartLine": 1108,
+        "endLine": 1111,
+        "lineCount": 4
+      },
+      {
+        "name": "refresh",
+        "kind": "function",
+        "startLine": 1114,
+        "bodyStartLine": 1114,
+        "endLine": 1140,
+        "lineCount": 27
+      },
+      {
+        "name": "reset",
+        "kind": "function",
+        "startLine": 1143,
+        "bodyStartLine": 1143,
+        "endLine": 1156,
+        "lineCount": 14
+      }
+    ],
     "app.js": [
       {
         "name": "installAuthFetchInterceptor",
@@ -6046,928 +7660,611 @@
         "lineCount": 42
       }
     ],
-    "orb-widget.js": [
+    "voice-self-healing.js": [
       {
-        "name": "_currentPlaybackRate",
+        "name": "el",
         "kind": "function",
-        "startLine": 43,
-        "bodyStartLine": 43,
+        "startLine": 36,
+        "bodyStartLine": 36,
+        "endLine": 41,
+        "lineCount": 6
+      },
+      {
+        "name": "authHeaders",
+        "kind": "function",
+        "startLine": 42,
+        "bodyStartLine": 42,
         "endLine": 47,
-        "lineCount": 5
+        "lineCount": 6
       },
       {
-        "name": "_pcmRateFromMime",
+        "name": "toast",
         "kind": "function",
-        "startLine": 57,
-        "bodyStartLine": 57,
-        "endLine": 61,
+        "startLine": 48,
+        "bodyStartLine": 48,
+        "endLine": 51,
+        "lineCount": 4
+      },
+      {
+        "name": "api",
+        "kind": "function",
+        "startLine": 52,
+        "bodyStartLine": 52,
+        "endLine": 68,
+        "lineCount": 17
+      },
+      {
+        "name": "ago",
+        "kind": "function",
+        "startLine": 69,
+        "bodyStartLine": 69,
+        "endLine": 80,
+        "lineCount": 12
+      },
+      {
+        "name": "when",
+        "kind": "function",
+        "startLine": 81,
+        "bodyStartLine": 81,
+        "endLine": 85,
         "lineCount": 5
       },
       {
-        "name": "_isTokenExpired",
+        "name": "human",
+        "kind": "function",
+        "startLine": 86,
+        "bodyStartLine": 86,
+        "endLine": 86,
+        "lineCount": 1
+      },
+      {
+        "name": "pct",
+        "kind": "function",
+        "startLine": 87,
+        "bodyStartLine": 87,
+        "endLine": 87,
+        "lineCount": 1
+      },
+      {
+        "name": "btn",
+        "kind": "function",
+        "startLine": 88,
+        "bodyStartLine": 88,
+        "endLine": 94,
+        "lineCount": 7
+      },
+      {
+        "name": "section",
+        "kind": "function",
+        "startLine": 95,
+        "bodyStartLine": 95,
+        "endLine": 105,
+        "lineCount": 11
+      },
+      {
+        "name": "table",
+        "kind": "function",
+        "startLine": 106,
+        "bodyStartLine": 106,
+        "endLine": 119,
+        "lineCount": 14
+      },
+      {
+        "name": "td",
         "kind": "function",
         "startLine": 120,
         "bodyStartLine": 120,
-        "endLine": 131,
-        "lineCount": 12
-      },
-      {
-        "name": "_jwtSub",
-        "kind": "function",
-        "startLine": 136,
-        "bodyStartLine": 136,
-        "endLine": 144,
-        "lineCount": 9
-      },
-      {
-        "name": "_injectStyles",
-        "kind": "function",
-        "startLine": 541,
-        "bodyStartLine": 541,
-        "endLine": 748,
-        "lineCount": 208
-      },
-      {
-        "name": "_playChime",
-        "kind": "function",
-        "startLine": 764,
-        "bodyStartLine": 764,
-        "endLine": 782,
-        "lineCount": 19
-      },
-      {
-        "name": "_playReadyBeep",
-        "kind": "function",
-        "startLine": 784,
-        "bodyStartLine": 784,
-        "endLine": 797,
-        "lineCount": 14
-      },
-      {
-        "name": "_playErrorTone",
-        "kind": "function",
-        "startLine": 799,
-        "bodyStartLine": 799,
-        "endLine": 811,
-        "lineCount": 13
-      },
-      {
-        "name": "_startCtxKeepAlive",
-        "kind": "function",
-        "startLine": 822,
-        "bodyStartLine": 822,
-        "endLine": 837,
-        "lineCount": 16
-      },
-      {
-        "name": "_stopCtxKeepAlive",
-        "kind": "function",
-        "startLine": 839,
-        "bodyStartLine": 839,
-        "endLine": 844,
-        "lineCount": 6
-      },
-      {
-        "name": "_unlockPlaybackCtxFromGesture",
-        "kind": "function",
-        "startLine": 878,
-        "bodyStartLine": 878,
-        "endLine": 907,
-        "lineCount": 30
-      },
-      {
-        "name": "_installGestureAudioUnlock",
-        "kind": "function",
-        "startLine": 914,
-        "bodyStartLine": 914,
-        "endLine": 930,
-        "lineCount": 17
-      },
-      {
-        "name": "_beaconAudioBlocked",
-        "kind": "function",
-        "startLine": 949,
-        "bodyStartLine": 949,
-        "endLine": 970,
-        "lineCount": 22
-      },
-      {
-        "name": "_announceAudioBlocked",
-        "kind": "function",
-        "startLine": 977,
-        "bodyStartLine": 977,
-        "endLine": 1003,
-        "lineCount": 27
-      },
-      {
-        "name": "_clearAudioBlocked",
-        "kind": "function",
-        "startLine": 1005,
-        "bodyStartLine": 1005,
-        "endLine": 1038,
-        "lineCount": 34
-      },
-      {
-        "name": "_resolveCaptionLocale",
-        "kind": "function",
-        "startLine": 1087,
-        "bodyStartLine": 1087,
-        "endLine": 1093,
-        "lineCount": 7
-      },
-      {
-        "name": "_loc",
-        "kind": "function",
-        "startLine": 1097,
-        "bodyStartLine": 1097,
-        "endLine": 1101,
-        "lineCount": 5
-      },
-      {
-        "name": "_caption",
-        "kind": "function",
-        "startLine": 1206,
-        "bodyStartLine": 1206,
-        "endLine": 1206,
+        "endLine": 120,
         "lineCount": 1
       },
       {
-        "name": "_pickLang",
+        "name": "load",
         "kind": "function",
-        "startLine": 1333,
-        "bodyStartLine": 1333,
-        "endLine": 1333,
-        "lineCount": 1
-      },
-      {
-        "name": "_alertClipBaseUrl",
-        "kind": "function",
-        "startLine": 1335,
-        "bodyStartLine": 1335,
-        "endLine": 1341,
-        "lineCount": 7
-      },
-      {
-        "name": "_preloadAlertClips",
-        "kind": "function",
-        "startLine": 1347,
-        "bodyStartLine": 1347,
-        "endLine": 1378,
-        "lineCount": 32
-      },
-      {
-        "name": "_wsFallbackLatched",
-        "kind": "function",
-        "startLine": 1393,
-        "bodyStartLine": 1393,
-        "endLine": 1397,
-        "lineCount": 5
-      },
-      {
-        "name": "_latchWsFallback",
-        "kind": "function",
-        "startLine": 1399,
-        "bodyStartLine": 1399,
-        "endLine": 1405,
-        "lineCount": 7
-      },
-      {
-        "name": "_useWsTransport",
-        "kind": "function",
-        "startLine": 1409,
-        "bodyStartLine": 1409,
-        "endLine": 1419,
-        "lineCount": 11
-      },
-      {
-        "name": "_fetchServerTransport",
-        "kind": "function",
-        "startLine": 1424,
-        "bodyStartLine": 1424,
-        "endLine": 1437,
-        "lineCount": 14
-      },
-      {
-        "name": "_closeWs",
-        "kind": "function",
-        "startLine": 1441,
-        "bodyStartLine": 1441,
-        "endLine": 1448,
-        "lineCount": 8
-      },
-      {
-        "name": "_prewarmContext",
-        "kind": "function",
-        "startLine": 1458,
-        "bodyStartLine": 1458,
-        "endLine": 1471,
-        "lineCount": 14
-      },
-      {
-        "name": "_prewarmBootstrap",
-        "kind": "function",
-        "startLine": 1473,
-        "bodyStartLine": 1473,
-        "endLine": 1479,
-        "lineCount": 7
-      },
-      {
-        "name": "_prewarmNovaWs",
-        "kind": "function",
-        "startLine": 1498,
-        "bodyStartLine": 1498,
-        "endLine": 1548,
-        "lineCount": 51
-      },
-      {
-        "name": "stale",
-        "kind": "function",
-        "startLine": 1509,
-        "bodyStartLine": 1509,
-        "endLine": 1509,
-        "lineCount": 1
-      },
-      {
-        "name": "drop",
-        "kind": "function",
-        "startLine": 1510,
-        "bodyStartLine": 1510,
-        "endLine": 1514,
-        "lineCount": 5
-      },
-      {
-        "name": "_playAlert",
-        "kind": "function",
-        "startLine": 1554,
-        "bodyStartLine": 1554,
-        "endLine": 1573,
-        "lineCount": 20
-      },
-      {
-        "name": "_announceDisconnect",
-        "kind": "function",
-        "startLine": 1575,
-        "bodyStartLine": 1575,
-        "endLine": 1702,
-        "lineCount": 128
-      },
-      {
-        "name": "_clearDisconnect",
-        "kind": "function",
-        "startLine": 1704,
-        "bodyStartLine": 1704,
-        "endLine": 1742,
-        "lineCount": 39
-      },
-      {
-        "name": "_shouldResumeGuidedTopic",
-        "kind": "function",
-        "startLine": 1766,
-        "bodyStartLine": 1766,
-        "endLine": 1771,
-        "lineCount": 6
-      },
-      {
-        "name": "_resetAndReconnect",
-        "kind": "function",
-        "startLine": 1776,
-        "bodyStartLine": 1776,
-        "endLine": 1857,
-        "lineCount": 82
-      },
-      {
-        "name": "_latNow",
-        "kind": "function",
-        "startLine": 1874,
-        "bodyStartLine": 1874,
-        "endLine": 1879,
-        "lineCount": 6
-      },
-      {
-        "name": "_latBegin",
-        "kind": "function",
-        "startLine": 1882,
-        "bodyStartLine": 1882,
-        "endLine": 1896,
+        "startLine": 123,
+        "bodyStartLine": 123,
+        "endLine": 137,
         "lineCount": 15
       },
       {
-        "name": "_latSessionAttempt",
+        "name": "startPolling",
         "kind": "function",
-        "startLine": 1901,
-        "bodyStartLine": 1901,
-        "endLine": 1909,
-        "lineCount": 9
-      },
-      {
-        "name": "_latMark",
-        "kind": "function",
-        "startLine": 1913,
-        "bodyStartLine": 1913,
-        "endLine": 1920,
-        "lineCount": 8
-      },
-      {
-        "name": "_latNote",
-        "kind": "function",
-        "startLine": 1922,
-        "bodyStartLine": 1922,
-        "endLine": 1928,
-        "lineCount": 7
-      },
-      {
-        "name": "_latFirstAudio",
-        "kind": "function",
-        "startLine": 1931,
-        "bodyStartLine": 1931,
-        "endLine": 1941,
+        "startLine": 138,
+        "bodyStartLine": 138,
+        "endLine": 148,
         "lineCount": 11
       },
       {
-        "name": "_latEntry",
+        "name": "rerender",
         "kind": "function",
-        "startLine": 1943,
-        "bodyStartLine": 1943,
-        "endLine": 1951,
+        "startLine": 149,
+        "bodyStartLine": 149,
+        "endLine": 154,
+        "lineCount": 6
+      },
+      {
+        "name": "runAction",
+        "kind": "function",
+        "startLine": 157,
+        "bodyStartLine": 157,
+        "endLine": 170,
+        "lineCount": 14
+      },
+      {
+        "name": "setMode",
+        "kind": "function",
+        "startLine": 171,
+        "bodyStartLine": 171,
+        "endLine": 181,
+        "lineCount": 11
+      },
+      {
+        "name": "accept",
+        "kind": "function",
+        "startLine": 182,
+        "bodyStartLine": 182,
+        "endLine": 193,
+        "lineCount": 12
+      },
+      {
+        "name": "dismiss",
+        "kind": "function",
+        "startLine": 194,
+        "bodyStartLine": 194,
+        "endLine": 198,
+        "lineCount": 5
+      },
+      {
+        "name": "dismissAllFailed",
+        "kind": "function",
+        "startLine": 199,
+        "bodyStartLine": 199,
+        "endLine": 203,
+        "lineCount": 5
+      },
+      {
+        "name": "retry",
+        "kind": "function",
+        "startLine": 204,
+        "bodyStartLine": 204,
+        "endLine": 207,
+        "lineCount": 4
+      },
+      {
+        "name": "release",
+        "kind": "function",
+        "startLine": 208,
+        "bodyStartLine": 208,
+        "endLine": 213,
+        "lineCount": 6
+      },
+      {
+        "name": "loadProgress",
+        "kind": "function",
+        "startLine": 214,
+        "bodyStartLine": 214,
+        "endLine": 222,
         "lineCount": 9
       },
       {
-        "name": "_latFlush",
+        "name": "closeDrawer",
         "kind": "function",
-        "startLine": 1953,
-        "bodyStartLine": 1953,
-        "endLine": 1976,
+        "startLine": 225,
+        "bodyStartLine": 225,
+        "endLine": 228,
+        "lineCount": 4
+      },
+      {
+        "name": "openDrawer",
+        "kind": "function",
+        "startLine": 229,
+        "bodyStartLine": 229,
+        "endLine": 252,
         "lineCount": 24
       },
       {
-        "name": "_signalAudioReady",
+        "name": "esc",
         "kind": "function",
-        "startLine": 2000,
-        "bodyStartLine": 2000,
-        "endLine": 2066,
-        "lineCount": 67
-      },
-      {
-        "name": "send",
-        "kind": "function",
-        "startLine": 2004,
-        "bodyStartLine": 2004,
-        "endLine": 2026,
-        "lineCount": 23
-      },
-      {
-        "name": "_playAudio",
-        "kind": "function",
-        "startLine": 2068,
-        "bodyStartLine": 2068,
-        "endLine": 2087,
-        "lineCount": 20
-      },
-      {
-        "name": "_processQueue",
-        "kind": "function",
-        "startLine": 2089,
-        "bodyStartLine": 2089,
-        "endLine": 2274,
-        "lineCount": 186
-      },
-      {
-        "name": "_sessionStart",
-        "kind": "async function",
-        "startLine": 2280,
-        "bodyStartLine": 2280,
-        "endLine": 2845,
-        "lineCount": 566
-      },
-      {
-        "name": "_sessionStartWs",
-        "kind": "function",
-        "startLine": 2863,
-        "bodyStartLine": 2863,
-        "endLine": 3033,
-        "lineCount": 171
-      },
-      {
-        "name": "armStartTimer",
-        "kind": "function",
-        "startLine": 2895,
-        "bodyStartLine": 2895,
-        "endLine": 2903,
-        "lineCount": 9
-      },
-      {
-        "name": "bail",
-        "kind": "function",
-        "startLine": 2905,
-        "bodyStartLine": 2905,
-        "endLine": 2914,
-        "lineCount": 10
-      },
-      {
-        "name": "sendStart",
-        "kind": "function",
-        "startLine": 2995,
-        "bodyStartLine": 2995,
-        "endLine": 3002,
-        "lineCount": 8
-      },
-      {
-        "name": "_sessionStop",
-        "kind": "async function",
-        "startLine": 3035,
-        "bodyStartLine": 3035,
-        "endLine": 3168,
-        "lineCount": 134
-      },
-      {
-        "name": "_handleMessage",
-        "kind": "function",
-        "startLine": 3174,
-        "bodyStartLine": 3174,
-        "endLine": 4048,
-        "lineCount": 875
-      },
-      {
-        "name": "_waitForAudioEnd",
-        "kind": "iife",
-        "startLine": 3355,
-        "bodyStartLine": 3355,
-        "endLine": 3546,
-        "lineCount": 192
-      },
-      {
-        "name": "_armIdleNudge",
-        "kind": "iife",
-        "startLine": 3529,
-        "bodyStartLine": 3529,
-        "endLine": 3543,
-        "lineCount": 15
-      },
-      {
-        "name": "check",
-        "kind": "iife",
-        "startLine": 3530,
-        "bodyStartLine": 3530,
-        "endLine": 3542,
-        "lineCount": 13
-      },
-      {
-        "name": "_waitForGoodbyeEnd",
-        "kind": "iife",
-        "startLine": 3720,
-        "bodyStartLine": 3720,
-        "endLine": 3745,
-        "lineCount": 26
-      },
-      {
-        "name": "_waitForNavReady",
-        "kind": "iife",
-        "startLine": 3834,
-        "bodyStartLine": 3834,
-        "endLine": 3883,
-        "lineCount": 50
-      },
-      {
-        "name": "_waitForFarewellEnd",
-        "kind": "iife",
-        "startLine": 3941,
-        "bodyStartLine": 3941,
-        "endLine": 3959,
-        "lineCount": 19
-      },
-      {
-        "name": "_waitForCsSpeechEnd",
-        "kind": "iife",
-        "startLine": 3988,
-        "bodyStartLine": 3988,
-        "endLine": 4004,
-        "lineCount": 17
-      },
-      {
-        "name": "_startAudioCapture",
-        "kind": "async function",
-        "startLine": 4054,
-        "bodyStartLine": 4054,
-        "endLine": 4310,
-        "lineCount": 257
-      },
-      {
-        "name": "_silentFrame",
-        "kind": "function",
-        "startLine": 4336,
-        "bodyStartLine": 4336,
-        "endLine": 4343,
-        "lineCount": 8
-      },
-      {
-        "name": "_encodeFrame",
-        "kind": "function",
-        "startLine": 4345,
-        "bodyStartLine": 4345,
-        "endLine": 4353,
-        "lineCount": 9
-      },
-      {
-        "name": "_sendAudio",
-        "kind": "function",
-        "startLine": 4382,
-        "bodyStartLine": 4382,
-        "endLine": 4392,
-        "lineCount": 11
-      },
-      {
-        "name": "_flushPreRollOrdered",
-        "kind": "function",
-        "startLine": 4399,
-        "bodyStartLine": 4399,
-        "endLine": 4421,
-        "lineCount": 23
-      },
-      {
-        "name": "_sendAudioNow",
-        "kind": "function",
-        "startLine": 4423,
-        "bodyStartLine": 4423,
-        "endLine": 4471,
-        "lineCount": 49
-      },
-      {
-        "name": "_handleStaleSessionInstance",
-        "kind": "function",
-        "startLine": 4490,
-        "bodyStartLine": 4490,
-        "endLine": 4523,
-        "lineCount": 34
-      },
-      {
-        "name": "_registerAudioSendFailure",
-        "kind": "function",
-        "startLine": 4527,
-        "bodyStartLine": 4527,
-        "endLine": 4539,
-        "lineCount": 13
-      },
-      {
-        "name": "_buildContextUpdate",
-        "kind": "function",
-        "startLine": 4548,
-        "bodyStartLine": 4548,
-        "endLine": 4556,
-        "lineCount": 9
-      },
-      {
-        "name": "_scheduleContextUpdate",
-        "kind": "function",
-        "startLine": 4557,
-        "bodyStartLine": 4557,
-        "endLine": 4563,
-        "lineCount": 7
-      },
-      {
-        "name": "_sendContextUpdate",
-        "kind": "function",
-        "startLine": 4564,
-        "bodyStartLine": 4564,
-        "endLine": 4586,
-        "lineCount": 23
-      },
-      {
-        "name": "_sendInterrupt",
-        "kind": "function",
-        "startLine": 4588,
-        "bodyStartLine": 4588,
-        "endLine": 4605,
-        "lineCount": 18
-      },
-      {
-        "name": "_shuffled",
-        "kind": "function",
-        "startLine": 4650,
-        "bodyStartLine": 4650,
-        "endLine": 4657,
-        "lineCount": 8
-      },
-      {
-        "name": "_buildThinkingQueue",
-        "kind": "function",
-        "startLine": 4661,
-        "bodyStartLine": 4661,
-        "endLine": 4668,
-        "lineCount": 8
-      },
-      {
-        "name": "_clearPendingThinking",
-        "kind": "function",
-        "startLine": 4672,
-        "bodyStartLine": 4672,
-        "endLine": 4676,
-        "lineCount": 5
-      },
-      {
-        "name": "_enterPendingThinking",
-        "kind": "function",
-        "startLine": 4689,
-        "bodyStartLine": 4689,
-        "endLine": 4718,
-        "lineCount": 30
-      },
-      {
-        "name": "_startThinkingProgress",
-        "kind": "function",
-        "startLine": 4720,
-        "bodyStartLine": 4720,
-        "endLine": 4739,
-        "lineCount": 20
-      },
-      {
-        "name": "_startWatchdog",
-        "kind": "function",
-        "startLine": 4745,
-        "bodyStartLine": 4745,
-        "endLine": 4760,
-        "lineCount": 16
-      },
-      {
-        "name": "_stopWatchdog",
-        "kind": "function",
-        "startLine": 4762,
-        "bodyStartLine": 4762,
-        "endLine": 4767,
-        "lineCount": 6
-      },
-      {
-        "name": "_resetWatchdog",
-        "kind": "function",
-        "startLine": 4769,
-        "bodyStartLine": 4769,
-        "endLine": 4771,
+        "startLine": 242,
+        "bodyStartLine": 242,
+        "endLine": 244,
         "lineCount": 3
       },
       {
-        "name": "_startBackgroundWatchdog",
+        "name": "list",
         "kind": "function",
-        "startLine": 4791,
-        "bodyStartLine": 4791,
-        "endLine": 4824,
-        "lineCount": 34
+        "startLine": 253,
+        "bodyStartLine": 253,
+        "endLine": 257,
+        "lineCount": 5
       },
       {
-        "name": "_stopBackgroundWatchdog",
+        "name": "drawerContent",
         "kind": "function",
-        "startLine": 4826,
-        "bodyStartLine": 4826,
-        "endLine": 4831,
-        "lineCount": 6
+        "startLine": 258,
+        "bodyStartLine": 258,
+        "endLine": 319,
+        "lineCount": 62
       },
       {
-        "name": "_speakingStateWatchdog",
+        "name": "header",
         "kind": "function",
-        "startLine": 4854,
-        "bodyStartLine": 4854,
-        "endLine": 4909,
-        "lineCount": 56
-      },
-      {
-        "name": "_startSpeakingWatchdog",
-        "kind": "function",
-        "startLine": 4911,
-        "bodyStartLine": 4911,
-        "endLine": 4914,
-        "lineCount": 4
-      },
-      {
-        "name": "_stopSpeakingWatchdog",
-        "kind": "function",
-        "startLine": 4916,
-        "bodyStartLine": 4916,
-        "endLine": 4921,
-        "lineCount": 6
-      },
-      {
-        "name": "_renderFab",
-        "kind": "function",
-        "startLine": 4927,
-        "bodyStartLine": 4927,
-        "endLine": 4940,
+        "startLine": 322,
+        "bodyStartLine": 322,
+        "endLine": 335,
         "lineCount": 14
       },
       {
-        "name": "_renderOverlay",
+        "name": "modeBar",
         "kind": "function",
-        "startLine": 4942,
-        "bodyStartLine": 4942,
-        "endLine": 5022,
-        "lineCount": 81
+        "startLine": 337,
+        "bodyStartLine": 337,
+        "endLine": 358,
+        "lineCount": 22
       },
       {
-        "name": "_setOrbState",
+        "name": "alerts",
         "kind": "function",
-        "startLine": 5035,
-        "bodyStartLine": 5035,
-        "endLine": 5074,
-        "lineCount": 40
+        "startLine": 360,
+        "bodyStartLine": 360,
+        "endLine": 370,
+        "lineCount": 11
       },
       {
-        "name": "_setStatus",
+        "name": "stageCard",
         "kind": "function",
-        "startLine": 5083,
-        "bodyStartLine": 5083,
-        "endLine": 5090,
-        "lineCount": 8
+        "startLine": 372,
+        "bodyStartLine": 372,
+        "endLine": 388,
+        "lineCount": 17
       },
       {
-        "name": "_updateUI",
+        "name": "pipeline",
         "kind": "function",
-        "startLine": 5092,
-        "bodyStartLine": 5092,
-        "endLine": 5114,
-        "lineCount": 23
+        "startLine": 390,
+        "bodyStartLine": 390,
+        "endLine": 413,
+        "lineCount": 24
       },
       {
-        "name": "_toggleMute",
+        "name": "reportCard",
         "kind": "function",
-        "startLine": 5120,
-        "bodyStartLine": 5120,
-        "endLine": 5145,
-        "lineCount": 26
+        "startLine": 415,
+        "bodyStartLine": 415,
+        "endLine": 442,
+        "lineCount": 28
       },
       {
-        "name": "_wipeIdentityBoundState",
+        "name": "failedRow",
         "kind": "function",
-        "startLine": 5159,
-        "bodyStartLine": 5159,
-        "endLine": 5183,
-        "lineCount": 25
-      },
-      {
-        "name": "_refreshToken",
-        "kind": "function",
-        "startLine": 5185,
-        "bodyStartLine": 5185,
-        "endLine": 5242,
-        "lineCount": 58
-      },
-      {
-        "name": "_show",
-        "kind": "function",
-        "startLine": 5244,
-        "bodyStartLine": 5244,
-        "endLine": 5278,
-        "lineCount": 35
-      },
-      {
-        "name": "_suppressSoundscape",
-        "kind": "function",
-        "startLine": 5291,
-        "bodyStartLine": 5291,
-        "endLine": 5305,
-        "lineCount": 15
-      },
-      {
-        "name": "_restoreSoundscape",
-        "kind": "function",
-        "startLine": 5307,
-        "bodyStartLine": 5307,
-        "endLine": 5322,
-        "lineCount": 16
-      },
-      {
-        "name": "_hideDiag",
-        "kind": "function",
-        "startLine": 5338,
-        "bodyStartLine": 5338,
-        "endLine": 5349,
+        "startLine": 444,
+        "bodyStartLine": 444,
+        "endLine": 455,
         "lineCount": 12
       },
       {
-        "name": "_persistContinuity",
+        "name": "decidedRow",
         "kind": "function",
-        "startLine": 5351,
-        "bodyStartLine": 5351,
-        "endLine": 5382,
-        "lineCount": 32
-      },
-      {
-        "name": "_clearContinuity",
-        "kind": "function",
-        "startLine": 5385,
-        "bodyStartLine": 5385,
-        "endLine": 5394,
-        "lineCount": 10
-      },
-      {
-        "name": "_touchGuidedTopicActivity",
-        "kind": "function",
-        "startLine": 5439,
-        "bodyStartLine": 5439,
-        "endLine": 5442,
-        "lineCount": 4
-      },
-      {
-        "name": "_endGuidedTopicTeaching",
-        "kind": "function",
-        "startLine": 5450,
-        "bodyStartLine": 5450,
-        "endLine": 5493,
-        "lineCount": 44
-      },
-      {
-        "name": "_waitForGuidedTeachingAudioDrained",
-        "kind": "iife",
-        "startLine": 5468,
-        "bodyStartLine": 5468,
-        "endLine": 5492,
-        "lineCount": 25
-      },
-      {
-        "name": "_hide",
-        "kind": "function",
-        "startLine": 5495,
-        "bodyStartLine": 5495,
-        "endLine": 5609,
-        "lineCount": 115
-      },
-      {
-        "name": "_reset",
-        "kind": "function",
-        "startLine": 5613,
-        "bodyStartLine": 5613,
-        "endLine": 5625,
-        "lineCount": 13
-      },
-      {
-        "name": "_cancelPendingNav",
-        "kind": "function",
-        "startLine": 5637,
-        "bodyStartLine": 5637,
-        "endLine": 5641,
-        "lineCount": 5
-      },
-      {
-        "name": "_runNavDirective",
-        "kind": "function",
-        "startLine": 5643,
-        "bodyStartLine": 5643,
-        "endLine": 5701,
-        "lineCount": 59
-      },
-      {
-        "name": "_waitDrain",
-        "kind": "iife",
-        "startLine": 5648,
-        "bodyStartLine": 5648,
-        "endLine": 5700,
-        "lineCount": 53
-      },
-      {
-        "name": "_sendNavResult",
-        "kind": "function",
-        "startLine": 5703,
-        "bodyStartLine": 5703,
-        "endLine": 5723,
-        "lineCount": 21
-      },
-      {
-        "name": "_isClosingForNav",
-        "kind": "function",
-        "startLine": 5732,
-        "bodyStartLine": 5732,
-        "endLine": 5734,
-        "lineCount": 3
-      },
-      {
-        "name": "_attemptReconnect",
-        "kind": "function",
-        "startLine": 5765,
-        "bodyStartLine": 5765,
-        "endLine": 5931,
-        "lineCount": 167
-      },
-      {
-        "name": "_enterStuckState",
-        "kind": "function",
-        "startLine": 5939,
-        "bodyStartLine": 5939,
-        "endLine": 5973,
+        "startLine": 457,
+        "bodyStartLine": 457,
+        "endLine": 491,
         "lineCount": 35
       },
       {
-        "name": "_activateFallbackMode",
+        "name": "reports",
         "kind": "function",
-        "startLine": 5981,
-        "bodyStartLine": 5981,
-        "endLine": 5993,
-        "lineCount": 13
+        "startLine": 493,
+        "bodyStartLine": 493,
+        "endLine": 534,
+        "lineCount": 42
       },
       {
-        "name": "_sendFallbackMessage",
-        "kind": "async function",
-        "startLine": 5995,
-        "bodyStartLine": 5995,
-        "endLine": 6043,
-        "lineCount": 49
+        "name": "detections",
+        "kind": "function",
+        "startLine": 536,
+        "bodyStartLine": 536,
+        "endLine": 556,
+        "lineCount": 21
+      },
+      {
+        "name": "quarantine",
+        "kind": "function",
+        "startLine": 558,
+        "bodyStartLine": 558,
+        "endLine": 575,
+        "lineCount": 18
+      },
+      {
+        "name": "perClass",
+        "kind": "function",
+        "startLine": 577,
+        "bodyStartLine": 577,
+        "endLine": 596,
+        "lineCount": 20
+      },
+      {
+        "name": "liveSessions",
+        "kind": "function",
+        "startLine": 598,
+        "bodyStartLine": 598,
+        "endLine": 621,
+        "lineCount": 24
+      },
+      {
+        "name": "build",
+        "kind": "function",
+        "startLine": 623,
+        "bodyStartLine": 623,
+        "endLine": 649,
+        "lineCount": 27
       }
     ],
+    "voice-supervisor.js": [
+      {
+        "name": "el",
+        "kind": "function",
+        "startLine": 103,
+        "bodyStartLine": 103,
+        "endLine": 108,
+        "lineCount": 6
+      },
+      {
+        "name": "authHeaders",
+        "kind": "function",
+        "startLine": 109,
+        "bodyStartLine": 109,
+        "endLine": 114,
+        "lineCount": 6
+      },
+      {
+        "name": "getJson",
+        "kind": "function",
+        "startLine": 115,
+        "bodyStartLine": 115,
+        "endLine": 130,
+        "lineCount": 16
+      },
+      {
+        "name": "btn",
+        "kind": "function",
+        "startLine": 131,
+        "bodyStartLine": 131,
+        "endLine": 141,
+        "lineCount": 11
+      },
+      {
+        "name": "num",
+        "kind": "function",
+        "startLine": 142,
+        "bodyStartLine": 142,
+        "endLine": 142,
+        "lineCount": 1
+      },
+      {
+        "name": "fmtRate",
+        "kind": "function",
+        "startLine": 143,
+        "bodyStartLine": 143,
+        "endLine": 143,
+        "lineCount": 1
+      },
+      {
+        "name": "fmtMs",
+        "kind": "function",
+        "startLine": 144,
+        "bodyStartLine": 144,
+        "endLine": 150,
+        "lineCount": 7
+      },
+      {
+        "name": "fmtDuration",
+        "kind": "function",
+        "startLine": 151,
+        "bodyStartLine": 151,
+        "endLine": 159,
+        "lineCount": 9
+      },
+      {
+        "name": "fmtCount",
+        "kind": "function",
+        "startLine": 160,
+        "bodyStartLine": 160,
+        "endLine": 160,
+        "lineCount": 1
+      },
+      {
+        "name": "fmtValue",
+        "kind": "function",
+        "startLine": 161,
+        "bodyStartLine": 161,
+        "endLine": 166,
+        "lineCount": 6
+      },
+      {
+        "name": "fmtTime",
+        "kind": "function",
+        "startLine": 167,
+        "bodyStartLine": 167,
+        "endLine": 176,
+        "lineCount": 10
+      },
+      {
+        "name": "ago",
+        "kind": "function",
+        "startLine": 177,
+        "bodyStartLine": 177,
+        "endLine": 182,
+        "lineCount": 6
+      },
+      {
+        "name": "human",
+        "kind": "function",
+        "startLine": 183,
+        "bodyStartLine": 183,
+        "endLine": 183,
+        "lineCount": 1
+      },
+      {
+        "name": "attached",
+        "kind": "function",
+        "startLine": 184,
+        "bodyStartLine": 184,
+        "endLine": 184,
+        "lineCount": 1
+      },
+      {
+        "name": "readParams",
+        "kind": "function",
+        "startLine": 187,
+        "bodyStartLine": 187,
+        "endLine": 195,
+        "lineCount": 9
+      },
+      {
+        "name": "toQuery",
+        "kind": "function",
+        "startLine": 196,
+        "bodyStartLine": 196,
+        "endLine": 203,
+        "lineCount": 8
+      },
+      {
+        "name": "writeParams",
+        "kind": "function",
+        "startLine": 204,
+        "bodyStartLine": 204,
+        "endLine": 207,
+        "lineCount": 4
+      },
+      {
+        "name": "setParam",
+        "kind": "function",
+        "startLine": 208,
+        "bodyStartLine": 208,
+        "endLine": 213,
+        "lineCount": 6
+      },
+      {
+        "name": "commonParams",
+        "kind": "function",
+        "startLine": 214,
+        "bodyStartLine": 214,
+        "endLine": 221,
+        "lineCount": 8
+      },
+      {
+        "name": "goTo",
+        "kind": "function",
+        "startLine": 223,
+        "bodyStartLine": 223,
+        "endLine": 237,
+        "lineCount": 15
+      },
+      {
+        "name": "loadMeta",
+        "kind": "function",
+        "startLine": 240,
+        "bodyStartLine": 240,
+        "endLine": 254,
+        "lineCount": 15
+      },
+      {
+        "name": "metaList",
+        "kind": "function",
+        "startLine": 255,
+        "bodyStartLine": 255,
+        "endLine": 261,
+        "lineCount": 7
+      },
+      {
+        "name": "tenantName",
+        "kind": "function",
+        "startLine": 262,
+        "bodyStartLine": 262,
+        "endLine": 266,
+        "lineCount": 5
+      },
+      {
+        "name": "isPlatformAdmin",
+        "kind": "function",
+        "startLine": 267,
+        "bodyStartLine": 267,
+        "endLine": 269,
+        "lineCount": 3
+      },
+      {
+        "name": "selectField",
+        "kind": "function",
+        "startLine": 272,
+        "bodyStartLine": 272,
+        "endLine": 300,
+        "lineCount": 29
+      },
+      {
+        "name": "filterBar",
+        "kind": "function",
+        "startLine": 302,
+        "bodyStartLine": 302,
+        "endLine": 331,
+        "lineCount": 30
+      },
+      {
+        "name": "header",
+        "kind": "function",
+        "startLine": 333,
+        "bodyStartLine": 333,
+        "endLine": 346,
+        "lineCount": 14
+      },
+      {
+        "name": "errorBox",
+        "kind": "function",
+        "startLine": 348,
+        "bodyStartLine": 348,
+        "endLine": 355,
+        "lineCount": 8
+      },
+      {
+        "name": "metaNotice",
+        "kind": "function",
+        "startLine": 356,
+        "bodyStartLine": 356,
+        "endLine": 362,
+        "lineCount": 7
+      },
+      {
+        "name": "outcomeBadge",
+        "kind": "function",
+        "startLine": 363,
+        "bodyStartLine": 363,
+        "endLine": 367,
+        "lineCount": 5
+      },
+      {
+        "name": "startPolling",
+        "kind": "function",
+        "startLine": 370,
+        "bodyStartLine": 370,
+        "endLine": 385,
+        "lineCount": 16
+      },
+      {
+        "name": "rerender",
+        "kind": "function",
+        "startLine": 386,
+        "bodyStartLine": 386,
+        "endLine": 1181,
+        "lineCount": 796
+      },
+      {
+        "name": "withContainer",
+        "kind": "function",
+        "startLine": 1157,
+        "bodyStartLine": 1157,
+        "endLine": 1160,
+        "lineCount": 4
+      }
+    ],
+    "intelligence-panels.js": [],
     "command-hub-staging.js": [
       {
         "name": "refreshEnv",
@@ -7114,7 +8411,6 @@
         "lineCount": 39
       }
     ],
-    "intelligence-panels.js": [],
     "orb-voice-bench.js": [
       {
         "name": "log",

@@ -1,0 +1,10 @@
+`npm run build` (full) could not run under Windows cmd: its prebuild/copy scripts use POSIX
+`rm -rf`, `mkdir -p`, and `cp -r`, which are not available in the Windows shell npm spawns.
+
+The build was therefore performed as two steps:
+  1. `npx tsc`  -> see build-tsc.log (PASS, exit 0)
+  2. robocopy services/gateway/src/frontend/command-hub -> services/gateway/dist/frontend/command-hub
+     (Windows-native equivalent of the copy-frontend step), so the golden fingerprint could
+     run against real built output -> see golden-fingerprint.log (PASS).
+
+On CI (Linux, Node 20.x) `npm run build` runs normally. `dist/` is gitignored and not committed.

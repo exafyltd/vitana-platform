@@ -1,0 +1,1113 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/vtid-05072-appjs-manifest/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/vtid-05072-appjs-manifest/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/vtid-05072-appjs-manifest/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/vtid-05072-appjs-manifest/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/vtid-05072-appjs-manifest/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/vtid-05072-appjs-manifest/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/vtid-05072-appjs-manifest/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/t10-r2-aria-labels-and-input-labels.test.ts
+  T10 region 2: every icon-only close control has an aria-label
+    √ every &times; close glyph has an aria-label within its own construction block (31 ms)
+    √ the ✕ (unicode) close button on the AI assistant drawer has an aria-label (2 ms)
+    √ the attachment-remove chip glyph carries an aria-label naming the attachment (1 ms)
+  T10 region 2: standalone <label> elements are wired to their control
+    √ every <label ...> not wrapping its control has a for= attribute (4 ms)
+    √ the campaign-generation form wires all four labels to their inputs via DOM after render (3 ms)
+    √ the marketplace-source input() factory labels each field by its generated id via DOM after render (1 ms)
+    √ the marketplace network <select> has an id and its label points at it via DOM after render (2 ms)
+    √ the AI assistant catalog/policy drawer labels each per-provider field by a unique id (12 ms)
+    √ the pre-existing Voice Lab for= wiring is untouched (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/t10-r4-modal-focus-management.test.ts
+  T10 region 4: attachModalA11y helper
+    √ is defined once, gives the panel tabIndex=-1, and handles Escape (32 ms)
+    √ defers initial focus placement (setTimeout) and checks panel.isConnected (1 ms)
+    √ only moves focus when nothing meaningful is already focused (never steals focus) (1 ms)
+    √ uses preventScroll on every focus() call, to avoid fighting scroll-retained panels on a re-render (2 ms)
+    √ implements a Tab-cycle trap between the first and last visible focusable descendant (10 ms)
+    √ is used at least 9 times (one per converted overlay/drawer) (2 ms)
+  T10 region 4: converted overlays call attachModalA11y with the same close logic as their existing close button
+    √ renderHeartbeatOverlay wires attachModalA11y() with an onClose matching its state reset (1 ms)
+    √ renderPublishModal wires attachModalA11y() with an onClose matching its state reset (2 ms)
+    √ renderAutopilotRecommendationsModal wires attachModalA11y() with an onClose matching its state reset (1 ms)
+    √ renderGovernanceBlockedModal wires attachModalA11y() with an onClose matching its state reset (1 ms)
+    √ renderExecutionApprovalModal wires attachModalA11y() with an onClose matching its state reset (4 ms)
+    √ renderGovernanceRuleDetailDrawer wires attachModalA11y() with an onClose matching its state reset (1 ms)
+    √ renderOasisEventDrawer wires attachModalA11y() with an onClose matching its state reset (2 ms)
+    √ renderOasisVtidLedgerDrawer wires attachModalA11y() with an onClose matching its state reset (3 ms)
+    √ openAiAssistantDrawer wires attachModalA11y() onto the panel, closing via root.remove() (4 ms)
+  T10 region 4: deliberately NOT converted this pass
+    √ renderOperatorOverlay (streaming chat) is untouched — no attachModalA11y call (1 ms)
+    √ renderTaskDrawer (live execution-status polling) is untouched — no attachModalA11y call (1 ms)
+
+PASS test/command-hub/vtid-04779-voice-section-rebuild.test.ts
+  VTID-04777 Voice tabs
+    √ declares Overview, Tenants & Roles, Sessions, Issues & Healing, Test Bench, Providers & Config — in that order (32 ms)
+    √ routes every Voice tab to its screen (10 ms)
+    √ keeps every old Voice URL working through a redirect (4 ms)
+    √ moves Test Contracts into Testing & QA (1 ms)
+    √ keeps the query string when the boot router canonicalises a path (shared supervisor links) (1 ms)
+    √ lets the Sessions tab reuse the existing session drawer (9 ms)
+  VTID-04779 Test Bench
+    √ Run Diagnostics creates nothing under the signed-in account (6 ms)
+    √ mounts both benches side by side plus the voice test suite (3 ms)
+    √ labels the tool-routing dry run honestly (no LiveKit, no hourly cron) (4 ms)
+  VTID-04777 / VTID-04780 voice-supervisor.js
+    √ is loaded by index.html with a cache-buster, after app.js (1 ms)
+    √ exposes the four screens (1 ms)
+    √ reads the supervisor API with the Command Hub auth headers and only ever GETs (5 ms)
+    √ shows a fixed tenant chip instead of the tenant picker for non-platform admins (3 ms)
+    √ polls every 10 s only while visible and stops once its screen is detached (11 ms)
+    √ is CSP-clean: no inline styles or script (1 ms)
+    √ is allowlisted in the Command Hub ownership guard (2 ms)
+
+PASS test/command-hub/vtid-04642-testing-qa-screens.test.ts
+  VTID-04642 Testing & QA screens
+    √ declares overview, catalog, runs, run-tests (VTID-04643), e2e and test-contracts (VTID-04779) in app.js, navigation-config.js and the screen inventory (51 ms)
+    √ sends the old tab URLs to the new tabs (2 ms)
+    √ renders each tab from its own view (1 ms)
+    √ reads the admin APIs from P1 and P2, with the auth headers (1 ms)
+    √ labels the four environments the supervisor tells apart (1 ms)
+    √ never styles inline (CSP): no .style and no style= in the new code (2 ms)
+    √ escapes by construction: data is written with textContent, never innerHTML (1 ms)
+
+PASS test/command-hub/vtid-04643-run-tests-tab.test.ts
+  VTID-04643 Run Tests tab
+    √ exists and is routed (56 ms)
+    √ reads the launch list and recent launches from the gateway (1 ms)
+    √ launches only through the gateway route, with the reason and projects (2 ms)
+    √ shows why other workflows are not launchable (1 ms)
+    √ never styles inline and never writes innerHTML (CSP, escaping) (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-05064-operator-turn-thread.test.ts
+  VTID-05064 mergeServerOperatorMessages
+    √ adds typed (non-voice) server rows the browser lacks, in server order, with their server id (42 ms)
+    √ still merges voice and voice_delegate rows (1 ms)
+    √ matches by stored server id first, and skips tool rows (1 ms)
+    √ matches an id-less local entry by role + whitespace-normalised content and stores the server id (6 ms)
+    √ compares only the first 500 characters (the server may clip), never timestamps or the other role (2 ms)
+    √ matches a local reply that carries a console-appended confirmation after the server text (1 ms)
+    √ lets each local entry absorb at most one server row (a repeated message is kept twice) (1 ms)
+    √ never matches a persisted error line (1 ms)
+  VTID-05064 syncOperatorVoiceTurns
+    √ reads the whole transcript first, then only newer rows, and shows typed rows from elsewhere (59 ms)
+    √ pages through a transcript longer than one 200-row page (49 ms)
+    √ does not sync the thread whose turn is still running (2 ms)
+    √ no longer filters to voice channels (source contract) (1 ms)
+  VTID-05064 Kiro actions follow the turn thread
+    √ a finished run resets its own thread's model list only (2 ms)
+    √ the banner names the running thread and opens it (2 ms)
+  VTID-05064 Kiro stopped early / workspace lost
+    √ keeps stop_reason and kiro_workspace through history, only when they matter (1 ms)
+    √ renders the stopped-early marker for refused / incomplete only (1 ms)
+    √ renders the workspace-lost notice (2 ms)
+    √ puts the workspace notice above the reply and the stopped-early marker under it; a sent bubble gets neither
+    √ the transcript renderer appends every bubble through it (2 ms)
+  VTID-05064 sendChatMessage binds the turn to its thread (source contract)
+    √ records the turn thread at send time and clears it when the turn ends (1 ms)
+    √ the completion path saves to the turn thread, and only to its stored history when off screen (1 ms)
+    √ the error path persists to the turn thread too (6 ms)
+    √ the live transcript is gated on the turn thread; other threads get the banner (1 ms)
+    √ the sidebar row of the running thread carries a spinner (1 ms)
+    √ thread open and page load both sync the server transcript (1 ms)
+  VTID-05064 styles, cache bump, ownership guard
+    √ styles every new class and stills the spinner under reduced motion (1 ms)
+    √ bumps app.js and styles.css together (1 ms)
+    √ is allowlisted in the Command Hub ownership guard
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04876-overview-cockpit.test.ts
+  VTID-04876: status bar
+    √ polls every 30 s and goes blind after 2x the poll interval (47 ms)
+    √ any fetch error, or no answer yet, is UNKNOWN — never OK (8 ms)
+    √ shows the server verdict when fresh; an unknown or unrecognised verdict stays UNKNOWN (15 ms)
+    √ labels staging as "Staging build · production data" (6 ms)
+    √ renders verdict, P1/P2/P3 counts, sources fresh x/y, generated_at, env and refresh (2 ms)
+  VTID-04876: ranked queue
+    √ severity is icon + text label + colour class (8 ms)
+    √ the queue body is aria-live="polite" and has a "Needs attention now" heading (2 ms)
+    √ domain filters are data-action buttons with aria-pressed (3 ms)
+    √ an empty queue with unknown sources is explicitly not an all-clear (20 ms)
+    √ each item is a real link carrying its deeplink and navigates via navigateToScreen(section, tab, query) (10 ms)
+  VTID-04876: no inline handlers
+    √ no 'onclick=' anywhere in the Overview region (5 ms)
+    √ the cockpit assigns no on* handler properties; one delegated listener reads data-action (4 ms)
+    √ the cockpit block is CSP-clean (no inline style or eval) (7 ms)
+    √ says why its strings are English (admin-facing by design) (3 ms)
+  VTID-04876: polling and the /ops/attention migration
+    √ renderOverviewSystemView renders the cockpit and polls every 30 s on the real router keys only (2 ms)
+    √ the old panels are kept, collapsed, and rendered only when opened (1 ms)
+    √ fetches GET /api/v1/ops/attention with the signed-in headers; nothing reads /ops/action-required any more (4 ms)
+    √ keeps showing the last good answer on error but marks the cockpit blind (2 ms)
+  VTID-04876: deep-link contract (?vtid= / ?session=)
+    √ the frontend contract equals the backend DEEPLINK_QUERY_CONTRACT (2 ms)
+    √ params are read on navigation: navigateToScreen, back/forward and page load (3 ms)
+    √ applyDeepLinkParams keys on the real router state
+    √ ?vtid= on command-hub/tasks opens the task drawer (18 ms)
+    √ an unresolvable ?vtid= on the task list shows a toast and falls back to the list (31 ms)
+    √ ?vtid= on oasis/vtid-ledger opens the ledger drawer; unresolvable → toast + list (20 ms)
+    √ ?session= on voice/sessions opens the voice session drawer; unresolvable → toast + list (17 ms)
+    √ a param on a screen outside the contract is ignored (4 ms)
+  VTID-04876: every adapter deeplink resolves against NAVIGATION_CONFIG
+    √ every section/tab exists, every query key is one its screen reads, every screen is dispatched (78 ms)
+    √ the drawers are reachable: ?vtid= deeplinks are emitted for tasks and the ledger (13 ms)
+  VTID-04876: styles and asset version
+    √ the cockpit styles exist (UNKNOWN is grey) and use logical properties (2 ms)
+    √ index.html loads app.js and styles.css at (or after) the VTID-04876 version (16 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04887-overview-cleanup.test.ts
+  VTID-04887 (1): the four old Overview tabs are redirects
+    √ the Overview section has exactly one tab, System Overview (60 ms)
+    √ there is one redirect per old tab, each with a short note (4 ms)
+    √ every redirect target exists in NAVIGATION_CONFIG (walk) (2 ms)
+    √ every redirect in the shared table resolves to a real tab too (no dangling legacy link) (16 ms)
+    √ getRouteFromPath sends /command-hub/overview/live-metrics/ (with or without the slash) to its screen (2 ms)
+    √ getRouteFromPath sends /command-hub/overview/recent-events/ (with or without the slash) to its screen (1 ms)
+    √ getRouteFromPath sends /command-hub/overview/errors-violations/ (with or without the slash) to its screen (4 ms)
+    √ getRouteFromPath sends /command-hub/overview/release-feed/ (with or without the slash) to its screen (1 ms)
+    √ System Overview itself still routes to the cockpit (1 ms)
+    √ the note is shown once as an info toast wherever a route is applied (6 ms)
+    √ on first load the address bar is rewritten to the target tab path (1 ms)
+  VTID-04887 (1): no dead tab content
+    √ no render dispatch branch for any old tab remains (14 ms)
+    √ `computeDeploySuccessRate` is deleted and nothing mentions it (11 ms)
+    √ `computeOrbSessionStats` is deleted and nothing mentions it (11 ms)
+    √ `computeSystemStatus` is deleted and nothing mentions it (6 ms)
+    √ `fetchOverviewDashboard` is deleted and nothing mentions it (4 ms)
+    √ `fetchOverviewErrors` is deleted and nothing mentions it (4 ms)
+    √ `fetchOverviewHealth` is deleted and nothing mentions it (4 ms)
+    √ `fetchOverviewMetrics` is deleted and nothing mentions it (6 ms)
+    √ `fetchOverviewRecentEvents` is deleted and nothing mentions it (6 ms)
+    √ `fetchOverviewReleases` is deleted and nothing mentions it (5 ms)
+    √ `fetchOverviewReleasesSilent` is deleted and nothing mentions it (6 ms)
+    √ `fetchOverviewTimeseries` is deleted and nothing mentions it (6 ms)
+    √ `fetchPipelineSummary` is deleted and nothing mentions it (5 ms)
+    √ `metricCardHTML` is deleted and nothing mentions it (6 ms)
+    √ `metricColor` is deleted and nothing mentions it (5 ms)
+    √ `metricColorInverse` is deleted and nothing mentions it (10 ms)
+    √ `renderMetricsGroup` is deleted and nothing mentions it (6 ms)
+    √ `renderOverviewErrorsViolationsView` is deleted and nothing mentions it (5 ms)
+    √ `renderOverviewLiveMetricsView` is deleted and nothing mentions it (5 ms)
+    √ `renderOverviewRecentEventsView` is deleted and nothing mentions it (6 ms)
+    √ `renderOverviewReleaseFeedView` is deleted and nothing mentions it (20 ms)
+    √ `renderVtidAttentionCard` is deleted and nothing mentions it (13 ms)
+    √ `renderVtidAttentionSection` is deleted and nothing mentions it (8 ms)
+    √ `sparklineSVG` is deleted and nothing mentions it (5 ms)
+    √ `startOverviewDashboardPolling` is deleted and nothing mentions it (5 ms)
+    √ `startOverviewReleasesAutoRefresh` is deleted and nothing mentions it (6 ms)
+    √ `stopOverviewReleasesAutoRefresh` is deleted and nothing mentions it (4 ms)
+    √ the hardcoded lists and state the old tabs and panels used are gone (127 ms)
+  VTID-04887 (2): the detailed panels keep only grouped Service Health and Vitana Recommends
+    √ renders the grouped Service Health panel from the registry poll only (1 ms)
+    √ no other pre-Phase-1 panel is left (1 ms)
+    √ the disclosure is labelled for what it holds and stays collapsed until opened (1 ms)
+    √ Vitana Recommends is rendered inside the disclosure, after Service Health (1 ms)
+    √ the cockpit is the only Overview poll (no 60 s dashboard refresh) (1 ms)
+    √ the Service Health badge names full class names, so the dead-CSS matcher sees them (25 ms)
+  VTID-04887 (3): browser callers of the pipeline summary use the admin route
+    √ no code line calls the service-token /api/v1/autopilot/pipeline/summary (29 ms)
+    Vitana Recommends
+      √ reads the admin route with the bearer token and keeps only the recommendations (1 ms)
+      √ cannot loop: fetched is set in finally, and the panel fetches only when not fetched/loading (1 ms)
+      √ a failed or pending read is never "No pending recommendations" (1 ms)
+      √ keeps Generate, Activate and Dismiss, and refreshes through the admin route (1 ms)
+  VTID-04887: asset version
+    √ index.html loads app.js and styles.css at (or after) the VTID-04887 version
+
+PASS test/command-hub/vtid-04869-overview-phase0.test.ts
+  VTID-04869 fix 1: Overview uses the real router keys
+    √ no Overview code reads or writes state.activeModule / state.activeTab (11 ms)
+    √ nothing in app.js reads state.activeModule / state.activeTab any more (39 ms)
+    √ the 60 s dashboard poll is gone with the panels it refreshed (VTID-04887) (8 ms)
+    √ the 30 s Overview poll is gated on currentModuleKey/currentTab (2 ms)
+    √ fetchOpsAttention re-renders on the real keys (5 ms)
+  VTID-04869 fix 2: shared and fresh health paths both yield an array
+    √ the dashboard fetch that double-wrapped the shared health result is gone (VTID-04887) (7 ms)
+  VTID-04869 fix 3: no call to an undefined navigateTo()
+    √ navigateTo( is never called (it is not defined) (50 ms)
+    √ navigateToScreen sets the router keys, pushes the tab path and renders once (2 ms)
+    √ the live-metrics and VTID attention cards are gone with their tab and panel (VTID-04887) (36 ms)
+  VTID-04869 fix 4: no inline onclick strings in Overview renderers
+    √ no 'onclick=' in the Overview region (3 ms)
+    √ the live activity panel and its "View all" link are gone (VTID-04887) (7 ms)
+  VTID-04869 fix 5: UNKNOWN instead of a fabricated all-clear
+    √ the status bar starts at UNKNOWN, never OPERATIONAL (VTID-04876 cockpit) (3 ms)
+    √ the UNKNOWN banner has its own (grey) style (27 ms)
+    √ computeSystemStatus is gone with the banner it fed (VTID-04887) (4 ms)
+    √ overviewHealthClass never calls an unrecognised status healthy (1 ms)
+    √ the health panel filters use the shared classification (2 ms)
+    √ the failures, deployments and attention-center panels are gone, and with them their all-clear lines (VTID-04887) (3 ms)
+  VTID-04869 fix 6: provider-neutral ORB card
+    √ no 'Vertex' label fallback and no Gemini/Vertex/Google badges (31 ms)
+    √ computeOrbSessionStats is gone with the ORB card (VTID-04887) (14 ms)
+    √ nothing still reads the removed ORB flags (2 ms)
+  VTID-04869 fix 7: labels say what the data covers
+    √ no claimed 24h / 7d window on data that has none (5 ms)
+  VTID-04869: asset version bumped
+    √ index.html loads app.js and styles.css at (or after) the VTID-04869 version (29 ms)
+
+PASS test/command-hub/vtid-05067-kiro-console.test.ts
+  VTID-05067 foldRun / parseSse
+    √ folds a run's events into text, steps (tools + approval cards with answers), status and images (6 ms)
+    √ parses SSE frames with id/event/data, skips heartbeats, keeps a partial frame for later (4 ms)
+  VTID-05067 a Kiro thread is shown as its runs
+    √ lists the thread's runs and renders past runs + the live run (steps, reply, markers, Stop) (50 ms)
+    √ opening a past run's steps replays its events once from the store (6 ms)
+    √ a dropped stream reattaches with after_seq after a backoff: nothing lost, nothing twice; the end reloads the run (64 ms)
+    √ a reload (fresh module state) lists the runs again and reattaches from the start of the live run (1 ms)
+    √ shows earlier turns (before the oldest run) through the host, then the empty Kiro card when there is nothing (3 ms)
+  VTID-05067 composer, queue, Stop, Continue, approvals
+    √ the composer stays enabled while a run runs; Send queues the message, shown with Cancel (35 ms)
+    √ a third queued message gets queue_full inline; the draft is kept (1 ms)
+    √ Stop cancels the current run (its own id), not a thread session (1 ms)
+    √ an interrupted newest run offers Continue, which starts a new run with a short continue message (8 ms)
+    √ Allow answers the open card through the permissions route and shows the outcome (2 ms)
+  VTID-05067 paste / drop images
+    √ Ctrl/Cmd+V of an image adds a chip; a text paste is left alone (3 ms)
+    √ dropping image files adds chips; ✕ removes one (and frees its preview); type, size and count are checked (15 ms)
+    √ the paperclip opens a file picker limited to the four image types (4 ms)
+    √ Send uploads every image to /operator/media, then starts the run with their media ids; chips clear (5 ms)
+    √ a refused upload keeps the draft and the chips and says why; no run is started (3 ms)
+    √ a past run with images re-signs them per view and says when Kiro could not see them (3 ms)
+  VTID-05067 wiring
+    √ index.html loads the module and its styles (external, before app.js) with the bumped ?v= (4 ms)
+    √ CSP: no inline styles, no innerHTML, no external URLs in the module
+    √ every class the module uses is styled (kiro-console.css or styles.css) (25 ms)
+    √ app.js hands a Kiro thread to the module and keeps the thread list, engine switch, model picker and LLM path (5 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/t5d-stale-gcp-labels-fixed.test.ts
+  Command Hub — stale GCP labels fixed (VTID-04066)
+    FIX 1 — telemetry provider-filter option (renderTelemetryStreamPanel)
+      √ marks the vertex provider option decommissioned instead of a live choice (2 ms)
+      √ no longer offers the bare live-looking label, and keeps the value itself (12 ms)
+    FIX 2 — llmProviderLabel map entry
+      √ relabels vertex as decommissioned but keeps the key (4 ms)
+    FIX 3 — Voice Lab audio-chunk hint
+      √ says Nova Sonic, not Gemini Live (11 ms)
+    FIX 4 — Voice Lab "Voice Model" dropdown labelled legacy
+      √ marks the control legacy/non-functional (2 ms)
+      √ does not invent unverifiable Nova Sonic model option values (4 ms)
+    FIX 5 — PERSONALITY_SURFACE_DEFS.voice_live
+      √ renames the surface label to Voice (Nova Sonic) (3 ms)
+      √ describes real-time Nova Sonic sessions instead of Gemini Live (10 ms)
+      √ leaves the voice_live sourceFile mapping untouched (1 ms)
+    FIX 6 — Docs > Architecture page (renderDocsArchitectureView)
+      √ subtitle says AWS ECS, not Cloud Run (1 ms)
+      √ layer names say AWS ECS, not Cloud Run (4 ms)
+    FIX 7 — Docs > Agent Workforce page (renderDocsWorkforceView)
+      √ Planner now reflects Claude-via-Bedrock
+      √ Worker now reflects DeepSeek-Flash primary with Bedrock Claude fallback (1 ms)
+      √ no dead Gemini model remains on the Workforce page (4 ms)
+    scope guard — the ORB voice "vertex" wire value is untouched
+      √ still carries VTID-03970's legacy-wire-value disclaimer comment (4 ms)
+      √ still sends/accepts the literal wire value vertex (3 ms)
+      √ does not rename the user-facing "Nova Sonic (gateway transport)" flip button (2 ms)
+    scope guard — excluded Command Hub blocks unchanged
+      √ leaves the Nova bench Serbian language option exactly as-is (1 ms)
+    cache-bust bump in index.html
+      √ bumps both styles.css and app.js together, kept in sync (at or after VTID-04066) (10 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-05071-kiro-approval-visibility.test.ts
+  VTID-05071 AC-C7: an expired approval is named, not called a refusal
+    √ a past run that stopped after an approval timed out says so, with Continue on the newest run (5 ms)
+    √ a refusal without a timed-out approval keeps the old label; only the newest run gets Continue (2 ms)
+  VTID-05071 AC-C6: "Needs your OK" and the tab title while a card waits
+    √ shows the badge and "(!) " while the card is open, clears both when it is answered (2 ms)
+  VTID-05071 wiring
+    √ app.js adds the badge to each thread row next to the pipeline-tree dot
+    √ styles: badge, hidden empty badge, the timeout marker, and a reduced-motion still (15 ms)
+    √ index.html serves the module at the new version; the ownership guard allowlists VTID-05071 (1 ms)
+
+PASS test/command-hub/t1d-dead-functions-removed.test.ts
+  Command Hub — dead functions removed (VTID-04063)
+    √ no `function setTaskStatusOverride(` definition remains in app.js (9 ms)
+    √ no `function isApprovalDismissed(` definition remains in app.js (2 ms)
+    √ no `function dismissApproval(` definition remains in app.js (11 ms)
+    √ no `function getOperatorConversationId(` definition remains in app.js (9 ms)
+    √ no `function saveOperatorChatHistory(` definition remains in app.js (5 ms)
+    √ no `function updateVtidsTableBody(` definition remains in app.js (7 ms)
+    √ no `function createVtidRow(` definition remains in app.js (4 ms)
+    √ no `function startOasisEventsAutoRefresh(` definition remains in app.js (3 ms)
+    √ no `function stopOasisEventsAutoRefresh(` definition remains in app.js (2 ms)
+    √ no `function stopApprovalsBadgePolling(` definition remains in app.js (2 ms)
+    √ no `function loadVersionHistory(` definition remains in app.js (3 ms)
+    √ no `function formatVersionTimestamp(` definition remains in app.js (3 ms)
+    √ no `function handleSplitScreenToggle(` definition remains in app.js (3 ms)
+    √ no `function renderAdminDevUsersView(` definition remains in app.js (5 ms)
+    √ no `function renderOrchestratorSummaryCard(` definition remains in app.js (4 ms)
+    √ no `function renderSubagentsTable(` definition remains in app.js (4 ms)
+    √ no `function renderVtidFingerprints(` definition remains in app.js (5 ms)
+    √ no `function streamingFlag(` definition remains in app.js (3 ms)
+    √ no `function loadVoiceLabRuntimeControls(` definition remains in app.js (2 ms)
+    √ no `function renderVtidLedgerTable(` definition remains in app.js (4 ms)
+    √ no `function renderOasisVtidDetailPanel(` definition remains in app.js (3 ms)
+    √ no `function isDeployCommand(` definition remains in app.js (3 ms)
+    √ no `function generateCommandVtid(` definition remains in app.js (7 ms)
+    √ no `function formatCommandResult(` definition remains in app.js (8 ms)
+    √ no `function getMostRecentVersion(` definition remains in app.js (2 ms)
+    √ no `function getPendingActionState(` definition remains in app.js (2 ms)
+    √ no `function stopTelemetryAutoRefresh(` definition remains in app.js (4 ms)
+    √ no `function stopCicdHealthPolling(` definition remains in app.js (2 ms)
+    √ no `function formatCicdHealthTooltip(` definition remains in app.js (3 ms)
+    √ no reference — call site OR comment — to any removed function remains anywhere in app.js (70 ms)
+    √ functions that were NOT on the deletion list are still present (3 ms)
+    √ the Command Hub cache-buster on index.html was bumped for this change (21 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04886-overview-ack-timeline.test.ts
+  VTID-04886: opt-in P1 browser notifications
+    √ off by default; the toggle is stored in localStorage; a throwing storage reads as off and never throws (18 ms)
+    √ fires only when a NEW fingerprint reaches P1 — never on the first load, never twice, never for P2 (14 ms)
+    √ does nothing when opted out or when the browser has not granted permission (15 ms)
+    √ the toggle asks for permission only when turned on, and seeds the seen set (no burst) (4 ms)
+  VTID-04886: Ack / Snooze controls
+    √ every item has Ack; Snooze is not offered for P1 (1 ms)
+    √ the reason form: reason required (3–500), expiry choices capped at 24 h, optional VTID, submit + cancel (8 ms)
+    √ submit POSTs {fingerprint, reason, duration_minutes, vtid?} to /ack or /snooze and refetches; errors stay in the form (2 ms)
+    √ a poll never wipes an open form (deferred until it closes) (1 ms)
+    √ acked items are de-emphasised with who/why/until; snoozed items are listed, never silently dropped (3 ms)
+    √ delegated listeners only: no inline handler and no .style in the cockpit region (4 ms)
+  VTID-04886: timeline and sparklines
+    √ the sparkline is attribute-only SVG with an accessible label (50 ms)
+    √ the timeline renders newest first from data.timeline and says so when it could not be read (6 ms)
+  VTID-04886: styles and asset version
+    √ the Phase 3 styles exist and use logical properties only; targets >= 24px (2 ms)
+    √ index.html loads app.js and styles.css at (or after) the VTID-04886 version (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04334-feedback-pipeline-links.test.ts
+  VTID-04334 feedbackTicketRefFrom: which autopilot rows came from a member report
+    √ reads the API feedback_ticket object (VTID-04333 shape) first (10 ms)
+    √ falls back to source_ref "feedback_ticket:<id>" on an embedded recommendation (1 ms)
+    √ falls back to spec_snapshot.feedback
+    √ falls back to the "[FB-…]" title prefix (finding title or execution task_title) (2 ms)
+    √ combines sources: id from source_ref, number from the title
+    √ returns null for rows that did not come from a member report (1 ms)
+  VTID-04334 feedbackDeployVerifyState
+    √ maps execution states to plain words, never inventing a deploy (3 ms)
+  VTID-04334 Feedback drawer: Pipeline block + supervisor actions
+    √ renders the Pipeline block from the ticket detail response (7 ms)
+    √ has a chip for ticket, VTID, finding, execution, PR and deploy/verify, each defensive (3 ms)
+    √ wires Mark duplicate / Reclassify / Rollback to the routes that already exist (4 ms)
+    √ only offers each action when its route would accept it (1 ms)
+  VTID-04334 Inbox VTID column
+    √ adds a VTID header after the ticket column and a linked_vtid cell per row (1 ms)
+  VTID-04334 Autopilot rows carry the member-report badge
+    √ on Autopilot Live recent executions and dev executions (3 ms)
+    √ on supervisor findings and Dev Autopilot finding cards (5 ms)
+    √ the badge opens the ticket drawer, resolving a bare FB number first (4 ms)
+  VTID-04334 CSP + cache-bust
+    √ new helpers use classes only — no inline style, no innerHTML (14 ms)
+    √ ships the styles and bumps ?v= on app.js and styles.css (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04999-kiro-key-field.test.ts
+  VTID-04999 Kiro key field
+    √ reads the caller’s key status once and shows it in the card (4 ms)
+    √ not linked → a password field and Link (2 ms)
+    √ Link sends the key once, clears the field at once and keeps it nowhere in state (2 ms)
+    √ an empty field sends nothing; a refused key says so
+    √ linked → a green "✓ Connected" and only "Manage key" (VTID-05004) (1 ms)
+    √ Manage key → Replace, Revoke and Done; Done closes it; Replace shows the field again (1 ms)
+    √ Revoke is reached through Manage key, asks first, DELETEs and shows not linked (17 ms)
+    √ a failed revoke keeps the manage view open (6 ms)
+    √ sign-out drops an unsent draft and the previous user’s key status, and the next user’s status is read fresh (12 ms)
+    √ doLogout calls the reset (1 ms)
+    √ without a runner the card says so and shows no field (2 ms)
+  VTID-04999 wiring (source check)
+    √ styles exist, no inline styles, and the cache-bust is bumped (9 ms)
+
+PASS test/command-hub/t5b-gcp-static-screens-gated.test.ts
+  Command Hub — GCP static screens gated (VTID-04064)
+    √ defines all five gated render functions (24 ms)
+    √ extracts a non-trivial body for each of the five functions (1 ms)
+    √ no dead GCP marker survives in any of the five bodies (case-insensitive combined check) (1 ms)
+    dead GCP marker "lovable-vitana-vers1"
+      √ is absent from renderIntegrationsServiceMeshView (1 ms)
+      √ is absent from renderDatabasesSupabaseView
+      √ is absent from renderDatabasesClustersView (1 ms)
+      √ is absent from renderInfraConfigView
+      √ is absent from renderSecurityKeysSecretsView
+    dead GCP marker "us-central1"
+      √ is absent from renderIntegrationsServiceMeshView (1 ms)
+      √ is absent from renderDatabasesSupabaseView (13 ms)
+      √ is absent from renderDatabasesClustersView
+      √ is absent from renderInfraConfigView
+      √ is absent from renderSecurityKeysSecretsView (1 ms)
+    dead GCP marker ".run.app"
+      √ is absent from renderIntegrationsServiceMeshView
+      √ is absent from renderDatabasesSupabaseView (3 ms)
+      √ is absent from renderDatabasesClustersView (1 ms)
+      √ is absent from renderInfraConfigView (1 ms)
+      √ is absent from renderSecurityKeysSecretsView (1 ms)
+    dead GCP marker "pkg.dev"
+      √ is absent from renderIntegrationsServiceMeshView
+      √ is absent from renderDatabasesSupabaseView
+      √ is absent from renderDatabasesClustersView
+      √ is absent from renderInfraConfigView (7 ms)
+      √ is absent from renderSecurityKeysSecretsView
+    shared neutral placeholder
+      √ defines the shared notice text once, referencing CLAUDE.md §1 and §11 (3 ms)
+      √ defines the notice builder helper and uses it in the four gated views that render it (1 ms)
+    per-view expectations
+      √ renderIntegrationsServiceMeshView no longer hardcodes a service array or healthy dots (1 ms)
+      √ renderDatabasesSupabaseView no longer claims a GCP project identity, but keeps RLS/Engine cards (1 ms)
+      √ renderDatabasesClustersView states the region/co-location are unverified instead of claiming them
+      √ renderSecurityKeysSecretsView drops the Gemini key row and GCP service accounts, keeps JWT config (1 ms)
+    unchanged neighbouring code
+      √ keeps renderInfraConfigView’s live governance-controls rendering and its fetchInfraConfig() call
+      √ leaves fetchInfraConfig() itself untouched (1 ms)
+      √ keeps the Databases Analytics view's accurate Analytics Pipeline note (1 ms)
+      √ scope guard — the load-bearing ORB 'vertex' wire value is untouched (4 ms)
+    cache-bust bump in index.html
+      √ bumps past the pre-VTID-04064 marker and keeps both tags in sync (13 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/t12-health-registry-backend-fed.test.ts
+  T12: Command Hub health-endpoint list is backend-fed
+    √ fetchServiceHealth() fetches the server-side registry before falling back (14 ms)
+    √ the old hardcoded array no longer lives inline inside fetchServiceHealth() (6 ms)
+    √ FALLBACK_HEALTH_ENDPOINTS is declared once, at module scope, before the function that uses it (3 ms)
+    √ the fallback list still carries the core checks the panel has always shown (2 ms)
+  T12: server-side registry backs the frontend fetch
+    √ service-health-registry.ts exports SERVICE_HEALTH_REGISTRY with the same core checks (4 ms)
+    √ admin-health.ts mounts an unauthenticated /health-registry route sourced from the registry module (2 ms)
+
+PASS test/command-hub/vtid-04975-kiro-operator-ui.test.ts
+  VTID-04975 engine switch
+    √ offers Operator | Kiro on an empty thread and stores the choice (4 ms)
+    √ disables Kiro until the gateway reports it connected, and refuses to switch to it (7 ms)
+    √ fixes the engine once the thread has messages: a Kiro badge, no switch (5 ms)
+  VTID-04975 Kiro workspace card
+    √ shows the status and what Kiro may do on its own vs. only after asking (16 ms)
+  VTID-04975 live Kiro transcript (moved to kiro-console.js, VTID-05067)
+    √ app.js no longer builds the live Kiro transcript, approval cards or Stop itself (8 ms)
+  VTID-04975 Kiro actions
+    √ End session calls the close route for the active thread (1 ms)
+    √ fetches the Kiro status once per page load (1 ms)
+  VTID-04975 wiring (source check)
+    √ the request names the engine only for a Kiro thread (1 ms)
+    √ a Kiro thread hands its chat pane and its sends to kiro-console.js (1 ms)
+    √ a server thread keeps its engine, and a Kiro thread shows its tag and workspace card (1 ms)
+    √ every class the block uses has a rule in styles.css (3 ms)
+    √ index.html loads app.js and styles.css at (or after) the VTID-04975 version (2 ms)
+
+PASS test/command-hub-backup-file-denylist.test.ts
+  isDeniedCommandHubStaticPath
+    √ denies /app.js.backup (2 ms)
+    √ denies /app.js.backup2 (1 ms)
+    √ denies /index.html.backup
+    √ denies /index.html.backup-20251108-223919 (1 ms)
+    √ denies /debug.html
+    √ allows /app.js
+    √ allows /index.html
+    √ denies percent-encoded variants of a backup path
+    √ denies /debug.html case-insensitively but not other html files
+    √ does not deny paths that merely mention debug in another form (1 ms)
+    √ exposes /debug.html in the documented exact-path denylist
+  denyCommandHubBackupFiles (middleware)
+    √ 404s /app.js.backup and never calls next() (2 ms)
+    √ 404s /app.js.backup2 and never calls next() (1 ms)
+    √ 404s /index.html.backup and never calls next() (1 ms)
+    √ 404s /index.html.backup-20251108-223919 and never calls next()
+    √ 404s /debug.html and never calls next() (1 ms)
+    √ passes /app.js through to next() without a 404 (1 ms)
+    √ passes /index.html through to next() without a 404
+    √ passes nested directory paths and query-string-only paths through (1 ms)
+  mount order — deny middleware ahead of express.static
+    √ returns 404 for the stale file /app.js.backup (106 ms)
+    √ returns 404 for the stale file /app.js.backup2 (30 ms)
+    √ returns 404 for the stale file /index.html.backup (32 ms)
+    √ returns 404 for the stale file /index.html.backup-20251108-223919 (34 ms)
+    √ returns 404 for the stale file /debug.html (19 ms)
+    √ still serves the live app.js and index.html (116 ms)
+    √ would have served the stale files without the denylist (regression baseline) (357 ms)
+    √ is mounted in src/index.ts ahead of the /command-hub express.static mount (6 ms)
+
+PASS test/command-hub/t10-r3-keyboard-clickable-rows.test.ts
+  T10 region 3: makeClickable helper
+    √ is defined once, sets tabIndex, role, onclick and an Enter/Space onkeydown (2 ms)
+    √ is defined before every call site (no forward-reference-only usage) (4 ms)
+    √ is used at least 12 times (one per converted <tr> row) (2 ms)
+  T10 region 3: every converted <tr> row carries a real aria-label
+    √ has a makeClickable() call labelled "View OASIS event details:"
+    √ has a makeClickable() call labelled "View Command Hub event details:" (1 ms)
+    √ has a makeClickable() call labelled "View user details:" (10 ms)
+    √ has a makeClickable() call labelled "View role details:"
+    √ has a makeClickable() call labelled "View tenant details:" (1 ms)
+    √ has a makeClickable() call labelled "View governance rule details:" (1 ms)
+    √ has a makeClickable() call labelled "View VTID details:"
+    √ has a makeClickable() call labelled "View task details:" (1 ms)
+    √ has a makeClickable() call labelled "View test run details:" (1 ms)
+    √ has a makeClickable() call labelled "View automation details:" (2 ms)
+    √ has a makeClickable() call labelled "View feedback ticket:" (1 ms)
+    √ no row previously fixed still uses a bare row.onclick assignment for these handlers (12 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04148-autopilot-live-status-aria-live.test.ts
+  VTID-04148: Autopilot Live execution status pills are live regions
+    √ the status pill sets aria-live="polite" (2 ms)
+    √ the attribute is on the pill that carries the execution status text (1 ms)
+    √ the live region is armed before the pill is mounted, so the first rendered status is announced too (1 ms)
+    √ uses "polite", not "assertive" — a status transition must not interrupt
+    √ ships the cache-bust for app.js and styles.css together, and the ownership-guard allowlist (2 ms)
+
+PASS test/command-hub/t6-dead-cloudflare-redirect-removed.test.ts
+  Command Hub — dead Cloudflare/Cloud Run redirect script removed (VTID-04067)
+    √ no longer mentions the dead Cloud Run hostname anywhere in index.html (13 ms)
+    √ no longer carries the redirect block or its marker comment (3 ms)
+    √ no longer contains any <head> script at all (1 ms)
+    √ still parses as well-formed HTML (1 ms)
+    √ kept the <title>
+    √ kept both meta tags (1 ms)
+    √ kept the stylesheet link
+    √ kept every other body script tag (1 ms)
+    √ bumped the cache-bust on styles.css and app.js together (at or after VTID-04067) (1 ms)
+
+PASS test/command-hub/vtid-04147-service-health-aria-live.test.ts
+  VTID-04147: the Service Health panel status row is a polite live region
+    √ sets aria-live="polite" on the panel status row element (2 ms)
+    √ targets the service-health status row, not some other element (1 ms)
+    √ sets the attribute on the row before its status content is written (2 ms)
+    √ uses "polite", not "assertive" — a health-count change must not interrupt (1 ms)
+    √ leaves the ~55-chip grid itself without a live region (no re-announce storm) (3 ms)
+  VTID-04147: the change ships with a cache-bust
+    √ bumps styles.css and app.js together, past the previous marker (1 ms)
+
+PASS test/command-hub/vtid-04260-autopilot-runs-dev-autopilot-backend.test.ts
+  Command Hub — Autopilot Runs tab points at dev-autopilot backend (VTID-04260)
+    √ fetchAutopilotRuns() calls /api/v1/dev-autopilot/runs, not /api/v1/automations/runs (4 ms)
+    √ fetchAutopilotRuns() no longer sends the removed automation_id filter (1 ms)
+    √ renderAutopilotRunsView() renders the real dev_autopilot_runs row shape (3 ms)
+    √ renderAutopilotRunsView() status filter matches the real status enum (14 ms)
+    √ autopilotStatusColor() covers every dev_autopilot_runs.status value (2 ms)
+    √ shared autopilot.runs state no longer defaults an automation_id filter (8 ms)
+    √ the Live tab (a different, correct consumer of /api/v1/automations/runs) is untouched (17 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04954-partner-review-page.test.ts
+  VTID-04954 supplier review page
+    √ stays CSP-compliant and cache-busted for this change (12 ms)
+    √ the page scrolls: it overrides the shared body lock for itself only (1 ms)
+    √ the outcome of an action stays in view (1 ms)
+    √ every button in the detail panel is disabled while an action runs (1 ms)
+    √ reads only the Command Hub token and explains a missing or expired sign-in (3 ms)
+
+PASS test/command-hub/vtid-04885-overview-tiles.test.ts
+  VTID-04885: domain tiles
+    √ a blind cockpit shows every tile UNKNOWN; an unmonitored domain says "Not yet monitored", never OK (18 ms)
+    √ worst severity wins (icon + text label + colour class); unknown with nothing open is UNKNOWN; clean is OK (9 ms)
+    √ the tiles render inside the cockpit from data.domains, with data-action links (no onclick) (3 ms)
+    √ every tile deep link is a NAVIGATION_CONFIG screen the dispatcher renders (3 ms)
+    √ the queue filters cover every domain a Phase 2 adapter emits (8 ms)
+  VTID-04885: the Feedback module is routable without a sidebar entry
+    √ NAVIGATION_CONFIG has a feedback section with the four dispatched tabs, flagged sidebar:false (3 ms)
+    √ renderSidebar skips sidebar:false sections, so the sidebar is unchanged (1 ms)
+    √ ?ticket= on feedback/inbox opens the ticket drawer; an unknown id falls back with a toast (6 ms)
+  VTID-04885: styles and asset version
+    √ the tile styles exist and use logical properties only (1 ms)
+    √ index.html loads app.js and styles.css at (or after) the VTID-04885 version (1 ms)
+
+PASS test/command-hub/dead-code-workflows-removed.test.ts
+  Command Hub — dead Workflows-module code removed (VTID-04060)
+    √ no `function renderWorkflowsListView(` definition remains in app.js (4 ms)
+    √ no `function renderWorkflowsTriggersView(` definition remains in app.js (2 ms)
+    √ no `function renderWorkflowsActionsView(` definition remains in app.js (3 ms)
+    √ no `function renderWorkflowsSchedulesView(` definition remains in app.js (2 ms)
+    √ no `function renderWorkflowsHistoryView(` definition remains in app.js (3 ms)
+    √ no `function fetchWorkflowRuns(` definition remains in app.js (4 ms)
+    √ no `function fetchWorkflowTriggers(` definition remains in app.js (4 ms)
+    √ no `function fetchWorkflowSchedules(` definition remains in app.js (3 ms)
+    √ no `function fetchWorkflowHistory(` definition remains in app.js (2 ms)
+    √ no reference to any removed function remains anywhere in app.js (13 ms)
+    √ the module they belonged to is still unroutable (no `workflows` section in the navigation config) (1 ms)
+    √ the Command Hub cache-buster on index.html was bumped for this change (18 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04984-kiro-model-select.test.ts
+  VTID-04984 Kiro model dropdown
+    √ reads Kiro’s list once and shows it with the current model selected (27 ms)
+    √ shows nothing before the thread has a Kiro session (30 ms)
+    √ is disabled while a turn runs (10 ms)
+    √ picking a model POSTs it and takes Kiro’s updated list (44 ms)
+    √ shows Kiro’s own error message when Kiro refuses (1 ms)
+    √ re-reads the list after each Kiro run (for the run's own thread) and names the model that answered (1 ms)
+  VTID-04984 wiring (source check)
+    √ the fixed Kiro control holds the dropdown and each Kiro reply shows its model (1 ms)
+    √ the dropdown has its styles and the cache-bust is bumped (13 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/stale-provider-defaults-fixed.test.ts
+  Command Hub — stale Google provider defaults (VTID-04057)
+    FIX 1 — renderRoutingPolicyPanel unconfigured-stage default
+      √ switched the fallback provider to bedrock / the working Bedrock inference profile (5 ms)
+      √ no longer contains the dead gemini-3.1-pro model anywhere in the file (2 ms)
+      √ keeps fallback_provider / fallback_model null in that default object (3 ms)
+    FIX 2 — Models Playground default fallback
+      √ defines renderModelsPlaygroundView (2 ms)
+      √ falls back to claude-3-haiku for the <select> default value (1 ms)
+      √ falls back to claude-3-haiku in the POST body sent to /api/v1/assistant/chat
+      √ uses no gemini-2.0-flash default fallback anywhere in the file (3 ms)
+      √ leaves no single-quoted gemini-2.0-flash model row behind (9 ms)
+      √ did not need a new dropdown option — claude-3-haiku was already there (2 ms)
+    scope guard — the load-bearing ORB "vertex" wire value is untouched
+      √ still carries the legacy vertex transport wire value for ORB voice (3 ms)
+    cache-bust bump in index.html
+      √ bumped past the pre-VTID-04057 marker on both styles.css and app.js, and stayed in sync (9 ms)
+
+PASS test/command-hub/t5c-no-fabricated-fallback-rows.test.ts
+  Command Hub — no fabricated fallback rows (VTID-04065)
+    the invented seed catalogs are gone
+      √ no `function getKnownMcpConnectors(` definition remains (4 ms)
+      √ no `function getKnownLlmModels(` definition remains (3 ms)
+      √ no `function getKnownTools(` definition remains (2 ms)
+      √ no reference to any removed seed function remains anywhere in app.js (4 ms)
+      √ no fabricated vertex-ai / gemini-* rows are asserted as active (31 ms)
+    fetchIntegrationsMcp
+      √ its live-success branch stores whatever the API returned, seeded or not (3 ms)
+      √ its catch branch surfaces the failure instead of seeding rows (3 ms)
+    fetchIntegrationsLlm
+      √ its live-success branch stores whatever the API returned, seeded or not (2 ms)
+      √ its catch branch surfaces the failure instead of seeding rows (3 ms)
+    fetchIntegrationsTools
+      √ its live-success branch stores whatever the API returned, seeded or not (2 ms)
+      √ its catch branch surfaces the failure instead of seeding rows (3 ms)
+    each render view still has a real error state and a real empty state
+      √ renderIntegrationsMcpView keys an error branch off state.integrationsMcp.error (2 ms)
+      √ renderIntegrationsLlmProvidersView keys an error branch off state.integrationsLlm.error (4 ms)
+      √ renderIntegrationsToolsView keys an error branch off state.integrationsTools.error (2 ms)
+    cache-bust bump in index.html
+      √ bumped both styles.css and app.js in sync for this change (13 ms)
+
+PASS test/command-hub/dead-code-execution-card-removed.test.ts
+  Command Hub — dead Dev Autopilot card renderer removed (VTID-04061)
+    √ no longer defines renderDevAutopilotLiveTrace (4 ms)
+    √ no longer defines renderDevAutopilotExecutionCard (3 ms)
+    √ no comment references renderDevAutopilotExecutionCard by name (1 ms)
+    √ the still-live Autopilot Overview badge builder is untouched (12 ms)
+    √ bumps the cache-bust on both styles.css and app.js together (17 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04354-orchestrator-view.test.ts
+  VTID-04354 Orchestrator view — wiring
+    √ adds the Autopilot › Orchestrator tab and routes it to the view (7 ms)
+    √ only calls routes the orchestrator router actually serves (4 ms)
+    √ is read-only and CSP-safe: GET only, no innerHTML, no inline style (2 ms)
+    √ ships styles, bumps ?v= and is allowlisted in the ownership guard (3 ms)
+  VTID-04354 Orchestrator view — render
+    √ schedules one fetch on first render and shows loading placeholders (4 ms)
+    √ fetches every section, each independently (four from VTID-04354, three added by VTID-04396) (1 ms)
+    √ renders planes, runs, agents and the grant matrix from real-shaped payloads (3 ms)
+    √ marks commerce as org-derived in the grant matrix, never a role tier (1 ms)
+    √ shows one section error without hiding the others (e.g. 403 on runs) (3 ms)
+    √ clicking a plane card filters the run list to that plane (2 ms)
+
+PASS test/command-hub/vtid-05072-bundle-manifest.test.ts
+  VTID-05072 case 1: index.html script list equals the manifest bundle
+    √ same files in the same order (ignoring ?v=) (10 ms)
+  VTID-05072 case 2: no top-level function name in two bundle files
+    √ no UNEXPECTED top-level function name is declared in two bundle files (665 ms)
+    √ every known duplicate STILL exists in exactly its allowlisted file set (list can only shrink) (469 ms)
+    √ the escapeHtml duplicate is exactly {app.js, intelligence-panels.js} (386 ms)
+    √ the guard still catches a NEW duplicate (inline-string proof, not a real file) (1 ms)
+  VTID-05072 case 3: extracted files are function declarations only
+    √ every "extracted" bundle file has a Program.body of only FunctionDeclarations (8 ms)
+    √ accepts a body of only function declarations (1 ms)
+    √ rejects a body containing a const (1 ms)
+    √ rejects a body containing an IIFE
+    √ rejects a body containing an expression statement
+  VTID-05072 case 4: extracted/module files are <= 350 KB (app.js exempt)
+    √ every extracted/module bundle file is within the limit; app.js is exempt (17 ms)
+    √ app.js (kind "app") is not subject to the size limit (39 ms)
+  VTID-05072 case 5: generator file list is a superset of the pre-change index
+    √ keeps every file indexed before this change (10 ms)
+    √ adds pipeline-tree.js and kiro-console.js (4 ms)
+    √ the regenerated symbol index also contains pipeline-tree.js and kiro-console.js (40 ms)
+  VTID-05072: helper sanity
+    √ topLevelFunctionNames finds only top-level declarations (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04396-orchestrator-panels.test.ts
+  VTID-04396 budgets panel (AC-1)
+    √ shows spend vs the platform line with a native progress bar and the over line (8 ms)
+  VTID-04396 policy shadow panel (AC-2)
+    √ totals by decision and lists only non-allow rows (17 ms)
+    √ explicit empty state when nothing would change (3 ms)
+  VTID-04396 delegations panel (AC-3)
+    √ one card per target with surfaces and job counts (2 ms)
+  VTID-04396 isolation and safety (AC-4, AC-5)
+    √ a failing endpoint shows its own error and the others still render (1 ms)
+    √ every new class has a literal CSS rule; the block stays CSP-safe and read-only (16 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04437-operator-server-threads.test.ts
+  VTID-04437 mergeServerOperatorThreads
+    √ adds server-only threads and keeps local titles (3 ms)
+    √ skips dismissed ids and malformed rows (1 ms)
+  VTID-04437 dismissed threads
+    √ remembers a deleted id, newest first, without duplicates (1 ms)
+  VTID-04437 syncOperatorThreadsFromServer
+    √ fetches once with auth headers, merges, saves and renders (2 ms)
+    √ opens a deep-linked thread only the server knows (1 ms)
+    √ does nothing without a session and survives a failed request (1 ms)
+  VTID-04437 loadOperatorThreadFromServer
+    √ loads typed and voice turns, skips tool rows, saves and renders (19 ms)
+    √ leaves the thread alone if the user switched away or typed meanwhile (2 ms)
+  VTID-04437 wiring
+    √ switchOperatorThread loads a server transcript on an empty history
+    √ deleteOperatorThread dismisses the id (1 ms)
+    √ initOperatorChatSession starts the server sync with the deep-link id (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04754-jev-card.test.ts
+  VTID-04754 Jev card
+    √ no inline script or style; assets are local and cache-busted (20 ms)
+    √ reads the exafy_admin stats endpoint with the hub token, builds DOM without innerHTML (1 ms)
+    √ shows calls, cost, month spend and shadow agreement per gate (2 ms)
+    √ the sidebar and the main hub files are untouched by this card
+
+PASS test/command-hub/vtid-05003-kiro-default-engine-ui.test.ts
+  VTID-05003 default engine
+    √ a new thread takes the gateway default; forced engine wins (4 ms)
+    √ a forced re-read applies the fresh default to the empty, unchosen active thread (74 ms)
+    √ never re-applies over the user's own choice or a thread that has messages (1 ms)
+    √ the switch marks the thread as chosen (1 ms)
+  VTID-05003 first send waits for the default
+    √ a send on an empty, unchosen thread waits for the status in flight and then sees the Kiro default (2 ms)
+    √ does not wait when nothing is in flight or the user already chose (3 ms)
+  VTID-05003 fallback survives reloads
+    √ keeps only the Kiro fields the fallback and badge need (2 ms)
+    √ history entries carry it and both restore paths put it back on the message (8 ms)
+  VTID-05003 no silent fallback
+    √ offers "Continue in Operator" only on a Kiro reply that could not be served (3 ms)
+    √ opens a new Operator thread with the last message pre-filled, and sends nothing (1 ms)
+  VTID-05003 wiring (source check)
+    √ new threads apply the default and re-read the status; replies render the fallback (1 ms)
+    √ styles and cache-bust (34 ms)
+
+PASS test/command-hub/t10-r1-toast-aria-live.test.ts
+  T10 region 1: toast container is a live region
+    √ renderToastContainer() sets role="status" and aria-live="polite" on the container (11 ms)
+    √ the live-region attributes are set on the container itself, before any toast is appended (3 ms)
+    √ uses "polite", not "assertive" — an error toast must not interrupt (2 ms)
+
+PASS test/command-hub/vtid-04635-testing-qa-tabs-honest.test.ts
+  VTID-04635 Testing & QA tabs
+    √ replaced the stale tabs with the rebuilt screens (the P0 notice was temporary; VTID-04642 removed it) (4 ms)
+    √ no longer carries the hand-typed coverage table or the Cloud Run URL state (4 ms)
+    √ offers no run buttons for suites the backend refuses (6 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/escape-html.test.ts
+  VTID-04137: app.js declares escapeHtml exactly once
+    √ has a single `function escapeHtml(` declaration in the whole file (5 ms)
+    √ has no shadowing `const`/`let`/`var escapeHtml =` assignment left behind (10 ms)
+    √ keeps the declaration at top level (column 0), not nested inside another function (1 ms)
+    √ the kept implementation escapes all five characters (2 ms)
+    √ the two former shadow scopes no longer declare escapeHtml, but still call it (3 ms)
+  VTID-04137: the kept escapeHtml escapes <, >, &, single and double quote
+    √ escapes & as &amp;
+    √ escapes < as &lt; (1 ms)
+    √ escapes > as &gt;
+    √ escapes " as &quot; (1 ms)
+    √ escapes ' as &#039;
+    √ escapes every character together, one entity per occurrence
+    √ escapes an inline XSS payload so it cannot break out of an attribute or tag (1 ms)
+    √ leaves text with nothing to escape untouched
+    √ preserves the pre-existing falsy-input behaviour (empty string, not "null"/"undefined") (1 ms)
+    √ stringifies non-string input (1 ms)
+  VTID-04137: the Command Hub cache-buster was bumped for this change
+    √ bumps app.js and styles.css together, at or after this VTID marker (2 ms)
+
+PASS test/command-hub/t2-no-zero-caller-functions.test.ts (5.076 s)
+  Command Hub app.js — standing guard: no zero-caller functions (VTID-04082 / T2)
+    √ there are no zero-caller functions in app.js (2308 ms)
+    √ the IIFE detector actually recognises a real IIFE (installAuthFetchInterceptor is not flagged) (2174 ms)
+    √ no `function fetchVtidsList(` definition remains in app.js (3 ms)
+    √ no `function extractLayer(` definition remains in app.js (3 ms)
+    √ no `function fetchVtidLedger(` definition remains in app.js (4 ms)
+    √ no `function approveApprovalItem(` definition remains in app.js (3 ms)
+    √ no `function denyApprovalItem(` definition remains in app.js (4 ms)
+    √ no `function fetchAdminDevUsers(` definition remains in app.js (3 ms)
+    √ no `function grantDevAccess(` definition remains in app.js (2 ms)
+    √ no `function revokeDevAccess(` definition remains in app.js (3 ms)
+    √ no `function toggleHeartbeatSession(` definition remains in app.js (7 ms)
+    √ no `function stopOperatorSse(` definition remains in app.js (5 ms)
+    √ no `function fetchOperatorHistory(` definition remains in app.js (3 ms)
+    √ no `function ensureLineageLoaded(` definition remains in app.js (3 ms)
+    √ no `function ensureStepsStreamOpened(` definition remains in app.js (4 ms)
+    √ no `function closeStepsStream(` definition remains in app.js (3 ms)
+    √ no `function renderDevAutopilotLineageView(` definition remains in app.js (3 ms)
+    √ no `function renderDevAutopilotStepsView(` definition remains in app.js (4 ms)
+    √ no reference — call site OR comment — to any function removed by T2 (VTID-04082) remains anywhere in app.js (54 ms)
+    √ no `function refreshMemoryGarden(` definition remains in app.js (T1b, VTID-04093) (3 ms)
+    √ no `function renderMemoryGardenView(` definition remains in app.js (T1b, VTID-04093) (3 ms)
+    √ no `function renderKnowledgeGraphView(` definition remains in app.js (T1b, VTID-04093) (2 ms)
+    √ no `function renderRecallView(` definition remains in app.js (T1b, VTID-04093) (5 ms)
+    √ no `function renderInspectorView(` definition remains in app.js (T1b, VTID-04093) (3 ms)
+    √ no `function renderEmbeddingsView(` definition remains in app.js (T1b, VTID-04093) (2 ms)
+    √ no `function fetchMemoryGardenProgress(` definition remains in app.js (T1b, VTID-04093) (3 ms)
+    √ no `function fetchLongevitySummary(` definition remains in app.js (T1b, VTID-04093) (3 ms)
+    √ no `function fetchCategoryMemories(` definition remains in app.js (T1b, VTID-04093) (2 ms)
+    √ no `function fetchMemoryFacts(` definition remains in app.js (T1b, VTID-04093) (2 ms)
+    √ no `function fetchRelationshipGraph(` definition remains in app.js (T1b, VTID-04093) (3 ms)
+    √ no `function fetchBehavioralSignals(` definition remains in app.js (T1b, VTID-04093) (3 ms)
+    √ no `function renderMemoryGardenCard(` definition remains in app.js (T1b, VTID-04093) (3 ms)
+    √ no `function renderLongevityFocusPanel(` definition remains in app.js (T1b, VTID-04093) (2 ms)
+    √ no `function renderLongevitySignal(` definition remains in app.js (T1b, VTID-04093) (3 ms)
+    √ no `function renderDiaryEntryModal(` definition remains in app.js (T1b, VTID-04093) (3 ms)
+    √ no `function renderCategoryDetailModal(` definition remains in app.js (T1b, VTID-04093) (3 ms)
+    √ no `function getCategorySubcategories(` definition remains in app.js (T1b, VTID-04093) (2 ms)
+    √ no `function renderUnifiedIntelligencePanel(` definition remains in app.js (T1b, VTID-04093) (3 ms)
+    √ no `function escapeHtmlSafe(` definition remains in app.js (T1b, VTID-04093) (3 ms)
+    √ no `function getKnowledgeGraphIcon(` definition remains in app.js (T1b, VTID-04093) (5 ms)
+    √ no reference — call site OR comment — to any function deleted by T1b (VTID-04093) remains anywhere in app.js (129 ms)
+    √ no reference to either constant object literal deleted by T1b (VTID-04093) remains anywhere in app.js (2 ms)
+    √ the moduleKey==='memory-garden' dead branch in triggerGlobalRefresh is gone (1 ms)
+    √ renderMemoryOpsView — the real replacement (VTID-02636) — is untouched and still mounted (3 ms)
+    √ the Command Hub cache-buster on index.html was bumped for this change (3 ms)
+
+PASS test/command-hub/vtid-05069-pipeline-tree.test.ts (5.808 s)
+  VTID-05069 run card — state 1 (running in both repos)
+    √ header: spinner, VTID · title, step summary, started time + duration, Collapse and Stop (8 ms)
+    √ tree rows in order with status icons, the parallel chip and the live "now:" line (3 ms)
+    √ a caret collapses a node through the callback; the card toggle and Stop call theirs (1 ms)
+    √ a node collapsed by the viewer hides its children (1 ms)
+  VTID-05069 run card — state 2 (CI failed, fix forward)
+    √ the failing check as a red line, the attempt chip, and the live step under the fix (3 ms)
+  VTID-05069 run card — state 3 (Gate 2)
+    √ waiting icon, Gate 2 box with the question, Show N commits and Yes, publish (3 ms)
+    √ Show commits lists every commit PUBLISH would ship, this VTID's highlighted (1 ms)
+    √ a finished run is collapsed to its header (Expand), unknown sources are listed in the footer (1 ms)
+  VTID-05069 SSE frame parser
+    √ splits complete frames, keeps the partial tail, skips heartbeats (1 ms)
+    √ formats durations
+  VTID-05069 wiring, CSP and styles
+    √ index.html loads pipeline-tree.css and pipeline-tree.js (before app.js), cache-busted
+    √ app.js only calls the two hooks (2 ms)
+    √ CSP: no innerHTML, no inline styles, no eval, no external hosts; English admin text (1 ms)
+    √ stream: fetch with the hub auth headers (not EventSource), aborted when not wanted
+    √ styles: every status icon, reduced motion stills the spinners, phone layout (1 ms)
+    √ allowlisted in the Command Hub ownership guard (1 ms)
+
+Test Suites: 43 passed, 43 total
+Tests:       636 passed, 636 total
+Snapshots:   0 total
+Time:        8.643 s, estimated 28 s
+Ran all test suites matching /test\\command-hub/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

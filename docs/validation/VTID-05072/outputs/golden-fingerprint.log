@@ -1,0 +1,28 @@
+==========================================
+VTID-0302: Command Hub Golden Fingerprint
+==========================================
+
+Checking 8 bundle file(s) in: C:\Users\dstev\vitana-platform-1\.worktrees\vtid-05072-appjs-manifest\services\gateway\dist\frontend\command-hub
+
+  + orb-widget.js
+  + pipeline-tree.js
+  + kiro-console.js
+  + app.js
+  + voice-self-healing.js
+  + voice-supervisor.js
+  + intelligence-panels.js
+  + command-hub-staging.js
+
+Bundle size: 3022.5 KB
+
+Checking required markers:
+
+  FOUND: Golden VTID marker
+  FOUND: Task Board class
+  FOUND: Task Column class
+  FOUND: Task Card class
+  FOUND: ORB idle element
+  FOUND: Header toolbar
+
+All golden markers verified.
+Fingerprint check PASSED.
