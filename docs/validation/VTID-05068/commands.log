@@ -1,0 +1,19 @@
+# services/kiro-runner
+npx tsc --noEmit -p .
+npx vitest run            # x3 (stability)
+# services/gateway
+npx tsc --noEmit -p .     # (local worktree: --preserveSymlinks, node_modules symlinked)
+npx jest test/vtid-05068-kiro-run-reattach.test.ts
+npx jest test/vtid-04465-operator-pipeline-regression.test.ts -t "VTID-0506[58]"
+npm run test:operator
+npm run test:support
+npm run test:roles
+npx jest test/vtid-04975-kiro-engine.test.ts test/vtid-04984-kiro-model-selection.test.ts test/vtid-04999-kiro-runner-backend.test.ts test/vtid-05003-kiro-default-engine.test.ts test/vtid-05005-kiro-dev-tools-mcp.test.ts test/vtid-05006-kiro-write-tools.test.ts test/vtid-05014-kiro-v1-writes.test.ts test/vtid-05018-kiro-thread-memory.test.ts test/vtid-05065-kiro-runs.test.ts test/operator-kiro-runs.test.ts test/vtid-05068-kiro-run-reattach.test.ts
+npx jest                  # full gateway suite
+# mutation checks (sed one line, run the suite, restore)
+#   remote-backend.ts: `let flowing = false` -> true
+#   kiro-runs.ts: drain does not detach
+#   kiro-runs.ts: isReattachCandidate bypassed
+# repo root
+node scripts/ci/validator-path-guard.cjs <changed files> gateway_backend
+node -e "validateManifest(docs/validation/VTID-05068/staging-tests.json, { vtid: 'VTID-05068', service: 'gateway' })"

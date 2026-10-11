@@ -2,6 +2,7 @@
 // VTID-04999 test double for `kiro-cli acp`: answers initialize/session/new/session/prompt,
 // reports its cwd and env so the tests can check what the relay gave it.
 let buf = '';
+const pendingAsk = new Map();
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\n');
 if (!process.env.KIRO_API_KEY || process.env.KIRO_API_KEY === 'not-logged-in') { process.stdout.write('Error: You are not logged in\n'); process.exit(1); }
 process.stdin.on('data', (c) => {
@@ -12,7 +13,27 @@ process.stdin.on('data', (c) => {
     const m = JSON.parse(line);
     if (m.method === 'initialize') out({ jsonrpc: '2.0', id: m.id, result: {} });
     else if (m.method === 'session/new') out({ jsonrpc: '2.0', id: m.id, result: { sessionId: 'S1', echo_cwd: m.params.cwd, echo_mcp: m.params.mcpServers, proc_cwd: process.cwd(), env_keys: Object.keys(process.env).sort(), key: process.env.KIRO_API_KEY } });
+    else if (m.id !== undefined && !m.method && pendingAsk.has(m.id)) {
+      // VTID-05068: the answer to a permission request ("ask"), then the held prompt ends.
+      const promptId = pendingAsk.get(m.id); pendingAsk.delete(m.id);
+      out({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'S1', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `answered:${m.result && m.result.outcome && m.result.outcome.optionId}` } } } });
+      out({ jsonrpc: '2.0', id: promptId, result: { stopReason: 'end_turn' } });
+    }
     else if (m.method === 'session/prompt') {
+      const text = m.params.prompt[0].text;
+      // VTID-05068: "timed:<n>:<bytes>" — one chunk now, n chunks after 150 ms, the answer after 200 ms.
+      if (text.startsWith('timed:')) {
+        const [, n, size] = text.split(':').map(Number);
+        const chunk = (t) => out({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'S1', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: t } } } });
+        chunk('before');
+        setTimeout(() => { for (let i = 1; i <= n; i++) chunk(`during-${i}:${'x'.repeat(size)}`); }, 150);
+        setTimeout(() => out({ jsonrpc: '2.0', id: m.id, result: { stopReason: 'end_turn' } }), 200);
+        return;
+      }
+      // VTID-05068: "ask" — a permission request; the prompt ends once it is answered.
+      if (text === 'ask') { pendingAsk.set(77, m.id); out({ jsonrpc: '2.0', id: 77, method: 'session/request_permission', params: { sessionId: 'S1', toolCall: { toolCallId: 'tc1', title: 'Edit a.ts', kind: 'edit' }, options: [{ optionId: 'allow', kind: 'allow_once' }] } }); return; }
+      // VTID-05068: "silent" — never answers, never writes.
+      if (text === 'silent') return;
       if (m.params.prompt[0].text === 'flood') { process.stdout.write('{"x":"' + 'a'.repeat(2 * 1024 * 1024)); return; }
       if (m.params.prompt[0].text === 'bigline') { process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'x', params: { t: 'a'.repeat(2 * 1024 * 1024) } }) + '\n'); return; }
       if (m.params.prompt[0].text === 'utf8') {

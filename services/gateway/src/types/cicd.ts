@@ -1148,7 +1148,18 @@ export type CicdEventType =
   | 'operator.kiro.write_tool_called'
   | 'operator.kiro.write_confirmed'
   | 'operator.kiro.write_denied'
-  | 'operator.kiro.branch_pushed';
+  | 'operator.kiro.branch_pushed'
+  // VTID-05064: a thread's parked Kiro workspace (unpushed edits) came back, or was lost (thread id only)
+  | 'operator.kiro.workspace_restored'
+  | 'operator.kiro.parked_workspace_lost'
+  // VTID-05065: a Kiro run (one server-side turn) started, finished, or was interrupted (run id, thread id, status only; never message text)
+  | 'operator.kiro.run_started'
+  | 'operator.kiro.run_finished'
+  | 'operator.kiro.run_interrupted'
+  // VTID-05068: a running Kiro run was taken over by a new gateway task after a deploy (run id, thread id, status only)
+  | 'operator.kiro.run_reattached'
+  // VTID-05067: an image pasted into the Operator Console was stored (media id, thread id, type, size; never the bytes)
+  | 'operator.media.uploaded';
 
 export interface CicdOasisEvent {
   vtid: string;

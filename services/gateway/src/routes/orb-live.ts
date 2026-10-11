@@ -5180,6 +5180,19 @@ async function executeLiveApiToolInner(
         // now in services/orb-tools-shared.ts (_runCapabilityTool), so both
         // Vertex and the LiveKit pipeline run identical capability-tool
         // logic — no drift possible by construction.
+        // VTID-04918: add_to_calendar writes to the member's connected
+        // calendar — never before the member has said a word (same gate as
+        // the generic arm below).
+        {
+          const { CALENDAR_SOCIAL_WRITE_TOOLS } = await import('../services/orb-tools/calendar-social-tools');
+          if (CALENDAR_SOCIAL_WRITE_TOOLS.includes(toolName)) {
+            const { memberHasSpoken } = await import('../orb/live/tools/calendar-write-guard');
+            if (!memberHasSpoken(session)) {
+              const refusal = 'STATUS: not_done. The member has not asked for anything yet in this session. Never act on their calendar, feed or chats on your own initiative.';
+              return { success: false, result: refusal, error: 'STATUS: not_done' };
+            }
+          }
+        }
         const SUPABASE_URL = process.env.SUPABASE_URL;
         const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
         if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {

@@ -1,0 +1,23 @@
+# VTID-05067 — local checks (2026-10-11)
+# services/gateway
+npx tsc --noEmit -p .                                                       # clean
+node --check kiro-console.js / app.js / kiro-console-harness.js             # ok
+npx jest test/command-hub/vtid-05067-kiro-console.test.ts                   # 22 passed
+npx jest test/vtid-05067-operator-media.test.ts                             # 12 passed
+npx jest test/vtid-05067-kiro-acp-images.test.ts                            # 7 passed
+npm run test:operator                                                       # 59 passed (2 new scenarios: Kiro run with a pasted image; Operator turn with an image)
+npm run test:support                                                        # 87 passed (4 suites)
+npm run test:roles                                                          # 105 passed
+npx jest test/command-hub + ownership guard + 03822                         # 601 passed (before the new module suite was added)
+npx jest Kiro suites (05065 runs/route, 04975, 04984, 04999, 05003, 05005, 05006, 05014, 05018, 05060) + roles + support   # all passed
+npx jest --silent                                                           # 1624 suites passed (1 skipped), 26124 passed, 25 skipped, 6 todo
+node scripts/generate-command-hub-symbol-index.mjs --check                  # in sync (945 functions, 11 files)
+node scripts/find-dead-css-classes.mjs --check                              # in sync
+mutation check (19 single-line mutations of acp-client, kiro-turn, operator-media service + route, kiro-console.js, operator-kiro-runs, operator.ts)  # 18/19 killed
+  survivor: the service's 5 MB check in storeOperatorMedia — the route's express.raw limit (5 MB) answers 413 first, so the service check is a second gate the route test cannot reach
+# repo root
+node scripts/ci/validator-path-guard.cjs <changed files> gateway_backend    # APPROVED (migration, workflow, scripts, DATABASE_SCHEMA.md, symbol index reported as not judged)
+node scripts/ci/validator-path-guard.cjs --csp-added-lines <frontend diff>  # No CSP pattern hits in added lines
+node scripts/ci/validator-path-guard.cjs --route-evidence-required <diff>   # route added → ROUTE_MOUNT / FINAL_URL / CURL_PROOF in acceptance.md
+validateManifest(VTID-05067 / VTID-04975 / VTID-05006 staging-tests.json)   # { ok: true, errors: [] } each
+# Playwright harness (chromium, 1400x900 + 390x844): 8 screenshots, document scrollWidth 390 at 390 px (no horizontal overflow), no console errors
