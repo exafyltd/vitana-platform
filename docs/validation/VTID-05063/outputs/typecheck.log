@@ -1,0 +1,17 @@
+=== command: npm run typecheck ===
+=== cwd: services/gateway (worktree vtid-05063-ledger-read-auth) ===
+=== runner: node v24.11.1 / npm 11.6.2, Windows PowerShell ===
+=== ran: 2026-10-11 (local capture in the worktree) ===
+
+> @vitana/gateway@1.0.1 typecheck
+> tsc --noEmit
+
+(no diagnostics emitted)
+
+=== exit code: 0  => PASS ===
+
+Note: this is a cleaned transcript. The command produced no tsc output other
+than the npm banner above; tsc --noEmit exited 0 with zero type errors. The
+raw PowerShell capture is preserved alongside at outputs/ (the first capture of
+this same run; the npm banner there is rendered with per-character spacing, a
+console-encoding artifact only — the exit code was 0).

@@ -30,3 +30,34 @@ runs the suites named in staging-tests.json.
    19,784 chars. Not measured by the jest helper here (no shell);
    vtid-05063-ledger-read-auth.test.ts asserts <= 19,900 in CI.
    No remaining line in the stage workflow starts with 30 or more spaces followed by a quote.
+
+----------------------------------------------------------------------
+VTID-05063 — local-check capture (evidence finalization)
+2026-10-11T20:42:39+02:00  (worktree .worktrees/vtid-05063-ledger-read-auth)
+Environment: node v24.11.1, npm 11.6.2, Windows PowerShell.
+services/gateway/node_modules already installed — no npm ci / npm install needed.
+
+Commands actually run (full stdout+stderr captured under outputs/):
+
+1. cwd: services/gateway
+   npm run typecheck
+   -> outputs/typecheck.log   exit 0  PASS (tsc --noEmit, no type errors)
+
+2. cwd: services/gateway
+   npx jest test/vtid-05063-ledger-read-auth.test.ts \
+            test/vtid-05063-ledger-read-routes.test.ts \
+            test/vtid-05063-ledger-read-self-calls.test.ts \
+            test/vtid-05063-command-hub-ledger-read-headers.test.ts \
+            test/vtid-04727-ledger-write-auth.test.ts \
+            test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+   -> outputs/jest-vtid-05063.log (cleaned) + outputs/jest-raw.log (raw)
+      exit 0  PASS — 6/6 suites, 163/163 tests
+
+3. cwd: repo root (.worktrees/vtid-05063-ledger-read-auth)
+   node --test scripts/ci/vtid-auto-close.test.cjs
+   -> outputs/vtid-auto-close-test.log (cleaned) + outputs/vtid-auto-close-raw.log (raw)
+      exit 0  PASS — 9/9 tests
+
+The *-raw.log files are the unedited PowerShell captures; the matching .log
+files are cleaned transcripts of the same runs (console line-wrapping and
+non-ASCII glyph mojibake stripped). CI on PR #4033 is the authoritative run.
