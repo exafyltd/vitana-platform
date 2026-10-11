@@ -49,4 +49,4 @@ pre-existing by stashing ALL VTID-05072 changes and re-running on the clean base
 ## Ledger
 See the PR body "Decisions taken" / Handoff: ledger update outcome recorded there.
 
-PR URL: _added once the draft PR is opened_.
+PR URL: https://github.com/exafyltd/vitana-platform/pull/4037 (draft)
