@@ -690,3 +690,12 @@ describe('reattach after a gateway drop (VTID-05068)', () => {
     await waitFor(() => sessionCount() === 0);
   });
 });
+
+// VTID-05071: a session left idle survives a 45-min gap at the gateway; the runner keeps it 5 min
+// longer (50 min) so the gateway, not the runner, is the one that closes it.
+describe('idle default (VTID-05071)', () => {
+  it('runner idle default is 50 min', async () => {
+    const { RUNNER_IDLE_MS_DEFAULT } = await import('../src/relay');
+    expect(RUNNER_IDLE_MS_DEFAULT).toBe(50 * 60_000);
+  });
+});

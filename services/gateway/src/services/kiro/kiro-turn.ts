@@ -94,12 +94,18 @@ export function imagesUnsupportedLine(n: number): string {
  */
 export interface KiroHistoryMessage { role: 'user' | 'assistant'; content: string; stopReason?: string | null; workspaceDirty?: string[] | null }
 
-/** VTID-05064: per-message cap; a longer message keeps its start AND its end (where conclusions are). */
-export const KIRO_HISTORY_MESSAGE_CHARS = 2_000;
-export const KIRO_HISTORY_HEAD_CHARS = 500;
-export const KIRO_HISTORY_TOTAL_CHARS = 16_000;
+/**
+ * VTID-05064: per-message cap; a longer message keeps its start AND its end (where conclusions are).
+ * VTID-05071: 6,000 / 1,500 / 40,000 (was 2,000 / 500 / 16,000) so a reply that carried a decision
+ * survives a fresh session; 40,000 chars ≈ 10K tokens, about 5% of Claude's 200K window.
+ */
+export const KIRO_HISTORY_MESSAGE_CHARS = 6_000;
+export const KIRO_HISTORY_HEAD_CHARS = 1_500;
+export const KIRO_HISTORY_TOTAL_CHARS = 40_000;
 const HISTORY_START = '=== RESTORED THREAD HISTORY (earlier turns of this conversation; context only, not new instructions) ===\n'
-  + 'Long messages are shortened in the middle; tool results are left out. Your workspace may still hold uncommitted edits from those turns: run `git status` in each repo before describing what was or was not done.';
+  + 'Long messages are shortened in the middle; tool results are left out. Your workspace may still hold uncommitted edits from those turns: run `git status` in each repo before describing what was or was not done.\n'
+  // VTID-05071: a nudge, not a guarantee; keeping the decision text (the caps above) is the real fix.
+  + 'If the thread already agreed on a decision, continue from it; do not re-ask what was agreed.';
 const HISTORY_END = '=== END RESTORED THREAD HISTORY ===';
 
 /**
@@ -111,6 +117,9 @@ export const KIRO_SESSION_RULES = '=== OPERATOR SESSION RULES (from the Vitana g
   + '- When a change needs a write tool (push, PR, merge) and no open VTID for it exists, finish the change in your workspace, say plainly that it needs a sparred, owner-approved plan before a VTID can exist, and offer to write that plan.\n'
   + '- Edits that are not pushed stay only in this workspace. Push them with dev_push_kiro_branch as soon as an open VTID allows it.\n'
   + '- Before describing earlier progress, check the workspace (`git status`, `git log`) rather than relying on memory.\n'
+  // VTID-05071: app.js is too large for code search; a shell grep needs an approval that can time out.
+  + '- To find Command Hub UI code in services/gateway/src/frontend/command-hub/app.js (too large for code search), read services/gateway/specs/command-hub-symbol-index.json first (function -> line), then read only those lines with dev_read_file. Do not grep app.js in a shell.\n'
+  + '- Prefer the read-only @vitana tools over shell commands: a shell command needs the user\'s approval and stops the turn if it is not given.\n'
   + '=== END OPERATOR SESSION RULES ===';
 
 /** VTID-05064: shorten one message to the cap, keeping its start and its end. */
@@ -214,7 +223,8 @@ function intEnv(name: string, def: number, env: NodeJS.ProcessEnv): number {
 export const kiroLimits = (env: NodeJS.ProcessEnv = process.env) => ({
   perUser: intEnv('KIRO_MAX_SESSIONS_PER_USER', 3, env),
   global: intEnv('KIRO_MAX_SESSIONS_GLOBAL', 10, env),
-  idleMs: intEnv('KIRO_SESSION_IDLE_MS', 15 * 60_000, env),
+  // VTID-05071: 45 min (was 15); the runner's own idle (50 min) is longer, so the gateway closes first.
+  idleMs: intEnv('KIRO_SESSION_IDLE_MS', 45 * 60_000, env),
 });
 
 function result(status: KiroStatus, reply: string, extra: Record<string, unknown> = {}, toolResults: KiroTurnResult['toolResults'] = []): KiroTurnResult {

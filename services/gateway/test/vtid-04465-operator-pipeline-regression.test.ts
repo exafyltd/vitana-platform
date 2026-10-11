@@ -1798,6 +1798,32 @@ describe('Kiro runs (VTID-05065)', () => {
     expect(platform.events('operator.kiro.permission_answered')).toHaveLength(1);
   });
 
+  // VTID-05071: the incident of 2026-10-11 — a shell approval nobody answered ends the turn as a
+  // refusal. The run record must carry the timed-out answer BEFORE the refused status: that pair is
+  // what kiro-console.js turns into "Stopped — your approval for … timed out. [Continue]".
+  it('an approval nobody answers times out, the turn ends refused, and the record says the approval expired first', async () => {
+    const saved = process.env.KIRO_PERMISSION_TIMEOUT_MS;
+    process.env.KIRO_PERMISSION_TIMEOUT_MS = '150';
+    try {
+      kiro.handlers.push(async (k) => { const r = await k.ask('Running: cd /tmp && grep -n "/api/v1" app.js', 'other'); return r.outcome.outcome === 'selected' ? 'end_turn' : 'refusal'; });
+      const id = (await startRun('agreed')).body.run_id as string;
+      const s = openStream(id, admin);
+      await s.ended;
+      const events = s.frames.map((f) => f.event);
+      const answerAt = events.indexOf('kiro.permission_answer');
+      expect(s.frames[answerAt].data).toMatchObject({ allow: false, by: 'timeout' });
+      const refusedAt = s.frames.findIndex((f) => f.event === 'run.status' && f.data.status === 'refused');
+      expect(answerAt).toBeGreaterThan(-1);
+      expect(refusedAt).toBeGreaterThan(answerAt);
+      expect(kiro.permissionReplies[kiro.permissionReplies.length - 1]).toEqual({ outcome: { outcome: 'cancelled' } });
+      await waitFor(() => isDone(id), 'run finished');
+      await platform.settle();
+      expect(run(id)).toMatchObject({ status: 'refused', stop_reason: 'refusal', pending_permission: null });
+    } finally {
+      if (saved === undefined) delete process.env.KIRO_PERMISSION_TIMEOUT_MS; else process.env.KIRO_PERMISSION_TIMEOUT_MS = saved;
+    }
+  });
+
   it('an answer written from another gateway task reaches Kiro through the owning task\'s control tick', async () => {
     kiro.handlers.push(async (k) => { const r = await k.ask('Run shell command', 'execute'); k.chunk(r.outcome.outcome === 'selected' ? 'ran' : 'skipped'); return 'end_turn'; });
     const id = (await startRun('run it')).body.run_id as string;

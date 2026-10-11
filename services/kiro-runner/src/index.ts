@@ -5,7 +5,7 @@
 import fs from 'fs';
 import { SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { KeyStore } from './key-store';
-import { REATTACH_DEFAULTS, defaultWorkRoot, stopAllSessions } from './relay';
+import { REATTACH_DEFAULTS, RUNNER_IDLE_MS_DEFAULT, defaultWorkRoot, stopAllSessions } from './relay';
 import { createRunnerServer } from './server';
 import { RepoMirrors } from './repo-mirrors';
 import { rescanParked, sweepParked } from './workspace-park';
@@ -47,7 +47,7 @@ const server = createRunnerServer({
   park,
   mcpGatewayUrl: /^https:\/\//.test(process.env.KIRO_MCP_GATEWAY_URL ?? '') ? process.env.KIRO_MCP_GATEWAY_URL : undefined,
   limits: {
-    idleMs: intEnv('KIRO_RUNNER_IDLE_MS', 15 * 60_000),
+    idleMs: intEnv('KIRO_RUNNER_IDLE_MS', RUNNER_IDLE_MS_DEFAULT), // VTID-05071: 50 min default
     maxSessionMs: intEnv('KIRO_RUNNER_MAX_SESSION_MS', 14_400_000),
     pingMs: 30_000,
     maxLineBytes: 1024 * 1024,

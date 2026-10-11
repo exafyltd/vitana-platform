@@ -204,6 +204,36 @@
   color: var(--color-text-primary);
 }
 
+/* VTID-05071: an approval card expired — named, with Continue. */
+.kiro-run-marker--approval-timeout {
+  border-inline-start-color: #f59e0b;
+  color: #fde68a;
+}
+
+/* VTID-05071: sidebar badge while Kiro waits for Allow / Deny. */
+.kiro-waiting-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: 0.4rem;
+  padding: 0 0.4rem;
+  border: 1px solid #f59e0b;
+  border-radius: 999px;
+  color: #fde68a;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  animation: kiro-waiting-pulse 1.4s ease-in-out infinite;
+}
+
+.kiro-waiting-badge--none {
+  display: none;
+}
+
+@keyframes kiro-waiting-pulse {
+  0%, 100% { background: rgba(245, 158, 11, 0.08); }
+  50% { background: rgba(245, 158, 11, 0.35); }
+}
+
 .kiro-continue-btn,
 .kiro-queued-cancel {
   min-height: 28px;
@@ -486,4 +516,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   .kiro-working { animation: none; }
+  .kiro-waiting-badge { animation: none; background: rgba(245, 158, 11, 0.2); }
 }

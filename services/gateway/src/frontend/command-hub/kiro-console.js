@@ -136,7 +136,7 @@
     // A run's events folded into what the view shows (pure)
     // ---------------------------------------------------------------------
     function foldRun(events) {
-        var v = { text: '', steps: [], status: null, stopReason: null, error: null, images: null };
+        var v = { text: '', steps: [], status: null, stopReason: null, error: null, images: null, timedOutApproval: null };
         var tools = {};
         var perms = {};
         (events || []).forEach(function (ev) {
@@ -168,6 +168,8 @@
                 case 'kiro.permission_answer': {
                     var q = perms[d.request_id];
                     if (q) q.answer = d.allow ? 'allowed' : (d.by === 'timeout' ? 'expired' : 'denied');
+                    // VTID-05071: the stop marker names the approval that timed out.
+                    if (!d.allow && d.by === 'timeout') v.timedOutApproval = q ? q.title : 'a tool';
                     break;
                 }
                 case 'kiro.images':
@@ -241,6 +243,37 @@
         return t.runs.some(function (r) { return !!ACTIVE[runStatus(r)]; });
     }
 
+    /** VTID-05071: a run of this thread waits on an unanswered approval card. */
+    function isThreadWaiting(threadId) {
+        var t = threads[threadId];
+        if (!t) return false;
+        return t.runs.some(function (r) {
+            if (runStatus(r) !== 'waiting_permission') return false;
+            var steps = (r.view && r.view.steps) || [];
+            return steps.length === 0 || steps.some(function (s) { return s.kind === 'permission' && !s.answer; });
+        });
+    }
+
+    /** VTID-05071: the sidebar's "Needs your OK" badge (empty span when nothing waits). */
+    function waitingBadge(threadId) {
+        if (!isThreadWaiting(threadId)) return el('span', 'kiro-waiting-badge kiro-waiting-badge--none');
+        var b = el('span', 'kiro-waiting-badge', 'Needs your OK');
+        b.setAttribute('role', 'status');
+        b.title = 'Kiro is waiting for your Allow or Deny in this thread';
+        return b;
+    }
+
+    /** VTID-05071: "(!) " in front of the tab title while any thread waits on an approval. */
+    var TITLE_MARK = '(!) ';
+    function updateTabTitle() {
+        var doc = root.document;
+        if (!doc || typeof doc.title !== 'string') return;
+        var waiting = Object.keys(threads).some(isThreadWaiting);
+        var has = doc.title.indexOf(TITLE_MARK) === 0;
+        if (waiting && !has) doc.title = TITLE_MARK + doc.title;
+        else if (!waiting && has) doc.title = doc.title.slice(TITLE_MARK.length);
+    }
+
     function hasRuns(threadId) {
         var t = threads[threadId];
         return !!(t && t.runs.length > 0);
@@ -271,6 +304,8 @@
                     if (ACTIVE[runStatus(r)]) follow(t, r);
                     // Images (and how Kiro took them) show without opening the steps.
                     else if (r.row.attachments && r.row.attachments.length && !r.eventsLoaded) loadEvents(t, r);
+                    // VTID-05071: a run that stopped early loads its events so an expired approval is named.
+                    else if ((runStatus(r) === 'refused' || runStatus(r) === 'incomplete') && !r.eventsLoaded) loadEvents(t, r);
                 });
                 scheduleListRefresh(t);
                 updateConfirmationPoll(t);
@@ -809,6 +844,21 @@
         var row = r.row;
         var view = r.view || {};
         var stopReason = row.stop_reason || view.stopReason;
+        if ((status === 'refused' || status === 'incomplete') && view.timedOutApproval) {
+            // VTID-05071: the turn ended because an approval card expired — say so, not "refusal".
+            var title = String(view.timedOutApproval);
+            if (title.length > 80) title = title.slice(0, 79) + '…';
+            var tb = el('div', 'kiro-run-marker kiro-run-marker--approval-timeout');
+            tb.setAttribute('role', 'status');
+            tb.appendChild(el('span', 'kiro-run-marker-text', 'Stopped — your approval for "' + title + '" timed out.'));
+            if (isNewest) {
+                var tc = button('kiro-continue-btn', 'Continue', function () { continueRun(t.id); });
+                tc.title = 'Start a new run in this thread; Kiro gets the thread history back';
+                tc.disabled = !!t.sending;
+                tb.appendChild(tc);
+            }
+            return tb;
+        }
         if (status === 'refused' || status === 'incomplete') {
             return el('div', 'kiro-stopped-early', 'Kiro stopped early: ' + (stopReason || status));
         }
@@ -1039,6 +1089,7 @@
         if (!t.loaded && !t.loading) loadThread(threadId);
         else scheduleListRefresh(t);
         t.legacy = opts.legacyMessages || [];
+        updateTabTitle(); // VTID-05071
         var pane = el('div', 'kiro-console');
         pane.setAttribute('data-thread-id', threadId);
         var messages = el('div', 'chat-messages kiro-console-messages');
@@ -1064,7 +1115,12 @@
         var busy = isThreadBusy(t.id);
         var busyChanged = busy !== t.wasBusy;
         t.wasBusy = busy;
-        if (forceApp || busyChanged) {
+        // VTID-05071: the sidebar badge and tab title follow a waiting approval.
+        var waiting = isThreadWaiting(t.id);
+        var waitingChanged = waiting !== !!t.wasWaiting;
+        t.wasWaiting = waiting;
+        updateTabTitle();
+        if (forceApp || busyChanged || waitingChanged) {
             // Sidebar spinner, engine badge and Send title depend on it: one full render.
             host.renderApp();
             return;
@@ -1096,6 +1152,7 @@
         threads = {};
         trays = {};
         mediaUrls = {};
+        updateTabTitle();
     }
 
     root.KiroConsole = {
@@ -1108,6 +1165,8 @@
         continueRun: continueRun,
         answerPermission: answerPermission,
         isThreadBusy: isThreadBusy,
+        isThreadWaiting: isThreadWaiting,
+        waitingBadge: waitingBadge,
         hasRuns: hasRuns,
         imageTray: imageTray,
         renderMediaThumbs: renderMediaThumbs,

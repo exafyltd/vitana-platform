@@ -56,6 +56,8 @@ export const CLOSE = {
 
 /** VTID-05068: how long a dropped session waits for its gateway, and how much it buffers meanwhile. */
 export const REATTACH_DEFAULTS = { reattachMs: 10 * 60_000, reattachBufferBytes: 2 * 1024 * 1024 } as const;
+/** VTID-05071: idle close 50 min (was 15) — longer than the gateway's 45 min, so the gateway always closes first. */
+export const RUNNER_IDLE_MS_DEFAULT = 50 * 60_000;
 /** VTID-05068: the token format the gateway mints (base64url of an HMAC-SHA256). */
 export const REATTACH_TOKEN_RE = /^[A-Za-z0-9_-]{32,128}$/;
 

@@ -1499,6 +1499,8 @@ function renderOperatorThreadRow(thread) {
     }
     // VTID-05069: run status dot from the thread's latest linked VTID (pipeline-tree.js).
     if (window.PipelineTree) meta.appendChild(window.PipelineTree.threadDot(thread.id));
+    // VTID-05071: "Needs your OK" while a Kiro run of this thread waits on an approval (kiro-console.js).
+    if (window.KiroConsole && window.KiroConsole.waitingBadge) meta.appendChild(window.KiroConsole.waitingBadge(thread.id));
     if (operatorThreadEngine(thread) === 'kiro') {
         const tag = document.createElement('span');
         tag.className = 'chat-engine-tag';
