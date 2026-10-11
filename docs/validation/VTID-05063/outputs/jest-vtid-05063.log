@@ -1,0 +1,39 @@
+=== command ===
+npx jest \
+  test/vtid-05063-ledger-read-auth.test.ts \
+  test/vtid-05063-ledger-read-routes.test.ts \
+  test/vtid-05063-ledger-read-self-calls.test.ts \
+  test/vtid-05063-command-hub-ledger-read-headers.test.ts \
+  test/vtid-04727-ledger-write-auth.test.ts \
+  test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+=== cwd: services/gateway (worktree vtid-05063-ledger-read-auth) ===
+=== runner: node v24.11.1 / npm 11.6.2, Windows PowerShell ===
+=== ran: 2026-10-11 (local capture in the worktree) ===
+
+Per-suite result:
+
+  PASS test/vtid-04727-ledger-write-auth.test.ts
+  PASS test/vtid-05063-ledger-read-self-calls.test.ts
+  PASS test/vtid-05063-ledger-read-routes.test.ts
+  PASS test/vtid-05063-command-hub-ledger-read-headers.test.ts   (5.955 s)
+  PASS test/vtid-05063-ledger-read-auth.test.ts                  (6.01 s)
+  PASS test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts (10.905 s)
+
+Jest summary:
+
+  Test Suites: 6 passed, 6 total
+  Tests:       163 passed, 163 total
+  Snapshots:   0 total
+  Time:        13.263 s
+
+(Jest also printed its usual "Force exiting Jest / --detectOpenHandles" hint
+after all suites finished; it is informational and did not affect the result.)
+
+=== exit code: 0  => PASS (6/6 suites, 163/163 tests) ===
+
+Note: this is a cleaned transcript. The full raw PowerShell capture (including
+every individual test name, the ts-jest "isolatedModules deprecated" WARN lines,
+and the route console.log lines) is preserved alongside at
+outputs/jest-raw.log. That raw file is rendered with narrow console line-wrapping
+and some non-ASCII mojibake (checkmark/box characters) — console-encoding
+artifacts only; the pass/fail content and the exit code (0) are authoritative.

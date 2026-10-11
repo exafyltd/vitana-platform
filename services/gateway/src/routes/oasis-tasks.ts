@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { validateTaskTitle, normalizeTaskTitle } from '../utils/task-title';
 import { requireLedgerWriteAuth, getLedgerWriteActor } from '../middleware/ledger-write-auth';
+// VTID-05063: the ledger's read routes require the service token or an admin JWT.
+import { requireLedgerReadAuth } from '../middleware/ledger-read-auth';
 
 export const oasisTasksRouter = Router();
 
@@ -49,7 +51,7 @@ function isLegacyId(id: string): { isLegacy: boolean; pattern?: string } {
  * - statuses: comma-separated (default: 'scheduled,allocated,in_progress')
  * - limit: number (1-200, default: 50)
  */
-oasisTasksRouter.get('/api/v1/oasis/tasks/discover', async (req: Request, res: Response) => {
+oasisTasksRouter.get('/api/v1/oasis/tasks/discover', requireLedgerReadAuth, async (req: Request, res: Response) => {
   try {
     const svcKey = process.env.SUPABASE_SERVICE_ROLE;
     const supabaseUrl = process.env.SUPABASE_URL;
@@ -214,7 +216,7 @@ const TaskUpdateSchema = z.object({
   metadata: z.record(z.any()).optional(),
 });
 
-oasisTasksRouter.get('/api/v1/oasis/tasks', async (req: Request, res: Response) => {
+oasisTasksRouter.get('/api/v1/oasis/tasks', requireLedgerReadAuth, async (req: Request, res: Response) => {
   try {
     const svcKey = process.env.SUPABASE_SERVICE_ROLE;
     const supabaseUrl = process.env.SUPABASE_URL;
@@ -300,7 +302,7 @@ oasisTasksRouter.post('/api/v1/oasis/tasks', requireLedgerWriteAuth, async (req:
   }
 });
 
-oasisTasksRouter.get('/api/v1/oasis/tasks/:id', async (req: Request, res: Response) => {
+oasisTasksRouter.get('/api/v1/oasis/tasks/:id', requireLedgerReadAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const svcKey = process.env.SUPABASE_SERVICE_ROLE;

@@ -262,7 +262,8 @@ export const dev_discover_tasks: Handler = async (args, id) => {
   const statuses = typeof args.statuses === 'string' ? args.statuses : undefined;
   const qs = new URLSearchParams({ limit: String(limit) });
   if (statuses) qs.set('statuses', statuses);
-  const { ok, status, body } = await gatewayApiCall(`/api/v1/oasis/tasks/discover?${qs.toString()}`);
+  // VTID-05063: the ledger's read routes require the service token too.
+  const { ok, status, body } = await gatewayApiCall(`/api/v1/oasis/tasks/discover?${qs.toString()}`, { headers: serviceAuthHeaders() });
   if (!ok || body.ok !== true) {
     return { ok: false, error: `dev_discover_tasks failed (${status}): ${String(body.error ?? 'unknown')}` };
   }
@@ -283,7 +284,7 @@ export const dev_get_vtid_projection: Handler = async (args, id) => {
   if (denied) return denied;
   const limit = clampLimit(args.limit, 20, 200);
   const offset = Math.max(0, Number(args.offset) || 0);
-  const { ok, status, body } = await gatewayApiCall(`/api/v1/vtid/projection?limit=${limit}&offset=${offset}`);
+  const { ok, status, body } = await gatewayApiCall(`/api/v1/vtid/projection?limit=${limit}&offset=${offset}`, { headers: serviceAuthHeaders() });
   if (!ok || body.ok !== true) {
     return { ok: false, error: `dev_get_vtid_projection failed (${status}): ${String(body.error ?? 'unknown')}` };
   }
@@ -307,7 +308,7 @@ export const dev_get_vtid_projection: Handler = async (args, id) => {
 export const dev_get_allocator_status: Handler = async (_args, id) => {
   const denied = developerGate(id);
   if (denied) return denied;
-  const { ok, status, body } = await gatewayApiCall('/api/v1/vtid/allocator/status');
+  const { ok, status, body } = await gatewayApiCall('/api/v1/vtid/allocator/status', { headers: serviceAuthHeaders() });
   if (!ok || body.ok !== true) {
     return { ok: false, error: `dev_get_allocator_status failed (${status}): ${String(body.error ?? 'unknown')}` };
   }
@@ -455,7 +456,7 @@ export const dev_get_work_order: Handler = async (args, id, sb) => {
   if (denied) return denied;
   const target = await resolveVtid(args, sb);
   if ('error' in target) return { ok: false, error: target.error };
-  const { ok, status, body } = await gatewayApiCall(`/api/v1/oasis/tasks/${encodeURIComponent(target.vtid)}`);
+  const { ok, status, body } = await gatewayApiCall(`/api/v1/oasis/tasks/${encodeURIComponent(target.vtid)}`, { headers: serviceAuthHeaders() });
   if (!ok) return { ok: false, error: `dev_get_work_order failed (${status}): ${String(body.error ?? 'unknown')}` };
   return {
     ok: true,

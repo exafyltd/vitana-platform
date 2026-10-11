@@ -1,0 +1,30 @@
+=== command: node --test scripts/ci/vtid-auto-close.test.cjs ===
+=== cwd: repo root (worktree vtid-05063-ledger-read-auth) ===
+=== runner: node v24.11.1, Windows PowerShell ===
+=== ran: 2026-10-11 (local capture in the worktree) ===
+
+  ok  extractTitleVtids: title VTIDs only, deduplicated, in order
+  ok  autoCloseDecision: Dev Autopilot branches and opt-outs are skipped
+  ok  rowAction: only a non-terminal row is closed
+  ok  autoClose: closes open rows as success and leaves terminal ones untouched
+  ok  autoClose: a skipped PR makes no ledger call at all
+  ok  autoClose: a per-VTID failure is reported, never thrown, and the rest still run
+  ok  autoClose: no VTID in the title means no calls
+  ok  autoClose: sends the service token on the read (VTID-05063) and on the close (VTID-04727)
+  ok  autoClose: with no token the read sends no Authorization header at all
+
+  tests 9
+  suites 0
+  pass 9
+  fail 0
+  cancelled 0
+  skipped 0
+  todo 0
+  duration_ms 178.2988
+
+=== exit code: 0  => PASS (9/9 tests) ===
+
+Note: this is a cleaned transcript. The raw PowerShell capture is preserved
+alongside at outputs/vtid-auto-close-raw.log; it renders the node:test tap
+checkmark/info glyphs as mojibake (console-encoding artifact only). The
+pass/fail content and the exit code (0) are authoritative.

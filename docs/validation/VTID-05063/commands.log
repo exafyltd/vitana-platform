@@ -1,0 +1,63 @@
+VTID-05063 step A — commands and evidence (implementing session)
+
+The implementing session had no shell (owner's Kiro denies process launches), so no
+npm/jest/git command ran here. Every check below was done with the editor's
+file-search and file-read tools against the worktree at base 62383c10d. GitHub CI
+runs the suites named in staging-tests.json.
+
+1. Caller inventory (plan section 2f), repo-wide content search outside routes/ and tests:
+   pattern: oasis/tasks|vtid-ledger|vtid/(list|projection|allocator)|execution-status|api/v1/tasks|commandhub/board|approvals/(pending|count)|api/v1/board
+   live callers that needed a fix (all fixed):
+     services/gateway/src/services/orb-tools/vtid-lifecycle-tools.ts  dev_discover_tasks, dev_get_vtid_projection, dev_get_allocator_status, dev_get_work_order
+     services/gateway/src/services/orb-tools/developer-tools.ts       approvalsApi('/pending?limit=..'), approvalsApi('/count')
+     services/gateway/src/services/task-state-query-service.ts        fetchFromOasis (GET /api/v1/oasis/tasks/discover)
+     services/gateway/src/services/gemini-operator.ts                 approvals/pending, approvals/count
+     scripts/ci/vtid-auto-close.cjs                                   readRow (GET /api/v1/oasis/tasks/:vtid)
+     services/gateway/src/frontend/command-hub/app.js                 13 Tier 1 read call sites (all send buildContextHeaders())
+     services/gateway/src/frontend/command-hub/debug.html             GET /api/v1/tasks (stored bearer)
+   dormant, not changed: mcp/vitana-work/src/lib/gateway-client.ts (VITANA_API_KEY, decommissioned default host)
+   vitana-v1 taskApi.ts / useTaskStream.ts: separate repo, separate PR (not in this change)
+
+2. Gate wiring: search "router.get(" / "Router.get(" in routes/{vtid,tasks,oasis-tasks,oasis-vtid-ledger,board-adapter,approvals}.ts
+   14 Tier 1 registrations carry requireLedgerReadAuth; /api/v1/vtid/health, /api/v1/approvals/feed,
+   /api/v1/oasis/vtid/terminalize/health and the OPTIONS registrations do not; no ".use(" of the gate.
+
+3. Staging register step size ("Register task-definition revision + roll the service"):
+   ten strip-list continuation lines inside the single-quoted jq program moved from 46 to 22
+   leading spaces (3 in the environment strip list, 7 in the secrets strip list): -240 chars.
+   strip entry ,"LEDGER_READ_AUTH_MODE" appended after "SCHEDULED_NOTIFICATIONS_AUTH_MODE",: +24 chars.
+   net: -216. The base passes the existing 20,000-char cap test, so the step is now at most
+   19,784 chars. Not measured by the jest helper here (no shell);
+   vtid-05063-ledger-read-auth.test.ts asserts <= 19,900 in CI.
+   No remaining line in the stage workflow starts with 30 or more spaces followed by a quote.
+
+----------------------------------------------------------------------
+VTID-05063 — local-check capture (evidence finalization)
+2026-10-11T20:42:39+02:00  (worktree .worktrees/vtid-05063-ledger-read-auth)
+Environment: node v24.11.1, npm 11.6.2, Windows PowerShell.
+services/gateway/node_modules already installed — no npm ci / npm install needed.
+
+Commands actually run (full stdout+stderr captured under outputs/):
+
+1. cwd: services/gateway
+   npm run typecheck
+   -> outputs/typecheck.log   exit 0  PASS (tsc --noEmit, no type errors)
+
+2. cwd: services/gateway
+   npx jest test/vtid-05063-ledger-read-auth.test.ts \
+            test/vtid-05063-ledger-read-routes.test.ts \
+            test/vtid-05063-ledger-read-self-calls.test.ts \
+            test/vtid-05063-command-hub-ledger-read-headers.test.ts \
+            test/vtid-04727-ledger-write-auth.test.ts \
+            test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+   -> outputs/jest-vtid-05063.log (cleaned) + outputs/jest-raw.log (raw)
+      exit 0  PASS — 6/6 suites, 163/163 tests
+
+3. cwd: repo root (.worktrees/vtid-05063-ledger-read-auth)
+   node --test scripts/ci/vtid-auto-close.test.cjs
+   -> outputs/vtid-auto-close-test.log (cleaned) + outputs/vtid-auto-close-raw.log (raw)
+      exit 0  PASS — 9/9 tests
+
+The *-raw.log files are the unedited PowerShell captures; the matching .log
+files are cleaned transcripts of the same runs (console line-wrapping and
+non-ASCII glyph mojibake stripped). CI on PR #4033 is the authoritative run.

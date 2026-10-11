@@ -261,6 +261,20 @@ ORCHESTRATOR_RUN_LEASE_TTL_MS=300000
 # skips the check; anything else (the default) is 'log': allowed, and every
 # call that would be rejected is logged. Staging pins 'enforce'.
 LEDGER_WRITE_AUTH_MODE=log
+# VTID ledger READ routes (VTID-05063): the 13 Tier 1 read route groups
+# (oasis/tasks*, oasis/vtid-ledger, vtid/{list,projection,allocator/status,
+# :vtid}, /api/v1/tasks, vtid/:vtid/execution-status, commandhub/board and
+# /api/v1/board, approvals/{pending,count}) need the same credential as the
+# writes. Same three modes, separate switch. Default 'log' on staging AND
+# production (staging strips any value; the 'enforce' pin is step B, merged
+# only after step A and VTID-04727 are in production). Boot line:
+# `[ledger-read-auth] mode=<mode> service_token_configured=<true|false>`.
+# Production has NO pin in AWS-PROD-DEPLOY-GATEWAY.yml: it is flipped (and
+# rolled back) by an env-only dispatch with
+# env_overrides={"LEDGER_READ_AUTH_MODE":"enforce"|"log"}, which is outside
+# PUBLISH and needs the owner's explicit go. So the generated flag-pins
+# mirror will show `prod: null` even when the live task def says enforce.
+LEDGER_READ_AUTH_MODE=log
 # /api/v1/scheduled-notifications/* (VTID-04677) need X-Gateway-Internal ==
 # GATEWAY_INTERNAL_TOKEN (Secrets Manager vitana/gateway/<env>/internal-token).
 # Same three modes; default 'log'. Staging pins 'log'; enforce is a separate,

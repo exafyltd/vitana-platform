@@ -57,6 +57,8 @@ import { executeKnowledgeSearch, KNOWLEDGE_SEARCH_TOOL_DEFINITION } from './know
 import { searchCode, getFileContents } from './github-service';
 import { VITANA_REPOS, repoGitHubToken, isVitanaRepo } from './vitana-repos';
 import { gatewayServiceAuthHeader } from '../middleware/require-service-or-admin';
+// VTID-05063: the approvals queue reads (pending/count) require the service token.
+import { serviceAuthHeaders } from '../middleware/ledger-write-auth';
 import { getOperatorBootstrapPack } from './operator-bootstrap-pack';
 import { filterVitanaLogs, LOGS_DEFAULT_MINUTES, LOGS_MAX_MINUTES, LOGS_DEFAULT_LIMIT, LOGS_MAX_LIMIT } from './aws-cloudwatch-logs-readonly';
 import { buildRecallQuery } from './operator-threads';
@@ -5642,11 +5644,10 @@ async function executeDevListApprovals(
   try {
     const gatewayPort = process.env.PORT || '8080';
     const limit = args.limit || 50;
+    // VTID-05063: this request goes to the gateway, not to Supabase, so it sends
+    // the gateway service token instead of the Supabase key.
     const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/approvals/pending?limit=${limit}`, {
-      headers: {
-        apikey: SUPABASE_SERVICE_ROLE,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
+      headers: serviceAuthHeaders(),
     });
 
     const result = await resp.json() as any;
@@ -5666,11 +5667,9 @@ async function executeDevApprovalCount(threadId: string): Promise<ToolExecutionR
 
   try {
     const gatewayPort = process.env.PORT || '8080';
+    // VTID-05063: gateway-bound request — the gateway service token, not the Supabase key.
     const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/approvals/count`, {
-      headers: {
-        apikey: SUPABASE_SERVICE_ROLE,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
+      headers: serviceAuthHeaders(),
     });
 
     const result = await resp.json() as any;

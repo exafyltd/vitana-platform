@@ -1,0 +1,14 @@
+﻿{
+  "verdict": "converged",
+  "plan_hash": "44e339f79ba891a5b99f7a552409eff30c207d890dbd49b223cd32f54a7c1af8",
+  "findings": [
+    {"id":"F16","severity":"blocker","status":"closed","claim":"Staging register-step size mitigation (re-indent jq arrays) verified: 37 lines, reclaim 888 chars, whitespace-only."},
+    {"id":"F17","severity":"minor","status":"closed","claim":"Strip entry placement keeps vtid-04677 test line 215 contiguity."},
+    {"id":"F18","severity":"minor","status":"closed","claim":"gemini-operator wording and service-token note verified."},
+    {"id":"F19","severity":"minor","status":"closed","claim":"Section 2f grep extended; gateway-client.ts:133 listed dormant."},
+    {"id":"F20","severity":"major","status":"closed","claim":"STAGING-VERIFY runs the change suite of every VTID between production and the verified commit (run.mjs:325-328, lib.cjs:197-229); plan 2c previously asserted the opposite.","resolution":"Section 2c rewritten to STAGING-VERIFY's real behaviour; step A staging-tests.json kept to health probes plus kind:existing jest refs; explicit ordering constraint added (step B merges only after step A and the VTID-04727 commit are in production, or after confirming the 04727 anonymous-200 probe is outside the production..verified-commit range); work-plan step 9 corrected (log-mode-only 200, no anonymous-200 ledger assertion in staging-tests.json)."},
+    {"id":"F21","severity":"minor","status":"closed","claim":"Section 2a cited app.js:~104; the vitana.authToken write is at app.js:125.","resolution":"Reference changed to app.js:125."}
+  ],
+  "reviewDoc": "c:/Users/dstev/vitana-platform-1/.worktrees/vtid-05063-sparring-converge/.agents/tasks/gateway-ledger-read-auth/sparring-review.md",
+  "round": 4
+}

@@ -21,6 +21,8 @@
  */
 
 import { emitOasisEvent } from './oasis-event-service';
+// VTID-05063: the discover route is a ledger read and requires the service token.
+import { serviceAuthHeaders } from '../middleware/ledger-write-auth';
 
 // =============================================================================
 // VTID-01158: Configuration
@@ -318,6 +320,7 @@ async function fetchFromOasis(params: {
         'Content-Type': 'application/json',
         'X-Actor': 'orb-router',
         'X-VTID': 'VTID-01158',
+        ...serviceAuthHeaders(),
       },
       signal: controller.signal,
     });

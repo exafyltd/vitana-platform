@@ -177,7 +177,7 @@ describe('VTID-05071 wiring', () => {
   });
   it('index.html serves the module at the new version; the ownership guard allowlists VTID-05071', () => {
     expect(INDEX_HTML).toContain('/command-hub/kiro-console.js?v=20261114-vtid-05071');
-    expect(INDEX_HTML).toContain('/command-hub/app.js?v=20261114-vtid-05071');
+    expect(INDEX_HTML).toContain('/command-hub/app.js?v=20261115-vtid-05063');
     expect(GUARD).toMatch(/ALLOWED_VTID_PATTERN = \/[^\n]*VTID-05071\|/);
   });
 });

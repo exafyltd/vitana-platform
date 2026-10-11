@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import cors from 'cors';
+// VTID-05063: the ledger's read routes require the service token or an admin JWT.
+import { requireLedgerReadAuth } from '../middleware/ledger-read-auth';
 
 const router = Router();
 
@@ -115,7 +117,10 @@ router.options('/', cors(corsOptions));
  *   - limit: max COMPLETED items to return (default 20, max 100). SCHEDULED/IN_PROGRESS are unlimited.
  *   - include_dev: include DEV-* items (default true for backward compatibility)
  */
-router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
+// VTID-05063: cors runs BEFORE the gate, so a 401/403 to an allowlisted origin
+// still carries this route's CORS headers (the browser shows the 401, not an
+// opaque network error).
+router.get('/', cors(corsOptions), requireLedgerReadAuth, async (req: Request, res: Response) => {
   // VTID-01079: Limit only applies to COMPLETED column. SCHEDULED/IN_PROGRESS are always unlimited.
   const completedLimit = Math.min(parseInt(req.query.limit as string) || 20, 100);
   // VTID-01079: Default true to avoid breaking existing UI

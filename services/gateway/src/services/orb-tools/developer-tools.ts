@@ -20,6 +20,8 @@ import { createHash } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import * as repo from './developer-tools-repository';
+// VTID-05063: the approvals queue reads (pending/count) require the service token.
+import { serviceAuthHeaders } from '../../middleware/ledger-write-auth';
 
 type Handler = (
   args: OrbToolArgs,
@@ -126,7 +128,7 @@ export async function gatewayApiCall(
 
 async function approvalsApi(
   path: string,
-  init?: { method?: string; body?: unknown },
+  init?: { method?: string; body?: unknown; headers?: Record<string, string> },
 ): Promise<{ ok: boolean; status: number; body: Record<string, unknown> }> {
   return gatewayApiCall(`/api/v1/approvals${path}`, init);
 }
@@ -238,7 +240,7 @@ export const dev_list_pending_approvals: Handler = async (args, id) => {
   if (denied) return denied;
   const limit = clampLimit(args.limit, 5, 20);
   try {
-    const { ok, status, body } = await approvalsApi(`/pending?limit=${limit}`);
+    const { ok, status, body } = await approvalsApi(`/pending?limit=${limit}`, { headers: serviceAuthHeaders() });
     if (!ok || body.ok !== true) {
       return { ok: false, error: `approvals queue unavailable (${status}): ${String(body.error ?? 'unknown')}` };
     }
@@ -264,7 +266,7 @@ export const dev_count_approvals: Handler = async (_args, id) => {
   const denied = developerGate(id);
   if (denied) return denied;
   try {
-    const { ok, status, body } = await approvalsApi('/count');
+    const { ok, status, body } = await approvalsApi('/count', { headers: serviceAuthHeaders() });
     if (!ok || body.ok !== true) {
       return { ok: false, error: `approvals count unavailable (${status}): ${String(body.error ?? 'unknown')}` };
     }

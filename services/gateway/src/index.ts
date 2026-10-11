@@ -1674,6 +1674,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
       console.log('Gateway: debug /debug/governance-ping route registered');
       console.log('Gateway: governance routes mounted at /api/v1/governance');
       console.log('Gateway: operator routes mounted at /api/v1/operator (VTID-0510)');
+      // VTID-05063: one boot line with the ledger read gate's mode and whether a
+      // service token is configured (presence only, never the value).
+      require('./middleware/ledger-read-auth').logLedgerReadAuthBoot();
 
       // VTID-01222: Initialize ORB WebSocket server for Live API
       try {

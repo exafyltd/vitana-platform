@@ -2,6 +2,9 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { timingSafeEqual } from "crypto";
 import { requireLedgerWriteAuth } from "../middleware/ledger-write-auth";
+// VTID-05063: the ledger's read routes require the service token or an admin JWT
+// (per route — /health on this router stays open).
+import { requireLedgerReadAuth } from "../middleware/ledger-read-auth";
 import { buildStageTimeline, defaultStageTimeline, type TimelineEvent, type StageTimelineEntry } from '../lib/stage-mapping';
 // VTID-01181: Import system controls service for DB-backed allocator toggle
 import { isVtidAllocatorEnabled, getSystemControl } from '../services/system-controls-service';
@@ -434,7 +437,7 @@ router.post("/allocate-internal", async (req: Request, res: Response) => { // pu
  * VTID-0542 + VTID-01181: Check allocator status and configuration
  * Shows both env var and DB control state
  */
-router.get("/allocator/status", async (_req: Request, res: Response) => {
+router.get("/allocator/status", requireLedgerReadAuth, async (_req: Request, res: Response) => {
   // VTID-01181: Get DB control state
   const dbControl = await getSystemControl('vtid_allocator_enabled');
   const effectiveEnabled = await isVtidAllocatorEnabled();
@@ -757,7 +760,7 @@ async function legacyCreate(
   return res.status(201).json({ ok: true, ...data[0], target_roles: body.target_roles });
 }
 
-router.get("/list", async (req: Request, res: Response) => {
+router.get("/list", requireLedgerReadAuth, async (req: Request, res: Response) => {
   try {
     const { limit: limitParam = "50", families, status, tenant = "vitana" } = req.query as Record<string, string>;
     const { supabaseUrl, svcKey } = getSupabaseConfig();
@@ -882,7 +885,7 @@ interface VtidProjectionItem {
   ledger_status: string;
 }
 
-router.get("/projection", async (req: Request, res: Response) => {
+router.get("/projection", requireLedgerReadAuth, async (req: Request, res: Response) => {
   try {
     // VTID-01189: Added offset support for infinite scroll pagination
     const { limit: limitParam = "50", offset: offsetParam = "0" } = req.query as Record<string, string>;
@@ -1171,7 +1174,7 @@ router.get("/projection", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/:vtid", async (req: Request, res: Response) => {
+router.get("/:vtid", requireLedgerReadAuth, async (req: Request, res: Response) => {
   try {
     const { vtid } = req.params;
     // VTID-0527-C + VTID-01007: Accept both formats with 4-5 digit support:

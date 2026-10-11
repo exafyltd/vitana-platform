@@ -18,6 +18,9 @@ import { Router, Request, Response } from 'express';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { createHash } from 'crypto';
 import { listOpenPrsWithStatus, GitHubFeedItem } from '../services/github-service';
+// VTID-05063: /count and /pending derive their items from vtid_ledger, so they
+// require the service token or an admin JWT (per route; /feed is not ledger data).
+import { requireLedgerReadAuth } from '../middleware/ledger-read-auth';
 
 const router = Router();
 
@@ -347,7 +350,7 @@ async function emitApprovalDecision(
  * GET /count
  * Returns the count of pending approval items
  */
-router.get('/count', async (_req: Request, res: Response) => {
+router.get('/count', requireLedgerReadAuth, async (_req: Request, res: Response) => {
   try {
     const { supabaseUrl, svcKey } = getSupabaseConfig();
 
@@ -393,7 +396,7 @@ router.get('/count', async (_req: Request, res: Response) => {
  * Query params:
  * - limit: number (default 50, max 100)
  */
-router.get('/pending', async (req: Request, res: Response) => {
+router.get('/pending', requireLedgerReadAuth, async (req: Request, res: Response) => {
   try {
     const { supabaseUrl, svcKey } = getSupabaseConfig();
 
