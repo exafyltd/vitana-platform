@@ -208,6 +208,39 @@ function isLockfileOnlyCommit(files, service) {
   return inBuild.length > 0 && inBuild.every((f) => String(f).split('/').pop() === LOCKFILE_ONLY_NAME);
 }
 
+// ── Range (VTID-05076) ───────────────────────────────────────────────────
+// Every change that landed on main between production and the verified commit,
+// one entry each: a squash commit, a direct push, or a PR merge commit. Walking
+// the first-parent chain keeps a merge-committed PR's own branch commits out of
+// the list — the PR is judged by its merge commit, whose subject carries the PR
+// title and VTID (validate-pr enforces it) — while a direct push without a VTID
+// is still a first-parent commit and still fails rule 47. Files come from the
+// first-parent diff, so a merge commit lists everything it brought into main
+// (git show's combined diff would list only conflict-resolved files).
+// `git(args)` runs git in the checkout and returns stdout, or null on failure.
+function commitsBetween(git, fromSha, toSha) {
+  const range = fromSha ? `${fromSha}..${toSha}` : `${toSha}~1..${toSha}`;
+  const out = git(['log', '--first-parent', '--reverse', '--format=%H%x1f%cI%x1f%an%x1f%P%x1f%s', range]) || '';
+  return out
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [sha, date, author, parentField, ...subjectParts] = line.split('\x1f');
+      const subject = subjectParts.join('\x1f');
+      const parents = (parentField || '').split(' ').filter(Boolean);
+      const fileOut = parents.length
+        ? git(['diff', '--name-only', `${sha}^1`, sha])
+        : git(['show', '--name-only', '--format=', sha]);
+      const files = (fileOut || '').split('\n').filter(Boolean);
+      let branchCommits = 0;
+      if (parents.length > 1) {
+        const n = Number(git(['rev-list', '--count', `${sha}^1..${sha}`]));
+        branchCommits = Number.isFinite(n) && n > 1 ? n - 1 : 0;
+      }
+      return { sha, date, author, subject, files, branchCommits };
+    });
+}
+
 // ── Plan ─────────────────────────────────────────────────────────────────
 // commits: [{ sha, date, subject, files }] — every commit between production
 // and the verified commit (exclusive/inclusive). manifests: { [vtid]: obj|null }.
@@ -402,7 +435,8 @@ function buildReadyMessage({ service, sha, outcome, results, plan, shipping, pro
   if (shipping.length === 0) lines.push('- (none — production already serves or contains this commit, or its version could not be read)');
   for (const c of shipping.slice(0, 60)) {
     const v = extractVtids(c.subject);
-    lines.push(`- \`${short(c.sha)}\` ${v.length ? v.join(', ') + ' — ' : ''}${c.subject}${c.author ? ` (${c.author})` : ''}`);
+    const via = c.branchCommits ? ` (${c.branchCommits} branch commit${c.branchCommits === 1 ? '' : 's'})` : '';
+    lines.push(`- \`${short(c.sha)}\` ${v.length ? v.join(', ') + ' — ' : ''}${c.subject}${c.author ? ` (${c.author})` : ''}${via}`);
   }
   if (shipping.length > 60) lines.push(`- … and ${shipping.length - 60} more (full list in the run summary)`);
   if (outcome === 'passed') {
@@ -443,6 +477,7 @@ module.exports = {
   pathMatches,
   touchesService,
   isLockfileOnlyCommit,
+  commitsBetween,
   extractVtids,
   validateManifest,
   planRange,
