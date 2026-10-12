@@ -1,0 +1,26 @@
+{
+  "vtid": "VTID-05099",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/companion/**",
+    "services/gateway/src/routes/companion.ts",
+    "services/gateway/src/routes/scheduled-notifications.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/orb/developer/domain-atlas.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/src/services/guide/presence-pacer.ts",
+    "services/gateway/src/services/proactive-match-messenger.ts",
+    "services/gateway/src/services/automation-handlers/sharing-growth.ts",
+    "services/gateway/src/services/automation-handlers/onboarding-growth.ts",
+    "services/gateway/package.json",
+    "services/gateway/test/vtid-05099-*.test.ts",
+    "services/gateway/test/vtid-04226-eventbridge-test-contract-schedules.test.ts",
+    "supabase/migrations/20261012200000_vtid_05099_companion_messages.sql",
+    "scripts/aws/setup-eventbridge-cron-migration.sh",
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-05099/**",
+    "docs/validation/VTID-05100/**",
+    "docs/validation/VTID-05101/**",
+    "docs/validation/VTID-05102/**"
+  ]
+}
