@@ -76,7 +76,8 @@ describe('runPlanningSession source wiring (VTID-03854, source check)', () => {
   it('the isPlanningStubEnabled() gate is followed by a real buildStubPlan return, before any routed call', () => {
     const gateIdx = SOURCE.indexOf('if (isPlanningStubEnabled()) {');
     const stubReturnIdx = SOURCE.indexOf('plan_markdown: buildStubPlan(finding, feedbackNote),', gateIdx);
-    const routedCallIdx = SOURCE.indexOf('let call = isWorkerQueueEnabled()');
+    // VTID-05078: the call now starts with the tools branch (toolsOn ? loop : worker queue ? … : routed).
+    const routedCallIdx = SOURCE.indexOf('let call = toolsOn');
     expect(stubReturnIdx).toBeGreaterThan(gateIdx);
     expect(routedCallIdx).toBeGreaterThan(stubReturnIdx);
   });
