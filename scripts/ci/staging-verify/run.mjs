@@ -149,16 +149,10 @@ function inside(root, p) {
 
 async function runHttp(service, t) {
   const base = lib.assertStagingTarget(lib.STAGING_TARGETS[t.target || lib.SERVICES[service].target]);
-  const method = String(t.method || 'GET').toUpperCase();
-  const init = { method, headers: { accept: 'application/json, text/html;q=0.9' } };
-  if (t.rejected_probe) {
-    // Deliberately invalid credentials: the probe must be rejected by the
-    // auth gate before any handler runs. evaluateHttp flags a 2xx loudly.
-    init.headers.authorization = 'Bearer staging-verify.invalid.probe';
-    init.headers['content-type'] = 'application/json';
-    init.body = '{}';
-  }
-  const res = await httpGet(`${base}${t.path}`, init);
+  // A rejected probe carries deliberately invalid credentials and must be
+  // refused by the auth gate before any handler runs; evaluateHttp flags a
+  // 2xx loudly. httpRequestInit adds a body only for write methods.
+  const res = await httpGet(`${base}${t.path}`, lib.httpRequestInit(t));
   return lib.evaluateHttp(t, res);
 }
 
