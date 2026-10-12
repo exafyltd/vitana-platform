@@ -401,88 +401,10 @@ routineAuditsRouter.get(
   }
 );
 
-// -----------------------------------------------------------------------------
-// GET /api/v1/routines/audits/push-pipeline
-// Used by: push-pipeline-probe routine
-// -----------------------------------------------------------------------------
-
-routineAuditsRouter.get(
-  '/api/v1/routines/audits/push-pipeline',
-  requireRoutineToken,
-  async (_req: Request, res: Response) => {
-    try {
-      const totalTokens = await supaCount('/rest/v1/user_device_tokens');
-      const webTokens = await supaCount(
-        '/rest/v1/user_device_tokens?platform=in.(web,chrome,firefox,safari)'
-      );
-      const mobileTokens = await supaCount(
-        '/rest/v1/user_device_tokens?platform=in.(android,ios,appilix)'
-      );
-      const recentTokens = await supaCount(
-        `/rest/v1/user_device_tokens?created_at=gte.${hoursAgoIso(24)}`
-      );
-
-      const featurePending = totalTokens === null;
-
-      return res.json({
-        ok: true,
-        feature_pending: featurePending,
-        total_tokens: totalTokens ?? 0,
-        web_tokens: webTokens ?? 0,
-        mobile_tokens: mobileTokens ?? 0,
-        new_tokens_last_24h: recentTokens ?? 0,
-      });
-    } catch (e: any) {
-      console.error(`${LOG_PREFIX} push-pipeline error:`, e);
-      return res.status(500).json({ ok: false, error: e.message });
-    }
-  }
-);
-
-// -----------------------------------------------------------------------------
-// GET /api/v1/routines/audits/migration-backlog
-// Used by: migration-backlog routine
-// -----------------------------------------------------------------------------
-
-routineAuditsRouter.get(
-  '/api/v1/routines/audits/migration-backlog',
-  requireRoutineToken,
-  async (_req: Request, res: Response) => {
-    try {
-      // Supabase stores applied migrations under schema=supabase_migrations,
-      // table=schema_migrations. Use the schema-qualified PostgREST header.
-      const url = process.env.SUPABASE_URL;
-      const key = process.env.SUPABASE_SERVICE_ROLE;
-      if (!url || !key) {
-        return res.status(503).json({ ok: false, error: 'Supabase env not configured' });
-      }
-      const resp = await fetch(
-        `${url}/rest/v1/schema_migrations?select=version,name,statements&limit=1000&order=version.desc`,
-        {
-          headers: {
-            apikey: key,
-            Authorization: `Bearer ${key}`,
-            'Accept-Profile': 'supabase_migrations',
-          },
-        }
-      );
-      let applied: Array<{ version: string; name?: string }> = [];
-      if (resp.ok) {
-        applied = (await resp.json()) as Array<{ version: string; name?: string }>;
-      }
-
-      return res.json({
-        ok: true,
-        applied_count: applied.length,
-        applied_versions: applied.map((m) => m.version),
-        latest_applied: applied[0]?.version ?? null,
-      });
-    } catch (e: any) {
-      console.error(`${LOG_PREFIX} migration-backlog error:`, e);
-      return res.status(500).json({ ok: false, error: e.message });
-    }
-  }
-);
+// VTID-05098: /routines/audits/push-pipeline and /routines/audits/migration-backlog
+// were removed with their routines (push-pipeline-probe, migration-backlog).
+// Push dispatch is covered by /api/v1/ops/health/push-dispatch; migration drift
+// by MIGRATION-DRIFT-CHECK. See docs/autonomy/LOOP-ENGINEERING.md §5.
 
 // -----------------------------------------------------------------------------
 // GET /api/v1/routines/audits/dyk-tour-progress

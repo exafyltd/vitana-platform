@@ -119,6 +119,12 @@
 .loops-coverage { display: flex; flex-direction: column; gap: 0.25rem; }
 .loops-overlaps { margin: 0; padding-inline-start: 1.25rem; }
 .loops-overlaps li { margin-bottom: 0.25rem; }
+.loops-overlaps .loops-badge { margin-inline-start: 0.5rem; }
+.loops-badge--overlap-resolved { color: var(--lp-live); }
+.loops-badge--overlap-partly_resolved { color: var(--lp-partial); }
+.loops-badge--overlap-not_a_duplicate,
+.loops-badge--overlap-open { color: var(--lp-muted); }
+.loops-overlap-resolution { color: var(--lp-muted); font-size: 12px; margin-top: 0.15rem; }
 
 @media (max-width: 600px) {
   .loops-view { padding: 1rem; }

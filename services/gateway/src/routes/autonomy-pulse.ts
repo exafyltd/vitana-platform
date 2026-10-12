@@ -100,13 +100,14 @@ export type PulseAction =
   | 'reject'             // dev_autopilot finding → reject
   | 'snooze'             // dev_autopilot finding → snooze 24h
   | 'view_plan'          // dev_autopilot finding → expand plan in dev-autopilot tab
-  | 'investigate'        // self_healing → open diagnosis
-  | 'apply_heal'         // self_healing → apply fix spec
-  | 'discard_heal'       // self_healing → mark won't-fix
+  | 'investigate'        // self_healing / test_contract_failure → open the source tab (the one place to act)
   | 'cancel'             // autonomous_execution → cancel during cooldown
-  | 'view_trace'         // autonomous_execution → open lineage
-  | 'rerun_contract'     // test_contract_failure → manually re-run the probe
-  | 'open_contract';     // test_contract_failure → open contract panel
+  | 'view_trace';        // autonomous_execution → open lineage
+// VTID-05098: apply_heal / discard_heal / rerun_contract / open_contract were
+// removed. Pulse sent {vtid} where /self-healing/approve|reject require a UUID
+// id (every click returned 400) and the contract verbs had no handler. Acting
+// on a heal or a contract happens in its own tab (autonomy/self-healing,
+// testing-qa/test-contracts); Pulse shows the item and links there.
 
 export interface PulseItem {
   id: string;                          // stable across reloads: `${source}:${row.id}`
@@ -238,9 +239,7 @@ function normalizeHeal(row: HealRow): PulseItem {
     severity: severityFromFailureClass(row.failure_class),
     created_at: row.created_at,
     age_minutes: ageMinutes(row.created_at),
-    actions: confidence >= 0.8
-      ? ['apply_heal', 'investigate', 'discard_heal']
-      : ['investigate', 'apply_heal', 'discard_heal'],
+    actions: ['investigate'],
     source_url: `/command-hub/infrastructure/self-healing?vtid=${encodeURIComponent(row.vtid)}`,
     metadata: {
       vtid: row.vtid,
@@ -272,7 +271,7 @@ function normalizeContract(row: ContractRow): PulseItem {
     severity,
     created_at: ts,
     age_minutes: ageMinutes(ts),
-    actions: ['rerun_contract', 'open_contract', 'investigate'],
+    actions: ['investigate'],
     source_url: `/command-hub/voice/test-contracts/?capability=${encodeURIComponent(row.capability)}`,
     metadata: {
       contract_id: row.id,
