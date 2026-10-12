@@ -57,8 +57,9 @@ import { notifyUserAsync } from '../notification-service';
 import { checkVoiceSendQuota } from '../voice-message-guard';
 import { getOwnCalendarEvent } from '../calendar-service';
 import { buildInviteFromEntry } from '../calendar-invite';
-import { isSensitiveEntry } from '../calendar-share';
+import { cardToken, cardTokenMatches, isSensitiveEntry } from '../calendar-share';
 import { checkInviteSend } from '../calendar-invite-guard';
+import { CARD_CHANGED } from './calendar-social-tools';
 import { tt } from '../../i18n/catalog';
 import { getUserLocale } from '../../i18n/server-locale';
 import * as repo from './messaging-depth-tools-repository';
@@ -800,15 +801,20 @@ export const tool_send_calendar_invite_in_chat: Handler = async (args, id, sb) =
           card_title: built.metadata.title,
           location_shown: built.metadata.location !== null,
           sensitive,
+          card_token: cardToken(ownRow as any, { title: built.metadata.title, location: built.metadata.location }),
         },
         text:
           `Ready to send ${name} the invite for ${speakEvent(event)}; the card will read "${built.metadata.title}"` +
           `${built.metadata.location ? '' : ' without the place'}. ` +
           (sensitive ? 'This is a health appointment: say so plainly. ' : '') +
-          'Read this back and only call send_calendar_invite_in_chat again with confirmed=true' +
+          'Read this back and only call send_calendar_invite_in_chat again with the same arguments, this card_token and confirmed=true' +
           (sensitive ? ' and sensitive_ack=true' : '') +
           ' after explicit confirmation.',
       };
+    }
+    // VTID-05126: only the card the member approved goes out (no dropped title, no added place).
+    if (!cardTokenMatches(ownRow as any, { title: built.metadata.title, location: built.metadata.location }, args.card_token)) {
+      return { ok: true, result: { stage: 'awaiting_confirmation', event_id: event.id, needs: 'card_token' }, text: CARD_CHANGED.invite };
     }
     // VTID-05126: a health appointment is sent only after the model surfaced what it is.
     if (sensitive && args.sensitive_ack !== true) {
@@ -857,7 +863,10 @@ export const tool_send_calendar_invite_in_chat: Handler = async (args, id, sb) =
       return { ok: false, error: "I can't send that invite." };
     }
 
-    const content = `📅 ${event.title} — ${fmtWhen(event.start_time)}${event.location ? ` at ${event.location}` : ''}`;
+    // VTID-05126: the message text says only what the card shows — the member's
+    // card title, and the place only when they chose to show it.
+    const card = built.metadata;
+    const content = `📅 ${card.title} — ${fmtWhen(card.start_time)}${card.location ? ` at ${card.location}` : ''}`;
     const { error: insErr } = await repo.insertCalendarInviteChatMessage(sb, {
       tenant_id: tenantId,
       sender_id: id.user_id,
@@ -1180,6 +1189,7 @@ export const MESSAGING_DEPTH_TOOL_DECLARATIONS: Array<Record<string, unknown>> =
         event_id: { type: 'string', description: 'Exact calendar_events UUID when already known.' },
         card_title: { type: 'string', description: 'For an own entry: the title on the card (max 120). Omit to use the entry title.' },
         include_location: { type: 'boolean', description: 'For an own entry: true shows the place on the card. Default false.' },
+        card_token: { type: 'string', description: 'With confirmed=true for an own entry: the card_token from the preview the member approved.' },
         sensitive_ack: { type: 'boolean', description: 'true ONLY when the preview said sensitive=true and the member confirmed after you said it is a health appointment.' },
         confirmed: { type: 'boolean', description: 'Pass true ONLY after the user explicitly confirmed sending.' },
       },

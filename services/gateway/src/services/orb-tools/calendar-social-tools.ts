@@ -23,7 +23,7 @@ import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-s
 import { checkCalendarWriteRequest } from '../../orb/live/tools/calendar-write-guard';
 import { createCalendarEvent, checkConflicts, getOwnCalendarEvent } from '../calendar-service';
 import { toWritableRoleContext } from '../../types/calendar';
-import { entryCard, entryNotOpenReason, isSensitiveEntry, isShareableEntry, shareCalendarEntryToFeed, SHARE_TEXT_MAX, type CardChoice } from '../calendar-share';
+import { cardToken, cardTokenMatches, entryCard, entryNotOpenReason, isSensitiveEntry, isShareableEntry, shareCalendarEntryToFeed, SHARE_TEXT_MAX, type CardChoice } from '../calendar-share';
 import { buildInviteFromEntry, CALENDAR_INVITE_TYPE } from '../calendar-invite';
 import { emitOasisEvent } from '../oasis-event-service';
 import { disambiguationResult, fmtWhen, resolveEvent, resolveTimezone } from './calendar-management-tools';
@@ -154,6 +154,16 @@ export async function tool_create_calendar_event(args: OrbToolArgs, id: OrbToolI
   }
 }
 
+// VTID-05126: a confirmed call whose card is not the previewed one (or has no card_token).
+export const CARD_CHANGED = {
+  share:
+    'STATUS: card_changed. Nothing was posted. The card is not the one the member approved, or card_token is missing. ' +
+    'Call again without confirmed to get a fresh preview, read it back, and confirm with the card_token from that preview.',
+  invite:
+    'STATUS: card_changed. Nothing was sent. The card is not the one the member approved, or card_token is missing. ' +
+    'Call again without confirmed to get a fresh preview, read it back, and confirm with the card_token from that preview.',
+} as const;
+
 // ---------------------------------------------------------------------------
 // share_calendar_entry_to_feed
 // ---------------------------------------------------------------------------
@@ -209,16 +219,20 @@ export async function tool_share_calendar_entry_to_feed(
         ok: true,
         result: {
           stage: 'awaiting_confirmation', entry_id: entry.id, title: entry.title, start_time: entry.start_time, text, is_public: isPublic,
-          card_title: card.title, location_shown: card.location !== null, sensitive,
+          card_title: card.title, location_shown: card.location !== null, sensitive, card_token: cardToken(entry, card),
         },
         text:
           'STATUS: needs_confirmation. Nothing was posted. Read the entry and the post text back to the member in your own words, ' +
           'say exactly what others will see (card_title, and whether the place is shown) and who will see it (is_public); ' +
           (sensitive ? 'say plainly that this is a health appointment; ' : '') +
-          'ask whether to post it; call again with the same entry_id, text, card_title, include_location and is_public ' +
+          'ask whether to post it; call again with the same entry_id, text, card_title, include_location, is_public and card_token ' +
           (sensitive ? 'and sensitive_ack=true ' : '') +
           'and confirmed=true only after they say yes.',
       };
+    }
+    // The card must be the one the member approved: no dropped title, no added place.
+    if (!cardTokenMatches(entry, card, args.card_token)) {
+      return { ok: true, result: { stage: 'awaiting_confirmation', entry_id: entry.id, needs: 'card_token' }, text: CARD_CHANGED.share };
     }
     // Health entries: posted only after the model surfaced what it is (enforced here, not in the prompt).
     if (sensitive && args.sensitive_ack !== true) {
@@ -324,15 +338,19 @@ export async function tool_invite_to_calendar_entry(
           recipient_name: recipientName,
           location_shown: invite.metadata.location !== null,
           sensitive,
+          card_token: cardToken(entry, { title: invite.metadata.title, location: invite.metadata.location }),
         },
         text:
           'STATUS: needs_confirmation. Nothing was sent. Tell the member, in your own words, which entry goes to whom, the exact title on the card ' +
           'and whether the place is shown, ' +
           (sensitive ? 'and say plainly that this is a health appointment; ' : '') +
-          'ask whether to send the invite; call again with the same entry_id, recipient_user_id, card_title and include_location ' +
+          'ask whether to send the invite; call again with the same entry_id, recipient_user_id, card_title, include_location and card_token ' +
           (sensitive ? 'and sensitive_ack=true ' : '') +
           'and confirmed=true only after they say yes.',
       };
+    }
+    if (!cardTokenMatches(entry, { title: invite.metadata.title, location: invite.metadata.location }, args.card_token)) {
+      return { ok: true, result: { stage: 'awaiting_confirmation', entry_id: entry.id, needs: 'card_token' }, text: CARD_CHANGED.invite };
     }
     if (sensitive && args.sensitive_ack !== true) {
       return {
@@ -466,7 +484,7 @@ export const CALENDAR_SOCIAL_TOOL_DECLARATIONS: Array<Record<string, unknown>> =
       'A health appointment (result sensitive=true) needs sensitive_ack=true on the confirmed call, after you said plainly what is shared.',
       'Compose a short, friendly post text in the member\'s language (du-form in German) or use their words.',
       'Two steps: call without confirmed to get the preview; read the event and the post text back and ask;',
-      'call again with the same entry_id, text, card_title, include_location and is_public and confirmed=true only after the member says yes (is_public is required on that call).',
+      'call again with the same entry_id, text, card_title, include_location, is_public and the preview\'s card_token and confirmed=true only after the member says yes (is_public is required on that call; an own entry needs card_token).',
       'Never claim it was posted unless the result says STATUS: shared.',
     ].join('\n'),
     parameters: {
@@ -477,6 +495,7 @@ export const CALENDAR_SOCIAL_TOOL_DECLARATIONS: Array<Record<string, unknown>> =
         is_public: { type: 'boolean', description: 'false keeps the post visible to the member only, true shows it to the community. Required with confirmed=true — send what the member approved.' },
         card_title: { type: 'string', description: 'For an own entry: the title others see on the card (max 120). Omit to use the entry title.' },
         include_location: { type: 'boolean', description: 'For an own entry: true shows the entry\'s place on the card. Default false.' },
+        card_token: { type: 'string', description: 'With confirmed=true for an own entry: the card_token from the preview the member approved.' },
         sensitive_ack: { type: 'boolean', description: 'true ONLY when the preview said sensitive=true and the member confirmed after you said it is a health appointment.' },
         confirmed: { type: 'boolean', description: 'true ONLY after the member explicitly confirmed the read-back.' },
       },
@@ -492,7 +511,7 @@ export const CALENDAR_SOCIAL_TOOL_DECLARATIONS: Array<Record<string, unknown>> =
       'For an own entry the card shows card_title (default: the entry title) and the place only with include_location=true. A health appointment needs sensitive_ack=true, as for sharing.',
       'First resolve the person with resolve_recipient and pass their user id as recipient_user_id.',
       'Two steps: call without confirmed to get the preview; tell the member which entry goes to whom and ask;',
-      'call again with the same arguments and confirmed=true only after they say yes. Never claim it was sent unless the result says STATUS: sent.',
+      'call again with the same arguments plus the preview\'s card_token and confirmed=true only after they say yes. Never claim it was sent unless the result says STATUS: sent.',
     ].join('\n'),
     parameters: {
       type: 'object',
@@ -501,6 +520,7 @@ export const CALENDAR_SOCIAL_TOOL_DECLARATIONS: Array<Record<string, unknown>> =
         recipient_user_id: { type: 'string', description: 'The invited person\'s user id (UUID) from resolve_recipient.' },
         card_title: { type: 'string', description: 'For an own entry: the title on the card (max 120). Omit to use the entry title.' },
         include_location: { type: 'boolean', description: 'For an own entry: true shows the entry\'s place on the card. Default false.' },
+        card_token: { type: 'string', description: 'With confirmed=true for an own entry: the card_token from the preview the member approved.' },
         sensitive_ack: { type: 'boolean', description: 'true ONLY when the preview said sensitive=true and the member confirmed after you said it is a health appointment.' },
         confirmed: { type: 'boolean', description: 'true ONLY after the member explicitly confirmed.' },
       },

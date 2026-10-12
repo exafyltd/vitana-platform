@@ -31,6 +31,7 @@ AC-5: "In meinen Kalender" copies only the card of a public `calendar_entry` pos
 AC-6: The calendar window marks each own entry `shareable` / `invitable` / `sensitive`.
   TEST: services/gateway/test/calendar/calendar-routes.contract.test.ts
 AC-7: Vitana's share and invite tools (and `send_calendar_invite_in_chat`) accept any own entry with the member's card choices; a health entry is posted or sent only with `sensitive_ack`, never on a bare confirmation.
+AC-7b (Codex review): a confirmed share or invite of an own entry must carry the `card_token` of the preview the member approved; a dropped `card_title`, an added place or a missing token posts or sends nothing (`STATUS: card_changed`). The chat-invite message text says only what the card shows (card title; the place only when shown). The LiveKit agent's three tools take the same arguments (`card_title`, `include_location`, `card_token`, `sensitive_ack`).
   TEST: services/gateway/test/vtid-04918-calendar-assistant-parity.test.ts
   TEST: services/gateway/test/vtid-05104-calendar-invite-guard.test.ts
 

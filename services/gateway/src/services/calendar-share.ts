@@ -27,6 +27,7 @@
  *   - Notifications are the database's job (trg_notify_community_post),
  *     deduplicated per recipient per shared thing per 24 h.
  */
+import { createHash } from 'crypto';
 import { getSupabaseConfig, headers } from './calendar-service';
 
 const LOG_PREFIX = '[CalendarShare]';
@@ -133,6 +134,24 @@ export function entryCard(entry: EntryLike, choice: CardChoice = {}): { title: s
   const title = custom || String(entry.title ?? '').trim().slice(0, CARD_TITLE_MAX);
   const location = choice.include_location === true ? (String(entry.location ?? '').trim() || null) : null;
   return { title, location };
+}
+
+/**
+ * VTID-05126: binds the assistant's confirmed share/invite of an own entry to
+ * the card the member approved in the preview. The preview returns this token;
+ * a confirmed call whose card differs (a dropped card_title, an added place)
+ * or that carries no token is refused, so nothing private goes out unseen.
+ * Null for an entry shared as its community event / live room (no card choice).
+ */
+export function cardToken(entry: EntryLike, card: { title: string; location: string | null }): string | null {
+  if (shareRefOf(entry)) return null;
+  return createHash('sha256').update(JSON.stringify([String(entry.id ?? ''), card.title, card.location])).digest('hex').slice(0, 12);
+}
+
+/** True when a confirmed call may proceed: no card choice, or the token the preview gave matches. */
+export function cardTokenMatches(entry: EntryLike, card: { title: string; location: string | null }, token: unknown): boolean {
+  const expected = cardToken(entry, card);
+  return expected === null || token === expected;
 }
 
 export interface EntrySnapshot {

@@ -107,6 +107,7 @@ import { tt } from '../src/i18n/catalog';
 import chatRouter from '../src/routes/chat';
 import chatGroupsRouter from '../src/routes/chat-groups';
 import { tool_send_calendar_invite_in_chat } from '../src/services/orb-tools/messaging-depth-tools';
+import { _resetSendCountersForTests } from '../src/services/voice-message-guard';
 
 const HOUR = 3_600_000;
 const iso = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString();
@@ -455,8 +456,16 @@ describe('POST /chat/groups/:id/send with calendar_invite', () => {
 // ═══ voice tool ══════════════════════════════════════════════════════════════
 describe('voice tool send_calendar_invite_in_chat', () => {
   const ID: any = { user_id: SENDER, tenant_id: TENANT, role: 'community', vitana_id: 'anna1' };
-  const call = (over: Record<string, unknown> = {}) =>
-    tool_send_calendar_invite_in_chat({ event_id: ENTRY, member_user_id: FRIEND, confirmed: true, ...over } as any, ID, fakeSb);
+  // The voice send quota is a module-level counter: each test starts from zero.
+  beforeEach(() => _resetSendCountersForTests());
+  // VTID-05126: a confirmed send carries the card_token of the preview the member approved.
+  const preview = (over: Record<string, unknown> = {}) =>
+    tool_send_calendar_invite_in_chat({ event_id: ENTRY, member_user_id: FRIEND, ...over, confirmed: false } as any, ID, fakeSb);
+  const call = async (over: Record<string, unknown> = {}) => {
+    const p: any = await preview(over);
+    return tool_send_calendar_invite_in_chat(
+      { event_id: ENTRY, member_user_id: FRIEND, card_token: p.result?.card_token, confirmed: true, ...over } as any, ID, fakeSb);
+  };
   const withEntry = (over: Row = {}) => {
     const e = ownEntry(over);
     db.tables.calendar_events.push({ id: ENTRY, user_id: SENDER, title: e.title, start_time: e.start_time, end_time: e.end_time, location: e.location, status: 'confirmed' });
@@ -475,6 +484,31 @@ describe('voice tool send_calendar_invite_in_chat', () => {
     const body = mockNotifyAsync.mock.calls[0][3].body;
     expect(body).toBe(tt('notif.calendar_invite.body', 'de', { name: 'Anna' }));
     expect(body).not.toMatch(/Coffee|Luigi|📅/);
+  });
+
+  // VTID-05126 (Codex review): the message text says only what the card shows.
+  it('the message text carries the card title, and the place only when shown', async () => {
+    withEntry({ title: 'Erinnerung: Kardiologie Dr. Weber' } as Row);
+    await call({ card_title: 'Termin' });
+    expect(invites()[0].content).toMatch(/^📅 Termin — /);
+    expect(invites()[0].content).not.toMatch(/Kardiologie|Weber|Luigi/);
+    await call({ card_title: 'Termin', include_location: true });
+    expect(invites().at(-1).content).toMatch(/^📅 Termin — .* at Luigi$/);
+  });
+
+  it('a confirmed send must carry the previewed card: no token, a dropped title or an added place sends nothing', async () => {
+    withEntry();
+    const p: any = await preview({ card_title: 'Kaffee' });
+    const token = p.result.card_token;
+    expect(token).toMatch(/^[0-9a-f]{12}$/);
+    const confirm = (over: Record<string, unknown>) =>
+      tool_send_calendar_invite_in_chat({ event_id: ENTRY, member_user_id: FRIEND, confirmed: true, ...over } as any, ID, fakeSb);
+    for (const over of [{ card_title: 'Kaffee' }, { card_token: token }, { card_title: 'Kaffee', include_location: true, card_token: token }]) {
+      expect(await confirm(over)).toMatchObject({ ok: true, result: { needs: 'card_token' } });
+    }
+    expect(invites()).toHaveLength(0);
+    expect(((await confirm({ card_title: 'Kaffee', card_token: token })) as any).result.sent).toBe(true);
+    expect(invites()[0].metadata.title).toBe('Kaffee');
   });
 
   // VTID-05126 (owner decision 2026-10-12): any own upcoming entry can be
@@ -519,8 +553,9 @@ describe('voice tool send_calendar_invite_in_chat', () => {
     const id: any = { user_id: SENDER, tenant_id: TENANT, role: 'community', vitana_id: 'anna1' };
     withEntry();
     let limited: any = null;
+    const token = ((await preview()) as any).result.card_token;
     for (let i = 0; i < 7; i++) {
-      const r: any = await tool_send_calendar_invite_in_chat({ event_id: ENTRY, member_user_id: FRIEND, confirmed: true } as any, id, fakeSb);
+      const r: any = await tool_send_calendar_invite_in_chat({ event_id: ENTRY, member_user_id: FRIEND, card_token: token, confirmed: true } as any, id, fakeSb);
       if (r.result?.rate_limited) { limited = r; break; }
     }
     expect(limited).not.toBeNull();
