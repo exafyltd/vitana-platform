@@ -50,3 +50,11 @@ pre-existing by stashing ALL VTID-05072 changes and re-running on the clean base
 See the PR body "Decisions taken" / Handoff: ledger update outcome recorded there.
 
 PR URL: https://github.com/exafyltd/vitana-platform/pull/4037 (draft)
+
+## Production closeout
+
+- **STAGING-VERIFY passed:** run [38236989335](https://github.com/exafyltd/vitana-platform/actions/runs/38236989335), gateway @ `c6100f80`, 17/17 tests green, change suites VTID-05072 and VTID-05074. The pnpm-lock commit `9358d991` was handled by the VTID-05075 lockfile exemption (first-parent commit judgment).
+- **Production published** at commit `c6100f80`. Commits `a294dad5`, `3743dff5`, and `97bfacc1` are all ancestors of what production serves now (`475e7e43`).
+- **Gate 2:** not required — production was published by the owner while the STAGING-VERIFY fix (VTID-05075) was being merged; the staging suite was green at publish time.
+- **Outcome:** success. VTID-05072 (Phase 0 — manifest + guards, no code moves) is complete and in production.
+- **Ledger:** terminalized with `outcome=success`.
