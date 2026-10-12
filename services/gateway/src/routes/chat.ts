@@ -24,6 +24,7 @@ import { VITANA_BOT_USER_ID, isVitanaBot } from '../lib/vitana-bot';
 import { processConversationTurn } from '../services/conversation-client';
 import { extractDmActions } from '../services/chat/dm-tool-actions';
 import { tt } from '../i18n/catalog';
+import { checkInviteSend, inviteRefusedBody, INVITE_REFUSED_STATUS } from '../services/calendar-invite-guard';
 import { getUserLocale } from '../i18n/server-locale';
 import * as repo from './chat-repository';
 
@@ -83,6 +84,14 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
   // VTID-04917: an invite card is built on the server from the sender's own
   // calendar entry; the client sends only { entry_id }.
   if (msgType === CALENDAR_INVITE_TYPE) {
+    // VTID-05104: test accounts, tenant, relationship and send limits.
+    const allowed = await checkInviteSend({
+      sb: getSupabase(),
+      senderId: identity.user_id,
+      tenantId: identity.tenant_id,
+      receiverId: receiver_id,
+    });
+    if (!allowed.ok) return res.status(INVITE_REFUSED_STATUS).json(inviteRefusedBody());
     const invite = await buildInviteForChat(identity.user_id, content_data);
     if (!invite.ok) {
       return res.status(invite.status).json({ ok: false, error: invite.error, ...(invite.reason ? { reason: invite.reason } : {}) });
@@ -202,6 +211,13 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
       // launches cleanly because the URL has no special characters.
       url: `/inbox/u/${identity.user_id}`,
     };
+
+    if (msgType === CALENDAR_INVITE_TYPE) {
+      // VTID-05104: the lock screen gets a generic line, never title/time/place
+      // (the card inside the conversation is unchanged).
+      const receiverLocale = await getUserLocale(supabase, receiver_id);
+      notifBodyFinal = tt('notif.calendar_invite.body', receiverLocale, { name: senderName });
+    }
 
     if (isListingInterest) {
       const receiverLocale = await getUserLocale(supabase, receiver_id);

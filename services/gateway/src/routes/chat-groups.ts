@@ -37,6 +37,7 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { buildInviteForChat, CALENDAR_INVITE_TYPE } from '../services/calendar-invite';
+import { checkInviteSend, inviteRefusedBody, INVITE_REFUSED_STATUS } from '../services/calendar-invite-guard';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { notifyUser } from '../services/notification-service';
 import { VITANA_BOT_USER_ID, isVitanaBot } from '../lib/vitana-bot';
@@ -302,6 +303,18 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
     return res.status(403).json({ ok: false, error: 'not_a_member' });
   }
 
+  // VTID-05104: sender is a member, the group is within the invite cap, and the
+  // sender is within the send limits. One generic refusal for every case.
+  if (msgType === CALENDAR_INVITE_TYPE) {
+    const allowed = await checkInviteSend({
+      sb: supabase,
+      senderId: identity.user_id,
+      tenantId: identity.tenant_id,
+      groupId,
+    });
+    if (!allowed.ok) return res.status(INVITE_REFUSED_STATUS).json(inviteRefusedBody());
+  }
+
   // VTID-04926: never store what the client claims about mentions — only the
   // sanitized list, and only when someone is actually tagged.
   let mentions: ChatMention[] = [];
@@ -352,6 +365,7 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
       fanoutBody,
       data.id,
       new Set(mentions.map(m => m.user_id)),
+      msgType === CALENDAR_INVITE_TYPE,
     );
   } catch (err: any) {
     console.warn('[ChatGroups] Fanout failed:', err?.message || err);
@@ -552,6 +566,7 @@ async function fanoutGroupNotifications(
   content: string,
   messageId: string,
   mentionedIds: ReadonlySet<string> = new Set(),
+  isCalendarInvite = false,
 ): Promise<void> {
   const [{ data: group }, { data: members }, { data: senderAppUser }, { data: senderProfile }] = await Promise.all([
     repo.fetchChatGroupName(supabase, groupId),
@@ -581,6 +596,11 @@ async function fanoutGroupNotifications(
     ? await bulkGetUserLocales(supabase, mentionedRecipientIds).catch(() => new Map())
     : new Map();
 
+  // VTID-05104: an invite push is generic, in each member's own language.
+  const inviteLocales = isCalendarInvite
+    ? await bulkGetUserLocales(supabase, recipients.map((m) => m.user_id)).catch(() => new Map())
+    : new Map();
+
   const notifyMember = (userId: string) => {
     if (mentionedIds.has(userId)) {
       return notifyUser(
@@ -608,7 +628,9 @@ async function fanoutGroupNotifications(
       'new_chat_message',
       {
         title: groupName,
-        body: `${senderName}: ${body}`,
+        body: isCalendarInvite
+          ? tt('notif.calendar_invite.body', inviteLocales.get(userId), { name: senderName })
+          : `${senderName}: ${body}`,
         data: {
           type: 'new_group_message',
           group_id: groupId,
