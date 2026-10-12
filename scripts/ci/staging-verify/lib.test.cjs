@@ -129,6 +129,36 @@ test('an accepted write probe is flagged loudly', () => {
   assert.match(r.problems.join(' '), /WRITE PROBE WAS ACCEPTED/);
 });
 
+test('VTID-05083: a GET/HEAD rejected probe has the invalid bearer and no body', () => {
+  for (const method of ['GET', 'HEAD', undefined]) {
+    const init = lib.httpRequestInit({ kind: 'http', method, path: '/api/v1/x', rejected_probe: true, expect_status: 401 });
+    assert.equal(init.method, method || 'GET');
+    assert.equal(init.headers.authorization, 'Bearer staging-verify.invalid.probe');
+    assert.equal('body' in init, false);
+    assert.equal('content-type' in init.headers, false);
+  }
+});
+
+test('VTID-05083: a write rejected probe keeps bearer, JSON type and {} body', () => {
+  const init = lib.httpRequestInit({ kind: 'http', method: 'post', path: '/api/v1/x', rejected_probe: true, expect_status: 401 });
+  assert.equal(init.method, 'POST');
+  assert.equal(init.headers.authorization, 'Bearer staging-verify.invalid.probe');
+  assert.equal(init.headers['content-type'], 'application/json');
+  assert.equal(init.body, '{}');
+});
+
+test('VTID-05083: a plain GET carries no authorization header', () => {
+  const init = lib.httpRequestInit({ kind: 'http', path: '/alive' });
+  assert.deepEqual(init, { method: 'GET', headers: { accept: 'application/json, text/html;q=0.9' } });
+});
+
+test('VTID-05083: an accepted read probe is flagged and names the method', () => {
+  const t = { kind: 'http', method: 'GET', path: '/api/v1/x', rejected_probe: true, expect_status: 401 };
+  const r = lib.evaluateHttp(t, { status: 200, contentType: 'application/json', json: {} });
+  assert.equal(r.ok, false);
+  assert.match(r.problems.join(' '), /REJECTED PROBE WAS ACCEPTED — GET/);
+});
+
 test('outcome: superseded beats everything, missing suites fail', () => {
   const plan = { missing: [], invalid: [], suites: [], legacy: [] };
   assert.equal(lib.decideOutcome({ superseded: true, results: [{ ok: false }], plan }), 'superseded');
