@@ -68,6 +68,7 @@
           "E2E-ORB-MONITOR",
           "MIGRATION-DRIFT-CHECK",
           "MORNING-SYSTEM-HEALTH-CHECK",
+          "SCREEN-LOAD-DAILY",
           "SCREEN-LOAD-TIMING",
           "VCAOP-HEALTH"
         ],
