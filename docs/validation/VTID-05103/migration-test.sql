@@ -36,9 +36,9 @@ UPDATE routines SET enabled = false WHERE name = 'dyk-tour-progress';
 -- An existing claude.ai run today must not block the gateway-runner claim.
 INSERT INTO routine_runs (routine_name, status, trigger) VALUES ('agents-heartbeat', 'failure', 'cron');
 
-\i supabase/migrations/20261012200000_vtid_05103_routine_runner_claim.sql
+\i supabase/migrations/20261012210000_vtid_05103_routine_runner_claim.sql
 -- Idempotent: a second apply changes nothing and does not fail.
-\i supabase/migrations/20261012200000_vtid_05103_routine_runner_claim.sql
+\i supabase/migrations/20261012210000_vtid_05103_routine_runner_claim.sql
 
 DO $$
 DECLARE

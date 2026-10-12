@@ -2083,7 +2083,7 @@ CREATE UNIQUE INDEX uq_routine_runs_gateway_runner_day
   ON routine_runs (routine_name, ((started_at AT TIME ZONE 'UTC')::date)) WHERE trigger = 'gateway-runner';
 ```
 
-**Gateway routine runner (VTID-05103, `20261012200000_vtid_05103_routine_runner_claim.sql`):** the nine deterministic routines run inside the gateway (`services/routine-runner`). Two functions, EXECUTE for `service_role` only:
+**Gateway routine runner (VTID-05103, `20261012210000_vtid_05103_routine_runner_claim.sql`):** the nine deterministic routines run inside the gateway (`services/routine-runner`). Two functions, EXECUTE for `service_role` only:
 - `claim_routine_run(p_name text) RETURNS uuid` — inserts today's `gateway-runner` run (`status='running'`) and marks the catalog row running; returns NULL when the routine is disabled (`routines.enabled = false`) or another gateway task already claimed it today.
 - `finish_routine_run(p_id, p_status, p_summary, p_findings, p_error)` — closes the run (`finished_at`, `duration_ms`) and updates the catalog row (`last_run_*`; `consecutive_failures` reset on success, +1 on failure).
 The same migration seeds the `mobile-screen-latency-rollup` catalog row.
