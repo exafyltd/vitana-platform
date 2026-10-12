@@ -421,19 +421,28 @@ function main() {
 
   const existing = JSON.parse(fs.readFileSync(SPEC_PATH, 'utf8'));
 
+  // VTID-05080: last_synced is the only date-dependent value. Build the spec
+  // once with the date already in the file; only when something ELSE differs
+  // is it stamped with today. A date-only diff can therefore never exist, so
+  // the bot does not open a PR (or redeploy staging) just to bump a date.
   const today = new Date().toISOString().slice(0, 10);
+  const previousSynced = (existing.screen_inventory && existing.screen_inventory.last_synced) || today;
   existing.sidebar_navigation = sidebarNavigation;
   existing.module_catalog = moduleCatalog;
   existing.screen_inventory = {
     total_screens: dev.length, // DEV-only — required by validate-dev-frontend-spec.mjs
     total_entries: all.length,
-    last_synced: today,
+    last_synced: previousSynced,
     source: 'auto-regen via services/gateway/scripts/regen-screens-catalog.mjs',
     role_counts: roleCounts,
     screens: all,
   };
 
-  const generatedSpec = JSON.stringify(existing, null, 2) + '\n';
+  let generatedSpec = JSON.stringify(existing, null, 2) + '\n';
+  if (fs.readFileSync(SPEC_PATH, 'utf8') !== generatedSpec) {
+    existing.screen_inventory.last_synced = today;
+    generatedSpec = JSON.stringify(existing, null, 2) + '\n';
+  }
   const generatedNavJs = buildNavReferenceJs(navConfig, loadDev._lastLabels);
 
   const currentSpec = fs.readFileSync(SPEC_PATH, 'utf8');
