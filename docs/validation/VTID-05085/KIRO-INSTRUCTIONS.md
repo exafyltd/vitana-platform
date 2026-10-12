@@ -110,7 +110,7 @@ Within a phase, the platform PR merges and is on staging before the vitana-v1 PR
      - Dismiss only ever writes the caller's own row.
    - `test/data/enrichment-card-tips.locale-coverage.test.ts`: the same pattern as `feature-tips.locale-coverage.test.ts`.
    - Also run `npm run test:roles`, plus the full `npx jest` and `npm run build` in `services/gateway`.
-10. **`docs/validation/VTID-05085/`** (this folder): add `acceptance.md`, `scope.json`, and `staging-tests.json`. The staging tests are:
+10. **`docs/validation/VTID-05085/`** (this folder): append your ACs to the existing `acceptance.md`, and add to `commands.log` and `outputs/`. Add `scope.json` and `staging-tests.json`. The staging tests are:
     - `GET /alive` returns 200.
     - `GET /api/v1/enrichment-cards?screen=home` without a token returns 401 `application/json`.
     - An `existing` entry for the two Jest files.
