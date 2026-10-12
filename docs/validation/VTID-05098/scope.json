@@ -7,7 +7,7 @@
     "routines/migration-backlog.md",
     "routines/cloud-run-frontend-health.md",
     "routines/self-healing-triage.md",
-    "supabase/migrations/20261012180000_vtid_05098_retire_duplicate_routines.sql",
+    "supabase/migrations/20261012190000_vtid_05098_retire_duplicate_routines.sql",
     "services/gateway/src/routes/routine-audits.ts",
     "services/gateway/src/routes/autonomy-pulse.ts",
     "services/gateway/src/services/loop-catalog.ts",
