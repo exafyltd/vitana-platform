@@ -3,7 +3,8 @@
 //   - the static category map equals the migration seed (parsed from the SQL)
 //   - hasHealthConsent reads only pre-migration columns, is fail-closed
 //   - setHealthConsent calls fn_set_health_consent with the given identity,
-//     answers CONSENT_STORE_PENDING without the migration, never leaks a DB message
+//     answers CONSENT_STORE_PENDING for a grant without the migration (a revoke
+//     falls back — health-consent-premigration.test.ts), never leaks a DB message
 //   - the OASIS event carries no health values; emit failures are counted
 //   - member reads work before (store_pending) and after the migration
 //   - the legacy partner-health/consent module delegates and stays fail-closed
@@ -195,7 +196,7 @@ describe('setHealthConsent — one transaction through fn_set_health_consent', (
     expect(rpcCalls[0].args).toMatchObject({ p_action: 'revoke', p_resource_id: 'doctorbox', p_text_version: null, p_granted_via: null, p_actor_role: 'user', p_actor_id: 'user-1' });
   });
 
-  it('CONSENT_STORE_PENDING (503) when the function does not exist yet', async () => {
+  it('a GRANT answers CONSENT_STORE_PENDING (503) when the function does not exist yet', async () => {
     for (const error of [
       { code: 'PGRST202', message: 'Could not find the function public.fn_set_health_consent in the schema cache' },
       { code: '42883', message: 'function public.fn_set_health_consent does not exist' },

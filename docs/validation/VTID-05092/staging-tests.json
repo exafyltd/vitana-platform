@@ -43,9 +43,9 @@
     },
     {
       "kind": "existing",
-      "ref": "npx jest test/consent/health-consent.test.ts test/routes/health-consent.test.ts test/partner-health-consent.test.ts test/migrations/vtid-05092-health-consent-migration.test.ts",
+      "ref": "npx jest test/consent/health-consent.test.ts test/consent/health-consent-premigration.test.ts test/routes/health-consent.test.ts test/partner-health-consent.test.ts test/migrations/vtid-05092-health-consent-migration.test.ts",
       "cwd": "services/gateway",
-      "reason": "the consent service (fail-closed check on pre-migration columns, static map equals the migration seed, every write through fn_set_health_consent, CONSENT_STORE_PENDING without the migration, no DB message leaks), the member API (JWT identity only, validation codes, OASIS after commit, emit failure never fails a revoke), the legacy route delegating with partner_registry validation and text_version legacy-03885, and the migration contract. No grant/revoke runs on staging: staging writes to the production database."
+      "reason": "the consent service (fail-closed check on pre-migration columns, static map equals the migration seed, every write through fn_set_health_consent, CONSENT_STORE_PENDING for a grant without the migration while a revoke still succeeds through the pre-migration write (GDPR Art. 7(3)), no DB message leaks), the member API (JWT identity only, validation codes, OASIS after commit, emit failure never fails a revoke), the legacy route delegating with partner_registry validation and text_version legacy-03885, and the migration contract. No grant/revoke runs on staging: staging writes to the production database."
     },
     {
       "kind": "existing",

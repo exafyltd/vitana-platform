@@ -13,8 +13,10 @@
  *
  * Errors are codes, never database messages: INVALID_REQUEST,
  * UNKNOWN_CATEGORY, UNKNOWN_RESOURCE (400), STALE_TEXT_VERSION (409),
- * CONSENT_STORE_PENDING (503: the migration is not applied yet — nothing is
- * written), CONSENT_WRITE_FAILED / CONSENTS_UNAVAILABLE /
+ * CONSENT_STORE_PENDING (503: a GRANT before the migration is applied —
+ * nothing is written; a REVOKE never answers it, it falls back to the
+ * pre-migration write because withdrawal must always work, GDPR Art. 7(3)),
+ * CONSENT_WRITE_FAILED / CONSENTS_UNAVAILABLE /
  * CONSENT_HISTORY_UNAVAILABLE (500).
  *
  * Every committed change emits health.consent.granted / health.consent.revoked

@@ -17,8 +17,10 @@
  * Only scope `result_ingestion` can be written (the partner_results
  * category); `order_tracking` is still readable through GET but has no
  * category and no caller, so a write for it is 400 UNSUPPORTED_SCOPE.
- * Before the VTID-05092 migration is applied grant/revoke answer 503
- * CONSENT_STORE_PENDING and write nothing; GET is unchanged.
+ * Before the VTID-05092 migration is applied a grant answers 503
+ * CONSENT_STORE_PENDING and writes nothing, while a revoke still works
+ * through the pre-migration write (GDPR Art. 7(3): withdrawal must always be
+ * possible); GET is unchanged.
  */
 
 import { Router, Request, Response } from 'express';

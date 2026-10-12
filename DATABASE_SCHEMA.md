@@ -3893,7 +3893,7 @@ OASIS (`CicdEventType`): `dev_autopilot.plan.fallback_used` — payload `{ findi
 
 ## Health consent categories — `health_consent_categories`, `fn_set_health_consent()` (VTID-05092, 2026-10-12) — NOT YET APPLIED (applied at production approval, before the gateway prod deploy)
 
-Migration: `supabase/migrations/20261012180000_vtid_05092_health_consent_categories.sql` (additive). Health Hub Phase 0 / D10, WP1: per-category, revocable, auditable health consent on top of the VTID-03885 primitive. The gateway works without it (fails closed: grants/revokes answer 503 `CONSENT_STORE_PENDING`, `GET /api/v1/health/consents` answers `store_pending: true`, consent checks read only pre-existing columns).
+Migration: `supabase/migrations/20261012180000_vtid_05092_health_consent_categories.sql` (additive). Health Hub Phase 0 / D10, WP1: per-category, revocable, auditable health consent on top of the VTID-03885 primitive. The gateway works without it (grants fail closed with 503 `CONSENT_STORE_PENDING`; revokes still succeed through the pre-migration write — withdrawal must always work, GDPR Art. 7(3); `GET /api/v1/health/consents` answers `store_pending: true`, consent checks read only pre-existing columns).
 
 ### health_consent_categories (catalogue as data)
 

@@ -13,9 +13,10 @@
  *     migration. Any error answers false.
  *   - `setHealthConsent()` — the only write path. It calls
  *     `fn_set_health_consent()`, which writes the consent row and its audit
- *     event in ONE transaction. Without the migration it answers
- *     CONSENT_STORE_PENDING (503) and writes nothing — never the old
- *     two-statement path.
+ *     event in ONE transaction. Without the migration a GRANT answers
+ *     CONSENT_STORE_PENDING (503) and writes nothing; a REVOKE falls back to
+ *     the pre-migration write (legacyRevokeHealthConsent) because withdrawal
+ *     must always work (GDPR Art. 7(3)).
  *   - `listMemberConsents()` / `listMemberConsentHistory()` — the member's
  *     own catalogue, rows and audit trail (identity from the JWT only).
  *
@@ -262,7 +263,14 @@ export async function setHealthConsent(sb: SupabaseClient, input: SetHealthConse
 
     if (error) {
       if (isConsentStoreMissing(error)) {
-        console.warn(`[${HEALTH_CONSENT_VTID}] fn_set_health_consent missing — migration not applied; nothing written.`);
+        // GDPR Art. 7(3): withdrawal must always work, even when this code was
+        // promoted before the migration. A revoke falls back to the pre-WP1
+        // write; a grant stays fail-closed.
+        if (action === 'revoke') {
+          console.warn(`[${HEALTH_CONSENT_VTID}] fn_set_health_consent missing — revoking ${category} through the pre-migration fallback.`);
+          return legacyRevokeHealthConsent(sb, input);
+        }
+        console.warn(`[${HEALTH_CONSENT_VTID}] fn_set_health_consent missing — migration not applied; grant refused, nothing written.`);
         return { ok: false, status: 503, error: 'CONSENT_STORE_PENDING' };
       }
       // Rolled back by Postgres: neither the consent nor its event was written.
@@ -296,6 +304,113 @@ export async function setHealthConsent(sb: SupabaseClient, input: SetHealthConse
     };
   } catch (err) {
     console.error(`[${HEALTH_CONSENT_VTID}] fn_set_health_consent ${action} ${category} threw: ${String(err)}`);
+    return { ok: false, status: 500, error: 'CONSENT_WRITE_FAILED' };
+  }
+}
+
+let consentAuditFailures = 0;
+
+/** Revokes committed without their audit row (pre-migration fallback only). */
+export function getConsentAuditFailureCount(): number {
+  return consentAuditFailures;
+}
+
+/**
+ * Pre-migration revoke (VTID-05092 fallback, used ONLY when
+ * fn_set_health_consent does not exist yet). Writes exactly what the
+ * VTID-03885 code wrote, with pre-migration columns only:
+ *   1. UPDATE data_sharing_consents SET revoked_at = now() on the member's
+ *      active row(s) for resource_type / resource_id / scope;
+ *   2. INSERT the data_sharing_consent_events audit row (legacy columns).
+ * GDPR Art. 7(3) — withdrawing consent must always be possible and as easy as
+ * giving it. The withdrawal therefore takes precedence over the audit row: if
+ * step 2 fails the revoke still succeeds, and the failure is logged loudly and
+ * counted (getConsentAuditFailureCount) so it can be reconciled. Not one
+ * transaction — that is what the function adds once the migration is applied.
+ */
+export async function legacyRevokeHealthConsent(sb: SupabaseClient, input: SetHealthConsentInput): Promise<SetHealthConsentResult> {
+  const { identity, category } = input;
+  const mapping = HEALTH_CONSENT_CATEGORY_MAP[category];
+  const resourceId = resolveConsentResourceId(category, input.resource_id);
+  if (!resourceId) return { ok: false, status: 400, error: 'UNKNOWN_RESOURCE' };
+  const actor = input.actor ?? { role: 'user', id: identity.user_id };
+  const base = {
+    changed: false,
+    action: 'revoke' as const,
+    category,
+    resource_type: mapping.resource_type,
+    resource_id: resourceId,
+    scope: mapping.scope,
+    text_version: null,
+    shown_locale: null,
+    granted_via: null,
+    granted_at: null,
+    revoked_at: null,
+    consent_id: null,
+    event_id: null,
+  };
+
+  try {
+    const revokedAt = new Date().toISOString();
+    const { data, error } = await sb
+      .from('data_sharing_consents')
+      .update({ revoked_at: revokedAt })
+      .eq('tenant_id', identity.tenant_id)
+      .eq('user_id', identity.user_id)
+      .eq('resource_type', mapping.resource_type)
+      .eq('resource_id', resourceId)
+      .eq('scope', mapping.scope)
+      .is('revoked_at', null)
+      .select('id, tenant_id, user_id, resource_type, resource_id, scope, granted_at, revoked_at, granted_via, created_at');
+    if (error) {
+      console.error(`[${HEALTH_CONSENT_VTID}] pre-migration revoke of ${category} FAILED: ${error.message}`);
+      return { ok: false, status: 500, error: 'CONSENT_WRITE_FAILED' };
+    }
+    const rows = (data ?? []) as Array<Record<string, unknown>>;
+    if (rows.length === 0) return { ok: true, ...base }; // nothing active — idempotent, no event
+
+    let eventId: string | null = null;
+    for (const row of rows) {
+      try {
+        const ins = await sb
+          .from('data_sharing_consent_events')
+          .insert({
+            tenant_id: identity.tenant_id,
+            user_id: identity.user_id,
+            resource_type: mapping.resource_type,
+            resource_id: resourceId,
+            scope: mapping.scope,
+            action: 'revoke',
+            actor_role: actor.role,
+            actor_id: actor.id,
+            before: { ...row, revoked_at: null },
+            after: row,
+          })
+          .select('id')
+          .maybeSingle();
+        if (ins.error) throw new Error(ins.error.message);
+        eventId = eventId ?? str((ins.data as { id?: unknown } | null)?.id);
+      } catch (err) {
+        consentAuditFailures += 1;
+        console.error(
+          `[${HEALTH_CONSENT_VTID}] AUDIT ROW MISSING: consent ${String(row.id)} (${category}/${resourceId}) was revoked but its data_sharing_consent_events row could not be written: ${String(err)} (audit failures so far: ${consentAuditFailures})`,
+        );
+      }
+    }
+
+    const first = rows[0];
+    return {
+      ok: true,
+      ...base,
+      changed: true,
+      granted_via: str(first.granted_via),
+      granted_at: str(first.granted_at),
+      revoked_at: str(first.revoked_at) ?? revokedAt,
+      consent_id: str(first.id),
+      event_id: eventId,
+    };
+  } catch (err) {
+    console.error(`[${HEALTH_CONSENT_VTID}] pre-migration revoke of ${category} threw: ${String(err)}`);
     return { ok: false, status: 500, error: 'CONSENT_WRITE_FAILED' };
   }
 }

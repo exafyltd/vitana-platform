@@ -223,13 +223,14 @@ describe('POST /revoke', () => {
     expect(b.body.ok).toBe(true);
   });
 
-  it('400 for an unknown or missing category; 503 before the migration', async () => {
+  it('400 for an unknown or missing category; a service write failure is passed through as a code', async () => {
     expect((await request(app()).post('/api/v1/health/consents/revoke').set(AUTH).send({})).body).toEqual({ ok: false, error: 'INVALID_REQUEST', field: 'category' });
     expect((await request(app()).post('/api/v1/health/consents/revoke').set(AUTH).send({ category: 'x' })).body).toEqual({ ok: false, error: 'UNKNOWN_CATEGORY' });
-    setHealthConsentMock.mockResolvedValue({ ok: false, status: 503, error: 'CONSENT_STORE_PENDING' });
+    // (Pre-migration revokes never answer 503 — see test/consent/health-consent-premigration.test.ts.)
+    setHealthConsentMock.mockResolvedValue({ ok: false, status: 500, error: 'CONSENT_WRITE_FAILED' });
     const r = await request(app()).post('/api/v1/health/consents/revoke').set(AUTH).send({ category: 'community_insights' });
-    expect(r.status).toBe(503);
-    expect(r.body).toEqual({ ok: false, error: 'CONSENT_STORE_PENDING' });
+    expect(r.status).toBe(500);
+    expect(r.body).toEqual({ ok: false, error: 'CONSENT_WRITE_FAILED' });
   });
 });
 
