@@ -3,6 +3,7 @@
     { "file": "orb-widget.js", "kind": "module" },
     { "file": "pipeline-tree.js", "kind": "module" },
     { "file": "kiro-console.js", "kind": "module" },
+    { "file": "loops-catalog.js", "kind": "module" },
     { "file": "app.js", "kind": "app" },
     { "file": "voice-self-healing.js", "kind": "post_app" },
     { "file": "voice-supervisor.js", "kind": "post_app" },
