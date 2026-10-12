@@ -4,7 +4,7 @@ Owner decision 2026-10-12 ("do what you recommended", then "yes" at Gate 1 on th
 
 Problem: STAGING-VERIFY for gateway @ c6100f80 failed with 17/17 tests passing and one reason, "Missing change suite (rule 47)" for commit 9358d991 ("chore(gateway): sync pnpm-lock.yaml with acorn 8.15.0 devDependency"): no VTID in its subject, only `services/gateway/pnpm-lock.yaml` in the build. Its subject cannot be fixed (a later tag commit does not change it), and production cannot move without a passing verification, so every publish from main was blocked.
 
-VALIDATION_PROFILE: ci_script
+VALIDATION_PROFILE: gateway_backend
 
 ROUTE_MOUNT: not applicable (CI script change; no route, no service deploy; scripts/ci is outside the gateway deploy paths).
 
