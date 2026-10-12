@@ -4542,28 +4542,15 @@ export async function tool_get_day_summary(
   }
 }
 
-async function _getWeakestPillarAndGoal(
+// VTID-05089 (Health Hub D6a): the marketplace tools read only the member's
+// Life Compass goal. They never read the Vitana Index (vitana_index_scores):
+// once the Index can contain device-derived data, an Index-driven product
+// filter would be a device-data -> commerce path (program plan section 2b).
+async function _getCompassGoal(
   sb: SupabaseClient,
   userId: string,
-): Promise<{ weakest_pillar: string | null; compass_goal: string | null }> {
-  let weakest: string | null = null;
+): Promise<{ compass_goal: string | null }> {
   let goal: string | null = null;
-  try {
-    const { data: idx } = await sb
-      .from('vitana_index_scores')
-      .select('pillars')
-      .eq('user_id', userId)
-      .order('computed_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (idx?.pillars && typeof idx.pillars === 'object') {
-      const pairs = Object.entries(idx.pillars as Record<string, number>);
-      pairs.sort((a, b) => a[1] - b[1]);
-      weakest = pairs[0]?.[0] ?? null;
-    }
-  } catch {
-    /* table may not exist in all envs */
-  }
   try {
     const { data: lc } = await sb
       .from('life_compass')
@@ -4574,7 +4561,7 @@ async function _getWeakestPillarAndGoal(
   } catch {
     /* table may not exist */
   }
-  return { weakest_pillar: weakest, compass_goal: goal };
+  return { compass_goal: goal };
 }
 
 export async function tool_find_perfect_product(
@@ -4589,8 +4576,9 @@ export async function tool_find_perfect_product(
     ? (args.exclude_ingredients as string[]).map((s) => String(s).toLowerCase())
     : [];
 
-  const ctx = await _getWeakestPillarAndGoal(sb, identity.user_id);
-  const targetPillar = askedPillar || ctx.weakest_pillar || '';
+  const ctx = await _getCompassGoal(sb, identity.user_id);
+  // VTID-05089: the pillar filter applies only when the member names one.
+  const targetPillar = askedPillar;
 
   let query = sb.from('products_catalog').select('*').limit(10);
   if (targetPillar) query = query.contains('pillar_tags', [targetPillar]);
@@ -4654,7 +4642,7 @@ export async function tool_find_perfect_practitioner(
   const telehealthOk = args.telehealth_ok;
   const maxPrice = args.max_price != null ? Number(args.max_price) : null;
 
-  const ctx = await _getWeakestPillarAndGoal(sb, identity.user_id);
+  const ctx = await _getCompassGoal(sb, identity.user_id);
 
   let query = sb.from('services_catalog').select('*').limit(10);
   if (specialty) query = query.ilike('specialty', `%${specialty}%`);

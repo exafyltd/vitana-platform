@@ -439,9 +439,9 @@ their own tools (search_community for groups, search_events for
 meetups/live rooms).
 
 ### find_perfect_product
-Recommend the perfect product for the user. Fuses their weakest
-Vitana Index pillar + active Life Compass goal + a free-form ask
-and any explicit filters (price cap, ingredients to exclude). Returns
+Recommend the perfect product for the user. Fuses their active Life
+Compass goal + a free-form ask + a pillar only when the user names
+one, and any explicit filters (price cap, ingredients to exclude). Returns
 top-3 with a rationale. Use for: "find me a product for poor sleep on
 travel days", "what supplement should I take for my hydration?", etc.
 
@@ -3259,9 +3259,9 @@ their own tools (search_community for groups, search_events for
 meetups/live rooms).
 
 ### find_perfect_product
-Recommend the perfect product for the user. Fuses their weakest
-Vitana Index pillar + active Life Compass goal + a free-form ask
-and any explicit filters (price cap, ingredients to exclude). Returns
+Recommend the perfect product for the user. Fuses their active Life
+Compass goal + a free-form ask + a pillar only when the user names
+one, and any explicit filters (price cap, ingredients to exclude). Returns
 top-3 with a rationale. Use for: "find me a product for poor sleep on
 travel days", "what supplement should I take for my hydration?", etc.
 

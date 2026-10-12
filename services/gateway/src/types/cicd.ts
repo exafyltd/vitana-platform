@@ -949,6 +949,10 @@ export type CicdEventType =
   // VTID-05030 (Health Hub D1): wearable token storage + vendor revoke
   | 'connector.wearable.token_storage_unavailable'
   | 'connector.wearable.vendor_revoke'
+  // VTID-05089 (Health Hub D6a): wearable -> health_features_daily bridge.
+  // Payloads carry keys, dates, providers and counts only, never health values.
+  | 'health.wearable_features.bridged'
+  | 'health.wearable_features.bridge_failed'
   // VTID-02300: Phase 3 outbound action consent events
   | 'connector.action.requested'
   | 'connector.action.executed'

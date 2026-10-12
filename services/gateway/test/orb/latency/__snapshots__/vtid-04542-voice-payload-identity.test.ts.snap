@@ -386,8 +386,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "instruction_sha256": "8f336c90b4c6cde71bc1c5cad997d33d1795291fb9967631f9f706fa10da88f3",
   "provider": "nova_sonic",
   "tool_count": 50,
-  "tools_bytes": 65566,
-  "tools_sha256": "cea0077da9bc07993487482a03c62775b9abef182b268f0b981b81f81cc60158",
+  "tools_bytes": 65575,
+  "tools_sha256": "b720a4cf1ca04701765ef2e1741df428da88c588498c48f44417580ad722fe69",
   "voice": "tina",
 }
 `;
@@ -629,8 +629,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "instruction_sha256": "1d857b035082cbe4212f91702beb0bb9c972b5dd8c35cb8287bff23f65aa079f",
   "provider": "nova_sonic",
   "tool_count": 50,
-  "tools_bytes": 65566,
-  "tools_sha256": "cea0077da9bc07993487482a03c62775b9abef182b268f0b981b81f81cc60158",
+  "tools_bytes": 65575,
+  "tools_sha256": "b720a4cf1ca04701765ef2e1741df428da88c588498c48f44417580ad722fe69",
   "voice": "amy",
 }
 `;
@@ -892,8 +892,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "instruction_sha256": "59c6e5ebed4201717adf8b73a0bded5556f4fa616f26cd34792a5498ffe49a24",
   "provider": "cascaded",
   "tool_count": 298,
-  "tools_bytes": 224978,
-  "tools_sha256": "9f127ea1937b6fcee3163752944eda34f4d5fb7a2d5e656fbf7a626e18b301d7",
+  "tools_bytes": 224987,
+  "tools_sha256": "96e70401a1eca638341a986fa00c86f8178ba1c9d1041603a22480c61e486a01",
   "voice": "polly:ru",
 }
 `;
@@ -1659,8 +1659,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "instruction_sha256": "fd0779ba9333e3853fe95d53e7b67f7732e98faf7414def764eb80b9d18128d5",
   "provider": "nova_sonic",
   "tool_count": 50,
-  "tools_bytes": 65566,
-  "tools_sha256": "cea0077da9bc07993487482a03c62775b9abef182b268f0b981b81f81cc60158",
+  "tools_bytes": 65575,
+  "tools_sha256": "b720a4cf1ca04701765ef2e1741df428da88c588498c48f44417580ad722fe69",
   "voice": "matthew",
 }
 `;
@@ -1766,8 +1766,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "instruction_sha256": "d1e2ddd4414289b2fade0a0f9b924648e979e04c8d833125b1c817b68d739b55",
   "provider": "nova_sonic",
   "tool_count": 50,
-  "tools_bytes": 65566,
-  "tools_sha256": "cea0077da9bc07993487482a03c62775b9abef182b268f0b981b81f81cc60158",
+  "tools_bytes": 65575,
+  "tools_sha256": "b720a4cf1ca04701765ef2e1741df428da88c588498c48f44417580ad722fe69",
   "voice": "tina",
 }
 `;

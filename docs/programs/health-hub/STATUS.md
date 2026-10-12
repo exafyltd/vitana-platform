@@ -23,6 +23,7 @@ Owner approval (Gate 1): 2026-10-10. Plan PRs merged: vitana-platform #3984, vit
 | 8 | Wave 0: Expo project, CI, parity ledger script, extraction dependency analysis | Native app | queued | — | macOS build minutes (EAS or GitHub) |
 | 9 | `tr` fixup migration for `supported_locales` | both | queued | — | — |
 | 10 | Fix stale "Active locales" paragraph in vitana-v1 CLAUDE.md (11 GA locales) | Native app | done — vitana-v1 #1305 | VTID-05021 | — |
+| 11 | D6a: flag-gated bridge from webhook wearable data into `health_features_daily` + one Vitana Index recompute; `find_perfect_product` no longer reads the Index (unconditional) | Health Hub | in review (sparred); ships dark — `WEARABLE_FEATURE_BRIDGE_ENABLED` unset everywhere, always off on staging | VTID-05089 | flag stays off until D10 WP3 (per-member `wearables` + `ai_health_analysis` consent) is in production, webhook secrets are provisioned and one real connection exists |
 
 ## Deferred follow-ups (recorded so they are not lost)
 
@@ -31,3 +32,4 @@ Owner approval (Gate 1): 2026-10-10. Plan PRs merged: vitana-platform #3984, vit
 | `social_connections` OAuth tokens (Google/Microsoft/YouTube connectors) are stored the same way `user_connections` tokens were | VTID-05030 sparring, Fact 6 | Needs its own sparred plan: grants + sealing + revoke for the dispatcher's table. |
 | Dedicated encryption key for health connection tokens + key rotation runbook | VTID-05030 round 1, Q2 | Interim: shared `AI_CREDENTIALS_ENC_KEY`. Zero stored tokens today. |
 | Production `AI_CREDENTIALS_ENC_KEY` wiring for the gateway | VTID-05030 | Without it wearable connects fail closed (`storage_unavailable`); confirm in Gate 2. |
+| D6b: poll scheduler for the polling connectors (Oura, Fitbit, Strava) — `fetchData` + token refresh | VTID-05089 plan (D6 split) | Deferred to Phase 2. Outline: EventBridge → internal `POST /api/v1/wearables/internal/sync-tick` (`X-Gateway-Internal`, 409 on staging, off unless `WEARABLE_SYNC_ENABLED==='true'`, single invocation not `setInterval`); per-connection claim by conditional update on `last_sync_at`; `openToken` → `refreshToken` when `token_expires_at` < 10 min → re-seal and store the rotated refresh token in the same update; `fetchData` → webhook persist code → the D6a bridge; per-provider concurrency 1, honour 429/`Retry-After`, per-tick cap; failures → `last_error` code + OASIS `connector.wearable.sync.*`. Needs its own sparred plan once a provider is enabled and members are connected (those three are seeded `enabled = FALSE`, frozen by the program, 0 connections). |

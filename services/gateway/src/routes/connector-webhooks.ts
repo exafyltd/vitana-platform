@@ -18,6 +18,7 @@ import { getSupabase } from '../lib/supabase';
 import { getConnector } from '../connectors';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import * as repo from './connector-webhooks-repository';
+import { bridgeWearableDays, isWearableFeatureBridgeEnabled, utcDateOf } from '../services/wearable-features-bridge';
 
 const router = Router();
 
@@ -100,6 +101,15 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
   // Persist normalized events
   let persisted = 0;
   let skipped = 0;
+  // VTID-05089: member-days whose wearable rows persisted without error,
+  // bridged into health_features_daily once per user after the loop.
+  const bridgeTargets = new Map<string, { tenantId: string; dates: Set<string> }>();
+  const noteBridgeDay = (uid: string, tid: string, date: string | null) => {
+    if (!date) return;
+    const t = bridgeTargets.get(uid) ?? { tenantId: tid, dates: new Set<string>() };
+    t.dates.add(date);
+    bridgeTargets.set(uid, t);
+  };
   for (const event of result.events) {
     const userId = event.user_id ?? null;
     try {
@@ -173,18 +183,20 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
               patch[k] = event.payload[k];
             }
           }
-          await repo.upsertWearableDailyMetrics(supabase, patch);
+          const dm = await repo.upsertWearableDailyMetrics(supabase, patch);
+          if (!dm?.error) noteBridgeDay(userId, tenantId, metric_date);
         }
       } else if (event.topic === 'connector.wearable.workout.recorded') {
         if (tenantId) {
-          await repo.upsertWearableWorkout(supabase, {
+          const startedAt = (event.payload.started_at as string | null) ?? new Date().toISOString();
+          const wo = await repo.upsertWearableWorkout(supabase, {
             tenant_id: tenantId,
             user_id: userId,
             user_connection_id: userConnectionId,
             provider,
             external_workout_id: (event.payload.external_workout_id as string | null) ?? null,
             workout_type: (event.payload.workout_type as string | null) ?? null,
-            started_at: (event.payload.started_at as string | null) ?? new Date().toISOString(),
+            started_at: startedAt,
             ended_at: (event.payload.ended_at as string | null) ?? null,
             duration_minutes: (event.payload.duration_minutes as number | null) ?? null,
             distance_meters: (event.payload.distance_meters as number | null) ?? null,
@@ -193,6 +205,7 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
             max_hr: (event.payload.max_hr as number | null) ?? null,
             raw: event.raw ?? null,
           });
+          if (!wo?.error) noteBridgeDay(userId, tenantId, utcDateOf(startedAt));
         }
       }
 
@@ -211,6 +224,22 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
       const message = err instanceof Error ? err.message : String(err);
       console.warn(`[connector-webhook] event persist failed: ${message}`);
       skipped++;
+    }
+  }
+
+  // VTID-05089 (Health Hub D6a): bridge persisted member-days into
+  // health_features_daily + one Index recompute, once per distinct user.
+  // Dark unless WEARABLE_FEATURE_BRIDGE_ENABLED === 'true' and not staging.
+  // A bridge failure never changes this webhook's response: the raw data is
+  // already stored, and the 02:00 recompute plus the next webhook repair it.
+  if (supabase && bridgeTargets.size > 0 && isWearableFeatureBridgeEnabled()) {
+    for (const [uid, t] of bridgeTargets) {
+      try {
+        await bridgeWearableDays(supabase, { tenantId: t.tenantId, userId: uid, dates: Array.from(t.dates) });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[connector-webhook] wearable features bridge failed: ${message}`);
+      }
     }
   }
 
