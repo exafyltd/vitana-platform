@@ -213,6 +213,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const commerceAiSetupRouter = require('./routes/commerce-ai-setup').default;
   // VTID-04847: Commerce MCP endpoint (/mcp + OAuth protected-resource metadata; COMMERCE_MCP_ENABLED)
   const commerceMcpModule = require('./routes/commerce-mcp');
+  // VTID-05074: public privacy, terms and support pages for the Commerce plugin listing (static HTML, always on)
+  const commercePluginLegalRouter = require('./routes/commerce-plugin-legal').default;
   // VTID-03939: Commerce Partner Onboarding Phase 3 — a patient's own aggregated health results
   const patientHealthResultsRouter = require('./routes/patient-health-results').default;
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
@@ -1217,6 +1219,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-04847: Commerce MCP — a supplier's AI assistant onboards their business (off unless COMMERCE_MCP_ENABLED=true)
   mountRouterSync(app, '/mcp', commerceMcpModule.default, { owner: 'commerce-mcp' });
   mountRouterSync(app, '/.well-known', commerceMcpModule.wellKnownRouter, { owner: 'commerce-mcp-well-known' });
+  mountRouterSync(app, '/legal/vitanaland-commerce', commercePluginLegalRouter, { owner: 'commerce-plugin-legal' });
   // VTID-03939: Commerce Partner Onboarding Phase 3 — GET /api/v1/patient/health-results
   mountRouterSync(app, '/api/v1/patient', patientHealthResultsRouter, { owner: 'patient-health-results' });
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
