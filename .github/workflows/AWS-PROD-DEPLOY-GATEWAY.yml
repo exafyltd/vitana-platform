@@ -1050,6 +1050,21 @@ jobs:
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Autopilot reward pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "AUTOPILOT_ACTION_REWARD_ENABLED")]')"
 
+      - name: Build task-definition (routine runner on)
+        # VTID-05103 (sparred plan, owner approved 2026-10-12): the deterministic
+        # daily routines run inside the gateway (services/routine-runner), once
+        # per UTC day each, exactly once across tasks. Pinned "true" here like
+        # the reward sweep so a publish never silently drops it. Off: dispatch
+        # with env_overrides={"ROUTINE_RUNNER_ENABLED":"false"} (applied in 2/2).
+        run: |
+          set -e
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name != "ROUTINE_RUNNER_ENABLED") ]
+                + [ {name:"ROUTINE_RUNNER_ENABLED", value:"true"} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Routine runner pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "ROUTINE_RUNNER_ENABLED")]')"
+
       - name: Build task-definition (onboarding coach shadow mode on)
         # VTID-05039 (sparred plan, owner approved 2026-10-10): the Vitana
         # Onboarding Assistant's coach (VTID-04892) runs in SHADOW mode in

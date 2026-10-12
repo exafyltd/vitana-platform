@@ -142,3 +142,16 @@ jobs:
 
             console.log("No stamp-write failures and no reconnect-bucket briefing regressions in the lookback window.");
           '
+
+      # VTID-05103: a failed check reaches the one self-healing intake (loop L1),
+      # not just a red run in Actions. Reporting never changes this job's result.
+      - name: Check out the report script
+        if: failure()
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/ci
+      - name: Report failure to self-healing
+        if: failure()
+        env:
+          SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+        run: bash scripts/ci/report-to-self-healing.sh "alert-newday-briefing-loop" "alert-workflow://ALERT-NEWDAY-BRIEFING-LOOP" "new-day briefing loop regression (stamp-write failures or reconnect-bucket briefings)"

@@ -2068,7 +2068,7 @@ CREATE TABLE routine_runs (
   started_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   finished_at   TIMESTAMPTZ,
   status        TEXT NOT NULL CHECK (status IN ('running','success','failure','partial')),
-  trigger       TEXT NOT NULL DEFAULT 'cron' CHECK (trigger IN ('cron','manual')),
+  trigger       TEXT NOT NULL DEFAULT 'cron' CHECK (trigger IN ('cron','manual','gateway-runner')),
   summary       TEXT,
   findings      JSONB,
   artifacts     JSONB,
@@ -2078,7 +2078,15 @@ CREATE TABLE routine_runs (
 );
 CREATE INDEX idx_routine_runs_routine_started ON routine_runs(routine_name, started_at DESC);
 CREATE INDEX idx_routine_runs_status          ON routine_runs(status);
+-- VTID-05103: at most one gateway-runner run per routine per UTC day.
+CREATE UNIQUE INDEX uq_routine_runs_gateway_runner_day
+  ON routine_runs (routine_name, ((started_at AT TIME ZONE 'UTC')::date)) WHERE trigger = 'gateway-runner';
 ```
+
+**Gateway routine runner (VTID-05103, `20261012200000_vtid_05103_routine_runner_claim.sql`):** the nine deterministic routines run inside the gateway (`services/routine-runner`). Two functions, EXECUTE for `service_role` only:
+- `claim_routine_run(p_name text) RETURNS uuid` — inserts today's `gateway-runner` run (`status='running'`) and marks the catalog row running; returns NULL when the routine is disabled (`routines.enabled = false`) or another gateway task already claimed it today.
+- `finish_routine_run(p_id, p_status, p_summary, p_findings, p_error)` — closes the run (`finished_at`, `duration_ms`) and updates the catalog row (`last_run_*`; `consecutive_failures` reset on success, +1 on failure).
+The same migration seeds the `mobile-screen-latency-rollup` catalog row.
 
 **Auth model:** GET endpoints reuse Command Hub auth. POST/PATCH require `X-Routine-Token: $ROUTINE_INGEST_TOKEN` (shared secret env var on the gateway), so a remote sandbox routine can authenticate without a user JWT.
 

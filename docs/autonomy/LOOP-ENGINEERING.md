@@ -138,10 +138,11 @@ be rotated.
 ## 6. Roadmap (each step has its own plan, sparring and VTID)
 
 1. **Phase 2 — Simplify first (VTID-05098, done).** Retired five dead or duplicate routines, one Health tab, one place to act in Pulse; outcomes in §5.
-2. **Phase 3 — Close L1 and add guard rails.** Find out why the surviving routines fail on every run; alert workflows write to the one intake and use their ops health route as the single definition of each check; derive `SCHEDULED_WORKFLOWS` from the generated catalog; per-loop kill switch, budget and stagnation stop on the existing `agents_registry` + `agent_runs`; L5 spend budgets and the silent-fallback incident rule.
-3. **Phase 4 — L3 Learn.** Act on the outcomes ledger (graduation proposals; an escaped bug becomes a test).
-4. **Phase 5 — L9 Supplier catalog, wave 1.** One category, at most 20 SKUs per run, deterministic validators before any LLM, human publish gate. Target: 80% of rows ready for approval without manual entry.
-5. **Phase 6 — Shared safety verifiers, then L14.** Claim verifier and red-flag rules with eval sets first; the health coaching MVP after.
+2. **Phase 3a — Close L1 (VTID-05103).** Why the routines failed: every claude.ai routine session ran the cloud environment's setup script, which `cd`s into `vitana-platform/services/gateway`; routine sessions clone no repo, so the script exited 1 before the prompt ran. Nine routines were only "curl an audit endpoint + a threshold", so they now run inside the gateway (`services/routine-runner`, once per UTC day, exactly once across tasks via `claim_routine_run`, results in the same `routine_runs` tables, breaches into the one self-healing intake; off on staging, pinned on in production). The seven `ALERT-*` workflows report a failure to `/api/v1/self-healing/report`. `voice-lab-triage` is not run: its spec reads data the route does not return.
+3. **Phase 3b — the rest of L1 and the guard rails.** The four routines that need a session (`draft-pr-babysitter`, `mobile-synthetic-load-probe`, `mobile-screen-api-latency`, `mobile-bundle-budget`) work again once the **owner** fixes the environment setup script (`[ -d vitana-platform/services/gateway ] && cd …`); a working `voice-lab-triage` (time-windowed sessions on the existing failure classes); each alert workflow's check as one ops health route; derive `SCHEDULED_WORKFLOWS` from the generated catalog; per-loop kill switch, budget and stagnation stop on the existing `agents_registry` + `agent_runs`; L5 spend budgets and the silent-fallback incident rule.
+4. **Phase 4 — L3 Learn.** Act on the outcomes ledger (graduation proposals; an escaped bug becomes a test).
+5. **Phase 5 — L9 Supplier catalog, wave 1.** One category, at most 20 SKUs per run, deterministic validators before any LLM, human publish gate. Target: 80% of rows ready for approval without manual entry.
+6. **Phase 6 — Shared safety verifiers, then L14.** Claim verifier and red-flag rules with eval sets first; the health coaching MVP after.
 
 ## 7. Changing the catalog
 
