@@ -11,3 +11,4 @@ npx jest test/command-hub test/navigation test/nav-golden test/nav-redirect test
 npx tsc --noEmit                                           # clean (after installing the locked libphonenumber-js missing from the local node_modules)
 npm run build && node ../../scripts/ci/command-hub-golden-fingerprint.js   # PASSED
 node -e "require('./dist/services/loop-catalog').buildCatalogResponse(null)"   # dist resolves specs/: 14 loops, 100 cases, 0 orphans
+npx jest --silent   # full gateway suite: 1642 suites passed (2 skipped), 26412 tests passed
