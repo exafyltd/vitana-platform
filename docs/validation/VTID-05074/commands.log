@@ -1,0 +1,3 @@
+# VTID-05074 commands
+git checkout -B claude/quirky-archimedes-s2t1f5 origin/main
+# local render check: route file with a stubbed Router, output checked for <script, style=, src=, and "maxina": clean
