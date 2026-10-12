@@ -327,3 +327,83 @@ test('run.mjs records and logs the lockfile-only commits (audit trail)', () => {
   assert.match(src, /lockfile_only: plan\.lockfileOnly/);
   assert.match(src, /lockfileOnly=\$\{plan\.lockfileOnly\.length\}/);
 });
+
+// ── VTID-05076: commitsBetween walks the first-parent chain ─────────────────
+const { execFileSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
+function tempRepo() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-range-'));
+  const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@x', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@x', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+  const run = (args) => execFileSync('git', args, { cwd: dir, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const write = (rel, text) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), text); };
+  const commit = (rel, text, subject) => { write(rel, text); run(['add', '-A']); run(['commit', '-q', '-m', subject]); return run(['rev-parse', 'HEAD']); };
+  run(['init', '-q', '-b', 'main']);
+  const base = commit('README.md', 'x', 'VTID-00001: base');
+  const git = (args) => { try { return run(args); } catch { return null; } };
+  return { dir, run, commit, base, git, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+}
+
+const MANIFEST = { 'VTID-09001': { vtid: 'VTID-09001', service: 'gateway', tests: [{ kind: 'existing', ref: 'npm run test:operator', cwd: 'services/gateway', reason: 'covers the gateway change' }] } };
+const AFTER_ENFORCE = (commits) => commits.map((c) => ({ ...c, date: '2099-01-01T00:00:00Z' }));
+
+test('VTID-05076: squash history lists every commit with its own files, as before', () => {
+  const r = tempRepo();
+  try {
+    const a = r.commit('services/gateway/src/a.ts', '1', 'VTID-09001: change a (#1)');
+    const b = r.commit('services/gateway/src/b.ts', '1', 'VTID-09001: change b (#2)');
+    const got = lib.commitsBetween(r.git, r.base, b);
+    assert.deepEqual(got.map((c) => c.sha), [a, b]);
+    assert.deepEqual(got.map((c) => c.files), [['services/gateway/src/a.ts'], ['services/gateway/src/b.ts']]);
+    assert.deepEqual(got.map((c) => c.branchCommits), [0, 0]);
+  } finally { r.cleanup(); }
+});
+
+test('VTID-05076: a merge-committed PR is judged by its merge commit; its untagged branch commit is not listed', () => {
+  const r = tempRepo();
+  try {
+    r.run(['checkout', '-q', '-b', 'feature']);
+    r.commit('services/gateway/src/x.ts', '1', 'VTID-09001: add x');
+    r.commit('services/gateway/package.json', '{}', 'chore(gateway): sync deps');
+    r.run(['checkout', '-q', 'main']);
+    r.run(['merge', '-q', '--no-ff', '-m', 'VTID-09001: feature (#3)', 'feature']);
+    const head = r.run(['rev-parse', 'HEAD']);
+    const got = lib.commitsBetween(r.git, r.base, head);
+    assert.equal(got.length, 1);
+    assert.equal(got[0].sha, head);
+    assert.equal(got[0].subject, 'VTID-09001: feature (#3)');
+    assert.deepEqual(got[0].files.sort(), ['services/gateway/package.json', 'services/gateway/src/x.ts']);
+    assert.equal(got[0].branchCommits, 2);
+    const plan = lib.planRange({ service: 'gateway', commits: AFTER_ENFORCE(got), manifests: MANIFEST });
+    assert.equal(plan.missing.length, 0);
+    assert.deepEqual(plan.suites.map((s) => s.vtid), ['VTID-09001']);
+    const msg = lib.buildReadyMessage({ service: 'gateway', sha: head, outcome: 'passed', results: [], plan, shipping: got, prodStamp: r.base, runUrl: 'https://example.invalid/run' });
+    assert.match(msg, /VTID-09001: feature \(#3\).*\(2 branch commits\)/);
+  } finally { r.cleanup(); }
+});
+
+test('VTID-05076: a direct push without a VTID still fails rule 47', () => {
+  const r = tempRepo();
+  try {
+    const c = r.commit('services/gateway/src/y.ts', '1', 'fix gateway thing');
+    const got = lib.commitsBetween(r.git, r.base, c);
+    const plan = lib.planRange({ service: 'gateway', commits: AFTER_ENFORCE(got), manifests: MANIFEST });
+    assert.deepEqual(plan.missing.map((m) => m.sha), [c]);
+  } finally { r.cleanup(); }
+});
+
+test('VTID-05076: a merge commit whose subject has no VTID fails rule 47', () => {
+  const r = tempRepo();
+  try {
+    r.run(['checkout', '-q', '-b', 'feature']);
+    r.commit('services/gateway/src/z.ts', '1', 'VTID-09001: add z');
+    r.run(['checkout', '-q', 'main']);
+    r.run(['merge', '-q', '--no-ff', '-m', 'Merge branch feature', 'feature']);
+    const head = r.run(['rev-parse', 'HEAD']);
+    const got = lib.commitsBetween(r.git, r.base, head);
+    const plan = lib.planRange({ service: 'gateway', commits: AFTER_ENFORCE(got), manifests: MANIFEST });
+    assert.deepEqual(plan.missing.map((m) => m.sha), [head]);
+  } finally { r.cleanup(); }
+});
