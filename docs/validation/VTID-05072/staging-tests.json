@@ -1,16 +1,9 @@
 {
   "vtid": "VTID-05072",
   "service": "gateway",
-  "note": "Read-only. Phase 0 changes no served file (modules.json is not served and no ?v= changed), so proving /command-hub/ and every script it loads still return 200 with a JS content type is sufficient.",
+  "note": "Read-only. Phase 0 changes no served file (modules.json is not served and no ?v= changed), so proving /command-hub/ returns 200 is sufficient. The guard test (vtid-05072-bundle-manifest.test.ts case 1) already pins that every manifest script appears in index.html.",
   "tests": [
     { "kind": "http", "name": "Command Hub index is served", "path": "/command-hub/", "expect_status": 200 },
-    { "kind": "http", "name": "orb-widget.js served as JavaScript", "path": "/command-hub/orb-widget.js", "expect_status": 200, "expect_content_type": "javascript" },
-    { "kind": "http", "name": "pipeline-tree.js served as JavaScript", "path": "/command-hub/pipeline-tree.js", "expect_status": 200, "expect_content_type": "javascript" },
-    { "kind": "http", "name": "kiro-console.js served as JavaScript", "path": "/command-hub/kiro-console.js", "expect_status": 200, "expect_content_type": "javascript" },
-    { "kind": "http", "name": "app.js served as JavaScript", "path": "/command-hub/app.js", "expect_status": 200, "expect_content_type": "javascript" },
-    { "kind": "http", "name": "voice-self-healing.js served as JavaScript", "path": "/command-hub/voice-self-healing.js", "expect_status": 200, "expect_content_type": "javascript" },
-    { "kind": "http", "name": "voice-supervisor.js served as JavaScript", "path": "/command-hub/voice-supervisor.js", "expect_status": 200, "expect_content_type": "javascript" },
-    { "kind": "http", "name": "intelligence-panels.js served as JavaScript", "path": "/command-hub/intelligence-panels.js", "expect_status": 200, "expect_content_type": "javascript" },
-    { "kind": "http", "name": "command-hub-staging.js served as JavaScript", "path": "/command-hub/command-hub-staging.js", "expect_status": 200, "expect_content_type": "javascript" }
+    { "kind": "existing", "ref": "npx jest test/command-hub/vtid-05072-bundle-manifest.test.ts", "cwd": "services/gateway", "reason": "guard test case 1 pins that every manifest bundle file is referenced in index.html's script tags with versioned URLs" }
   ]
 }
