@@ -83,3 +83,4 @@ export function topLevelFunctionNames(src: string): string[] {
 export function programBody(src: string): acorn.Node[] {
   return acorn.parse(src, { ecmaVersion: 'latest', sourceType: 'script' }).body as acorn.Node[];
 }
+// VTID-05072: Phase 0 bundle helper (manifest, acorn parse, function declarations).
