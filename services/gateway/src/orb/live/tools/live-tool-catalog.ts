@@ -683,9 +683,9 @@ function buildLiveApiToolsUngated(
         {
           name: 'find_perfect_product',
           description: [
-            'Recommend the perfect product for the user. Fuses their weakest',
-            'Vitana Index pillar + active Life Compass goal + a free-form ask',
-            'and any explicit filters (price cap, ingredients to exclude). Returns',
+            'Recommend the perfect product for the user. Fuses their active Life',
+            'Compass goal + a free-form ask + a pillar only when the user names',
+            'one, and any explicit filters (price cap, ingredients to exclude). Returns',
             'top-3 with a rationale. Use for: "find me a product for poor sleep on',
             'travel days", "what supplement should I take for my hydration?", etc.',
             '',
@@ -702,7 +702,7 @@ function buildLiveApiToolsUngated(
               },
               pillar: {
                 type: 'string',
-                description: 'OPTIONAL — nutrition / hydration / exercise / sleep / mental. Defaults to the user\'s weakest pillar.',
+                description: 'OPTIONAL — only when the member names a pillar: nutrition / hydration / exercise / sleep / mental.',
               },
               max_price: { type: 'number', description: 'OPTIONAL — price cap.' },
               exclude_ingredients: {

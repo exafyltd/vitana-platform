@@ -1,0 +1,10 @@
+# VTID-05088 — commands run (2026-10-12)
+mcp github get_job_logs 114468320479                       # 2/22, row 21 + row 22
+row-22 watchlist latest runs (gh api)                        # all 11 green -> row 22 failed only via self
+mcp Supabase execute_sql ci_memory_health()                  # writes 0, coverage 96%, ctx 155/155, AP-0910 fresh
+mcp Supabase execute_sql memory_items / memory_transcript_turns / orb.live.diag by day   # last speech 2026-10-08 17:17
+aws logs filter-log-events /vitana/gateway-awsdr             # sessions closed by the member (close_button), no write errors
+mcp Supabase execute_sql (read-only) new speech/transcript SQL over 3 windows   # 10-08: 15/15, 10-11: 0/0, now: 0/0
+npx jest test/vtid-05088-memory-health-speech-input.test.ts test/vtid-04345-morning-memory-check.test.ts   # 12/12
+mutation: unconditional writes line restored -> quiet-day test fails (1 failed); restored
+initdb + pg_ctl (PostgreSQL 16, local); psql -v ON_ERROR_STOP=1 -f outputs/local-postgres-harness.sql

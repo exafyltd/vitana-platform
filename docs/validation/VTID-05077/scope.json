@@ -1,0 +1,24 @@
+{
+  "vtid": "VTID-05077",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/llm-router.ts",
+    "services/gateway/src/services/llm-stage-tool-loop.ts",
+    "services/gateway/src/services/dev-pipeline-models.ts",
+    "services/gateway/src/services/dev-autopilot-planning.ts",
+    "services/gateway/src/services/dev-autopilot-outcomes.ts",
+    "services/gateway/src/routes/dev-autopilot.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "services/gateway/specs/command-hub-symbol-index.json",
+    "services/gateway/test/vtid-05077-planner-fallback-and-thinking.test.ts",
+    "services/gateway/test/command-hub/**",
+    "scripts/ci/command-hub-ownership-guard.js",
+    "supabase/migrations/20261012110000_vtid_05077_plan_version_planner_model.sql",
+    "docs/validation/VTID-05077/**",
+    "DATABASE_SCHEMA.md"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

@@ -61,7 +61,7 @@ export const DOMAIN_ATLAS: readonly AtlasDomain[] = [
     title: 'Agents, orchestrator and the Operator Console',
     summary:
       'The Operator Console (text + voice) with its tool loop, bootstrap pack, threads and turn memory; the orchestrator\'s agent-as-tool specialists and delegation jobs; the worker-runner execution plane and its claim allowlist; the agent registry and dev_agent_memory.',
-    routes: [/^operator$/, /^operator-kiro-mcp$/, /^orchestrator$/, /^worker-orchestrator$/, /^agents-registry$/, /^pillar-agents/, /^dev-memory$/, /^jev-decisions$/, /^board-adapter$/, /^admin\/ai-integrations/],
+    routes: [/^operator$/, /^operator-kiro-mcp$/, /^operator-kiro-runs$/, /^operator-media$/, /^operator-runs$/, /^orchestrator$/, /^worker-orchestrator$/, /^agents-registry$/, /^pillar-agents/, /^dev-memory$/, /^jev-decisions$/, /^board-adapter$/, /^admin\/ai-integrations/],
     code: ['services/gemini-operator.ts', 'services/operator-*.ts', 'orb/delegation/', 'services/dev-agent-memory.ts', 'services/llm-stage-tool-loop.ts', 'services/jev/'],
     tables: ['operator_threads', 'operator_messages', 'dev_agent_memory', 'agent_runs', 'agents_registry', 'vtid_ledger'],
     flags: ['OPERATOR_EXECUTION_ONRAMP_ENABLED', 'OPERATOR_BOOTSTRAP_PACK_ENABLED', 'OPERATOR_THREADS_ENABLED', 'OPERATOR_TURN_MEMORY_ENABLED', 'ORCHESTRATOR_DELEGATION_PERSIST_ENABLED', 'JEV_DECISIONS_ENABLED'],
@@ -157,7 +157,7 @@ export const DOMAIN_ATLAS: readonly AtlasDomain[] = [
     title: 'Commerce and Discover',
     summary:
       'Discover feed and search, merchants and products, affiliate sync (Awin, Shopify), click attribution, the universal cart and shopping agent, VCAOP, VAEA (the Business Hub referral assistant), and self-service partner onboarding.',
-    routes: [/^offers/, /^commerce-ai-setup$/, /^commerce-mcp$/, /^shop-/, /^shopify-/, /^shopping-agent/, /^universal-cart/, /^discover-/, /^vcaop/, /^partner-/, /^awin-sync/, /^catalog-ingest/, /^click-redirect/, /^internal-marketplace-sync$/, /^cover-images$/, /^integrations/, /^connected-apps$/, /^connector-webhooks/, /^admin-marketplace/, /^admin-community-marketplace$/, /^admin-partner-health$/, /^admin-partner-terms$/, /^admin-partner-review$/, /^community-marketplace$/, /^vaea/],
+    routes: [/^offers/, /^commerce-ai-setup$/, /^commerce-mcp$/, /^commerce-plugin-legal$/, /^shop-/, /^shopify-/, /^shopping-agent/, /^universal-cart/, /^discover-/, /^vcaop/, /^partner-/, /^awin-sync/, /^catalog-ingest/, /^click-redirect/, /^internal-marketplace-sync$/, /^cover-images$/, /^integrations/, /^connected-apps$/, /^connector-webhooks/, /^admin-marketplace/, /^admin-community-marketplace$/, /^admin-partner-health$/, /^admin-partner-terms$/, /^admin-partner-review$/, /^community-marketplace$/, /^vaea/],
     code: ['services/commerce/', 'services/commerce-ai-setup.ts', 'services/commerce-mcp.ts', 'services/partner-*.ts'],
     tables: ['merchants', 'products', 'partner_organizations', 'partner_registry', 'affiliate_clicks', 'partner_terms_versions'],
     flags: ['PARTNER_INVITE_EMAIL_ENABLED', 'ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED', 'COMMERCE_MCP_ENABLED'],

@@ -152,6 +152,10 @@ validates. The test is written in the same PR as the code, never after the
 deploy. Worked example: `exafyltd/vitana-v1`
 `docs/validation/VTID-04616/staging-tests.json`.
 
+**How the range is read (VTID-05076):** one entry per change that landed on main — the first-parent chain (`git log --first-parent`). A squash merge or a direct push is its own entry; a PR merged with a merge commit is judged by the merge commit, whose subject carries the PR title and VTID, and its files are everything the merge brought into main. The ready message marks such an entry "(N branch commits)". A direct push without a VTID still fails rule 47.
+
+**One exception (VTID-05075):** a commit whose only build-relevant change is a service's `pnpm-lock.yaml` (files outside the service's build, such as evidence docs, are ignored) needs no change suite of its own. STAGING-VERIFY lists it under "Lockfile-only changes (no change suite; smoke tests only)" and records it as `lockfile_only`, so the "Staging verified — ready for deployment to production?" message names every one that ships. Any other build file in the same commit, a VTID without a manifest, or another service's lockfile (`package-lock.json`, `bun.lock`) keeps the rule as written.
+
 **Which suites run.** Every commit between the commit production serves and
 the verified commit that touches the service's deploy paths contributes its
 VTIDs' suites — so a verification proves everything a PUBLISH would ship, not

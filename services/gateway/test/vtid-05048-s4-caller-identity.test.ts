@@ -63,6 +63,9 @@ const mockFetchPrimaryTenant = jest.fn();
 jest.mock('../src/middleware/auth-supabase-jwt-repository', () => ({
   fetchPrimaryTenantForUser: (...a: any[]) => mockFetchPrimaryTenant(...a),
   fetchVitanaIdForUser: async () => ({ data: null, error: null }),
+  // VTID-05043: requireTenant now checks the token tenant is a membership;
+  // the signed-in fixtures are members of their own JWT tenant.
+  fetchMembershipForUserTenant: async (_sb: any, _uid: string, tenantId: string) => ({ data: { tenant_id: tenantId }, error: null }),
 }));
 jest.mock('../src/lib/supabase', () => ({ getSupabase: () => ({}) }));
 

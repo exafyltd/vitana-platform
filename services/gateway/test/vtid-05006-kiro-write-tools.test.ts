@@ -213,10 +213,15 @@ describe('wiring (source check)', () => {
     expect(prod).toContain('{name:"KIRO_MCP_ENABLED", value:"false"}, {name:"KIRO_MCP_WRITE_ENABLED", value:"false"} ]');
   });
 
-  it('the Command Hub polls only during a Kiro turn and answers through the confirmation route', () => {
-    const app = read('services/gateway/src/frontend/command-hub/app.js');
-    expect(app).toContain("if (activeOperatorEngine() === 'kiro') startKiroConfirmationPoll(state.operatorActiveThreadId);");
-    expect(app).toContain('stopKiroConfirmationPoll();');
-    expect(app).toContain("'/api/v1/operator/kiro/confirmations/' + encodeURIComponent(card.confirmationId)");
+  // VTID-05067: the poll moved with the Kiro view into kiro-console.js (one owner of the
+  // Kiro view); it runs only while a run of the thread runs (behaviour pinned by
+  // test/command-hub/vtid-05067-kiro-console.test.ts).
+  it('the Command Hub polls only during a Kiro run and answers through the confirmation route', () => {
+    const mod = read('services/gateway/src/frontend/command-hub/kiro-console.js');
+    expect(mod).toContain('function updateConfirmationPoll(t) {');
+    expect(mod).toContain('var want = !!activeRun(t);');
+    expect(mod).toContain("'/api/v1/operator/kiro/confirmations?thread_id=' + encodeURIComponent(t.id)");
+    expect(mod).toContain("'/api/v1/operator/kiro/confirmations/' + encodeURIComponent(confirmationId)");
+    expect(read('services/gateway/src/frontend/command-hub/app.js')).not.toContain('startKiroConfirmationPoll');
   });
 });

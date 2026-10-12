@@ -715,6 +715,12 @@ CREATE TABLE apple_account_credentials (
 - `profiles.phone_e164 TEXT`, `profiles.phone_verified BOOLEAN NOT NULL DEFAULT false`, `profiles.discoverable_by_phone BOOLEAN NOT NULL DEFAULT true` — `phone_verified`/`phone_e164` are set only by trigger `on_auth_user_phone_verification` on `auth.users` (`phone` set AND `phone_confirmed_at` not null). A number typed into a profile never matches.
 - `match_existing_contacts()` (trigger `on_phone_verified`, now on `phone_e164`/`phone_verified`/`discoverable_by_phone`) and `check_phone_on_platform()` match only a verified, discoverable member and skip `service_bot_accounts` / `notification_test_actors`. Rollback: `docs/validation/VTID-05057/rollback.down.sql`.
 
+**Phone verification (VTID-05095, `20261012180000_vtid_05095_phone_verification.sql`, applied at Gate 2):**
+- `phone_verification_challenges` — one open SMS code per member (`user_id` UNIQUE): `phone_e164`, `code_hash` (HMAC, never the code), `expires_at` (10 min), `attempts` (max 5), `consumed_at`. RLS on, no policies, no browser grants (service role only).
+- `phone_verification_sends` — one row per verification SMS (`user_id`, `phone_e164`, `sent_at`) for the limits (3/member/hour, 6/member/day, 5/number/day, a daily cap for everyone); rows older than 7 days are purged on each send. Service role only.
+- `phone_verification_begin(...)` / `phone_verification_confirm(...)` — SECURITY DEFINER, EXECUTE for `service_role` only; each step is one transaction under a per-member advisory lock.
+- `unmatch_phone_contacts()` + trigger `on_phone_a_withdrawn` on `profiles` — when a matchable number is removed, unverified, hidden or replaced, other members' contacts linked to it by phone are unlinked (rows whose e-mail matches the member stay linked). Runs before `on_phone_verified` (name order). The verified number itself lands in `auth.users` (`phone` + `phone_confirm` via the Auth admin API) and reaches `profiles` through VTID-05057's mirror. Rollback: `docs/validation/VTID-05095/rollback.down.sql`.
+
 **Rules:** tokens stay in `social_connections` (Google, Microsoft) or here encrypted (Apple). Turning an app off deletes what it left in Vitanaland (busy rows; imported contacts only when the member ticks it); turning the provider's last app off releases the grant (Google refresh token revoked, Microsoft tokens dropped, Apple credentials deleted).
 
 ### calendar_push_targets / calendar_push_links — Outlook + iCloud calendar push — APPLIED 2026-09-24 (VTID-04436)
@@ -1545,6 +1551,7 @@ CREATE TABLE my_new_table (
 | 2026-09-23 | New tables `calendar_google_sync`, `calendar_google_links`, `calendar_external_busy` for Google Calendar two-way sync (switched off). No tokens stored — they stay in `social_connections`. RLS on, no policies, no browser grants. | Claude | VTID-04372 |
 | 2026-09-24 | New tables `calendar_push_targets`, `calendar_push_links`: Outlook and iCloud calendar push into a member-owned "Vitanaland" calendar. RLS on, no policies, no browser grants. | Claude | VTID-04436 |
 | 2026-09-24 | `connected_app_settings.app_id` CHECK gains `outlook-contacts` (Outlook contacts import; rows land in `contacts` with `source='microsoft'`). | Claude | VTID-04449 |
+| 2026-10-12 | New tables `phone_verification_challenges`, `phone_verification_sends` (service role only); functions `phone_verification_begin` / `phone_verification_confirm`; trigger `on_phone_a_withdrawn` + `unmatch_phone_contacts()` on `profiles` (member phone verification by SMS code). | Claude | VTID-05095 |
 | 2026-10-10 | `contacts.contact_phone_e164`; `profiles.phone_e164`, `phone_verified`, `discoverable_by_phone`; trigger `on_auth_user_phone_verification` on `auth.users`; `match_existing_contacts()` / `check_phone_on_platform()` match only verified, discoverable members (contacts phone matching). | Claude | VTID-05057 |
 | 2026-10-06 | Triggers on `global_community_events` → `calendar_events`: the host gets an entry on create, edits to time/place/title move every live entry for the event, delete cancels them; future hosts backfilled. No table/column change. | Claude | VTID-04915 |
 | 2026-05-12 | Added `cover_url`, `cover_generated_at`, `cover_source` to `user_intents` for the Find-a-Match cover-photo flow (user upload OR server-side OpenAI Images generation OR curated fallback). Idx on `(requester_user_id, cover_generated_at)` for per-user rate-limit. | Claude | BOOTSTRAP-INTENT-COVER-GEN |
@@ -1582,6 +1589,7 @@ CREATE TABLE my_new_table (
 | 2026-10-09 | `calendar_events.valid_source_type` CHECK now also allows `'subscription'`. Triggers `trg_subscription_insert_calendar`, `trg_subscription_update_calendar`, `trg_subscription_delete_calendar` (user_subscriptions → calendar_events): one entry at `current_period_end` (metadata.kind `renews` for a Stripe subscription that will renew, `ends` for grants and cancel-at-period-end) and one `trial_ends` entry while trialing; moved/cancelled with status/date changes; `reminder_offsets='{}'` (no reminders). The trigger function catches every error so it can never block a billing write. One-time backfill. Migration `20261009090000_vtid_04994_subscription_dates_in_calendar.sql`. | Claude | VTID-04994 |
 | 2026-10-10 | `calendar_events.valid_source_type` CHECK now also allows `'test_result'`. Triggers `trg_test_result_insert_calendar`, `trg_test_result_update_calendar`, `trg_test_result_delete_calendar` (partner_health_test_orders → calendar_events): one entry per order at `expected_result_at` (15-minute span, `event_type='health'`, `metadata.kind='test_result_expected'`, title = test name only) while the order is ordered / sample_kit_shipped / sample_received / processing and the date is in the future; moved when the date changes, cancelled on result_ready / delivered / cancelled / failed / quarantined, a cleared or past date, or delete; `reminder_offsets='{}'`. The trigger function catches every error so it can never block an order write. One-time backfill. Migration `20261010100000_vtid_04997_test_results_in_calendar.sql`. | Claude | VTID-04997 |
 | 2026-10-10 | `ci_welcome_greeting_health()` (CI-only, `service_role`): `signups_24h` and `unflagged_24h` now exclude `service_bot_accounts` and `notification_test_actors`, the accounts the welcome trigger never greets; return keys, `SECURITY DEFINER`, `search_path` and grants unchanged. Removes the false "signups but zero greetings" alarm a test-account-only 24h window raised (2026-10-08). Migration `20261010170000_vtid_05052_ci_welcome_greeting_health_exclude_test_accounts.sql`. | Claude | VTID-05052 |
+| 2026-10-12 | `ci_memory_health()` (CI-only, `service_role`): two new keys, `user_speech_turns_24h` (user turns whose summed `input_transcription` fragments exceed 20 chars, from `oasis_events`) and `transcript_turns_24h` (`memory_transcript_turns`). Every existing key, `SECURITY DEFINER`, `search_path` and grants unchanged. MORNING-SYSTEM-HEALTH-CHECK row 21 fails on zero writes only when somebody spoke. Migration `20261012160000_vtid_05088_ci_memory_health_speech_input.sql`. | Claude | VTID-05088 |
 
 ---
 
@@ -3347,7 +3355,7 @@ Plan and rationale: `docs/MEMORY-SYSTEM-PLAN.md`. Canonical user memory is two t
 - **Search RPCs** `memory_semantic_search(vector, …)` and `memory_facts_semantic_search(vector, …)` take an untyped `vector` and compare with `<=>`; they need no change when the dimension changes.
 - **Access (VTID-05041):** `write_fact`, `get_current_facts`, `recall_at_time_range` and `memory_facts_semantic_search` are SECURITY DEFINER and take `p_user_id` without an `auth.uid()` check, so EXECUTE is `service_role` only (the gateway). Never grant them to `authenticated`/`anon`/`PUBLIC`; a member-facing path goes through the gateway.
 - **Diary** — the broker reads both `diary_entries` (the app's Daily Diary; `user_id`, no tenant column) and `memory_diary_entries`, merged newest-first.
-- **`ci_memory_health()`** — `SECURITY DEFINER`, `service_role` only, counts only: writes/24h, `preferred_language` writes/24h, embedding coverage of rows older than 2h, `dlq_new_24h`, `memory.orchestrator.context_built` with memory / with diary, AP-0910 last run. Read by `MORNING-SYSTEM-HEALTH-CHECK.yml` check 21.
+- **`ci_memory_health()`** — `SECURITY DEFINER`, `service_role` only, counts only: writes/24h, `preferred_language` writes/24h, embedding coverage of rows older than 2h, `dlq_new_24h`, `memory.orchestrator.context_built` with memory / with diary, AP-0910 last run. Read by `MORNING-SYSTEM-HEALTH-CHECK.yml` check 21. Since VTID-05088 also `user_speech_turns_24h` and `transcript_turns_24h`, so a day nobody spoke is not read as a broken writer.
 - **`ci_welcome_greeting_health()`** — `SECURITY DEFINER`, `service_role` only (VTID-03492, VTID-05052): welcome-trigger structure (present, enabled, SECURITY DEFINER, on `user_tenants`) plus 24h `signups_24h` / `greeted_senders_24h` / `unflagged_24h`; signups exclude the welcome bot, `service_bot_accounts` and `notification_test_actors`. Read by `ALERT-WELCOME-GREETING-HEALTH.yml`, `SMOKE-WELCOME-GREETING.yml` and `MORNING-SYSTEM-HEALTH-CHECK.yml` check 9.
 - **One fact write path (VTID-04364):** every gateway fact write goes through `services/gateway/src/services/memory/remember.ts` (`rememberFact()`: Identity Lock → `write_fact` → async Titan embedding). A source-contract test fails the build if any other file calls `write_fact`.
 - **Session summaries (VTID-04365):** every session end calls `commitSessionMemory()` once. It extracts facts, and for a session with ≥ 2 user turns and ≥ 200 chars writes one `memory_items` row: `category_key = 'session_summary'`, `source = 'system'`, `importance = 50` (kept ≤ 50 so `trg_notify_memory_garden` does not notify), `content_json = { kind, session_id, channel, user_turns, summary_provider }`, written by the `memory` routing stage. `uq_memory_items_session_summary` makes it one per (user, session); a losing concurrent insert gets 23505, which is treated as already committed.
@@ -3715,3 +3723,91 @@ Migration: `supabase/migrations/20261010150000_vtid_04917_audiobook_source_type.
 | `calendar_invite_responses` (existing, vitana-v1) | Answers to v2 invites are written by the gateway (`POST /api/v1/calendar/invites/:messageId/respond`), one row per member per message (`on_conflict message_id,user_id`). |
 | `global_event_participants` (existing) | "I'm in" on a free community event inserts the same `attending` row the app writes; the calendar entry comes from `trg_event_participation_calendar`. A paid or full event is never joined from a chat card. |
 | `calendar_events` (data) | "I'm in" on an invite to a member's own plan writes a copy: `source_type 'invite'`, `source_ref_type 'calendar_invite'`, `source_ref_id` = the message id; "No" cancels it. |
+
+---
+
+## Kiro runs — `kiro_runs`, `kiro_run_events` (VTID-05065, 2026-10-10) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261010210000_vtid_05065_kiro_runs.sql`. Service role only (RLS on, no policies; `anon`/`authenticated` revoked). Written by the gateway (`services/gateway/src/services/kiro/kiro-runs.ts`), read through `/api/v1/operator/kiro/runs` (exafy_admin, the run's own user only).
+
+`kiro_runs` — one row per Kiro turn in the Command Hub Operator:
+
+| Column | Meaning |
+|---|---|
+| `id` | uuid PK (minted by the gateway) |
+| `thread_id` | the Operator Kiro thread (`operator_threads.id`, text) |
+| `user_id` | the signed-in admin who started the run (text; only they can read, stream or cancel it) |
+| `status` | `queued` \| `running` \| `waiting_permission` → `completed` \| `refused` \| `incomplete` \| `failed` \| `cancelled` \| `interrupted`. Every status write is guarded by the unfinished statuses, so a finished run never changes again. |
+| `message` | the developer's message |
+| `reply` | Kiro's reply (when finished) |
+| `stop_reason` | Kiro's stop reason (`end_turn`, `refusal`, `max_tokens`, `cancelled`, …) |
+| `kiro_model` | the model the turn ran on |
+| `workspace` | `{ kiro_workspace, kiro_workspace_dirty }` from the turn (VTID-05064), or null |
+| `error` | why a run failed (`busy`, `not_connected`, `no_credits`, `error: …`, `gateway_shutdown`, `gateway_task_lost`) |
+| `pending_permission` | the open approval card `{ request_id, tool_call_id, title, kind, expires_at }` (null when none); an answer from another gateway task is written into it as `answer: { allow, at }` |
+| `cancel_requested_at` | set when the owner cancels a run that another gateway task is running |
+| `gateway_task` | the gateway process (random id at boot) that runs the turn |
+| `created_at` | queue order |
+| `started_at`, `ended_at`, `last_heartbeat_at` | timestamps; the owning task refreshes `last_heartbeat_at` every 30 s, and any task's sweep marks another task's unfinished run with a heartbeat older than 2 min `interrupted` |
+
+Indexes `idx_kiro_runs_thread_created (thread_id, created_at DESC)`, `idx_kiro_runs_status_heartbeat (status, last_heartbeat_at)`.
+
+`kiro_run_events` — the run's events in order:
+
+| Column | Meaning |
+|---|---|
+| `id` | bigserial PK |
+| `run_id` | `kiro_runs.id` (cascade delete) |
+| `seq` | 1, 2, 3 … per run, assigned by the owning gateway task; `UNIQUE (run_id, seq)` |
+| `type` | `kiro.message_chunk` (coalesced: one per 500 ms or 2 KB), `kiro.tool_call`, `kiro.tool_update`, `kiro.permission_request`, `kiro.permission_answer`, `kiro.turn_end`, `run.status` |
+| `payload` | the event's fields (the frame data the console receives) |
+| `created_at` | timestamp |
+
+OASIS (`CicdEventType`): `operator.kiro.run_started`, `operator.kiro.run_finished`, `operator.kiro.run_interrupted` — payload `{ run_id, thread_id, status }` only, never message text.
+
+## Operator Console images — `operator_media`, `kiro_runs.attachments`, Storage bucket `operator-media` (VTID-05067, 2026-10-11) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261011090000_vtid_05067_operator_media.sql`. Service role only (RLS on, no policies; `anon`/`authenticated` revoked). Written by the gateway (`services/gateway/src/services/operator-media.ts`) through `POST /api/v1/operator/media` (exafy_admin); read back only by the uploading admin (`GET /api/v1/operator/media/:id`, a fresh 1-hour signed URL per view — URLs are never stored).
+
+`operator_media` — one row per image pasted, dropped or picked into the Operator Console:
+
+| Column | Meaning |
+|---|---|
+| `id` | uuid PK (minted by the gateway; the `media_id` the console sends) |
+| `user_id` | the admin who uploaded it (text; the only reader) |
+| `thread_id` | the Operator thread it was uploaded for (text) |
+| `object_path` | `<user_id>/<thread_id>/<id>.<ext>` in the bucket `operator-media` (unique) |
+| `mime_type` | `image/png` \| `image/jpeg` \| `image/webp` \| `image/gif` — recognised by magic bytes, never by name |
+| `size_bytes` | 1 … 5 242 880 (5 MB) |
+| `created_at` | timestamp |
+
+Index `idx_operator_media_user_thread (user_id, thread_id, created_at DESC)`.
+
+`kiro_runs.attachments` (jsonb, nullable) — the images a Kiro run was sent with, `[{ media_id, mime_type }]`; written only when a run has images (at most 4 per message, the caller's own). The gateway reads it with a fallback to the column list without it, so runs keep listing before the migration is applied.
+
+**Storage bucket `operator-media`** — private (`public: false`), 5 MB file limit, png/jpeg/webp/gif only, no client policies (gateway service role only). Created once, idempotently, through the Storage API (`POST /storage/v1/bucket`, never an INSERT into `storage.buckets`) by `scripts/supabase/setup-operator-media-bucket.mjs` — run it from the `SETUP-OPERATOR-MEDIA-BUCKET.yml` workflow_dispatch job (`dry_run=true` first), or locally with `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE` set. An existing private bucket is left alone; an existing PUBLIC one is refused (exit 2) for a person to decide. Deleting old images (retention) is a logged follow-up, not part of VTID-05067.
+
+OASIS (`CicdEventType`): `operator.media.uploaded` — payload `{ media_id, thread_id, mime_type, size_bytes }` only, never the bytes. A Kiro run's image delivery is a run event `kiro.images` `{ count, delivery: sent | unsupported | unreadable, sent }` in `kiro_run_events`.
+### Reattach columns on `kiro_runs` (VTID-05068, 2026-10-10) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261010220000_vtid_05068_kiro_run_reattach.sql` (additive, nullable). A running run whose gateway task goes away (deploy, crash) is taken over by another task through the kiro-runner's reattach (`/sessions/reattach`, header `X-Kiro-Reattach-Token`); only if the runner refuses is it marked `interrupted` as before.
+
+| Column | Meaning |
+|---|---|
+| `reattach_nonce` | random per Kiro session; the token is `HMAC-SHA256(HKDF(GATEWAY_INTERNAL_TOKEN), 'kiro-reattach:' + nonce)` and is **never stored** |
+| `reattach_token_hash` | hex sha256 of that token (checked before the token is presented; the runner keeps only the hash too) |
+| `reattach_expires_at` | end of the reattach window once the owning task let the session go on graceful shutdown (null while it runs; after a crash the window is counted from `last_heartbeat_at`) |
+| `turn_context` | how the turn was asked (`mode`, `channel`, `requestId`, `conversation_id`, `validatedVtid`, `attachments`), so the task that finishes it records the turn the same way |
+
+OASIS: `operator.kiro.run_reattached` — payload `{ run_id, thread_id, status }` only.
+
+## Plan authorship on `dev_autopilot_plan_versions` (VTID-05077, 2026-10-12) — applied before merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261012110000_vtid_05077_plan_version_planner_model.sql` (additive, nullable). Every Dev Autopilot plan version records which provider/model actually wrote it, so a planner fallback (DeepSeek → Bedrock Opus 4.6) is visible per plan.
+
+| Column | Meaning |
+|---|---|
+| `planner_provider` | provider that wrote the plan (`deepseek`, `bedrock` on fallback, `claude_subscription` on the worker-queue path); NULL before 2026-10-12 |
+| `planner_model` | model id that wrote the plan; NULL before 2026-10-12 |
+
+OASIS (`CicdEventType`): `dev_autopilot.plan.fallback_used` — payload `{ finding_id, version, planner_provider, planner_model }`. `GET /api/v1/dev-autopilot/spend` returns `planner: { plans_24h, fallback_24h, fallback_rate_24h }` from these columns.

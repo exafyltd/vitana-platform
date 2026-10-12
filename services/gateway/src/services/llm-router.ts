@@ -65,6 +65,11 @@ const LOG_PREFIX = '[llm-router]';
 export interface LLMUsage {
   inputTokens: number;
   outputTokens: number;
+  /**
+   * VTID-05077: hidden reasoning tokens counted inside `outputTokens`, when the
+   * provider reports them (DeepSeek `completion_tokens_details.reasoning_tokens`).
+   */
+  reasoningTokens?: number;
 }
 
 /**
@@ -146,7 +151,27 @@ export interface LLMRouterOpts {
    */
   thinking?: LLMRouterThinkingConfig;
   effort?: LLMRouterEffort;
+  /**
+   * VTID-05077: per-call override of the stage's FALLBACK provider/model (the
+   * counterpart of providerOverride/modelOverride, which replace the primary).
+   * Used by the Dev Autopilot planner to fall back to Bedrock Opus 4.6 without
+   * changing the shared `planner` policy row that member-facing features read.
+   * Ignored (and logged) for a no-fallback stage and for a refused provider
+   * (vertex, anthropic, claude_subscription); the policy fallback then applies
+   * exactly as before. Omitted by every other caller.
+   */
+  fallbackOverride?: { provider: LLMProvider; model: string };
+  /**
+   * VTID-05077: DeepSeek's thinking toggle, sent as `thinking: {type}`. DeepSeek
+   * Flash reasons by default and can spend the whole output cap on hidden
+   * reasoning (VTID-04794). Honoured by the DeepSeek adapter only; omitted, the
+   * request body is byte-identical to before.
+   */
+  deepseekThinking?: 'enabled' | 'disabled';
 }
+
+/** VTID-05077: providers a per-call fallback override may never name. */
+export const REFUSED_FALLBACK_OVERRIDE_PROVIDERS: readonly string[] = ['vertex', 'anthropic', 'claude_subscription'];
 
 /** VTID-04868: see LLMRouterOpts.thinking. */
 export type LLMRouterThinkingConfig = BedrockThinkingConfig;
@@ -244,6 +269,8 @@ interface AdapterCallArgs {
   /** VTID-04868: Bedrock-only request extensions (default off). */
   thinking?: LLMRouterThinkingConfig;
   effort?: LLMRouterEffort;
+  /** VTID-05077: DeepSeek only (see LLMRouterOpts.deepseekThinking). */
+  deepseekThinking?: 'enabled' | 'disabled';
 }
 
 interface AdapterResult {
@@ -794,7 +821,7 @@ function isAbortLikeError(err: unknown): boolean {
 
 const deepseekAdapter: ProviderAdapter = {
   isAvailable: () => Boolean(process.env.DEEPSEEK_API_KEY),
-  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool, history }): Promise<AdapterResult> {
+  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool, history, deepseekThinking }): Promise<AdapterResult> {
     const apiKey = process.env.DEEPSEEK_API_KEY;
     if (!apiKey) return { ok: false, error: 'DEEPSEEK_API_KEY not set' };
 
@@ -822,6 +849,8 @@ const deepseekAdapter: ProviderAdapter = {
       messages,
       max_tokens: maxTokens ?? 8000,
     };
+    // VTID-05077: only when the caller asks; otherwise the body is unchanged.
+    if (deepseekThinking) body.thinking = { type: deepseekThinking };
     if (tools && tools.length > 0) {
       body.tools = tools.map(t => ({
         type: 'function',
@@ -853,10 +882,15 @@ const deepseekAdapter: ProviderAdapter = {
           finish_reason?: string;
           message?: {
             content?: string;
+            reasoning_content?: string;
             tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }>;
           };
         }>;
-        usage?: { prompt_tokens?: number; completion_tokens?: number };
+        usage?: {
+          prompt_tokens?: number;
+          completion_tokens?: number;
+          completion_tokens_details?: { reasoning_tokens?: number };
+        };
       };
       const choice = json.choices?.[0];
       const msg = choice?.message;
@@ -875,6 +909,9 @@ const deepseekAdapter: ProviderAdapter = {
         usage: {
           inputTokens: json.usage?.prompt_tokens ?? 0,
           outputTokens: json.usage?.completion_tokens ?? 0,
+          ...(typeof json.usage?.completion_tokens_details?.reasoning_tokens === 'number'
+            ? { reasoningTokens: json.usage.completion_tokens_details.reasoning_tokens }
+            : {}),
         },
       };
     } catch (err) {
@@ -1140,13 +1177,15 @@ export async function callViaRouter(
   // VTID-03820: an explicit per-call override replaces PRIMARY only; the
   // stage's own policy-configured fallback still applies on failure. See
   // LLMRouterOpts.providerOverride/modelOverride doc comment.
+  // VTID-05077: always a copy — a fallback override below must never write into
+  // the cached policy object.
   const stageConfig: StageRoutingConfig = (opts.providerOverride && opts.modelOverride)
     ? {
         ...policyStageConfig,
         primary_provider: opts.providerOverride,
         primary_model: opts.modelOverride,
       }
-    : policyStageConfig;
+    : { ...policyStageConfig };
 
   // VTID-04868: a no-fallback stage never falls back, whatever the caller or
   // the stored policy says, and only ever runs on Bedrock — a stored
@@ -1160,6 +1199,19 @@ export async function callViaRouter(
     };
   }
   const allowFallback = opts.allowFallback !== false && !noFallbackStage;
+
+  // VTID-05077: a per-call fallback override replaces the policy FALLBACK only.
+  if (opts.fallbackOverride) {
+    const fo = opts.fallbackOverride;
+    if (noFallbackStage) {
+      console.warn(`${LOG_PREFIX} stage=${stage} is a no-fallback stage — fallbackOverride ${fo.provider}/${fo.model} ignored`);
+    } else if (!fo.provider || !fo.model || REFUSED_FALLBACK_OVERRIDE_PROVIDERS.includes(fo.provider)) {
+      console.warn(`${LOG_PREFIX} stage=${stage} fallbackOverride ${fo.provider}/${fo.model} refused — the policy fallback applies`);
+    } else {
+      stageConfig.fallback_provider = fo.provider;
+      stageConfig.fallback_model = fo.model;
+    }
+  }
 
   // === PRIMARY ===
   const primary = await runProviderCall(
@@ -1248,6 +1300,7 @@ async function runProviderCall(
     history: opts.history,
     thinking: opts.thinking,
     effort: opts.effort,
+    deepseekThinking: opts.deepseekThinking,
   });
 
   // VTID-04794: a reply cut off by the output cap with no text and no tool
@@ -1263,7 +1316,8 @@ async function runProviderCall(
     && !(result.toolCalls && result.toolCalls.length > 0)
   ) {
     const error = `${provider}/${model} returned no text: output cap reached (stop_reason=${result.stopReason}, `
-      + `output_tokens=${result.usage?.outputTokens ?? 'n/a'})`;
+      + `output_tokens=${result.usage?.outputTokens ?? 'n/a'}`
+      + `${typeof result.usage?.reasoningTokens === 'number' ? `, reasoning_tokens=${result.usage.reasoningTokens}` : ''})`;
     void failLLMCallDetached(ctx, { code: 'empty_truncated', message: error });
     return { ok: false, error, provider, model };
   }

@@ -131,20 +131,6 @@ async function confirmLive(service, sha, repoRoot, { attempts = 8, samples = 5 }
   return { state: 'mismatch', stamp: last };
 }
 
-// ── Range ────────────────────────────────────────────────────────────────
-function commitsBetween(repoRoot, fromSha, toSha) {
-  const range = fromSha ? `${fromSha}..${toSha}` : `${toSha}~1..${toSha}`;
-  const out = git(repoRoot, ['log', '--reverse', '--format=%H%x1f%cI%x1f%an%x1f%s', range], { allowFail: true }) || '';
-  return out
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => {
-      const [sha, date, author, subject] = line.split('\x1f');
-      const files = (git(repoRoot, ['show', '--name-only', '--format=', sha], { allowFail: true }) || '').split('\n').filter(Boolean);
-      return { sha, date, author, subject, files };
-    });
-}
-
 function loadManifest(repoRoot, vtid) {
   const p = join(repoRoot, 'docs', 'validation', vtid, 'staging-tests.json');
   if (!existsSync(p)) return null;
@@ -163,16 +149,10 @@ function inside(root, p) {
 
 async function runHttp(service, t) {
   const base = lib.assertStagingTarget(lib.STAGING_TARGETS[t.target || lib.SERVICES[service].target]);
-  const method = String(t.method || 'GET').toUpperCase();
-  const init = { method, headers: { accept: 'application/json, text/html;q=0.9' } };
-  if (t.rejected_probe) {
-    // Deliberately invalid credentials: the probe must be rejected by the
-    // auth gate before any handler runs. evaluateHttp flags a 2xx loudly.
-    init.headers.authorization = 'Bearer staging-verify.invalid.probe';
-    init.headers['content-type'] = 'application/json';
-    init.body = '{}';
-  }
-  const res = await httpGet(`${base}${t.path}`, init);
+  // A rejected probe carries deliberately invalid credentials and must be
+  // refused by the auth gate before any handler runs; evaluateHttp flags a
+  // 2xx loudly. httpRequestInit adds a body only for write methods.
+  const res = await httpGet(`${base}${t.path}`, lib.httpRequestInit(t));
   return lib.evaluateHttp(t, res);
 }
 
@@ -321,12 +301,12 @@ async function verify(args) {
     prodIsAncestor: Boolean(distinct && isAncestor(repoRoot, prodSha, sha)),
     shaIsAncestorOfProd: Boolean(distinct && isAncestor(repoRoot, sha, prodSha)),
   });
-  const commits = baseline.state === 'same' || baseline.state === 'ahead' ? [] : commitsBetween(repoRoot, baseline.rangeFrom, sha);
+  const commits = baseline.state === 'same' || baseline.state === 'ahead' ? [] : lib.commitsBetween((a) => git(repoRoot, a, { allowFail: true }), baseline.rangeFrom, sha);
   const manifests = {};
   for (const c of commits) for (const v of lib.extractVtids(c.subject)) if (!(v in manifests)) manifests[v] = loadManifest(repoRoot, v);
   const plan = lib.planRange({ service, commits, manifests });
   const shipping = commits.filter((c) => lib.touchesService(c.files, service));
-  log(`production=${prodStamp || 'unknown'} range=${commits.length} commits, ${shipping.length} touch ${service}; suites=${plan.suites.map((s) => s.vtid).join(',') || '(none)'} missing=${plan.missing.length}`);
+  log(`production=${prodStamp || 'unknown'} range=${commits.length} commits, ${shipping.length} touch ${service}; suites=${plan.suites.map((s) => s.vtid).join(',') || '(none)'} missing=${plan.missing.length} lockfileOnly=${plan.lockfileOnly.length}`);
 
   let results = [];
   let superseded = before.state === 'superseded';
@@ -376,8 +356,8 @@ async function verify(args) {
     run_url: runUrl,
     full: args.full === 'true',
     results,
-    plan: { suites: plan.suites.map((s) => s.vtid), missing: plan.missing, invalid: plan.invalid, legacy_count: plan.legacy.length },
-    shipping: shipping.map(({ sha: s, subject, author, date }) => ({ sha: s, subject, author, date })),
+    plan: { suites: plan.suites.map((s) => s.vtid), missing: plan.missing, invalid: plan.invalid, legacy_count: plan.legacy.length, lockfile_only: plan.lockfileOnly },
+    shipping: shipping.map(({ sha: s, subject, author, date, branchCommits }) => ({ sha: s, subject, author, date, branch_commits: branchCommits || 0 })),
     message,
   };
   writeFileSync(join(outDir, 'results.json'), JSON.stringify(record, null, 2));

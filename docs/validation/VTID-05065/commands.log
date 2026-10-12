@@ -1,0 +1,14 @@
+# services/gateway
+npx tsc --noEmit -p .                                                    # clean
+npx jest test/vtid-05065-kiro-runs.test.ts                               # 38 passed
+npx jest test/vtid-04465-operator-pipeline-regression.test.ts -t VTID-05065   # 16 passed
+npm run test:operator                                                    # 57 passed
+npm run test:support                                                     # 87 passed (4 suites)
+npm run test:roles                                                       # 105 passed
+npx jest test/vtid-04975 test/vtid-05018 test/vtid-05006 test/vtid-04999 test/vtid-05003 test/vtid-04984 test/vtid-05005 test/vtid-05014 test/vtid-05060   # 10 suites, 155 passed
+npx jest test/command-hub                                                # 39 suites, 581 passed
+npx jest --silent                                                        # 1620 suites passed (1 skipped), 26068 passed, 25 skipped, 6 todo
+python3 mutate.py                                                        # 34/34 mutations killed (scratch script, not committed)
+# repo root
+node scripts/ci/validator-path-guard.cjs <changed files> gateway_backend # APPROVED (migration, DATABASE_SCHEMA.md reported as not judged)
+node -e "validateManifest(docs/validation/VTID-05065/staging-tests.json, { vtid: 'VTID-05065', service: 'gateway' })"   # { ok: true, errors: [] }

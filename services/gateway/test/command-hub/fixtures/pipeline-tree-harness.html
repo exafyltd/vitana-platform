@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<!-- VTID-05069: visual harness for the Operator run card (test fixture, never served:
+     it lives under test/, outside src/frontend/command-hub which the build copies).
+     Opened from disk by capture-pipeline-tree.ts with fixture views. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pipeline tree harness</title>
+  <link rel="stylesheet" href="../../../src/frontend/command-hub/styles.css" />
+  <link rel="stylesheet" href="../../../src/frontend/command-hub/pipeline-tree.css" />
+  <link rel="stylesheet" href="pipeline-tree-harness.css" />
+</head>
+<body>
+  <div id="app" class="h-app"></div>
+  <script src="../../../src/frontend/command-hub/pipeline-tree.js"></script>
+  <script src="pipeline-tree-harness.js"></script>
+</body>
+</html>

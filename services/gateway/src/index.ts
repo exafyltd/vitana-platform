@@ -213,6 +213,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const commerceAiSetupRouter = require('./routes/commerce-ai-setup').default;
   // VTID-04847: Commerce MCP endpoint (/mcp + OAuth protected-resource metadata; COMMERCE_MCP_ENABLED)
   const commerceMcpModule = require('./routes/commerce-mcp');
+  // VTID-05074: public privacy, terms and support pages for the Commerce plugin listing (static HTML, always on)
+  const commercePluginLegalRouter = require('./routes/commerce-plugin-legal').default;
   // VTID-03939: Commerce Partner Onboarding Phase 3 — a patient's own aggregated health results
   const patientHealthResultsRouter = require('./routes/patient-health-results').default;
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
@@ -385,6 +387,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const autonomyPulseRouter = require('./routes/autonomy-pulse').default;
   // Autonomy Trace — unified timeline of autonomous work-in-flight + history
   const autonomyTraceRouter = require('./routes/autonomy-trace').default;
+  // VTID-05084: Loop Engineering catalog (read-only) — Command Hub Autonomy → Loops
+  const autonomyLoopsRouter = require('./routes/autonomy-loops').default;
   // VTID-04319: Orchestrator v2 read-only control-plane API (context, unified runs, agent cards)
   const orchestratorRouter = require('./routes/orchestrator').default;
   // VTID-01250: Social Connect (AP-1305/AP-1306)
@@ -850,6 +854,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-05005: the Operator's read tools for Kiro sessions (MCP). Before the operator
   // router so its own auth (the session pass) applies, not the console's.
   mountRouterSync(app, '/api/v1/operator/kiro/mcp', require('./routes/operator-kiro-mcp').default, { owner: 'operator-kiro-mcp' });
+  // VTID-05065: Kiro runs — one server-side record per Kiro turn, replayable stream.
+  mountRouterSync(app, '/api/v1/operator/kiro/runs', require('./routes/operator-kiro-runs').default, { owner: 'operator-kiro-runs' });
+  // VTID-05069: the live pipeline tree of a VTID (read-only run view + SSE).
+  mountRouterSync(app, '/api/v1/operator/runs', require('./routes/operator-runs').default, { owner: 'operator-runs' });
+  // VTID-05067: images pasted / dropped into the Operator Console (private bucket, owner-only, signed URLs).
+  mountRouterSync(app, '/api/v1/operator/media', require('./routes/operator-media').default, { owner: 'operator-media' });
   mountRouterSync(app, '/api/v1/operator', operatorRouter, { owner: 'operator' });
 
   // VTID-0526-D: Telemetry routes with stage counters
@@ -886,6 +896,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/dev-autopilot', devAutopilotRouter, { owner: 'dev-autopilot' });
   mountRouterSync(app, '/api/v1/autonomy', autonomyPulseRouter, { owner: 'autonomy-pulse' });
   mountRouterSync(app, '/api/v1/autonomy', autonomyTraceRouter, { owner: 'autonomy-trace' });
+  mountRouterSync(app, '/api/v1/autonomy', autonomyLoopsRouter, { owner: 'autonomy-loops' });
   mountRouterSync(app, '/api/v1/orchestrator', orchestratorRouter, { owner: 'orchestrator' });
 
   // VTID-01250: Social Connect — OAuth, profile enrichment, auto-share (AP-1305/AP-1306)
@@ -1126,6 +1137,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
     }
   });
 
+  // VTID-05095: a member verifies their own phone number (SMS code). Mounted
+  // before the /me context router so its paths resolve here first.
+  const mePhoneRouter = require('./routes/me-phone').default();
+  mountRouterSync(app, '/api/v1/me/phone', mePhoneRouter, { owner: 'me-phone' });
+
   // VTID-01046: Me Context - role context and active role switching
   mountRouterSync(app, '/api/v1/me', meRouter, { owner: 'me-context' });
 
@@ -1211,6 +1227,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-04847: Commerce MCP — a supplier's AI assistant onboards their business (off unless COMMERCE_MCP_ENABLED=true)
   mountRouterSync(app, '/mcp', commerceMcpModule.default, { owner: 'commerce-mcp' });
   mountRouterSync(app, '/.well-known', commerceMcpModule.wellKnownRouter, { owner: 'commerce-mcp-well-known' });
+  mountRouterSync(app, '/legal/vitanaland-commerce', commercePluginLegalRouter, { owner: 'commerce-plugin-legal' });
   // VTID-03939: Commerce Partner Onboarding Phase 3 — GET /api/v1/patient/health-results
   mountRouterSync(app, '/api/v1/patient', patientHealthResultsRouter, { owner: 'patient-health-results' });
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
@@ -1692,10 +1709,26 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
               const r = await emitShutdownStopsForLiveSessions('server_shutdown', 4_500);
               console.log(`[VTID-04835] live-session drain: emitted=${r.emitted} skipped=${r.skipped} timedOut=${r.timedOut}`);
             },
+            // VTID-05065: write every open Kiro run's events and mark this task's runs
+            // interrupted (own 3 s bound, inside the shared 5 s drain).
+            // VTID-05068: running runs on a reattachable session are let go for the next task instead.
+            async () => {
+              const { drainKiroRunsForShutdown } = require('./services/kiro/kiro-runs');
+              const r = await drainKiroRunsForShutdown(3_000);
+              console.log(`[VTID-05065] kiro-run drain: interrupted=${r.interrupted} detached=${r.detached} timedOut=${r.timedOut}`);
+            },
           ],
         });
       } catch (error) {
         console.warn('⚠️ Graceful shutdown handler installation failed (non-fatal):', error);
+      }
+
+      // VTID-05065: Kiro run liveness — boot sweep, heartbeat 30 s, sweep 60 s, control 2 s (unref'd).
+      try {
+        const { startKiroRunTimers } = require('./services/kiro/kiro-runs');
+        startKiroRunTimers();
+      } catch (error) {
+        console.warn('⚠️ Kiro run timers failed to start (non-fatal):', error);
       }
 
       // VTID-01178: Initialize autopilot controller (ensure VTIDs exist in ledger)

@@ -832,6 +832,8 @@ export type CicdEventType =
   | 'dev_autopilot.scan.failed'
   | 'dev_autopilot.plan.generated'
   | 'dev_autopilot.plan.failed'
+  | 'dev_autopilot.plan.fallback_used'
+  | 'dev_autopilot.plan.needs_human'
   | 'dev_autopilot.plan.version_added'
   | 'dev_autopilot.finding.rejected'
   | 'dev_autopilot.finding.snoozed'
@@ -947,6 +949,10 @@ export type CicdEventType =
   // VTID-05030 (Health Hub D1): wearable token storage + vendor revoke
   | 'connector.wearable.token_storage_unavailable'
   | 'connector.wearable.vendor_revoke'
+  // VTID-05089 (Health Hub D6a): wearable -> health_features_daily bridge.
+  // Payloads carry keys, dates, providers and counts only, never health values.
+  | 'health.wearable_features.bridged'
+  | 'health.wearable_features.bridge_failed'
   // VTID-02300: Phase 3 outbound action consent events
   | 'connector.action.requested'
   | 'connector.action.executed'
@@ -1154,7 +1160,18 @@ export type CicdEventType =
   | 'operator.kiro.write_tool_called'
   | 'operator.kiro.write_confirmed'
   | 'operator.kiro.write_denied'
-  | 'operator.kiro.branch_pushed';
+  | 'operator.kiro.branch_pushed'
+  // VTID-05064: a thread's parked Kiro workspace (unpushed edits) came back, or was lost (thread id only)
+  | 'operator.kiro.workspace_restored'
+  | 'operator.kiro.parked_workspace_lost'
+  // VTID-05065: a Kiro run (one server-side turn) started, finished, or was interrupted (run id, thread id, status only; never message text)
+  | 'operator.kiro.run_started'
+  | 'operator.kiro.run_finished'
+  | 'operator.kiro.run_interrupted'
+  // VTID-05068: a running Kiro run was taken over by a new gateway task after a deploy (run id, thread id, status only)
+  | 'operator.kiro.run_reattached'
+  // VTID-05067: an image pasted into the Operator Console was stored (media id, thread id, type, size; never the bytes)
+  | 'operator.media.uploaded';
 
 export interface CicdOasisEvent {
   vtid: string;

@@ -192,6 +192,55 @@ function validateManifest(m, { vtid, service } = {}) {
   return { ok: errors.length === 0, errors };
 }
 
+// ── Lockfile-only commits (VTID-05075) ───────────────────────────────────
+// A dependency-lockfile sync that follows a package.json change is that
+// change's own bookkeeping, and its subject cannot be fixed after the fact (a
+// later "tag" commit does not change it). So a commit whose only build-relevant
+// change is `pnpm-lock.yaml` needs no change suite of its own. Deliberately
+// narrow: one filename, files outside the service's build are ignored (docs
+// evidence rides along), any other build file makes it an ordinary commit, and
+// the community app's package-lock.json / bun.lock are not covered. It is never
+// hidden: planRange returns it in `lockfileOnly` and the message names it.
+const LOCKFILE_ONLY_NAME = 'pnpm-lock.yaml';
+
+function isLockfileOnlyCommit(files, service) {
+  const inBuild = (files || []).filter((f) => touchesService([f], service));
+  return inBuild.length > 0 && inBuild.every((f) => String(f).split('/').pop() === LOCKFILE_ONLY_NAME);
+}
+
+// ── Range (VTID-05076) ───────────────────────────────────────────────────
+// Every change that landed on main between production and the verified commit,
+// one entry each: a squash commit, a direct push, or a PR merge commit. Walking
+// the first-parent chain keeps a merge-committed PR's own branch commits out of
+// the list — the PR is judged by its merge commit, whose subject carries the PR
+// title and VTID (validate-pr enforces it) — while a direct push without a VTID
+// is still a first-parent commit and still fails rule 47. Files come from the
+// first-parent diff, so a merge commit lists everything it brought into main
+// (git show's combined diff would list only conflict-resolved files).
+// `git(args)` runs git in the checkout and returns stdout, or null on failure.
+function commitsBetween(git, fromSha, toSha) {
+  const range = fromSha ? `${fromSha}..${toSha}` : `${toSha}~1..${toSha}`;
+  const out = git(['log', '--first-parent', '--reverse', '--format=%H%x1f%cI%x1f%an%x1f%P%x1f%s', range]) || '';
+  return out
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [sha, date, author, parentField, ...subjectParts] = line.split('\x1f');
+      const subject = subjectParts.join('\x1f');
+      const parents = (parentField || '').split(' ').filter(Boolean);
+      const fileOut = parents.length
+        ? git(['diff', '--name-only', `${sha}^1`, sha])
+        : git(['show', '--name-only', '--format=', sha]);
+      const files = (fileOut || '').split('\n').filter(Boolean);
+      let branchCommits = 0;
+      if (parents.length > 1) {
+        const n = Number(git(['rev-list', '--count', `${sha}^1..${sha}`]));
+        branchCommits = Number.isFinite(n) && n > 1 ? n - 1 : 0;
+      }
+      return { sha, date, author, subject, files, branchCommits };
+    });
+}
+
 // ── Plan ─────────────────────────────────────────────────────────────────
 // commits: [{ sha, date, subject, files }] — every commit between production
 // and the verified commit (exclusive/inclusive). manifests: { [vtid]: obj|null }.
@@ -201,11 +250,16 @@ function planRange({ service, commits, manifests, enforceSince = ENFORCE_SINCE }
   const missing = [];
   const legacy = [];
   const invalid = [];
+  const lockfileOnly = [];
   for (const c of commits) {
     if (!touchesService(c.files || [], service)) continue;
     const vtids = extractVtids(c.subject);
     const enforced = new Date(c.date).getTime() >= new Date(enforceSince).getTime();
     relevant.push({ sha: c.sha, subject: c.subject, vtids, enforced });
+    if (vtids.length === 0 && isLockfileOnlyCommit(c.files, service)) {
+      lockfileOnly.push({ sha: c.sha, subject: c.subject });
+      continue;
+    }
     if (vtids.length === 0) {
       (enforced ? missing : legacy).push({ sha: c.sha, subject: c.subject, vtid: null });
       continue;
@@ -226,7 +280,7 @@ function planRange({ service, commits, manifests, enforceSince = ENFORCE_SINCE }
       suites.push({ vtid, tests: m.tests });
     }
   }
-  return { relevant, suites, missing, legacy, invalid };
+  return { relevant, suites, missing, legacy, invalid, lockfileOnly };
 }
 
 // ── Live commit ──────────────────────────────────────────────────────────
@@ -263,12 +317,33 @@ function clipBody(text) {
     : { body: s, truncated: false };
 }
 
+// VTID-05083: the request init for one http test. A rejected probe carries a
+// deliberately invalid bearer; only a write method also gets a JSON body —
+// fetch refuses a GET/HEAD with a body before anything is sent.
+function httpRequestInit(t) {
+  const method = String(t.method || 'GET').toUpperCase();
+  const init = { method, headers: { accept: 'application/json, text/html;q=0.9' } };
+  if (t.rejected_probe) {
+    init.headers.authorization = 'Bearer staging-verify.invalid.probe';
+    if (!READ_METHODS.has(method)) {
+      init.headers['content-type'] = 'application/json';
+      init.body = '{}';
+    }
+  }
+  return init;
+}
+
 function evaluateHttp(t, res) {
   const want = t.expect_status ?? 200;
   const problems = [];
   if (res.status !== want) problems.push(`status ${res.status}, expected ${want}`);
   if (t.rejected_probe && res.status >= 200 && res.status < 300) {
-    problems.push('WRITE PROBE WAS ACCEPTED — the route did not reject an unauthenticated write; investigate immediately');
+    const method = String(t.method || 'GET').toUpperCase();
+    problems.push(
+      READ_METHODS.has(method)
+        ? `REJECTED PROBE WAS ACCEPTED — ${method} with an invalid bearer was served; investigate immediately`
+        : 'WRITE PROBE WAS ACCEPTED — the route did not reject an unauthenticated write; investigate immediately',
+    );
   }
   const wantType = t.expect_content_type ?? (t.target !== 'frontend' && String(t.path).startsWith('/api') ? 'application/json' : null);
   if (wantType && !String(res.contentType || '').includes(wantType)) {
@@ -370,12 +445,19 @@ function buildReadyMessage({ service, sha, outcome, results, plan, shipping, pro
     lines.push('');
     lines.push(`Changes without a change suite, merged before the rule took effect (${ENFORCE_SINCE}) — smoke only: ${plan.legacy.map((m) => m.vtid || short(m.sha)).join(', ')}`);
   }
+  const lockfileOnly = plan.lockfileOnly || [];
+  if (lockfileOnly.length) {
+    lines.push('');
+    lines.push('Lockfile-only changes (no change suite; smoke tests only):');
+    for (const m of lockfileOnly) lines.push(`- \`${short(m.sha)}\` ${m.subject}`);
+  }
   lines.push('');
   lines.push(`What would ship (production \`${short(prodStamp) || 'unknown'}\` → \`${short(sha)}\`, ${shipping.length} commit(s)):`);
   if (shipping.length === 0) lines.push('- (none — production already serves or contains this commit, or its version could not be read)');
   for (const c of shipping.slice(0, 60)) {
     const v = extractVtids(c.subject);
-    lines.push(`- \`${short(c.sha)}\` ${v.length ? v.join(', ') + ' — ' : ''}${c.subject}${c.author ? ` (${c.author})` : ''}`);
+    const via = c.branchCommits ? ` (${c.branchCommits} branch commit${c.branchCommits === 1 ? '' : 's'})` : '';
+    lines.push(`- \`${short(c.sha)}\` ${v.length ? v.join(', ') + ' — ' : ''}${c.subject}${c.author ? ` (${c.author})` : ''}${via}`);
   }
   if (shipping.length > 60) lines.push(`- … and ${shipping.length - 60} more (full list in the run summary)`);
   if (outcome === 'passed') {
@@ -415,6 +497,8 @@ module.exports = {
   assertStagingTarget,
   pathMatches,
   touchesService,
+  isLockfileOnlyCommit,
+  commitsBetween,
   extractVtids,
   validateManifest,
   planRange,
@@ -423,6 +507,7 @@ module.exports = {
   MAX_HTTP_BODY_CHARS,
   clipBody,
   evaluateHttp,
+  httpRequestInit,
   describeBaseline,
   decideOutcome,
   buildReadyMessage,

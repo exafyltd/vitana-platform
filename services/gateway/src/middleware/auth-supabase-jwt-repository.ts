@@ -34,3 +34,9 @@ export async function fetchVitanaIdForUser(sb: SupabaseClient, userId: string, s
 export async function fetchPrimaryTenantForUser(sb: SupabaseClient, userId: string, signal: AbortSignal) {
   return sb.from('user_tenants').select('tenant_id').eq('user_id', userId).eq('is_primary', true).abortSignal(signal).single();
 }
+
+// VTID-05043: is the user a member of the tenant named in their token claim?
+// maybeSingle(): zero rows is "not a member", not an error.
+export async function fetchMembershipForUserTenant(sb: SupabaseClient, userId: string, tenantId: string, signal: AbortSignal) {
+  return sb.from('user_tenants').select('tenant_id').eq('user_id', userId).eq('tenant_id', tenantId).abortSignal(signal).maybeSingle();
+}

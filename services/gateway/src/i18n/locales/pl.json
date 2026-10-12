@@ -192,5 +192,6 @@
   "autopilot.auto.event_rsvp_referral.title": "Zapisz się na wydarzenie, na które cię zaproszono",
   "autopilot.auto.event_rsvp_referral.summary": "Trafiłeś tu przez zaproszenie na wydarzenie. Zapisz się, aby zachować miejsce.",
   "autopilot.auto.share_milestone.title": "Podziel się osiągnięciem: {milestone}",
-  "autopilot.auto.share_milestone.summary": "Osiągnąłeś kamień milowy. Podziel się nim ze społecznością — zobaczysz post przed publikacją."
+  "autopilot.auto.share_milestone.summary": "Osiągnąłeś kamień milowy. Podziel się nim ze społecznością — zobaczysz post przed publikacją.",
+  "sms.phone_verification.code": "Twój kod Vitanaland: {code}. Nie udostępniaj go nikomu."
 }

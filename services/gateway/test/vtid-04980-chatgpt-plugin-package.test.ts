@@ -31,11 +31,18 @@ describe('plugin manifests', () => {
   });
 
   it('has the listing fields and legal URLs', () => {
-    for (const k of ['displayName', 'shortDescription', 'longDescription', 'developerName', 'category', 'websiteURL', 'privacyPolicyURL', 'termsOfServiceURL', 'brandColor']) {
+    for (const k of ['displayName', 'shortDescription', 'longDescription', 'developerName', 'category', 'websiteURL', 'privacyPolicyURL', 'termsOfServiceURL', 'supportURL', 'brandColor']) {
       expect(typeof iface[k]).toBe('string');
       expect(iface[k].length).toBeGreaterThan(0);
     }
-    for (const k of ['websiteURL', 'privacyPolicyURL', 'termsOfServiceURL']) expect(iface[k]).toMatch(/^https:\/\/vitanaland\.com\//);
+    expect(iface.websiteURL).toMatch(/^https:\/\/vitanaland\.com\//);
+    // VTID-05074: the legal and support pages are the gateway's own static pages (the app's /privacy and /terms are the Maxina app's)
+    const LEGAL = 'https://gateway.vitanaland.com/legal/vitanaland-commerce';
+    expect(iface.privacyPolicyURL).toBe(`${LEGAL}/privacy`);
+    expect(iface.termsOfServiceURL).toBe(`${LEGAL}/terms`);
+    expect(iface.supportURL).toBe(`${LEGAL}/support`);
+    // OpenAI's portal rejects a subtitle over 30 characters
+    expect(iface.shortDescription.length).toBeLessThanOrEqual(30);
     expect(iface.defaultPrompt.length).toBeLessThanOrEqual(3);
     for (const p of iface.defaultPrompt) expect(p.length).toBeLessThanOrEqual(128);
   });

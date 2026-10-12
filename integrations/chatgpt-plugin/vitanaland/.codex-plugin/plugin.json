@@ -9,14 +9,15 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Vitanaland",
-    "shortDescription": "Set up your business on Vitanaland",
+    "shortDescription": "Onboard your business",
     "longDescription": "Vitanaland is a health and longevity community marketplace. With this plugin a supplier can set up their business from a conversation: create the business, add company details, add products or services as hidden drafts, run the automatic business checks, connect an online shop and submit the business for review. The supplier signs in to their own Vitanaland account. Accepting the Partner Terms and everything that needs identity documents or payment details happens on Vitanaland, never in the chat.",
     "developerName": "EXAFY LTD",
     "category": "Productivity",
     "capabilities": ["Read", "Write"],
     "websiteURL": "https://vitanaland.com/commerce",
-    "privacyPolicyURL": "https://vitanaland.com/privacy",
-    "termsOfServiceURL": "https://vitanaland.com/terms",
+    "privacyPolicyURL": "https://gateway.vitanaland.com/legal/vitanaland-commerce/privacy",
+    "termsOfServiceURL": "https://gateway.vitanaland.com/legal/vitanaland-commerce/terms",
+    "supportURL": "https://gateway.vitanaland.com/legal/vitanaland-commerce/support",
     "defaultPrompt": [
       "Set up my business on Vitanaland",
       "What is the status of my Vitanaland business?",
