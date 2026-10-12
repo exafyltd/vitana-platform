@@ -317,12 +317,33 @@ function clipBody(text) {
     : { body: s, truncated: false };
 }
 
+// VTID-05083: the request init for one http test. A rejected probe carries a
+// deliberately invalid bearer; only a write method also gets a JSON body —
+// fetch refuses a GET/HEAD with a body before anything is sent.
+function httpRequestInit(t) {
+  const method = String(t.method || 'GET').toUpperCase();
+  const init = { method, headers: { accept: 'application/json, text/html;q=0.9' } };
+  if (t.rejected_probe) {
+    init.headers.authorization = 'Bearer staging-verify.invalid.probe';
+    if (!READ_METHODS.has(method)) {
+      init.headers['content-type'] = 'application/json';
+      init.body = '{}';
+    }
+  }
+  return init;
+}
+
 function evaluateHttp(t, res) {
   const want = t.expect_status ?? 200;
   const problems = [];
   if (res.status !== want) problems.push(`status ${res.status}, expected ${want}`);
   if (t.rejected_probe && res.status >= 200 && res.status < 300) {
-    problems.push('WRITE PROBE WAS ACCEPTED — the route did not reject an unauthenticated write; investigate immediately');
+    const method = String(t.method || 'GET').toUpperCase();
+    problems.push(
+      READ_METHODS.has(method)
+        ? `REJECTED PROBE WAS ACCEPTED — ${method} with an invalid bearer was served; investigate immediately`
+        : 'WRITE PROBE WAS ACCEPTED — the route did not reject an unauthenticated write; investigate immediately',
+    );
   }
   const wantType = t.expect_content_type ?? (t.target !== 'frontend' && String(t.path).startsWith('/api') ? 'application/json' : null);
   if (wantType && !String(res.contentType || '').includes(wantType)) {
@@ -486,6 +507,7 @@ module.exports = {
   MAX_HTTP_BODY_CHARS,
   clipBody,
   evaluateHttp,
+  httpRequestInit,
   describeBaseline,
   decideOutcome,
   buildReadyMessage,

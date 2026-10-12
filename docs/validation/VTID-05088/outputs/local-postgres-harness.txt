@@ -1,0 +1,10 @@
+ speech | turns | facts 
+--------+-------+-------
+ 1      | 1     | 0
+(1 row)
+
+ anon_exec | sr_exec 
+-----------+---------
+ f         | t
+(1 row)
+
