@@ -1,0 +1,7 @@
+PASS test/vtid-05048-s4-caller-identity.test.ts (5.818 s)
+PASS test/vtid-05121-autopilot-prompts-not-behind-service-token.test.ts (6.565 s)
+PASS test/vtid-04530-autopilot-recommendations-not-behind-service-token.test.ts
+PASS test/routes/autopilot-prompts.test.ts
+PASS test/routes/autopilot.test.ts (8.529 s)
+Test Suites: 5 passed, 5 total
+Tests:       184 passed, 184 total

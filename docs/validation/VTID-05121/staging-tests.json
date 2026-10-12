@@ -1,0 +1,46 @@
+{
+  "vtid": "VTID-05121",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "prefs answers from its own member gate, not the pipeline service-token gate",
+      "path": "/api/v1/autopilot/prefs",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "expect_json": { "ok": false, "error": "UNAUTHENTICATED" }
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "today's prompts answer from their own member gate",
+      "path": "/api/v1/autopilot/prompts/today",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "expect_json": { "ok": false, "error": "UNAUTHENTICATED" }
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "prompts health still up",
+      "path": "/api/v1/autopilot/prompts/health",
+      "expect_json": { "ok": true, "service": "autopilot-prompts" }
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "pipeline routes keep the service-token gate",
+      "path": "/api/v1/autopilot/controller/status",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "expect_json": { "ok": false, "error": "missing bearer token" }
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05121-autopilot-prompts-not-behind-service-token.test.ts test/vtid-04530-autopilot-recommendations-not-behind-service-token.test.ts test/routes/autopilot.test.ts test/routes/autopilot-prompts.test.ts",
+      "cwd": "services/gateway",
+      "reason": "member-JWT reachability, the per-user write limits and the pipeline gate matrix (writes are proven here, never on staging)"
+    }
+  ]
+}

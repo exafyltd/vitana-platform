@@ -139,6 +139,18 @@ function requireServiceToken(req: Request, res: Response, next: NextFunction): v
     next();
     return;
   }
+  // VTID-05121: /prefs and /prompts/* belong to the member-facing
+  // autopilot-prompts router (mounted at the same prefix right after this
+  // one, index.ts), which verifies the member's own JWT on every path
+  // (getUserContext). Hand them to the router that owns them; never
+  // authenticate them here. Exact match: /prefsX, /promptsX stay gated.
+  if (
+    req.path === "/prefs" || req.path === "/prefs/" ||
+    req.path === "/prompts" || req.path.startsWith("/prompts/")
+  ) {
+    next("router");
+    return;
+  }
   // VTID-04530: /recommendations/* belongs to the member-facing Autopilot
   // recommendations router (mounted at /api/v1/autopilot/recommendations,
   // after this one), which verifies the member's own JWT on every path. This
