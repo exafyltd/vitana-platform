@@ -73,8 +73,62 @@ export const corsOptions = {
   maxAge: 86400,
 };
 
+// VTID-05079: OpenAI's plugin portal reads our OAuth discovery documents and talks to the
+// ChatGPT MCP endpoint from the browser (Origin: https://platform.openai.com). The generic
+// handler above answers any origin that is not on its allow-list with an HTML 500, so the
+// portal reported "Authorization unavailable" and never started the sign-in. Two narrow
+// rules, exact paths only, and nothing else widened (/mcp, /api/*, the Command Hub keep the
+// allow-list above):
+//   1. GET/HEAD/OPTIONS on /.well-known/*: public, unauthenticated discovery documents, any
+//      origin (`*`, no credentials).
+//   2. /mcp/chatgpt: only the OpenAI origins below, reflected exactly (never `*`). The bearer
+//      token is still required for any data; CORS only lets those pages read the response,
+//      including the WWW-Authenticate challenge that points at the sign-in metadata.
+const OPENAI_MCP_ORIGINS = ["https://platform.openai.com", "https://chatgpt.com"];
+const MCP_CHATGPT_PATH = "/mcp/chatgpt";
+const WELL_KNOWN_PREFIX = "/.well-known/";
+
+/**
+ * Applies the narrow CORS rules above. Returns true when the request was handled by one of
+ * them (headers set, preflight answered), false when the generic handler must decide.
+ * Exported for tests.
+ */
+export function applyDiscoveryCors(req: Request, res: Response): boolean {
+  const path = req.path;
+  const method = req.method.toUpperCase();
+  const origin = req.headers.origin;
+
+  if (path.startsWith(WELL_KNOWN_PREFIX) && ["GET", "HEAD", "OPTIONS"].includes(method)) {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept");
+    res.setHeader("Access-Control-Max-Age", "86400");
+    return true;
+  }
+
+  if (path === MCP_CHATGPT_PATH && ["POST", "OPTIONS"].includes(method) && typeof origin === "string" && OPENAI_MCP_ORIGINS.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept, Mcp-Protocol-Version, Mcp-Session-Id");
+    res.setHeader("Access-Control-Expose-Headers", "WWW-Authenticate, Mcp-Session-Id");
+    res.setHeader("Access-Control-Max-Age", "86400");
+    return true;
+  }
+
+  return false;
+}
+
 export function setupCors(app: Express) {
-  app.use(cors(corsOptions));
+  const generic = cors(corsOptions);
+  // Registered BEFORE the generic handler, which it bypasses for the two path rules only.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (applyDiscoveryCors(req, res)) {
+      if (req.method.toUpperCase() === "OPTIONS") return res.sendStatus(204);
+      return next();
+    }
+    return generic(req, res, next);
+  });
   app.options("*", cors(corsOptions));
 }
 
