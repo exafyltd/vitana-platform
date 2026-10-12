@@ -171,3 +171,118 @@ Approved by owner in Claude Code session https://claude.ai/code/session_01TMPMNG
 - Owner decisions: the recommended option for each (no automatic backfill; the stray vault entry is left untouched).
 
 Owner approval (Gate 1): "Yes" — 2026-10-12, Claude Code session; plan hash b9dd9fff6c2c54947f6bd53fa205b52ebf7c5d23b4d84d28c59930da7c58653a; sparring record d39794cb-161b-490f-b8ec-690e6db5e3c1.
+
+## Sparring partner findings (verbatim, round 1 then round 2)
+
+I see a notable issue -- `send-test-user-confirmation` uses a plain `!==` comparison (line 62), not constant-time. The plan says to use `timingSafeEqual` for the new code, which is good, but it's worth noting the existing pattern does NOT use it despite the plan implying it mirrors the existing approach.
+
+Now I have enough evidence for my analysis.
+
+## Verified premises
+
+- **"The trigger function reads two vault names (`supabase_url`, `service_role_key`) that do not exist"** --> TRUE -- `/home/user/vitana-v1/supabase/migrations/20260210141933_0d5c2768-22f0-40bb-9c45-a621094bb458.sql:104,107` confirms the function reads `vault.decrypted_secrets WHERE name = 'supabase_url'` and `WHERE name = 'service_role_key'`.
+
+- **"`notify_test_user_confirmation()` hard-codes the project-public edge URL and reads vault `email_trigger_secret`"** --> TRUE -- `/home/user/vitana-v1/supabase/migrations/20260518010000_test_user_confirmation_vault.sql:21,24-28` shows `edge_url constant text := 'https://inmkhvwdcuyhnxkgfvsb.supabase.co/functions/v1/send-test-user-confirmation'` and `SELECT decrypted_secret ... WHERE name = 'email_trigger_secret'`.
+
+- **"`send-welcome-discount/index.ts` accepts only `isServiceRoleCaller(req)` and the body is destructured only as `{ discount_code_id }`"** --> TRUE -- `/home/user/vitana-v1/supabase/functions/send-welcome-discount/index.ts:38,54` confirms both: `if (!(await isServiceRoleCaller(req)))` at line 38, and `const { discount_code_id } = await req.json()` at line 54.
+
+- **"`supabase/config.toml` sets `verify_jwt = false` for `send-welcome-discount`"** --> TRUE -- `/home/user/vitana-v1/supabase/config.toml:153-154` shows `[functions.send-welcome-discount]` followed by `verify_jwt = false`.
+
+- **"The plan says the trigger-secret comparison in the existing pattern uses constant-time comparison (timingSafeEqual)"** --> PARTIAL -- The plan says to use `timingSafeEqual` for the new code (correct choice), but the existing `send-test-user-confirmation` at `/home/user/vitana-v1/supabase/functions/send-test-user-confirmation/index.ts:62` uses a plain `!==` comparison, NOT constant-time. The plan references `timingSafeEqual` from `caller-auth.ts` which does exist (`/home/user/vitana-v1/supabase/functions/_shared/caller-auth.ts:25-31`) but is not exported and is used only within `isServiceRoleCaller`. The plan is correct to want constant-time, but the "same approach as caller-auth" framing is slightly misleading since `timingSafeEqual` is not exported.
+
+## Findings
+
+F1 [minor] `timingSafeEqual` in `caller-auth.ts` is not exported; the plan assumes it can be reused directly.
+
+Evidence: `/home/user/vitana-v1/supabase/functions/_shared/caller-auth.ts:25` defines `function timingSafeEqual` (no `export`). The plan says "using the same `timingSafeEqual` approach as caller-auth" and proposes either a helper `isTriggerSecretCaller(req)` in `caller-auth.ts` or inlining. If the helper is added to `caller-auth.ts`, it can use the private `timingSafeEqual` internally -- fine. If inlined in `send-welcome-discount/index.ts`, the implementer must duplicate the function or export it. The plan should be explicit: either (a) the helper goes into `caller-auth.ts` (preferred, as it can reuse the private function), or (b) `timingSafeEqual` is exported. Do not leave it as "or inline it."
+
+Suggestion: Commit to the `isTriggerSecretCaller(req)` helper in `caller-auth.ts` as the single approach. This keeps `timingSafeEqual` private and avoids duplication.
+
+F2 [minor] The existing `send-test-user-confirmation` uses a plain `!==` comparison for the trigger secret -- inconsistency with the plan's security goal.
+
+Evidence: `/home/user/vitana-v1/supabase/functions/send-test-user-confirmation/index.ts:62` -- `if (provided !== TRIGGER_SECRET)`. The plan correctly specifies constant-time for the new code, but the existing pattern it cites as a model is NOT constant-time. This is not a blocker for this plan, but the implementer might follow the "existing pattern" literally and use `!==`. The plan should note this divergence explicitly.
+
+Suggestion: Add a sentence: "Note: the existing `send-test-user-confirmation` uses `!==`; the new helper intentionally upgrades to constant-time comparison. Retrofitting the old function is out of scope."
+
+F3 [major] The plan puts the migration in `vitana-platform` but the existing trigger migration lives in `vitana-v1`.
+
+Evidence: The plan's scope says `vitana-platform: supabase/migrations/2026101XXXXXXX_...sql (new)`. But the existing function definition is in `/home/user/vitana-v1/supabase/migrations/20260210141933_...sql:95-123`, and the companion trigger `notify_test_user_confirmation` migration is also in `vitana-v1` (`/home/user/vitana-v1/supabase/migrations/20260518010000_...sql`). There is no `supabase/migrations/` directory in vitana-platform at all (the platform repo has its migrations elsewhere or manages them differently). The `RUN-MIGRATION.yml` workflow referenced in the rollout would need to exist in whichever repo the migration is placed. Which repo's `supabase/migrations/` directory actually gets applied to the production Supabase project?
+
+Suggestion: The planner should verify which repo's migration directory is the one that gets applied to the `inmkhvwdcuyhnxkgfvsb` Supabase project. Both existing trigger migrations are in `vitana-v1/supabase/migrations/`. If `vitana-v1` is the correct home for Supabase migrations, the plan's scope line must change. If `vitana-platform` has a separate migration path, clarify the mechanism.
+
+F4 [minor] CORS `x-trigger-secret` addition is unnecessary for a server-to-server call from `pg_net`.
+
+Evidence: The `pg_net` trigger runs server-side and never sends a preflight OPTIONS request. Adding `x-trigger-secret` to `Access-Control-Allow-Headers` exposes the header name to browser callers (the function has `verify_jwt = false` in config.toml:153-154). This is cosmetic -- a browser caller would still need the secret -- but it is unnecessary attack-surface disclosure. The existing `send-test-user-confirmation` does list it (line 41), so there is precedent, but that function also has `verify_jwt = false`.
+
+Suggestion: Consider whether `x-trigger-secret` truly needs to be in the CORS allow-headers. If the function is only called by `pg_net`, it does not. If kept for consistency with the existing pattern, note why.
+
+F5 [major] The plan does not address the test file assertion that will break: the test explicitly checks `isServiceRoleCaller` comes before `req.json()`, and the existing test name is `'send-welcome-discount is service-role only'`. Adding an alternative auth path (trigger secret) means the test's positional assertion at line 165 (`src.indexOf('await isServiceRoleCaller(req)')` < `src.indexOf('req.json()')`) still passes, but the semantic contract changes. The test at line 161 checks a contract that the plan deliberately changes, yet the plan's test section says only "extending the existing block" and "renaming" -- it does not say what the new positional assertion will be for the trigger-secret path.
+
+Evidence: `/home/user/vitana-v1/src/lib/edge-functions-caller-identity.s4.test.ts:161-168`. The test asserts `isServiceRoleCaller` is called before `req.json()`. If the new code structure is `isServiceRoleCaller(req) || isTriggerSecretCaller(req)`, the trigger-secret check must also precede `req.json()`. The plan's test section says "The auth gate (`isServiceRoleCaller` OR the trigger-secret check) comes before `req.json()`" which is correct intent, but the plan does not describe the actual assertion change (the current test uses `src.indexOf('await isServiceRoleCaller(req)')` -- will there be a separate indexOf for the trigger-secret helper?).
+
+Suggestion: Spell out the concrete assertion: either a single combined guard function whose name is checked positionally, or two separate indexOf checks, both before `req.json()`. The implementer needs to know the test structure, not just the intent.
+
+F6 [minor] The plan says "Add `x-trigger-secret` to the CORS allow-headers" but the current CORS line in `send-welcome-discount/index.ts:10` is `"authorization, x-client-info, apikey, content-type"`. The plan should note that `x-client-info` and `apikey` may or may not be kept, and confirm the exact new value.
+
+Evidence: `/home/user/vitana-v1/supabase/functions/send-welcome-discount/index.ts:9-10`.
+
+Suggestion: Specify the full replacement string for the CORS header, do not just say "add."
+
+F7 [minor] The plan lists `vitana-v1: src/lib/edge-functions-caller-identity.s4.test.ts` in scope but does not list `supabase/functions/_shared/caller-auth.ts` even though F1 implies it must be changed (to add `isTriggerSecretCaller`).
+
+Evidence: Plan scope section (lines 7-8) vs. plan fix section (line 38).
+
+Suggestion: Add `supabase/functions/_shared/caller-auth.ts` to the scope list.
+
+## Questions for the planner
+
+1. Which repo's `supabase/migrations/` directory is applied to the production Supabase project `inmkhvwdcuyhnxkgfvsb`? The two existing trigger migrations are both in `vitana-v1/supabase/migrations/`. If that is the canonical path, the migration in this plan belongs in `vitana-v1`, not `vitana-platform`. (F3)
+
+2. The plan proposes `isTriggerSecretCaller` as an option in `caller-auth.ts` but also says "if the planner wants <=2 touched v1 files, it can be inlined instead." Which approach is chosen? The file count constraint should not drive a security-relevant design choice. (F1)
+
+3. Does the `RUN-MIGRATION.yml` workflow exist in `vitana-v1`, `vitana-platform`, or both? The rollout step 4 references it without specifying the repo.
+
+## Verdict
+
+NOT CONVERGED -- F3 and F5 are open majors. F3 (wrong repo for the migration) is potentially a blocker if the plan as written would place the migration where it cannot be applied. F5 (incomplete test assertion specification) risks the implementation breaking CI or shipping an undertested auth change.
+Good -- nothing exists yet, so the plan is purely additive. Let me check the guard ordering proposed: `isTriggerSecretCaller(req) || (await isServiceRoleCaller(req))`. The trigger-secret check is synchronous, service-role is async. That ordering is correct (cheap sync check first, expensive async check second).
+
+One thing to verify: the plan says `isTriggerSecretCaller` is synchronous (no `await`), but the guard expression has `await` only on `isServiceRoleCaller`. Let me confirm the plan's signature says it returns `boolean` not `Promise<boolean>`.
+
+Looking at the plan line 38: `isTriggerSecretCaller(req: Request, getEnv = ...): boolean` -- yes, synchronous return. Good. And the guard expression at line 44: `if (!(isTriggerSecretCaller(req) || (await isServiceRoleCaller(req))))` -- the `await` only wraps the async call. This is correct JavaScript short-circuit evaluation: if the trigger secret matches, the async call is never made.
+
+Now let me check one more thing -- the plan's test regex at line 68.
+
+The regex `/if\s*\(\s*!\(\s*isTriggerSecretCaller\(req\)\s*\|\|\s*\(await isServiceRoleCaller\(req\)\)\s*\)\s*\)/` -- this needs to match the actual code `if (!(isTriggerSecretCaller(req) || (await isServiceRoleCaller(req))))`. The regex looks correct, though it is quite rigid. Any formatting difference (e.g., a newline) would break it. But that is an implementation detail, not a plan-level concern.
+
+I have completed my analysis.
+
+## Verified premises
+
+- **F3 rejection: vitana-platform has `supabase/migrations/` and `RUN-MIGRATION.yml`** --> TRUE -- `/home/user/vitana-platform/supabase/migrations/` contains 639+ SQL files; `/home/user/vitana-platform/.github/workflows/RUN-MIGRATION.yml` exists.
+- **New file `trigger-secret.ts` can use the `globalThis.Deno` pattern from `data-client.ts`** --> TRUE -- `/home/user/vitana-v1/supabase/functions/_shared/data-client.ts:31-34` shows `const deno = (globalThis as any).Deno; return deno?.env?.get?.(name);`.
+- **`isTriggerSecretCaller` does not yet exist anywhere in the codebase** --> TRUE -- grep returns no matches in vitana-v1.
+
+## Findings
+
+### Round 1 dispositions
+
+- F1 [minor] `timingSafeEqual` not exported --> **closed**. Plan now creates `trigger-secret.ts` with the export, and `caller-auth.ts` imports from it. The Vitest-importability constraint is addressed with the import-free file design.
+- F2 [minor] `send-test-user-confirmation` uses `!==` --> **closed**. Plan notes the inconsistency explicitly in Fix 2 and lists it as an out-of-scope follow-up.
+- F3 [major] Wrong repo for migration --> **closed**. The planner's rejection is correct. `vitana-platform/supabase/migrations/` is the active migration directory (639+ files) and `RUN-MIGRATION.yml` exists in that repo. The plan now names both repos explicitly in scope and rollout.
+- F4 [minor] CORS `x-trigger-secret` unnecessary --> **closed**. Plan states the CORS string stays unchanged; a test pins it.
+- F5 [major] Test assertions unspecified --> **closed**. The test section now has concrete assertions: the renamed describe block, the regex for the combined guard, two indexOf checks before `req.json()`, source guards on the helper, and a full unit test with stubbed env covering match/mismatch/missing/empty cases.
+- F6 [minor] Exact CORS string --> **closed**. Plan specifies the exact unchanged string and pins it with a test assertion.
+- F7 [minor] Missing `caller-auth.ts` from scope --> **closed**. Scope now lists `caller-auth.ts`, `trigger-secret.ts`, and `trigger-secret.test.ts`.
+
+### New findings (round 2)
+
+No new blocker or major findings. The revision is clean: the file split (`trigger-secret.ts` import-free, `caller-auth.ts` re-exports) is sound and follows the established pattern; the guard ordering (sync first, async second) is correct for short-circuit evaluation; the test plan is concrete; the rollout order (edge function deployed before migration) prevents 401s; and both repos are named explicitly at every step.
+
+## Questions for the planner
+
+None.
+
+## Verdict
+
+CONVERGED
