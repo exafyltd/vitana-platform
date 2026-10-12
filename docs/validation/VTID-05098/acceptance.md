@@ -12,7 +12,7 @@ FINAL_URL: https://preview-aws-gateway.vitanaland.com/command-hub/diagnostics/he
 
 OASIS_PROOF: none — no event topic added or changed.
 
-CURL_PROOF: `GET /api/v1/routines/audits/migration-backlog` → 404; `GET /api/v1/routines/audits/oasis-summary` without a token → 401 JSON (staging-tests.json).
+CURL_PROOF: `GET /api/v1/routines/audits/migration-backlog` → 404; `GET /api/v1/routines/audits/oasis-summary` → 503 JSON `ROUTINE_INGEST_TOKEN env var not configured` on staging, which has no routine token (staging-tests.json).
 
 ## Acceptance criteria
 
@@ -22,7 +22,7 @@ AC-2: A data-only, idempotent migration marks their `routines` rows disabled and
   TEST: services/gateway/test/loop-catalog.test.ts
 AC-3: `/routines/audits/push-pipeline` and `/routines/audits/migration-backlog` answer 404; every remaining audit endpoint still answers 401 without the routine token and 503 when the gateway has no token configured.
   TEST: services/gateway/test/routine-audits.test.ts
-  CURL: GET /api/v1/routines/audits/migration-backlog → 404 on staging
+  CURL: GET /api/v1/routines/audits/migration-backlog → 404 on staging; GET /api/v1/routines/audits/oasis-summary → 503 token-gate JSON on staging
 AC-4: Infrastructure → Health is removed and redirects to Diagnostics → Health Checks, which still probes its same 5 endpoints; its render function is removed; Infrastructure → Services is untouched; the legacy voice id DEVHUB.INFRA.HEALTH still opens (alias on Diagnostics → Health Checks).
   TEST: services/gateway/test/command-hub/vtid-05098-simplify.test.ts
   TEST: services/gateway/test/navigation/vtid-04814-command-hub-navigation.test.ts
@@ -78,3 +78,4 @@ Disabled by this session (claude.ai routines, `update_trigger enabled=false`, ea
 - **No new nav vectors needed.** The embeddings rebuild dropped the six texts of the removed entry and embedded nothing new (no Bedrock call).
 - **The 404 staging probe does not check content type** — the gateway has no JSON 404 handler, so an unknown path answers Express's HTML 404; the status alone proves the route is gone.
 - **April-generation triggers left for the owner** (see above) — the platform refuses agent updates to them.
+- **Staging probe of a remaining audit route expects 503, not 401** (fix-forward after STAGING-VERIFY run 38297710254). Staging has no `ROUTINE_INGEST_TOKEN`, so the token gate fails closed with 503 and its JSON error. The probe pins that exact body, so it still fails if the route is removed (404) or opened (200). The 401 path is covered in CI by `routine-audits.test.ts`.
