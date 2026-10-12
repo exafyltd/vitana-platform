@@ -22,6 +22,13 @@ const CARD = {
   title: 'Coffee at Luigi', start_time: '2026-10-12T15:00:00Z', end_time: null, location: null,
 };
 
+// VTID-05104: the send guard has its own suite (vtid-05104-calendar-invite-guard);
+// here it is allowed so these tests keep proving the card the routes store.
+jest.mock('../src/services/calendar-invite-guard', () => ({
+  ...jest.requireActual('../src/services/calendar-invite-guard'),
+  checkInviteSend: jest.fn().mockResolvedValue({ ok: true }),
+}));
+
 const mockBuildForChat = jest.fn();
 const mockRespond = jest.fn();
 const mockState = jest.fn();

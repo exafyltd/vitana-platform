@@ -1,6 +1,6 @@
 # VTID-04998 — Shared calendar events and invites (design)
 
-Status: design only, for owner decision at Gate 1. No code, no migration, no production access.
+Status: design for owner decision at Gate 1 (approved 2026-10-12). Phase 1 shipped under VTID-05104 (invite guards and fixes, no schema change); phases 2 onward are still design only.
 Repos read: `vitana-platform` (GW = `services/gateway/src`) and `vitana-v1` (v1 = `src`, read-only).
 Commit read: platform `origin/main` cc899c631.
 

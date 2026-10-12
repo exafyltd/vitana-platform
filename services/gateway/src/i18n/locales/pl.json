@@ -131,6 +131,7 @@
   "notif.listing_interest.title": "Zainteresowanie Twoim ogłoszeniem",
   "notif.listing_interest.body": "Ktoś jest zainteresowany „{title}\".",
   "notif.chat_mention.title": "{sender} wspomina o tobie w „{group}”",
+  "notif.calendar_invite.body": "{name} zaprasza cię na wydarzenie",
   "notif.day_close.title": "Dobranoc 🌙",
   "notif.day_close.body": "Dzień się skończył — jeśli coś wciąż chodzi ci po głowie, powiedz mi.",
   "notif.partner_test_status_changed.title": "Aktualizacja od {partner_name}",

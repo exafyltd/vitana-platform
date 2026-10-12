@@ -55,6 +55,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { notifyUserAsync } from '../notification-service';
 import { checkVoiceSendQuota } from '../voice-message-guard';
+import { getOwnCalendarEvent } from '../calendar-service';
+import { buildInviteFromEntry } from '../calendar-invite';
+import { checkInviteSend } from '../calendar-invite-guard';
+import { tt } from '../../i18n/catalog';
+import { getUserLocale } from '../../i18n/server-locale';
 import * as repo from './messaging-depth-tools-repository';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
@@ -754,6 +759,20 @@ export const tool_send_calendar_invite_in_chat: Handler = async (args, id, sb) =
     }
     const event = resolvedEvent.event;
 
+    // VTID-05104: re-fetch the full own row and build the card the same way the
+    // app path does (own, one-off, manual/invite, not past, not private), so a
+    // voice invite is v2 metadata the recipient can answer.
+    const ownRow = await getOwnCalendarEvent(event.id, id.user_id);
+    const built = await buildInviteFromEntry(id.user_id, ownRow as any);
+    if (!built.ok) {
+      return {
+        ok: false,
+        error: built.status === 404
+          ? "I couldn't find that event in your calendar."
+          : `That entry can't be sent as an invite${built.reason ? ` (${built.reason})` : ''}.`,
+      };
+    }
+
     const resolvedMember = await resolveMember(memberIdArg || memberArg, id, sb);
     if (!resolvedMember.ok) return resolvedMember;
     const target = resolvedMember.member;
@@ -799,6 +818,18 @@ export const tool_send_calendar_invite_in_chat: Handler = async (args, id, sb) =
       };
     }
 
+    // VTID-05104: test accounts, tenant, relationship and send limits — the
+    // same guard the app routes use. One generic refusal.
+    const allowed = await checkInviteSend({
+      sb,
+      senderId: id.user_id,
+      tenantId,
+      receiverId: target.user_id,
+    });
+    if (!allowed.ok) {
+      return { ok: false, error: "I can't send that invite." };
+    }
+
     const content = `📅 ${event.title} — ${fmtWhen(event.start_time)}${event.location ? ` at ${event.location}` : ''}`;
     const { error: insErr } = await repo.insertCalendarInviteChatMessage(sb, {
       tenant_id: tenantId,
@@ -810,15 +841,8 @@ export const tool_send_calendar_invite_in_chat: Handler = async (args, id, sb) =
       // CHECK constraint, so a descriptive kind is safe and matches
       // established precedent rather than inventing a new column.
       message_type: 'calendar_invite',
-      metadata: {
-        source: 'voice',
-        kind: 'calendar_invite',
-        event_id: event.id,
-        title: event.title,
-        start_time: event.start_time,
-        end_time: event.end_time,
-        location: event.location,
-      },
+      // v2 card (ref_type / ref_id) so respond / GET can read it.
+      metadata: { ...built.metadata },
     });
     if (insErr) {
       return { ok: false, error: "I couldn't send that invite just now — want me to try again?" };
@@ -827,13 +851,15 @@ export const tool_send_calendar_invite_in_chat: Handler = async (args, id, sb) =
     try {
       if (!/^00000000-0000-0000-0000-000000000001$/i.test(target.user_id)) {
         const senderName = await senderDisplayName(sb, id.user_id);
+        const receiverLocale = await getUserLocale(sb, target.user_id);
         notifyUserAsync(
           target.user_id,
           tenantId,
           'new_chat_message',
           {
             title: senderName,
-            body: content,
+            // Generic line: no title / time / place on the lock screen.
+            body: tt('notif.calendar_invite.body', receiverLocale, { name: senderName }),
             // Path-based, not query-string — Appilix's Android in-app browser
             // silently fails to launch notification URLs containing a query
             // string (see App.tsx's BOOTSTRAP-NOTIF-MESSENGER-DIAG comment).
