@@ -1,0 +1,5 @@
+Tests:       4 failed, 3 passed, 7 total
+    ✕ reads vault email_trigger_secret and sends it as X-Trigger-Secret
+    ✕ no longer references the missing vault names or a bearer header
+    ✕ posts to the send-welcome-discount edge function with discount_code_id only
+    ✕ skips with a WARNING and RETURN NEW when the vault secret is missing, before posting

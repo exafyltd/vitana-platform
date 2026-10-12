@@ -1,0 +1,10 @@
+PASS test/vtid-05118-welcome-discount-trigger-secret.test.ts
+    ✓ redefines notify_welcome_discount() only, keeping SECURITY DEFINER and search_path (4 ms)
+    ✓ reads vault email_trigger_secret and sends it as X-Trigger-Secret (1 ms)
+    ✓ no longer references the missing vault names or a bearer header (1 ms)
+    ✓ posts to the send-welcome-discount edge function with discount_code_id only (1 ms)
+    ✓ skips with a WARNING and RETURN NEW when the vault secret is missing, before posting (1 ms)
+    ✓ keeps the outer WHEN OTHERS handler so a signup is never blocked (1 ms)
+    ✓ carries no secret value (1 ms)
+Test Suites: 1 passed, 1 total
+Tests:       7 passed, 7 total
