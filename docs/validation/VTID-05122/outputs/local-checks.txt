@@ -1,0 +1,9 @@
+symbol index --check: ✓ in sync (1119 functions across 16 files)
+screens catalog --check: ✓ in sync (314 entries)
+jest (new test + VTID-05048 caller identity): Test Suites: 2 passed, 2 total; Tests: 44 passed, 44 total
+tsc --noEmit: 3 x TS2307 (missing local deps libphonenumber-js, @aws-sdk/client-pinpoint-sms-voice-v2; untouched files), 0 other errors
+golden fingerprint: All golden markers verified. Fingerprint check PASSED.
+ownership guard (branch fu/VTID-05122): Authorized marker found in branch/PR title (allowlisted-marker). Guard check PASSED.
+ownership guard (no marker, negative control): Guard check FAILED.
+staging manifest: {"ok":true,"errors":[]}; 0 invalid manifests across docs/validation
+pr-gate validateScope: []; evaluateSparringRecord: []
