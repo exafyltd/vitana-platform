@@ -249,3 +249,98 @@ Approved by owner in Claude Code session https://claude.ai/code/session_01TMPMNG
 - Sparring record: `d50d7db8-37b4-4eba-af37-e589db92ec14`. Partner: plan-sparring-partner, 2 rounds. Verdict: **CONVERGED**.
 
 Owner approval (Gate 1): "Yes" — 2026-10-12, Claude Code session; plan hash 9263080a07a90d1296609681c7d9883fa773b17876fdaba85159d5e5ee1a2f72; sparring record d50d7db8-37b4-4eba-af37-e589db92ec14.
+
+## Sparring partner findings (verbatim, round 1 then round 2)
+
+All these are `CREATE OR REPLACE` with the same signature (10 params), so only one `write_fact` overload should exist in the live DB. The four functions each have one overload, so `n` should equal 4 in the plan's check. However, the plan's check is still structurally weaker than VTID-05041's `count(DISTINCT proname)` approach. Let me formalize the findings.
+
+## Verified premises
+
+- **Claim: VTID-05041 revoked only PUBLIC, anon, authenticated, not migrate** -- TRUE. `/home/user/vitana-platform/supabase/migrations/20261010164100_vtid_05041_definer_functions_lockdown.sql:46` shows `REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated` with no mention of `migrate`.
+
+- **Claim: VTID-05041's self-check only tests authenticated, anon, and service_role** -- TRUE. Lines 150-156 of the same file check `has_function_privilege('authenticated', ...)` and `has_function_privilege('anon', ...)` and `has_function_privilege('service_role', ...)` only. No `migrate` check.
+
+- **Claim: The caller inventory is limited to gateway (service_role) and scripts/backfill-memory-facts.mjs** -- TRUE. The VTID-05041 migration's own header (lines 22-26) states this explicitly, and the grep for the four function names in `services/gateway/src` returns 16 files, all under the gateway. `scripts/backfill-memory-facts.mjs` also references them. No file logs in as `migrate`.
+
+- **Claim: DMS endpoints authenticate as `migrate`** -- TRUE. `/home/user/vitana-platform/docs/AURORA-MIGRATION-STATUS-2026-09-10.md` lines 638-641 and 740-747 confirm all four DMS source endpoints use `migrate` as the username.
+
+- **Claim: SQL-MEMORY-SENSITIVITY.yml exists as a pattern for the proposed test workflow** -- TRUE. `/home/user/vitana-platform/.github/workflows/SQL-MEMORY-SENSITIVITY.yml` exists with the exact structure described (postgres:16 service container, throwaway DB, `scripts/ci/sql-tests/` test script).
+
+- **Claim: RUN-MIGRATION.yml exists for the rollout step** -- TRUE. `/home/user/vitana-platform/.github/workflows/RUN-MIGRATION.yml` exists.
+
+## Findings
+
+F1 [minor] The plan's self-check count assertion (`n < 4`) is weaker than VTID-05041's own check (`count(DISTINCT proname) <> 4`)
+
+Evidence: The plan's proposed migration (lines 76-93) counts loop iterations in `n` and asserts `n < 4`. If any of the four functions had multiple overloads (same name, different signature), `n` would exceed 4 while potentially fewer than 4 distinct function names are present. VTID-05041 uses `count(DISTINCT p.proname) <> 4` at `/home/user/vitana-platform/supabase/migrations/20261010164100_vtid_05041_definer_functions_lockdown.sql:158-161`, which is more precise. In practice, none of the four functions currently has multiple overloads (all are `CREATE OR REPLACE` with the same signature), so this is not a live bug, but the check is less robust than the pattern it follows.
+
+Suggestion: Replace the `n < 4` loop-counter check with VTID-05041's own `count(DISTINCT p.proname) <> 4` subquery, or add a dual assertion: `n <> 4` (exact count) would catch both missing functions and unexpected overloads.
+
+F2 [minor] The REVOKE loop uses `r.oid::regprocedure` cast, but the revoke body in the plan (line 71) uses `r.fn` which is already formatted differently from the check block (line 83)
+
+Evidence: In the REVOKE block (plan lines 59-73), the query `SELECT p.oid::regprocedure AS fn` returns the function identity. In the CHECK block (plan lines 76-93), the code uses `r.oid` (the raw oid) and casts it to `regprocedure` only in the exception message. This is fine and consistent with VTID-05041's pattern. No issue here upon closer inspection -- withdrawing this finding.
+
+F3 [major] The plan references `RUN-MIGRATION.yml` for applying the migration to production (Rollout step 3), but does not describe how the migration interacts with `migrate`'s `rolbypassrls` privilege
+
+Evidence: The plan states (line 22-23) that `migrate` has `rolbypassrls=true`. The four memory functions are `SECURITY DEFINER` with owner `postgres`, so they already execute with `postgres` privileges regardless of the caller's RLS bypass. The REVOKE correctly removes EXECUTE, preventing `migrate` from calling the functions at all. However, the plan's Problem section mentions `migrate` bypasses RLS but never connects this to whether `migrate` could access the underlying `memory_facts` table directly (via raw SQL, not the functions), which would also bypass RLS. This is explicitly acknowledged as out of scope (line 152-154: "migrate's table SELECT / default ACL"), but given that the plan's own Problem section (line 39) documents that `migrate` has `SELECT` on all public tables via a default ACL, a reader might reasonably ask: what is the point of revoking EXECUTE on four DEFINER functions when the same role can `SELECT * FROM memory_facts` directly and bypass RLS?
+
+Suggestion: Add one sentence to the Problem or Risks section acknowledging that the direct table access path is the larger exposure and is tracked separately, so the rationale for this change being worthwhile despite it is clear: the functions also WRITE (write_fact), and revoking EXECUTE still removes the ability to overwrite arbitrary member facts. The SELECT exposure on the table is the wider follow-up, but the write path through these functions is a distinct, closable gap.
+
+F4 [minor] The plan's test (Tests section, line 111-120) creates the `migrate` role with `LOGIN` and `REPLICATION` but does not grant `migrate` membership in `postgres` or vice versa
+
+Evidence: The plan states (line 28) that `postgres` is a member of `migrate` in production. The test creates `migrate` as a standalone role but does not replicate this membership relationship. Since the plan's own check uses `has_function_privilege` (which checks inherited privileges), the test would not catch a case where `migrate`'s EXECUTE comes through role membership rather than a direct grant. The plan acknowledges (line 100-102) that `migrate` is not a member of any role that holds EXECUTE (only `postgres` is a member OF `migrate`), so the direction of membership means inherited privileges flow from `migrate` to `postgres`, not the reverse. The test is correct in practice, but should replicate the membership to prove it.
+
+Suggestion: Add `GRANT migrate TO postgres;` in the test setup to match the live role graph, and verify the check still catches the direct grant on `migrate` even with this membership present.
+
+F5 [minor] No workflow `paths:` trigger for the new migration file
+
+Evidence: The plan says the new workflow `SQL-MEMORY-FUNCTIONS-MIGRATE-REVOKE.yml` follows the `SQL-MEMORY-SENSITIVITY.yml` pattern. That workflow (line 12-15 of `SQL-MEMORY-SENSITIVITY.yml`) triggers on `pull_request` with `paths:` including `supabase/migrations/*memory_sensitivity*.sql`. The plan's proposed workflow should similarly trigger on a glob matching the new migration file name. This is not stated explicitly in the plan -- just a reminder to include it.
+
+Suggestion: Ensure the workflow's `paths:` trigger includes the new migration file's name pattern and the test script path.
+
+F6 [blocker] The plan's Rollout section (line 133) references dispatching `RUN-MIGRATION.yml` to apply the migration to production, but this is a **production database write** that the CLAUDE.md governance rules treat specially
+
+Evidence: CLAUDE.md Part 1 rule 48 says "Staging tests are read-only. Staging writes to the production Supabase project." The plan correctly notes (line 127) "No staging suite: the change deploys nothing. Applying the migration is a production DB write." However, the plan's Rollout step 3 says the owner's Gate 1 "yes" must "explicitly cover this dispatch" -- but the Autonomy Contract (VTID-04947) defines Gate 2 as being built from "STAGING-VERIFY run link, test counts, the verified commit" etc., and says "A change that deploys nothing has no Gate 2; it is done when merged with green checks." A migration-only change that applies directly to production is neither a "deploy" nor "nothing" -- it is a production write. The plan should make the governance path for a production migration explicit: is Gate 1 approval sufficient, or does the `RUN-MIGRATION.yml` dispatch itself require explicit owner confirmation as a production write (Autonomy Contract stop-case (b))?
+
+Suggestion: Clarify in the Rollout section that the `RUN-MIGRATION.yml` dispatch is a production database write and falls under the Autonomy Contract's stop-case (b) -- "a production write not covered by the two gates" -- requiring explicit owner confirmation before dispatch. Or, if Gate 1 approval is intended to cover it, say so explicitly and note it in the plan's Owner Decisions section.
+
+## Questions for the planner
+
+1. The plan's self-check asserts `n < 4` using a loop counter. VTID-05041 uses `count(DISTINCT proname) <> 4`. Was the weaker check intentional, or should it match VTID-05041's pattern?
+
+2. The `RUN-MIGRATION.yml` dispatch for a production DB write -- is the planner relying on Gate 1 approval to cover this, or treating it as Autonomy Contract stop-case (b)?
+
+## Verdict
+
+NOT CONVERGED -- F6 is a governance-path ambiguity that needs resolution (blocker on clarity, not on the technical change itself). F3 is major because the rationale for the change's value should be explicit given the wider `SELECT` exposure the plan itself documents. F1, F4, F5 are minor improvements.
+All findings have been addressed. Let me verify the key revisions in the plan body match the planner's stated responses.
+
+## Verified premises
+
+(Round 1 premises remain TRUE -- no recheck needed; the plan's factual claims about the codebase are unchanged.)
+
+## Prior findings -- disposition
+
+- **F1 [minor]** -- `closed`. The plan now uses `count(DISTINCT p.proname) <> 4` (lines 79-83) AND tightens the loop counter to `n <> 4` (line 101), with an explicit comment about the live overload count. The test adds a fifth-overload negative case (line 135-136). Exactly what was suggested.
+
+- **F2** -- `closed`. Withdrawn in round 1.
+
+- **F3 [major]** -- `closed`. Lines 107-112 now explicitly state why the change is worthwhile despite the wider SELECT exposure: `write_fact` writes, `migrate` has only `r` (SELECT) on tables, so revoking EXECUTE removes the write path. The follow-ups are named (FU9a for the 12 other DEFINER functions, FU9b for table SELECT/default ACL). Clear and sufficient.
+
+- **F4 [minor]** -- `closed`. Test setup now includes `GRANT migrate TO postgres` (line 127).
+
+- **F5 [minor]** -- `closed`. Workflow `paths:` trigger is described (lines 137-140) covering the migration file, the test script, and the workflow itself, plus `workflow_dispatch`.
+
+- **F6 [blocker]** -- `closed`. The Rollout section now opens with a "Governance of the production write" paragraph (lines 151-157) and Owner decision 0 (lines 196-199) explicitly names the dispatch as the production write covered by Gate 1. The closing report is the Gate 2 equivalent. The before-state check gates the dispatch. This is clear and consistent with the Autonomy Contract.
+
+## Findings
+
+No new blocker or major findings. The revised plan is tight: the migration SQL is sound, the self-check is now as robust as VTID-05041's own pattern, the governance path is explicit, the test covers the role graph faithfully, and the rationale for scoping to these four functions is stated.
+
+## Questions for the planner
+
+None.
+
+## Verdict
+
+CONVERGED
