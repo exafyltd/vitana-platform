@@ -192,6 +192,22 @@ function validateManifest(m, { vtid, service } = {}) {
   return { ok: errors.length === 0, errors };
 }
 
+// ── Lockfile-only commits (VTID-05075) ───────────────────────────────────
+// A dependency-lockfile sync that follows a package.json change is that
+// change's own bookkeeping, and its subject cannot be fixed after the fact (a
+// later "tag" commit does not change it). So a commit whose only build-relevant
+// change is `pnpm-lock.yaml` needs no change suite of its own. Deliberately
+// narrow: one filename, files outside the service's build are ignored (docs
+// evidence rides along), any other build file makes it an ordinary commit, and
+// the community app's package-lock.json / bun.lock are not covered. It is never
+// hidden: planRange returns it in `lockfileOnly` and the message names it.
+const LOCKFILE_ONLY_NAME = 'pnpm-lock.yaml';
+
+function isLockfileOnlyCommit(files, service) {
+  const inBuild = (files || []).filter((f) => touchesService([f], service));
+  return inBuild.length > 0 && inBuild.every((f) => String(f).split('/').pop() === LOCKFILE_ONLY_NAME);
+}
+
 // ── Plan ─────────────────────────────────────────────────────────────────
 // commits: [{ sha, date, subject, files }] — every commit between production
 // and the verified commit (exclusive/inclusive). manifests: { [vtid]: obj|null }.
@@ -201,11 +217,16 @@ function planRange({ service, commits, manifests, enforceSince = ENFORCE_SINCE }
   const missing = [];
   const legacy = [];
   const invalid = [];
+  const lockfileOnly = [];
   for (const c of commits) {
     if (!touchesService(c.files || [], service)) continue;
     const vtids = extractVtids(c.subject);
     const enforced = new Date(c.date).getTime() >= new Date(enforceSince).getTime();
     relevant.push({ sha: c.sha, subject: c.subject, vtids, enforced });
+    if (vtids.length === 0 && isLockfileOnlyCommit(c.files, service)) {
+      lockfileOnly.push({ sha: c.sha, subject: c.subject });
+      continue;
+    }
     if (vtids.length === 0) {
       (enforced ? missing : legacy).push({ sha: c.sha, subject: c.subject, vtid: null });
       continue;
@@ -226,7 +247,7 @@ function planRange({ service, commits, manifests, enforceSince = ENFORCE_SINCE }
       suites.push({ vtid, tests: m.tests });
     }
   }
-  return { relevant, suites, missing, legacy, invalid };
+  return { relevant, suites, missing, legacy, invalid, lockfileOnly };
 }
 
 // ── Live commit ──────────────────────────────────────────────────────────
@@ -370,6 +391,12 @@ function buildReadyMessage({ service, sha, outcome, results, plan, shipping, pro
     lines.push('');
     lines.push(`Changes without a change suite, merged before the rule took effect (${ENFORCE_SINCE}) — smoke only: ${plan.legacy.map((m) => m.vtid || short(m.sha)).join(', ')}`);
   }
+  const lockfileOnly = plan.lockfileOnly || [];
+  if (lockfileOnly.length) {
+    lines.push('');
+    lines.push('Lockfile-only changes (no change suite; smoke tests only):');
+    for (const m of lockfileOnly) lines.push(`- \`${short(m.sha)}\` ${m.subject}`);
+  }
   lines.push('');
   lines.push(`What would ship (production \`${short(prodStamp) || 'unknown'}\` → \`${short(sha)}\`, ${shipping.length} commit(s)):`);
   if (shipping.length === 0) lines.push('- (none — production already serves or contains this commit, or its version could not be read)');
@@ -415,6 +442,7 @@ module.exports = {
   assertStagingTarget,
   pathMatches,
   touchesService,
+  isLockfileOnlyCommit,
   extractVtids,
   validateManifest,
   planRange,

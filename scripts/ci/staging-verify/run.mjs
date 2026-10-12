@@ -326,7 +326,7 @@ async function verify(args) {
   for (const c of commits) for (const v of lib.extractVtids(c.subject)) if (!(v in manifests)) manifests[v] = loadManifest(repoRoot, v);
   const plan = lib.planRange({ service, commits, manifests });
   const shipping = commits.filter((c) => lib.touchesService(c.files, service));
-  log(`production=${prodStamp || 'unknown'} range=${commits.length} commits, ${shipping.length} touch ${service}; suites=${plan.suites.map((s) => s.vtid).join(',') || '(none)'} missing=${plan.missing.length}`);
+  log(`production=${prodStamp || 'unknown'} range=${commits.length} commits, ${shipping.length} touch ${service}; suites=${plan.suites.map((s) => s.vtid).join(',') || '(none)'} missing=${plan.missing.length} lockfileOnly=${plan.lockfileOnly.length}`);
 
   let results = [];
   let superseded = before.state === 'superseded';
@@ -376,7 +376,7 @@ async function verify(args) {
     run_url: runUrl,
     full: args.full === 'true',
     results,
-    plan: { suites: plan.suites.map((s) => s.vtid), missing: plan.missing, invalid: plan.invalid, legacy_count: plan.legacy.length },
+    plan: { suites: plan.suites.map((s) => s.vtid), missing: plan.missing, invalid: plan.invalid, legacy_count: plan.legacy.length, lockfile_only: plan.lockfileOnly },
     shipping: shipping.map(({ sha: s, subject, author, date }) => ({ sha: s, subject, author, date })),
     message,
   };
