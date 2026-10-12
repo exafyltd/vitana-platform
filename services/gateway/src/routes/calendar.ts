@@ -43,7 +43,7 @@ import {
 } from '../services/calendar-service';
 import { completeSourceForCalendarEvent } from '../services/calendar-producers';
 import { z } from 'zod';
-import { isShareableEntry, listSharedPostIds, shareCalendarEntryToFeed, shareRefOf, SHARE_TEXT_MAX } from '../services/calendar-share';
+import { addSharedEntryToCalendar, CARD_TITLE_MAX, entryShareRefOf, isSensitiveEntry, isShareableEntry, listSharedPostIds, shareCalendarEntryToFeed, SHARE_TEXT_MAX } from '../services/calendar-share';
 import { buildInviteFromEntry, getInviteState, respondToInvite, INVITE_RESPONSES } from '../services/calendar-invite';
 
 // Pillar keys — must match the 5 canonical Vitana pillars.
@@ -429,10 +429,11 @@ router.get('/events/window', async (req: Request, res: Response) => {
       const { listExternalBusy } = await import('../services/calendar-google-sync');
       external = await listExternalBusy(userId, { from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString() });
     }
-    // VTID-04916: can this entry be shared to the feed, and was it already?
+    // VTID-04916/05126: can this entry be shared to the feed and invited to
+    // (any own upcoming entry, VTID-05126), and was it already shared?
     const nowDate = new Date();
     const refIds = data
-      .map((it: any) => (it.event && !it.busy ? shareRefOf(it.event)?.ref_id : null))
+      .map((it: any) => (it.event && !it.busy ? entryShareRefOf(it.event)?.ref_id : null))
       .filter((id: string | null | undefined): id is string => !!id);
     let shared = new Map<string, string>();
     if (refIds.length) {
@@ -444,10 +445,13 @@ router.get('/events/window', async (req: Request, res: Response) => {
     }
     const decorated = data.map((it: any) => {
       if (!it.event || it.busy) return it;
-      const ref = shareRefOf(it.event);
+      const ref = entryShareRefOf(it.event);
+      const open = isShareableEntry(it.event, nowDate) && (it.occurrence_index ?? null) === null;
       return {
         ...it,
-        shareable: isShareableEntry(it.event, nowDate),
+        shareable: open,
+        invitable: open,
+        sensitive: isSensitiveEntry(it.event),
         shared_post_id: ref ? shared.get(ref.ref_id) ?? null : null,
       };
     });
@@ -860,6 +864,9 @@ const ShareToFeedSchema = z
   .object({
     text: z.string().max(SHARE_TEXT_MAX).optional(),
     is_public: z.boolean().optional(),
+    // VTID-05126: for an own entry, the title others see and whether the place is shown.
+    card_title: z.string().max(CARD_TITLE_MAX).optional(),
+    include_location: z.boolean().optional(),
   })
   .strict();
 
@@ -910,6 +917,37 @@ router.post('/events/:id/share-to-feed', async (req: Request, res: Response) => 
 // server from the sender's own entry. Only the DM recipient or a member of
 // the group can answer, never the sender.
 // =============================================================================
+// =============================================================================
+// POST /feed-posts/:postId/add — VTID-05126 "In meinen Kalender"
+//   A member adds another member's shared own entry (a public calendar_entry
+//   post) to their calendar: title, times, the place only if the author
+//   showed it. The post's current card is read on the server; a cancelled or
+//   finished entry answers 409 NOT_OPEN. Idempotent.
+//   200 { action: added|already, event_id } · 404 NOT_FOUND · 409 OWN_POST | NOT_OPEN
+// =============================================================================
+router.post('/feed-posts/:postId/add', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const result = await addSharedEntryToCalendar(userId, req.params.postId);
+    if (!result.ok) return res.status(result.status).json({ ok: false, error: result.error });
+    if (result.action === 'added') {
+      emitOasisEvent({
+        vtid: 'VTID-05126',
+        type: 'calendar.feed_post.added' as any,
+        source: 'calendar-api',
+        status: 'info',
+        message: 'Shared calendar entry added from the feed',
+        payload: { user_id: userId, post_id: req.params.postId, event_id: result.event_id },
+      }).catch(() => {});
+    }
+    return res.json({ ok: true, data: { action: result.action, event_id: result.event_id } });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /feed-posts/:postId/add error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
 router.get('/events/:id/invite-preview', async (req: Request, res: Response) => {
   try {
     const userId = getUserId(req);

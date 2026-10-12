@@ -44,8 +44,8 @@
     "voice": "polly:ru",
     "instruction_sha256": "59c6e5ebed4201717adf8b73a0bded5556f4fa616f26cd34792a5498ffe49a24",
     "instruction_bytes": 20129,
-    "tools_sha256": "96e70401a1eca638341a986fa00c86f8178ba1c9d1041603a22480c61e486a01",
-    "tools_bytes": 224987,
+    "tools_sha256": "ac2260e957a05b0859f8eb8930708840a7c66c21dad49f864722ead68a5313ef",
+    "tools_bytes": 226850,
     "tool_count": 298,
     "deferred_tools": 0
   },

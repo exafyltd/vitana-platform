@@ -477,8 +477,21 @@ describe('voice tool send_calendar_invite_in_chat', () => {
     expect(body).not.toMatch(/Coffee|Luigi|📅/);
   });
 
+  // VTID-05126 (owner decision 2026-10-12): any own upcoming entry can be
+  // invited to; a health appointment only after the model surfaced it
+  // (sensitive_ack), so a bare confirmation sends nothing.
+  it('a health appointment is sent only with sensitive_ack, never on a bare confirmation', async () => {
+    withEntry({ source_type: 'health_plan' } as Row);
+    const bare = await call();
+    expect(bare).toMatchObject({ ok: true, result: { needs: 'sensitive_ack', sensitive: true } });
+    expect(invites()).toHaveLength(0);
+    expect(mockNotifyAsync).not.toHaveBeenCalled();
+    const acked = await call({ sensitive_ack: true });
+    expect((acked as any).result.sent).toBe(true);
+    expect(invites()).toHaveLength(1);
+  });
+
   it.each([
-    ['private entry (health plan)', { source_type: 'health_plan' }],
     ['past entry', { start_time: iso(-3 * HOUR), end_time: iso(-2 * HOUR) }],
     ['recurring entry', { rrule: 'FREQ=WEEKLY' }],
     ['cancelled entry', { status: 'cancelled' }],

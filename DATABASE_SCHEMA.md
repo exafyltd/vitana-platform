@@ -3700,6 +3700,24 @@ throwaway Postgres 16 (`scripts/sql-tests/run-event-share-posts-test.sh`, CI `SQ
 `community_event_shared` is in the gateway's notification catalog (`member`, `posts`); like every new type it
 starts OFF per tenant (VTID-04674) until an admin turns it on.
 
+## Share any own calendar entry — `profile_posts.attached_snapshot`, `calendar_entry` (VTID-05126, 2026-10-12) — applied on merge
+
+Migration: `exafyltd/vitana-v1` `supabase/migrations/20261012120000_vtid_05126_profile_posts_calendar_entry_share.sql`
+(applied by that repo's `apply-vtid-05126-calendar-entry-share-migration.yml` on merge). Idempotent; tested on a
+throwaway Postgres 16 (`scripts/sql-tests/run-calendar-entry-share-test.sh`).
+
+| Object | Change |
+|---|---|
+| `profile_posts_attached_ref_type_check` | also allows `calendar_entry` (`attached_ref_id` = the author's own `calendar_events.id`). An entry that belongs to a community event / live room is still shared as that event. |
+| `profile_posts.attached_snapshot` | new `jsonb`, only for `calendar_entry` (check `profile_posts_attached_snapshot_check`: required for `calendar_entry`, null otherwise). Keys: `title` (the member may rename it for the card), `start_time`, `end_time`, `location` (only when the member chose to show it), `emoji`, `status`. Nothing else of the entry is copied. Others cannot read the author's `calendar_events` (owner-only RLS), so the feed card renders from this. |
+| `profile_posts_guard_attached_ref()` | also keeps `attached_snapshot` out of client hands: an insert carrying one raises `ATTACH_VIA_GATEWAY`; an update keeps the old one. |
+| `sync_shared_calendar_entry_snapshot()` + `trg_calendar_events_sync_shared_snapshot` | AFTER UPDATE OF `start_time, end_time, status, location` / AFTER DELETE ON `calendar_events`. Updates the snapshot of the author's `calendar_entry` posts: times and status follow the entry (delete → `cancelled`); the card title the member chose is kept; the place is updated only on a card that already shows one. |
+| `notify_community_on_public_post()` | the share branch reads the name of a `calendar_entry` from `attached_snapshot->>'title'`; same `community_event_shared` type, same 24 h per-recipient dedup on `ref_id`. Private posts notify nobody (trigger `WHEN NEW.is_public`). |
+
+Gateway: `POST /api/v1/calendar/events/:id/share-to-feed` accepts `card_title` / `include_location`;
+`POST /api/v1/calendar/feed-posts/:postId/add` copies a public `calendar_entry` post's card into the viewer's
+calendar (`source_type 'invite'`, `source_ref_type 'feed_post'`, `source_ref_id` = post id).
+
 ## Kiro write confirmations — `kiro_mcp_confirmations` (VTID-05006, 2026-10-09) — applied after merge via `RUN-MIGRATION.yml`
 
 Migration: `supabase/migrations/20261009180000_vtid_05006_kiro_mcp_confirmations.sql`. Service role only (RLS on, no policies; `anon`/`authenticated` revoked).

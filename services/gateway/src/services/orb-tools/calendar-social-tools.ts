@@ -23,7 +23,7 @@ import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-s
 import { checkCalendarWriteRequest } from '../../orb/live/tools/calendar-write-guard';
 import { createCalendarEvent, checkConflicts, getOwnCalendarEvent } from '../calendar-service';
 import { toWritableRoleContext } from '../../types/calendar';
-import { isShareableEntry, shareCalendarEntryToFeed, shareRefOf, SHARE_TEXT_MAX } from '../calendar-share';
+import { entryCard, entryNotOpenReason, isSensitiveEntry, isShareableEntry, shareCalendarEntryToFeed, SHARE_TEXT_MAX, type CardChoice } from '../calendar-share';
 import { buildInviteFromEntry, CALENDAR_INVITE_TYPE } from '../calendar-invite';
 import { emitOasisEvent } from '../oasis-event-service';
 import { disambiguationResult, fmtWhen, resolveEvent, resolveTimezone } from './calendar-management-tools';
@@ -160,8 +160,8 @@ export async function tool_create_calendar_event(args: OrbToolArgs, id: OrbToolI
 
 const SHARE_REFUSAL: Record<string, string> = {
   NOT_FOUND: 'STATUS: not_found. That entry is not on the member\'s calendar.',
-  NOT_SHAREABLE: 'STATUS: not_shareable. Only an upcoming community event or live room the member takes part in can be shared to the feed.',
-  ALREADY_SHARED: 'STATUS: already_shared. The member has already shared this event to the feed.',
+  NOT_SHAREABLE: 'STATUS: not_shareable. Any of the member\'s own upcoming entries can be shared — never one that is cancelled, done, over, or a recurring series.',
+  ALREADY_SHARED: 'STATUS: already_shared. The member has already shared this entry to the feed.',
   DUPLICATE_POST: 'STATUS: duplicate_post. The member posted the same text moments ago.',
   SHARE_LIMIT: 'STATUS: share_limit. The member has reached today\'s limit for sharing events.',
   RATE_LIMITED: 'STATUS: rate_limited. Posting is paused for the member for now.',
@@ -181,11 +181,15 @@ export async function tool_share_calendar_entry_to_feed(
     if (found.kind === 'reply') return found.reply;
     const entry = found.entry;
     if (!isShareableEntry(entry)) {
-      const reason = !shareRefOf(entry) ? 'private_entry' : entry.status === 'cancelled' ? 'cancelled' : 'past';
+      const reason = entryNotOpenReason(entry) ?? 'not_found';
       return { ok: true, result: { shared: false, reason }, text: SHARE_REFUSAL.NOT_SHAREABLE };
     }
     const text = strArg(args, 'text').slice(0, SHARE_TEXT_MAX);
     const isPublic = args.is_public !== false;
+    // VTID-05126: what others see of an own entry — the member's title, the place only on request.
+    const choice: CardChoice = { card_title: strArg(args, 'card_title') || undefined, include_location: args.include_location === true };
+    const card = entryCard(entry, choice);
+    const sensitive = isSensitiveEntry(entry);
 
     // The visibility the member approved must be sent again with the
     // confirmation: a confirmed call that leaves it out would otherwise fall
@@ -203,17 +207,33 @@ export async function tool_share_calendar_entry_to_feed(
     if (args.confirmed !== true) {
       return {
         ok: true,
-        result: { stage: 'awaiting_confirmation', entry_id: entry.id, title: entry.title, start_time: entry.start_time, text, is_public: isPublic },
+        result: {
+          stage: 'awaiting_confirmation', entry_id: entry.id, title: entry.title, start_time: entry.start_time, text, is_public: isPublic,
+          card_title: card.title, location_shown: card.location !== null, sensitive,
+        },
         text:
-          'STATUS: needs_confirmation. Nothing was posted. Read the event and the post text back to the member in your own words ' +
-          'and say who will see it (is_public); ask whether to post it; call again with the same entry_id, text and is_public ' +
+          'STATUS: needs_confirmation. Nothing was posted. Read the entry and the post text back to the member in your own words, ' +
+          'say exactly what others will see (card_title, and whether the place is shown) and who will see it (is_public); ' +
+          (sensitive ? 'say plainly that this is a health appointment; ' : '') +
+          'ask whether to post it; call again with the same entry_id, text, card_title, include_location and is_public ' +
+          (sensitive ? 'and sensitive_ack=true ' : '') +
           'and confirmed=true only after they say yes.',
+      };
+    }
+    // Health entries: posted only after the model surfaced what it is (enforced here, not in the prompt).
+    if (sensitive && args.sensitive_ack !== true) {
+      return {
+        ok: true,
+        result: { stage: 'awaiting_confirmation', entry_id: entry.id, card_title: card.title, location_shown: card.location !== null, sensitive, needs: 'sensitive_ack' },
+        text:
+          'STATUS: needs_sensitive_ack. Nothing was posted. This is a health appointment: tell the member that plainly, read back the exact ' +
+          'card_title and whether the place is shown, and call again with sensitive_ack=true only after they confirm.',
       };
     }
     const refusal = checkCalendarWriteRequest({ confirmed: true, startTime: entry.start_time, endTime: entry.end_time, nowMs: Date.now() });
     if (refusal) return { ok: true, result: { shared: false, reason: 'past' }, text: SHARE_REFUSAL.NOT_SHAREABLE };
 
-    const r = await shareCalendarEntryToFeed(id.user_id, entry as never, { text, is_public: isPublic });
+    const r = await shareCalendarEntryToFeed(id.user_id, entry as never, { text, is_public: isPublic, ...choice });
     if (!r.ok) {
       return {
         ok: true,
@@ -231,8 +251,8 @@ export async function tool_share_calendar_entry_to_feed(
     }).catch(() => {});
     return {
       ok: true,
-      result: { shared: true, post_id: r.post_id, title: entry.title },
-      text: `STATUS: shared. "${entry.title}" is on the member's feed.`,
+      result: { shared: true, post_id: r.post_id, title: card.title },
+      text: `STATUS: shared. "${card.title}" is on the member's feed.`,
     };
   } catch (err) {
     return { ok: false, error: `share_calendar_entry_to_feed failed: ${(err as Error).message}` };
@@ -246,7 +266,7 @@ export async function tool_share_calendar_entry_to_feed(
 const INVITE_REFUSAL: Record<string, string> = {
   NOT_FOUND: 'STATUS: not_found. That entry is not on the member\'s calendar.',
   NOT_INVITABLE:
-    'STATUS: not_invitable. Only an upcoming community event, live room, or the member\'s own one-off entry can be shared as an invite — never a series, a finished or cancelled entry, or one another feature owns.',
+    'STATUS: not_invitable. Any of the member\'s own upcoming entries can be sent as an invite — never one that is cancelled, done, over, or a recurring series.',
 };
 
 export async function tool_invite_to_calendar_entry(
@@ -269,7 +289,9 @@ export async function tool_invite_to_calendar_entry(
     if (found.kind === 'reply') return found.reply;
     const entry = found.entry;
 
-    const invite = await buildInviteFromEntry(id.user_id, entry as never);
+    const choice: CardChoice = { card_title: strArg(args, 'card_title') || undefined, include_location: args.include_location === true };
+    const sensitive = isSensitiveEntry(entry);
+    const invite = await buildInviteFromEntry(id.user_id, entry as never, new Date(), choice);
     if (!invite.ok) {
       return {
         ok: true,
@@ -300,10 +322,25 @@ export async function tool_invite_to_calendar_entry(
           start_time: invite.metadata.start_time,
           recipient_user_id: recipientId,
           recipient_name: recipientName,
+          location_shown: invite.metadata.location !== null,
+          sensitive,
         },
         text:
-          'STATUS: needs_confirmation. Nothing was sent. Tell the member, in your own words, which entry goes to whom and ask whether to send the invite; ' +
-          'call again with the same entry_id and recipient_user_id and confirmed=true only after they say yes.',
+          'STATUS: needs_confirmation. Nothing was sent. Tell the member, in your own words, which entry goes to whom, the exact title on the card ' +
+          'and whether the place is shown, ' +
+          (sensitive ? 'and say plainly that this is a health appointment; ' : '') +
+          'ask whether to send the invite; call again with the same entry_id, recipient_user_id, card_title and include_location ' +
+          (sensitive ? 'and sensitive_ack=true ' : '') +
+          'and confirmed=true only after they say yes.',
+      };
+    }
+    if (sensitive && args.sensitive_ack !== true) {
+      return {
+        ok: true,
+        result: { stage: 'awaiting_confirmation', entry_id: entry.id, title: invite.metadata.title, sensitive, needs: 'sensitive_ack' },
+        text:
+          'STATUS: needs_sensitive_ack. Nothing was sent. This is a health appointment: tell the member that plainly, read back the exact ' +
+          'title on the card and whether the place is shown, and call again with sensitive_ack=true only after they confirm.',
       };
     }
     const refusal = checkCalendarWriteRequest({ confirmed: true, startTime: entry.start_time, endTime: entry.end_time, nowMs: Date.now() });
@@ -422,12 +459,14 @@ export const CALENDAR_SOCIAL_TOOL_DECLARATIONS: Array<Record<string, unknown>> =
   {
     name: 'share_calendar_entry_to_feed',
     description: [
-      'Share an upcoming community event or live room from the member\'s calendar to their community feed, as a post with the event card.',
-      'WHEN TO CALL: "post my yoga meetup to the feed", "tell everyone I\'m going", "Teil das Event im Feed".',
-      'Only events and live rooms can be shared — never a private entry. The member must ask for it.',
+      'Share one of the member\'s own upcoming calendar entries to their community feed, as a post with a card: an event, a live room, or any private, business, medical or reminder entry.',
+      'WHEN TO CALL: "post my yoga meetup to the feed", "tell everyone I\'m going", "teil Marias Geburtstag im Feed".',
+      'Never a cancelled, finished or recurring entry. The member must ask for it.',
+      'For an own entry the card shows card_title (default: the entry title — offer a friendlier one when the title is private, e.g. a reminder) and the place only with include_location=true.',
+      'A health appointment (result sensitive=true) needs sensitive_ack=true on the confirmed call, after you said plainly what is shared.',
       'Compose a short, friendly post text in the member\'s language (du-form in German) or use their words.',
       'Two steps: call without confirmed to get the preview; read the event and the post text back and ask;',
-      'call again with the same entry_id, text and is_public and confirmed=true only after the member says yes (is_public is required on that call).',
+      'call again with the same entry_id, text, card_title, include_location and is_public and confirmed=true only after the member says yes (is_public is required on that call).',
       'Never claim it was posted unless the result says STATUS: shared.',
     ].join('\n'),
     parameters: {
@@ -436,6 +475,9 @@ export const CALENDAR_SOCIAL_TOOL_DECLARATIONS: Array<Record<string, unknown>> =
         ...ENTRY_PROPS,
         text: { type: 'string', description: 'The post text, in the member\'s language (max 2000 characters). May be empty.' },
         is_public: { type: 'boolean', description: 'false keeps the post visible to the member only, true shows it to the community. Required with confirmed=true — send what the member approved.' },
+        card_title: { type: 'string', description: 'For an own entry: the title others see on the card (max 120). Omit to use the entry title.' },
+        include_location: { type: 'boolean', description: 'For an own entry: true shows the entry\'s place on the card. Default false.' },
+        sensitive_ack: { type: 'boolean', description: 'true ONLY when the preview said sensitive=true and the member confirmed after you said it is a health appointment.' },
         confirmed: { type: 'boolean', description: 'true ONLY after the member explicitly confirmed the read-back.' },
       },
       required: [],
@@ -446,7 +488,8 @@ export const CALENDAR_SOCIAL_TOOL_DECLARATIONS: Array<Record<string, unknown>> =
     description: [
       'Invite another community member to an entry in the member\'s calendar: sends an invite card into their direct chat, which they answer with yes / maybe / no.',
       'WHEN TO CALL: "invite Maria to my run on Saturday", "Lad Jonas zum Meetup ein".',
-      'Works for an upcoming community event, live room, or the member\'s own one-off entry — not a series, nothing finished or cancelled.',
+      'Works for any of the member\'s own upcoming entries (event, live room, private, business, medical, reminder) — not a series, nothing finished or cancelled.',
+      'For an own entry the card shows card_title (default: the entry title) and the place only with include_location=true. A health appointment needs sensitive_ack=true, as for sharing.',
       'First resolve the person with resolve_recipient and pass their user id as recipient_user_id.',
       'Two steps: call without confirmed to get the preview; tell the member which entry goes to whom and ask;',
       'call again with the same arguments and confirmed=true only after they say yes. Never claim it was sent unless the result says STATUS: sent.',
@@ -456,6 +499,9 @@ export const CALENDAR_SOCIAL_TOOL_DECLARATIONS: Array<Record<string, unknown>> =
       properties: {
         ...ENTRY_PROPS,
         recipient_user_id: { type: 'string', description: 'The invited person\'s user id (UUID) from resolve_recipient.' },
+        card_title: { type: 'string', description: 'For an own entry: the title on the card (max 120). Omit to use the entry title.' },
+        include_location: { type: 'boolean', description: 'For an own entry: true shows the entry\'s place on the card. Default false.' },
+        sensitive_ack: { type: 'boolean', description: 'true ONLY when the preview said sensitive=true and the member confirmed after you said it is a health appointment.' },
         confirmed: { type: 'boolean', description: 'true ONLY after the member explicitly confirmed.' },
       },
       required: ['recipient_user_id'],

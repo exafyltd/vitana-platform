@@ -912,6 +912,7 @@
     "POST /events/:id/move",
     "POST /events/:id/complete",
     "POST /events/:id/share-to-feed",
+    "POST /feed-posts/:postId/add",
     "GET /events/:id/invite-preview",
     "GET /invites/:messageId",
     "POST /invites/:messageId/respond",
@@ -1205,6 +1206,8 @@
           ],
           "movable": false,
           "shareable": false,
+          "invitable": false,
+          "sensitive": false,
           "shared_post_id": null
         },
         {
@@ -1263,6 +1266,8 @@
           ],
           "movable": true,
           "shareable": false,
+          "invitable": false,
+          "sensitive": false,
           "shared_post_id": null
         },
         {
