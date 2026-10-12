@@ -266,6 +266,19 @@ LEDGER_WRITE_AUTH_MODE=log
 # Same three modes; default 'log'. Staging pins 'log'; enforce is a separate,
 # owner-approved change. GET /health stays open and reports the mode.
 SCHEDULED_NOTIFICATIONS_AUTH_MODE=log
+# Member phone verification by SMS code (VTID-05095). Exact 'true' enables;
+# unset = every /api/v1/me/phone write answers 503 PHONE_VERIFY_DISABLED.
+# Enabled with a missing / < 32-byte secret = 503 PHONE_VERIFY_MISCONFIGURED.
+# SMS go through AWS End User Messaging SMS (sms-voice:SendTextMessage on the
+# task role; account out of the SMS sandbox; spend limit set) — owner setup
+# before switching on.
+PHONE_VERIFY_ENABLED=true
+PHONE_VERIFY_HMAC_SECRET=xxx
+PHONE_VERIFY_COUNTRIES=DE,AT,CH
+PHONE_VERIFY_DAILY_CAP=200
+PHONE_VERIFY_SENDER_ID=Vitana
+PHONE_VERIFY_ORIGINATION=
+PHONE_VERIFY_CONFIGURATION_SET=
 ```
 
 `GOOGLE_CLOUD_PROJECT`, `GCP_PROJECT`, `VERTEX_LOCATION`, `VERTEX_MODEL`,

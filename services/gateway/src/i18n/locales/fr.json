@@ -192,5 +192,6 @@
   "autopilot.auto.event_rsvp_referral.title": "Inscris-toi à l'événement auquel tu es invité",
   "autopilot.auto.event_rsvp_referral.summary": "Tu es arrivé par une invitation à un événement. Inscris-toi pour garder ta place.",
   "autopilot.auto.share_milestone.title": "Partage ton étape : {milestone}",
-  "autopilot.auto.share_milestone.summary": "Tu as franchi une étape. Partage-la avec la communauté — tu verras la publication avant qu'elle parte."
+  "autopilot.auto.share_milestone.summary": "Tu as franchi une étape. Partage-la avec la communauté — tu verras la publication avant qu'elle parte.",
+  "sms.phone_verification.code": "Ton code Vitanaland : {code}. Ne le partage avec personne."
 }

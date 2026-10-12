@@ -99,6 +99,8 @@ export type GatewayI18nKey =
   | 'notif.calendar_reminder.now'
   | 'notif.calendar_reminder.tomorrow'
   | 'notif.fallback_app_name'
+  // VTID-05095: the SMS that carries a member's phone verification code
+  | 'sms.phone_verification.code'
   // VTID-04463: partner organization invite email
   | 'email.partner_invite.subject'
   | 'email.partner_invite.greeting'

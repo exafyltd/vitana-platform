@@ -1137,6 +1137,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
     }
   });
 
+  // VTID-05095: a member verifies their own phone number (SMS code). Mounted
+  // before the /me context router so its paths resolve here first.
+  const mePhoneRouter = require('./routes/me-phone').default();
+  mountRouterSync(app, '/api/v1/me/phone', mePhoneRouter, { owner: 'me-phone' });
+
   // VTID-01046: Me Context - role context and active role switching
   mountRouterSync(app, '/api/v1/me', meRouter, { owner: 'me-context' });
 

@@ -98,7 +98,12 @@ describe('gateway i18n catalog coverage', () => {
     // state for a locale that has not gone through the translate+audit
     // pipeline yet — and every push notification for an Arabic user still
     // renders (via the EN → DE fallback chain in `tt()`), never a raw key.
-    expect(missingKeysForLocale('ar')).toEqual(KEYS);
+    // VTID-05095: the one key translated into Arabic by hand (the SMS with a
+    // phone verification code — a member must be able to read it). Anything
+    // else showing up in ar.json, or a value equal to English, fails here.
+    const AR_TRANSLATED = ['sms.phone_verification.code'];
+    expect(missingKeysForLocale('ar')).toEqual(KEYS.filter((k) => !AR_TRANSLATED.includes(k)));
+    for (const k of AR_TRANSLATED) expect(RAW.ar[k]).not.toBe(en[k]);
     expect(tt('notif.diary_reminder.title', 'ar')).toBe(en['notif.diary_reminder.title']);
   });
 });
