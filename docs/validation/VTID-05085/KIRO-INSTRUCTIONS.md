@@ -39,6 +39,10 @@ Within a phase, the platform PR merges and is on staging before the vitana-v1 PR
    - The title starts with the VTID, e.g. `VTID-05085: Unified Card System — enrichment endpoint + migration`.
    - The body has a `VTID: VTID-05085` line and a Handoff section (Where it stopped / Open / Next).
    - Copy this phase's `plan-sparring.md` into the vitana-v1 PR too, as `docs/validation/<VTID>/plan-sparring.md`.
+   - **Platform PRs must pass `validate-pr` (VALIDATOR-CHECK.yml).** Put these lines at the top of the PR body: `VTID: <VTID>`, `VALIDATION_PROFILE: gateway_backend`, `SCOPE_ALLOWLIST: <paths>`, `ACCEPTANCE: docs/validation/<VTID>/acceptance.md`, `MERGE_PAYLOAD_PREVIEW: <merge title>`, `OASIS_IMPACT: yes|no`.
+     - `docs/validation/<VTID>/` needs `acceptance.md` (every `AC-n` followed within 12 lines by a `TEST:`/`CURL:`/`UI:` line), `commands.log` and `outputs/`.
+     - A route change also needs `ROUTE_MOUNT:`, `FINAL_URL:` and `CURL_PROOF:` in `acceptance.md`; `OASIS_IMPACT: yes` needs `OASIS_PROOF:`.
+     - The migration is outside the `gateway_backend` path allowlist (`node scripts/ci/validator-path-guard.cjs` reports it as "not judged", not rejected). Check locally with `node scripts/ci/validator-path-guard.cjs <changed-files.txt> gateway_backend <body.txt>`.
 9. **Regression suites:** do not loosen any existing test to get green. If one fails, fix the change.
 
 ---
