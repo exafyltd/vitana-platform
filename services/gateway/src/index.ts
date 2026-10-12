@@ -387,6 +387,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const autonomyPulseRouter = require('./routes/autonomy-pulse').default;
   // Autonomy Trace — unified timeline of autonomous work-in-flight + history
   const autonomyTraceRouter = require('./routes/autonomy-trace').default;
+  // VTID-05084: Loop Engineering catalog (read-only) — Command Hub Autonomy → Loops
+  const autonomyLoopsRouter = require('./routes/autonomy-loops').default;
   // VTID-04319: Orchestrator v2 read-only control-plane API (context, unified runs, agent cards)
   const orchestratorRouter = require('./routes/orchestrator').default;
   // VTID-01250: Social Connect (AP-1305/AP-1306)
@@ -894,6 +896,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/dev-autopilot', devAutopilotRouter, { owner: 'dev-autopilot' });
   mountRouterSync(app, '/api/v1/autonomy', autonomyPulseRouter, { owner: 'autonomy-pulse' });
   mountRouterSync(app, '/api/v1/autonomy', autonomyTraceRouter, { owner: 'autonomy-trace' });
+  mountRouterSync(app, '/api/v1/autonomy', autonomyLoopsRouter, { owner: 'autonomy-loops' });
   mountRouterSync(app, '/api/v1/orchestrator', orchestratorRouter, { owner: 'orchestrator' });
 
   // VTID-01250: Social Connect — OAuth, profile enrichment, auto-share (AP-1305/AP-1306)

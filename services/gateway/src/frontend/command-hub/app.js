@@ -3797,7 +3797,7 @@ const NAVIGATION_CONFIG = [
         "tabs": [
             { "key": "autopilot-community", "path": "/command-hub/autonomy/autopilot-community/" },
             { "key": "autopilot-developer", "path": "/command-hub/autonomy/autopilot-developer/" },
-            { "key": "autopilot-admin", "path": "/command-hub/autonomy/autopilot-admin/" },
+            { "key": "loops", "path": "/command-hub/autonomy/loops/" },
             { "key": "self-healing", "path": "/command-hub/autonomy/self-healing/" },
             { "key": "autonomy-pulse", "path": "/command-hub/autonomy/autonomy-pulse/" },
             { "key": "autonomy-trace", "path": "/command-hub/autonomy/autonomy-trace/" }
@@ -8522,8 +8522,16 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'autonomy' && tab === 'autopilot-developer') {
         // Moved from command-hub/dev-autopilot
         container.appendChild(renderDevAutopilotView());
-    } else if (moduleKey === 'autonomy' && tab === 'autopilot-admin') {
-        container.appendChild(renderAutopilotAdminView());
+    } else if (moduleKey === 'autonomy' && tab === 'loops') {
+        // VTID-05084: Loop Engineering catalog — loops-catalog.js (loaded before app.js)
+        if (window.LoopsCatalog) {
+            container.appendChild(window.LoopsCatalog.render({ headers: buildContextHeaders }));
+        } else {
+            var loopsMissing = document.createElement('div');
+            loopsMissing.style.padding = '1.5rem';
+            loopsMissing.textContent = 'The Loops module did not load. Reload the page.';
+            container.appendChild(loopsMissing);
+        }
     } else if (moduleKey === 'autonomy' && tab === 'self-healing') {
         // Moved from infrastructure/self-healing
         container.appendChild(renderSelfHealingView());
@@ -12602,6 +12610,8 @@ const AUTONOMY_REDIRECTS = {
     '/command-hub/autonomy-pulse/':               { section: 'autonomy', tab: 'autonomy-pulse' },
     '/command-hub/autonomy-trace/':               { section: 'autonomy', tab: 'autonomy-trace' },
     '/command-hub/dev-autopilot/':                { section: 'autonomy', tab: 'autopilot-developer' },
+    // VTID-05084: the "Autopilot — Admin (Coming soon)" placeholder became the Loops screen
+    '/command-hub/autonomy/autopilot-admin/':     { section: 'autonomy', tab: 'loops' },
     // Assistant section moves (Round 2) — kept for legacy bookmarks. DEV-COMHU:
     // Awareness moved from Voice into Conversation (design + monitoring), so these
     // now resolve onward to the Conversation / Awareness tab.
@@ -50997,26 +51007,6 @@ function renderAutopilotCommunityView() {
         '</ul>';
     container.appendChild(info);
 
-    return container;
-}
-
-function renderAutopilotAdminView() {
-    var container = document.createElement('div');
-    container.style.padding = '1.5rem';
-    container.innerHTML = '<h2>Autopilot — Admin <span class="status-badge status-warning" style="margin-left:.5rem;font-size:.7rem;">Coming soon</span></h2>' +
-        '<p class="section-subtitle">The admin-role equivalent of community Autopilot — automated recommendations for platform admins.</p>';
-
-    var card = document.createElement('div');
-    card.className = 'databases-arch-note';
-    card.innerHTML = '<h3>Planned scope</h3>' +
-        '<ul>' +
-        '<li>Recommendations for admins based on platform signals: flagged content, stalled tenants, unassigned VTIDs, governance violations approaching SLA, user growth anomalies.</li>' +
-        '<li>Same intake / accept / dismiss / snooze flow as community Autopilot, but with admin-facing actions (open PR, run migration, escalate to Exafy).</li>' +
-        '<li>Shares the same Autopilot engine as the other roles — differences are in the recommendation sources and the action handlers.</li>' +
-        '<li>Tracked under the parallel autopilot build-out running alongside Dev Autopilot.</li>' +
-        '</ul>' +
-        '<p style="margin-top:.75rem;font-size:.8rem;color:var(--color-text-secondary);">This tab reserves the slot in the Autonomy section so the direction is visible. When the implementation lands, the render function in <code>app.js</code> gets swapped for the real view.</p>';
-    container.appendChild(card);
     return container;
 }
 
