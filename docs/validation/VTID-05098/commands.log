@@ -13,3 +13,4 @@ npm run build && node ../../scripts/ci/command-hub-golden-fingerprint.js   # PAS
 node scripts/ci/validator-path-guard.cjs --csp-added-lines <diff>        # no CSP pattern hits
 node -e lintMigration/validateScope/evaluateSparringRecord               # clean
 node -e staging-verify validateManifest VTID-05098 + VTID-05084         # ok
+npx jest --silent   # full gateway suite: 1648 suites passed (2 skipped), 26565 tests
