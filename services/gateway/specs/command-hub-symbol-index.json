@@ -1622,113 +1622,113 @@
       {
         "name": "h",
         "kind": "function",
-        "startLine": 36,
-        "bodyStartLine": 36,
-        "endLine": 41,
+        "startLine": 37,
+        "bodyStartLine": 37,
+        "endLine": 42,
         "lineCount": 6
       },
       {
         "name": "load",
         "kind": "function",
-        "startLine": 43,
-        "bodyStartLine": 43,
-        "endLine": 55,
+        "startLine": 44,
+        "bodyStartLine": 44,
+        "endLine": 56,
         "lineCount": 13
       },
       {
         "name": "signalText",
         "kind": "function",
-        "startLine": 57,
-        "bodyStartLine": 57,
-        "endLine": 64,
+        "startLine": 58,
+        "bodyStartLine": 58,
+        "endLine": 65,
         "lineCount": 8
       },
       {
         "name": "sensorCount",
         "kind": "function",
-        "startLine": 66,
-        "bodyStartLine": 66,
-        "endLine": 70,
+        "startLine": 67,
+        "bodyStartLine": 67,
+        "endLine": 71,
         "lineCount": 5
       },
       {
         "name": "badge",
         "kind": "function",
-        "startLine": 72,
-        "bodyStartLine": 72,
-        "endLine": 74,
+        "startLine": 73,
+        "bodyStartLine": 73,
+        "endLine": 75,
         "lineCount": 3
       },
       {
         "name": "renderHeader",
         "kind": "function",
-        "startLine": 76,
-        "bodyStartLine": 76,
-        "endLine": 91,
+        "startLine": 77,
+        "bodyStartLine": 77,
+        "endLine": 92,
         "lineCount": 16
       },
       {
         "name": "renderKpis",
         "kind": "function",
-        "startLine": 93,
-        "bodyStartLine": 93,
-        "endLine": 107,
+        "startLine": 94,
+        "bodyStartLine": 94,
+        "endLine": 108,
         "lineCount": 15
       },
       {
         "name": "renderCard",
         "kind": "function",
-        "startLine": 109,
-        "bodyStartLine": 109,
-        "endLine": 133,
+        "startLine": 110,
+        "bodyStartLine": 110,
+        "endLine": 134,
         "lineCount": 25
       },
       {
         "name": "renderDetail",
         "kind": "function",
-        "startLine": 135,
-        "bodyStartLine": 135,
-        "endLine": 180,
+        "startLine": 136,
+        "bodyStartLine": 136,
+        "endLine": 181,
         "lineCount": 46
       },
       {
         "name": "renderEngine",
         "kind": "function",
-        "startLine": 182,
-        "bodyStartLine": 182,
-        "endLine": 193,
+        "startLine": 183,
+        "bodyStartLine": 183,
+        "endLine": 194,
         "lineCount": 12
       },
       {
         "name": "renderSimplification",
         "kind": "function",
-        "startLine": 195,
-        "bodyStartLine": 195,
-        "endLine": 225,
-        "lineCount": 31
+        "startLine": 196,
+        "bodyStartLine": 196,
+        "endLine": 230,
+        "lineCount": 35
       },
       {
         "name": "paint",
         "kind": "function",
-        "startLine": 227,
-        "bodyStartLine": 227,
-        "endLine": 259,
+        "startLine": 232,
+        "bodyStartLine": 232,
+        "endLine": 264,
         "lineCount": 33
       },
       {
         "name": "render",
         "kind": "function",
-        "startLine": 266,
-        "bodyStartLine": 266,
-        "endLine": 274,
+        "startLine": 271,
+        "bodyStartLine": 271,
+        "endLine": 279,
         "lineCount": 9
       },
       {
         "name": "reset",
         "kind": "function",
-        "startLine": 276,
-        "bodyStartLine": 276,
-        "endLine": 278,
+        "startLine": 281,
+        "bodyStartLine": 281,
+        "endLine": 283,
         "lineCount": 3
       }
     ],
