@@ -47,6 +47,8 @@ import { withDependencyHealth } from '../services/dependency-probe';
 import { requireScheduledNotificationsAuth, scheduledNotificationsAuthStatus, evaluateScheduledNotificationsAuth } from '../middleware/scheduled-notifications-auth';
 import { runCoachTick } from '../services/onboarding-coach/coach-service';
 import { resolveCoachConfig } from '../services/onboarding-coach/config';
+import { runCompanionTick } from '../services/companion/companion-service';
+import { resolveCompanionConfig } from '../services/companion/config';
 const router = Router();
 
 // VTID-04677: every route below fans out notifications to members, so each
@@ -1669,6 +1671,33 @@ router.post('/onboarding-coach-tick', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('[onboarding-coach] tick failed:', err?.message || err);
     return res.status(500).json({ ok: false, error: 'onboarding coach tick failed' });
+  }
+});
+
+// VTID-05099 — Vitana Companion Messages tick (Phase 1: SHADOW ONLY).
+// Every 15 minutes (EventBridge, production gateway only). Decides, for each
+// member inside their local morning window, the one moment + Vitana card
+// Vitana would bring today and records it; composes a capped sample. Sends
+// nothing. The staging gateway answers 409 — it shares the production database.
+router.post('/companion-tick', async (req: Request, res: Response) => {
+  const auth = evaluateScheduledNotificationsAuth(req);
+  if (!auth.ok) return res.status(auth.status ?? 401).json({ ok: false, error: auth.error });
+  // impact-allow-no-oasis: runCompanionTick emits one companion.tick.completed per tick that decided something.
+
+  const config = resolveCompanionConfig();
+  if (config.mode === 'disabled-on-staging') {
+    return res.status(409).json({ ok: false, mode: config.mode, error: 'companion messages do not run on staging' });
+  }
+  if (config.mode !== 'shadow') return res.json({ ok: true, mode: config.mode, reason: config.reason });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+  try {
+    const result = await runCompanionTick({ sb: supa as any, config });
+    return res.status(result.ok ? 200 : 503).json(result);
+  } catch (err: any) {
+    console.error('[companion] tick failed:', err?.message || err);
+    return res.status(500).json({ ok: false, error: 'companion tick failed' });
   }
 });
 

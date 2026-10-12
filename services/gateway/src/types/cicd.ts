@@ -157,6 +157,8 @@ export type CicdEventType =
   // tick (never one per member per tick), plus a member's real stage changes.
   | 'onboarding.coach.tick_completed'
   | 'onboarding.coach.stage_changed'
+  // VTID-05099: Vitana Companion Messages — one aggregate event per tick that decided something.
+  | 'companion.tick.completed'
   | 'cicd.github.create_pr.requested'
   | 'cicd.github.create_pr.succeeded'
   | 'cicd.github.create_pr.failed'
