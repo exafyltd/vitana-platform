@@ -481,6 +481,13 @@ jobs:
       # something is being written, memory reaches the prompt, >=90% of rows
       # older than 2h are embedded, no new DLQ rows, AP-0910 ran in the last
       # 3h, and no same-value fact churn (VTID-04341 regression guard).
+      #
+      # VTID-05088: "nothing written" only fails when somebody actually spoke.
+      # On 2026-10-11 row 21 went red on a day nobody had a voice conversation
+      # while the pipeline was healthy. user_speech_turns_24h is counted from
+      # the speech stream, upstream of the writer, so a broken writer still
+      # shows speech > 0 and fails here; speech that never reached the writer
+      # (transcript_turns_24h = 0) fails as speech-not-recorded.
       - name: '21. Memory system health (VTID-04345)'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -506,14 +513,17 @@ jobs:
           AP=$(jq -r '.ap0910_last_run // ""' mem.json)
           AP_AGE_H=999
           if [ -n "$AP" ]; then AP_AGE_H=$(( ( $(date -u +%s) - $(date -u -d "$AP" +%s) ) / 3600 )); fi
+          SPEECH=$(j .user_speech_turns_24h); TURNS=$(j .transcript_turns_24h)
           BAD=""
-          [ "$WRITES" -eq 0 ] && BAD="$BAD no-memory-writes-24h;"
+          [ "$SPEECH" -gt 0 ] && [ "$WRITES" -eq 0 ] && BAD="$BAD no-memory-writes-24h;"
+          [ "$SPEECH" -gt 0 ] && [ "$TURNS" -eq 0 ] && BAD="$BAD speech-not-recorded;"
           [ "$CTX" -gt 0 ] && [ "$CTX_MEM" -eq 0 ] && BAD="$BAD memory-never-reached-prompt;"
           [ "$COV" -lt 90 ] && BAD="$BAD embedding-coverage-${COV}pct;"
           [ "$DLQ" -gt 0 ] && BAD="$BAD dlq-${DLQ}-new;"
           [ "$AP_AGE_H" -gt 3 ] && BAD="$BAD AP-0910-last-run-${AP_AGE_H}h-ago;"
           [ "$LANG" -gt 25 ] && BAD="$BAD preferred_language-churn-${LANG};"
-          D="writes/24h $WRITES, prompt-with-memory $CTX_MEM/$CTX, with-diary $CTX_DIARY, embedded ${COV}% ($EMB/$ROWS), dlq-new $DLQ, AP-0910 ${AP_AGE_H}h ago"
+          if [ "$SPEECH" -eq 0 ]; then SP="no user speech in 24h (nothing to remember)"; else SP="user speech turns $SPEECH, recorded $TURNS"; fi
+          D="$SP, writes/24h $WRITES, prompt-with-memory $CTX_MEM/$CTX, with-diary $CTX_DIARY, embedded ${COV}% ($EMB/$ROWS), dlq-new $DLQ, AP-0910 ${AP_AGE_H}h ago"
           if [ -z "$BAD" ]; then R=PASS; else R=FAIL; D="$BAD $D"; fi
           echo "| 21 | Memory system health | $R | $D |" >> "$REPORT"
 
