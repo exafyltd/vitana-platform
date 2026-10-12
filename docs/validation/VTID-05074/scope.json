@@ -8,7 +8,7 @@
     "integrations/chatgpt-plugin/vitanaland/plugin.json",
     "integrations/chatgpt-plugin/vitanaland/.codex-plugin/plugin.json",
     "services/gateway/test/vtid-04980-*.test.ts",
-    "services/gateway/test/vtid-05074-*.test.ts",
+    "services/gateway/test/commerce-plugin-legal.test.ts",
     "docs/validation/VTID-05074/**"
   ],
   "weakens_tests": [],

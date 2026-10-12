@@ -15,13 +15,13 @@ CURL_PROOF: staging returns 200 `text/html; charset=utf-8` for `/legal/vitanalan
 ## Acceptance criteria
 
 AC-1: `GET /legal/vitanaland-commerce/{privacy,terms,support}` return 200 static English HTML with `Cache-Control: public, max-age=300`, and each page has its heading.
-  TEST: services/gateway/test/vtid-05074-commerce-plugin-legal.test.ts
+  TEST: services/gateway/test/commerce-plugin-legal.test.ts
 AC-2: The pages contain no script, inline style, event handler, external resource or form, and never mention the Maxina app.
-  TEST: services/gateway/test/vtid-05074-commerce-plugin-legal.test.ts
+  TEST: services/gateway/test/commerce-plugin-legal.test.ts
 AC-3: The pages are always on: the Commerce MCP switches do not affect them. Nothing in the request (query, headers) changes the page.
-  TEST: services/gateway/test/vtid-05074-commerce-plugin-legal.test.ts
+  TEST: services/gateway/test/commerce-plugin-legal.test.ts
 AC-4: Unknown paths and any method but GET answer 404; the router is mounted under `/legal/vitanaland-commerce` beside the unchanged `/mcp` and `/.well-known` mounts.
-  TEST: services/gateway/test/vtid-05074-commerce-plugin-legal.test.ts
+  TEST: services/gateway/test/commerce-plugin-legal.test.ts
 AC-5: The plugin package (both layouts) points the privacy, terms and support URLs at these pages and has a subtitle of at most 30 characters ("Onboard your business").
   TEST: services/gateway/test/vtid-04980-chatgpt-plugin-package.test.ts
 
