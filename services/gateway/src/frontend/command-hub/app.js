@@ -8528,7 +8528,7 @@ function renderModuleContent(moduleKey, tab) {
             container.appendChild(window.LoopsCatalog.render({ headers: buildContextHeaders }));
         } else {
             var loopsMissing = document.createElement('div');
-            loopsMissing.style.padding = '1.5rem';
+            loopsMissing.className = 'loops-view loops-error';
             loopsMissing.textContent = 'The Loops module did not load. Reload the page.';
             container.appendChild(loopsMissing);
         }
