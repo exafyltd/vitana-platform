@@ -3819,3 +3819,40 @@ Migration: `supabase/migrations/20261012110000_vtid_05077_plan_version_planner_m
 | `planner_model` | model id that wrote the plan; NULL before 2026-10-12 |
 
 OASIS (`CicdEventType`): `dev_autopilot.plan.fallback_used` — payload `{ finding_id, version, planner_provider, planner_model }`. `GET /api/v1/dev-autopilot/spend` returns `planner: { plans_24h, fallback_24h, fallback_rate_24h }` from these columns.
+
+## Vitana Companion Messages — `companion_messages_ledger`, `companion_preferences` (VTID-05099, 2026-10-12) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261012200000_vtid_05099_companion_messages.sql` (additive). Vitana writes at most one proactive message per member per local day into the member's Vitana DM, each carrying one Unified Card System card (VTID-05085). Phase 1 is shadow only: decisions are recorded, nothing is sent. Plan: `docs/validation/VTID-05099/plan-sparring.md`.
+
+### companion_preferences (one row per member; no row = defaults)
+
+| Column | Meaning |
+|---|---|
+| `user_id` | PK, `auth.users(id)` |
+| `tenant_id` | member's tenant (nullable) |
+| `enabled` | companion messages on (default `true`) |
+| `topic_health` / `topic_community` | default `true` |
+| `topic_business` | default `false` — business / income messages are opt-in (owner decision) |
+| `delivery_window` | `'morning'` (only value today) |
+
+RLS: members select / insert / update their own row; no client delete.
+
+### companion_messages_ledger (service role only)
+
+| Column | Meaning |
+|---|---|
+| `user_id`, `tenant_id`, `local_date` | member and their local calendar day |
+| `mode` | `shadow` \| `staff` \| `live` |
+| `sender` | `companion` \| `proactive_match` (VTID-01270 claims the same slot) |
+| `moment_key`, `card_type` | the moment and its Vitana card id (`F2` Vitana Index, `F4` Talk to Vitana, `F5` Find a Match, …) |
+| `status` | `pending` → `sent` \| `failed` \| `shadow` |
+| `facts` | the only facts the message may use |
+| `composed_text`, `composed_by_model` | Vitana's note (shadow: a capped sample only) |
+| `chat_message_id` | the DM row once sent |
+| `replied_at` | set when the member replies or taps the card (back-off) |
+
+Uniqueness: `(user_id, local_date, mode)`, plus partial unique index `uq_companion_ledger_one_real_per_day (user_id, local_date) WHERE mode <> 'shadow'` — at most one real proactive Vitana DM per member per local day, whoever sends it.
+
+Functions (SECURITY DEFINER, `service_role` only): `claim_companion_message(user, tenant, local_date, mode, sender, moment_key, card_type, facts) → {ok, claimed, id|reason}`, `finish_companion_message(id, status, composed_text, model, chat_message_id)` (pending rows only), `mark_companion_replied(user)` (latest unreplied real send).
+
+Also: `user_proactive_touches.surface` CHECK gains `messenger_companion` (presence-pacer surface). OASIS (`CicdEventType`): `companion.tick.completed` — one aggregate event per tick that decided something.

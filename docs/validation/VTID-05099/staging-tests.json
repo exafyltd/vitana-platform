@@ -1,0 +1,37 @@
+{
+ "vtid": "VTID-05099",
+ "service": "gateway",
+ "tests": [
+  {
+   "kind": "http",
+   "name": "gateway alive after the change",
+   "path": "/alive",
+   "expect_status": 200
+  },
+  {
+   "kind": "http",
+   "name": "companion messages report they are disabled on staging (read-only GET, no member data)",
+   "path": "/api/v1/companion/status",
+   "expect_status": 200,
+   "expect_json": {
+    "ok": true,
+    "mode": "disabled-on-staging",
+    "env": "staging"
+   }
+  },
+  {
+   "kind": "http",
+   "name": "the companion tick refuses an untokened call (rejected probe, no write)",
+   "method": "POST",
+   "path": "/api/v1/scheduled-notifications/companion-tick",
+   "rejected_probe": true,
+   "expect_status": 401
+  },
+  {
+   "kind": "existing",
+   "ref": "npx jest test/vtid-05099-companion-messages.test.ts test/vtid-05099-proactive-match-daily-limit.test.ts test/vtid-04560-role-separation-regression.test.ts test/vtid-04892-onboarding-coach.test.ts",
+   "cwd": "services/gateway",
+   "reason": "The engine writes ledger rows and staging shares the production database, so the tick never runs on staging (409 disabled-on-staging, proven in the suite). The moment/card choice, mode rules, the shadow tick (local window, strict exclusion, opt-out, once per local day, onboarding touch, pacer, compose cap, sends nothing), the Bedrock-only composer and the match message's shared one-a-day claim are proven in vtid-05099-*; the migration (one real DM per member per local day across senders, shadow rows never block, service-role only, pacer CHECK widening) is proven over a throwaway Postgres by docs/validation/VTID-05099/pglite-companion-messages-check.mjs (outputs/pglite-companion-messages.txt). test:roles covers the new route file's atlas domain."
+  }
+ ]
+}

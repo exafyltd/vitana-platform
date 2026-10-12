@@ -204,6 +204,14 @@ JOBS=(
   # the gateway (the tick then answers {mode:"off"}); full silence: re-run
   # with --only gateway-onboarding-coach-tick --delete.
   "gateway-onboarding-coach-tick|17 6 * * *|UTC|/api/v1/scheduled-notifications/onboarding-coach-tick|{}|{\"auth\":\"gateway_internal\",\"token_secret_id\":\"$PROD_INTERNAL_TOKEN_SECRET_ID\"}"
+  # VTID-05099 — Vitana Companion Messages, Phase 1 SHADOW: every 15 minutes,
+  # production gateway only (staging answers 409 — shared database). Each tick
+  # handles the members whose LOCAL time is inside the morning window
+  # (default 07:30–09:30), once per member per local day; records what Vitana
+  # would write, sends nothing. Inert until FEATURE_COMPANION_MESSAGES_ENV and
+  # COMPANION_MODE=shadow are set on the gateway (the tick answers {mode:"off"});
+  # full silence: re-run with --only gateway-companion-tick --delete.
+  "gateway-companion-tick|*/15 * * * *|UTC|/api/v1/scheduled-notifications/companion-tick|{}|{\"auth\":\"gateway_internal\",\"token_secret_id\":\"$PROD_INTERNAL_TOKEN_SECRET_ID\"}"
 )
 
 # VTID-04352: --only narrows JOBS to the requested name prefixes.
