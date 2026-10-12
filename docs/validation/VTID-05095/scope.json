@@ -1,0 +1,27 @@
+{
+  "vtid": "VTID-05095",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/phone-verification/*.ts",
+    "services/gateway/src/routes/me-phone.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/i18n/catalog.ts",
+    "services/gateway/src/i18n/locales/*.json",
+    "services/gateway/package.json",
+    "services/gateway/package-lock.json",
+    "services/gateway/pnpm-lock.yaml",
+    "services/gateway/test/vtid-05095-*.test.ts",
+    "services/gateway/test/i18n/catalog-coverage.test.ts",
+    "supabase/migrations/20261012180000_vtid_05095_phone_verification.sql",
+    "DATABASE_SCHEMA.md",
+    ".claude/rules/infrastructure.md",
+    "docs/validation/VTID-05095/**"
+  ],
+  "weakens_tests": [
+    {
+      "file": "services/gateway/test/i18n/catalog-coverage.test.ts",
+      "reason": "the Arabic check now allows exactly one hand-translated key (sms.phone_verification.code, the verification SMS a member must be able to read); every other key must still be missing and that value must differ from English, so a copied-English catalog still fails"
+    }
+  ],
+  "red_green_exempt": []
+}

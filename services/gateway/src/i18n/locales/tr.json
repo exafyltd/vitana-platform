@@ -192,5 +192,6 @@
   "email.push_fallback.more": "… ve {count} tane daha",
   "email.push_fallback.cta": "Uygulamada aç",
   "email.push_fallback.why": "Bu e-postayı, hiçbir anlık bildirim sana ulaşmadığı için alıyorsun. Bunu istediğin zaman değiştirebilirsin:",
-  "email.push_fallback.settings": "Bildirim ayarları"
+  "email.push_fallback.settings": "Bildirim ayarları",
+  "sms.phone_verification.code": "Vitanaland kodun: {code}. Kimseyle paylaşma."
 }
