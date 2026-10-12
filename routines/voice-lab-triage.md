@@ -1,6 +1,8 @@
 # Routine: voice-lab-triage
 
 **Schedule:** `30 4 * * *` (daily 04:30 UTC, scheduler jitter pads to ~04:38)
+**Known broken — not run (VTID-05103, amendment A1).** This spec reads `/api/v1/voice-lab/live/sessions?since_hours=…&until_hours=…` and computes an error rate from `error_count` and novel codes from `error_codes`. The route accepts only `status`, `limit` (max 100) and `offset` (`services/gateway/src/routes/voice-lab.ts:619-623`), drops the time windows, sets `error_count: 0` for every session (`:840`) and returns no `error_codes`. A run could only ever report green, so neither the claude.ai trigger nor the gateway routine runner runs it. The fix — a time-windowed session query on the existing `classifyQualityFromSessionStop` failure classes — is Loop Engineering Phase 3b.
+
 **Catalog row:** `routines.name = 'voice-lab-triage'`
 **OASIS VTID for emitted events:** `VTID-01155` (canonical voice VTID)
 

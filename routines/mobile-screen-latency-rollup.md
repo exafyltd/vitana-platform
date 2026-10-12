@@ -1,6 +1,8 @@
 # Routine: mobile-screen-latency-rollup
 
 **Schedule:** `15 6 * * *` (daily 06:15 UTC)
+**Runs in:** the gateway's routine runner (`services/gateway/src/services/routine-runner`, VTID-05103), once per UTC day at the time above — not as a claude.ai session. The steps below are the spec the runner implements: it calls the audit function behind each `$GATEWAY_URL/...` endpoint directly, records the run in `routine_runs` (`trigger = gateway-runner`), and on a breach emits the event with `source: routine.<name>`, `status: warning` and hands it to the self-healing intake. No token or URL is involved.
+
 **Catalog row:** `routines.name = 'mobile-screen-latency-rollup'`
 **OASIS VTID for emitted events:** `VTID-03177` (screen-latency telemetry cluster)
 
@@ -42,11 +44,6 @@ A screen breaches when its **p75 ≥ the "poor" cut** for any metric.
 
 CLS uses the unitless `[0.1, 0.25]` band; a screen also breaches when its
 p75 CLS ≥ `0.25`.
-
-## Required environment
-
-- `GATEWAY_URL` = `https://gateway-q74ibpv6ia-uc.a.run.app`
-- `ROUTINE_INGEST_TOKEN`
 
 ## Steps
 

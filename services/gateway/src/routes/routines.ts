@@ -21,6 +21,8 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
+import { requireAuth, requireExafyAdmin } from '../middleware/auth-supabase-jwt';
+import { routineRunnerStatus } from '../services/routine-runner/runner';
 
 export const routinesRouter = Router();
 
@@ -162,6 +164,36 @@ routinesRouter.get('/api/v1/routines', async (_req: Request, res: Response) => {
     return res.status(500).json({ ok: false, error: error.message });
   }
 });
+
+// =============================================================================
+// GET /api/v1/routines/runner/status — in-gateway routine runner (VTID-05103)
+// For people in the Command Hub (exafy_admin), not for machines: read-only.
+// =============================================================================
+
+routinesRouter.get(
+  '/api/v1/routines/runner/status',
+  requireAuth,
+  requireExafyAdmin,
+  async (_req: Request, res: Response) => {
+    try {
+      const status = routineRunnerStatus();
+      const names = status.routines.map((r) => r.name);
+      const catalog = await supabaseRequest<RoutineRow[]>(
+        `/rest/v1/routines?name=in.(${names.map(encodeURIComponent).join(',')})` +
+          '&select=name,enabled,last_run_at,last_run_status,last_run_summary,consecutive_failures'
+      );
+      const byName = new Map((catalog.data ?? []).map((r: any) => [r.name, r]));
+      return res.json({
+        ok: true,
+        ...status,
+        routines: status.routines.map((r) => ({ ...r, catalog: byName.get(r.name) ?? null })),
+      });
+    } catch (error: any) {
+      console.error(`${LOG_PREFIX} runner status error:`, error);
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+  }
+);
 
 // =============================================================================
 // GET /api/v1/routines/:name — single routine + last 30 runs

@@ -153,3 +153,16 @@ jobs:
             exit 1
           fi
           echo "app_users drift within normal bounds."
+
+      # VTID-05103: a failed check reaches the one self-healing intake (loop L1),
+      # not just a red run in Actions. Reporting never changes this job's result.
+      - name: Check out the report script
+        if: failure()
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/ci
+      - name: Report failure to self-healing
+        if: failure()
+        env:
+          SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+        run: bash scripts/ci/report-to-self-healing.sh "alert-app-users-identity-drift" "alert-workflow://ALERT-APP-USERS-IDENTITY-DRIFT" "app_users identity drift above threshold"

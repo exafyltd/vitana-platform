@@ -2020,6 +2020,15 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Jev slow voice session scheduler initialization failed (non-fatal):', error);
       }
 
+      // VTID-05103: deterministic daily routines run here, once per UTC day.
+      // Off unless ROUTINE_RUNNER_ENABLED=true; never on staging (shared database).
+      try {
+        const { startRoutineRunner } = require('./services/routine-runner/runner');
+        if (startRoutineRunner()) console.log('🔁 Routine runner started (VTID-05103)');
+      } catch (error) {
+        console.warn('⚠️ Routine runner initialization failed (non-fatal):', error);
+      }
+
       // VTID-04817 (Jev C4): voice opener outcomes over the last 7 days, judged once per UTC day.
       // Off unless JEV_VOICE_OPENER_OUTCOMES_MODE is set; shadow only.
       try {
