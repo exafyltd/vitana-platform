@@ -1,0 +1,9 @@
+NOTICE:  role "postgres" has already been granted membership in role "migrate" by role "postgres"
+ok 1 happy path: migrate revoked, service_role kept, members out, other ACL entries untouched
+ok 2 idempotent re-apply
+ok 3 refused while authenticated holds EXECUTE (rolled back)
+ok 4 refused while service_role lacks EXECUTE (rolled back)
+ok 5 refused while a function is missing (rolled back)
+ok 6 refused with a fifth overload (rolled back)
+ok 7 absent migrate role: NOTICE, applied
+PASS vtid-05125 memory functions migrate revoke
