@@ -235,3 +235,95 @@ test('VTID-04949: the nightly full run covers every valid suite of the service o
   assert.deepEqual(r.suites.map((s) => s.vtid), ['VTID-00001']);
   assert.deepEqual(r.invalid.map((i) => i.vtid), ['VTID-00004', 'VTID-00005']);
 });
+
+// VTID-05075: a pnpm-lock.yaml-only commit has a subject that cannot be fixed
+// after the fact (a later "tag" commit does not change it), so it needs no
+// change suite of its own — but it is never hidden, and nothing wider is exempt.
+const LOCK = 'services/gateway/pnpm-lock.yaml';
+const lockCommit = (files, subject = 'chore(gateway): sync pnpm-lock.yaml', extra = {}) => ({ sha: 'l1', date: '2026-10-12T08:00:00Z', subject, files, ...extra });
+
+test('isLockfileOnlyCommit: only pnpm-lock.yaml counts, other files outside the build are ignored', () => {
+  assert.equal(lib.isLockfileOnlyCommit([LOCK], 'gateway'), true);
+  assert.equal(lib.isLockfileOnlyCommit([LOCK, 'services/gateway/sub/pnpm-lock.yaml'], 'gateway'), true, 'two lockfiles and nothing else');
+  assert.equal(lib.isLockfileOnlyCommit([LOCK, 'docs/validation/VTID-05072/outputs/pr-body.md'], 'gateway'), true, 'evidence docs are outside the build');
+  assert.equal(lib.isLockfileOnlyCommit([LOCK, 'services/gateway/src/x.ts'], 'gateway'), false, 'a source file makes it an ordinary commit');
+  assert.equal(lib.isLockfileOnlyCommit([LOCK, 'services/gateway/package.json'], 'gateway'), false);
+  assert.equal(lib.isLockfileOnlyCommit([], 'gateway'), false);
+  assert.equal(lib.isLockfileOnlyCommit(['docs/x.md'], 'gateway'), false, 'a docs-only commit is not in the build at all');
+  assert.equal(lib.isLockfileOnlyCommit(['package-lock.json'], 'community-app'), false, 'community-app lockfiles are not exempt');
+  assert.equal(lib.isLockfileOnlyCommit(['bun.lock'], 'community-app'), false);
+});
+
+test('planRange: the real shape of 9358d991 (lockfile + two evidence docs) is lockfile-only, not missing', () => {
+  const plan = lib.planRange({
+    service: 'gateway',
+    commits: [lockCommit([LOCK, 'docs/validation/VTID-05072/outputs/pnpm-lock-update.log', 'docs/validation/VTID-05072/outputs/pr-body.md'], 'chore(gateway): sync pnpm-lock.yaml with acorn 8.15.0 devDependency', { sha: '9358d991' })],
+    manifests: {},
+  });
+  assert.deepEqual(plan.missing, []);
+  assert.deepEqual(plan.legacy, []);
+  assert.deepEqual(plan.lockfileOnly.map((m) => m.sha), ['9358d991']);
+  assert.equal(plan.relevant.length, 1, 'still counted as part of the build');
+  assert.equal(lib.decideOutcome({ superseded: false, results: [{ ok: true }], plan }), 'passed');
+});
+
+test('planRange: a lockfile commit that also changes source, or any other no-VTID commit, is still missing', () => {
+  const plan = lib.planRange({
+    service: 'gateway',
+    commits: [
+      lockCommit([LOCK, 'services/gateway/src/x.ts'], 'chore: lock and code', { sha: 'm1' }),
+      { sha: 'm2', date: '2026-10-12T09:00:00Z', subject: 'no vtid at all', files: ['services/gateway/src/y.ts'] },
+      lockCommit([LOCK], 'chore: lock only', { sha: 'ok' }),
+    ],
+    manifests: {},
+  });
+  assert.deepEqual(plan.missing.map((m) => m.sha), ['m1', 'm2']);
+  assert.deepEqual(plan.lockfileOnly.map((m) => m.sha), ['ok']);
+  assert.equal(lib.decideOutcome({ superseded: false, results: [{ ok: true }], plan }), 'failed');
+});
+
+test('planRange: a lockfile-only commit that names a VTID without a manifest is still reported', () => {
+  const plan = lib.planRange({ service: 'gateway', commits: [lockCommit([LOCK], 'chore(VTID-05999): lock', { sha: 'v1' })], manifests: { 'VTID-05999': null } });
+  assert.deepEqual(plan.missing.map((m) => m.vtid), ['VTID-05999']);
+  assert.deepEqual(plan.lockfileOnly, []);
+});
+
+test('planRange: community-app package-lock.json / bun.lock commits without a VTID are still missing', () => {
+  const plan = lib.planRange({
+    service: 'community-app',
+    commits: [
+      { sha: 'c1', date: '2026-10-12T08:00:00Z', subject: 'chore: lock', files: ['package-lock.json'] },
+      { sha: 'c2', date: '2026-10-12T08:01:00Z', subject: 'chore: bun', files: ['bun.lock'] },
+    ],
+    manifests: {},
+  });
+  assert.deepEqual(plan.missing.map((m) => m.sha), ['c1', 'c2']);
+  assert.deepEqual(plan.lockfileOnly, []);
+});
+
+test('ready message names lockfile-only commits in a passing and in a failing run, and keeps the approval line', () => {
+  const base = {
+    service: 'gateway',
+    sha: 'c6100f8001227c8b4e1e8fd2c148be537b838339',
+    results: [{ suite: 'smoke', name: 'alive', ok: true, problems: [] }],
+    plan: { suites: [], missing: [], invalid: [], legacy: [], lockfileOnly: [{ sha: '9358d9912074aaaa', subject: 'chore(gateway): sync pnpm-lock.yaml' }] },
+    shipping: [],
+    prodStamp: 'c69d521d4f02bbbb',
+  };
+  const passed = lib.buildReadyMessage({ ...base, outcome: 'passed' });
+  assert.match(passed, /Lockfile-only changes \(no change suite; smoke tests only\):/);
+  assert.match(passed, /`9358d9912074` chore\(gateway\): sync pnpm-lock\.yaml/);
+  assert.match(passed, /A "yes" promotes exactly this commit via PUBLISH/);
+  const failed = lib.buildReadyMessage({ ...base, outcome: 'failed', plan: { ...base.plan, missing: [{ sha: 'abcdef123456zzzz', subject: 'no vtid', vtid: null }] } });
+  assert.match(failed, /Lockfile-only changes/);
+  assert.match(failed, /Missing change suite/);
+  assert.doesNotMatch(failed, /ready for deployment to production\?/);
+  // callers that predate the field keep working
+  assert.doesNotMatch(lib.buildReadyMessage({ ...base, outcome: 'passed', plan: { suites: [], missing: [], invalid: [], legacy: [] } }), /Lockfile-only/);
+});
+
+test('run.mjs records and logs the lockfile-only commits (audit trail)', () => {
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, 'run.mjs'), 'utf8');
+  assert.match(src, /lockfile_only: plan\.lockfileOnly/);
+  assert.match(src, /lockfileOnly=\$\{plan\.lockfileOnly\.length\}/);
+});
