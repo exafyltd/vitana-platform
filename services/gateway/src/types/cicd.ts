@@ -832,6 +832,7 @@ export type CicdEventType =
   | 'dev_autopilot.scan.failed'
   | 'dev_autopilot.plan.generated'
   | 'dev_autopilot.plan.failed'
+  | 'dev_autopilot.plan.fallback_used'
   | 'dev_autopilot.plan.version_added'
   | 'dev_autopilot.finding.rejected'
   | 'dev_autopilot.finding.snoozed'

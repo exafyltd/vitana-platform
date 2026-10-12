@@ -27,7 +27,16 @@ export interface DevPipelineModel {
 export const DEV_PLANNER_DEFAULT: DevPipelineModel = { provider: 'deepseek', model: 'deepseek-flash' };
 export const DEV_WORKER_DEFAULT: DevPipelineModel = { provider: 'bedrock', model: 'eu.anthropic.claude-sonnet-4-6' };
 
+/**
+ * VTID-05077: the planner's fallback when DeepSeek fails. Owner decision
+ * 2026-10-12: planning is thinking, not coding — Bedrock Claude Opus 4.6, not
+ * the shared `planner` row's fallback. Passed per call (fallbackOverride); the
+ * shared row is unchanged.
+ */
+export const DEV_PLANNER_FALLBACK_DEFAULT: DevPipelineModel = { provider: 'bedrock', model: 'eu.anthropic.claude-opus-4-6-v1' };
+
 const REFUSED_PROVIDERS = new Set(['vertex', 'anthropic']);
+const REFUSED_FALLBACK_PROVIDERS = new Set(['vertex', 'anthropic', 'claude_subscription']);
 
 function resolve(
   providerVar: string,
@@ -48,6 +57,22 @@ function resolve(
 /** The Dev Autopilot planner + spec generator model. */
 export function devPlannerModel(env: NodeJS.ProcessEnv = process.env): DevPipelineModel {
   return resolve('DEV_PLANNER_PROVIDER', 'DEV_PLANNER_MODEL', DEV_PLANNER_DEFAULT, env);
+}
+
+/**
+ * VTID-05077: the planner's fallback model. Env override for a controlled
+ * experiment (DEV_PLANNER_FALLBACK_PROVIDER + DEV_PLANNER_FALLBACK_MODEL); a
+ * Google, direct-Anthropic or claude_subscription value is refused.
+ */
+export function devPlannerFallbackModel(env: NodeJS.ProcessEnv = process.env): DevPipelineModel {
+  const provider = (env.DEV_PLANNER_FALLBACK_PROVIDER || '').trim();
+  const model = (env.DEV_PLANNER_FALLBACK_MODEL || '').trim();
+  if (!provider || !model) return DEV_PLANNER_FALLBACK_DEFAULT;
+  if (REFUSED_FALLBACK_PROVIDERS.has(provider)) {
+    console.warn(`[VTID-05077] DEV_PLANNER_FALLBACK_PROVIDER=${provider} refused — using ${DEV_PLANNER_FALLBACK_DEFAULT.provider}/${DEV_PLANNER_FALLBACK_DEFAULT.model}`);
+    return DEV_PLANNER_FALLBACK_DEFAULT;
+  }
+  return { provider: provider as LLMProvider, model };
 }
 
 /** The coding agent's model (agent executor). */

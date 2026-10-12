@@ -41139,6 +41139,8 @@ function renderDevAutopilotView() {
         { label: 'Kill switch', value: cfg.kill_switch ? 'ARMED' : 'off', color: cfg.kill_switch ? '#ef4444' : '#22c55e' },
         { label: 'Budget', value: '—/' + (cfg.daily_budget || '—') + ' today', color: '#eab308' },
         { label: 'Spend today', value: spend ? ('$' + Number(spend.spend_usd_today || 0).toFixed(4) + ' · ' + spend.runs_today + ' run' + (spend.runs_today === 1 ? '' : 's')) : '—', color: '#f97316', title: TURN_COST_ESTIMATE_NOTE },
+        // VTID-05077: plans the planner's fallback (Opus 4.6) wrote instead of DeepSeek, last 24 h.
+        { label: 'Planner fallback 24h', value: (spend && spend.planner && spend.planner.plans_24h) ? (spend.planner.fallback_24h + '/' + spend.planner.plans_24h + ' plans (' + Math.round((spend.planner.fallback_rate_24h || 0) * 100) + '%)') : '—', color: (spend && spend.planner && spend.planner.fallback_rate_24h > 0.05) ? '#ef4444' : '#888', title: 'Plan versions of the last 24 hours written by the planner fallback instead of its primary model (VTID-05077)' },
         { label: 'Concurrency cap', value: (cfg.concurrency_cap || '—'), color: '#888' },
         { label: 'Queue', value: queueCount + ' new', color: '#3b82f6' },
         { label: 'Last run', value: (state.devAutopilot.runs[0] && state.devAutopilot.runs[0].started_at) ? new Date(state.devAutopilot.runs[0].started_at).toLocaleString() : '—', color: '#888' },

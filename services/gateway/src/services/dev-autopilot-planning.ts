@@ -56,7 +56,7 @@ import { applyScannerOverrides } from './dev-autopilot-safety';
 import { buildReminders, remindersEnabled, renderRemindersBlock } from './watcher/reminder';
 import { isPlannerMemoryRecallEnabled, buildFileScopedMemoryBlock } from './dev-agent-memory-file-recall';
 import { recordShown } from './watcher/feedback';
-import { devPlannerModel } from './dev-pipeline-models';
+import { devPlannerModel, devPlannerFallbackModel } from './dev-pipeline-models';
 import { isPlannabilityOn, recordPlannabilityOutcome, runPlannabilityCheck } from './jev/gates/plannability-gate';
 
 const LOG_PREFIX = '[dev-autopilot-planning]';
@@ -171,12 +171,16 @@ interface MessagesResponse {
 async function callRoutedLlm(
   prompt: string,
   vtid?: string | null,
-): Promise<{ ok: boolean; text?: string; usage?: MessagesResponse['usage']; error?: string }> {
+): Promise<PlannerCallResult> {
   // Lazy import to avoid a circular dep at module init time.
   const { callViaRouter } = await import('./llm-router');
-  // VTID-04593: the planner runs on DeepSeek Flash (primary only; the stage's
-  // own fallback still applies). The shared `planner` policy row is untouched.
+  // VTID-04593: the planner runs on DeepSeek Flash. VTID-05077: its fallback is
+  // Bedrock Opus 4.6, passed per call (the shared `planner` row is untouched),
+  // and DeepSeek's thinking is off — Flash reasons by default and spent the
+  // whole 8,000-token cap on hidden reasoning in about half of all plans
+  // (VTID-04794; 128 of 246 calls, 2026-10-05..11).
   const planner = devPlannerModel();
+  const fallback = devPlannerFallbackModel();
   const r = await callViaRouter('planner', prompt, {
     vtid: vtid ?? null,
     service: 'dev-autopilot-planning',
@@ -184,16 +188,50 @@ async function callRoutedLlm(
     maxTokens: 8000,
     providerOverride: planner.provider,
     modelOverride: planner.model,
+    fallbackOverride: { provider: fallback.provider, model: fallback.model },
+    ...(planner.provider === 'deepseek' ? { deepseekThinking: 'disabled' as const } : {}),
   });
+  return plannerCallResult(r);
+}
+
+/** VTID-05077: what one planner call returned, with who answered it. */
+export interface PlannerCallResult {
+  ok: boolean;
+  text?: string;
+  usage?: MessagesResponse['usage'];
+  error?: string;
+  provider?: string;
+  model?: string;
+  fallbackUsed?: boolean;
+}
+
+/**
+ * VTID-05077 (A3): maps a router result to the planner's shape. A failure
+ * always carries a reason — the router's own error, or a named empty answer —
+ * never a bare "unknown error". Pure; exported for tests.
+ */
+export function plannerCallResult(r: {
+  ok: boolean;
+  text?: string;
+  error?: string;
+  provider?: string;
+  model?: string;
+  fallbackUsed?: boolean;
+  stopReason?: string;
+  usage?: { inputTokens: number; outputTokens: number };
+}): PlannerCallResult {
+  const who = { provider: r.provider, model: r.model, fallbackUsed: Boolean(r.fallbackUsed) };
   if (!r.ok) {
-    return { ok: false, error: r.error || 'router returned ok=false' };
+    return { ok: false, error: r.error || `router returned ok=false without an error (${r.provider || '?'}/${r.model || '?'})`, ...who };
+  }
+  if (!(r.text || '').trim()) {
+    return { ok: false, error: `${r.provider || '?'}/${r.model || '?'} returned an empty plan (stop_reason=${r.stopReason || 'n/a'})`, ...who };
   }
   return {
     ok: true,
     text: r.text,
-    usage: r.usage
-      ? { input_tokens: r.usage.inputTokens, output_tokens: r.usage.outputTokens }
-      : undefined,
+    usage: r.usage ? { input_tokens: r.usage.inputTokens, output_tokens: r.usage.outputTokens } : undefined,
+    ...who,
   };
 }
 
@@ -848,7 +886,7 @@ async function runPlanningSession(
   feedbackNote: string | undefined,
   scope?: { allow?: string[]; deny?: string[] },
   supa?: SupaConfig,
-): Promise<{ ok: boolean; plan_markdown?: string; session_id?: string; error?: string }> {
+): Promise<PlanningSessionResult> {
   const sessionId = `plan_${randomUUID().slice(0, 12)}`;
 
   // VTID-03854: this used to gate on `!ANTHROPIC_API_KEY` — permanently true
@@ -1033,7 +1071,28 @@ async function runPlanningSession(
     `${LOG_PREFIX} plan generated for ${finding.id} in ${elapsed}s via ${isWorkerQueueEnabled() ? 'worker-queue' : 'routed-llm'} (${call.usage?.input_tokens || '?'} in / ${call.usage?.output_tokens || '?'} out tokens)`,
   );
 
-  return { ok: true, plan_markdown: call.text, session_id: sessionId };
+  // VTID-05077: who wrote it. The worker-queue path (claude subscription) has no
+  // router provider; it is recorded as such.
+  const routed = call as Partial<PlannerCallResult>;
+  return {
+    ok: true,
+    plan_markdown: call.text,
+    session_id: sessionId,
+    planner_provider: routed.provider ?? (isWorkerQueueEnabled() ? 'claude_subscription' : undefined),
+    planner_model: routed.model ?? (isWorkerQueueEnabled() ? PLANNING_MODEL : undefined),
+    fallback_used: Boolean(routed.fallbackUsed),
+  };
+}
+
+/** VTID-05077: one planning session's result, with who wrote the plan. */
+export interface PlanningSessionResult {
+  ok: boolean;
+  plan_markdown?: string;
+  session_id?: string;
+  error?: string;
+  planner_provider?: string;
+  planner_model?: string;
+  fallback_used?: boolean;
 }
 
 // =============================================================================
@@ -1113,6 +1172,7 @@ export async function generatePlanVersion(
   // without losing TypeScript's narrowing across reassignment.
   let plan_markdown: string = initialSession.plan_markdown;
   let session_id: string | undefined = initialSession.session_id;
+  let writtenBy = { provider: initialSession.planner_provider, model: initialSession.planner_model, fallback: Boolean(initialSession.fallback_used) };
 
   // VTID-02680: for feedback-bridged findings, the bridge has already
   // pre-validated `proposed_files` against allow_scope/deny_scope. Trust
@@ -1153,6 +1213,7 @@ export async function generatePlanVersion(
     if (retrySession.ok && retrySession.plan_markdown) {
       plan_markdown = retrySession.plan_markdown;
       session_id = retrySession.session_id;
+      writtenBy = { provider: retrySession.planner_provider, model: retrySession.planner_model, fallback: Boolean(retrySession.fallback_used) };
       files_referenced = (isFeedbackLane && Array.isArray(proposedFiles) && proposedFiles.length > 0)
         ? (proposedFiles as string[]).filter(p => typeof p === 'string' && p.includes('/'))
         : extractFilePaths(plan_markdown);
@@ -1183,6 +1244,8 @@ export async function generatePlanVersion(
       planning_session_id: session_id,
       feedback_note: opts.feedback_note || null,
       files_referenced,
+      planner_provider: writtenBy.provider ?? null,
+      planner_model: writtenBy.model ?? null,
     }),
   });
   if (!insertR.ok) {
@@ -1197,8 +1260,20 @@ export async function generatePlanVersion(
     source: 'dev-autopilot',
     status: 'success',
     message: `Plan v${nextVersion} generated for ${findingId} (${files_referenced.length} files cited)`,
-    payload: { finding_id: findingId, version: nextVersion, session_id, files: files_referenced },
+    payload: { finding_id: findingId, version: nextVersion, session_id, files: files_referenced, planner_provider: writtenBy.provider ?? null, planner_model: writtenBy.model ?? null, fallback_used: writtenBy.fallback },
   });
+
+  // VTID-05077 (A2): the fallback is allowed but never silent.
+  if (writtenBy.fallback) {
+    await emitOasisEvent({
+      vtid: PLAN_VTID,
+      type: 'dev_autopilot.plan.fallback_used',
+      source: 'dev-autopilot',
+      status: 'warning',
+      message: `Plan v${nextVersion} for ${findingId} was written by the fallback ${writtenBy.provider}/${writtenBy.model}, not the primary planner`,
+      payload: { finding_id: findingId, version: nextVersion, planner_provider: writtenBy.provider ?? null, planner_model: writtenBy.model ?? null },
+    });
+  }
 
   return {
     ok: true,

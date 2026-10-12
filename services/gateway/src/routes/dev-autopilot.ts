@@ -20,7 +20,8 @@ import { bridgeFailureToSelfHealing, FailureStage } from '../services/dev-autopi
 import { writeAutopilotFailure } from '../services/dev-autopilot-self-heal-log';
 import { dryRunPreflight, RiskClass } from '../services/dev-autopilot-safety';
 import { emitOasisEvent } from '../services/oasis-event-service';
-import { recordOutcome, summarizeSpendToday } from '../services/dev-autopilot-outcomes';
+import { recordOutcome, summarizeSpendToday, summarizePlannerFallback } from '../services/dev-autopilot-outcomes';
+import { devPlannerModel } from '../services/dev-pipeline-models';
 import { validateConfigUpdate } from '../services/dev-autopilot-config-update';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { buildSupervisorSnapshot } from '../services/dev-autopilot-supervisor';
@@ -1452,7 +1453,15 @@ router.get('/spend', requireDevRole, async (_req: Request, res: Response) => {
   );
   if (!r.ok) return res.status(500).json({ ok: false, error: r.error });
   const summary = summarizeSpendToday(r.data || []);
-  return res.json({ ok: true, ...summary });
+  // VTID-05077 (A2): the planner's fallback rate, so a fallback is never
+  // silent. Best-effort — the spend answer never fails on it.
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const pv = await supaGet<Array<{ planner_provider: string | null }>>(
+    supa,
+    `/rest/v1/dev_autopilot_plan_versions?select=planner_provider&created_at=gte.${encodeURIComponent(since)}&limit=1000`,
+  );
+  const planner = pv.ok ? summarizePlannerFallback(pv.data || [], devPlannerModel().provider) : null;
+  return res.json({ ok: true, ...summary, planner });
 });
 
 export default router;
