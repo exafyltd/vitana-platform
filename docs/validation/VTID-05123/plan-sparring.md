@@ -293,3 +293,122 @@ Approved by owner in Claude Code session https://claude.ai/code/session_01TMPMNG
 d27c82d75e29868e985cee6150a7075797f8cc6574ec866d0b8195486f0fb2b5
 
 Owner approval (Gate 1): "Yes" — 2026-10-12, Claude Code session; plan hash d27c82d75e29868e985cee6150a7075797f8cc6574ec866d0b8195486f0fb2b5; sparring record 905b0511-9df4-4034-88e6-a574f9de5032.
+
+## Sparring partner findings (verbatim, round 1 then round 2)
+
+Good -- the ROLLBACK mentions in migration files are all comments (documentation), not actual `ROLLBACK;` statements being executed. The 3 files found all use `ROLLBACK` in comment blocks. This means the concern I had about a deliberate ROLLBACK followed by the INSERT still running is not a real-world issue.
+
+Now I have enough evidence to produce my round 1 assessment.
+
+## Verified premises
+
+- **"Neither file contains `schema_migrations`"** (RUN-MIGRATION.yml + apply-sql-via-management-api.sh) → TRUE -- Confirmed by reading both files in full: `/home/user/vitana-platform/.github/workflows/RUN-MIGRATION.yml` and `/home/user/vitana-platform/scripts/ci/apply-sql-via-management-api.sh`. Neither mentions `schema_migrations`.
+
+- **"database-migrations-tools.ts reads workflow runs, not the table"** → TRUE -- `/home/user/vitana-platform/services/gateway/src/services/orb-tools/database-migrations-tools.ts:16-17`: `"no migration-tracking table read back anywhere"` and no grep hit for `schema_migrations` in that file.
+
+- **"MIGRATION-DRIFT-CHECK checks declared tables vs live tables via ci_schema_inventory RPC, deliberately not schema_migrations"** → TRUE -- `/home/user/vitana-platform/scripts/ci/check-migration-drift.cjs:9-15` explicitly documents why the `schema_migrations` approach "does not work on this project" (377 file versions vs 330 rows, overlap of 2). The script checks object existence, not version rows.
+
+- **"`data-fixups/` path exists"** → TRUE -- Glob found 11 files under `supabase/migrations/data-fixups/`.
+
+- **"AP-1005 verifies table existence"** → TRUE -- `/home/user/vitana-platform/services/gateway/src/services/automation-handlers/platform-operations.ts:139-168`.
+
+## Findings
+
+F1 [major] `ON CONFLICT DO NOTHING` without a target silently loses the record when a file collides on `idempotency_key` (not just `version`).
+
+Evidence: The plan says `ON CONFLICT DO NOTHING` (no target) covers both the `version` PK and the `idempotency_key` UNIQUE key. This is correct PostgreSQL behavior. However, the plan only discusses the version-collision case (two files sharing a prefix). It never addresses the case where `idempotency_key` (the full basename) collides -- which means a re-run of the exact same file is silently a no-op. The plan does mention this at line 82 ("a re-run of the same file is a no-op") which is the intended behavior. On closer reading, this is actually well-handled. **Downgrading to minor on reflection** -- the re-run case is correct (idempotent), and two different files cannot share a basename. No real gap here.
+
+F1 [minor] (revised) The `ON CONFLICT DO NOTHING` design is correct but the plan text at line 80 conflates two things: "ON CONFLICT DO NOTHING (no target) covers both" -- while technically true, explicitly specifying `ON CONFLICT (idempotency_key) DO NOTHING` would be clearer and would fail fast if the constraint is ever renamed, rather than silently inserting a duplicate `version` (which would fail on the PK separately). Not a bug, but a defensive-coding miss.
+
+Evidence: Plan line 80; PostgreSQL semantics.
+
+Suggestion: Use `ON CONFLICT (idempotency_key) DO NOTHING` as the explicit target. A version-PK collision from a different file then produces a clear PK-violation error rather than a silent skip, which is actually better signal than the "warn and continue" path (you learn something went wrong).
+
+F2 [major] A migration file containing `BEGIN; ... COMMIT;` followed by statements that error means the INSERT runs after an explicit COMMIT and the migration's committed work is non-recoverable, but the recording INSERT itself runs outside any explicit transaction.
+
+Evidence: Plan lines 73-76 state: "A file with its own `BEGIN ... COMMIT` commits first and the INSERT runs right after, only if the COMMIT succeeded." This is correct for the success path. But for the failure path: if the file is `BEGIN; <good DDL>; COMMIT; <bad SQL that errors>`, PostgreSQL in simple-query mode will (a) commit the DDL, (b) error on the bad SQL, (c) abort remaining statements including the INSERT. The migration partially applied but has no record. The plan's test case (line 121: "file with its own `BEGIN ... COMMIT` succeeds -> one row") only tests the happy path. The partial-success case is not tested and the plan's risk section (line 149) only mentions "COMMIT mid-file followed by more statements" as "unchanged behaviour," which is true but doesn't acknowledge that this is a regression from the current state of "no row ever" -- now "sometimes a row, sometimes not for the same structural pattern."
+
+Suggestion: Add a test case: `BEGIN; CREATE TABLE t1(); COMMIT; SELECT 1/0;` -- this should result in zero rows (the INSERT is never reached) but `t1` exists. Document this explicitly as an accepted edge case. Consider whether the verify SELECT (line 84) already handles this, since it runs as a separate `--sql` call in the same workflow step -- if the previous curl returned non-zero, the step already failed and the verify never runs. Confirm the step's `set -euo pipefail` behavior in this scenario.
+
+F3 [minor] The `--dry-run-payload` test mode does not prove the Management API's abort-on-error semantics, only local `psql`'s.
+
+Evidence: Plan lines 115-117: "The script under test gets a `--dry-run-payload` mode (prints the final SQL instead of POSTing) so the test feeds that SQL to local `psql` as one simple-query string (`psql -c "$(...)"`), which matches the Management API's semantics)." The parenthetical "(which matches)" is an assumption. PostgreSQL's simple-query protocol does abort remaining statements on error, and `psql -c` uses the simple-query protocol, so the assumption is correct for PostgreSQL. The Supabase Management API also uses `PgBouncer` or connects directly; either way it should use simple query. This is a minor documentation/confidence concern, not a bug.
+
+Suggestion: Add a comment in the test script noting the assumption and what would invalidate it (e.g., the Management API switching to extended query protocol or wrapping in savepoints).
+
+F4 [minor] The scope guard regex (`^supabase/migrations/[^/]+\.sql$`) excludes 8-digit-prefix files that ARE direct children of `supabase/migrations/`.
+
+Evidence: Plan line 88 says record "only when `MIGRATION_FILE` matches `^supabase/migrations/[^/]+\.sql$`" and line 51 acknowledges "some files have 8-digit prefixes." The scope guard passes 8-digit files through (they match the path pattern). But then plan line 92 says the basename must match `^[0-9]{8,14}_[A-Za-z0-9_.-]+\.sql$` for quoting -- so 8-digit files DO get through the scope guard but their version is extracted as an 8-digit number. The plan doesn't explicitly say whether `version` for an 8-digit prefix is the 8 digits or something else, but the regex `[0-9]{8,14}` covers 8 digits. This is actually fine. No real gap here.
+
+Suggestion: None needed. The design handles this correctly.
+
+F5 [major] The plan proposes appending raw SQL to a migration payload, constructing `VALUES` from a basename. While the basename regex is restrictive (`^[0-9]{8,14}_[A-Za-z0-9_.-]+\.sql$`), the `version` and `name` values are inserted as string literals (single-quoted in the SQL). If the regex ever drifts or is bypassed, this is a SQL injection vector. The plan says "No user text goes into SQL unchecked" but the defense is a regex, not parameterized queries.
+
+Evidence: Plan lines 65-67 show the constructed SQL with `'<version>'` and `'<name>'` as interpolated values. Plan line 92 documents the regex guard. The Management API does not support parameterized queries (it takes raw SQL text), so parameterization is impossible in this context.
+
+Suggestion: This is an inherent limitation of the Management API approach. The regex is the correct defense here. Add a belt-and-suspenders check: after regex validation, assert the extracted values contain no single-quote characters (which the regex already prevents, but an explicit check makes the security contract visible). **Downgrading to minor** since the regex `[A-Za-z0-9_.-]` genuinely cannot produce a single quote.
+
+F5 [minor] (revised) The regex defense against SQL injection is correct. Belt-and-suspenders: assert no single-quote in the interpolated values.
+
+F6 [minor] The plan's `created_by` value `'github-actions:RUN-MIGRATION:<run_id>'` introduces `github.run_id` into a SQL literal. Run IDs are numeric, but this should be explicitly validated.
+
+Evidence: Plan line 98: `RUN_ID=${{ github.run_id }}` in env. `github.run_id` is always a positive integer in GitHub Actions, but the script should validate it matches `^[0-9]+$` before interpolation.
+
+Suggestion: Add a numeric check on `RUN_ID` in the script.
+
+F7 [minor] No CLAUDE.md rule is violated, but the plan does not mention updating `DATABASE_SCHEMA.md` (CLAUDE.md Always rule 24: "Always update `DATABASE_SCHEMA.md` when schema changes"). This plan does not change the schema -- it writes to an existing table -- so rule 24 does not technically apply. However, documenting that `schema_migrations` is now written to by RUN-MIGRATION could be useful.
+
+Evidence: CLAUDE.md Always rule 24.
+
+Suggestion: Optional -- add a note to `DATABASE_SCHEMA.md` documenting the new write path to `supabase_migrations.schema_migrations`.
+
+## Questions for the planner
+
+1. F2: Have you considered the case where a migration file has `BEGIN; <DDL>; COMMIT; <more statements that error>`? The DDL commits, the error aborts the remaining statements including the INSERT, and you get a partially-applied migration with no record. Is this an accepted edge case, and should the test suite pin it?
+
+2. The plan's recommended owner decision 1 is "warn and continue" for duplicate-prefix collisions. Have you considered that the verify SELECT (plan line 84) runs as a separate `--sql` call -- if the appended INSERT was in the same curl request that succeeded (HTTP 200), the step continues to the verify SELECT. But if the INSERT was silently skipped (ON CONFLICT), the verify SELECT correctly reports "no row found." What happens to the step's exit code? Does the script exit 0 with only a `::warning`? The workflow's "Apply migration" step name suggests the caller expects success = migration applied. A warning-only exit could be surprising for automated consumers.
+
+3. The plan says "No staging suite" (line 129). This is correct per CLAUDE.md (no deploy, no Gate 2). But the first real exercise is a production write to `supabase_migrations.schema_migrations`. Has anyone confirmed the Management API's `current_user` (`postgres`) has INSERT on that table? The plan says yes (line 20), but this was stated as evidence from a read-only check, not from an actual INSERT attempt.
+
+## Verdict
+
+NOT CONVERGED -- F2 is major (partial-apply + error = committed DDL with no record, and no test covers it). The plan should either add that test case and document the accepted behavior, or change the design to handle it. F1 and F5 were downgraded to minor on analysis. Everything else is minor or informational.
+## Round 1 finding disposition
+
+- **F1 [minor]** ON CONFLICT target → `closed`. Plan now uses `ON CONFLICT (idempotency_key) DO NOTHING` with an explicit target, plus a `EXCEPTION WHEN unique_violation` wrapper for the PK race. Both changes are exactly what was suggested.
+
+- **F2 [major]** partial-apply edge case → `closed`. Plan adds an explicit "Accepted edge case -- partial apply" section (lines 106-114), documents why the step goes red (with line-number citations to `set -euo pipefail` and the error checks), and adds a test case that pins the behavior: `BEGIN; CREATE TABLE t; COMMIT; SELECT 1/0;` produces zero rows, table exists, exit 1.
+
+- **F3 [minor]** test assumption about simple-query protocol → `closed`. Plan now has a commented assumption in the test (lines 174-179) documenting the dependency and what to re-verify. The test also changed from `--dry-run-payload` mode to a fake-curl approach that exercises the real script, which is a strict improvement.
+
+- **F4 [minor]** 8-digit prefix handling → `closed` (acknowledged, no change needed).
+
+- **F5 [minor]** SQL injection defense → `closed`. Plan adds an explicit no-single-quote assertion after the regex (line 139-140), explicitly noted as redundant-on-purpose, plus a test case covering a basename containing `'` (line 194).
+
+- **F6 [minor]** RUN_ID validation → `closed`. Plan adds `^[0-9]+$` check (line 141), with a test case for `RUN_ID=abc` (line 195).
+
+- **F7 [minor]** DATABASE_SCHEMA.md → `closed`. Plan adds the documentation line and adds the file to scope (line 4, lines 149-153).
+
+- **Q2** (duplicate-prefix exit code / pre-check) → `closed`. The pre-check design (lines 81-91) is thorough: read-only SELECT before apply, three-way branch (no row / same file / different file), and the `unique_violation` exception handler covers the pre-check-to-apply race. Exit codes are stated explicitly (lines 97-104).
+
+- **Q3** (INSERT privilege) → `closed`. Evidence cited in Problem section 2 (lines 20-24), confirmed via `has_table_privilege` and `current_user` check.
+
+## Findings
+
+No new blocker or major findings. The revision addressed every round 1 finding, and the new mechanisms (pre-check SELECT, `DO ... EXCEPTION WHEN unique_violation` wrapper, fake-curl test harness, explicit quote assertion) are all well-designed and internally consistent.
+
+## Verified premises (round 2 -- new claims only)
+
+- **"The pre-check and `unique_violation` handler cover the race"** (lines 81-95) → TRUE by construction. The pre-check omits the INSERT when a collision is detected ahead of time; the `EXCEPTION WHEN unique_violation` handler in the `DO` block catches the remaining window between pre-check and apply. Both paths produce a warning and exit 0, so an applied migration never fails due to bookkeeping.
+
+- **"`set -euo pipefail` is at script L43"** (line 109) → TRUE -- `/home/user/vitana-platform/scripts/ci/apply-sql-via-management-api.sh:43`.
+
+- **"L121-124 `HTTP != 200/201` exit 1"** (line 110) → TRUE -- `/home/user/vitana-platform/scripts/ci/apply-sql-via-management-api.sh:121-124`.
+
+## Questions for the planner
+
+None.
+
+## Verdict
+
+CONVERGED -- all round 1 findings are closed. No new blocker or major. The plan is well-structured: it correctly handles the happy path (recording), the idempotent re-run, the duplicate-prefix collision, the partial-apply edge case, and the pre-check-to-apply race. The test suite covers all of these, plus input validation (quote in basename, non-numeric RUN_ID, non-standard paths). The scope is appropriately narrow (workflow + script + test, no gateway code, no deploy).
