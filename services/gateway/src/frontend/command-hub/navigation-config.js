@@ -186,7 +186,6 @@ export const NAVIGATION_CONFIG = [
     label: "Infrastructure",
     tabs: [
       { key: "services", label: "Services" },
-      { key: "health", label: "Health" },
       { key: "deployments", label: "Deployments" },
       { key: "logs", label: "Logs" },
       { key: "config", label: "Config" }

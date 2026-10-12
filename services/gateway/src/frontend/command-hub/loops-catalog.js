@@ -28,6 +28,7 @@
         workflows: { label: 'Scheduled workflows', href: '/command-hub/testing-qa/catalog/' },
         test_contracts: { label: 'Test contracts', href: '/command-hub/testing-qa/test-contracts/' }
     };
+    var OVERLAP_LABELS = { open: 'Open', resolved: 'Resolved', partly_resolved: 'Partly resolved', not_a_duplicate: 'Not a duplicate' };
     var GROUPS = [['platform', 'Platform loops — the system fixes and improves itself'],
                   ['product', 'Product loops — member, supplier and creator experience improves itself']];
 
@@ -216,8 +217,12 @@
         var ol = h('ol', 'loops-overlaps');
         d.catalog.overlaps.forEach(function (o) {
             var li = h('li', null);
+            li.setAttribute('data-overlap', o.id);
             li.appendChild(h('strong', null, o.title));
+            // VTID-05098: what the Simplify loop did with it.
+            if (o.status) li.appendChild(badge(OVERLAP_LABELS[o.status] || o.status, 'overlap-' + o.status));
             li.appendChild(h('span', 'loops-mono', ' — ' + o.items.join(' · ')));
+            if (o.resolution) li.appendChild(h('div', 'loops-overlap-resolution', o.resolution));
             ol.appendChild(li);
         });
         sec.appendChild(ol);

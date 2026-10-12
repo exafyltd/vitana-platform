@@ -11,7 +11,7 @@
       "risk": "R1",
       "autonomy": "L2",
       "status": "PARTIAL",
-      "gap": "Routines and test contracts already feed the self-healing intake; the scheduled alert workflows only alert and do not.",
+      "gap": "Routines and test contracts feed the self-healing intake, but the scheduled alert workflows only alert. The surviving routines fail on every run (claude.ai triggers RUN_ERRORED, found in VTID-05098) — diagnosing them is Phase 3.",
       "trigger": "Any owned sensor turns red (health check, routine run, alert workflow, test contract, error cluster).",
       "goal": "The same sensor that fired is green again after the fix is deployed, and STAGING-VERIFY passes on that commit.",
       "act": "One intake (self_healing_log) -> six-layer diagnosis -> spec -> fix through the one executor (Dev Autopilot).",
@@ -46,16 +46,11 @@
         ],
         "routines": [
           "agents-heartbeat",
-          "cloud-run-frontend-health",
-          "migration-backlog",
           "mobile-bundle-budget",
           "mobile-screen-api-latency",
           "mobile-screen-latency-rollup",
           "mobile-synthetic-load-probe",
           "oasis-event-anomaly",
-          "orb-audio-smoke",
-          "push-pipeline-probe",
-          "self-healing-triage",
           "spec-memory-quarantine",
           "supabase-io-audit"
         ],
@@ -1014,7 +1009,9 @@
         "diagnostics/health-checks",
         "infrastructure/health"
       ],
-      "note": "Neither uses the 117-check Service Health registry."
+      "note": "Neither uses the 117-check Service Health registry.",
+      "status": "resolved",
+      "resolution": "VTID-05098: Infrastructure → Health removed and redirected to Diagnostics → Health Checks (unchanged). The full registry stays in the header Service Health pill."
     },
     {
       "id": "O2",
@@ -1024,7 +1021,9 @@
         "E2E-ORB-MONITOR",
         "ALERT-ORB-*",
         "Service Health registry"
-      ]
+      ],
+      "status": "partly_resolved",
+      "resolution": "VTID-05098: routine orb-audio-smoke retired (duplicate of registry \"ORB Live\"; its Vertex fields breach falsely). E2E-ORB-MONITOR and the bootstrap-latency alert are distinct signals and stay. ALERT-ORB-SESSION-STATE-HEALTH vs registry \"ORB Session Ledger\" (same RPC) is left to Phase 3."
     },
     {
       "id": "O3",
@@ -1033,7 +1032,9 @@
         "routine push-pipeline-probe",
         "ALERT-PUSH-DISPATCH-HEALTH",
         "ops/health/push-dispatch"
-      ]
+      ],
+      "status": "partly_resolved",
+      "resolution": "VTID-05098: routine push-pipeline-probe and its audit endpoint retired. ALERT-PUSH-DISPATCH-HEALTH and /ops/health/push-dispatch run the same query; pointing the workflow at the route is Phase 3."
     },
     {
       "id": "O4",
@@ -1041,7 +1042,9 @@
       "items": [
         "routine migration-backlog",
         "MIGRATION-DRIFT-CHECK"
-      ]
+      ],
+      "status": "resolved",
+      "resolution": "VTID-05098: routine migration-backlog and /routines/audits/migration-backlog retired (its diff always breached). MIGRATION-DRIFT-CHECK is the check."
     },
     {
       "id": "O5",
@@ -1049,7 +1052,9 @@
       "items": [
         "routine cloud-run-frontend-health",
         "ops/runtime/deploy/frontend-*"
-      ]
+      ],
+      "status": "resolved",
+      "resolution": "VTID-05098: routine cloud-run-frontend-health retired; the registry Gateway Alive / Frontend Prod / Frontend Staging checks remain."
     },
     {
       "id": "O6",
@@ -1057,7 +1062,9 @@
       "items": [
         "autonomy/self-healing",
         "autonomy/autonomy-pulse"
-      ]
+      ],
+      "status": "resolved",
+      "resolution": "VTID-05098: Pulse shows self-healing items with an Open link; acting happens only in Autonomy → Self-Healing (Pulse apply/discard sent {vtid} and always failed)."
     },
     {
       "id": "O7",
@@ -1065,7 +1072,9 @@
       "items": [
         "testing-qa/test-contracts",
         "autonomy/autonomy-pulse"
-      ]
+      ],
+      "status": "resolved",
+      "resolution": "VTID-05098: Pulse shows failing contracts with an Open link; re-running happens only in Testing & QA → Test Contracts (Pulse rerun/open had no handler)."
     },
     {
       "id": "O8",
@@ -1073,7 +1082,9 @@
       "items": [
         "routines table",
         "agents_registry"
-      ]
+      ],
+      "status": "resolved",
+      "resolution": "VTID-05098: not the same thing — the routine was an inert daily rules pass and is retired; the in-gateway triage agent stays."
     },
     {
       "id": "O9",
@@ -1081,7 +1092,9 @@
       "items": [
         "dev_autopilot_scanners",
         "test-contract source type"
-      ]
+      ],
+      "status": "not_a_duplicate",
+      "resolution": "VTID-05098: two live code paths with different signals (.ts without .test.ts vs endpoint without a test contract). Both stay."
     },
     {
       "id": "O10",
@@ -1091,7 +1104,9 @@
         "TEST-CATALOG JSON",
         "EventBridge setup script",
         "SCHEDULED_WORKFLOWS in ops-runtime-health.ts"
-      ]
+      ],
+      "status": "not_a_duplicate",
+      "resolution": "VTID-05098: four different scopes; TEST-CATALOG is generated. Deriving SCHEDULED_WORKFLOWS from it is Phase 3."
     }
   ],
   "retire_candidates": []

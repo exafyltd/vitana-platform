@@ -34,6 +34,8 @@ export const AUTONOMY = ['L0', 'L1', 'L2', 'L3'] as const;
 export const STATUSES = ['LIVE', 'PARTIAL', 'PLANNED'] as const;
 export const RUN_PLANES = ['dev_autopilot', 'community_autopilot', 'self_healing'] as const;
 export const SHARED_VERIFIERS = ['claim_verifier', 'red_flag_rules'] as const;
+/** VTID-05098: what the Simplify loop did with each known overlap. */
+export const OVERLAP_STATUSES = ['open', 'resolved', 'partly_resolved', 'not_a_duplicate'] as const;
 export const CONTRACT_FIELDS = [
   'trigger', 'goal', 'act', 'verifier', 'stop', 'human_gate', 'budget', 'metrics',
 ] as const;
@@ -74,7 +76,14 @@ export interface LoopCatalog {
   principle: string;
   loops: Loop[];
   components: Array<{ id: string; name: string; what: string; existing_ref: Ref | null; cases?: LoopCase[] }>;
-  overlaps: Array<{ id: string; title: string; items: string[]; note?: string }>;
+  overlaps: Array<{
+    id: string;
+    title: string;
+    items: string[];
+    note?: string;
+    status: typeof OVERLAP_STATUSES[number];
+    resolution?: string;
+  }>;
   retire_candidates: Array<{ kind: SensorKind; ref: string; reason: string }>;
 }
 
@@ -117,6 +126,10 @@ export function validateCatalog(c: LoopCatalog): string[] {
       if (!Array.isArray(l.sensors[k])) errors.push(`${at}: sensors.${k} must be an array`);
     }
     if (!Array.isArray(l.cases)) errors.push(`${at}: missing cases`);
+  }
+  for (const o of c.overlaps || []) {
+    if (!OVERLAP_STATUSES.includes(o.status)) errors.push(`overlap ${o.id || '?'}: bad status ${o.status}`);
+    if (o.status !== 'open' && !o.resolution) errors.push(`overlap ${o.id || '?'}: ${o.status} needs a resolution`);
   }
   return errors;
 }

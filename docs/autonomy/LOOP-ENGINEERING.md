@@ -110,23 +110,35 @@ and CI enforces the other two.
 ## 5. Known overlaps (the Simplify loop's first backlog)
 
 Found while comparing the plan with Testing & QA, Routines and Health Checks
-(2026-10-12). Phase 1 only lists them; removing each one is its own change.
+(2026-10-12). Phase 2 (VTID-05098) worked through them; the catalog carries
+each one's `status` and `resolution`, and the Loops screen shows them.
 
-1. Two Health Checks tabs (`diagnostics/health-checks`, `infrastructure/health`) show the same 5 probes; neither uses the 117-check Service Health registry.
-2. Voice assistant (ORB) health is checked in 4 places.
-3. The push pipeline is checked in 3 places.
-4. Migration drift is checked twice.
-5. Frontend reachability is checked twice.
-6. The self-healing queue is actionable on 2 screens.
-7. Test-contract failures are actionable on 2 screens.
-8. `self-healing-triage` is registered twice (routine and agent).
-9. The missing-test scanner is registered twice.
-10. Scheduled jobs are listed in 4 places.
+| # | Overlap | Outcome (VTID-05098) |
+|---|---|---|
+| O1 | Two Health Checks tabs with the same 5 probes | **Resolved.** Infrastructure → Health removed and redirected; Diagnostics → Health Checks unchanged. |
+| O2 | ORB health in 4 places | **Partly resolved.** Routine `orb-audio-smoke` retired. The widget E2E and bootstrap-latency checks are distinct and stay; the session-state alert vs panel pair is Phase 3. |
+| O3 | Push pipeline in 3 places | **Partly resolved.** Routine `push-pipeline-probe` and its audit endpoint retired; pointing the alert workflow at `/ops/health/push-dispatch` is Phase 3. |
+| O4 | Migration drift twice | **Resolved.** Routine `migration-backlog` and its audit endpoint retired; MIGRATION-DRIFT-CHECK stays. |
+| O5 | Frontend reachability twice | **Resolved.** Routine `cloud-run-frontend-health` retired; the registry checks stay. |
+| O6 | Self-healing queue actionable on 2 screens | **Resolved.** Pulse links to Autonomy → Self-Healing (its apply/discard sent `{vtid}` and always failed). |
+| O7 | Test-contract failures actionable on 2 screens | **Resolved.** Pulse links to Testing & QA → Test Contracts (its rerun/open had no handler). |
+| O8 | `self-healing-triage` registered twice | **Resolved.** Not the same thing: the inert routine is retired, the triage agent stays. |
+| O9 | Missing-test scanner twice | **Not a duplicate.** Two live paths with different signals. |
+| O10 | Scheduled jobs listed in 4 places | **Not a duplicate.** Four scopes, one generated; deriving `SCHEDULED_WORKFLOWS` is Phase 3. |
+
+**Found on the way (2026-10-12):** every routine had two live claude.ai
+triggers — an April generation posting to the deleted Cloud Run gateway
+(reporting "succeeded" because the script exits 0) and a September generation
+that fails on every run. The retired routines' September triggers are disabled;
+the April-generation triggers were created through the HTTP API and can only
+be disabled by the owner (list in `docs/validation/VTID-05098/acceptance.md`).
+The routine ingest token sits in plain text in the trigger prompts and should
+be rotated.
 
 ## 6. Roadmap (each step has its own plan, sparring and VTID)
 
-1. **Phase 2 — Simplify first.** Remove the overlaps above: one health view on the registry, one probe per concern, one place to act, one scheduled-job list.
-2. **Phase 3 — Close L1 and add guard rails.** Alert workflows write to the one intake; per-loop kill switch, budget and stagnation stop on the existing `agents_registry` + `agent_runs`; L5 spend budgets and the silent-fallback incident rule.
+1. **Phase 2 — Simplify first (VTID-05098, done).** Retired five dead or duplicate routines, one Health tab, one place to act in Pulse; outcomes in §5.
+2. **Phase 3 — Close L1 and add guard rails.** Find out why the surviving routines fail on every run; alert workflows write to the one intake and use their ops health route as the single definition of each check; derive `SCHEDULED_WORKFLOWS` from the generated catalog; per-loop kill switch, budget and stagnation stop on the existing `agents_registry` + `agent_runs`; L5 spend budgets and the silent-fallback incident rule.
 3. **Phase 4 — L3 Learn.** Act on the outcomes ledger (graduation proposals; an escaped bug becomes a test).
 4. **Phase 5 — L9 Supplier catalog, wave 1.** One category, at most 20 SKUs per run, deterministic validators before any LLM, human publish gate. Target: 80% of rows ready for approval without manual entry.
 5. **Phase 6 — Shared safety verifiers, then L14.** Claim verifier and red-flag rules with eval sets first; the health coaching MVP after.

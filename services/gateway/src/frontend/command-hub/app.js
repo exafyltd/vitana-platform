@@ -3893,7 +3893,6 @@ const NAVIGATION_CONFIG = [
         "basePath": "/command-hub/infrastructure/",
         "tabs": [
             { "key": "services", "path": "/command-hub/infrastructure/services/" },
-            { "key": "health", "path": "/command-hub/infrastructure/health/" },
             { "key": "deployments", "path": "/command-hub/infrastructure/deployments/" },
             { "key": "logs", "path": "/command-hub/infrastructure/logs/" },
             { "key": "config", "path": "/command-hub/infrastructure/config/" }
@@ -8746,8 +8745,6 @@ function renderModuleContent(moduleKey, tab) {
     // ──── Infrastructure Module ────
     } else if (moduleKey === 'infrastructure' && tab === 'services') {
         container.appendChild(renderInfraServicesView());
-    } else if (moduleKey === 'infrastructure' && tab === 'health') {
-        container.appendChild(renderInfraHealthView());
     } else if (moduleKey === 'infrastructure' && tab === 'deployments') {
         container.appendChild(renderInfraDeploymentsView());
     } else if (moduleKey === 'infrastructure' && tab === 'logs') {
@@ -12612,6 +12609,8 @@ const AUTONOMY_REDIRECTS = {
     '/command-hub/dev-autopilot/':                { section: 'autonomy', tab: 'autopilot-developer' },
     // VTID-05084: the "Autopilot — Admin (Coming soon)" placeholder became the Loops screen
     '/command-hub/autonomy/autopilot-admin/':     { section: 'autonomy', tab: 'loops' },
+    // VTID-05098: Infrastructure → Health probed the same 5 endpoints as Diagnostics → Health Checks
+    '/command-hub/infrastructure/health/':        { section: 'diagnostics', tab: 'health-checks' },
     // Assistant section moves (Round 2) — kept for legacy bookmarks. DEV-COMHU:
     // Awareness moved from Voice into Conversation (design + monitoring), so these
     // now resolve onward to the Conversation / Awareness tab.
@@ -40172,94 +40171,6 @@ function renderInfraServicesView() {
 }
 
 /**
- * renderInfraHealthView - Aggregate health overview.
- * Shows overall system health score, service count, degraded services.
- */
-function renderInfraHealthView() {
-    var container = document.createElement('div');
-    container.className = 'infra-health-container';
-
-    // Auto-fetch services if not loaded (reuse infraServices data)
-    if (!state.infraServices.fetched && !state.infraServices.loading) {
-        fetchInfraServices();
-    }
-
-    // Header
-    var header = document.createElement('div');
-    header.className = 'infra-section-header';
-    header.innerHTML = '<h2>System Health</h2><p class="infra-subtitle">Aggregate health view across all infrastructure services. Highlights degraded or down services.</p>';
-    container.appendChild(header);
-
-    if (state.infraServices.loading) {
-        var loadingDiv = document.createElement('div');
-        loadingDiv.className = 'infra-empty';
-        loadingDiv.textContent = 'Loading...';
-        container.appendChild(loadingDiv);
-        return container;
-    }
-
-    var services = state.infraServices.items;
-    var totalCount = services.length;
-    var healthyCount = services.filter(function (s) { return s.status === 'healthy'; }).length;
-    var degradedCount = services.filter(function (s) { return s.status === 'degraded'; }).length;
-    var downCount = services.filter(function (s) { return s.status === 'down'; }).length;
-    var healthScore = totalCount > 0 ? Math.round((healthyCount / totalCount) * 100) : 0;
-
-    // Metric Cards Grid (4 across)
-    var cardsGrid = document.createElement('div');
-    cardsGrid.className = 'infra-card-grid';
-
-    var healthCards = [
-        { label: 'Health Score', value: healthScore + '%', detail: healthyCount + ' of ' + totalCount + ' services healthy' },
-        { label: 'Healthy', value: String(healthyCount), detail: 'Services responding normally' },
-        { label: 'Degraded', value: String(degradedCount), detail: 'Services with partial issues' },
-        { label: 'Down', value: String(downCount), detail: 'Services not responding' }
-    ];
-
-    healthCards.forEach(function (info) {
-        var card = document.createElement('div');
-        card.className = 'infra-metric-card';
-        card.innerHTML =
-            '<div class="infra-metric-card__label">' + escapeHtml(info.label) + '</div>' +
-            '<div class="infra-metric-card__value">' + escapeHtml(info.value) + '</div>' +
-            '<div class="infra-metric-card__detail">' + escapeHtml(info.detail) + '</div>';
-        cardsGrid.appendChild(card);
-    });
-    container.appendChild(cardsGrid);
-
-    // Degraded services highlighted
-    var degradedServices = services.filter(function (s) { return s.status !== 'healthy'; });
-    if (degradedServices.length > 0) {
-        var alertSection = document.createElement('div');
-        alertSection.className = 'infra-panel infra-panel--warning';
-        alertSection.innerHTML = '<h3>Attention Required</h3>';
-
-        var alertList = document.createElement('ul');
-        degradedServices.forEach(function (s) {
-            var li = document.createElement('li');
-            li.innerHTML = '<strong>' + escapeHtml(s.name) + '</strong> — ' +
-                '<span class="infra-card__badge infra-card__badge--' + s.status + '">' + s.status.toUpperCase() + '</span>' +
-                ' (' + s.latency_ms + 'ms)' +
-                (s.error ? ' — ' + escapeHtml(s.error) : '');
-            alertList.appendChild(li);
-        });
-        alertSection.appendChild(alertList);
-        container.appendChild(alertSection);
-    }
-
-    // Heartbeat info
-    var heartbeatSection = document.createElement('div');
-    heartbeatSection.className = 'infra-panel';
-    heartbeatSection.innerHTML = '<h3>Heartbeat</h3>' +
-        '<p>Operator heartbeat endpoint: <code>GET /api/v1/operator/heartbeat</code></p>' +
-        '<p>Gateway polls the operator heartbeat to detect service availability. ' +
-        'The Operator Console live ticker uses SSE for real-time event streaming.</p>';
-    container.appendChild(heartbeatSection);
-
-    return container;
-}
-
-/**
  * fetchInfraDeployments - GET /api/v1/operator/deployments?limit=30
  */
 function fetchInfraDeployments() {
@@ -42677,9 +42588,7 @@ function autonomyPulseActionSpec(action) {
         case 'reject':         return { label: 'Reject', color: '#ef4444' };
         case 'snooze':         return { label: 'Snooze 24h', color: '#eab308' };
         case 'view_plan':      return { label: 'View plan', color: '#3b82f6' };
-        case 'investigate':    return { label: 'Investigate', color: '#3b82f6' };
-        case 'apply_heal':     return { label: 'Apply heal', color: '#22c55e' };
-        case 'discard_heal':   return { label: 'Discard', color: '#ef4444' };
+        case 'investigate':    return { label: 'Open', color: '#3b82f6' };
         case 'cancel':         return { label: 'Cancel', color: '#ef4444' };
         case 'view_trace':     return { label: 'View trace', color: '#3b82f6' };
         default:               return { label: action, color: 'var(--text-secondary, #aaa)' };
@@ -42723,16 +42632,8 @@ function autonomyPulseDoAction(item, action) {
             promise = fetch('/api/v1/dev-autopilot/executions/' + execId + '/reject', { method: 'POST', headers, body: '{}' });
         }
     }
-    // self_healing apply_heal / discard_heal — Self-Healing endpoints live
-    // under /api/v1/self-healing; route there.
-    if (item.source === 'self_healing') {
-        var vtid = item.metadata.vtid;
-        if (action === 'apply_heal') {
-            promise = fetch('/api/v1/self-healing/approve', { method: 'POST', headers, body: JSON.stringify({ vtid: vtid }) });
-        } else if (action === 'discard_heal') {
-            promise = fetch('/api/v1/self-healing/reject', { method: 'POST', headers, body: JSON.stringify({ vtid: vtid }) });
-        }
-    }
+    // VTID-05098: self-healing and test-contract items are acted on in their
+    // own tabs; Pulse only offers 'investigate' (Open) for them.
 
     if (!promise) {
         delete state.autonomyPulse.actionInFlight[key];
