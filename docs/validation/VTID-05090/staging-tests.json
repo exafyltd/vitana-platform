@@ -1,0 +1,30 @@
+{
+  "vtid": "VTID-05090",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/partner-onboarding/00000000-0000-0000-0000-000000000000/dpa?locale=de",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "the supplier DPA view is mounted and needs the supplier's session (anonymous GET, nothing is read or written)"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/admin/partner-dpa",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "the DPA publishing API is mounted and refuses an unsigned caller (exafy_admin only; nothing is read or written)"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05090-partner-dpa.test.ts test/admin-partner-dpa.test.ts test/vtid-04478-partner-onboarding-checklist.test.ts test/vtid-04953-checklist-policy.test.ts test/vtid-04941-commerce-mcp-automation.test.ts",
+      "cwd": "services/gateway",
+      "reason": "signing (own session only; assistant/delegated and unknown sessions refused; exact version + German hash + carried language; typed name/role and ticked declaration; DPA_NOT_REQUIRED / DPA_COMPANY_INCOMPLETE; append-only row with org snapshot, IP and UA; OASIS event without personal data), the derived dpa checklist step with dpa_not_published and fail-closed reads, the publishing API and the MCP waiting action are proven here. POST /dpa/sign is never probed on staging: staging shares the production Supabase project, so nothing is published or signed during verification. The database rules are proven on a throwaway Postgres (CI SQL-PARTNER-TERMS)."
+    }
+  ]
+}
