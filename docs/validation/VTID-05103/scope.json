@@ -9,7 +9,7 @@
     "services/gateway/src/routes/routines.ts",
     "services/gateway/src/index.ts",
     "services/gateway/src/services/conversation/conversation-flag-pins.generated.ts",
-    "supabase/migrations/20261012200000_vtid_05103_routine_runner_claim.sql",
+    "supabase/migrations/20261012210000_vtid_05103_routine_runner_claim.sql",
     "scripts/ci/report-to-self-healing.sh",
     ".github/workflows/ALERT-*.yml",
     ".github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml",
