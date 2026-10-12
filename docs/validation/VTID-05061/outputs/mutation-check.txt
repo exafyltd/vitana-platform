@@ -1,0 +1,7 @@
+VTID-05061 mutation check (npx jest test/vtid-05061-reaper-sparring-guard.test.ts), each mutation applied alone, source restored after each:
+M1 remove REAPER_NOT_SPARRING_BOUND from the candidate SELECT  -> 2 failed, 5 passed, 7 total
+M2 remove ${REAPER_NOT_SPARRING_BOUND} from the PATCH filter   -> 2 failed, 5 passed, 7 total
+M3 remove metadata->>sparring_id=is.null (SELECT + PATCH)      -> 2 failed, 5 passed, 7 total
+M4 remove metadata->>sparring_id_unverified=is.null (both)     -> 2 failed, 5 passed, 7 total
+M5 remove the per-tick console.warn                            -> 1 failed, 6 passed, 7 total
+Unmutated: 7 passed, 7 total.
