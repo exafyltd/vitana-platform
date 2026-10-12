@@ -514,7 +514,7 @@ const tenantMembershipCache = new Map<string, number>();
 type MembershipLookup = 'member' | 'not_member' | 'unavailable';
 
 function tenantMembershipCheckMode(): 'enforce' | 'log' {
-  return process.env.TENANT_MEMBERSHIP_CHECK_MODE === 'log' ? 'log' : 'enforce';
+  return (process.env.TENANT_MEMBERSHIP_CHECK_MODE ?? 'enforce') === 'log' ? 'log' : 'enforce';
 }
 
 async function lookupTenantMembership(userId: string, tenantId: string): Promise<MembershipLookup> {
