@@ -47,10 +47,14 @@
     },
     {
       "kind": "http",
-      "name": "a remaining routine audit endpoint still requires its token",
+      "name": "a remaining routine audit endpoint still exists behind its token gate (staging has no ROUTINE_INGEST_TOKEN, so the gate fails closed with 503)",
       "path": "/api/v1/routines/audits/oasis-summary",
-      "expect_status": 401,
-      "expect_content_type": "application/json"
+      "expect_status": 503,
+      "expect_content_type": "application/json",
+      "expect_json": {
+        "ok": false,
+        "error": "ROUTINE_INGEST_TOKEN env var not configured"
+      }
     }
   ]
 }
