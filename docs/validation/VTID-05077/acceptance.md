@@ -35,6 +35,8 @@ AC-7: The 4 executions frozen in `ci` since the kill switch was armed (#4016–#
 - A1 step 1 (measure before fixing) was answered by the evidence already recorded: every one of the 128 failures returned EMPTY content at exactly 8,000 output tokens — a long plan would have returned truncated text, not none — and VTID-04794 had already identified hidden reasoning as the cause. The reasoning-token count is now parsed and logged, so the 48 h acceptance (≥ 95 % of plans from DeepSeek) is measured on staging, not assumed.
 - The Opus 4.6 invoke check could not run from this session (no AWS CLI; `/api/v1/llm/providers/verify` needs an exafy_admin login and has never been called). The first real fallback on staging is the check: a denial surfaces as `llm.call.failed` for `eu.anthropic.claude-opus-4-6-v1` and a `plan.failed` naming it — never a silent substitution — and stops Phase B for the owner.
 - `app.js` and `styles.css` share the new `?v=20261115-vtid-05077` (repo convention: both bumped together); the three tests pinning the previous version were updated to it.
+- `GET /dev-autopilot/spend` gains a `planner` field (contract change on purpose); `test/routes/dev-autopilot.test.ts`'s exact-body assertions now include it, with two new cases (rate from plan-version rows; a failed read leaves `planner: null` and never fails the answer).
+- Every staging suite that named the previous `app.js`/`styles.css` version follows the bump (VTID-04696 rule); `kiro-console.*` versions are unchanged.
 - Cause 2 in the outcome analysis (deploy-event topic) was already fixed by VTID-04215; no change here.
 
 ## Limits

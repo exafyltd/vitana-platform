@@ -8,3 +8,4 @@ npm run test:operator   # 64 pass
 node scripts/generate-command-hub-symbol-index.mjs && node scripts/generate-command-hub-symbol-index.mjs --check
 npm run build && node ../../scripts/ci/command-hub-golden-fingerprint.js && node ../../scripts/ci/command-hub-ownership-guard.js
 # mutation: cached-policy copy removed -> 1 fail; restored -> 12 pass
+npx jest --silent   # full gateway suite: 1633 suites passed, 26290 tests
