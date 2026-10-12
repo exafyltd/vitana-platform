@@ -88,8 +88,8 @@ const PAGES: Record<string, string> = {
   '/support': SUPPORT,
 };
 
-// public-route: static legal pages for the plugin listing, intentionally anonymous
-router.get(Object.keys(PAGES), (req: Request, res: Response) => {
+// static legal pages for the plugin listing, intentionally anonymous
+router.get(Object.keys(PAGES), (req: Request, res: Response) => { // public-route
   res
     .status(200)
     .set('Cache-Control', 'public, max-age=300')
