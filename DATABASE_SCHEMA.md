@@ -3792,3 +3792,14 @@ Migration: `supabase/migrations/20261010220000_vtid_05068_kiro_run_reattach.sql`
 | `turn_context` | how the turn was asked (`mode`, `channel`, `requestId`, `conversation_id`, `validatedVtid`, `attachments`), so the task that finishes it records the turn the same way |
 
 OASIS: `operator.kiro.run_reattached` — payload `{ run_id, thread_id, status }` only.
+
+## Plan authorship on `dev_autopilot_plan_versions` (VTID-05077, 2026-10-12) — applied before merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261012110000_vtid_05077_plan_version_planner_model.sql` (additive, nullable). Every Dev Autopilot plan version records which provider/model actually wrote it, so a planner fallback (DeepSeek → Bedrock Opus 4.6) is visible per plan.
+
+| Column | Meaning |
+|---|---|
+| `planner_provider` | provider that wrote the plan (`deepseek`, `bedrock` on fallback, `claude_subscription` on the worker-queue path); NULL before 2026-10-12 |
+| `planner_model` | model id that wrote the plan; NULL before 2026-10-12 |
+
+OASIS (`CicdEventType`): `dev_autopilot.plan.fallback_used` — payload `{ finding_id, version, planner_provider, planner_model }`. `GET /api/v1/dev-autopilot/spend` returns `planner: { plans_24h, fallback_24h, fallback_rate_24h }` from these columns.
