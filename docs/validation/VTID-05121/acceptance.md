@@ -47,3 +47,14 @@ AC-7: The new suite fails when the fix is removed (mutation).
 TEST: docs/validation/VTID-05121/outputs/mutation.txt
 
 OASIS_PROOF: none. An auth routing fix plus request limits, no new state transition.
+
+## Route mount evidence (VALIDATOR-CHECK route gate)
+
+No route is added: the three write routes and the two read routes already exist and keep their mount. The
+gate fires because their `router.post(...)` lines change (per-user limiter middleware inserted).
+
+ROUTE_MOUNT: `autopilotPromptsRouter` stays mounted at `/api/v1/autopilot` in services/gateway/src/index.ts:884 via mountRouterSync, after the pipeline router at :881 whose `requireServiceToken` now hands `/prefs`, `/prefs/`, `/prompts` and `/prompts/*` on with `next("router")` (routes/autopilot.ts).
+FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/autopilot/prefs
+FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/autopilot/prompts/today
+CURL_PROOF: before this change (staging @ origin/main, 2026-10-12 22:58 UTC, unauthenticated GET): `/api/v1/autopilot/prefs` → `401 {"ok":false,"error":"missing bearer token"}` and `/api/v1/autopilot/prompts/today` → `401 {"ok":false,"error":"missing bearer token"}` (the pipeline service-token gate). After merge-to-main auto-deploys staging, the same GETs must return `401 application/json {"ok":false,"error":"UNAUTHENTICATED"}` (the member router's own JWT gate), never `404 text/html`; STAGING-VERIFY runs these probes from staging-tests.json.
+TEST: services/gateway/test/vtid-05121-autopilot-prompts-not-behind-service-token.test.ts
