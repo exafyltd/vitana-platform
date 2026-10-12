@@ -186,3 +186,118 @@ Approved by owner in Claude Code session https://claude.ai/code/session_01TMPMNG
 Final plan hash: `43217d4dc382a193c76630088503c22635550756da6064ebd8ad6f6479235027`
 
 Owner approval (Gate 1): "Yes" — 2026-10-12, Claude Code session; plan hash 43217d4dc382a193c76630088503c22635550756da6064ebd8ad6f6479235027; sparring record 1cc5ea35-3b7c-4a65-a7a7-dd473d322e6f.
+
+## Sparring partner findings (verbatim, round 1 then round 2)
+
+Now I have all the evidence for my review.
+
+## Verified premises
+
+- **"The real route is `POST /api/v1/specs/:vtid/approve` defined at `specs.ts:1182`"** → TRUE -- `specs.ts:1182` confirms `router.post('/:vtid/approve', requireServiceOrAdmin, ...)`.
+
+- **"Call site A calls `fetch('/api/v1/specs/approve', ...)`"** → TRUE but wrong line number. The plan says `app.js:46297`; the actual fetch is at `app.js:46148`. The call sends `{vtid}` in the body, no Authorization header, and shows a success toast unconditionally -- all as described. Plan premise TRUE, line reference FALSE.
+
+- **"Call site B sends `x-user-id`/`x-user-role` headers"** → TRUE but wrong line number. The plan says `app.js:10352`; the actual headers are at `app.js:10220-10221`. These are the only occurrences in app.js. The path is already correct (`'/api/v1/specs/' + vtid + '/approve'`). Plan premise TRUE, line reference FALSE.
+
+- **"Mounted at `index.ts:798`"** → FALSE. The specs router is mounted at `index.ts:794` (`mountRouterSync(app, '/api/v1/specs', specsRouter, { owner: 'specs-pipeline' })`). Line 798-799 is the VCAOP postback router.
+
+- **"`index.html:28` has the `?v=` for app.js"** → FALSE. The app.js script tag is at `index.html:17`, not line 28. Current value is `?v=20261109-vtid-05006`.
+
+- **"No `router.post('/approve'` exists"** → TRUE -- grep for `router.post('/approve'` in specs.ts returns no matches, confirming only `/:vtid/approve` exists.
+
+- **"`renderSelfHealingView` starts at 46011"** → FALSE. It starts at line `45862`.
+
+- **"`renderTaskDrawer` starts at 9810"** → FALSE. It starts at line `9674`.
+
+## Findings
+
+F1 [major] Multiple line-number references are wrong, which will break the pinning tests that slice by function name/line
+
+Evidence: Plan says call site A is at `app.js:46297` (actual: 46148), call site B at `app.js:10352` (actual: 10220-10221), `renderSelfHealingView` starts at 46011 (actual: 45862), `renderTaskDrawer` starts at 9810 (actual: 9674), `index.ts:798` (actual: 794), `index.html:28` (actual: 17). None of these line numbers are close. The plan likely ran against a different version of app.js than what is currently on `origin/main`.
+
+Suggestion: Correct all line numbers to match the current `origin/main`. The plan's test design (slice by function name regex, not line number) is not directly impacted because it uses `function renderSelfHealingView(` as the anchor, but the prose is misleading and any implementor who navigates by line number will land in the wrong place. Re-verify all references against the actual HEAD before implementation.
+
+F2 [minor] The plan references `?v=20261117-vtid-05098` as the current cache-bust value
+
+Evidence: `index.html:17` shows `app.js?v=20261109-vtid-05006`. The plan's reference to `vtid-05098` appears to be from a future or parallel change, not the current state.
+
+Suggestion: Update the plan to reference the actual current value `20261109-vtid-05006` and pick a new value for this VTID's bump.
+
+F3 [minor] The `.then()` on call site A does not just "ignore the response" -- it unconditionally shows a success toast
+
+Evidence: `app.js:46152-46156` -- the `.then(function() { ... showToast('Spec approved for ' + task.vtid, 'success'); })` fires on any HTTP response (including 404 HTML). The plan's problem statement says "`.then()` ignores the response" but then correctly describes the false-success toast. The phrasing is slightly contradictory -- it ignores the response *content* but does execute a success action.
+
+Suggestion: Minor wording clarity; the plan already proposes the correct fix (check `r.ok && j.ok`). No change needed to the fix itself.
+
+F4 [minor] Call site A has no `.catch()` handler at all
+
+Evidence: `app.js:46148-46156` -- the fetch chain has `.then(function() { ... })` with no `.catch()`. A network error would produce an unhandled promise rejection. The plan correctly proposes adding a `.catch` network-error toast, but does not call this out as an existing bug distinct from the wrong-route bug.
+
+Suggestion: Already addressed by the fix proposal. No action needed.
+
+F5 [minor] The plan says "the REJECT button ... `fetch('/api/v1/self-healing/rollback/' + task.vtid`" -- this should be verified as the intended reject path
+
+Evidence: `app.js:46164` -- the REJECT button calls `POST /api/v1/self-healing/rollback/<vtid>` with `buildContextHeaders()`. This is out of scope per the plan, but worth noting: the REJECT button already uses `buildContextHeaders()` (auth), while the APPROVE button right next to it does not. This confirms the APPROVE button was simply missed when the auth pattern was applied.
+
+Suggestion: No action needed (out of scope), but this confirms the diagnosis.
+
+F6 [minor] The plan's test proposes asserting `'Approve failed'` text is "present near" the success toast -- this is fragile for a source-text-pinning test
+
+Evidence: The plan says "asserting that the text `'Approve failed'` is present near it" to prove the success toast is inside an ok branch. In a 2.3 MB file, "near" is ambiguous without a formal definition. The slicing approach (extract the `renderSelfHealingView` body) already scopes it sufficiently; the real assertion should be that the success toast only appears after an ok-check, not just that an error string exists somewhere in the same function.
+
+Suggestion: The test should assert that within the sliced function body, the `showToast('Spec approved` string appears AFTER a conditional check (e.g., the slice contains a pattern like `ok` or `r.ok` before the success toast). Alternatively, assert that `buildContextHeaders` and `Approve failed` both appear in the same fetch handler block. The exact regex is an implementation detail the implementor can decide.
+
+F7 [minor] The plan's `?v=` value in the staging test JSON uses `<new-value>` placeholder but the staging test is meant to be committed as-is
+
+Evidence: `staging-tests.json` lines in the plan show `"app.js?v=<new-value>"` -- these need to be the real value at commit time, not a placeholder.
+
+Suggestion: The plan already uses `VTID-XXXXX` as a placeholder throughout (for the not-yet-allocated VTID). This is consistent. No change needed -- the implementor will substitute the real values.
+
+## Questions for the planner
+
+1. The line numbers are all significantly off (by 100-150 lines in many cases). Was the plan verified against a different commit than `5f0220d0c`? The plan header claims verification against that commit, but the discrepancies suggest the app.js content has shifted. Can you confirm the commit you actually read?
+
+2. The plan's test proposes a route cross-check asserting `router.post('/:vtid/approve', requireServiceOrAdmin` exists in `specs.ts`. This is a good contract test. However, the import is `requireServiceOrAdmin` from `'../middleware/require-service-or-admin'` (specs.ts:16). If that middleware is ever renamed, this test would catch it -- is that the intent, or should it be more lenient (just assert the route pattern exists)?
+
+## Verdict
+
+NOT CONVERGED
+
+F1 is major because the plan's claimed verification commit does not match the actual code state. Every line number in the plan is wrong, which means either (a) the plan was verified against a different commit, undermining the "verified read-only against origin/main @ 5f0220d0c" claim, or (b) the file has been modified since the plan was written and the plan needs a refresh. The fix design and test design are sound in principle -- the line numbers are wrong but the function names and behavioral descriptions are correct. Correcting the line numbers and confirming the actual commit resolves F1.
+All claims verified. The plan is solid. Let me produce my round-2 output.
+
+## Verified premises
+- `fetch('/api/v1/specs/approve'` at app.js:46297 → TRUE -- `/home/user/vitana-platform/services/gateway/src/frontend/command-hub/app.js:46297`
+- `'x-user-role': userRole` at app.js:10357 → TRUE -- `/home/user/vitana-platform/services/gateway/src/frontend/command-hub/app.js:10357`
+- `function renderSelfHealingView()` at app.js:46011 → TRUE -- `/home/user/vitana-platform/services/gateway/src/frontend/command-hub/app.js:46011`
+- `function renderTaskDrawer()` at app.js:9810 → TRUE -- `/home/user/vitana-platform/services/gateway/src/frontend/command-hub/app.js:9810`
+- `mountRouterSync(app, '/api/v1/specs', specsRouter)` at index.ts:798 → TRUE -- `/home/user/vitana-platform/services/gateway/src/index.ts:798`
+- `app.js?v=20261117-vtid-05098` at index.html:28 → TRUE -- `/home/user/vitana-platform/services/gateway/src/frontend/command-hub/index.html:28`
+- `router.post('/:vtid/approve', requireServiceOrAdmin` at specs.ts:1182 → TRUE -- `/home/user/vitana-platform/services/gateway/src/routes/specs.ts:1182`
+- No `router.post('/approve'` in specs.ts → TRUE -- grep returns no matches
+
+## Findings
+
+F1 [major] line numbers wrong: **closed.** My round-1 checkout was stale. All line numbers confirmed against the current `origin/main` at `5f0220d0c`. The planner's evidence is correct.
+
+F2 [minor] `?v=` value wrong: **closed.** Same stale-checkout issue. `index.html:28` is `app.js?v=20261117-vtid-05098` as the plan states.
+
+F3 [minor] `.then()` wording: **closed.** Plan revised to say "the `.then()` callback never inspects the response" and "unconditionally calls showToast... so a 404 (or a 401/403) still produces the success toast."
+
+F4 [minor] no `.catch`: **closed.** Fix step 1 now explicitly adds `.catch` with re-enable and error toast. Test asserts `.catch(` is present.
+
+F5 [minor] REJECT button uses buildContextHeaders: **closed.** Acknowledged, out of scope, consistent with the fix direction.
+
+F6 [minor] fragile "near" assertion: **closed.** The test design is now precise: slices the function body, then the APPROVE fetch call, uses a regex for the ok-branch guard, and includes a mutation self-test that proves the regex would fail without the guard. This is a well-designed pinning test.
+
+F7 [minor] placeholders: **closed.** Deliberate per CLAUDE.md rules 51-55; VTID allocated after sparring and owner approval.
+
+No new blocker or major findings. The revised plan is well-scoped, the test design is thorough (source-text pinning, ok-branch mutation self-test, route cross-check, staging probe), the fix is minimal, and all premises are verified against the actual code.
+
+## Questions for the planner
+
+None.
+
+## Verdict
+
+CONVERGED
