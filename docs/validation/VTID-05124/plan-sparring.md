@@ -192,3 +192,114 @@ message, the Gate 2 equivalent for this change.
 Approved by owner in Claude Code session https://claude.ai/code/session_01TMPMNGNEtPxKwmVqyfdx46 on 2026-10-12 ("Yes"), including the recommended option for every owner decision and the production steps named in the plan. Verdict: CONVERGED (2 rounds).
 
 Owner approval (Gate 1): "Yes" — 2026-10-12, Claude Code session; plan hash e96821f8b1a655a027069f30164f6efeeaa71acef67a0ba9f17380c17fc1a37f; sparring record 33db1d1d-4b1c-497a-8120-cb55481beeb5.
+
+## Sparring partner findings (verbatim, round 1 then round 2)
+
+Good -- the function still exists, just bypasses RLS. The plan's claim about `create_tenant_direct_thread` accepting a deleted user as valid recipient is confirmed: it checks `memberships` for an active row, and these orphan rows would pass that check.
+
+Now I have enough evidence for a thorough review. Let me also verify the `RUN-MIGRATION.yml` accepts a `migration_file` input (already confirmed above at line 5-7) and check if the workflow applies via the Supabase Management API (confirmed at lines 32-37).
+
+Here is my round-1 analysis:
+
+## Verified premises
+
+- **"Gateway reads memberships in `jev-repository.ts:33`, caller-keyed"** → TRUE — `/home/user/vitana-platform/services/gateway/src/services/jev/jev-repository.ts:33` does `.from('memberships').select('role').eq('user_id', userId).eq('tenant_id', tenantId).eq('status', 'active')`, which is caller-keyed (the userId comes from the authenticated user, not a scan).
+
+- **"VTID-05043 Migration B captured these rows with `has_auth_user=false` and deliberately left them alone"** → TRUE — `/home/user/vitana-platform/supabase/migrations/data-fixups/20261010180100_vtid_05043_s3_backfill_drifted_memberships.sql:12-13` says explicitly: "12 of them belong to user ids that no longer exist in auth.users or app_users (deleted accounts; user_tenants.user_id references app_users, so they cannot be inserted and can never sign in) -- they are kept in the snapshot and left alone."
+
+- **"`legacy_archive` schema already exists"** → TRUE — same migration file at line 36-37 does `CREATE SCHEMA IF NOT EXISTS legacy_archive; REVOKE ALL ON SCHEMA legacy_archive FROM PUBLIC, anon, authenticated;`
+
+- **"`RUN-MIGRATION.yml` exists and accepts `migration_file` input"** → TRUE — `/home/user/vitana-platform/.github/workflows/RUN-MIGRATION.yml:5-7` shows `migration_file` as a `workflow_dispatch` input, applied via the Supabase Management API.
+
+- **"`create_tenant_direct_thread` accepts a deleted user id as a valid recipient via orphan memberships row"** → TRUE — `/home/user/vitana-v1/supabase/migrations/20250917161459_8ae0b2ca-1644-48c9-9662-63e775ee36f9.sql:56-60` checks `memberships` for the recipient's active row. An orphan membership row for a deleted user would pass this check. (Note: function is in vitana-v1, not vitana-platform.)
+
+- **"PGlite migration check harness exists at `docs/validation/VTID-05043/pglite-migration-check.mjs`"** → TRUE — file confirmed at `/home/user/vitana-platform/docs/validation/VTID-05043/pglite-migration-check.mjs`.
+
+## Findings
+
+F1 [minor] The plan lists `create_tenant_direct_thread` as a function "in the database" reading `memberships`, but its definition lives in the vitana-v1 repo (`supabase/migrations/20250917161459_...sql`), not vitana-platform. This is cosmetically misleading in the plan text (the function does live in the same Supabase database at runtime), but the actual claim about its behavior is correct.
+
+Evidence: The plan says "the functions reading `memberships` are access checks" and lists this function among them. It exists in `/home/user/vitana-v1/supabase/migrations/`, not under `/home/user/vitana-platform/supabase/`. At runtime it is in the same database.
+
+Suggestion: Add a parenthetical noting the function's definition is in the vitana-v1 repo's migrations for traceability.
+
+F2 [minor] The plan claims "`admin_tenant_analytics` (member/role counts per tenant, LEFT JOIN memberships)" but the VIEW definition itself is never shown or verified -- only the existence of the view name in migration files is established. The actual JOIN type and whether it counts from `memberships` vs `user_tenants` was not cited with `file:line`.
+
+Evidence: The plan references inflated admin counts as a consequence. The migration at `/home/user/vitana-platform/supabase/migrations/20260216000000_security_linter_fixes.sql:38` confirms the view exists, but the CREATE VIEW statement defining the JOIN is not cited in the plan. The original CREATE VIEW may be in an earlier migration or even in the initial schema dump.
+
+Suggestion: Verify the actual view definition to confirm the "inflated count" claim. If the view has since been redefined to use `user_tenants` instead, the "inflated admin counts" rationale weakens (though the cleanup is still valid).
+
+F3 [minor] The tolerance band `archived count < 10 or > 14` is reasonable for the +-2 window described, but the plan does not account for what happens if another migration (or manual cleanup) runs between plan approval and execution that deletes some of these rows. A deployment of the VTID-05043 follow-up FK constraint, for example, could cascade-delete them first.
+
+Evidence: The plan notes the tolerance is for "accounts deleted or re-created in between" but does not mention the possibility of a concurrent data-fixup migration removing them. The `live-before.sql` re-run in step 2 of Rollout mitigates this partially.
+
+Suggestion: The `live-before.sql` pre-check in Rollout step 2 is the right mitigation. Consider explicitly stating that if the count has dropped below 10, the migration should be abandoned (the problem solved itself) rather than adjusting bounds.
+
+F4 [minor] The plan proposes the migration file path as `supabase/migrations/data-fixups/<ts>_vtid_XXXXX_delete_orphan_memberships.sql`. Existing data-fixup files in this directory use inconsistent casing for the VTID prefix: some use uppercase `VTID` (e.g., `VTID_03695`, `VTID_03039`), others use lowercase `vtid` (e.g., `vtid_05043`, `vtid_04888`). The plan uses lowercase, which matches the more recent convention.
+
+Evidence: `/home/user/vitana-platform/supabase/migrations/data-fixups/` contains both `VTID_03695` and `vtid_05043` patterns.
+
+Suggestion: Not a blocker -- lowercase is the recent convention. No change needed.
+
+F5 [major] The plan says "No staging suite needed beyond these: the change deploys no service (no Gate 2; done when the migration is applied and post-checks pass)." But CLAUDE.md Part 1 rule 46-50 and the Staging Verification Gate say "Every merge that deploys is followed automatically by a test run." The plan correctly notes this change deploys no service, so no STAGING-VERIFY is needed. However, the plan proposes applying the migration via `RUN-MIGRATION.yml` which is a **production write** (step 3 in Rollout). CLAUDE.md rule 48 says "No automated test suite ever targets production." The `post-apply-checks.sql` is a manual read-only check, which is consistent. But the plan skips Gate 2 entirely -- it should still have a Gate 2 moment for the production write (the `RUN-MIGRATION.yml` dispatch), since the owner must explicitly approve it. The plan does mention "this is a production write and needs the owner's explicit go" in Rollout step 3, and Owner Decision #2 covers it. This is consistent with the Autonomy Contract. However, the flow is unusual -- Gate 1 (sparred plan approval) covers the plan, and the `RUN-MIGRATION.yml` dispatch is the production write requiring explicit approval. There is no deployed service to verify on staging, so no Gate 2 in the normal sense. The plan should explicitly state this is a "no Gate 2" change per the Autonomy Contract ("A change that deploys nothing has no Gate 2; it is done when merged with green checks") -- but a data-fixup migration IS a production write, which is more than "deploys nothing." This is a governance edge case.
+
+Evidence: CLAUDE.md Autonomy Contract: "A change that deploys nothing has no Gate 2; it is done when merged with green checks." But this change DOES write to production (via RUN-MIGRATION.yml). The migration is not a deployment, but it is a production mutation.
+
+Suggestion: Clarify in the plan that while no service deploys (no STAGING-VERIFY), the `RUN-MIGRATION.yml` dispatch is the production write requiring the owner's explicit approval (already covered by Owner Decision #2 and Rollout step 3). This IS effectively a Gate 2 equivalent -- reframe it as such for governance clarity. The "done when merged with green checks" clause does not apply here because the merge alone does not complete the work; the migration application does.
+
+F6 [minor] The plan's self-check in step 3 guards against "any FK in `pg_constraint` now references `public.memberships`" but the check uses `confrelid = 'public.memberships'::regclass`. This correctly checks for FKs whose target is `memberships`. However, it would not catch a new table that has a column named `membership_id` without a formal FK constraint (e.g., a soft reference). The plan already notes the only `membership_id` column is in `legacy_archive`, so this is acceptable, but worth noting the guard is FK-only.
+
+Evidence: Plan step 3, bullet 3.
+
+Suggestion: No change needed -- the guard is appropriate for the risk level.
+
+F7 [minor] The plan does not mention whether RLS is enabled on `memberships` and whether the migration's `DELETE` would be blocked by it. The `RUN-MIGRATION.yml` workflow applies SQL via the Supabase Management API, which likely runs as the `postgres` role (bypasses RLS). This should be stated explicitly to avoid confusion.
+
+Evidence: `/home/user/vitana-platform/.github/workflows/RUN-MIGRATION.yml:32-37` says it uses the Supabase Management API. The Management API runs SQL as `postgres` (superuser), which bypasses RLS.
+
+Suggestion: Add a note that the migration runs as `postgres` via the Management API, so RLS on `memberships` (if any) is bypassed.
+
+## Questions for the planner
+
+1. Has the `admin_tenant_analytics` view definition been verified to confirm it actually counts from `memberships` (not `user_tenants`)? If it uses `user_tenants`, the "inflated admin counts" rationale is weaker (though the cleanup is still valid).
+
+2. The plan mentions `create_tenant_direct_thread` as a theoretical risk. Given this function lives in vitana-v1's migrations and allows messaging a deleted user, should the fix include (or at least flag) hardening this function to also check `auth.users` or `app_users` existence? Or is this out of scope?
+
+3. For the governance flow: is the owner's approval of the `RUN-MIGRATION.yml` run (Owner Decision #2) the Gate 2 equivalent, or is there a different protocol for data-fixup migrations?
+
+## Verdict
+
+NOT CONVERGED -- F5 is major because it touches governance clarity for a production write. The plan needs to explicitly frame the `RUN-MIGRATION.yml` dispatch as the Gate 2 equivalent (or document why it is not) to satisfy the Autonomy Contract's two-gate model. The remaining findings are minor and can be addressed or acknowledged without blocking.
+I have all the information needed to render my round-2 verdict.
+
+## Verified premises
+
+(Carried from round 1, all still hold -- no re-verification needed as the plan's factual claims were only refined, not changed.)
+
+- "Gateway reads memberships in `jev-repository.ts:33`, caller-keyed" → TRUE -- `/home/user/vitana-platform/services/gateway/src/services/jev/jev-repository.ts:33`
+- "VTID-05043 Migration B captured these rows and left them alone" → TRUE -- `/home/user/vitana-platform/supabase/migrations/data-fixups/20261010180100_vtid_05043_s3_backfill_drifted_memberships.sql:12-13`
+- "`legacy_archive` schema already exists" → TRUE -- same file, line 36
+- "`RUN-MIGRATION.yml` exists and accepts `migration_file` input" → TRUE -- `/home/user/vitana-platform/.github/workflows/RUN-MIGRATION.yml:5-7`
+- "`create_tenant_direct_thread` accepts a deleted user id via orphan memberships" → TRUE -- `/home/user/vitana-v1/supabase/migrations/20250917161459_8ae0b2ca-1644-48c9-9662-63e775ee36f9.sql:56-60`
+
+## Findings — disposition of round 1
+
+- **F1 [minor]** `create_tenant_direct_thread` repo attribution → **closed**. Plan now names the vitana-v1 repo and both the original and latest migration files (lines 49-51).
+- **F2 [minor]** `admin_tenant_analytics` view definition unverified → **closed**. Plan now cites the live `pg_get_viewdef` result and corrects the rationale: orphans inflate `total_users`/`active_users` only, not the per-role counts (lines 42-48).
+- **F3 [minor]** Tolerance band edge case → **closed**. Rollout step 2 now explicitly says: below 10 or above 14 at pre-check, abandon and report to owner (lines 113-115).
+- **F4 [minor]** Naming convention → **acknowledged** (no change needed).
+- **F5 [major]** Governance of the production write → **closed**. New "Governance of the production write" paragraph (lines 123-129) explicitly frames the `RUN-MIGRATION.yml` dispatch as the production write covered by Gate 1, with the closing report as the Gate 2 equivalent. Owner Decision #1 now includes the dispatch approval (lines 152-155). This satisfies the Autonomy Contract's two-gate model.
+- **F6 [minor]** FK-only dependency guard → **acknowledged** (no change needed).
+- **F7 [minor]** RLS bypass via Management API → **closed**. Rollout step 3 now states explicitly that the Management API runs as `postgres`, RLS is bypassed, and the in-migration guards are the protection (lines 118-120).
+
+## Findings — round 2
+
+No new blockers or majors. The revision addressed every round-1 finding cleanly. The plan is well-scoped, the guards are sound, the governance flow is explicit, and the rollback path is tested.
+
+## Questions for the planner
+
+None.
+
+## Verdict
+
+CONVERGED. All round-1 findings are closed or acknowledged with no dispute. No new blockers or majors. The plan is ready for Gate 1.
