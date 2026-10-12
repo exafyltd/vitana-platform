@@ -177,3 +177,82 @@ Approved by owner in Claude Code session https://claude.ai/code/session_01TMPMNG
 - Partner: plan-sparring-partner, 2 rounds. Round-1 findings F1–F5 answered above; round 2 closed them. Verdict: **CONVERGED**.
 
 Owner approval (Gate 1): "Yes" — 2026-10-12, Claude Code session; plan hash b345adc7e7dd8bc0f52dba65c56f8aff6c7849bcdfce58bf3d1f23c986055437; sparring record 30502099-d45a-4f23-99e9-2ef46ef6cdb5.
+
+## Sparring partner findings (verbatim, round 1 then round 2)
+
+The generate endpoint already has its own rate limits. Good. I have enough evidence for a thorough review.
+
+## Verified premises
+
+- **"index.ts:881 mounts autopilotRouter, :884 mounts autopilotPromptsRouter, :887 mounts recommendations"** --> PARTIAL -- The structure and order are correct but the line numbers are wrong. Actual: `index.ts:871` (autopilotRouter), `:874` (autopilotPromptsRouter), `:877` (recommendations). `/home/user/vitana-platform/services/gateway/src/index.ts:871-877`
+
+- **"routes/autopilot.ts:124-165 requireServiceToken with exemptions at :133-141 (health) and :149-152 (recommendations), router.use at :166"** --> TRUE -- All line numbers match exactly. `/home/user/vitana-platform/services/gateway/src/routes/autopilot.ts:124-166`
+
+- **"autopilot-prompts.ts member endpoints: GET /prefs (:168), POST /prefs (:210), GET /prompts/today (:269), POST /prompts/generate (:312), POST /prompts/:id/action (:379), each calling getUserContext"** --> TRUE -- All routes and line numbers match. Every handler calls `getUserContext()` which returns `UNAUTHENTICATED` without a bearer token. `/home/user/vitana-platform/services/gateway/src/routes/autopilot-prompts.ts:168-423`
+
+- **"getUserContext at :62-121"** --> PARTIAL -- `getUserContext` is at lines 91-141, not 62-121. Lines 64-80 are `resolveFallbackTenant`, a different function. `/home/user/vitana-platform/services/gateway/src/routes/autopilot-prompts.ts:91`
+
+- **"autopilot.ts defines no /prefs or /prompts* route"** --> TRUE -- grep of all `router.(get|post|...)` calls in autopilot.ts shows only `/tasks/*`, `/controller/*`, `/spec/*`, `/validation/*`, `/loop/*`, `/health`, `/pipeline/*` paths. No `/prefs` or `/prompts` anywhere. `/home/user/vitana-platform/services/gateway/src/routes/autopilot.ts`
+
+- **"No frontend caller of /api/v1/autopilot/prefs or /prompts/*"** --> TRUE -- `vitana-v1/src` has zero matches; `app.js` only references `/prompts/health`. `/home/user/vitana-platform/services/gateway/src/frontend/command-hub/app.js:28196`
+
+## Findings
+
+F1 [minor] Plan cites wrong line numbers for index.ts mounts (881/884/887 vs actual 871/874/877) and wrong range for getUserContext (62-121 vs actual 91-141).
+Evidence: `/home/user/vitana-platform/services/gateway/src/index.ts:871-877`, `/home/user/vitana-platform/services/gateway/src/routes/autopilot-prompts.ts:91`
+Suggestion: Correct to `:871`, `:874`, `:877` and `:91-141`. Not a design issue, just accuracy for the audit trail.
+
+F2 [major] Re-opening dormant write surface without rate limiting at the HTTP layer. The plan acknowledges `/prompts/generate` and `/prompts/:id/action` as write paths (the action handler can create connection requests, join groups, RSVP). While `/prompts/generate` documents its own internal rate limits (line 296), there is no Express-level rate limiter on these routes. Since the service-token gate has been the only defense since August 2026, removing it exposes these endpoints to unauthenticated brute-force or replay attacks using a stolen JWT. The plan's "Out of scope" section explicitly defers rate limiting, but the plan's own "Risks" section acknowledges these are write paths that have been unreachable for two months.
+Evidence: `/home/user/vitana-platform/services/gateway/src/routes/autopilot-prompts.ts:312` (generate), `:379` (action). No `rateLimit` middleware on the router itself. `executeYesAction` at `/home/user/vitana-platform/services/gateway/src/services/autopilot-prompts-service.ts:720-722` creates real community actions (connection requests, group joins, RSVPs).
+Suggestion: Either (a) add a per-user Express rate limiter on the `autopilot-prompts` router in this same PR (matching existing patterns elsewhere in the gateway), or (b) explicitly document in the plan that `/prompts/generate`'s internal rate limit is sufficient for that endpoint and that `/prompts/:id/action` is bounded by the finite number of prompts a user has (each prompt can only be actioned once, state transitions to `accepted`/`dismissed`). If (b), state why that is acceptable and note it as a follow-up, not "out of scope" -- a dormant surface being restored is the right moment to add the limiter, not later.
+
+F3 [minor] The `next("router")` for the health path `/prompts/health` creates a subtle behavioral change the plan acknowledges but underestimates. Currently (line 136) `/prompts/health` is exempted with `next()`, meaning it falls through to the rest of `autopilot.ts`'s middleware stack (including `checkDeprecatedBypass`). After the fix, the new block catches `/prompts/health` first (since `req.path.startsWith("/prompts/")` matches it) and calls `next("router")`, skipping the autopilot.ts router entirely. The plan says "Keep the existing :136 line, which costs nothing" -- but the new block at lines before :136 will match first, making the :136 line dead code rather than harmless. The behavior change is benign (health endpoints should not go through deprecation checks), but the plan should be explicit that this IS a behavior change for `/prompts/health`, not a no-op.
+Evidence: The proposed `req.path.startsWith("/prompts/")` matches `/prompts/health`. The existing line 136 (`req.path === "/prompts/health"`) in the health block at lines 133-141 calls `next()` (falls through to the rest of autopilot.ts). With the new block inserted before the token check, the new block's `next("router")` fires first.
+Suggestion: Either (a) place the new exemption block AFTER the existing health check (between line 141 and 149), so `/prompts/health` still hits the existing `next()` path, or (b) explicitly document that `/prompts/health` now takes the `next("router")` path instead and that this is intentional and harmless (it reaches the same handler either way because the prompts router defines it).
+
+F4 [minor] The plan proposes `req.path === "/prefs"` but does not account for trailing slashes. Express normalizes some but not all cases. A request to `/api/v1/autopilot/prefs/` would have `req.path === "/prefs/"` and would NOT match the exemption, falling through to the service-token check and returning 401. The VTID-04530 recommendations block handles this by matching both exact and prefix (`req.path.startsWith("/recommendations/")`), which inherently handles trailing slashes. The `/prefs` case has no prefix variant.
+Evidence: Line 149: `req.path === "/recommendations" || req.path.startsWith("/recommendations/")` handles trailing slash. Proposed: `req.path === "/prefs"` does not.
+Suggestion: Add `|| req.path === "/prefs/"` to the condition, or note in the test that trailing-slash requests are intentionally gated (since no sub-paths of `/prefs` exist).
+
+F5 [minor] The staging test expects `{"error": "UNAUTHENTICATED"}` but the actual `getUserContext` response shape is `{"ok": false, "error": "UNAUTHENTICATED"}` (line 100 returns `{ ok: false, error: 'UNAUTHENTICATED' }`, and the handler at line 168-190 returns `res.status(context.status || 401).json({ ok: false, error: context.error || 'UNAUTHENTICATED' })`). The staging test's `expect_json` of `{"error": "UNAUTHENTICATED"}` would need to be a subset match, not an exact match. Verify that the STAGING-VERIFY runner uses subset/partial matching, or add `"ok": false` to the expected JSON.
+Evidence: `/home/user/vitana-platform/services/gateway/src/routes/autopilot-prompts.ts:171-175` always wraps with `ok: false`.
+Suggestion: Update `expect_json` to `{"ok": false, "error": "UNAUTHENTICATED"}` or confirm the runner does subset matching and document that.
+
+## Questions for the planner
+
+1. On F2: Is the internal rate-limit logic in `generatePromptsFromMatches` (the function `/prompts/generate` calls) sufficient to prevent abuse, or should a per-IP / per-user Express-level limiter be added in this PR given you are restoring a dormant surface? What about `/prompts/:id/action` -- is the finite-prompt-set argument (each prompt can only be actioned once) considered sufficient?
+
+2. On F3: Do you prefer placing the new exemption block AFTER the health check block (between current lines 141 and 149) to preserve the existing `/prompts/health` routing path, or are you comfortable with the behavior change where `/prompts/health` now routes via `next("router")` instead of `next()`?
+
+## Verdict
+
+NOT CONVERGED -- F2 is major: restoring two months of dormant write endpoints (one of which creates connection requests and group joins on behalf of the authenticated user) without addressing rate limiting at the HTTP layer needs an explicit decision, not a deferred "out of scope" note.
+Everything checks out. I have verified all the new claims in the revised plan. Here is my round-2 assessment.
+
+## Verified premises
+- **index.ts:881,884,887 mount autopilotRouter, autopilotPromptsRouter, recommendations** --> TRUE -- confirmed on the current checkout at `/home/user/vitana-platform/services/gateway/src/index.ts:881-887`. My round-1 checkout was stale.
+- **express-rate-limit at package.json:59, optionalAuth at auth-supabase-jwt.ts:433, liveRateLimitKey at live.ts:68-75** --> TRUE -- all three exist at the cited lines.
+- **RoomSessionManager side effect at live.ts:114** --> TRUE -- `const sessionManager = new RoomSessionManager()` runs at module scope, confirming the copy-not-import rationale.
+- **Service-level daily cap max 50 (types:31), per-request limit max 10 (types:97)** --> TRUE -- `/home/user/vitana-platform/services/gateway/src/types/autopilot-prompts.ts:31,97`.
+
+## Findings — round 1 disposition
+
+- **F1 [minor] line numbers** --> `closed` -- the planner is correct; my checkout was stale. The one genuine error (getUserContext range) was fixed.
+- **F2 [major] dormant write surface with no HTTP rate limit** --> `closed` -- Part B adds per-user `express-rate-limit` on all three write routes, following the proven VTID-04904 pattern in `live.ts`. The bounds are reasonable (10/15min for generate, 60/15min for action, 30/15min for prefs write), the key function avoids importing `live.ts`'s side effects, and the existing service-level daily cap is correctly cited as defence in depth.
+- **F3 [minor] /prompts/health path change** --> `closed` -- the new block is now placed after the health block, so `/prompts/health` keeps its existing `next()` path.
+- **F4 [minor] trailing slash** --> `closed` -- the condition now includes `"/prefs/"` and the test covers it.
+- **F5 [minor] expect_json shape** --> `closed` -- staging probes now assert `{ "ok": false, "error": ... }`.
+
+## Findings — round 2
+
+No new blocker or major findings. The revised plan is clean.
+
+One observation (not a finding): the plan notes the in-memory limiter state is per-ECS-task and the effective limit is `max x task_count`. This is an accepted, documented trade-off consistent with every other `express-rate-limit` use in the gateway. No action needed.
+
+## Questions for the planner
+
+None.
+
+## Verdict
+
+CONVERGED -- all five round-1 findings are closed. The revised plan adds rate limiting (Part B) using the proven VTID-04904 pattern, correctly places the exemption block to preserve the `/prompts/health` path, handles trailing slashes, and fixes the staging test assertions. No new blocker or major introduced.
