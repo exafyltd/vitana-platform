@@ -17,7 +17,7 @@ OASIS_PROOF: none — no event emitted or changed.
 AC-1: `public.notify_welcome_discount()` is redefined (only it; the trigger is unchanged) to read vault
 `email_trigger_secret` and post to the public `send-welcome-discount` URL with an `X-Trigger-Secret` header and body
 `{discount_code_id}`.
-  TEST: services/gateway/test/vtid-05118-welcome-discount-trigger-secret.test.ts (7 passed; 4 of them fail against the old definition, see commands.log)
+  TEST: services/gateway/test/vtid-05118-welcome-discount-trigger-secret.test.ts (8 passed; 5 of them fail against the old definition, incl. the EXECUTE revoke, see commands.log)
 
 AC-2: The migration no longer references the missing vault names `'supabase_url'` / `'service_role_key'`, carries no
 authorization header and no secret value (no `eyJ`, no `sb_secret_`).
