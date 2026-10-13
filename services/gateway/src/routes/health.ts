@@ -256,7 +256,9 @@ router.post('/lab-reports/ingest', async (req: Request, res: Response) => {
  * Answers 410 before any auth or database call, so a retired endpoint
  * cannot be used to probe accounts or reach the database.
  */
-router.post('/wearables/ingest', (_req: Request, res: Response) => {
+// Retired: answers 410 to everyone before any auth or database work.
+router.post('/wearables/ingest', (_req: Request, res: Response) => { // public-route
+  // impact-allow-no-oasis — no state change: the retired endpoint does nothing.
   return res.status(410).json({ ok: false, error: 'ENDPOINT_RETIRED' });
 });
 
