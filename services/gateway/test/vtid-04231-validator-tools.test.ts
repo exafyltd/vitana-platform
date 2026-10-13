@@ -171,16 +171,16 @@ describe('runLlmMergeReview with tools (VTID-04231)', () => {
     expect(r.summary).toContain('hardcoded key');
   });
 
-  it('fails open when the router fails mid-loop and when the model never answers with a verdict', async () => {
+  it('VTID-05146: fails closed when the router fails mid-loop and when the model never answers with a verdict', async () => {
     mockRouter.mockResolvedValueOnce({ ok: true, toolCalls: [{ name: 'ci_evidence', arguments: {} }] }).mockResolvedValueOnce({ ok: false, error: 'throttled' });
     mockChecks.mockResolvedValue({ check_runs: [] });
     const r = await runLlmMergeReview({ repo: 'exafyltd/vitana-platform', prNumber: 7, vtid: 'VTID-X' });
-    expect(r).toMatchObject({ ok: false, passed: true });
+    expect(r).toMatchObject({ ok: false, passed: false });
     expect(r.error).toContain('throttled');
     mockRouter.mockReset();
     mockRouter.mockResolvedValue({ ok: true, text: 'prose, no json' });
     const r2 = await runLlmMergeReview({ repo: 'exafyltd/vitana-platform', prNumber: 7, vtid: 'VTID-X' });
-    expect(r2).toMatchObject({ ok: false, passed: true, error: 'unparseable_verdict' });
+    expect(r2).toMatchObject({ ok: false, passed: false, error: 'unparseable_verdict' });
   });
 
   it('bounds the loop: after REVIEW_MAX_TOOL_CALLS the verdict is requested without tools', async () => {
