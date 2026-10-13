@@ -227,6 +227,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const internalMarketplaceSyncRouter = require('./routes/internal-marketplace-sync').default;
   // VTID-05023 part 4: auth.users webhook -> Aurora provisioning (service token only)
   const authBridgeRouter = require('./routes/auth-bridge').default;
+  // VTID-05174 (Health Hub D5 remainder): account-deletion health residue (service token only)
+  const healthErasureInternalRouter = require('./routes/health-erasure-internal').default;
   // VTID-02000: User limitations CRUD + impact counter
   const userLimitationsRouter = require('./routes/user-limitations').default;
   // VTID-02000: Wearables waitlist (Phase 0 stub — still works alongside Phase 1 connector flow)
@@ -1253,6 +1255,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/i18n-ops', adminI18nOpsRouter, { owner: 'admin-i18n-ops' });
   mountRouterSync(app, '/api/v1/internal/marketplace', internalMarketplaceSyncRouter, { owner: 'marketplace-sync' });
   mountRouterSync(app, '/api/v1/internal/auth-bridge', authBridgeRouter, { owner: 'auth-bridge' });
+  mountRouterSync(app, '/api/v1/internal/health-erasure', healthErasureInternalRouter, { owner: 'health-erasure-internal' });
 
   // VTID-02000: User limitations + impact counter (user-facing /ecosystem/preferences)
   mountRouterSync(app, '/api/v1/user/limitations', userLimitationsRouter, { owner: 'user-limitations' });
