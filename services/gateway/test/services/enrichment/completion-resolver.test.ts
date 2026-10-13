@@ -111,6 +111,9 @@ describe('computeCompletions — each E-check', () => {
   it('E11 cover', () => {
     expect(computeCompletions({ ...emptyFacts(), profile: { cover_url: 'https://x/c.png' } }).get('E11')).toBe(true);
     expect(computeCompletions({ ...emptyFacts(), profile: { cover_url: null } }).get('E11')).toBe(false);
+    // The cover library (CoverLibraryDrawer) writes universal_intent_cover_url — that counts too.
+    expect(computeCompletions({ ...emptyFacts(), profile: { cover_url: null, universal_intent_cover_url: 'https://x/u.png' } }).get('E11')).toBe(true);
+    expect(computeCompletions({ ...emptyFacts(), profile: { cover_url: '  ', universal_intent_cover_url: '' } }).get('E11')).toBe(false);
   });
 });
 

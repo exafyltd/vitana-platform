@@ -33,7 +33,7 @@ it('profiles: the five enrichment fields of the caller', async () => {
   const { sb, calls } = recorder();
   await repo.fetchProfileEnrichmentFields(sb, U);
   expect(calls[0].table).toBe('profiles');
-  expect(op(calls[0], 'select')[0][0]).toBe('avatar_url, bio, location, cover_url, interests');
+  expect(op(calls[0], 'select')[0][0]).toBe('avatar_url, bio, location, cover_url, universal_intent_cover_url, interests');
   expect(op(calls[0], 'eq')).toEqual([['user_id', U]]);
 });
 
