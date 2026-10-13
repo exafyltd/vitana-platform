@@ -385,6 +385,19 @@ jobs:
           jq -c '.env += [{name:"AUDIOBOOK_GOOGLE_RU_ENABLED", value:"true"}, {name:"AUDIOBOOK_GOOGLE_SR_ENABLED", value:"true"}, {name:"AUDIOBOOK_GOOGLE_DAILY_CHAR_CAP_PER_TASK", value:"1040000"}]' "$F" > "$F.tmp"
           mv "$F.tmp" "$F"
           jq -c '{env, sec: [.sec[].name]}' "$F"
+      # VTID-05133: Maxina Community MCP ("Connect your AI") — a member's ChatGPT or
+      # Claude reads their Maxina community through /mcp/community (Claude) and
+      # /mcp/community/chatgpt (ChatGPT). Two exact-'true' switches, STAGING ONLY;
+      # production stays off until the owner turns it on after Gate 2. Rides on
+      # connected-apps.json (VTID-03788 size guard), merged by name in the roll
+      # step. Rollback: either switch to 'false' (404, nothing else changes).
+      - name: Community MCP flags
+        run: |
+          set -euo pipefail
+          F="$RUNNER_TEMP/connected-apps.json"
+          jq -c '.env += [{name:"COMMUNITY_MCP_ENABLED", value:"true"}, {name:"COMMUNITY_MCP_CHATGPT", value:"true"}]' "$F" > "$F.tmp"
+          mv "$F.tmp" "$F"
+          jq -c '{env, sec: [.sec[].name]}' "$F"
       # VTID-05127: phone verification by SMS code (VTID-05095). Kiro pattern:
       # the secret's presence is the switch. The owner creates it with
       # scripts/aws/setup-phone-verify-sms.sh --env staging --apply; then
