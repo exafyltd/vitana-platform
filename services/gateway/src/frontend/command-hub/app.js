@@ -10346,16 +10346,11 @@ function renderTaskDrawer() {
                 approveBtn.disabled = true;
                 approveBtn.textContent = 'Approving...';
                 try {
-                    // VTID-01229: Use state.meContext instead of deprecated MeState.me
-                    var userId = state.meContext?.user_id || state.meContext?.email || 'unknown';
-                    var userRole = state.meContext?.active_role || 'operator';
+                    // VTID-05122: the approver is resolved server-side from the Bearer JWT
+                    // (VTID-05048); no identity headers are sent.
                     var response = await fetch('/api/v1/specs/' + vtid + '/approve', {
                         method: 'POST',
-                        headers: buildContextHeaders({
-                            'Content-Type': 'application/json',
-                            'x-user-id': userId,
-                            'x-user-role': userRole
-                        })
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' })
                     });
                     if (!response.ok) throw new Error('HTTP ' + response.status);
                     var result = await response.json();
@@ -46294,14 +46289,33 @@ function renderSelfHealingView() {
                 approveBtn.className = 'infra-btn infra-btn--success';
                 approveBtn.textContent = 'APPROVE';
                 approveBtn.onclick = function() {
-                    fetch('/api/v1/specs/approve', {
+                    // VTID-05122: the real route is POST /api/v1/specs/:vtid/approve
+                    // (requireServiceOrAdmin, approver from the Bearer JWT). Report
+                    // failures instead of an unconditional success toast.
+                    approveBtn.disabled = true;
+                    approveBtn.textContent = 'APPROVING…';
+                    fetch('/api/v1/specs/' + encodeURIComponent(task.vtid) + '/approve', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ vtid: task.vtid })
-                    }).then(function() {
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                        body: '{}'
+                    }).then(function(r) {
+                        return r.json().catch(function() { return {}; }).then(function(j) {
+                            state.selfHealing.fetched = false;
+                            fetchSelfHealingData();
+                            if (r.ok && j && j.ok) {
+                                showToast('Spec approved for ' + task.vtid, 'success');
+                            } else {
+                                showToast('Approve failed: ' + (j.message || j.error || 'HTTP ' + r.status), 'error');
+                                approveBtn.disabled = false;
+                                approveBtn.textContent = 'APPROVE';
+                            }
+                        });
+                    }).catch(function(err) {
+                        approveBtn.disabled = false;
+                        approveBtn.textContent = 'APPROVE';
                         state.selfHealing.fetched = false;
                         fetchSelfHealingData();
-                        showToast('Spec approved for ' + task.vtid, 'success');
+                        showToast('Approve failed: ' + err.message, 'error');
                     });
                 };
                 actions.appendChild(approveBtn);

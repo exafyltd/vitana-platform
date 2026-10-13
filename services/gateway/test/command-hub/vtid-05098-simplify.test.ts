@@ -92,7 +92,11 @@ describe('VTID-05098 Loops screen shows overlap outcomes', () => {
   });
 
   it('index.html serves the Phase 2 versions of app.js, styles.css and the Loops module', () => {
-    for (const f of ['app.js', 'styles.css', 'loops-catalog.js', 'loops-catalog.css']) {
+    // app.js/styles.css were re-bumped by VTID-05122 (spec-approve fix).
+    for (const f of ['app.js', 'styles.css']) {
+      expect(INDEX).toContain(`/command-hub/${f}?v=20261118-vtid-05122`);
+    }
+    for (const f of ['loops-catalog.js', 'loops-catalog.css']) {
       expect(INDEX).toContain(`/command-hub/${f}?v=20261117-vtid-05098`);
     }
   });
