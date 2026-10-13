@@ -16,6 +16,10 @@
  * VTID-05148 (Phase 4) adds learn-outcomes (loop L3 Learn, learn-outcomes.ts):
  * tests_added per fix PR, write_test findings for escaped bugs, the L3
  * metrics, and graduation proposals on Mondays (UTC).
+ *
+ * VTID-05153 (Phase 5) adds supplier-catalog-check (loop L9 Supplier catalog,
+ * services/catalog-check/run.ts): deterministic checks of at most 20 supplier
+ * rows of one category per run, one result per row, the L9 metrics.
  */
 
 async function googleCallsLast24h() {
@@ -48,6 +52,7 @@ import { aggregateSpend, budgetLines, loadSpendToday } from '../orchestrator/bud
 import { isGoogleLlmCall, LLM_GOOGLE_WINDOW_MS } from '../ops-attention-adapters';
 import { readAgentsRegistry } from '../../routes/agents-registry';
 import { runLearnOutcomes } from './learn-outcomes';
+import { runSupplierCatalogCheck } from '../catalog-check/run';
 import {
   RoutineVerdict,
   checkAgentsHeartbeat,
@@ -128,6 +133,8 @@ export const RUNNER_ROUTINES: readonly RunnerRoutine[] = [
   { name: 'spec-memory-quarantine', hour: 11, minute: 0, run: async () => checkSpecMemoryQuarantine(await auditSpecMemoryQuarantine()) },
   // L3 Learn; the graduation step inside it runs on Mondays (UTC) only.
   { name: 'learn-outcomes', hour: 12, minute: 0, run: async () => runLearnOutcomes() },
+  // L9 Supplier catalog, wave 1: at most 20 supplement rows per run, results only, never publishes.
+  { name: 'supplier-catalog-check', hour: 13, minute: 0, run: async () => runSupplierCatalogCheck() },
   // Budgets are per UTC day (budgets.ts), so the day's spend is read just before midnight.
   { name: 'llm-spend-budget', hour: 23, minute: 50, run: async () => checkLlmSpendBudget(await spendToday()) },
 ];

@@ -7,7 +7,8 @@
  * Simplify loop works through, sensor coverage, and a plane-level 7-day run
  * signal from agent_runs_unified. Backs Command Hub → Autonomy → Loops.
  * VTID-05148: `metrics_latest.L3` carries the latest learn-outcomes run's
- * metrics (routine_runs findings) for the L3 card.
+ * metrics (routine_runs findings) for the L3 card. VTID-05153: `metrics_latest.L9`
+ * the latest supplier-catalog-check run's metrics for the L9 card.
  *
  * GET only: nothing here writes. exafy_admin only, through the shared
  * middleware (no local copy of the dev-role check).

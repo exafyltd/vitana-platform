@@ -11,7 +11,7 @@
       "risk": "R1",
       "autonomy": "L2",
       "status": "PARTIAL",
-      "gap": "Thirteen deterministic routines run inside the gateway (routine runner, VTID-05103/05141/05148; learn-outcomes is owned by L3) with a stop rule (three crashed runs in a row switch a routine off and raise routine.runner.stagnated) and repeated-breach damping (the same breach three days running is not re-sent to self-healing). Every ALERT-* workflow check except the Supabase-vs-Aurora identity drift has one gateway ops health route, and the workflows report failures to the self-healing intake. Four routines still need a claude.ai session (gh, a browser, a member sign-in, CI artifacts); they fail at the cloud environment setup script until the owner fixes it.",
+      "gap": "Fourteen deterministic routines run inside the gateway (routine runner, VTID-05103/05141/05148/05153; learn-outcomes is owned by L3, supplier-catalog-check by L9) with a stop rule (three crashed runs in a row switch a routine off and raise routine.runner.stagnated) and repeated-breach damping (the same breach three days running is not re-sent to self-healing). Every ALERT-* workflow check except the Supabase-vs-Aurora identity drift has one gateway ops health route, and the workflows report failures to the self-healing intake. Four routines still need a claude.ai session (gh, a browser, a member sign-in, CI artifacts); they fail at the cloud environment setup script until the owner fixes it.",
       "trigger": "Any owned sensor turns red (health check, routine run, alert workflow, test contract, error cluster).",
       "goal": "The same sensor that fired is green again after the fix is deployed, and STAGING-VERIFY passes on that commit.",
       "act": "One intake (self_healing_log) -> six-layer diagnosis -> spec -> fix through the one executor (Dev Autopilot).",
@@ -595,7 +595,7 @@
       "risk": "R2",
       "autonomy": "L2",
       "status": "PARTIAL",
-      "gap": "Partner verification and marketplace sync run; feed normalization, claim/media/certificate/duplicate checks and stock drafts do not.",
+      "gap": "Wave 1 (VTID-05153): the supplier-catalog-check routine (daily 13:00 UTC, at most 20 supplement rows per run, no LLM) normalizes rows losslessly, checks required fields and money, finds duplicates within a supplier, probes images (SSRF-guarded HEAD, outage guard), pre-screens disease claims (a hit only routes to human review), stores one result per row and returns a row to the supplier after the same failure 3 times (checklist catalogue_fixes, MCP next_action); it never publishes. Partner verification and marketplace sync also run. Not yet: verified claims (shared claim verifier, Phase 6), certificate expiry (needs the evidence tables), stock/reorder drafts (S10), sync drift (S07), WooCommerce feed import.",
       "trigger": "A supplier signs up or submits a feed; a source feed changes; stock crosses its threshold.",
       "goal": "80% of supplier product rows are normalized, validated and ready for approval without manual entry; live listings match their source.",
       "act": "Normalize with deterministic validators first, LLM only for extraction and exceptions -> claim, media, certificate and duplicate checks -> draft -> approval -> publish -> keep in sync.",
@@ -614,7 +614,9 @@
       ],
       "sensors": {
         "health_groups": [],
-        "routines": [],
+        "routines": [
+          "supplier-catalog-check"
+        ],
         "workflows": [
           "MARKETPLACE-SYNC-CRON"
         ],
