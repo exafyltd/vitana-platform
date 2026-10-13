@@ -129,6 +129,59 @@ async function findActiveVtidByDedupeKey(dedupe_key: string): Promise<ActiveDupl
 }
 
 // ---------------------------------------------------------------------------
+// VTID-05148: the write_test finding insert, exported so the learn-outcomes
+// routine (services/routine-runner/learn-outcomes.ts) files an escaped-bug
+// lesson through the same path. The body is exactly what the allocate route
+// sent before (same columns, same auto_exec_eligible, same spec_snapshot);
+// `extra_snapshot` adds keys to spec_snapshot only when a caller passes it.
+// ---------------------------------------------------------------------------
+export interface MissingTestRecommendationInput {
+  id: string;
+  title: string;
+  summary: string;
+  spec_markdown: string;
+  files_referenced: string[];
+  dedupe_key: string;
+  capability: string;
+  target_endpoint: string;
+  extra_snapshot?: Record<string, unknown>;
+}
+
+export async function insertMissingTestRecommendation(
+  input: MissingTestRecommendationInput,
+): Promise<{ ok: boolean; status: number; text: () => Promise<string> }> {
+  return fetch(`${SUPABASE_URL}/rest/v1/autopilot_recommendations`, {
+    method: 'POST',
+    headers: { ...supabaseHeaders(), Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      id: input.id,
+      title: input.title,
+      summary: input.summary,
+      source_type: 'missing-test-scanner',
+      status: 'new',
+      risk_class: 'low',
+      impact_score: 6,
+      effort_score: 3,
+      auto_exec_eligible: true,
+      domain: 'gateway',
+      // VTID-02979 (PR-M1.1 hotfix): `scanner` is NOT a column on
+      // autopilot_recommendations — it lives in spec_snapshot.scanner.
+      // The top-level field caused PostgREST to reject the entire INSERT
+      // with PGRST204, leaving allocated VTIDs orphaned without a recommendation.
+      spec_snapshot: {
+        spec_markdown: input.spec_markdown,
+        files_referenced: input.files_referenced,
+        scanner: 'missing-test-scanner',
+        dedupe_key: input.dedupe_key,
+        capability: input.capability,
+        target_endpoint: input.target_endpoint,
+        ...(input.extra_snapshot || {}),
+      },
+    }),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // GET /api/v1/test-contracts/missing
 // ---------------------------------------------------------------------------
 router.get('/test-contracts/missing', requireDevAccess, async (_req: Request, res: Response) => {
@@ -266,36 +319,18 @@ The capability \`${gap.capability}\` (endpoint \`${gap.target_endpoint}\`, file 
 `;
 
     const recommendationId = crypto.randomUUID();
-    const recInsertResp = await fetch(`${SUPABASE_URL}/rest/v1/autopilot_recommendations`, {
-      method: 'POST',
-      headers: { ...supabaseHeaders(), Prefer: 'return=minimal' },
-      body: JSON.stringify({
-        id: recommendationId,
-        title: `Write missing test contract: ${gap.capability}`,
-        summary: `Endpoint ${gap.target_endpoint} (file ${gap.target_file}) has no test contract. Add a typed dispatcher + seed row + unit test.`,
-        source_type: 'missing-test-scanner',
-        status: 'new',
-        risk_class: 'low',
-        impact_score: 6,
-        effort_score: 3,
-        auto_exec_eligible: true,
-        domain: 'gateway',
-        // VTID-02979 (PR-M1.1 hotfix): `scanner` is NOT a column on
-        // autopilot_recommendations — it lives in spec_snapshot.scanner.
-        // The top-level field caused PostgREST to reject the entire INSERT
-        // with PGRST204, leaving allocated VTIDs orphaned without a recommendation.
-        spec_snapshot: {
-          spec_markdown,
-          files_referenced: [
-            'services/gateway/src/services/test-contract-commands.ts',
-            gap.target_file,
-          ],
-          scanner: 'missing-test-scanner',
-          dedupe_key: dedupe_key,
-          capability: gap.capability,
-          target_endpoint: gap.target_endpoint,
-        },
-      }),
+    const recInsertResp = await insertMissingTestRecommendation({
+      id: recommendationId,
+      title: `Write missing test contract: ${gap.capability}`,
+      summary: `Endpoint ${gap.target_endpoint} (file ${gap.target_file}) has no test contract. Add a typed dispatcher + seed row + unit test.`,
+      spec_markdown,
+      files_referenced: [
+        'services/gateway/src/services/test-contract-commands.ts',
+        gap.target_file,
+      ],
+      dedupe_key,
+      capability: gap.capability,
+      target_endpoint: gap.target_endpoint,
     });
     if (!recInsertResp.ok) {
       const errBody = await recInsertResp.text();

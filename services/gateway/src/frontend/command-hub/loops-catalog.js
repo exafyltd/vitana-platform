@@ -64,6 +64,27 @@
         return (s.capped ? '≥' : '') + s.total + ' runs in 7 days (' + parts.join(', ') + ')';
     }
 
+    // VTID-05148: the three L3 numbers from the latest learn-outcomes run.
+    function pctText(v) {
+        return (v === null || v === undefined) ? 'n/a' : (Math.round(v * 1000) / 10) + '%';
+    }
+
+    function metricsText(loop, metricsLatest) {
+        var m = metricsLatest && metricsLatest[loop.id];
+        if (!m) return null;
+        if (m.state === 'no_run_yet') return 'Metrics: no ' + m.routine + ' run yet';
+        if (m.state !== 'ok') return 'Metrics unavailable';
+        var x = m.metrics || {};
+        var rf = x.repeat_failure || {};
+        var pr = x.pattern_reuse || {};
+        var et = x.escaped_bugs_to_tests || {};
+        var reuse = pr.state === 'measured' ? pctText(pr.share) + ' (' + pr.reused + '/' + pr.fixes + ')' : 'not measured';
+        return 'Repeat-failure ' + pctText(rf.rate) + ' (' + (rf.repeated || 0) + '/' + (rf.fixes || 0) + ' fixes)' +
+            ' · Pattern reuse ' + reuse +
+            ' · Escaped bugs → tests ' + pctText(et.share) + ' (' + (et.with_tests || 0) + '/' +
+            ((et.with_tests || 0) + (et.without_tests || 0)) + ', ' + (et.unknown || 0) + ' unknown)';
+    }
+
     function sensorCount(loop) {
         var n = 0;
         Object.keys(SENSOR_LINKS).forEach(function (k) { n += (loop.sensors[k] || []).length; });
@@ -107,7 +128,7 @@
         box.appendChild(row);
     }
 
-    function renderCard(loop, signals) {
+    function renderCard(loop, signals, metricsLatest) {
         var card = h('button', 'loops-card' + (st.selected === loop.id ? ' is-selected' : ''));
         card.type = 'button';
         card.setAttribute('aria-expanded', st.selected === loop.id ? 'true' : 'false');
@@ -126,6 +147,8 @@
         card.appendChild(meta);
         if (loop.gap) card.appendChild(h('div', 'loops-card-gap', loop.gap));
         card.appendChild(h('div', 'loops-card-signal', signalText(loop, signals)));
+        var metrics = metricsText(loop, metricsLatest);
+        if (metrics) card.appendChild(h('div', 'loops-card-signal loops-card-metrics', metrics));
         card.addEventListener('click', function () {
             st.selected = st.selected === loop.id ? null : loop.id;
             paint();
@@ -253,7 +276,7 @@
             box.appendChild(h('h3', 'loops-section-title', g[1]));
             var grid = h('div', 'loops-grid');
             d.catalog.loops.filter(function (l) { return l.group === g[0]; }).forEach(function (l) {
-                grid.appendChild(renderCard(l, d.signals));
+                grid.appendChild(renderCard(l, d.signals, d.metrics_latest));
                 if (l.id === st.selected) selected = l;
             });
             box.appendChild(grid);
@@ -286,6 +309,6 @@
         render: render,
         reset: reset,
         // Exposed for tests.
-        _internals: { signalText: signalText, sensorCount: sensorCount, state: st }
+        _internals: { signalText: signalText, sensorCount: sensorCount, metricsText: metricsText, state: st }
     };
 })(typeof window !== 'undefined' ? window : this);

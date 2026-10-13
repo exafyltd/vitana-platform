@@ -6,6 +6,8 @@
  * Returns the 14 loops, the shared engine components, the overlaps the
  * Simplify loop works through, sensor coverage, and a plane-level 7-day run
  * signal from agent_runs_unified. Backs Command Hub → Autonomy → Loops.
+ * VTID-05148: `metrics_latest.L3` carries the latest learn-outcomes run's
+ * metrics (routine_runs findings) for the L3 card.
  *
  * GET only: nothing here writes. exafy_admin only, through the shared
  * middleware (no local copy of the dev-role check).

@@ -42636,9 +42636,12 @@ function autonomyPulseSeverityColor(s) {
     return s === 'critical' ? '#ef4444' : s === 'warning' ? '#eab308' : '#3b82f6';
 }
 function autonomyPulseSourceColor(s) {
+    // VTID-05148: graduation proposals (L3 Learn) are read-only info items.
+    if (s === 'graduation_proposal') return '#3b82f6';
     return s === 'dev_autopilot_finding' ? '#a855f7' : s === 'self_healing' ? '#f97316' : '#22c55e';
 }
 function autonomyPulseSourceLabel(s) {
+    if (s === 'graduation_proposal') return 'GRADUATION';
     return s === 'dev_autopilot_finding' ? 'DEV AUTOPILOT' : s === 'self_healing' ? 'SELF-HEAL' : 'EXECUTION';
 }
 function autonomyPulseActionSpec(action) {

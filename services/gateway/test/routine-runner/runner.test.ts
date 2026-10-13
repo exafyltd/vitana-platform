@@ -127,7 +127,7 @@ describe('switches', () => {
 });
 
 describe('the routine list', () => {
-  it('covers the 12 deterministic routines at their documented UTC times', () => {
+  it('covers the 13 deterministic routines at their documented UTC times', () => {
     expect(RUNNER_ROUTINES.map((r) => `${r.name}@${r.hour}:${r.minute}`)).toEqual([
       'voice-lab-triage@4:30',
       'agents-heartbeat@5:30',
@@ -140,6 +140,7 @@ describe('the routine list', () => {
       'knowledge-docs-freshness@9:0',
       'dyk-tour-progress@10:30',
       'spec-memory-quarantine@11:0',
+      'learn-outcomes@12:0',
       'llm-spend-budget@23:50',
     ]);
   });

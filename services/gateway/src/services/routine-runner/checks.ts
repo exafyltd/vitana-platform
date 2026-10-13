@@ -531,3 +531,70 @@ export function checkLlmFallbackWatch(googleCalls: GoogleCallInput[]): RoutineVe
     },
   };
 }
+
+// =============================================================================
+// VTID-05148 (Loop Engineering Phase 4 — L3 Learn)
+// =============================================================================
+
+export interface RepeatFailureClass {
+  failure_class: string;
+  fixes: number;
+  repeated: number;
+  rate: number | null;
+}
+
+export interface LearnMetrics {
+  window_days: number;
+  repeat_failure: {
+    fixes: number;
+    repeated: number;
+    rate: number | null;
+    follow_up_days: number;
+    by_class: RepeatFailureClass[];
+    truncated: boolean;
+  };
+  pattern_reuse:
+    | { state: 'measured'; fixes: number; reused: number; share: number | null }
+    | { state: 'not_measured'; reason: string };
+  escaped_bugs_to_tests: { with_tests: number; without_tests: number; unknown: number; share: number | null };
+}
+
+/** A class breaches when more than this share of its fixes failed again within the follow-up window… */
+export const REPEAT_FAILURE_RATE_MAX = 0.3;
+/** …and it has at least this many fixes. */
+export const REPEAT_FAILURE_MIN_FIXES = 5;
+
+// routines/learn-outcomes.md — "Breach"
+export function checkLearnOutcomes(
+  metrics: LearnMetrics,
+  steps: { tests_added: Record<string, unknown>; graduation: Record<string, unknown> }
+): RoutineVerdict {
+  const high = metrics.repeat_failure.by_class.filter(
+    (c) => c.fixes >= REPEAT_FAILURE_MIN_FIXES && c.rate != null && c.rate > REPEAT_FAILURE_RATE_MAX
+  );
+  const tests = metrics.escaped_bugs_to_tests;
+  const reuse = metrics.pattern_reuse.state === 'measured' ? pct(metrics.pattern_reuse.share) : 'not measured';
+  const line =
+    `repeat-failure ${pct(metrics.repeat_failure.rate)} of ${metrics.repeat_failure.fixes} fixes, ` +
+    `pattern reuse ${reuse}, escaped bugs → tests ${pct(tests.share)} (${tests.unknown} unknown)`;
+  const findings = { metrics, tests_added_step: steps.tests_added, graduation_step: steps.graduation, high_repeat_classes: high };
+  if (!high.length) {
+    return { status: 'success', summary: `✅ L3 Learn: ${line}`, findings };
+  }
+  const list = high.map((c) => `${c.failure_class} ${pct(c.rate)} (${c.repeated}/${c.fixes})`).join(', ');
+  return {
+    status: 'partial',
+    summary: `⚠️ Repeat-failure rate high: ${list}. OASIS event emitted, self-healing notified.`,
+    findings,
+    breach: {
+      topic: 'learn.repeat_failure.high',
+      vtid: 'VTID-05148',
+      message: `${high.length} failure class(es) failed again after a fix in more than ${REPEAT_FAILURE_RATE_MAX * 100}% of cases: ${list}`,
+      payload: {
+        window_days: metrics.window_days,
+        follow_up_days: metrics.repeat_failure.follow_up_days,
+        classes: high,
+      },
+    },
+  };
+}

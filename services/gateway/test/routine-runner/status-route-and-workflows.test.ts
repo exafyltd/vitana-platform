@@ -51,12 +51,12 @@ describe('GET /api/v1/routines/runner/status', () => {
     expect(res.status).toBe(403);
   });
 
-  it('exafy_admin sees the 12 routines, their times and catalog rows', async () => {
+  it('exafy_admin sees the 13 routines, their times and catalog rows', async () => {
     identity = { exafy_admin: true };
     const res = await request(app()).get('/api/v1/routines/runner/status');
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
-    expect(res.body.routines).toHaveLength(12);
+    expect(res.body.routines).toHaveLength(13);
     const hb = res.body.routines.find((r: any) => r.name === 'agents-heartbeat');
     expect(hb).toMatchObject({ run_at_utc: '05:30', catalog: { enabled: true, last_run_status: 'success' } });
   });
