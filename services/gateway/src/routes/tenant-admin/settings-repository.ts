@@ -23,3 +23,24 @@ export async function fetchTenantSettings(sb: SupabaseClient, tenantId: string) 
 export async function upsertTenantSettings(sb: SupabaseClient, row: Record<string, unknown>) {
   return sb.from('tenant_settings').upsert(row, { onConflict: 'tenant_id' }).select('*').single();
 }
+
+/**
+ * VTID-05150: merge feature_flags in one SQL statement
+ * (tenant_settings_merge_feature_flags, migration 20261014000400): the
+ * client's top-level keys replace the stored ones, other stored keys stay, and
+ * the governed `jev` key is kept unless `allowGoverned` (exafy_admin).
+ */
+export async function mergeTenantFeatureFlags(
+  sb: SupabaseClient,
+  tenantId: string,
+  flags: Record<string, unknown>,
+  allowGoverned: boolean,
+  updatedBy: string,
+) {
+  return sb.rpc('tenant_settings_merge_feature_flags', {
+    p_tenant_id: tenantId,
+    p_flags: flags,
+    p_allow_governed: allowGoverned,
+    p_updated_by: updatedBy,
+  });
+}
