@@ -45,6 +45,7 @@ import {
 import { createOrgProduct, findOrgMerchant, upsertOrgMerchant } from './partner-setup';
 import { BUSINESS_CATEGORIES, catalogueVerticalForCategory, isBusinessCategory } from './commerce-ai-setup';
 import { loadOrg, type Supa } from '../routes/partner-onboarding';
+import { supplierCatalogCheckView } from '../routes/vcaop-portal-my-products';
 import { SANDBOX_SUBMIT_NOTE, isSandboxAccount } from './sandbox-accounts';
 import { cleanText, MAX_LEN, MAX_LIST_ITEMS, SUPPLIER_DATA_NOTE, supplierData } from './commerce-mcp-safety';
 
@@ -336,6 +337,13 @@ function isCatalogueMapping(st: { detail?: { source?: unknown } | null; missing?
   return Boolean(st && (st.detail?.source === 'catalogue' || st.missing?.includes('complete_offering')));
 }
 
+/**
+ * VTID-05153: the catalogue check returned products after three failed checks
+ * (list_products shows each product's check state and error codes).
+ */
+const CATALOGUE_FIXES_ACTION =
+  'Some products failed the catalogue check three times: call list_products, then update_product for each product whose check state is returned_to_supplier, fixing the listed error codes.';
+
 const STEP_SUPPLIER_ACTIONS: Record<string, string> = {
   terms: 'Read and accept the Partner Terms on Vitanaland.',
   tracking_test: 'Finish the tracking test on Vitanaland.',
@@ -352,13 +360,21 @@ export function nextAction(
   checklist: {
     next_step?: string | null;
     complete?: boolean;
-    steps?: Array<{ key: string; detail?: { source?: unknown } | null; missing?: string[] }>;
+    steps?: Array<{ key: string; required?: boolean; status?: string; detail?: { source?: unknown } | null; missing?: string[] }>;
   } | null,
   typeless: boolean,
   link: string,
 ): { step: string | null; tool: string | null; supplier_action: string | null; link: string | null } {
   if (typeless) return { step: 'business_type', tool: 'update_business', supplier_action: null, link: null };
   if (!checklist) return { step: null, tool: null, supplier_action: null, link: null };
+  // VTID-05153: products the catalogue check returned are fixed next, unless
+  // a required step before the catalogue is still open.
+  const steps = checklist.steps ?? [];
+  const catIdx = steps.findIndex((s) => s.key === 'catalogue');
+  if (catIdx >= 0 && steps[catIdx].missing?.includes('catalogue_fixes')) {
+    const earlierOpen = steps.slice(0, catIdx).some((s) => s.required && s.status !== 'done');
+    if (!earlierOpen) return { step: 'catalogue', tool: 'update_product', supplier_action: CATALOGUE_FIXES_ACTION, link: null };
+  }
   if (checklist.complete) return { step: null, tool: 'submit_for_verification', supplier_action: null, link: null };
   const step = checklist.next_step ?? null;
   if (!step) return { step: null, tool: null, supplier_action: null, link: null };
@@ -417,6 +433,11 @@ export function shapeStatus(body: Record<string, any>, portalUrl: string): Recor
   };
 }
 
+function productCheck(cc: unknown): { check?: { state: string; codes: string[] } } {
+  const v = supplierCatalogCheckView(cc);
+  return v ? { check: { state: v.state, codes: v.errors.map((e) => e.code) } } : {};
+}
+
 export const shapeProduct = (p: Record<string, any>) => ({
   product_id: p.id,
   price: typeof p.price_cents === 'number' ? p.price_cents / 100 : null,
@@ -424,6 +445,8 @@ export const shapeProduct = (p: Record<string, any>) => ({
   availability: p.availability,
   kind: p.attributes?.kind ?? null,
   live: p.is_active === true,
+  // VTID-05153: the catalogue check's state and error codes, nothing else.
+  ...productCheck(p.attributes?.catalog_check),
   ...supplierData({
     title: cleanText(p.title),
     url: cleanText(p.affiliate_url, MAX_LEN.url),

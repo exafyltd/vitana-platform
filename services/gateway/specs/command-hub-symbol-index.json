@@ -2,7 +2,7 @@
   "generated_by": "services/gateway/scripts/generate-command-hub-symbol-index.mjs",
   "generated_at": "2026-10-13",
   "note": "function name -> line range index for the Command Hub frontend *.js files, all nesting depths. Regenerate with the generator script; do not hand-edit.",
-  "total_functions": 1121,
+  "total_functions": 1122,
   "files": {
     "orb-widget.js": [
       {
@@ -1652,99 +1652,107 @@
         "lineCount": 3
       },
       {
+        "name": "l9MetricsText",
+        "kind": "function",
+        "startLine": 73,
+        "bodyStartLine": 73,
+        "endLine": 81,
+        "lineCount": 9
+      },
+      {
         "name": "metricsText",
         "kind": "function",
-        "startLine": 72,
-        "bodyStartLine": 72,
-        "endLine": 86,
-        "lineCount": 15
+        "startLine": 83,
+        "bodyStartLine": 83,
+        "endLine": 98,
+        "lineCount": 16
       },
       {
         "name": "sensorCount",
         "kind": "function",
-        "startLine": 88,
-        "bodyStartLine": 88,
-        "endLine": 92,
+        "startLine": 100,
+        "bodyStartLine": 100,
+        "endLine": 104,
         "lineCount": 5
       },
       {
         "name": "badge",
         "kind": "function",
-        "startLine": 94,
-        "bodyStartLine": 94,
-        "endLine": 96,
+        "startLine": 106,
+        "bodyStartLine": 106,
+        "endLine": 108,
         "lineCount": 3
       },
       {
         "name": "renderHeader",
         "kind": "function",
-        "startLine": 98,
-        "bodyStartLine": 98,
-        "endLine": 113,
+        "startLine": 110,
+        "bodyStartLine": 110,
+        "endLine": 125,
         "lineCount": 16
       },
       {
         "name": "renderKpis",
         "kind": "function",
-        "startLine": 115,
-        "bodyStartLine": 115,
-        "endLine": 129,
+        "startLine": 127,
+        "bodyStartLine": 127,
+        "endLine": 141,
         "lineCount": 15
       },
       {
         "name": "renderCard",
         "kind": "function",
-        "startLine": 131,
-        "bodyStartLine": 131,
-        "endLine": 157,
+        "startLine": 143,
+        "bodyStartLine": 143,
+        "endLine": 169,
         "lineCount": 27
       },
       {
         "name": "renderDetail",
         "kind": "function",
-        "startLine": 159,
-        "bodyStartLine": 159,
-        "endLine": 204,
+        "startLine": 171,
+        "bodyStartLine": 171,
+        "endLine": 216,
         "lineCount": 46
       },
       {
         "name": "renderEngine",
         "kind": "function",
-        "startLine": 206,
-        "bodyStartLine": 206,
-        "endLine": 217,
+        "startLine": 218,
+        "bodyStartLine": 218,
+        "endLine": 229,
         "lineCount": 12
       },
       {
         "name": "renderSimplification",
         "kind": "function",
-        "startLine": 219,
-        "bodyStartLine": 219,
-        "endLine": 253,
+        "startLine": 231,
+        "bodyStartLine": 231,
+        "endLine": 265,
         "lineCount": 35
       },
       {
         "name": "paint",
         "kind": "function",
-        "startLine": 255,
-        "bodyStartLine": 255,
-        "endLine": 287,
+        "startLine": 267,
+        "bodyStartLine": 267,
+        "endLine": 299,
         "lineCount": 33
       },
       {
         "name": "render",
         "kind": "function",
-        "startLine": 294,
-        "bodyStartLine": 294,
-        "endLine": 302,
+        "startLine": 306,
+        "bodyStartLine": 306,
+        "endLine": 314,
         "lineCount": 9
       },
       {
         "name": "reset",
         "kind": "function",
-        "startLine": 304,
-        "bodyStartLine": 304,
-        "endLine": 306,
+        "startLine": 316,
+        "bodyStartLine": 316,
+        "endLine": 318,
         "lineCount": 3
       }
     ],

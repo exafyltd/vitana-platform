@@ -49,8 +49,8 @@ function fakeSb(result: { data?: unknown[]; error?: { message: string } }, calls
 }
 
 describe('latestLoopMetrics (routine_runs, read-only)', () => {
-  it('only L3 has a metrics routine: learn-outcomes', () => {
-    expect(METRICS_ROUTINES).toEqual({ L3: 'learn-outcomes' });
+  it('L3 has a metrics routine: learn-outcomes (L9 joined in VTID-05153)', () => {
+    expect(METRICS_ROUTINES).toEqual({ L3: 'learn-outcomes', L9: 'supplier-catalog-check' });
   });
 
   it('reads the latest success/partial learn-outcomes run and returns its findings.metrics', async () => {
@@ -99,9 +99,10 @@ describe('GET /api/v1/autonomy/loops — metrics_latest', () => {
     supabase = fakeSb({ data: [{ started_at: '2026-10-13T12:00:05Z', status: 'partial', findings: { metrics: METRICS } }] });
     const res = await request(app()).get('/api/v1/autonomy/loops');
     expect(res.status).toBe(200);
-    expect(res.body.data.metrics_latest).toEqual({
-      L3: { state: 'ok', routine: 'learn-outcomes', run_at: '2026-10-13T12:00:05Z', status: 'partial', metrics: METRICS },
-    });
+    // VTID-05153: L9 is read the same way (its own test covers it).
+    expect(res.body.data.metrics_latest.L3).toEqual(
+      { state: 'ok', routine: 'learn-outcomes', run_at: '2026-10-13T12:00:05Z', status: 'partial', metrics: METRICS },
+    );
   });
 });
 
