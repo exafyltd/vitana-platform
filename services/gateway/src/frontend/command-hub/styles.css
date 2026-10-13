@@ -15342,13 +15342,7 @@ border-bottom: 1px solid var(--color-border, #333);
 }
 
 /* ── Attention / info panels ── */
-.infra-panel {
-  background: var(--color-sidebar-bg, #1a1b2e);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  padding: 20px;
-  margin-bottom: 20px;
-}
+
 .infra-panel h3 {
   font-size: 0.9rem;
   font-weight: 700;
@@ -15383,10 +15377,7 @@ border-bottom: 1px solid var(--color-border, #333);
   color: var(--color-text-primary, #e2e8f0);
 }
 
-.infra-panel--warning {
-  border-color: rgba(245, 158, 11, 0.25);
-  background: rgba(245, 158, 11, 0.04);
-}
+
 
 /* ── Data table (deployments, logs, history) ── */
 .infra-table-wrap {
@@ -17427,6 +17418,32 @@ border-bottom: 1px solid var(--color-border, #333);
   padding: 0 12px 12px;
   display: flex;
   gap: 8px;
+}
+/* VTID-05146 (C2): frozen_scope editor */
+.dev-autopilot-config-field--wide {
+  flex-basis: 100%;
+}
+.dev-autopilot-config-textarea {
+  font-family: monospace;
+  resize: vertical;
+}
+/* VTID-05146 (C1): a held_overlap execution's blocking PRs */
+.dev-autopilot-hold-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  color: #fdba74;
+}
+.dev-autopilot-hold-pr {
+  color: #60a5fa;
+  font-family: monospace;
+  text-decoration: none;
+}
+.dev-autopilot-hold-frozen,
+.dev-autopilot-hold-since {
+  color: #a3a3a3;
 }
 
 /* --- Autopilot supervisor layer (VTID-04282) --- */

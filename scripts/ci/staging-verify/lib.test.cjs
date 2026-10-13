@@ -564,6 +564,33 @@ test('VTID-05076: a merge commit whose subject has no VTID fails rule 47', () =>
   } finally { r.cleanup(); }
 });
 
+test('VTID-05146 (C4): autopilot merges and auto-reverts get their own section in the ready message', () => {
+  assert.equal(lib.isAutopilotCommit('Dev Autopilot auto-merge: execution 1a2b3c4d'), true);
+  assert.equal(lib.isAutopilotCommit('Revert: auto-fix 1a2b3c4d failed deploy verification'), true);
+  assert.equal(lib.isAutopilotCommit('VTID-05146: Dev Autopilot Phase C (#4100)'), false);
+  const shipping = [
+    { sha: 'aaaaaaaaaaaa1111', subject: 'VTID-05146: Phase C (#4100)', author: 'exafyltd' },
+    { sha: 'bbbbbbbbbbbb2222', subject: 'Dev Autopilot auto-merge: execution 1a2b3c4d', author: 'exafyltd' },
+    { sha: 'cccccccccccc3333', subject: 'Revert: auto-fix 1a2b3c4d failed deploy verification', author: 'exafyltd' },
+  ];
+  const msg = lib.buildReadyMessage({
+    service: 'gateway', sha: 'cccccccccccc3333', outcome: 'passed', results: [{ ok: true }], plan: { suites: [], missing: [], invalid: [], legacy: [] },
+    shipping, prodStamp: 'ffffffffffff', runUrl: 'https://example.invalid/run',
+  });
+  assert.match(msg, /3 commit\(s\)\):/);
+  const [people, autopilot] = msg.split('Dev Autopilot changes in this range (2,');
+  assert.ok(autopilot, 'autopilot section present');
+  assert.match(people, /VTID-05146: Phase C/);
+  assert.doesNotMatch(people, /auto-merge: execution/);
+  assert.match(autopilot, /auto-merge: execution 1a2b3c4d/);
+  assert.match(autopilot, /Revert: auto-fix 1a2b3c4d/);
+  const none = lib.buildReadyMessage({
+    service: 'gateway', sha: 'aaaaaaaaaaaa1111', outcome: 'passed', results: [{ ok: true }], plan: { suites: [], missing: [], invalid: [], legacy: [] },
+    shipping: shipping.slice(0, 1), prodStamp: 'ffffffffffff', runUrl: '',
+  });
+  assert.doesNotMatch(none, /Dev Autopilot changes in this range/);
+});
+
 // ── VTID-05129 ────────────────────────────────────────────────────────────
 const SHA = 'bcae4d0af10b63163b71ca71dde88f22ae07585b';
 

@@ -464,6 +464,25 @@ function short(sha) {
   return String(sha || '').slice(0, 12);
 }
 
+// VTID-05146 (autonomy plan C4): commits the Dev Autopilot landed by itself —
+// its squash merges ("Dev Autopilot auto-merge: execution <id>", the commit
+// title dev-autopilot-watcher.ts gives every merge of a dev-autopilot/* PR) and
+// its revert PRs ("Revert: auto-fix <id> failed <stage> verification", from a
+// revert/auto-* branch, dev-autopilot-bridge.ts). The ready message lists them
+// in their own section so a "yes" sees exactly what no person wrote.
+const AUTOPILOT_SUBJECT_RES = [/^Dev Autopilot auto-merge:/i, /^Revert: auto-fix [0-9a-f]{8} failed /i];
+
+function isAutopilotCommit(subject) {
+  const s = String(subject || '');
+  return AUTOPILOT_SUBJECT_RES.some((re) => re.test(s));
+}
+
+function shippingLine(c) {
+  const v = extractVtids(c.subject);
+  const via = c.branchCommits ? ` (${c.branchCommits} branch commit${c.branchCommits === 1 ? '' : 's'})` : '';
+  return `- \`${short(c.sha)}\` ${v.length ? v.join(', ') + ' — ' : ''}${c.subject}${c.author ? ` (${c.author})` : ''}${via}`;
+}
+
 function buildReadyMessage({ service, sha, outcome, results, plan, shipping, prodStamp, runUrl, supersededBy = null, attributionCutoff = null }) {
   const passed = results.filter((r) => r.ok).length;
   const lines = [];
@@ -528,12 +547,16 @@ function buildReadyMessage({ service, sha, outcome, results, plan, shipping, pro
   lines.push('');
   lines.push(`What would ship (production \`${short(prodStamp) || 'unknown'}\` → \`${short(sha)}\`, ${shipping.length} commit(s)):`);
   if (shipping.length === 0) lines.push('- (none — production already serves or contains this commit, or its version could not be read)');
-  for (const c of shipping.slice(0, 60)) {
-    const v = extractVtids(c.subject);
-    const via = c.branchCommits ? ` (${c.branchCommits} branch commit${c.branchCommits === 1 ? '' : 's'})` : '';
-    lines.push(`- \`${short(c.sha)}\` ${v.length ? v.join(', ') + ' — ' : ''}${c.subject}${c.author ? ` (${c.author})` : ''}${via}`);
+  const autopilot = shipping.filter((c) => isAutopilotCommit(c.subject));
+  const byPeople = shipping.filter((c) => !isAutopilotCommit(c.subject));
+  for (const c of byPeople.slice(0, 60)) lines.push(shippingLine(c));
+  if (byPeople.length > 60) lines.push(`- … and ${byPeople.length - 60} more (full list in the run summary)`);
+  if (autopilot.length) {
+    lines.push('');
+    lines.push(`Dev Autopilot changes in this range (${autopilot.length}, merged or reverted by the autopilot, not by a person):`);
+    for (const c of autopilot.slice(0, 60)) lines.push(shippingLine(c));
+    if (autopilot.length > 60) lines.push(`- … and ${autopilot.length - 60} more (full list in the run summary)`);
   }
-  if (shipping.length > 60) lines.push(`- … and ${shipping.length - 60} more (full list in the run summary)`);
   if (outcome === 'passed') {
     lines.push('');
     lines.push('A "yes" promotes exactly this commit via PUBLISH (CLAUDE.md rule 50).');
@@ -680,4 +703,5 @@ module.exports = {
   DEPLOY_LOOKBACK_MS,
   decideOutcome,
   buildReadyMessage,
+  isAutopilotCommit,
 };

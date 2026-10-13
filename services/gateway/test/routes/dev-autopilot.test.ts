@@ -1193,7 +1193,7 @@ describe('GET /executions', () => {
     ]);
     await asAdmin(request(app).get('/api/v1/dev-autopilot/executions'));
     // VTID-04029: a held execution (awaiting_approval) is active too.
-    expect(seenUrl).toContain('status=in.(cooling,running,awaiting_approval,ci,merging,deploying,verifying)');
+    expect(seenUrl).toContain('status=in.(cooling,running,awaiting_approval,held_overlap,ci,merging,deploying,verifying)');
   });
 
   it('omits the status clause entirely for ?status=all', async () => {

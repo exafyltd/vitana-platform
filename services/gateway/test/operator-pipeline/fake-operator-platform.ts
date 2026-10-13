@@ -41,7 +41,7 @@ export { FAKE_SUPABASE_URL };
 export type { Row };
 
 /** The in-flight statuses the real partial unique index covers (migration 20260509000000). */
-export const INFLIGHT_UNIQUE_STATUSES = ['cooling', 'running', 'ci', 'merging', 'deploying', 'verifying'] as const;
+export const INFLIGHT_UNIQUE_STATUSES = ['cooling', 'running', 'held_overlap', 'ci', 'merging', 'deploying', 'verifying'] as const;
 
 // ---------------------------------------------------------------------------
 // PostgREST parsing
@@ -511,6 +511,8 @@ export class FakeGitHub {
   readonly pushes: Array<{ branch: string; sha: string; force: boolean; files: string[] }> = [];
   readonly calls: Array<{ method: string; path: string }> = [];
   readonly deletedBranches: string[] = [];
+  /** VTID-05146: comments left on PRs (e.g. the overlap-hold timeout). */
+  readonly comments: Array<{ pr: number; body: string }> = [];
   /** VTID-04612: main moved ahead of every open PR by `behindBy` commits touching `files`. Null = up to date. */
   mainAhead: { behindBy: number; files: string[] } | null = null;
   private nextPr = 3600;
@@ -594,6 +596,15 @@ export class FakeGitHub {
     const rest = path.slice(prefix.length);
     let m: RegExpExecArray | null;
 
+    // VTID-05146: the open-PR overlap check lists every open PR (one page here).
+    if (method === 'GET' && rest === '/pulls') {
+      const open = [...this.prs.values()].filter((p) => p.state === 'open');
+      return this.res(200, open.map((p) => ({ number: p.number, title: p.title, draft: false, head: { ref: p.head.ref, sha: p.head.sha } })));
+    }
+    if ((m = /^\/issues\/(\d+)\/comments$/.exec(rest)) && method === 'POST') {
+      this.comments.push({ pr: Number(m[1]), body: String(body?.body || '') });
+      return this.res(201, { id: this.comments.length });
+    }
     if (method === 'POST' && rest === '/pulls') {
       if (!this.branches.has(body.head)) return this.res(422, { message: `fake-github: head ${body.head} was never pushed` });
       if (this.prForBranch(body.head)?.state === 'open') return this.res(422, { message: 'A pull request already exists for this branch' });

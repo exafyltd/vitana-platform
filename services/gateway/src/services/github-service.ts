@@ -1053,6 +1053,47 @@ export async function listOpenPrsBare(repo: string = DEFAULT_REPO, limit: number
   return prs.map((pr) => ({ number: pr.number, title: pr.title, branch: pr.head.ref, url: pr.html_url, updated_at: pr.updated_at }));
 }
 
+/** VTID-05146: every open PR (any author, any branch, drafts included), paged. */
+export interface OpenPullRequest { number: number; branch: string; head_sha: string; draft: boolean; title: string }
+
+export async function listOpenPullRequests(repo: string, maxPages: number = 5): Promise<{ prs: OpenPullRequest[]; complete: boolean }> {
+  const prs: OpenPullRequest[] = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const batch = await githubRequest<Array<{ number: number; title: string; draft?: boolean; head: { ref: string; sha: string } }>>(
+      `/repos/${repo}/pulls?state=open&per_page=100&page=${page}`
+    );
+    for (const pr of batch) prs.push({ number: pr.number, branch: pr.head.ref, head_sha: pr.head.sha, draft: !!pr.draft, title: pr.title });
+    if (batch.length < 100) return { prs, complete: true };
+  }
+  return { prs, complete: false };
+}
+
+/**
+ * VTID-05146: a PR's complete file list. getPrFiles returns GitHub's first page
+ * (30 files) only; this pages to GitHub's own cap (3,000 files) and says when
+ * the list is not complete.
+ */
+export async function getAllPrFiles(repo: string, prNumber: number, maxPages: number = 30): Promise<{ files: string[]; complete: boolean }> {
+  const files: string[] = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const batch = await githubRequest<Array<{ filename: string; previous_filename?: string }>>(
+      `/repos/${repo}/pulls/${prNumber}/files?per_page=100&page=${page}`
+    );
+    for (const f of batch) {
+      files.push(f.filename);
+      if (f.previous_filename) files.push(f.previous_filename);
+    }
+    if (batch.length < 100) return { files, complete: true };
+  }
+  return { files, complete: false };
+}
+
+/** VTID-05146: close a PR and leave a comment saying why. */
+export async function closePullRequestWithComment(repo: string, prNumber: number, comment: string): Promise<void> {
+  await githubRequest(`/repos/${repo}/issues/${prNumber}/comments`, { method: 'POST', body: JSON.stringify({ body: comment }) });
+  await githubRequest(`/repos/${repo}/pulls/${prNumber}`, { method: 'PATCH', body: JSON.stringify({ state: 'closed' }) });
+}
+
 /**
  * Detect which service is primarily affected by a PR
  */
@@ -1088,6 +1129,9 @@ export const githubService = {
   findPrForBranch,
   getPullRequest,
   getPrFiles,
+  getAllPrFiles,
+  listOpenPullRequests,
+  closePullRequestWithComment,
   getCombinedStatus,
   getCheckRuns,
   getPrStatus,

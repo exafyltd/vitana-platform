@@ -559,8 +559,8 @@ describe('VTID-05067 wiring', () => {
   it('index.html loads the module and its styles (external, before app.js) with the bumped ?v=', () => {
     expect(INDEX_HTML).toContain('<link rel="stylesheet" href="/command-hub/kiro-console.css?v=20261114-vtid-05071" />');
     expect(INDEX_HTML).toContain('<script src="/command-hub/kiro-console.js?v=20261114-vtid-05071"></script>');
-    expect(INDEX_HTML).toContain('/command-hub/app.js?v=20261119-vtid-05141');
-    expect(INDEX_HTML).toContain('/command-hub/styles.css?v=20261119-vtid-05141');
+    expect(INDEX_HTML).toContain('/command-hub/app.js?v=20261120-vtid-05146');
+    expect(INDEX_HTML).toContain('/command-hub/styles.css?v=20261120-vtid-05146');
     expect(INDEX_HTML.indexOf('kiro-console.js')).toBeLessThan(INDEX_HTML.indexOf('/command-hub/app.js'));
   });
 

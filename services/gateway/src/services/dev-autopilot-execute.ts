@@ -64,6 +64,8 @@ import { deployTopicsInFilter, normalizeDeployEvent, resolveDeployOutcome } from
 import { gatewayBaseUrl } from '../env';
 // VTID-04005: claim-time environment stamp + ownership filter (shared table, two gateways).
 import { claimStamp, filterOwnedExecutions, currentEnv, executorClaimsHere } from './dev-autopilot-env-ownership';
+// VTID-05146 (C1a, C2): no claim while an open PR shares the plan's files; frozen_scope at approval.
+import { guardFiles, holdExecution, loadPlanFiles, frozenHits } from './dev-autopilot-overlap';
 import { describeLoopOwnership, LOOP_OWNER_ENV_VAR } from './dev-autopilot-loop-owner';
 // VTID-04006: single-shot vs agent executor selection.
 import { resolveExecutorMode, claimExecutorStamp } from './autopilot-agent/executor-mode';
@@ -363,6 +365,8 @@ interface ConfigRow {
   // evolve separately. See Command Hub → Autopilot → Auto-Approve.
   auto_approve_impact_enabled?: boolean;
   auto_approve_impact_rules?: string[];
+  // VTID-05146 (C2): temporary never-touch globs while people work an area.
+  frozen_scope?: unknown;
 }
 
 async function loadConfig(s: SupaConfig): Promise<ConfigRow | null> {
@@ -712,6 +716,15 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
     // from name-only deny rules; existence is checked on the base branch.
     new_files: isOpenEndedPlan ? [] : await confirmNewFiles(files, cfg.deny_scope),
   };
+  // VTID-05146 (C2): a plan that touches frozen_scope is never approved —
+  // people are working there. (An open-ended plan has no file list yet; the
+  // merge-time check holds its PR instead.) Not snoozed: the freeze is
+  // temporary, and the finding is approvable again once it is lifted.
+  const frozen = isOpenEndedPlan ? [] : frozenHits(files, cfg.frozen_scope);
+  if (frozen.length > 0) {
+    console.log(`${LOG_PREFIX} [${input.finding_id.slice(0, 8)}] plan touches frozen_scope (${frozen.join(', ')}); not approved`);
+    return { ok: false, error: `plan touches frozen_scope: ${frozen.join(', ')} (dev_autopilot_config.frozen_scope — people are working there)` };
+  }
   const decision = evaluateSafetyGate(safetyPlan, safetyCtx);
   if (!decision.ok) {
     // Surface safety-gate rejections on the Self-Healing screen so the
@@ -914,7 +927,7 @@ export async function bridgeActivationToExecution(
     s,
     `/rest/v1/dev_autopilot_executions?finding_id=eq.${findingId}` +
     // VTID-04029: a row waiting for a human decision still owns its finding.
-    `&status=in.(cooling,running,awaiting_approval,ci,merging,deploying,verifying)` +
+    `&status=in.(cooling,running,awaiting_approval,held_overlap,ci,merging,deploying,verifying)` +
     `&select=id,status&limit=1`,
   );
   if (inflightR.ok && inflightR.data && inflightR.data[0]) {
@@ -2857,6 +2870,29 @@ export function buildWatchdogReclaimPatch(
 
 let claimGateLogged = false;
 
+/**
+ * VTID-05146 (C1a): 'clear' → claim; 'held' → moved to held_overlap (the CI
+ * watcher re-checks it every tick); 'retry' → the check could not run, so
+ * nothing is claimed this tick. An open-ended plan has no file list yet: the
+ * merge-time check judges its real diff.
+ */
+async function overlapBeforeClaim(s: SupaConfig, exec: Pick<ExecutionRow, 'id' | 'finding_id' | 'plan_version' | 'metadata'>): Promise<'clear' | 'held' | 'retry'> {
+  const files = await loadPlanFiles(s, exec.finding_id, exec.plan_version);
+  if (files === null) {
+    console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] plan files unreadable; not claiming this tick`);
+    return 'retry';
+  }
+  if (files.length === 0) return 'clear';
+  const guard = await guardFiles(`${GITHUB_OWNER}/${GITHUB_REPO}`, files);
+  if (!guard.ok) {
+    console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] open-PR overlap check failed (${guard.error}); not claiming this tick`);
+    return 'retry';
+  }
+  if (guard.blocks.length === 0) return 'clear';
+  const moved = await holdExecution(s, exec, 'cooling', guard.blocks, [], claimStamp());
+  return moved ? 'held' : 'retry';
+}
+
 export async function backgroundExecutorTick(): Promise<void> {
   const s = getSupabase();
   if (!s) return;
@@ -3069,6 +3105,13 @@ export async function backgroundExecutorTick(): Promise<void> {
   const filteredRows = readyR.data;
 
   for (const exec of filteredRows) {
+    // VTID-05146 (C1a): before the claim, the plan's files against every open
+    // PR in the repository (any author, drafts included). A shared file holds
+    // the execution (held_overlap) instead of running it; a failed check
+    // claims nothing this tick.
+    const overlap = await overlapBeforeClaim(s, exec);
+    if (overlap !== 'clear') continue;
+
     // Atomic claim: transition cooling → running only if still cooling
     // VTID-04005: stamp the claiming environment onto the row so the other
     // gateway's watcher/reconciler (shared table) leaves it alone.
@@ -3762,7 +3805,7 @@ export async function autoApproveTick(): Promise<void> {
     const inflightR = await supa<Array<{ id: string }>>(
       s,
       `/rest/v1/dev_autopilot_executions?finding_id=eq.${f.id}`
-      + `&status=in.(cooling,running,awaiting_approval,ci,merging,deploying,verifying)`
+      + `&status=in.(cooling,running,awaiting_approval,held_overlap,ci,merging,deploying,verifying)`
       + `&select=id&limit=1`,
     );
     if (inflightR.ok && inflightR.data && inflightR.data.length > 0) continue;

@@ -363,11 +363,11 @@ describe('VTID-04029 wiring guards', () => {
 
   it('the active list, the same-finding inflight guards and the stream terminal topics know the status', () => {
     const routes = read('src/routes/dev-autopilot.ts');
-    expect(routes).toContain("statusClause = 'status=in.(cooling,running,awaiting_approval,ci,merging,deploying,verifying)';");
+    expect(routes).toContain("statusClause = 'status=in.(cooling,running,awaiting_approval,held_overlap,ci,merging,deploying,verifying)';");
     expect(routes).toContain("'dev_autopilot.execution.awaiting_approval',");
     expect(routes).toContain("'dev_autopilot.execution.rejected',");
     const exec = read('src/services/dev-autopilot-execute.ts');
-    expect(exec.match(/status=in\.\(cooling,running,awaiting_approval,ci,merging,deploying,verifying\)/g)?.length).toBe(2);
+    expect(exec.match(/status=in\.\(cooling,running,awaiting_approval,held_overlap,ci,merging,deploying,verifying\)/g)?.length).toBe(2);
     // the concurrency cap deliberately does NOT count a human hold
     // (VTID-04376: the cap reads cooling/running + the post-merge tail, never awaiting_approval)
     expect(exec).toContain('`/rest/v1/dev_autopilot_executions?status=in.(cooling,running,${POST_MERGE_TAIL_STATUSES.join(\',\')})&select=status`');

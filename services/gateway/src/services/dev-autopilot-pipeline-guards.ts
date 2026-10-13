@@ -56,7 +56,8 @@ export const STRANDED_PR_FILTER =
  * 2026-09-22: finding b560c306 approved at 21:03, 21:09 and 21:24).
  */
 export const INFLIGHT_EXECUTION_STATUSES = [
-  'cooling', 'running', 'awaiting_approval', 'ci', 'merging', 'deploying', 'verifying',
+  // VTID-05146: held_overlap waits for other people's PRs and still owns its finding.
+  'cooling', 'running', 'awaiting_approval', 'held_overlap', 'ci', 'merging', 'deploying', 'verifying',
 ] as const;
 
 /** PostgREST filter fragment (leading '&') for an in-flight execution. */
