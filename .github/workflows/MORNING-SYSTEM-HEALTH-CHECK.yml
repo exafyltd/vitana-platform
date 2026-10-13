@@ -527,6 +527,39 @@ jobs:
           if [ -z "$BAD" ]; then R=PASS; else R=FAIL; D="$BAD $D"; fi
           echo "| 21 | Memory system health | $R | $D |" >> "$REPORT"
 
+      # 21b — Tenant isolation health (VTID-05149). REPORT-ONLY: always INFO,
+      # never FAIL, not counted in TOTAL_CHECKS, so nothing here pages anyone.
+      # ci_tenant_isolation_health() (M3, 20261014000300) counts rows whose
+      # tenant_id points at no tenant or is NULL, users with 0 or 2+ primary
+      # memberships and memberships/user_tenants drift. The baseline is not 0
+      # (2026-10-13: 3,628 foreign, 2,158 NULL); paging thresholds come with
+      # the WS2 cleanup that drives them to 0.
+      - name: '21b. Tenant isolation health (report-only, VTID-05149)'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: |
+          set +e
+          HTTP=$(curl -sS -o iso.json -w '%{http_code}' \
+            -X POST "${SUPABASE_URL%/}/rest/v1/rpc/ci_tenant_isolation_health" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
+            -H 'Content-Type: application/json' -d '{}')
+          if [ "$HTTP" != "200" ]; then
+            echo "| 21b | Tenant isolation health | INFO | RPC HTTP $HTTP (not applied yet?) |" >> "$REPORT"
+            exit 0
+          fi
+          if ! jq -e 'type == "object"' iso.json >/dev/null 2>&1; then
+            echo "| 21b | Tenant isolation health | INFO | RPC HTTP 200 but the reply is not a JSON object |" >> "$REPORT"
+            exit 0
+          fi
+          j() { jq -r "$1 // 0" iso.json 2>/dev/null; }
+          TOP=$(jq -r '[(.foreign_tenant_tables // [])[:3][] | "\(.table) \(.rows)"] | join(", ")' iso.json 2>/dev/null)
+          ERRS=$(jq -r '(.scan_errors // []) | length' iso.json 2>/dev/null)
+          D="foreign $(j .foreign_tenant_rows) (top: ${TOP:-none}), null $(j .null_tenant_rows), primary 0/2+: $(j .users_zero_primary)/$(j .users_multi_primary), drift $(j .memberships_not_in_user_tenants)/$(j .user_tenants_not_in_memberships), default=$(j .default_tenant_count)"
+          [ "${ERRS:-0}" != "0" ] && D="$D, scan errors $ERRS"
+          echo "| 21b | Tenant isolation health | INFO | $D |" >> "$REPORT"
+
       # VTID-03666: watchlist extended with the three newer ALERT-*.yml
       # workflows that did not exist when this list was first written —
       # leaving them off defeats the exact purpose of this self-audit.

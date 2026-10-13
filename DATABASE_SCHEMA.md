@@ -1194,6 +1194,41 @@ CREATE TABLE public.plan_sparring_shadow_log (
   `vtid.plan_sparring.tamper_detected`), not prevented. Mode changes only by a
   reviewed migration.
 
+### tenants — default / platform flags, signup default tenant, isolation health — committed, NOT yet applied (VTID-05149)
+
+Multi-tenant M0, lane A. Apply order and status: `docs/multitenancy/MIGRATION-QUEUE.md`.
+
+- **`tenants.is_default boolean NOT NULL DEFAULT false`** — the tenant new members
+  land in when signup names no usable slug (maxina). Exactly one row: at most one
+  by the partial unique index `tenants_one_default ON tenants ((true)) WHERE
+  is_default`, at least one by the constraint trigger `tenants_exactly_one_default`
+  (AFTER INSERT / UPDATE OF is_default / DELETE, `DEFERRABLE INITIALLY DEFERRED`,
+  function `tenants_assert_one_default()`, SECURITY DEFINER, `search_path` pinned,
+  no EXECUTE for PUBLIC/anon/authenticated). Swapping the default inside one
+  transaction works; leaving zero defaults fails at COMMIT.
+- **`tenants.is_platform boolean NOT NULL DEFAULT false`** — marks the future
+  platform tenant (never joinable). `CHECK tenants_default_not_platform (NOT
+  (is_default AND is_platform))`. No row has it yet.
+- **Signup triggers** `handle_new_user()` / `provision_platform_user()`: the
+  `tenant_slug` from signup metadata is honoured only for a tenant with
+  `open_signup AND is_active AND NOT is_platform` (the `switch_to_tenant_by_slug`
+  rule, VTID-05043); otherwise the `is_default` tenant (was: the oldest tenant by
+  `created_at`, which maxina and alkalma share). No tenant at all → `RAISE
+  WARNING` and the signup still succeeds without a membership. Everything they
+  write is otherwise unchanged. Migration `20261014000200_vtid_05149_signup_default_tenant.sql`
+  (md5 drift guard on both live definitions).
+- **`ci_tenant_isolation_health() RETURNS json`** (CI-only, `service_role`;
+  SECURITY DEFINER, STABLE): for every public base table with a uuid `tenant_id`
+  (except `tenants`) the rows pointing at no tenant and the NULL rows (totals +
+  top 25 tables), per-table failures in `scan_errors`; text `tenant_id` table
+  count; users with 0 / 2+ primary `user_tenants` rows; auth users without a
+  membership; `memberships` ↔ `user_tenants` drift; default / platform tenant
+  counts. Counts and table names only. MORNING-SYSTEM-HEALTH-CHECK row 21b
+  (report-only). Migration `20261014000300_vtid_05149_ci_tenant_isolation_health.sql`.
+- Gateway: `services/gateway/src/services/tenancy/tenant-context.ts` reads
+  `user_tenants` (deterministic primary) and `tenants (tenant_id, slug,
+  is_default, is_platform)` (60 s cache).
+
 ### supabase_migrations.schema_migrations — audit trail, not the authority (VTID-05123)
 
 Since VTID-05123, RUN-MIGRATION writes one row per applied repo file under `supabase/migrations/` (`idempotency_key` = filename, `version`/`name` = its digit prefix and rest, `created_by` = `github-actions:RUN-MIGRATION:<run_id>`) in the same request as the migration; older rows carry MCP/dashboard apply-time versions and most repo files have no row, so "no row" never means "not applied" — MIGRATION-DRIFT-CHECK (VTID-03486) is the authority.
@@ -1598,6 +1633,7 @@ CREATE TABLE my_new_table (
 | 2026-10-10 | `calendar_events.valid_source_type` CHECK now also allows `'test_result'`. Triggers `trg_test_result_insert_calendar`, `trg_test_result_update_calendar`, `trg_test_result_delete_calendar` (partner_health_test_orders → calendar_events): one entry per order at `expected_result_at` (15-minute span, `event_type='health'`, `metadata.kind='test_result_expected'`, title = test name only) while the order is ordered / sample_kit_shipped / sample_received / processing and the date is in the future; moved when the date changes, cancelled on result_ready / delivered / cancelled / failed / quarantined, a cleared or past date, or delete; `reminder_offsets='{}'`. The trigger function catches every error so it can never block an order write. One-time backfill. Migration `20261010100000_vtid_04997_test_results_in_calendar.sql`. | Claude | VTID-04997 |
 | 2026-10-10 | `ci_welcome_greeting_health()` (CI-only, `service_role`): `signups_24h` and `unflagged_24h` now exclude `service_bot_accounts` and `notification_test_actors`, the accounts the welcome trigger never greets; return keys, `SECURITY DEFINER`, `search_path` and grants unchanged. Removes the false "signups but zero greetings" alarm a test-account-only 24h window raised (2026-10-08). Migration `20261010170000_vtid_05052_ci_welcome_greeting_health_exclude_test_accounts.sql`. | Claude | VTID-05052 |
 | 2026-10-12 | `ci_memory_health()` (CI-only, `service_role`): two new keys, `user_speech_turns_24h` (user turns whose summed `input_transcription` fragments exceed 20 chars, from `oasis_events`) and `transcript_turns_24h` (`memory_transcript_turns`). Every existing key, `SECURITY DEFINER`, `search_path` and grants unchanged. MORNING-SYSTEM-HEALTH-CHECK row 21 fails on zero writes only when somebody spoke. Migration `20261012160000_vtid_05088_ci_memory_health_speech_input.sql`. | Claude | VTID-05088 |
+| 2026-10-14 | `tenants.is_default` / `tenants.is_platform` (+ index `tenants_one_default`, CHECK `tenants_default_not_platform`, constraint trigger `tenants_exactly_one_default` / `tenants_assert_one_default()`); `handle_new_user()` / `provision_platform_user()` honour a signup slug only for an open, active, non-platform tenant and fall back to the `is_default` tenant instead of the oldest; new CI-only `ci_tenant_isolation_health()` (`service_role`). Committed, NOT yet applied. Migrations `20261014000100_vtid_05149_tenants_default_platform_flags.sql`, `20261014000200_vtid_05149_signup_default_tenant.sql`, `20261014000300_vtid_05149_ci_tenant_isolation_health.sql`. | Claude | VTID-05149 |
 
 ---
 

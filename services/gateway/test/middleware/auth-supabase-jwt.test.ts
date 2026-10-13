@@ -12,7 +12,8 @@
  *   - requireExafyAdmin: 401 without identity, 403 without exafy_admin claim.
  *   - requireAdminAuth: combined auth + exafy_admin gating.
  *   - requireTenant / requireAuthWithTenant: tenant from JWT, DB fallback via
- *     user_tenants(is_primary), else 400 TENANT_REQUIRED.
+ *     user_tenants (VTID-05149 resolver: is_primary desc, created_at,
+ *     tenant_id, limit 1), else 400 TENANT_REQUIRED.
  *   - resolveVitanaId: cached per user, invalidateVitanaIdCache busts the cache.
  *   - VTID-05043: a tenant taken from the JWT must be a user_tenants membership
  *     (403 TENANT_NOT_MEMBER), exafy_admin exempt, 503 on lookup failure,
@@ -35,6 +36,8 @@ const createChain = () => {
   const chain: any = {
     select: jest.fn(() => chain),
     eq: jest.fn(() => chain),
+    order: jest.fn(() => chain),
+    limit: jest.fn(() => chain),
     abortSignal: jest.fn(() => chain),
     single: jest.fn(() => chain),
     maybeSingle: jest.fn(() => chain),
@@ -506,14 +509,16 @@ describe('auth-supabase-jwt middleware', () => {
     it('resolves the primary tenant from user_tenants when the JWT lacks one', async () => {
       mockVerifiedJwt(claims(uniqueSub('t-db'), { app_metadata: {} }));
       chainFor('user_tenants').mockResolvedValue({
-        data: { tenant_id: 'tenant-from-db' },
+        data: [{ tenant_id: 'tenant-from-db', active_role: 'community', is_primary: true }],
         error: null,
       });
 
       const res = await request(app).get('/tenant').set('Authorization', 'Bearer good');
       expect(res.status).toBe(200);
       expect(res.body.identity.tenant_id).toBe('tenant-from-db');
-      expect(chainFor('user_tenants').eq).toHaveBeenCalledWith('is_primary', true);
+      // VTID-05149: deterministic query shape (was eq('is_primary', true).single()).
+      expect(chainFor('user_tenants').order).toHaveBeenCalledWith('is_primary', { ascending: false });
+      expect(chainFor('user_tenants').limit).toHaveBeenCalledWith(1);
     });
 
     it('returns 400 TENANT_REQUIRED when no tenant exists in JWT or DB', async () => {
@@ -612,12 +617,17 @@ describe('auth-supabase-jwt middleware', () => {
 
     it('no claim → primary fallback unchanged, no membership lookup', async () => {
       mockVerifiedJwt(claims(uniqueSub('m-noclaim'), { app_metadata: {} }));
-      chainFor('user_tenants').mockResolvedValue({ data: { tenant_id: 'tenant-primary' }, error: null });
+      chainFor('user_tenants').mockResolvedValue({
+        data: [{ tenant_id: 'tenant-primary', active_role: 'community', is_primary: true }],
+        error: null,
+      });
 
       const res = await request(app).get(path).set('Authorization', 'Bearer good');
       expect(res.status).toBe(200);
       expect(res.body.identity.tenant_id).toBe('tenant-primary');
-      expect(chainFor('user_tenants').eq).toHaveBeenCalledWith('is_primary', true);
+      // VTID-05149: deterministic query shape (was eq('is_primary', true).single()).
+      expect(chainFor('user_tenants').order).toHaveBeenCalledWith('is_primary', { ascending: false });
+      expect(chainFor('user_tenants').limit).toHaveBeenCalledWith(1);
       expect(chainFor('user_tenants').maybeSingle).not.toHaveBeenCalled();
     });
 
