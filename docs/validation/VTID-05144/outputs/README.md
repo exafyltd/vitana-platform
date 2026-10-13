@@ -19,10 +19,31 @@ Local evidence (no staging, no production, no workflow dispatch):
 - `pr-gate.txt` — `scripts/ci/pr-gate/gate.mjs` scope / sparring / weakening /
   red-green against origin/main.
 
-## Staging evidence (AC-12) — to be added after merge, before Gate 2
+## Staging evidence (AC-12)
 
-- Gateway full run with a gateway merge during it: run link, the
-  `staging.verify.superseded` event with `metadata.superseded_by`, and the
-  chained run (`chain=1`).
-- Quiet-window or nightly gateway full run: run link and the
-  `staging.verify.passed` event with `metadata.full=true`.
+### 1. Full run superseded by a redeploy mid-run → chained full run
+
+- Run: https://github.com/exafyltd/vitana-platform/actions/runs/38429381084
+  (`workflow_dispatch`, gateway, `full=true`, `commit_sha=f7263f19b081`,
+  dispatched 2026-10-13T16:18Z; staging redeployed during the run).
+- Result: outcome `superseded`, 1114 tests, 1111 passed. Staging moved from
+  `f7263f19b081` to `e7a4c90fb561` (a descendant). Attribution cutoff
+  2026-10-13T16:24:28.602Z: the run start, because the staging deploy began
+  before it. All 1114 results are therefore unattributed (0 attributed
+  passed, 0 attributed failed). The 3 failures that happened while staging
+  redeployed did not fail the run. Before VTID-05144 the same run ended as
+  `mismatch` / failed.
+- OASIS (read-only query, AC-12 / OASIS_PROOF): event
+  `180e0ab5-4f3d-4337-94f4-3a47eec94d76`, 2026-10-13 17:06:27Z, topic
+  `staging.verify.superseded`, `metadata.commit=f7263f19b081…`,
+  `metadata.superseded_by=e7a4c90fb56197ca256bf3343f3a980fd52b5765`,
+  `metadata.attribution_cutoff=2026-10-13T16:24:28.602Z`, `metadata.chain=0`,
+  `metadata.full=true`.
+- Report job: step "Re-run the full verification on the newer commit
+  (VTID-05144)" succeeded and dispatched the chained full run
+  https://github.com/exafyltd/vitana-platform/actions/runs/38436837467
+  (gateway @ `e7a4c90fb561`, chain=1).
+
+### 2. Full run that passes (`staging.verify.passed`, `metadata.full=true`)
+
+- Pending: the chained run above (chain=1). Its result is recorded here before Gate 2.
