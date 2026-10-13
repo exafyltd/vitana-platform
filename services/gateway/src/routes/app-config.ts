@@ -38,8 +38,7 @@ export function createAppConfigRouter(deps: AppConfigRouterDeps = {}): Router {
     legacyHeaders: false,
   });
 
-  // public-route — anonymous by design: the app reads its config before sign-in (VTID-05177).
-  router.get('/', ipLimit, async (_req: Request, res: Response) => {
+  router.get('/', ipLimit, async (_req: Request, res: Response) => { // public-route — read before sign-in (VTID-05177)
     const result = await readAppConfig();
     if (!result.ok) {
       console.warn(`[app-config] kill switch read failed (${result.error}); answering 503`);
