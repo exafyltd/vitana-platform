@@ -29,3 +29,4 @@ PR confirms or corrects its rows (file names, rollback paths).
 
 - S-M's planned version `20261013200000` was already used by `20261013200000_vtid_05143_unified_card_system.sql`; S-M uses `20261013233000` instead (resolved 2026-10-13).
 - Lane A rollback order: gateway revert → R2 → R1. R3 is independent.
+- `reserved_tenant_slugs` (row 5) is listed in `scripts/ci/migration-drift-baseline.json` while row 5 is unapplied, so MIGRATION-DRIFT-CHECK does not fail the PR that adds it. Remove it from the baseline in the PR after the apply (the check then reports it as recovered).
