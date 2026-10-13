@@ -550,3 +550,117 @@ until it passes.
 Tests: `python3 -m unittest discover -s scripts/aws/test -p 'test_*.py'`
 (fixture catalogs, no network), run in CI by
 `AURORA-PRIVILEGE-PARITY-UNIT.yml`.
+
+---
+
+## Part 4 — auth -> Aurora bridge (VTID-05023, sparring F2 / N3 / R2)
+
+GoTrue (`auth.users`) stays on Supabase; `public` moves to Aurora, which has
+no `auth.users`. Six AFTER INSERT triggers on Supabase's `auth.users` used to
+provision every new member in `public` (see
+`docs/validation/VTID-05023/side-effects.md` C). At the flip they are
+disabled and the same provisioning runs on Aurora through three idempotent
+layers: the PostgREST `db-pre-request` hook (members' own read-write
+requests), the `auth.users` webhook -> gateway
+`POST /api/v1/internal/auth-bridge/user-event`, and a 5-minute gateway
+reconciliation job. The gateway also awaits `ensureProvisioned(userId)` on
+its post-sign-up write paths (service-role writes never reach the hook).
+`before_auth_user_delete_cleanup_contacts` stays enabled on Supabase.
+
+**Order**
+1. Before the prod proxy deploy that carries `PGRST_DB_PRE_REQUEST`
+   (`AWS-PROD-DEPLOY-POSTGREST-AURORA-PROXY.yml` sets it): run
+   `scripts/aws/aurora-run-sql.sh scripts/aws/aurora-cutover-auth-bridge.sql`
+   on Aurora (and on the clone for part 10). PostgREST fails every request
+   while the function is missing. Re-runnable.
+2. In the window, after the schema freeze: export the FK map read-only from
+   Supabase and load it on Aurora:
+   `psql "$SUPABASE_DB_URL" -X -A -t -f scripts/aws/supabase-auth-fk-map-export.sql > /tmp/aurora-auth-fk-map.sql`
+   then `scripts/aws/aurora-run-sql.sh /tmp/aurora-auth-fk-map.sql`. The
+   deletion path refuses to run while the map is empty.
+3. Gateway (prod task def, with the R1(b) flip): `AUTH_BRIDGE_ENABLED=true`,
+   `AUTH_BRIDGE_RECONCILE_ENABLED=true`, `AUTH_BRIDGE_RECONCILE_SINCE=<start
+   of the final full load, ISO 8601>` (anyone who signed up after the load
+   began may be missing on Aurora: the gap backfill), optional
+   `AUTH_BRIDGE_RECONCILE_MAX_DELETES` (default 20). `GATEWAY_SERVICE_TOKEN`
+   must be set (the endpoint refuses every call otherwise).
+4. Supabase Vault: `auth_bridge_gateway_url` (prod gateway base URL) and
+   `auth_bridge_service_token` (the prod `GATEWAY_SERVICE_TOKEN`), then run
+   `scripts/aws/supabase-cutover-auth-bridge.sql` on Supabase (one
+   transaction; it verifies 6 triggers disabled and 4 enabled before
+   COMMIT). Users who signed up after the final load began, including
+   between the trigger switch and the gateway flip, are picked up by the
+   reconciler (`SINCE`).
+5. Verify read-only: the gateway logs `auth-bridge reconcile: N auth users,
+   provisioned 0, deleted 0` every 5 minutes; no `ensure_provisioned failed`.
+
+**Rollback**: `scripts/aws/supabase-cutover-auth-bridge-rollback.sql` on
+Supabase (re-enables the six triggers, drops the bridge triggers), and set
+`AUTH_BRIDGE_ENABLED` / `AUTH_BRIDGE_RECONCILE_ENABLED` back to false.
+
+**Known gap to resolve before the window (not part 4)**:
+`erase_user_data()` (VTID-04765, account deletion) references
+`'auth.users'::regclass`; on Aurora that raises, so account deletion's
+erasure step fails there until the function is adapted.
+
+Tests: `npm run test:auth-bridge` (throwaway Postgres; CI
+`SQL-AUTH-BRIDGE.yml`) and
+`npx jest test/vtid-05023-auth-bridge-*.test.ts` in `services/gateway`.
+
+## Part 8 — migrations (VTID-05023)
+
+`RUN-MIGRATION.yml` and `MIGRATION-DRIFT-CHECK.yml` choose their database
+from the repo variable `MIGRATION_TARGET` (`supabase` when unset — the
+Supabase path is unchanged) or the dispatch input `target`
+(`default`/`supabase`/`aurora`; anything but `default` overrides the
+variable). On `aurora`:
+
+- `RUN-MIGRATION.yml` prints the statement plan with no credentials
+  (`scripts/aws/aurora-apply-migration.sh --dry-run`), then assumes
+  `AWS_PROD_ROLE_ARN` over OIDC and applies the file over the RDS Data API:
+  all statements in one Data API transaction; any failure (also at COMMIT)
+  rolls back and fails the run naming the statement; then
+  `NOTIFY pgrst, 'reload schema'`. Files with psql meta-commands
+  (`\set ...`) or a top-level `ROLLBACK` are refused; `CREATE INDEX
+  CONCURRENTLY` and other non-transactional statements need a file of their
+  own or the `allow_non_transactional` input (statement by statement, no
+  rollback).
+- `MIGRATION-DRIFT-CHECK.yml` reads the same public-table inventory as
+  `ci_schema_inventory()` from Aurora with one read-only SELECT over the
+  Data API and checks it against the same baseline. Pull-request runs need
+  the OIDC role's trust policy to accept this repo's pull_request subject;
+  otherwise they fail at the credentials step while the target is `aurora`.
+- `APPLY-FB061-DEBOUNCER-FIX.yml` applies no SQL and is unchanged.
+
+**Order in the window**
+1. **Schema freeze** — at the start of the final load (Step 5), after
+   checking that no `RUN-MIGRATION` run is in progress:
+   `gh variable set MIGRATION_FREEZE --body true --repo exafyltd/vitana-platform`.
+   Both workflows then fail fast, for either target: no migration is applied
+   between the final load and the flip, so the loaded schema is the schema
+   that goes live.
+2. **DDL watch** — after the final load has finished, as the master user
+   (needs `rds_superuser`):
+   `scripts/aws/aurora-run-sql.sh scripts/aws/aurora-pgrst-ddl-watch.sql`.
+   Idempotent. Verify read-only:
+   `SELECT evtname, evtevent, evtenabled FROM pg_event_trigger WHERE evtname LIKE 'pgrst%'`
+   → `pgrst_watch` (ddl_command_end) and `pgrst_drop_watch` (sql_drop), both `O`.
+3. **Flip** (with Step 7):
+   `gh variable set MIGRATION_TARGET --body aurora --repo exafyltd/vitana-platform`.
+4. **Unfreeze** (with Step 8):
+   `gh variable delete MIGRATION_FREEZE --repo exafyltd/vitana-platform`.
+   Dispatch the drift check once by hand
+   (`gh workflow run MIGRATION-DRIFT-CHECK.yml --repo exafyltd/vitana-platform -f target=aurora`)
+   and see it green before the nightly run relies on it.
+
+**Rollback**: `gh variable delete MIGRATION_TARGET` (back to supabase). The
+event triggers can stay; to remove them:
+`DROP EVENT TRIGGER IF EXISTS pgrst_watch; DROP EVENT TRIGGER IF EXISTS pgrst_drop_watch;`.
+
+**Limits**: `ALTER TYPE ... ADD VALUE` runs inside the transaction (PG ≥ 12),
+but the new value cannot be used before COMMIT — split such a file in two.
+One Data API call is limited to 45 s and 64 KB of SQL; a longer statement
+fails the run and rolls back.
+
+Tests: `npm run test:aurora-migrations` (throwaway Postgres and a fake
+`aws`; the splitter is also compared with psql on 15 real migration files).

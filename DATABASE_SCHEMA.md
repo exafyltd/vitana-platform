@@ -1525,6 +1525,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-10-13 | VTID-05156 (Health Hub Phase 0 fix-ups, Defect 5), **committed, NOT applied — applied via `RUN-MIGRATION.yml` after Gate 2** (migration `20261014120000_vtid_05156_revoke_wearable_samples_rpc.sql`, access only; read-only before/after `has_function_privilege` check recorded in Gate 2): `health_ingest_wearable_samples(jsonb)` (SECURITY DEFINER) is EXECUTE for `service_role` only — `PUBLIC`/`anon`/`authenticated` revoked. It had been granted to `authenticated` since VTID-01078, so any signed-in member could write wearable samples through PostgREST with no consent check (live 2026-10-13: `authenticated = true`, `anon = false`, 0 rows). Its only caller, `POST /api/v1/health/wearables/ingest`, now answers 410 `ENDPOINT_RETIRED` before any database call. The migration refuses to apply unless that end state holds. `health_ingest_lab_report(jsonb)` keeps its grant (live callers; Phase 1 consent rework). Rollback: `docs/validation/VTID-05156/rollback.sql`. CI: `SQL-WEARABLE-SAMPLES-RPC-REVOKE.yml` (throwaway Postgres). | Claude Code | VTID-05156 |
 | 2026-10-13 | VTID-05147 (Track S / S-M), **committed, NOT applied** (migration `20261013233000_vtid_05147_s_m_membership_role_lockdown.sql`, access + one function body; applied via `RUN-MIGRATION.yml` after the read-only `docs/validation/VTID-05147/pre-apply-checks.sql`): members can no longer write their own role or membership. Dropped policies `user_tenants_update_own` (no WITH CHECK — a member could set own `active_role='admin'` or move `tenant_id`), `rp_upsert_self`/`rp_update_self`/`rp_delete_self` and `user_active_roles_insert`/`_update` (role value was free); `INSERT/UPDATE/DELETE/TRUNCATE/TRIGGER/REFERENCES` revoked from `anon`/`authenticated` on `user_tenants`, `role_preferences`, `user_active_roles`, `user_permitted_roles` (reads and SELECT policies stay); `TRUNCATE/TRIGGER/REFERENCES` revoked on `memberships`, `app_users`. `set_role_preference()` now raises `Not authenticated` without a user and `Not a member of this tenant` (42501) for a tenant the caller has no `user_tenants` row in (exafy admins excepted; `'community'` still always allowed in an own tenant); EXECUTE for `authenticated`, `service_role` only (`PUBLIC`/`anon` revoked). The definer writers (`set_role_preference`, `me_set_active_role`, `switch_to_tenant_by_slug`, `provision_platform_user`, `handle_new_user`) are the only write paths left besides the service role. Self-check rolls the file back unless that end state holds. Rollback (re-opens the hole, owner approval): `docs/validation/VTID-05147/rollback-s-m.sql`. CI guard against reopening: `services/gateway/test/vtid-05147-s-m-membership-role-lockdown.test.ts`. | Claude Code | VTID-05147 |
 | 2026-10-13 | VTID-05137, **committed; applied via `RUN-MIGRATION.yml` before merge** (migration `20261013180000_vtid_05137_chat_push_coalescing.sql`, additive, idempotent): `user_notifications_push_outcome_check` re-created with `coalesced` added (chat push held back because the recipient was already pushed for that conversation in the last 5 minutes and has not read it; the row is still written with `push_sent_at` set and `data.push_coalesced='true'`). New partial index `idx_user_notifications_chat_conv (user_id, (data->>'conversation_key'), created_at DESC) WHERE type IN ('new_chat_message','chat_mention')` for the coalescer's one read per message. Every chat notification row now carries `data.conversation_key` (`dm:<sender>` / `group:<group>`) and `data.tag`. Written/read by `services/chat-push-coalescer.ts` + `notifyUser(..., { suppressPush: 'coalesced' })`; off switch `CHAT_PUSH_COALESCING_ENABLED=false`. Rollback `docs/validation/VTID-05137/rollback.sql`. | Claude Code | VTID-05137 |
 | 2026-10-12 | VTID-05125, **committed, NOT applied** (migration `20261013090000_vtid_05125_memory_functions_revoke_migrate.sql`, access only; applied via `RUN-MIGRATION.yml` after a read-only before-state check): the `migrate` role (AWS DMS source role for the Aurora migration) loses EXECUTE on `write_fact`, `get_current_facts`, `recall_at_time_range` and `memory_facts_semantic_search` — VTID-05041 had revoked `PUBLIC`/`anon`/`authenticated` only, and the live ACL still carried `migrate=X/postgres`. DMS never calls application RPCs. The migration refuses to apply unless `migrate` (when present) cannot execute any of the four, `service_role` still can, members still cannot, and exactly 4 overloads exist. Rollback: `docs/validation/VTID-05125/rollback.sql`. `migrate`'s EXECUTE on other service-only DEFINER functions (FU9a) and its table SELECT / `postgres` default ACL (FU9b) are separate follow-ups. | Claude Code | VTID-05125 |
@@ -3806,6 +3807,44 @@ Migration: `supabase/migrations/20261010150000_vtid_04917_audiobook_source_type.
 
 ---
 
+## Auth -> Aurora bridge — `ensure_provisioned()`, `provisioning_pre_request()`, `auth_user_fk_map`, `auth_bridge_deleted_users` (VTID-05023 part 4) — AURORA ONLY, applied in the cutover window
+
+After the cutover GoTrue (`auth.users`) stays on Supabase and `public` lives on Aurora, which has no `auth.users`. The six Supabase sign-up triggers on `auth.users` are disabled at the flip (`scripts/aws/supabase-cutover-auth-bridge.sql`; reverse: `…-rollback.sql`) and the same provisioning runs on Aurora. DDL: `scripts/aws/aurora-cutover-auth-bridge.sql` (one statement per line, `aurora-run-sql.sh`). Tested on throwaway Postgres: `npm run test:auth-bridge` (CI: `SQL-AUTH-BRIDGE.yml`).
+
+### `ensure_provisioned(p_user_id uuid, p_email text, p_raw_user_meta jsonb, p_created_at timestamptz) returns jsonb`
+- Reproduces `handle_new_user`, `generate_maxina_discount_code`, `initialize_user_preferences`, `provision_wallet_accounts`, `provision_platform_user`, `initialize_user_journey` (same rows, same defaults, trigger order).
+- Idempotent: per-user advisory lock, guarded inserts; a user with both `app_users` and `profiles` rows is returned untouched.
+- Returns `{user_id, created[], provisioned, active_tenant_id}`; the gateway writes `active_tenant_id` into GoTrue `app_metadata` when missing (what `handle_new_user`'s `UPDATE auth.users` did).
+- SECURITY DEFINER, `service_role` only.
+
+### `provisioning_pre_request() returns void`
+PostgREST `db-pre-request` (`PGRST_DB_PRE_REQUEST`). No-op when `transaction_read_only = on`, `auth.uid()` is null, the role is not `authenticated`, an `app_users` row exists (one PK lookup), or the user is in `service_bot_accounts` / `notification_test_actors`. Otherwise calls `ensure_provisioned()` from the JWT (`email`, `user_metadata`); a failure is a WARNING, never a failed request. EXECUTE: anon, authenticated, service_role (PostgREST calls it for every role).
+
+### `auth_bridge_unprovisioned(p_user_ids uuid[]) returns setof uuid`
+The ids with no `app_users` row, registered test/service accounts excluded (the gateway reconciler). `service_role` only.
+
+### auth_user_fk_map
+| Column | Type | Notes |
+|---|---|---|
+| `table_name`, `column_name` | text, PK | a public column that had a FK to `auth.users(id)` on Supabase |
+| `on_delete` | text | `confdeltype`: a, r, c, n, d |
+| `loaded_at` | timestamptz | |
+
+Loaded from Supabase's live `pg_constraint` by `scripts/aws/supabase-auth-fk-map-export.sql` right before the window. RLS on, `service_role` only.
+
+### auth_bridge_deleted_users
+| Column | Type | Notes |
+|---|---|---|
+| `user_id` | uuid PK | the deleted auth user |
+| `source` | text | `webhook` \| `reconciler` |
+| `result` | jsonb | what `auth_bridge_handle_deleted_user()` changed |
+| `processed_at` | timestamptz | |
+
+RLS on, `service_role` only.
+
+### `auth_bridge_handle_deleted_user(p_user_id uuid, p_source text) returns jsonb`
+What `DELETE FROM auth.users` did on Supabase: the kept `before_auth_user_delete_cleanup_contacts` cleanup (phone-less inbound `contacts`), then each `auth_user_fk_map` action (CASCADE delete, SET NULL, SET DEFAULT; NO ACTION / RESTRICT rows are reported in `blocked`, not touched), with FK-ordered retries; atomic; refuses an empty map; records the result in `auth_bridge_deleted_users`. `app_users` has no FK to `auth.users`, so it stays, as before. `service_role` only.
+
 ## Kiro runs — `kiro_runs`, `kiro_run_events` (VTID-05065, 2026-10-10) — applied after merge via `RUN-MIGRATION.yml`
 
 Migration: `supabase/migrations/20261010210000_vtid_05065_kiro_runs.sql`. Service role only (RLS on, no policies; `anon`/`authenticated` revoked). Written by the gateway (`services/gateway/src/services/kiro/kiro-runs.ts`), read through `/api/v1/operator/kiro/runs` (exafy_admin, the run's own user only).
@@ -3983,3 +4022,45 @@ No `completed_at`: completion is derived from the source tables (`profiles`, `pr
 ### profiles.interests
 
 `TEXT[] DEFAULT '{}'` — the member's interests as stable slugs (`fitness`, `nutrition`, …), never display text; the app resolves labels via `screens.interests.<slug>`. Enrichment card E4 is complete when it is non-empty.
+
+## Tenant provisioning — brand pack, `reserved_tenant_slugs`, `provision_tenant()` (VTID-05150, multi-tenant M0 lane B) — NOT YET APPLIED
+
+Migrations `20261014000400_vtid_05150_tenant_brand_pack.sql` (expand only) and `20261014000500_vtid_05150_provision_tenant.sql` (needs Lane A M1, `tenants.is_default`/`is_platform`). Queue: `docs/multitenancy/MIGRATION-QUEUE.md`. Rollback: `docs/validation/VTID-05150/rollback.sql` (+ `rollback-complete.sql`).
+
+### tenant_settings — brand pack columns (Exafy-governed; the tenant-admin `PUT /settings` never writes them)
+
+| Column | Type / default | Meaning |
+|---|---|---|
+| `display_name` | text | community display name |
+| `brand` | jsonb `{}` | `{colors:{accent,bg,fg}, tokens:{}, logo_path, favicon_path, og_image_path}`; every `*_path` under `<tenants.slug>/` in bucket `tenant-assets` |
+| `legal_entity_line` | text (≤200) | legal entity shown in footers/emails |
+| `support_email`, `sender_email` | text (email CHECK) | support address; transactional sender address |
+| `sender_name` | text | sender display name |
+| `default_locale` | text `'de'` | must be in `enabled_locales` |
+| `enabled_locales` | text[] `{de,en,es,sr,fr,pl,pt,ru,tr,zh,ar}` | each must exist in `supported_locales` (trigger) |
+| `timezone` | text `'Europe/Berlin'` | must exist in `pg_timezone_names` (trigger) |
+| `currency` | text `'EUR'` | `^[A-Z]{3}$` |
+| `landing` | jsonb `{}` | `{hero_image_path, cta: invite_only|signup|waitlist}` (copy comes from content packs, WS5) |
+| `persona_facts` | jsonb `{}` | FACTS only: `community_name`, `community_pronunciation`, `anchor_person{name,pronunciation,role}`, `story_facts[]`, `offer_facts[]`, `tone[]` — never a sentence Vitana speaks (rule 41) |
+| `provisioned_at`, `provisioned_by` | timestamptz, uuid | set by `provision_tenant()`; NULL = legacy tenant (maxina, alkalma, hand-made), never touched by provisioning and read-only for the brand-pack API |
+
+CHECK `tenant_settings_brand_pack_check` (emails, currency, locales, jsonb object types, legal line length). Trigger `tenant_settings_brand_pack_validate` (BEFORE INSERT / UPDATE OF `enabled_locales, default_locale, timezone, brand, landing`, SECURITY INVOKER). Backfill: Maxina and Alkalma new columns only (values from the SPA and the live DB). Nothing reads these columns yet (consumers: WS5/WS7).
+
+### reserved_tenant_slugs
+
+| Column | Meaning |
+|---|---|
+| `slug` | PK — a slug no tenant may take (path URL `vitanaland.com/<slug>`) |
+| `source` | `spa_route` \| `public_file` \| `platform` |
+| `added_vtid` | the VTID that added the row |
+
+RLS on, `service_role` only. Seeded from `services/gateway/src/services/tenant-provisioning/reserved-slugs.json` (`scripts/tenants/gen-reserved-slugs.mjs`, drift: `TENANT-RESERVED-SLUGS-DRIFT.yml`).
+
+### Functions
+
+- `provision_tenant(p_slug, p_name, p_admin_email, p_invited_by, p_all_members_group_name, p_display_name, p_jev_monthly_budget_usd, p_default_locale, p_enabled_locales, p_timezone, p_currency) RETURNS jsonb` — SECURITY DEFINER, `search_path=public`, `service_role` only (gateway `POST /api/v1/admin/tenants`, exafy_admin). One transaction, `pg_advisory_xact_lock(42001, hashtext(slug))` (namespace 42001 reserved for it). Writes `tenants`, `tenant_settings`, `notification_type_controls` (baseline computed at call time), `ai_provider_policies` (copied from the default tenant), `tenant_autopilot_settings`, `chat_groups` (+ bot in `chat_group_members`), `tenant_invitations` (first admin). Never writes `auth.users`, `app_users`, `user_tenants`, `memberships`, `profiles`, `chat_messages`, `user_notifications`. Errors: SQLSTATE 22023 with a code word (`INVALID_SLUG`, `RESERVED_SLUG`, `SLUG_TAKEN`, `NOT_EXAFY_ADMIN`, `SERVICE_ACCOUNT_EMAIL`, `NO_DEFAULT_TENANT`, …).
+- `tenant_settings_merge_feature_flags(p_tenant_id, p_flags, p_allow_governed, p_updated_by) RETURNS jsonb` — SECURITY INVOKER, `service_role` only. One-statement top-level merge of `feature_flags` for the tenant-admin `PUT /settings`; drops the governed `jev` key from the client's object unless `p_allow_governed` (exafy_admin).
+
+Storage bucket `tenant-assets` (public read, 1 MB, png/jpeg/webp, no client write policies) is created by `scripts/supabase/setup-tenant-assets-bucket.mjs`, not by a migration.
+
+OASIS (`CicdEventType`): `tenant.provisioned`, `tenant.brand_pack.updated`, `tenant.asset.uploaded` — ids, slug, counts and field names only; never the invitation token or an email.

@@ -1,0 +1,13 @@
+Read-only, production project, 2026-10-13 (subset of live-before.sql, run during implementation):
+tenant_settings existing-column md5:
+  2e7528b8-472a-4356-88da-0280d4639cce  369753c528f3d92639c5128cf272eee7   (maxina)
+  73cc592f-84ec-457a-b0f7-25a082d7e011  41bd9711ce9a41232ce189c9b7bfc159   (alkalma)
+absent: reserved_tenant_slugs=true provision_tenant=true merge_fn=true pack_columns=true
+lane_a_m1_applied: false   (expected before Lane A ships — B-M2 must wait)
+computed notification baseline: 16 rows
+tenant-assets bucket: 0
+notification_type_controls per tenant: maxina 21 (16 baseline + 3 auto-registered OFF + 2 local), alkalma 16
+ai_provider_policies: 2 per tenant, identical (chatgpt, claude; allowed; cap 50)
+system groups: maxina 1 ("Alle Beisammen", bot 00000000-0000-0000-0000-000000000001), alkalma 0
+tenant_autopilot_settings: maxina 1, alkalma 0
+triggers on the provisioning-written tables: only trg_ap_settings_updated (BEFORE UPDATE on tenant_autopilot_settings, sets updated_at)
