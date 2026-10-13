@@ -80,8 +80,9 @@ describe('VTID-05122 Task drawer spec approve', () => {
 });
 
 describe('VTID-05122 cache-bust', () => {
-  it("index.html loads app.js with a vtid-05122 ?v=", () => {
-    expect(INDEX).toMatch(/app\.js\?v=[^"]*vtid-05122/);
+  it("index.html loads app.js with a ?v= at or after the vtid-05122 marker", () => {
+    const ver = (INDEX.match(/app\.js\?v=([^"]+)/) || [])[1] || '';
+    expect(ver >= '20261118-vtid-05122').toBe(true);
   });
 });
 

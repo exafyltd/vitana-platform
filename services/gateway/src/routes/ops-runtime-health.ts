@@ -30,6 +30,7 @@ import { isFishConfigured } from '../services/tts/fish';
 import { isJevConfigured } from '../services/jev/jev-client';
 import { isVertexSerbianBridgeEnabled } from '../orb/live/upstream/vertex-serbian-bridge';
 import { getWorkflowRuns } from '../services/github-service';
+import { loadTestCatalog, type TestCatalog } from '../services/testing/test-catalog';
 
 const router = Router();
 
@@ -270,13 +271,66 @@ export function evalOasisLag(latest: string | null, now = Date.now()): RuntimeCh
   return { status: 'ok', age_min: age };
 }
 
-export const SCHEDULED_WORKFLOWS = [
+// VTID-05141 (P3): the list is derived from the published test catalog
+// (every workflow with a schedule). These five are the fallback when the
+// catalog cannot be read, so the check never gets weaker than it was.
+export const FALLBACK_SCHEDULED_WORKFLOWS = [
   'MORNING-SYSTEM-HEALTH-CHECK.yml',
   'SCREEN-LOAD-TIMING.yml',
   'DEV-AUTOPILOT.yml',
   'CODEINTEL-INDEX.yml',
   'ALERT-PUSH-DISPATCH-HEALTH.yml',
 ];
+
+export const MAX_SCHEDULED_WORKFLOWS = 30;
+
+const CATALOG_REPO_PREFIX: Record<string, string> = {
+  platform: 'exafyltd/vitana-platform',
+  frontend: 'exafyltd/vitana-v1',
+};
+
+type CatalogLike = Pick<TestCatalog, 'workflows'> & { other_workflows?: Array<Record<string, unknown>> };
+
+/**
+ * Pure: every scheduled workflow file of `repo` in the catalog, both the
+ * test workflows and `other_workflows`, de-duplicated, sorted by file name,
+ * capped at MAX_SCHEDULED_WORKFLOWS.
+ */
+export function scheduledWorkflowsFromCatalog(catalog: CatalogLike, repo: string): string[] {
+  const files = new Set<string>();
+  const entries: Array<Record<string, unknown>> = [
+    ...((catalog.workflows || []) as unknown as Array<Record<string, unknown>>),
+    ...(catalog.other_workflows || []),
+  ];
+  for (const w of entries) {
+    const schedules = w.schedules;
+    if (!Array.isArray(schedules) || schedules.length === 0) continue;
+    if (typeof w.file !== 'string' || !w.file) continue;
+    const id = typeof w.id === 'string' ? w.id : '';
+    const wfRepo = typeof w.repo === 'string' && w.repo ? w.repo : CATALOG_REPO_PREFIX[id.split(':')[0]];
+    if (wfRepo !== repo) continue;
+    files.add(w.file);
+  }
+  return [...files].sort().slice(0, MAX_SCHEDULED_WORKFLOWS);
+}
+
+/**
+ * The workflows the scheduled-workflows check reads. Any error loading or
+ * parsing the catalog, or an empty result, falls back to the fixed five.
+ */
+export async function resolveScheduledWorkflows(
+  repo: string,
+  load: () => Promise<{ catalog: CatalogLike }> = loadTestCatalog,
+): Promise<{ workflows: string[]; source: 'catalog' | 'fallback' }> {
+  try {
+    const { catalog } = await load();
+    const workflows = scheduledWorkflowsFromCatalog(catalog, repo);
+    if (workflows.length > 0) return { workflows, source: 'catalog' };
+  } catch (err) {
+    console.warn(`[ops-runtime-health] test catalog unreadable, using fallback workflows: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return { workflows: [...FALLBACK_SCHEDULED_WORKFLOWS], source: 'fallback' };
+}
 
 export function evalScheduledWorkflows(
   results: Array<{ workflow: string; conclusion: string | null; error?: string }>,
@@ -488,18 +542,19 @@ export const RUNTIME_CHECKS: Record<string, Handler> = {
       return { status: 'not_configured', reason: 'github_token_missing' };
     }
     const repo = process.env.GITHUB_REPO || 'exafyltd/vitana-platform';
-    const results = await Promise.all(
-      SCHEDULED_WORKFLOWS.map(async (workflow) => {
-        try {
-          const runs = await getWorkflowRuns(repo, workflow);
-          const done = runs.workflow_runs.find((r) => r.status === 'completed');
-          return { workflow, conclusion: done ? done.conclusion : null };
-        } catch (err) {
-          return { workflow, conclusion: null, error: err instanceof Error ? err.message : String(err) };
-        }
-      }),
-    );
-    return evalScheduledWorkflows(results);
+    const { workflows, source } = await resolveScheduledWorkflows(repo);
+    // Sequential on purpose: up to MAX_SCHEDULED_WORKFLOWS GitHub calls.
+    const results: Array<{ workflow: string; conclusion: string | null; error?: string }> = [];
+    for (const workflow of workflows) {
+      try {
+        const runs = await getWorkflowRuns(repo, workflow);
+        const done = runs.workflow_runs.find((r) => r.status === 'completed');
+        results.push({ workflow, conclusion: done ? done.conclusion : null });
+      } catch (err) {
+        results.push({ workflow, conclusion: null, error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+    return { ...evalScheduledWorkflows(results), source };
   },
 
   // Support & business

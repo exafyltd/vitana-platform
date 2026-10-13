@@ -172,8 +172,8 @@ describe('VTID-05069 wiring, CSP and styles', () => {
     const pt = INDEX.indexOf('<script src="/command-hub/pipeline-tree.js?v=20261112-vtid-05069"></script>');
     expect(pt).toBeGreaterThan(0);
     expect(pt).toBeLessThan(INDEX.indexOf('/command-hub/app.js?v='));
-    expect(INDEX).toContain('/command-hub/app.js?v=20261118-vtid-05122');
-    expect(INDEX).toContain('/command-hub/styles.css?v=20261118-vtid-05122');
+    expect(INDEX).toContain('/command-hub/app.js?v=20261119-vtid-05141');
+    expect(INDEX).toContain('/command-hub/styles.css?v=20261119-vtid-05141');
   });
 
   it('app.js only calls the two hooks', () => {

@@ -8,10 +8,26 @@
  *   - 8 routines: the exported audit* functions in routes/routine-audits.ts
  *   - agents-heartbeat: readAgentsRegistry() in routes/agents-registry.ts
  *
- * voice-lab-triage is deliberately absent (VTID-05103 amendment A1): its
- * spec reads time windows and error codes that /voice-lab/live/sessions does
- * not provide, so a port would be green forever. See routines/voice-lab-triage.md.
+ * VTID-05141 (Phase 3b) adds voice-lab-triage (reads voice_session_facts —
+ * /voice-lab/live/sessions has no time window, so VTID-05103 left it out),
+ * llm-spend-budget (the shadow budgets in orchestrator/budgets.ts, alert only)
+ * and llm-fallback-watch (isGoogleLlmCall over llm.call.completed).
  */
+
+async function googleCallsLast24h() {
+  const { createAttentionReads } = require('../ops-attention-reads');
+  const rows = await createAttentionReads().llmGoogleCalls(new Date(Date.now() - LLM_GOOGLE_WINDOW_MS).toISOString());
+  return rows.filter(isGoogleLlmCall);
+}
+
+async function spendToday() {
+  const { getSupabase } = require('../../lib/supabase');
+  const sb = getSupabase();
+  if (!sb) throw new Error('Supabase client not configured');
+  const { rows, since, truncated, error } = await loadSpendToday(sb);
+  if (error) throw new Error(`oasis_events (llm.call.completed): ${error}`);
+  return { rows: rows.length, since, truncated, lines: budgetLines(aggregateSpend(rows)) };
+}
 
 import {
   auditAutopilotRecs,
@@ -22,7 +38,10 @@ import {
   auditOasisSummary,
   auditSpecMemoryQuarantine,
   auditVitanaIndex,
+  auditVoiceSessionOutcomes,
 } from '../../routes/routine-audits';
+import { aggregateSpend, budgetLines, loadSpendToday } from '../orchestrator/budgets';
+import { isGoogleLlmCall, LLM_GOOGLE_WINDOW_MS } from '../ops-attention-adapters';
 import { readAgentsRegistry } from '../../routes/agents-registry';
 import {
   RoutineVerdict,
@@ -35,6 +54,9 @@ import {
   checkSpecMemoryQuarantine,
   checkSupabaseIoAudit,
   checkVitanaIndexHealth,
+  checkVoiceLabTriage,
+  checkLlmSpendBudget,
+  checkLlmFallbackWatch,
 } from './checks';
 
 export interface RunnerRoutine {
@@ -46,6 +68,16 @@ export interface RunnerRoutine {
 }
 
 export const RUNNER_ROUTINES: readonly RunnerRoutine[] = [
+  {
+    name: 'voice-lab-triage',
+    hour: 4,
+    minute: 30,
+    run: async () => {
+      const yesterday = await auditVoiceSessionOutcomes({ sinceHours: 24 });
+      const baseline = await auditVoiceSessionOutcomes({ sinceHours: 192, untilHours: 24 });
+      return checkVoiceLabTriage(yesterday, baseline);
+    },
+  },
   {
     name: 'agents-heartbeat',
     hour: 5,
@@ -79,6 +111,7 @@ export const RUNNER_ROUTINES: readonly RunnerRoutine[] = [
       return checkOasisEventAnomaly(today, baseline);
     },
   },
+  { name: 'llm-fallback-watch', hour: 7, minute: 15, run: async () => checkLlmFallbackWatch(await googleCallsLast24h()) },
   { name: 'vitana-index-health', hour: 7, minute: 30, run: async () => checkVitanaIndexHealth(await auditVitanaIndex()) },
   {
     name: 'knowledge-docs-freshness',
@@ -88,4 +121,6 @@ export const RUNNER_ROUTINES: readonly RunnerRoutine[] = [
   },
   { name: 'dyk-tour-progress', hour: 10, minute: 30, run: async () => checkDykTourProgress(await auditDykTourProgress()) },
   { name: 'spec-memory-quarantine', hour: 11, minute: 0, run: async () => checkSpecMemoryQuarantine(await auditSpecMemoryQuarantine()) },
+  // Budgets are per UTC day (budgets.ts), so the day's spend is read just before midnight.
+  { name: 'llm-spend-budget', hour: 23, minute: 50, run: async () => checkLlmSpendBudget(await spendToday()) },
 ];
