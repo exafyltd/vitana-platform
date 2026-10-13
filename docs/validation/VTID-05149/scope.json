@@ -1,0 +1,27 @@
+{
+  "vtid": "VTID-05149",
+  "files": [
+    "supabase/migrations/20261014000100_vtid_05149_tenants_default_platform_flags.sql",
+    "supabase/migrations/20261014000200_vtid_05149_signup_default_tenant.sql",
+    "supabase/migrations/20261014000300_vtid_05149_ci_tenant_isolation_health.sql",
+    "scripts/ci/sql-tests/run-tenant-foundation-test.sh",
+    "scripts/ci/sql-tests/vtid-05149-tenant-foundation.test.sql",
+    ".github/workflows/SQL-TENANT-FOUNDATION.yml",
+    ".github/workflows/MORNING-SYSTEM-HEALTH-CHECK.yml",
+    "services/gateway/src/services/tenancy/tenant-context.ts",
+    "services/gateway/src/services/tenancy/tenant-context-repository.ts",
+    "services/gateway/src/middleware/auth-supabase-jwt.ts",
+    "services/gateway/src/middleware/auth-supabase-jwt-repository.ts",
+    "services/gateway/src/routes/auth.ts",
+    "services/gateway/src/routes/auth-repository.ts",
+    "services/gateway/src/routes/universal-cart.ts",
+    "services/gateway/src/routes/universal-cart-context-repository.ts",
+    "services/gateway/test/vtid-05149-tenant-context.test.ts",
+    "services/gateway/test/vtid-05149-tenant-foundation-migrations.test.ts",
+    "services/gateway/test/middleware/auth-supabase-jwt.test.ts",
+    "services/gateway/test/vtid-05048-s4-caller-identity.test.ts",
+    "DATABASE_SCHEMA.md",
+    "docs/multitenancy/MIGRATION-QUEUE.md",
+    "docs/validation/VTID-05149/**"
+  ]
+}

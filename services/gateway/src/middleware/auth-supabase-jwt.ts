@@ -27,6 +27,13 @@ import * as jose from 'jose';
 import { getSupabase } from '../lib/supabase';
 import { upsertActiveDay } from '../services/guide/active-usage';
 import * as repo from './auth-supabase-jwt-repository';
+import {
+  resolvePrimaryTenant,
+  getTenantMeta,
+  type PrimaryTenantResult,
+  type TenantContext,
+  type TenantSource,
+} from '../services/tenancy/tenant-context';
 
 /**
  * Identity claims extracted from a validated Supabase JWT
@@ -54,7 +61,7 @@ const VITANA_ID_CACHE_TTL_MS = 5 * 60 * 1000;
 const vitanaIdCache = new Map<string, { vitana_id: string | null; expires_at: number }>();
 
 // VTID-03972: this middleware runs on every authenticated/optionally-authenticated
-// gateway request. resolveVitanaId()/fetchPrimaryTenantForUser() previously had
+// gateway request. resolveVitanaId()/the primary-tenant lookup previously had
 // no AbortController/timeout at all, so a slow Supabase moment (the platform's
 // own oasis_events I/O-stall pattern, see docs/CLAUDE.md changelog VTID-03954→65)
 // stalled every screen navigation, not just one route. Matches the
@@ -128,6 +135,9 @@ export interface AuthenticatedRequest extends Request {
   identity?: SupabaseIdentity;
   auth_raw_claims?: jose.JWTPayload;
   auth_source?: AuthSource;
+  // VTID-05149: set by requireTenant/requireAuthWithTenant once the tenant is
+  // final, or lazily by getTenantContext(). identity.tenant_id is unchanged.
+  tenant?: TenantContext;
 }
 
 /**
@@ -509,7 +519,8 @@ export function requireExafyAdmin(
 // ---------------------------------------------------------------------------
 
 const TENANT_MEMBERSHIP_CACHE_TTL_MS = 60 * 1000;
-const tenantMembershipCache = new Map<string, number>();
+// VTID-05149: the positive entry also keeps the membership's active_role.
+const tenantMembershipCache = new Map<string, { expiresAt: number; role: string | null }>();
 
 type MembershipLookup = 'member' | 'not_member' | 'unavailable';
 
@@ -519,9 +530,9 @@ function tenantMembershipCheckMode(): 'enforce' | 'log' {
 
 async function lookupTenantMembership(userId: string, tenantId: string): Promise<MembershipLookup> {
   const key = `${userId}:${tenantId}`;
-  const expiresAt = tenantMembershipCache.get(key);
-  if (expiresAt !== undefined) {
-    if (expiresAt > Date.now()) return 'member';
+  const cached = tenantMembershipCache.get(key);
+  if (cached !== undefined) {
+    if (cached.expiresAt > Date.now()) return 'member';
     tenantMembershipCache.delete(key);
   }
 
@@ -533,7 +544,10 @@ async function lookupTenantMembership(userId: string, tenantId: string): Promise
     const { data, error } = await repo.fetchMembershipForUserTenant(supabase, userId, tenantId, timeout.signal);
     if (error) return 'unavailable';
     if (!data) return 'not_member';
-    tenantMembershipCache.set(key, Date.now() + TENANT_MEMBERSHIP_CACHE_TTL_MS);
+    tenantMembershipCache.set(key, {
+      expiresAt: Date.now() + TENANT_MEMBERSHIP_CACHE_TTL_MS,
+      role: ((data as any).active_role as string | null | undefined) ?? null,
+    });
     return 'member';
   } catch {
     return 'unavailable';
@@ -545,6 +559,94 @@ async function lookupTenantMembership(userId: string, tenantId: string): Promise
 /** VTID-05043: drop every cached membership (tests; an admin removing a member). */
 export function clearTenantMembershipCache(): void {
   tenantMembershipCache.clear();
+}
+
+/** VTID-05149: active_role from a live positive membership cache entry, else null. */
+function cachedMembershipRole(userId: string, tenantId: string): string | null {
+  const cached = tenantMembershipCache.get(`${userId}:${tenantId}`);
+  return cached && cached.expiresAt > Date.now() ? cached.role : null;
+}
+
+// ---------------------------------------------------------------------------
+// VTID-05149: TenantContext on the request. The primary-tenant fallback goes
+// through services/tenancy/tenant-context.ts (deterministic: is_primary desc,
+// created_at, tenant_id), and once the tenant is final req.tenant carries its
+// slug, the caller's role in it, where it came from and the platform flag.
+// Tenant metadata that cannot be read leaves slug null / isPlatform false with
+// a warning; it never fails the request.
+// ---------------------------------------------------------------------------
+
+type PrimaryTenantOutcome = { tenantId: string; role: string | null; source: TenantSource } | null;
+
+/** Run the shared resolver with the auth lookup timeout; log the two failure kinds. */
+async function resolvePrimaryTenantForRequest(userId: string): Promise<PrimaryTenantOutcome> {
+  const timeout = abortAfter(AUTH_LOOKUP_TIMEOUT_MS);
+  let result: PrimaryTenantResult;
+  try {
+    result = await resolvePrimaryTenant(userId, { signal: timeout.signal });
+  } finally {
+    timeout.clear();
+  }
+  switch (result.status) {
+    case 'found':
+      console.log(`[VTID-01186] Resolved tenant from user_tenants for user ${userId}: ${result.tenantId}`);
+      return { tenantId: result.tenantId, role: result.role, source: result.source };
+    case 'none':
+      return null;
+    case 'unavailable':
+      console.warn(`[VTID-01186] Failed to resolve tenant from DB for user ${userId}`);
+      return null;
+    default: {
+      const unreachable: never = result;
+      return unreachable;
+    }
+  }
+}
+
+/** The source/role of a tenant that came from the token (after the VTID-05043 check). */
+function tokenTenantOrigin(identity: SupabaseIdentity): { source: TenantSource; role: string | null } {
+  return {
+    source: identity.exafy_admin ? 'exafy_admin_token' : 'token',
+    role: cachedMembershipRole(identity.user_id, identity.tenant_id!),
+  };
+}
+
+async function attachTenantContext(
+  req: AuthenticatedRequest,
+  tenantId: string,
+  source: TenantSource,
+  role: string | null
+): Promise<TenantContext> {
+  const meta = await getTenantMeta(tenantId);
+  if (!meta) {
+    console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+  }
+  req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+  return req.tenant;
+}
+
+/**
+ * VTID-05149: the request's TenantContext, resolved on first use and memoised
+ * on req.tenant. For routes behind requireAuth/optionalAuth (which add no DB
+ * call of their own). A token tenant is used only when the caller is a member
+ * of it (or exafy_admin); otherwise the primary membership. Null when there is
+ * no identity or no tenant could be resolved. Never changes identity.tenant_id.
+ */
+export async function getTenantContext(req: AuthenticatedRequest): Promise<TenantContext | null> {
+  if (req.tenant) return req.tenant;
+  const identity = req.identity;
+  if (!identity) return null;
+  if (identity.tenant_id) {
+    if (!identity.exafy_admin) {
+      const lookup = await lookupTenantMembership(identity.user_id, identity.tenant_id);
+      if (lookup !== 'member') return null;
+    }
+    const origin = tokenTenantOrigin(identity);
+    return attachTenantContext(req, identity.tenant_id, origin.source, origin.role);
+  }
+  const primary = await resolvePrimaryTenantForRequest(identity.user_id);
+  if (!primary) return null;
+  return attachTenantContext(req, primary.tenantId, primary.source, primary.role);
 }
 
 /**
@@ -614,28 +716,11 @@ export async function requireTenant(
     if (!applyTenantMembershipResult(req, res, lookup)) return;
   }
 
-  // If tenant_id missing from JWT, resolve from user_tenants table
+  // If tenant_id missing from JWT, resolve the primary membership (VTID-05149 resolver)
+  let primary: PrimaryTenantOutcome = null;
   if (!req.identity.tenant_id) {
-    const supabase = getSupabase();
-    if (supabase) {
-      const timeout = abortAfter(AUTH_LOOKUP_TIMEOUT_MS);
-      try {
-        const { data: tenantRow } = await repo.fetchPrimaryTenantForUser(supabase, req.identity.user_id, timeout.signal);
-
-        if (tenantRow?.tenant_id) {
-          req.identity.tenant_id = tenantRow.tenant_id;
-          console.log(
-            `[VTID-01186] Resolved tenant from user_tenants for user ${req.identity.user_id}: ${tenantRow.tenant_id}`
-          );
-        }
-      } catch (err: any) {
-        console.warn(
-          `[VTID-01186] Failed to resolve tenant from DB for user ${req.identity.user_id}: ${err.message}`
-        );
-      } finally {
-        timeout.clear();
-      }
-    }
+    primary = await resolvePrimaryTenantForRequest(req.identity.user_id);
+    if (primary) req.identity.tenant_id = primary.tenantId;
   }
 
   if (!req.identity.tenant_id) {
@@ -649,6 +734,9 @@ export async function requireTenant(
     });
     return;
   }
+
+  const origin = primary ?? tokenTenantOrigin(req.identity);
+  await attachTenantContext(req, req.identity.tenant_id, origin.source, origin.role);
 
   next();
 }
@@ -703,31 +791,11 @@ export async function requireAuthWithTenant(
     !needsTenantLookup && !req.identity.exafy_admin
       ? lookupTenantMembership(req.identity.user_id, req.identity.tenant_id!)
       : Promise.resolve('member');
-  const tenantLookup = needsTenantLookup
-    ? (async () => {
-        const supabase = getSupabase();
-        if (!supabase) return;
-        const timeout = abortAfter(AUTH_LOOKUP_TIMEOUT_MS);
-        try {
-          const { data: tenantRow } = await repo.fetchPrimaryTenantForUser(supabase, req.identity!.user_id, timeout.signal);
+  const tenantLookup: Promise<PrimaryTenantOutcome> = needsTenantLookup
+    ? resolvePrimaryTenantForRequest(req.identity.user_id)
+    : Promise.resolve(null);
 
-          if (tenantRow?.tenant_id) {
-            req.identity!.tenant_id = tenantRow.tenant_id;
-            console.log(
-              `[VTID-01186] Resolved tenant from user_tenants for user ${req.identity!.user_id}: ${tenantRow.tenant_id}`
-            );
-          }
-        } catch (err: any) {
-          console.warn(
-            `[VTID-01186] Failed to resolve tenant from DB for user ${req.identity!.user_id}: ${err.message}`
-          );
-        } finally {
-          timeout.clear();
-        }
-      })()
-    : Promise.resolve();
-
-  const [vitanaId, , membership] = await Promise.all([
+  const [vitanaId, primary, membership] = await Promise.all([
     resolveVitanaId(result.identity.user_id),
     tenantLookup,
     membershipLookup,
@@ -735,6 +803,7 @@ export async function requireAuthWithTenant(
   req.identity.vitana_id = vitanaId;
 
   if (!applyTenantMembershipResult(req, res, membership)) return;
+  if (primary) req.identity.tenant_id = primary.tenantId;
 
   // Still no tenant after DB lookup → reject
   if (!req.identity.tenant_id) {
@@ -748,6 +817,9 @@ export async function requireAuthWithTenant(
     });
     return;
   }
+
+  const origin = primary ?? tokenTenantOrigin(req.identity);
+  await attachTenantContext(req, req.identity.tenant_id, origin.source, origin.role);
 
   next();
 }

@@ -50,10 +50,6 @@ export async function fetchUserMemberships(sb: SupabaseClient, userId: string) {
   return sb.from('user_tenants').select('tenant_id, active_role, is_primary').eq('user_id', userId);
 }
 
-export async function fetchOldestTenant(sb: SupabaseClient) {
-  return sb.from('tenants').select('tenant_id').order('created_at', { ascending: true }).limit(1).single();
-}
-
 export async function upsertAppUserProvision(
   sb: SupabaseClient,
   row: { user_id: string; email: string | null | undefined; display_name: string; tenant_id: string | null },

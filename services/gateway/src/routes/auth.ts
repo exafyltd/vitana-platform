@@ -24,6 +24,7 @@ import { generatePersonalRecommendations } from '../services/recommendation-engi
 import { sendWelcomeChatMessages } from '../services/welcome-chat-service';
 import { addUserToSystemGroups } from '../services/community-group-enrollment';
 import * as repo from './auth-repository';
+import { getDefaultTenantId } from '../services/tenancy/tenant-context';
 import { isCognitoAuthConfigured, cognitoLogin, cognitoRefresh } from '../services/cognito-auth-client';
 
 const router = Router();
@@ -650,10 +651,14 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
           `app_users=${missingProfile ? 'MISSING' : 'ok'}, user_tenants=${missingMembership ? 'MISSING' : 'ok'}`
         );
 
-        // Resolve default tenant (oldest)
-        const { data: tenantRow } = await repo.fetchOldestTenant(supabase);
-
-        const defaultTenantId = tenantRow?.tenant_id as string | undefined;
+        // VTID-05149: the default tenant (tenants.is_default), never "the oldest"
+        // (maxina and alkalma share created_at). Unresolved → no membership.
+        const defaultTenantId = (await getDefaultTenantId()) ?? undefined;
+        if (!defaultTenantId) {
+          console.warn(
+            JSON.stringify({ event: 'default_tenant_unresolved', vtid: 'VTID-05149', user_id: identity.user_id })
+          );
+        }
 
         if (missingProfile) {
           const displayName = identity.email
