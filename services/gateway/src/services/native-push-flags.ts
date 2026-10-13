@@ -10,9 +10,9 @@
  */
 
 export function isNativePushDirectEnabled(): boolean {
-  return process.env.NATIVE_PUSH_DIRECT_ENABLED === 'true';
+  return (process.env.NATIVE_PUSH_DIRECT_ENABLED ?? '') === 'true';
 }
 
 export function isNativePushAppilixGuardEnabled(): boolean {
-  return process.env.NATIVE_PUSH_APPILIX_GUARD_ENABLED === 'true';
+  return (process.env.NATIVE_PUSH_APPILIX_GUARD_ENABLED ?? '') === 'true';
 }

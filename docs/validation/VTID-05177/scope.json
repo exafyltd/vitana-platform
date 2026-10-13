@@ -19,7 +19,7 @@
     "services/gateway/test/services/native-push-routing.vtid-05177.test.ts",
     "services/gateway/test/services/__golden__/vtid-05177-push-switch-off.json",
     "services/gateway/test/routes/notifications-token.vtid-05177.test.ts",
-    "services/gateway/test/vtid-05177-app-config.test.ts",
+    "services/gateway/test/app-config.test.ts",
     "services/gateway/test/vtid-04674-notification-controls-wiring.test.ts",
     "services/gateway/test/vtid-04883-community-ranking.test.ts",
     "docs/validation/VTID-05177/**"

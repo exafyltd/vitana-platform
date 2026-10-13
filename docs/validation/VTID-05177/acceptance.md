@@ -36,7 +36,7 @@ AC-1 `GET /api/v1/app-config`: no auth; `200 { ok, schema_version: 1, generated_
 { ios, android } }` with `min_supported_version '0.0.0'`, `recommended_version null`, `update_url null` and
 `push_enabled`, `health_sync_enabled`, `orb_native_enabled` all `false`; `Cache-Control: public, max-age=60`; no
 `user_id` / `email` / `tenant_id` anywhere in the body (deep key scan).
-TEST: test/vtid-05177-app-config.test.ts "GET /api/v1/app-config"
+TEST: test/app-config.test.ts "GET /api/v1/app-config"
 
 AC-2 Kill switches: `system_controls` rows `native_app.kill.<ios|android|all>.<flag>` that are enabled and unexpired
 force that flag `false`; `all` covers both platforms; expired, disarmed, unknown-platform, unknown-flag and malformed

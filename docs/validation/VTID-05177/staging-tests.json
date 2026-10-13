@@ -32,7 +32,7 @@
     },
     {
       "kind": "existing",
-      "ref": "npx jest test/services/native-push-golden.vtid-05177.test.ts test/services/native-push-routing.vtid-05177.test.ts test/routes/notifications-token.vtid-05177.test.ts test/vtid-05177-app-config.test.ts",
+      "ref": "npx jest test/services/native-push-golden.vtid-05177.test.ts test/services/native-push-routing.vtid-05177.test.ts test/routes/notifications-token.vtid-05177.test.ts test/app-config.test.ts",
       "cwd": "services/gateway",
       "reason": "Token registration (POST /api/v1/notifications/token) and push dispatch are writes to the database staging shares with production and sends to real members' devices, so a read-only staging suite cannot exercise them; NATIVE_PUSH_DIRECT_ENABLED and NATIVE_PUSH_APPILIX_GUARD_ENABLED stay unset on staging, so dispatch there is today's. These suites mock Supabase, FCM and Appilix and prove: the switch-off golden fixtures recorded from the unmodified code for all three dispatch sites (130 scenarios), switch-on native routing, badge and duplicate-guard rules, the token route's device_type allowlist with today's rows unchanged, and the app-config kill switches, 503, rate limit, mount and atlas claim."
     }

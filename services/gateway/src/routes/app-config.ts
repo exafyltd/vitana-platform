@@ -38,6 +38,7 @@ export function createAppConfigRouter(deps: AppConfigRouterDeps = {}): Router {
     legacyHeaders: false,
   });
 
+  // public-route — anonymous by design: the app reads its config before sign-in (VTID-05177).
   router.get('/', ipLimit, async (_req: Request, res: Response) => {
     const result = await readAppConfig();
     if (!result.ok) {
