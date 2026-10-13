@@ -35,6 +35,9 @@ jest.mock('../../src/services/enrichment/completion-resolver-repository', () => 
   upsertEnrichmentCardDismissal: jest.fn(),
 }));
 
+const emitOasisEvent = jest.fn(async (_e: unknown) => ({ ok: true }));
+jest.mock('../../src/services/oasis-event-service', () => ({ emitOasisEvent: (e: unknown) => emitOasisEvent(e) }));
+
 import * as repo from '../../src/services/enrichment/completion-resolver-repository';
 import { ENRICHMENT_CARD_TIPS } from '../../src/data/enrichment-card-tips';
 import { eligibleEnrichmentCards } from '../../src/services/enrichment/card-catalog';
@@ -277,6 +280,21 @@ describe('POST /dismiss', () => {
     expect(userId).toBe(ME.user_id);
     expect(cardType).toBe('E4');
     expect(nowIso).toBe(NOW.toISOString());
+    // OASIS: the member's own state change is recorded once.
+    expect(emitOasisEvent).toHaveBeenCalledTimes(1);
+    expect(emitOasisEvent.mock.calls[0][0]).toMatchObject({
+      vtid: 'VTID-05143', type: 'enrichment_card.dismissed', status: 'success', actor_id: ME.user_id,
+      payload: { user_id: ME.user_id, card_type: 'E4' },
+    });
+  });
+
+  it('a failing OASIS emit never fails the dismiss', async () => {
+    emitOasisEvent.mockRejectedValueOnce(new Error('oasis down'));
+    m.upsertEnrichmentCardDismissal.mockResolvedValue({
+      data: { card_type: 'E1', dismissed_at: NOW.toISOString(), cooldown_days: 7 }, error: null,
+    } as any);
+    const r = await request(app()).post('/api/v1/enrichment-cards/dismiss').send({ card_type: 'E1' });
+    expect(r.status).toBe(200);
   });
 
   it('a write error → 500 JSON', async () => {
@@ -285,6 +303,7 @@ describe('POST /dismiss', () => {
     const r = await request(app()).post('/api/v1/enrichment-cards/dismiss').send({ card_type: 'E1' });
     expect(r.status).toBe(500);
     expect(r.body).toEqual({ ok: false, error: 'DISMISS_FAILED' });
+    expect(emitOasisEvent).not.toHaveBeenCalled();
     spy.mockRestore();
   });
 });

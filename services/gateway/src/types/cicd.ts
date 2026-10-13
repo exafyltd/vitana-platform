@@ -164,6 +164,8 @@ export type CicdEventType =
   | 'companion.message.sent'
   | 'companion.message.failed'
   | 'companion.preferences.updated'
+  // VTID-05143: a member dismissed a Unified Card System enrichment card (7-day cooldown).
+  | 'enrichment_card.dismissed'
   | 'cicd.github.create_pr.requested'
   | 'cicd.github.create_pr.succeeded'
   | 'cicd.github.create_pr.failed'

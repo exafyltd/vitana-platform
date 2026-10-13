@@ -37,6 +37,7 @@ import {
 } from '../services/enrichment/card-catalog';
 import { loadEnrichmentCardState } from '../services/enrichment/completion-resolver';
 import { upsertEnrichmentCardDismissal } from '../services/enrichment/completion-resolver-repository';
+import { emitOasisEvent } from '../services/oasis-event-service';
 
 const router = Router();
 const LOG = '[ENRICHMENT-CARDS]';
@@ -114,7 +115,15 @@ router.post('/dismiss', requireAuth, async (req: Request, res: Response) => {
       dismissed_at: row.dismissed_at ?? nowIso,
       cooldown_days: row.cooldown_days ?? null,
     });
-    return res.json({ ok: true, card_type: cardType, dismissed_until: until ? until.toISOString() : null });
+    const dismissedUntilIso = until ? until.toISOString() : null;
+    // A member's own state change — recorded fire-and-forget; never fails the dismiss.
+    void emitOasisEvent({
+      vtid: 'VTID-05143', type: 'enrichment_card.dismissed', source: 'enrichment-cards', status: 'success',
+      message: `member dismissed enrichment card ${cardType}`,
+      payload: { user_id: identity.user_id, card_type: cardType, dismissed_until: dismissedUntilIso },
+      actor_id: identity.user_id, actor_role: 'user', surface: 'api',
+    }).catch(() => undefined);
+    return res.json({ ok: true, card_type: cardType, dismissed_until: dismissedUntilIso });
   } catch (err: any) {
     console.error(`${LOG} POST /dismiss ${cardType} failed:`, err?.message || err);
     return res.status(500).json({ ok: false, error: 'DISMISS_FAILED' });

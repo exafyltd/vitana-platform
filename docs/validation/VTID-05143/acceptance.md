@@ -12,7 +12,8 @@ CURL_PROOF: unauthenticated `GET /api/v1/enrichment-cards?screen=home` answers 4
 
 MIGRATION: `supabase/migrations/20261013200000_vtid_05143_unified_card_system.sql` — `user_enrichment_cards` (plan §3.2 without `completed_at`; `CREATE INDEX IF NOT EXISTS`; `DROP POLICY IF EXISTS` before each `CREATE POLICY`; table COMMENT names VTID-05085 and VTID-05143) and `profiles.interests TEXT[] DEFAULT '{}'`. Documented in `DATABASE_SCHEMA.md`. Checked locally on PGlite (outputs/step1-pglite-migration.log). Apply after merge via `RUN-MIGRATION.yml`, then confirm read-only that the table exists. Until it is applied, `GET` answers 500 JSON (the `profiles.interests` and `user_enrichment_cards` reads fail loudly), so the vitana-v1 PR must not merge before the migration is applied.
 
-OASIS_IMPACT: no — no state transition worth an OASIS event; a card dismissal is member UI state.
+OASIS_IMPACT: yes
+OASIS_PROOF: `POST /api/v1/enrichment-cards/dismiss` emits `enrichment_card.dismissed` (vtid VTID-05143, actor = the member, payload user_id/card_type/dismissed_until) fire-and-forget after a successful upsert; topic added to services/gateway/src/types/cicd.ts. A failed upsert emits nothing; a failing emit never fails the dismiss. Proven in test/routes/enrichment-cards.test.ts ("POST /dismiss" block). Added after the impact scan's new-mutation-without-oasis-emit warning on #4085.
 
 ## Acceptance criteria
 

@@ -11,6 +11,7 @@
     "services/gateway/src/data/enrichment-card-tips.ts",
     "services/gateway/src/index.ts",
     "services/gateway/src/orb/developer/domain-atlas.ts",
+    "services/gateway/src/types/cicd.ts",
     "services/gateway/test/services/enrichment/completion-resolver.test.ts",
     "services/gateway/test/services/enrichment/completion-resolver-repository.test.ts",
     "services/gateway/test/routes/enrichment-cards.test.ts",
