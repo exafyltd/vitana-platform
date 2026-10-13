@@ -36,9 +36,13 @@ import { resolveCompanionConfig, isSendMode, type CompanionConfig } from './conf
 import { deliverCompanionMessage, type DeliveryInput, type DeliveryResult } from './delivery';
 import { localTime, minusDays } from './local-time';
 import { pickMoment, type MemberContext, type MomentCandidate } from './moments';
+import { backoffDecision } from './backoff';
+import { fetchMemberSignals, memberSignals, type FetchSignals } from './signals';
 
 const VTID = 'VTID-05099';
-const LEDGER_LOOKBACK_DAYS = 14;
+// VTID-05101: long enough for the weekly back-off (7 unreplied sends at a
+// weekly cadence) and the moments' anti-repeat windows.
+const LEDGER_LOOKBACK_DAYS = 60;
 
 export interface CompanionTickResult {
   ok: boolean;
@@ -55,6 +59,8 @@ export interface CompanionTickResult {
   send_failed?: number;
   moments?: Record<string, number>;
   skipped?: Record<string, number>;
+  /** VTID-05101: signal sources that could not be read this tick (their moments did not fire). */
+  signals_unavailable?: string[];
   error?: string;
 }
 
@@ -70,6 +76,8 @@ export interface CompanionTickDeps {
   /** VTID-05100: send-mode seams. */
   deliver?: (input: DeliveryInput) => Promise<DeliveryResult>;
   staffIds?: (sb: SupabaseClient, members: repo.MemberRow[]) => Promise<Set<string>>;
+  /** VTID-05101: Phase 3 member signals, one batch per page of members. */
+  signals?: FetchSignals;
 }
 
 export async function runCompanionTick(deps: CompanionTickDeps): Promise<CompanionTickResult> {
@@ -85,6 +93,7 @@ export async function runCompanionTick(deps: CompanionTickDeps): Promise<Compani
   const locales = deps.locales ?? bulkGetUserLocales;
   const deliver = deps.deliver ?? ((input: DeliveryInput) => deliverCompanionMessage(input, { sb }));
   const staffIds = deps.staffIds ?? repo.fetchStaffMemberIds;
+  const fetchSignals = deps.signals ?? fetchMemberSignals;
 
   const excluded = await fetchExcludedTestServiceAccountIdsStrict(sb);
   if (!excluded.ok) return { ok: false, mode: config.mode, reason: 'exclusion_unavailable', error: excluded.error };
@@ -114,16 +123,19 @@ export async function runCompanionTick(deps: CompanionTickDeps): Promise<Compani
   let composeFailed = 0;
   let sent = 0;
   let sendFailed = 0;
+  let signalsUnavailable: string[] = [];
 
   if (inWindow.length > 0) {
     const ids = inWindow.map((m) => m.user_id);
     const earliest = inWindow.map((m) => m.date).sort()[0];
-    const [prefs, ledger, onboarding, localeMap] = await Promise.all([
+    const [prefs, ledger, onboarding, localeMap, signals] = await Promise.all([
       repo.fetchPreferences(sb, ids),
       repo.fetchRecentLedger(sb, ids, minusDays(earliest, LEDGER_LOOKBACK_DAYS)),
       repo.fetchOnboardingTouches(sb, ids, earliest),
       locales(sb, ids),
+      fetchSignals(sb, ids, now),
     ]);
+    signalsUnavailable = signals.unavailable;
     const prefBy = new Map(prefs.map((p) => [p.user_id, p]));
     const ledgerBy = new Map<string, repo.LedgerRow[]>();
     for (const r of ledger) {
@@ -154,6 +166,8 @@ export async function runCompanionTick(deps: CompanionTickDeps): Promise<Compani
       const rows = ledgerBy.get(m.user_id) ?? [];
       if (rows.some((r) => r.local_date === m.date)) { skip('already_today'); continue; }
       if (onboardingToday.has(`${m.user_id}|${m.date}`)) { skip('onboarding_touched_today'); continue; }
+      // VTID-05101 back-off: unanswered real sends slow Vitana down (ledger only).
+      if (!backoffDecision(rows, m.date).allow) { skip('backoff'); continue; }
 
       const decision = await pacer(m.user_id);
       if (!decision.allow) { skip(`pacer_${decision.reason ?? 'denied'}`); continue; }
@@ -178,6 +192,7 @@ export async function runCompanionTick(deps: CompanionTickDeps): Promise<Compani
         },
         vitanaIndex: index,
         lastUsed,
+        ...memberSignals(signals.by.get(m.user_id), rows, m.date),
       };
       const moment = pickMoment(ctx);
       const sendMode = sendModeFor(m.user_id);
@@ -228,6 +243,7 @@ export async function runCompanionTick(deps: CompanionTickDeps): Promise<Compani
     members: members.length, in_window: inWindow.length, decided, composed, compose_failed: composeFailed,
     ...(isSendMode(config.mode) ? { sent, send_failed: sendFailed } : {}),
     moments, skipped,
+    ...(signalsUnavailable.length > 0 ? { signals_unavailable: signalsUnavailable } : {}),
   };
   // One aggregate event per tick that decided something — never one per member,
   // and nothing for a tick that found no one (OASIS: decisions, not polling).
