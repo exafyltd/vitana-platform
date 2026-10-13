@@ -195,5 +195,7 @@
   "autopilot.auto.event_rsvp_referral.summary": "你是通过活动邀请加入的。报名以保留你的名额。",
   "autopilot.auto.share_milestone.title": "分享你的里程碑：{milestone}",
   "autopilot.auto.share_milestone.summary": "你达成了一个里程碑。与社区分享——发布前你会先看到帖子。",
-  "sms.phone_verification.code": "你的 Vitanaland 验证码：{code}。不要告诉任何人。"
+  "sms.phone_verification.code": "你的 Vitanaland 验证码：{code}。不要告诉任何人。",
+  "notif.vitana_companion_message.title": "来自 Vitana 的消息",
+  "notif.vitana_companion_message.body": "Vitana 给你发了一条消息——点按即可阅读。"
 }

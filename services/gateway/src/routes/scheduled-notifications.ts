@@ -48,7 +48,7 @@ import { requireScheduledNotificationsAuth, scheduledNotificationsAuthStatus, ev
 import { runCoachTick } from '../services/onboarding-coach/coach-service';
 import { resolveCoachConfig } from '../services/onboarding-coach/config';
 import { runCompanionTick } from '../services/companion/companion-service';
-import { resolveCompanionConfig } from '../services/companion/config';
+import { resolveCompanionConfig, isSendMode } from '../services/companion/config';
 const router = Router();
 
 // VTID-04677: every route below fans out notifications to members, so each
@@ -1674,10 +1674,10 @@ router.post('/onboarding-coach-tick', async (req: Request, res: Response) => {
   }
 });
 
-// VTID-05099 — Vitana Companion Messages tick (Phase 1: SHADOW ONLY).
+// VTID-05099 — Vitana Companion Messages tick (shadow; VTID-05100 adds staff/live sending, gated off by COMPANION_SEND_ENABLED).
 // Every 15 minutes (EventBridge, production gateway only). Decides, for each
 // member inside their local morning window, the one moment + Vitana card
-// Vitana would bring today and records it; composes a capped sample. Sends
+// Vitana would bring today and records it; composes a capped sample. In shadow it sends
 // nothing. The staging gateway answers 409 — it shares the production database.
 router.post('/companion-tick', async (req: Request, res: Response) => {
   const auth = evaluateScheduledNotificationsAuth(req);
@@ -1688,7 +1688,8 @@ router.post('/companion-tick', async (req: Request, res: Response) => {
   if (config.mode === 'disabled-on-staging') {
     return res.status(409).json({ ok: false, mode: config.mode, error: 'companion messages do not run on staging' });
   }
-  if (config.mode !== 'shadow') return res.json({ ok: true, mode: config.mode, reason: config.reason });
+  // VTID-05100: staff/live exist only with COMPANION_SEND_ENABLED=true (config.ts).
+  if (config.mode !== 'shadow' && !isSendMode(config.mode)) return res.json({ ok: true, mode: config.mode, reason: config.reason });
 
   const supa = await getServiceClient();
   if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });

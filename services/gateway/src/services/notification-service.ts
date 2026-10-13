@@ -107,6 +107,9 @@ export const TYPE_META: Record<string, TypeMeta> = {
   orb_proactive_message:           { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },
   conversation_followup_reminder:  { channel: 'inapp',          priority: 'p2', category: 'chat' },
   orb_suggestion:                  { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },
+  // VTID-05100: Vitana Companion Messages — one proactive Vitana DM a day.
+  // p2 so the member's quiet hours hold the push (the DM still lands).
+  vitana_companion_message:        { channel: 'push_and_inapp', priority: 'p2', category: 'chat' },
   // Emitted by the notify_on_reaction() Postgres trigger on message_reactions
   // inserts (not via notifyUser()), so this entry is documentation/parity
   // only — the trigger hardcodes the same channel/priority in its INSERT.
