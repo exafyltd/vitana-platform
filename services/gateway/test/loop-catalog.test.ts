@@ -139,7 +139,7 @@ describe('VTID-05084 loop catalog — contract', () => {
   it('VTID-05098: every overlap says what the Simplify loop did with it', () => {
     const byId = Object.fromEntries(catalog.overlaps.map((o) => [o.id, o.status]));
     expect(byId).toEqual({
-      O1: 'resolved', O2: 'partly_resolved', O3: 'partly_resolved', O4: 'resolved', O5: 'resolved',
+      O1: 'resolved', O2: 'resolved', O3: 'resolved', O4: 'resolved', O5: 'resolved',
       O6: 'resolved', O7: 'resolved', O8: 'resolved', O9: 'not_a_duplicate', O10: 'not_a_duplicate',
     });
     for (const o of catalog.overlaps) {
@@ -200,7 +200,7 @@ describe('VTID-05084 validateCatalog rejects broken contracts', () => {
     c.overlaps[1].resolution = '';
     expect(validateCatalog(c)).toEqual(expect.arrayContaining([
       'overlap O1: bad status done',
-      'overlap O2: partly_resolved needs a resolution',
+      'overlap O2: resolved needs a resolution',
     ]));
   });
 

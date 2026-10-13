@@ -28503,6 +28503,10 @@ var FALLBACK_HEALTH_ENDPOINTS = [
     { name: 'VTID Ledger Integrity', url: '/api/v1/ops/health/vtid-ledger', group: 'Governance & Integrity' },
     { name: 'ORB Session Ledger', url: '/api/v1/ops/health/orb-session-ledger', group: 'Data & Memory' },
     { name: 'Push Dispatch', url: '/api/v1/ops/health/push-dispatch', group: 'Automation & Scheduling' },
+    // VTID-05141: gateway twins of three ALERT-* workflows.
+    { name: 'Welcome Greeting', url: '/api/v1/ops/health/welcome-greeting', group: 'Community & Social' },
+    { name: 'ORB Bootstrap Latency', url: '/api/v1/ops/health/orb-bootstrap-latency', group: 'AI & Assistant' },
+    { name: 'New-Day Briefing Loop', url: '/api/v1/ops/health/newday-briefing-loop', group: 'AI & Assistant' },
     // VTID-04664: systems that had no check.
     { name: 'STAGING-VERIFY', url: '/api/v1/ops/runtime/deploy/staging-verify', group: 'Deploy & Release' },
     { name: 'Staging Deploy', url: '/api/v1/ops/runtime/deploy/staging-deploy', group: 'Deploy & Release' },

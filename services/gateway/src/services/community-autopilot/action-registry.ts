@@ -25,6 +25,7 @@
  */
 import { randomUUID } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { assertAgentEnabled } from '../orchestrator/run-ledger';
 
 export type ActionRisk = 'low' | 'medium';
 export type ActionChannel = 'app' | 'voice' | 'calendar' | 'system';
@@ -276,14 +277,24 @@ async function runViaOrbTool(action: RecommendationAction, ctx: ActionContext, s
   return { ok: true as const, result: r.result, text: typeof r.text === 'string' ? r.text : undefined };
 }
 
+export const COMMUNITY_AUTOPILOT_AGENT_ID = 'community-autopilot';
+
 async function claimRun(sb: SupabaseClient, action: RecommendationAction, ctx: ActionContext): Promise<
-  { claimed: true; runId: string } | { claimed: false; runId: string | null }
+  | { claimed: true; runId: string }
+  | { claimed: false; runId: string | null }
+  | { claimed: false; refused: true; error: string }
 > {
+  // VTID-05141 (P4): agents_registry.enabled kill switch. Unlike a ledger
+  // outage (fail-open below), an operator switching the agent off stops it.
+  const gate = await assertAgentEnabled(sb, COMMUNITY_AUTOPILOT_AGENT_ID, {
+    plane: 'community_autopilot', action_kind: action.kind, recommendation_id: ctx.recommendationId,
+  });
+  if (!gate.allowed) return { claimed: false, refused: true, error: gate.error };
   const runId = randomUUID();
   const key = idempotencyKeyFor(ctx.recommendationId, action.kind);
   const { error } = await sb.from('agent_runs').insert({
     id: runId,
-    agent_id: 'community-autopilot',
+    agent_id: COMMUNITY_AUTOPILOT_AGENT_ID,
     plane: 'community_autopilot',
     principal: { platform_role: 'community', channel: ctx.channel },
     user_id: ctx.userId,
@@ -345,6 +356,7 @@ export async function executeRecommendationAction(
   }
 
   const claim = await claimRun(sb, action, ctx);
+  if ('refused' in claim) return { status: 'failed', kind: action.kind, run_id: null, error: claim.error };
   if (!claim.claimed) return { status: 'already_executed', kind: action.kind, run_id: claim.runId };
 
   try {

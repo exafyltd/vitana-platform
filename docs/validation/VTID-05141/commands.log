@@ -1,0 +1,10 @@
+# VTID-05141 local checks (2026-10-13)
+npx tsc --noEmit -p services/gateway                                                     # clean
+npx jest (services/gateway, full suite)                                                  # 1670 suites passed, 1 failed (vtid-04721 pinned the push workflow's old inline 48 h query) → updated to the route; re-run 4/4 pass
+npx jest test/routine-runner test/ops-health test/ops-runtime test/services/orchestrator test/loop-catalog.test.ts test/command-hub test/vtid-04662-* test/vtid-04875-* test/vtid-05077-* test/routine-audits.test.ts   # 68 suites, 1041 pass
+psql (throwaway local PG16) -f docs/validation/VTID-05141/migration-test.sql             # all assertions passed (outputs: migration-test.out)
+node staging-verify validateManifest over every docs/validation/*/staging-tests.json      # 0 invalid manifests
+node --test scripts/ci/staging-verify/lib.test.cjs                                       # 44 pass
+node services/gateway/scripts/generate-command-hub-symbol-index.mjs                      # regenerated after the app.js change
+read-only prod: routine_runs gateway-runner rows 2026-10-13                              # all 9 Phase 3a routines ran (knowledge-docs threshold printed 29.700000000000003 → rounded in this change)
+read-only prod: llm.call.completed last 24 h                                             # 783 events, 0 fallback_used (spend data exists)
