@@ -154,6 +154,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const memoryRouter = require('./routes/memory').default;
   // VTID-04388: Memory Garden on the canonical store
   const memoryGardenRouter = require('./routes/memory-garden').default;
+  // VTID-05169: Life Timeline API (Index spotlight, moments, hide/delete)
+  const timelineRouter = require('./routes/timeline').default;
   // VTID-04407/04408: developer memory (morning pack, Operator thread handoffs)
   const devMemoryRouter = require('./routes/dev-memory').default;
   // VTID-01099: Memory Governance Routes - visibility, lock, delete, export
@@ -1185,6 +1187,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/memory', semanticMemoryRouter, { owner: 'semantic-memory' });
   // VTID-04388: /api/v1/memory/garden/{entries,categories}
   mountRouterSync(app, '/api/v1', memoryGardenRouter, { owner: 'memory-garden' });
+  // VTID-05169: /api/v1/timeline{,/spotlight,/summary,/:id,/:id/hide-from-ai}
+  mountRouterSync(app, '/api/v1/timeline', timelineRouter, { owner: 'timeline' });
   mountRouterSync(app, '/api/v1/dev-memory', devMemoryRouter, { owner: 'dev-memory' });
 
   // VTID-01095: Daily Scheduler - daily recompute pipeline
