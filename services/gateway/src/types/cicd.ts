@@ -971,6 +971,15 @@ export type CicdEventType =
   // Payloads carry sites, codes and counts only, never member ids or health values.
   | 'health.sources.dual_write_failed'
   | 'health.sources.reconcile'
+  // VTID-05159 (Health Hub A2): health store state transitions. Payloads carry
+  // ids and counts only, never member health values. Per-batch success is
+  // telemetry (structured log + health_ingest_batches), never an OASIS event.
+  | 'health.store.source.first_data'
+  | 'health.store.batch.quarantined'
+  | 'health.store.quota.exceeded'
+  | 'health.store.maintenance.completed'
+  | 'health.store.maintenance.failed'
+  | 'health.store.partition_missing'
   // VTID-02300: Phase 3 outbound action consent events
   | 'connector.action.requested'
   | 'connector.action.executed'

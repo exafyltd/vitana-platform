@@ -179,6 +179,45 @@ export async function hasHealthConsent(
   return checkActiveConsentRow(sb, identity, mapping.resource_type, resource, mapping.scope);
 }
 
+/**
+ * VTID-05159 (Health Hub Phase 1 / A2, shared interface S7): the same check as
+ * hasHealthConsent(), returning the active consent row's id (the health store
+ * keeps it as `consent_id`, provenance only) or null. Fail closed: an unknown
+ * category, a missing per-resource id, an error or an exception is null.
+ */
+export async function findActiveHealthConsentId(
+  sb: SupabaseClient,
+  identity: ConsentIdentity,
+  category: HealthConsentCategoryKey,
+  resourceId?: string | null,
+): Promise<string | null> {
+  if (!isHealthConsentCategoryKey(category)) return null;
+  const resource = resolveConsentResourceId(category, resourceId);
+  if (!resource) return null;
+  const mapping = HEALTH_CONSENT_CATEGORY_MAP[category];
+  try {
+    const { data, error } = await sb
+      .from('data_sharing_consents')
+      .select('id')
+      .eq('tenant_id', identity.tenant_id)
+      .eq('user_id', identity.user_id)
+      .eq('resource_type', mapping.resource_type)
+      .eq('resource_id', resource)
+      .eq('scope', mapping.scope)
+      .is('revoked_at', null)
+      .maybeSingle();
+    if (error) {
+      console.error(`[${HEALTH_CONSENT_VTID}] consent id lookup failed (treated as not granted): ${error.message}`);
+      return null;
+    }
+    const id = (data as { id?: unknown } | null)?.id;
+    return typeof id === 'string' && id.length > 0 ? id : null;
+  } catch (err) {
+    console.error(`[${HEALTH_CONSENT_VTID}] consent id lookup threw (treated as not granted): ${String(err)}`);
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Writes
 // ---------------------------------------------------------------------------

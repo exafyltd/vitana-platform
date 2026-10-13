@@ -150,6 +150,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const backofficeCommandsRouter = require('./routes/backoffice-commands').default;
   // VTID-01081 + VTID-01103: Health Gateway (C2 ingest + C3 compute)
   const healthRouter = require('./routes/health').default;
+  // VTID-05159: health store internal routes (Health Hub Phase 1 / A2)
+  const healthStoreInternalRouter = require('./routes/health-store-internal').default;
   // VTID-01105: Memory Gateway Routes - memory write/context for ORB
   const memoryRouter = require('./routes/memory').default;
   // VTID-04388: Memory Garden on the canonical store
@@ -1172,6 +1174,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01081 + VTID-01103: Health Gateway (C2 ingest + C3 compute)
   mountRouterSync(app, '/api/v1/health', healthRouter, { owner: 'health' });
+  // VTID-05159: health store internal routes (maintenance, reprocess, erase-raw, store-status) — dark by default
+  mountRouterSync(app, '/api/v1/health/internal', healthStoreInternalRouter, { owner: 'health-store-internal' });
 
   // VTID-01105: Memory Gateway - write/context endpoints for ORB memory
   mountRouterSync(app, '/api/v1/memory', memoryRouter, { owner: 'memory' });
