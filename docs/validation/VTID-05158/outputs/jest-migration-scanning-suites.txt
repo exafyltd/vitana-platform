@@ -1,0 +1,34 @@
+# gateway Jest: every suite that scans supabase/migrations + the drift parser suite
+PASS test/vtid-04560-role-separation-regression.test.ts
+PASS test/vtid-04456-customer-support-pipeline-regression.test.ts
+PASS test/vtid-04982-rewards-shop.test.ts
+PASS test/vtid-04868-plan-sparring-migration.test.ts
+PASS test/vtid-04981-consume-credits-lockdown.test.ts
+PASS test/vtid-04988-earned-vtna-rewards-only.test.ts
+PASS test/vtid-05041-definer-lockdown.test.ts
+PASS test/vtid-05147-s-m-membership-role-lockdown.test.ts
+PASS test/vtid-04465-operator-pipeline-regression.test.ts (14.799 s)
+PASS test/vtid-04809-vtna-reward-ledger.test.ts
+PASS test/vtid-04878-capped-reward-migration.test.ts
+PASS test/vtid-04331-calendar-data-model.test.ts
+PASS test/navigation/vtid-04880-legacy-navigator-retired.test.ts
+PASS test/vtid-05012-jev-gate-observability.test.ts
+PASS test/vtid-04860-vtna-token-name.test.ts
+PASS test/vtid-04864-vtna-reward-rules.test.ts
+PASS test/vtid-04859-founding-1000.test.ts
+PASS test/loop-catalog.test.ts
+PASS test/autopilot-onboarding-seed-bundle.test.ts
+PASS test/vtid-05043-s3-migrations.test.ts
+PASS test/partner-health/link-confirmation.test.ts
+PASS test/calendar/calendar-coverage.guard.test.ts
+PASS test/vtid-05055-member-link-migration.test.ts
+PASS test/services/journey-stage/b4-walls.test.ts
+PASS test/vtid-03832-vitana-roles-constant.test.ts
+PASS test/vtid-04740-product-clicks-rls.test.ts
+PASS test/vtid-05038-alle-beisammen-enrollment.test.ts
+PASS test/vtid-04716-feature-data-layers.test.ts
+PASS test/vtid-04892-onboarding-journey-pacer.test.ts
+PASS test/scripts/check-migration-drift.test.ts
+PASS test/vtid-05149-tenant-foundation-migrations.test.ts (28.473 s)
+Test Suites: 31 passed, 31 total
+Tests:       574 passed, 574 total
