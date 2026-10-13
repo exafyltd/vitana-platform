@@ -159,6 +159,13 @@ export type CicdEventType =
   | 'onboarding.coach.stage_changed'
   // VTID-05099: Vitana Companion Messages — one aggregate event per tick that decided something.
   | 'companion.tick.completed'
+  // VTID-05100: a real companion DM delivered / failed (per member — a real
+  // state transition, unlike the shadow tick), and a member's own settings change.
+  | 'companion.message.sent'
+  | 'companion.message.failed'
+  | 'companion.preferences.updated'
+  // VTID-05143: a member dismissed a Unified Card System enrichment card (7-day cooldown).
+  | 'enrichment_card.dismissed'
   | 'cicd.github.create_pr.requested'
   | 'cicd.github.create_pr.succeeded'
   | 'cicd.github.create_pr.failed'
@@ -864,6 +871,11 @@ export type CicdEventType =
   | 'dev_autopilot.execution.auto_merge_declined'
   | 'dev_autopilot.execution.llm_review_passed'
   | 'dev_autopilot.execution.llm_review_blocked'
+  // VTID-05146 (Phase C): overlap hold, its release and timeout; review fail-closed.
+  | 'dev_autopilot.execution.held_overlap'
+  | 'dev_autopilot.execution.overlap_released'
+  | 'dev_autopilot.execution.overlap_hold_timeout'
+  | 'dev_autopilot.execution.llm_review_unavailable'
   | 'dev_autopilot.execution.deployed'
   | 'dev_autopilot.execution.deploy_failed'
   | 'dev_autopilot.execution.verification_failed'
@@ -1099,6 +1111,9 @@ export type CicdEventType =
   | 'partner_org.member_joined'
   | 'partner_org.activated'
   | 'partner_org.registry_linked'
+  // VTID-05023: auth -> Aurora bridge (a member provisioned / cleaned up on Aurora)
+  | 'auth_bridge.user.provisioned'
+  | 'auth_bridge.user.deleted'
   // VTID-04478: Commerce partner onboarding engine
   | 'partner_org.onboarding_started'
   | 'partner_org.company_updated'
@@ -1184,7 +1199,12 @@ export type CicdEventType =
   // VTID-05068: a running Kiro run was taken over by a new gateway task after a deploy (run id, thread id, status only)
   | 'operator.kiro.run_reattached'
   // VTID-05067: an image pasted into the Operator Console was stored (media id, thread id, type, size; never the bytes)
-  | 'operator.media.uploaded';
+  | 'operator.media.uploaded'
+  // VTID-05150: tenant provisioning (exafy_admin). Payloads carry ids, slug, counts and field
+  // names only — never an invitation token or an email address.
+  | 'tenant.provisioned'
+  | 'tenant.brand_pack.updated'
+  | 'tenant.asset.uploaded';
 
 export interface CicdOasisEvent {
   vtid: string;

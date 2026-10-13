@@ -1,0 +1,3 @@
+PASS vtid-04765 erase_user_data
+PASS vtid-05158 erase_user_data without auth.users
+exit=0

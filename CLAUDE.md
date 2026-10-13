@@ -104,6 +104,15 @@ post-deploy check result in one line.
 
 ---
 
+## 🤝 CLAUDE CODE ↔ KIRO COLLABORATION (STANDING RULE — VTID-05145)
+
+Git is the only channel between Claude Code and Kiro sessions — the owner never relays. At session start run
+`node <vitana-platform>/scripts/collab/queue.mjs --repo <vitana-platform> --repo <vitana-v1>` and work lanes whose
+`next_actor` is you; state your session id + lane in your first reply; claim a lane before touching it, one session per
+lane; push and update the lane file before ending. Full rules: `.claude/rules/collaboration.md`.
+
+---
+
 # PART 1: CORE RULES (Always / Never / If–Then)
 
 These are **non-negotiable behavioral rules** for developing the Vitana platform.

@@ -1,0 +1,24 @@
+{
+  "vtid": "VTID-05143",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261013200000_vtid_05143_unified_card_system.sql",
+    "DATABASE_SCHEMA.md",
+    "services/gateway/src/services/enrichment/card-catalog.ts",
+    "services/gateway/src/services/enrichment/completion-resolver.ts",
+    "services/gateway/src/services/enrichment/completion-resolver-repository.ts",
+    "services/gateway/src/routes/enrichment-cards.ts",
+    "services/gateway/src/data/enrichment-card-tips.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/orb/developer/domain-atlas.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/test/services/enrichment/completion-resolver.test.ts",
+    "services/gateway/test/services/enrichment/completion-resolver-repository.test.ts",
+    "services/gateway/test/services/enrichment/boost-triggers.test.ts",
+    "services/gateway/test/routes/enrichment-cards.test.ts",
+    "services/gateway/test/data/enrichment-card-tips.locale-coverage.test.ts",
+    "docs/validation/VTID-05143/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

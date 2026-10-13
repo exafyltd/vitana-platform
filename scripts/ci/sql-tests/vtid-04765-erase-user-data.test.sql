@@ -13,6 +13,9 @@ create schema if not exists auth;
 create table if not exists auth.users (id uuid primary key);
 
 \ir ../../../supabase/migrations/20261001120000_vtid_04765_erase_user_data.sql
+-- VTID-05158: the Aurora-safe replacement must keep every assertion below
+-- (with the auth.users stub) passing unchanged.
+\ir ../../../supabase/migrations/20261014100000_vtid_05158_erase_user_data_aurora_safe.sql
 
 -- Users: A is erased, B must be untouched.
 insert into auth.users values ('00000000-0000-0000-0000-00000000000a'), ('00000000-0000-0000-0000-00000000000b');

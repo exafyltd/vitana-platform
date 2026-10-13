@@ -270,7 +270,11 @@ export type GatewayI18nKey =
   // push notification has a fixed contract and must stay translated and
   // reviewable, same as every other entry in this file.
   | 'notif.day_close.title'
-  | 'notif.day_close.body';
+  | 'notif.day_close.body'
+  // VTID-05100: push for a Vitana Companion Message. The DM itself is composed
+  // by the model (rule 41); the lock-screen title/body are fixed catalog text.
+  | 'notif.vitana_companion_message.title'
+  | 'notif.vitana_companion_message.body';
 
 type LocaleCatalog = Record<GatewayI18nKey, string>;
 

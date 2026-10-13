@@ -72,7 +72,11 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
   // Falls back to the raw JWT role if resolution fails or tenant is unknown.
   const tenantId = req.identity?.tenant_id ?? null;
   const effectiveRole = tenantId
-    ? await resolveEffectiveRole(userId, tenantId).catch(() => null)
+    ? await resolveEffectiveRole(userId, tenantId, {
+        // VTID-05147: a non-exafy role outside the permitted set resolves to
+        // 'community', so developerGate below sees the clamped role.
+        exafyAdmin: req.identity?.exafy_admin === true,
+      }).catch(() => null)
     : null;
   const identity: OrbToolIdentity = {
     user_id: userId,

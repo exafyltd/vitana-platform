@@ -8,12 +8,14 @@
  *
  * Security (Batch 1.B1 — dual-mode):
  * - exafy_admin: full cross-tenant access (sees all users, all memberships)
- * - tenant admin (active_role = 'admin'): scoped to their own tenant only
+ * - tenant admin (active_role = 'admin' AND a permitted admin role, VTID-05147):
+ *   scoped to their own tenant only
  */
 
 import { Router, Request, Response } from 'express';
 import { VALID_ROLES } from '../constants/vitana-roles';
 import { getSupabase } from '../lib/supabase';
+import { fetchPermittedRoles } from '../lib/permitted-roles';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import * as repo from './admin-users-repository';
 
@@ -84,6 +86,14 @@ async function verifyAdminAccess(
     }
 
     if (!membership || membership.active_role !== 'admin') {
+      return { ok: false, status: 403, error: 'FORBIDDEN' };
+    }
+
+    // VTID-05147: active_role was member-writable — 'admin' must also be a
+    // permitted role (user_permitted_roles or active memberships). Fails closed.
+    const permitted = await fetchPermittedRoles(supabase, authData.user.id, tenantId);
+    if (!permitted.roles || !permitted.roles.includes('admin')) {
+      console.warn(`[${VTID}] admin_not_permitted user=${authData.user.id} tenant=${tenantId}${permitted.error ? ` (${permitted.error})` : ''}`);
       return { ok: false, status: 403, error: 'FORBIDDEN' };
     }
 

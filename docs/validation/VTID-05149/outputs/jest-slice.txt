@@ -1,0 +1,15 @@
+PASS test/routes/auth-cognito.test.ts
+PASS test/vtid-05088-memory-health-speech-input.test.ts
+PASS test/vtid-05048-s4-caller-identity.test.ts
+PASS test/vtid-05041-definer-lockdown.test.ts
+PASS test/middleware/auth-supabase-jwt.test.ts
+PASS test/vtid-05043-s3-migrations.test.ts
+PASS test/routes/autopilot-prompts.test.ts
+PASS test/vtid-04878-reward-routes.test.ts
+PASS test/universal-cart.test.ts
+PASS test/vtid-04787-self-audit-and-identity-drift.test.ts
+PASS test/vtid-04345-morning-memory-check.test.ts
+PASS test/vtid-05149-tenant-context.test.ts
+PASS test/vtid-05149-tenant-foundation-migrations.test.ts (34.822 s)
+Test Suites: 13 passed, 13 total
+Tests:       295 passed, 295 total

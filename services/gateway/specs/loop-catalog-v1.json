@@ -11,7 +11,7 @@
       "risk": "R1",
       "autonomy": "L2",
       "status": "PARTIAL",
-      "gap": "Nine deterministic routines run inside the gateway (routine runner, VTID-05103) and the ALERT-* workflows report failures to the self-healing intake. Four routines still need a claude.ai session (gh, a browser, a member sign-in, CI artifacts); they fail at the cloud environment setup script until the owner fixes it (Phase 3b).",
+      "gap": "Thirteen deterministic routines run inside the gateway (routine runner, VTID-05103/05141/05148; learn-outcomes is owned by L3) with a stop rule (three crashed runs in a row switch a routine off and raise routine.runner.stagnated) and repeated-breach damping (the same breach three days running is not re-sent to self-healing). Every ALERT-* workflow check except the Supabase-vs-Aurora identity drift has one gateway ops health route, and the workflows report failures to the self-healing intake. Four routines still need a claude.ai session (gh, a browser, a member sign-in, CI artifacts); they fail at the cloud environment setup script until the owner fixes it.",
       "trigger": "Any owned sensor turns red (health check, routine run, alert workflow, test contract, error cluster).",
       "goal": "The same sensor that fired is green again after the fix is deployed, and STAGING-VERIFY passes on that commit.",
       "act": "One intake (self_healing_log) -> six-layer diagnosis -> spec -> fix through the one executor (Dev Autopilot).",
@@ -65,6 +65,7 @@
           "MORNING-SYSTEM-HEALTH-CHECK",
           "SCREEN-LOAD-DAILY",
           "SCREEN-LOAD-TIMING",
+          "TENANT-RESERVED-SLUGS-DRIFT",
           "VCAOP-HEALTH"
         ],
         "test_contracts": [
@@ -241,7 +242,7 @@
       "risk": "R1",
       "autonomy": "L1",
       "status": "PARTIAL",
-      "gap": "Outcomes, repair patterns and prompt learnings are recorded, but nothing acts on the outcomes ledger yet.",
+      "gap": "The learn-outcomes routine (VTID-05148, daily 12:00 UTC) measures repeat-failure rate per class, the share of fixes reusing a known pattern and escaped bugs that became tests; records which tests each fix PR shipped and files one write_test finding for a fix without one; and proposes (never applies) graduations on Mondays, withdrawing a proposal whose class regresses. Still recorded only: repair patterns are not auto-recorded or looked up by the executor (pattern reuse reports not measured), and prompt learnings and shadow-eval promotions have no graduation step.",
       "trigger": "Every finished L1, L2 or L6 run (success or failure); every escaped bug; every shadow-eval result.",
       "goal": "Each outcome leaves exactly one lesson: a new test, a repair pattern, a prompt learning, or a graduation proposal.",
       "act": "Write the lesson to its existing store; propose (never apply) a graduation of a finding class to auto-approve.",
@@ -258,7 +259,8 @@
       "sensors": {
         "health_groups": [],
         "routines": [
-          "autopilot-rec-quality"
+          "autopilot-rec-quality",
+          "learn-outcomes"
         ],
         "workflows": [
           "CRON-AUTO-PROMOTER",
@@ -351,7 +353,7 @@
       "risk": "R3",
       "autonomy": "L0",
       "status": "PARTIAL",
-      "gap": "The checks exist; LLM spend budgets per stage, the GCP carve-out window watcher and the consent audit do not.",
+      "gap": "LLM spend is compared with the budgets daily (llm-spend-budget, alert only) and any LLM call that lands on Google is an incident (llm-fallback-watch), both VTID-05141; agents_registry.enabled is enforced as the per-agent kill switch. Blocking calls over budget, the GCP carve-out window watcher and the consent audit do not exist yet.",
       "trigger": "A cost, model-fallback, secret, test-account, consent or ledger-integrity signal.",
       "goal": "Every such signal reaches the owner (or DPO) with evidence within one check interval.",
       "act": "Escalate only. This loop never changes code, data or configuration by itself.",
@@ -369,7 +371,10 @@
         "health_groups": [
           "Governance & Integrity"
         ],
-        "routines": [],
+        "routines": [
+          "llm-fallback-watch",
+          "llm-spend-budget"
+        ],
         "workflows": [
           "ALERT-OASIS-LEDGER-INTEGRITY"
         ],
@@ -463,7 +468,7 @@
       "risk": "R2",
       "autonomy": "L2",
       "status": "PARTIAL",
-      "gap": "Opener, slow-session and fallback gates run; tool success, misroutes, locale errors and provider cost per language are not measured as a loop. The voice-lab-triage routine has no working data source (its spec reads time windows and error codes /voice-lab/live/sessions does not return) and is not run (VTID-05103); a time-windowed query on the existing failure classes is Phase 3b.",
+      "gap": "Opener, slow-session and fallback gates run; voice-lab-triage compares 24 h of voice_session_facts outcomes and failure classes with the prior 7 days (VTID-05141). Tool success, misroutes, locale errors and provider cost per language are not measured as a loop.",
       "trigger": "Voice session outcomes, aggregated daily.",
       "goal": "Per-language opener success, tool success and misroute rate meet their targets.",
       "act": "Tuning PR (tool description, navigation phrasing, prompt intent) -> shadow -> enforce.",
@@ -1022,8 +1027,8 @@
         "ALERT-ORB-*",
         "Service Health registry"
       ],
-      "status": "partly_resolved",
-      "resolution": "VTID-05098: routine orb-audio-smoke retired (duplicate of registry \"ORB Live\"; its Vertex fields breach falsely). E2E-ORB-MONITOR and the bootstrap-latency alert are distinct signals and stay. ALERT-ORB-SESSION-STATE-HEALTH vs registry \"ORB Session Ledger\" (same RPC) is left to Phase 3."
+      "status": "resolved",
+      "resolution": "VTID-05098: routine orb-audio-smoke retired (duplicate of registry \"ORB Live\"; its Vertex fields breach falsely). E2E-ORB-MONITOR and the bootstrap-latency alert are distinct signals and stay. VTID-05141: ALERT-ORB-SESSION-STATE-HEALTH now calls the registry route /ops/health/orb-session-ledger, one implementation."
     },
     {
       "id": "O3",
@@ -1033,8 +1038,8 @@
         "ALERT-PUSH-DISPATCH-HEALTH",
         "ops/health/push-dispatch"
       ],
-      "status": "partly_resolved",
-      "resolution": "VTID-05098: routine push-pipeline-probe and its audit endpoint retired. ALERT-PUSH-DISPATCH-HEALTH and /ops/health/push-dispatch run the same query; pointing the workflow at the route is Phase 3."
+      "status": "resolved",
+      "resolution": "VTID-05098: routine push-pipeline-probe and its audit endpoint retired. ALERT-PUSH-DISPATCH-HEALTH and /ops/health/push-dispatch run the same query; VTID-05141: the workflow now calls the route, one implementation."
     },
     {
       "id": "O4",
@@ -1106,7 +1111,7 @@
         "SCHEDULED_WORKFLOWS in ops-runtime-health.ts"
       ],
       "status": "not_a_duplicate",
-      "resolution": "VTID-05098: four different scopes; TEST-CATALOG is generated. Deriving SCHEDULED_WORKFLOWS from it is Phase 3."
+      "resolution": "VTID-05098: four different scopes; TEST-CATALOG is generated. VTID-05141: SCHEDULED_WORKFLOWS is derived from it (fallback to the old five on a read error)."
     }
   ],
   "retire_candidates": []

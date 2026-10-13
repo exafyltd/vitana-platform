@@ -30,9 +30,19 @@ on:
   schedule:
     - cron: '40 7 * * *'   # 09:40 CET daily — catches drift introduced elsewhere
   workflow_dispatch:
+    inputs:
+      # VTID-05023 part 8: which database to compare against. 'default' follows
+      # the repo variable MIGRATION_TARGET (unset = supabase, unchanged).
+      target:
+        description: 'Database to check (default = repo variable MIGRATION_TARGET, unset = supabase)'
+        required: false
+        type: choice
+        options: [default, supabase, aurora]
+        default: default
 
 permissions:
   contents: read
+  id-token: write # aurora target only: aws-actions/configure-aws-credentials OIDC
 
 jobs:
   drift:
@@ -44,6 +54,34 @@ jobs:
         with:
           node-version: '20'
 
+      # VTID-05023 part 8. Schedule and pull_request runs have no inputs and
+      # follow the repo variable. While MIGRATION_FREEZE is 'true' (Aurora
+      # cutover window, final load -> flip) the check fails fast: no migration
+      # may merge or be applied in the window.
+      - name: Resolve target and enforce the schema freeze
+        id: target
+        env:
+          TARGET_INPUT: ${{ inputs.target }}
+          TARGET_VAR: ${{ vars.MIGRATION_TARGET }}
+          MIGRATION_FREEZE: ${{ vars.MIGRATION_FREEZE }}
+        run: |
+          set -euo pipefail
+          if [ "${MIGRATION_FREEZE:-}" = "true" ]; then
+            echo "::error::MIGRATION_FREEZE=true — schema freeze for the Aurora cutover window (from the start of the final load to the flip). Migrations wait until the repo variable is cleared."
+            exit 1
+          fi
+          case "${TARGET_INPUT:-default}" in
+            supabase|aurora) TARGET="$TARGET_INPUT" ;;
+            default|'') TARGET="${TARGET_VAR:-supabase}" ;;
+            *) echo "::error::unknown target input '$TARGET_INPUT'"; exit 1 ;;
+          esac
+          case "$TARGET" in
+            supabase|aurora) ;;
+            *) echo "::error::repo variable MIGRATION_TARGET='$TARGET' — must be supabase or aurora"; exit 1 ;;
+          esac
+          echo "Drift check target: $TARGET"
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+
       # NOTE: deliberately NOT psql. GitHub Actions cannot reach the Supabase
       # pooler — the project has a network allow-list and runner IPs are not on
       # it ("FATAL: (EADDRNOTALLOWED) address not in tenant allow_list").
@@ -51,6 +89,7 @@ jobs:
       # 6+ days on exactly this. PostgREST is a separate edge service and is not
       # subject to that allow-list, so we go over HTTPS instead.
       - name: Snapshot live public tables (via PostgREST RPC)
+        if: steps.target.outputs.target == 'supabase'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
@@ -77,6 +116,49 @@ jobs:
           # on a broken connection rather than emitting a wall of false positives.
           if [ "$COUNT" -lt "50" ]; then
             echo "::error::Only $COUNT tables returned — the connection or RPC is wrong, not the schema. Refusing to evaluate drift against a bad snapshot."
+            exit 1
+          fi
+
+      # Aurora answers the same question: the same catalog query as the
+      # ci_schema_inventory() RPC (public base + partitioned tables), read-only,
+      # as one SELECT over the RDS Data API (the cluster is VPC-private).
+      # formattedRecords has the RPC's shape: [{"table_name": ...}, ...].
+      - name: Configure AWS credentials (GitHub OIDC — no static keys)
+        if: steps.target.outputs.target == 'aurora'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: eu-central-1
+
+      - name: Snapshot live public tables (Aurora, via RDS Data API)
+        if: steps.target.outputs.target == 'aurora'
+        env:
+          AWS_PAGER: ''
+        run: |
+          set -euo pipefail
+          R=eu-central-1
+          ACCT=$(aws sts get-caller-identity --query Account --output text)
+          [ "$ACCT" = "472838866351" ] || { echo "::error::Assumed role is in account $ACCT, expected 472838866351"; exit 1; }
+          CLUSTER_ARN=$(aws rds describe-db-clusters --region $R --db-cluster-identifier vitana-aurora-prod \
+            --query 'DBClusters[0].DBClusterArn' --output text)
+          SECRET_ARN=$(aws rds describe-db-clusters --region $R --db-cluster-identifier vitana-aurora-prod \
+            --query 'DBClusters[0].MasterUserSecret.SecretArn' --output text)
+          SQL="SELECT c.relname::text AS table_name FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') ORDER BY c.relname"
+          tries=0
+          until aws rds-data execute-statement --region $R --resource-arn "$CLUSTER_ARN" \
+                --secret-arn "$SECRET_ARN" --database vitana --sql "$SQL" \
+                --format-records-as JSON --query formattedRecords --output text > rpc.json 2> err.txt; do
+            if grep -q HttpEndpointNotEnabled err.txt && [ "$tries" -lt 20 ]; then
+              tries=$((tries+1)); echo "Data API not ready yet, retrying in 15s ($tries/20)..."; sleep 15
+            else
+              echo "::error::Aurora inventory query failed"; cat err.txt; exit 1
+            fi
+          done
+          jq -r '.[].table_name' rpc.json > live-tables.txt
+          COUNT=$(grep -c . live-tables.txt || true)
+          echo "Live public tables (Aurora): $COUNT"
+          if [ "$COUNT" -lt "50" ]; then
+            echo "::error::Only $COUNT tables returned — the connection or query is wrong, not the schema. Refusing to evaluate drift against a bad snapshot."
             exit 1
           fi
 

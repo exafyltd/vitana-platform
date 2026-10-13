@@ -24,6 +24,8 @@ import { generatePersonalRecommendations } from '../services/recommendation-engi
 import { sendWelcomeChatMessages } from '../services/welcome-chat-service';
 import { addUserToSystemGroups } from '../services/community-group-enrollment';
 import * as repo from './auth-repository';
+import { ensureProvisioned } from '../services/auth-bridge/auth-bridge';
+import { getDefaultTenantId } from '../services/tenancy/tenant-context';
 import { isCognitoAuthConfigured, cognitoLogin, cognitoRefresh } from '../services/cognito-auth-client';
 
 const router = Router();
@@ -275,6 +277,9 @@ router.post('/login', async (req: Request, res: Response) => {
     if (supabase && authData.user?.id) {
       const uid = authData.user.id;
       void (async () => {
+      // VTID-05023 part 4: a brand-new member's public rows exist before the
+      // first-login writes below (no-op unless AUTH_BRIDGE_ENABLED=true).
+      await ensureProvisioned(uid);
       // Resolve tenant_id from memberships
       const { data: tenantRow } = await repo.fetchPrimaryTenantMembership(supabase, uid);
       const tid = tenantRow?.tenant_id;
@@ -547,6 +552,9 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
   const supabase = getSupabase();
   if (supabase && identity.user_id) {
     try {
+      // VTID-05023 part 4: provision on Aurora first, so the auto-provision
+      // net below never creates a partial app_users row for a new member.
+      await ensureProvisioned(identity.user_id);
       // VTID-03952: these four reads are independent of each other's RESULTS
       // (each only needs identity.user_id) — they were previously awaited
       // one after another, including one whose own comment claimed "Parallel
@@ -650,10 +658,14 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
           `app_users=${missingProfile ? 'MISSING' : 'ok'}, user_tenants=${missingMembership ? 'MISSING' : 'ok'}`
         );
 
-        // Resolve default tenant (oldest)
-        const { data: tenantRow } = await repo.fetchOldestTenant(supabase);
-
-        const defaultTenantId = tenantRow?.tenant_id as string | undefined;
+        // VTID-05149: the default tenant (tenants.is_default), never "the oldest"
+        // (maxina and alkalma share created_at). Unresolved → no membership.
+        const defaultTenantId = (await getDefaultTenantId()) ?? undefined;
+        if (!defaultTenantId) {
+          console.warn(
+            JSON.stringify({ event: 'default_tenant_unresolved', vtid: 'VTID-05149', user_id: identity.user_id })
+          );
+        }
 
         if (missingProfile) {
           const displayName = identity.email
@@ -821,6 +833,8 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
   }
 
   try {
+    // VTID-05023 part 4: the member's app_users row exists before the update.
+    await ensureProvisioned(identity.user_id);
     const trimmedName = display_name !== undefined ? display_name.trim() : undefined;
     const trimmedBio = bio !== undefined ? bio.trim() : undefined;
 

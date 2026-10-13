@@ -1,0 +1,5 @@
+# VTID-05154 commands
+git checkout -B ccr-b9eba87b-k287vj origin/main
+# plan v3 + sparring record written; canonical hash checked with the gateway's own module
+cd services/gateway && npx tsx hash-script.ts docs/plans/VITANALAND-HEALTH-AGENTIC-SYSTEM-PLAN.md docs/validation/VTID-05154/plan-sparring.md   # -> outputs/plan-hash.txt
+git diff --name-only origin/main...HEAD   # -> outputs/changed-files.txt

@@ -1,0 +1,24 @@
+# VTID-05156 full gateway Jest (npx jest --silent --maxWorkers=3), local, head of claude/health-data-integration-plan-dbxyld-platfix
+Test Suites: 19 failed, 2 skipped, 1670 passed, 1689 of 1691 total
+Tests:       4 failed, 24 skipped, 6 todo, 27072 passed, 27106 total
+
+# Every failing suite fails to load for one environmental reason (module missing from the local node_modules), none touched by this change:
+test/autopilot-pipeline.test.ts :: Cannot find module 'libphonenumber-js/max' from 'src/services/phone-verification/service.ts'
+test/governance.test.ts :: Cannot find module 'libphonenumber-js/max' from 'src/services/phone-verification/service.ts'
+test/operator-chat-oasis.test.ts :: Cannot find module 'libphonenumber-js/max' from 'src/services/phone-verification/service.ts'
+test/operator-command.test.ts :: Cannot find module 'libphonenumber-js/max' from 'src/services/phone-verification/service.ts'
+test/operator-deployments.test.ts :: Cannot find module 'libphonenumber-js/max' from 'src/services/phone-verification/service.ts'
+test/routes/command-hub-static-cache-headers.test.ts :: Cannot find module 'libphonenumber-js/max' from 'src/services/phone-verification/service.ts'
+test/task-extractor.test.ts :: Cannot find module 'libphonenumber-js/max' from 'src/services/phone-verification/service.ts'
+test/vtid-03926-operator-chat-userrole.test.ts :: Cannot find module 'libphonenumber-js/max' from 'src/services/phone-verification/service.ts'
+test/vtid-03928-operator-cross-session-memory.test.ts :: Cannot find module 'libphonenumber-js/max' from 'src/services/phone-verification/service.ts'
+test/vtid-04028-operator-turn-stream.test.ts :: Cannot find module 'libphonenumber-js/max' from 'src/services/phone-verification/service.ts'
+test/vtid-04172-operator-simulated-tool-call-retry.test.ts :: Cannot find module 'libphonenumber-js/max' from 'src/services/phone-verification/service.ts'
+test/vtid-04309-thread-messages-route.test.ts :: Cannot find module 'libphonenumber-js/max' from 'src/services/phone-verification/service.ts'
+test/vtid-04402-connected-apps.test.ts :: Cannot find module 'libphonenumber-js' from 'src/services/connected-apps/contacts-import.ts'
+test/vtid-04439-contacts-import-collisions.test.ts :: Cannot find module 'libphonenumber-js' from 'src/services/connected-apps/contacts-import.ts'
+test/vtid-04449-outlook-contacts.test.ts :: Cannot find module 'libphonenumber-js' from 'src/services/connected-apps/contacts-import.ts'
+test/vtid-04986-overview-timeseries-retired.test.ts :: Cannot find module 'libphonenumber-js/max' from 'src/services/phone-verification/service.ts'
+test/vtid-05057-contacts-phone-matching.test.ts :: Cannot find module 'libphonenumber-js' from 'src/services/connected-apps/contacts-import.ts'
+test/vtid-05095-phone-verification.test.ts :: Cannot find module 'libphonenumber-js/max' from 'src/services/phone-verification/service.ts'
+test/vtid.test.ts :: Cannot find module 'libphonenumber-js/max' from 'src/services/phone-verification/service.ts'

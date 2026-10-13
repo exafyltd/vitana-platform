@@ -127,21 +127,22 @@ describe('switches', () => {
 });
 
 describe('the routine list', () => {
-  it('covers the 9 deterministic routines at their documented UTC times', () => {
+  it('covers the 13 deterministic routines at their documented UTC times', () => {
     expect(RUNNER_ROUTINES.map((r) => `${r.name}@${r.hour}:${r.minute}`)).toEqual([
+      'voice-lab-triage@4:30',
       'agents-heartbeat@5:30',
       'supabase-io-audit@6:0',
       'mobile-screen-latency-rollup@6:15',
       'autopilot-rec-quality@6:30',
       'oasis-event-anomaly@7:0',
+      'llm-fallback-watch@7:15',
       'vitana-index-health@7:30',
       'knowledge-docs-freshness@9:0',
       'dyk-tour-progress@10:30',
       'spec-memory-quarantine@11:0',
+      'learn-outcomes@12:0',
+      'llm-spend-budget@23:50',
     ]);
-  });
-  it('voice-lab-triage is not run (its spec has no working data source — amendment A1)', () => {
-    expect(RUNNER_ROUTINES.map((r) => r.name)).not.toContain('voice-lab-triage');
   });
   it('each time matches the routine spec\'s cron line', () => {
     const fs = require('fs');

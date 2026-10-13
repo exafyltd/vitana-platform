@@ -9,7 +9,9 @@
  * The check is per COMMIT, not "the latest run": staging serves one commit,
  * and only a run for that exact commit says anything about it. A run that
  * reported `superseded` means staging moved on mid-run, so it proves nothing
- * about the commit either. A lookup that fails blocks too (fail closed) —
+ * about the commit either; since VTID-05144 the newest passed/failed run for
+ * the commit decides and a superseded one only when no other exists (see
+ * pickVerificationRow). A lookup that fails blocks too (fail closed) —
  * the override is the way through, not a silent pass.
  */
 import { getSupabase } from '../../lib/supabase';
@@ -104,6 +106,19 @@ export function decidePublishGate(input: {
   return { allowed: false, status: 'blocked', reason, override_reason: null, verification: v };
 }
 
+type VerifyRow = { topic?: string; created_at?: string; metadata?: unknown };
+
+/**
+ * VTID-05144: the row that decides, from newest-first rows for one commit. The
+ * newest `passed` or `failed` row wins over a newer `superseded` one: a
+ * superseded run holds no failure attributed to the commit (else it would be
+ * `failed`), so it says nothing about it. Only when no decisive row exists
+ * does the newest row decide (superseded → blocked, as before).
+ */
+export function pickVerificationRow<T extends VerifyRow>(rows: T[]): T | null {
+  return rows.find((r) => r.topic === 'staging.verify.passed' || r.topic === 'staging.verify.failed') || rows[0] || null;
+}
+
 export interface PublishGateDeps {
   /** Newest-first staging.verify.* rows for this service and commit. */
   fetchRows(service: string, commit: string): Promise<Array<{ topic?: string; created_at?: string; metadata?: unknown }>>;
@@ -121,7 +136,8 @@ export function supabasePublishGateDeps(): PublishGateDeps | null {
         .eq('metadata->>service', service)
         .eq('metadata->>commit', commit)
         .order('created_at', { ascending: false })
-        .limit(5);
+        // VTID-05144: room for a decisive row behind up to 3 chained superseded full runs.
+        .limit(10);
       if (error) throw new Error(error.message);
       return data || [];
     },
@@ -145,7 +161,8 @@ export async function evaluatePublishGate(opts: {
   }
   try {
     const rows = await deps.fetchRows(service, opts.commit);
-    const verification = rows.length ? toVerification(rows[0]) : null;
+    const row = pickVerificationRow(rows);
+    const verification = row ? toVerification(row) : null;
     return decidePublishGate({ enabled, commit: opts.commit, verification, overrideReason: opts.overrideReason });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

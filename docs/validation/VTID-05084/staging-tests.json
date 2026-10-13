@@ -10,15 +10,15 @@
       "expect_content_type": "text/html",
       "expect_body_contains": [
         "loops-catalog.css?v=20261117-vtid-05098",
-        "loops-catalog.js?v=20261117-vtid-05098",
-        "app.js?v=20261118-vtid-05122",
-        "styles.css?v=20261118-vtid-05122"
+        "loops-catalog.js?v=20261120-vtid-05148",
+        "app.js?v=20261120-vtid-05148",
+        "styles.css?v=20261120-vtid-05148"
       ]
     },
     {
       "kind": "http",
       "name": "served loops-catalog.js defines window.LoopsCatalog and reads the loops API",
-      "path": "/command-hub/loops-catalog.js?v=20261117-vtid-05098",
+      "path": "/command-hub/loops-catalog.js?v=20261120-vtid-05148",
       "expect_status": 200,
       "expect_content_type": "javascript",
       "expect_body_contains": [
@@ -41,7 +41,7 @@
     {
       "kind": "http",
       "name": "served app.js has the Loops tab in Autonomy and redirects the old placeholder",
-      "path": "/command-hub/app.js?v=20261118-vtid-05122",
+      "path": "/command-hub/app.js?v=20261120-vtid-05148",
       "expect_status": 200,
       "expect_content_type": "javascript",
       "expect_body_contains": [

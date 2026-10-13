@@ -5,6 +5,9 @@ run-name: 'erase_user_data() against a throwaway Postgres [VTID: VTID-04765] (${
 # Postgres service container: FK retry order, partitioned tables, delete
 # triggers, retained tables, auth-cascading tables, a failing table, and
 # that another user's rows are untouched. Never runs against Supabase.
+# VTID-05158: a second variant runs on a database WITHOUT auth.users (Aurora)
+# after the Aurora-safe replacement; the first variant (with the auth.users
+# stub) must keep passing unchanged.
 
 on:
   pull_request:
@@ -39,5 +42,7 @@ jobs:
         run: |
           set -o pipefail
           scripts/ci/sql-tests/run-erase-user-data-test.sh 2>&1 | tee /tmp/erase.log
-      - name: Assert the test ran to the end
-        run: grep -q '^PASS vtid-04765 erase_user_data' /tmp/erase.log
+      - name: Assert both variants ran to the end
+        run: |
+          grep -q '^PASS vtid-04765 erase_user_data' /tmp/erase.log
+          grep -q '^PASS vtid-05158 erase_user_data without auth.users' /tmp/erase.log

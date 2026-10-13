@@ -1,0 +1,26 @@
+{
+  "vtid": "VTID-05148",
+  "kind": "feature",
+  "sparring_record": "docs/validation/VTID-05148/plan-sparring.md",
+  "paths": [
+    "services/gateway/src/services/routine-runner/**",
+    "services/gateway/src/routes/test-contracts-missing.ts",
+    "services/gateway/src/routes/autonomy-pulse.ts",
+    "services/gateway/src/routes/autonomy-loops.ts",
+    "services/gateway/src/services/loop-catalog.ts",
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/loops-catalog.js",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "services/gateway/specs/command-hub-symbol-index.json",
+    "services/gateway/specs/loop-catalog-v1.json",
+    "scripts/ci/command-hub-ownership-guard.js",
+    "supabase/migrations/20261013210000_vtid_05148_learn_outcomes_routine_seed.sql",
+    "routines/learn-outcomes.md",
+    "services/gateway/test/**",
+    "docs/validation/*/staging-tests.json",
+    "docs/autonomy/LOOP-ENGINEERING.md",
+    "docs/CHANGELOG.md",
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-05148/**"
+  ]
+}

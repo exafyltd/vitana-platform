@@ -159,12 +159,138 @@ test('VTID-05083: an accepted read probe is flagged and names the method', () =>
   assert.match(r.problems.join(' '), /REJECTED PROBE WAS ACCEPTED — GET/);
 });
 
-test('outcome: superseded beats everything, missing suites fail', () => {
+// VTID-05144: "superseded beats everything" no more — an ATTRIBUTED failure
+// (it ran while staging still served the commit) makes a superseded run failed.
+test('outcome: superseded only when no attributed failure, missing suites fail', () => {
   const plan = { missing: [], invalid: [], suites: [], legacy: [] };
   assert.equal(lib.decideOutcome({ superseded: true, results: [{ ok: false }], plan }), 'superseded');
+  assert.equal(lib.decideOutcome({ superseded: true, results: [{ ok: false, attributed: true }], plan }), 'failed');
   assert.equal(lib.decideOutcome({ superseded: false, results: [{ ok: true }], plan }), 'passed');
   assert.equal(lib.decideOutcome({ superseded: false, results: [{ ok: false }], plan }), 'failed');
   assert.equal(lib.decideOutcome({ superseded: false, results: [{ ok: true }], plan: { ...plan, missing: [{}] } }), 'failed');
+});
+
+test('VTID-05144: superseded + no attributed failure → superseded (never a pass)', () => {
+  const plan = { missing: [], invalid: [], suites: [], legacy: [] };
+  const results = [{ ok: true, attributed: true }, { ok: true, attributed: false }];
+  assert.equal(lib.decideOutcome({ superseded: true, results, plan }), 'superseded');
+});
+
+test('VTID-05144: superseded + an attributed failure → failed (a real failure is never hidden)', () => {
+  const plan = { missing: [], invalid: [], suites: [], legacy: [] };
+  const results = [{ ok: true, attributed: true }, { ok: false, attributed: true }, { ok: false, attributed: false }];
+  assert.equal(lib.decideOutcome({ superseded: true, results, plan }), 'failed');
+});
+
+test('VTID-05144: superseded + only unattributed failures → superseded', () => {
+  const plan = { missing: [], invalid: [], suites: [], legacy: [] };
+  const results = [{ ok: true, attributed: true }, { ok: false, attributed: false }, { ok: false, attributed: false }];
+  assert.equal(lib.decideOutcome({ superseded: true, results, plan }), 'superseded');
+});
+
+test('VTID-05144: not superseded is unchanged — every failure counts, attributed or not', () => {
+  const plan = { missing: [], invalid: [], suites: [], legacy: [] };
+  assert.equal(lib.decideOutcome({ superseded: false, results: [{ ok: false, attributed: false }], plan }), 'failed');
+  assert.equal(lib.decideOutcome({ superseded: false, results: [{ ok: true, attributed: false }], plan }), 'passed');
+  assert.equal(lib.decideOutcome({ superseded: false, results: [{ ok: true }], plan: { ...plan, invalid: [{}] } }), 'failed');
+});
+
+test('VTID-05144: attributeResults — ended before T_cut or static; the boundary is not attributed', () => {
+  const tCut = Date.parse('2026-10-13T07:17:00.000Z');
+  const rows = [
+    { name: 'early', ok: true, ended_at: '2026-10-13T07:16:59.999Z' },
+    { name: 'boundary', ok: false, ended_at: '2026-10-13T07:17:00.000Z' },
+    { name: 'late', ok: false, ended_at: '2026-10-13T07:20:00.000Z' },
+    { name: 'static', ok: false, static: true },
+    { name: 'no end time', ok: false },
+  ];
+  const out = lib.attributeResults(rows, tCut);
+  assert.deepEqual(out.map((r) => [r.name, r.attributed]), [['early', true], ['boundary', false], ['late', false], ['static', true], ['no end time', false]]);
+  assert.equal(out[0].ended_at, rows[0].ended_at, 'rows keep their fields');
+  assert.equal('attributed' in rows[0], false, 'input rows are not mutated');
+  // An ISO cutoff is accepted too.
+  assert.equal(lib.attributeResults([{ ok: true, ended_at: '2026-10-13T07:00:00Z' }], '2026-10-13T07:17:00Z')[0].attributed, true);
+});
+
+test('VTID-05144: deployCutoff — earliest relevant deploy run, clamped to runStart', () => {
+  const runStart = Date.parse('2026-10-13T07:14:00.000Z');
+  const iso = (m) => new Date(runStart + m * 60_000).toISOString();
+  // A deploy created 3 min into the run.
+  assert.equal(lib.deployCutoff([{ created_at: iso(3), updated_at: iso(9), status: 'completed', conclusion: 'success' }], runStart), runStart + 3 * 60_000);
+  // Earliest of several; failed/cancelled count (they may have rolled tasks).
+  assert.equal(lib.deployCutoff([
+    { created_at: iso(20), updated_at: iso(26), status: 'completed', conclusion: 'success' },
+    { created_at: iso(8), updated_at: iso(10), status: 'completed', conclusion: 'failure' },
+    { created_at: iso(12), updated_at: iso(13), status: 'completed', conclusion: 'cancelled' },
+  ], runStart), runStart + 8 * 60_000);
+});
+
+test('VTID-05144: deployCutoff — skipped and completed-before-runStart-minus-5-min runs are excluded', () => {
+  const runStart = Date.parse('2026-10-13T07:14:00.000Z');
+  const iso = (m) => new Date(runStart + m * 60_000).toISOString();
+  const later = { created_at: iso(10), updated_at: iso(16), status: 'completed', conclusion: 'success' };
+  assert.equal(lib.deployCutoff([{ created_at: iso(2), updated_at: iso(2), status: 'completed', conclusion: 'skipped' }, later], runStart), runStart + 10 * 60_000);
+  assert.equal(lib.deployCutoff([{ created_at: iso(-30), updated_at: iso(-6), status: 'completed', conclusion: 'success' }, later], runStart), runStart + 10 * 60_000);
+  // Completed 4 min before the run: its rollout may still be draining → counts, clamped to runStart.
+  assert.equal(lib.deployCutoff([{ created_at: iso(-12), updated_at: iso(-4), status: 'completed', conclusion: 'success' }, later], runStart), runStart);
+  // Created more than 6 h before the run → ignored.
+  assert.equal(lib.deployCutoff([{ created_at: iso(-7 * 60), updated_at: iso(1), status: 'in_progress', conclusion: null }, later], runStart), runStart + 10 * 60_000);
+});
+
+test('VTID-05144: deployCutoff — a deploy in progress at run start → runStart', () => {
+  const runStart = Date.parse('2026-10-13T07:14:00.000Z');
+  const iso = (m) => new Date(runStart + m * 60_000).toISOString();
+  assert.equal(lib.deployCutoff([{ created_at: iso(-2), updated_at: iso(-1), status: 'in_progress', conclusion: null }], runStart), runStart);
+});
+
+test('VTID-05144: deployCutoff — lookup error or no runs → runStart (fail closed: nothing attributed)', () => {
+  const runStart = Date.parse('2026-10-13T07:14:00.000Z');
+  assert.equal(lib.deployCutoff(null, runStart), runStart);
+  assert.equal(lib.deployCutoff(undefined, runStart), runStart);
+  assert.equal(lib.deployCutoff([], runStart), runStart);
+  assert.equal(lib.deployCutoff('{"message":"Bad credentials"}', runStart), runStart);
+  // The margins are the planned ones.
+  assert.equal(lib.DEPLOY_COMPLETED_MARGIN_MS, 5 * 60_000);
+  assert.equal(lib.DEPLOY_LOOKBACK_MS, 6 * 60 * 60_000);
+});
+
+test('VTID-05144: superseded message names the new stamp, T_cut, attributed counts and unattributed failures', () => {
+  const sha = 'a837b4194c0000000000000000000000000000aa';
+  const newer = '2541b523a00000000000000000000000000000bb';
+  const results = [
+    { suite: 'smoke', name: 'alive', ok: true, problems: [], attributed: true },
+    { suite: 'VTID-04999', name: 'route', ok: true, problems: [], attributed: true },
+    { suite: 'VTID-05000', name: 'late probe', ok: false, problems: ['fetch failed'], attributed: false },
+    { suite: 'VTID-05001', name: 'late ok', ok: true, problems: [], attributed: false },
+  ];
+  const msg = lib.buildReadyMessage({
+    service: 'gateway', sha, outcome: 'superseded', results,
+    plan: { suites: [], missing: [], invalid: [], legacy: [] }, shipping: [], prodStamp: null,
+    supersededBy: newer, attributionCutoff: '2026-10-13T07:17:30.000Z',
+  });
+  assert.match(msg, /superseded/);
+  assert.match(msg, /2541b523a000/);
+  assert.match(msg, /Attribution cutoff: 2026-10-13T07:17:30\.000Z/);
+  assert.match(msg, /2 passed, 0 failed; not attributed: 2/);
+  assert.match(msg, /Not attributed — staging was redeploying:\n- VTID-05000 › late probe: fetch failed/);
+  assert.doesNotMatch(msg, /\nFailed:/);
+  assert.doesNotMatch(msg, /ready for deployment to production\?/);
+});
+
+test('VTID-05144: superseded run with an attributed failure reads as FAILED and lists it under Failed', () => {
+  const results = [
+    { suite: 'smoke', name: 'alive', ok: false, problems: ['status 500'], attributed: true },
+    { suite: 'VTID-05000', name: 'late probe', ok: false, problems: ['fetch failed'], attributed: false },
+  ];
+  const msg = lib.buildReadyMessage({
+    service: 'gateway', sha: 'a'.repeat(40), outcome: 'failed', results,
+    plan: { suites: [], missing: [], invalid: [], legacy: [] }, shipping: [], prodStamp: null,
+    supersededBy: 'b'.repeat(40), attributionCutoff: '2026-10-13T07:17:30.000Z',
+  });
+  assert.match(msg, /FAILED/);
+  assert.match(msg, /Failed:\n- smoke › alive: status 500/);
+  assert.match(msg, /Not attributed — staging was redeploying:\n- VTID-05000 › late probe/);
+  assert.match(msg, /0 passed, 1 failed; not attributed: 1/);
 });
 
 test('ready message asks the question only on a pass and lists what ships', () => {
@@ -436,6 +562,33 @@ test('VTID-05076: a merge commit whose subject has no VTID fails rule 47', () =>
     const plan = lib.planRange({ service: 'gateway', commits: AFTER_ENFORCE(got), manifests: MANIFEST });
     assert.deepEqual(plan.missing.map((m) => m.sha), [head]);
   } finally { r.cleanup(); }
+});
+
+test('VTID-05146 (C4): autopilot merges and auto-reverts get their own section in the ready message', () => {
+  assert.equal(lib.isAutopilotCommit('Dev Autopilot auto-merge: execution 1a2b3c4d'), true);
+  assert.equal(lib.isAutopilotCommit('Revert: auto-fix 1a2b3c4d failed deploy verification'), true);
+  assert.equal(lib.isAutopilotCommit('VTID-05146: Dev Autopilot Phase C (#4100)'), false);
+  const shipping = [
+    { sha: 'aaaaaaaaaaaa1111', subject: 'VTID-05146: Phase C (#4100)', author: 'exafyltd' },
+    { sha: 'bbbbbbbbbbbb2222', subject: 'Dev Autopilot auto-merge: execution 1a2b3c4d', author: 'exafyltd' },
+    { sha: 'cccccccccccc3333', subject: 'Revert: auto-fix 1a2b3c4d failed deploy verification', author: 'exafyltd' },
+  ];
+  const msg = lib.buildReadyMessage({
+    service: 'gateway', sha: 'cccccccccccc3333', outcome: 'passed', results: [{ ok: true }], plan: { suites: [], missing: [], invalid: [], legacy: [] },
+    shipping, prodStamp: 'ffffffffffff', runUrl: 'https://example.invalid/run',
+  });
+  assert.match(msg, /3 commit\(s\)\):/);
+  const [people, autopilot] = msg.split('Dev Autopilot changes in this range (2,');
+  assert.ok(autopilot, 'autopilot section present');
+  assert.match(people, /VTID-05146: Phase C/);
+  assert.doesNotMatch(people, /auto-merge: execution/);
+  assert.match(autopilot, /auto-merge: execution 1a2b3c4d/);
+  assert.match(autopilot, /Revert: auto-fix 1a2b3c4d/);
+  const none = lib.buildReadyMessage({
+    service: 'gateway', sha: 'aaaaaaaaaaaa1111', outcome: 'passed', results: [{ ok: true }], plan: { suites: [], missing: [], invalid: [], legacy: [] },
+    shipping: shipping.slice(0, 1), prodStamp: 'ffffffffffff', runUrl: '',
+  });
+  assert.doesNotMatch(none, /Dev Autopilot changes in this range/);
 });
 
 // ── VTID-05129 ────────────────────────────────────────────────────────────

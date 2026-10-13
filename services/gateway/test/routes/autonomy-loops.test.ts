@@ -65,7 +65,7 @@ describe('GET /api/v1/autonomy/loops', () => {
     expect(d.signals.self_healing).toEqual({ state: 'unavailable' });
   });
 
-  it('reads the run ledger only (select on agent_runs_unified), never writes', async () => {
+  it('reads the run ledger and the latest learn-outcomes run only (select), never writes', async () => {
     identity = { user_id: 'u1', exafy_admin: true };
     const tables: string[] = [];
     const ops: string[] = [];
@@ -76,6 +76,7 @@ describe('GET /api/v1/autonomy/loops', () => {
           select: () => { ops.push('select'); return chain; },
           eq: () => chain,
           gte: () => chain,
+          in: () => chain,
           order: () => chain,
           limit: () => Promise.resolve({ data: [{ status: 'succeeded', created_at: '2026-10-12T00:00:00Z' }], error: null }),
         };
@@ -85,7 +86,8 @@ describe('GET /api/v1/autonomy/loops', () => {
     };
     const res = await request(buildApp()).get('/api/v1/autonomy/loops');
     expect(res.status).toBe(200);
-    expect(new Set(tables)).toEqual(new Set(['agent_runs_unified']));
+    // VTID-05148: routine_runs is read for the L3 card's metrics_latest.
+    expect(new Set(tables)).toEqual(new Set(['agent_runs_unified', 'routine_runs']));
     expect(ops.every((o) => o === 'select')).toBe(true);
     expect(res.body.data.signals.self_healing).toMatchObject({ state: 'ok', total: 1 });
   });

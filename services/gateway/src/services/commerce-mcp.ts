@@ -85,15 +85,17 @@ const SECURITY_SCHEMES = [{ type: 'oauth2', scopes: [...MCP_SCOPES] }] as const;
 /**
  * OpenAI requires all three hints as explicit booleans on every tool.
  * - readOnly: the tool changes nothing.
- * - destructive: it can erase or irreversibly change something. Our writes only
- *   create or overwrite DRAFT data that another call restores; the one change that
- *   restarts a passed verification is gated behind `confirmed` instead.
+ * - destructive (VTID-05142): it overwrites existing values in place, so the previous
+ *   value is lost unless the caller still knows it. True for update_business and
+ *   update_product (OpenAI's plugin review flagged both); false for the tools that
+ *   only create, read, run checks or submit. The one change that restarts a passed
+ *   verification is also gated behind `confirmed`.
  * - openWorld: it reaches outside Vitanaland (the supplier's website, DNS, VIES,
  *   their shop platform).
  */
-const hints = (h: { readOnly: boolean; idempotent: boolean; openWorld?: boolean }) => ({
+const hints = (h: { readOnly: boolean; idempotent: boolean; openWorld?: boolean; destructive?: boolean }) => ({
   readOnlyHint: h.readOnly,
-  destructiveHint: false,
+  destructiveHint: h.destructive === true,
   idempotentHint: h.idempotent,
   openWorldHint: h.openWorld === true,
 });
@@ -158,7 +160,7 @@ export const COMMERCE_MCP_TOOLS = [
       required: ['organization_id'],
       additionalProperties: false,
     },
-    annotations: hints({ readOnly: false, idempotent: true }),
+    annotations: hints({ readOnly: false, idempotent: true, destructive: true }),
     securitySchemes: SECURITY_SCHEMES,
     _meta: { securitySchemes: SECURITY_SCHEMES },
   },
@@ -223,7 +225,7 @@ export const COMMERCE_MCP_TOOLS = [
       required: ['organization_id', 'product_id'],
       additionalProperties: false,
     },
-    annotations: hints({ readOnly: false, idempotent: true }),
+    annotations: hints({ readOnly: false, idempotent: true, destructive: true }),
     securitySchemes: SECURITY_SCHEMES,
     _meta: { securitySchemes: SECURITY_SCHEMES },
   },

@@ -1,0 +1,14 @@
+$ node --test scripts/collab/queue.test.mjs
+# tests 14 / pass 14 / fail 0
+$ node --test scripts/ci/pr-gate/__tests__/*.test.mjs
+# pass 15 / fail 0
+$ node --test scripts/ci/kiro-steering/guard.test.cjs && node scripts/ci/kiro-steering/guard.cjs .
+# pass 8 / fail 0 — kiro-steering: OK
+$ PR_TITLE="VTID-05145: …" node scripts/ci/pr-gate/gate.mjs scope|sparring|weakening --base origin/main --head HEAD
+✅ scope · ✅ sparring record · ✅ test weakening
+$ node scripts/collab/queue.mjs validate --base origin/main --head HEAD --branch ccr-ca63b286-optl8c
+✅ collab handoff
+$ node scripts/collab/queue.mjs --repo . --repo ../vitana-v1     (after push of both branches)
+11 rows: desktop-spotlight _plan + 10 lanes; phase-5/phase-6 blocked
+$ HOME=<empty> GIT_CONFIG_NOSYSTEM=1 node --test scripts/collab/queue.test.mjs   (no git identity, like the CI runner)
+# before fix: pass 13 / fail 1 (commit-tree: Author identity unknown) — after fix: pass 14 / fail 0

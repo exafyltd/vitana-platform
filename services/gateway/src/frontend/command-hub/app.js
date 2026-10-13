@@ -28503,6 +28503,10 @@ var FALLBACK_HEALTH_ENDPOINTS = [
     { name: 'VTID Ledger Integrity', url: '/api/v1/ops/health/vtid-ledger', group: 'Governance & Integrity' },
     { name: 'ORB Session Ledger', url: '/api/v1/ops/health/orb-session-ledger', group: 'Data & Memory' },
     { name: 'Push Dispatch', url: '/api/v1/ops/health/push-dispatch', group: 'Automation & Scheduling' },
+    // VTID-05141: gateway twins of three ALERT-* workflows.
+    { name: 'Welcome Greeting', url: '/api/v1/ops/health/welcome-greeting', group: 'Community & Social' },
+    { name: 'ORB Bootstrap Latency', url: '/api/v1/ops/health/orb-bootstrap-latency', group: 'AI & Assistant' },
+    { name: 'New-Day Briefing Loop', url: '/api/v1/ops/health/newday-briefing-loop', group: 'AI & Assistant' },
     // VTID-04664: systems that had no check.
     { name: 'STAGING-VERIFY', url: '/api/v1/ops/runtime/deploy/staging-verify', group: 'Deploy & Release' },
     { name: 'Staging Deploy', url: '/api/v1/ops/runtime/deploy/staging-deploy', group: 'Deploy & Release' },
@@ -40834,7 +40838,22 @@ var DEV_AUTOPILOT_CONFIG_FIELDS = [
     { key: 'select_all_cap', label: 'Select-all cap', min: 1, max: 500 },
     { key: 'max_auto_fix_depth', label: 'Max auto-fix depth', min: 0, max: 20 },
     { key: 'post_deploy_verification_window_minutes', label: 'Post-deploy verification window (minutes)', min: 1, max: 1440 },
+    // VTID-05146: a held_overlap execution older than this ends (overlap_hold_timeout).
+    { key: 'overlap_hold_max_hours', label: 'Overlap hold limit (hours)', min: 1, max: 720 },
 ];
+
+// VTID-05146 (C2): frozen_scope — temporary never-touch globs while people
+// work an area (one per line). It can only take work away from the executor.
+function devAutopilotFrozenScopeText(cfg) {
+    var list = Array.isArray(cfg && cfg.frozen_scope) ? cfg.frozen_scope : [];
+    return list.join('\n');
+}
+
+function devAutopilotFrozenScopeDraft() {
+    var draft = state.devAutopilot.configDraft || {};
+    if (!Object.prototype.hasOwnProperty.call(draft, 'frozen_scope')) return null;
+    return String(draft.frozen_scope || '').split('\n').map(function (l) { return l.trim(); }).filter(function (l) { return l.length > 0; });
+}
 
 function devAutopilotSaveConfig() {
     var cfg = state.devAutopilot.config || {};
@@ -40857,6 +40876,8 @@ function devAutopilotSaveConfig() {
         }
         if (n !== cfg[f.key]) patch[f.key] = n;
     });
+    var frozenDraft = devAutopilotFrozenScopeDraft();
+    if (frozenDraft !== null && frozenDraft.join('\n') !== devAutopilotFrozenScopeText(cfg)) patch.frozen_scope = frozenDraft;
     if (invalid) {
         state.devAutopilot.configSaveError = invalid;
         renderApp();
@@ -40924,6 +40945,23 @@ function renderDevAutopilotConfigPanel() {
         wrap.appendChild(input);
         body.appendChild(wrap);
     });
+
+    var frozenWrap = document.createElement('label');
+    frozenWrap.className = 'dev-autopilot-config-field dev-autopilot-config-field--wide';
+    frozenWrap.textContent = 'Frozen scope — the autopilot never approves or merges a change here (one glob per line)';
+    var frozenInput = document.createElement('textarea');
+    frozenInput.className = 'dev-autopilot-config-input dev-autopilot-config-textarea';
+    frozenInput.rows = 3;
+    frozenInput.placeholder = 'services/gateway/src/frontend/command-hub/**';
+    frozenInput.value = Object.prototype.hasOwnProperty.call(state.devAutopilot.configDraft, 'frozen_scope')
+        ? state.devAutopilot.configDraft.frozen_scope
+        : devAutopilotFrozenScopeText(cfg);
+    frozenInput.disabled = !!state.devAutopilot.configSaving;
+    frozenInput.oninput = function (e) {
+        state.devAutopilot.configDraft.frozen_scope = e.target.value;
+    };
+    frozenWrap.appendChild(frozenInput);
+    body.appendChild(frozenWrap);
 
     section.appendChild(body);
 
@@ -41846,6 +41884,32 @@ function devAutopilotBatchAction(action, hours) {
     });
 }
 
+// VTID-05146 (C1): re-run the open-PR overlap check for a held execution and
+// release it only when nothing blocks any more — never a skip of the check.
+function devAutopilotReleaseHold(execId) {
+    var key = 'release:' + execId;
+    if (devAutopilotInFlight(key)) return;
+    devAutopilotMarkFlight(key, true);
+    renderApp();
+    devAutopilotApi('/executions/' + execId + '/release-hold', 'POST', {}).then(function (data) {
+        devAutopilotMarkFlight(key, false);
+        if (data && data.state === 'released') {
+            showToast('Released — no open PR shares its files any more', 'success');
+        } else if (data && data.state === 'still_held') {
+            showToast('Still held — open PR' + ((data.blocking_prs || []).length === 1 ? ' ' : 's ') + (data.blocking_prs || []).map(function (n) { return '#' + n; }).join(', ') + (data.frozen_files && data.frozen_files.length ? ' (and frozen scope)' : '') + ' still change the same files', 'warning');
+        } else if (data && data.state === 'timed_out') {
+            showToast('The hold had run past its limit — execution ended (overlap_hold_timeout)', 'warning');
+        } else {
+            showToast((data && data.error) || 'Release check failed', 'error');
+        }
+        fetchAutopilotLive().then(renderApp, renderApp);
+    }).catch(function (err) {
+        devAutopilotMarkFlight(key, false);
+        showToast('Network error: ' + (err.message || err), 'error');
+        renderApp();
+    });
+}
+
 function devAutopilotCancelExecution(execId) {
     var key = 'cancel:' + execId;
     if (devAutopilotInFlight(key)) return;
@@ -42572,9 +42636,12 @@ function autonomyPulseSeverityColor(s) {
     return s === 'critical' ? '#ef4444' : s === 'warning' ? '#eab308' : '#3b82f6';
 }
 function autonomyPulseSourceColor(s) {
+    // VTID-05148: graduation proposals (L3 Learn) are read-only info items.
+    if (s === 'graduation_proposal') return '#3b82f6';
     return s === 'dev_autopilot_finding' ? '#a855f7' : s === 'self_healing' ? '#f97316' : '#22c55e';
 }
 function autonomyPulseSourceLabel(s) {
+    if (s === 'graduation_proposal') return 'GRADUATION';
     return s === 'dev_autopilot_finding' ? 'DEV AUTOPILOT' : s === 'self_healing' ? 'SELF-HEAL' : 'EXECUTION';
 }
 function autonomyPulseActionSpec(action) {
@@ -48788,6 +48855,7 @@ function renderAutopilotLiveView() {
             var statusColor = exec.status === 'running' || exec.status === 'ci' || exec.status === 'merging' ? '#3b82f6'
                 : exec.status === 'cooling' ? '#eab308'
                 : exec.status === 'awaiting_approval' ? '#f59e0b' // VTID-04029: branch pushed, PR held for a human decision
+                : exec.status === 'held_overlap' ? '#f97316' // VTID-05146: waiting for open PRs that change the same files
                 : exec.status === 'deploying' || exec.status === 'verifying' ? '#a855f7'
                 : '#888';
             card.style.cssText = 'padding:10px 12px;background:rgba(255,255,255,0.02);border:1px solid #2a2a3a;border-left:3px solid ' + statusColor + ';border-radius:6px;margin-bottom:0.5rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;';
@@ -48874,6 +48942,49 @@ function renderAutopilotLiveView() {
                 liveCancelBtn.className = 'dev-autopilot-decision-btn dev-autopilot-decision-btn--cancel' + (liveCancelling ? ' dev-autopilot-decision-btn--busy' : '');
                 liveCancelBtn.onclick = function () { devAutopilotCancelExecution(exec.id); };
                 card.appendChild(liveCancelBtn);
+            }
+
+            // VTID-05146 (C1): held because an open PR (any author) changes the
+            // same files, or the PR touches frozen_scope. Shows the blocking
+            // PRs; "Re-check & release" re-runs the check, never skips it.
+            if (exec.status === 'held_overlap') {
+                var hold = (exec.metadata && exec.metadata.overlap_hold) || {};
+                var holdInfo = document.createElement('div');
+                holdInfo.className = 'dev-autopilot-hold-info';
+                var holdText = document.createElement('span');
+                holdText.textContent = (hold.from === 'cooling' ? 'Held before the run' : 'Held before the merge') + ' — waiting for';
+                holdInfo.appendChild(holdText);
+                (hold.blocking_prs || []).forEach(function (b) {
+                    var a = document.createElement('a');
+                    a.href = 'https://github.com/exafyltd/vitana-platform/pull/' + b.pr;
+                    a.target = '_blank';
+                    a.rel = 'noopener';
+                    a.className = 'dev-autopilot-hold-pr';
+                    a.textContent = '#' + b.pr;
+                    a.title = (b.files || []).join('\n');
+                    holdInfo.appendChild(a);
+                });
+                if ((hold.frozen_files || []).length) {
+                    var frozenNote = document.createElement('span');
+                    frozenNote.className = 'dev-autopilot-hold-frozen';
+                    frozenNote.textContent = 'frozen scope: ' + hold.frozen_files.slice(0, 3).join(', ') + (hold.frozen_files.length > 3 ? ', …' : '');
+                    holdInfo.appendChild(frozenNote);
+                }
+                if (hold.held_at) {
+                    var heldSince = document.createElement('span');
+                    heldSince.className = 'dev-autopilot-hold-since';
+                    heldSince.textContent = 'since ' + autopilotSupervisorAgo(hold.held_at);
+                    holdInfo.appendChild(heldSince);
+                }
+                card.appendChild(holdInfo);
+                var releasing = devAutopilotInFlight('release:' + exec.id);
+                var releaseBtn = document.createElement('button');
+                releaseBtn.textContent = releasing ? 'Checking…' : 'Re-check & release';
+                releaseBtn.disabled = releasing;
+                releaseBtn.title = 'Run the open-PR overlap check now; the execution is released only if nothing blocks it any more';
+                releaseBtn.className = 'dev-autopilot-decision-btn dev-autopilot-decision-btn--approve' + (releasing ? ' dev-autopilot-decision-btn--busy' : '');
+                releaseBtn.onclick = function () { devAutopilotReleaseHold(exec.id); };
+                card.appendChild(releaseBtn);
             }
 
             // VTID-04029: the agent pushed its branch and is waiting for a

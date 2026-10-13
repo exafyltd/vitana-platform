@@ -1,0 +1,25 @@
+# Read-only live checks (Supabase MCP execute_sql, project inmkhvwdcuyhnxkgfvsb, 2026-10-13)
+$ SELECT md5(pg_get_functiondef(oid)), pg_get_functiondef(oid), proacl FROM pg_proc WHERE oid IN ('public.handle_new_user()'::regprocedure, 'public.provision_platform_user()'::regprocedure)
+handle_new_user         9599cfbfa7d9f8532ea1564df99e430f   (= plan; no drift)
+provision_platform_user 6254e35b2765d8edd5976ec5b9eec4f3   (= plan; no drift; body has CRLF line endings, kept verbatim)
+$ information_schema.columns for tenants, memberships, role_preferences, app_users, user_tenants, user_permitted_roles, profiles, global_community_profiles
+app_users.tenant_id is NOT NULL (→ M2's no-tenant path returns before the app_users insert)
+$ pg_get_triggerdef for auth.users / user_tenants / tenants; pg_get_functiondef(membership_side_effects_suppressed); pg_constraint for the signup tables; tenants rows
+7 AFTER INSERT triggers on auth.users (+1 BEFORE DELETE), 4 on user_tenants, none on tenants; maxina/alkalma both open_signup, is_active, same created_at
+
+# Local throwaway cluster (postgres 16, /usr/lib/postgresql/16/bin, trust auth, unix socket)
+$ initdb -D <tmp>/data -U postgres -A trust && pg_ctl -D <tmp>/data -o "-p 55449 -k <tmp> -c listen_addresses=''" -w start
+$ PGHOST=<tmp> PGPORT=55449 PGUSER=postgres bash scripts/ci/sql-tests/run-tenant-foundation-test.sh
+ok 1 … ok 8, PASS vtid-05149 tenant foundation          (outputs/sql-harness.txt)
+$ (mutation) drop the slug filter from handle_new_user in M2, re-run the harness
+FAIL … M2 should have applied (M2's post-guard refuses it); file restored byte-for-byte
+
+# Gateway (services/gateway)
+$ npx jest test/vtid-05149-tenant-context.test.ts test/vtid-05149-tenant-foundation-migrations.test.ts test/middleware/auth-supabase-jwt.test.ts test/vtid-05048-s4-caller-identity.test.ts test/routes/auth-cognito.test.ts test/routes/autopilot-prompts.test.ts test/universal-cart.test.ts test/vtid-04345-morning-memory-check.test.ts test/vtid-04787-self-audit-and-identity-drift.test.ts test/vtid-04878-reward-routes.test.ts test/vtid-05041-definer-lockdown.test.ts test/vtid-05043-s3-migrations.test.ts test/vtid-05088-memory-health-speech-input.test.ts
+Test Suites: 13 passed, 13 total / Tests: 295 passed, 295 total   (outputs/jest-slice.txt)
+$ npm run test:roles && npm run test:support && npm run test:operator
+105 / 87 / 64 passed                                               (outputs/regression-suites.txt)
+$ npx tsc --noEmit -p .
+3 pre-existing TS2307 (missing modules in the shared node_modules), nothing else   (outputs/tsc.txt)
+$ npx jest --silent --maxWorkers=6   (full suite)
+26 failed suites, 1653 passed; every failing suite also fails on origin/main in this environment (sampled with the change stashed)   (outputs/jest-full.txt)

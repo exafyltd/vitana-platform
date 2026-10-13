@@ -43,6 +43,7 @@
 
 import { specialistAckWindowMs, SPECIALIST_VOICE_ACK_DEFAULT_MS } from '../orb/live/tools/delegation-tools';
 import { pickEffectiveRole } from '../services/orchestrator/active-role';
+import { fetchPermittedRoles } from '../lib/permitted-roles';
 import express, { Router, Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
 // VTID-04543: in-process cache for lookupPrimaryTenant.
@@ -812,18 +813,35 @@ async function fetchUserRolePreference(
  */
 export async function resolveEffectiveRole(
   userId: string,
-  tenantId: string
+  tenantId: string,
+  opts?: { exafyAdmin?: boolean }
 ): Promise<string | null> {
-  const [pref, tenantRole] = await Promise.all([
+  const exafyAdmin = opts?.exafyAdmin === true;
+  // VTID-05147: the permitted set is read in parallel (no extra round trip);
+  // exafy callers skip it — their roles have no permitted rows.
+  const [pref, tenantRole, permitted] = await Promise.all([
     fetchUserRolePreference(userId, tenantId),
     fetchUserActiveRole(userId, tenantId),
+    exafyAdmin ? Promise.resolve(null) : fetchPermittedRoles(getSupabase(), userId, tenantId),
   ]);
   if (pref && tenantRole && pref !== tenantRole) {
     console.log(`[BOOTSTRAP-ORB-ROLE-SYNC] role_preference="${pref}" overrides user_tenants.active_role="${tenantRole}" for user=${userId.substring(0, 8)}...`);
   }
   // VTID-04318: the rule lives in orchestrator/active-role.ts so the AP
   // executor targets users on exactly the role the ORB addresses them as.
-  return pickEffectiveRole(pref, tenantRole);
+  const picked = pickEffectiveRole(pref, tenantRole);
+  if (!picked || exafyAdmin || !permitted) return picked;
+  // VTID-05147: role_preferences / user_tenants.active_role were member-
+  // writable, so the picked role is a claim. Outside the permitted set — or
+  // when that set cannot be read — the caller acts as 'community'.
+  if (!permitted.roles || !permitted.roles.includes(picked.toLowerCase())) {
+    console.warn(
+      `[VTID-05147] effective role clamped: "${picked}" -> "community" for user=${userId.substring(0, 8)}... ` +
+      (permitted.roles ? 'not permitted' : `permitted roles unavailable (${permitted.error})`)
+    );
+    return 'community';
+  }
+  return picked;
 }
 
 /**
@@ -18317,7 +18335,7 @@ async function prewarmNovaFullContext(clientSession: WsClientSession, message: W
       { identity, sessionId: shadowId, brainRole, timezone: clientContext.timezone, useBrain },
       { legacy: buildBootstrapContextPack },
     ),
-    resolveEffectiveRole(identity.user_id, identity.tenant_id || ''),
+    resolveEffectiveRole(identity.user_id, identity.tenant_id || '', { exafyAdmin: identity.exafy_admin === true }),
     fetchLastSessionInfo(identity.user_id, clientContext.timezone),
     identity.tenant_id ? fetchAdminBriefingBlock(identity.tenant_id, 3).catch(() => null) : Promise.resolve(null),
     import('./autopilot-recommendations')

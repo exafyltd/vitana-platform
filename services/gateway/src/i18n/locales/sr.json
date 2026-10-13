@@ -195,5 +195,7 @@
   "autopilot.auto.event_rsvp_referral.summary": "Došao si preko pozivnice za događaj. Prijavi se da sačuvaš mesto.",
   "autopilot.auto.share_milestone.title": "Podeli svoj uspeh: {milestone}",
   "autopilot.auto.share_milestone.summary": "Dostigao si prekretnicu. Podeli je sa zajednicom — videćeš objavu pre nego što izađe.",
-  "sms.phone_verification.code": "Tvoj Vitanaland kod: {code}. Ne deli ga ni sa kim."
+  "sms.phone_verification.code": "Tvoj Vitanaland kod: {code}. Ne deli ga ni sa kim.",
+  "notif.vitana_companion_message.title": "Poruka od Vitane",
+  "notif.vitana_companion_message.body": "Vitana ti je pisala – dodirni da pročitaš njenu poruku."
 }

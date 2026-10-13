@@ -195,5 +195,7 @@
   "email.push_fallback.cta": "Uygulamada aç",
   "email.push_fallback.why": "Bu e-postayı, hiçbir anlık bildirim sana ulaşmadığı için alıyorsun. Bunu istediğin zaman değiştirebilirsin:",
   "email.push_fallback.settings": "Bildirim ayarları",
-  "sms.phone_verification.code": "Vitanaland kodun: {code}. Kimseyle paylaşma."
+  "sms.phone_verification.code": "Vitanaland kodun: {code}. Kimseyle paylaşma.",
+  "notif.vitana_companion_message.title": "Vitana'dan mesaj",
+  "notif.vitana_companion_message.body": "Vitana sana yazdı – mesajını okumak için dokun."
 }

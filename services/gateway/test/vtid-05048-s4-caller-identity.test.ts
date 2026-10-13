@@ -68,6 +68,16 @@ jest.mock('../src/middleware/auth-supabase-jwt-repository', () => ({
   fetchMembershipForUserTenant: async (_sb: any, _uid: string, tenantId: string) => ({ data: { tenant_id: tenantId }, error: null }),
 }));
 jest.mock('../src/lib/supabase', () => ({ getSupabase: () => ({}) }));
+// VTID-05149: requireTenant's primary-tenant fallback goes through the shared
+// resolver (services/tenancy/tenant-context.ts), no longer through
+// fetchPrimaryTenantForUser; drive it from the same mock.
+jest.mock('../src/services/tenancy/tenant-context', () => ({
+  ...jest.requireActual('../src/services/tenancy/tenant-context'),
+  resolvePrimaryTenant: async (userId: string) => {
+    const { data } = await mockFetchPrimaryTenant(null, userId);
+    return data?.tenant_id ? { status: 'found', tenantId: data.tenant_id, role: null, source: 'primary' } : { status: 'none' };
+  },
+}));
 
 const mockUpdateSystemControl = jest.fn();
 jest.mock('../src/services/system-controls-service', () => ({
