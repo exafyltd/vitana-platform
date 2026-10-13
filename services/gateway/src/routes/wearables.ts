@@ -20,6 +20,13 @@ import type { RevokeAccessResult } from '../connectors/types';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { isTokenCryptoConfigured, openToken, sealToken } from '../lib/connection-token-crypto';
 import * as repo from './wearables-repository';
+import { dualWriteUserConnections } from '../services/health-sources/legacy-mirror';
+import {
+  isHealthSourcesReadEnabled,
+  logReadFallback,
+  readProviderConnectionsFromSources,
+  readWearableConnectionsFromSources,
+} from '../services/health-sources/read-model';
 
 const router = Router();
 
@@ -76,6 +83,12 @@ router.get('/providers', async (req: Request, res: Response) => {
       console.error(`[wearables] user connections lookup failed for user=${user.user_id}: ${connectionsErr.message}`);
     }
     userConnections = connections ?? [];
+    // VTID-05161 (B1 Change 4): connected flags from health_sources when the read switch is on.
+    if (isHealthSourcesReadEnabled()) {
+      const fromSources = await readProviderConnectionsFromSources(supabase, user.user_id);
+      if (fromSources.ok) userConnections = fromSources.rows;
+      else logReadFallback('wearables.providers', fromSources.code);
+    }
   }
   const connectionMap = new Map(userConnections.filter((c) => c.is_active).map((c) => [c.connector_id, c]));
 
@@ -140,6 +153,7 @@ router.post('/connect/:connector', async (req: Request, res: Response) => {
         enrichment_status: 'pending',
         is_active: false, // flipped to true on auth webhook
       });
+      dualWriteUserConnections(supabase, { user_id: user.user_id, connector_id: connector.id }, 'wearables.connect');
       return res.json({ ok: true, connector: connector.id, widget_url: widget.url, widget_session_id: widget.session_id });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -246,6 +260,7 @@ router.get('/callback/:connector', async (req: Request, res: Response) => {
       is_active: true,
       connected_at: new Date().toISOString(),
     });
+    dualWriteUserConnections(supabase, { user_id: stateData.u, connector_id: connector.id }, 'wearables.callback');
 
     // Redirect user to frontend success page
     const successUrl = `${process.env.FRONTEND_PUBLIC_URL ?? 'https://vitanaland.com'}/ecosystem?wearable=success&provider=${connectorId}`;
@@ -275,6 +290,7 @@ router.post('/disconnect/:connector', async (req: Request, res: Response) => {
   const { data: rows } = await repo.fetchConnectionsForDisconnect(supabase, user.user_id, connectorId);
   const { error } = await repo.disconnectUserConnection(supabase, user.user_id, connectorId);
   if (error) return res.status(500).json({ ok: false, error: error.message });
+  dualWriteUserConnections(supabase, { user_id: user.user_id, connector_id: connectorId }, 'wearables.disconnect');
 
   const connector = getConnector(connectorId);
   const revoke = await revokeAtVendor(connector, (rows ?? []) as DisconnectRow[]);
@@ -347,6 +363,12 @@ router.get('/connections', async (req: Request, res: Response) => {
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const { data, error } = await repo.fetchUserWearableConnectionsFull(supabase, user.user_id);
   if (error) return res.status(500).json({ ok: false, error: error.message });
+  // VTID-05161 (B1 Change 4): connection state from health_sources when the read switch is on.
+  if (isHealthSourcesReadEnabled()) {
+    const fromSources = await readWearableConnectionsFromSources(supabase, user.user_id);
+    if (fromSources.ok) return res.json({ ok: true, connections: fromSources.rows });
+    logReadFallback('wearables.connections', fromSources.code);
+  }
   res.json({ ok: true, connections: data ?? [] });
 });
 

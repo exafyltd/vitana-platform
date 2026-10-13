@@ -1,0 +1,29 @@
+{
+  "vtid": "VTID-05161",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261014100200_vtid_05161_health_sources.sql",
+    "supabase/migrations/20261014100300_vtid_05161_user_integrations_revoke_browser_writes.sql",
+    "scripts/ci/sql-tests/vtid-05161-health-sources.test.sql",
+    "scripts/ci/sql-tests/run-health-sources-test.sh",
+    ".github/workflows/SQL-HEALTH-SOURCES.yml",
+    "scripts/ci/migration-drift-baseline.json",
+    "scripts/ci/check-migration-drift.test.cjs",
+    "scripts/aws/aurora-restore-rls-parity.sql",
+    "scripts/aws/aurora-cutover-restore-grants.sql",
+    "services/gateway/src/services/health-sources/**",
+    "services/gateway/src/routes/wearables.ts",
+    "services/gateway/src/routes/integrations.ts",
+    "services/gateway/src/routes/connector-webhooks.ts",
+    "services/gateway/src/routes/scheduler.ts",
+    "services/gateway/src/services/voice-tools/health-log.ts",
+    "services/gateway/src/services/orb-tools/health-depth-tools.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/test/vtid-05161-health-sources.test.ts",
+    "services/gateway/test/health-sources/fake-db.ts",
+    "services/gateway/test/migrations/vtid-05161-health-sources-migration.test.ts",
+    "DATABASE_SCHEMA.md",
+    "docs/programs/health-hub/STATUS.md",
+    "docs/validation/VTID-05161/**"
+  ]
+}

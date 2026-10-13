@@ -106,6 +106,29 @@ test('the repo baseline lists every table the health store migration declares, a
   assert.ok(![...collectDeclaredTables().keys()].some((t) => /^health_.*_p\d{6,8}$/.test(t)));
 });
 
+// VTID-05161 (B1): health_sources follows the same rule, and the rule is
+// general: every migration carrying the health store placement guard declares
+// only Aurora-only tables.
+test('every table declared behind the health store placement guard is aurora_only (incl. health_sources)', () => {
+  const { map } = parseAuroraOnly(BASELINE);
+  const sourcesMigration = join(ROOT, 'supabase', 'migrations', '20261014100200_vtid_05161_health_sources.sql');
+  assert.deepEqual([...parseMigrationSql(readFileSync(sourcesMigration, 'utf8')).created], ['health_sources']);
+  assert.equal(map.get('health_sources')?.vtid, 'VTID-05161');
+  assert.ok(!BASELINE.known_missing_tables.includes('health_sources'));
+  const dir = join(ROOT, 'supabase', 'migrations');
+  const guarded = require('node:fs').readdirSync(dir).filter((f) => f.endsWith('.sql'))
+    .map((f) => [f, readFileSync(join(dir, f), 'utf8')])
+    .filter(([, sql]) => /health store placement guard/.test(sql));
+  assert.ok(guarded.length >= 2, 'expected the A1 store and B1 health_sources migrations');
+  for (const [f, sql] of guarded) {
+    for (const t of parseMigrationSql(sql).created) assert.ok(map.has(t), `${f}: ${t} is not in aurora_only_tables`);
+  }
+  // The user_integrations revoke targets Supabase: it carries no placement guard and declares no table.
+  const revoke = readFileSync(join(dir, '20261014100300_vtid_05161_user_integrations_revoke_browser_writes.sql'), 'utf8');
+  assert.ok(!/placement guard/.test(revoke));
+  assert.deepEqual([...parseMigrationSql(revoke).created], []);
+});
+
 test('CLI: passes on a snapshot without the store tables, fails when one appears on Supabase', () => {
   const dir = mkdtempSync(join(tmpdir(), 'drift-05158-'));
   try {

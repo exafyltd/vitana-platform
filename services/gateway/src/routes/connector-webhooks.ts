@@ -18,6 +18,7 @@ import { getSupabase } from '../lib/supabase';
 import { getConnector } from '../connectors';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import * as repo from './connector-webhooks-repository';
+import { dualWriteUserConnections } from '../services/health-sources/legacy-mirror';
 import { bridgeWearableDays, isWearableFeatureBridgeEnabled, utcDateOf } from '../services/wearable-features-bridge';
 
 const router = Router();
@@ -141,6 +142,7 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
           provider_user_id: (event.payload.terra_user_id as string | undefined) ?? null,
           provider_username: (event.payload.provider as string | undefined) ?? null,
         });
+        dualWriteUserConnections(supabase, { user_id: userId, connector_id: connector.id }, 'webhook.auth_completed');
       }
 
       // On auth.revoked: flip inactive
@@ -153,6 +155,7 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
           refresh_token: null,
           token_expires_at: null,
         });
+        dualWriteUserConnections(supabase, { user_id: userId, connector_id: connector.id }, 'webhook.auth_revoked');
       }
 
       // On data events: upsert into daily metrics / workouts

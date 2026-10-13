@@ -149,6 +149,11 @@
       "table": "health_store_maintenance_runs",
       "vtid": "VTID-05158",
       "reason": "Health Hub store (Phase 1 A1): Aurora only — 0T, production after the cutover. Never Supabase (migration placement guard)."
+    },
+    {
+      "table": "health_sources",
+      "vtid": "VTID-05161",
+      "reason": "Health Hub connection model (Phase 1 B1): Aurora only — 0T, production after the cutover. Never Supabase (migration placement guard)."
     }
   ]
 }

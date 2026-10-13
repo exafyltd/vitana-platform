@@ -16,6 +16,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import * as repo from './health-log-repository';
+import { dualWriteUserIntegration } from '../health-sources/legacy-mirror';
 
 type LogTool = 'log_water' | 'log_sleep' | 'log_exercise' | 'log_meditation';
 
@@ -163,6 +164,7 @@ export async function logHealthSignal(
     metadata: { source: 'voice_tool' },
     updated_at: new Date().toISOString(),
   });
+  dualWriteUserIntegration(admin, { user_id: input.user_id, integration_id: 'manual-entry', tenant_id: tenantId }, 'voice.health_log');
 
   // Recompute the Index so the badge + pillar score reflect the new signal.
   const { data: newRow } = await repo.computeVitanaIndexForUser(admin, input.user_id, input.date);
