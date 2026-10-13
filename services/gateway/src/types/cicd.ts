@@ -1133,6 +1133,8 @@ export type CicdEventType =
   | 'commerce.mcp.delegated_token_blocked'
   | 'commerce.mcp.client_refused'
   | 'commerce.mcp.loopback_client_approved'
+  // VTID-05135: TEMPORARY - an unauthenticated probe of /mcp/chatgpt or its discovery documents (remove with auditProbe)
+  | 'commerce.mcp.probe'
   // VTID-05133: Maxina Community MCP ("Connect your AI")
   | 'community.mcp.tool_called'
   | 'community.mcp.client_refused'
