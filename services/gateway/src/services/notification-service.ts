@@ -268,7 +268,19 @@ export type PushOutcome =
   | 'suppressed_type_disabled'
   | 'suppressed_push_disabled'
   | 'suppressed_dnd'
-  | 'dispatch_exception';
+  | 'dispatch_exception'
+  // VTID-05137: a chat push held back because the recipient was already
+  // pushed for this conversation moments ago (chat-push-coalescer.ts).
+  | 'coalesced';
+
+/**
+ * VTID-05137: per-call options. `suppressPush: 'coalesced'` writes the in-app
+ * row exactly as usual but sends no push (the caller decided — notifyUser
+ * never runs the chat coalescer itself).
+ */
+export interface NotifyUserOptions {
+  suppressPush?: 'coalesced';
+}
 
 /** The delivery outcome of one notification after FCM and Appilix ran. */
 export function classifyPushOutcome(fcm: PushFanoutOutcome, appilixSent: boolean): PushOutcome {
@@ -731,7 +743,8 @@ export async function notifyUser(
   tenantId: string,
   type: string,
   payload: NotificationPayload,
-  supabase: SupabaseClient<any, any, any>
+  supabase: SupabaseClient<any, any, any>,
+  opts?: NotifyUserOptions,
 ): Promise<{ pushed: number; inapp: boolean; suppressed?: string }> {
   const meta = TYPE_META[type] || { channel: 'push_and_inapp' as Channel, priority: 'p2' as Priority, category: 'system' as Category };
   const sourceKey = normalizeSourceKey(payload.data?.automation_id);
@@ -782,10 +795,14 @@ export async function notifyUser(
 
   // ── 3. Determine effective actions ───────────────────────
   const shouldWriteInapp = meta.channel !== 'push'; // inapp, push_and_inapp, silent all write
-  const shouldSendPush =
+  const pushAllowed =
     (meta.channel === 'push' || meta.channel === 'push_and_inapp') &&
     !pushBlockedByDnd &&
     (prefs ? prefs.push_enabled !== false : true);
+  // VTID-05137: the caller held this push back (chat burst). The row is still
+  // written, with push_sent_at set so the /push-dispatch cron never sends it.
+  const pushCoalesced = pushAllowed && opts?.suppressPush === 'coalesced';
+  const shouldSendPush = pushAllowed && !pushCoalesced;
 
   // ── 4. Write in-app notification record ──────────────────
   // When shouldSendPush is true, set push_sent_at at INSERT time to prevent
@@ -807,10 +824,10 @@ export async function notifyUser(
       priority: meta.priority,
       title: payload.title,
       body: payload.body,
-      data: payload.data || {},
+      data: pushCoalesced ? { ...(payload.data || {}), push_coalesced: 'true' } : payload.data || {},
       ...(recipientVitanaId && { recipient_vitana_id: recipientVitanaId }),
     };
-    if (shouldSendPush) {
+    if (shouldSendPush || pushCoalesced) {
       insertData.push_sent_at = new Date().toISOString();
     }
     const { data: inserted, error } = await repo.insertUserNotification(supabase, insertData);
@@ -886,7 +903,9 @@ export async function notifyUser(
   if (notificationId && (meta.channel === 'push' || meta.channel === 'push_and_inapp')) {
     const outcome: PushOutcome = shouldSendPush
       ? classifyPushOutcome(fcmTally, appilixSent)
-      : pushBlockedByDnd
+      : pushCoalesced
+        ? 'coalesced'
+        : pushBlockedByDnd
         ? 'suppressed_dnd'
         : 'suppressed_push_disabled';
     await recordPushOutcome(supabase, notificationId, outcome);
@@ -896,6 +915,7 @@ export async function notifyUser(
     `[Notifications] ${type} → user=${userId.slice(0, 8)}… ` +
     `inapp=${inappWritten} push=${pushed} appilix=${appilixSent} ch=${meta.channel} pri=${meta.priority}` +
     (pushBlockedByDnd ? ' (DND)' : '') +
+    (pushCoalesced ? ' (coalesced)' : '') +
     (meta.channel === 'silent' ? ' (silent)' : '')
   );
 
@@ -913,7 +933,7 @@ export async function notifyUser(
     dnd: isDnd,
   }).catch(() => undefined);
 
-  return { pushed, inapp: inappWritten };
+  return { pushed, inapp: inappWritten, ...(pushCoalesced && { suppressed: 'coalesced' }) };
 }
 
 /**
@@ -925,9 +945,10 @@ export function notifyUserAsync(
   tenantId: string,
   type: string,
   payload: NotificationPayload,
-  supabase: SupabaseClient<any, any, any>
+  supabase: SupabaseClient<any, any, any>,
+  opts?: NotifyUserOptions,
 ): void {
-  notifyUser(userId, tenantId, type, payload, supabase).catch((err) => {
+  notifyUser(userId, tenantId, type, payload, supabase, opts).catch((err) => {
     console.error(`[Notifications] Async dispatch failed for ${type}:`, err.message || err);
   });
 }
@@ -941,9 +962,10 @@ export function notifyUsersAsync(
   tenantId: string,
   type: string,
   payload: NotificationPayload,
-  supabase: SupabaseClient<any, any, any>
+  supabase: SupabaseClient<any, any, any>,
+  opts?: NotifyUserOptions,
 ): void {
   for (const uid of userIds) {
-    notifyUserAsync(uid, tenantId, type, payload, supabase);
+    notifyUserAsync(uid, tenantId, type, payload, supabase, opts);
   }
 }

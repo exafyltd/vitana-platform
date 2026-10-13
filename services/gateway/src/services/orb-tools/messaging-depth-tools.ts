@@ -54,6 +54,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { notifyUserAsync } from '../notification-service';
+import { coalesceChatPushes, chatConversationKey } from '../chat-push-coalescer';
 import { checkVoiceSendQuota } from '../voice-message-guard';
 import { getOwnCalendarEvent } from '../calendar-service';
 import { buildInviteFromEntry } from '../calendar-invite';
@@ -367,13 +368,17 @@ export const tool_send_group_chat_message: Handler = async (args, id, sb) => {
       const { data: members } = await repo.fetchChatGroupMemberIds(sb, group.id);
       const senderName = await senderDisplayName(sb, id.user_id);
       const preview = body.length > 100 ? `${body.slice(0, 97)}...` : body;
-      for (const m of (members as Array<{ user_id: string }>) ?? []) {
-        if (m.user_id === id.user_id) continue;
-        notifyUserAsync(
-          m.user_id,
-          group.tenant_id,
-          'new_chat_message',
-          {
+      const recipientIds = ((members as Array<{ user_id: string }>) ?? [])
+        .map((m) => m.user_id)
+        .filter((uid) => uid !== id.user_id);
+      // VTID-05137: same per-conversation coalescing as the group route.
+      const prepared = await coalesceChatPushes(
+        sb,
+        chatConversationKey({ groupId: group.id, senderId: id.user_id }),
+        recipientIds.map((uid) => ({
+          userId: uid,
+          kind: 'message' as const,
+          payload: {
             title: group.name,
             body: `${senderName}: ${preview}`,
             data: {
@@ -384,8 +389,11 @@ export const tool_send_group_chat_message: Handler = async (args, id, sb) => {
               url: `/inbox/g/${group.id}/msg/${messageId}`, // VTID-04928
             },
           },
-          sb,
-        );
+        })),
+      );
+      for (const p of prepared) {
+        if (p.opts) notifyUserAsync(p.userId, group.tenant_id, 'new_chat_message', p.payload, sb, p.opts);
+        else notifyUserAsync(p.userId, group.tenant_id, 'new_chat_message', p.payload, sb);
       }
     } catch {
       /* fanout is best-effort; never fail the send because of it */

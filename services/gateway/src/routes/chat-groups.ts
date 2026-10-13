@@ -40,6 +40,7 @@ import { buildInviteForChat, CALENDAR_INVITE_TYPE } from '../services/calendar-i
 import { checkInviteSend, inviteRefusedBody, INVITE_REFUSED_STATUS } from '../services/calendar-invite-guard';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { notifyUser } from '../services/notification-service';
+import { coalesceChatPushes, chatConversationKey, type ChatPushItem, type PreparedChatPush } from '../services/chat-push-coalescer';
 import { VITANA_BOT_USER_ID, isVitanaBot } from '../lib/vitana-bot';
 import { processConversationTurn } from '../services/conversation-client';
 import { emitOasisEvent } from '../services/oasis-event-service';
@@ -601,13 +602,13 @@ async function fanoutGroupNotifications(
     ? await bulkGetUserLocales(supabase, recipients.map((m) => m.user_id)).catch(() => new Map())
     : new Map();
 
-  const notifyMember = (userId: string) => {
+  const items: ChatPushItem[] = recipients.map((m): ChatPushItem => {
+    const userId = m.user_id;
     if (mentionedIds.has(userId)) {
-      return notifyUser(
+      return {
         userId,
-        tenantId,
-        'chat_mention',
-        {
+        kind: 'mention',
+        payload: {
           title: tt('notif.chat_mention.title', mentionLocales.get(userId), { sender: senderName, group: groupName }),
           body,
           data: {
@@ -619,14 +620,12 @@ async function fanoutGroupNotifications(
             url: `/inbox/g/${groupId}/msg/${messageId}`,
           },
         },
-        supabase,
-      );
+      };
     }
-    return notifyUser(
+    return {
       userId,
-      tenantId,
-      'new_chat_message',
-      {
+      kind: 'message',
+      payload: {
         title: groupName,
         body: isCalendarInvite
           ? tt('notif.calendar_invite.body', inviteLocales.get(userId), { name: senderName })
@@ -641,15 +640,26 @@ async function fanoutGroupNotifications(
           url: `/inbox/g/${groupId}/msg/${messageId}`,
         },
       },
-      supabase,
-    );
-  };
+    };
+  });
+
+  // VTID-05137: one batched read decides, per member, whether this message
+  // pushes or joins the burst already in their tray. A calendar invite is an
+  // event of its own and always pushes unchanged.
+  const prepared = isCalendarInvite
+    ? items.map((i): PreparedChatPush => ({ userId: i.userId, payload: i.payload }))
+    : await coalesceChatPushes(supabase, chatConversationKey({ groupId, senderId }), items);
+  const typeFor = new Map(items.map((i) => [i.userId, i.kind === 'mention' ? 'chat_mention' : 'new_chat_message']));
 
   // Promise.allSettled so one bad member can't block the rest, and so the
   // caller's await actually finishes before Cloud Run can freeze the
   // container (see call site's comment for why fire-and-forget silently
   // drops pushes here).
-  const results = await Promise.allSettled(recipients.map((m) => notifyMember(m.user_id)));
+  const results = await Promise.allSettled(
+    prepared.map((p) => (p.opts
+      ? notifyUser(p.userId, tenantId, typeFor.get(p.userId)!, p.payload, supabase, p.opts)
+      : notifyUser(p.userId, tenantId, typeFor.get(p.userId)!, p.payload, supabase))),
+  );
   const failed = results.filter((r) => r.status === 'rejected').length;
   if (failed > 0) {
     console.warn(`[ChatGroups] fanout: ${failed}/${results.length} notifyUser calls rejected`);

@@ -2736,11 +2736,13 @@ export async function tool_send_chat_message(
         const truncatedBody = body.length > 100 ? body.slice(0, 97) + '...' : body;
         const insertedId = (inserted as { id?: string } | null)?.id ?? null;
         const { notifyUserAsync } = await import('./notification-service');
-        notifyUserAsync(
-          recipientUserId,
-          tenantId,
-          'new_chat_message',
-          {
+        // VTID-05137: same per-conversation coalescing as routes/chat.ts —
+        // decided (awaited) here, before the fire-and-forget dispatch.
+        const { coalesceChatPushes, chatConversationKey } = await import('./chat-push-coalescer');
+        const [prepared] = await coalesceChatPushes(sb, chatConversationKey({ senderId: id.user_id }), [{
+          userId: recipientUserId,
+          kind: 'message',
+          payload: {
             title: senderName,
             body: truncatedBody,
             data: {
@@ -2757,8 +2759,9 @@ export async function tool_send_chat_message(
               source: 'voice',
             },
           },
-          sb,
-        );
+        }]);
+        if (prepared.opts) notifyUserAsync(recipientUserId, tenantId, 'new_chat_message', prepared.payload, sb, prepared.opts);
+        else notifyUserAsync(recipientUserId, tenantId, 'new_chat_message', prepared.payload, sb);
       }
     } catch (notifyErr: unknown) {
       const m = notifyErr instanceof Error ? notifyErr.message : 'notify dispatch failed';
