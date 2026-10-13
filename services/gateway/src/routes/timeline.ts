@@ -15,6 +15,8 @@
  *   GET    /api/v1/timeline/usage-data          how many stored-but-silent rows (screen visits, technical traces)
  *   GET    /api/v1/timeline/usage-data/export   those rows as a JSON download
  *   DELETE /api/v1/timeline/usage-data          delete them all (+ the app-usage routines)
+ *   GET    /api/v1/timeline/routines            the routines Vitana noticed (user_routines, confidence ≥ 0.5)
+ *   DELETE /api/v1/timeline/routines/:id        forget one
  *
  * Auth: requireAuth; the user comes from the JWT only and every read/write is
  * filtered by it. Text is { key, params } — the app renders it in the
@@ -259,6 +261,36 @@ router.delete('/usage-data', requireAuth, async (req: AuthenticatedRequest, res:
   // What was learned from it goes too.
   const routines = await sb.from('user_routines').delete({ count: 'exact' }).eq('user_id', userId).in('routine_kind', [...APP_USAGE_ROUTINE_KINDS]);
   return res.json({ ok: true, deleted: r.deleted, routines_deleted: routines.error ? 0 : routines.count ?? 0, vtid: VTID_P5 });
+});
+
+router.get('/routines', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = userOf(req);
+  if (!userId) return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID_P5 });
+  const sb = dbOr500(res);
+  if (!sb) return;
+  const { data, error } = await sb
+    .from('user_routines')
+    .select('id, routine_kind, routine_key, metadata, confidence, evidence_count, last_observed')
+    .eq('user_id', userId)
+    .gte('confidence', 0.5)
+    .order('confidence', { ascending: false })
+    .limit(50);
+  if (error) return res.status(500).json({ ok: false, error: 'routines_failed', vtid: VTID_P5 });
+  // The app renders each routine from kind + metadata in the member's language;
+  // the English title/summary are for the model only and are not sent.
+  return res.json({ ok: true, routines: data ?? [], vtid: VTID_P5 });
+});
+
+router.delete('/routines/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = userOf(req);
+  if (!userId) return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID_P5 });
+  if (!UUID_RE.test(req.params.id)) return res.status(400).json({ ok: false, error: 'invalid_id', vtid: VTID_P5 });
+  const sb = dbOr500(res);
+  if (!sb) return;
+  const { error, count } = await sb.from('user_routines').delete({ count: 'exact' }).eq('user_id', userId).eq('id', req.params.id);
+  if (error) return res.status(500).json({ ok: false, error: 'forget_failed', vtid: VTID_P5 });
+  if (!count) return res.status(404).json({ ok: false, error: 'not_found', vtid: VTID_P5 });
+  return res.json({ ok: true, id: req.params.id, vtid: VTID_P5 });
 });
 
 router.get('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {

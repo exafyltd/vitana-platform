@@ -1,8 +1,8 @@
 # VTID-05171 — acceptance (Life Timeline P5: companion wiring)
 
-ROUTE_MOUNT: services/gateway/src/routes/timeline.ts (existing router, mounted at /api/v1/timeline by VTID-05169) — five routes added before '/:id'.
-FINAL_URL: GET/PUT {gateway}/api/v1/timeline/learning-prefs, GET {gateway}/api/v1/timeline/usage-data, GET {gateway}/api/v1/timeline/usage-data/export, DELETE {gateway}/api/v1/timeline/usage-data
-CURL_PROOF: on staging only the anonymous GETs (staging-tests.json): `curl -s -o /dev/null -w "%{http_code} %{content_type}" https://preview-aws-gateway.vitanaland.com/api/v1/timeline/learning-prefs` → `401 application/json` (also /usage-data, /usage-data/export). The PUT and the DELETE are proven in Jest (staging shares the production database; writes are never probed).
+ROUTE_MOUNT: services/gateway/src/routes/timeline.ts (existing router, mounted at /api/v1/timeline by VTID-05169) — seven routes added before '/:id'.
+FINAL_URL: GET/PUT {gateway}/api/v1/timeline/learning-prefs, GET {gateway}/api/v1/timeline/usage-data, GET {gateway}/api/v1/timeline/usage-data/export, DELETE {gateway}/api/v1/timeline/usage-data, GET {gateway}/api/v1/timeline/routines, DELETE {gateway}/api/v1/timeline/routines/:id
+CURL_PROOF: on staging only the anonymous GETs (staging-tests.json): `curl -s -o /dev/null -w "%{http_code} %{content_type}" https://preview-aws-gateway.vitanaland.com/api/v1/timeline/learning-prefs` → `401 application/json` (also /usage-data, /usage-data/export, /routines). The PUT and the DELETE are proven in Jest (staging shares the production database; writes are never probed).
 OASIS_PROOF: AP-0916 emits `autopilot.memory.timeline_habits_rolled_up` (counts only) through the automation context, like AP-0915; no other event added or changed.
 
 AC-1 Profiler: the 14-day activity read asks the database only for tier spotlight/moment/digest, not hidden_from_ai,
@@ -29,6 +29,8 @@ TEST: npx jest test/vtid-05171-companion-wiring.test.ts -t "get_my_timeline"
 AC-5 Learning switches and usage data: GET lists every learnable category (missing row = on); PUT validates, writes
 only for the JWT user, app_usage off deletes the app-usage routines, 409 before the migration; usage-data count,
 JSON export and delete (main table + archive + app-usage routines), silent/system tiers only, JWT user only.
+Routines: the member's own (confidence ≥ 0.5, kind + key + metadata, never the English title/summary); forget one by
+id (400 bad id, 404 not theirs).
 TEST: npx jest test/vtid-05171-companion-wiring.test.ts -t "learning-prefs"
 
 AC-6 Migration: four routine kinds accepted, unknown rejected, existing rows kept; timeline_learning_prefs defaults,

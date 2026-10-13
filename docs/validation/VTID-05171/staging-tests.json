@@ -2,10 +2,41 @@
   "vtid": "VTID-05171",
   "service": "gateway",
   "tests": [
-    { "kind": "http", "name": "build-info answers JSON (the runner confirms the verified commit from it)", "path": "/api/v1/admin/build-info", "expect_status": 200, "expect_content_type": "application/json" },
-    { "kind": "http", "name": "GET /api/v1/timeline/learning-prefs is mounted (before /:id) and refuses an anonymous caller with JSON 401", "path": "/api/v1/timeline/learning-prefs", "expect_status": 401, "expect_content_type": "application/json" },
-    { "kind": "http", "name": "GET /api/v1/timeline/usage-data is mounted and refuses an anonymous caller with JSON 401", "path": "/api/v1/timeline/usage-data", "expect_status": 401, "expect_content_type": "application/json" },
-    { "kind": "http", "name": "GET /api/v1/timeline/usage-data/export is mounted and refuses an anonymous caller with JSON 401", "path": "/api/v1/timeline/usage-data/export", "expect_status": 401, "expect_content_type": "application/json" },
+    {
+      "kind": "http",
+      "name": "build-info answers JSON (the runner confirms the verified commit from it)",
+      "path": "/api/v1/admin/build-info",
+      "expect_status": 200,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "GET /api/v1/timeline/learning-prefs is mounted (before /:id) and refuses an anonymous caller with JSON 401",
+      "path": "/api/v1/timeline/learning-prefs",
+      "expect_status": 401,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "GET /api/v1/timeline/usage-data is mounted and refuses an anonymous caller with JSON 401",
+      "path": "/api/v1/timeline/usage-data",
+      "expect_status": 401,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "GET /api/v1/timeline/usage-data/export is mounted and refuses an anonymous caller with JSON 401",
+      "path": "/api/v1/timeline/usage-data/export",
+      "expect_status": 401,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "GET /api/v1/timeline/routines is mounted and refuses an anonymous caller with JSON 401",
+      "path": "/api/v1/timeline/routines",
+      "expect_status": 401,
+      "expect_content_type": "application/json"
+    },
     {
       "kind": "existing",
       "ref": "npx jest test/vtid-05171-companion-wiring.test.ts test/vtid-04560-role-separation-regression.test.ts test/vtid-04226-eventbridge-test-contract-schedules.test.ts test/vtid-04349-automation-shadow.test.ts",

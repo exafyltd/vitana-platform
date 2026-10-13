@@ -304,6 +304,8 @@ describe('/api/v1/timeline learning-prefs + usage-data', () => {
     ['get', '/api/v1/timeline/usage-data'],
     ['get', '/api/v1/timeline/usage-data/export'],
     ['delete', '/api/v1/timeline/usage-data'],
+    ['get', '/api/v1/timeline/routines'],
+    ['delete', '/api/v1/timeline/routines/0b5f3a52-1d6c-4c3e-9a0e-1d2b3c4d5e6f'],
   ])('%s %s → 401 without identity', async (method, url) => {
     currentIdentity = null;
     routeSb = fakeSb(() => ({ data: [] }));
@@ -356,5 +358,24 @@ describe('/api/v1/timeline learning-prefs + usage-data', () => {
     for (const c of routeSb.calls as Call[]) expect(c.ops).toContainEqual(['eq', ['user_id', 'u1']]);
     const logDel = routeSb.calls.find((c: Call) => c.table === 'user_activity_log' && op(c, 'delete'));
     expect(op(logDel, 'in')).toEqual(['tier', ['silent', 'system']]);
+  });
+
+  it('routines: the member’s own, confidence ≥ 0.5, no English strings; forget one by id (404 when not theirs)', async () => {
+    routeSb = fakeSb(() => ({ data: [{ id: 'r1', routine_kind: 'pillar_rhythm', routine_key: 'sleep', metadata: { bucket: 'night' }, confidence: 0.8 }] }));
+    const res = await request(app).get('/api/v1/timeline/routines');
+    expect(res.status).toBe(200);
+    expect(res.body.routines[0]).toMatchObject({ routine_kind: 'pillar_rhythm', routine_key: 'sleep' });
+    const sel = routeSb.calls[0];
+    expect(op(sel, 'select')![0]).not.toMatch(/title|summary/);
+    expect(sel.ops).toContainEqual(['eq', ['user_id', 'u1']]);
+    expect(sel.ops).toContainEqual(['gte', ['confidence', 0.5]]);
+
+    expect((await request(app).delete('/api/v1/timeline/routines/not-a-uuid')).status).toBe(400);
+    routeSb = fakeSb(() => ({ count: 0 }));
+    expect((await request(app).delete('/api/v1/timeline/routines/0b5f3a52-1d6c-4c3e-9a0e-1d2b3c4d5e6f')).status).toBe(404);
+    routeSb = fakeSb(() => ({ count: 1 }));
+    const ok = await request(app).delete('/api/v1/timeline/routines/0b5f3a52-1d6c-4c3e-9a0e-1d2b3c4d5e6f');
+    expect(ok.status).toBe(200);
+    expect(routeSb.calls[0].ops).toContainEqual(['eq', ['user_id', 'u1']]);
   });
 });
