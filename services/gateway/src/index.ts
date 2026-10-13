@@ -248,6 +248,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const consentActionsRouter = require('./routes/consent-actions').default;
   const { registerAllActionExecutors } = require('./services/action-executors');
   registerAllActionExecutors();
+  // VTID-05162 (Health Hub B2): rederiveMemberFeatures on the health store's
+  // change hook (S8) — A fires it after withdrawals and committed deletions.
+  // A no-op on staging; reads only through S4.
+  require('./services/health-features/derive-daily-features').registerHealthFeaturesDerivation();
   // VTID-02403: Phase 1 — AI Assistants (ChatGPT + Claude) API-key connect routes
   const aiAssistantsRouter = require('./routes/ai-assistants').default;
   const adminAiIntegrationsRouter = require('./routes/admin/ai-integrations').default;

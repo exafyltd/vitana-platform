@@ -46,6 +46,7 @@ import {
 import { applyUserLimitations, type FilterableProduct } from '../src/services/limitations-filter';
 import { tool_find_perfect_product, tool_find_perfect_practitioner } from '../src/services/orb-tools-shared';
 import { HEALTH_STORE_TABLES } from '../src/services/health-store/tables';
+import { HEALTH_FEATURES_TABLES } from '../src/services/health-features/health-features-repository';
 
 const mockedRepo = repo as jest.Mocked<typeof repo>;
 
@@ -248,9 +249,12 @@ const WEARABLE_FIELD_READ = /wearable_summary_7d(?!\s*:\s*null\b)/;
 const WEARABLE_OPT_IN = /include_wearable\s*:\s*true/;
 // VTID-05159 (Health Hub A2): the health store's tables (S5) join the banned list.
 const LEGACY_HEALTH_TABLES = ['wearable_daily_metrics', 'wearable_rollup_7d', 'wearable_samples', 'health_features_daily', 'biomarker_results', 'lab_reports', 'vitana_index_scores', 'vitana_pillar_agent_outputs'];
-const HEALTH_TABLES = new RegExp(`['"\`](${[...LEGACY_HEALTH_TABLES, ...HEALTH_STORE_TABLES].join('|')})['"\`]`);
+// VTID-05162 (Health Hub B2): the derived features tables join it too.
+const HEALTH_TABLES = new RegExp(`['"\`](${[...LEGACY_HEALTH_TABLES, ...HEALTH_STORE_TABLES, ...HEALTH_FEATURES_TABLES].join('|')})['"\`]`);
 // VTID-05159: commerce never imports the health store (writer, readers, catalogue, fake).
 const HEALTH_STORE_IMPORT = /from\s+['"][^'"]*services\/health-store\/[^'"]*['"]|from\s+['"]\.{1,2}\/(\.\.\/)*health-store\/[^'"]*['"]|require\(\s*['"][^'"]*health-store\/[^'"]*['"]\s*\)/;
+// VTID-05162: commerce never imports the derived-features module (writer re-routing, derivation).
+const HEALTH_FEATURES_IMPORT = /from\s+['"][^'"]*health-features\/[^'"]*['"]|require\(\s*['"][^'"]*health-features\/[^'"]*['"]\s*\)/;
 const WEARABLE_ANALYZER_IMPORT = /from\s+['"][^'"]*wearable-analyzer['"]/;
 // VTID-05089: the wearable -> health_features_daily bridge is health-domain only.
 const WEARABLE_BRIDGE_IMPORT = /from\s+['"][^'"]*wearable-features-bridge(-repository)?['"]/;
@@ -284,6 +288,7 @@ describe('commerce/health purpose boundary — source scan (VTID-05025)', () => 
       expect(src).not.toMatch(WEARABLE_ANALYZER_IMPORT);
       expect(src).not.toMatch(WEARABLE_BRIDGE_IMPORT);
       expect(src).not.toMatch(HEALTH_STORE_IMPORT);
+      expect(src).not.toMatch(HEALTH_FEATURES_IMPORT);
     }
   );
 
@@ -307,6 +312,10 @@ describe('commerce/health purpose boundary — source scan (VTID-05025)', () => 
     expect("import { HEALTH_CODES } from '../../health-store/catalogue';").toMatch(HEALTH_STORE_IMPORT);
     expect("const x = require('../services/health-store/reader');").toMatch(HEALTH_STORE_IMPORT);
     expect("import { resolveHealthSource } from '../services/health-sources/health-sources';").not.toMatch(HEALTH_STORE_IMPORT);
+    // VTID-05162: B2's tables and module.
+    for (const t of HEALTH_FEATURES_TABLES) expect(`.from('${t}')`).toMatch(HEALTH_TABLES);
+    expect("import { recordToHealthStore } from '../services/health-features/record-to-health-store';").toMatch(HEALTH_FEATURES_IMPORT);
+    expect("import { resolveHealthSource } from '../services/health-sources/health-sources';").not.toMatch(HEALTH_FEATURES_IMPORT);
   });
 
   it('limitations-filter.ts is the single allowed health→commerce module and stays hide-only in shape', () => {

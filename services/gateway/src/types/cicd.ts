@@ -980,6 +980,11 @@ export type CicdEventType =
   | 'health.store.maintenance.completed'
   | 'health.store.maintenance.failed'
   | 'health.store.partition_missing'
+  // VTID-05162 (Health Hub B2): writer dual-write into the store and the
+  // health_features_daily_v2 derivation. Writers, codes and counts only —
+  // never member ids or health values.
+  | 'health.features.dual_write_failed'
+  | 'health.features.derivation_catch_up'
   // VTID-02300: Phase 3 outbound action consent events
   | 'connector.action.requested'
   | 'connector.action.executed'

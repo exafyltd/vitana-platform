@@ -4194,3 +4194,9 @@ DO $HS05161$ BEGIN IF to_regclass('public.health_sources') IS NOT NULL THEN EXEC
 DO $HC05092$ BEGIN IF to_regclass('public.health_consent_categories') IS NOT NULL THEN EXECUTE $SQL05092$GRANT DELETE ON TABLE public.health_consent_categories TO service_role$SQL05092$; END IF; END $HC05092$;
 DO $HC05092$ BEGIN IF to_regclass('public.health_consent_categories') IS NOT NULL THEN EXECUTE $SQL05092$GRANT INSERT ON TABLE public.health_consent_categories TO service_role$SQL05092$; END IF; END $HC05092$;
 DO $HC05092$ BEGIN IF to_regclass('public.health_consent_categories') IS NOT NULL THEN EXECUTE $SQL05092$GRANT UPDATE ON TABLE public.health_consent_categories TO service_role$SQL05092$; END IF; END $HC05092$;
+
+-- VTID-05162: health_features_daily_v2 / _legacy_shadow / health_features_derivation_pending (Aurora only,
+-- created after the cutover): gateway ALL, no browser role.
+DO $HF05162$ BEGIN IF to_regclass('public.health_features_daily_v2') IS NOT NULL THEN EXECUTE $SQL05162$GRANT ALL ON TABLE public.health_features_daily_v2 TO service_role$SQL05162$; END IF; END $HF05162$;
+DO $HF05162$ BEGIN IF to_regclass('public.health_features_daily_legacy_shadow') IS NOT NULL THEN EXECUTE $SQL05162$GRANT ALL ON TABLE public.health_features_daily_legacy_shadow TO service_role$SQL05162$; END IF; END $HF05162$;
+DO $HF05162$ BEGIN IF to_regclass('public.health_features_derivation_pending') IS NOT NULL THEN EXECUTE $SQL05162$GRANT ALL ON TABLE public.health_features_derivation_pending TO service_role$SQL05162$; END IF; END $HF05162$;

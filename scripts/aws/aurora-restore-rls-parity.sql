@@ -1719,3 +1719,9 @@ DO $HS05161$ BEGIN IF to_regclass('public.health_sources') IS NOT NULL AND NOT E
 -- policies above; their write revokes live in aurora-cutover-restore-grants.sql.
 DO $HC05092$ BEGIN IF to_regclass('public.health_consent_categories') IS NOT NULL THEN EXECUTE $SQL05092$ALTER TABLE public.health_consent_categories ENABLE ROW LEVEL SECURITY$SQL05092$; END IF; END $HC05092$;
 DO $HC05092$ BEGIN IF to_regclass('public.health_consent_categories') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'health_consent_categories' AND policyname = 'health_consent_categories_select') THEN EXECUTE $SQL05092$CREATE POLICY health_consent_categories_select ON public.health_consent_categories AS PERMISSIVE FOR SELECT TO authenticated USING (true)$SQL05092$; END IF; END $HC05092$;
+
+-- VTID-05162: health_features_daily_v2 / _legacy_shadow / health_features_derivation_pending (Aurora only;
+-- created by 20261014100700_vtid_05162_health_features_v2.sql after the cutover). Service role only: RLS on, no policy.
+DO $HF05162$ BEGIN IF to_regclass('public.health_features_daily_v2') IS NOT NULL THEN EXECUTE $SQL05162$ALTER TABLE public.health_features_daily_v2 ENABLE ROW LEVEL SECURITY$SQL05162$; END IF; END $HF05162$;
+DO $HF05162$ BEGIN IF to_regclass('public.health_features_daily_legacy_shadow') IS NOT NULL THEN EXECUTE $SQL05162$ALTER TABLE public.health_features_daily_legacy_shadow ENABLE ROW LEVEL SECURITY$SQL05162$; END IF; END $HF05162$;
+DO $HF05162$ BEGIN IF to_regclass('public.health_features_derivation_pending') IS NOT NULL THEN EXECUTE $SQL05162$ALTER TABLE public.health_features_derivation_pending ENABLE ROW LEVEL SECURITY$SQL05162$; END IF; END $HF05162$;

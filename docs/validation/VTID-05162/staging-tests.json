@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05162",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "build-info answers JSON with the deployed commit", "method": "GET", "path": "/api/v1/admin/build-info", "expect_status": 200, "expect_content_type": "application/json" },
+    { "kind": "http", "name": "integrations list is mounted and needs a signed-in member (invalid bearer rejected)", "method": "GET", "path": "/api/v1/integrations", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "wearable connections is mounted and needs a signed-in member (invalid bearer rejected)", "method": "GET", "path": "/api/v1/wearables/connections", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "wearable providers answers the catalogue without a member (legacy path, flags off on staging)", "method": "GET", "path": "/api/v1/wearables/providers", "expect_status": 200, "expect_json": { "ok": true } },
+    { "kind": "existing", "ref": "npx jest test/health-features test/migrations/vtid-05162-health-features-v2-migration.test.ts test/health-store test/vtid-05025-commerce-health-boundary.test.ts", "cwd": "services/gateway",
+      "reason": "B2 ships dark: HEALTH_STORE_DUAL_WRITE_DEVICE and HEALTH_STORE_DUAL_WRITE_SELF_LOGGED are forced off when VITANA_ENV=staging (and so is the store's own HEALTH_STORE_ENABLED), and the three new tables are Aurora-only and absent from the shared Supabase project, so on staging every changed writer (webhook, voice, ORB health tools, diary, manual log, wearable_log_workout) answers exactly as before and nothing reads or writes the store or health_features_daily_v2. The read-only GETs above prove the gateway build is live and the touched routers still answer JSON. Every write path is POST-only and is never probed on staging; it is proven by Jest: the dual-write after each successful legacy write and a byte-identical legacy response for every store outcome (writers-dual-write.test.ts), recordToHealthStore over the S10 fake store with real ingest/reader (record-to-health-store.test.ts), the derivation, the S8 change hook, the pending marker and the nightly passes (derive-daily-features.test.ts), the spec against all four F7 key lists (feature-spec.test.ts), and the no-store-table-outside-A grep rule (boundary.test.ts); the migration on a throwaway Postgres by scripts/ci/sql-tests/run-health-features-v2-test.sh (outputs/sql-health-features-v2.txt)." }
+  ]
+}
