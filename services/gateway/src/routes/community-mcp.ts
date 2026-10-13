@@ -120,6 +120,19 @@ const ACCESS_MESSAGE: Record<string, { status: number; code: number; message: st
   lookup_failed: { status: 503, code: -32603, message: 'PERMISSIONS_UNAVAILABLE' },
 };
 
+/**
+ * The member's tenant when the token carries none (OAuth tokens may not). Null on
+ * any error: people tools then show nobody (fetchAiDiscoverableUserIds fails closed).
+ */
+async function profileTenant(sb: any, userId: string): Promise<string | null> {
+  try {
+    const { data, error } = await sb.from('profiles').select('tenant_id').eq('user_id', userId).maybeSingle();
+    return !error && typeof data?.tenant_id === 'string' ? data.tenant_id : null;
+  } catch {
+    return null;
+  }
+}
+
 export const communityMcpPost = (chatgpt: boolean) => async (req: Request, res: Response) => {
   // impact-allow-no-oasis: every tools/call emits community.mcp.tool_called
   // (services/community-mcp.ts auditCommunityToolCall); refusals emit
@@ -160,7 +173,7 @@ export const communityMcpPost = (chatgpt: boolean) => async (req: Request, res: 
   const ctx: CommunityCallContext = {
     supabase,
     userId: identity.user_id,
-    tenantId: identity.tenant_id ?? null,
+    tenantId: identity.tenant_id ?? (await profileTenant(supabase, identity.user_id)),
     clientId: client.clientId,
     categories: access.categories,
     appUrl: portalUrlFor(publicOrigin(req)),

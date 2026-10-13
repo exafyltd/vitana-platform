@@ -208,29 +208,47 @@ export function publicCard(row: ProfileRow, interests: unknown, appUrl: string):
 
 const PROFILE_CARD_COLUMNS = 'user_id, vitana_id, display_name, avatar_url, city, tenant_id, account_visibility';
 
+/** `.in()` lists go into the PostgREST URL: keep each request well under URL limits. */
+const IN_CHUNK = 100;
+
+/** Runs one `.in('user_id', chunk)` query per chunk; any chunk error makes the whole result an error. */
+async function selectIn(sb: Supa, table: string, cols: string, ids: string[], extra?: (q: any) => any): Promise<{ data: any[]; error: unknown }> {
+  const out: any[] = [];
+  for (let i = 0; i < ids.length; i += IN_CHUNK) {
+    let q = sb.from(table).select(cols).in('user_id', ids.slice(i, i + IN_CHUNK));
+    if (extra) q = extra(q);
+    const { data, error } = await q;
+    if (error) return { data: [], error };
+    out.push(...((data ?? []) as any[]));
+  }
+  return { data: out, error: null };
+}
+
 /**
  * Of the candidate members, those another member's AI assistant may see by
- * identity. Fails CLOSED: any lookup error → nobody (plan section 4).
+ * identity: opted in, searchable, visible in the community, in the caller's
+ * tenant, not a test/service account. Fails CLOSED: no caller tenant or any
+ * lookup error → nobody (plan section 4; never mix tenant data).
  */
 export async function fetchAiDiscoverableUserIds(sb: Supa, candidateIds: string[], tenantId: string | null): Promise<Set<string>> {
   const ids = [...new Set(candidateIds)].filter(Boolean);
-  if (ids.length === 0) return new Set();
+  if (ids.length === 0 || !tenantId) return new Set();
   try {
     const [privacy, hidden, excluded, profiles] = await Promise.all([
-      sb.from('profile_privacy_settings').select('user_id, searchable, ai_discoverable').in('user_id', ids),
-      sb.from('global_community_profiles').select('user_id, is_visible').in('user_id', ids).eq('is_visible', false),
+      selectIn(sb, 'profile_privacy_settings', 'user_id, searchable, ai_discoverable', ids),
+      selectIn(sb, 'global_community_profiles', 'user_id, is_visible', ids, (q) => q.eq('is_visible', false)),
       fetchExcludedTestServiceAccountIds(sb),
-      sb.from('profiles').select('user_id, tenant_id').in('user_id', ids),
+      selectIn(sb, 'profiles', 'user_id, tenant_id', ids),
     ]);
     if (privacy.error || hidden.error || profiles.error) return new Set();
-    const hiddenIds = new Set<string>(((hidden.data ?? []) as any[]).map((r) => String(r.user_id)));
-    const tenantOf = new Map<string, string | null>(((profiles.data ?? []) as any[]).map((r) => [String(r.user_id), r.tenant_id ?? null]));
+    const hiddenIds = new Set<string>(hidden.data.map((r) => String(r.user_id)));
+    const tenantOf = new Map<string, string | null>(profiles.data.map((r) => [String(r.user_id), r.tenant_id ?? null]));
     const out = new Set<string>();
-    for (const r of (privacy.data ?? []) as any[]) {
+    for (const r of privacy.data) {
       const id = String(r.user_id);
       if (r.ai_discoverable !== true || r.searchable !== true) continue;
       if (hiddenIds.has(id) || excluded.has(id)) continue;
-      if (tenantId && tenantOf.get(id) !== tenantId) continue;
+      if (tenantOf.get(id) !== tenantId) continue;
       out.add(id);
     }
     return out;
@@ -243,11 +261,11 @@ async function loadCards(sb: Supa, userIds: string[], appUrl: string): Promise<M
   const cards = new Map<string, PublicCard>();
   if (userIds.length === 0) return cards;
   const [profiles, community] = await Promise.all([
-    sb.from('profiles').select(PROFILE_CARD_COLUMNS).in('user_id', userIds),
-    sb.from('global_community_profiles').select('user_id, interests').in('user_id', userIds),
+    selectIn(sb, 'profiles', PROFILE_CARD_COLUMNS, userIds),
+    selectIn(sb, 'global_community_profiles', 'user_id, interests', userIds),
   ]);
-  const interestsOf = new Map<string, unknown>(((community.data ?? []) as any[]).map((r) => [String(r.user_id), r.interests]));
-  for (const row of (profiles.data ?? []) as ProfileRow[]) {
+  const interestsOf = new Map<string, unknown>(community.data.map((r) => [String(r.user_id), r.interests]));
+  for (const row of profiles.data as ProfileRow[]) {
     const card = publicCard(row, interestsOf.get(String(row.user_id)), appUrl);
     if (card) cards.set(String(row.user_id), card);
   }

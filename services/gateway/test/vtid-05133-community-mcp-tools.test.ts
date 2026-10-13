@@ -123,6 +123,19 @@ describe('who can be seen (fetchAiDiscoverableUserIds)', () => {
     expect([...ids]).toEqual(['ok']);
   });
 
+  test('fails CLOSED without a caller tenant (never mix tenant data)', async () => {
+    const db = world([member('ok', 'ok')]);
+    expect((await fetchAiDiscoverableUserIds(db, ['ok'], null)).size).toBe(0);
+  });
+
+  test('large candidate lists are looked up in chunks (URL limits) and still complete', async () => {
+    const many = Array.from({ length: 250 }, (_, i) => member(`m-${i}`, `m${i}`));
+    const db = world(many);
+    const ids = await fetchAiDiscoverableUserIds(db, many.map((m) => String(m.profile.user_id)), 't-1');
+    expect(ids.size).toBe(250);
+    expect(db.touched.filter((t) => t === 'profile_privacy_settings')).toHaveLength(3);
+  });
+
   test('fails CLOSED: a lookup error means nobody is visible', async () => {
     const db = world([member('ok', 'ok')]);
     db.failTables.add('profile_privacy_settings');
