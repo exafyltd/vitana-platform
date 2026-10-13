@@ -230,7 +230,7 @@ describe('eligibleBoostCards — screens, urgency, cooldown', () => {
     ['longevity-journey', ['G3']],
     ['vitana-index', ['G3']],
     ['calendar', []],
-    ['autopilot', []],
+    ['autopilot', ['G3']],
     ['community', []],
     ['make-a-post', []],
     ['talk-to-vitana', []],

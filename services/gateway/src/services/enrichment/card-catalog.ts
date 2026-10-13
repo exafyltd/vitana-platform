@@ -90,9 +90,10 @@ export const BOOST_PRIORITY: readonly BoostCardType[] = ['G3', 'G2', 'G1'];
  * Screen → boost cards (plan §2C "Screens" column and §4):
  *   G1 Complete Your Profile → home, profile
  *   G2 Unread Matches        → home
- *   G3 Streak at Risk        → home, longevity-journey, vitana-index
- * Every other screen (incl. messenger and autopilot, whose only planned boost
- * is the out-of-scope G4) shows no boost card.
+ *   G3 Streak at Risk        → home, longevity-journey, vitana-index, autopilot
+ * `autopilot` is the key the My Journey screen (/autopilot) sends, so G3's
+ * Longevity Journey placement reaches it. Every other screen (incl.
+ * messenger) shows no boost card.
  */
 export const SCREEN_BOOST_CARDS: Readonly<Record<CardScreen, readonly BoostCardType[]>> = {
   home: ['G1', 'G2', 'G3'],
@@ -100,7 +101,7 @@ export const SCREEN_BOOST_CARDS: Readonly<Record<CardScreen, readonly BoostCardT
   'longevity-journey': ['G3'],
   calendar: [],
   'vitana-index': ['G3'],
-  autopilot: [],
+  autopilot: ['G3'],
   community: [],
   'make-a-post': [],
   'talk-to-vitana': [],
