@@ -385,6 +385,32 @@ jobs:
           jq -c '.env += [{name:"AUDIOBOOK_GOOGLE_RU_ENABLED", value:"true"}, {name:"AUDIOBOOK_GOOGLE_SR_ENABLED", value:"true"}, {name:"AUDIOBOOK_GOOGLE_DAILY_CHAR_CAP_PER_TASK", value:"1040000"}]' "$F" > "$F.tmp"
           mv "$F.tmp" "$F"
           jq -c '{env, sec: [.sec[].name]}' "$F"
+      # VTID-05127: phone verification by SMS code (VTID-05095). Kiro pattern:
+      # the secret's presence is the switch. The owner creates it with
+      # scripts/aws/setup-phone-verify-sms.sh --env staging --apply; then
+      # PHONE_VERIFY_HMAC_SECRET is wired and PHONE_VERIFY_ENABLED=true. Absent
+      # => PHONE_VERIFY_ENABLED=false and the deploy never fails. Production is
+      # wired separately (repository variables, scripts/ci/phone-verify-wiring.sh).
+      - name: Resolve phone verification config
+        run: |
+          set -euo pipefail
+          NAME="vitana/gateway/staging/phone-verify-hmac"
+          ERR="$RUNNER_TEMP/phone-verify-describe.err"
+          ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>"$ERR" || true)
+          F="$RUNNER_TEMP/connected-apps.json"
+          if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+            if grep -q ResourceNotFoundException "$ERR"; then
+              echo "  $NAME not found - PHONE_VERIFY_ENABLED=false (VTID-05127; expected until provisioned)"
+            else
+              echo "::warning::$NAME lookup failed - PHONE_VERIFY_ENABLED=false: $(head -c 300 "$ERR")"
+            fi
+            jq -c '.env += [{name:"PHONE_VERIFY_ENABLED", value:"false"}]' "$F" > "$F.tmp"
+          else
+            echo "  resolved $NAME -> PHONE_VERIFY_HMAC_SECRET, PHONE_VERIFY_ENABLED=true"
+            jq -c --arg a "$ARN" '.env += [{name:"PHONE_VERIFY_ENABLED", value:"true"}] | .sec += [{name:"PHONE_VERIFY_HMAC_SECRET", valueFrom:$a}]' "$F" > "$F.tmp"
+          fi
+          mv "$F.tmp" "$F"
+          jq -c '{env, sec: [.sec[].name]}' "$F"
       # VTID-04542 latency plan (comment kept outside the run: scalar, VTID-03788
       # size guard): four exact-'true' flags pinned on STAGING ONLY until re-measured
       # here, prod untouched -- Devon pre-connect (04549), cascade sentence streaming
