@@ -1,0 +1,4 @@
+# VTID-05152 commands
+git checkout -B claude/quirky-archimedes-s2t1f5 origin/main
+cp v6/plugin.json v6/mcp.json into the plugin folder; git rm .mcp.json .codex-plugin/plugin.json
+# syntax check: ts.transpileModule on the edited test: see outputs/local-checks.txt
