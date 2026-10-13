@@ -77,3 +77,19 @@ VTID-05081 phone-journey perf budget (real, owned by that VTID); sharding/speed-
 - **F6 [minor] publish-gate** — ACKNOWLEDGED, no change.
 - **F7 [minor] `-f service` shorthand** — ACCEPTED. Exact command now in the plan: `-f service="$SERVICE" -f commit_sha="$SUPERSEDED_BY" -f full=true -f chain=$((CHAIN+1))`.
 - **Q1** answered under F3. **Q2** answered under F5. **Q3** answered under F2 (accepted approximation, fail-safe direction, window widened).
+
+## Appendix — partner text (verbatim)
+
+### Round 1 verdict
+> NOT CONVERGED -- F3 is a blocker (the `actions: write` permission escalation will not work as designed), and F1 and F2 are majors that need explicit answers. F7 is reclassified to minor (plan shorthand, not a real omission) after re-reading, but F3 remains a hard blocker that will cause the re-dispatch to fail with a 403.
+
+### Round 2 — prior findings disposition
+> - **F1 [major]** -- `closed`. Plan now explicitly documents `origin` per service and the cross-repo fetch path for community-app.
+> - **F2 [major]** -- `closed`. Exclusion widened to `runStart - 5 min`, documented as under-attribution only (fail-safe direction).
+> - **F3 [blocker]** -- `closed`. I was wrong. GitHub job-level `permissions` replaces the workflow-level set for that job, not intersects. The report job already demonstrates this: `statuses: write` / `pull-requests: write` at lines 204-206 work today despite the workflow level granting only `contents: read` / `actions: read` at lines 60-62. Adding `actions: write` follows the same mechanism. The nightly workflow (`STAGING-VERIFY-NIGHTLY.yml:57-62`) already dispatches `STAGING-VERIFY.yml` via `github.token` with `actions: write`, confirming the pattern works end to end in this repo.
+> - **F4 [minor]** -- `closed`. `error` is honest ("could not verify") and the status is posted on an already-merged commit, not a PR head, so branch protection is unaffected.
+> - **F5 [minor]** -- `closed`. `cancel-in-progress: false` for both groups; "replaces a stale queued one" is only GitHub's one-pending-per-group built-in, clarified.
+> - **F6 [minor]** -- `closed`. No change needed.
+> - **F7 [minor]** -- `closed`. Exact command with `-f service="$SERVICE"` now in the plan.
+>
+> No new blocker or major findings. [...] Verdict: CONVERGED
