@@ -1194,6 +1194,10 @@ CREATE TABLE public.plan_sparring_shadow_log (
   `vtid.plan_sparring.tamper_detected`), not prevented. Mode changes only by a
   reviewed migration.
 
+### supabase_migrations.schema_migrations — audit trail, not the authority (VTID-05123)
+
+Since VTID-05123, RUN-MIGRATION writes one row per applied repo file under `supabase/migrations/` (`idempotency_key` = filename, `version`/`name` = its digit prefix and rest, `created_by` = `github-actions:RUN-MIGRATION:<run_id>`) in the same request as the migration; older rows carry MCP/dashboard apply-time versions and most repo files have no row, so "no row" never means "not applied" — MIGRATION-DRIFT-CHECK (VTID-03486) is the authority.
+
 ---
 
 ## ⚠️ DEPRECATED / DO NOT USE

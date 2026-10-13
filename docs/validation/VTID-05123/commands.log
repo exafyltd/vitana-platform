@@ -1,0 +1,14 @@
+# local Postgres 16.13 cluster (pg_ctlcluster 16 main start), TCP 127.0.0.1:5432
+$ PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGPASSWORD=postgres scripts/ci/sql-tests/run-record-migration-row-test.sh
+PASS vtid-05123 record migration row (52 checks)            -> outputs/record-migration-row-test.txt
+# mutation checks (script edited in a scratch copy, then restored):
+$ (drop the "\n;\n" separator)                -> FAIL trailing comment (3 checks)
+$ (drop the pre-check collision handling)     -> FAIL dup b: warning names the holder
+$ (unique_violation -> division_by_zero)      -> FAIL race (4 checks)
+$ (ignore a failed pre-check)                 -> FAIL precheck fail (3 checks)
+$ (drop ON CONFLICT (idempotency_key))        -> FAIL twice: re-run is an ON CONFLICT no-op
+$ bash -n scripts/ci/apply-sql-via-management-api.sh scripts/ci/sql-tests/run-record-migration-row-test.sh
+$ shellcheck scripts/ci/apply-sql-via-management-api.sh scripts/ci/sql-tests/run-record-migration-row-test.sh   -> outputs/static-checks.txt
+$ cd services/gateway && npx jest test/orb-tools/database-migrations-tools.test.ts
+Tests: 23 passed, 23 total                                  -> outputs/gateway-jest.txt
+# No Management API call, no RUN-MIGRATION dispatch, no production read or write.
