@@ -159,6 +159,10 @@ export async function reviewDetail(s: Supa, orgId: string): Promise<ServiceResul
       is_active: p.is_active,
       listing: listingState({ is_active: p.is_active ?? null, listing_hold: p.listing_hold, first_listed_at: p.first_listed_at }),
       admin_listing: p.attributes?.admin_listing ?? null,
+      // VTID-05153: the catalogue check's result (services/catalog-check).
+      // Advisory for the reviewer: keep-offline / allow-listing stay the only
+      // per-offering decisions.
+      catalog_check: p.attributes?.catalog_check ?? null,
     }));
   }
   const [{ data: terms }, { data: events }] = await Promise.all([
