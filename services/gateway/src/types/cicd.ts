@@ -967,6 +967,10 @@ export type CicdEventType =
   // Payloads carry keys, dates, providers and counts only, never health values.
   | 'health.wearable_features.bridged'
   | 'health.wearable_features.bridge_failed'
+  // VTID-05161 (Health Hub B1): health_sources dual-write and reconciler.
+  // Payloads carry sites, codes and counts only, never member ids or health values.
+  | 'health.sources.dual_write_failed'
+  | 'health.sources.reconcile'
   // VTID-02300: Phase 3 outbound action consent events
   | 'connector.action.requested'
   | 'connector.action.executed'

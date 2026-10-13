@@ -23,6 +23,8 @@ import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-j
 import { getSupabase } from '../lib/supabase';
 import { runPillarAgentsForUser } from '../services/pillar-agents/orchestrator';
 import * as repo from './integrations-repository';
+import { dualWriteUserIntegration } from '../services/health-sources/legacy-mirror';
+import { isHealthSourcesReadEnabled, logReadFallback, readUserIntegrationsFromSources } from '../services/health-sources/read-model';
 
 const router = Router();
 
@@ -57,7 +59,13 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
     const { data, error } = await repo.fetchUserIntegrations(admin, userId);
     if (error) return res.status(400).json({ ok: false, error: error.message });
 
-    const rows = data ?? [];
+    let rows = data ?? [];
+    // VTID-05161 (B1 Change 4): integration state from health_sources when the read switch is on.
+    if (isHealthSourcesReadEnabled()) {
+      const fromSources = await readUserIntegrationsFromSources(admin, userId);
+      if (fromSources.ok) rows = fromSources.rows as typeof rows;
+      else logReadFallback('integrations.list', fromSources.code);
+    }
     const hasManual = rows.some(r => r.integration_id === 'manual-entry');
     const integrations = hasManual
       ? rows
@@ -104,6 +112,7 @@ router.post('/:integration_id/connect', requireAuth, async (req: AuthenticatedRe
   try {
     const { data, error } = await repo.upsertIntegrationConnected(admin, userId, integrationId);
     if (error) return res.status(400).json({ ok: false, error: error.message });
+    dualWriteUserIntegration(admin, { user_id: userId, integration_id: integrationId }, 'integrations.connect');
     return res.status(200).json({ ok: true, integration: data });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err.message });
@@ -120,6 +129,7 @@ router.post('/:integration_id/disconnect', requireAuth, async (req: Authenticate
   try {
     const { data, error } = await repo.upsertIntegrationDisconnected(admin, userId, integrationId);
     if (error) return res.status(400).json({ ok: false, error: error.message });
+    dualWriteUserIntegration(admin, { user_id: userId, integration_id: integrationId }, 'integrations.disconnect');
     return res.status(200).json({ ok: true, integration: data });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err.message });
@@ -177,6 +187,7 @@ router.post('/manual/log', requireAuth, async (req: AuthenticatedRequest, res: R
 
     // Mark the manual-entry integration as connected + bump last_sync_at.
     await repo.upsertManualEntryIntegrationSynced(admin, userId);
+    dualWriteUserIntegration(admin, { user_id: userId, integration_id: 'manual-entry', tenant_id: tenantId }, 'integrations.manual_log');
 
     // Re-run pillar agents so the per-agent connected_data sub-score reflects the new signal.
     const orchestratorResult = await runPillarAgentsForUser(admin, userId, date);

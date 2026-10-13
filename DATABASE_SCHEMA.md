@@ -1525,6 +1525,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-10-13 | VTID-05161 (Health Hub Phase 1 / B1), **committed, NOT applied** — two migrations. (1) `20261014100200_vtid_05161_health_sources.sql` — **APPLY TARGET: Aurora only (0T; production after the cutover). Never Supabase.** Same placement guard as VTID-05158; MIGRATION-DRIFT-CHECK lists `health_sources` in `aurora_only_tables`. Creates `health_sources` (one connection model, S6), backfills it from `user_connections` rows with `category IN ('wearable','aggregator')` and from `user_integrations` (tenant = primary `user_tenants` row), adds `health_sources_connection_status()` and `health_sources_reconcile_counts()` (STABLE SECURITY DEFINER, service_role only). (2) `20261014100300_vtid_05161_user_integrations_revoke_browser_writes.sql` — **APPLY TARGET: Supabase via `RUN-MIGRATION.yml`, only after this change's Gate 2** (Aurora gets the same end state from `scripts/aws/aurora-restore-rls-parity.sql` / `aurora-cutover-restore-grants.sql`): revokes INSERT/UPDATE/DELETE on `user_integrations` from `anon`/`authenticated` and replaces the `FOR ALL` policy `user_integrations_owner_all` with SELECT-only `user_integrations_owner_select`; self-check by effect. OASIS `health.sources.dual_write_failed`, `health.sources.reconcile`. See the section "Health Hub connection model" below. Tests: `scripts/ci/sql-tests/run-health-sources-test.sh` (CI `SQL-HEALTH-SOURCES.yml`). | Claude Code | VTID-05161 |
 | 2026-10-13 | VTID-05158 (Health Hub Phase 1 / A1), **committed, NOT applied** — two migrations. (1) `20261014100000_vtid_05158_erase_user_data_aurora_safe.sql` (Supabase AND Aurora; applied to Supabase only after its own Gate 2): `erase_user_data()` is the VTID-04765 body except `v_auth_users := to_regclass('auth.users')` and the cascade exclusion `(v_auth_users is null or not exists (… con.confrelid = v_auth_users …))` — on Aurora (no `auth.users`) the old `'auth.users'::regclass` cast failed every call; on Supabase the table list is identical. (2) `20261014100100_vtid_05158_health_store.sql` — **APPLY TARGET: Aurora only (0T; production after the cutover). Never Supabase.** A placement guard refuses a database with both `auth.users` and `storage.objects` unless `vitana.health_store_target = 'aurora'`; MIGRATION-DRIFT-CHECK lists the eight tables as `aurora_only_tables` and fails if one appears on Supabase. Tables `health_codes`, `health_series_5m` (daily partitions, 30 days), `health_series_1h`, `health_series_1d`, `health_observations` (monthly, lifetime), `health_ingest_batches`, `health_ingest_quarantine` (monthly, 30 days), `health_store_maintenance_runs`; functions `health_store_ingest`, `health_store_ensure_partitions`, `health_store_partition_check`, `health_store_purge`, `health_store_suppress`, `health_store_unsuppress`, `health_series_daily_resolved` (SECURITY DEFINER, service_role only). OASIS namespace `health.store.*` (A2). See the section "Health Hub store" below. Tests: `scripts/ci/sql-tests/run-health-store-test.sh` (CI `SQL-HEALTH-STORE.yml`) and both `erase_user_data()` variants in `SQL-ERASE-USER-DATA.yml`. | Claude Code | VTID-05158 |
 | 2026-10-13 | VTID-05147 (Track S / S-M), **committed, NOT applied** (migration `20261013233000_vtid_05147_s_m_membership_role_lockdown.sql`, access + one function body; applied via `RUN-MIGRATION.yml` after the read-only `docs/validation/VTID-05147/pre-apply-checks.sql`): members can no longer write their own role or membership. Dropped policies `user_tenants_update_own` (no WITH CHECK — a member could set own `active_role='admin'` or move `tenant_id`), `rp_upsert_self`/`rp_update_self`/`rp_delete_self` and `user_active_roles_insert`/`_update` (role value was free); `INSERT/UPDATE/DELETE/TRUNCATE/TRIGGER/REFERENCES` revoked from `anon`/`authenticated` on `user_tenants`, `role_preferences`, `user_active_roles`, `user_permitted_roles` (reads and SELECT policies stay); `TRUNCATE/TRIGGER/REFERENCES` revoked on `memberships`, `app_users`. `set_role_preference()` now raises `Not authenticated` without a user and `Not a member of this tenant` (42501) for a tenant the caller has no `user_tenants` row in (exafy admins excepted; `'community'` still always allowed in an own tenant); EXECUTE for `authenticated`, `service_role` only (`PUBLIC`/`anon` revoked). The definer writers (`set_role_preference`, `me_set_active_role`, `switch_to_tenant_by_slug`, `provision_platform_user`, `handle_new_user`) are the only write paths left besides the service role. Self-check rolls the file back unless that end state holds. Rollback (re-opens the hole, owner approval): `docs/validation/VTID-05147/rollback-s-m.sql`. CI guard against reopening: `services/gateway/test/vtid-05147-s-m-membership-role-lockdown.test.ts`. | Claude Code | VTID-05147 |
 | 2026-10-13 | VTID-05137, **committed; applied via `RUN-MIGRATION.yml` before merge** (migration `20261013180000_vtid_05137_chat_push_coalescing.sql`, additive, idempotent): `user_notifications_push_outcome_check` re-created with `coalesced` added (chat push held back because the recipient was already pushed for that conversation in the last 5 minutes and has not read it; the row is still written with `push_sent_at` set and `data.push_coalesced='true'`). New partial index `idx_user_notifications_chat_conv (user_id, (data->>'conversation_key'), created_at DESC) WHERE type IN ('new_chat_message','chat_mention')` for the coalescer's one read per message. Every chat notification row now carries `data.conversation_key` (`dm:<sender>` / `group:<group>`) and `data.tag`. Written/read by `services/chat-push-coalescer.ts` + `notifyUser(..., { suppressPush: 'coalesced' })`; off switch `CHAT_PUSH_COALESCING_ENABLED=false`. Rollback `docs/validation/VTID-05137/rollback.sql`. | Claude Code | VTID-05137 |
@@ -4074,3 +4075,46 @@ until A2 (VTID-05159) ships behind `HEALTH_STORE_ENABLED` (off; forced off on st
   `health.store.quota.exceeded`, `health.store.maintenance.completed|failed`, `health.store.partition_missing` — ids and
   counts only, never values. Per-batch success is telemetry, not an OASIS event.
 - **Tests:** `scripts/ci/sql-tests/run-health-store-test.sh` (CI `SQL-HEALTH-STORE.yml`, throwaway Postgres only).
+
+## Health Hub connection model — `health_sources` (VTID-05161, 2026-10-13) — committed, NOT applied — Aurora only
+
+Health Hub Phase 1 / B1 (program VTID-05020), shared interface S6. **APPLY TARGET: Aurora only (0T; production after
+the cutover). Never Supabase** — migration `supabase/migrations/20261014100200_vtid_05161_health_sources.sql`, same
+placement guard as the store migration above; `health_sources` is in `aurora_only_tables`. Gateway:
+`services/gateway/src/services/health-sources/` (`resolveHealthSource`, `setHealthSourceState`, `listHealthSources`;
+each answers `STORE_PENDING` while the table is absent).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid PK | The store's `source_id` (A1 tables keep it without FK). |
+| `tenant_id`, `user_id` | uuid NOT NULL | No FK to `auth.users`; `erase_user_data()` finds the table by its catalogue scan. |
+| `kind` | text NOT NULL | `device_cloud`, `aggregator`, `phone_store`, `partner`, `manual`, `voice`, `diary`. Device cloud / aggregator / phone store need `connector_id`; manual / voice / diary never have one; a phone store needs `provider_user_id` (install id). |
+| `connector_id` | text NULL → `connector_registry(id)` | Phone-store ids `apple_health` / `health_connect` are registered by C1; before that a phone-store create fails on the FK (gateway answers `STORE_UNAVAILABLE`). |
+| `provider_user_id` | text | Provider-side identity; install id for phone stores. |
+| `status` | text NOT NULL | `pending`, `connected`, `paused`, `disconnected`, `error`. |
+| `token_ref` | text NULL | Pointer `user_connections:<uuid>` (CHECK), never a token. Tokens stay sealed in `user_connections` (VTID-05030). |
+| `sync_cursor` | jsonb NOT NULL default `{}` | |
+| `last_sync_at`, `connected_at`, `disconnected_at` | timestamptz | |
+| `last_error_code` | text | Code only (CHECK `^[A-Z][A-Z0-9_]{0,63}$`), never free text. |
+| `legacy_user_connection_id`, `legacy_user_integration_id` | uuid UNIQUE NULL | Link to the legacy row the source mirrors. |
+| `created_at`, `updated_at` | timestamptz | `updated_at` by trigger. |
+
+- **Keys:** unique `(tenant_id, user_id, kind, coalesce(connector_id,''), coalesce(provider_user_id,''))`; index `(user_id, status)`.
+- **RLS / grants:** `authenticated` SELECT own rows (`user_id = auth.uid()`); no INSERT/UPDATE/DELETE for any browser
+  role; `anon` nothing; writes only by the gateway (service_role).
+- **Backfill** (idempotent, `ON CONFLICT DO NOTHING`, counts in a `RAISE NOTICE`): `user_connections` with
+  `category IN ('wearable','aggregator')` (wearable → `device_cloud`, aggregator → `aggregator`; active → connected,
+  inactive with `disconnected_at` → disconnected, else pending); `user_integrations` (`manual-entry` → `manual`, a
+  wearable/aggregator `connector_registry` id → that connector, anything else unmapped and skipped; tenant = the
+  member's primary `user_tenants` row; rows without a tenant skipped). The gateway dual-write uses the same mapping.
+- **`health_sources_reconcile_counts()`** (STABLE SECURITY DEFINER, service_role only): counts of both legacy models
+  and `health_sources` per kind/status plus mismatch counts (unlinked, unmapped, no tenant, status mismatch, orphaned);
+  no member ids. The gateway emits it nightly as OASIS `health.sources.reconcile`; a non-zero `mismatch.total` blocks
+  the read-switch Gate 2.
+- **Flags** (all exact `true`, all forced off on staging): `HEALTH_SOURCES_DUAL_WRITE` (mirror every legacy connection
+  write; failures → OASIS `health.sources.dual_write_failed`, codes only), `HEALTH_SOURCES_READ` (connection state of
+  `GET /api/v1/integrations`, `/wearables/connections`, `/wearables/providers` from `health_sources`; legacy fallback).
+- **`user_integrations` (Supabase):** `20261014100300_vtid_05161_user_integrations_revoke_browser_writes.sql` makes it
+  owner read-only (policy `user_integrations_owner_select`, no browser INSERT/UPDATE/DELETE). Applied via
+  `RUN-MIGRATION.yml` after Gate 2; until then the `FOR ALL` policy `user_integrations_owner_all` is live.
+- **Tests:** `scripts/ci/sql-tests/run-health-sources-test.sh` (CI `SQL-HEALTH-SOURCES.yml`, throwaway Postgres only).

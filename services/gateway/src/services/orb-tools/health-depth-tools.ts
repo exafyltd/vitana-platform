@@ -87,6 +87,7 @@ import {
   type PillarKey,
 } from '../../lib/vitana-pillars';
 import * as repo from './health-depth-tools-repository';
+import { dualWriteUserIntegration } from '../health-sources/legacy-mirror';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
 
@@ -179,6 +180,7 @@ async function upsertHealthFeatureAndRecompute(
   // Mark manual-entry integration connected (mirrors logHealthSignal / manual/log).
   try {
     await repo.upsertUserIntegrationManualEntry(sb, id.user_id);
+    dualWriteUserIntegration(sb, { user_id: id.user_id, integration_id: 'manual-entry', tenant_id: id.tenant_id ?? null }, 'orb.health_depth');
   } catch {
     /* non-fatal — mirrors health-log.ts */
   }
