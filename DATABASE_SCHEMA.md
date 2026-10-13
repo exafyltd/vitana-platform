@@ -3984,6 +3984,48 @@ No `completed_at`: completion is derived from the source tables (`profiles`, `pr
 
 `TEXT[] DEFAULT '{}'` — the member's interests as stable slugs (`fitness`, `nutrition`, …), never display text; the app resolves labels via `screens.interests.<slug>`. Enrichment card E4 is complete when it is non-empty.
 
+## Tenant provisioning — brand pack, `reserved_tenant_slugs`, `provision_tenant()` (VTID-05150, multi-tenant M0 lane B) — NOT YET APPLIED
+
+Migrations `20261014000400_vtid_05150_tenant_brand_pack.sql` (expand only) and `20261014000500_vtid_05150_provision_tenant.sql` (needs Lane A M1, `tenants.is_default`/`is_platform`). Queue: `docs/multitenancy/MIGRATION-QUEUE.md`. Rollback: `docs/validation/VTID-05150/rollback.sql` (+ `rollback-complete.sql`).
+
+### tenant_settings — brand pack columns (Exafy-governed; the tenant-admin `PUT /settings` never writes them)
+
+| Column | Type / default | Meaning |
+|---|---|---|
+| `display_name` | text | community display name |
+| `brand` | jsonb `{}` | `{colors:{accent,bg,fg}, tokens:{}, logo_path, favicon_path, og_image_path}`; every `*_path` under `<tenants.slug>/` in bucket `tenant-assets` |
+| `legal_entity_line` | text (≤200) | legal entity shown in footers/emails |
+| `support_email`, `sender_email` | text (email CHECK) | support address; transactional sender address |
+| `sender_name` | text | sender display name |
+| `default_locale` | text `'de'` | must be in `enabled_locales` |
+| `enabled_locales` | text[] `{de,en,es,sr,fr,pl,pt,ru,tr,zh,ar}` | each must exist in `supported_locales` (trigger) |
+| `timezone` | text `'Europe/Berlin'` | must exist in `pg_timezone_names` (trigger) |
+| `currency` | text `'EUR'` | `^[A-Z]{3}$` |
+| `landing` | jsonb `{}` | `{hero_image_path, cta: invite_only|signup|waitlist}` (copy comes from content packs, WS5) |
+| `persona_facts` | jsonb `{}` | FACTS only: `community_name`, `community_pronunciation`, `anchor_person{name,pronunciation,role}`, `story_facts[]`, `offer_facts[]`, `tone[]` — never a sentence Vitana speaks (rule 41) |
+| `provisioned_at`, `provisioned_by` | timestamptz, uuid | set by `provision_tenant()`; NULL = legacy tenant (maxina, alkalma, hand-made), never touched by provisioning and read-only for the brand-pack API |
+
+CHECK `tenant_settings_brand_pack_check` (emails, currency, locales, jsonb object types, legal line length). Trigger `tenant_settings_brand_pack_validate` (BEFORE INSERT / UPDATE OF `enabled_locales, default_locale, timezone, brand, landing`, SECURITY INVOKER). Backfill: Maxina and Alkalma new columns only (values from the SPA and the live DB). Nothing reads these columns yet (consumers: WS5/WS7).
+
+### reserved_tenant_slugs
+
+| Column | Meaning |
+|---|---|
+| `slug` | PK — a slug no tenant may take (path URL `vitanaland.com/<slug>`) |
+| `source` | `spa_route` \| `public_file` \| `platform` |
+| `added_vtid` | the VTID that added the row |
+
+RLS on, `service_role` only. Seeded from `services/gateway/src/services/tenant-provisioning/reserved-slugs.json` (`scripts/tenants/gen-reserved-slugs.mjs`, drift: `TENANT-RESERVED-SLUGS-DRIFT.yml`).
+
+### Functions
+
+- `provision_tenant(p_slug, p_name, p_admin_email, p_invited_by, p_all_members_group_name, p_display_name, p_jev_monthly_budget_usd, p_default_locale, p_enabled_locales, p_timezone, p_currency) RETURNS jsonb` — SECURITY DEFINER, `search_path=public`, `service_role` only (gateway `POST /api/v1/admin/tenants`, exafy_admin). One transaction, `pg_advisory_xact_lock(42001, hashtext(slug))` (namespace 42001 reserved for it). Writes `tenants`, `tenant_settings`, `notification_type_controls` (baseline computed at call time), `ai_provider_policies` (copied from the default tenant), `tenant_autopilot_settings`, `chat_groups` (+ bot in `chat_group_members`), `tenant_invitations` (first admin). Never writes `auth.users`, `app_users`, `user_tenants`, `memberships`, `profiles`, `chat_messages`, `user_notifications`. Errors: SQLSTATE 22023 with a code word (`INVALID_SLUG`, `RESERVED_SLUG`, `SLUG_TAKEN`, `NOT_EXAFY_ADMIN`, `SERVICE_ACCOUNT_EMAIL`, `NO_DEFAULT_TENANT`, …).
+- `tenant_settings_merge_feature_flags(p_tenant_id, p_flags, p_allow_governed, p_updated_by) RETURNS jsonb` — SECURITY INVOKER, `service_role` only. One-statement top-level merge of `feature_flags` for the tenant-admin `PUT /settings`; drops the governed `jev` key from the client's object unless `p_allow_governed` (exafy_admin).
+
+Storage bucket `tenant-assets` (public read, 1 MB, png/jpeg/webp, no client write policies) is created by `scripts/supabase/setup-tenant-assets-bucket.mjs`, not by a migration.
+
+OASIS (`CicdEventType`): `tenant.provisioned`, `tenant.brand_pack.updated`, `tenant.asset.uploaded` — ids, slug, counts and field names only; never the invitation token or an email.
+
 ## Health Hub store — `health_*` tables (VTID-05158, 2026-10-13) — committed, NOT applied — Aurora only
 
 Health Hub Phase 1 / A1 (program VTID-05020). **APPLY TARGET: Aurora only (0T; production after the cutover). Never

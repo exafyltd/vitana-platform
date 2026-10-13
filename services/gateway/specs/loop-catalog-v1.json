@@ -65,6 +65,7 @@
           "MORNING-SYSTEM-HEALTH-CHECK",
           "SCREEN-LOAD-DAILY",
           "SCREEN-LOAD-TIMING",
+          "TENANT-RESERVED-SLUGS-DRIFT",
           "VCAOP-HEALTH"
         ],
         "test_contracts": [
