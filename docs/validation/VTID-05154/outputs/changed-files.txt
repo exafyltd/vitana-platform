@@ -1,0 +1,5 @@
+docs/plans/VITANALAND-HEALTH-AGENTIC-SYSTEM-PLAN.md
+docs/validation/VTID-05154/acceptance.md
+docs/validation/VTID-05154/commands.log
+docs/validation/VTID-05154/outputs/plan-hash.txt
+docs/validation/VTID-05154/plan-sparring.md

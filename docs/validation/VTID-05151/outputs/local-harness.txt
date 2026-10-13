@@ -1,0 +1,8 @@
+order guard: seed refused before the registry and rolled back
+psql:<work>/20261014000700_vtid_05151_seed_legacy_tenant_landing.sql:31: NOTICE:  schema "legacy_archive" already exists, skipping
+psql:<work>/20261014000700_vtid_05151_seed_legacy_tenant_landing.sql:36: NOTICE:  relation "bak_vtid_05151_tenant_settings" already exists, skipping
+idempotent: second registry and seed apply changed nothing
+rollback: seed restored, functions dropped
+psql:<work>/20261014000700_vtid_05151_seed_legacy_tenant_landing.sql:31: NOTICE:  schema "legacy_archive" already exists, skipping
+VTID-05151: all assertions passed
+exit 0

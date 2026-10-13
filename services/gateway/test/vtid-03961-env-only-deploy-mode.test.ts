@@ -145,8 +145,9 @@ describe('VTID-03961: AWS-PROD-DEPLOY-GATEWAY.yml env-only deploy mode', () => {
     const inputs = doc.on.workflow_dispatch.inputs;
     expect(Object.keys(inputs)).toContain('deploy_mode');
     expect(inputs.deploy_mode.options).toEqual(['promote-staging', 'rebuild-main', 'env-only']);
-    // Adding a choice value must not add a new top-level input.
-    expect(Object.keys(inputs).length).toBe(24);
+    // Adding a choice value must not add a new top-level input. (25 since
+    // VTID-05023 part 9 added data_backend, a separate input, on purpose.)
+    expect(Object.keys(inputs).length).toBe(25);
   });
 
   it('is a well-formed bash script that passes bash -n on its own', () => {
