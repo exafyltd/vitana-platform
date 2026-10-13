@@ -7,8 +7,8 @@
  * Sections:
  *   - Enrichment completion sources (E1–E11), Phase 1.
  *   - Dismissal state (`user_enrichment_cards`), Phase 1.
- *   - Boost trigger sources (G1–G3) — Phase 3 (VTID-05087) adds its reads in
- *     that section (match_notifications, fetchUserDiaryStreak reuse); none yet.
+ *   - Boost trigger sources (G1–G3), Phase 3: the profile-progress fields,
+ *     unseen live `daily_matches`, recent `diary_entries` days. Read-only.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -96,5 +96,50 @@ export async function upsertEnrichmentCardDismissal(
     .single();
 }
 
-// ==================== Boost trigger sources (Phase 3, VTID-05087) ====================
-// Intentionally empty in Phase 1.
+// ==================== Boost trigger sources (Phase 3) ====================
+
+/**
+ * G1 — every field vitana-v1 `useProfileProgress.ts` weighs: identity
+ * (display_name + handle), avatar, bio, location, links, cover (cover_url or
+ * the cover library's universal_intent_cover_url, as E11), languages, service
+ * offerings (`profiles.service_offerings.offers`).
+ */
+export async function fetchProfileProgressFields(sb: SupabaseClient, userId: string) {
+  return sb
+    .from('profiles')
+    .select('display_name, handle, avatar_url, bio, location, links, cover_url, universal_intent_cover_url, languages, service_offerings')
+    .eq('user_id', userId)
+    .maybeSingle();
+}
+
+/**
+ * G2 — the caller's unseen live matches: the same rows the Matches page
+ * (`/me/matches`, vitana-v1 useRealMatches) lists — not expired, no action
+ * taken — that the member has not seen yet (`viewed_at` is set by
+ * useMarkMatchesViewed when the cards are on screen). Count only.
+ * (The plan named `match_notifications`; that table does not exist.)
+ */
+export async function countUnseenLiveMatches(sb: SupabaseClient, userId: string, nowIso: string) {
+  return sb
+    .from('daily_matches')
+    .select('matched_user_id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .gt('expires_at', nowIso)
+    .is('action', null)
+    .is('viewed_at', null);
+}
+
+/** G3 — look-back for the diary streak (UTC days, same as the user_diary_streak view). */
+export const DIARY_STREAK_LOOKBACK_DAYS = 120;
+export const DIARY_STREAK_ROW_LIMIT = 2000;
+
+/** G3 — the caller's diary entry timestamps since `sinceIso`, newest first. */
+export async function fetchRecentDiaryEntryTimes(sb: SupabaseClient, userId: string, sinceIso: string) {
+  return sb
+    .from('diary_entries')
+    .select('created_at')
+    .eq('user_id', userId)
+    .gte('created_at', sinceIso)
+    .order('created_at', { ascending: false })
+    .limit(DIARY_STREAK_ROW_LIMIT);
+}

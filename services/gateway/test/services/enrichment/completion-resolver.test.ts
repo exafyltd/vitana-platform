@@ -13,6 +13,10 @@ jest.mock('../../../src/services/enrichment/completion-resolver-repository', () 
   fetchAnyContact: jest.fn(),
   fetchActiveDeviceToken: jest.fn(),
   fetchEnrichmentCardStates: jest.fn(),
+  fetchProfileProgressFields: jest.fn(),
+  countUnseenLiveMatches: jest.fn(),
+  fetchRecentDiaryEntryTimes: jest.fn(),
+  DIARY_STREAK_LOOKBACK_DAYS: 120,
 }));
 
 import * as repo from '../../../src/services/enrichment/completion-resolver-repository';
@@ -39,6 +43,9 @@ function setRepo(over: Partial<Record<keyof typeof repo, unknown>> = {}) {
     fetchAnyContact: [],
     fetchActiveDeviceToken: [],
     fetchEnrichmentCardStates: [],
+    fetchProfileProgressFields: null,
+    countUnseenLiveMatches: null,
+    fetchRecentDiaryEntryTimes: [],
   };
   for (const [k, v] of Object.entries({ ...defaults, ...over })) {
     (m as any)[k].mockImplementation(() => ok(v));
@@ -132,7 +139,7 @@ describe('resolveCompletions — through the repository', () => {
     const c = await resolveCompletions(sb, USER);
     expect([...c.values()].every((v) => v === true)).toBe(true);
     const reads = Object.values(m).filter((fn) => jest.isMockFunction(fn));
-    expect(reads).toHaveLength(7);
+    expect(reads).toHaveLength(10);
     for (const fn of reads) {
       expect(fn).toHaveBeenCalledTimes(1);
       expect((fn as jest.Mock).mock.calls[0][1]).toBe(USER);
@@ -145,12 +152,12 @@ describe('resolveCompletions — through the repository', () => {
     expect([...c.values()].every((v) => v === false)).toBe(true);
   });
 
-  it('loadEnrichmentCardState returns the dismissal rows and no boost triggers in Phase 1', async () => {
+  it('loadEnrichmentCardState returns the dismissal rows and a computed trigger for each of G1–G3', async () => {
     const rows = [{ card_type: 'E1', dismissed_at: '2026-10-01T00:00:00Z', cooldown_days: 7 }];
     setRepo({ fetchEnrichmentCardStates: rows });
     const state = await loadEnrichmentCardState(sb, USER);
     expect(state.dismissals).toEqual(rows);
-    expect(state.boosts.size).toBe(0);
+    expect([...state.boosts.keys()]).toEqual(['G1', 'G2', 'G3']);
   });
 
   it.each([
@@ -161,6 +168,9 @@ describe('resolveCompletions — through the repository', () => {
     ['fetchAnyContact', 'contacts'],
     ['fetchActiveDeviceToken', 'user_device_tokens'],
     ['fetchEnrichmentCardStates', 'user_enrichment_cards'],
+    ['fetchProfileProgressFields', 'profiles.profile_progress'],
+    ['countUnseenLiveMatches', 'daily_matches'],
+    ['fetchRecentDiaryEntryTimes', 'diary_entries'],
   ])('a read error in %s throws EnrichmentDataError naming %s', async (fn, source) => {
     setRepo();
     (m as any)[fn].mockImplementation(() => Promise.resolve({ data: null, error: { message: 'boom' } }));

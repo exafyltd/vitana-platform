@@ -48,3 +48,12 @@ python3 acceptance mapping check (VALIDATOR-CHECK.yml logic)                    
 # E11 is now done when either column is non-empty.
 cd services/gateway && npx jest test/services/enrichment test/routes/enrichment-cards   # 60 passed
 npx tsc --noEmit -p .   # 0 errors
+
+# --- Phase 3, step 15: boost triggers G1–G3 (G4 out of scope, owner decision) ---
+# Sources verified read-only in code: vitana-v1 src/hooks/useProfileProgress.ts (G1 weights),
+# vitana-v1 useRealMatches/useMarkMatchesViewed (daily_matches live + viewed_at; no match_notifications table exists),
+# supabase/migrations/20260427090000_user_diary_streak_view.sql + diary-missing-relevant.ts (UTC day boundary).
+cd services/gateway && npx jest test/services/enrichment test/routes/enrichment-cards test/data/enrichment-card-tips.locale-coverage  # -> outputs/phase3-boost-suites.log: 5 suites, 132 tests pass
+# red check: the new/changed test files copied onto origin/main (cf8f3a703) -> 4 suites failed, 65 tests failed, 62 passed
+cd services/gateway && npx tsc --noEmit -p .   # only the 3 pre-existing missing-module errors (libphonenumber-js, client-pinpoint-sms-voice-v2) of the shared node_modules
+node scripts/ci/pr-gate/gate.mjs scope|sparring|weakening|red-green --base origin/main --title "VTID-05143: Unified Card System Phase 3 — boost triggers G1–G3 (backend)"

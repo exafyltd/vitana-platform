@@ -7,12 +7,15 @@
  *
  * GET  /?screen=<screen>[&locale=<code>]
  *   200 { ok, screen, locale, cards: [{ card_type, category, priority, completed,
- *         dismissed_until, title, description }], profile_completion_pct }
+ *         dismissed_until, title, description[, data] }], profile_completion_pct }
  *   The caller's incomplete, non-cooled-down enrichment cards for that screen,
- *   in static priority order, with localized title/description
- *   (data/enrichment-card-tips.ts). 400 on an unknown screen.
+ *   in static priority order, followed by the boost cards (G1–G3) whose
+ *   trigger fired, in urgency order G3 → G2 → G1, each with a `data` object:
+ *   G1 { completion_pct }, G2 { unread_match_count }, G3 { streak_days }.
+ *   Localized title/description from data/enrichment-card-tips.ts. `priority`
+ *   is 1-based within the card's category. 400 on an unknown screen.
  *
- * POST /dismiss  { card_type }
+ * POST /dismiss  { card_type }   (E1–E11, G1–G3)
  *   200 { ok, card_type, dismissed_until } — upserts the caller's dismissal
  *   (dismissed_at = updated_at = now). 400 on an unknown card_type.
  *
@@ -27,13 +30,15 @@ import { getUserLocale } from '../i18n/server-locale';
 import { GATEWAY_LOCALES, type GatewayLocale } from '../i18n/catalog';
 import { enrichmentCardText } from '../data/enrichment-card-tips';
 import {
+  BOOST_CARD_TYPES,
   CARD_SCREENS,
   ENRICHMENT_CARD_TYPES,
   dismissedUntil,
+  eligibleBoostCards,
   eligibleEnrichmentCards,
   enrichmentCompletionPct,
   isCardScreen,
-  isEnrichmentCardType,
+  isDismissibleCardType,
 } from '../services/enrichment/card-catalog';
 import { loadEnrichmentCardState } from '../services/enrichment/completion-resolver';
 import { upsertEnrichmentCardDismissal } from '../services/enrichment/completion-resolver-repository';
@@ -65,16 +70,27 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 
   try {
     const forced = requestedLocale(req);
+    const now = new Date();
     const [state, locale] = await Promise.all([
-      loadEnrichmentCardState(sb, identity.user_id),
+      loadEnrichmentCardState(sb, identity.user_id, now),
       forced ? Promise.resolve(forced) : getUserLocale(sb, identity.user_id),
     ]);
-    const cards = eligibleEnrichmentCards(state.completions, state.dismissals, screen, new Date()).map((c) => ({
+    const enrichment = eligibleEnrichmentCards(state.completions, state.dismissals, screen, now).map((c) => ({
       ...c,
       completed: false,
       dismissed_until: null,
       ...enrichmentCardText(c.card_type, locale),
     }));
+    const boost = eligibleBoostCards(state.boosts, state.dismissals, screen, now).map((c) => ({
+      card_type: c.card_type,
+      category: c.category,
+      priority: c.priority,
+      completed: false,
+      dismissed_until: null,
+      ...enrichmentCardText(c.card_type, locale),
+      data: c.data,
+    }));
+    const cards = [...enrichment, ...boost];
     return res.json({
       ok: true,
       screen,
@@ -93,8 +109,8 @@ router.post('/dismiss', requireAuth, async (req: Request, res: Response) => {
   if (!identity?.user_id) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
 
   const cardType = (req.body as { card_type?: unknown } | undefined)?.card_type;
-  if (!isEnrichmentCardType(cardType)) {
-    return res.status(400).json({ ok: false, error: 'INVALID_CARD_TYPE', card_types: ENRICHMENT_CARD_TYPES });
+  if (!isDismissibleCardType(cardType)) {
+    return res.status(400).json({ ok: false, error: 'INVALID_CARD_TYPE', card_types: [...ENRICHMENT_CARD_TYPES, ...BOOST_CARD_TYPES] });
   }
 
   const sb = getSupabase();

@@ -83,3 +83,40 @@ it('dismissal upsert writes only the caller row and never cooldown_days', async 
   expect(row).toEqual({ user_id: U, card_type: 'E1', dismissed_at: '2026-10-13T10:00:00.000Z', updated_at: '2026-10-13T10:00:00.000Z' });
   expect(opts).toEqual({ onConflict: 'user_id,card_type' });
 });
+
+// ==================== Boost trigger sources (Phase 3) ====================
+
+it('G1 profiles: every field useProfileProgress weighs, the caller only', async () => {
+  const { sb, calls } = recorder();
+  await repo.fetchProfileProgressFields(sb, U);
+  expect(calls[0].table).toBe('profiles');
+  expect(op(calls[0], 'select')[0][0]).toBe(
+    'display_name, handle, avatar_url, bio, location, links, cover_url, universal_intent_cover_url, languages, service_offerings',
+  );
+  expect(op(calls[0], 'eq')).toEqual([['user_id', U]]);
+  expect(op(calls[0], 'maybeSingle')).toHaveLength(1);
+});
+
+it('G2 daily_matches: a head count of the caller\'s live, untouched, unseen matches', async () => {
+  const { sb, calls } = recorder();
+  await repo.countUnseenLiveMatches(sb, U, '2026-10-13T12:00:00.000Z');
+  const c = calls[0];
+  expect(c.table).toBe('daily_matches');
+  expect(op(c, 'select')[0]).toEqual(['matched_user_id', { count: 'exact', head: true }]);
+  expect(op(c, 'eq')).toEqual([['user_id', U]]);
+  expect(op(c, 'gt')).toEqual([['expires_at', '2026-10-13T12:00:00.000Z']]);
+  expect(op(c, 'is')).toEqual([['action', null], ['viewed_at', null]]);
+  expect(JSON.stringify(c.ops)).not.toMatch(/update|upsert|insert|delete/);
+});
+
+it('G3 diary_entries: the caller\'s entry times since the look-back, newest first, bounded', async () => {
+  const { sb, calls } = recorder();
+  await repo.fetchRecentDiaryEntryTimes(sb, U, '2026-06-15T00:00:00.000Z');
+  const c = calls[0];
+  expect(c.table).toBe('diary_entries');
+  expect(op(c, 'select')[0][0]).toBe('created_at');
+  expect(op(c, 'eq')).toEqual([['user_id', U]]);
+  expect(op(c, 'gte')).toEqual([['created_at', '2026-06-15T00:00:00.000Z']]);
+  expect(op(c, 'order')).toEqual([['created_at', { ascending: false }]]);
+  expect(op(c, 'limit')).toEqual([[repo.DIARY_STREAK_ROW_LIMIT]]);
+});
