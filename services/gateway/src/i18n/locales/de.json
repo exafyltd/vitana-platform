@@ -132,6 +132,7 @@
   "notif.listing_interest.body": "Jemand hat Interesse an „{title}\" gezeigt.",
   "notif.chat_mention.title": "{sender} hat dich in „{group}“ erwähnt",
   "notif.calendar_invite.body": "{name} hat dich zu einem Termin eingeladen",
+  "notif.chat_burst.body": "{count} neue Nachrichten · {preview}",
   "notif.day_close.title": "Gute Nacht 🌙",
   "notif.day_close.body": "Der Tag ist zu Ende — wenn dir noch was durch den Kopf geht, sag es mir kurz.",
   "notif.partner_test_status_changed.title": "Update von {partner_name}",

@@ -19,7 +19,8 @@ import {
 } from '../middleware/auth-supabase-jwt';
 import { buildInviteForChat, CALENDAR_INVITE_TYPE } from '../services/calendar-invite';
 import { createClient } from '@supabase/supabase-js';
-import { notifyUser } from '../services/notification-service';
+import { notifyUser, type NotificationPayload, type NotifyUserOptions } from '../services/notification-service';
+import { coalesceChatPushes, chatConversationKey } from '../services/chat-push-coalescer';
 import { VITANA_BOT_USER_ID, isVitanaBot } from '../lib/vitana-bot';
 import { processConversationTurn } from '../services/conversation-client';
 import { extractDmActions } from '../services/chat/dm-tool-actions';
@@ -239,13 +240,25 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
     // scheduled-notifications.ts BOOTSTRAP-DAILY-FEATURE-TIP). try/catch so a
     // push failure never turns a successfully-sent chat message into a 500.
     try {
-      await notifyUser(
-        receiver_id,
-        identity.tenant_id!,
-        notifType,
-        { title: notifTitle, body: notifBodyFinal, data: notifData },
-        supabase,
-      );
+      let payload: NotificationPayload = { title: notifTitle, body: notifBodyFinal, data: notifData };
+      let notifyOpts: NotifyUserOptions | undefined;
+      // VTID-05137: plain chat messages are coalesced per conversation (one
+      // push per burst). Calendar invites and listing-interest pushes are
+      // events of their own and always go out unchanged.
+      if (notifType === 'new_chat_message' && msgType !== CALENDAR_INVITE_TYPE) {
+        const [prepared] = await coalesceChatPushes(
+          supabase,
+          chatConversationKey({ senderId: identity.user_id }),
+          [{ userId: receiver_id, payload, kind: 'message' }],
+        );
+        payload = prepared.payload;
+        notifyOpts = prepared.opts;
+      }
+      if (notifyOpts) {
+        await notifyUser(receiver_id, identity.tenant_id!, notifType, payload, supabase, notifyOpts);
+      } else {
+        await notifyUser(receiver_id, identity.tenant_id!, notifType, payload, supabase);
+      }
     } catch (err: any) {
       console.error('[Chat] Push notification dispatch failed:', err?.message || err);
     }
