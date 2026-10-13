@@ -459,47 +459,47 @@ The 5 existing card components (`VitanaIndexCard`, `LongevityJourneyCard`, `Invi
 
 **Goal:** Ship the enrichment card system with 11 enrichment cards on Home + Profile screens. This directly addresses the 90% no-photo problem.
 
-- [ ] 1. Create migration `20261012000000_unified_card_system.sql` with `user_enrichment_cards` table DDL and `profiles.interests` column addition.
+- [x] 1. Create migration `20261012000000_unified_card_system.sql` with `user_enrichment_cards` table DDL and `profiles.interests` column addition.
       Files: `supabase/migrations/20261012000000_unified_card_system.sql`
       Verify: migration SQL is syntactically valid (parse check).
 
-- [ ] 2. Create completion resolver service + repository with batched query checking all 11 enrichment completion signals.
+- [x] 2. Create completion resolver service + repository with batched query checking all 11 enrichment completion signals.
       Files: `services/gateway/src/services/enrichment/completion-resolver.ts`, `services/gateway/src/services/enrichment/completion-resolver-repository.ts`
       Verify: `cd services/gateway && npx jest test/services/enrichment/completion-resolver` — new unit tests pass.
 
-- [ ] 3. Create the `GET /api/v1/enrichment-cards` and `POST /api/v1/enrichment-cards/dismiss` endpoints. Register router in Express app.
+- [x] 3. Create the `GET /api/v1/enrichment-cards` and `POST /api/v1/enrichment-cards/dismiss` endpoints. Register router in Express app.
       Files: `services/gateway/src/routes/enrichment-cards.ts`, update `services/gateway/src/index.ts` (or route registration file)
       Verify: `cd services/gateway && npx jest test/routes/enrichment-cards` — endpoint tests pass.
 
-- [ ] 4. Create `enrichment-card-tips.ts` data file with localized title/description for all 15 enrichment+boost cards across all 11 gateway locales. Create companion locale-coverage test.
+- [x] 4. Create `enrichment-card-tips.ts` data file with localized title/description for all 15 enrichment+boost cards across all 11 gateway locales. Create companion locale-coverage test.
       Files: `services/gateway/src/data/enrichment-card-tips.ts`, `services/gateway/test/data/enrichment-card-tips.locale-coverage.test.ts`
       Verify: `cd services/gateway && npx jest test/data/enrichment-card-tips.locale-coverage` — locale coverage test passes.
 
-- [ ] 5. Extend `VitanaFeature` union type in `VitanaRecommendationHeader.tsx` with 15 new keys. Add `FEATURE_CONFIG` entries with Lucide icons and i18n label keys.
+- [x] 5. Extend `VitanaFeature` union type in `VitanaRecommendationHeader.tsx` with 15 new keys. Add `FEATURE_CONFIG` entries with Lucide icons and i18n label keys.
       Files: `src/components/vitana/VitanaRecommendationHeader.tsx`
       Verify: `cd vitana-v1 && npx vitest run src/components/vitana` — existing tests pass, TypeScript compiles.
 
-- [ ] 6. Create `VitanaCardActionButton` component with round/pill/rounded-square variants.
+- [x] 6. Create `VitanaCardActionButton` component with round/pill/rounded-square variants.
       Files: `src/components/vitana/VitanaCardActionButton.tsx`
       Verify: `cd vitana-v1 && npx vitest run` — builds clean, no type errors.
 
-- [ ] 7. Create `useEnrichmentCards` and `useCardDismiss` hooks.
+- [x] 7. Create `useEnrichmentCards` and `useCardDismiss` hooks.
       Files: `src/hooks/useEnrichmentCards.ts`, `src/hooks/useCardDismiss.ts`
       Verify: `cd vitana-v1 && npx vitest run src/hooks` — hook tests pass.
 
-- [ ] 8. Create all 11 enrichment card components (E1–E11).
+- [x] 8. Create all 11 enrichment card components (E1–E11).
       Files: `src/components/enrichment/UploadPhotoCard.tsx`, `AddBioCard.tsx`, `FirstPostCard.tsx`, `AddInterestsCard.tsx`, `SetLocationCard.tsx`, `ConnectInstagramCard.tsx`, `ConnectFacebookCard.tsx`, `ConnectCalendarCard.tsx`, `ImportContactsCard.tsx`, `EnableNotificationsCard.tsx`, `UploadCoverCard.tsx`
       Verify: `cd vitana-v1 && npx vitest run src/components/enrichment` — component tests pass.
 
-- [ ] 9. Create `EnrichmentCardStrip` component with carousel/stacked layouts.
+- [x] 9. Create `EnrichmentCardStrip` component with carousel/stacked layouts.
       Files: `src/components/vitana/EnrichmentCardStrip.tsx`
       Verify: `cd vitana-v1 && npx vitest run src/components/vitana/EnrichmentCardStrip` — renders correctly.
 
-- [ ] 10. Create `InterestsPicker` sheet component for E4's action target.
+- [x] 10. Create `InterestsPicker` sheet component for E4's action target.
       Files: `src/components/profile/InterestsPicker.tsx`
       Verify: `cd vitana-v1 && npx vitest run src/components/profile/InterestsPicker` — picker tests pass.
 
-- [ ] 11. Mount enrichment cards on Home (add to `vitanaCards` array in Home.tsx for composeFeed interleaving) and Profile (add `EnrichmentCardStrip` carousel at top).
+- [x] 11. Mount enrichment cards on Home (add to `vitanaCards` array in Home.tsx for composeFeed interleaving) and Profile (add `EnrichmentCardStrip` carousel at top).
       Files: `src/pages/Home.tsx`, `src/pages/Profile.tsx`
       Verify: `cd vitana-v1 && npm run build` — clean production build. `npx vitest run` — all tests pass.
 
@@ -507,15 +507,15 @@ The 5 existing card components (`VitanaIndexCard`, `LongevityJourneyCard`, `Invi
 
 **Goal:** Ship 11 feature cards across all 9 screens so every screen shows the unified Vitana card family.
 
-- [ ] 12. Create 6 new feature card components (F3 Daily Diary, F4 Talk to Vitana, F6 Autopilot, F9 Calendar, F10 Upload Media, F11 Discover). Existing cards (F1 Guided Journey = LongevityJourneyCard, F2 Vitana Index = VitanaIndexCard, F5 Find a Match, F7 Invite Friend = InviteFriendCard, F8 Did You Know = DidYouKnowCard) already exist — restyle their widgets to use `VitanaCardActionButton`.
+- [x] 12. Create 6 new feature card components (F3 Daily Diary, F4 Talk to Vitana, F6 Autopilot, F9 Calendar, F10 Upload Media, F11 Discover). Existing cards (F1 Guided Journey = LongevityJourneyCard, F2 Vitana Index = VitanaIndexCard, F5 Find a Match, F7 Invite Friend = InviteFriendCard, F8 Did You Know = DidYouKnowCard) already exist — restyle their widgets to use `VitanaCardActionButton`.
       Files: `src/components/feature/DailyDiaryCard.tsx`, `TalkToVitanaCard.tsx`, `AutopilotCard.tsx`, `CalendarCard.tsx`, `UploadMediaCard.tsx`, `DiscoverCard.tsx`; modify `VitanaIndexCard.tsx`, `LongevityJourneyCard.tsx`, `InviteFriendCard.tsx`
       Verify: `cd vitana-v1 && npx vitest run src/components/feature src/components/home` — all card tests pass.
 
-- [ ] 13. Add 2 new FEATURE_TIPS entries (`calendar-connect`, `upload-media`) with all 11 locales.
+- [x] 13. Add 2 new FEATURE_TIPS entries (`calendar-connect`, `upload-media`) with all 11 locales.
       Files: `services/gateway/src/data/feature-tips.ts`
       Verify: `cd services/gateway && npx jest test/data/feature-tips.locale-coverage` — passes.
 
-- [ ] 14. Mount `EnrichmentCardStrip` on remaining 7 screens (Longevity Journey, Calendar, Vitana Index, Autopilot, Community, Make a Post, Talk to Vitana) with per-screen card lists and appropriate layouts.
+- [x] 14. Mount `EnrichmentCardStrip` on remaining 7 screens (Longevity Journey, Calendar, Vitana Index, Autopilot, Community, Make a Post, Talk to Vitana) with per-screen card lists and appropriate layouts.
       Files: Modify 7 screen page files (see §7.3 table)
       Verify: `cd vitana-v1 && npm run build` — clean production build. `npx vitest run` — all tests pass.
 
