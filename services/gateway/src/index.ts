@@ -435,6 +435,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminUsersLookupRouter = require('./routes/admin-users-lookup').default;
   // Phase 0 staging build (P0.3): /admin/health + /admin/build-info diagnostics.
   const adminHealthRouter = require('./routes/admin-health').default;
+  // VTID-05177: GET /api/v1/app-config — auth-free native app remote config.
+  const appConfigRouter = require('./routes/app-config').default;
   // Phase D (DEV-COMHU voice budget watch): admin observability for the Vertex
   // system_instruction budget. See services/voice-budget-watch.ts.
   const voiceBudgetWatchRouter = require('./routes/voice-budget-watch').default;
@@ -1359,6 +1361,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Phase 0 staging build (P0.3): /admin/health + /admin/build-info — auth-free
   // env-identity probes used by the STAGE-DEPLOY smoke and isolation checks.
   mountRouterSync(app, '/api/v1/admin', adminHealthRouter, { owner: 'admin-health' });
+  // VTID-05177: native app remote config — no auth, no member data, all flags
+  // off by default; per-IP rate limit inside the router.
+  mountRouterSync(app, '/api/v1/app-config', appConfigRouter, { owner: 'app-config' });
 
   // VTID-03460 (Watcher Phase 1): /timeline + /health are admin-gated;
   // /session-step is gated on WATCHER_SESSION_TOKEN and closed when unset.
