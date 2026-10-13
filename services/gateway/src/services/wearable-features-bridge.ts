@@ -284,7 +284,11 @@ export async function bridgeWearableDays(
         if (up?.error) throw new BridgeError('update_features_failed');
       }
       const today = (opts.now ?? new Date()).toISOString().slice(0, 10);
-      const rpc = await repo.computeVitanaIndexForUser(sb, userId, today);
+      const rpc = await repo.computeVitanaIndexForUser(sb, userId, today, {
+        trigger: 'wearable_sync',
+        sourceKind: 'wearable_bridge',
+        sourceRef: Array.from(providers).sort().join(',') || null,
+      });
       if (rpc?.error) throw new BridgeError('index_recompute_failed');
       indexRecomputed = true;
     }

@@ -26,6 +26,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import { recordIndexRecompute } from './vitana-index/record-recompute';
 import { getSupabase } from '../lib/supabase';
 import { writeDiaryEpisode, updateDiaryEpisodeText, resolveTenantId } from './memory/diary';
 import { shouldBlockTool } from './intelligence/role-policy-enforcer';
@@ -4254,9 +4255,12 @@ export async function tool_save_diary_entry(
   // 4) Recompute Index.
   let pillars_after: Record<string, number> | null = null;
   try {
-    const { data: rec, error: rpcErr } = await sb.rpc('health_compute_vitana_index_for_user', {
-      p_user_id: identity.user_id,
-      p_date: entryDate,
+    // VTID-05168: locked + recorded recompute (trigger 'diary').
+    const { data: rec, error: rpcErr } = await recordIndexRecompute(sb, {
+      userId: identity.user_id,
+      date: entryDate,
+      trigger: 'diary',
+      sourceKind: 'diary_entry',
     });
     if (rpcErr) {
       // supabase-js resolves normally with {data:null, error} on an RPC

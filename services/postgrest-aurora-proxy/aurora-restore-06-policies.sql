@@ -4738,3 +4738,5 @@ CREATE POLICY "Service role full access to worker_registry" ON public.worker_reg
 
 -- VTID-05167 (Life Timeline P1)
 DO $IDEMPOTENT$ BEGIN IF to_regclass('public.activity_catalog') IS NOT NULL THEN DROP POLICY IF EXISTS activity_catalog_read ON public.activity_catalog; CREATE POLICY activity_catalog_read ON public.activity_catalog AS PERMISSIVE FOR SELECT TO authenticated USING (true); END IF; END $IDEMPOTENT$;
+-- VTID-05168 (Life Timeline P2)
+DO $IDEMPOTENT$ BEGIN IF to_regclass('public.vitana_index_movements') IS NOT NULL THEN DROP POLICY IF EXISTS vitana_index_movements_owner_read ON public.vitana_index_movements; CREATE POLICY vitana_index_movements_owner_read ON public.vitana_index_movements AS PERMISSIVE FOR SELECT TO authenticated USING ((auth.uid() = user_id)); END IF; END $IDEMPOTENT$;

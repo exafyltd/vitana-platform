@@ -6,6 +6,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { recordIndexRecompute, type IndexRecomputeTrigger } from './vitana-index/record-recompute';
 
 export const HEALTH_FEATURES_CONFLICT = 'tenant_id,user_id,date,feature_key';
 
@@ -73,6 +74,18 @@ export async function updateBridgeOwnedFeatureRow(
     .filter('metadata->>source', 'eq', 'wearable_bridge');
 }
 
-export async function computeVitanaIndexForUser(sb: SupabaseClient, userId: string, date: string) {
-  return sb.rpc('health_compute_vitana_index_for_user', { p_user_id: userId, p_date: date });
+/** VTID-05168: locked + recorded recompute (see services/vitana-index/record-recompute.ts). */
+export async function computeVitanaIndexForUser(
+  sb: SupabaseClient,
+  userId: string,
+  date: string,
+  source: { trigger?: IndexRecomputeTrigger; sourceKind?: string | null; sourceRef?: string | null } = {},
+) {
+  return recordIndexRecompute(sb, {
+    userId,
+    date: date,
+    trigger: source.trigger ?? 'wearable_sync',
+    sourceKind: source.sourceKind ?? null,
+    sourceRef: source.sourceRef ?? null,
+  });
 }

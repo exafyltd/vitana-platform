@@ -25,6 +25,7 @@ import { runPillarAgentsForUser } from '../services/pillar-agents/orchestrator';
 import * as repo from './integrations-repository';
 import { dualWriteUserIntegration } from '../services/health-sources/legacy-mirror';
 import { isHealthSourcesReadEnabled, logReadFallback, readUserIntegrationsFromSources } from '../services/health-sources/read-model';
+import { FEATURE_KEY_TO_LOG_KIND, writePillarLogMoment } from '../services/vitana-index/pillar-log-moment';
 
 const router = Router();
 
@@ -197,7 +198,24 @@ router.post('/manual/log', requireAuth, async (req: AuthenticatedRequest, res: R
     // the main Index total lives in vitana_index_scores and is only refreshed by
     // health_compute_vitana_index_for_user. Without this call the badge stays flat
     // after a manual log even though the agents panel updates.
-    const { data: recomputedRow, error: recomputeErr } = await repo.recomputeVitanaIndexForUser(admin, userId, date);
+    const { data: recomputedRow, error: recomputeErr } = await repo.recomputeVitanaIndexForUser(admin, userId, date, {
+      trigger: 'manual_log',
+      sourceKind: 'health_feature',
+      sourceRef: featureKey,
+    });
+
+    // VTID-05168: a manual pillar log becomes a timeline moment linked to its movement.
+    const logKind = FEATURE_KEY_TO_LOG_KIND[featureKey];
+    if (logKind) {
+      await writePillarLogMoment({
+        userId,
+        kind: logKind,
+        via: 'manual',
+        date,
+        movementId: (recomputedRow?.movement_id as string | undefined) ?? null,
+        params: logKind === 'water' && featureKey === 'water_intake' ? { amount_ml: Number(value) } : {},
+      });
+    }
 
     return res.status(200).json({
       ok: true,

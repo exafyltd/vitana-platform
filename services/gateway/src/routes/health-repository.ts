@@ -52,9 +52,6 @@ export async function fetchVitanaIndexScoreForDate(sb: SupabaseClient, date: str
   return sb.from('vitana_index_scores').select('*').eq('date', date).single();
 }
 
-export async function upsertVitanaIndexScore(sb: SupabaseClient, row: Record<string, unknown>) {
-  return sb.from('vitana_index_scores').upsert(row, { onConflict: 'tenant_id,user_id,date' });
-}
 
 export async function fetchVitanaIndexScoreExistsForUser(sb: SupabaseClient, userId: string) {
   return sb.from('vitana_index_scores').select('id').eq('user_id', userId).limit(1).maybeSingle();

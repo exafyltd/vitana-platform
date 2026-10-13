@@ -33,7 +33,7 @@ function resetMocks() {
   ]) {
     mock.setTable(t, { data: null, error: null });
   }
-  mock.setRpc('health_compute_vitana_index_for_user', { data: null, error: null });
+  mock.setRpc('vitana_index_recompute_and_record', { data: null, error: null });
   mock.calls.length = 0;
   mock.rpcCalls.length = 0;
 }
@@ -144,7 +144,7 @@ describe('logHealthSignal — happy paths', () => {
   it('logs water with a provided tenant_id, skipping the user_tenants lookup', async () => {
     mock.setTable('vitana_index_scores', { data: { score_total: 40 }, error: null });
     mock.setTable('health_features_daily', { data: null, error: null });
-    mock.setRpc('health_compute_vitana_index_for_user', {
+    mock.setRpc('vitana_index_recompute_and_record', {
       data: { score_total: 55, score_hydration: 80 },
       error: null,
     });
@@ -195,7 +195,7 @@ describe('logHealthSignal — happy paths', () => {
   it('computes index_delta as null when there is no previous index row', async () => {
     mock.setTable('vitana_index_scores', { data: null, error: null });
     mock.setTable('health_features_daily', { data: null, error: null });
-    mock.setRpc('health_compute_vitana_index_for_user', {
+    mock.setRpc('vitana_index_recompute_and_record', {
       data: { score_total: 55, score_hydration: 80 },
       error: null,
     });
@@ -211,7 +211,7 @@ describe('logHealthSignal — happy paths', () => {
   it('returns null total_after / pillar_score_after / index_delta when the RPC returns no row', async () => {
     mock.setTable('vitana_index_scores', { data: { score_total: 40 }, error: null });
     mock.setTable('health_features_daily', { data: null, error: null });
-    mock.setRpc('health_compute_vitana_index_for_user', { data: null, error: null });
+    mock.setRpc('vitana_index_recompute_and_record', { data: null, error: null });
 
     const result = await logHealthSignal(baseInput({ tool: 'log_water', amount_ml: 500 }));
     const summary = (result as any).summary;
@@ -223,7 +223,7 @@ describe('logHealthSignal — happy paths', () => {
 
   it('carries activity_type through for log_exercise', async () => {
     mock.setTable('health_features_daily', { data: null, error: null });
-    mock.setRpc('health_compute_vitana_index_for_user', {
+    mock.setRpc('vitana_index_recompute_and_record', {
       data: { score_total: 70, score_exercise: 65 },
       error: null,
     });
