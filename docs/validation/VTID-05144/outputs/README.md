@@ -44,6 +44,14 @@ Local evidence (no staging, no production, no workflow dispatch):
   https://github.com/exafyltd/vitana-platform/actions/runs/38436837467
   (gateway @ `e7a4c90fb561`, chain=1).
 
+- Chained run 38436837467 (chain=1, gateway @ `e7a4c90fb561`) was itself
+  superseded when the #4095 merge redeployed staging to `fdf6af3e921b`:
+  1126/1127 passed, cutoff 2026-10-13T17:30:27.790Z, all 1127 results
+  unattributed, `metadata.chain=1`. It dispatched the next chained full run
+  https://github.com/exafyltd/vitana-platform/actions/runs/38444220325
+  (gateway @ `fdf6af3e921b`, chain=2). Two supersedes in a row, each
+  re-dispatching once, as designed (cap: chain < 3).
+
 ### 2. Full run that passes (`staging.verify.passed`, `metadata.full=true`)
 
-- Pending: the chained run above (chain=1). Its result is recorded here before Gate 2.
+- Pending: chained run 38444220325 (chain=2). Its result is recorded here before Gate 2.
