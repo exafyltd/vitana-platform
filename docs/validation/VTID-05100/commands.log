@@ -1,0 +1,12 @@
+# VTID-05100 — commands run (no SQL, no call to any staging/production endpoint; nothing written outside this checkout)
+git fetch origin main && git reset --hard origin/main   # branch claude/vitana-proactive-messenger-1255ww held only VTID-05128 commits already squashed into main (#4068)
+cd services/gateway && npx jest test/vtid-05100-companion-delivery.test.ts   # 24 passed
+# mutation checks (reverted): removing the reply-hook call → 2 reply-hook tests fail; making COMPANION_SEND_ENABLED unnecessary → 2 gate tests fail
+npm run test:companion -- --verbose   # 3 suites, 62 passed (outputs/test-companion.txt)
+npx jest test/vtid-04560-role-separation-regression.test.ts test/vtid-04892-onboarding-journey-pacer.test.ts test/i18n/catalog-coverage.test.ts test/chat-vitana-reply.test.ts test/vtid-04674-notification-controls.test.ts test/vtid-04962-push-dispatch-outcome.test.ts test/vtid-05055-member-link-migration.test.ts test/scheduled-notifications-*.test.ts test/vtid-04677-scheduled-notifications-auth.test.ts test/vtid-04892-onboarding-coach.test.ts   # 12 suites, 285 passed (outputs/regression.txt)
+npx jest <every test referencing TYPE_META / notification-catalog / i18n catalog / companion> + scheduled-notifications + onboarding-coach   # 23 suites, 415 passed
+npx tsc --noEmit -p .   # no new errors (3 pre-existing: missing local libphonenumber-js / client-pinpoint-sms-voice-v2) (outputs/tsc.txt)
+node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(require('./docs/validation/VTID-05100/staging-tests.json'),{vtid:'VTID-05100',service:'gateway'})"   # { ok: true, errors: [] }
+node scripts/ci/pr-gate/vtid-scope.mjs init VTID-05100 --kind feature --sparring-record docs/validation/VTID-05099/plan-sparring.md --paths ...   # wrote scope.json
+IMPACT_SCAN_BASE=origin/main node scripts/ci/dev-autopilot-impact-scan.mjs   # changed=30, 0 findings (blocker=0 warning=0 info=0)
+node scripts/ci/pr-gate/gate.mjs {scope,sparring,weakening,red-green,migrations} --base $(git merge-base origin/main HEAD) --head HEAD --title "VTID-05100: …"   # scope ✅ 30 files in scope, sparring ✅, weakening ✅, red-green skipped (feature), migrations none

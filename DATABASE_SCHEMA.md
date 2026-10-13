@@ -1548,6 +1548,7 @@ CREATE TABLE my_new_table (
 | 2026-01-03 | Added risk_mitigations table for D49 Proactive Health & Lifestyle Risk Mitigation Layer | Claude | VTID-01143 |
 | 2026-09-28 | Five feature data layers that were documented/declared but never existed live, now APPLIED: autopilot_prompts + autopilot_prompt_prefs, risk_mitigations, overload_*, taste_*/user_*_profiles, preference modeling (explicit table renamed user_explicit_preferences; public.user_preferences is the settings table). New `caller_tenant_id()`. See the section at the end of this file. | Claude | VTID-04716 / 04717 / 04718 / 04719 / 04720 |
 | 2026-04-19 | Added ai_provider_policies, ai_assistant_credentials, ai_consent_log + extended connector_registry.category to include 'ai_assistant' | Claude | VTID-02403 |
+| 2026-10-13 | Seeded `routines` rows `llm-spend-budget` (`50 23 * * *`) and `llm-fallback-watch` (`15 7 * * *`) for the gateway routine runner (migration 20261013190000, additive, ON CONFLICT DO NOTHING). No schema change. | Claude | VTID-05141 |
 | 2026-04-27 | Added routines + routine_runs tables for daily Claude Code remote-agent catalog and run history | Claude | VTID-01981 |
 | 2026-04-28 | Added `pillar` + `contribution_vector` columns to `calendar_events` for typed Vitana Index linkage (replaces `pillar:*` wellness_tag heuristic on the frontend) | Claude | claude/vitana-index-navigation-VdSEQ |
 | 2026-09-23 | Triggers `trg_event_participation_calendar` (global_event_participants → calendar_events) + `trg_calendar_dedupe_event_rsvp`, so community event sign-ups reach the calendar on every path. No table/column change. | Claude | VTID-04321 |
@@ -3900,3 +3901,23 @@ Functions (SECURITY DEFINER, `authenticated`, act only as `auth.uid()`): `ai_con
 Gateway rules (`services/gateway/src/services/ai-connection-grants.ts`): Community needs an active row with the tool's category (no row → PERMISSION_NEEDED, revoked → CONNECTION_REVOKED, lookup error → 503). Commerce refuses a client whose row lacks `commerce` or is revoked; a client with no row (connected before VTID-05133) is unchanged.
 
 Read alongside (column added by `exafyltd/vitana-v1`, same VTID): `profile_privacy_settings.ai_discoverable boolean NOT NULL DEFAULT false` — a member is shown by identity to other members' AI assistants only when true (and `searchable`). OASIS (`CicdEventType`): `community.mcp.tool_called`, `community.mcp.client_refused`, `community.mcp.loopback_client_approved`.
+
+## Unified Card System — `user_enrichment_cards`, `profiles.interests` (VTID-05143, builds VTID-05085 Phase 1, 2026-10-13) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261013200000_vtid_05143_unified_card_system.sql` (additive, idempotent). Plan: `docs/validation/VTID-05085/plan-sparring.md` (§3.2, §6.2, §6.3); build record `docs/validation/VTID-05143/`. Read and written by the gateway (`services/gateway/src/routes/enrichment-cards.ts`, service_role), always for the caller's own `user_id`.
+
+### user_enrichment_cards (one row per member per dismissed enrichment card)
+
+| Column | Meaning |
+|---|---|
+| `user_id` | PK part, `auth.users(id)` ON DELETE CASCADE |
+| `card_type` | PK part, `E1`–`E11` (validated by the gateway catalog `services/enrichment/card-catalog.ts`; no CHECK so Phase 3 boost cards need no migration) |
+| `dismissed_at` | last dismissal; the card is hidden while `dismissed_at + cooldown_days > now()` |
+| `cooldown_days` | default `7` |
+| `created_at`, `updated_at` | timestamps (`updated_at` set by the gateway on dismiss) |
+
+No `completed_at`: completion is derived from the source tables (`profiles`, `profile_posts`, `social_connections` `is_active`/`disconnected_at`, `connected_app_settings` calendar apps, `contacts`, `user_device_tokens` `revoked_at IS NULL`). Index `idx_user_enrichment_cards_user (user_id)`. RLS: members select / insert / update their own rows; `service_role` all.
+
+### profiles.interests
+
+`TEXT[] DEFAULT '{}'` — the member's interests as stable slugs (`fitness`, `nutrition`, …), never display text; the app resolves labels via `screens.interests.<slug>`. Enrichment card E4 is complete when it is non-empty.

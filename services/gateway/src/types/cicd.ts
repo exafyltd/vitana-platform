@@ -159,6 +159,13 @@ export type CicdEventType =
   | 'onboarding.coach.stage_changed'
   // VTID-05099: Vitana Companion Messages — one aggregate event per tick that decided something.
   | 'companion.tick.completed'
+  // VTID-05100: a real companion DM delivered / failed (per member — a real
+  // state transition, unlike the shadow tick), and a member's own settings change.
+  | 'companion.message.sent'
+  | 'companion.message.failed'
+  | 'companion.preferences.updated'
+  // VTID-05143: a member dismissed a Unified Card System enrichment card (7-day cooldown).
+  | 'enrichment_card.dismissed'
   | 'cicd.github.create_pr.requested'
   | 'cicd.github.create_pr.succeeded'
   | 'cicd.github.create_pr.failed'

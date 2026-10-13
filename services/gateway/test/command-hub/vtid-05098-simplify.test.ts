@@ -86,7 +86,7 @@ describe('VTID-05098 Loops screen shows overlap outcomes', () => {
     const badge = (id: string) => items.find((li) => li.getAttribute('data-overlap') === id)!.one('loops-badge');
     expect(badge('O1').textContent).toBe('Resolved');
     expect(badge('O1').className).toContain('loops-badge--overlap-resolved');
-    expect(badge('O2').textContent).toBe('Partly resolved');
+    expect(badge('O2').textContent).toBe('Resolved'); // VTID-05141 closed it
     expect(badge('O9').textContent).toBe('Not a duplicate');
     expect(items[0].one('loops-overlap-resolution').textContent).toContain('VTID-05098');
   });
@@ -94,7 +94,7 @@ describe('VTID-05098 Loops screen shows overlap outcomes', () => {
   it('index.html serves the Phase 2 versions of app.js, styles.css and the Loops module', () => {
     // app.js/styles.css were re-bumped by VTID-05122 (spec-approve fix).
     for (const f of ['app.js', 'styles.css']) {
-      expect(INDEX).toContain(`/command-hub/${f}?v=20261118-vtid-05122`);
+      expect(INDEX).toContain(`/command-hub/${f}?v=20261119-vtid-05141`);
     }
     for (const f of ['loops-catalog.js', 'loops-catalog.css']) {
       expect(INDEX).toContain(`/command-hub/${f}?v=20261117-vtid-05098`);

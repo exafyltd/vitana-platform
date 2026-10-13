@@ -395,6 +395,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const orchestratorRouter = require('./routes/orchestrator').default;
   // VTID-01250: Social Connect (AP-1305/AP-1306)
   const socialConnectRouter = require('./routes/social-connect').default;
+  // VTID-05143 (VTID-05085 Phase 1): Unified Card System — enrichment cards
+  const enrichmentCardsRouter = require('./routes/enrichment-cards').default;
   // Intelligent Calendar — Phase 1: Backend Calendar API
   const calendarRouter = require('./routes/calendar').default;
   // VTID-01188: Unified "Generate Spec" Pipeline Routes
@@ -903,6 +905,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01250: Social Connect — OAuth, profile enrichment, auto-share (AP-1305/AP-1306)
   mountRouterSync(app, '/api/v1/social-accounts', socialConnectRouter, { owner: 'social-connect' });
+
+  // VTID-05143 (VTID-05085 Phase 1): Unified Card System — GET /?screen=, POST /dismiss (caller's own cards only)
+  mountRouterSync(app, '/api/v1/enrichment-cards', enrichmentCardsRouter, { owner: 'enrichment-cards' });
 
   // VTID-01939: Capability layer — voice-intent-level verbs
   // (music.play, email.read, calendar.create, contacts.import, ...)

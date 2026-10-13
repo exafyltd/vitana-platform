@@ -177,7 +177,7 @@ export function shouldAuditProbe(key: string, now = Date.now()): boolean {
   probeEmitted.push(now);
   return true;
 }
-export async function auditProbe(req: Request, status: number, now = Date.now()): Promise<void> {
+export async function auditProbe(req: Request, status: number, now = Date.now(), res?: Response): Promise<void> {
   const path = clip(req.originalUrl.split('?')[0]) ?? '';
   const userAgent = clip(req.get('user-agent'));
   if (!shouldAuditProbe(`${req.method}|${path}|${userAgent ?? ''}`, now)) return;
@@ -188,7 +188,7 @@ export async function auditProbe(req: Request, status: number, now = Date.now())
     type: 'commerce.mcp.probe',
     source: 'commerce-mcp',
     status: 'info',
-    message: `Commerce MCP answered ${req.method} ${path} with ${status} (no session).`,
+    message: `Commerce MCP answered ${req.method} ${path} with ${status}.`,
     payload: {
       method: req.method,
       path,
@@ -199,6 +199,11 @@ export async function auditProbe(req: Request, status: number, now = Date.now())
       content_type: clip(req.get('content-type')),
       has_authorization: Boolean(req.get('authorization')),
       jsonrpc_method: jsonrpcMethod,
+      // VTID-05140: request metadata only (lengths, header NAMES, a version string, our own answer's type)
+      content_length: clip(req.get('content-length'), 20),
+      header_names: Object.keys(req.headers).filter((n) => /^[a-z0-9-]{1,40}$/.test(n)).slice(0, 40),
+      mcp_protocol_version: clip(req.get('mcp-protocol-version'), 32),
+      response_content_type: clip(res?.get('content-type'), 80),
     },
     actor_role: 'system',
     surface: 'api',
@@ -210,7 +215,7 @@ export function probeMiddleware(statuses: number[]) {
     res.on('finish', () => {
       if (!statuses.includes(res.statusCode)) return;
       try {
-        void auditProbe(req, res.statusCode).catch(() => undefined);
+        void auditProbe(req, res.statusCode, Date.now(), res).catch(() => undefined);
       } catch {
         /* a diagnostic never changes an answer */
       }
@@ -218,6 +223,31 @@ export function probeMiddleware(statuses: number[]) {
     next();
   };
 }
+
+/**
+ * VTID-05140 (TEMPORARY, same removal as above): the scanner's other requests. First middleware of the
+ * /mcp router and of the /.well-known router, so it also sees paths no route answers (Express's own 404).
+ * Only scanner-shaped user agents; any status; a request with an Authorization header that ends below 400
+ * is never logged. Where probeMiddleware is also attached both listeners fire and shouldAuditProbe
+ * deduplicates by key, so there is never a double row. Requests answered by the community MCP's own
+ * /.well-known router are not seen here (deliberate: the plugin under review is the Commerce one).
+ */
+const SCANNER_UA = /aiohttp|openai|chatgpt|python/i;
+export function scannerProbeMiddleware(req: Request, res: Response, next: NextFunction) {
+  if (SCANNER_UA.test(req.get('user-agent') ?? '')) {
+    res.on('finish', () => {
+      if (req.get('authorization') && res.statusCode < 400) return;
+      try {
+        void auditProbe(req, res.statusCode, Date.now(), res).catch(() => undefined);
+      } catch {
+        /* a diagnostic never changes an answer */
+      }
+    });
+  }
+  next();
+}
+router.use(scannerProbeMiddleware);
+wellKnownRouter.use(scannerProbeMiddleware);
 
 /**
  * VTID-04969: OpenAI verifies the domain by fetching a token the portal shows,

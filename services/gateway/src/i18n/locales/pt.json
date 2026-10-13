@@ -195,5 +195,7 @@
   "autopilot.auto.event_rsvp_referral.summary": "Chegaste através de um convite para um evento. Inscreve-te para guardar o teu lugar.",
   "autopilot.auto.share_milestone.title": "Partilha a tua conquista: {milestone}",
   "autopilot.auto.share_milestone.summary": "Alcançaste uma conquista. Partilha-a com a comunidade — vais ver a publicação antes de sair.",
-  "sms.phone_verification.code": "O teu código Vitanaland: {code}. Não o partilhes com ninguém."
+  "sms.phone_verification.code": "O teu código Vitanaland: {code}. Não o partilhes com ninguém.",
+  "notif.vitana_companion_message.title": "Mensagem da Vitana",
+  "notif.vitana_companion_message.body": "A Vitana escreveu-te – toca para ler a mensagem dela."
 }

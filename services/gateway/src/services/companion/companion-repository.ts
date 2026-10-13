@@ -1,8 +1,12 @@
 /**
  * VTID-05099 — companion messages data access. Reads member signals
  * (memberships, profiles, preferences, the ledger, today's onboarding touch)
- * and writes ONLY through claim_companion_message / finish_companion_message.
- * Nothing here sends anything.
+ * and writes the ledger ONLY through claim_companion_message /
+ * finish_companion_message / mark_companion_replied.
+ *
+ * VTID-05100 adds: the member's own preferences row (read / upsert, keyed by
+ * the verified user id), the staff audience lookup, and the Vitana DM insert
+ * used by delivery.ts.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -69,14 +73,97 @@ export function fetchPreferences(sb: SupabaseClient, ids: string[]) {
     'companion_preferences');
 }
 
-export interface LedgerRow { user_id: string; local_date: string; mode: string; moment_key: string }
+/**
+ * VTID-05101: reads that return many rows per member (a row per day, an entry
+ * per diary write) page through PostgREST's ~1000-row cap per id chunk, so a
+ * busy page is never silently truncated. One query per page of 1000 rows —
+ * never one per member.
+ */
+async function inChunksPaged<R>(
+  ids: string[],
+  run: (part: string[], from: number, to: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>,
+  label: string,
+  chunk = 50,
+): Promise<R[]> {
+  const out: R[] = [];
+  for (const part of chunks(ids, chunk)) {
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await run(part, from, from + 999);
+      if (error) throw new Error(`${label}: ${error.message}`);
+      const rows = (data ?? []) as R[];
+      out.push(...rows);
+      if (rows.length < 1000) break;
+    }
+  }
+  return out;
+}
+
+export interface LedgerRow {
+  user_id: string;
+  local_date: string;
+  mode: string;
+  moment_key: string;
+  /** VTID-05101 back-off: only `sent` rows count; a reply resets. */
+  status?: string | null;
+  replied_at?: string | null;
+  facts?: Record<string, unknown> | null;
+}
 
 export function fetchRecentLedger(sb: SupabaseClient, ids: string[], sinceDate: string) {
-  return inChunks<LedgerRow>(
+  return inChunksPaged<LedgerRow>(
     ids,
-    (p) => sb.from('companion_messages_ledger')
-      .select('user_id, local_date, mode, moment_key').gte('local_date', sinceDate).in('user_id', p),
+    (p, from, to) => sb.from('companion_messages_ledger')
+      .select('user_id, local_date, mode, moment_key, status, replied_at, facts')
+      .gte('local_date', sinceDate).in('user_id', p)
+      .order('user_id', { ascending: true }).order('local_date', { ascending: false }).order('mode', { ascending: true })
+      .range(from, to),
     'companion_ledger');
+}
+
+// ── VTID-05101: member signals for the Phase 3 moments ───────────────────────
+
+export interface JourneyStateRow {
+  user_id: string;
+  mode: 'guided' | 'full';
+  onboarding_status: string;
+  current_session: number;
+  completed_practice_count: number;
+  qualification_threshold: number;
+  last_opened_topic_id: string | null;
+  metadata: Record<string, any> | null;
+}
+
+/** Guided Journey state (VTID-03276), one row per member. */
+export function fetchJourneyStates(sb: SupabaseClient, ids: string[]) {
+  return inChunks<JourneyStateRow>(
+    ids,
+    (p) => sb.from('user_guided_journey_state')
+      .select('user_id, mode, onboarding_status, current_session, completed_practice_count, qualification_threshold, last_opened_topic_id, metadata')
+      .in('user_id', p),
+    'journey_state');
+}
+
+/** The app's Daily Diary (`diary_entries`: user_id, created_at, no tenant column) since a UTC instant. */
+export function fetchDiaryEntriesSince(sb: SupabaseClient, ids: string[], sinceIso: string) {
+  return inChunksPaged<{ user_id: string; created_at: string }>(
+    ids,
+    (p, from, to) => sb.from('diary_entries')
+      .select('user_id, created_at').gte('created_at', sinceIso).in('user_id', p)
+      .order('user_id', { ascending: true }).order('created_at', { ascending: false })
+      .range(from, to),
+    'diary_entries');
+}
+
+/** Distinct active usage days (`user_active_days`, one row per user per UTC date). */
+export function fetchActiveDaysSince(sb: SupabaseClient, ids: string[], sinceDate: string) {
+  return inChunksPaged<{ user_id: string; active_date: string }>(
+    ids,
+    (p, from, to) => sb.from('user_active_days')
+      .select('user_id, active_date').gte('active_date', sinceDate).in('user_id', p)
+      .order('user_id', { ascending: true }).order('active_date', { ascending: false })
+      .range(from, to),
+    'user_active_days',
+    30);
 }
 
 /** Onboarding coach touches already SENT (VTID-04892) — one Vitana touch a day, whoever sends it. */
@@ -148,4 +235,112 @@ export async function finishMessage(
   });
   if (error) return { ok: false, error: error.message };
   return (data ?? { ok: false, error: 'empty_rpc_result' }) as { ok: boolean; error?: string };
+}
+
+// ── VTID-05100 ──────────────────────────────────────────────────────────────
+
+/** Owner decision D2: no row = enabled, health + community on, business off. */
+export const DEFAULT_PREFERENCES = Object.freeze({
+  enabled: true,
+  topic_health: true,
+  topic_community: true,
+  topic_business: false,
+});
+
+export type CompanionPreferences = { -readonly [K in keyof typeof DEFAULT_PREFERENCES]: boolean };
+export type CompanionPreferencesPatch = Partial<CompanionPreferences>;
+
+/** One member's preferences (defaults when they never saved any). */
+export async function getMemberPreferences(sb: SupabaseClient, userId: string): Promise<CompanionPreferences> {
+  const { data, error } = await sb
+    .from('companion_preferences')
+    .select('enabled, topic_health, topic_community, topic_business')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) throw new Error(`companion_preferences: ${error.message}`);
+  const row = (data ?? {}) as Partial<CompanionPreferences>;
+  return {
+    enabled: row.enabled ?? DEFAULT_PREFERENCES.enabled,
+    topic_health: row.topic_health ?? DEFAULT_PREFERENCES.topic_health,
+    topic_community: row.topic_community ?? DEFAULT_PREFERENCES.topic_community,
+    topic_business: row.topic_business ?? DEFAULT_PREFERENCES.topic_business,
+  };
+}
+
+/** Merge a patch onto the member's current preferences and save the full row. */
+export async function saveMemberPreferences(
+  sb: SupabaseClient,
+  userId: string,
+  tenantId: string | null,
+  patch: CompanionPreferencesPatch,
+): Promise<CompanionPreferences> {
+  const current = await getMemberPreferences(sb, userId);
+  const next: CompanionPreferences = { ...current, ...patch };
+  const { error } = await sb.from('companion_preferences').upsert(
+    { user_id: userId, ...(tenantId ? { tenant_id: tenantId } : {}), ...next, updated_at: new Date().toISOString() },
+    { onConflict: 'user_id' },
+  );
+  if (error) throw new Error(`companion_preferences upsert: ${error.message}`);
+  return next;
+}
+
+/** Roles that make a member part of the staff audience (COMPANION_MODE=staff). */
+export const STAFF_ROLES = ['staff', 'admin'] as const;
+
+/**
+ * Members (of the given ids) holding a staff/admin role in their own tenant
+ * (user_permitted_roles — the table check_role_permitted() reads).
+ */
+export async function fetchStaffMemberIds(
+  sb: SupabaseClient,
+  members: Array<{ user_id: string; tenant_id: string }>,
+): Promise<Set<string>> {
+  const tenantBy = new Map(members.map((m) => [m.user_id, m.tenant_id]));
+  const rows = await inChunks<{ user_id: string; tenant_id: string; role: string }>(
+    members.map((m) => m.user_id),
+    (p) => sb.from('user_permitted_roles').select('user_id, tenant_id, role').in('role', [...STAFF_ROLES]).in('user_id', p),
+    'user_permitted_roles',
+  );
+  return new Set(rows.filter((r) => tenantBy.get(r.user_id) === r.tenant_id).map((r) => r.user_id));
+}
+
+export interface CompanionChatMessageRow {
+  tenant_id: string;
+  sender_id: string;
+  receiver_id: string;
+  content: string;
+  message_type: 'text';
+  /** Persisted as chat_messages.metadata; the client reads it as content_data. */
+  metadata: Record<string, unknown>;
+}
+
+/** Insert Vitana's DM; returns the new chat_messages id. */
+export async function insertCompanionChatMessage(
+  sb: SupabaseClient,
+  row: CompanionChatMessageRow,
+): Promise<{ id: string | null; error: string | null }> {
+  const { data, error } = await sb.from('chat_messages').insert(row).select('id').single();
+  if (error) return { id: null, error: error.message };
+  return { id: ((data as { id?: string } | null)?.id) ?? null, error: null };
+}
+
+/** The member replied to Vitana: mark their latest unreplied real send (sparring F3). */
+export async function markCompanionReplied(sb: SupabaseClient, userId: string): Promise<{ ok: boolean; marked?: boolean; error?: string }> {
+  const { data, error } = await sb.rpc('mark_companion_replied', { p_user_id: userId });
+  if (error) return { ok: false, error: error.message };
+  return (data ?? { ok: false, error: 'empty_rpc_result' }) as { ok: boolean; marked?: boolean; error?: string };
+}
+
+/**
+ * Fire-and-forget form for the reply path: never throws, never rejects,
+ * never delays the caller (the Vitana reply must not depend on the ledger).
+ */
+export function markCompanionRepliedInBackground(sb: SupabaseClient, userId: string): void {
+  try {
+    Promise.resolve(markCompanionReplied(sb, userId))
+      .then((r) => { if (!r.ok) console.warn(`[companion] mark_companion_replied failed: ${r.error}`); })
+      .catch((err: any) => console.warn(`[companion] mark_companion_replied failed: ${err?.message ?? err}`));
+  } catch (err: any) {
+    console.warn(`[companion] mark_companion_replied failed: ${err?.message ?? err}`);
+  }
 }

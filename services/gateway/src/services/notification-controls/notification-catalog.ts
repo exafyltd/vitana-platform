@@ -56,6 +56,8 @@ const ROWS: Row[] = [
   // ── ORB (Vitana's own messages) ───────────────────────────────────────────
   ['orb_proactive_message', 'member', 'orb', 'automation', 'unverified', 'Message from Vitana', 'Nachricht von Vitana', 'Vitana reaches out on her own, sent by an automation.', 'Vitana meldet sich von sich aus, ausgelöst durch eine Automation.'],
   ['orb_suggestion', 'member', 'orb', 'automation', 'unverified', 'Suggestion from Vitana', 'Vorschlag von Vitana', 'A suggestion from Vitana, sent by an automation.', 'Ein Vorschlag von Vitana, ausgelöst durch eine Automation.'],
+  // VTID-05100: Vitana Companion Messages (at most one a day; title/body from the tt() catalog, the DM is composed in the member's language).
+  ['vitana_companion_message', 'member', 'orb', 'scheduled', 'ready', 'Daily message from Vitana', 'Tägliche Nachricht von Vitana', 'Vitana writes you at most one personal message a day in your chat with her.', 'Vitana schreibt dir höchstens eine persönliche Nachricht am Tag in deinen Chat mit ihr.'],
   ['conversation_followup_reminder', 'member', 'orb', 'automation', 'unverified', 'Follow up a conversation', 'Gespräch fortsetzen', 'A reminder to continue a conversation.', 'Eine Erinnerung, ein Gespräch fortzusetzen.'],
   ['reminder_due', 'member', 'orb', 'member_activity', 'ready', 'Reminder the member set', 'Selbst gesetzte Erinnerung', 'A reminder the member asked Vitana to set.', 'Eine Erinnerung, die das Mitglied bei Vitana eingestellt hat.'],
 

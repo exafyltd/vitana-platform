@@ -195,5 +195,7 @@
   "autopilot.auto.event_rsvp_referral.summary": "Du bist über eine Event-Einladung gekommen. Melde dich an, damit dein Platz sicher ist.",
   "autopilot.auto.share_milestone.title": "Teile deinen Meilenstein: {milestone}",
   "autopilot.auto.share_milestone.summary": "Du hast einen Meilenstein erreicht. Teile ihn mit der Community – du siehst den Beitrag, bevor er erscheint.",
-  "sms.phone_verification.code": "Dein Vitanaland-Code: {code}. Gib ihn niemandem weiter."
+  "sms.phone_verification.code": "Dein Vitanaland-Code: {code}. Gib ihn niemandem weiter.",
+  "notif.vitana_companion_message.title": "Nachricht von Vitana",
+  "notif.vitana_companion_message.body": "Vitana hat dir geschrieben – tippe, um ihre Nachricht zu lesen."
 }

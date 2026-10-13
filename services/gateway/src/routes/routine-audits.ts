@@ -520,6 +520,56 @@ export async function auditSpecMemoryQuarantine() {
   };
 }
 
+// =============================================================================
+// VTID-05141 — voice-lab-triage data (Loop Engineering Phase 3b, loop L7)
+//
+// Reads voice_session_facts (VTID-04776: one row per ORB voice session, with
+// outcome and voice-failure-taxonomy failure_class) over a real time window.
+// /api/v1/voice-lab/live/sessions is not used: it ignores time windows and
+// hard-codes error_count to 0 (voice-lab.ts list route).
+// =============================================================================
+
+/** Outcomes that count as an error session for voice-lab-triage. */
+export const VOICE_ERROR_OUTCOMES = ['silent', 'one_way', 'dropped', 'error'];
+const VOICE_PAGE = 1000;
+const VOICE_MAX_ROWS = 20000;
+
+export async function auditVoiceSessionOutcomes(params: { sinceHours: number; untilHours?: number }) {
+  const since = hoursAgoIso(params.sinceHours);
+  const until = hoursAgoIso(params.untilHours ?? 0);
+  let total = 0;
+  let errorSessions = 0;
+  const byFailureClass: Record<string, number> = {};
+  let truncated = false;
+  for (let offset = 0; ; offset += VOICE_PAGE) {
+    if (offset >= VOICE_MAX_ROWS) { truncated = true; break; }
+    const page = await supaFetch<Array<{ outcome: string | null; failure_class: string | null }>>(
+      '/rest/v1/voice_session_facts?select=outcome,failure_class' +
+        `&started_at=gte.${since}&started_at=lt.${until}` +
+        '&outcome=not.is.null&outcome=neq.active' +
+        `&order=started_at.asc&limit=${VOICE_PAGE}&offset=${offset}`
+    );
+    if (page === null) throw new Error('voice_session_facts read failed');
+    for (const r of page) {
+      total += 1;
+      if (r.outcome && VOICE_ERROR_OUTCOMES.includes(r.outcome)) {
+        errorSessions += 1;
+        const fc = r.failure_class || 'voice.unknown';
+        byFailureClass[fc] = (byFailureClass[fc] || 0) + 1;
+      }
+    }
+    if (page.length < VOICE_PAGE) break;
+  }
+  return {
+    window: { since, until },
+    total_sessions: total,
+    error_sessions: errorSessions,
+    error_rate: total > 0 ? errorSessions / total : null,
+    by_failure_class: byFailureClass,
+    truncated,
+  };
+}
+
 routineAuditsRouter.get(
   '/api/v1/routines/audits/spec-memory-quarantine',
   requireRoutineToken,
