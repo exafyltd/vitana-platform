@@ -52,4 +52,4 @@ The first `learn-outcomes` row in `routine_runs` (trigger `gateway-runner`) carr
 - A removed test file in a fix PR does not count as a test added.
 - The escaped-bug finding records `repair_kind: write_test` in `spec_snapshot` (the allocate route records it on the VTID's ledger metadata; the routine allocates no VTID).
 - The L3 card reuses the card signal style (no CSS change), so only `loops-catalog.js` and `app.js`/`styles.css` markers were bumped (`20261120-vtid-05148`); `loops-catalog.css` keeps `20261117-vtid-05098`. Exact-version pins in older tests and staging suites follow, as VTID-05141 did.
-- L1's gap text still says "Twelve deterministic routines" — left unchanged (outside the approved plan; learn-outcomes is an L3 routine).
+- L1's gap text now says "Thirteen deterministic routines" (the count of gateway runner routines, now including the L3 routine learn-outcomes); nothing else in L1 changed.
