@@ -11,6 +11,23 @@
  * English intent block.
  */
 import { z } from 'zod';
+import { JEV_PLANES } from '../jev/jev-access';
+
+/**
+ * Upper bound for a tenant's Jev monthly budget. One value for every write path
+ * (provisioning and the tenant-admin settings PUT), so an exafy_admin settings
+ * update can never authorise more spend than provisioning permits.
+ */
+export const JEV_MONTHLY_BUDGET_MAX_USD = 500;
+
+/** Full shape of the governed `feature_flags.jev` key (jev-policy.ts parses the same fields). */
+export const GovernedJevFlagSchema = z
+  .object({
+    enabled: z.boolean(),
+    planes: z.array(z.enum(JEV_PLANES)).max(JEV_PLANES.length),
+    monthly_budget_usd: z.number().finite().min(0).max(JEV_MONTHLY_BUDGET_MAX_USD).nullable(),
+  })
+  .strict();
 
 export const SLUG_RE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -60,7 +77,7 @@ export const ProvisionTenantSchema = z
     admin_email: email,
     all_members_group_name: z.string().trim().min(1).max(80),
     display_name: z.string().trim().min(1).max(80).optional(),
-    jev_monthly_budget_usd: z.number().min(0).max(500).optional(),
+    jev_monthly_budget_usd: z.number().min(0).max(JEV_MONTHLY_BUDGET_MAX_USD).optional(),
     default_locale: LOCALE.optional(),
     enabled_locales: z.array(LOCALE).min(1).max(20).optional(),
     timezone: timezone.optional(),

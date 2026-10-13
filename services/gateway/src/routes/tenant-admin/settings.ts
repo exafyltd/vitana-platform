@@ -14,6 +14,7 @@ import { requireTenantAdmin } from '../../middleware/require-tenant-admin';
 import { AuthenticatedRequest } from '../../middleware/auth-supabase-jwt';
 import { getSupabase } from '../../lib/supabase';
 import * as repo from './settings-repository';
+import { GovernedJevFlagSchema } from '../../services/tenant-provisioning/schemas';
 
 const router = Router({ mergeParams: true });
 
@@ -74,6 +75,14 @@ router.put('/', requireTenantAdmin, async (req: AuthenticatedRequest, res: Respo
 
     if (feature_flags !== undefined && (feature_flags === null || typeof feature_flags !== 'object' || Array.isArray(feature_flags))) {
       return res.status(400).json({ ok: false, error: 'INVALID_FEATURE_FLAGS' });
+    }
+    // An exafy_admin may change the governed jev key, but only to a complete,
+    // valid flag inside the provisioning budget bound — never an arbitrary object.
+    if (isExafyAdmin && feature_flags !== undefined && Object.prototype.hasOwnProperty.call(feature_flags, 'jev')) {
+      const jev = GovernedJevFlagSchema.safeParse(feature_flags.jev);
+      if (!jev.success) {
+        return res.status(400).json({ ok: false, error: 'INVALID_JEV_FLAG', details: jev.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) });
+      }
     }
 
     const updates: Record<string, unknown> = {

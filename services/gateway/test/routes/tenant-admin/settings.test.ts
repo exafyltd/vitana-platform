@@ -328,11 +328,32 @@ describe('Tenant Admin Settings Routes', () => {
     const res = await request(app)
       .put(`/api/v1/admin/tenants/${TENANT_A}/settings`)
       .set('Authorization', 'Bearer token')
-      .send({ feature_flags: { jev: { enabled: true, monthly_budget_usd: 20 } } });
+      .send({ feature_flags: { jev: { enabled: true, planes: ['internal', 'system_autopilot', 'member'], monthly_budget_usd: 20 } } });
 
     expect(res.status).toBe(200);
     expect(res.body.ignored_keys).toBeUndefined();
     expect(mockRpc.mock.calls[0][1]).toMatchObject({ p_allow_governed: true, p_updated_by: 'exafy-1' });
+  });
+
+  it.each([
+    ['a budget above the provisioning bound', { enabled: true, planes: ['member'], monthly_budget_usd: 999999 }],
+    ['a negative budget', { enabled: true, planes: ['member'], monthly_budget_usd: -1 }],
+    ['an unknown plane', { enabled: true, planes: ['everyone'], monthly_budget_usd: 20 }],
+    ['a partial flag (planes missing)', { enabled: true, monthly_budget_usd: 20 }],
+    ['an extra key', { enabled: true, planes: ['member'], monthly_budget_usd: 20, cap_override: true }],
+    ['a non-object', 'on'],
+  ])('VTID-05150: an exafy_admin jev update with %s → 400 INVALID_JEV_FLAG, nothing written', async (_label, jev) => {
+    mockVerifiedJwt({ sub: 'exafy-1', email: 'ops@exafy.io', app_metadata: { active_tenant_id: TENANT_A, exafy_admin: true } });
+
+    const res = await request(app)
+      .put(`/api/v1/admin/tenants/${TENANT_A}/settings`)
+      .set('Authorization', 'Bearer token')
+      .send({ profile: { name: 'x' }, feature_flags: { jev } });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('INVALID_JEV_FLAG');
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(chainFor('tenant_settings').upsert).not.toHaveBeenCalled();
   });
 
   it('VTID-05150: before the migration (merge function missing) the gateway merges with the same jev guard', async () => {
