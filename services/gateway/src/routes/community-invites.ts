@@ -10,6 +10,7 @@
 import { Router, Request, Response } from 'express';
 import { optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { ensureProvisioned } from '../services/auth-bridge/auth-bridge';
 
 const router = Router();
 const LOG_PREFIX = '[community-invites]';
@@ -58,6 +59,8 @@ router.post('/claim', async (req: Request, res: Response) => {
   const sb = await serviceClient();
   if (!sb) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
   try {
+    // VTID-05023 part 4: claims run right after sign-up; provision first.
+    await ensureProvisioned(identity.user_id);
     const { claimInvite } = await import('../services/community-autopilot/invites');
     const outcome = await claimInvite(sb, identity.user_id, code, {
       getAuthUser: async (userId) => {

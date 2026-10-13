@@ -251,6 +251,51 @@ router.post('/merchants', async (req: Request, res: Response) => {
  * form forgets to ask for.
  */
 /**
+ * VTID-05153: `attributes` keys only the platform writes — the admin's
+ * listing decision (VTID-04933) and the catalogue check's result
+ * (services/catalog-check). A supplier's input never sets them: the schema
+ * drops exactly these two keys and keeps every other one.
+ */
+export const RESERVED_ATTRIBUTE_KEYS = ['admin_listing', 'catalog_check'] as const;
+
+export function stripReservedAttributes(attrs: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(attrs)) {
+    if (!(RESERVED_ATTRIBUTE_KEYS as readonly string[]).includes(k)) out[k] = v;
+  }
+  return out;
+}
+
+/** What a supplier sees of `attributes.catalog_check`: state, error codes and fields, strikes. */
+export interface SupplierCatalogCheckView {
+  state: string;
+  errors: Array<{ code: string; field: string | null; params?: { other_title: string } }>;
+  strikes: number;
+}
+
+export function supplierCatalogCheckView(cc: unknown): SupplierCatalogCheckView | null {
+  if (!cc || typeof cc !== 'object') return null;
+  const c = cc as Record<string, any>;
+  if (typeof c.state !== 'string') return null;
+  const errors = (Array.isArray(c.errors) ? c.errors : [])
+    .filter((e: any) => e && typeof e.code === 'string')
+    .map((e: any) => ({
+      code: e.code as string,
+      field: typeof e.field === 'string' ? e.field : null,
+      // A duplicate names the supplier's own other row by title, never by id.
+      ...(e.code === 'duplicate' && typeof e.params?.other_title === 'string' ? { params: { other_title: e.params.other_title as string } } : {}),
+    }));
+  return { state: c.state, errors, strikes: typeof c.strikes === 'number' ? c.strikes : 0 };
+}
+
+/** A product row for a supplier: `attributes.catalog_check` replaced by its supplier view. */
+export function withSupplierCatalogCheck<T extends { attributes?: unknown }>(row: T): T {
+  const attrs = row?.attributes;
+  if (!attrs || typeof attrs !== 'object' || !('catalog_check' in (attrs as object))) return row;
+  return { ...row, attributes: { ...(attrs as object), catalog_check: supplierCatalogCheckView((attrs as any).catalog_check) } };
+}
+
+/**
  * The product fields, WITHOUT the cross-field refine below.
  *
  * Kept separate because `.refine()` returns a ZodEffects, and ZodEffects has
@@ -278,7 +323,8 @@ export const ProductFields = z.object({
   // the product's Discover category, so an unknown value never hides a product.
   subcategory: z.string().max(64).optional(),
   // Vertical-specific answers, keyed by catalog_vertical_fields.field_key.
-  attributes: z.record(z.string(), z.unknown()).default({}),
+  // VTID-05153: the reserved platform keys are dropped from supplier input.
+  attributes: z.record(z.string(), z.unknown()).default({}).transform(stripReservedAttributes),
 });
 
 /**
@@ -337,7 +383,8 @@ router.get('/products', async (req: Request, res: Response) => {
     res.status(500).json({ ok: false, error: 'failed to load products' });
     return;
   }
-  res.json({ ok: true, data: { merchant, products: data ?? [] } });
+  // VTID-05153: the catalogue check's result reaches the supplier shaped.
+  res.json({ ok: true, data: { merchant, products: (data ?? []).map(withSupplierCatalogCheck) } });
 });
 
 router.post('/products', async (req: Request, res: Response) => {
