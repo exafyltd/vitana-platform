@@ -73,14 +73,97 @@ export function fetchPreferences(sb: SupabaseClient, ids: string[]) {
     'companion_preferences');
 }
 
-export interface LedgerRow { user_id: string; local_date: string; mode: string; moment_key: string }
+/**
+ * VTID-05101: reads that return many rows per member (a row per day, an entry
+ * per diary write) page through PostgREST's ~1000-row cap per id chunk, so a
+ * busy page is never silently truncated. One query per page of 1000 rows —
+ * never one per member.
+ */
+async function inChunksPaged<R>(
+  ids: string[],
+  run: (part: string[], from: number, to: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>,
+  label: string,
+  chunk = 50,
+): Promise<R[]> {
+  const out: R[] = [];
+  for (const part of chunks(ids, chunk)) {
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await run(part, from, from + 999);
+      if (error) throw new Error(`${label}: ${error.message}`);
+      const rows = (data ?? []) as R[];
+      out.push(...rows);
+      if (rows.length < 1000) break;
+    }
+  }
+  return out;
+}
+
+export interface LedgerRow {
+  user_id: string;
+  local_date: string;
+  mode: string;
+  moment_key: string;
+  /** VTID-05101 back-off: only `sent` rows count; a reply resets. */
+  status?: string | null;
+  replied_at?: string | null;
+  facts?: Record<string, unknown> | null;
+}
 
 export function fetchRecentLedger(sb: SupabaseClient, ids: string[], sinceDate: string) {
-  return inChunks<LedgerRow>(
+  return inChunksPaged<LedgerRow>(
     ids,
-    (p) => sb.from('companion_messages_ledger')
-      .select('user_id, local_date, mode, moment_key').gte('local_date', sinceDate).in('user_id', p),
+    (p, from, to) => sb.from('companion_messages_ledger')
+      .select('user_id, local_date, mode, moment_key, status, replied_at, facts')
+      .gte('local_date', sinceDate).in('user_id', p)
+      .order('user_id', { ascending: true }).order('local_date', { ascending: false }).order('mode', { ascending: true })
+      .range(from, to),
     'companion_ledger');
+}
+
+// ── VTID-05101: member signals for the Phase 3 moments ───────────────────────
+
+export interface JourneyStateRow {
+  user_id: string;
+  mode: 'guided' | 'full';
+  onboarding_status: string;
+  current_session: number;
+  completed_practice_count: number;
+  qualification_threshold: number;
+  last_opened_topic_id: string | null;
+  metadata: Record<string, any> | null;
+}
+
+/** Guided Journey state (VTID-03276), one row per member. */
+export function fetchJourneyStates(sb: SupabaseClient, ids: string[]) {
+  return inChunks<JourneyStateRow>(
+    ids,
+    (p) => sb.from('user_guided_journey_state')
+      .select('user_id, mode, onboarding_status, current_session, completed_practice_count, qualification_threshold, last_opened_topic_id, metadata')
+      .in('user_id', p),
+    'journey_state');
+}
+
+/** The app's Daily Diary (`diary_entries`: user_id, created_at, no tenant column) since a UTC instant. */
+export function fetchDiaryEntriesSince(sb: SupabaseClient, ids: string[], sinceIso: string) {
+  return inChunksPaged<{ user_id: string; created_at: string }>(
+    ids,
+    (p, from, to) => sb.from('diary_entries')
+      .select('user_id, created_at').gte('created_at', sinceIso).in('user_id', p)
+      .order('user_id', { ascending: true }).order('created_at', { ascending: false })
+      .range(from, to),
+    'diary_entries');
+}
+
+/** Distinct active usage days (`user_active_days`, one row per user per UTC date). */
+export function fetchActiveDaysSince(sb: SupabaseClient, ids: string[], sinceDate: string) {
+  return inChunksPaged<{ user_id: string; active_date: string }>(
+    ids,
+    (p, from, to) => sb.from('user_active_days')
+      .select('user_id, active_date').gte('active_date', sinceDate).in('user_id', p)
+      .order('user_id', { ascending: true }).order('active_date', { ascending: false })
+      .range(from, to),
+    'user_active_days',
+    30);
 }
 
 /** Onboarding coach touches already SENT (VTID-04892) — one Vitana touch a day, whoever sends it. */
