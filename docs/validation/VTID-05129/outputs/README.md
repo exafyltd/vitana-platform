@@ -16,3 +16,10 @@
   - smoke phone journey (09:39, on 7e3abbed): News return 1518 ms vs the 1500 ms budget (+18 ms). The same step read 1242, 1250 and 1030 ms in the run's other three journeys (10:19–10:20, by then on 80fb08b1).
   - deploy after-run: staging moved to 80fb08b1 (stage deploy 09:57–10:03) — the fourth mid-run deploy in three runs.
 - Phone journey across the three runs: one of about four journeys per run misses one budget by 1–11% (run 1: Events image wait; run 2: Postfach 4354/4454 vs 4000 ms; run 3: News return 1518 vs 1500 ms), a different step each time. Raised to the owner: a methodology change (or performance work) is outside the approved plan.
+- Amendment A1 (vitana-v1 #1361, fa314551): the phone journey is judged on the median of 3 passes against the same budgets (owner decision 2026-10-13; sparred, converged).
+- Proof run 4: https://github.com/exafyltd/vitana-platform/actions/runs/38402340778 (community-app @ fa314551, full, 13:06–13:49): 272 passed, 4 failed — every failure inside a deploy window, and every failing spec passed in its other executions of the same run on fa314551:
+  - VTID-04760 Audiobook (13:14:08): episode audio 502 during the staging gateway deploy 13:07–13:14:46 (VTID-05141); the same spec passed at 13:15:02, 13:15:15, 13:15:26.
+  - VTID-04812 calendar (13:17:08): + button not rendered right after that gateway deploy; the same spec passed 6 times 13:18–13:29.
+  - VTID-05081 phone journey (13:48:01): "bottom tab bar did not render" during the frontend switch to ffaabdca (VTID-05109, deploy 13:41–13:48); the journey passed at 13:09, 13:45 and 13:46 with every step's median ≤ 739 ms.
+  - deploy after-run: staging moved to ffaabdca (merge during the requested pause).
+- Outcome: all 16 original failures fixed; the phone journey is stable on medians (tab switches ~100 ms). The only remaining red comes from deploys landing mid-run in either repo.
