@@ -17,9 +17,10 @@
  */
 
 import { Router, Request, Response } from 'express';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { getSupabase } from '../lib/supabase';
-import { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import { AuthenticatedRequest, optionalAuth } from '../middleware/auth-supabase-jwt';
 import { fetchPrimaryTenantForUser } from '../middleware/auth-supabase-jwt-repository';
 import * as repo from './autopilot-prompts-repository';
 import { withDependencyHealth } from '../services/dependency-probe';
@@ -38,6 +39,42 @@ import {
 
 const router = Router();
 const VTID = 'VTID-01089';
+
+// =============================================================================
+// VTID-05121: per-user rate limits on the three write routes
+// =============================================================================
+
+/**
+ * VTID-05121: rate-limit key, a local copy of liveRateLimitKey (routes/live.ts,
+ * VTID-04904) — not imported, so this router does not pull in live.ts's
+ * module-level side effects. Key = the user id optionalAuth VERIFIED from the
+ * JWT, else the first X-Forwarded-For hop, else req.ip. A token that does not
+ * verify never sets req.identity, so it shares the IP bucket.
+ * optionalAuth must run before the limiter on every route that uses it.
+ */
+function promptsRateLimitKey(req: Request): string {
+  const userId = (req as AuthenticatedRequest).identity?.user_id;
+  if (userId) return `user:${userId}`;
+  const xff = req.headers['x-forwarded-for'];
+  const first = (Array.isArray(xff) ? xff[0] : xff || '').split(',')[0].trim();
+  if (first) return `ip:${ipKeyGenerator(first)}`;
+  return `ip:${ipKeyGenerator(req.ip || 'unknown')}`;
+}
+
+// The key generator reads X-Forwarded-For itself; the library's own
+// "X-Forwarded-For without trust proxy" warning does not apply.
+const limiterBase = {
+  keyGenerator: promptsRateLimitKey,
+  validate: { xForwardedForHeader: false } as const,
+  message: { ok: false, error: 'RATE_LIMIT_EXCEEDED' },
+  standardHeaders: true,
+  legacyHeaders: false,
+};
+// The service's daily cap (max_prompts_per_day) is the durable bound; these
+// are a per-task backstop, since a member can raise their own cap via POST /prefs.
+const prefsWriteLimiter = rateLimit({ ...limiterBase, windowMs: 15 * 60 * 1000, max: 30 });
+const generateLimiter = rateLimit({ ...limiterBase, windowMs: 15 * 60 * 1000, max: 10 });
+const actionLimiter = rateLimit({ ...limiterBase, windowMs: 15 * 60 * 1000, max: 60 });
 
 // =============================================================================
 // VTID-01089: Helper Functions
@@ -207,7 +244,7 @@ router.get('/prefs', async (req: Request, res: Response) => {
  *   "prefs": { ... }
  * }
  */
-router.post('/prefs', async (req: Request, res: Response) => {
+router.post('/prefs', optionalAuth, prefsWriteLimiter, async (req: Request, res: Response) => {
   console.log(`[${VTID}] POST /prefs`);
 
   const context = await getUserContext(req);
@@ -309,7 +346,7 @@ router.get('/prompts/today', async (req: Request, res: Response) => {
  *   "rate_limit_info": { ... }
  * }
  */
-router.post('/prompts/generate', async (req: Request, res: Response) => {
+router.post('/prompts/generate', optionalAuth, generateLimiter, async (req: Request, res: Response) => {
   console.log(`[${VTID}] POST /prompts/generate`);
 
   const context = await getUserContext(req);
@@ -376,7 +413,7 @@ router.post('/prompts/generate', async (req: Request, res: Response) => {
  * - "not_now": state → dismissed
  * - "options": returns top 5 candidates of same type (no state change)
  */
-router.post('/prompts/:id/action', async (req: Request, res: Response) => {
+router.post('/prompts/:id/action', optionalAuth, actionLimiter, async (req: Request, res: Response) => {
   const promptId = req.params.id;
   console.log(`[${VTID}] POST /prompts/${promptId}/action`);
 

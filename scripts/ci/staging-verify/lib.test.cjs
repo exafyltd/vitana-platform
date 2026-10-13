@@ -437,3 +437,100 @@ test('VTID-05076: a merge commit whose subject has no VTID fails rule 47', () =>
     assert.deepEqual(plan.missing.map((m) => m.sha), [head]);
   } finally { r.cleanup(); }
 });
+
+// ── VTID-05129 ────────────────────────────────────────────────────────────
+const SHA = 'bcae4d0af10b63163b71ca71dde88f22ae07585b';
+
+test('VTID-05129: a dropped stamp sample is unknown, not a mismatch', () => {
+  const short = SHA.slice(0, 12);
+  assert.deepEqual(lib.evaluateStampSamples('community-app', [short, null, short, short, short], SHA), { state: 'match' });
+  assert.deepEqual(lib.evaluateStampSamples('community-app', [short, short, short, short, short], SHA), { state: 'match' });
+  assert.deepEqual(lib.evaluateStampSamples('community-app', [short, 'aaaaaaaaaaaa', short], SHA), { state: 'mismatch', other: 'aaaaaaaaaaaa' });
+  assert.deepEqual(lib.evaluateStampSamples('community-app', [null, null, null, null, null], SHA), { state: 'unknown' });
+  // fewer than half readable is not enough to call it a match
+  assert.deepEqual(lib.evaluateStampSamples('community-app', [short, null, null, null, null], SHA), { state: 'unknown' });
+  assert.deepEqual(lib.evaluateStampSamples('gateway', [SHA, null, SHA], SHA), { state: 'match' });
+});
+
+test('VTID-05129: only dropped connections are retried', () => {
+  const net = (code) => Object.assign(new TypeError('fetch failed'), { cause: { code } });
+  for (const c of ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EAI_AGAIN', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT']) {
+    assert.equal(lib.isRetriableFetchError(net(c)), true, c);
+  }
+  assert.equal(lib.isRetriableFetchError(net('CERT_HAS_EXPIRED')), false);
+  assert.equal(lib.isRetriableFetchError(net('ENOTFOUND')), false);
+  assert.equal(lib.isRetriableFetchError(Object.assign(new Error('x'), { cause: { code: 'ECONNRESET' } })), false);
+  assert.equal(lib.isRetriableFetchError(new DOMException('timeout', 'TimeoutError')), false);
+  assert.equal(lib.isRetriableFetchError(null), false);
+});
+
+test('VTID-05129: a dropped connection hidden in an AggregateError or a closed socket is retried, and named', () => {
+  const net = (cause) => Object.assign(new TypeError('fetch failed'), { cause });
+  for (const c of ['UND_ERR_CLOSED', 'UND_ERR_HEADERS_TIMEOUT', 'EPIPE', 'ENETUNREACH', 'EHOSTUNREACH']) {
+    assert.equal(lib.isRetriableFetchError(net({ code: c })), true, c);
+  }
+  const agg = (codes) => Object.assign(new AggregateError(codes.map((code) => Object.assign(new Error(code), { code }))), {});
+  assert.equal(lib.isRetriableFetchError(net(agg(['ENETUNREACH', 'ETIMEDOUT']))), true);
+  // one non-transient member (a TLS error) keeps the whole thing a real failure
+  assert.equal(lib.isRetriableFetchError(net(agg(['ETIMEDOUT', 'CERT_HAS_EXPIRED']))), false);
+  assert.equal(lib.isRetriableFetchError(net(agg([]))), false);
+  assert.match(lib.describeFetchError(net(Object.assign(new Error('other side closed'), { code: 'UND_ERR_SOCKET' }))), /fetch failed \(UND_ERR_SOCKET: other side closed\)/);
+  assert.match(lib.describeFetchError(net(agg(['ENETUNREACH', 'ETIMEDOUT']))), /\[ENETUNREACH, ETIMEDOUT\]/);
+  assert.equal(lib.describeFetchError(new Error('plain')), 'plain');
+});
+
+test('VTID-05129: a guard failure keeps the blocked requests in its summary', () => {
+  const out = [
+    '  ✘  1 tests/e2e/staging/x.staging.spec.ts:3:1 › page (4.8s)',
+    '    Error: staging-guard aborted 2 request(s) — staging writes reach production data, and a staging build must not call production:',
+    '      POST https://inmkhvwdcuyhnxkgfvsb.supabase.co/rest/v1/profile_posts',
+    '      PATCH https://inmkhvwdcuyhnxkgfvsb.supabase.co/rest/v1/daily_matches?id=eq.1',
+    '  1 failed',
+  ].join('\n');
+  const s = lib.summarizeFailure(out);
+  assert.match(s, /staging-guard aborted 2/);
+  assert.match(s, /blocked: POST https:\/\/inmkhvwdcuyhnxkgfvsb\.supabase\.co\/rest\/v1\/profile_posts ; PATCH /);
+  // other failures are summarised as before
+  assert.equal(lib.summarizeFailure('a\n  Error: boom\nb'), 'Error: boom');
+  assert.equal(lib.summarizeFailure('GET https://x.example/ only\nError: no guard'), 'Error: no guard');
+});
+
+test('VTID-05129: the shared tolerated-abort list is exact, capped and never covers a real write or production', () => {
+  assert.ok(lib.DEFAULT_ALLOWED_ABORTS.length <= lib.DEFAULT_ALLOWED_ABORTS_CAP);
+  assert.equal(lib.DEFAULT_ALLOWED_ABORTS.length, 10, 'list changed — review each new entry, then update this count');
+  const S = 'https://inmkhvwdcuyhnxkgfvsb.supabase.co';
+  const G = 'https://preview-aws-gateway.vitanaland.com';
+  for (const ok of [
+    `POST ${G}/api/v1/rum/beacon`,
+    `POST ${G}/api/v1/analytics/events/batch`,
+    `POST ${G}/api/v1/orb/live/session/prewarm`,
+    `POST ${S}/rest/v1/thread_presence?on_conflict=user_id`,
+    `POST ${S}/rest/v1/rpc/get_role_preference`,
+    `POST ${S}/rest/v1/rpc/get_user_profile_by_identifier`,
+    `POST ${S}/rest/v1/rpc/health_compute_vitana_index`,
+    `POST ${S}/functions/v1/generate-daily-matches`,
+    `POST ${S}/functions/v1/list_my_memberships`,
+  ]) assert.equal(lib.isToleratedAbort(ok), true, ok);
+  for (const bad of [
+    `POST ${S}/rest/v1/profile_posts`,
+    `PATCH ${S}/rest/v1/daily_matches?id=eq.1`,
+    `POST ${S}/rest/v1/rpc/get_role_preference_and_write`,
+    `POST ${G}/api/v1/orb/live/session/start`,
+    `POST ${G}/api/v1/orb/live/session/prewarm/x`,
+    `DELETE ${S}/rest/v1/thread_presence`,
+    `POST https://gateway.vitanaland.com/api/v1/rum/beacon (production host)`,
+    `POST ${G}/api/v1/rum/beacon (production host)`,
+  ]) assert.equal(lib.isToleratedAbort(bad), false, bad);
+  // a spec's own allowance still adds to the list
+  assert.equal(lib.isToleratedAbort(`PATCH ${S}/rest/v1/daily_matches?id=eq.1`, [/rest\/v1\/daily_matches/]), true);
+});
+
+test('VTID-05129: staging-guard.ts mirrors the shared list exactly', () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, 'staging-guard.ts'), 'utf8');
+  const block = /const DEFAULT_ALLOWED_ABORTS: RegExp\[\] = \[\n([\s\S]*?)\n\];/.exec(src);
+  assert.ok(block, 'DEFAULT_ALLOWED_ABORTS block missing in staging-guard.ts');
+  const literals = block[1].split('\n').map((l) => l.trim()).filter((l) => l.startsWith('/^'));
+  const fromGuard = literals.map((l) => l.replace(/,$/, ''));
+  assert.deepEqual(fromGuard, lib.DEFAULT_ALLOWED_ABORTS.map((r) => r.toString()));
+  assert.match(src, /!DEFAULT_ALLOWED_ABORTS\.some\(\(r\) => r\.test\(b\)\) && !allow\.some/);
+});

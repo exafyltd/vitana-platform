@@ -1664,26 +1664,6 @@
    }
   },
   {
-   "id": "DEVHUB.INFRA.HEALTH",
-   "route": "/command-hub/infrastructure/health/",
-   "category": "developer",
-   "access": "member",
-   "surface": "command-hub",
-   "i18n": {
-    "en": {
-     "title": "Infrastructure Health",
-     "shows": "Infrastructure health monitoring.",
-     "phrasings": [
-      "open Infrastructure Health",
-      "show me Infrastructure Health",
-      "go to the Health tab in Infrastructure",
-      "open Health in Infrastructure"
-     ],
-     "hint": "When asking about infra health, system health, or health checks."
-    }
-   }
-  },
-  {
    "id": "DEVHUB.INFRA.DEPLOYMENTS",
    "route": "/command-hub/infrastructure/deployments/",
    "category": "developer",
@@ -1971,7 +1951,10 @@
      ],
      "hint": "When asking about health checks, uptime, endpoint health, or service availability."
     }
-   }
+   },
+   "aliases": [
+    "DEVHUB.INFRA.HEALTH"
+   ]
   },
   {
    "id": "DEVHUB.DIAGNOSTICS.LATENCY",

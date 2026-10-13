@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05118",
+  "files": [
+    "supabase/migrations/20261012235118_vtid_05118_welcome_discount_trigger_secret.sql",
+    "services/gateway/test/vtid-05118-welcome-discount-trigger-secret.test.ts",
+    "docs/validation/VTID-05118/**"
+  ]
+}

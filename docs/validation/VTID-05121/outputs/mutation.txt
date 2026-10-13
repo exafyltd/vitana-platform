@@ -1,0 +1,6 @@
+M1: gate exemption, /prompts arm replaced by false (the /prefs arm kept)
+Tests:       9 failed, 15 passed, 24 total
+M2: generate limiter removed
+Tests:       3 failed, 21 passed, 24 total
+M3: optionalAuth removed before generate limiter (per-IP only)
+Tests:       2 failed, 22 passed, 24 total

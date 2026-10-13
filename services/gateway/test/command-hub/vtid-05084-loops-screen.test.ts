@@ -144,11 +144,11 @@ describe('VTID-05084 Loops screen — wiring', () => {
   });
 
   it('index.html loads the module and stylesheet with ?v= before app.js; modules.json agrees', () => {
-    const mod = INDEX.indexOf('/command-hub/loops-catalog.js?v=20261116-vtid-05084');
-    const app = INDEX.indexOf('/command-hub/app.js?v=20261116-vtid-05084');
+    const mod = INDEX.indexOf('/command-hub/loops-catalog.js?v=20261117-vtid-05098');
+    const app = INDEX.indexOf('/command-hub/app.js?v=20261118-vtid-05122');
     expect(mod).toBeGreaterThan(0);
     expect(app).toBeGreaterThan(mod);
-    expect(INDEX).toContain('<link rel="stylesheet" href="/command-hub/loops-catalog.css?v=20261116-vtid-05084" />');
+    expect(INDEX).toContain('<link rel="stylesheet" href="/command-hub/loops-catalog.css?v=20261117-vtid-05098" />');
     const files = MODULES.bundle.map((b: any) => b.file);
     expect(MODULES.bundle.find((b: any) => b.file === 'loops-catalog.js').kind).toBe('module');
     expect(files.indexOf('loops-catalog.js')).toBeLessThan(files.indexOf('app.js'));

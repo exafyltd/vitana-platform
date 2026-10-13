@@ -35,14 +35,21 @@ jobs:
       # rolled-back migration still fails the step rather than reporting green.
       #
       # Requires the SUPABASE_ACCESS_TOKEN repo secret (see the script header).
+      #
+      # VTID-05123: --record-migration also writes one row per applied repo
+      # file to supabase_migrations.schema_migrations (idempotency_key = the
+      # filename, created_by = github-actions:RUN-MIGRATION:<run_id>), in the
+      # same request as the migration, so a failed migration never gets a row.
+      # Audit trail only; MIGRATION-DRIFT-CHECK stays the authority.
       - name: Apply migration
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           MIGRATION_FILE: ${{ inputs.migration_file }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
-          scripts/ci/apply-sql-via-management-api.sh --file "${MIGRATION_FILE}"
+          scripts/ci/apply-sql-via-management-api.sh --file "${MIGRATION_FILE}" --record-migration
           echo "Migration applied successfully"
 
       - name: Reload PostgREST schema cache

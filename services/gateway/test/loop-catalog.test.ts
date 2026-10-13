@@ -135,6 +135,25 @@ describe('VTID-05084 loop catalog — contract', () => {
     expect(catalog.overlaps.length).toBeGreaterThanOrEqual(10);
     for (const o of catalog.overlaps) expect(o.items.length).toBeGreaterThanOrEqual(2);
   });
+
+  it('VTID-05098: every overlap says what the Simplify loop did with it', () => {
+    const byId = Object.fromEntries(catalog.overlaps.map((o) => [o.id, o.status]));
+    expect(byId).toEqual({
+      O1: 'resolved', O2: 'partly_resolved', O3: 'partly_resolved', O4: 'resolved', O5: 'resolved',
+      O6: 'resolved', O7: 'resolved', O8: 'resolved', O9: 'not_a_duplicate', O10: 'not_a_duplicate',
+    });
+    for (const o of catalog.overlaps) {
+      if (o.status !== 'open') expect((o.resolution || '').length).toBeGreaterThan(20);
+    }
+  });
+
+  it('VTID-05098: the five retired routines are gone from the repo and from every loop', () => {
+    const retired = ['orb-audio-smoke', 'push-pipeline-probe', 'migration-backlog', 'cloud-run-frontend-health', 'self-healing-triage'];
+    for (const r of retired) {
+      expect(fs.existsSync(path.join(REPO, 'routines', `${r}.md`))).toBe(false);
+      for (const l of catalog.loops) expect(l.sensors.routines).not.toContain(r);
+    }
+  });
 });
 
 describe('VTID-05084 coverage rule — every sensor owned by exactly one loop', () => {
@@ -175,6 +194,16 @@ describe('VTID-05084 coverage rule — every sensor owned by exactly one loop', 
 });
 
 describe('VTID-05084 validateCatalog rejects broken contracts', () => {
+  it('VTID-05098: flags an unknown overlap status and a closed overlap without a resolution', () => {
+    const c = raw();
+    (c.overlaps[0] as any).status = 'done';
+    c.overlaps[1].resolution = '';
+    expect(validateCatalog(c)).toEqual(expect.arrayContaining([
+      'overlap O1: bad status done',
+      'overlap O2: partly_resolved needs a resolution',
+    ]));
+  });
+
   it('flags a missing field, an R2 loop without a gate and an R3 loop at L3', () => {
     const c = raw();
     c.loops[0].goal = '';

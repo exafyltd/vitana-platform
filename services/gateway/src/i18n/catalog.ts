@@ -99,6 +99,8 @@ export type GatewayI18nKey =
   | 'notif.calendar_reminder.now'
   | 'notif.calendar_reminder.tomorrow'
   | 'notif.fallback_app_name'
+  // VTID-05095: the SMS that carries a member's phone verification code
+  | 'sms.phone_verification.code'
   // VTID-04463: partner organization invite email
   | 'email.partner_invite.subject'
   | 'email.partner_invite.greeting'
@@ -257,6 +259,11 @@ export type GatewayI18nKey =
   // VTID-04926: push to a member @mentioned in a group chat message (the body
   // is the message itself).
   | 'notif.chat_mention.title'
+  // VTID-05104: generic calendar-invite push body (no title/time/place on the lock screen)
+  | 'notif.calendar_invite.body'
+  // VTID-05137: body of the one push a burst of chat messages gets
+  // ("{count} new messages · {preview}") — see chat-push-coalescer.ts
+  | 'notif.chat_burst.body'
   // VTID-03604: nightly goodnight push — the "you didn't open ORB tonight"
   // counterpart to the spoken day-close. Fixed catalog text, not
   // LLM-composed: unlike the ORB voice path (CLAUDE.md NEVER-rule 41), a

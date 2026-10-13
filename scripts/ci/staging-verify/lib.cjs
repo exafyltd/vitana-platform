@@ -486,7 +486,98 @@ function planFullRun({ service, manifests, alreadyRun = [] }) {
   return { suites, invalid };
 }
 
+// ── VTID-05129: robustness of the run itself ─────────────────────────────
+
+// One sample round of version stamps. A null sample (the fetch threw, or the
+// page had no stamp) is unknown, never a mismatch: a single dropped request
+// must not read as "staging serves another commit". Match needs at least half
+// the samples readable and every readable one on <sha>.
+function evaluateStampSamples(service, stamps, sha) {
+  const seen = stamps.filter(Boolean);
+  const other = seen.find((st) => !commitMatches(service, st, sha)) || null;
+  if (other) return { state: 'mismatch', other };
+  if (seen.length > 0 && seen.length >= Math.ceil(stamps.length / 2)) return { state: 'match' };
+  return { state: 'unknown' };
+}
+
+// A GET that THROWS with one of these is a dropped connection worth one more
+// try. HTTP statuses, TLS/certificate errors and DNS misses are never retried.
+const RETRIABLE_FETCH_CODES = new Set([
+  'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EAI_AGAIN', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT',
+  // VTID-05129 (proof run 38363989362): a bare "fetch failed" on a GET that
+  // passed a second later carried none of the codes above. Node 20 connects
+  // with happy eyeballs (IPv6 + IPv4), so a dropped connect surfaces as an
+  // AggregateError of per-address errors, and an idle keep-alive socket the
+  // CDN closed surfaces as UND_ERR_CLOSED / EPIPE / a headers timeout.
+  'UND_ERR_CLOSED', 'UND_ERR_HEADERS_TIMEOUT', 'EPIPE', 'ENETUNREACH', 'EHOSTUNREACH',
+]);
+function retriableCause(c) {
+  if (!c) return false;
+  if (RETRIABLE_FETCH_CODES.has(c.code)) return true;
+  return Array.isArray(c.errors) && c.errors.length > 0 && c.errors.every((x) => RETRIABLE_FETCH_CODES.has(x && x.code));
+}
+function isRetriableFetchError(e) {
+  return !!e && e.name === 'TypeError' && retriableCause(e.cause);
+}
+// "fetch failed" alone says nothing; name the underlying cause in the evidence.
+function describeFetchError(e) {
+  const c = e && e.cause;
+  if (!c) return String((e && e.message) || e);
+  const inner = Array.isArray(c.errors) && c.errors.length ? ` [${c.errors.map((x) => (x && (x.code || x.message)) || '?').join(', ')}]` : '';
+  return `${e.message} (${c.code || c.name || 'cause'}: ${c.message || ''}${inner})`;
+}
+
+// The one-line evidence for a failed spec. Keeps the error lines and, after a
+// staging-guard abort, the requests it names (the guard prints one
+// "METHOD URL" per line), so OASIS and the PR comment say WHICH requests.
+function summarizeFailure(output) {
+  const lines = String(output || '').split('\n').map((l) => l.replace(/[║╔╗╚╝═]/g, '').trim()).filter(Boolean);
+  const key = lines.filter((l) => /(✘|Error:|expect\(|Expected|Received|FAIL|failed)/.test(l));
+  const head = (key.length ? key : lines.slice(-6)).slice(0, 8).join(' | ').slice(0, 1500);
+  if (!/staging-guard aborted/.test(output || '')) return head;
+  const blocked = [...new Set(lines.filter((l) => /^(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS) https?:\/\//.test(l)))].slice(0, 20);
+  return blocked.length ? `${head} | blocked: ${blocked.join(' ; ')}`.slice(0, 4000) : head;
+}
+
+// Requests the app fires on almost every page that the staging guard aborts,
+// but that no spec should fail on. Each entry matches ONE guard record exactly
+// ("METHOD URL", anchored), so a production-host record — which the guard
+// suffixes with " (production host)" — never matches. The requests stay
+// aborted: nothing new reaches production data. MIRRORED VERBATIM in
+// staging-guard.ts (DEFAULT_ALLOWED_ABORTS); lib.test.cjs keeps the two equal.
+const DEFAULT_ALLOWED_ABORTS = [
+  // Telemetry beacons (fire-and-forget).
+  /^POST https:\/\/preview-aws-gateway\.vitanaland\.com\/api\/v1\/rum\/beacon(\?[^ ]*)?$/,
+  /^POST https:\/\/preview-aws-gateway\.vitanaland\.com\/api\/v1\/diag\/notif-tap(\?[^ ]*)?$/,
+  /^POST https:\/\/preview-aws-gateway\.vitanaland\.com\/api\/v1\/analytics\/events\/batch(\?[^ ]*)?$/,
+  // Voice widget warm-up on load (useOrbVoiceWidget) — only this path.
+  /^POST https:\/\/preview-aws-gateway\.vitanaland\.com\/api\/v1\/orb\/live\/session\/prewarm(\?[^ ]*)?$/,
+  // Chat presence and the activity log.
+  /^(POST|PATCH) https:\/\/inmkhvwdcuyhnxkgfvsb\.supabase\.co\/rest\/v1\/thread_presence(\?[^ ]*)?$/,
+  /^POST https:\/\/inmkhvwdcuyhnxkgfvsb\.supabase\.co\/rest\/v1\/user_activity_log(\?[^ ]*)?$/,
+  // Read-only RPCs and functions (supabase-js sends rpc/invoke as POST).
+  /^POST https:\/\/inmkhvwdcuyhnxkgfvsb\.supabase\.co\/rest\/v1\/rpc\/(get_role_preference|get_my_permitted_roles|list_roles_for_active_tenant|get_profile_health_summary|get_user_profile_by_identifier)(\?[^ ]*)?$/,
+  /^POST https:\/\/inmkhvwdcuyhnxkgfvsb\.supabase\.co\/functions\/v1\/list_my_memberships(\?[^ ]*)?$/,
+  // Real production writes fired app-wide on load, never a spec's subject:
+  // the daily Vitana Index upsert and daily match generation. The guard
+  // aborts them; specs only stop failing on that abort.
+  /^POST https:\/\/inmkhvwdcuyhnxkgfvsb\.supabase\.co\/rest\/v1\/rpc\/health_compute_vitana_index(\?[^ ]*)?$/,
+  /^POST https:\/\/inmkhvwdcuyhnxkgfvsb\.supabase\.co\/functions\/v1\/generate-daily-matches(\?[^ ]*)?$/,
+];
+const DEFAULT_ALLOWED_ABORTS_CAP = 16;
+
+function isToleratedAbort(record, specAllow = []) {
+  return DEFAULT_ALLOWED_ABORTS.some((r) => r.test(record)) || specAllow.some((r) => r.test(record));
+}
+
 module.exports = {
+  evaluateStampSamples,
+  isRetriableFetchError,
+  describeFetchError,
+  summarizeFailure,
+  DEFAULT_ALLOWED_ABORTS,
+  DEFAULT_ALLOWED_ABORTS_CAP,
+  isToleratedAbort,
   planFullRun,
   PRODUCTION_HOSTS,
   STAGING_TARGETS,

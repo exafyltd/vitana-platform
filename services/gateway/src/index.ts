@@ -168,6 +168,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const scheduledNotificationsRouter = require('./routes/scheduled-notifications').default;
   // VTID-04892: Vitana Onboarding Assistant — read-only coach status
   const onboardingCoachRouter = require('./routes/onboarding-coach').default;
+  // VTID-05099: Vitana Companion Messages — read-only engine status
+  const companionRouter = require('./routes/companion').default;
   // Real-time My Journey celebrations — daily-goal, phase milestone, progress thresholds
   const celebrationsRouter = require('./routes/celebrations').default;
   // VTID-02601: Reminders feature — voice-creatable + audio-interrupt delivery
@@ -1139,6 +1141,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
     }
   });
 
+  // VTID-05095: a member verifies their own phone number (SMS code). Mounted
+  // before the /me context router so its paths resolve here first.
+  const mePhoneRouter = require('./routes/me-phone').default();
+  mountRouterSync(app, '/api/v1/me/phone', mePhoneRouter, { owner: 'me-phone' });
+
   // VTID-01046: Me Context - role context and active role switching
   mountRouterSync(app, '/api/v1/me', meRouter, { owner: 'me-context' });
 
@@ -1176,6 +1183,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Scheduled notification webhooks (Cloud Scheduler triggers)
   mountRouterSync(app, '/api/v1/scheduled-notifications', scheduledNotificationsRouter, { owner: 'scheduled-notifications' });
   mountRouterSync(app, '/api/v1/onboarding-coach', onboardingCoachRouter, { owner: 'onboarding-coach' });
+  mountRouterSync(app, '/api/v1/companion', companionRouter, { owner: 'companion' });
   mountRouterSync(app, '/api/v1/celebrations', celebrationsRouter, { owner: 'celebrations' });
   mountRouterSync(app, '/api/v1/reminders', remindersRouter, { owner: 'reminders' });
 
@@ -1223,6 +1231,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/partner-onboarding', partnerOnboardingConnectionsRouter, { owner: 'partner-onboarding-connections' });
   // VTID-04838: Commerce "Set up with AI" (off unless COMMERCE_AI_SETUP_ENABLED=true)
   mountRouterSync(app, '/api/v1/commerce/ai-setup', commerceAiSetupRouter, { owner: 'commerce-ai-setup' });
+  // VTID-05133: Maxina Community MCP — a member's AI assistant reads their Maxina community (off unless
+  // COMMUNITY_MCP_ENABLED=true). Mounted BEFORE Commerce's /mcp prefix.
+  const communityMcpModule = require('./routes/community-mcp');
+  mountRouterSync(app, '/mcp/community', communityMcpModule.default, { owner: 'community-mcp' });
+  mountRouterSync(app, '/.well-known', communityMcpModule.communityWellKnownRouter, { owner: 'community-mcp-well-known' });
   // VTID-04847: Commerce MCP — a supplier's AI assistant onboards their business (off unless COMMERCE_MCP_ENABLED=true)
   mountRouterSync(app, '/mcp', commerceMcpModule.default, { owner: 'commerce-mcp' });
   mountRouterSync(app, '/.well-known', commerceMcpModule.wellKnownRouter, { owner: 'commerce-mcp-well-known' });
@@ -2017,6 +2030,15 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         if (startSlowSessionScheduler()) console.log('🐢 Jev slow voice session scheduler started (VTID-04805)');
       } catch (error) {
         console.warn('⚠️ Jev slow voice session scheduler initialization failed (non-fatal):', error);
+      }
+
+      // VTID-05103: deterministic daily routines run here, once per UTC day.
+      // Off unless ROUTINE_RUNNER_ENABLED=true; never on staging (shared database).
+      try {
+        const { startRoutineRunner } = require('./services/routine-runner/runner');
+        if (startRoutineRunner()) console.log('🔁 Routine runner started (VTID-05103)');
+      } catch (error) {
+        console.warn('⚠️ Routine runner initialization failed (non-fatal):', error);
       }
 
       // VTID-04817 (Jev C4): voice opener outcomes over the last 7 days, judged once per UTC day.

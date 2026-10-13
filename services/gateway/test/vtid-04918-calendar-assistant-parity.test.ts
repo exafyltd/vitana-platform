@@ -157,7 +157,7 @@ describe('share_calendar_entry_to_feed (Phase 2 service, assistant entry point)'
     const { sb } = fakeSb({ calendar_events: [entry()] });
     const r = await tool_share_calendar_entry_to_feed({ entry_id: 'ev-1', text: 'Kommst du mit?', is_public: true, confirmed: true }, ME, sb);
     expect(r).toMatchObject({ ok: true, result: { shared: true, post_id: 'post-1' } });
-    expect(shareCalendarEntryToFeed).toHaveBeenCalledWith(ME.user_id, expect.objectContaining({ id: 'ev-1' }), { text: 'Kommst du mit?', is_public: true });
+    expect(shareCalendarEntryToFeed).toHaveBeenCalledWith(ME.user_id, expect.objectContaining({ id: 'ev-1' }), { text: 'Kommst du mit?', is_public: true, include_location: false });
 
     (shareCalendarEntryToFeed as jest.Mock).mockResolvedValueOnce({ ok: false, status: 409, error: 'ALREADY_SHARED', post_id: 'post-1' });
     const again = await tool_share_calendar_entry_to_feed({ entry_id: 'ev-1', is_public: true, confirmed: true }, ME, sb);
@@ -173,7 +173,69 @@ describe('share_calendar_entry_to_feed (Phase 2 service, assistant entry point)'
     expect(shareCalendarEntryToFeed).not.toHaveBeenCalled();
     (shareCalendarEntryToFeed as jest.Mock).mockResolvedValueOnce({ ok: true, post_id: 'post-2', ref: { ref_type: 'community_event', ref_id: GCE } });
     await tool_share_calendar_entry_to_feed({ entry_id: 'ev-1', text: 'Nur für mich', is_public: false, confirmed: true }, ME, sb);
-    expect(shareCalendarEntryToFeed).toHaveBeenCalledWith(ME.user_id, expect.objectContaining({ id: 'ev-1' }), { text: 'Nur für mich', is_public: false });
+    expect(shareCalendarEntryToFeed).toHaveBeenCalledWith(ME.user_id, expect.objectContaining({ id: 'ev-1' }), { text: 'Nur für mich', is_public: false, include_location: false });
+  });
+});
+
+describe('any own entry, health confirmation (VTID-05126)', () => {
+  const OWN_ID = '77777777-2222-4333-8444-555555555555'; // real entry ids are UUIDs
+  const health = () => entry({ id: OWN_ID, source_type: 'appointment', source_ref_type: 'appointment', source_ref_id: 'apt-1', title: 'Kardiologie Dr. Weber', location: 'Praxis Weber' });
+  // A confirmed call carries the card_token of the preview the member approved.
+  const tokenOf = async (tool: typeof tool_share_calendar_entry_to_feed, args: Record<string, unknown>, sb: unknown) =>
+    ((await tool({ ...args, confirmed: false }, ME, sb as never)) as { result: { card_token?: string } }).result.card_token;
+
+  it('a private entry is shareable now, and the card choices reach the service', async () => {
+    (getOwnCalendarEvent as jest.Mock).mockResolvedValue(entry({ id: OWN_ID, source_type: 'reminder', source_ref_type: 'reminder', source_ref_id: 'rem-1' }));
+    (shareCalendarEntryToFeed as jest.Mock).mockResolvedValueOnce({ ok: true, post_id: 'post-9', ref: { ref_type: 'calendar_entry', ref_id: 'ev-1' } });
+    const { sb } = fakeSb({ calendar_events: [entry()] });
+    const args = { entry_id: 'ev-1', card_title: 'Marias Geburtstag', include_location: false, is_public: true };
+    const card_token = await tokenOf(tool_share_calendar_entry_to_feed, args, sb);
+    const r = await tool_share_calendar_entry_to_feed({ ...args, card_token, confirmed: true }, ME, sb);
+    expect(r).toMatchObject({ ok: true, result: { shared: true, title: 'Marias Geburtstag' } });
+    expect(shareCalendarEntryToFeed).toHaveBeenCalledWith(ME.user_id, expect.objectContaining({ id: OWN_ID }), { text: '', is_public: true, card_title: 'Marias Geburtstag', include_location: false });
+  });
+
+  it('a health appointment: the preview says sensitive, a bare yes posts nothing, sensitive_ack posts', async () => {
+    (getOwnCalendarEvent as jest.Mock).mockResolvedValue(health());
+    const { sb } = fakeSb({ calendar_events: [entry()] });
+    const preview = await tool_share_calendar_entry_to_feed({ entry_id: 'ev-1', card_title: 'Arzttermin' }, ME, sb);
+    expect(preview).toMatchObject({ ok: true, result: { stage: 'awaiting_confirmation', sensitive: true, card_title: 'Arzttermin', location_shown: false } });
+    expect((preview as { text: string }).text).toMatch(/health appointment/);
+    const card_token = (preview as { result: { card_token: string } }).result.card_token;
+    const bare = await tool_share_calendar_entry_to_feed({ entry_id: 'ev-1', card_title: 'Arzttermin', is_public: false, card_token, confirmed: true }, ME, sb);
+    expect((bare as { text: string }).text).toMatch(/^STATUS: needs_sensitive_ack/);
+    expect(shareCalendarEntryToFeed).not.toHaveBeenCalled();
+    (shareCalendarEntryToFeed as jest.Mock).mockResolvedValueOnce({ ok: true, post_id: 'post-10', ref: { ref_type: 'calendar_entry', ref_id: 'ev-1' } });
+    await tool_share_calendar_entry_to_feed({ entry_id: 'ev-1', card_title: 'Arzttermin', is_public: false, card_token, confirmed: true, sensitive_ack: true }, ME, sb);
+    expect(shareCalendarEntryToFeed).toHaveBeenCalledTimes(1);
+  });
+
+  // Codex review: the confirmation is bound to the card the member approved.
+  it('a confirmed share whose card differs from the preview (title dropped, place added, no token) posts nothing', async () => {
+    (getOwnCalendarEvent as jest.Mock).mockResolvedValue(health());
+    const { sb } = fakeSb({ calendar_events: [entry()] });
+    const card_token = await tokenOf(tool_share_calendar_entry_to_feed, { entry_id: 'ev-1', card_title: 'Arzttermin' }, sb);
+    const base = { entry_id: 'ev-1', is_public: false, sensitive_ack: true, confirmed: true };
+    for (const over of [{ card_token }, { card_title: 'Arzttermin', include_location: true, card_token }, { card_title: 'Arzttermin' }]) {
+      const r = await tool_share_calendar_entry_to_feed({ ...base, ...over }, ME, sb);
+      expect(r).toMatchObject({ ok: true, result: { needs: 'card_token' } });
+      expect((r as { text: string }).text).toMatch(/^STATUS: card_changed/);
+    }
+    expect(shareCalendarEntryToFeed).not.toHaveBeenCalled();
+  });
+
+  it('inviting to a health appointment needs sensitive_ack too', async () => {
+    (getOwnCalendarEvent as jest.Mock).mockResolvedValue(health());
+    (buildInviteFromEntry as jest.Mock).mockResolvedValue({ ok: true, metadata: { kind: 'calendar_invite', v: 2, ref_type: 'calendar_entry', ref_id: 'ev-1', title: 'Arzttermin', start_time: FUTURE, end_time: FUTURE_END, location: null }, content: '📅 Arzttermin' });
+    const { sb, inserts } = fakeSb({ calendar_events: [entry()], app_users: [{ user_id: PEER, display_name: 'Ana', vitana_id: 'ana1', tenant_id: 'tenant-1' }] });
+    const card_token = await tokenOf(tool_invite_to_calendar_entry, { entry_id: 'ev-1', recipient_user_id: PEER }, sb);
+    expect(await tool_invite_to_calendar_entry({ entry_id: 'ev-1', recipient_user_id: PEER, sensitive_ack: true, confirmed: true }, ME, sb))
+      .toMatchObject({ result: { needs: 'card_token' } });
+    const bare = await tool_invite_to_calendar_entry({ entry_id: 'ev-1', recipient_user_id: PEER, card_token, confirmed: true }, ME, sb);
+    expect((bare as { text: string }).text).toMatch(/^STATUS: needs_sensitive_ack/);
+    expect(inserts).toHaveLength(0);
+    const acked = await tool_invite_to_calendar_entry({ entry_id: 'ev-1', recipient_user_id: PEER, card_token, confirmed: true, sensitive_ack: true }, ME, sb);
+    expect(acked).toMatchObject({ ok: true, result: { invited: true } });
   });
 });
 
@@ -211,7 +273,7 @@ describe('invite_to_calendar_entry (Phase 3 card, assistant entry point)', () =>
     const { sb, inserts } = fakeSb({ calendar_events: [entry()], app_users: [peerRow] });
     const r = await tool_invite_to_calendar_entry({ entry_id: 'ev-1', recipient_user_id: PEER, confirmed: true }, ME, sb);
     expect(r).toMatchObject({ ok: true, result: { invited: true, message_id: 'msg-1' } });
-    expect(buildInviteFromEntry).toHaveBeenCalledWith(ME.user_id, expect.objectContaining({ id: 'ev-1' }));
+    expect(buildInviteFromEntry).toHaveBeenCalledWith(ME.user_id, expect.objectContaining({ id: 'ev-1' }), expect.any(Date), { include_location: false });
     const sent = inserts.find((i) => i.table === 'chat_messages')!;
     expect(sent.row).toMatchObject({ sender_id: ME.user_id, receiver_id: PEER, message_type: 'calendar_invite', content: '📅 Sunset yoga', metadata: card, tenant_id: 'tenant-1' });
     expect(checkVoiceSendQuota).toHaveBeenCalledWith(expect.objectContaining({ session_id: 'sess-1', recipient_user_id: PEER }));

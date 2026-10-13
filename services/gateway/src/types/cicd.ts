@@ -157,6 +157,8 @@ export type CicdEventType =
   // tick (never one per member per tick), plus a member's real stage changes.
   | 'onboarding.coach.tick_completed'
   | 'onboarding.coach.stage_changed'
+  // VTID-05099: Vitana Companion Messages — one aggregate event per tick that decided something.
+  | 'companion.tick.completed'
   | 'cicd.github.create_pr.requested'
   | 'cicd.github.create_pr.succeeded'
   | 'cicd.github.create_pr.failed'
@@ -1054,6 +1056,12 @@ export type CicdEventType =
   | 'voice.latency.handoff'
   | 'voice.latency.client'
   | 'screen.latency.measured'       // per-route TTFB / Server-Timing breakdown from gateway
+  // VTID-05062: one in-app navigation from the vitana-v1 RUM nav beacon
+  // (SCREEN_READY ms, nav first|return, first-viewport images re-fetched).
+  | 'screen.nav.measured'
+  // VTID-05062: once-per-UTC-day production screen-load report (budgets +
+  // build check), written by POST /api/v1/frontend/screen-load/daily-report/run.
+  | 'screen.load.daily_report'
   // VTID-SCREEN-LOAD-01: scheduled Playwright job's per-screen load-time
   // result — independent of FEATURE_LATENCY_TELEMETRY_ENV, always live so
   // Command Hub Overview has a signal even while RUM stays staging-only.
@@ -1130,6 +1138,12 @@ export type CicdEventType =
   | 'commerce.mcp.delegated_token_blocked'
   | 'commerce.mcp.client_refused'
   | 'commerce.mcp.loopback_client_approved'
+  // VTID-05135: TEMPORARY - an unauthenticated probe of /mcp/chatgpt or its discovery documents (remove with auditProbe)
+  | 'commerce.mcp.probe'
+  // VTID-05133: Maxina Community MCP ("Connect your AI")
+  | 'community.mcp.tool_called'
+  | 'community.mcp.client_refused'
+  | 'community.mcp.loopback_client_approved'
   | 'partner_org.sandbox_submitted'
   // VTID-04859: a Founding Member saw (and closed) their free-year celebration.
   | 'billing.founding.celebrated'

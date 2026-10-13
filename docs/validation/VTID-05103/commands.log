@@ -1,0 +1,8 @@
+# VTID-05103 local checks (2026-10-12)
+cd services/gateway && npx jest test/routine-runner test/routine-audits.test.ts test/loop-catalog.test.ts test/command-hub/vtid-05098-simplify.test.ts
+cd services/gateway && npx tsc --noEmit -p .
+cd services/gateway && npm run build
+psql -v ON_ERROR_STOP=1 -h /tmp/pgtest05103 -p 55432 -U postgres -f docs/validation/VTID-05103/migration-test.sql   # throwaway local Postgres 16
+node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(require('./docs/validation/VTID-05103/staging-tests.json'))"
+python3 -c "import yaml; [yaml.safe_load(open(f)) for f in glob('.github/workflows/ALERT-*.yml')]"
+full suite: 1654 suites passed (2 skipped), 26683 tests; 1 failure = stale generated workflow pins, regenerated

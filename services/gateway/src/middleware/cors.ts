@@ -85,7 +85,8 @@ export const corsOptions = {
 //      token is still required for any data; CORS only lets those pages read the response,
 //      including the WWW-Authenticate challenge that points at the sign-in metadata.
 const OPENAI_MCP_ORIGINS = ["https://platform.openai.com", "https://chatgpt.com"];
-const MCP_CHATGPT_PATH = "/mcp/chatgpt";
+// VTID-05133: the Maxina Community connector's ChatGPT path gets the same exact-path rule.
+const MCP_CHATGPT_PATHS = ["/mcp/chatgpt", "/mcp/community/chatgpt"];
 const WELL_KNOWN_PREFIX = "/.well-known/";
 
 /**
@@ -106,7 +107,7 @@ export function applyDiscoveryCors(req: Request, res: Response): boolean {
     return true;
   }
 
-  if (path === MCP_CHATGPT_PATH && ["POST", "OPTIONS"].includes(method) && typeof origin === "string" && OPENAI_MCP_ORIGINS.includes(origin)) {
+  if (MCP_CHATGPT_PATHS.includes(path) && ["POST", "OPTIONS"].includes(method) && typeof origin === "string" && OPENAI_MCP_ORIGINS.includes(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");

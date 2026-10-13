@@ -131,6 +131,8 @@
   "notif.listing_interest.title": "Интерес к твоему объявлению",
   "notif.listing_interest.body": "Кто-то заинтересовался «{title}».",
   "notif.chat_mention.title": "{sender} упоминает тебя в «{group}»",
+  "notif.calendar_invite.body": "{name} приглашает тебя на событие",
+  "notif.chat_burst.body": "Новых сообщений: {count} · {preview}",
   "notif.day_close.title": "Спокойной ночи 🌙",
   "notif.day_close.body": "День закончился — если тебя что-то всё ещё беспокоит, скажи мне.",
   "notif.partner_test_status_changed.title": "Обновление от {partner_name}",
@@ -192,5 +194,6 @@
   "autopilot.auto.event_rsvp_referral.title": "Запишись на событие, куда тебя пригласили",
   "autopilot.auto.event_rsvp_referral.summary": "Ты пришёл по приглашению на событие. Запишись, чтобы сохранить место.",
   "autopilot.auto.share_milestone.title": "Поделись достижением: {milestone}",
-  "autopilot.auto.share_milestone.summary": "Ты достиг важного этапа. Поделись с сообществом — ты увидишь пост до публикации."
+  "autopilot.auto.share_milestone.summary": "Ты достиг важного этапа. Поделись с сообществом — ты увидишь пост до публикации.",
+  "sms.phone_verification.code": "Твой код Vitanaland: {code}. Никому его не сообщай."
 }
