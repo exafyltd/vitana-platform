@@ -1227,6 +1227,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/partner-onboarding', partnerOnboardingConnectionsRouter, { owner: 'partner-onboarding-connections' });
   // VTID-04838: Commerce "Set up with AI" (off unless COMMERCE_AI_SETUP_ENABLED=true)
   mountRouterSync(app, '/api/v1/commerce/ai-setup', commerceAiSetupRouter, { owner: 'commerce-ai-setup' });
+  // VTID-05133: Maxina Community MCP — a member's AI assistant reads their Maxina community (off unless
+  // COMMUNITY_MCP_ENABLED=true). Mounted BEFORE Commerce's /mcp prefix.
+  const communityMcpModule = require('./routes/community-mcp');
+  mountRouterSync(app, '/mcp/community', communityMcpModule.default, { owner: 'community-mcp' });
+  mountRouterSync(app, '/.well-known', communityMcpModule.communityWellKnownRouter, { owner: 'community-mcp-well-known' });
   // VTID-04847: Commerce MCP — a supplier's AI assistant onboards their business (off unless COMMERCE_MCP_ENABLED=true)
   mountRouterSync(app, '/mcp', commerceMcpModule.default, { owner: 'commerce-mcp' });
   mountRouterSync(app, '/.well-known', commerceMcpModule.wellKnownRouter, { owner: 'commerce-mcp-well-known' });

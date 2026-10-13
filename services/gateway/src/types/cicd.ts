@@ -1133,6 +1133,10 @@ export type CicdEventType =
   | 'commerce.mcp.delegated_token_blocked'
   | 'commerce.mcp.client_refused'
   | 'commerce.mcp.loopback_client_approved'
+  // VTID-05133: Maxina Community MCP ("Connect your AI")
+  | 'community.mcp.tool_called'
+  | 'community.mcp.client_refused'
+  | 'community.mcp.loopback_client_approved'
   | 'partner_org.sandbox_submitted'
   // VTID-04859: a Founding Member saw (and closed) their free-year celebration.
   | 'billing.founding.celebrated'

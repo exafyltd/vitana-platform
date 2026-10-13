@@ -3879,3 +3879,23 @@ Uniqueness: `(user_id, local_date, mode)`, plus partial unique index `uq_compani
 Functions (SECURITY DEFINER, `service_role` only): `claim_companion_message(user, tenant, local_date, mode, sender, moment_key, card_type, facts) → {ok, claimed, id|reason}`, `finish_companion_message(id, status, composed_text, model, chat_message_id)` (pending rows only), `mark_companion_replied(user)` (latest unreplied real send).
 
 Also: `user_proactive_touches.surface` CHECK gains `messenger_companion` (presence-pacer surface). OASIS (`CicdEventType`): `companion.tick.completed` — one aggregate event per tick that decided something.
+
+## "Connect your AI" — `ai_connection_grants` (VTID-05133, 2026-10-13) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261013150000_vtid_05133_ai_connection_grants.sql` (additive). What each AI assistant a member connected to Maxina (a Supabase OAuth client, e.g. ChatGPT or Claude) may use through the MCP tools. Supabase tokens are not bound to one resource, so this row is what separates the Community connector (`/mcp/community*`) from Commerce (`/mcp`, `/mcp/chatgpt`) and makes "Disconnect" in Maxina immediate. Plan: `docs/validation/VTID-05133/plan-sparring.md`.
+
+| Column | Meaning |
+|---|---|
+| `user_id` | PK part, `auth.users(id)` ON DELETE CASCADE |
+| `client_id` | PK part, Supabase `auth.oauth_clients.id` (resolved server-side from the pending authorization) |
+| `client_name`, `redirect_host`, `resource` | what the member saw on the consent screen; `resource` is the MCP URL the assistant asked for |
+| `categories` | subset of `profile`, `matches`, `people`, `activities`, `commerce` (CHECK) |
+| `revoked_at` | set when the member disconnects; every tool then refuses |
+
+RLS: members SELECT their own rows; no direct INSERT/UPDATE/DELETE for `authenticated`; `service_role` reads (gateway).
+
+Functions (SECURITY DEFINER, `authenticated`, act only as `auth.uid()`): `ai_connection_authorization_info(authorization_id) → {client_id, client_name, redirect_host, resource, product}` (pending authorizations only; `product` = `community` | `commerce` | `unknown`), `ai_connection_grant_from_authorization(authorization_id, categories)` (consent screen, before approving with Supabase; clears `revoked_at`), `ai_connection_grant_update(client_id, categories)` (active rows only), `ai_connection_grant_revoke(client_id)`.
+
+Gateway rules (`services/gateway/src/services/ai-connection-grants.ts`): Community needs an active row with the tool's category (no row → PERMISSION_NEEDED, revoked → CONNECTION_REVOKED, lookup error → 503). Commerce refuses a client whose row lacks `commerce` or is revoked; a client with no row (connected before VTID-05133) is unchanged.
+
+Read alongside (column added by `exafyltd/vitana-v1`, same VTID): `profile_privacy_settings.ai_discoverable boolean NOT NULL DEFAULT false` — a member is shown by identity to other members' AI assistants only when true (and `searchable`). OASIS (`CicdEventType`): `community.mcp.tool_called`, `community.mcp.client_refused`, `community.mcp.loopback_client_approved`.

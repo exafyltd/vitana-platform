@@ -284,6 +284,8 @@ export type ToolErrorCode =
   | 'prerequisites_missing'
   | 'rate_limited'
   | 'unavailable'
+  /** VTID-05133: the member has not allowed this assistant to use that category. */
+  | 'permission_needed'
   | 'internal';
 
 export function toolError(code: ToolErrorCode, message: string, details?: Record<string, unknown>): ToolCallResult {

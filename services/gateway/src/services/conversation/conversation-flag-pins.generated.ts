@@ -32,6 +32,8 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   COMMERCE_MCP_CHATGPT: { staging: "true", prod: null },
   COMMERCE_MCP_ENABLED: { staging: "true", prod: "true" },
   COMMIT_SHA: { staging: "dynamic", prod: "dynamic" },
+  COMMUNITY_MCP_CHATGPT: { staging: "true", prod: null },
+  COMMUNITY_MCP_ENABLED: { staging: "true", prod: null },
   DEFAULT_TENANT_ID: { staging: "2e7528b8-472a-4356-88da-0280d4639cce", prod: null },
   DEV_AUTOPILOT_EXECUTOR: { staging: "agent", prod: null },
   DEV_AUTOPILOT_EXECUTOR_ENABLED: { staging: null, prod: "true | dynamic" },

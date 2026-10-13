@@ -37,6 +37,8 @@ import { getSupabase } from '../lib/supabase';
 import { checkMcpClient } from '../services/mcp-client-allowlist';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { handleJsonRpc, isCommerceMcpEnabled, MCP_SCOPES as SERVICE_MCP_SCOPES, type JsonRpcRequest, type McpCallContext } from '../services/commerce-mcp';
+import { isCommunityChatgptPathEnabled } from '../services/community-mcp';
+import { commerceAllowed, lookupGrant } from '../services/ai-connection-grants';
 
 const router = Router();
 export const wellKnownRouter = Router();
@@ -163,8 +165,11 @@ wellKnownRouter.get('/oauth-protected-resource/mcp/chatgpt', (req: Request, res:
   res.json(chatgptResourceMetadata(req));
 });
 
+// VTID-05133 (A1): the same shim serves the Community ChatGPT path; content unchanged.
 wellKnownRouter.get('/oauth-authorization-server', (req: Request, res: Response) => {
-  if (!chatgptEnabled(res)) return;
+  if (!isChatgptPathEnabled() && !isCommunityChatgptPathEnabled()) {
+    return res.status(404).json({ ok: false, error: 'COMMERCE_MCP_DISABLED' });
+  }
   const doc = chatgptAuthorizationServerMetadata(req);
   if (!doc) return res.status(503).json({ ok: false, error: 'AUTH_SERVER_UNCONFIGURED' });
   return res.json(doc);
@@ -249,6 +254,24 @@ const mcpPost = (chatgpt: boolean) => async (req: Request, res: Response) => {
       status: 'warning',
       message: `Commerce MCP refused a client: ${client.reason}.`,
       payload: { reason: client.reason, client_id: typeof (verified.claims as any)?.client_id === 'string' ? (verified.claims as any).client_id : null, path: chatgpt ? '/mcp/chatgpt' : '/mcp' },
+      actor_id: identity.user_id,
+      actor_role: 'agent',
+      surface: 'api',
+    }).catch(() => undefined);
+    return res.status(403).json({ jsonrpc: '2.0', id: null, error: { code: -32002, message: 'CLIENT_NOT_APPROVED' } });
+  }
+
+  // VTID-05133: a client the member approved in Maxina WITHOUT supplier tools (a
+  // Community connection), or disconnected, is refused here. Clients with no
+  // grant row (every Commerce connection made before VTID-05133) are unchanged.
+  if (client.clientId && !commerceAllowed(await lookupGrant(supabase as any, identity.user_id, client.clientId))) {
+    await emitOasisEvent({
+      vtid: 'VTID-05133',
+      type: 'commerce.mcp.client_refused',
+      source: 'commerce-mcp',
+      status: 'warning',
+      message: 'Commerce MCP refused a client: not_granted_commerce.',
+      payload: { reason: 'not_granted_commerce', client_id: client.clientId, path: chatgpt ? '/mcp/chatgpt' : '/mcp' },
       actor_id: identity.user_id,
       actor_role: 'agent',
       surface: 'api',
