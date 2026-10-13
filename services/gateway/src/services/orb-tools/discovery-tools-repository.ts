@@ -13,7 +13,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-// ==================== life_compass / vitana_index_scores ====================
+// ==================== life_compass ====================
 
 export async function fetchLifeCompassGoal(sb: SupabaseClient, userId: string) {
   return sb
@@ -22,16 +22,6 @@ export async function fetchLifeCompassGoal(sb: SupabaseClient, userId: string) {
     .eq('user_id', userId)
     .eq('is_active', true)
     .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-}
-
-export async function fetchLatestVitanaIndexScore(sb: SupabaseClient, userId: string) {
-  return sb
-    .from('vitana_index_scores')
-    .select('pillars')
-    .eq('user_id', userId)
-    .order('computed_at', { ascending: false })
     .limit(1)
     .maybeSingle();
 }

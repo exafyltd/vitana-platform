@@ -24,11 +24,14 @@ Owner approval (Gate 1): 2026-10-10. Plan PRs merged: vitana-platform #3984, vit
 | 9 | `tr` fixup migration for `supported_locales` | both | queued | — | — |
 | 10 | Fix stale "Active locales" paragraph in vitana-v1 CLAUDE.md (11 GA locales) | Native app | done — vitana-v1 #1305 | VTID-05021 | — |
 | 11 | D6a: flag-gated bridge from webhook wearable data into `health_features_daily` + one Vitana Index recompute; `find_perfect_product` no longer reads the Index (unconditional) | Health Hub | in review (sparred); ships dark — `WEARABLE_FEATURE_BRIDGE_ENABLED` unset everywhere, always off on staging | VTID-05089 | flag stays off until D10 WP3 (per-member `wearables` + `ai_health_analysis` consent) is in production, webhook secrets are provisioned and one real connection exists |
+| 12 | Phase 0 fix-ups (PLAT-FIX, sparred plan shared with V1-FIX VTID-05155 in vitana-v1): `find_perfect_match` stops reading the Vitana Index (no pillar-derived ask, goal only); `find_perfect_product`/`practitioner` read the real Life Compass goal (`primary_goal`, was the non-existent `current_goal`); `health_ingest_wearable_samples` revoked from members + `POST /health/wearables/ingest` answers 410. Change 6 (commerce-MCP link on a not-yet-published Terms/DPA step) follows in a separate PR after #4057 merges | Health Hub | in review (sparred, 3 rounds, converged); revoke migration applied via `RUN-MIGRATION.yml` after Gate 2 | VTID-05156 | Change 6: PR #4057 (VTID-05090) |
+| 13 | Phase 0 fix-up V1-FIX: doubled `/api/v1` prefix on four pages (partner-health staff pages, marketplace Overview/Products, member page `/settings/limitations`) | Health Hub | in review — vitana-v1 | VTID-05155 | — |
 
 ## Deferred follow-ups (recorded so they are not lost)
 
 | Item | From | Note |
 |---|---|---|
+| `health_ingest_lab_report(jsonb)` is SECURITY DEFINER and EXECUTE for `authenticated` — any signed-in member can call it without a consent check | VTID-05156 plan, F18 / Open question 4 | Live callers (`routes/health.ts`, `routes/patient-health-results.ts`, `orb-tools/health-depth-tools.ts`); left to the Phase 1 package C consent-gated ingest rework. |
 | `social_connections` OAuth tokens (Google/Microsoft/YouTube connectors) are stored the same way `user_connections` tokens were | VTID-05030 sparring, Fact 6 | Needs its own sparred plan: grants + sealing + revoke for the dispatcher's table. |
 | Dedicated encryption key for health connection tokens + key rotation runbook | VTID-05030 round 1, Q2 | Interim: shared `AI_CREDENTIALS_ENC_KEY`. Zero stored tokens today. |
 | Production `AI_CREDENTIALS_ENC_KEY` wiring for the gateway | VTID-05030 | Without it wearable connects fail closed (`storage_unavailable`); confirm in Gate 2. |
