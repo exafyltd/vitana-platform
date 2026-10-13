@@ -9,6 +9,10 @@
 # (VTID-04949, ~1,060 results) exceeds Linux's 128 KiB per-argument limit, bash
 # failed with "Argument list too long" and full runs never reached OASIS.
 # The event content is unchanged (same jq programs as before).
+#
+# VTID-05144: metadata also carries superseded_by, attribution_cutoff, chain,
+# and per result `attributed` (only when the run was superseded mid-run and
+# its results were attributed against the deploy cutoff).
 set -euo pipefail
 
 if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SVC:-}" ]; then
@@ -31,9 +35,11 @@ if [ -n "${RESULTS:-}" ] && [ -f "$RESULTS" ]; then
     metadata: {
       env: "staging", service: .service, commit: .sha, outcome: .outcome,
       vtids: .vtids, run_url: $run, production_commit: .production_stamp,
-      results: [.results[] | {suite, name, ok, problems}],
+      results: [.results[] | {suite, name, ok, problems} + (if has("attributed") then {attributed} else {} end)],
       missing_suites: .plan.missing, invalid_suites: .plan.invalid,
-      shipping: .shipping, full: (.full // false), workflow: "STAGING-VERIFY.yml"
+      shipping: .shipping, full: (.full // false), workflow: "STAGING-VERIFY.yml",
+      superseded_by: (.superseded_by // null), attribution_cutoff: (.attribution_cutoff // null),
+      chain: (.chain // 0)
     }
   }' "$RESULTS" > "$BODY_FILE"
 else

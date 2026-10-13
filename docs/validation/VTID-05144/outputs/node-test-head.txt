@@ -1,0 +1,479 @@
+TAP version 13
+# [staging-verify] fetched origin main to resolve staging stamp e3d7d93d224ea2575f96843351f0e4d70caed4ff
+# [staging-verify] fetched origin main to resolve staging stamp e3d7d93d224e
+# [staging-verify] fetched origin main to resolve staging stamp d52f1be19796cd6f781f4102f94ba67eac8e1601
+# [staging-verify] attempt 1/1: staging stamps ["d52f1be19796cd6f781f4102f94ba67eac8e1601"] — want 856f55a10682; retry in 0s
+# [staging-verify] attempt 1/1: staging stamps ["82320a557e053810cbd08608f04f599d8c8b680e"] — want b3f0f5533843; retry in 0s
+# [staging-verify] could not fetch origin main to resolve staging stamp d61b9616e16cc844c776ded806088aa016f7353c
+# [staging-verify] attempt 1/1: staging stamps ["d61b9616e16cc844c776ded806088aa016f7353c"] — want b3f0f5533843; retry in 0s
+# Subtest: staging serving the commit under test → match
+ok 1 - staging serving the commit under test → match
+  ---
+  duration_ms: 194.41183
+  type: 'test'
+  ...
+# Subtest: clone predates a descendant merged mid-run → superseded after the fetch (gateway full stamp)
+ok 2 - clone predates a descendant merged mid-run → superseded after the fetch (gateway full stamp)
+  ---
+  duration_ms: 265.077001
+  type: 'test'
+  ...
+# Subtest: community-app 12-char stamp of a descendant → superseded with the full sha
+ok 3 - community-app 12-char stamp of a descendant → superseded with the full sha
+  ---
+  duration_ms: 289.011877
+  type: 'test'
+  ...
+# Subtest: a non-descendant on main (e.g. a pinned rollback) → mismatch
+ok 4 - a non-descendant on main (e.g. a pinned rollback) → mismatch
+  ---
+  duration_ms: 303.603444
+  type: 'test'
+  ...
+# Subtest: an older ancestor (staging rolled back) → mismatch
+ok 5 - an older ancestor (staging rolled back) → mismatch
+  ---
+  duration_ms: 150.450576
+  type: 'test'
+  ...
+# Subtest: a failed fetch leaves an unknown stamp as mismatch (fail closed)
+ok 6 - a failed fetch leaves an unknown stamp as mismatch (fail closed)
+  ---
+  duration_ms: 218.044154
+  type: 'test'
+  ...
+# Subtest: production hosts are refused as test targets
+ok 7 - production hosts are refused as test targets
+  ---
+  duration_ms: 2.998223
+  type: 'test'
+  ...
+# Subtest: the fixed staging targets are not production
+ok 8 - the fixed staging targets are not production
+  ---
+  duration_ms: 2.322132
+  type: 'test'
+  ...
+# Subtest: deploy paths decide whether a commit belongs to a service
+ok 9 - deploy paths decide whether a commit belongs to a service
+  ---
+  duration_ms: 0.368618
+  type: 'test'
+  ...
+# Subtest: VTIDs are extracted, normalised and de-duplicated
+ok 10 - VTIDs are extracted, normalised and de-duplicated
+  ---
+  duration_ms: 2.008942
+  type: 'test'
+  ...
+# Subtest: a GET http test is valid
+ok 11 - a GET http test is valid
+  ---
+  duration_ms: 0.596298
+  type: 'test'
+  ...
+# Subtest: writes are refused unless they are an auth-rejected probe
+ok 12 - writes are refused unless they are an auth-rejected probe
+  ---
+  duration_ms: 0.342015
+  type: 'test'
+  ...
+# Subtest: playwright specs must be .staging.spec.ts inside the repo
+ok 13 - playwright specs must be .staging.spec.ts inside the repo
+  ---
+  duration_ms: 0.427624
+  type: 'test'
+  ...
+# Subtest: existing suites are limited to test-runner commands and need a reason
+ok 14 - existing suites are limited to test-runner commands and need a reason
+  ---
+  duration_ms: 0.475666
+  type: 'test'
+  ...
+# Subtest: manifest identity and shape are checked
+ok 15 - manifest identity and shape are checked
+  ---
+  duration_ms: 0.474923
+  type: 'test'
+  ...
+# Subtest: planRange: suites run, missing ones fail only after the rule took effect
+ok 16 - planRange: suites run, missing ones fail only after the rule took effect
+  ---
+  duration_ms: 0.977736
+  type: 'test'
+  ...
+# Subtest: planRange: an invalid manifest is reported, not run
+ok 17 - planRange: an invalid manifest is reported, not run
+  ---
+  duration_ms: 0.377804
+  type: 'test'
+  ...
+# Subtest: live commit matching
+ok 18 - live commit matching
+  ---
+  duration_ms: 0.298277
+  type: 'test'
+  ...
+# Subtest: evaluateHttp checks status, json type, fields and body
+ok 19 - evaluateHttp checks status, json type, fields and body
+  ---
+  duration_ms: 0.484062
+  type: 'test'
+  ...
+# Subtest: an accepted write probe is flagged loudly
+ok 20 - an accepted write probe is flagged loudly
+  ---
+  duration_ms: 0.294595
+  type: 'test'
+  ...
+# Subtest: VTID-05083: a GET/HEAD rejected probe has the invalid bearer and no body
+ok 21 - VTID-05083: a GET/HEAD rejected probe has the invalid bearer and no body
+  ---
+  duration_ms: 0.205459
+  type: 'test'
+  ...
+# Subtest: VTID-05083: a write rejected probe keeps bearer, JSON type and {} body
+ok 22 - VTID-05083: a write rejected probe keeps bearer, JSON type and {} body
+  ---
+  duration_ms: 0.113855
+  type: 'test'
+  ...
+# Subtest: VTID-05083: a plain GET carries no authorization header
+ok 23 - VTID-05083: a plain GET carries no authorization header
+  ---
+  duration_ms: 0.239446
+  type: 'test'
+  ...
+# Subtest: VTID-05083: an accepted read probe is flagged and names the method
+ok 24 - VTID-05083: an accepted read probe is flagged and names the method
+  ---
+  duration_ms: 0.169356
+  type: 'test'
+  ...
+# Subtest: outcome: superseded only when no attributed failure, missing suites fail
+ok 25 - outcome: superseded only when no attributed failure, missing suites fail
+  ---
+  duration_ms: 0.229487
+  type: 'test'
+  ...
+# Subtest: VTID-05144: superseded + no attributed failure → superseded (never a pass)
+ok 26 - VTID-05144: superseded + no attributed failure → superseded (never a pass)
+  ---
+  duration_ms: 0.105969
+  type: 'test'
+  ...
+# Subtest: VTID-05144: superseded + an attributed failure → failed (a real failure is never hidden)
+ok 27 - VTID-05144: superseded + an attributed failure → failed (a real failure is never hidden)
+  ---
+  duration_ms: 0.21571
+  type: 'test'
+  ...
+# Subtest: VTID-05144: superseded + only unattributed failures → superseded
+ok 28 - VTID-05144: superseded + only unattributed failures → superseded
+  ---
+  duration_ms: 0.154108
+  type: 'test'
+  ...
+# Subtest: VTID-05144: not superseded is unchanged — every failure counts, attributed or not
+ok 29 - VTID-05144: not superseded is unchanged — every failure counts, attributed or not
+  ---
+  duration_ms: 0.129642
+  type: 'test'
+  ...
+# Subtest: VTID-05144: attributeResults — ended before T_cut or static; the boundary is not attributed
+ok 30 - VTID-05144: attributeResults — ended before T_cut or static; the boundary is not attributed
+  ---
+  duration_ms: 0.374875
+  type: 'test'
+  ...
+# Subtest: VTID-05144: deployCutoff — earliest relevant deploy run, clamped to runStart
+ok 31 - VTID-05144: deployCutoff — earliest relevant deploy run, clamped to runStart
+  ---
+  duration_ms: 0.735217
+  type: 'test'
+  ...
+# Subtest: VTID-05144: deployCutoff — skipped and completed-before-runStart-minus-5-min runs are excluded
+ok 32 - VTID-05144: deployCutoff — skipped and completed-before-runStart-minus-5-min runs are excluded
+  ---
+  duration_ms: 0.298817
+  type: 'test'
+  ...
+# Subtest: VTID-05144: deployCutoff — a deploy in progress at run start → runStart
+ok 33 - VTID-05144: deployCutoff — a deploy in progress at run start → runStart
+  ---
+  duration_ms: 0.207003
+  type: 'test'
+  ...
+# Subtest: VTID-05144: deployCutoff — lookup error or no runs → runStart (fail closed: nothing attributed)
+ok 34 - VTID-05144: deployCutoff — lookup error or no runs → runStart (fail closed: nothing attributed)
+  ---
+  duration_ms: 0.142556
+  type: 'test'
+  ...
+# Subtest: VTID-05144: superseded message names the new stamp, T_cut, attributed counts and unattributed failures
+ok 35 - VTID-05144: superseded message names the new stamp, T_cut, attributed counts and unattributed failures
+  ---
+  duration_ms: 0.799027
+  type: 'test'
+  ...
+# Subtest: VTID-05144: superseded run with an attributed failure reads as FAILED and lists it under Failed
+ok 36 - VTID-05144: superseded run with an attributed failure reads as FAILED and lists it under Failed
+  ---
+  duration_ms: 0.222082
+  type: 'test'
+  ...
+# Subtest: ready message asks the question only on a pass and lists what ships
+ok 37 - ready message asks the question only on a pass and lists what ships
+  ---
+  duration_ms: 0.274793
+  type: 'test'
+  ...
+# Subtest: a body check finds code served past the first megabyte
+ok 38 - a body check finds code served past the first megabyte
+  ---
+  duration_ms: 2.814642
+  type: 'test'
+  ...
+# Subtest: the body cap is large enough for every Command Hub asset
+ok 39 - the body cap is large enough for every Command Hub asset
+  ---
+  duration_ms: 0.293019
+  type: 'test'
+  ...
+# Subtest: a body past the cap is reported as cut off, not as a plain miss
+ok 40 - a body past the cap is reported as cut off, not as a plain miss
+  ---
+  duration_ms: 25.025269
+  type: 'test'
+  ...
+# Subtest: the runner reads response bodies through clipBody, never a fixed slice
+ok 41 - the runner reads response bodies through clipBody, never a fixed slice
+  ---
+  duration_ms: 0.760841
+  type: 'test'
+  ...
+# Subtest: production already past the verified commit is its own failed state
+ok 42 - production already past the verified commit is its own failed state
+  ---
+  duration_ms: 0.377684
+  type: 'test'
+  ...
+# Subtest: every other baseline state keeps its meaning
+ok 43 - every other baseline state keeps its meaning
+  ---
+  duration_ms: 0.248268
+  type: 'test'
+  ...
+# Subtest: VTID-04949: the nightly full run covers every valid suite of the service once
+ok 44 - VTID-04949: the nightly full run covers every valid suite of the service once
+  ---
+  duration_ms: 11.424986
+  type: 'test'
+  ...
+# Subtest: isLockfileOnlyCommit: only pnpm-lock.yaml counts, other files outside the build are ignored
+ok 45 - isLockfileOnlyCommit: only pnpm-lock.yaml counts, other files outside the build are ignored
+  ---
+  duration_ms: 0.299563
+  type: 'test'
+  ...
+# Subtest: planRange: the real shape of 9358d991 (lockfile + two evidence docs) is lockfile-only, not missing
+ok 46 - planRange: the real shape of 9358d991 (lockfile + two evidence docs) is lockfile-only, not missing
+  ---
+  duration_ms: 0.431504
+  type: 'test'
+  ...
+# Subtest: planRange: a lockfile commit that also changes source, or any other no-VTID commit, is still missing
+ok 47 - planRange: a lockfile commit that also changes source, or any other no-VTID commit, is still missing
+  ---
+  duration_ms: 0.74146
+  type: 'test'
+  ...
+# Subtest: planRange: a lockfile-only commit that names a VTID without a manifest is still reported
+ok 48 - planRange: a lockfile-only commit that names a VTID without a manifest is still reported
+  ---
+  duration_ms: 0.354193
+  type: 'test'
+  ...
+# Subtest: planRange: community-app package-lock.json / bun.lock commits without a VTID are still missing
+ok 49 - planRange: community-app package-lock.json / bun.lock commits without a VTID are still missing
+  ---
+  duration_ms: 0.189127
+  type: 'test'
+  ...
+# Subtest: ready message names lockfile-only commits in a passing and in a failing run, and keeps the approval line
+ok 50 - ready message names lockfile-only commits in a passing and in a failing run, and keeps the approval line
+  ---
+  duration_ms: 0.27197
+  type: 'test'
+  ...
+# Subtest: run.mjs records and logs the lockfile-only commits (audit trail)
+ok 51 - run.mjs records and logs the lockfile-only commits (audit trail)
+  ---
+  duration_ms: 0.548575
+  type: 'test'
+  ...
+# Subtest: VTID-05076: squash history lists every commit with its own files, as before
+ok 52 - VTID-05076: squash history lists every commit with its own files, as before
+  ---
+  duration_ms: 128.06307
+  type: 'test'
+  ...
+# Subtest: VTID-05076: a merge-committed PR is judged by its merge commit; its untagged branch commit is not listed
+ok 53 - VTID-05076: a merge-committed PR is judged by its merge commit; its untagged branch commit is not listed
+  ---
+  duration_ms: 148.900364
+  type: 'test'
+  ...
+# Subtest: VTID-05076: a direct push without a VTID still fails rule 47
+ok 54 - VTID-05076: a direct push without a VTID still fails rule 47
+  ---
+  duration_ms: 90.801144
+  type: 'test'
+  ...
+# Subtest: VTID-05076: a merge commit whose subject has no VTID fails rule 47
+ok 55 - VTID-05076: a merge commit whose subject has no VTID fails rule 47
+  ---
+  duration_ms: 137.901773
+  type: 'test'
+  ...
+# Subtest: VTID-05129: a dropped stamp sample is unknown, not a mismatch
+ok 56 - VTID-05129: a dropped stamp sample is unknown, not a mismatch
+  ---
+  duration_ms: 0.937993
+  type: 'test'
+  ...
+# Subtest: VTID-05129: only dropped connections are retried
+ok 57 - VTID-05129: only dropped connections are retried
+  ---
+  duration_ms: 0.537529
+  type: 'test'
+  ...
+# Subtest: VTID-05129: a dropped connection hidden in an AggregateError or a closed socket is retried, and named
+ok 58 - VTID-05129: a dropped connection hidden in an AggregateError or a closed socket is retried, and named
+  ---
+  duration_ms: 0.673802
+  type: 'test'
+  ...
+# Subtest: VTID-05129: a guard failure keeps the blocked requests in its summary
+ok 59 - VTID-05129: a guard failure keeps the blocked requests in its summary
+  ---
+  duration_ms: 0.970524
+  type: 'test'
+  ...
+# Subtest: VTID-05129: the shared tolerated-abort list is exact, capped and never covers a real write or production
+ok 60 - VTID-05129: the shared tolerated-abort list is exact, capped and never covers a real write or production
+  ---
+  duration_ms: 1.433808
+  type: 'test'
+  ...
+# Subtest: VTID-05129: staging-guard.ts mirrors the shared list exactly
+ok 61 - VTID-05129: staging-guard.ts mirrors the shared list exactly
+  ---
+  duration_ms: 0.677241
+  type: 'test'
+  ...
+# Subtest: a full run (1,100 results, body over 128 KiB) is recorded from a file, not argv
+ok 62 - a full run (1,100 results, body over 128 KiB) is recorded from a file, not argv
+  ---
+  duration_ms: 101.237018
+  type: 'test'
+  ...
+# Subtest: a passed run is recorded as passed / success
+ok 63 - a passed run is recorded as passed / success
+  ---
+  duration_ms: 30.448188
+  type: 'test'
+  ...
+# Subtest: VTID-05144: superseded_by, attribution_cutoff, chain and per-result attributed reach the body
+ok 64 - VTID-05144: superseded_by, attribution_cutoff, chain and per-result attributed reach the body
+  ---
+  duration_ms: 33.25089
+  type: 'test'
+  ...
+# Subtest: VTID-05144: a run without the new fields records null/0 and no attributed key
+ok 65 - VTID-05144: a run without the new fields records null/0 and no attributed key
+  ---
+  duration_ms: 31.385868
+  type: 'test'
+  ...
+# Subtest: runner crashed (no results.json) → recorded as a failed, crashed verification
+ok 66 - runner crashed (no results.json) → recorded as a failed, crashed verification
+  ---
+  duration_ms: 31.878084
+  type: 'test'
+  ...
+# Subtest: missing Supabase credentials fail loudly before anything is sent
+ok 67 - missing Supabase credentials fail loudly before anything is sent
+  ---
+  duration_ms: 5.176992
+  type: 'test'
+  ...
+# Subtest: a failed POST fails the step (no silent success)
+ok 68 - a failed POST fails the step (no silent success)
+  ---
+  duration_ms: 25.030404
+  type: 'test'
+  ...
+# Subtest: the body file is removed after the step
+ok 69 - the body file is removed after the step
+  ---
+  duration_ms: 42.235913
+  type: 'test'
+  ...
+# Subtest: the workflow step calls the script and never passes the body as an argument
+ok 70 - the workflow step calls the script and never passes the body as an argument
+  ---
+  duration_ms: 0.891594
+  type: 'test'
+  ...
+# Subtest: full runs get their own -full concurrency group; nothing running is ever cancelled
+ok 71 - full runs get their own -full concurrency group; nothing running is ever cancelled
+  ---
+  duration_ms: 1.623814
+  type: 'test'
+  ...
+# Subtest: workflow_dispatch has a numeric `chain` input defaulting to 0, passed through to run.mjs
+ok 72 - workflow_dispatch has a numeric `chain` input defaulting to 0, passed through to run.mjs
+  ---
+  duration_ms: 0.52943
+  type: 'test'
+  ...
+# Subtest: the verify job exposes superseded_by from the runner
+ok 73 - the verify job exposes superseded_by from the runner
+  ---
+  duration_ms: 0.195538
+  type: 'test'
+  ...
+# Subtest: superseded is reported as commit status error with "not verified", never success
+ok 74 - superseded is reported as commit status error with "not verified", never success
+  ---
+  duration_ms: 0.218173
+  type: 'test'
+  ...
+# Subtest: a superseded full run re-dispatches a full run on the newer commit, guarded by FULL and chain < 3
+ok 75 - a superseded full run re-dispatches a full run on the newer commit, guarded by FULL and chain < 3
+  ---
+  duration_ms: 0.405992
+  type: 'test'
+  ...
+# Subtest: the report job grants itself actions: write next to its status/comment permissions
+ok 76 - the report job grants itself actions: write next to its status/comment permissions
+  ---
+  duration_ms: 0.288384
+  type: 'test'
+  ...
+# Subtest: the deploy-run lookup tokens reach run.mjs, never the test processes
+ok 77 - the deploy-run lookup tokens reach run.mjs, never the test processes
+  ---
+  duration_ms: 3.444624
+  type: 'test'
+  ...
+1..77
+# tests 77
+# suites 0
+# pass 77
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1546.916608

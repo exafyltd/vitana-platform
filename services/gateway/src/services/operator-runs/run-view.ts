@@ -496,7 +496,10 @@ export async function buildRunViewWith(
     const evs = (verifyEvents || [])
       .filter((e) => (e.service === svc || e.service === `staging-verify-${svc}`) && (e.vtids.includes(vtid) || (!!rs.mergeSha && e.commit === rs.mergeSha)))
       .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
-    return evs[0] || null;
+    // VTID-05144: the newest passed/failed run decides; a newer superseded one
+    // (staging moved mid-run, no failure attributed to the commit) only when
+    // no decisive run exists — same preference as the PUBLISH gate.
+    return evs.find((e) => e.topic === 'staging.verify.passed' || e.topic === 'staging.verify.failed') || evs[0] || null;
   };
 
   const deployChildren: string[] = [];

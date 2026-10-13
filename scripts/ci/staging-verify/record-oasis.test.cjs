@@ -105,6 +105,44 @@ test('a passed run is recorded as passed / success', () => {
   assert.equal(body.vtid, 'VTID-04613');
 });
 
+// VTID-05144: a full run superseded by a mid-run redeploy carries where staging
+// moved to, the attribution cutoff, the re-dispatch chain and per-result attribution.
+test('VTID-05144: superseded_by, attribution_cutoff, chain and per-result attributed reach the body', () => {
+  const h = harness();
+  const file = path.join(h.dir, 'results.json');
+  fs.writeFileSync(file, JSON.stringify({
+    vtid: 'VTID-05144', outcome: 'superseded', service: 'gateway', sha: 'abcdef0123456789abcdef0123456789abcdef01',
+    message: '**Staging verification superseded**', vtids: [], production_stamp: '98ebdab1',
+    superseded_by: '1234567890abcdef1234567890abcdef12345678', attribution_cutoff: '2026-10-13T07:17:30.000Z', chain: 2,
+    results: [
+      { suite: 'smoke', name: 'alive', ok: true, problems: [], attributed: true, started_at: 'x', ended_at: 'y' },
+      { suite: 'VTID-04999', name: 'late', ok: false, problems: ['fetch failed'], attributed: false },
+    ],
+    plan: { missing: [], invalid: [] }, shipping: [], full: true,
+  }));
+  const r = run(h, { RESULTS: file });
+  assert.equal(r.status, 0, r.stderr);
+  const body = JSON.parse(fs.readFileSync(path.join(h.out, 'payload.json'), 'utf8'));
+  assert.equal(body.topic, 'staging.verify.superseded');
+  assert.equal(body.status, 'info');
+  assert.equal(body.metadata.superseded_by, '1234567890abcdef1234567890abcdef12345678');
+  assert.equal(body.metadata.attribution_cutoff, '2026-10-13T07:17:30.000Z');
+  assert.equal(body.metadata.chain, 2);
+  assert.deepEqual(body.metadata.results.map((x) => x.attributed), [true, false]);
+  assert.deepEqual(Object.keys(body.metadata.results[1]).sort(), ['attributed', 'name', 'ok', 'problems', 'suite']);
+});
+
+test('VTID-05144: a run without the new fields records null/0 and no attributed key', () => {
+  const h = harness();
+  const r = run(h, { RESULTS: writeResults(h, { n: 3, outcome: 'passed', full: false }) });
+  assert.equal(r.status, 0, r.stderr);
+  const body = JSON.parse(fs.readFileSync(path.join(h.out, 'payload.json'), 'utf8'));
+  assert.equal(body.metadata.superseded_by, null);
+  assert.equal(body.metadata.attribution_cutoff, null);
+  assert.equal(body.metadata.chain, 0);
+  assert.equal('attributed' in body.metadata.results[0], false);
+});
+
 test('runner crashed (no results.json) → recorded as a failed, crashed verification', () => {
   const h = harness();
   const r = run(h, { RESULTS: path.join(h.dir, 'missing.json') });

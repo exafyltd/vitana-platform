@@ -7,6 +7,7 @@ import {
   evaluatePublishGate,
   isPublishGateEnabled,
   normalizeOverrideReason,
+  pickVerificationRow,
   toVerification,
   OVERRIDE_REASON_MIN,
   OVERRIDE_REASON_MAX,
@@ -96,6 +97,46 @@ describe('publish gate — evaluatePublishGate', () => {
     const d = await evaluatePublishGate({ commit: COMMIT, deps: { fetchRows }, env: {} as NodeJS.ProcessEnv });
     expect(fetchRows).toHaveBeenCalledWith('gateway', COMMIT);
     expect(d.status).toBe('verified');
+  });
+
+  // VTID-05144: a superseded run holds no failure attributed to the commit, so
+  // a newer superseded row never hides the newest passed/failed row.
+  it('prefers the newest passed row over a newer superseded one', async () => {
+    const fetchRows = jest.fn().mockResolvedValue([
+      { ...row('staging.verify.superseded'), created_at: '2026-09-26T11:00:00Z' },
+      row('staging.verify.passed'),
+    ]);
+    const d = await evaluatePublishGate({ commit: COMMIT, deps: { fetchRows }, env: {} as NodeJS.ProcessEnv });
+    expect(d).toMatchObject({ allowed: true, status: 'verified' });
+    expect(d.verification?.outcome).toBe('passed');
+  });
+
+  it('prefers the newest failed row over a newer superseded one — still blocked as failed', async () => {
+    const fetchRows = jest.fn().mockResolvedValue([
+      { ...row('staging.verify.superseded'), created_at: '2026-09-26T11:00:00Z' },
+      row('staging.verify.failed', COMMIT, { results: [{ suite: 'smoke', name: 'alive', ok: false }] }),
+      row('staging.verify.passed'),
+    ]);
+    const d = await evaluatePublishGate({ commit: COMMIT, deps: { fetchRows }, env: {} as NodeJS.ProcessEnv });
+    expect(d).toMatchObject({ allowed: false, status: 'blocked' });
+    expect(d.verification?.outcome).toBe('failed');
+    expect(d.reason).toMatch(/failed on aaaaaaa \(alive\)/);
+  });
+
+  it('still blocks when only superseded rows exist', async () => {
+    const fetchRows = jest.fn().mockResolvedValue([row('staging.verify.superseded'), row('staging.verify.superseded')]);
+    const d = await evaluatePublishGate({ commit: COMMIT, deps: { fetchRows }, env: {} as NodeJS.ProcessEnv });
+    expect(d).toMatchObject({ allowed: false, status: 'blocked' });
+    expect(d.reason).toMatch(/superseded/);
+  });
+
+  it('pickVerificationRow: newest decisive row, else the newest row, else null', () => {
+    const sup = row('staging.verify.superseded');
+    const pass = row('staging.verify.passed');
+    const weird = row('staging.verify.weird');
+    expect(pickVerificationRow([sup, pass])).toBe(pass);
+    expect(pickVerificationRow([weird, sup])).toBe(weird);
+    expect(pickVerificationRow([])).toBeNull();
   });
 
   it('fails closed on a lookup error and when Supabase is not configured', async () => {
