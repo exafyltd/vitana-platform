@@ -36,6 +36,8 @@ const SERVICES = {
   gateway: {
     repo: 'exafyltd/vitana-platform',
     target: 'gateway',
+    // VTID-05144: the staging deploy workflow whose runs bound T_cut.
+    stageDeployWorkflow: 'AWS-STAGE-DEPLOY-GATEWAY.yml',
     deployPaths: [
       'services/gateway/**',
       '.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml',
@@ -44,6 +46,7 @@ const SERVICES = {
   'community-app': {
     repo: 'exafyltd/vitana-v1',
     target: 'frontend',
+    stageDeployWorkflow: 'AWS-STAGE-DEPLOY-FRONTEND.yml',
     deployPaths: [
       'src/**',
       'public/**',
@@ -396,9 +399,62 @@ function describeBaseline({ sha, prodStamp, prodSha, prodIsAncestor, shaIsAncest
   return { state: 'diverged', rangeFrom: null, check: 'production baseline known', problem: `production commit ${prodStamp} and ${short(sha)} are on diverged histories — cannot list what would ship, so nothing can be approved` };
 }
 
+// ── Mid-run redeploy (VTID-05144) ────────────────────────────────────────
+// A full run takes 22–45 min; a merge in that window redeploys staging. When
+// the after-run check finds staging on a DESCENDANT of the commit under test
+// (superseded), each result is attributed to the commit only if it ended
+// before the earliest instant a newer image could have served: T_cut.
+const DEPLOY_LOOKBACK_MS = 6 * 60 * 60_000;
+// An ECS rollout and target-group deregistration can outlast its deploy
+// workflow run by 30–120 s, so a deploy that completed shortly before the
+// run started still counts. With T_cut clamped to runStart this only ever
+// under-attributes — the fail-safe direction.
+const DEPLOY_COMPLETED_MARGIN_MS = 5 * 60_000;
+
+function toMs(t) {
+  if (typeof t === 'number') return t;
+  const ms = Date.parse(t);
+  return Number.isFinite(ms) ? ms : NaN;
+}
+
+// runs: the service's staging deploy workflow runs [{ created_at, updated_at,
+// status, conclusion }], or null when the lookup failed. Returns T_cut (ms).
+// No new image can serve before its deploy run exists (deploys only via CI),
+// so T_cut is a provable lower bound. Failed/cancelled deploy runs count —
+// they may have rolled tasks. Lookup failure or no runs → runStart (fail
+// closed: nothing attributed).
+function deployCutoff(runs, runStart) {
+  const start = toMs(runStart);
+  if (!Array.isArray(runs)) return start;
+  let cut = Infinity;
+  for (const r of runs) {
+    if (!r || r.conclusion === 'skipped') continue;
+    const created = toMs(r.created_at);
+    if (!Number.isFinite(created) || created < start - DEPLOY_LOOKBACK_MS) continue;
+    const updated = toMs(r.updated_at);
+    if (r.status === 'completed' && Number.isFinite(updated) && updated < start - DEPLOY_COMPLETED_MARGIN_MS) continue;
+    cut = Math.min(cut, Math.max(created, start));
+  }
+  return Number.isFinite(cut) ? cut : start;
+}
+
+// Each row: attributed = static || ended_at < T_cut. A row that ended exactly
+// at T_cut, or carries no end time, is not attributed.
+function attributeResults(results, tCut) {
+  const cut = toMs(tCut);
+  return results.map((r) => {
+    const ended = r.ended_at ? toMs(r.ended_at) : NaN;
+    return { ...r, attributed: r.static === true || (Number.isFinite(ended) && Number.isFinite(cut) && ended < cut) };
+  });
+}
+
 // ── Outcome + message ────────────────────────────────────────────────────
+// VTID-05144: superseded no longer hides a real failure. Superseded →
+// `failed` when a failure is attributed to the commit (it ran while staging
+// still served it), else `superseded`. Unattributed rows never count, pass
+// or fail. `superseded` is never a pass for any consumer.
 function decideOutcome({ superseded, results, plan }) {
-  if (superseded) return 'superseded';
+  if (superseded) return results.some((r) => !r.ok && r.attributed === true) ? 'failed' : 'superseded';
   const failed = results.some((r) => !r.ok);
   if (failed || plan.missing.length > 0 || plan.invalid.length > 0) return 'failed';
   return 'passed';
@@ -427,13 +483,13 @@ function shippingLine(c) {
   return `- \`${short(c.sha)}\` ${v.length ? v.join(', ') + ' — ' : ''}${c.subject}${c.author ? ` (${c.author})` : ''}${via}`;
 }
 
-function buildReadyMessage({ service, sha, outcome, results, plan, shipping, prodStamp, runUrl }) {
+function buildReadyMessage({ service, sha, outcome, results, plan, shipping, prodStamp, runUrl, supersededBy = null, attributionCutoff = null }) {
   const passed = results.filter((r) => r.ok).length;
   const lines = [];
   if (outcome === 'passed') {
     lines.push('**Staging verified — ready for deployment to production?**');
   } else if (outcome === 'superseded') {
-    lines.push(`**Staging verification superseded** — staging moved past \`${short(sha)}\` during the run; the newer deploy gets its own verification. No production prompt.`);
+    lines.push(`**Staging verification superseded** — staging moved from \`${short(sha)}\` to \`${supersededBy ? short(supersededBy) : 'a newer commit'}\` during the run; nothing failed while staging still served \`${short(sha)}\`, but it is not verified. The newer commit gets its own verification. No production prompt.`);
   } else {
     lines.push('**Staging verification FAILED — not ready for production.** Nothing will be offered for PUBLISH until this is green.');
   }
@@ -441,14 +497,32 @@ function buildReadyMessage({ service, sha, outcome, results, plan, shipping, pro
   lines.push(`- Service: \`${service}\``);
   lines.push(`- Verified commit: \`${sha}\``);
   lines.push(`- Tests: ${passed}/${results.length} passed`);
+  // VTID-05144: after a mid-run redeploy only results that ended before the
+  // deploy cutoff are attributed to the commit.
+  const attributedKnown = results.some((r) => typeof r.attributed === 'boolean');
+  if (supersededBy) {
+    lines.push(`- Staging moved to: \`${supersededBy}\``);
+    lines.push(`- Attribution cutoff: ${attributionCutoff || '(none — staging had moved before the tests ran)'}`);
+  }
+  if (attributedKnown) {
+    const att = results.filter((r) => r.attributed === true);
+    const un = results.filter((r) => r.attributed !== true);
+    lines.push(`- Attributed to \`${short(sha)}\`: ${att.filter((r) => r.ok).length} passed, ${att.filter((r) => !r.ok).length} failed; not attributed: ${un.length}`);
+  }
   if (runUrl) lines.push(`- Run: ${runUrl}`);
   const vtids = plan.suites.map((s) => s.vtid);
   if (vtids.length) lines.push(`- Change suites run: ${vtids.join(', ')}`);
-  const failures = results.filter((r) => !r.ok);
+  const failures = results.filter((r) => !r.ok && (!attributedKnown || r.attributed === true));
   if (failures.length) {
     lines.push('');
     lines.push('Failed:');
     for (const f of failures) lines.push(`- ${f.suite} › ${f.name}: ${f.problems.join('; ')}`);
+  }
+  const unattributedFailures = attributedKnown ? results.filter((r) => !r.ok && r.attributed !== true) : [];
+  if (unattributedFailures.length) {
+    lines.push('');
+    lines.push('Not attributed — staging was redeploying:');
+    for (const f of unattributedFailures) lines.push(`- ${f.suite} › ${f.name}: ${f.problems.join('; ')}`);
   }
   if (plan.missing.length) {
     lines.push('');
@@ -509,7 +583,98 @@ function planFullRun({ service, manifests, alreadyRun = [] }) {
   return { suites, invalid };
 }
 
+// ── VTID-05129: robustness of the run itself ─────────────────────────────
+
+// One sample round of version stamps. A null sample (the fetch threw, or the
+// page had no stamp) is unknown, never a mismatch: a single dropped request
+// must not read as "staging serves another commit". Match needs at least half
+// the samples readable and every readable one on <sha>.
+function evaluateStampSamples(service, stamps, sha) {
+  const seen = stamps.filter(Boolean);
+  const other = seen.find((st) => !commitMatches(service, st, sha)) || null;
+  if (other) return { state: 'mismatch', other };
+  if (seen.length > 0 && seen.length >= Math.ceil(stamps.length / 2)) return { state: 'match' };
+  return { state: 'unknown' };
+}
+
+// A GET that THROWS with one of these is a dropped connection worth one more
+// try. HTTP statuses, TLS/certificate errors and DNS misses are never retried.
+const RETRIABLE_FETCH_CODES = new Set([
+  'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EAI_AGAIN', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT',
+  // VTID-05129 (proof run 38363989362): a bare "fetch failed" on a GET that
+  // passed a second later carried none of the codes above. Node 20 connects
+  // with happy eyeballs (IPv6 + IPv4), so a dropped connect surfaces as an
+  // AggregateError of per-address errors, and an idle keep-alive socket the
+  // CDN closed surfaces as UND_ERR_CLOSED / EPIPE / a headers timeout.
+  'UND_ERR_CLOSED', 'UND_ERR_HEADERS_TIMEOUT', 'EPIPE', 'ENETUNREACH', 'EHOSTUNREACH',
+]);
+function retriableCause(c) {
+  if (!c) return false;
+  if (RETRIABLE_FETCH_CODES.has(c.code)) return true;
+  return Array.isArray(c.errors) && c.errors.length > 0 && c.errors.every((x) => RETRIABLE_FETCH_CODES.has(x && x.code));
+}
+function isRetriableFetchError(e) {
+  return !!e && e.name === 'TypeError' && retriableCause(e.cause);
+}
+// "fetch failed" alone says nothing; name the underlying cause in the evidence.
+function describeFetchError(e) {
+  const c = e && e.cause;
+  if (!c) return String((e && e.message) || e);
+  const inner = Array.isArray(c.errors) && c.errors.length ? ` [${c.errors.map((x) => (x && (x.code || x.message)) || '?').join(', ')}]` : '';
+  return `${e.message} (${c.code || c.name || 'cause'}: ${c.message || ''}${inner})`;
+}
+
+// The one-line evidence for a failed spec. Keeps the error lines and, after a
+// staging-guard abort, the requests it names (the guard prints one
+// "METHOD URL" per line), so OASIS and the PR comment say WHICH requests.
+function summarizeFailure(output) {
+  const lines = String(output || '').split('\n').map((l) => l.replace(/[║╔╗╚╝═]/g, '').trim()).filter(Boolean);
+  const key = lines.filter((l) => /(✘|Error:|expect\(|Expected|Received|FAIL|failed)/.test(l));
+  const head = (key.length ? key : lines.slice(-6)).slice(0, 8).join(' | ').slice(0, 1500);
+  if (!/staging-guard aborted/.test(output || '')) return head;
+  const blocked = [...new Set(lines.filter((l) => /^(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS) https?:\/\//.test(l)))].slice(0, 20);
+  return blocked.length ? `${head} | blocked: ${blocked.join(' ; ')}`.slice(0, 4000) : head;
+}
+
+// Requests the app fires on almost every page that the staging guard aborts,
+// but that no spec should fail on. Each entry matches ONE guard record exactly
+// ("METHOD URL", anchored), so a production-host record — which the guard
+// suffixes with " (production host)" — never matches. The requests stay
+// aborted: nothing new reaches production data. MIRRORED VERBATIM in
+// staging-guard.ts (DEFAULT_ALLOWED_ABORTS); lib.test.cjs keeps the two equal.
+const DEFAULT_ALLOWED_ABORTS = [
+  // Telemetry beacons (fire-and-forget).
+  /^POST https:\/\/preview-aws-gateway\.vitanaland\.com\/api\/v1\/rum\/beacon(\?[^ ]*)?$/,
+  /^POST https:\/\/preview-aws-gateway\.vitanaland\.com\/api\/v1\/diag\/notif-tap(\?[^ ]*)?$/,
+  /^POST https:\/\/preview-aws-gateway\.vitanaland\.com\/api\/v1\/analytics\/events\/batch(\?[^ ]*)?$/,
+  // Voice widget warm-up on load (useOrbVoiceWidget) — only this path.
+  /^POST https:\/\/preview-aws-gateway\.vitanaland\.com\/api\/v1\/orb\/live\/session\/prewarm(\?[^ ]*)?$/,
+  // Chat presence and the activity log.
+  /^(POST|PATCH) https:\/\/inmkhvwdcuyhnxkgfvsb\.supabase\.co\/rest\/v1\/thread_presence(\?[^ ]*)?$/,
+  /^POST https:\/\/inmkhvwdcuyhnxkgfvsb\.supabase\.co\/rest\/v1\/user_activity_log(\?[^ ]*)?$/,
+  // Read-only RPCs and functions (supabase-js sends rpc/invoke as POST).
+  /^POST https:\/\/inmkhvwdcuyhnxkgfvsb\.supabase\.co\/rest\/v1\/rpc\/(get_role_preference|get_my_permitted_roles|list_roles_for_active_tenant|get_profile_health_summary|get_user_profile_by_identifier)(\?[^ ]*)?$/,
+  /^POST https:\/\/inmkhvwdcuyhnxkgfvsb\.supabase\.co\/functions\/v1\/list_my_memberships(\?[^ ]*)?$/,
+  // Real production writes fired app-wide on load, never a spec's subject:
+  // the daily Vitana Index upsert and daily match generation. The guard
+  // aborts them; specs only stop failing on that abort.
+  /^POST https:\/\/inmkhvwdcuyhnxkgfvsb\.supabase\.co\/rest\/v1\/rpc\/health_compute_vitana_index(\?[^ ]*)?$/,
+  /^POST https:\/\/inmkhvwdcuyhnxkgfvsb\.supabase\.co\/functions\/v1\/generate-daily-matches(\?[^ ]*)?$/,
+];
+const DEFAULT_ALLOWED_ABORTS_CAP = 16;
+
+function isToleratedAbort(record, specAllow = []) {
+  return DEFAULT_ALLOWED_ABORTS.some((r) => r.test(record)) || specAllow.some((r) => r.test(record));
+}
+
 module.exports = {
+  evaluateStampSamples,
+  isRetriableFetchError,
+  describeFetchError,
+  summarizeFailure,
+  DEFAULT_ALLOWED_ABORTS,
+  DEFAULT_ALLOWED_ABORTS_CAP,
+  isToleratedAbort,
   planFullRun,
   PRODUCTION_HOSTS,
   STAGING_TARGETS,
@@ -532,6 +697,10 @@ module.exports = {
   evaluateHttp,
   httpRequestInit,
   describeBaseline,
+  deployCutoff,
+  attributeResults,
+  DEPLOY_COMPLETED_MARGIN_MS,
+  DEPLOY_LOOKBACK_MS,
   decideOutcome,
   buildReadyMessage,
   isAutopilotCommit,

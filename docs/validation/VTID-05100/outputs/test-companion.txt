@@ -1,0 +1,263 @@
+
+> @vitana/gateway@1.0.1 test:companion
+> jest test/vtid-05099-companion-messages.test.ts test/vtid-05099-proactive-match-daily-limit.test.ts test/vtid-05100-companion-delivery.test.ts --verbose
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [VTID-01270] Proactive message sent to 11111111-1111-4111-8111-111111111111: 1 matches in 30ms
+
+      at sendProactiveMatchMessages (src/services/proactive-match-messenger.ts:389:13)
+
+  console.warn
+    [VTID-01270] companion ledger claim failed, sending anyway: function does not exist
+
+      327 |           skipped_reason: 'companion_daily_limit',
+      328 |         };
+    > 329 |       } else console.warn(`[${VTID}] companion ledger claim failed, sending anyway: ${claim.error}`);
+          |                      ^
+      330 |     } catch (err: any) {
+      331 |       console.warn(`[${VTID}] companion ledger unavailable, sending anyway: ${err?.message ?? err}`);
+      332 |     }
+
+      at sendProactiveMatchMessages (src/services/proactive-match-messenger.ts:329:22)
+      at Object.<anonymous> (test/vtid-05099-proactive-match-daily-limit.test.ts:65:13)
+
+  console.log
+    [VTID-01270] Proactive message sent to 11111111-1111-4111-8111-111111111111: 1 matches in 5ms
+
+      at sendProactiveMatchMessages (src/services/proactive-match-messenger.ts:389:13)
+
+  console.warn
+    [VTID-01270] companion ledger unavailable, sending anyway: network
+
+      329 |       } else console.warn(`[${VTID}] companion ledger claim failed, sending anyway: ${claim.error}`);
+      330 |     } catch (err: any) {
+    > 331 |       console.warn(`[${VTID}] companion ledger unavailable, sending anyway: ${err?.message ?? err}`);
+          |               ^
+      332 |     }
+      333 |
+      334 |     // Step 8: Insert chat message
+
+      at sendProactiveMatchMessages (src/services/proactive-match-messenger.ts:331:15)
+      at Object.<anonymous> (test/vtid-05099-proactive-match-daily-limit.test.ts:67:13)
+
+  console.log
+    [VTID-01270] Proactive message sent to 11111111-1111-4111-8111-111111111111: 1 matches in 4ms
+
+      at sendProactiveMatchMessages (src/services/proactive-match-messenger.ts:389:13)
+
+  console.error
+    [VTID-01270] Proactive match error for 11111111-1111-4111-8111-111111111111: Chat message insert failed: boom
+
+      396 |     };
+      397 |   } catch (err: any) {
+    > 398 |     console.error(`[${VTID}] Proactive match error for ${user_id}:`, err.message);
+          |             ^
+      399 |
+      400 |     emitOasisEvent({
+      401 |       vtid: VTID,
+
+      at sendProactiveMatchMessages (src/services/proactive-match-messenger.ts:398:13)
+      at Object.<anonymous> (test/vtid-05099-proactive-match-daily-limit.test.ts:74:15)
+
+  console.log
+    [VTID-01270] No qualifying matches for 11111111-1111-4111-8111-111111111111 on 2026-10-20
+
+      at sendProactiveMatchMessages (src/services/proactive-match-messenger.ts:213:15)
+
+PASS test/vtid-05099-proactive-match-daily-limit.test.ts
+  VTID-05099: the match message shares the one-a-day slot
+    ✓ claims the slot (live, proactive_match, new_match, card F5), sends, then marks it sent (71 ms)
+    ✓ a refused claim (another Vitana DM already today) skips the send and the push (3 ms)
+    ✓ a ledger error fails open: the match message still sends (12 ms)
+    ✓ a failed chat insert marks the claimed slot failed (5 ms)
+    ✓ no qualifying matches: no claim is taken (2 ms)
+
+  console.warn
+    [companion] pacer touch failed for 11111111…: pacer down
+
+      118 |     });
+      119 |   } catch (err: any) {
+    > 120 |     console.warn(`[companion] pacer touch failed for ${input.userId.slice(0, 8)}…: ${err?.message ?? err}`);
+          |             ^
+      121 |   }
+      122 |
+      123 |   // 3. Exactly one push.
+
+      at deliverCompanionMessage (src/services/companion/delivery.ts:120:13)
+      at Object.<anonymous> (test/vtid-05100-companion-delivery.test.ts:289:15)
+
+  console.warn
+    [companion] push failed for 11111111… (DM delivered): fcm down
+
+      140 |     pushSuppressed = r?.suppressed;
+      141 |   } catch (err: any) {
+    > 142 |     console.warn(`[companion] push failed for ${input.userId.slice(0, 8)}… (DM delivered): ${err?.message ?? err}`);
+          |             ^
+      143 |   }
+      144 |
+      145 |   // 4. The slot is used.
+
+      at deliverCompanionMessage (src/services/companion/delivery.ts:142:13)
+      at Object.<anonymous> (test/vtid-05100-companion-delivery.test.ts:289:15)
+
+  console.log
+    [Chat] Vitana text reply written (1ms)
+
+      at handleVitanaTextReply (src/routes/chat.ts:641:13)
+
+  console.warn
+    [companion] mark_companion_replied failed: db down
+
+      257 |     Promise.resolve(markCompanionReplied(sb, userId))
+      258 |       .then((r) => { if (!r.ok) console.warn(`[companion] mark_companion_replied failed: ${r.error}`); })
+    > 259 |       .catch((err: any) => console.warn(`[companion] mark_companion_replied failed: ${err?.message ?? err}`));
+          |                                    ^
+      260 |   } catch (err: any) {
+      261 |     console.warn(`[companion] mark_companion_replied failed: ${err?.message ?? err}`);
+      262 |   }
+
+      at src/services/companion/companion-repository.ts:259:36
+
+  console.log
+    [Chat] Vitana text reply written (5ms)
+
+      at handleVitanaTextReply (src/routes/chat.ts:641:13)
+
+  console.warn
+    [companion] mark_companion_replied failed: boom
+
+      256 |   try {
+      257 |     Promise.resolve(markCompanionReplied(sb, userId))
+    > 258 |       .then((r) => { if (!r.ok) console.warn(`[companion] mark_companion_replied failed: ${r.error}`); })
+          |                                         ^
+      259 |       .catch((err: any) => console.warn(`[companion] mark_companion_replied failed: ${err?.message ?? err}`));
+      260 |   } catch (err: any) {
+      261 |     console.warn(`[companion] mark_companion_replied failed: ${err?.message ?? err}`);
+
+      at src/services/companion/companion-repository.ts:258:41
+
+  console.log
+    [Chat] Vitana text reply written (2ms)
+
+      at handleVitanaTextReply (src/routes/chat.ts:641:13)
+
+  console.warn
+    [companion] mark_companion_replied failed: sync boom
+
+      257 |     Promise.resolve(markCompanionReplied(sb, userId))
+      258 |       .then((r) => { if (!r.ok) console.warn(`[companion] mark_companion_replied failed: ${r.error}`); })
+    > 259 |       .catch((err: any) => console.warn(`[companion] mark_companion_replied failed: ${err?.message ?? err}`));
+          |                                    ^
+      260 |   } catch (err: any) {
+      261 |     console.warn(`[companion] mark_companion_replied failed: ${err?.message ?? err}`);
+      262 |   }
+
+      at src/services/companion/companion-repository.ts:259:36
+
+  console.log
+    [Chat] Vitana text reply written (3ms)
+
+      at handleVitanaTextReply (src/routes/chat.ts:641:13)
+
+PASS test/vtid-05100-companion-delivery.test.ts
+  VTID-05100: preferences API
+    ✓ GET without a token → 401 JSON from the real auth middleware (138 ms)
+    ✓ PATCH without a token → 401 and nothing written (27 ms)
+    ✓ GET with no saved row → the defaults (enabled, health + community on, business off) (9 ms)
+    ✓ GET returns only the signed-in member's own row (5 ms)
+    ✓ PATCH merges onto the current settings, keyed by the verified user id (a body user_id is refused) (22 ms)
+    ✓ PATCH validation: booleans only, known fields only, at least one field (35 ms)
+  VTID-05100: delivery
+    ✓ inserts ONE Vitana DM with the card in metadata, touches the pacer, sends ONE push, finishes sent (9 ms)
+    ✓ a failed DM insert finishes the slot as failed: no push, no pacer touch (3 ms)
+    ✓ a held or failing push never undoes the DM; a failing pacer touch never blocks it (40 ms)
+    ✓ card params keep only finite numbers (2 ms)
+    ✓ the new notification type: push_and_inapp, p2 (quiet hours apply), chat category, in the admin catalog with both languages (1 ms)
+  VTID-05100: sending stays off without COMPANION_SEND_ENABLED
+    ✓ staff/live without the switch (or with anything but exact "true") run in shadow (14 ms)
+    ✓ with COMPANION_SEND_ENABLED=true: staff and live become sending modes (1 ms)
+    ✓ the switch never overrides staging, the feature flag or an off mode (1 ms)
+  VTID-05100: the tick in a sending mode
+    ✓ staff mode: only the staff member gets a real DM; everyone else keeps the shadow behaviour (43 ms)
+    ✓ staff mode: a failed staff lookup sends to nobody (fail closed) (4 ms)
+    ✓ live mode: every eligible member gets a real DM, once per local day (8 ms)
+    ✓ a send composes even when the shadow sample cap is used up (4 ms)
+    ✓ a failed composition in a send mode: no DM, the slot finishes failed (5 ms)
+    ✓ opted-out members and the pacer are respected in a send mode too (2 ms)
+    ✓ shadow mode never delivers (4 ms)
+  VTID-05100: the reply hook
+    ✓ a member text to Vitana calls mark_companion_replied for that member (65 ms)
+    ✓ a failing ledger never breaks the reply (rejected, error result, or thrown synchronously) (33 ms)
+    ✓ the background helper never throws or rejects (3 ms)
+
+PASS test/vtid-05099-companion-messages.test.ts
+  VTID-05099: which moment and which Vitana card
+    ✓ brings the Vitana Index (card F2) when there is a score (9 ms)
+    ✓ falls back to the morning greeting (card F4 Talk to Vitana) with no score (1 ms)
+    ✓ respects the health topic switch (1 ms)
+    ✓ does not repeat the Index within 3 days, and does again after (1 ms)
+    ✓ every moment names a card and carries an English intent, never a finished sentence (rule 41) (3 ms)
+  VTID-05099: mode
+    ✓ never runs on staging (1 ms)
+    ✓ is off without the feature flag or COMPANION_MODE (1 ms)
+    ✓ shadow when asked; staff/live have no sending mode in Phase 1 and still run in shadow (1 ms)
+    ✓ defaults: 07:30–09:30 window, 20 composed samples a day, Bedrock models (1 ms)
+    ✓ COMPANION_SHADOW_COMPOSE_LIMIT: 0 means no samples; junk means the default (1 ms)
+    ✓ an inverted window falls back to the default
+  VTID-05099: local time
+    ✓ uses the member's zone and falls back to Europe/Berlin (26 ms)
+  VTID-05099: composer
+    ✓ calls Bedrock for primary AND fallback, with the localized prompt and the English intent (2 ms)
+    ✓ never uses an answer from a non-Bedrock provider (1 ms)
+    ✓ a failed or truncated call is a skip, never a template (10 ms)
+    ✓ validates the text (2 ms)
+    ✓ a missing first name is said to the model, not invented (1 ms)
+  VTID-05099: the shadow tick
+    ✓ decides one moment for the member inside their local window and sends nothing (6 ms)
+    ✓ never decides for the Vitana bot or an excluded test/service account (2 ms)
+    ✓ a failed exclusion lookup skips the whole tick (1 ms)
+    ✓ once per member per local day: later ticks the same day decide nothing (8 ms)
+    ✓ a real proactive DM already sent today (e.g. the match message) means no decision (2 ms)
+    ✓ an onboarding touch sent today means no decision (one Vitana touch a day) (1 ms)
+    ✓ respects the presence pacer (pause, daily cap) (2 ms)
+    ✓ respects anti-repeat from the ledger history (2 ms)
+    ✓ caps full compositions per day; beyond the cap it still decides, without text (3 ms)
+    ✓ a failed composition is recorded without text and counted (2 ms)
+    ✓ a tick with nobody in the window emits nothing (1 ms)
+    ✓ off / disabled-on-staging: does nothing at all (1 ms)
+  VTID-05099: the endpoints
+    ✓ the tick needs the internal token whatever the global auth mode is (448 ms)
+    ✓ the staging gateway refuses the tick even with a valid token (274 ms)
+    ✓ off by default in production: the tick answers mode off and touches nothing (228 ms)
+    ✓ status is a read-only GET with the mode and nothing about members (184 ms)
+
+Test Suites: 3 passed, 3 total
+Tests:       62 passed, 62 total
+Snapshots:   0 total
+Time:        3.813 s, estimated 7 s
+Ran all test suites matching /test\/vtid-05099-companion-messages.test.ts|test\/vtid-05099-proactive-match-daily-limit.test.ts|test\/vtid-05100-companion-delivery.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

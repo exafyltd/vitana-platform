@@ -181,6 +181,47 @@ describe('state 3 — staging verified, waiting for your yes', () => {
     expect(v.status).toBe('failed');
   });
 
+  // VTID-05144: a superseded run (staging moved mid-run, no failure attributed
+  // to the commit) never hides the newest decisive run for the same commit.
+  const iso = (minutes: number): string => new Date(T0 + minutes * 60_000).toISOString();
+  it('VTID-05144: a newer superseded run does not hide an older passed run — still passed, Gate 2 waiting', async () => {
+    const gw = STATE_GATE2.verify![0];
+    const s: FixtureState = {
+      ...STATE_GATE2,
+      verify: [{ ...gw, topic: 'staging.verify.superseded', created_at: iso(-5), run_url: 'https://github.com/exafyltd/vitana-platform/actions/runs/950' }, ...STATE_GATE2.verify!],
+    };
+    const v = await view(s);
+    expect(node(v, 'verify')).toMatchObject({ status: 'passed', detail: 'gateway 2/2 suites passed · community-app 1/1 suites passed' });
+    expect(node(v, 'gate2').status).toBe('waiting');
+    expect(v.gate2).not.toBeNull();
+  });
+
+  it('VTID-05144: a newer superseded run does not hide an older failed run — still failed', async () => {
+    const gw = STATE_GATE2.verify![0];
+    const failed = { ...gw, topic: 'staging.verify.failed', results: [{ suite: 'VTID-05072', name: 'paste', ok: false, problems: ['expected 200, got 500'] }] };
+    const s: FixtureState = {
+      ...STATE_GATE2,
+      verify: [{ ...gw, topic: 'staging.verify.superseded', created_at: iso(-5) }, failed, STATE_GATE2.verify![1]],
+    };
+    const v = await view(s);
+    expect(node(v, 'verify')).toMatchObject({ status: 'failed', error: '✕ gateway › VTID-05072 › paste — expected 200, got 500' });
+    expect(v.gate2).toBeNull();
+  });
+
+  it('VTID-05144: only superseded runs → pending, waiting for a verification', async () => {
+    const gw = STATE_GATE2.verify![0];
+    const s: FixtureState = {
+      ...STATE_GATE2,
+      verify: [{ ...gw, topic: 'staging.verify.superseded', created_at: iso(-5) }, { ...gw, topic: 'staging.verify.superseded' }, STATE_GATE2.verify![1]],
+    };
+    const v = await view(s);
+    // The gateway service is superseded-only → the node is pending (the shared
+    // detail line then shows community-app's pass, existing behaviour).
+    expect(node(v, 'verify').status).toBe('pending');
+    expect(node(v, 'gate2').status).toBe('pending');
+    expect(v.gate2).toBeNull();
+  });
+
   it('production contains both merges → Gate 2 + Production passed, terminal, done', async () => {
     const v = await view(STATE_DONE);
     expect(node(v, 'production')).toMatchObject({ status: 'passed' });

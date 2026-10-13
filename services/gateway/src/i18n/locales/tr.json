@@ -132,6 +132,7 @@
   "notif.listing_interest.body": "Birisi \"{title}\" ile ilgilendi.",
   "notif.chat_mention.title": "{sender} seni \"{group}\" grubunda andı",
   "notif.calendar_invite.body": "{name} seni bir etkinliğe davet etti",
+  "notif.chat_burst.body": "{count} yeni mesaj · {preview}",
   "notif.day_close.title": "İyi geceler 🌙",
   "notif.day_close.body": "Gün sona erdi — aklında bir şey varsa, bana kısaca söyleyebilirsin.",
   "notif.partner_test_status_changed.title": "{partner_name} güncellemesi",
@@ -194,5 +195,7 @@
   "email.push_fallback.cta": "Uygulamada aç",
   "email.push_fallback.why": "Bu e-postayı, hiçbir anlık bildirim sana ulaşmadığı için alıyorsun. Bunu istediğin zaman değiştirebilirsin:",
   "email.push_fallback.settings": "Bildirim ayarları",
-  "sms.phone_verification.code": "Vitanaland kodun: {code}. Kimseyle paylaşma."
+  "sms.phone_verification.code": "Vitanaland kodun: {code}. Kimseyle paylaşma.",
+  "notif.vitana_companion_message.title": "Vitana'dan mesaj",
+  "notif.vitana_companion_message.body": "Vitana sana yazdı – mesajını okumak için dokun."
 }

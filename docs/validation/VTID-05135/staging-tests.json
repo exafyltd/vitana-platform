@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05135",
+  "service": "gateway",
+  "note": "Read-only. Unauthenticated behaviour is proven by the Jest suites below; the staging checks only confirm the discovery documents are still served.",
+  "tests": [
+    { "kind": "existing", "ref": "npx jest test/commerce-mcp-probe-log.test.ts test/vtid-04990-chatgpt-oauth.test.ts", "cwd": "services/gateway", "reason": "covers the capped probe log, the plain challenge on /mcp/chatgpt and the unchanged /mcp challenge" },
+    { "kind": "http", "name": "the authorization-server document is still served", "path": "/.well-known/oauth-authorization-server", "expect_status": 200 },
+    { "kind": "http", "name": "the ChatGPT resource metadata is still served", "path": "/.well-known/oauth-protected-resource/mcp/chatgpt", "expect_status": 200 }
+  ]
+}

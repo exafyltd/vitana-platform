@@ -1,0 +1,1621 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [ChatPushCoalescer] read failed, pushing as before: supabase.from(...).select(...).in is not a function
+
+      105 |     rows = (data as ChatNotificationRow[] | null) ?? [];
+      106 |   } catch (err: any) {
+    > 107 |     console.warn(`[ChatPushCoalescer] read failed, pushing as before: ${err?.message || err}`);
+          |             ^
+      108 |     return decisions;
+      109 |   }
+      110 |
+
+      at decideChatPushes (src/services/chat-push-coalescer.ts:107:13)
+      at coalesceChatPushes (src/services/chat-push-coalescer.ts:148:27)
+      at src/routes/chat.ts:250:52
+
+  console.warn
+    [companion] mark_companion_replied failed: sb.rpc is not a function
+
+      257 |     Promise.resolve(markCompanionReplied(sb, userId))
+      258 |       .then((r) => { if (!r.ok) console.warn(`[companion] mark_companion_replied failed: ${r.error}`); })
+    > 259 |       .catch((err: any) => console.warn(`[companion] mark_companion_replied failed: ${err?.message ?? err}`));
+          |                                    ^
+      260 |   } catch (err: any) {
+      261 |     console.warn(`[companion] mark_companion_replied failed: ${err?.message ?? err}`);
+      262 |   }
+
+      at src/services/companion/companion-repository.ts:259:36
+
+  console.log
+    [Chat] Vitana text reply written (18ms)
+
+      at handleVitanaTextReply (src/routes/chat.ts:641:13)
+
+  console.warn
+    [companion] mark_companion_replied failed: sb.rpc is not a function
+
+      257 |     Promise.resolve(markCompanionReplied(sb, userId))
+      258 |       .then((r) => { if (!r.ok) console.warn(`[companion] mark_companion_replied failed: ${r.error}`); })
+    > 259 |       .catch((err: any) => console.warn(`[companion] mark_companion_replied failed: ${err?.message ?? err}`));
+          |                                    ^
+      260 |   } catch (err: any) {
+      261 |     console.warn(`[companion] mark_companion_replied failed: ${err?.message ?? err}`);
+      262 |   }
+
+      at src/services/companion/companion-repository.ts:259:36
+
+  console.warn
+    [Chat] Vitana reply failed: llm_timeout
+
+      596 |     if (!result.ok || !result.reply) {
+      597 |       const error = result.error || 'empty reply';
+    > 598 |       console.warn(`[Chat] Vitana reply failed: ${error}`);
+          |               ^
+      599 |       return { ok: false, error };
+      600 |     }
+      601 |
+
+      at handleVitanaTextReply (src/routes/chat.ts:598:15)
+      at src/routes/chat.ts:312:20
+
+  console.warn
+    [companion] mark_companion_replied failed: sb.rpc is not a function
+
+      257 |     Promise.resolve(markCompanionReplied(sb, userId))
+      258 |       .then((r) => { if (!r.ok) console.warn(`[companion] mark_companion_replied failed: ${r.error}`); })
+    > 259 |       .catch((err: any) => console.warn(`[companion] mark_companion_replied failed: ${err?.message ?? err}`));
+          |                                    ^
+      260 |   } catch (err: any) {
+      261 |     console.warn(`[companion] mark_companion_replied failed: ${err?.message ?? err}`);
+      262 |   }
+
+      at src/services/companion/companion-repository.ts:259:36
+
+  console.log
+    [Chat] Vitana text reply written (108ms)
+
+      at handleVitanaTextReply (src/routes/chat.ts:641:13)
+
+PASS test/chat-vitana-reply.test.ts
+  POST /send
+    ✓ inserts the message and never calls processConversationTurn, even when receiver is the Vitana bot (58 ms)
+    ✓ still fires the push notification path for a human receiver (regression guard) (38 ms)
+  POST /vitana-reply
+    ✓ generates and awaits the reply, writes it, and returns it in the response (38 ms)
+    ✓ rejects empty content with 400 (12 ms)
+    ✓ returns 502 when the turn fails or produces no reply (27 ms)
+    ✓ rejects a concurrent duplicate call for the same user with 409, without running a second turn (115 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/daily-feature-tip status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/daily-feature-tip status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [Scheduled] daily_feature_tip → tip=tip-b dispatched=2 users
+
+      at src/routes/scheduled-notifications.ts:860:13
+
+  console.log
+    [OASIS Event] Emitted: notification.daily_feature_tip.dispatched for BOOTSTRAP-DAILY-FEATURE-TIP (4b887801-a76a-458d-8901-e351bc0bc9be)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/daily-feature-tip status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.warn
+    [Scheduled] daily_feature_tip: 1/2 notifyUser calls rejected
+
+      850 |     const failed = results.length - dispatched;
+      851 |     if (failed > 0) {
+    > 852 |       console.warn(`[Scheduled] daily_feature_tip: ${failed}/${results.length} notifyUser calls rejected`);
+          |               ^
+      853 |     }
+      854 |
+      855 |     // 4. Advance rotation state for next time, and record when dispatch
+
+      at src/routes/scheduled-notifications.ts:852:15
+
+  console.log
+    [Scheduled] daily_feature_tip → tip=tip-b dispatched=1 users
+
+      at src/routes/scheduled-notifications.ts:860:13
+
+  console.log
+    [OASIS Event] Emitted: notification.daily_feature_tip.dispatched for BOOTSTRAP-DAILY-FEATURE-TIP (684936f3-a559-44f4-8a66-aa3ef0b24114)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/daily-feature-tip status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [Scheduled] daily_feature_tip → tip=tip-a dispatched=1 users
+
+      at src/routes/scheduled-notifications.ts:860:13
+
+  console.log
+    [OASIS Event] Emitted: notification.daily_feature_tip.dispatched for BOOTSTRAP-DAILY-FEATURE-TIP (cf1a7827-31b2-42b0-bffc-0cc69ee7aa5d)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/daily-feature-tip status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.error
+    [Scheduled] daily_feature_tip insert error: boom
+
+      809 |
+      810 |     if (insertError || !inserted) {
+    > 811 |       console.error('[Scheduled] daily_feature_tip insert error:', insertError?.message);
+          |               ^
+      812 |       return res.status(500).json({ ok: false, error: insertError?.message || 'INSERT_FAILED' });
+      813 |     }
+      814 |     const announcementId = inserted.id as string;
+
+      at src/routes/scheduled-notifications.ts:811:15
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/daily-feature-tip status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [Scheduled] daily_feature_tip → tip=tip-b dispatched=0 users
+
+      at src/routes/scheduled-notifications.ts:860:13
+
+  console.log
+    [OASIS Event] Emitted: notification.daily_feature_tip.dispatched for BOOTSTRAP-DAILY-FEATURE-TIP (805e59c8-1457-4f1e-90e5-6493f5b8f84b)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+PASS test/scheduled-notifications-daily-feature-tip.test.ts
+  POST /daily-feature-tip
+    ✓ 400 without tenant_id (60 ms)
+    ✓ advances rotation, publishes tenant-wide, and notifies every member (52 ms)
+    ✓ still counts successful dispatches when some users reject (Promise.allSettled) (11 ms)
+    ✓ wraps around to index 0 once the tip list is exhausted (8 ms)
+    ✓ 500 when the announcement insert fails (19 ms)
+    ✓ logs loudly (not silently) when getActiveUsers' member-page query errors (9 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04892-onboarding-coach.test.ts
+  VTID-04892: stages and the ladder
+    ✓ maps tenure to stages and ends at 90 days (11 ms)
+    ✓ teaches in ladder order and only steps the member is far enough in for (1 ms)
+    ✓ only uses milestones that milestone-service already detects (no new milestones in slice 1) (15 ms)
+  VTID-04892: one member, one day
+    ✓ would touch a fresh member with the next step (2 ms)
+    ✓ respects opt-out, the 90-day window and snooze (1 ms)
+    ✓ backs off ×2 after each ignored touch and stops after 3 ignores (2 ms)
+    ✓ gives the day to the Audiobook reminder (set and today not heard, or already sent today) (1 ms)
+    ✓ never a second touch the same local day (1 ms)
+    ✓ a pilot stage override wins over tenure (22 ms)
+    ✓ cohort = joined on/after rollout − 30 days and still inside 90 days (1 ms)
+    ✓ uses the member's local date (45 ms)
+  VTID-04892: mode
+    ✓ never runs on staging (1 ms)
+    ✓ is off without the feature flag or a valid rollout date (2 ms)
+    ✓ has no live mode in slice 1: VOA_MODE=live still runs shadow (1 ms)
+  VTID-04892: the tick (shadow — sends nothing)
+    ✓ skips the whole tick when the strict exclusion lookup fails (12 ms)
+    ✓ decides for cohort members only, writes only coach tables, one aggregate event (40 ms)
+    ✓ re-running the same day overwrites the decision (one row per member per day) (4 ms)
+    ✓ simulates 90 days: a stage change emits one transition event, then the member graduates (140 ms)
+    ✓ the coach code has no send path at all in slice 1 (2 ms)
+  VTID-04892: the endpoints
+    ✓ the tick needs the internal token whatever the global auth mode is (905 ms)
+    ✓ 503 when no internal token is configured (295 ms)
+    ✓ the staging gateway refuses the tick even with a valid token (258 ms)
+    ✓ status is a read-only GET with the mode and nothing about members (186 ms)
+
+PASS test/vtid-04677-scheduled-notifications-auth.test.ts
+  mode switch
+    ✓ defaults to log; only exact enforce/off change it (3 ms)
+  token compare
+    ✓ matches only an identical non-empty token (2 ms)
+  enforce mode
+    ✓ runs the route with the right token (32 ms)
+    ✓ 401 without a token, 403 with a wrong one — the route never runs (116 ms)
+    ✓ an admin bearer token is not accepted (no JWT path) (38 ms)
+    ✓ 503 and a loud error when the gateway has no token configured (16 ms)
+    ✓ GET /health stays open and reports the mode (6 ms)
+  log mode (default)
+    ✓ lets an anonymous call through and logs it without the header value (5 ms)
+    ✓ a call with the right token is not logged (5 ms)
+    ✓ health reports log and whether a token is set, never the token (6 ms)
+  off mode
+    ✓ runs without any check or log line (4 ms)
+  internalTokenHeaders (gateway self-calls)
+    ✓ sends the token when configured, nothing otherwise (3 ms)
+  wiring (source)
+    ✓ the middleware is registered before the first route of the router (1 ms)
+    ✓ no route is still marked public (1 ms)
+    ✓ /health reports the auth status (1 ms)
+    ✓ every gateway self-call to these routes sends the token (1 ms)
+  deploy workflows
+    ✓ prod wires GATEWAY_INTERNAL_TOKEN in every deploy mode, before register/roll (1 ms)
+    ✓ prod step replaces any existing entry and keeps the other secrets (runs its jq) (20 ms)
+    ✓ prod does not set an auth mode (stays log until enforce is approved) (1 ms)
+    ✓ staging strips any set value, so it runs the code default (log) (1 ms)
+    ✓ staging prints the secret lookup error instead of discarding it (1 ms)
+  scheduler Lambda scripts
+    ✓ /home/user/vitana-platform/scripts/aws/setup-eventbridge-push-dispatch.sh: valid bash, token read from the prod secret and sent as X-Gateway-Internal (13 ms)
+    ✓ /home/user/vitana-platform/scripts/aws/setup-eventbridge-daily-feature-tip.sh: valid bash, token read from the prod secret and sent as X-Gateway-Internal (12 ms)
+    ✓ /home/user/vitana-platform/scripts/aws/setup-eventbridge-whats-new.sh: valid bash, token read from the prod secret and sent as X-Gateway-Internal (17 ms)
+    ✓ /home/user/vitana-platform/scripts/aws/setup-eventbridge-push-dispatch.sh: the embedded Lambda code parses (6 ms)
+    ✓ /home/user/vitana-platform/scripts/aws/setup-eventbridge-daily-feature-tip.sh: the embedded Lambda code parses (1 ms)
+    ✓ /home/user/vitana-platform/scripts/aws/setup-eventbridge-whats-new.sh: the embedded Lambda code parses (1 ms)
+    ✓ cron script: notification jobs carry the prod token secret; daily-feature-tip is not duplicated (1 ms)
+  route-auth CI rule
+    ✓ new-route-without-auth-middleware accepts the file-level router.use(requireScheduledNotificationsAuth) (97 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/whats-new status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [Scheduled] whats_new → entry=feat-a dispatched=2 users
+
+      at src/routes/scheduled-notifications.ts:985:13
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/whats-new status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/push-dispatch status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [PushDispatch] dispatched=1 skipped=0 total=1
+
+      at src/routes/scheduled-notifications.ts:1411:11
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/whats-new status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/whats-new status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/push-dispatch status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [PushDispatch] dispatched=0 skipped=1 total=1
+
+      at src/routes/scheduled-notifications.ts:1411:11
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/whats-new status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/push-dispatch status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [PushDispatch] dispatched=1 skipped=0 total=1
+
+      at src/routes/scheduled-notifications.ts:1411:11
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/whats-new status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/push-dispatch status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [PushDispatch] dispatched=0 skipped=1 total=1
+
+      at src/routes/scheduled-notifications.ts:1411:11
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/whats-new status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/push-dispatch status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [PushDispatch] dispatched=1 skipped=0 total=1
+
+      at src/routes/scheduled-notifications.ts:1411:11
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/whats-new status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/push-dispatch status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/whats-new status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [PushDispatch] dispatched=0 skipped=1 total=1
+
+      at src/routes/scheduled-notifications.ts:1411:11
+
+  console.warn
+    [Scheduled] whats_new: 1/2 notifyUser calls rejected
+
+      980 |     const dispatched = results.filter((r) => r.status === 'fulfilled').length;
+      981 |     if (dispatched < results.length) {
+    > 982 |       console.warn(`[Scheduled] whats_new: ${results.length - dispatched}/${results.length} notifyUser calls rejected`);
+          |               ^
+      983 |     }
+      984 |     await repo.markFeatureAnnouncementNotified(supa, { announcementId, notifiedAt: new Date().toISOString() });
+      985 |     console.log(`[Scheduled] whats_new → entry=${entry.id} dispatched=${dispatched} users`);
+
+      at src/routes/scheduled-notifications.ts:982:15
+
+  console.log
+    [Scheduled] whats_new → entry=feat-a dispatched=1 users
+
+      at src/routes/scheduled-notifications.ts:985:13
+
+PASS test/scheduled-notifications-whats-new.test.ts
+  whats-new publisher (pure)
+    ✓ drops malformed entries without failing the rest (5 ms)
+    ✓ picks the oldest fresh unpublished entry; skips stale and published (2 ms)
+  POST /whats-new
+    ✓ publishes the next entry tenant-wide and notifies every member (66 ms)
+    ✓ never re-announces an entry already recorded for the tenant (20 ms)
+    ✓ publishes at most one card per gap (10 ms)
+    ✓ never publishes a stale entry (10 ms)
+    ✓ honours the kill switch without touching anything (8 ms)
+    ✓ 502s (and publishes nothing) when the production manifest is unreachable (9 ms)
+    ✓ stops (does not guess) when the dedupe lookup fails (7 ms)
+    ✓ 500 when the announcement insert fails, and notifies no one (9 ms)
+    ✓ counts only successful dispatches when some users reject (13 ms)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/push-dispatch status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [PushDispatch] dispatched=0 skipped=1 total=1
+
+      at src/routes/scheduled-notifications.ts:1411:11
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/push-dispatch status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [PushDispatch] dispatched=0 skipped=1 total=1
+
+      at src/routes/scheduled-notifications.ts:1411:11
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/push-dispatch status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.error
+    [PushDispatch] Failed for notification i: boom
+
+      1402 |       else skipped++; // No device tokens found and Appilix not configured
+      1403 |     } catch (err: any) {
+    > 1404 |       console.error(`[PushDispatch] Failed for notification ${notif.id}:`, err.message || err);
+           |               ^
+      1405 |       // Still mark as handled to avoid infinite retries
+      1406 |       await markHandled(notif.id, 'dispatch_exception');
+      1407 |       skipped++;
+
+      at src/routes/scheduled-notifications.ts:1404:15
+
+  console.log
+    [PushDispatch] dispatched=0 skipped=1 total=1
+
+      at src/routes/scheduled-notifications.ts:1411:11
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/push-dispatch status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [PushDispatch] dispatched=0 skipped=2 total=2
+
+      at src/routes/scheduled-notifications.ts:1411:11
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04962-push-dispatch-outcome.test.ts
+  ✓ FCM errors only (no URL) → Appilix fallback fires; outcome delivered_appilix (27 ms)
+  ✓ FCM errors and Appilix reaches nobody → fcm_error (9 ms)
+  ✓ FCM delivers → delivered_fcm, no Appilix (10 ms)
+  ✓ no device → no_device (8 ms)
+  ✓ deep link: Appilix first, delivered_appilix (8 ms)
+  ✓ type switched off → suppressed_type_disabled (17 ms)
+  ✓ push disabled → suppressed_push_disabled (38 ms)
+  ✓ quiet hours → suppressed_dnd (15 ms)
+  ✓ exception → dispatch_exception, row still handled (14 ms)
+  ✓ push_sent_at is written before the outcome, for every row (6 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04674-notification-controls.test.ts
+  isNotificationTypeAllowed
+    ✓ answers the database switch: off → false (3 ms)
+    ✓ passes the automation id as the source key
+    ✓ reuses the answer within the cache window, re-reads after clear (1 ms)
+    ✓ fails open, loudly, when the switch cannot be read (1 ms)
+  isMemberCategoryAllowed
+    ✓ true/false from the database, null when unreadable (1 ms)
+  isInQuietHours
+    ✓ overnight span, in the given timezone (2 ms)
+    ✓ checks the member's local clock, not the server's UTC clock (1 ms)
+    ✓ an unset or "UTC" timezone (the profiles default) means Europe/Berlin (1 ms)
+    ✓ an invalid timezone falls back to UTC, loudly (1 ms)
+    ✓ HH:MM:SS values from Postgres time columns (1 ms)
+    ✓ off, incomplete or an empty window → never quiet (1 ms)
+  decidePushDelivery
+    ✓ admin switch off → not sent, counted as admin_off (2 ms)
+    ✓ member category off → not sent, counted as member_off (1 ms)
+    ✓ push switch off → not sent
+    ✓ quiet hours hold a normal push but not a P0 — in the member's saved timezone (4 ms)
+    ✓ loads the member prefs when not given
+    ✓ everything on → sent
+  setNotificationControl
+    ✓ switching on writes the row, the audit entry and the OASIS event (2 ms)
+    ✓ refuses to switch on a type whose text is English only (1 ms)
+    ✓ switching an English-only type OFF is always allowed
+    ✓ refuses to switch on an automation whose domain writes English only (1 ms)
+    ✓ rejects bad input (1 ms)
+  listNotificationControls
+    ✓ catalog + types seen only in the database, with switch state and category (3 ms)
+    ✓ stats that cannot be read come back as an error, never as zeros (2 ms)
+    ✓ the switch table itself failing is an error (54 ms)
+  catalog
+    ✓ every entry has both languages and a known audience (49 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04892-onboarding-journey-pacer.test.ts
+  VTID-04892: pacer surfaces — code and database agree
+    ✓ the latest CHECK lists exactly the ProactiveSurface union (3 ms)
+  VTID-04892: the onboarding journey surface in the pacer
+    ✓ allows the first onboarding touch of the day (1 ms)
+    ✓ only once per day on its own surface (1 ms)
+    ✓ another surface's touch uses a quiet member's only slot (cross-surface cap)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/night-push status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/night-push status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [Scheduled] night_push → dispatched=0 skipped={"wrong_hour":1,"already_closed":0,"already_pushed":0,"error":0} total_users=1
+
+      at src/routes/scheduled-notifications.ts:1609:11
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/night-push status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [Scheduled] night_push → dispatched=0 skipped={"wrong_hour":0,"already_closed":1,"already_pushed":0,"error":0} total_users=1
+
+      at src/routes/scheduled-notifications.ts:1609:11
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/night-push status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+PASS test/i18n/catalog-coverage.test.ts
+  gateway i18n catalog coverage
+    ✓ ships all 11 registered locales (1 ms)
+    ✓ de has every key DE has
+    ✓ en has every key DE has (1 ms)
+    ✓ es has every key DE has
+    ✓ sr has every key DE has
+    ✓ fr has every key DE has
+    ✓ pt has every key DE has
+    ✓ ru has every key DE has
+    ✓ pl has every key DE has
+    ✓ zh has every key DE has (1 ms)
+    ✓ tr has every key DE has
+    ✓ de has no empty values
+    ✓ en has no empty values (1 ms)
+    ✓ es has no empty values
+    ✓ sr has no empty values
+    ✓ fr has no empty values
+    ✓ pt has no empty values
+    ✓ ru has no empty values (1 ms)
+    ✓ pl has no empty values
+    ✓ zh has no empty values (1 ms)
+    ✓ tr has no empty values
+    ✓ ar is honestly incomplete (registered, not yet translated) and tt() falls back visibly (2 ms)
+  gateway i18n catalog fidelity
+    ✓ de is not a copy of the English catalog
+    ✓ es is not a copy of the English catalog
+    ✓ sr is not a copy of the English catalog
+    ✓ fr is not a copy of the English catalog (4 ms)
+    ✓ pt is not a copy of the English catalog
+    ✓ ru is not a copy of the English catalog
+    ✓ pl is not a copy of the English catalog (1 ms)
+    ✓ zh is not a copy of the English catalog (2 ms)
+    ✓ tr is not a copy of the English catalog (1 ms)
+  gateway i18n placeholder integrity
+    ✓ de preserves every {placeholder} exactly (1 ms)
+    ✓ en preserves every {placeholder} exactly (1 ms)
+    ✓ es preserves every {placeholder} exactly (1 ms)
+    ✓ sr preserves every {placeholder} exactly (1 ms)
+    ✓ fr preserves every {placeholder} exactly
+    ✓ pt preserves every {placeholder} exactly
+    ✓ ru preserves every {placeholder} exactly (1 ms)
+    ✓ pl preserves every {placeholder} exactly (3 ms)
+    ✓ zh preserves every {placeholder} exactly
+    ✓ tr preserves every {placeholder} exactly (1 ms)
+  locale resolution
+    ✓ resolves language words whose spelling does not match their ISO code (1 ms)
+    ✓ resolves BCP-47 tags the frontend language picker writes (4 ms)
+    ✓ distinguishes "unknown" from "German" (strict resolver) (2 ms)
+  tt() fallback chain
+    ✓ returns the locale value when present
+    ✓ substitutes placeholders
+    ✓ leaves unknown placeholders untouched rather than printing undefined (1 ms)
+    ✓ falls back to an unknown locale via German, not a raw key (4 ms)
+
+  console.log
+    [Scheduled] night_push → dispatched=0 skipped={"wrong_hour":0,"already_closed":0,"already_pushed":1,"error":0} total_users=1
+
+      at src/routes/scheduled-notifications.ts:1609:11
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/night-push status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [Scheduled] night_push → dispatched=1 skipped={"wrong_hour":0,"already_closed":0,"already_pushed":0,"error":0} total_users=1
+
+      at src/routes/scheduled-notifications.ts:1609:11
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/night-push status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [Scheduled] night_push → dispatched=1 skipped={"wrong_hour":0,"already_closed":0,"already_pushed":0,"error":0} total_users=1
+
+      at src/routes/scheduled-notifications.ts:1609:11
+
+PASS test/scheduled-notifications-night-push.test.ts
+  POST /night-push
+    ✓ 400 without tenant_id (27 ms)
+    ✓ wrong local hour → skipped, nothing dispatched (7 ms)
+    ✓ already got the spoken day-close tonight → skipped, defers to it (7 ms)
+    ✓ already pushed tonight → skipped, once per night (8 ms)
+    ✓ a STALE day-close from a previous night does not suppress tonight (1 ms)
+    ✓ happy path: dispatches the localized push and stamps last_night_push_date FIRST (11 ms)
+    ✓ force=true bypasses the local-hour gate (9 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-05055-member-link-migration.test.ts
+  VTID-05055 migration
+    ✓ exists (1 ms)
+    ✓ is additive only — no drops, no RLS/policy changes, no deletes (3 ms)
+    ✓ adds every proposal column idempotently, all nullable except the declined-users array (2 ms)
+    ✓ constrains member_link_status to the three states
+    ✓ indexes pending requests by the proposed member (member reads are scoped by user)
+    ✓ switches partner_link_request ON exactly like VTID-04926 (idempotent, keeps an admin "off") (2 ms)
+  VTID-05055 gateway registries agree with the migration
+    ✓ the admin notification catalog lists partner_link_request as member/health with localized text
+    ✓ the notification type config sends it as push + in-app
+    ✓ the OASIS event union has the new health_test.* types (2 ms)
+    ✓ the notification text is translated in every shipped locale, DE in du-form (3 ms)
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2182:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2189:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2213:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:2238:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:2441:11)
+
+PASS test/vtid-04560-role-separation-regression.test.ts (5.123 s)
+  resolveAssistantProfile — the screen decides, the token verifies
+    ✓ work surface command-hub serves role /command-hub/autopilot/live/ from the first byte (20 ms)
+    ✓ work surface admin serves role /admin/dashboard from the first byte (1 ms)
+    ✓ work surface backoffice serves role /backoffice/dashboard from the first byte (1 ms)
+    ✓ work surface commerce serves role /commerce/org from the first byte (1 ms)
+    ✓ the device never changes the surface: a phone on the Command Hub is still the Command Hub (1 ms)
+    ✓ community screens serve the declared member role; a work role there is narrowed to community (1 ms)
+    ✓ a declared surface wins over the route (the host knows what it renders)
+    ✓ an unknown declared surface falls back to the route, never to a crash or undefined
+    ✓ Command Hub without an exafy_admin claim is unverified — still the developer persona, never community (1 ms)
+    ✓ anonymous sessions stay on the member surface with no role (1 ms)
+    ✓ clampRoleToProfile: stored roles never leak across surfaces (1 ms)
+    ✓ session helpers read the profile; sessions without one keep the legacy derivation (1 ms)
+  greeting ladder — a work surface never reaches a member rung
+    ✓ developer on the Command Hub opens with work_surface_open — normal ladder (context resolved) (3 ms)
+    ✓ developer on the Command Hub opens with work_surface_open — safe-fast ladder (context NOT resolved — the 300 ms gate case) (2 ms)
+    ✓ admin surface opens with its own role opener (2 ms)
+    ✓ backoffice surface opens with its own role opener (1 ms)
+    ✓ commerce surface opens with its own role opener (1 ms)
+    ✓ no facts loaded → the opener offers to check, it does not invent (1 ms)
+    ✓ VTID-04586: a work surface skips the member payload gathers — normal ladder (context resolved) (1 ms)
+    ✓ VTID-04586: a work surface skips the member payload gathers — safe-fast ladder (context NOT resolved — the 300 ms gate case)
+    ✓ VTID-04586: the member surface still gathers — normal ladder (context resolved) (1 ms)
+    ✓ VTID-04586: the member surface still gathers — safe-fast ladder (context NOT resolved — the 300 ms gate case)
+    ✓ VTID-04586: the opener speaks from the loaded facts and calls no tool first (1 ms)
+    ✓ VTID-04586: the developer conduct rule no longer demands a tool call for facts the snapshot covers (1 ms)
+    ✓ a genuine transport reconnect stays silent on a work surface too
+    ✓ the member surface is untouched: no surface field, or vitanaland, never takes the work rung (2 ms)
+    ✓ workSurfaceGreetingFields feeds the rung from the session; member sessions add nothing (1 ms)
+  system instruction — each surface carries only its own Vitana
+    ✓ Command Hub: developer supervisor conduct, the work context, and no member content even when it is concatenated in (32 ms)
+    ✓ Command Hub with no work context carries no bootstrap at all (never the member brain) (3 ms)
+    ✓ admin: work conduct block, no member content (4 ms)
+    ✓ backoffice: work conduct block, no member content (3 ms)
+    ✓ commerce: work conduct block, no member content (3 ms)
+    ✓ member surface keeps the member Vitana exactly as before (2 ms)
+    ✓ every surface keeps the stop-and-farewell rule (4 ms)
+    ✓ extractWorkSurfaceContext keeps only the marked section (1 ms)
+  text path — engineering context only for the console and developer/admin callers
+    ✓ the Operator Console itself (no custom instruction) keeps it
+    ✓ developer caller with a custom instruction keeps it (1 ms)
+    ✓ admin caller with a custom instruction keeps it (1 ms)
+    ✓ infra caller with a custom instruction keeps it
+    ✓ exafy_admin caller with a custom instruction keeps it
+    ✓ member caller community never receives it
+    ✓ member caller patient never receives it
+    ✓ member caller professional never receives it
+    ✓ member caller staff never receives it
+    ✓ member caller undefined never receives it (1 ms)
+  source contracts — the wiring cannot silently disappear
+    ✓ the controller resolves the profile from the declared surface/view_role and stores it on the session
+    ✓ work surfaces skip the member brain and the member wake-brief
+    ✓ the old route override and phone-means-community rule are gone (1 ms)
+    ✓ the setup envelope reads role, surface and tools from the profile (2 ms)
+    ✓ every greeting context carries the work-surface fields (1 ms)
+    ✓ the Nova prewarm resolves the same profile and member role as the session start (1 ms)
+    ✓ the widget declares surface + view_role and restarts on a role switch (1 ms)
+    ✓ the Command Hub declares the developer surface (2 ms)
+  VTID-04561 role registry — one declarative answer per role
+    ✓ every Vitana role has an entry
+    ✓ member-plane roles are served on the member surface by the member ladder; work roles on their surface (2 ms)
+    ✓ privileged voice tools follow the registry, never a member role (1 ms)
+    ✓ the profile persona comes from the registry
+    ✓ the tool catalog has no hard-coded privileged-role list left (1 ms)
+  VTID-04561 one role truth — both switchers write both tables
+    ✓ set_role_preference (community app) also writes user_active_roles
+    ✓ me_set_active_role (Command Hub) also writes role_preferences (1 ms)
+    ✓ the Command Hub switches into the community app of its own environment (13 ms)
+  VTID-04562 domain atlas — a map that cannot silently fall behind the code
+    ✓ every gateway route file is claimed by at least one domain (drift guard) (18 ms)
+    ✓ keys are unique and every domain names code, tables and docs or flags (3 ms)
+    ✓ the developer's words find the right domain (2 ms)
+    ✓ the prompt index is one line per domain and names the lookup tool (1 ms)
+  VTID-04562 live system snapshot — facts with a timestamp, never a throw
+    ✓ critical facts lead the highlights (kill switch, provider outage, error spike) (1 ms)
+    ✓ a clean system says so instead of inventing a problem (1 ms)
+    ✓ a failed source renders as unavailable, the rest still renders (1 ms)
+    ✓ snapshots are cached and concurrent builds coalesce into one (1 ms)
+  VTID-04562 developer knowledge loader — fails open, never member memory
+    ✓ snapshot, atlas and engineering memory all reach the session (2 ms)
+    ✓ failing sources degrade to null, the atlas stays (1 ms)
+    ✓ the Command Hub loader is registered and the member surface gets nothing (4 ms)
+    ✓ the developer loader reads dev_agent_memory, never the member memory tables (1 ms)
+  VTID-04562 developer knowledge tools
+    ✓ both tools are declared for developers and registered with a handler (8 ms)
+    ✓ a community caller is refused (1 ms)
+    ✓ dev_domain_atlas answers a topic with code, tables and docs (1 ms)
+    ✓ the developer conduct block names both tools (1 ms)
+  VTID-04562 text path — the tool-result turn is gated like the main turn
+    ✓ sendToolResultsToVertex only loads the pack for engineering callers (2 ms)
+  VTID-04563 deep dive — read-only tools with guard rails
+    ✓ the probe only GETs /alive and /api/v1/* on the two known hosts (1 ms)
+    ✓ file windows are numbered and bounded (1 ms)
+    ✓ a screen resolves by id, route or title to its App.tsx mount (1 ms)
+    ✓ the executor routes every tool and never throws (9 ms)
+  VTID-04563 deep dive — only developers, on the planner stage, with telemetry
+    ✓ member and admin-surface callers are refused before any model call (2 ms)
+    ✓ a developer question runs bounded on the planner stage and reports findings with telemetry (6 ms)
+    ✓ a loop failure is reported as failed, never as findings (2 ms)
+    ✓ the target is registered for the Command Hub only, read tier (1 ms)
+    ✓ the Command Hub catalog declares dev_deep_dive; the member and admin catalogs never do (4 ms)
+    ✓ a delegation caller carries the served role from the profile (1 ms)
+    ✓ orb-live dispatches dev_deep_dive to the async runner (6 ms)
+  VTID-04564 the Operator Console shares the developer knowledge and deep dive
+    ✓ the console declares the same three developer tools the voice assistant has (2 ms)
+    ✓ engineering callers get the atlas in the prompt; the snapshot stays one tool call away (1 ms)
+    ✓ the console deep dive requires the verified caller on the thread (1 ms)
+  VTID-04565 developer-assistant evaluation set
+    ✓ 60+ questions, every domain covered, every expected tool declared (15 ms)
+    ✓ the atlas routes at least 90% of the questions to the right domain (4 ms)
+    ✓ the live eval script refuses any host but staging and uses the machine credential (1 ms)
+  VTID-04565 telemetry — which Vitana served, and how deep dives went
+    ✓ profiles are counted per surface and resolution (1 ms)
+    ✓ the snapshot reports them and reads them in its one events query (1 ms)
+  VTID-04654 admin opener — facts are the insights, and the briefing is not fetched twice
+    ✓ each numbered insight becomes one fact with its detail; the instruction text is never a fact (6 ms)
+    ✓ a block without numbered items still yields plain lines, minus headings (1 ms)
+    ✓ the admin opener carries the insights as its facts (1 ms)
+    ✓ the admin instruction says the briefing is already loaded, so the no-tool opener has no conflict (3 ms)
+  VTID-04655 me_set_active_role writes role_preferences for a real Supabase token
+    ✓ the preference tenant falls back to the token claim, then the primary membership, members only (1 ms)
+    ✓ the backfill only repairs single-membership users (user_active_roles carries no tenant) (1 ms)
+    ✓ authorization is unchanged: still current_tenant_id() + check_role_permitted, exafy-admin otherwise (1 ms)
+  VTID-04656 the live eval sends thread ids the chat route accepts
+    ✓ the eval script sends a UUID, which is what the route validates (1 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 12 passed, 12 total
+Tests:       285 passed, 285 total
+Snapshots:   0 total
+Time:        6.857 s, estimated 8 s
+Ran all test suites matching /test\/vtid-04560-role-separation-regression.test.ts|test\/vtid-04892-onboarding-journey-pacer.test.ts|test\/i18n\/catalog-coverage.test.ts|test\/chat-vitana-reply.test.ts|test\/vtid-04674-notification-controls.test.ts|test\/vtid-04962-push-dispatch-outcome.test.ts|test\/vtid-05055-member-link-migration.test.ts|test\/scheduled-notifications-daily-feature-tip.test.ts|test\/scheduled-notifications-night-push.test.ts|test\/scheduled-notifications-whats-new.test.ts|test\/vtid-04677-scheduled-notifications-auth.test.ts|test\/vtid-04892-onboarding-coach.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -271,7 +271,11 @@ SCHEDULED_NOTIFICATIONS_AUTH_MODE=log
 # Enabled with a missing / < 32-byte secret = 503 PHONE_VERIFY_MISCONFIGURED.
 # SMS go through AWS End User Messaging SMS (sms-voice:SendTextMessage on the
 # task role; account out of the SMS sandbox; spend limit set) — owner setup
-# before switching on.
+# before switching on. VTID-05127: scripts/aws/setup-phone-verify-sms.sh does
+# the setup; the deploys wire it (staging: secret
+# vitana/gateway/staging/phone-verify-hmac present = on; production: repository
+# variables PHONE_VERIFY_HMAC_SECRET_PROD_ARN + PHONE_VERIFY_PROD_ENABLED=true,
+# scripts/ci/phone-verify-wiring.sh). Runbook: docs/validation/VTID-05127/SWITCH-ON.md.
 PHONE_VERIFY_ENABLED=true
 PHONE_VERIFY_HMAC_SECRET=xxx
 PHONE_VERIFY_COUNTRIES=DE,AT,CH

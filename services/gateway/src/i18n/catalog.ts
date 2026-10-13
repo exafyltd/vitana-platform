@@ -261,13 +261,20 @@ export type GatewayI18nKey =
   | 'notif.chat_mention.title'
   // VTID-05104: generic calendar-invite push body (no title/time/place on the lock screen)
   | 'notif.calendar_invite.body'
+  // VTID-05137: body of the one push a burst of chat messages gets
+  // ("{count} new messages · {preview}") — see chat-push-coalescer.ts
+  | 'notif.chat_burst.body'
   // VTID-03604: nightly goodnight push — the "you didn't open ORB tonight"
   // counterpart to the spoken day-close. Fixed catalog text, not
   // LLM-composed: unlike the ORB voice path (CLAUDE.md NEVER-rule 41), a
   // push notification has a fixed contract and must stay translated and
   // reviewable, same as every other entry in this file.
   | 'notif.day_close.title'
-  | 'notif.day_close.body';
+  | 'notif.day_close.body'
+  // VTID-05100: push for a Vitana Companion Message. The DM itself is composed
+  // by the model (rule 41); the lock-screen title/body are fixed catalog text.
+  | 'notif.vitana_companion_message.title'
+  | 'notif.vitana_companion_message.body';
 
 type LocaleCatalog = Record<GatewayI18nKey, string>;
 

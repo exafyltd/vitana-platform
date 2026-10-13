@@ -1,0 +1,22 @@
+{
+  "vtid": "VTID-05137",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "an unsigned DM send is refused (route still mounted after the coalescing change)",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/api/v1/chat/send",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "reason": "rejected probe, nothing is written"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05137-chat-push-coalescing.test.ts test/vtid-04962-push-outcome.test.ts test/vtid-04926-chat-group-mentions.test.ts test/vtid-05104-calendar-invite-guard.test.ts",
+      "cwd": "services/gateway",
+      "reason": "coalescing decisions, held-back pushes (row written, no FCM/Appilix), burst summary, mentions and invites always push, chat tag; every case needs a write so it is proven in CI, never on staging"
+    }
+  ]
+}

@@ -1169,6 +1169,22 @@ jobs:
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Calendar gates pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name | startswith("CALENDAR_")) | .name]')"
 
+      - name: Build task-definition (phone verification)
+        # VTID-05127: phone verification by SMS code (VTID-05095) ships off.
+        # The owner switches it on with two repository variables after
+        # scripts/aws/setup-phone-verify-sms.sh --env prod --apply and the AWS
+        # SMS sandbox exit (docs/validation/VTID-05127/SWITCH-ON.md):
+        #   PHONE_VERIFY_HMAC_SECRET_PROD_ARN  full ARN (this role has no
+        #     secretsmanager:Describe*); empty = no secret ref
+        #   PHONE_VERIFY_PROD_ENABLED          exact 'true' = on
+        # On without the ARN fails here. Logic: scripts/ci/phone-verify-wiring.sh.
+        # Off-switch without touching the variables: env_overrides
+        # {"PHONE_VERIFY_ENABLED":"false"} (step 2/2 runs after this one).
+        env:
+          PHONE_VERIFY_ARN: ${{ vars.PHONE_VERIFY_HMAC_SECRET_PROD_ARN }}
+          PHONE_VERIFY_ENABLED_VAR: ${{ vars.PHONE_VERIFY_PROD_ENABLED }}
+        run: bash scripts/ci/phone-verify-wiring.sh /tmp/vitana-new-task-def.json
+
       - name: Build task-definition (2/2 — optional overrides) + register + roll the service
         id: roll
         env:

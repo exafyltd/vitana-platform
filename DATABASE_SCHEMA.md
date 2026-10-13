@@ -1194,6 +1194,10 @@ CREATE TABLE public.plan_sparring_shadow_log (
   `vtid.plan_sparring.tamper_detected`), not prevented. Mode changes only by a
   reviewed migration.
 
+### supabase_migrations.schema_migrations — audit trail, not the authority (VTID-05123)
+
+Since VTID-05123, RUN-MIGRATION writes one row per applied repo file under `supabase/migrations/` (`idempotency_key` = filename, `version`/`name` = its digit prefix and rest, `created_by` = `github-actions:RUN-MIGRATION:<run_id>`) in the same request as the migration; older rows carry MCP/dashboard apply-time versions and most repo files have no row, so "no row" never means "not applied" — MIGRATION-DRIFT-CHECK (VTID-03486) is the authority.
+
 ---
 
 ## ⚠️ DEPRECATED / DO NOT USE
@@ -1486,6 +1490,8 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-10-13 | VTID-05137, **committed; applied via `RUN-MIGRATION.yml` before merge** (migration `20261013180000_vtid_05137_chat_push_coalescing.sql`, additive, idempotent): `user_notifications_push_outcome_check` re-created with `coalesced` added (chat push held back because the recipient was already pushed for that conversation in the last 5 minutes and has not read it; the row is still written with `push_sent_at` set and `data.push_coalesced='true'`). New partial index `idx_user_notifications_chat_conv (user_id, (data->>'conversation_key'), created_at DESC) WHERE type IN ('new_chat_message','chat_mention')` for the coalescer's one read per message. Every chat notification row now carries `data.conversation_key` (`dm:<sender>` / `group:<group>`) and `data.tag`. Written/read by `services/chat-push-coalescer.ts` + `notifyUser(..., { suppressPush: 'coalesced' })`; off switch `CHAT_PUSH_COALESCING_ENABLED=false`. Rollback `docs/validation/VTID-05137/rollback.sql`. | Claude Code | VTID-05137 |
+| 2026-10-12 | VTID-05125, **committed, NOT applied** (migration `20261013090000_vtid_05125_memory_functions_revoke_migrate.sql`, access only; applied via `RUN-MIGRATION.yml` after a read-only before-state check): the `migrate` role (AWS DMS source role for the Aurora migration) loses EXECUTE on `write_fact`, `get_current_facts`, `recall_at_time_range` and `memory_facts_semantic_search` — VTID-05041 had revoked `PUBLIC`/`anon`/`authenticated` only, and the live ACL still carried `migrate=X/postgres`. DMS never calls application RPCs. The migration refuses to apply unless `migrate` (when present) cannot execute any of the four, `service_role` still can, members still cannot, and exactly 4 overloads exist. Rollback: `docs/validation/VTID-05125/rollback.sql`. `migrate`'s EXECUTE on other service-only DEFINER functions (FU9a) and its table SELECT / `postgres` default ACL (FU9b) are separate follow-ups. | Claude Code | VTID-05125 |
 | 2026-10-10 | VTID-05041, **committed, NOT applied** (migration `20261010164100_vtid_05041_definer_functions_lockdown.sql`, access + one return shape; applied via `RUN-MIGRATION.yml` after `20261008170000_vtid_04981_consume_credits_lockdown.sql`, which it requires): `write_fact`, `get_current_facts`, `recall_at_time_range` and `memory_facts_semantic_search` (every overload) are EXECUTE for `service_role` only — `PUBLIC`/`anon`/`authenticated` revoked (they take `p_user_id`, never check `auth.uid()`, and any member could read/overwrite any member's facts). `get_user_profile_by_identifier(text)` no longer returns `email` (DROP + CREATE, body otherwise unchanged; EXECUTE for `anon`, `authenticated`, `service_role`, not `PUBLIC`). The migration refuses to apply unless that end state holds and `fn_consume_credits` is closed. Rollback (never re-exposes email): `docs/validation/VTID-05041/rollback.sql`. New SECURITY DEFINER functions in later migrations must revoke `PUBLIC` and `anon` in the same file or carry `-- definer-public: <reason>` (CI guard in `services/gateway/test/vtid-05041-definer-lockdown.test.ts`). | Claude Code | VTID-05041 |
 | 2026-10-10 | VTID-05029, **committed; applied via `RUN-MIGRATION.yml` before merge** (migration `20261010130000_vtid_05029_email_fallback.sql`, additive, idempotent): nullable `user_notifications.email_fallback_sent_at timestamptz` (row included in a fallback digest email Resend accepted; NULL = not emailed) and `user_notification_preferences.email_fallback_enabled boolean NOT NULL DEFAULT true` (member opt-out; `push_enabled=false` also suppresses). Partial indexes `idx_user_notifications_email_fallback_pending (created_at) WHERE email_fallback_sent_at IS NULL AND read_at IS NULL AND push_outcome IN ('no_device','fcm_error')` and `idx_user_notifications_email_fallback_sent (user_id, email_fallback_sent_at DESC) WHERE email_fallback_sent_at IS NOT NULL`. Written/read by `services/email/notification-email-fallback.ts` (inert until `EMAIL_FALLBACK_ENABLED=true` + Resend configured; never on staging). | Claude Code | VTID-05029 |
 | 2026-10-10 | VTID-05027, **committed; applied via `RUN-MIGRATION.yml` before merge** (migration `20261010120000_vtid_05027_push_reach_active.sql`, additive, read-only function): `push_reach_active(p_days int default 7)` → `(active, eligible, reached bigint)`. `active` = members who read a notification, opened the app (`user_device_session_log`) or sent a chat message in the window; `eligible` = active members with a recorded, non-`suppressed_*` `push_outcome`; `reached` = eligible members with a `delivered_*` outcome. Excludes `notification_test_actors` and `service_bot_accounts`. SECURITY DEFINER, `search_path=public`, EXECUTE for `service_role` only. Read by `GET /api/v1/ops/health/push-dispatch` (`active_reach_7d`; `degraded` / `active_member_reach_low` when ≥10 eligible and < 90 % reached). | Claude Code | VTID-05027 |
@@ -1542,6 +1548,7 @@ CREATE TABLE my_new_table (
 | 2026-01-03 | Added risk_mitigations table for D49 Proactive Health & Lifestyle Risk Mitigation Layer | Claude | VTID-01143 |
 | 2026-09-28 | Five feature data layers that were documented/declared but never existed live, now APPLIED: autopilot_prompts + autopilot_prompt_prefs, risk_mitigations, overload_*, taste_*/user_*_profiles, preference modeling (explicit table renamed user_explicit_preferences; public.user_preferences is the settings table). New `caller_tenant_id()`. See the section at the end of this file. | Claude | VTID-04716 / 04717 / 04718 / 04719 / 04720 |
 | 2026-04-19 | Added ai_provider_policies, ai_assistant_credentials, ai_consent_log + extended connector_registry.category to include 'ai_assistant' | Claude | VTID-02403 |
+| 2026-10-13 | Seeded `routines` rows `llm-spend-budget` (`50 23 * * *`) and `llm-fallback-watch` (`15 7 * * *`) for the gateway routine runner (migration 20261013190000, additive, ON CONFLICT DO NOTHING). No schema change. | Claude | VTID-05141 |
 | 2026-04-27 | Added routines + routine_runs tables for daily Claude Code remote-agent catalog and run history | Claude | VTID-01981 |
 | 2026-04-28 | Added `pillar` + `contribution_vector` columns to `calendar_events` for typed Vitana Index linkage (replaces `pillar:*` wellness_tag heuristic on the frontend) | Claude | claude/vitana-index-navigation-VdSEQ |
 | 2026-09-23 | Triggers `trg_event_participation_calendar` (global_event_participants → calendar_events) + `trg_calendar_dedupe_event_rsvp`, so community event sign-ups reach the calendar on every path. No table/column change. | Claude | VTID-04321 |
@@ -3361,7 +3368,7 @@ Plan and rationale: `docs/MEMORY-SYSTEM-PLAN.md`. Canonical user memory is two t
 - **`write_fact(...)`** — if the current fact for (tenant, user, entity, fact_key) has the same value (trimmed, case-insensitive) and the incoming provenance is not stronger, returns the existing id and writes nothing. Strength: `user_*` 3 > `system_observed` 2 > `assistant_inferred` 1 > other 0. A different value, or a stronger source confirming the same value, supersedes as before.
 - **Embeddings** are written by the gateway only (`services/gateway/src/services/memory-embedding.ts`): on write (`memory_items`, fire-and-forget), async after `write_fact` (facts), and by the hourly AP-0910 backfill for anything left NULL. No fallback provider — a vector from another model is never written into these columns.
 - **Search RPCs** `memory_semantic_search(vector, …)` and `memory_facts_semantic_search(vector, …)` take an untyped `vector` and compare with `<=>`; they need no change when the dimension changes.
-- **Access (VTID-05041):** `write_fact`, `get_current_facts`, `recall_at_time_range` and `memory_facts_semantic_search` are SECURITY DEFINER and take `p_user_id` without an `auth.uid()` check, so EXECUTE is `service_role` only (the gateway). Never grant them to `authenticated`/`anon`/`PUBLIC`; a member-facing path goes through the gateway.
+- **Access (VTID-05041):** `write_fact`, `get_current_facts`, `recall_at_time_range` and `memory_facts_semantic_search` are SECURITY DEFINER and take `p_user_id` without an `auth.uid()` check, so EXECUTE is `service_role` only (the gateway). Never grant them to `authenticated`/`anon`/`PUBLIC`; a member-facing path goes through the gateway. Since VTID-05125 the `migrate` (DMS) role does not hold EXECUTE either.
 - **Diary** — the broker reads both `diary_entries` (the app's Daily Diary; `user_id`, no tenant column) and `memory_diary_entries`, merged newest-first.
 - **`ci_memory_health()`** — `SECURITY DEFINER`, `service_role` only, counts only: writes/24h, `preferred_language` writes/24h, embedding coverage of rows older than 2h, `dlq_new_24h`, `memory.orchestrator.context_built` with memory / with diary, AP-0910 last run. Read by `MORNING-SYSTEM-HEALTH-CHECK.yml` check 21. Since VTID-05088 also `user_speech_turns_24h` and `transcript_turns_24h`, so a day nobody spoke is not read as a broken writer.
 - **`ci_welcome_greeting_health()`** — `SECURITY DEFINER`, `service_role` only (VTID-03492, VTID-05052): welcome-trigger structure (present, enabled, SECURITY DEFINER, on `user_tenants`) plus 24h `signups_24h` / `greeted_senders_24h` / `unflagged_24h`; signups exclude the welcome bot, `service_bot_accounts` and `notification_test_actors`. Read by `ALERT-WELCOME-GREETING-HEALTH.yml`, `SMOKE-WELCOME-GREETING.yml` and `MORNING-SYSTEM-HEALTH-CHECK.yml` check 9.
@@ -3889,3 +3896,43 @@ Uniqueness: `(user_id, local_date, mode)`, plus partial unique index `uq_compani
 Functions (SECURITY DEFINER, `service_role` only): `claim_companion_message(user, tenant, local_date, mode, sender, moment_key, card_type, facts) → {ok, claimed, id|reason}`, `finish_companion_message(id, status, composed_text, model, chat_message_id)` (pending rows only), `mark_companion_replied(user)` (latest unreplied real send).
 
 Also: `user_proactive_touches.surface` CHECK gains `messenger_companion` (presence-pacer surface). OASIS (`CicdEventType`): `companion.tick.completed` — one aggregate event per tick that decided something.
+
+## "Connect your AI" — `ai_connection_grants` (VTID-05133, 2026-10-13) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261013150000_vtid_05133_ai_connection_grants.sql` (additive). What each AI assistant a member connected to Maxina (a Supabase OAuth client, e.g. ChatGPT or Claude) may use through the MCP tools. Supabase tokens are not bound to one resource, so this row is what separates the Community connector (`/mcp/community*`) from Commerce (`/mcp`, `/mcp/chatgpt`) and makes "Disconnect" in Maxina immediate. Plan: `docs/validation/VTID-05133/plan-sparring.md`.
+
+| Column | Meaning |
+|---|---|
+| `user_id` | PK part, `auth.users(id)` ON DELETE CASCADE |
+| `client_id` | PK part, Supabase `auth.oauth_clients.id` (resolved server-side from the pending authorization) |
+| `client_name`, `redirect_host`, `resource` | what the member saw on the consent screen; `resource` is the MCP URL the assistant asked for |
+| `categories` | subset of `profile`, `matches`, `people`, `activities`, `commerce` (CHECK) |
+| `revoked_at` | set when the member disconnects; every tool then refuses |
+
+RLS: members SELECT their own rows; no direct INSERT/UPDATE/DELETE for `authenticated`; `service_role` reads (gateway).
+
+Functions (SECURITY DEFINER, `authenticated`, act only as `auth.uid()`): `ai_connection_authorization_info(authorization_id) → {client_id, client_name, redirect_host, resource, product}` (pending authorizations only; `product` = `community` | `commerce` | `unknown`), `ai_connection_grant_from_authorization(authorization_id, categories)` (consent screen, before approving with Supabase; clears `revoked_at`), `ai_connection_grant_update(client_id, categories)` (active rows only), `ai_connection_grant_revoke(client_id)`.
+
+Gateway rules (`services/gateway/src/services/ai-connection-grants.ts`): Community needs an active row with the tool's category (no row → PERMISSION_NEEDED, revoked → CONNECTION_REVOKED, lookup error → 503). Commerce refuses a client whose row lacks `commerce` or is revoked; a client with no row (connected before VTID-05133) is unchanged.
+
+Read alongside (column added by `exafyltd/vitana-v1`, same VTID): `profile_privacy_settings.ai_discoverable boolean NOT NULL DEFAULT false` — a member is shown by identity to other members' AI assistants only when true (and `searchable`). OASIS (`CicdEventType`): `community.mcp.tool_called`, `community.mcp.client_refused`, `community.mcp.loopback_client_approved`.
+
+## Unified Card System — `user_enrichment_cards`, `profiles.interests` (VTID-05143, builds VTID-05085 Phase 1, 2026-10-13) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261013200000_vtid_05143_unified_card_system.sql` (additive, idempotent). Plan: `docs/validation/VTID-05085/plan-sparring.md` (§3.2, §6.2, §6.3); build record `docs/validation/VTID-05143/`. Read and written by the gateway (`services/gateway/src/routes/enrichment-cards.ts`, service_role), always for the caller's own `user_id`.
+
+### user_enrichment_cards (one row per member per dismissed enrichment card)
+
+| Column | Meaning |
+|---|---|
+| `user_id` | PK part, `auth.users(id)` ON DELETE CASCADE |
+| `card_type` | PK part, `E1`–`E11` (validated by the gateway catalog `services/enrichment/card-catalog.ts`; no CHECK so Phase 3 boost cards need no migration) |
+| `dismissed_at` | last dismissal; the card is hidden while `dismissed_at + cooldown_days > now()` |
+| `cooldown_days` | default `7` |
+| `created_at`, `updated_at` | timestamps (`updated_at` set by the gateway on dismiss) |
+
+No `completed_at`: completion is derived from the source tables (`profiles`, `profile_posts`, `social_connections` `is_active`/`disconnected_at`, `connected_app_settings` calendar apps, `contacts`, `user_device_tokens` `revoked_at IS NULL`). Index `idx_user_enrichment_cards_user (user_id)`. RLS: members select / insert / update their own rows; `service_role` all.
+
+### profiles.interests
+
+`TEXT[] DEFAULT '{}'` — the member's interests as stable slugs (`fitness`, `nutrition`, …), never display text; the app resolves labels via `screens.interests.<slug>`. Enrichment card E4 is complete when it is non-empty.

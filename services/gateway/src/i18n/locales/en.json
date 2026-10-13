@@ -132,6 +132,7 @@
   "notif.listing_interest.body": "Someone is interested in \"{title}\".",
   "notif.chat_mention.title": "{sender} mentioned you in \"{group}\"",
   "notif.calendar_invite.body": "{name} invited you to an event",
+  "notif.chat_burst.body": "{count} new messages · {preview}",
   "notif.day_close.title": "Good night 🌙",
   "notif.day_close.body": "The day's done — if anything's still on your mind, tell me quickly.",
   "notif.partner_test_status_changed.title": "Update from {partner_name}",
@@ -194,5 +195,7 @@
   "autopilot.auto.event_rsvp_referral.summary": "You came in through an event invite. Sign up so your place is saved.",
   "autopilot.auto.share_milestone.title": "Share your milestone: {milestone}",
   "autopilot.auto.share_milestone.summary": "You reached a milestone. Share it with the community — you'll see the post before it goes out.",
-  "sms.phone_verification.code": "Your Vitanaland code: {code}. Don't share it with anyone."
+  "sms.phone_verification.code": "Your Vitanaland code: {code}. Don't share it with anyone.",
+  "notif.vitana_companion_message.title": "Message from Vitana",
+  "notif.vitana_companion_message.body": "Vitana wrote to you — tap to read her message."
 }

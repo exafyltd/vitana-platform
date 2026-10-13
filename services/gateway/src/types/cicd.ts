@@ -159,6 +159,13 @@ export type CicdEventType =
   | 'onboarding.coach.stage_changed'
   // VTID-05099: Vitana Companion Messages — one aggregate event per tick that decided something.
   | 'companion.tick.completed'
+  // VTID-05100: a real companion DM delivered / failed (per member — a real
+  // state transition, unlike the shadow tick), and a member's own settings change.
+  | 'companion.message.sent'
+  | 'companion.message.failed'
+  | 'companion.preferences.updated'
+  // VTID-05143: a member dismissed a Unified Card System enrichment card (7-day cooldown).
+  | 'enrichment_card.dismissed'
   | 'cicd.github.create_pr.requested'
   | 'cicd.github.create_pr.succeeded'
   | 'cicd.github.create_pr.failed'
@@ -1138,6 +1145,12 @@ export type CicdEventType =
   | 'commerce.mcp.delegated_token_blocked'
   | 'commerce.mcp.client_refused'
   | 'commerce.mcp.loopback_client_approved'
+  // VTID-05135: TEMPORARY - an unauthenticated probe of /mcp/chatgpt or its discovery documents (remove with auditProbe)
+  | 'commerce.mcp.probe'
+  // VTID-05133: Maxina Community MCP ("Connect your AI")
+  | 'community.mcp.tool_called'
+  | 'community.mcp.client_refused'
+  | 'community.mcp.loopback_client_approved'
   | 'partner_org.sandbox_submitted'
   // VTID-04859: a Founding Member saw (and closed) their free-year celebration.
   | 'billing.founding.celebrated'

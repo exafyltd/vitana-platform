@@ -46,4 +46,4 @@ Disabling the merge-time hold turns 2 scenarios red; disabling the claim-time ho
 - **GitHub or config unreadable.** No claim and no merge that tick (retried next tick); never a hold, never a "no overlap".
 - **`frozen_scope` initial value.** Set by the migration to the Command Hub frontend (plan C2) only when the column still holds its default.
 - **Plan hash.** Recorded on the master sparring record as sha256 of the raw marker text (`2c184d7b…`); the canonical algorithm gives `286c96ec…` for the same, unchanged text. Kept as recorded; noted in `plan-sparring.md`.
-- **Asset bump.** app.js and styles.css move to `?v=20261118-vtid-05146`; every staging suite and test that pinned the previous version follows (VTID-04696 rule).
+- **Asset bump.** app.js and styles.css move to `?v=20261120-vtid-05146`; every staging suite and test that pinned the previous version follows (VTID-04696 rule).

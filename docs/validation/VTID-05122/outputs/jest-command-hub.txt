@@ -1,0 +1,4 @@
+    ✓ dropping image files adds chips; ✕ removes one (and frees its preview); type, size and count are checked (5 ms)
+    ✓ the ✕ (unicode) close button on the AI assistant drawer has an aria-label (1 ms)
+Test Suites: 54 passed, 54 total
+Tests:       787 passed, 787 total

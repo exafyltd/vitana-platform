@@ -10346,16 +10346,11 @@ function renderTaskDrawer() {
                 approveBtn.disabled = true;
                 approveBtn.textContent = 'Approving...';
                 try {
-                    // VTID-01229: Use state.meContext instead of deprecated MeState.me
-                    var userId = state.meContext?.user_id || state.meContext?.email || 'unknown';
-                    var userRole = state.meContext?.active_role || 'operator';
+                    // VTID-05122: the approver is resolved server-side from the Bearer JWT
+                    // (VTID-05048); no identity headers are sent.
                     var response = await fetch('/api/v1/specs/' + vtid + '/approve', {
                         method: 'POST',
-                        headers: buildContextHeaders({
-                            'Content-Type': 'application/json',
-                            'x-user-id': userId,
-                            'x-user-role': userRole
-                        })
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' })
                     });
                     if (!response.ok) throw new Error('HTTP ' + response.status);
                     var result = await response.json();
@@ -28508,6 +28503,10 @@ var FALLBACK_HEALTH_ENDPOINTS = [
     { name: 'VTID Ledger Integrity', url: '/api/v1/ops/health/vtid-ledger', group: 'Governance & Integrity' },
     { name: 'ORB Session Ledger', url: '/api/v1/ops/health/orb-session-ledger', group: 'Data & Memory' },
     { name: 'Push Dispatch', url: '/api/v1/ops/health/push-dispatch', group: 'Automation & Scheduling' },
+    // VTID-05141: gateway twins of three ALERT-* workflows.
+    { name: 'Welcome Greeting', url: '/api/v1/ops/health/welcome-greeting', group: 'Community & Social' },
+    { name: 'ORB Bootstrap Latency', url: '/api/v1/ops/health/orb-bootstrap-latency', group: 'AI & Assistant' },
+    { name: 'New-Day Briefing Loop', url: '/api/v1/ops/health/newday-briefing-loop', group: 'AI & Assistant' },
     // VTID-04664: systems that had no check.
     { name: 'STAGING-VERIFY', url: '/api/v1/ops/runtime/deploy/staging-verify', group: 'Deploy & Release' },
     { name: 'Staging Deploy', url: '/api/v1/ops/runtime/deploy/staging-deploy', group: 'Deploy & Release' },
@@ -46354,14 +46353,33 @@ function renderSelfHealingView() {
                 approveBtn.className = 'infra-btn infra-btn--success';
                 approveBtn.textContent = 'APPROVE';
                 approveBtn.onclick = function() {
-                    fetch('/api/v1/specs/approve', {
+                    // VTID-05122: the real route is POST /api/v1/specs/:vtid/approve
+                    // (requireServiceOrAdmin, approver from the Bearer JWT). Report
+                    // failures instead of an unconditional success toast.
+                    approveBtn.disabled = true;
+                    approveBtn.textContent = 'APPROVING…';
+                    fetch('/api/v1/specs/' + encodeURIComponent(task.vtid) + '/approve', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ vtid: task.vtid })
-                    }).then(function() {
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                        body: '{}'
+                    }).then(function(r) {
+                        return r.json().catch(function() { return {}; }).then(function(j) {
+                            state.selfHealing.fetched = false;
+                            fetchSelfHealingData();
+                            if (r.ok && j && j.ok) {
+                                showToast('Spec approved for ' + task.vtid, 'success');
+                            } else {
+                                showToast('Approve failed: ' + (j.message || j.error || 'HTTP ' + r.status), 'error');
+                                approveBtn.disabled = false;
+                                approveBtn.textContent = 'APPROVE';
+                            }
+                        });
+                    }).catch(function(err) {
+                        approveBtn.disabled = false;
+                        approveBtn.textContent = 'APPROVE';
                         state.selfHealing.fetched = false;
                         fetchSelfHealingData();
-                        showToast('Spec approved for ' + task.vtid, 'success');
+                        showToast('Approve failed: ' + err.message, 'error');
                     });
                 };
                 actions.appendChild(approveBtn);

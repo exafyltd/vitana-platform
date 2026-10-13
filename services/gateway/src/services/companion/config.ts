@@ -8,15 +8,23 @@
  *   off                  FEATURE_COMPANION_MESSAGES_ENV is not live here, or
  *                        COMPANION_MODE is unset / 'off'.
  *   shadow               decide and record what Vitana would write; send nothing.
+ *   staff                (VTID-05100) send the DM + push to exafy staff/admin
+ *                        members only; everyone else keeps the shadow behaviour.
+ *   live                 (VTID-05100) send to every eligible member.
  *
- * Phase 1 has no sending mode: COMPANION_MODE=staff|live is reported as
- * `send_not_available` and the engine still runs in shadow. Sending arrives in
- * Phase 2 (VTID-05100), staff first.
+ * Sending is OFF unless a second, explicit switch says otherwise:
+ * COMPANION_MODE=staff|live without COMPANION_SEND_ENABLED=true is reported as
+ * `send_not_available` and the engine still runs in shadow (Phase 1 behaviour).
  */
 import { isStaging as runningOnStaging } from '../../env';
 import { isFeatureLive } from '../feature-flags';
 
-export type CompanionMode = 'disabled-on-staging' | 'off' | 'shadow';
+export type CompanionMode = 'disabled-on-staging' | 'off' | 'shadow' | 'staff' | 'live';
+
+/** Modes that deliver a real DM + push. */
+export function isSendMode(mode: CompanionMode): mode is 'staff' | 'live' {
+  return mode === 'staff' || mode === 'live';
+}
 
 export interface CompanionConfig {
   mode: CompanionMode;
@@ -81,6 +89,12 @@ export function resolveCompanionConfig(
 
   const requested = (env.COMPANION_MODE ?? 'off').trim().toLowerCase();
   if (requested === 'shadow') return { mode: 'shadow', reason: 'shadow', ...common };
-  if (requested === 'staff' || requested === 'live') return { mode: 'shadow', reason: 'send_not_available', ...common };
+  if (requested === 'staff' || requested === 'live') {
+    // VTID-05100: a sending mode needs its own explicit switch, on top of the mode.
+    if ((env.COMPANION_SEND_ENABLED ?? '').trim() !== 'true') {
+      return { mode: 'shadow', reason: 'send_not_available', ...common };
+    }
+    return { mode: requested, reason: requested, ...common };
+  }
   return { mode: 'off', reason: 'mode_off', ...common };
 }

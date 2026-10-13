@@ -25,11 +25,41 @@ import { RUNNER_ROUTINES, RunnerRoutine } from './sources';
 const LOG = '[routine-runner]';
 const TICK_MS = 60 * 60 * 1000;
 
+export interface RecentRun {
+  status: string;
+  findings: Record<string, unknown> | null;
+  error?: string | null;
+}
+
 export interface RunnerDeps {
   claim: (name: string) => Promise<string | null>;
   finish: (id: string, verdict: RoutineVerdict, error: string | null) => Promise<void>;
   emitBreach: (routine: string, verdict: RoutineVerdict) => Promise<void>;
   routeBreach: (routine: string, verdict: RoutineVerdict) => Promise<void>;
+  // VTID-05141 stop rules. Optional so a dep set without them keeps the
+  // VTID-05103 behaviour (no damping, no stagnation stop).
+  /** The routine's latest finished gateway-runner runs, newest first. */
+  recentRuns?: (name: string, limit: number) => Promise<RecentRun[]>;
+  /** Switch the routine off in the catalog and emit routine.runner.stagnated. */
+  stopStagnated?: (name: string, lastError: string | null) => Promise<void>;
+}
+
+/** Consecutive crashed runs (status failure) that switch a routine off. */
+export const STAGNATION_RUNS = 3;
+/** Consecutive earlier runs with the same breach that stop re-routing it to self-healing. */
+export const DAMPING_RUNS = 3;
+
+/** True when the previous DAMPING_RUNS runs all reported this same breach topic. */
+export function shouldDampBreach(previous: RecentRun[], topic: string): boolean {
+  if (previous.length < DAMPING_RUNS) return false;
+  return previous
+    .slice(0, DAMPING_RUNS)
+    .every((r) => r.status === 'partial' && (r.findings as any)?.breach_topic === topic);
+}
+
+/** True when the latest STAGNATION_RUNS runs (this one included) all crashed. */
+export function isStagnated(latest: RecentRun[]): boolean {
+  return latest.length >= STAGNATION_RUNS && latest.slice(0, STAGNATION_RUNS).every((r) => r.status === 'failure');
 }
 
 export function routineRunnerAllowed(env: NodeJS.ProcessEnv = process.env): { ok: true } | { ok: false; reason: string } {
@@ -91,15 +121,30 @@ export async function runDueRoutines(
     }
 
     if (verdict.breach) {
+      const topic = verdict.breach.topic;
+      // Recorded on the run so the next days can tell an open, already-routed problem.
+      verdict = { ...verdict, findings: { ...verdict.findings, breach_topic: topic } };
       try {
         await deps.emitBreach(routine.name, verdict);
       } catch (err: any) {
         console.warn(`${LOG} ${routine.name}: OASIS emit failed: ${err?.message || err}`);
       }
-      try {
-        await deps.routeBreach(routine.name, verdict);
-      } catch (err: any) {
-        console.warn(`${LOG} ${routine.name}: self-healing routing failed (non-fatal): ${err?.message || err}`);
+      let damped = false;
+      if (deps.recentRuns) {
+        try {
+          damped = shouldDampBreach(await deps.recentRuns(routine.name, DAMPING_RUNS), topic);
+        } catch (err: any) {
+          console.warn(`${LOG} ${routine.name}: recent runs read failed, routing as usual: ${err?.message || err}`);
+        }
+      }
+      if (damped) {
+        verdict = { ...verdict, findings: { ...verdict.findings, self_healing_damped: true } };
+      } else {
+        try {
+          await deps.routeBreach(routine.name, verdict);
+        } catch (err: any) {
+          console.warn(`${LOG} ${routine.name}: self-healing routing failed (non-fatal): ${err?.message || err}`);
+        }
       }
     }
 
@@ -107,6 +152,16 @@ export async function runDueRoutines(
       await deps.finish(runId, verdict, error);
     } catch (err: any) {
       console.warn(`${LOG} finish ${routine.name} failed: ${err?.message || err}`);
+    }
+
+    if (verdict.status === 'failure' && deps.recentRuns && deps.stopStagnated) {
+      try {
+        if (isStagnated(await deps.recentRuns(routine.name, STAGNATION_RUNS))) {
+          await deps.stopStagnated(routine.name, error ?? verdict.summary);
+        }
+      } catch (err: any) {
+        console.warn(`${LOG} ${routine.name}: stagnation check failed: ${err?.message || err}`);
+      }
     }
     results.push({ name: routine.name, outcome: 'ran', status: verdict.status });
   }
@@ -131,6 +186,20 @@ async function rpc<T>(fn: string, body: Record<string, unknown>): Promise<T> {
   return (text ? JSON.parse(text) : null) as T;
 }
 
+async function rest<T>(path: string, init: { method?: string; body?: string } = {}): Promise<T | null> {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE;
+  if (!url || !key) throw new Error('SUPABASE_URL / SUPABASE_SERVICE_ROLE not set');
+  const res = await fetch(`${url}${path}`, {
+    method: init.method || 'GET',
+    headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: init.body,
+  });
+  if (!res.ok) throw new Error(`${init.method || 'GET'} ${path.split('?')[0]} → ${res.status} ${(await res.text()).slice(0, 300)}`);
+  const text = await res.text();
+  return (text ? JSON.parse(text) : null) as T;
+}
+
 export const productionDeps: RunnerDeps = {
   claim: async (name) => (await rpc<string | null>('claim_routine_run', { p_name: name })) || null,
   finish: async (id, verdict, error) => {
@@ -149,10 +218,33 @@ export const productionDeps: RunnerDeps = {
       vtid: b.vtid,
       type: b.topic,
       source: `routine.${routine}`,
-      status: 'warning',
+      status: b.status || 'warning',
       message: b.message,
       payload: b.payload,
     });
+  },
+  recentRuns: async (name, limit) => {
+    const rows = await rest<RecentRun[]>(
+      `/rest/v1/routine_runs?routine_name=eq.${encodeURIComponent(name)}&trigger=eq.gateway-runner` +
+        `&status=neq.running&select=status,findings,error&order=started_at.desc&limit=${limit}`
+    );
+    return rows || [];
+  },
+  stopStagnated: async (name, lastError) => {
+    await rest(`/rest/v1/routines?name=eq.${encodeURIComponent(name)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled: false, updated_at: new Date().toISOString() }),
+    });
+    const { emitOasisEvent } = require('../oasis-event-service');
+    await emitOasisEvent({
+      vtid: 'VTID-05141',
+      type: 'routine.runner.stagnated',
+      source: `routine.${name}`,
+      status: 'error',
+      message: `${name} failed ${STAGNATION_RUNS} runs in a row and was switched off in the routine catalog; re-enable it once fixed`,
+      payload: { routine: name, last_error: (lastError || '').slice(0, 1000) },
+    });
+    console.warn(`${LOG} ${name}: ${STAGNATION_RUNS} failed runs in a row — switched off (routine.runner.stagnated)`);
   },
   // Same synthetic failure routes/events.ts builds for a routine breach, so
   // dedup, circuit breaker and the autonomy level apply exactly as before.

@@ -17,6 +17,8 @@ export interface RoutineBreach {
   vtid: string;
   message: string;
   payload: Record<string, unknown>;
+  /** OASIS status of the breach event; 'warning' unless the spec calls it an incident. */
+  status?: 'warning' | 'error';
 }
 
 export interface RoutineVerdict {
@@ -238,7 +240,7 @@ export function checkKnowledgeDocsFreshness(data: {
   if (data.feature_pending) {
     return { status: 'success', summary: '✅ knowledge_docs table not yet present — feature pending', findings: { feature_pending: true } };
   }
-  const threshold = Math.max(20, data.total_docs * 0.10);
+  const threshold = Math.max(20, Math.round(data.total_docs * 0.1 * 10) / 10);
   const findings = { total_docs: data.total_docs, stale_count: data.stale_count, threshold, sample_stalest: data.sample_stalest };
   if (!(data.stale_count > threshold)) {
     return { status: 'success', summary: `✅ Knowledge docs healthy: ${data.stale_count}/${data.total_docs} stale`, findings };
@@ -388,6 +390,144 @@ export function checkMobileScreenLatency(
       vtid: 'VTID-03177',
       message: `${breached_screens.length} mobile screens over budget: ${list}`,
       payload: { window_hours: 24, breached_screens, sample_size: allUp.sample_size, platform_breakdown: allUp.platform_breakdown ?? {} },
+    },
+  };
+}
+
+// =============================================================================
+// VTID-05141 (Loop Engineering Phase 3b)
+// =============================================================================
+
+export interface VoiceWindow {
+  total_sessions: number;
+  error_sessions: number;
+  error_rate: number | null;
+  by_failure_class: Record<string, number>;
+  truncated?: boolean;
+}
+
+// routines/voice-lab-triage.md — step 3 (thresholds), step 4 (event)
+export function checkVoiceLabTriage(yesterday: VoiceWindow, baseline: VoiceWindow): RoutineVerdict {
+  const baselineAvgPerDay = baseline.total_sessions / 7;
+  const novel = Object.entries(yesterday.by_failure_class)
+    .filter(([fc, n]) => n >= 3 && !(fc in baseline.by_failure_class))
+    .map(([fc, n]) => ({ failure_class: fc, sessions: n }));
+  const kinds: string[] = [];
+  if (
+    yesterday.error_rate != null &&
+    baseline.error_rate != null &&
+    yesterday.error_rate > baseline.error_rate * 1.5 &&
+    yesterday.error_sessions >= 3
+  ) kinds.push('error_rate_spike');
+  if (novel.length > 0) kinds.push('novel_failure_class');
+  if (baselineAvgPerDay > 0 && yesterday.total_sessions < baselineAvgPerDay * 0.3) kinds.push('session_collapse');
+
+  const top = (m: Record<string, number>) =>
+    Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([failure_class, sessions]) => ({ failure_class, sessions }));
+  const findings = {
+    yesterday: { ...yesterday, top_failure_classes: top(yesterday.by_failure_class), novel_failure_classes: novel },
+    baseline: { ...baseline, avg_sessions_per_day: Math.round(baselineAvgPerDay * 10) / 10, top_failure_classes: top(baseline.by_failure_class) },
+    regression_kinds: kinds,
+  };
+  if (!kinds.length) {
+    return {
+      status: 'success',
+      summary: `✅ Voice healthy: ${yesterday.total_sessions} sessions, ${yesterday.error_sessions} errors, error rate ${pct(yesterday.error_rate)} (within baseline)`,
+      findings,
+    };
+  }
+  return {
+    status: 'partial',
+    summary: `⚠️ Voice regression: ${kinds.join(', ')}. OASIS event emitted, self-healing notified.`,
+    findings,
+    breach: {
+      topic: 'voice.live.regression.daily_triage',
+      vtid: 'VTID-01155',
+      message: `Voice regression detected: ${kinds.join(', ')}`,
+      payload: { yesterday: findings.yesterday, baseline: findings.baseline, regression_kind: kinds[0], regression_kinds: kinds },
+    },
+  };
+}
+
+export interface BudgetLineInput {
+  scope: 'platform' | 'agent' | 'run';
+  key: string;
+  spent_usd: number;
+  limit_usd: number;
+  used_pct: number;
+  over: boolean;
+}
+
+// routines/llm-spend-budget.md
+export function checkLlmSpendBudget(data: { rows: number; since: string; truncated: boolean; lines: BudgetLineInput[] }): RoutineVerdict {
+  const platform = data.lines.find((l) => l.scope === 'platform');
+  const over = data.lines.filter((l) => l.over);
+  const findings = {
+    since: data.since,
+    calls: data.rows,
+    truncated: data.truncated,
+    platform: platform ?? null,
+    over_budget: over,
+    top_lines: data.lines.slice(0, 10),
+  };
+  if (data.rows === 0) {
+    return { status: 'failure', summary: '❌ No llm.call.completed events today — no spend data', findings };
+  }
+  if (!over.length) {
+    return {
+      status: 'success',
+      summary: `✅ LLM spend within budget: $${platform?.spent_usd ?? 0} of $${platform?.limit_usd ?? 0} today (${data.rows} calls)`,
+      findings,
+    };
+  }
+  return {
+    status: 'partial',
+    summary: `⚠️ LLM spend over budget: ${over.map((l) => `${l.scope}:${l.key} $${l.spent_usd}/$${l.limit_usd}`).join(', ')}. OASIS event emitted.`,
+    findings,
+    breach: {
+      topic: 'llm.spend.budget_exceeded',
+      vtid: 'VTID-05141',
+      message: `${over.length} LLM budget line(s) over limit today`,
+      payload: { since: data.since, over_budget: over, platform: platform ?? null },
+    },
+  };
+}
+
+export interface GoogleCallInput {
+  created_at: string;
+  provider: string | null;
+  model: string | null;
+  stage: string | null;
+  service: string | null;
+  fallback_used: boolean;
+}
+
+// routines/llm-fallback-watch.md — rows are already filtered by isGoogleLlmCall
+export function checkLlmFallbackWatch(googleCalls: GoogleCallInput[]): RoutineVerdict {
+  const fallback = googleCalls.filter((r) => r.fallback_used);
+  const routed = googleCalls.filter((r) => !r.fallback_used);
+  const stages = (rows: GoogleCallInput[]) => [...new Set(rows.map((r) => r.stage || r.service || 'unknown'))];
+  const findings = {
+    google_calls_24h: googleCalls.length,
+    fallback_to_google: fallback.length,
+    routed_at_google: routed.length,
+    fallback_stages: stages(fallback),
+    routed_stages: stages(routed),
+    models: [...new Set(googleCalls.map((r) => r.model))].slice(0, 5),
+  };
+  if (!googleCalls.length) {
+    return { status: 'success', summary: '✅ No LLM call landed on Google in 24 h', findings };
+  }
+  return {
+    status: 'partial',
+    summary: `⚠️ ${googleCalls.length} LLM call(s) landed on Google in 24 h (${fallback.length} fallback, ${routed.length} routed). Incident emitted, self-healing notified.`,
+    findings,
+    breach: {
+      topic: 'llm.fallback.google_incident',
+      vtid: 'VTID-05141',
+      status: 'error',
+      message: `${googleCalls.length} LLM call(s) landed on Google in 24 h — an incident (CLAUDE.md 10c)`,
+      payload: findings,
     },
   };
 }

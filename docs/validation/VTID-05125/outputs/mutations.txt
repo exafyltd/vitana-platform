@@ -1,0 +1,13 @@
+== mut1
+psql:/tmp/claude-0/-home-user/381e2852-9bcc-53fc-81b0-c92afb514bf5/scratchpad/mut1.sql:92: ERROR:  VTID-05125: write_fact(uuid,uuid,text,text,text,text,text,uuid,numeric,uuid) still executable by migrate
+CONTEXT:  PL/pgSQL function inline_code_block line 19 at RAISE
+FAIL [migrate_revoke_happy_5571] migration should have applied
+exit=1
+== mut2
+NOTICE:  role "postgres" has already been granted membership in role "migrate" by role "postgres"
+FAIL [migrate_revoke_overload_6130] migration applied but should have been refused
+exit=1
+== mut3 (self-check for migrate removed AND revoke removed)
+NOTICE:  role "postgres" has already been granted membership in role "migrate" by role "postgres"
+FAIL [migrate_revoke_happy_6559] migrate EXECUTE on public.write_fact(uuid,uuid,text,text,text,text,text,uuid,numeric,uuid): got t, want f
+exit=1
