@@ -406,6 +406,14 @@ router.post('/:id/read', requireAuth, requireTenant, async (req: Request, res: R
     return res.status(500).json({ ok: false, error: error.message });
   }
 
+  // VTID-05137: best effort — a failure here never fails the read itself.
+  try {
+    const { error: notifErr } = await repo.markGroupChatNotificationsRead(supabase, groupId, identity.user_id);
+    if (notifErr) console.warn('[ChatGroups] Clearing group chat notifications failed:', notifErr.message);
+  } catch (err: any) {
+    console.warn('[ChatGroups] Clearing group chat notifications failed:', err?.message || err);
+  }
+
   return res.json({ ok: true });
 });
 

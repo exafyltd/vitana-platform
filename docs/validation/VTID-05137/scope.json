@@ -6,6 +6,8 @@
     "services/gateway/src/services/notification-service.ts",
     "services/gateway/src/routes/chat.ts",
     "services/gateway/src/routes/chat-groups.ts",
+    "services/gateway/src/routes/chat-groups-repository.ts",
+    "services/gateway/test/routes/chat-groups-repository.test.ts",
     "services/gateway/src/services/orb-tools-shared.ts",
     "services/gateway/src/services/orb-tools/messaging-depth-tools.ts",
     "services/gateway/src/i18n/catalog.ts",
