@@ -1525,6 +1525,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-10-13 | VTID-05158 (Health Hub Phase 1 / A1), **committed, NOT applied** — two migrations. (1) `20261014100000_vtid_05158_erase_user_data_aurora_safe.sql` (Supabase AND Aurora; applied to Supabase only after its own Gate 2): `erase_user_data()` is the VTID-04765 body except `v_auth_users := to_regclass('auth.users')` and the cascade exclusion `(v_auth_users is null or not exists (… con.confrelid = v_auth_users …))` — on Aurora (no `auth.users`) the old `'auth.users'::regclass` cast failed every call; on Supabase the table list is identical. (2) `20261014100100_vtid_05158_health_store.sql` — **APPLY TARGET: Aurora only (0T; production after the cutover). Never Supabase.** A placement guard refuses a database with both `auth.users` and `storage.objects` unless `vitana.health_store_target = 'aurora'`; MIGRATION-DRIFT-CHECK lists the eight tables as `aurora_only_tables` and fails if one appears on Supabase. Tables `health_codes`, `health_series_5m` (daily partitions, 30 days), `health_series_1h`, `health_series_1d`, `health_observations` (monthly, lifetime), `health_ingest_batches`, `health_ingest_quarantine` (monthly, 30 days), `health_store_maintenance_runs`; functions `health_store_ingest`, `health_store_ensure_partitions`, `health_store_partition_check`, `health_store_purge`, `health_store_suppress`, `health_store_unsuppress`, `health_series_daily_resolved` (SECURITY DEFINER, service_role only). OASIS namespace `health.store.*` (A2). See the section "Health Hub store" below. Tests: `scripts/ci/sql-tests/run-health-store-test.sh` (CI `SQL-HEALTH-STORE.yml`) and both `erase_user_data()` variants in `SQL-ERASE-USER-DATA.yml`. | Claude Code | VTID-05158 |
 | 2026-10-13 | VTID-05147 (Track S / S-M), **committed, NOT applied** (migration `20261013233000_vtid_05147_s_m_membership_role_lockdown.sql`, access + one function body; applied via `RUN-MIGRATION.yml` after the read-only `docs/validation/VTID-05147/pre-apply-checks.sql`): members can no longer write their own role or membership. Dropped policies `user_tenants_update_own` (no WITH CHECK — a member could set own `active_role='admin'` or move `tenant_id`), `rp_upsert_self`/`rp_update_self`/`rp_delete_self` and `user_active_roles_insert`/`_update` (role value was free); `INSERT/UPDATE/DELETE/TRUNCATE/TRIGGER/REFERENCES` revoked from `anon`/`authenticated` on `user_tenants`, `role_preferences`, `user_active_roles`, `user_permitted_roles` (reads and SELECT policies stay); `TRUNCATE/TRIGGER/REFERENCES` revoked on `memberships`, `app_users`. `set_role_preference()` now raises `Not authenticated` without a user and `Not a member of this tenant` (42501) for a tenant the caller has no `user_tenants` row in (exafy admins excepted; `'community'` still always allowed in an own tenant); EXECUTE for `authenticated`, `service_role` only (`PUBLIC`/`anon` revoked). The definer writers (`set_role_preference`, `me_set_active_role`, `switch_to_tenant_by_slug`, `provision_platform_user`, `handle_new_user`) are the only write paths left besides the service role. Self-check rolls the file back unless that end state holds. Rollback (re-opens the hole, owner approval): `docs/validation/VTID-05147/rollback-s-m.sql`. CI guard against reopening: `services/gateway/test/vtid-05147-s-m-membership-role-lockdown.test.ts`. | Claude Code | VTID-05147 |
 | 2026-10-13 | VTID-05137, **committed; applied via `RUN-MIGRATION.yml` before merge** (migration `20261013180000_vtid_05137_chat_push_coalescing.sql`, additive, idempotent): `user_notifications_push_outcome_check` re-created with `coalesced` added (chat push held back because the recipient was already pushed for that conversation in the last 5 minutes and has not read it; the row is still written with `push_sent_at` set and `data.push_coalesced='true'`). New partial index `idx_user_notifications_chat_conv (user_id, (data->>'conversation_key'), created_at DESC) WHERE type IN ('new_chat_message','chat_mention')` for the coalescer's one read per message. Every chat notification row now carries `data.conversation_key` (`dm:<sender>` / `group:<group>`) and `data.tag`. Written/read by `services/chat-push-coalescer.ts` + `notifyUser(..., { suppressPush: 'coalesced' })`; off switch `CHAT_PUSH_COALESCING_ENABLED=false`. Rollback `docs/validation/VTID-05137/rollback.sql`. | Claude Code | VTID-05137 |
 | 2026-10-12 | VTID-05125, **committed, NOT applied** (migration `20261013090000_vtid_05125_memory_functions_revoke_migrate.sql`, access only; applied via `RUN-MIGRATION.yml` after a read-only before-state check): the `migrate` role (AWS DMS source role for the Aurora migration) loses EXECUTE on `write_fact`, `get_current_facts`, `recall_at_time_range` and `memory_facts_semantic_search` — VTID-05041 had revoked `PUBLIC`/`anon`/`authenticated` only, and the live ACL still carried `migrate=X/postgres`. DMS never calls application RPCs. The migration refuses to apply unless `migrate` (when present) cannot execute any of the four, `service_role` still can, members still cannot, and exactly 4 overloads exist. Rollback: `docs/validation/VTID-05125/rollback.sql`. `migrate`'s EXECUTE on other service-only DEFINER functions (FU9a) and its table SELECT / `postgres` default ACL (FU9b) are separate follow-ups. | Claude Code | VTID-05125 |
@@ -3982,3 +3983,52 @@ No `completed_at`: completion is derived from the source tables (`profiles`, `pr
 ### profiles.interests
 
 `TEXT[] DEFAULT '{}'` — the member's interests as stable slugs (`fitness`, `nutrition`, …), never display text; the app resolves labels via `screens.interests.<slug>`. Enrichment card E4 is complete when it is non-empty.
+
+## Health Hub store — `health_*` tables (VTID-05158, 2026-10-13) — committed, NOT applied — Aurora only
+
+Health Hub Phase 1 / A1 (program VTID-05020). **APPLY TARGET: Aurora only (0T; production after the cutover). Never
+Supabase.** Migration `supabase/migrations/20261014100100_vtid_05158_health_store.sql`; capacity model and placement
+record `docs/programs/health-hub/P1A-CAPACITY-AND-PLACEMENT.md`. Nothing in the gateway reads or writes these tables
+until A2 (VTID-05159) ships behind `HEALTH_STORE_ENABLED` (off; forced off on staging).
+
+- **Placement guard:** the migration's first statement raises when `auth.users` AND `storage.objects` both exist
+  (Supabase) unless the session sets `vitana.health_store_target = 'aurora'`. If Aurora ever gains an `auth.users`
+  shim, every health-store migration must run with that setting. MIGRATION-DRIFT-CHECK lists all eight tables in
+  `scripts/ci/migration-drift-baseline.json` `aurora_only_tables` and **fails** if any of them appears on Supabase.
+- **Common shape:** schema `public`; every member table has `tenant_id uuid NOT NULL`, `user_id uuid NOT NULL`, **no
+  FK to `auth.users`** (so `erase_user_data()` erases them, reaching partitions through the parent); `source_id uuid`
+  without FK (`health_sources` is package B's); `source_kind text`, `source_rank smallint` (smaller = more trusted);
+  `consent_id uuid` (D10 consent row of the write), `batch_id`, `ingested_at`, `suppressed_at` (withdrawal).
+- **Partitions:** declarative range partitioning, **no DEFAULT partition** (a missing partition fails the write with
+  SQLSTATE 23514; A2 ensures and retries once). Partitions are created by `health_store_ensure_partitions(p_now)` with
+  `PARTITION OF` (parent's exact types), RLS on and no browser grants. Names `<parent>_pYYYYMMDD` (5-minute tier) or
+  `<parent>_pYYYYMM`.
+
+| Table | Partitioning / retention | Key | Notes |
+|---|---|---|---|
+| `health_codes` | — | `code_id smallint` PK, `key` unique | Catalogue (S2): `unit` (UCUM), `kind` (`series_sum`/`series_stats`/`record`), `category` (`activity`/`sleep`/`heart`/`body`/`labs`/`habits`), `plausible_min/max`, `catalogue_allowed`. 20 seeded codes; CHECK forbids glucose/CGM/HbA1c keys. SELECT for `authenticated`. Equal to A2's `catalogue.ts`. |
+| `health_series_5m` | `bucket_start`, daily; dropped after 30 days | `(user_id, source_id, code_id, bucket_start)` | 5-minute buckets (CHECK on 5-minute UTC boundary): `n`, `sum`, `min`, `max`. |
+| `health_series_1h` | `bucket_start`, monthly; lifetime | same | Hourly; recomputed from the 5-minute tier, or written directly for intervals older than 30 days. |
+| `health_series_1d` | `local_date`, monthly; lifetime | `(user_id, source_id, code_id, local_date)` | Member's local date (`tz`); recomputed from the 5-minute tier when the whole day is inside retention, else from the hourly tier. |
+| `health_observations` | `effective_start`, monthly; lifetime | `(user_id, source_id, source_record_id, effective_start)` | Discrete records (sleep session with stages in `detail`, workout, weight, spot values); `detail jsonb` ≤ 8 KB. Replace by `(source_id, source_record_id)`. |
+| `health_ingest_batches` | `received_month`, monthly; 30 days | unique `(user_id, batch_id, received_month)` | Batch idempotency (`body_sha256`), `via`, `s3_key`, counts, `status`, stored per-sample `results` (no values). |
+| `health_ingest_quarantine` | `received_at`, monthly; 30 days | `(user_id, batch_id, item_index, received_at)` | `reason` code only — **no value** (the value stays in the 30-day S3 raw batch). |
+| `health_store_maintenance_runs` | — | `run_id` | One row per purge run; no member data. |
+
+- **RLS / grants:** `authenticated` may SELECT its own, un-suppressed rows of the four store tiers
+  (`user_id = auth.uid() AND suppressed_at IS NULL`) and the catalogue; no INSERT/UPDATE/DELETE for any browser role;
+  batches, quarantine and maintenance runs are `service_role` only; `anon` has nothing. Writes go only through the
+  gateway (service_role) and the functions below.
+- **Functions** (all SECURITY DEFINER, `search_path = public, pg_temp`, EXECUTE `service_role` only):
+  - `health_store_ingest(p_tenant, p_user, p_batch_id, p_source_id, p_source_kind, p_source_rank, p_consent_id, p_tz, p_series jsonb, p_records jsonb) → jsonb` — one chunk (≤ 2,000 items) in one transaction; replace semantics (`stored`/`updated`/`duplicate`/`deleted`/`not_found`, plus `invalid` for a misaligned or malformed item and `suppressed` for a key under withdrawal, which is never overwritten); recomputes affected hours and local dates; returns `{counts, series, records, deleted_dates}`.
+  - `health_store_ensure_partitions(p_now) → int` — 5-minute tier today−31 … today+30, other tiers 2025-07 … now+3 months (skips partitions the purge would drop at once).
+  - `health_store_partition_check(p_now)` — partitions tomorrow's writes need that are missing (daily alarm, A2).
+  - `health_store_purge(p_now) → jsonb` — drops expired 5-minute partitions, expires batch/quarantine rows after 30 days (dropping wholly expired partitions), hard-deletes rows suppressed more than 7 days ago; one `health_store_maintenance_runs` row.
+  - `health_store_suppress(p_user, p_category, p_source_id, p_at)` / `health_store_unsuppress(p_user, p_category, p_source_id)` — withdrawal primitives (S9) across all four tiers; optional category and/or source.
+  - `health_series_daily_resolved(p_user, p_codes, p_from, p_to)` — per (code, local date) the best-ranked source's daily row.
+- **Erasure:** none of the tables is in `erasure_registry`; `erase_user_data()` (Aurora-safe since this VTID) deletes a
+  member's rows from every tier's partitions, including rows inside the 7-day suppression window.
+- **OASIS** (A2, declared in `types/cicd.ts`): `health.store.source.first_data`, `health.store.batch.quarantined`,
+  `health.store.quota.exceeded`, `health.store.maintenance.completed|failed`, `health.store.partition_missing` — ids and
+  counts only, never values. Per-batch success is telemetry, not an OASIS event.
+- **Tests:** `scripts/ci/sql-tests/run-health-store-test.sh` (CI `SQL-HEALTH-STORE.yml`, throwaway Postgres only).

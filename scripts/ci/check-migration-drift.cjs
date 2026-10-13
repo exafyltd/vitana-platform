@@ -34,6 +34,17 @@
  * only on drift that is NEW relative to that file. The baseline is a visible
  * backlog, not an amnesty — shrink it.
  *
+ * AURORA-ONLY TABLES (VTID-05158)
+ * --------------------------------
+ * Some migrations declare tables that must exist ONLY on Aurora and never on
+ * the live Supabase project (the Health Hub store: applied in 0T, and in
+ * production only after the cutover). They are listed with a VTID and a reason
+ * in migration-drift-baseline.json `aurora_only_tables`. For them the check is
+ * inverted: absent from the Supabase snapshot is correct and never reported;
+ * PRESENT in it fails the job — the migration was applied to the wrong
+ * database. Retargeting this check at Aurora after the cutover belongs to the
+ * cutover workstream.
+ *
  * Usage:
  *   node scripts/ci/check-migration-drift.cjs --live <file-with-one-table-per-line>
  *   node scripts/ci/check-migration-drift.cjs --live live.txt --update-baseline
@@ -142,13 +153,64 @@ function collectDeclaredTables(dir = MIGRATIONS_DIR) {
   return expected;
 }
 
-function loadBaseline() {
+function readBaselineFile() {
   try {
-    const raw = JSON.parse(readFileSync(BASELINE_PATH, 'utf8'));
-    return new Set(raw.known_missing_tables || []);
+    return JSON.parse(readFileSync(BASELINE_PATH, 'utf8'));
   } catch {
-    return new Set();
+    return {};
   }
+}
+
+function loadBaseline() {
+  return new Set(readBaselineFile().known_missing_tables || []);
+}
+
+/**
+ * VTID-05158: tables that must exist only on Aurora. Each entry is
+ * { table, vtid, reason }; an entry without all three is a configuration error,
+ * so a table cannot be exempted silently.
+ */
+function parseAuroraOnly(raw) {
+  const entries = raw && Array.isArray(raw.aurora_only_tables) ? raw.aurora_only_tables : [];
+  const map = new Map();
+  const errors = [];
+  for (const e of entries) {
+    const table = e && typeof e.table === 'string' ? e.table.trim().toLowerCase() : '';
+    if (!table || !e || !/^VTID-\d{4,5}$/.test(String(e.vtid || '')) || !String(e.reason || '').trim()) {
+      errors.push(`invalid aurora_only_tables entry ${JSON.stringify(e)} — needs table, vtid (VTID-NNNNN) and reason`);
+      continue;
+    }
+    map.set(table, { vtid: e.vtid, reason: e.reason });
+  }
+  return { map, errors };
+}
+
+function loadAuroraOnly() {
+  return parseAuroraOnly(readBaselineFile());
+}
+
+/**
+ * The decision, separated from I/O so both Aurora-only branches are unit
+ * tested (scripts/ci/check-migration-drift.test.cjs).
+ *   expected   Map table -> declaring file (collectDeclaredTables)
+ *   live       Set of tables in the live Supabase snapshot
+ *   baseline   Set of known-missing tables
+ *   auroraOnly Map table -> { vtid, reason }
+ */
+function evaluateDrift({ expected, live, baseline, auroraOnly = new Map() }) {
+  const missing = [...expected.keys()].filter((t) => !live.has(t) && !auroraOnly.has(t)).sort();
+  const newlyMissing = missing.filter((t) => !baseline.has(t));
+  const recovered = [...baseline].filter((t) => live.has(t)).sort();
+  const auroraOnlyOnSupabase = [...auroraOnly.keys()].filter((t) => live.has(t)).sort();
+  const auroraOnlyAbsent = [...auroraOnly.keys()].filter((t) => !live.has(t)).sort();
+  return {
+    missing,
+    newlyMissing,
+    recovered,
+    auroraOnlyOnSupabase,
+    auroraOnlyAbsent,
+    ok: newlyMissing.length === 0 && auroraOnlyOnSupabase.length === 0,
+  };
 }
 
 function main() {
@@ -172,9 +234,16 @@ function main() {
   }
 
   const expected = collectDeclaredTables();
-  const missing = [...expected.keys()].filter((t) => !live.has(t)).sort();
+  const auroraOnlyParsed = loadAuroraOnly();
+  if (auroraOnlyParsed.errors.length > 0) {
+    for (const e of auroraOnlyParsed.errors) console.error(`::error::${e}`);
+    process.exit(2);
+  }
+  const auroraOnly = auroraOnlyParsed.map;
 
   if (updateBaseline) {
+    const raw = readBaselineFile();
+    const { missing } = evaluateDrift({ expected, live, baseline: new Set(), auroraOnly });
     writeFileSync(
       BASELINE_PATH,
       `${JSON.stringify(
@@ -183,27 +252,36 @@ function main() {
             'VTID-03486. Tables declared by supabase/migrations/**.sql that do NOT exist in production. ' +
             'This is pre-existing drift recorded so the CI check can fail only on NEW drift. ' +
             'It is a backlog to shrink, not an amnesty — every entry is a migration whose SQL never reached the database.',
+          _comment_aurora_only:
+            'VTID-05158. aurora_only_tables: tables that must exist ONLY on Aurora (0T; production after the cutover). ' +
+            'Never reported missing from Supabase; the check FAILS if one appears there. Each entry names its VTID and reason.',
           generated_at: new Date().toISOString().slice(0, 10),
           count: missing.length,
           known_missing_tables: missing,
+          aurora_only_tables: raw.aurora_only_tables || [],
         },
         null,
         2,
       )}\n`,
     );
-    console.log(`Baseline written: ${missing.length} known-missing tables.`);
+    console.log(`Baseline written: ${missing.length} known-missing tables (aurora_only_tables kept: ${auroraOnly.size}).`);
     return;
   }
 
   const baseline = loadBaseline();
-  const newlyMissing = missing.filter((t) => !baseline.has(t));
-  const recovered = [...baseline].filter((t) => live.has(t)).sort();
+  const { missing, newlyMissing, recovered, auroraOnlyOnSupabase, auroraOnlyAbsent } = evaluateDrift({
+    expected,
+    live,
+    baseline,
+    auroraOnly,
+  });
 
   console.log(`Declared by migrations: ${expected.size}`);
   console.log(`Live in database:       ${live.size}`);
   console.log(`Missing (total):        ${missing.length}`);
   console.log(`Missing (baselined):    ${missing.length - newlyMissing.length}`);
   console.log(`Missing (NEW):          ${newlyMissing.length}`);
+  console.log(`Aurora-only (absent from Supabase, correct): ${auroraOnlyAbsent.length}`);
 
   if (recovered.length > 0) {
     console.log(
@@ -211,6 +289,18 @@ function main() {
         `(node scripts/ci/check-migration-drift.cjs --live <file> --update-baseline):`,
     );
     for (const t of recovered) console.log(`  + ${t}`);
+  }
+
+  if (auroraOnlyOnSupabase.length > 0) {
+    console.error('');
+    for (const t of auroraOnlyOnSupabase) {
+      const why = auroraOnly.get(t);
+      console.error(
+        `::error::Aurora-only table "${t}" (${why.vtid}: ${why.reason}) EXISTS in the live Supabase database. ` +
+          'It was applied to the wrong database — this table must only ever exist on Aurora. ' +
+          'Do not drop it blindly: stop, tell the owner, and check what wrote to it.',
+      );
+    }
   }
 
   if (newlyMissing.length > 0) {
@@ -222,8 +312,9 @@ function main() {
           'Apply it, or drop the CREATE from the migration if it was superseded.',
       );
     }
-    process.exit(1);
   }
+
+  if (newlyMissing.length > 0 || auroraOnlyOnSupabase.length > 0) process.exit(1);
 
   console.log('\nNo new migration drift.');
 }
@@ -233,4 +324,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { stripSqlComments, parseMigrationSql, collectDeclaredTables };
+module.exports = { stripSqlComments, parseMigrationSql, collectDeclaredTables, evaluateDrift, parseAuroraOnly };

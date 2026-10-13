@@ -24,6 +24,9 @@ Owner approval (Gate 1): 2026-10-10. Plan PRs merged: vitana-platform #3984, vit
 | 9 | `tr` fixup migration for `supported_locales` | both | queued | — | — |
 | 10 | Fix stale "Active locales" paragraph in vitana-v1 CLAUDE.md (11 GA locales) | Native app | done — vitana-v1 #1305 | VTID-05021 | — |
 | 11 | D6a: flag-gated bridge from webhook wearable data into `health_features_daily` + one Vitana Index recompute; `find_perfect_product` no longer reads the Index (unconditional) | Health Hub | in review (sparred); ships dark — `WEARABLE_FEATURE_BRIDGE_ENABLED` unset everywhere, always off on staging | VTID-05089 | flag stays off until D10 WP3 (per-member `wearables` + `ai_health_analysis` consent) is in production, webhook secrets are provisioned and one real connection exists |
+| 12 | Phase 1 / A1: health store schema (Aurora only), placement guard + Aurora-only drift guard, SQL tests, Aurora-safe `erase_user_data()`, capacity model + placement record (`P1A-CAPACITY-AND-PLACEMENT.md`) | Health Hub | in review (sparred, 2 rounds, converged; Gate 1 2026-10-13); store migration committed, NOT applied — Aurora only (0T, then production after the cutover); the `erase_user_data()` fix is applied to Supabase only after its own Gate 2 | VTID-05158 | 0T (store apply), Aurora cutover (production) |
+| 13 | Phase 1 / A2: gateway ingest service (`writeHealthSamples`), readers, maintenance, infra scripts — ships dark | Health Hub | queued (sparred with A1) | VTID-05159 | A1, B1 (`health_sources`), D10 WP1 |
+| 14 | Phase 1 / A3: account deletion reaches the raw-batch bucket (vitana-v1) | Health Hub | queued (sparred with A1) | VTID-05160 | A2 (`erase-raw`) |
 
 ## Deferred follow-ups (recorded so they are not lost)
 
