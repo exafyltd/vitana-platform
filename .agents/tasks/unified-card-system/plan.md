@@ -523,19 +523,19 @@ The 5 existing card components (`VitanaIndexCard`, `LongevityJourneyCard`, `Invi
 
 **Goal:** Ship 4 conditional boost cards with trigger system and VTNA integration.
 
-- [ ] 15. Add boost trigger resolver to the completion-resolver service (G1 profile completion, G2 unread matches, G3 streak at risk, G4 unclaimed reward).
+- [x] 15. Add boost trigger resolver to the completion-resolver service (G1 profile completion, G2 unread matches, G3 streak at risk, G4 unclaimed reward). _Done for G1–G3 (vitana-platform #4095); G4 out of scope (owner 2026-10-13)._
       Files: update `services/gateway/src/services/enrichment/completion-resolver.ts`
       Verify: `cd services/gateway && npx jest test/services/enrichment` — trigger tests pass.
 
-- [ ] 16. Create 4 boost card components (G1–G4).
+- [x] 16. Create 4 boost card components (G1–G4). _G1–G3 built (vitana-v1 #1371); G4 out of scope._
       Files: `src/components/enrichment/CompleteProfileCard.tsx`, `UnreadMatchesCard.tsx`, `StreakAtRiskCard.tsx`, `EarnVtnaCard.tsx`
       Verify: `cd vitana-v1 && npx vitest run src/components/enrichment` — all boost card tests pass.
 
-- [ ] 17. Wire boost cards into `EnrichmentCardStrip` rendering pipeline across all screens (see §4 for per-screen placement). Update `useEnrichmentCards` to include boost card data from the endpoint.
+- [x] 17. Wire boost cards into `EnrichmentCardStrip` rendering pipeline across all screens (see §4 for per-screen placement). Update `useEnrichmentCards` to include boost card data from the endpoint.
       Files: update `src/components/vitana/EnrichmentCardStrip.tsx`, `src/hooks/useEnrichmentCards.ts`
       Verify: `cd vitana-v1 && npm run build` — clean build. `npx vitest run` — full test suite passes.
 
-- [ ] 18. End-to-end verification: build both repos, run full test suites.
+- [x] 18. End-to-end verification: build both repos, run full test suites.
       Verify: `cd vitana-v1 && npm run build && npx vitest run` and `cd services/gateway && npm run build && npx jest` — both clean.
 
 ## 9. Testing
