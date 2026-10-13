@@ -282,8 +282,27 @@ same two channels.
   breaks an older feature is then caught within a day, even when no new commit
   touches it. The OASIS event carries `metadata.full=true`.
 - **Gate 2 freshness.** Before sending the ready message, the session checks
-  the newest `staging.verify.*` event with `metadata.full=true` for the
-  service. If it is older than 24 h, the session dispatches a full run first.
+  the newest passed or failed full run under 24 h (`staging.verify.passed` /
+  `staging.verify.failed` with `metadata.full=true`) for the service;
+  superseded full runs are skipped; a failed one blocks. If there is none
+  under 24 h, the session dispatches a full run first (VTID-05144).
+- **Mid-run staging redeploy (VTID-05144).** A full run takes 22–45 min and a
+  merge in that window redeploys staging. The runner fetches `main` to resolve
+  the new stamp: a descendant of the verified commit makes the run
+  `superseded`, a non-descendant stays a failed `mismatch`. Each result
+  carries `started_at`/`ended_at`; it is attributed to the commit only if it
+  ended before `T_cut`, the earliest staging deploy run created at or after
+  the run start (lookup failure → run start: nothing attributed). An
+  attributed failure makes the run `failed`; otherwise it is `superseded`
+  (commit status `error`, "superseded — staging moved to <short>; not
+  verified", never a pass). The OASIS event carries `superseded_by`,
+  `attribution_cutoff`, `chain` and per-result `attributed`. A superseded
+  **full** run re-dispatches a full run on the newer commit (`chain` + 1, at
+  most 3 in a row; after that the nightly run is the evidence). Full runs use
+  their own concurrency group (`staging-verify-<service>-full`), so they never
+  delay a per-deploy verification. PUBLISH and the Operator run view take the
+  newest passed/failed run for the commit and fall back to a superseded one
+  only when no other exists.
 - **Where the result lands.** Besides OASIS and the job summary, the `report`
   job posts:
   - a commit status (`staging-verify`, or `staging-verify/full` for the

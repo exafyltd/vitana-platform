@@ -1,0 +1,29 @@
+{
+  "vtid": "VTID-05144",
+  "kind": "fix",
+  "paths": [
+    "scripts/ci/staging-verify/run.mjs",
+    "scripts/ci/staging-verify/lib.cjs",
+    "scripts/ci/staging-verify/lib.test.cjs",
+    "scripts/ci/staging-verify/record-oasis.sh",
+    "scripts/ci/staging-verify/record-oasis.test.cjs",
+    "scripts/ci/staging-verify/workflow.test.cjs",
+    "scripts/ci/staging-verify/confirm-live.test.mjs",
+    ".github/workflows/STAGING-VERIFY.yml",
+    "services/gateway/src/services/testing/publish-gate.ts",
+    "services/gateway/test/services/testing/publish-gate.test.ts",
+    "services/gateway/src/services/operator-runs/run-view.ts",
+    "services/gateway/test/operator-runs-view.test.ts",
+    ".claude/skills/plan-sparring/SKILL.md",
+    "docs/DEPLOYMENT-PIPELINE.md",
+    "docs/validation/VTID-05144/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05144/plan-sparring.md",
+  "weakens_tests": [
+    {
+      "file": "scripts/ci/staging-verify/lib.test.cjs",
+      "reason": "Planned change (VTID-05144 design item 4, plan Test plan): the case 'outcome: superseded beats everything' is renamed and extended — superseded no longer wins over an ATTRIBUTED failure. Its original assertions are all kept unchanged (an unattributed failure is still superseded) and one assertion is added; no case or assertion is removed."
+    }
+  ],
+  "red_green_exempt": []
+}
