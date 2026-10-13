@@ -1,6 +1,7 @@
 -- VTID-05158 (Health Hub Phase 1 / A1, program VTID-05020) — the canonical
 -- health data store: catalogue, partitioned series tiers, discrete records,
 -- ingest batches, quarantine, maintenance log, and the store functions.
+-- impact-allow-solo-migration: by design (approved plan, merge order A1 -> B1 -> A2): the gateway code that writes and reads these tables lands in A2 (VTID-05159); the tables are Aurora-only and inert until then.
 --
 -- APPLY TARGET: Aurora only (0T; production after the cutover). Never Supabase.
 --

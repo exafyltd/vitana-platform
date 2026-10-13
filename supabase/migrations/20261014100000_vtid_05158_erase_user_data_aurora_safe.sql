@@ -1,5 +1,6 @@
 -- VTID-05158 (Health Hub Phase 1 / A1, program VTID-05020) — erase_user_data()
 -- works on a database without auth.users (Aurora).
+-- impact-allow-solo-migration: the existing erase_user_data() callers (request-account-deletion, the nightly erasure) use this function unchanged; only its auth.users lookup becomes Aurora-safe.
 --
 -- APPLY TARGET: Supabase AND Aurora. On Supabase it is applied only after its
 -- own Gate 2 (evidence: both SQL-ERASE-USER-DATA variants green and a
