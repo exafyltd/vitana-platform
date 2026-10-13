@@ -23,6 +23,15 @@
  *      function returns (so before the caller's response);
  *   6. the derivation of those days, scheduled after the response.
  *
+ * VTID-05163 (B3) — `opts.cutover: true` (the writer is cut over, cutover.ts):
+ * the same steps 1–5, but every failure is FATAL and returned to the caller
+ * (store off, no tenant, call-level ok:false, and any sample that was not
+ * stored — S3 "fatal only in derived mode"), every item date is derived (not
+ * only the changed ones), and step 6 runs SYNCHRONOUSLY with target 'live'
+ * (deriveAndStore publishes into health_features_daily for dates >= C), so the
+ * writer's own Index recompute that follows sees the row. A pending-marker
+ * write failure stays non-fatal (the marker is only crash recovery).
+ *
  * Self-logged writers stay dark until C1's `self_logged_health` consent key
  * is live (S7): until then A answers skipped_no_consent /
  * CONSENT_CATEGORY_MISSING for every sample, which is counted like any other
@@ -52,6 +61,7 @@ import {
 import { defaultDerivationDeps, deriveAndStore, type DerivationDeps } from './derive-daily-features';
 import { HEALTH_FEATURES_VTID, WRITER_SPEC, type HealthWriterId, type WriterValue } from './feature-spec';
 import { isDualWriteEnabledFor } from './flags';
+import { derivationTargetFor } from './cutover';
 import { featuresErrorCode, healthFeaturesRepository, type HealthFeaturesRepository } from './health-features-repository';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -65,6 +75,8 @@ export interface RecordOptions {
   connector_id?: string | null;
   /** per_call writers: a stable id for this call (e.g. the action id); default a new uuid. */
   call_id?: string | null;
+  /** VTID-05163: the writer is cut over (isWriterCutOver / isFeatureWriteCutOver) — fatal, synchronous 'live'. */
+  cutover?: boolean;
 }
 
 export type RecordSkip = 'flag_off' | 'store_disabled' | 'no_tenant' | 'no_values' | 'unknown_writer';
@@ -257,13 +269,19 @@ export async function recordToHealthStore(
 
 async function record(deps: RecordDeps, writer: HealthWriterId, identity: HealthStoreIdentity, values: WriterValue[], opts: RecordOptions): Promise<RecordResult> {
   const spec = WRITER_SPEC[writer];
+  const cutover = opts.cutover === true;
   // 2. the store's own flag.
   if (!deps.storeStatus().enabled) {
     count(`${writer}:STORE_DISABLED`);
+    if (cutover) {
+      await reportFailure(deps, writer, 'STORE_DISABLED');
+      return { ok: false, code: 'STORE_DISABLED' };
+    }
     return { ok: true, skipped: 'store_disabled' };
   }
   if (!validIdentity(identity)) {
     count(`${writer}:NO_TENANT`);
+    if (cutover) return { ok: false, code: 'NO_TENANT' };
     return { ok: true, skipped: 'no_tenant' };
   }
   const callId = opts.call_id || deps.newId();
@@ -317,6 +335,12 @@ async function record(deps: RecordDeps, writer: HealthWriterId, identity: Health
     }
     safeLog(deps, { event: 'health_store_dual_write_partial', writer, counts, reasons });
     if ((counts.store_unavailable ?? 0) > 0) await reportFailure(deps, writer, 'STORE_UNAVAILABLE', { items: counts.store_unavailable });
+    if (cutover) {
+      // S3: non-stored statuses are fatal in derived mode.
+      const code = Object.keys(reasons).sort()[0] ?? 'NOT_STORED';
+      await reportFailure(deps, writer, `CUTOVER_${code}`);
+      return { ok: false, code };
+    }
   }
 
   // 5. pending markers for the member-days that changed, before the caller responds.
@@ -324,7 +348,8 @@ async function record(deps: RecordDeps, writer: HealthWriterId, identity: Health
   res.results.forEach((r, i) => {
     if ((r.status === 'stored' || r.status === 'updated' || r.status === 'deleted') && itemDates[i]) changed.add(itemDates[i]);
   });
-  const dates = Array.from(changed).sort();
+  // In cutover mode every item date is derived (a duplicate still needs its live row).
+  const dates = cutover ? Array.from(new Set(itemDates.filter(Boolean))).sort() : Array.from(changed).sort();
   if (dates.length === 0) return { ok: true, counts, dates, marker: 'none' };
 
   const enqueuedAt = deps.now().toISOString();
@@ -335,10 +360,21 @@ async function record(deps: RecordDeps, writer: HealthWriterId, identity: Health
     safeLog(deps, { event: 'health_features_marker_write_failed', writer, code: featuresErrorCode(marker.error) });
   }
 
-  // 6. derivation after the response.
   const ident = { tenant_id: identity.tenant_id, user_id: identity.user_id };
+  // 6a. VTID-05163 cutover: derive and publish NOW, before the caller's Index recompute; a failure is the caller's.
+  if (cutover) {
+    const d = await deriveAndStore(deps.derivation, ident, dates, 'live');
+    if (!d.ok) {
+      count(`${writer}:DERIVATION_${d.code}`);
+      await reportFailure(deps, writer, `DERIVATION_${d.code}`);
+      return { ok: false, code: `DERIVATION_${d.code}` };
+    }
+    return { ok: true, counts, dates, marker: marker.error ? 'failed' : 'written' };
+  }
+
+  // 6. derivation after the response (target 'live' once a cutover mode is on, so published rows stay in step).
   deps.schedule(async () => {
-    const d = await deriveAndStore(deps.derivation, ident, dates);
+    const d = await deriveAndStore(deps.derivation, ident, dates, derivationTargetFor(deps.derivation.env));
     if (!d.ok) {
       count(`${writer}:DERIVATION_${d.code}`);
       safeLog(deps, { event: 'health_features_derivation_failed', writer, code: d.code });

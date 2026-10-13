@@ -47,6 +47,7 @@ import { applyUserLimitations, type FilterableProduct } from '../src/services/li
 import { tool_find_perfect_product, tool_find_perfect_practitioner } from '../src/services/orb-tools-shared';
 import { HEALTH_STORE_TABLES } from '../src/services/health-store/tables';
 import { HEALTH_FEATURES_TABLES } from '../src/services/health-features/health-features-repository';
+import { INDEX_DUAL_COMPUTE_TABLE } from '../src/services/health-features/index-dual-compute-repository';
 
 const mockedRepo = repo as jest.Mocked<typeof repo>;
 
@@ -250,7 +251,8 @@ const WEARABLE_OPT_IN = /include_wearable\s*:\s*true/;
 // VTID-05159 (Health Hub A2): the health store's tables (S5) join the banned list.
 const LEGACY_HEALTH_TABLES = ['wearable_daily_metrics', 'wearable_rollup_7d', 'wearable_samples', 'health_features_daily', 'biomarker_results', 'lab_reports', 'vitana_index_scores', 'vitana_pillar_agent_outputs'];
 // VTID-05162 (Health Hub B2): the derived features tables join it too.
-const HEALTH_TABLES = new RegExp(`['"\`](${[...LEGACY_HEALTH_TABLES, ...HEALTH_STORE_TABLES, ...HEALTH_FEATURES_TABLES].join('|')})['"\`]`);
+// VTID-05163 (Health Hub B3): and the Index dual-compute table.
+const HEALTH_TABLES = new RegExp(`['"\`](${[...LEGACY_HEALTH_TABLES, ...HEALTH_STORE_TABLES, ...HEALTH_FEATURES_TABLES, INDEX_DUAL_COMPUTE_TABLE].join('|')})['"\`]`);
 // VTID-05159: commerce never imports the health store (writer, readers, catalogue, fake).
 const HEALTH_STORE_IMPORT = /from\s+['"][^'"]*services\/health-store\/[^'"]*['"]|from\s+['"]\.{1,2}\/(\.\.\/)*health-store\/[^'"]*['"]|require\(\s*['"][^'"]*health-store\/[^'"]*['"]\s*\)/;
 // VTID-05162: commerce never imports the derived-features module (writer re-routing, derivation).
@@ -314,6 +316,7 @@ describe('commerce/health purpose boundary — source scan (VTID-05025)', () => 
     expect("import { resolveHealthSource } from '../services/health-sources/health-sources';").not.toMatch(HEALTH_STORE_IMPORT);
     // VTID-05162: B2's tables and module.
     for (const t of HEALTH_FEATURES_TABLES) expect(`.from('${t}')`).toMatch(HEALTH_TABLES);
+    expect(`.from('${INDEX_DUAL_COMPUTE_TABLE}')`).toMatch(HEALTH_TABLES); // VTID-05163
     expect("import { recordToHealthStore } from '../services/health-features/record-to-health-store';").toMatch(HEALTH_FEATURES_IMPORT);
     expect("import { resolveHealthSource } from '../services/health-sources/health-sources';").not.toMatch(HEALTH_FEATURES_IMPORT);
   });

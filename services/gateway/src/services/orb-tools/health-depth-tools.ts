@@ -90,6 +90,7 @@ import * as repo from './health-depth-tools-repository';
 import { dualWriteUserIntegration } from '../health-sources/legacy-mirror';
 import { recordToHealthStore } from '../health-features/record-to-health-store';
 import { writerValuesForFeature, type HealthWriterId, type WriterValue } from '../health-features/feature-spec';
+import { persistFeatureRow, readFeatureValueForWrite } from '../health-features/cutover';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
 
@@ -168,7 +169,9 @@ async function upsertHealthFeatureAndRecompute(
   const { data: prevRow } = await repo.fetchVitanaIndexScoreTotal(sb, id.user_id, opts.date);
   const prevTotal = (prevRow as { score_total?: number } | null)?.score_total ?? null;
 
-  const { error: featErr } = await repo.upsertHealthFeatureDaily(sb, {
+  // VTID-05163 (B3): through the cutover switch — in `legacy` mode exactly this
+  // upsert; in `derived` mode a coded key goes to the legacy shadow instead.
+  const featureRow = {
     tenant_id: tenantId,
     user_id: id.user_id,
     date: opts.date,
@@ -178,13 +181,17 @@ async function upsertHealthFeatureAndRecompute(
     sample_count: 1,
     confidence: 0.85,
     metadata: opts.metadata,
-  });
+  };
+  const { error: featErr, cutover } = await persistFeatureRow(sb, opts.store.writer, featureRow, () => repo.upsertHealthFeatureDaily(sb, featureRow));
   if (featErr) return { ok: false, error: `feature_write_failed: ${featErr.message}` };
 
   // VTID-05162 (Health Hub B2): dual-write into the health store after the
   // legacy write landed (dark: HEALTH_STORE_DUAL_WRITE_SELF_LOGGED). The tool's
-  // result never depends on it.
-  await recordToHealthStore(sb, { tenant_id: tenantId, user_id: id.user_id }, opts.store.writer, opts.store.values).catch(() => undefined);
+  // result never depends on it — except in a VTID-05163 derived mode, where a
+  // store or derivation failure is returned (the model composes the reply).
+  const rec = await recordToHealthStore(sb, { tenant_id: tenantId, user_id: id.user_id }, opts.store.writer, opts.store.values, { cutover })
+    .catch(() => ({ ok: false as const, code: 'THREW' }));
+  if (cutover && !rec.ok) return { ok: false, error: `health_features_derivation_failed: ${rec.code}` };
 
   // Mark manual-entry integration connected (mirrors logHealthSignal / manual/log).
   try {
@@ -225,7 +232,11 @@ export async function tool_log_meal(args: OrbToolArgs, id: OrbToolIdentity, sb: 
     // includes 'meal_log'; diary-health-extractor.ts documents it the same way) —
     // read-modify-write so multiple meals in a day accumulate rather than overwrite.
     const tenantId = await resolveHealthTenantId(id, sb);
-    const { data: existing, error: existingErr } = await repo.fetchHealthFeatureValue(sb, tenantId, id.user_id, date, 'meal_log');
+    // VTID-05163: in a derived mode the running count lives in the legacy shadow.
+    const { data: existing, error: existingErr } = await readFeatureValueForWrite(
+      sb, 'orb_meal', { tenant_id: tenantId, user_id: id.user_id, date, feature_key: 'meal_log' },
+      () => repo.fetchHealthFeatureValue(sb, tenantId, id.user_id, date, 'meal_log'),
+    );
     if (existingErr) throw existingErr; // must not be indistinguishable from "no meals logged yet today" — would silently reset the day's count instead of accumulating
     const newCount = (Number((existing as { feature_value?: number } | null)?.feature_value) || 0) + 1;
 

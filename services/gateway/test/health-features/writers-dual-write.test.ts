@@ -5,6 +5,8 @@
  * recordToHealthStore answers (skipped, a call-level STORE_* failure, or even a
  * rejection) the legacy response / tool result is byte-identical.
  * recordToHealthStore itself is covered by record-to-health-store.test.ts.
+ * VTID-05163 (B3): every call now carries `cutover` — false here, because the
+ * cutover switch is off (legacy); the derived modes are in cutover-writers.test.ts.
  */
 import express from 'express';
 import request from 'supertest';
@@ -143,7 +145,7 @@ describe('webhook daily metrics and workouts (VTID-05162)', () => {
     await request(app).post('/api/v1/connectors/webhook/oura').send({});
     expect(mockRecord).toHaveBeenCalledTimes(2);
     const [, identity, writer, values, opts] = mockRecord.mock.calls[0];
-    expect({ identity, writer, opts }).toEqual({ identity: { tenant_id: 'tenant-1', user_id: 'user-1' }, writer: 'webhook_daily', opts: { legacy_user_connection_id: 'conn-1', connector_id: 'oura' } });
+    expect({ identity, writer, opts }).toEqual({ identity: { tenant_id: 'tenant-1', user_id: 'user-1' }, writer: 'webhook_daily', opts: { legacy_user_connection_id: 'conn-1', connector_id: 'oura', cutover: false } });
     expect(values).toEqual([{ code: 'sleep_session', date: '2026-10-11', value: 437 }]);
     const [, , w2, v2] = mockRecord.mock.calls[1];
     expect(w2).toBe('webhook_workout');
@@ -173,7 +175,7 @@ describe('voice logHealthSignal (VTID-05162)', () => {
 
   it('dual-writes after the legacy write, as the voice writer', async () => {
     await logHealthSignal(input);
-    expect(mockRecord).toHaveBeenCalledWith(mockSupabase, { tenant_id: 'tenant-1', user_id: 'user-1' }, 'voice', [{ code: 'water_intake', date: '2026-10-12', value: 500 }]);
+    expect(mockRecord).toHaveBeenCalledWith(mockSupabase, { tenant_id: 'tenant-1', user_id: 'user-1' }, 'voice', [{ code: 'water_intake', date: '2026-10-12', value: 500 }], { cutover: false });
   });
 
   it('not after a failed legacy write; the tool result never depends on the store', async () => {
@@ -190,9 +192,9 @@ describe('ORB health tools (VTID-05162)', () => {
 
   it('log_meal is an event write, log_mood and log_vitals are replace writes; weight/BP follow their own legacy insert', async () => {
     await tool_log_meal({ description: 'salad' } as never, id, mockSupabase as never);
-    expect(mockRecord).toHaveBeenLastCalledWith(mockSupabase, { tenant_id: 'tenant-1', user_id: 'user-1' }, 'orb_meal', [expect.objectContaining({ code: 'meal', value: 1 })]);
+    expect(mockRecord).toHaveBeenLastCalledWith(mockSupabase, { tenant_id: 'tenant-1', user_id: 'user-1' }, 'orb_meal', [expect.objectContaining({ code: 'meal', value: 1 })], { cutover: false });
     await tool_log_mood({ mood_score: 4, date: '2026-10-12' } as never, id, mockSupabase as never);
-    expect(mockRecord).toHaveBeenLastCalledWith(mockSupabase, expect.anything(), 'orb_mood', [{ code: 'mood', date: '2026-10-12', value: 4 }]);
+    expect(mockRecord).toHaveBeenLastCalledWith(mockSupabase, expect.anything(), 'orb_mood', [{ code: 'mood', date: '2026-10-12', value: 4 }], { cutover: false });
     mockRecord.mockClear();
     await tool_log_vitals({ heart_rate: 61, weight_kg: 80, systolic: 120, date: '2026-10-12' } as never, id, mockSupabase as never);
     expect(mockRecord.mock.calls.map((c) => c[2])).toEqual(['orb_vitals', 'orb_vitals']);
@@ -225,7 +227,7 @@ describe('diary persistDiaryHealthFeatures — the chokepoint of its three call 
     (diaryRepo.upsertHealthFeatureDaily as jest.Mock).mockImplementation(async (_sb: unknown, row: { feature_key: string }) =>
       row.feature_key === 'meditation_minutes' ? { error: { message: 'x' } } : { error: null });
     await persistDiaryHealthFeatures(mockSupabase as never, 'user-1', 'tenant-1', '2026-10-12', writes);
-    expect(mockRecord).toHaveBeenCalledWith(mockSupabase, { tenant_id: 'tenant-1', user_id: 'user-1' }, 'diary', [{ code: 'water_intake', date: '2026-10-12', value: 1000 }]);
+    expect(mockRecord).toHaveBeenCalledWith(mockSupabase, { tenant_id: 'tenant-1', user_id: 'user-1' }, 'diary', [{ code: 'water_intake', date: '2026-10-12', value: 1000 }], { cutover: false });
   });
 
   it('no successful legacy write, no dual-write; the result never depends on the store', async () => {
@@ -244,10 +246,10 @@ describe('manual-log route (VTID-05162)', () => {
 
   it('dual-writes after the legacy write as the manual writer; biomarker keys stay legacy-only', async () => {
     await request(app).post('/api/v1/integrations/manual/log').send({ pillar: 'hydration', feature_key: 'water_intake', value: 750, date: '2026-10-12' });
-    expect(mockRecord).toHaveBeenCalledWith(mockSupabase, { tenant_id: 'tenant-1', user_id: 'user-1' }, 'manual', [{ code: 'water_intake', date: '2026-10-12', value: 750 }]);
+    expect(mockRecord).toHaveBeenCalledWith(mockSupabase, { tenant_id: 'tenant-1', user_id: 'user-1' }, 'manual', [{ code: 'water_intake', date: '2026-10-12', value: 750 }], { cutover: false });
     mockRecord.mockClear();
     await request(app).post('/api/v1/integrations/manual/log').send({ pillar: 'nutrition', feature_key: 'biomarker_glucose', value: 95, date: '2026-10-12' });
-    expect(mockRecord).toHaveBeenCalledWith(mockSupabase, expect.anything(), 'manual', []);
+    expect(mockRecord).toHaveBeenCalledWith(mockSupabase, expect.anything(), 'manual', [], { cutover: false });
   });
 
   it('a failed legacy write is not dual-written; the response never depends on the store', async () => {
@@ -275,7 +277,7 @@ describe('wearable_log_workout action (VTID-05162)', () => {
       { tenant_id: 'tenant-1', user_id: 'user-1' },
       'manual_workout',
       [{ code: 'workout', date: '2026-10-12', start: '2026-10-12T06:00:00.000Z', value: 30, detail: { workout_type: 'run' } }],
-      { call_id: 'act-1' },
+      { call_id: 'act-1', cutover: false },
     );
   });
 

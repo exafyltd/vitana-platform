@@ -27,6 +27,7 @@ import { dualWriteUserIntegration } from '../services/health-sources/legacy-mirr
 import { isHealthSourcesReadEnabled, logReadFallback, readUserIntegrationsFromSources } from '../services/health-sources/read-model';
 import { recordToHealthStore } from '../services/health-features/record-to-health-store';
 import { writerValuesForFeature } from '../services/health-features/feature-spec';
+import { persistFeatureRow } from '../services/health-features/cutover';
 
 const router = Router();
 
@@ -172,8 +173,10 @@ router.post('/manual/log', requireAuth, async (req: AuthenticatedRequest, res: R
     tenantId = (tenantRow?.tenant_id as string | undefined) ?? null;
     const effectiveTenantId = tenantId ?? '00000000-0000-0000-0000-000000000000';
 
-    // Upsert the feature row.
-    const { error: featErr } = await repo.upsertHealthFeatureDaily(admin, {
+    // Upsert the feature row (VTID-05163: through the cutover switch — in
+    // `legacy` mode exactly this upsert; in `derived` mode a coded key goes to
+    // the legacy shadow instead).
+    const featureRow = {
       tenant_id: effectiveTenantId,
       user_id: userId,
       date,
@@ -182,7 +185,8 @@ router.post('/manual/log', requireAuth, async (req: AuthenticatedRequest, res: R
       feature_unit: unit,
       sample_count: 1,
       confidence: 0.8,
-    });
+    };
+    const { error: featErr, cutover } = await persistFeatureRow(admin, 'manual', featureRow, () => repo.upsertHealthFeatureDaily(admin, featureRow));
     if (featErr) {
       return res.status(400).json({ ok: false, error: 'FEATURE_WRITE_FAILED', detail: featErr.message });
     }
@@ -190,13 +194,18 @@ router.post('/manual/log', requireAuth, async (req: AuthenticatedRequest, res: R
     // VTID-05162 (Health Hub B2): dual-write into the health store after the
     // legacy write landed (dark: HEALTH_STORE_DUAL_WRITE_SELF_LOGGED). Keys with
     // no store code (biomarker_*, macro_balance, hydration_log, …) stay legacy-only.
-    // The response never depends on it. Members without a tenant row are skipped.
-    await recordToHealthStore(
+    // The response never depends on it — except in a VTID-05163 derived mode,
+    // where a store or derivation failure is this call's error.
+    const rec = await recordToHealthStore(
       admin,
       { tenant_id: tenantId ?? '', user_id: userId },
       'manual',
       writerValuesForFeature(featureKey, value, date, 'replace'),
-    ).catch(() => undefined);
+      { cutover },
+    ).catch(() => ({ ok: false as const, code: 'THREW' }));
+    if (cutover && !rec.ok) {
+      return res.status(503).json({ ok: false, error: 'HEALTH_FEATURES_DERIVATION_FAILED', code: rec.code });
+    }
 
     // Mark the manual-entry integration as connected + bump last_sync_at.
     await repo.upsertManualEntryIntegrationSynced(admin, userId);

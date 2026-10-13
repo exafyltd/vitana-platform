@@ -11,6 +11,7 @@ import { emitClickOutbound } from './reward-events';
 import * as repo from './action-executors-repository';
 import { CALENDAR_EVENT_TYPES } from '../types/calendar';
 import { recordToHealthStore } from './health-features/record-to-health-store';
+import { isWriterCutOver } from './health-features/cutover';
 
 export function registerAllActionExecutors(): void {
   // ---- shopping_add_to_list ----
@@ -114,16 +115,21 @@ export function registerAllActionExecutors(): void {
     // legacy insert landed (dark: HEALTH_STORE_DUAL_WRITE_DEVICE). One workout
     // record per action (the action id is the per-call key), on the UTC day it
     // started — the day D6a counts it on. The result never depends on it.
+    // VTID-05163 (B3): in a derived mode (derived_device / derived) the store
+    // write is synchronous and publishes the day's wearable_workout row; a
+    // failure is this action's error. In `legacy` mode nothing changes.
     const startedMs = Date.parse(started_at);
     if (Number.isFinite(startedMs)) {
       const startIso = new Date(startedMs).toISOString();
-      await recordToHealthStore(
+      const cutover = isWriterCutOver('manual_workout');
+      const rec = await recordToHealthStore(
         supabase,
         { tenant_id: ctx.tenant_id, user_id: ctx.user_id },
         'manual_workout',
         [{ code: 'workout', date: startIso.slice(0, 10), start: startIso, value: duration_minutes, detail: { workout_type: String(workout_type).slice(0, 64) } }],
-        { call_id: String(ctx.action_id) },
-      ).catch(() => undefined);
+        { call_id: String(ctx.action_id), cutover },
+      ).catch(() => ({ ok: false as const, code: 'THREW' }));
+      if (cutover && !rec.ok) return { ok: false, error: `health_features_derivation_failed: ${rec.code}` };
     }
     return {
       ok: true,

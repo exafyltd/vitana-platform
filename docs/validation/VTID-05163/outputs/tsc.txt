@@ -1,0 +1,6 @@
+src/services/connected-apps/contacts-import.ts(24,82): error TS2307: Cannot find module 'libphonenumber-js' or its corresponding type declarations.
+src/services/phone-verification/service.ts(19,62): error TS2307: Cannot find module 'libphonenumber-js/max' or its corresponding type declarations.
+src/services/phone-verification/sms-sender.ts(12,8): error TS2307: Cannot find module '@aws-sdk/client-pinpoint-sms-voice-v2' or its corresponding type declarations.
+# The three errors above are module-resolution gaps of this machine's node_modules (libphonenumber-js and
+# @aws-sdk/client-pinpoint-sms-voice-v2 are not installed locally), in files this change does not touch; the same
+# three appear on the B2 base (docs/validation/VTID-05162/outputs/tsc.txt). No error in any file this change touches.

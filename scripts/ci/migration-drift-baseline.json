@@ -169,6 +169,11 @@
       "table": "health_features_derivation_pending",
       "vtid": "VTID-05162",
       "reason": "Health Hub derived features pending markers (Phase 1 B2): Aurora only — 0T, production after the cutover. Never Supabase (migration placement guard)."
+    },
+    {
+      "table": "vitana_index_dual_compute",
+      "vtid": "VTID-05163",
+      "reason": "Health Hub Vitana Index dual-compute (Phase 1 B3): Aurora only — 0T, production after the cutover. Never Supabase (migration placement guard)."
     }
   ]
 }

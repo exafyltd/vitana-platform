@@ -22,6 +22,8 @@ import { dualWriteUserConnections } from '../services/health-sources/legacy-mirr
 import { bridgeWearableDays, isWearableFeatureBridgeEnabled, utcDateOf } from '../services/wearable-features-bridge';
 import { recordToHealthStore } from '../services/health-features/record-to-health-store';
 import { writerValuesForDailyMetrics } from '../services/health-features/feature-spec';
+import { bridgeShadowWriter, isWearableBridgeCutOver, isWriterCutOver } from '../services/health-features/cutover';
+import { computeVitanaIndexForUser } from '../services/wearable-features-bridge-repository';
 
 const router = Router();
 
@@ -107,6 +109,12 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
   // VTID-05089: member-days whose wearable rows persisted without error,
   // bridged into health_features_daily once per user after the loop.
   const bridgeTargets = new Map<string, { tenantId: string; dates: Set<string> }>();
+  // VTID-05163 (Health Hub B3): in a derived mode the webhook writers publish
+  // through the store synchronously; a failure makes this response a 503 (the
+  // raw rows are stored and the vendor's retry is idempotent).
+  const webhookDailyCutover = isWriterCutOver('webhook_daily');
+  const webhookWorkoutCutover = isWriterCutOver('webhook_workout');
+  const derivedFailures: string[] = [];
   const noteBridgeDay = (uid: string, tid: string, date: string | null) => {
     if (!date) return;
     const t = bridgeTargets.get(uid) ?? { tenantId: tid, dates: new Set<string>() };
@@ -194,13 +202,14 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
             // VTID-05162 (Health Hub B2): dual-write the day's metrics into the
             // health store after the legacy upsert landed (dark:
             // HEALTH_STORE_DUAL_WRITE_DEVICE). Never changes this response.
-            await recordToHealthStore(
+            const rec = await recordToHealthStore(
               supabase,
               { tenant_id: tenantId, user_id: userId },
               'webhook_daily',
               writerValuesForDailyMetrics(patch, metric_date),
-              { legacy_user_connection_id: userConnectionId, connector_id: connector.id },
-            ).catch(() => undefined);
+              { legacy_user_connection_id: userConnectionId, connector_id: connector.id, cutover: webhookDailyCutover },
+            ).catch(() => ({ ok: false as const, code: 'THREW' }));
+            if (webhookDailyCutover && !rec.ok) derivedFailures.push(rec.code);
           }
         }
       } else if (event.topic === 'connector.wearable.workout.recorded') {
@@ -230,7 +239,7 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
             const externalId = (event.payload.external_workout_id as string | null) ?? null;
             const minutes = event.payload.duration_minutes;
             if (day) {
-              await recordToHealthStore(
+              const rec = await recordToHealthStore(
                 supabase,
                 { tenant_id: tenantId, user_id: userId },
                 'webhook_workout',
@@ -242,8 +251,9 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
                   // No vendor id: the start time identifies the workout (decision inside the plan).
                   external_id: externalId ?? `started:${new Date(Date.parse(startedAt)).toISOString()}`,
                 }],
-                { legacy_user_connection_id: userConnectionId, connector_id: connector.id },
-              ).catch(() => undefined);
+                { legacy_user_connection_id: userConnectionId, connector_id: connector.id, cutover: webhookWorkoutCutover },
+              ).catch(() => ({ ok: false as const, code: 'THREW' }));
+              if (webhookWorkoutCutover && !rec.ok) derivedFailures.push(rec.code);
             }
           }
         }
@@ -272,13 +282,33 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
   // Dark unless WEARABLE_FEATURE_BRIDGE_ENABLED === 'true' and not staging.
   // A bridge failure never changes this webhook's response: the raw data is
   // already stored, and the 02:00 recompute plus the next webhook repair it.
+  // VTID-05163 (Health Hub B3): once the webhook writer is cut over the bridge
+  // no longer writes health_features_daily — the derivation published the
+  // device rows above — its rows go to the legacy shadow (rollback) and the
+  // Index recompute it used to run happens here, once per user.
+  const bridgeCutOver = isWearableBridgeCutOver();
   if (supabase && bridgeTargets.size > 0 && isWearableFeatureBridgeEnabled()) {
     for (const [uid, t] of bridgeTargets) {
       try {
-        await bridgeWearableDays(supabase, { tenantId: t.tenantId, userId: uid, dates: Array.from(t.dates) });
+        await bridgeWearableDays(
+          supabase,
+          { tenantId: t.tenantId, userId: uid, dates: Array.from(t.dates) },
+          bridgeCutOver ? { shadow: bridgeShadowWriter(supabase) } : {},
+        );
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`[connector-webhook] wearable features bridge failed: ${message}`);
+      }
+    }
+  }
+  if (supabase && bridgeTargets.size > 0 && bridgeCutOver) {
+    const today = new Date().toISOString().slice(0, 10);
+    for (const uid of bridgeTargets.keys()) {
+      try {
+        const rpc = await computeVitanaIndexForUser(supabase, uid, today);
+        if (rpc?.error) derivedFailures.push('INDEX_RECOMPUTE_FAILED');
+      } catch {
+        derivedFailures.push('INDEX_RECOMPUTE_FAILED');
       }
     }
   }
@@ -293,6 +323,10 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
     });
   }
 
+  if (derivedFailures.length > 0) {
+    // VTID-05163: only reachable in a derived mode (legacy: never populated).
+    return res.status(503).json({ ok: false, error: 'HEALTH_FEATURES_DERIVATION_FAILED', code: derivedFailures[0], processed: persisted, skipped });
+  }
   res.json({ ok: true, processed: persisted, skipped });
 });
 

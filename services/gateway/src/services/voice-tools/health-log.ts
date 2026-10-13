@@ -19,6 +19,7 @@ import * as repo from './health-log-repository';
 import { dualWriteUserIntegration } from '../health-sources/legacy-mirror';
 import { recordToHealthStore } from '../health-features/record-to-health-store';
 import { writerValuesForFeature } from '../health-features/feature-spec';
+import { persistFeatureRow } from '../health-features/cutover';
 
 type LogTool = 'log_water' | 'log_sleep' | 'log_exercise' | 'log_meditation';
 
@@ -141,7 +142,9 @@ export async function logHealthSignal(
       ? { activity_type: input.activity_type, source: 'voice_tool' }
       : { source: 'voice_tool' };
 
-  const { error: featErr } = await repo.upsertHealthFeatureDaily(admin, {
+  // VTID-05163 (B3): through the cutover switch — in `legacy` mode exactly this
+  // upsert; in `derived` mode the row goes to the legacy shadow instead.
+  const featureRow = {
     tenant_id: effectiveTenantId,
     user_id: input.user_id,
     date: input.date,
@@ -151,20 +154,27 @@ export async function logHealthSignal(
     sample_count: 1,
     confidence: 0.85,
     metadata,
-  });
+  };
+  const { error: featErr, cutover } = await persistFeatureRow(admin, 'voice', featureRow, () => repo.upsertHealthFeatureDaily(admin, featureRow));
   if (featErr) {
     return { ok: false, error: `feature_write_failed: ${featErr.message}` };
   }
 
   // VTID-05162 (Health Hub B2): dual-write into the health store after the
   // legacy write landed (dark: HEALTH_STORE_DUAL_WRITE_SELF_LOGGED). The tool's
-  // result never depends on it.
-  await recordToHealthStore(
+  // result never depends on it — except in a VTID-05163 derived mode, where the
+  // store write and the synchronous derivation ARE the Index input, so a
+  // failure is returned (the model composes what the member hears).
+  const rec = await recordToHealthStore(
     admin,
     { tenant_id: effectiveTenantId, user_id: input.user_id },
     'voice',
     writerValuesForFeature(map.feature_key, value, input.date, 'replace'),
-  ).catch(() => undefined);
+    { cutover },
+  ).catch(() => ({ ok: false as const, code: 'THREW' }));
+  if (cutover && !rec.ok) {
+    return { ok: false, error: `health_features_derivation_failed: ${rec.code}` };
+  }
 
   // Mark manual-entry integration connected (mirrors integrations.ts).
   await repo.upsertManualEntryUserIntegration(admin, {

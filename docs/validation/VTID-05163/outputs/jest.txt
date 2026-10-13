@@ -1,0 +1,54 @@
+PASS test/health-features/record-to-health-store.test.ts
+PASS test/routes/health.test.ts
+PASS test/save-diary-entry-shared.test.ts
+PASS test/diary.test.ts
+PASS test/vtid-05025-commerce-health-boundary.test.ts
+PASS test/health-features/boundary.test.ts
+PASS test/health-store/infra-scripts.test.ts
+PASS test/health-store/ingest.test.ts
+PASS test/health-features/cutover-writers.test.ts
+PASS test/vtid-05030-connection-tokens.test.ts
+PASS test/vtid-05161-health-sources.test.ts
+PASS test/vtid-05031-webhook-verification.test.ts
+PASS test/health-store/internal-routes.test.ts
+PASS test/health-store/catalogue.test.ts
+PASS test/health-store/contract.test.ts
+PASS test/vtid-04968-delegation-guard.test.ts
+PASS test/health-features/admin-dual-compute-route.test.ts
+PASS test/services/voice-tools/health-log.test.ts
+PASS test/services/action-executors.test.ts
+PASS test/routes/vtid-05089-connector-webhooks-bridge.test.ts
+PASS test/health-features/derive-daily-features.test.ts
+PASS test/health-features/cutover.test.ts
+PASS test/health-features/daily-recompute-dual-compute.test.ts
+PASS test/migrations/vtid-05163-index-dual-compute-migration.test.ts
+PASS test/health-features/writers-dual-write.test.ts
+PASS test/routes/connector-webhooks.test.ts
+PASS test/health-features/index-dual-compute.test.ts
+PASS test/vtid-05089-wearable-features-bridge.test.ts
+PASS test/services/memory/diary.test.ts
+PASS test/vtid-04662-service-health-registered-routes.test.ts
+PASS test/health-store/store-ops.test.ts
+PASS test/health-features/feature-spec.test.ts
+PASS test/services/conversation/vtid-04423-turn-candidates.test.ts
+PASS test/services/orb-tools/health-depth-tools.test.ts
+PASS test/migrations/vtid-05162-health-features-v2-migration.test.ts
+PASS test/migrations/vtid-05161-health-sources-migration.test.ts
+PASS test/vtid-05156-people-match-health-boundary.test.ts
+Test Suites: 37 passed, 37 total
+Tests:       694 passed, 694 total
+# npm run test:support
+PASS test/vtid-04456-customer-support-pipeline-regression.test.ts
+PASS test/feedback-pipeline.test.ts
+PASS test/vtid-04332-report-to-specialist-status-contract.test.ts
+PASS test/vtid-04445-persona-voice-gender.test.ts
+Test Suites: 4 passed, 4 total
+Tests:       87 passed, 87 total
+# npm run test:operator
+PASS test/vtid-04465-operator-pipeline-regression.test.ts (14.617 s)
+Test Suites: 1 passed, 1 total
+Tests:       71 passed, 71 total
+# npm run test:roles
+PASS test/vtid-04560-role-separation-regression.test.ts
+Test Suites: 1 passed, 1 total
+Tests:       105 passed, 105 total

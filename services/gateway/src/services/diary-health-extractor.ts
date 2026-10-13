@@ -45,6 +45,7 @@ import * as repo from './diary-health-extractor-repository';
 import { rememberFact } from './memory/remember'; // VTID-04364
 import { recordToHealthStore } from './health-features/record-to-health-store';
 import { writerValuesForFeature, type WriterValue } from './health-features/feature-spec';
+import { persistFeatureRow } from './health-features/cutover';
 
 export interface DiaryFeatureWrite {
   feature_key: string;
@@ -297,15 +298,18 @@ export async function persistDiaryHealthFeatures(
   tenantId: string,
   date: string,
   writes: DiaryFeatureWrite[],
-): Promise<{ written: number; failed: number }> {
+): Promise<{ written: number; failed: number; error_code?: string }> {
   if (writes.length === 0) return { written: 0, failed: 0 };
 
   let written = 0;
   let failed = 0;
+  let cutoverWritten = 0; // VTID-05163: rows that went to the legacy shadow (cutover mode only)
   const storeValues: WriterValue[] = []; // VTID-05162: the writes whose legacy row landed
   for (const w of writes) {
     try {
-      const { error } = await repo.upsertHealthFeatureDaily(admin, {
+      // VTID-05163 (B3): through the cutover switch — in `legacy` mode exactly
+      // the upsert below; in a derived mode a cut-over key goes to the shadow.
+      const row = {
         tenant_id: tenantId,
         user_id: userId,
         date,
@@ -315,12 +319,14 @@ export async function persistDiaryHealthFeatures(
         sample_count: 1,
         confidence: 0.6,
         metadata: { source: 'diary_extractor', evidence: w.evidence.slice(0, 200) },
-      });
+      };
+      const { error, cutover } = await persistFeatureRow(admin, 'diary', row, () => repo.upsertHealthFeatureDaily(admin, row));
       if (error) {
         console.warn(`[VTID-01977] feature write failed (${w.feature_key}): ${error.message}`);
         failed += 1;
       } else {
         written += 1;
+        if (cutover) cutoverWritten += 1;
         storeValues.push(...writerValuesForFeature(w.feature_key, w.feature_value, date, 'replace'));
       }
     } catch (e: any) {
@@ -333,8 +339,18 @@ export async function persistDiaryHealthFeatures(
   // health store (dark: HEALTH_STORE_DUAL_WRITE_SELF_LOGGED). One chokepoint for
   // all three diary call sites (routes/memory.ts, services/memory/diary.ts,
   // orb-tools-shared.ts). Never changes this function's result.
+  let errorCode: string | undefined;
   if (storeValues.length > 0) {
-    await recordToHealthStore(admin, { tenant_id: tenantId, user_id: userId }, 'diary', storeValues).catch(() => undefined);
+    const rec = await recordToHealthStore(admin, { tenant_id: tenantId, user_id: userId }, 'diary', storeValues, { cutover: cutoverWritten > 0 })
+      .catch(() => ({ ok: false as const, code: 'THREW' }));
+    // VTID-05163: in a derived mode the store + derivation failure is the call's
+    // (the cut-over rows did not reach the Index); in `legacy` mode it is ignored.
+    if (cutoverWritten > 0 && !rec.ok) {
+      errorCode = `health_features_derivation_failed:${rec.code}`;
+      console.warn(`[VTID-05163] diary features not published: ${rec.code}`);
+      written -= cutoverWritten;
+      failed += cutoverWritten;
+    }
   }
 
   // BOOTSTRAP-MEMORY-DAILY-LEARNING (diary de-silo): the diary previously
@@ -368,5 +384,5 @@ export async function persistDiaryHealthFeatures(
     });
   }
 
-  return { written, failed };
+  return errorCode ? { written, failed, error_code: errorCode } : { written, failed };
 }

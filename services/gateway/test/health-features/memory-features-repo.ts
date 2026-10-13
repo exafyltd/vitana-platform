@@ -8,6 +8,8 @@
 import type {
   FeatureV2Row,
   HealthFeaturesRepository,
+  LegacyFeatureRow,
+  LiveDerivedRow,
   PendingMarker,
   RepoResult,
 } from '../../src/services/health-features/health-features-repository';
@@ -16,6 +18,9 @@ type Mode = 'error' | 'missing' | 'throw';
 
 export interface MemoryFeaturesRepo extends HealthFeaturesRepository {
   v2: Map<string, FeatureV2Row>;
+  /** VTID-05163: health_features_daily (the live Index input) and the legacy shadow. */
+  live: Map<string, LegacyFeatureRow | LiveDerivedRow>;
+  shadow: Map<string, LegacyFeatureRow>;
   pending: Map<string, PendingMarker>;
   fail: Partial<Record<keyof HealthFeaturesRepository, Mode>>;
   calls: Array<keyof HealthFeaturesRepository>;
@@ -24,6 +29,9 @@ export interface MemoryFeaturesRepo extends HealthFeaturesRepository {
 export function createMemoryFeaturesRepo(): MemoryFeaturesRepo {
   const v2 = new Map<string, FeatureV2Row>();
   const pending = new Map<string, PendingMarker>();
+  const live = new Map<string, LegacyFeatureRow | LiveDerivedRow>();
+  const shadow = new Map<string, LegacyFeatureRow>();
+  const src = (r: { metadata?: Record<string, unknown> } | undefined) => (r?.metadata as { source?: string } | undefined)?.source;
   const fail: MemoryFeaturesRepo['fail'] = {};
   const calls: MemoryFeaturesRepo['calls'] = [];
   const k2 = (t: string, u: string, d: string, f: string) => `${t}|${u}|${d}|${f}`;
@@ -40,6 +48,8 @@ export function createMemoryFeaturesRepo(): MemoryFeaturesRepo {
 
   return {
     v2,
+    live,
+    shadow,
     pending,
     fail,
     calls,
@@ -71,6 +81,48 @@ export function createMemoryFeaturesRepo(): MemoryFeaturesRepo {
     setPendingAttempts: (t, u, d, attempts) => run('setPendingAttempts', () => {
       const p = pending.get(kp(t, u, d));
       if (p) p.attempts = attempts;
+      return null;
+    }),
+    upsertLegacyShadow: (rows) => run('upsertLegacyShadow', () => {
+      for (const r of rows) shadow.set(k2(r.tenant_id, r.user_id, r.date, r.feature_key), { ...r });
+      return null;
+    }),
+    fetchLegacyShadowValue: (t, u, d, f) => run('fetchLegacyShadowValue', () => {
+      const r = shadow.get(k2(t, u, d, f));
+      return r ? { feature_value: r.feature_value } : null;
+    }),
+    insertLegacyShadowIgnoringExisting: (rows) => run('insertLegacyShadowIgnoringExisting', () => {
+      for (const r of rows) {
+        const k = k2(r.tenant_id, r.user_id, r.date, r.feature_key);
+        if (!shadow.has(k)) shadow.set(k, { ...r });
+      }
+      return null;
+    }),
+    updateLegacyShadowBridgeOwned: (row) => run('updateLegacyShadowBridgeOwned', () => {
+      const k = k2(row.tenant_id, row.user_id, row.date, row.feature_key);
+      if (src(shadow.get(k)) === 'wearable_bridge') shadow.set(k, { ...shadow.get(k)!, ...row });
+      return null;
+    }),
+    insertLiveIgnoringExisting: (rows) => run('insertLiveIgnoringExisting', () => {
+      for (const r of rows) {
+        const k = k2(r.tenant_id, r.user_id, r.date, r.feature_key);
+        if (!live.has(k)) live.set(k, { ...r });
+      }
+      return null;
+    }),
+    updateLiveDerivedRow: (row) => run('updateLiveDerivedRow', () => {
+      const k = k2(row.tenant_id, row.user_id, row.date, row.feature_key);
+      if (src(live.get(k)) === 'derived_v2') live.set(k, { ...live.get(k)!, ...row });
+      return null;
+    }),
+    listLiveDerivedKeys: (t, u, dates) => run('listLiveDerivedKeys', () =>
+      Array.from(live.values()).filter((r) => r.tenant_id === t && r.user_id === u && dates.includes(r.date) && src(r) === 'derived_v2')
+        .map((r) => ({ date: r.date, feature_key: r.feature_key }))),
+    deleteLiveDerived: (t, u, d, keys) => run('deleteLiveDerived', () => {
+      for (const f of keys) {
+        const k = k2(t, u, d, f);
+        if (src(live.get(k)) === 'derived_v2') live.delete(k);
+      }
       return null;
     }),
   };
