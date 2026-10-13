@@ -57,13 +57,29 @@ function isAncestor(repoRoot, a, b) {
 // endpoint that redirects to production must never turn a staging test into
 // a production request (rule 48). A write probe is never redirected at all —
 // its 3xx is returned as the answer and fails the expected 401/403.
+// VTID-05129: a GET/HEAD whose connection drops (fetch THROWS a retriable
+// network error) gets up to two more tries. An HTTP status is an answer and
+// is never retried; neither is a write probe or a TLS/DNS error.
+async function fetchWithRetry(url, init, method) {
+  const retriable = ['GET', 'HEAD'].includes(method);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fetch(url, { ...init, signal: AbortSignal.timeout(20_000) });
+    } catch (e) {
+      if (!retriable || attempt >= 2 || !lib.isRetriableFetchError(e)) throw e;
+      log(`retrying ${method} ${url} after ${e.cause?.code}`);
+      await sleep(1_000 * (attempt + 1));
+    }
+  }
+}
+
 async function httpGet(url, init = {}, { allowProduction = false } = {}) {
   const method = String(init.method || 'GET').toUpperCase();
   let current = url;
   let res;
   for (let hop = 0; ; hop++) {
     if (!allowProduction) lib.assertStagingTarget(current);
-    res = await fetch(current, { ...init, redirect: 'manual', signal: AbortSignal.timeout(20_000) });
+    res = await fetchWithRetry(current, { ...init, redirect: 'manual' }, method);
     const location = res.headers.get('location');
     if (res.status < 300 || res.status >= 400 || !location || !['GET', 'HEAD'].includes(method)) break;
     if (hop >= 5) throw new Error(`too many redirects from ${url}`);
@@ -109,8 +125,10 @@ async function productionStamp(service) {
 // { state: 'match' | 'superseded' | 'mismatch', stamp }.
 async function confirmLive(service, sha, repoRoot, { attempts = 8, samples = 5 } = {}) {
   let last = null;
+  let lastStamps = [];
   for (let a = 1; a <= attempts; a++) {
     const stamps = [];
+    lastStamps = stamps;
     for (let s = 0; s < samples; s++) {
       try {
         stamps.push(await stagingStamp(service));
@@ -119,8 +137,10 @@ async function confirmLive(service, sha, repoRoot, { attempts = 8, samples = 5 }
       }
     }
     last = stamps.find(Boolean) || null;
-    if (stamps.every((st) => lib.commitMatches(service, st, sha))) return { state: 'match', stamp: last };
-    const other = stamps.find((st) => st && !lib.commitMatches(service, st, sha));
+    // VTID-05129: a null sample is unknown, not a mismatch.
+    const verdict = lib.evaluateStampSamples(service, stamps, sha);
+    if (verdict.state === 'match') return { state: 'match', stamp: last, stamps };
+    const other = verdict.other;
     if (other) {
       const full = git(repoRoot, ['rev-parse', '--verify', `${other}^{commit}`], { allowFail: true });
       if (full && full !== sha && isAncestor(repoRoot, sha, full)) return { state: 'superseded', stamp: other };
@@ -128,7 +148,7 @@ async function confirmLive(service, sha, repoRoot, { attempts = 8, samples = 5 }
     log(`attempt ${a}/${attempts}: staging stamps ${JSON.stringify(stamps)} — want ${sha.slice(0, 12)}; retry in 15s`);
     if (a < attempts) await sleep(15_000);
   }
-  return { state: 'mismatch', stamp: last };
+  return { state: 'mismatch', stamp: last, stamps: lastStamps };
 }
 
 function loadManifest(repoRoot, vtid) {
@@ -224,17 +244,11 @@ export default defineConfig({
   });
   const output = `${r.stdout || ''}${r.stderr || ''}`;
   process.stdout.write(output);
-  return r.status === 0 ? { ok: true, problems: [] } : { ok: false, problems: [summarizeFailure(output)] };
+  return r.status === 0 ? { ok: true, problems: [] } : { ok: false, problems: [lib.summarizeFailure(output)] };
 }
 
 // The few lines that say what broke, not the whole reporter output (which is
 // already in the job log above).
-function summarizeFailure(output) {
-  const lines = output.split('\n').map((l) => l.replace(/[║╔╗╚╝═]/g, '').trim()).filter(Boolean);
-  const key = lines.filter((l) => /(✘|Error:|expect\(|Expected|Received|FAIL|failed)/.test(l));
-  return (key.length ? key : lines.slice(-6)).slice(0, 8).join(' | ').slice(0, 1500);
-}
-
 function runExisting(repoRoot, t) {
   const cwdAbs = inside(repoRoot, t.cwd || '.');
   if (!cwdAbs) return { ok: false, problems: ['cwd outside repo'] };
@@ -249,7 +263,7 @@ function runExisting(repoRoot, t) {
   });
   const output = `${r.stdout || ''}${r.stderr || ''}`;
   process.stdout.write(output);
-  return r.status === 0 ? { ok: true, problems: [] } : { ok: false, problems: [summarizeFailure(output)] };
+  return r.status === 0 ? { ok: true, problems: [] } : { ok: false, problems: [lib.summarizeFailure(output)] };
 }
 
 async function runSuite(service, repoRoot, outDir, suite, tests) {
@@ -331,10 +345,12 @@ async function verify(args) {
       for (const iv of full.invalid) results.push({ suite: iv.vtid, name: 'manifest valid', kind: 'manifest', ok: false, problems: iv.errors, ms: 0 });
       for (const s of full.suites) results.push(...(await runSuite(service, repoRoot, outDir, s.vtid, s.tests)));
     }
-    const after = await confirmLive(service, sha, repoRoot, { attempts: 1, samples: 5 });
+    // VTID-05129: three attempts, and the problem lists every sample (null =
+    // unreadable) so a dropped request can't pass for a different commit.
+    const after = await confirmLive(service, sha, repoRoot, { attempts: 3, samples: 5 });
     if (after.state !== 'match') {
       superseded = after.state === 'superseded';
-      if (!superseded) results.push({ suite: 'deploy', name: 'staging still serves the commit after the run', kind: 'http', ok: false, problems: [`staging now reports ${after.stamp || 'nothing'}`], ms: 0 });
+      if (!superseded) results.push({ suite: 'deploy', name: 'staging still serves the commit after the run', kind: 'http', ok: false, problems: [`staging stamps ${JSON.stringify(after.stamps || [])} — want ${sha.slice(0, 12)}`], ms: 0 });
     }
   }
 
