@@ -64,7 +64,7 @@
     },
     {
       "kind": "existing",
-      "ref": "npx jest test/vtid-05133-community-mcp-route.test.ts test/vtid-05133-community-mcp-tools.test.ts test/vtid-04990-chatgpt-oauth.test.ts test/vtid-04968-delegation-guard.test.ts test/commerce-mcp.test.ts test/commerce-mcp-cors.test.ts",
+      "ref": "npx jest test/community-mcp.test.ts test/vtid-05133-community-mcp-tools.test.ts test/vtid-04990-chatgpt-oauth.test.ts test/vtid-04968-delegation-guard.test.ts test/commerce-mcp.test.ts test/commerce-mcp-cors.test.ts",
       "cwd": "services/gateway",
       "reason": "the Community connector, its privacy rules and grant checks, and the unchanged Commerce behaviour"
     }

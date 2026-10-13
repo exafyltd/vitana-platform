@@ -3,6 +3,6 @@ $ new: services/gateway/src/routes/community-mcp.ts, services/community-mcp.ts, 
 $ edit: routes/commerce-mcp.ts (grant check, shim gating), services/commerce-mcp.ts (permission_needed code), middleware/cors.ts, index.ts (mount), types/cicd.ts, AWS-STAGE-DEPLOY-GATEWAY.yml (staging flags)
 $ node scripts/conversation/generate-flag-pins.mjs
 $ cd services/gateway && npx tsc --noEmit -p tsconfig.json
-$ npx jest test/vtid-05133-community-mcp-tools.test.ts test/vtid-05133-community-mcp-route.test.ts
+$ npx jest test/vtid-05133-community-mcp-tools.test.ts test/community-mcp.test.ts
 $ npx jest test/commerce-mcp test/vtid-04897 test/vtid-04940 test/vtid-04941 test/vtid-04968 test/vtid-04969 test/vtid-04990 test/vtid-04980
 $ npx jest $(grep -rl AWS-STAGE-DEPLOY-GATEWAY test) test/services/conversation/vtid-04525-conversation-flag-registry.test.ts

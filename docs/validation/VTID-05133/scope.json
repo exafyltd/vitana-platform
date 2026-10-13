@@ -15,6 +15,7 @@
     "supabase/migrations/20261013150000_vtid_05133_ai_connection_grants.sql",
     "DATABASE_SCHEMA.md",
     "services/gateway/test/vtid-05133-*.test.ts",
+    "services/gateway/test/community-mcp.test.ts",
     "services/gateway/test/helpers/vtid-05133-fake-supabase.ts",
     "docs/validation/VTID-05133/**"
   ],
