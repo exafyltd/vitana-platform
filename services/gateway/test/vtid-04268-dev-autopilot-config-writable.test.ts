@@ -20,7 +20,7 @@ describe('CONFIG_NUMERIC_FIELDS', () => {
     expect(CONFIG_NUMERIC_FIELDS).not.toHaveProperty('kill_switch');
   });
 
-  it('includes the nine safe numeric fields', () => {
+  it('includes the safe numeric fields (VTID-05146 adds overlap_hold_max_hours)', () => {
     expect(Object.keys(CONFIG_NUMERIC_FIELDS).sort()).toEqual(
       [
         'auto_archive_days',
@@ -29,6 +29,7 @@ describe('CONFIG_NUMERIC_FIELDS', () => {
         'daily_budget',
         'eager_plan_top_k',
         'max_auto_fix_depth',
+        'overlap_hold_max_hours',
         'post_deploy_verification_window_minutes',
         'reject_suppression_days',
         'select_all_cap',
@@ -125,5 +126,29 @@ describe('validateConfigUpdate', () => {
     expect(validateConfigUpdate({ [field]: bounds.min }).ok).toBe(true);
     expect(validateConfigUpdate({ [field]: bounds.max }).ok).toBe(true);
     expect(validateConfigUpdate({ [field]: bounds.max + 1 }).ok).toBe(false);
+  });
+});
+
+describe('VTID-05146: frozen_scope is writable (it can only take work away from the executor)', () => {
+  it('accepts a list of repo-relative globs, trimmed and de-duplicated', () => {
+    const r = validateConfigUpdate({ frozen_scope: [' services/gateway/src/frontend/command-hub/** ', 'services/gateway/src/frontend/command-hub/**'] });
+    expect(r).toEqual({ ok: true, patch: { frozen_scope: ['services/gateway/src/frontend/command-hub/**'] } });
+  });
+  it('accepts an empty list (lifts the freeze)', () => {
+    expect(validateConfigUpdate({ frozen_scope: [] })).toEqual({ ok: true, patch: { frozen_scope: [] } });
+  });
+  it('rejects a non-array, an empty entry, an absolute path and a parent-directory path', () => {
+    expect(validateConfigUpdate({ frozen_scope: 'services/**' }).ok).toBe(false);
+    expect(validateConfigUpdate({ frozen_scope: [''] }).ok).toBe(false);
+    expect(validateConfigUpdate({ frozen_scope: ['/etc/**'] }).ok).toBe(false);
+    expect(validateConfigUpdate({ frozen_scope: ['../x/**'] }).ok).toBe(false);
+  });
+  it('overlap_hold_max_hours is bounded 1..720', () => {
+    expect(validateConfigUpdate({ overlap_hold_max_hours: 72 })).toEqual({ ok: true, patch: { overlap_hold_max_hours: 72 } });
+    expect(validateConfigUpdate({ overlap_hold_max_hours: 0 }).ok).toBe(false);
+    expect(validateConfigUpdate({ overlap_hold_max_hours: 721 }).ok).toBe(false);
+  });
+  it('allow_scope and deny_scope stay unwritable', () => {
+    expect(validateConfigUpdate({ frozen_scope: [], deny_scope: [] }).ok).toBe(false);
   });
 });

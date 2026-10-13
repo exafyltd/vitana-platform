@@ -16,6 +16,7 @@ import { ingestScan, ScanInput } from '../services/dev-autopilot-synthesis';
 import { generatePlanVersion } from '../services/dev-autopilot-planning';
 import { approveAutoExecute, cancelExecution } from '../services/dev-autopilot-execute';
 import { approveExecution, rejectExecution, getPendingApproval } from '../services/dev-autopilot-approval';
+import { releaseHeldExecution } from '../services/dev-autopilot-watcher';
 import { bridgeFailureToSelfHealing, FailureStage } from '../services/dev-autopilot-bridge';
 import { writeAutopilotFailure } from '../services/dev-autopilot-self-heal-log';
 import { dryRunPreflight, RiskClass } from '../services/dev-autopilot-safety';
@@ -1094,6 +1095,17 @@ function approvalActor(req: Request): string {
   return identity?.email || identity?.user_id || 'gateway-internal';
 }
 
+// VTID-05146 (C1): "release" a held_overlap execution. Runs the overlap check
+// now and releases only when nothing blocks any more — it never skips the
+// check. 200 with { state: 'released' | 'still_held' | 'timed_out' | 'error' },
+// 404 when the row is not held.
+router.post('/executions/:id/release-hold', requireDevRole, async (req: Request, res: Response) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ ok: false, error: 'invalid execution id' });
+  const r = await releaseHeldExecution(req.params.id, `release:${approvalActor(req)}`);
+  if (r.state === 'not_held') return res.status(404).json({ ok: false, error: 'execution is not held', ...r });
+  return res.json({ ok: r.state !== 'error', ...r });
+});
+
 router.get('/executions/:id/diff', requireDevRole, async (req: Request, res: Response) => {
   const r = await getPendingApproval(req.params.id);
   return res.status(r.ok ? 200 : 404).json(r);
@@ -1311,7 +1323,8 @@ router.get('/executions', requireDevRole, async (req: Request, res: Response) =>
   let statusClause: string;
   if (filter === 'active') {
     // VTID-04029: a row waiting for a human decision is still active work.
-    statusClause = 'status=in.(cooling,running,awaiting_approval,ci,merging,deploying,verifying)';
+    // VTID-05146: a held_overlap row is active work waiting for other PRs.
+    statusClause = 'status=in.(cooling,running,awaiting_approval,held_overlap,ci,merging,deploying,verifying)';
   } else if (filter === 'all') {
     statusClause = '';
   } else {

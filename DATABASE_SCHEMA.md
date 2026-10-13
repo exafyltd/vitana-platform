@@ -3838,6 +3838,21 @@ Migration: `supabase/migrations/20261012110000_vtid_05077_plan_version_planner_m
 
 OASIS (`CicdEventType`): `dev_autopilot.plan.fallback_used` — payload `{ finding_id, version, planner_provider, planner_model }`. `GET /api/v1/dev-autopilot/spend` returns `planner: { plans_24h, fallback_24h, fallback_rate_24h }` from these columns.
 
+## Dev Autopilot overlap hold and frozen scope (VTID-05146, 2026-10-13) — applied before merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261013150000_vtid_05146_autopilot_overlap_hold.sql` (constraint/index widening + two additive columns). Phase C of the Dev Autopilot autonomy plan (`docs/validation/VTID-05146/plan-sparring.md`): the autopilot never runs or merges over an open pull request that changes the same files.
+
+| Change | Meaning |
+|---|---|
+| `dev_autopilot_executions.status` CHECK gains `held_overlap` | the plan (before the claim) or the PR (before the auto-merge) shares a file with another open PR, or the PR touches `frozen_scope`; re-checked every CI-watcher tick, released when the blocking PRs merge or close |
+| `dev_autopilot_executions_finding_inflight_uniq` covers `held_overlap` | a held execution is still in flight — no second one for the same finding |
+| `dev_autopilot_config.frozen_scope` jsonb NOT NULL DEFAULT `[]` | temporary never-touch globs while people work an area: a plan touching one is never approved, an autopilot PR touching one is never merged (held). Writable through `POST /api/v1/dev-autopilot/config/update` (developer role). Initial value: `["services/gateway/src/frontend/command-hub/**"]` (app.js split, VTID-05072/05073) |
+| `dev_autopilot_config.overlap_hold_max_hours` integer NOT NULL DEFAULT 72, CHECK 1..720 | a held execution older than this ends as `failed` with `metadata.failure_reason = 'overlap_hold_timeout'`; its PR is closed with a comment; never merged |
+
+`dev_autopilot_executions.metadata` keys (no DDL): `overlap_hold = { from: 'cooling'|'ci', held_at, checked_at, blocking_prs: [{ pr, branch, files }], frozen_files }` while held; `overlap_released = { at, by, held_since }` after a release; `overlap_hold_timeout = { at, max_hours, blocking_prs }`; `llm_review_unavailable` when the pre-merge review could not run twice (fail-closed).
+
+OASIS (`CicdEventType`): `dev_autopilot.execution.held_overlap`, `dev_autopilot.execution.overlap_released`, `dev_autopilot.execution.overlap_hold_timeout`, `dev_autopilot.execution.llm_review_unavailable`. Route: `POST /api/v1/dev-autopilot/executions/:id/release-hold` (developer role) re-runs the check and releases only when nothing blocks.
+
 ## Vitana Companion Messages — `companion_messages_ledger`, `companion_preferences` (VTID-05099, 2026-10-12) — applied after merge via `RUN-MIGRATION.yml`
 
 Migration: `supabase/migrations/20261012200000_vtid_05099_companion_messages.sql` (additive). Vitana writes at most one proactive message per member per local day into the member's Vitana DM, each carrying one Unified Card System card (VTID-05085). Phase 1 is shadow only: decisions are recorded, nothing is sent. Plan: `docs/validation/VTID-05099/plan-sparring.md`.

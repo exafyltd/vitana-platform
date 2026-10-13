@@ -57,7 +57,9 @@ import {
   autoApproveTick,
   runExecutionSession,
   getSupabase,
+  approveAutoExecute,
 } from '../src/services/dev-autopilot-execute';
+import { resetOverlapCache } from '../src/services/dev-autopilot-overlap';
 import { ciWatcherTick, deployWatcherTick, verificationWatcherTick } from '../src/services/dev-autopilot-watcher';
 
 // ---------------------------------------------------------------------------
@@ -1158,6 +1160,145 @@ describe('Runner checks: a Command Hub frontend change runs the suites that read
     expect(runnerJest[0]).toContain('test/command-hub/cache-bust-pin.test.ts');
     expect(runnerJest[0]).toContain('test/ch-reason-meta.test.ts');
     expect(runnerJest[0]).not.toContain('unrelated.test.ts');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// VTID-05146 (autonomy plan, Phase C): no collisions with people. Every open
+// PR in the repository (any author, any branch) is checked before the claim
+// (plan files) and before the auto-merge (the PR's real files); frozen_scope
+// blocks approval and merge; the pre-merge LLM review fails closed.
+// ---------------------------------------------------------------------------
+
+function openHumanPr(branch: string, change: Record<string, string>): number {
+  platform.github.push(branch, { ...MAIN_FILES, ...change }, true);
+  const res = platform.github.handle('POST', new URL(`https://api.github.com/repos/${platform.github.repo}/pulls`), { title: `human: ${branch}`, body: '', head: branch, base: 'main' });
+  expect(res.status).toBe(201);
+  return platform.github.prForBranch(branch)!.number;
+}
+
+describe('Phase C: an autopilot PR never merges over an open PR that changes the same files (VTID-05146)', () => {
+  beforeEach(() => resetOverlapCache());
+
+  it('overlap hold entry and release: held while the human PR is open, released and merged once it closes', async () => {
+    const { execId, prNumber } = seedForeignCiExecution(null);
+    const human = openHumanPr('feature/human-greeting', { [GREETING]: 'export const human = 1;\n' });
+
+    await ciTick();
+    const held = platform.execution(execId);
+    expect(held.status).toBe('held_overlap');
+    expect(held.metadata.overlap_hold.from).toBe('ci');
+    expect(held.metadata.overlap_hold.blocking_prs.map((b: any) => b.pr)).toEqual([human]);
+    expect(held.metadata.overlap_hold.blocking_prs[0].files).toEqual([GREETING]);
+    expect(platform.github.prs.get(prNumber)!.merged).toBe(false);
+    expect(execEvents('dev_autopilot.execution.held_overlap', execId)).toHaveLength(1);
+
+    await ciTick(); // still open: still held, nothing merged, no second hold event
+    expect(platform.execution(execId).status).toBe('held_overlap');
+    expect(platform.github.prs.get(prNumber)!.merged).toBe(false);
+    expect(execEvents('dev_autopilot.execution.held_overlap', execId)).toHaveLength(1);
+
+    platform.github.prs.get(human)!.state = 'closed';
+    await ciTick();
+    expect(execEvents('dev_autopilot.execution.overlap_released', execId)).toHaveLength(1);
+    expect(platform.github.calls.some((c) => c.method === 'PUT' && c.path.endsWith(`/pulls/${prNumber}/update-branch`))).toBe(true);
+    if (platform.execution(execId).status === 'ci') await ciTick();
+    expect(platform.github.prs.get(prNumber)!.merged).toBe(true);
+    expect(platform.execution(execId).metadata.overlap_hold).toBeUndefined();
+  });
+
+  it('an open PR on other files does not hold the merge', async () => {
+    const { execId, prNumber } = seedForeignCiExecution(null);
+    openHumanPr('feature/human-weather', { 'services/gateway/src/services/weather.ts': 'export const sunny = false;\n' });
+    await ciTick();
+    expect(platform.github.prs.get(prNumber)!.merged).toBe(true);
+    expect(execEvents('dev_autopilot.execution.held_overlap', execId)).toEqual([]);
+  });
+
+  it('before the claim: a plan whose files an open PR changes is held, not run; released to cooling when the PR closes', async () => {
+    const human = openHumanPr('feature/human-greeting-2', { [GREETING]: 'export const other = 2;\n' });
+    const f = platform.insert('autopilot_recommendations', { source_type: 'dev_autopilot', status: 'new', risk_class: 'low', title: 'claim overlap', spec_snapshot: { scanner: 'todo-scanner-v1', file_path: GREETING } });
+    platform.insert('dev_autopilot_plan_versions', { finding_id: f.id, version: 1, plan_markdown: `## Files to modify\n- \`${GREETING}\`\n`, files_referenced: [GREETING] });
+    const ex = platform.insert('dev_autopilot_executions', { finding_id: f.id, plan_version: 1, status: 'cooling', execute_after: new Date(Date.now() - 60_000).toISOString(), auto_fix_depth: 0, metadata: { executor: 'agent' } });
+
+    await backgroundExecutorTick();
+    await platform.settle();
+    expect(platform.execution(ex.id).status).toBe('held_overlap');
+    expect(platform.execution(ex.id).metadata.overlap_hold.from).toBe('cooling');
+    expect(platform.execution(ex.id).metadata.overlap_hold.blocking_prs.map((b: any) => b.pr)).toEqual([human]);
+    expect(model.workerCalls()).toBe(0);
+
+    platform.github.prs.get(human)!.state = 'closed';
+    await ciTick();
+    expect(platform.execution(ex.id).status).toBe('cooling');
+    expect(execEvents('dev_autopilot.execution.overlap_released', ex.id)).toHaveLength(1);
+  });
+
+  it('overlap hold timeout: past overlap_hold_max_hours the execution fails, its PR is closed with a comment, nothing merges', async () => {
+    const { execId, prNumber } = seedForeignCiExecution(null);
+    openHumanPr('feature/human-greeting-3', { [GREETING]: 'export const still = 3;\n' });
+    const row = platform.execution(execId);
+    row.status = 'held_overlap';
+    row.metadata = { ...row.metadata, overlap_hold: { from: 'ci', held_at: new Date(Date.now() - 73 * 3_600_000).toISOString(), checked_at: new Date().toISOString(), blocking_prs: [{ pr: 1, branch: 'x', files: [GREETING] }], frozen_files: [] } };
+
+    await ciTick();
+    const after = platform.execution(execId);
+    expect(after.status).toBe('failed');
+    expect(after.metadata.failure_reason).toBe('overlap_hold_timeout');
+    expect(platform.github.prs.get(prNumber)!.merged).toBe(false);
+    expect(platform.github.prs.get(prNumber)!.state).toBe('closed');
+    expect(platform.github.comments.filter((c) => c.pr === prNumber).map((c) => c.body).join('\n')).toMatch(/waited 72 h/);
+    expect(execEvents('dev_autopilot.execution.overlap_hold_timeout', execId)).toHaveLength(1);
+  });
+
+  it('frozen_scope rejection at approval: a plan touching a frozen path is never approved', async () => {
+    Object.assign(platform.rows('dev_autopilot_config')[0], { frozen_scope: ['services/gateway/src/services/**'] });
+    const finding = platform.insert('autopilot_recommendations', {
+      title: 'Stale TODO in greeting', source_type: 'dev_autopilot', status: 'new', risk_class: 'low', effort_score: 2, impact_score: 7,
+      spec_snapshot: { scanner: 'todo-scanner-v1', title: 'Stale TODO in greeting', file_path: GREETING },
+    });
+    platform.insert('dev_autopilot_plan_versions', {
+      finding_id: finding.id, version: 1,
+      plan_markdown: `# Remove the stale TODO\n\n## Files to modify\n- \`${GREETING}\`\n- \`${GREETING_TEST}\`\n`,
+      files_referenced: [GREETING, GREETING_TEST],
+    });
+    const r = await approveAutoExecute({ finding_id: finding.id });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/frozen_scope/);
+    expect(r.error).toContain(GREETING);
+    expect(platform.rows('dev_autopilot_executions').filter((e) => e.finding_id === finding.id)).toEqual([]);
+  });
+
+  it('frozen_scope block at merge: an open autopilot PR touching a frozen path is held, never merged', async () => {
+    Object.assign(platform.rows('dev_autopilot_config')[0], { frozen_scope: [GREETING] });
+    const { execId, prNumber } = seedForeignCiExecution(null);
+    await ciTick();
+    expect(platform.execution(execId).status).toBe('held_overlap');
+    expect(platform.execution(execId).metadata.overlap_hold.frozen_files).toEqual([GREETING]);
+    expect(platform.github.prs.get(prNumber)!.merged).toBe(false);
+
+    Object.assign(platform.rows('dev_autopilot_config')[0], { frozen_scope: [] }); // the freeze is lifted
+    await ciTick();
+    if (platform.execution(execId).status === 'ci') await ciTick();
+    expect(platform.github.prs.get(prNumber)!.merged).toBe(true);
+  });
+
+  it('pre-merge LLM review fail-closed: a review that cannot run (twice) blocks the merge', async () => {
+    const prev = process.env.DEV_AUTOPILOT_LLM_REVIEW_ENABLED;
+    process.env.DEV_AUTOPILOT_LLM_REVIEW_ENABLED = 'true';
+    try {
+      const { execId, prNumber } = seedForeignCiExecution(null);
+      await ciTick();
+      const row = platform.execution(execId);
+      expect(row.status).toBe('failed');
+      expect(row.metadata.llm_review_unavailable).toBeTruthy();
+      expect(platform.github.prs.get(prNumber)!.merged).toBe(false);
+      expect(model.refused.filter((r) => r.stage === 'validator').length).toBeGreaterThanOrEqual(2);
+      expect(execEvents('dev_autopilot.execution.llm_review_unavailable', execId)).toHaveLength(1);
+    } finally {
+      if (prev === undefined) delete process.env.DEV_AUTOPILOT_LLM_REVIEW_ENABLED;
+      else process.env.DEV_AUTOPILOT_LLM_REVIEW_ENABLED = prev;
+    }
   });
 });
 

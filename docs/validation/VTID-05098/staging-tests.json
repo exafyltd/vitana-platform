@@ -9,8 +9,8 @@
       "expect_status": 200,
       "expect_content_type": "text/html",
       "expect_body_contains": [
-        "app.js?v=20261117-vtid-05098",
-        "styles.css?v=20261117-vtid-05098",
+        "app.js?v=20261118-vtid-05146",
+        "styles.css?v=20261118-vtid-05146",
         "loops-catalog.js?v=20261117-vtid-05098",
         "loops-catalog.css?v=20261117-vtid-05098"
       ]
@@ -18,7 +18,7 @@
     {
       "kind": "http",
       "name": "served app.js redirects Infrastructure → Health and labels the Pulse link Open",
-      "path": "/command-hub/app.js?v=20261117-vtid-05098",
+      "path": "/command-hub/app.js?v=20261118-vtid-05146",
       "expect_status": 200,
       "expect_content_type": "javascript",
       "expect_body_contains": [

@@ -864,6 +864,11 @@ export type CicdEventType =
   | 'dev_autopilot.execution.auto_merge_declined'
   | 'dev_autopilot.execution.llm_review_passed'
   | 'dev_autopilot.execution.llm_review_blocked'
+  // VTID-05146 (Phase C): overlap hold, its release and timeout; review fail-closed.
+  | 'dev_autopilot.execution.held_overlap'
+  | 'dev_autopilot.execution.overlap_released'
+  | 'dev_autopilot.execution.overlap_hold_timeout'
+  | 'dev_autopilot.execution.llm_review_unavailable'
   | 'dev_autopilot.execution.deployed'
   | 'dev_autopilot.execution.deploy_failed'
   | 'dev_autopilot.execution.verification_failed'
