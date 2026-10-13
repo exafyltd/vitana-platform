@@ -1,6 +1,6 @@
 # Vitanaland plugin - submission checklist
 
-Listing content lives in `plugin.json` (`extensions.com.openai.interface`); the Codex layout (`.codex-plugin/plugin.json`, `.mcp.json`) carries the same content as a fallback.
+Listing content lives in `plugin.json` (`extensions.com.openai.interface`); the MCP server and its OAuth declaration live in `mcp.json`. One layout only.
 
 ## Owner (needs account access or approval)
 - [ ] OpenAI organization verified under the EXAFY LTD identity; submitter has the Owner role; project uses global (not EU) data residency.
@@ -9,8 +9,7 @@ Listing content lives in `plugin.json` (`extensions.com.openai.interface`); the 
 - [ ] Final submission.
 
 ## Package (done in this folder)
-- [x] `plugin.json` (portable) + `mcp.json` (`streamable-http`, `https://gateway.vitanaland.com/mcp/chatgpt`)
-- [x] `.codex-plugin/plugin.json` + `.mcp.json` (Codex fallback)
+- [x] `plugin.json` + `mcp.json` (`streamable-http`, `https://gateway.vitanaland.com/mcp/chatgpt`, OAuth with dynamic client registration, scopes `email profile`)
 - [x] One skill: `skills/set-up-my-business`
 - [x] `assets/logo.png`, `assets/composer-icon.png` (512x512 PNG)
 - [x] 5 positive and 3 negative cases: `REVIEW-CASES.md`
@@ -26,5 +25,5 @@ Listing content lives in `plugin.json` (`extensions.com.openai.interface`); the 
 - [ ] Demo video of P1-P5
 - [ ] Run P1-P5 and N1-N3 once on web, iOS and Android and record the outcome here
 
-## Verify the package format at submission
-The manifest layout follows OpenAI's published plugin docs as read through search excerpts only (the docs hosts are not reachable from the build environment). Validate the package with OpenAI's own scaffold/validator before submitting and adjust field names if it objects.
+## Submission status
+Version 1.0.0 was submitted in OpenAI's plugin portal on 2026-10-13 and is in review. The portal accepted this layout. Category: Business & Operations.
