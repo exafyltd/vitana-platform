@@ -35,6 +35,7 @@ AC-7: The catalog rows for the two new routines are seeded idempotently without 
 
 ## Step B (same VTID, second PR — after the production deploy)
 After this is in production and a read-only GET of each new route on production returns JSON: ALERT-WELCOME-GREETING-HEALTH, ALERT-ORB-BOOTSTRAP-LATENCY and ALERT-NEWDAY-BRIEFING-LOOP switch to their routes the same way. The VTID is terminalized after Step B.
+  TEST: services/gateway/test/ops-health/vtid-05141-alert-routes.test.ts (all six workflows: production route, no Supabase call, fail on non-JSON/404/5xx/non-ok)
 
 ## Owner actions (only the owner can do these)
 1. Fix the cloud environment's setup script (`[ -d vitana-platform/services/gateway ] && cd vitana-platform/services/gateway`) so the four session routines run.
@@ -48,3 +49,5 @@ After this is in production and a read-only GET of each new route on production 
 - The push-dispatch alert is now as strict as its route (it also fails on the route's FCM error-ratio and member-reach checks, VTID-04962/05027).
 - knowledge-docs-freshness threshold is rounded for display (production showed 29.700000000000003 on 2026-10-13).
 - Command Hub `?v=` bumped to `20261119-vtid-05141` (the fallback endpoint list in app.js gained the three routes); exact-version pins in older tests and staging suites follow, as VTID-05122 did.
+- Step B: the workflows no longer carry the thresholds, so the test pins the route constants to the values the workflows used (6000/12000 ms, 90 min, limit 1000; 60 min, limit 50).
+- Step B: the branch is pushed as a draft PR before the production GET so CI runs early; it is not marked ready or merged until each of the three routes answers JSON on production.

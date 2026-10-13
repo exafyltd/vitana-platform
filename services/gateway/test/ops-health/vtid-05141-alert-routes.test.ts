@@ -5,9 +5,11 @@
  *    and thresholds of ALERT-WELCOME-GREETING-HEALTH.yml,
  *    ALERT-ORB-BOOTSTRAP-LATENCY.yml and ALERT-NEWDAY-BRIEFING-LOOP.yml.
  * 2. Step A: ALERT-OASIS-LEDGER-INTEGRITY, ALERT-ORB-SESSION-STATE-HEALTH and
- *    ALERT-PUSH-DISPATCH-HEALTH are thin GETs of their production route. The
- *    check step is executed here with a stub `curl` to prove a non-JSON, 404,
- *    5xx or non-ok answer fails the job.
+ *    ALERT-PUSH-DISPATCH-HEALTH are thin GETs of their production route.
+ * 3. Step B: ALERT-WELCOME-GREETING-HEALTH, ALERT-ORB-BOOTSTRAP-LATENCY and
+ *    ALERT-NEWDAY-BRIEFING-LOOP are thin GETs too, once the routes were live
+ *    in production. Each check step is executed here with a stub `curl` to
+ *    prove a non-JSON, 404, 5xx or non-ok answer fails the job.
  */
 
 import * as fs from 'fs';
@@ -81,18 +83,18 @@ beforeEach(() => {
   queries = [];
 });
 
-describe('thresholds are the workflows\' own values', () => {
+// Step B moved the thresholds out of the workflows into the route, so the
+// values the workflows used before VTID-05141 are pinned here instead.
+describe('thresholds are the values the workflows used before VTID-05141', () => {
   it('ORB bootstrap: P50 6000 ms, max 12000 ms, 90 min window, limit 1000', () => {
-    const s = wf('ALERT-ORB-BOOTSTRAP-LATENCY.yml');
-    expect(s).toContain(`P50_THRESHOLD_MS: '${ORB_BOOTSTRAP_P50_MS}'`);
-    expect(s).toContain(`MAX_THRESHOLD_MS: '${ORB_BOOTSTRAP_MAX_MS}'`);
-    expect(s).toContain(`WINDOW_MINUTES: '${ORB_BOOTSTRAP_WINDOW_MIN}'`);
-    expect(s).toContain(`'limit=${ORB_BOOTSTRAP_LIMIT}'`);
+    expect(ORB_BOOTSTRAP_P50_MS).toBe(6000);
+    expect(ORB_BOOTSTRAP_MAX_MS).toBe(12000);
+    expect(ORB_BOOTSTRAP_WINDOW_MIN).toBe(90);
+    expect(ORB_BOOTSTRAP_LIMIT).toBe(1000);
   });
   it('new-day briefing: 60 min lookback, limit 50 per query', () => {
-    const s = wf('ALERT-NEWDAY-BRIEFING-LOOP.yml');
-    expect(s).toContain(`LOOKBACK_MINUTES: '${NEWDAY_LOOKBACK_MIN}'`);
-    expect(s).toContain(`'limit=${NEWDAY_QUERY_LIMIT}'`);
+    expect(NEWDAY_LOOKBACK_MIN).toBe(60);
+    expect(NEWDAY_QUERY_LIMIT).toBe(50);
   });
 });
 
@@ -230,13 +232,19 @@ describe('the three routes are on the Service Health panel', () => {
   });
 });
 
-// ── Step A workflows ────────────────────────────────────────────────────────
+// ── Step A + Step B workflows ───────────────────────────────────────────────
 
 const STEP_A: Array<[string, string]> = [
   ['ALERT-OASIS-LEDGER-INTEGRITY', 'vtid-ledger'],
   ['ALERT-ORB-SESSION-STATE-HEALTH', 'orb-session-ledger'],
   ['ALERT-PUSH-DISPATCH-HEALTH', 'push-dispatch'],
 ];
+const STEP_B: Array<[string, string]> = [
+  ['ALERT-WELCOME-GREETING-HEALTH', 'welcome-greeting'],
+  ['ALERT-ORB-BOOTSTRAP-LATENCY', 'orb-bootstrap-latency'],
+  ['ALERT-NEWDAY-BRIEFING-LOOP', 'newday-briefing-loop'],
+];
+const ALL_STEPS = [...STEP_A, ...STEP_B];
 
 function checkStep(name: string): { run: string; env: Record<string, string> } {
   const doc = yaml.load(wf(`${name}.yml`)) as any;
@@ -272,8 +280,8 @@ function runCheck(name: string, code: string, body: string): { status: number; o
   return { status: r.status ?? -1, out: `${r.stdout}${r.stderr}`, url };
 }
 
-describe('Step A: three ALERT workflows are thin GETs of their production route', () => {
-  it.each(STEP_A)('%s GETs /api/v1/ops/health/%s on production with no Supabase call', (name, route) => {
+describe('Steps A and B: six ALERT workflows are thin GETs of their production route', () => {
+  it.each(ALL_STEPS)('%s GETs /api/v1/ops/health/%s on production with no Supabase call', (name, route) => {
     const s = wf(`${name}.yml`);
     expect(checkStep(name).env.HEALTH_URL).toBe(`https://gateway.vitanaland.com/api/v1/ops/health/${route}`);
     expect(s).not.toMatch(/supabase\.co|\/rest\/v1\/|SUPABASE_URL|SUPABASE_SERVICE_ROLE/);
@@ -285,7 +293,7 @@ describe('Step A: three ALERT workflows are thin GETs of their production route'
     expect('workflow_dispatch' in doc.on).toBe(true);
   });
 
-  it.each(STEP_A)('%s passes only on JSON status ok', (name, route) => {
+  it.each(ALL_STEPS)('%s passes only on JSON status ok', (name, route) => {
     const ok = runCheck(name, '200', JSON.stringify({ status: 'ok', checked_at: 'x' }));
     expect(ok.status).toBe(0);
     expect(ok.url).toBe(`https://gateway.vitanaland.com/api/v1/ops/health/${route}`);
@@ -301,11 +309,5 @@ describe('Step A: three ALERT workflows are thin GETs of their production route'
     expect(runCheck(name, '404', '<html>Not Found</html>').status).toBe(1);
     expect(runCheck(name, '503', JSON.stringify({ status: 'ok' })).status).toBe(1);
     expect(runCheck(name, '000', '').status).toBe(1);
-  });
-
-  it('the Step B workflows are untouched (still query Supabase directly)', () => {
-    for (const n of ['ALERT-WELCOME-GREETING-HEALTH', 'ALERT-ORB-BOOTSTRAP-LATENCY', 'ALERT-NEWDAY-BRIEFING-LOOP']) {
-      expect(wf(`${n}.yml`)).toContain('SUPABASE_SERVICE_ROLE');
-    }
   });
 });
