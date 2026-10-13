@@ -12,4 +12,7 @@
   - VTID-04909 desktop (09:07:24): staging switched to 51bc5e37 mid-run (deploy 09:02–09:08); the same test passed 26 s later in the next invocation.
   - deploy after-run: staging moved on to 7e3abbed (deploy 09:06–09:15) — correct detection.
   - VTID-05062 / VTID-05081 phone journey: Postfach first visit 4454 / 4354 ms vs the 4000 ms budget (waiting on the /inbox route chunk), on the 7e3abbed build; the same step read 3262 and 2006 ms in the run's other two journeys.
-- Proof run 3: full run on 7e3abbed — to be recorded here.
+- Proof run 3: https://github.com/exafyltd/vitana-platform/actions/runs/38376258040 (community-app @ 7e3abbed, full): 269 passed, 2 failed.
+  - smoke phone journey (09:39, on 7e3abbed): News return 1518 ms vs the 1500 ms budget (+18 ms). The same step read 1242, 1250 and 1030 ms in the run's other three journeys (10:19–10:20, by then on 80fb08b1).
+  - deploy after-run: staging moved to 80fb08b1 (stage deploy 09:57–10:03) — the fourth mid-run deploy in three runs.
+- Phone journey across the three runs: one of about four journeys per run misses one budget by 1–11% (run 1: Events image wait; run 2: Postfach 4354/4454 vs 4000 ms; run 3: News return 1518 vs 1500 ms), a different step each time. Raised to the owner: a methodology change (or performance work) is outside the approved plan.
