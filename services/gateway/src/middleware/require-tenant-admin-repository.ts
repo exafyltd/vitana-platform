@@ -17,6 +17,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { fetchPermittedRoles } from '../lib/permitted-roles';
 
 export async function fetchCallerActiveRoleForTenant(sb: SupabaseClient, userId: string, tenantId: string) {
   return sb
@@ -25,4 +26,9 @@ export async function fetchCallerActiveRoleForTenant(sb: SupabaseClient, userId:
     .eq('user_id', userId)
     .eq('tenant_id', tenantId)
     .single();
+}
+
+/** VTID-05147: the caller's permitted roles in the tenant (fails closed: roles null). */
+export async function fetchCallerPermittedRoles(sb: SupabaseClient, userId: string, tenantId: string) {
+  return fetchPermittedRoles(sb, userId, tenantId);
 }
