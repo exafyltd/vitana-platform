@@ -97,7 +97,7 @@ describe('VTID-05098 Loops screen shows overlap outcomes', () => {
       expect(INDEX).toContain(`/command-hub/${f}?v=20261120-vtid-05148`);
     }
     // loops-catalog.js was re-bumped by VTID-05148 (L3 metrics on the card).
-    expect(INDEX).toContain('/command-hub/loops-catalog.js?v=20261120-vtid-05148');
+    expect(INDEX).toContain('/command-hub/loops-catalog.js?v=20261121-vtid-05153');
     expect(INDEX).toContain('/command-hub/loops-catalog.css?v=20261117-vtid-05098');
   });
 });

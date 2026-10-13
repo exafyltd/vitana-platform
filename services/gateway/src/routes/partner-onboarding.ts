@@ -43,6 +43,7 @@ import {
 import { detectPlatform } from '../services/platform-detect';
 import { availableTermsLocales, loadBaselineVersions, loadCurrentTerms, requestDelegation, termsForDisplay } from '../services/partner-terms';
 import { VERIFICATION_LEVEL_REQUIRED, isCompleteOffering, verificationIsStale, type OfferingFields } from '../services/partner-onboarding-checklist';
+import { CATALOG_CHECK_CATEGORY } from '../services/catalog-check/validators';
 import {
   computeVerification,
   domainProofInstructions,
@@ -145,7 +146,35 @@ export async function loadCatalogueSource(
   if (products.error) return { source: null, error: products.error.message };
   const rows = (Array.isArray(products.data) ? products.data : []) as unknown as OfferingFields[];
   const completeOfferings = rows.filter(isCompleteOffering).length;
-  return { source: { connections, completeOfferings }, error: null };
+  const returnedProducts = await countReturnedProducts(supabase, merchantIds);
+  return {
+    source: { connections, completeOfferings, ...(returnedProducts > 0 ? { returnedProducts } : {}) },
+    error: null,
+  };
+}
+
+/**
+ * VTID-05153: how many of the org's wave-1-category products the catalogue
+ * check returned to the supplier (attributes.catalog_check.state). A head
+ * count, separate from the offering scan (OFFERING_FIELDS is not widened).
+ * Advisory only — it never changes a step's status — so a read error counts
+ * as none and is logged, instead of failing the checklist.
+ */
+export async function countReturnedProducts(supabase: Supa, merchantIds: string[]): Promise<number> {
+  if (merchantIds.length === 0) return 0;
+  try {
+    const { count, error } = await supabase
+      .from('products')
+      .select('id', { count: 'exact', head: true })
+      .in('merchant_id', merchantIds)
+      .eq('category', CATALOG_CHECK_CATEGORY)
+      .eq('attributes->catalog_check->>state', 'returned_to_supplier');
+    if (error) throw new Error(error.message);
+    return typeof count === 'number' ? count : 0;
+  } catch (err) {
+    console.warn(`[partner-onboarding] returned-products count unavailable: ${err instanceof Error ? err.message : String(err)}`);
+    return 0;
+  }
 }
 
 export async function loadChecklist(supabase: Supa, org: OrgRow): Promise<{ checklist: Checklist | null; error: string | null }> {

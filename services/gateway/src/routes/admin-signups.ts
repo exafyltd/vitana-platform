@@ -22,6 +22,7 @@ import { requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supa
 import { notifyUserAsync } from '../services/notification-service';
 import { dispatchEvent } from '../services/automation-executor';
 import * as repo from '../services/admin-signups/admin-signups-repository';
+import { ensureProvisioned } from '../services/auth-bridge/auth-bridge';
 
 const router = Router();
 const VTID = 'ADMIN-SIGNUPS';
@@ -313,6 +314,10 @@ router.post('/:id/repair', requireExafyAdmin, async (req: AuthenticatedRequest, 
     if (!attempt.auth_user_id) {
       return res.status(400).json({ ok: false, error: 'NO_AUTH_USER', message: 'User has not completed email verification' });
     }
+
+    // VTID-05023 part 4: after the cutover, repair re-runs the full sign-up
+    // provisioning on Aurora first (no-op unless AUTH_BRIDGE_ENABLED=true).
+    await ensureProvisioned(attempt.auth_user_id);
 
     // Check if app_users row exists
     const { data: existingUser } = await repo.fetchAppUserByUserId(supabase, attempt.auth_user_id);

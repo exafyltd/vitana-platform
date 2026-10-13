@@ -20,7 +20,7 @@ TEST: test/health-store/catalogue.test.ts; test/vtid-05025-commerce-health-bound
 AC-3 Dark flag: off by default, forced off on staging, off without `HEALTH_RAW_BUCKET`; off → `writeHealthSamples` and
 every reader answer `STORE_DISABLED` without reading anything; `/maintenance` and `/reprocess` answer
 `404 {error:'HEALTH_STORE_DISABLED'}` without touching the store; `GET /store-status` (member JWT) says why.
-TEST: test/health-store/store-ops.test.ts "dark flag"; contract.test.ts "disabled"; internal-routes.test.ts — outputs/jest-health-store.txt
+TEST: test/health-store/store-ops.test.ts "dark flag"; contract.test.ts "disabled"; test/routes/health-store-internal.test.ts — outputs/jest-health-store.txt
 
 AC-4 S3 `writeHealthSamples` never throws: a throwing repository (each method), S3 client, consent read, source
 lookup, emitter or hook gives a result; garbage input and > 5,000 items give `INVALID_INPUT`; an unknown or another
@@ -38,7 +38,7 @@ AC-6 Consent (S7) is inside, per sample category, fail closed: no consent / a fa
 (`sync_*`, `self_logged_health` ship as `null` for C1 to fill) → `CONSENT_CATEGORY_MISSING`; deletions are processed
 without consent; the consent id is stored on every row and on the batch row. `findActiveHealthConsentId` is added
 next to `hasHealthConsent` with the same query, returning the row id or null (fail closed).
-TEST: test/health-store/contract.test.ts; store-ops.test.ts "S7 consent-key map"; internal-routes.test.ts "S7 findActiveHealthConsentId" — outputs/jest-health-store.txt
+TEST: test/health-store/contract.test.ts; store-ops.test.ts "S7 consent-key map"; test/routes/health-store-internal.test.ts "S7 findActiveHealthConsentId" — outputs/jest-health-store.txt
 
 AC-7 Idempotency: same `batch_id` + same normalised content → stored results with `replay:true`, nothing written; same
 id + new content → `BATCH_ID_REUSED`; replace mode: same key + same content → `duplicate`, new content → `updated`.
@@ -79,11 +79,11 @@ wrong one (403), fails closed without a configured token (503), runs ensure → 
 (service token or exafy_admin) re-checks the CURRENT consent (revoked → nothing written); `/erase-raw` deletes only the
 member's prefix (or one source), lists again and reports `{deleted, residual}`; `GET /store-status` needs a member
 JWT. Errors are codes, never database messages.
-TEST: test/health-store/internal-routes.test.ts — outputs/jest-health-store.txt
+TEST: test/routes/health-store-internal.test.ts — outputs/jest-health-store.txt
 
 AC-15 Raw batches: key `u/<user>/<source>/<yyyy>/<mm>/<dd>/<batch>.json.gz`, gzip JSON, SSE-KMS; erasure pages through
 listings; never a bucket-wide prefix.
-TEST: test/health-store/internal-routes.test.ts "raw-batch store over S3" — outputs/jest-health-store.txt
+TEST: test/routes/health-store-internal.test.ts "raw-batch store over S3" — outputs/jest-health-store.txt
 
 AC-16 Maintenance: ensure → purge, partition check + capacity snapshot on the 02:xx UTC run, log lines for the
 alarms, OASIS `health.store.maintenance.completed|failed`; never throws.
@@ -147,7 +147,7 @@ TEST: npx jest (full); npx tsc --noEmit -p . — outputs/jest-full-summary.txt, 
 
 ROUTE_MOUNT: `services/gateway/src/index.ts` — `mountRouterSync(app, '/api/v1/health/internal', healthStoreInternalRouter, { owner: 'health-store-internal' })`, right after the `/api/v1/health` router (which has no catch-all, so `/internal/*` falls through to this router); router `services/gateway/src/routes/health-store-internal.ts` (`GET /store-status` requireAuthWithTenant, `POST /maintenance` X-Gateway-Internal, `POST /reprocess` and `POST /erase-raw` requireServiceOrAdmin). Claimed by the `health` domain in `orb/developer/domain-atlas.ts` (`/^health/`).
 FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/health/internal/store-status
-CURL_PROOF: read-only, after the staging deploy: `curl -s -o /dev/null -w '%{http_code} %{content_type}' https://preview-aws-gateway.vitanaland.com/api/v1/health/internal/store-status` with NO Authorization header must answer `401 application/json` (not an HTML 404); `GET /api/v1/health/` still answers `200 application/json`. No POST is ever sent to staging (a write would reach the production Supabase project); the store is forced off there, so a signed-in member would read `{enabled:false, reason:"staging"}` (proven in Jest, internal-routes.test.ts).
-TEST: npx jest test/health-store/internal-routes.test.ts
+CURL_PROOF: read-only, after the staging deploy: `curl -s -o /dev/null -w '%{http_code} %{content_type}' https://preview-aws-gateway.vitanaland.com/api/v1/health/internal/store-status` with NO Authorization header must answer `401 application/json` (not an HTML 404); `GET /api/v1/health/` still answers `200 application/json`. No POST is ever sent to staging (a write would reach the production Supabase project); the store is forced off there, so a signed-in member would read `{enabled:false, reason:"staging"}` (proven in Jest, test/routes/health-store-internal.test.ts).
+TEST: npx jest test/routes/health-store-internal.test.ts
 
 OASIS_PROOF: six new event types in `services/gateway/src/types/cicd.ts`, all `vtid: 'VTID-05159'`, `source: 'health-store'`, `actor_role: 'system'`, payloads with ids and counts only (never member health values, never a member id): `health.store.source.first_data` and `health.store.batch.quarantined` (asserted in test/health-store/ingest.test.ts "first data …" and "each reason is quarantined …"), `health.store.quota.exceeded` ("the 501st batch of the day …", asserts the payload carries no member id), `health.store.partition_missing` ("still failing -> …" and store-ops.test.ts "the 02:xx UTC run …"), `health.store.maintenance.completed|failed` (store-ops.test.ts "maintenance run"). An emit failure is logged and never fails the caller ("a throwing … emitter gives a result"). Nothing is emitted while the store is off, i.e. never on staging.

@@ -144,7 +144,7 @@ describe('VTID-05084 Loops screen — wiring', () => {
   });
 
   it('index.html loads the module and stylesheet with ?v= before app.js; modules.json agrees', () => {
-    const mod = INDEX.indexOf('/command-hub/loops-catalog.js?v=20261120-vtid-05148');
+    const mod = INDEX.indexOf('/command-hub/loops-catalog.js?v=20261121-vtid-05153');
     const app = INDEX.indexOf('/command-hub/app.js?v=20261120-vtid-05148');
     expect(mod).toBeGreaterThan(0);
     expect(app).toBeGreaterThan(mod);

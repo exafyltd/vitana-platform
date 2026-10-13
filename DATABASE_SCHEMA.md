@@ -1588,6 +1588,7 @@ CREATE TABLE my_new_table (
 | 2026-01-03 | Added risk_mitigations table for D49 Proactive Health & Lifestyle Risk Mitigation Layer | Claude | VTID-01143 |
 | 2026-09-28 | Five feature data layers that were documented/declared but never existed live, now APPLIED: autopilot_prompts + autopilot_prompt_prefs, risk_mitigations, overload_*, taste_*/user_*_profiles, preference modeling (explicit table renamed user_explicit_preferences; public.user_preferences is the settings table). New `caller_tenant_id()`. See the section at the end of this file. | Claude | VTID-04716 / 04717 / 04718 / 04719 / 04720 |
 | 2026-04-19 | Added ai_provider_policies, ai_assistant_credentials, ai_consent_log + extended connector_registry.category to include 'ai_assistant' | Claude | VTID-02403 |
+| 2026-10-14 | Seeded `routines` row `supplier-catalog-check` (`0 13 * * *`) for the gateway routine runner (migration 20261014000000, additive, ON CONFLICT DO NOTHING). One documented reserved jsonb key, no column change: `products.attributes.catalog_check` — written only by the routine (service role; supplier input drops it, together with `admin_listing`, in `ProductFields.attributes`; `updateProduct` keeps it): {`v`: 1, `state` ready_for_review\|needs_fix\|needs_review\|returned_to_supplier, `checked_at`, `content_hash` (sha256 of the supplier-mutable fields, reserved keys excluded), `errors` [{code, field, params}], `flags` [claim_disease_en\|claim_disease_de\|image_unchecked\|certifications_declared], `duplicate_of`? (a product id of the same supplier), `normalized` [fields written back], `fingerprint` (sorted error codes), `strikes`}. `routine_runs.findings` for `supplier-catalog-check`: `metrics` {category, rows_checked, rows_auto_normalized, validation_failure_rate, ready_for_approval_share, ready_for_approval_target, by_state, by_error_code, time_to_listing/human_edits_per_listing not_measured} and `run` {pool_rows, pool_truncated, excluded_rows, candidates, probes, write_conflicts, write_errors}. | Claude | VTID-05153 |
 | 2026-10-13 | Seeded `routines` row `learn-outcomes` (`0 12 * * *`) for the gateway routine runner (migration 20261013210000, additive, ON CONFLICT DO NOTHING). Two documented jsonb keys, no column change: `self_healing_log.diagnosis.tests_added` (`string[]`, test files the fix PR changed; absent on rows before VTID-05148 = unknown) and `routine_runs.findings` for `learn-outcomes` (`metrics` {`window_days`, `repeat_failure` {fixes, repeated, rate, follow_up_days, by_class[], truncated}, `pattern_reuse` {state measured\|not_measured, …}, `escaped_bugs_to_tests` {with_tests, without_tests, unknown, share}}, `tests_added_step`, `graduation_step`, `high_repeat_classes`). | Claude | VTID-05148 |
 | 2026-10-13 | Seeded `routines` rows `llm-spend-budget` (`50 23 * * *`) and `llm-fallback-watch` (`15 7 * * *`) for the gateway routine runner (migration 20261013190000, additive, ON CONFLICT DO NOTHING). No schema change. | Claude | VTID-05141 |
 | 2026-04-27 | Added routines + routine_runs tables for daily Claude Code remote-agent catalog and run history | Claude | VTID-01981 |
@@ -3808,6 +3809,44 @@ Migration: `supabase/migrations/20261010150000_vtid_04917_audiobook_source_type.
 | `calendar_events` (data) | "I'm in" on an invite to a member's own plan writes a copy: `source_type 'invite'`, `source_ref_type 'calendar_invite'`, `source_ref_id` = the message id; "No" cancels it. |
 
 ---
+
+## Auth -> Aurora bridge — `ensure_provisioned()`, `provisioning_pre_request()`, `auth_user_fk_map`, `auth_bridge_deleted_users` (VTID-05023 part 4) — AURORA ONLY, applied in the cutover window
+
+After the cutover GoTrue (`auth.users`) stays on Supabase and `public` lives on Aurora, which has no `auth.users`. The six Supabase sign-up triggers on `auth.users` are disabled at the flip (`scripts/aws/supabase-cutover-auth-bridge.sql`; reverse: `…-rollback.sql`) and the same provisioning runs on Aurora. DDL: `scripts/aws/aurora-cutover-auth-bridge.sql` (one statement per line, `aurora-run-sql.sh`). Tested on throwaway Postgres: `npm run test:auth-bridge` (CI: `SQL-AUTH-BRIDGE.yml`).
+
+### `ensure_provisioned(p_user_id uuid, p_email text, p_raw_user_meta jsonb, p_created_at timestamptz) returns jsonb`
+- Reproduces `handle_new_user`, `generate_maxina_discount_code`, `initialize_user_preferences`, `provision_wallet_accounts`, `provision_platform_user`, `initialize_user_journey` (same rows, same defaults, trigger order).
+- Idempotent: per-user advisory lock, guarded inserts; a user with both `app_users` and `profiles` rows is returned untouched.
+- Returns `{user_id, created[], provisioned, active_tenant_id}`; the gateway writes `active_tenant_id` into GoTrue `app_metadata` when missing (what `handle_new_user`'s `UPDATE auth.users` did).
+- SECURITY DEFINER, `service_role` only.
+
+### `provisioning_pre_request() returns void`
+PostgREST `db-pre-request` (`PGRST_DB_PRE_REQUEST`). No-op when `transaction_read_only = on`, `auth.uid()` is null, the role is not `authenticated`, an `app_users` row exists (one PK lookup), or the user is in `service_bot_accounts` / `notification_test_actors`. Otherwise calls `ensure_provisioned()` from the JWT (`email`, `user_metadata`); a failure is a WARNING, never a failed request. EXECUTE: anon, authenticated, service_role (PostgREST calls it for every role).
+
+### `auth_bridge_unprovisioned(p_user_ids uuid[]) returns setof uuid`
+The ids with no `app_users` row, registered test/service accounts excluded (the gateway reconciler). `service_role` only.
+
+### auth_user_fk_map
+| Column | Type | Notes |
+|---|---|---|
+| `table_name`, `column_name` | text, PK | a public column that had a FK to `auth.users(id)` on Supabase |
+| `on_delete` | text | `confdeltype`: a, r, c, n, d |
+| `loaded_at` | timestamptz | |
+
+Loaded from Supabase's live `pg_constraint` by `scripts/aws/supabase-auth-fk-map-export.sql` right before the window. RLS on, `service_role` only.
+
+### auth_bridge_deleted_users
+| Column | Type | Notes |
+|---|---|---|
+| `user_id` | uuid PK | the deleted auth user |
+| `source` | text | `webhook` \| `reconciler` |
+| `result` | jsonb | what `auth_bridge_handle_deleted_user()` changed |
+| `processed_at` | timestamptz | |
+
+RLS on, `service_role` only.
+
+### `auth_bridge_handle_deleted_user(p_user_id uuid, p_source text) returns jsonb`
+What `DELETE FROM auth.users` did on Supabase: the kept `before_auth_user_delete_cleanup_contacts` cleanup (phone-less inbound `contacts`), then each `auth_user_fk_map` action (CASCADE delete, SET NULL, SET DEFAULT; NO ACTION / RESTRICT rows are reported in `blocked`, not touched), with FK-ordered retries; atomic; refuses an empty map; records the result in `auth_bridge_deleted_users`. `app_users` has no FK to `auth.users`, so it stays, as before. `service_role` only.
 
 ## Kiro runs — `kiro_runs`, `kiro_run_events` (VTID-05065, 2026-10-10) — applied after merge via `RUN-MIGRATION.yml`
 
