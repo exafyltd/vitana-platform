@@ -18,11 +18,11 @@ export const SOCIAL_PROVIDERS = ['instagram', 'facebook'] as const;
 
 // ==================== Enrichment completion sources ====================
 
-/** E1 avatar_url, E2 bio, E4 interests, E5 location, E11 cover_url. */
+/** E1 avatar_url, E2 bio, E4 interests, E5 location, E11 cover_url or universal_intent_cover_url. */
 export async function fetchProfileEnrichmentFields(sb: SupabaseClient, userId: string) {
   return sb
     .from('profiles')
-    .select('avatar_url, bio, location, cover_url, interests')
+    .select('avatar_url, bio, location, cover_url, universal_intent_cover_url, interests')
     .eq('user_id', userId)
     .maybeSingle();
 }

@@ -16,7 +16,7 @@
  * | E8   | connected_app_settings | google/outlook/apple-calendar enabled                 |
  * | E9   | contacts               | any row                                               |
  * | E10  | user_device_tokens     | revoked_at IS NULL AND fcm_token IS NOT NULL          |
- * | E11  | profiles.cover_url     | non-empty                                             |
+ * | E11  | profiles.cover_url or universal_intent_cover_url | either non-empty (the cover library writes the latter) |
  *
  * Any read error throws EnrichmentDataError — the route answers 500, never an
  * empty list. Boost triggers (G1–G3) slot into `resolveBoostTriggers` in
@@ -46,6 +46,7 @@ export interface EnrichmentFacts {
     bio?: string | null;
     location?: string | null;
     cover_url?: string | null;
+    universal_intent_cover_url?: string | null;
     interests?: string[] | null;
   } | null;
   hasPost: boolean;
@@ -74,7 +75,7 @@ export function computeCompletions(facts: EnrichmentFacts): Map<EnrichmentCardTy
     E8: facts.hasEnabledCalendar,
     E9: facts.hasContact,
     E10: facts.hasActiveDeviceToken,
-    E11: nonEmpty(p.cover_url),
+    E11: nonEmpty(p.cover_url) || nonEmpty(p.universal_intent_cover_url),
   };
   return new Map(ENRICHMENT_CARD_TYPES.map((t) => [t, done[t]]));
 }

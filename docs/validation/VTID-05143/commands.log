@@ -41,3 +41,10 @@ cd services/gateway && npx jest --silent                                        
 # --- PR gate dry runs (local) ---
 node scripts/ci/validator-path-guard.cjs <changed-files> gateway_backend <pr-body>   # APPROVED 23 in-remit; NOT JUDGED: DATABASE_SCHEMA.md, the migration (expected)
 python3 acceptance mapping check (VALIDATOR-CHECK.yml logic)                         # 8 ACs, none unmapped
+
+# Follow-up (E11 cover photo): the app's cover library (vitana-v1 CoverLibraryDrawer) writes
+# profiles.universal_intent_cover_url, not cover_url. Read-only count on 2026-10-13:
+# cover_url set 3, universal_intent_cover_url set 4, only cover_url 2 (of 238) — both are used.
+# E11 is now done when either column is non-empty.
+cd services/gateway && npx jest test/services/enrichment test/routes/enrichment-cards   # 60 passed
+npx tsc --noEmit -p .   # 0 errors
