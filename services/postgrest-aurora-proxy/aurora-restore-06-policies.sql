@@ -4736,3 +4736,5 @@ DROP POLICY IF EXISTS "Service role full access to worker_registry" ON public.wo
 CREATE POLICY "Service role full access to worker_registry" ON public.worker_registry AS PERMISSIVE FOR ALL TO public
   USING ((auth.role() = 'service_role'::text));
 
+-- VTID-05167 (Life Timeline P1)
+DO $IDEMPOTENT$ BEGIN IF to_regclass('public.activity_catalog') IS NOT NULL THEN DROP POLICY IF EXISTS activity_catalog_read ON public.activity_catalog; CREATE POLICY activity_catalog_read ON public.activity_catalog AS PERMISSIVE FOR SELECT TO authenticated USING (true); END IF; END $IDEMPOTENT$;

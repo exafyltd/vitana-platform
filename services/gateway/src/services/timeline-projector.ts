@@ -15,6 +15,7 @@
  *     on new activity without TTL-only eviction.
  */
 import { randomUUID } from 'crypto';
+import { isTimelineProjectable } from './timeline/catalog';
 
 const PROJECTOR_DISABLED = process.env.TIMELINE_PROJECTOR_ENABLED === 'false';
 
@@ -109,6 +110,7 @@ export async function writeTimelineRow(input: ProjectorInput): Promise<void> {
     console.warn(`[TimelineProjector] invalid activity_type skipped: ${input.activity_type}`);
     return;
   }
+  if (!isTimelineProjectable(input.activity_type)) return;
 
   // VTID-01969: denormalize actor_vitana_id so support tooling and Voice Lab
   // can render @<id> without joining profiles. Cached lookup is null-tolerant.
@@ -212,6 +214,9 @@ export async function projectOasisEventToTimeline(params: {
   if (!params.actor_id) return; // CICD events without a user have no business on a user timeline
   const activityType = mapOasisTopicToActivityType(params.topic);
   if (!activityType) return;
+  // VTID-05167: internal telemetry (orb.livekit.*, orb.navigator.*, next-action
+  // candidates…) is `system` in the timeline catalog and stays in oasis_events.
+  if (!isTimelineProjectable(activityType)) return;
 
   await writeTimelineRow({
     user_id: params.actor_id,
