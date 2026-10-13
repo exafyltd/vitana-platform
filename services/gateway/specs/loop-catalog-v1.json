@@ -11,7 +11,7 @@
       "risk": "R1",
       "autonomy": "L2",
       "status": "PARTIAL",
-      "gap": "Twelve deterministic routines run inside the gateway (routine runner, VTID-05103/05141) with a stop rule (three crashed runs in a row switch a routine off and raise routine.runner.stagnated) and repeated-breach damping (the same breach three days running is not re-sent to self-healing). Every ALERT-* workflow check except the Supabase-vs-Aurora identity drift has one gateway ops health route, and the workflows report failures to the self-healing intake. Four routines still need a claude.ai session (gh, a browser, a member sign-in, CI artifacts); they fail at the cloud environment setup script until the owner fixes it.",
+      "gap": "Thirteen deterministic routines run inside the gateway (routine runner, VTID-05103/05141/05148; learn-outcomes is owned by L3) with a stop rule (three crashed runs in a row switch a routine off and raise routine.runner.stagnated) and repeated-breach damping (the same breach three days running is not re-sent to self-healing). Every ALERT-* workflow check except the Supabase-vs-Aurora identity drift has one gateway ops health route, and the workflows report failures to the self-healing intake. Four routines still need a claude.ai session (gh, a browser, a member sign-in, CI artifacts); they fail at the cloud environment setup script until the owner fixes it.",
       "trigger": "Any owned sensor turns red (health check, routine run, alert workflow, test contract, error cluster).",
       "goal": "The same sensor that fired is green again after the fix is deployed, and STAGING-VERIFY passes on that commit.",
       "act": "One intake (self_healing_log) -> six-layer diagnosis -> spec -> fix through the one executor (Dev Autopilot).",
@@ -241,7 +241,7 @@
       "risk": "R1",
       "autonomy": "L1",
       "status": "PARTIAL",
-      "gap": "Outcomes, repair patterns and prompt learnings are recorded, but nothing acts on the outcomes ledger yet.",
+      "gap": "The learn-outcomes routine (VTID-05148, daily 12:00 UTC) measures repeat-failure rate per class, the share of fixes reusing a known pattern and escaped bugs that became tests; records which tests each fix PR shipped and files one write_test finding for a fix without one; and proposes (never applies) graduations on Mondays, withdrawing a proposal whose class regresses. Still recorded only: repair patterns are not auto-recorded or looked up by the executor (pattern reuse reports not measured), and prompt learnings and shadow-eval promotions have no graduation step.",
       "trigger": "Every finished L1, L2 or L6 run (success or failure); every escaped bug; every shadow-eval result.",
       "goal": "Each outcome leaves exactly one lesson: a new test, a repair pattern, a prompt learning, or a graduation proposal.",
       "act": "Write the lesson to its existing store; propose (never apply) a graduation of a finding class to auto-approve.",
@@ -258,7 +258,8 @@
       "sensors": {
         "health_groups": [],
         "routines": [
-          "autopilot-rec-quality"
+          "autopilot-rec-quality",
+          "learn-outcomes"
         ],
         "workflows": [
           "CRON-AUTO-PROMOTER",

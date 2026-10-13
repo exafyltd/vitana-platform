@@ -245,10 +245,44 @@ export async function planeSignal(sb: SupabaseClient | null, plane: string, now 
   return value;
 }
 
+/**
+ * VTID-05148: the latest run's measured numbers for a loop that has a metrics
+ * routine. Only L3 has one (learn-outcomes); read from routine_runs.
+ */
+export const METRICS_ROUTINES: Record<string, string> = { L3: 'learn-outcomes' };
+
+export type LoopMetrics =
+  | { state: 'ok'; routine: string; run_at: string; status: string; metrics: Record<string, unknown> }
+  | { state: 'no_run_yet'; routine: string }
+  | { state: 'unavailable'; routine: string };
+
+export async function latestLoopMetrics(sb: SupabaseClient | null, routine: string): Promise<LoopMetrics> {
+  if (!sb) return { state: 'unavailable', routine };
+  try {
+    const { data, error } = await sb
+      .from('routine_runs')
+      .select('started_at, status, findings')
+      .eq('routine_name', routine)
+      .in('status', ['success', 'partial'])
+      .order('started_at', { ascending: false })
+      .limit(1);
+    if (error) throw new Error(error.message);
+    const row = ((data || []) as Array<{ started_at: string; status: string; findings: Record<string, unknown> | null }>)[0];
+    const metrics = row?.findings && (row.findings as Record<string, unknown>).metrics;
+    if (!row || !metrics || typeof metrics !== 'object') return { state: 'no_run_yet', routine };
+    return { state: 'ok', routine, run_at: row.started_at, status: row.status, metrics: metrics as Record<string, unknown> };
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} metrics for ${routine} unavailable: ${err?.message}`);
+    return { state: 'unavailable', routine };
+  }
+}
+
 export interface CatalogResponse {
   catalog: LoopCatalog;
   coverage: CoverageReport;
   signals: Record<string, PlaneSignal>;
+  /** VTID-05148: per loop id, the latest metrics routine run (L3 only today). */
+  metrics_latest: Record<string, LoopMetrics>;
   totals: { loops: number; by_status: Record<string, number>; by_group: Record<string, number>; cases: number };
 }
 
@@ -257,6 +291,10 @@ export async function buildCatalogResponse(sb: SupabaseClient | null): Promise<C
   const planes = [...new Set(catalog.loops.map((l) => l.run_plane).filter((p): p is NonNullable<typeof p> => !!p))];
   const signals: Record<string, PlaneSignal> = {};
   await Promise.all(planes.map(async (p) => { signals[p] = await planeSignal(sb, p); }));
+  const metrics_latest: Record<string, LoopMetrics> = {};
+  await Promise.all(Object.entries(METRICS_ROUTINES).map(async ([loop, routine]) => {
+    metrics_latest[loop] = await latestLoopMetrics(sb, routine);
+  }));
   const by_status: Record<string, number> = {};
   const by_group: Record<string, number> = {};
   let cases = 0;
@@ -270,6 +308,7 @@ export async function buildCatalogResponse(sb: SupabaseClient | null): Promise<C
     catalog,
     coverage: computeCoverage(catalog),
     signals,
+    metrics_latest,
     totals: { loops: catalog.loops.length, by_status, by_group, cases },
   };
 }

@@ -12,6 +12,10 @@
  * /voice-lab/live/sessions has no time window, so VTID-05103 left it out),
  * llm-spend-budget (the shadow budgets in orchestrator/budgets.ts, alert only)
  * and llm-fallback-watch (isGoogleLlmCall over llm.call.completed).
+ *
+ * VTID-05148 (Phase 4) adds learn-outcomes (loop L3 Learn, learn-outcomes.ts):
+ * tests_added per fix PR, write_test findings for escaped bugs, the L3
+ * metrics, and graduation proposals on Mondays (UTC).
  */
 
 async function googleCallsLast24h() {
@@ -43,6 +47,7 @@ import {
 import { aggregateSpend, budgetLines, loadSpendToday } from '../orchestrator/budgets';
 import { isGoogleLlmCall, LLM_GOOGLE_WINDOW_MS } from '../ops-attention-adapters';
 import { readAgentsRegistry } from '../../routes/agents-registry';
+import { runLearnOutcomes } from './learn-outcomes';
 import {
   RoutineVerdict,
   checkAgentsHeartbeat,
@@ -121,6 +126,8 @@ export const RUNNER_ROUTINES: readonly RunnerRoutine[] = [
   },
   { name: 'dyk-tour-progress', hour: 10, minute: 30, run: async () => checkDykTourProgress(await auditDykTourProgress()) },
   { name: 'spec-memory-quarantine', hour: 11, minute: 0, run: async () => checkSpecMemoryQuarantine(await auditSpecMemoryQuarantine()) },
+  // L3 Learn; the graduation step inside it runs on Mondays (UTC) only.
+  { name: 'learn-outcomes', hour: 12, minute: 0, run: async () => runLearnOutcomes() },
   // Budgets are per UTC day (budgets.ts), so the day's spend is read just before midnight.
   { name: 'llm-spend-budget', hour: 23, minute: 50, run: async () => checkLlmSpendBudget(await spendToday()) },
 ];
