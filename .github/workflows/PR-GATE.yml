@@ -59,6 +59,18 @@ jobs:
           node --test scripts/ci/kiro-steering/guard.test.cjs
           node scripts/ci/kiro-steering/guard.cjs .
 
+      # VTID-05145: Claude Code ↔ Kiro handoff/lane files, state transitions and session/lane trailers
+      # (scripts/collab/queue.mjs; rules: .claude/rules/collaboration.md). Report-only until 2026-10-20:
+      # it is not in the Verdict OUTCOMES yet; add `collab=${{ steps.collab.outcome }}` there to make it count.
+      - name: Collab handoff
+        id: collab
+        continue-on-error: true
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          node --test scripts/collab/queue.test.mjs
+          node scripts/collab/queue.mjs validate --base "$BASE" --head "$HEAD" --branch "$HEAD_REF" --summary "$GITHUB_STEP_SUMMARY"
+
       - name: Scope guard
         id: scope
         continue-on-error: true
