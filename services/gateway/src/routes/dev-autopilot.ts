@@ -1101,6 +1101,9 @@ function approvalActor(req: Request): string {
 // 404 when the row is not held.
 router.post('/executions/:id/release-hold', requireDevRole, async (req: Request, res: Response) => {
   if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ ok: false, error: 'invalid execution id' });
+  // impact-allow-no-oasis: releaseHeldExecution emits the OASIS event for every
+  // state change it makes (overlap_released / overlap_hold_timeout); a check
+  // that finds the PR still blocked changes no state.
   const r = await releaseHeldExecution(req.params.id, `release:${approvalActor(req)}`);
   if (r.state === 'not_held') return res.status(404).json({ ok: false, error: 'execution is not held', ...r });
   return res.json({ ok: r.state !== 'error', ...r });
