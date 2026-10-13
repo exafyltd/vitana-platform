@@ -1,0 +1,30 @@
+# VTID-05177 — commands run in the worktree /home/user/wt-n4gw (branch claude/health-data-integration-plan-dbxyld-n4gw,
+# based on origin/main d577b319d). No command wrote to Supabase, Aurora, staging or production; every database, FCM and
+# Appilix call in the tests is mocked.
+
+# Plan F9 / Rollout 1 — read-only column check before code (production Supabase, SELECT only, no member data):
+#   select column_name, data_type from information_schema.columns
+#    where table_schema='public' and table_name='user_device_tokens' order by ordinal_position;
+#     -> device_type text, os_version text, app_version text present (no migration needed)
+#   select device_type, count(*) from public.user_device_tokens group by 1;
+#     -> one group: device_type NULL, 134 rows
+
+ln -s /home/user/vitana-platform/services/gateway/node_modules services/gateway/node_modules   # local only, not committed
+cd services/gateway
+
+# Commit 1 (501385f2f) — record the switch-off goldens from the UNMODIFIED dispatch code, then re-run without recording:
+RECORD_PUSH_GOLDEN=1 npx jest test/services/native-push-golden.vtid-05177.test.ts   # writes test/services/__golden__/vtid-05177-push-switch-off.json
+npx jest test/services/native-push-golden.vtid-05177.test.ts                       # 2 passed on unmodified code
+
+# After the change (fixture file untouched):
+npx jest test/services/native-push-golden.vtid-05177.test.ts test/services/native-push-routing.vtid-05177.test.ts \
+  test/routes/notifications-token.vtid-05177.test.ts test/vtid-05177-app-config.test.ts            # -> outputs/jest.txt
+npx jest $(grep -rl "notification-service\|push-routing\|reminders-dispatch\|scheduled-notifications\|routes/notifications" test | grep '\.test\.ts$') \
+  test/vtid-04883-community-ranking.test.ts                                                        # -> outputs/jest.txt
+npm run test:roles; npm run test:operator; npm run test:support                                   # -> outputs/jest.txt
+npx tsc --noEmit -p .                                                                              # -> outputs/tsc.txt (known local module gaps only)
+npx jest --silent                                                                                  # full gateway suite -> outputs/jest-full.txt
+cd ../..
+git branch -f main origin/main
+node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base origin/main --head HEAD --title "<title>"
+node scripts/ci/validate-pr-locally.cjs --title "<title>" --body-file pr-05177.md
