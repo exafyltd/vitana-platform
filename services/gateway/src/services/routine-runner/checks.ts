@@ -598,3 +598,56 @@ export function checkLearnOutcomes(
     },
   };
 }
+
+// =============================================================================
+// VTID-05153 (Loop Engineering Phase 5 — L9 Supplier catalog, wave 1)
+// =============================================================================
+
+export type NotMeasured = { state: 'not_measured'; reason: string };
+
+export interface SupplierCatalogMetrics {
+  category: string;
+  /** Rows this run checked (at most 20) and wrote a result for. */
+  rows_checked: number;
+  /** Rows that became ready_for_review with no supplier edit since their previous check. */
+  rows_auto_normalized: number;
+  /** needs_fix + returned_to_supplier among this run's checked rows / rows checked; null with none checked. */
+  validation_failure_rate: number | null;
+  /** ready_for_review (images checked) / every category row that has a result; null with none. */
+  ready_for_approval_share: number | null;
+  ready_for_approval_target: number;
+  /** Category rows with a result, per state (the whole category, after this run). */
+  by_state: Record<string, number>;
+  /** Error codes on this run's checked rows. */
+  by_error_code: Record<string, number>;
+  time_to_listing: NotMeasured;
+  human_edits_per_listing: NotMeasured;
+}
+
+export interface SupplierCatalogRun {
+  pool_rows: number;
+  pool_truncated: boolean;
+  excluded_rows: number;
+  candidates: number;
+  probes: { total: number; network_errors: number; outage: boolean };
+  write_conflicts: number;
+  write_errors: number;
+}
+
+/** L9's wave-1 target: 80% of rows ready for approval without manual entry. */
+export const READY_FOR_APPROVAL_TARGET = 0.8;
+
+// routines/supplier-catalog-check.md — "Breach": none in wave 1. Poor supplier
+// data is not a code failure and is never routed to self-healing; a crashed
+// run is a failure (the runner's stagnation stop applies).
+export function checkSupplierCatalog(metrics: SupplierCatalogMetrics, run: SupplierCatalogRun): RoutineVerdict {
+  const line =
+    `${metrics.rows_checked} ${metrics.category} rows checked, ready for approval ${pct(metrics.ready_for_approval_share)} ` +
+    `(target ${pct(metrics.ready_for_approval_target)}), failure rate ${pct(metrics.validation_failure_rate)}` +
+    (run.probes.outage ? ', images unchecked (probe outage)' : '');
+  const findings = { metrics, run };
+  if (run.write_errors > 0) {
+    return { status: 'partial', summary: `⚠️ L9 Supplier catalog: ${line}; ${run.write_errors} result write(s) failed`, findings };
+  }
+  return { status: 'success', summary: `✅ L9 Supplier catalog: ${line}`, findings };
+}

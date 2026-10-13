@@ -69,12 +69,24 @@
         return (v === null || v === undefined) ? 'n/a' : (Math.round(v * 1000) / 10) + '%';
     }
 
+    // VTID-05153: the L9 numbers from the latest supplier-catalog-check run.
+    function l9MetricsText(x) {
+        var st = x.by_state || {};
+        var returned = st.returned_to_supplier || 0;
+        return 'Ready for approval ' + pctText(x.ready_for_approval_share) +
+            ' (target ' + pctText(x.ready_for_approval_target) + ')' +
+            ' · Failure rate ' + pctText(x.validation_failure_rate) + ' of ' + (x.rows_checked || 0) + ' checked' +
+            ' · Auto-normalized ' + (x.rows_auto_normalized || 0) +
+            ' · Returned to supplier ' + returned;
+    }
+
     function metricsText(loop, metricsLatest) {
         var m = metricsLatest && metricsLatest[loop.id];
         if (!m) return null;
         if (m.state === 'no_run_yet') return 'Metrics: no ' + m.routine + ' run yet';
         if (m.state !== 'ok') return 'Metrics unavailable';
         var x = m.metrics || {};
+        if (loop.id === 'L9') return l9MetricsText(x);
         var rf = x.repeat_failure || {};
         var pr = x.pattern_reuse || {};
         var et = x.escaped_bugs_to_tests || {};

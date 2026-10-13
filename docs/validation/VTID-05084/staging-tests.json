@@ -10,7 +10,7 @@
       "expect_content_type": "text/html",
       "expect_body_contains": [
         "loops-catalog.css?v=20261117-vtid-05098",
-        "loops-catalog.js?v=20261120-vtid-05148",
+        "loops-catalog.js?v=20261121-vtid-05153",
         "app.js?v=20261120-vtid-05148",
         "styles.css?v=20261120-vtid-05148"
       ]
@@ -18,7 +18,7 @@
     {
       "kind": "http",
       "name": "served loops-catalog.js defines window.LoopsCatalog and reads the loops API",
-      "path": "/command-hub/loops-catalog.js?v=20261120-vtid-05148",
+      "path": "/command-hub/loops-catalog.js?v=20261121-vtid-05153",
       "expect_status": 200,
       "expect_content_type": "javascript",
       "expect_body_contains": [

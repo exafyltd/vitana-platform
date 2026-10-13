@@ -29,6 +29,9 @@ Owner approval (Gate 1): 2026-10-10. Plan PRs merged: vitana-platform #3984, vit
 | 14 | Phase 1 / A1: health store schema (Aurora only), placement guard + Aurora-only drift guard, SQL tests, Aurora-safe `erase_user_data()`, capacity model + placement record (`P1A-CAPACITY-AND-PLACEMENT.md`) | Health Hub | in review (sparred, 2 rounds, converged; Gate 1 2026-10-13); store migration committed, NOT applied — Aurora only (0T, then production after the cutover); the `erase_user_data()` fix is applied to Supabase only after its own Gate 2 | VTID-05158 | 0T (store apply), Aurora cutover (production) |
 | 15 | Phase 1 / A2: gateway ingest service (`writeHealthSamples`), readers, maintenance, infra scripts — ships dark | Health Hub | queued (sparred with A1) | VTID-05159 | A1, B1 (`health_sources`), D10 WP1 |
 | 16 | Phase 1 / A3: account deletion reaches the raw-batch bucket (vitana-v1) | Health Hub | queued (sparred with A1) | VTID-05160 | A2 (`erase-raw`) |
+| 17 | Phase 1 / B1: `health_sources` (Aurora only) + backfill, S6 (`resolveHealthSource`/`setHealthSourceState`/`listHealthSources`), dark dual-write / read switch / reconciler, `user_integrations` browser-write revoke (Supabase, after Gate 2) | Health Hub | in review (sparred, 2 rounds, converged); stacked on A1 | VTID-05161 | A1 (#4102) merges first |
+| 18 | Phase 1 / B2: writer re-routing (dual-write into the store), derived `health_features_daily_v2` | Health Hub | queued (sparred with B1) | VTID-05162 | A2, C1 (`self_logged_health`) |
+| 19 | Phase 1 / B3: Vitana Index dual-compute, report, cutover switch + rollback | Health Hub | queued (sparred with B1) | VTID-05163 | B2 |
 
 ## Deferred follow-ups (recorded so they are not lost)
 
