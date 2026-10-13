@@ -1,0 +1,20 @@
+# VTID-05147 — commands run (worktree mt/VTID-05147 on origin/main 1a70d6b55)
+# live facts (read-only, Supabase inmkhvwdcuyhnxkgfvsb): pg_get_functiondef of set_role_preference,
+#   me_set_active_role, switch_to_tenant_by_slug, check_role_permitted, me_context, current_tenant_id,
+#   current_active_role, is_exafy_admin, membership_side_effects_suppressed; pg_policies,
+#   information_schema.role_table_grants, columns, constraints, triggers of the 6 tables;
+#   plan_sparring_sessions record cc98a8e9 (final_plan_hash)
+$ (read-only) docs/validation/VTID-05147/pre-apply-checks.sql            -> outputs/pre-apply-live-readonly.txt
+$ bash scripts/ci/test-vtid-05147-s-m-lockdown.sh                         -> outputs/sql-harness.txt
+$ VTID_05147_MIGRATION=<membership check disabled> bash scripts/ci/test-vtid-05147-s-m-lockdown.sh   -> red (case e)
+$ VTID_05147_MIGRATION=<user_tenants lines removed> bash scripts/ci/test-vtid-05147-s-m-lockdown.sh  -> red (self-check)
+$ local cluster: fixture + migration + pre-apply + post-apply + rollback + re-apply -> outputs/local-pre-post-rollback.txt
+$ cd services/gateway
+$ npx jest test/vtid-05147-s-m-membership-role-lockdown.test.ts test/vtid-05147-effective-role-permitted.test.ts
+$ npx jest test/middleware/require-tenant-admin.test.ts test/routes/orb-live.test.ts test/routes/admin-notification-controls.test.ts test/routes/tenant-admin
+$ npx jest <30 affected suites>                                            -> outputs/local-checks.txt
+$ npm run test:roles && npm run test:support && npm run test:operator
+$ npx jest                                                                 (full suite, compared with base)
+$ npx tsc --noEmit -p .
+$ curl (GET only) staging /alive and an unauthenticated tenant-admin route -> outputs/staging-read-only-probes.txt
+# migration renamed 20261013200000 -> 20261013233000 (version taken by VTID-05143 on origin/main); harness, jest pin and local pre/post/rollback run re-done on the new name

@@ -1,0 +1,38 @@
+VTID-05147 local checks (2026-10-13, worktree on origin/main 1a70d6b55)
+
+$ bash scripts/ci/test-vtid-05147-s-m-lockdown.sh      (PostgreSQL 16 local cluster)
+precondition: member forged active_role/role_preferences/user_active_roles before the migration
+migration applied twice (self-check passed both times)
+VTID-05147: all assertions passed
+
+Mutations (harness must go red):
+- membership check disabled in set_role_preference  -> "(e) community in a foreign tenant: expected an error, the statement succeeded"
+- user_tenants policy drop + REVOKE removed          -> self-check: "anon still has TRUNCATE on public.user_tenants" (file rolled back)
+- gateway src reverted (orb-live.ts, admin-users.ts)  -> vtid-05147-effective-role-permitted.test.ts: 5 failed, 8 passed
+
+$ npx jest test/vtid-05147-s-m-membership-role-lockdown.test.ts           -> 7 passed
+$ npx jest test/vtid-05147-effective-role-permitted.test.ts               -> 13 passed
+$ npx jest test/middleware/require-tenant-admin.test.ts                   -> 18 passed (4 new VTID-05147 cases)
+$ npx jest <30 affected suites: the above + orb-live, admin-notification-controls, tenant-admin/* (13),
+    admin-users-error-logging, orb-tool-lang, Jev (5), vtid-05041, vtid-05043, live-session-controller,
+    vtid-04545, vtid-04548>
+Test Suites: 30 passed, 30 total
+Tests:       681 passed, 681 total
+
+$ npm run test:roles      -> Tests: 105 passed, 105 total
+$ npm run test:support    -> Tests: 87 passed, 87 total
+$ npm run test:operator   -> Tests: 64 passed, 64 total
+
+$ npx jest   (full gateway suite)
+Test Suites: 28 failed, 2 skipped, 1649 passed  (before the two test-mock fixes below)
+  - 26 of the 28 fail identically on the untouched base commit (missing local modules
+    libphonenumber-js / @aws-sdk/client-pinpoint-sms-voice-v2, parallel Postgres harness ports, etc.)
+  - the other 2 (routes/orb-live.test.ts, routes/admin-notification-controls.test.ts) asserted the old
+    contract / mocked only the old repository function; both updated on purpose, now green.
+
+$ npx tsc --noEmit -p .   -> 3 errors, all TS2307 "Cannot find module" (libphonenumber-js,
+  libphonenumber-js/max, @aws-sdk/client-pinpoint-sms-voice-v2) in files this change does not touch:
+  the local node_modules predates those dependencies. No error in a changed file.
+
+$ node scripts/ci/pr-gate/lib.mjs lintMigration(<migration>)   -> []
+$ node -e validateManifest(staging-tests.json)                 -> {"ok":true,"errors":[]}
