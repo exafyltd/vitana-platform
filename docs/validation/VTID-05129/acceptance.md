@@ -21,3 +21,7 @@ AC-6: staging-guard.ts mirrors lib.cjs's list exactly and applies it.
   TEST: scripts/ci/staging-verify/lib.test.cjs
 AC-7: End to end — after both PRs merge, a full STAGING-VERIFY community-app run on the served commit has 0 failures (recorded in outputs/README.md before Gate 2).
   TEST: STAGING-VERIFY.yml full=true (community-app)
+AC-8: Fix-forward 1 — a "fetch failed" whose cause is a closed socket, a headers timeout, EPIPE, an unreachable network/host or an AggregateError made only of transient codes is retried; a TLS member keeps it a real failure; every network failure names its cause in the evidence.
+  TEST: scripts/ci/staging-verify/lib.test.cjs
+AC-9: Fix-forward 1 — the verify job's timeout fits a full community-app run (75 min; 45 cancelled proof run 38363989362 during its final deploy check).
+  TEST: STAGING-VERIFY.yml full=true (community-app)

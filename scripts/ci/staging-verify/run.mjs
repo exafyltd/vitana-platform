@@ -67,7 +67,7 @@ async function fetchWithRetry(url, init, method) {
       return await fetch(url, { ...init, signal: AbortSignal.timeout(20_000) });
     } catch (e) {
       if (!retriable || attempt >= 2 || !lib.isRetriableFetchError(e)) throw e;
-      log(`retrying ${method} ${url} after ${e.cause?.code}`);
+      log(`retrying ${method} ${url} after ${lib.describeFetchError(e)}`);
       await sleep(1_000 * (attempt + 1));
     }
   }
@@ -277,7 +277,7 @@ async function runSuite(service, repoRoot, outDir, suite, tests) {
       else if (t.kind === 'playwright') r = runPlaywright(service, repoRoot, t, outDir);
       else r = runExisting(repoRoot, t);
     } catch (e) {
-      r = { ok: false, problems: [e.message] };
+      r = { ok: false, problems: [lib.describeFetchError(e)] };
     }
     const row = { suite, name, kind: t.kind, ok: r.ok, problems: r.problems, ms: Date.now() - started };
     log(`${row.ok ? 'PASS' : 'FAIL'} ${suite} › ${name}${row.ok ? '' : ` — ${row.problems.join('; ')}`}`);
