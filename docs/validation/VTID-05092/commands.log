@@ -1,0 +1,27 @@
+# VTID-05092 — commands run (worktree /home/user/wt-d10w1, branch local/d10w1 from origin/main 2a3a73b91).
+# No command touched a network endpoint, a gateway, Supabase or any shared database.
+
+# Throwaway Postgres 16 (local unix socket, initdb'd for this run; never Supabase/Aurora)
+initdb -D /tmp/pg05092/data -U postgres --auth=trust && pg_ctl -D /tmp/pg05092/data -o "-k /tmp/pg05092/sock -c listen_addresses=''" -w start
+PGHOST=/tmp/pg05092/sock PGUSER=postgres scripts/ci/sql-tests/run-health-consent-test.sh            # → outputs/sql-health-consent.txt (PASS)
+# 5 sed mutations of the migration, each re-running the SQL test, migration restored after  # → outputs/sql-mutation-check.txt (all 5 fail as expected)
+# Aurora parity additions run twice against a scratch DB, without and with health_consent_categories (clean, idempotent)
+
+# Gateway (services/gateway)
+npx jest test/consent/health-consent.test.ts test/routes/health-consent.test.ts test/partner-health-consent.test.ts test/migrations/vtid-05092-health-consent-migration.test.ts --verbose   # → outputs/jest-vtid-05092-suites.txt (4 suites, 86 tests; re-run below after the Art. 7(3) fix)
+npx jest test/partner-health test/partner-health-member.test.ts test/admin-partner-health.test.ts test/vtid-04560-role-separation-regression.test.ts test/connectors test/vtid-05055-member-link-migration.test.ts test/migrations/vtid-04765-erase-user-data-migration.test.ts   # → outputs/jest-regression-suites.txt (10 suites, 243 tests)
+npm run test:support                                                                                # → outputs/jest-support-pipeline.txt (4 suites, 87 tests)
+npx tsc --noEmit -p .                                                                               # → outputs/tsc.txt (1 pre-existing environmental TS2307, untouched file)
+
+# Repo root
+node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base origin/main --head HEAD --title "x (VTID-05092)"   # → outputs/check-pr.txt (✓ valid)
+IMPACT_SCAN_DRY_RUN=true node scripts/ci/dev-autopilot-impact-scan.mjs                               # → outputs/impact-scan-findings.json (0 findings)
+
+# Follow-up commit — withdrawal always works pre-migration (GDPR Art. 7(3))
+npx jest test/consent/health-consent.test.ts test/consent/health-consent-premigration.test.ts test/routes/health-consent.test.ts test/partner-health-consent.test.ts test/migrations/vtid-05092-health-consent-migration.test.ts --verbose   # → outputs/jest-vtid-05092-suites.txt (5 suites, 97 tests)
+# 2 source mutations of the revoke fallback, each re-running test/consent/health-consent-premigration.test.ts   # → outputs/premigration-mutation-check.txt (both caught)
+npx jest <regression set as above>                                                                  # → outputs/jest-regression-suites.txt (10 suites, 243 tests)
+npm run test:support                                                                                # → outputs/jest-support-pipeline.txt (4 suites, 87 tests)
+npx tsc --noEmit -p .                                                                               # → outputs/tsc.txt (same single pre-existing TS2307)
+node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base 2a3a73b91 --head HEAD --title "x (VTID-05092)"   # → outputs/check-pr.txt
+IMPACT_SCAN_DRY_RUN=true IMPACT_SCAN_BASE=2a3a73b91 node scripts/ci/dev-autopilot-impact-scan.mjs   # → outputs/impact-scan-findings.json
