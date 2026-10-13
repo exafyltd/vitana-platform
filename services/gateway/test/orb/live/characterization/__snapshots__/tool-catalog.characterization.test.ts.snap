@@ -6429,6 +6429,33 @@ CALL WHEN the user says: "connect my Oura ring", "pair my device",
         },
       },
       {
+        "description": "Read the member's own Life Timeline: what they logged and did, how their Vitana Index
+changed each day and which pillar moved it (nutrition, hydration, exercise, sleep, mental).
+CALL WHEN the member asks what they did or how their week went: "what did I do this week?",
+"how did my sleep go lately?", "why did my Index go up yesterday?", "was habe ich diese Woche gemacht?".
+Answer in your own words from the returned facts; "measured" influence is a real Index change,
+"counted" means it counted toward that pillar without a measured change.",
+        "name": "get_my_timeline",
+        "parameters": {
+          "properties": {
+            "category": {
+              "description": "Optional life area, e.g. community, diary, journey, events.",
+              "type": "string",
+            },
+            "pillar": {
+              "description": "Optional: nutrition, hydration, exercise, sleep or mental.",
+              "type": "string",
+            },
+            "range": {
+              "description": "today, week (default) or month.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
         "description": "Get the status of the user's partner health test(s) (e.g. a DoctorBox
 blood test ordered through Discover). Reads a canonical status —
 never a raw partner status string.
@@ -19548,6 +19575,33 @@ CALL WHEN the user says: "connect my Oura ring", "pair my device",
           "properties": {
             "device_name": {
               "description": "Optional device name, e.g. "Oura Ring".",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Read the member's own Life Timeline: what they logged and did, how their Vitana Index
+changed each day and which pillar moved it (nutrition, hydration, exercise, sleep, mental).
+CALL WHEN the member asks what they did or how their week went: "what did I do this week?",
+"how did my sleep go lately?", "why did my Index go up yesterday?", "was habe ich diese Woche gemacht?".
+Answer in your own words from the returned facts; "measured" influence is a real Index change,
+"counted" means it counted toward that pillar without a measured change.",
+        "name": "get_my_timeline",
+        "parameters": {
+          "properties": {
+            "category": {
+              "description": "Optional life area, e.g. community, diary, journey, events.",
+              "type": "string",
+            },
+            "pillar": {
+              "description": "Optional: nutrition, hydration, exercise, sleep or mental.",
+              "type": "string",
+            },
+            "range": {
+              "description": "today, week (default) or month.",
               "type": "string",
             },
           },

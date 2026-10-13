@@ -59,8 +59,9 @@ describe('VTID-04226: EventBridge JOBS carry the two test-contract scanners', ()
     // -1: VTID-04677 gateway-daily-feature-tip (owned by setup-eventbridge-daily-feature-tip.sh).
     // +1: VTID-05039 onboarding coach tick (shadow mode).
     // +1: VTID-05099 companion messages tick (shadow mode).
-    expect(jobs.length).toBe(32);
-    expect(jobs.filter((l) => l.includes('/api/v1/automations/cron/AP-')).length).toBe(21);
+    // +1: VTID-05171 AP-0916 timeline habit rollup.
+    expect(jobs.length).toBe(33);
+    expect(jobs.filter((l) => l.includes('/api/v1/automations/cron/AP-')).length).toBe(22);
   });
 
   it('the schedule Input merges the EXTRA json (method/auth/gateway_url) onto path+body', () => {
@@ -111,7 +112,7 @@ describe('VTID-04226: scripts parse and dry-run', () => {
     }).toString();
     expect(out).toContain('gateway-test-contracts-scheduled-run  (*/15 * * * * UTC)  -> /api/v1/test-contracts/scheduled-run');
     expect(out).toContain('gateway-test-contracts-missing  (30 6 * * * UTC)  -> /api/v1/test-contracts/missing');
-    expect(out).toContain('Jobs:     32'); // +1: VTID-04444 AP-0915, +1: VTID-04505 community scan, -1: VTID-04677 daily-feature-tip, +1: VTID-05039 onboarding coach tick, +1: VTID-05099 companion tick
+    expect(out).toContain('Jobs:     33'); // +1: VTID-04444 AP-0915, +1: VTID-04505 community scan, -1: VTID-04677 daily-feature-tip, +1: VTID-05039 onboarding coach tick, +1: VTID-05099 companion tick, +1: VTID-05171 AP-0916
   });
 
   it('the token provisioning script is dry-run by default and never defaults to prod', () => {
