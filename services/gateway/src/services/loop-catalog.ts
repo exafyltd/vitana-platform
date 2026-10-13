@@ -247,9 +247,10 @@ export async function planeSignal(sb: SupabaseClient | null, plane: string, now 
 
 /**
  * VTID-05148: the latest run's measured numbers for a loop that has a metrics
- * routine. Only L3 has one (learn-outcomes); read from routine_runs.
+ * routine, read from routine_runs: L3 (learn-outcomes) and, since VTID-05153,
+ * L9 (supplier-catalog-check).
  */
-export const METRICS_ROUTINES: Record<string, string> = { L3: 'learn-outcomes' };
+export const METRICS_ROUTINES: Record<string, string> = { L3: 'learn-outcomes', L9: 'supplier-catalog-check' };
 
 export type LoopMetrics =
   | { state: 'ok'; routine: string; run_at: string; status: string; metrics: Record<string, unknown> }
@@ -281,7 +282,7 @@ export interface CatalogResponse {
   catalog: LoopCatalog;
   coverage: CoverageReport;
   signals: Record<string, PlaneSignal>;
-  /** VTID-05148: per loop id, the latest metrics routine run (L3 only today). */
+  /** VTID-05148: per loop id, the latest metrics routine run (L3; L9 since VTID-05153). */
   metrics_latest: Record<string, LoopMetrics>;
   totals: { loops: number; by_status: Record<string, number>; by_group: Record<string, number>; cases: number };
 }
