@@ -21,9 +21,10 @@
 
 import { Router, Request, Response } from 'express';
 import {
-  notifyUser, notifyUserAsync, sendPushToUser, sendAppilixPush, isSignedOutOnAllKnownDevices, TYPE_META,
+  notifyUser, notifyUserAsync, TYPE_META,
   newPushFanoutOutcome, classifyPushOutcome, recordPushOutcome, type PushOutcome,
 } from '../services/notification-service';
+import { dispatchPush } from '../services/push-routing';
 import { generatePersonalRecommendations } from '../services/recommendation-engine';
 import { LangCode, resolveLanguage } from '../services/recommendation-engine/analyzers/community-user-analyzer';
 import { tt, type GatewayI18nKey } from '../i18n/catalog';
@@ -1377,23 +1378,28 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
       // that produced "Neuer Beitrag" and "New post" on the SAME phone a minute
       // apart, because two accounts had been signed in on it and Appilix still
       // had both identities mapped to the device.
-      let sent = 0;
-      let appilixSent = false;
+      //
+      // VTID-05177: routed through dispatchPush(). This site keeps its own,
+      // pre-existing policy: the narrower signed-out-everywhere suppression,
+      // and a deep-link FCM fallback that does NOT exclude Appilix-tagged
+      // tokens (unlike notifyUser — a known asymmetry, kept byte-for-byte and
+      // tracked separately). No server badge on this cron path.
       const fcmTally = newPushFanoutOutcome();
-      const appilixSuppressed = await isSignedOutOnAllKnownDevices(notif.user_id, supa);
-      if (hasDeepLink) {
-        appilixSent = appilixSuppressed
-          ? false
-          : await sendAppilixPush(notif.user_id, pushPayload);
-        if (!appilixSent) {
-          sent = await sendPushToUser(notif.user_id, notif.tenant_id, pushPayload, supa, { outcome: fcmTally });
-        }
-      } else {
-        sent = await sendPushToUser(notif.user_id, notif.tenant_id, pushPayload, supa, { outcome: fcmTally });
-        if (sent === 0 && !appilixSuppressed) {
-          appilixSent = await sendAppilixPush(notif.user_id, pushPayload);
-        }
-      }
+      const dispatchedPush = await dispatchPush({
+        userId: notif.user_id,
+        tenantId: notif.tenant_id,
+        payload: pushPayload,
+        supabase: supa,
+        policy: {
+          kind: 'deep_link_split',
+          hasDeepLink,
+          suppression: 'signed_out_only',
+          excludeAppilixTaggedOnFallback: false,
+        },
+        outcome: fcmTally,
+      });
+      const sent = dispatchedPush.sent;
+      const appilixSent = dispatchedPush.appilixSent;
 
       // Mark as dispatched, with what actually happened
       await markHandled(notif.id, classifyPushOutcome(fcmTally, appilixSent));
