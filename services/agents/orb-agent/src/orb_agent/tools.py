@@ -791,14 +791,19 @@ async def share_calendar_entry_to_feed(
     title_query: str | None = None,
     text: str | None = None,
     is_public: bool | None = None,
+    card_title: str | None = None,
+    include_location: bool | None = None,
+    card_token: str | None = None,
+    sensitive_ack: bool | None = None,
     confirmed: bool | None = None,
 ) -> str:
-    """Share an upcoming community event or live room from the member's calendar to their feed.
+    """Share one of the member's own upcoming calendar entries to their feed.
 
-    Compose a short post in the member's language. Two steps: call without
-    `confirmed` first, read the event and the post text back and ask; call
-    again with the same entry, text and is_public and confirmed=True only after
-    they say yes.
+    Any entry: an event, a live room, or a private, business, medical or
+    reminder entry. Compose a short post in the member's language. Two steps:
+    call without `confirmed` first, read the entry, what others see on the
+    card and the post text back and ask; call again with the same arguments,
+    the preview's card_token and confirmed=True only after they say yes.
 
     Args:
         entry_id: The calendar entry id, if known.
@@ -807,6 +812,11 @@ async def share_calendar_entry_to_feed(
         is_public: False keeps the post visible to the member only, True shows
             it to the community. Required with confirmed=True — send what the
             member approved.
+        card_title: For an own entry: the title others see (default: the entry title).
+        include_location: For an own entry: True shows the place on the card.
+        card_token: With confirmed=True for an own entry: the card_token from the preview.
+        sensitive_ack: True ONLY when the preview said sensitive and the member
+            confirmed after you said it is a health appointment.
         confirmed: True ONLY after the member confirmed.
     """
     body = await _dispatch(context, "share_calendar_entry_to_feed", {
@@ -814,6 +824,10 @@ async def share_calendar_entry_to_feed(
         "title_query": title_query,
         "text": text,
         "is_public": is_public,
+        "card_title": card_title,
+        "include_location": include_location,
+        "card_token": card_token,
+        "sensitive_ack": sensitive_ack,
         "confirmed": confirmed,
     })
     return summarize(body)
@@ -825,24 +839,38 @@ async def invite_to_calendar_entry(
     recipient_user_id: str,
     entry_id: str | None = None,
     title_query: str | None = None,
+    card_title: str | None = None,
+    include_location: bool | None = None,
+    card_token: str | None = None,
+    sensitive_ack: bool | None = None,
     confirmed: bool | None = None,
 ) -> str:
     """Invite another member to an entry in the member's calendar (an invite card in their chat).
 
     Resolve the person with resolve_recipient first. Two steps: call without
-    `confirmed`, tell the member which entry goes to whom and ask; call again
-    with confirmed=True only after they say yes.
+    `confirmed`, tell the member which entry goes to whom and what the card
+    shows and ask; call again with the same arguments, the preview's
+    card_token and confirmed=True only after they say yes.
 
     Args:
         recipient_user_id: The invited person's user id from resolve_recipient.
         entry_id: The calendar entry id, if known.
         title_query: Fuzzy title to find the entry when entry_id is unknown.
+        card_title: For an own entry: the title on the card (default: the entry title).
+        include_location: For an own entry: True shows the place on the card.
+        card_token: With confirmed=True for an own entry: the card_token from the preview.
+        sensitive_ack: True ONLY when the preview said sensitive and the member
+            confirmed after you said it is a health appointment.
         confirmed: True ONLY after the member confirmed.
     """
     body = await _dispatch(context, "invite_to_calendar_entry", {
         "recipient_user_id": recipient_user_id,
         "entry_id": entry_id,
         "title_query": title_query,
+        "card_title": card_title,
+        "include_location": include_location,
+        "card_token": card_token,
+        "sensitive_ack": sensitive_ack,
         "confirmed": confirmed,
     })
     return summarize(body)
@@ -3505,13 +3533,17 @@ async def leave_group_chat(context: RunContext, group: str | None = None, group_
 
 
 @function_tool
-async def send_calendar_invite_in_chat(context: RunContext, member: str | None = None, member_user_id: str | None = None, event: str | None = None, event_id: str | None = None, confirmed: bool | None = None) -> str:
-    """Share one of the user's own upcoming calendar events with a community member via direct message."""
+async def send_calendar_invite_in_chat(context: RunContext, member: str | None = None, member_user_id: str | None = None, event: str | None = None, event_id: str | None = None, card_title: str | None = None, include_location: bool | None = None, card_token: str | None = None, sensitive_ack: bool | None = None, confirmed: bool | None = None) -> str:
+    """Share one of the user's own upcoming calendar events with a community member via direct message (confirm with the preview's card_token)."""
     body = await _dispatch_with_directive(context, "send_calendar_invite_in_chat", {
             "member": member,
             "member_user_id": member_user_id,
             "event": event,
             "event_id": event_id,
+            "card_title": card_title,
+            "include_location": include_location,
+            "card_token": card_token,
+            "sensitive_ack": sensitive_ack,
             "confirmed": confirmed,
         })
     return summarize(body)

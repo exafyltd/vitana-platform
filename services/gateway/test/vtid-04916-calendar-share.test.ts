@@ -139,8 +139,8 @@ describe('sharing (VTID-04916)', () => {
     expect(Object.keys(inserts[0]).sort()).toEqual(['attached_ref_id', 'attached_ref_type', 'content', 'is_public', 'user_id']);
   });
 
-  it('private entries, cancelled entries and past or missing events are refused', async () => {
-    expect(await shareCalendarEntryToFeed(USER, eventEntry({ source_ref_type: 'health_plan', metadata: {} }), {}, NOW)).toMatchObject({ status: 409, reason: 'private_entry' });
+  it('cancelled entries and past or missing events are refused', async () => {
+    // VTID-05126: an own entry without an event is shared as calendar_entry (see vtid-05126 suite), never refused as private.
     expect(await shareCalendarEntryToFeed(USER, eventEntry({ status: 'cancelled' }), {}, NOW)).toMatchObject({ status: 409, reason: 'cancelled' });
     db.events[EVENT].end_time = '2026-10-10T09:00:00Z';
     expect(await shareCalendarEntryToFeed(USER, eventEntry(), {}, NOW)).toMatchObject({ status: 409, reason: 'past' });

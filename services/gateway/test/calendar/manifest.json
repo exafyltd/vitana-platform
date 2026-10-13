@@ -139,7 +139,8 @@
     },
     "src/services/calendar-share.ts": {
       "tests": [
-        "test/vtid-04916-calendar-share.test.ts"
+        "test/vtid-04916-calendar-share.test.ts",
+        "test/vtid-05126-calendar-share-any-entry.test.ts"
       ]
     },
     "src/services/orb-tools/calendar-social-tools.ts": {
