@@ -28,6 +28,7 @@ import { tt } from '../i18n/catalog';
 import { checkInviteSend, inviteRefusedBody, INVITE_REFUSED_STATUS } from '../services/calendar-invite-guard';
 import { getUserLocale } from '../i18n/server-locale';
 import * as repo from './chat-repository';
+import { markCompanionRepliedInBackground } from '../services/companion/companion-repository';
 
 const router = Router();
 
@@ -546,6 +547,11 @@ async function handleVitanaTextReply(
   supabase: ReturnType<typeof getSupabase>,
 ): Promise<{ ok: boolean; reply?: string; error?: string }> {
   const startTime = Date.now();
+
+  // VTID-05100: the member texted Vitana — mark their latest companion
+  // message as replied (back-off, plan §B). Fire-and-forget: never awaited,
+  // never fails or delays the reply.
+  markCompanionRepliedInBackground(supabase, userId);
 
   try {
     // VITANA-BRAIN: Route through brain when flag is enabled, else legacy path

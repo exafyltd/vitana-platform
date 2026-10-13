@@ -195,5 +195,7 @@
   "autopilot.auto.event_rsvp_referral.summary": "Llegaste por una invitación a un evento. Apúntate para guardar tu plaza.",
   "autopilot.auto.share_milestone.title": "Comparte tu logro: {milestone}",
   "autopilot.auto.share_milestone.summary": "Alcanzaste un logro. Compártelo con la comunidad: verás la publicación antes de que salga.",
-  "sms.phone_verification.code": "Tu código de Vitanaland: {code}. No lo compartas con nadie."
+  "sms.phone_verification.code": "Tu código de Vitanaland: {code}. No lo compartas con nadie.",
+  "notif.vitana_companion_message.title": "Mensaje de Vitana",
+  "notif.vitana_companion_message.body": "Vitana te ha escrito: toca para leer su mensaje."
 }
