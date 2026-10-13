@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05101",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/companion/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05099/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
