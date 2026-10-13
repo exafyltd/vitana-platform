@@ -31,7 +31,7 @@
  * http://127.0.0.1:<port>/…) is an approved client. Off unless
  * COMMERCE_MCP_CHATGPT=true as well (404 everywhere above, today's behaviour).
  */
-import { Router, type Request, type Response } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 import { verifyAndExtractIdentity } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
 import { checkMcpClient } from '../services/mcp-client-allowlist';
@@ -144,6 +144,82 @@ export function chatgptAuthorizationServerMetadata(req: Request) {
 }
 
 /**
+ * VTID-05135 (TEMPORARY diagnostic): OpenAI's plugin scanner says "the latest scan did not
+ * complete" and we cannot see what it sends. One capped `commerce.mcp.probe` event per
+ * (method, path, user agent) per 15 minutes, at most 60 an hour per process, for requests the
+ * ChatGPT path answered WITHOUT a session (401 / 405) and for the two ChatGPT discovery
+ * documents (200). Strings are clipped, no credential, IP or cookie is ever recorded, and the
+ * audit runs after the response has finished: it cannot change an answer. Remove with the
+ * follow-up VTID once the scanner is understood (this block, probeMiddleware, the
+ * `commerce.mcp.probe` entry in types/cicd.ts).
+ */
+const PROBE_WINDOW_MS = 15 * 60_000;
+const PROBE_HOUR_MS = 3_600_000;
+const PROBE_MAX_PER_HOUR = 60;
+const PROBE_MAX_KEYS = 2_000;
+const probeSeen = new Map<string, number>();
+let probeEmitted: number[] = [];
+export function resetProbeAudit(): void {
+  probeSeen.clear();
+  probeEmitted = [];
+}
+function clip(value: unknown, max = 200): string | null {
+  return typeof value === 'string' && value ? value.slice(0, max) : null;
+}
+/** True when this probe should be written now; records it when it should. */
+export function shouldAuditProbe(key: string, now = Date.now()): boolean {
+  probeEmitted = probeEmitted.filter((t) => t > now - PROBE_HOUR_MS);
+  if (probeEmitted.length >= PROBE_MAX_PER_HOUR) return false;
+  const last = probeSeen.get(key) ?? 0;
+  if (now - last < PROBE_WINDOW_MS) return false;
+  if (probeSeen.size >= PROBE_MAX_KEYS) probeSeen.clear();
+  probeSeen.set(key, now);
+  probeEmitted.push(now);
+  return true;
+}
+export async function auditProbe(req: Request, status: number, now = Date.now()): Promise<void> {
+  const path = clip(req.originalUrl.split('?')[0]) ?? '';
+  const userAgent = clip(req.get('user-agent'));
+  if (!shouldAuditProbe(`${req.method}|${path}|${userAgent ?? ''}`, now)) return;
+  const body = req.body as { method?: unknown } | undefined;
+  const jsonrpcMethod = typeof body?.method === 'string' && body.method.length <= 64 ? body.method : null;
+  await emitOasisEvent({
+    vtid: 'VTID-05135',
+    type: 'commerce.mcp.probe',
+    source: 'commerce-mcp',
+    status: 'info',
+    message: `Commerce MCP answered ${req.method} ${path} with ${status} (no session).`,
+    payload: {
+      method: req.method,
+      path,
+      status,
+      user_agent: userAgent,
+      origin: clip(req.get('origin')),
+      accept: clip(req.get('accept')),
+      content_type: clip(req.get('content-type')),
+      has_authorization: Boolean(req.get('authorization')),
+      jsonrpc_method: jsonrpcMethod,
+    },
+    actor_role: 'system',
+    surface: 'api',
+  }).catch(() => undefined);
+}
+/** Registered BEFORE the handlers, so the listener exists before any res.json(). */
+export function probeMiddleware(statuses: number[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    res.on('finish', () => {
+      if (!statuses.includes(res.statusCode)) return;
+      try {
+        void auditProbe(req, res.statusCode).catch(() => undefined);
+      } catch {
+        /* a diagnostic never changes an answer */
+      }
+    });
+    next();
+  };
+}
+
+/**
  * VTID-04969: OpenAI verifies the domain by fetching a token the portal shows,
  * served as plain text and nothing else. Off (404) until the token is set; it is
  * independent of the MCP switch because OpenAI pings it when the plugin is submitted.
@@ -160,13 +236,13 @@ wellKnownRouter.get(['/oauth-protected-resource', '/oauth-protected-resource/mcp
 });
 
 // VTID-04990: the ChatGPT-only path (404 unless COMMERCE_MCP_CHATGPT=true).
-wellKnownRouter.get('/oauth-protected-resource/mcp/chatgpt', (req: Request, res: Response) => {
+wellKnownRouter.get('/oauth-protected-resource/mcp/chatgpt', probeMiddleware([200]), (req: Request, res: Response) => {
   if (!chatgptEnabled(res)) return;
   res.json(chatgptResourceMetadata(req));
 });
 
 // VTID-05133 (A1): the same shim serves the Community ChatGPT path; content unchanged.
-wellKnownRouter.get('/oauth-authorization-server', (req: Request, res: Response) => {
+wellKnownRouter.get('/oauth-authorization-server', probeMiddleware([200]), (req: Request, res: Response) => {
   if (!isChatgptPathEnabled() && !isCommunityChatgptPathEnabled()) {
     return res.status(404).json({ ok: false, error: 'COMMERCE_MCP_DISABLED' });
   }
@@ -192,11 +268,16 @@ export function resetMcpLimits(): void {
   windows.clear();
 }
 
-function unauthorized(req: Request, res: Response, description: string, chatgpt = false) {
+function unauthorized(req: Request, res: Response, description: string, chatgpt = false, tokenSent = true) {
   const metadata = `${publicOrigin(req)}/.well-known/oauth-protected-resource/mcp${chatgpt ? '/chatgpt' : ''}`;
+  // VTID-05135 (RFC 6750 s3.1): a request that carried no credentials gets the plain challenge, no error
+  // code. ChatGPT path only; /mcp (Claude) keeps its challenge byte for byte.
+  const challenge = chatgpt && !tokenSent
+    ? `Bearer resource_metadata="${metadata}", scope="${MCP_SCOPES.join(' ')}"`
+    : `Bearer resource_metadata="${metadata}", scope="${MCP_SCOPES.join(' ')}", error="invalid_token", error_description="${description}"`;
   res
     .status(401)
-    .set('WWW-Authenticate', `Bearer resource_metadata="${metadata}", scope="${MCP_SCOPES.join(' ')}", error="invalid_token", error_description="${description}"`)
+    .set('WWW-Authenticate', challenge)
     .json({ jsonrpc: '2.0', id: null, error: { code: -32001, message: description } });
 }
 
@@ -231,7 +312,7 @@ const mcpPost = (chatgpt: boolean) => async (req: Request, res: Response) => {
   if (chatgpt ? !chatgptEnabled(res) : !enabled(res)) return;
   const header = req.get('authorization') ?? '';
   const token = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : '';
-  if (!token) return unauthorized(req, res, 'Sign in to Vitanaland to connect this assistant.', chatgpt);
+  if (!token) return unauthorized(req, res, 'Sign in to Vitanaland to connect this assistant.', chatgpt, false);
   const verified = await verifyAndExtractIdentity(token).catch(() => null);
   if (!verified?.identity?.user_id) return unauthorized(req, res, 'The Vitanaland sign-in has expired or is not valid.', chatgpt);
   const identity = verified.identity;
@@ -310,7 +391,7 @@ router.post('/', (req: Request, res: Response) => { // inline-bearer-auth
   // commerce.mcp.client_refused.
   return mcpPost(false)(req, res);
 });
-router.post('/chatgpt', (req: Request, res: Response) => { // inline-bearer-auth
+router.post('/chatgpt', probeMiddleware([401]), (req: Request, res: Response) => { // inline-bearer-auth
   // impact-allow-no-oasis: the same handler as above, on the ChatGPT-only path.
   return mcpPost(true)(req, res);
 });
@@ -319,7 +400,7 @@ router.all('/', (_req: Request, res: Response) => {
   res.status(405).set('Allow', 'POST').json({ jsonrpc: '2.0', id: null, error: { code: -32000, message: 'Method not allowed' } });
 });
 
-router.all('/chatgpt', (_req: Request, res: Response) => {
+router.all('/chatgpt', probeMiddleware([405]), (_req: Request, res: Response) => {
   if (!chatgptEnabled(res)) return;
   res.status(405).set('Allow', 'POST').json({ jsonrpc: '2.0', id: null, error: { code: -32000, message: 'Method not allowed' } });
 });
