@@ -59,6 +59,12 @@ describe('VTID-05118: welcome-discount trigger uses the email trigger secret', (
     expect(body).toMatch(/EXCEPTION WHEN OTHERS THEN\s+[\s\S]*?RAISE WARNING[\s\S]*?RETURN NEW;\s+END;\s*$/);
   });
 
+  it('revokes EXECUTE from PUBLIC, anon and authenticated (VTID-05041 definer lockdown)', () => {
+    expect(sql).toMatch(
+      /REVOKE ALL ON FUNCTION public\.notify_welcome_discount\(\) FROM PUBLIC, anon, authenticated;/,
+    );
+  });
+
   it('carries no secret value', () => {
     expect(sql).not.toContain('eyJ');
     expect(sql).not.toMatch(/sb_secret_/);

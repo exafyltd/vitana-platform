@@ -56,3 +56,8 @@ EXCEPTION WHEN OTHERS THEN
   RETURN NEW;
 END;
 $$;
+
+-- Trigger-only SECURITY DEFINER function: nothing calls it directly, and a
+-- trigger fires without an EXECUTE check, so client roles lose EXECUTE
+-- (VTID-05041 definer lockdown).
+REVOKE ALL ON FUNCTION public.notify_welcome_discount() FROM PUBLIC, anon, authenticated;
