@@ -176,44 +176,9 @@ jobs:
           SUPABASE_SVC: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           RESULTS: ${{ runner.temp }}/staging-verify/results.json
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -e
-          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SVC" ]; then
-            echo "::error::SUPABASE_URL / SUPABASE_SERVICE_ROLE not set — the result cannot reach OASIS, so neither channel will see it."
-            exit 1
-          fi
-          if [ -f "$RESULTS" ]; then
-            BODY=$(jq -c --arg run "$RUN_URL" '{
-              vtid: (.vtid // "BOOTSTRAP-STAGING-VERIFY"),
-              topic: ("staging.verify." + .outcome),
-              service: ("staging-verify-" + .service),
-              role: "CICD",
-              model: "staging-verify",
-              status: (if .outcome == "passed" then "success" elif .outcome == "failed" then "error" else "info" end),
-              message: .message,
-              metadata: {
-                env: "staging", service: .service, commit: .sha, outcome: .outcome,
-                vtids: .vtids, run_url: $run, production_commit: .production_stamp,
-                results: [.results[] | {suite, name, ok, problems}],
-                missing_suites: .plan.missing, invalid_suites: .plan.invalid,
-                shipping: .shipping, full: (.full // false), workflow: "STAGING-VERIFY.yml"
-              }
-            }' "$RESULTS")
-          else
-            # The runner crashed before writing a result: that is a failed
-            # verification, and it must be visible as one.
-            BODY=$(jq -nc --arg svc "$SERVICE" --arg sha "$SHA" --arg run "$RUN_URL" '{
-              vtid: "BOOTSTRAP-STAGING-VERIFY", topic: "staging.verify.failed",
-              service: ("staging-verify-" + $svc), role: "CICD", model: "staging-verify", status: "error",
-              message: ("**Staging verification FAILED — the runner crashed before producing a result.** Not ready for production. Run: " + $run),
-              metadata: { env: "staging", service: $svc, commit: $sha, outcome: "failed", run_url: $run, crashed: true, workflow: "STAGING-VERIFY.yml" }
-            }')
-          fi
-          curl -fsS -X POST "$SUPABASE_URL/rest/v1/oasis_events" \
-            -H "Content-Type: application/json" -H "apikey: $SUPABASE_SVC" \
-            -H "Authorization: Bearer $SUPABASE_SVC" -H "Prefer: return=minimal" \
-            -d "$BODY"
-          echo "✓ recorded $(echo "$BODY" | jq -r .topic) for $SERVICE @ ${SHA:0:12}"
+        # VTID-05128: the body goes to OASIS from a file (curl --data-binary @file);
+        # a full run's body is over Linux's 128 KiB per-argument limit.
+        run: bash runner/scripts/ci/staging-verify/record-oasis.sh
 
       - name: Keep the evidence
         if: always()
