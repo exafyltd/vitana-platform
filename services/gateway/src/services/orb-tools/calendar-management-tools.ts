@@ -19,6 +19,7 @@ import {
 } from '../calendar-service';
 import { completeSourceForCalendarEvent } from '../calendar-producers';
 import * as repo from './calendar-management-tools-repository';
+import { checkCalendarWriteRequest } from '../../orb/live/tools/calendar-write-guard';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
 
@@ -57,7 +58,7 @@ function strArg(args: OrbToolArgs, key: string): string {
 }
 
 /** timezone arg, falling back to args.user_timezone, then UTC. */
-function resolveTimezone(args: OrbToolArgs): string {
+export function resolveTimezone(args: OrbToolArgs): string {
   const tz = strArg(args, 'timezone') || strArg(args, 'user_timezone') || 'UTC';
   try {
     // Throws RangeError for unknown IANA names.
@@ -75,7 +76,7 @@ function parseIso(value: string): Date | null {
 }
 
 /** Speakable "Tue, Jul 7, 9:00 AM" in the user's timezone. */
-function fmtWhen(iso: string | null | undefined, tz: string): string {
+export function fmtWhen(iso: string | null | undefined, tz: string): string {
   if (!iso) return '';
   try {
     return new Date(iso).toLocaleString('en-US', {
@@ -136,7 +137,7 @@ function localDateParts(tz: string, at: Date): { y: number; mo: number; d: numbe
   return { y: Number(parts.year), mo: Number(parts.month), d: Number(parts.day) };
 }
 
-type ResolveOutcome =
+export type ResolveOutcome =
   | { kind: 'found'; event: CalendarEventRow }
   | { kind: 'ambiguous'; matches: CalendarEventRow[] }
   | { kind: 'none' }
@@ -147,7 +148,7 @@ type ResolveOutcome =
  * (ilike on title, scoped to the user, cancelled excluded on title search).
  * Prefers upcoming events; multiple plausible matches → disambiguation list.
  */
-async function resolveEvent(
+export async function resolveEvent(
   args: OrbToolArgs,
   id: OrbToolIdentity,
   sb: SupabaseClient,
@@ -183,7 +184,7 @@ async function resolveEvent(
   return { kind: 'ambiguous', matches: upcoming.length > 1 ? upcoming : matches };
 }
 
-function disambiguationResult(matches: CalendarEventRow[], tz: string): OrbToolResult {
+export function disambiguationResult(matches: CalendarEventRow[], tz: string): OrbToolResult {
   const listed = matches.slice(0, 5);
   const lines = listed
     .map((e, i) => `${i + 1}) "${e.title}" on ${fmtWhen(e.start_time, tz)}`)
@@ -248,6 +249,9 @@ export async function tool_reschedule_event(
     if (newEnd.getTime() <= newStart.getTime()) {
       return { ok: false, error: 'new_end must be after new_start.' };
     }
+    // VTID-04918: never move an event into the past (shared guard, every path).
+    const pastRefusal = checkCalendarWriteRequest({ confirmed: true, startTime: newStart.toISOString(), nowMs: Date.now() });
+    if (pastRefusal) return { ok: false, error: pastRefusal };
 
     const updated = await rescheduleEvent(
       event.id,

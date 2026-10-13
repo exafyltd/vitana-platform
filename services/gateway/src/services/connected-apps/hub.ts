@@ -548,9 +548,10 @@ export async function syncApp(userId: string, appId: string): Promise<SyncOutcom
 export async function importDeviceContacts(
   userId: string,
   contacts: Array<{ name?: unknown; emails?: unknown; phones?: unknown }>,
+  opts: { region?: unknown; method?: unknown } = {},
 ): Promise<{ ok: true; result: Record<string, unknown> } | { ok: false; error: string; status?: number }> {
   if (!Array.isArray(contacts) || contacts.length === 0) return { ok: false, error: 'no_contacts', status: 400 };
-  const { deviceContactId, importContacts, MAX_CONTACTS_PER_IMPORT } = await import('./contacts-import');
+  const { deviceContactId, importContacts, phoneRegion, MAX_CONTACTS_PER_IMPORT } = await import('./contacts-import');
   if (contacts.length > MAX_CONTACTS_PER_IMPORT) return { ok: false, error: 'too_many_contacts', status: 413 };
   const asList = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => String(x ?? '')).filter(Boolean) : []);
   const shaped = contacts.map((c) => {
@@ -559,11 +560,23 @@ export async function importDeviceContacts(
     const phones = asList(c.phones);
     return { external_id: deviceContactId({ name, emails, phones }), name, emails, phones };
   });
-  const result = await importContacts(userId, 'android', shaped);
+  // VTID-05057: how the phone handed the contacts over (picker, a .vcf file or
+  // a native bridge) and which country national numbers are read in.
+  const method = ['picker', 'vcf', 'native'].includes(String(opts.method)) ? String(opts.method) : 'picker';
+  const result = await importContacts(userId, 'android', shaped, { region: phoneRegion(opts.region), method });
   const at = new Date().toISOString();
   await upsertSetting(userId, 'android-contacts', { enabled: true, last_sync_at: at, last_result: { ...result }, last_error: null });
   emit('connected_app.contacts_imported', 'success', userId, 'android-contacts', { imported: result.imported });
   return { ok: true, result: { ...result } };
+}
+
+/** VTID-05057: remove every contact this member imported from their phone. */
+export async function removeDeviceContacts(userId: string): Promise<{ ok: true }> {
+  const { removeImportedContacts } = await import('./contacts-import');
+  await removeImportedContacts(userId, 'android');
+  await upsertSetting(userId, 'android-contacts', { enabled: false, last_result: null, last_error: null });
+  emit('connected_app.contacts_removed', 'success', userId, 'android-contacts', {});
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------

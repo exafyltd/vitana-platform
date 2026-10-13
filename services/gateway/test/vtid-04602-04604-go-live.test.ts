@@ -111,10 +111,19 @@ describe('VTID-04604 voice calendar writes', () => {
     const fs = require('fs'); const path = require('path');
     const src: string = fs.readFileSync(path.join(__dirname, '../src/routes/orb-live.ts'), 'utf8');
     const i = src.indexOf("case 'create_calendar_event':");
-    const guard = src.indexOf('checkVoiceCalendarWrite', i);
-    const write = src.indexOf('createCalendarEvent(userId', i);
+    const guard = src.indexOf('memberHasSpoken(session)', i);
+    // VTID-04918: the write moved into the shared handler; the live arm checks
+    // memberHasSpoken, then delegates, and the handler runs the request guard
+    // before it writes.
+    const write = src.indexOf("dispatchOrbToolForVertex(\n          'create_calendar_event'", i);
     expect(guard).toBeGreaterThan(i);
     expect(write).toBeGreaterThan(guard);
+    const shared: string = fs.readFileSync(path.join(__dirname, '../src/services/orb-tools/calendar-social-tools.ts'), 'utf8');
+    const h = shared.indexOf('export async function tool_create_calendar_event(');
+    const sharedGuard = shared.indexOf('checkCalendarWriteRequest(', h);
+    const sharedWrite = shared.indexOf('createCalendarEvent(id.user_id', h);
+    expect(sharedGuard).toBeGreaterThan(h);
+    expect(sharedWrite).toBeGreaterThan(sharedGuard);
     const cat: string = fs.readFileSync(path.join(__dirname, '../src/orb/live/tools/live-tool-catalog.ts'), 'utf8');
     const j = cat.indexOf("name: 'create_calendar_event'");
     expect(cat.slice(j, j + 3000)).toMatch(/confirmed: \{\s*type: 'boolean'/);

@@ -157,6 +157,15 @@ export type CicdEventType =
   // tick (never one per member per tick), plus a member's real stage changes.
   | 'onboarding.coach.tick_completed'
   | 'onboarding.coach.stage_changed'
+  // VTID-05099: Vitana Companion Messages — one aggregate event per tick that decided something.
+  | 'companion.tick.completed'
+  // VTID-05100: a real companion DM delivered / failed (per member — a real
+  // state transition, unlike the shadow tick), and a member's own settings change.
+  | 'companion.message.sent'
+  | 'companion.message.failed'
+  | 'companion.preferences.updated'
+  // VTID-05143: a member dismissed a Unified Card System enrichment card (7-day cooldown).
+  | 'enrichment_card.dismissed'
   | 'cicd.github.create_pr.requested'
   | 'cicd.github.create_pr.succeeded'
   | 'cicd.github.create_pr.failed'
@@ -832,6 +841,8 @@ export type CicdEventType =
   | 'dev_autopilot.scan.failed'
   | 'dev_autopilot.plan.generated'
   | 'dev_autopilot.plan.failed'
+  | 'dev_autopilot.plan.fallback_used'
+  | 'dev_autopilot.plan.needs_human'
   | 'dev_autopilot.plan.version_added'
   | 'dev_autopilot.finding.rejected'
   | 'dev_autopilot.finding.snoozed'
@@ -860,6 +871,11 @@ export type CicdEventType =
   | 'dev_autopilot.execution.auto_merge_declined'
   | 'dev_autopilot.execution.llm_review_passed'
   | 'dev_autopilot.execution.llm_review_blocked'
+  // VTID-05146 (Phase C): overlap hold, its release and timeout; review fail-closed.
+  | 'dev_autopilot.execution.held_overlap'
+  | 'dev_autopilot.execution.overlap_released'
+  | 'dev_autopilot.execution.overlap_hold_timeout'
+  | 'dev_autopilot.execution.llm_review_unavailable'
   | 'dev_autopilot.execution.deployed'
   | 'dev_autopilot.execution.deploy_failed'
   | 'dev_autopilot.execution.verification_failed'
@@ -941,9 +957,16 @@ export type CicdEventType =
   | 'connector.wearable.workout.recorded'
   | 'connector.wearable.other'
   | 'wearable.metrics.read'
+  // VTID-05054 (Health Hub D7/D5)
+  | 'health.lab_report.parse_unavailable'
+  | 'connector.webhook_log.purged'
   // VTID-05030 (Health Hub D1): wearable token storage + vendor revoke
   | 'connector.wearable.token_storage_unavailable'
   | 'connector.wearable.vendor_revoke'
+  // VTID-05089 (Health Hub D6a): wearable -> health_features_daily bridge.
+  // Payloads carry keys, dates, providers and counts only, never health values.
+  | 'health.wearable_features.bridged'
+  | 'health.wearable_features.bridge_failed'
   // VTID-02300: Phase 3 outbound action consent events
   | 'connector.action.requested'
   | 'connector.action.executed'
@@ -1045,6 +1068,12 @@ export type CicdEventType =
   | 'voice.latency.handoff'
   | 'voice.latency.client'
   | 'screen.latency.measured'       // per-route TTFB / Server-Timing breakdown from gateway
+  // VTID-05062: one in-app navigation from the vitana-v1 RUM nav beacon
+  // (SCREEN_READY ms, nav first|return, first-viewport images re-fetched).
+  | 'screen.nav.measured'
+  // VTID-05062: once-per-UTC-day production screen-load report (budgets +
+  // build check), written by POST /api/v1/frontend/screen-load/daily-report/run.
+  | 'screen.load.daily_report'
   // VTID-SCREEN-LOAD-01: scheduled Playwright job's per-screen load-time
   // result — independent of FEATURE_LATENCY_TELEMETRY_ENV, always live so
   // Command Hub Overview has a signal even while RUM stays staging-only.
@@ -1071,6 +1100,11 @@ export type CicdEventType =
   | 'health_test.status_changed'
   | 'health_test.result_ready'
   | 'health_test.result_quarantined'
+  // VTID-05055: member-confirmed partner links, audited staff reads, partner_key from the order
+  | 'health_test.staff_read'
+  | 'health_test.link_proposed'
+  | 'health_test.link_declined'
+  | 'health_test.partner_key_mismatch'
   // VTID-03932: Commerce Partner Onboarding — self-service partner org registration
   | 'partner_org.registered'
   | 'partner_org.member_invited'
@@ -1114,6 +1148,12 @@ export type CicdEventType =
   | 'commerce.mcp.delegated_token_blocked'
   | 'commerce.mcp.client_refused'
   | 'commerce.mcp.loopback_client_approved'
+  // VTID-05135: TEMPORARY - an unauthenticated probe of /mcp/chatgpt or its discovery documents (remove with auditProbe)
+  | 'commerce.mcp.probe'
+  // VTID-05133: Maxina Community MCP ("Connect your AI")
+  | 'community.mcp.tool_called'
+  | 'community.mcp.client_refused'
+  | 'community.mcp.loopback_client_approved'
   | 'partner_org.sandbox_submitted'
   // VTID-04859: a Founding Member saw (and closed) their free-year celebration.
   | 'billing.founding.celebrated'
@@ -1143,7 +1183,18 @@ export type CicdEventType =
   | 'operator.kiro.write_tool_called'
   | 'operator.kiro.write_confirmed'
   | 'operator.kiro.write_denied'
-  | 'operator.kiro.branch_pushed';
+  | 'operator.kiro.branch_pushed'
+  // VTID-05064: a thread's parked Kiro workspace (unpushed edits) came back, or was lost (thread id only)
+  | 'operator.kiro.workspace_restored'
+  | 'operator.kiro.parked_workspace_lost'
+  // VTID-05065: a Kiro run (one server-side turn) started, finished, or was interrupted (run id, thread id, status only; never message text)
+  | 'operator.kiro.run_started'
+  | 'operator.kiro.run_finished'
+  | 'operator.kiro.run_interrupted'
+  // VTID-05068: a running Kiro run was taken over by a new gateway task after a deploy (run id, thread id, status only)
+  | 'operator.kiro.run_reattached'
+  // VTID-05067: an image pasted into the Operator Console was stored (media id, thread id, type, size; never the bytes)
+  | 'operator.media.uploaded';
 
 export interface CicdOasisEvent {
   vtid: string;

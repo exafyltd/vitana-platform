@@ -107,6 +107,19 @@ export async function markChatGroupRead(sb: SupabaseClient, groupId: string, use
     .eq('user_id', userId);
 }
 
+// VTID-05137: opening a group clears its chat notifications too, so the
+// per-conversation push coalescing (chat-push-coalescer.ts) restarts and the
+// "{count} new messages" summary counts only what is really unread.
+export async function markGroupChatNotificationsRead(sb: SupabaseClient, groupId: string, userId: string) {
+  return sb
+    .from('user_notifications')
+    .update({ read_at: new Date().toISOString() })
+    .eq('user_id', userId)
+    .in('type', ['new_chat_message', 'chat_mention'])
+    .is('read_at', null)
+    .filter('data->>group_id', 'eq', groupId);
+}
+
 // ─── Ownership / membership guards ──────────────────────────────────────────────
 
 export async function fetchChatMessageOwnership(sb: SupabaseClient, messageId: string) {

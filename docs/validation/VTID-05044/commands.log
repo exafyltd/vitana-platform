@@ -1,0 +1,12 @@
+$ cd services/gateway
+$ (src reverted with git stash) npx jest test/routes/tenant-admin/invitations.test.ts test/routes/billing-repository.test.ts test/routes/billing-admin-metrics.test.ts
+Tests: 18 failed, 58 passed, 76 total   (red before the fix: every new VTID-05044 case)
+$ npx jest test/routes/tenant-admin/invitations.test.ts test/routes/billing-repository.test.ts test/routes/billing-admin-metrics.test.ts
+Tests: 76 passed, 76 total
+$ npm run test:roles
+Tests: 105 passed, 105 total
+$ NODE_OPTIONS=--max-old-space-size=8192 npx tsc --noEmit -p .
+39 errors, all TS2742 ("inferred type ... cannot be named") in 6 untouched *-repository.ts files; caused by the
+worktree's node_modules being a symlink to another checkout. 0 errors of any other code, 0 in touched files.
+$ npx eslint <touched files>
+not runnable: the gateway has no ESLint config file (package.json "lint" fails the same way on main)

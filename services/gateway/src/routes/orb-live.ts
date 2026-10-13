@@ -43,6 +43,7 @@
 
 import { specialistAckWindowMs, SPECIALIST_VOICE_ACK_DEFAULT_MS } from '../orb/live/tools/delegation-tools';
 import { pickEffectiveRole } from '../services/orchestrator/active-role';
+import { fetchPermittedRoles } from '../lib/permitted-roles';
 import express, { Router, Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
 // VTID-04543: in-process cache for lookupPrimaryTenant.
@@ -292,7 +293,9 @@ import {
 // VTID-ORBC: Added AuthSource for dual JWT support
 import {
   optionalAuth,
+  requireAuth,
   requireAuthWithTenant,
+  requireExafyAdmin,
   AuthenticatedRequest,
   verifyAndExtractIdentity,
   SupabaseIdentity,
@@ -810,18 +813,35 @@ async function fetchUserRolePreference(
  */
 export async function resolveEffectiveRole(
   userId: string,
-  tenantId: string
+  tenantId: string,
+  opts?: { exafyAdmin?: boolean }
 ): Promise<string | null> {
-  const [pref, tenantRole] = await Promise.all([
+  const exafyAdmin = opts?.exafyAdmin === true;
+  // VTID-05147: the permitted set is read in parallel (no extra round trip);
+  // exafy callers skip it — their roles have no permitted rows.
+  const [pref, tenantRole, permitted] = await Promise.all([
     fetchUserRolePreference(userId, tenantId),
     fetchUserActiveRole(userId, tenantId),
+    exafyAdmin ? Promise.resolve(null) : fetchPermittedRoles(getSupabase(), userId, tenantId),
   ]);
   if (pref && tenantRole && pref !== tenantRole) {
     console.log(`[BOOTSTRAP-ORB-ROLE-SYNC] role_preference="${pref}" overrides user_tenants.active_role="${tenantRole}" for user=${userId.substring(0, 8)}...`);
   }
   // VTID-04318: the rule lives in orchestrator/active-role.ts so the AP
   // executor targets users on exactly the role the ORB addresses them as.
-  return pickEffectiveRole(pref, tenantRole);
+  const picked = pickEffectiveRole(pref, tenantRole);
+  if (!picked || exafyAdmin || !permitted) return picked;
+  // VTID-05147: role_preferences / user_tenants.active_role were member-
+  // writable, so the picked role is a claim. Outside the permitted set — or
+  // when that set cannot be read — the caller acts as 'community'.
+  if (!permitted.roles || !permitted.roles.includes(picked.toLowerCase())) {
+    console.warn(
+      `[VTID-05147] effective role clamped: "${picked}" -> "community" for user=${userId.substring(0, 8)}... ` +
+      (permitted.roles ? 'not permitted' : `permitted roles unavailable (${permitted.error})`)
+    );
+    return 'community';
+  }
+  return picked;
 }
 
 /**
@@ -4682,112 +4702,39 @@ async function executeLiveApiToolInner(
       // =====================================================================
 
       case 'create_calendar_event': {
-        const title = (args.title as string) || '';
-        const eventStart = (args.start_time as string) || '';
-        const eventEnd = (args.end_time as string) || '';
-        const description = (args.description as string) || '';
-        const location = (args.location as string) || '';
-        const eventType = (args.event_type as string) || 'personal';
-        const role = sessionServedRole(session) || 'community';
-        const userId = session.identity.user_id;
-
-        if (!title || !eventStart) {
-          return {
-            success: false,
-            result: 'I need at least a title and start time to create a calendar event.',
-            error: 'Missing required fields: title and start_time',
-          };
-        }
-
-        // VTID-04604: never on the model's own initiative, never unconfirmed, never in the past.
+        // VTID-04918: one implementation for every assistant path — the shared
+        // handler (services/orb-tools/calendar-social-tools.ts) creates the
+        // entry and runs the request-checkable guard (confirmed, not in the
+        // past). Only the live session knows whether the member has spoken
+        // (VTID-04604), so that half stays here.
         {
           const { checkVoiceCalendarWrite, memberHasSpoken } = await import('../orb/live/tools/calendar-write-guard');
-          const refusal = checkVoiceCalendarWrite({
-            memberHasSpoken: memberHasSpoken(session),
-            confirmed: args.confirmed,
-            startTime: eventStart,
-            nowMs: Date.now(),
-          });
-          if (refusal) return { success: false, result: refusal, error: refusal.split('.')[0] };
-        }
-
-        try {
-          const { createCalendarEvent, checkConflicts } = await import('../services/calendar-service');
-          const { toWritableRoleContext } = await import('../types/calendar');
-
-          // Check for conflicts first
-          const effectiveEndTime = eventEnd || new Date(new Date(eventStart).getTime() + 60 * 60 * 1000).toISOString();
-          const conflicts = await checkConflicts(userId, role, eventStart, effectiveEndTime);
-
-          const event = await createCalendarEvent(userId, {
-            title,
-            start_time: eventStart,
-            end_time: effectiveEndTime,
-            description: description || undefined,
-            location: location || undefined,
-            event_type: eventType as any,
-            status: 'confirmed',
-            priority: 'medium',
-            // VTID-04356: one mapping for every writer — professional and
-            // backoffice used to fall through to the community view here.
-            role_context: toWritableRoleContext(role),
-            source_type: 'assistant',
-            priority_score: 50,
-            wellness_tags: [],
-            metadata: { created_via: 'orb_voice' },
-            is_recurring: false,
-          });
-
-          if (!event) {
-            return {
-              success: false,
-              result: 'I wasn\'t able to save the event to your calendar. Please try again.',
-              error: 'createCalendarEvent returned null',
-            };
+          if (!memberHasSpoken(session)) {
+            const refusal = checkVoiceCalendarWrite({ memberHasSpoken: false, confirmed: args.confirmed, startTime: String(args.start_time ?? ''), nowMs: Date.now() })!;
+            return { success: false, result: refusal, error: refusal.split('.')[0] };
           }
-
-          // Emit OASIS event
-          emitOasisEvent({
-            vtid: 'VTID-01155',
-            type: 'calendar.event.created' as any,
-            source: 'orb-live-voice',
-            status: 'info',
-            message: `Voice-created calendar event: ${event.title}`,
-            payload: {
-              event_id: event.id,
-              user_id: userId,
-              event_type: event.event_type,
-              session_id: session.sessionId,
-            },
-          }).catch(() => {});
-
-          const userTz = session.clientContext?.timezone || 'UTC';
-          const startFormatted = new Date(eventStart).toLocaleString('en-US', {
-            weekday: 'short', month: 'short', day: 'numeric',
-            hour: '2-digit', minute: '2-digit', hour12: true,
-            timeZone: userTz,
-          });
-          const endFormatted = new Date(effectiveEndTime).toLocaleTimeString('en-US', {
-            hour: '2-digit', minute: '2-digit', hour12: true,
-            timeZone: userTz,
-          });
-
-          let result = `Event created successfully!\n- Title: ${event.title}\n- When: ${startFormatted} – ${endFormatted}`;
-          if (event.location) result += `\n- Where: ${event.location}`;
-          if (conflicts.length > 0) {
-            result += `\n\nNote: There ${conflicts.length === 1 ? 'is 1 existing event' : `are ${conflicts.length} existing events`} during this time slot.`;
-          }
-
-          console.log(`[Calendar] create_calendar_event executed: "${event.title}" at ${eventStart}, ${Date.now() - startTime}ms`);
-          return { success: true, result };
-        } catch (calErr: any) {
-          console.warn(`[Calendar] create_calendar_event failed: ${calErr.message}`);
-          return {
-            success: false,
-            result: 'I had trouble creating the event. Please try again in a moment.',
-            error: calErr.message,
-          };
         }
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'create_calendar_event',
+          { ...(args ?? {}), timezone: session.clientContext?.timezone || undefined },
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: sessionServedRole(session) || session.identity?.role || null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            session_id: session.sessionId,
+            thread_id: session.thread_id || session.sessionId,
+            turn_number: session.turn_count,
+          },
+          createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE),
+        );
       }
 
       // =====================================================================
@@ -5251,6 +5198,19 @@ async function executeLiveApiToolInner(
         // now in services/orb-tools-shared.ts (_runCapabilityTool), so both
         // Vertex and the LiveKit pipeline run identical capability-tool
         // logic — no drift possible by construction.
+        // VTID-04918: add_to_calendar writes to the member's connected
+        // calendar — never before the member has said a word (same gate as
+        // the generic arm below).
+        {
+          const { CALENDAR_SOCIAL_WRITE_TOOLS } = await import('../services/orb-tools/calendar-social-tools');
+          if (CALENDAR_SOCIAL_WRITE_TOOLS.includes(toolName)) {
+            const { memberHasSpoken } = await import('../orb/live/tools/calendar-write-guard');
+            if (!memberHasSpoken(session)) {
+              const refusal = 'STATUS: not_done. The member has not asked for anything yet in this session. Never act on their calendar, feed or chats on your own initiative.';
+              return { success: false, result: refusal, error: 'STATUS: not_done' };
+            }
+          }
+        }
         const SUPABASE_URL = process.env.SUPABASE_URL;
         const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
         if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
@@ -7043,6 +7003,17 @@ async function executeLiveApiToolInner(
           const { createClient } = await import('@supabase/supabase-js');
           const { ORB_TOOL_NAMES, dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
           if (ORB_TOOL_NAMES.includes(toolName)) {
+            // VTID-04918: the calendar write tools never run before the member
+            // has said a word (the request-checkable half of the guard lives in
+            // the shared handlers; only the live session knows this half).
+            const { CALENDAR_SOCIAL_WRITE_TOOLS } = await import('../services/orb-tools/calendar-social-tools');
+            if (CALENDAR_SOCIAL_WRITE_TOOLS.includes(toolName)) {
+              const { memberHasSpoken } = await import('../orb/live/tools/calendar-write-guard');
+              if (!memberHasSpoken(session)) {
+                const refusal = 'STATUS: not_done. The member has not asked for anything yet in this session. Never act on their calendar, feed or chats on your own initiative.';
+                return { success: false, result: refusal, error: 'STATUS: not_done' };
+              }
+            }
             const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
             const dispatched = await dispatchOrbToolForVertex(
               toolName,
@@ -15315,6 +15286,11 @@ router.get('/debug/brain-instruction', requireAuthWithTenant, async (req: Authen
   if (userId !== identity?.user_id && !identity?.exafy_admin) {
     return res.status(403).json({ ok: false, error: 'FORBIDDEN_USER_SCOPE' });
   }
+  // VTID-05040: the tenant is scoped the same way — a member cannot render
+  // their instruction under another tenant's context.
+  if (tenantId !== identity?.tenant_id && !identity?.exafy_admin) {
+    return res.status(403).json({ ok: false, error: 'FORBIDDEN_TENANT_SCOPE' });
+  }
   try {
     const { buildBrainSystemInstruction } = await import('../services/vitana-brain');
     // brain-parity-allow: debug endpoint that renders the brain instruction itself.
@@ -15530,108 +15506,16 @@ router.get('/debug/intent', async (req: Request, res: Response) => {
 });
 
 /**
- * VTID-01155: GET /debug/tts - TTS Debug Endpoint
- *
- * Tests Google Cloud TTS with Gemini model and returns detailed debug info.
- * Helps diagnose why TTS might be failing.
- *
- * Query params:
- * - text: Text to speak (optional, defaults to "Hello, this is a test")
- * - lang: Language code (optional, defaults to "en")
- *
- * Response:
- * {
- *   "ok": true/false,
- *   "tts_client_ready": true/false,
- *   "voice": "Kore",
- *   "audio_bytes": 12345,
- *   "error": "..." (if failed)
- * }
+ * VTID-01155: GET /debug/tts — was a Google Cloud TTS probe.
  */
-router.get('/debug/tts', async (req: Request, res: Response) => {
-  console.log('[VTID-01155] Debug TTS endpoint accessed');
-
-  const testText = (req.query.text as string) || 'Hello, this is a TTS test.';
-  const lang = normalizeLang((req.query.lang as string) || 'en');
-  const voiceConfig = getGeminiTtsVoice(lang);
-
-  const debugResult: Record<string, unknown> = {
-    timestamp: new Date().toISOString(),
-    tts_client_ready: !!ttsClient,
-    model: 'gemini-2.5-flash-tts',
-    voice: voiceConfig.name,
-    language_code: voiceConfig.languageCode,
-    lang: lang,
-    test_text: testText,
-    test_text_length: testText.length
-  };
-
-  if (!ttsClient) {
-    return res.status(200).json({
-      ok: false,
-      ...debugResult,
-      error: 'Google Cloud TTS client not initialized'
-    });
-  }
-
-  try {
-    console.log(`[VTID-01155] Debug TTS: testing Cloud TTS with voice=${voiceConfig.name}, lang=${voiceConfig.languageCode}`);
-
-    // VTID-02857: speakingRate read from system_config['tts.speaking_rate']
-    const __vc = await getVoiceConfig();
-    const request: protos.google.cloud.texttospeech.v1.ISynthesizeSpeechRequest = {
-      input: { text: testText },
-      voice: {
-        languageCode: voiceConfig.languageCode,
-        name: voiceConfig.name,
-        // @ts-ignore - modelName is supported but types may be outdated
-        modelName: 'gemini-2.5-flash-tts'
-      },
-      audioConfig: {
-        audioEncoding: 'MP3' as any,
-        speakingRate: __vc.tts.speaking_rate,
-        pitch: 0
-      }
-    };
-
-    debugResult.request = request;
-
-    const [response] = await ttsClient.synthesizeSpeech(request);
-
-    debugResult.has_audio_content = !!response.audioContent;
-
-    if (!response.audioContent) {
-      return res.status(200).json({
-        ok: false,
-        ...debugResult,
-        error: 'No audio content in response'
-      });
-    }
-
-    const audioBytes = Buffer.isBuffer(response.audioContent)
-      ? response.audioContent.length
-      : (response.audioContent as Uint8Array).length;
-
-    debugResult.audio_bytes = audioBytes;
-
-    // Success!
-    return res.status(200).json({
-      ok: true,
-      ...debugResult,
-      message: 'Google Cloud TTS with Gemini model working correctly'
-    });
-
-  } catch (err: any) {
-    console.error('[VTID-01155] Debug TTS error:', err.message);
-    return res.status(200).json({
-      ok: false,
-      ...debugResult,
-      error: err.message,
-      error_code: err.code,
-      error_details: err.details,
-      stack: err.stack?.substring(0, 500)
-    });
-  }
+// VTID-05040: disabled. It was anonymous and called Google Cloud TTS, which is
+// decommissioned outside the sr/ru bridges. Admin-gated so probes stay meaningful.
+router.get('/debug/tts', requireAuth, requireExafyAdmin, (_req: Request, res: Response) => {
+  return res.status(503).json({
+    ok: false,
+    error: 'DEBUG_ROUTE_DISABLED',
+    reason: 'Google Cloud TTS is decommissioned outside the sr/ru bridges',
+  });
 });
 
 // =============================================================================
@@ -15666,7 +15550,8 @@ router.get('/debug/tts', async (req: Request, res: Response) => {
  *   "timestamp": "ISO"
  * }
  */
-router.get('/debug/context-bootstrap', async (req: Request, res: Response) => {
+// VTID-05040: exafy_admin only — the response carries the member's memory and full context.
+router.get('/debug/context-bootstrap', requireAuth, requireExafyAdmin, async (req: Request, res: Response) => {
   console.log('[VTID-01225] Debug context-bootstrap endpoint accessed');
 
   // Build identity from query params or use DEV_IDENTITY
@@ -18450,7 +18335,7 @@ async function prewarmNovaFullContext(clientSession: WsClientSession, message: W
       { identity, sessionId: shadowId, brainRole, timezone: clientContext.timezone, useBrain },
       { legacy: buildBootstrapContextPack },
     ),
-    resolveEffectiveRole(identity.user_id, identity.tenant_id || ''),
+    resolveEffectiveRole(identity.user_id, identity.tenant_id || '', { exafyAdmin: identity.exafy_admin === true }),
     fetchLastSessionInfo(identity.user_id, clientContext.timezone),
     identity.tenant_id ? fetchAdminBriefingBlock(identity.tenant_id, 3).catch(() => null) : Promise.resolve(null),
     import('./autopilot-recommendations')

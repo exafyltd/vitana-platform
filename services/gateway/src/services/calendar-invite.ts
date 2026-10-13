@@ -30,7 +30,7 @@
  * message), so the card shows it and the sender sees who is coming.
  */
 import { getSupabaseConfig, headers, getOwnCalendarEvent } from './calendar-service';
-import { checkShareTarget, shareRefOf } from './calendar-share';
+import { checkShareTarget, entryCard, entryNotOpenReason, shareRefOf, type CardChoice } from './calendar-share';
 import { upsertCalendarEntryFromSource, cancelCalendarEntriesForSource } from './calendar-producers';
 
 const LOG_PREFIX = '[CalendarInvite]';
@@ -41,7 +41,6 @@ export const INVITE_RESPONSES = ['accepted', 'maybe', 'declined'] as const;
 export type InviteResponse = (typeof INVITE_RESPONSES)[number];
 export type InviteRefType = 'community_event' | 'live_room_session' | 'calendar_entry';
 
-const INVITABLE_OWN_SOURCES = new Set(['manual', 'invite']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HOUR_MS = 3_600_000;
 
@@ -73,6 +72,8 @@ interface EntryLike {
   end_time?: string | null;
   location?: string | null;
   rrule?: string | null;
+  completed_at?: string | null;
+  completion_status?: string | null;
 }
 
 function endOf(start: string | null | undefined, end: string | null | undefined): number {
@@ -90,12 +91,11 @@ export async function buildInviteFromEntry(
   senderId: string,
   entry: EntryLike | null,
   now: Date = new Date(),
+  choice: CardChoice = {},
 ): Promise<BuildInviteResult> {
   if (!entry || entry.user_id !== senderId) return { ok: false, status: 404, error: 'NOT_FOUND' };
-  if (entry.status === 'cancelled') return { ok: false, status: 409, error: 'NOT_INVITABLE', reason: 'cancelled' };
-  if (!(endOf(entry.start_time, entry.end_time) > now.getTime())) {
-    return { ok: false, status: 409, error: 'NOT_INVITABLE', reason: 'past' };
-  }
+  const notOpen = entryNotOpenReason(entry, now);
+  if (notOpen) return { ok: false, status: 409, error: 'NOT_INVITABLE', reason: notOpen };
 
   const ref = shareRefOf(entry);
   if (ref) {
@@ -114,25 +114,26 @@ export async function buildInviteFromEntry(
     return { ok: true, metadata, content: `📅 ${metadata.title}`.trim() };
   }
 
-  if (!INVITABLE_OWN_SOURCES.has(String(entry.source_type)) || entry.rrule) {
-    return { ok: false, status: 409, error: 'NOT_INVITABLE', reason: entry.rrule ? 'recurring' : 'private_entry' };
-  }
+  if (!entry.id || !UUID_RE.test(String(entry.id))) return { ok: false, status: 409, error: 'NOT_INVITABLE', reason: 'not_found' };
+  const card = entryCard(entry, choice);
   const metadata: InviteMetadata = {
     kind: 'calendar_invite',
     v: INVITE_METADATA_VERSION,
     ref_type: 'calendar_entry',
     ref_id: String(entry.id),
-    title: entry.title || '',
+    title: card.title,
     start_time: String(entry.start_time),
     end_time: entry.end_time ?? null,
-    location: entry.location ?? null,
+    location: card.location,
   };
   return { ok: true, metadata, content: `📅 ${metadata.title}`.trim() };
 }
 
 /**
  * What the chat send routes store for a `calendar_invite`: the client sends
- * only `{ entry_id }`; everything on the card comes from the sender's entry.
+ * `{ entry_id }` and, for an own entry, its card choices
+ * (`card_title`, `include_location`); everything else on the card comes from
+ * the sender's entry.
  */
 export async function buildInviteForChat(
   senderId: string,
@@ -143,8 +144,13 @@ export async function buildInviteForChat(
   if (typeof entryId !== 'string' || !UUID_RE.test(entryId)) {
     return { ok: false, status: 400, error: 'entry_id_required' };
   }
+  const data = contentData as Record<string, unknown>;
+  const choice: CardChoice = {
+    card_title: typeof data.card_title === 'string' ? data.card_title : undefined,
+    include_location: data.include_location === true,
+  };
   const entry = await getOwnCalendarEvent(entryId, senderId);
-  return buildInviteFromEntry(senderId, entry as EntryLike | null, now);
+  return buildInviteFromEntry(senderId, entry as EntryLike | null, now, choice);
 }
 
 // ---------------------------------------------------------------------------

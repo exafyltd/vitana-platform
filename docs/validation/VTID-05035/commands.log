@@ -1,0 +1,22 @@
+$ cd services/gateway && npx jest test/vtid-05035-reward-shop-admin.test.ts test/vtid-04982-rewards-shop.test.ts
+Test Suites: 2 passed, 2 total
+Tests:       51 passed, 51 total
+(full output: outputs/jest.txt)
+
+$ cd services/gateway && npx tsc --noEmit -p .
+exit 0
+
+$ npx tsc -p <scratch tsconfig extending services/gateway/tsconfig.json, including both test files>
+exit 0
+
+# Migration, throwaway local Postgres (initdb in a temp dir, stub storage.buckets table; never a live database)
+$ psql -c "create schema storage; create table storage.buckets (id text primary key, name text not null, public boolean default false, file_size_limit bigint, allowed_mime_types text[]);"
+$ psql -f supabase/migrations/20261010160000_vtid_05035_reward_shop_images_bucket.sql   # apply 1 ok
+$ psql -f supabase/migrations/20261010160000_vtid_05035_reward_shop_images_bucket.sql   # apply 2 ok (idempotent)
+$ psql -c "select * from storage.buckets"
+ reward-shop-images | reward-shop-images | t | 1468006 | {image/jpeg,image/png,image/webp}
+$ psql -c "update storage.buckets set public=false"; psql -f supabase/migrations/20261010160000_vtid_05035_reward_shop_images_bucket.sql
+ERROR:  VTID-05035: bucket reward-shop-images is missing or not public   # self-check fires as intended
+
+$ node -e "validateManifest(staging-tests.json, {vtid:'VTID-05035', service:'gateway'})"   # scripts/ci/staging-verify/lib.cjs
+{"ok":true,"errors":[]}

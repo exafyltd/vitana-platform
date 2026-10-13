@@ -1,0 +1,6 @@
+# VTID-05080 commands
+git fetch origin main && git checkout -B claude/awesome-dirac-8z7arg origin/main
+VITANA_V1_ROOT=/nonexistent node services/gateway/scripts/regen-screens-catalog.mjs --check   # before: out of sync (last_synced date only); after: in sync
+actionlint .github/workflows/REGEN-SCREENS-CATALOG.yml; shellcheck scripts/ci/regen-screens-catalog-pr.sh; bash -n scripts/ci/regen-screens-catalog-pr.sh
+cd services/gateway && npx jest test/vtid-05080-regen-screens-catalog-pr.test.ts test/vtid-05080-regen-screens-catalog-date.test.ts test/vtid-05080-dev-frontend-spec-valid.test.ts test/vtid-04986-screen-inventory-in-sync.test.ts
+cd services/gateway && REGEN_SCREENS_CHECK=1 npx jest test/vtid-05080-regen-screens-catalog-check.test.ts

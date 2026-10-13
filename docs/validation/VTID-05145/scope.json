@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05145",
+  "kind": "infra",
+  "paths": [
+    "docs/validation/VTID-05145/**",
+    "scripts/collab/**",
+    ".claude/rules/collaboration.md",
+    ".kiro/steering/vitana-collaboration.md",
+    ".kiro/steering/vitana-kiro-notes.md",
+    ".github/workflows/PR-GATE.yml",
+    "CLAUDE.md"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

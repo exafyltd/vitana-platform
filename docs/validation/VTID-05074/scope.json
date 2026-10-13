@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-05074",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/routes/commerce-plugin-legal.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/orb/developer/domain-atlas.ts",
+    "integrations/chatgpt-plugin/vitanaland/plugin.json",
+    "integrations/chatgpt-plugin/vitanaland/.codex-plugin/plugin.json",
+    "services/gateway/test/vtid-04980-*.test.ts",
+    "services/gateway/test/commerce-plugin-legal.test.ts",
+    "docs/validation/VTID-05074/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

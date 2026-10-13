@@ -146,29 +146,29 @@ describe('runLlmMergeReview', () => {
     expect(result.summary).toContain('hardcoded API key');
   });
 
-  it('fails open (does not block) when the diff fetch throws', async () => {
+  it('VTID-05146: fails closed (blocks) when the diff fetch throws', async () => {
     mockGetPrFiles.mockRejectedValue(new Error('GitHub 500'));
     const result = await runLlmMergeReview({ repo: 'exafyltd/vitana-platform', prNumber: 42, vtid: 'VTID-DEV-AUTOPILOT' });
     expect(result.ok).toBe(false);
-    expect(result.passed).toBe(true);
+    expect(result.passed).toBe(false);
     expect(mockCallViaRouter).not.toHaveBeenCalled();
   });
 
-  it('fails open when the router call itself fails', async () => {
+  it('VTID-05146: fails closed when the router call itself fails', async () => {
     mockGetPrFiles.mockResolvedValue([{ filename: 'a.ts', status: 'modified', patch: '+ok', additions: 1, deletions: 0 }]);
     mockCallViaRouter.mockResolvedValue({ ok: false, error: 'no provider configured' });
     const result = await runLlmMergeReview({ repo: 'exafyltd/vitana-platform', prNumber: 42, vtid: 'VTID-DEV-AUTOPILOT' });
     expect(result.ok).toBe(false);
-    expect(result.passed).toBe(true);
+    expect(result.passed).toBe(false);
     expect(result.error).toContain('no provider configured'); // VTID-04231: the stage loop prefixes the stage and turn
   });
 
-  it('fails open when the response cannot be parsed as a verdict', async () => {
+  it('VTID-05146: fails closed when the response cannot be parsed as a verdict', async () => {
     mockGetPrFiles.mockResolvedValue([{ filename: 'a.ts', status: 'modified', patch: '+ok', additions: 1, deletions: 0 }]);
     mockCallViaRouter.mockResolvedValue({ ok: true, text: 'I refuse to answer in JSON.' });
     const result = await runLlmMergeReview({ repo: 'exafyltd/vitana-platform', prNumber: 42, vtid: 'VTID-DEV-AUTOPILOT' });
     expect(result.ok).toBe(false);
-    expect(result.passed).toBe(true);
+    expect(result.passed).toBe(false);
   });
 
   it('skips the call entirely and passes when the PR has no files', async () => {

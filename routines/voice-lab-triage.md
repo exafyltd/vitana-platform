@@ -1,92 +1,57 @@
 # Routine: voice-lab-triage
 
-**Schedule:** `30 4 * * *` (daily 04:30 UTC, scheduler jitter pads to ~04:38)
+**Schedule:** `30 4 * * *` (daily 04:30 UTC)
+**Runs in:** the gateway's routine runner (`services/gateway/src/services/routine-runner`, VTID-05103; this routine since VTID-05141), once per UTC day at the time above — not as a claude.ai session. It records the run in `routine_runs` (`trigger = gateway-runner`) and on a breach emits the event below with `source: routine.voice-lab-triage`, `status: warning` and hands it to the self-healing intake. No token or URL is involved.
+
 **Catalog row:** `routines.name = 'voice-lab-triage'`
 **OASIS VTID for emitted events:** `VTID-01155` (canonical voice VTID)
 
 ## Autonomy contract
 
-Reads the last 24h of ORB Live sessions, clusters error patterns vs the 7-day baseline, and **emits an OASIS event** (`topic = voice.live.regression.daily_triage`) when a regression is detected so the existing voice self-healing loop picks it up. **No briefs for human review.**
+Compares the last 24 h of ORB voice sessions with the prior 7 days and **emits an OASIS event** (`topic = voice.live.regression.daily_triage`) when voice regressed, so the voice self-healing loop picks it up. **No briefs for human review.**
 
 | Catalog state | Meaning |
 |---|---|
 | 🟢 `success` | No regression, error rate within baseline. Nothing to do. |
-| 🟡 `partial` | Regression detected → OASIS event emitted → self-healing now investigating. |
-| 🔴 `failure` | Routine itself errored (voice-lab API down, gateway 5xx, etc.). |
+| 🟡 `partial` | Regression detected → OASIS event emitted → self-healing notified. |
+| 🔴 `failure` | The routine itself errored (the session read failed). |
 
-## Required environment
+## Data source
 
-- `GATEWAY_URL` = `https://gateway-q74ibpv6ia-uc.a.run.app`
-- `ROUTINE_INGEST_TOKEN` (embedded in the routine prompt)
+`voice_session_facts` (VTID-04776): one row per ORB voice session with `started_at`, `outcome` (`ok`, `silent`, `one_way`, `dropped`, `error`, `abandoned`, `active`) and `failure_class` (the voice failure taxonomy, `services/gateway/src/services/voice-failure-taxonomy.ts`). Loader: `auditVoiceSessionOutcomes()` in `services/gateway/src/routes/routine-audits.ts`.
+
+`/api/v1/voice-lab/live/sessions` is not used: it has no time window and sets `error_count` to 0 for every session (why this routine was not run under VTID-05103).
 
 ## Steps
 
-### 1. Open the run record
+### 1. Read both windows (ended sessions only — `outcome` set and not `active`)
+
+- yesterday: `started_at` in the last 24 h
+- baseline: `started_at` from 8 days ago to 1 day ago (the prior 7 days, not including yesterday)
+
+For each: `total_sessions`, `error_sessions` (outcome `silent`, `one_way`, `dropped` or `error`), `error_rate = error_sessions / total_sessions`, and error sessions by `failure_class` (missing class → `voice.unknown`).
+
+### 2. Regression check
+
+A regression is any of:
+- `error_rate_spike`: `error_rate_yesterday > error_rate_baseline × 1.5` AND `error_sessions_yesterday ≥ 3`
+- `novel_failure_class`: a `failure_class` seen in ≥ 3 sessions yesterday and not at all in the baseline
+- `session_collapse`: `total_sessions_yesterday < (total_sessions_baseline / 7) × 0.3`
+
+### 3. On a regression — OASIS event
 
 ```
-POST $GATEWAY_URL/api/v1/routines/voice-lab-triage/runs
-H: X-Routine-Token: $ROUTINE_INGEST_TOKEN
-B: { "trigger": "cron" }
-→ { ok: true, run: { id: "<run_id>" } }
+type: voice.live.regression.daily_triage   vtid: VTID-01155
+source: routine.voice-lab-triage           status: warning
+payload: { yesterday, baseline, regression_kind, regression_kinds }
 ```
 
-### 2. Fetch yesterday + the 7-day baseline
-
-```
-# Yesterday (last 24h)
-GET $GATEWAY_URL/api/v1/voice-lab/live/sessions?status=ended&since_hours=24
-→ { sessions: [ { session_id, started_at, ended_at, error_count, error_codes, platform, ... } ] }
-
-# Baseline (8d to 1d ago — the prior 7-day window, NOT including yesterday)
-GET $GATEWAY_URL/api/v1/voice-lab/live/sessions?status=ended&since_hours=192&until_hours=24
-```
-
-### 3. Cluster + compare
-
-For yesterday and baseline, compute:
-- `total_sessions`
-- `error_sessions` (sessions with `error_count > 0`)
-- `error_rate = error_sessions / total_sessions`
-- `top_error_codes` (count by error_code, top 5)
-- `novel_error_codes` (codes in yesterday NOT seen in baseline)
-
-A **regression** is any of:
-- `error_rate_yesterday > error_rate_baseline * 1.5` AND `error_sessions_yesterday >= 3`
-- `novel_error_codes.length > 0` AND that novel code appeared in `>= 3` yesterday sessions
-- `total_sessions_yesterday < total_sessions_baseline_avg * 0.3` (collapse — voice barely used, possible outage)
-
-### 4. If regression detected — emit OASIS event
-
-```
-POST $GATEWAY_URL/api/v1/events/ingest
-B: {
-  "vtid": "VTID-01155",
-  "type": "voice.live.regression.daily_triage",
-  "source": "routine.voice-lab-triage",
-  "status": "warning",
-  "message": "Voice regression detected: <one-line summary>",
-  "payload": {
-    "yesterday": { "total_sessions", "error_sessions", "error_rate", "top_error_codes", "novel_error_codes" },
-    "baseline":  { "total_sessions", "error_sessions", "error_rate", "top_error_codes" },
-    "regression_kind": "error_rate_spike" | "novel_error_codes" | "session_collapse"
-  }
-}
-```
-
-### 5. Close the run
-
-`PATCH $GATEWAY_URL/api/v1/routines/voice-lab-triage/runs/{run_id}` with `X-Routine-Token`.
+### 4. Close the run
 
 | Outcome | status | summary |
 |---|---|---|
-| No regression | `success` | `"✅ Voice healthy: X sessions, Y errors, error rate Z% (within baseline)"` |
-| Regression detected | `partial` | `"⚠️ Voice regression: <kind>. OASIS event emitted, self-healing notified."` |
-| Voice-lab API down | `failure` | `"❌ Could not read voice-lab/live/sessions — see error."` |
+| No regression | `success` | `✅ Voice healthy: X sessions, Y errors, error rate Z% (within baseline)` |
+| Regression | `partial` | `⚠️ Voice regression: <kinds>. OASIS event emitted, self-healing notified.` |
+| Read failed | `failure` | the error |
 
-`findings` = the comparison object plus `oasis_event_id` if one was emitted.
-
-## Hard rules
-
-- Never produce briefs. The findings JSON is forensics — green tile means no further reading needed.
-- Always end with PATCH (success / partial / failure). Never leave a run in `running`.
-- Plain `curl` only. Wall-clock cap 5 minutes.
+`findings` = both windows (with top failure classes and novel classes) and `regression_kinds`.

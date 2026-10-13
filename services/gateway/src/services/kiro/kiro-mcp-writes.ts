@@ -42,7 +42,8 @@ export function isKiroMcpWriteTool(name: string): boolean {
   return (KIRO_MCP_WRITE_TOOLS as readonly string[]).includes(name);
 }
 
-const VTID_PARAM = { type: 'string', description: 'The open VTID this action belongs to (required for every Kiro write).' };
+// VTID-05064: say what to do without one — Kiro asked the owner for VTIDs before.
+const VTID_PARAM = { type: 'string', description: 'An existing open VTID (in_progress + approved) this action belongs to. Never ask the user to supply one and never invent one: a VTID exists only after a sparred, owner-approved plan. If none exists, keep the change in your workspace, say it needs that plan, and offer to write it.' };
 
 function lower(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(lower);
@@ -68,7 +69,7 @@ export function kiroMcpWriteTools(): McpTool[] {
     schema.properties = { ...(schema.properties ?? {}) };
     if (!schema.properties.vtid) { schema.properties.vtid = VTID_PARAM; ADDED_VTID.add(d.name); }
     schema.required = Array.from(new Set([...(schema.required ?? []), 'vtid']));
-    out.push({ name: d.name, description: `${d.description ?? d.name}\n\n[Kiro] Needs a vtid and the user's Allow in the thread before it runs.`, inputSchema: schema });
+    out.push({ name: d.name, description: `${d.description ?? d.name}\n\n[Kiro] Needs an existing open VTID (never ask the user for one) and the user's Allow in the thread before it runs.`, inputSchema: schema });
   }
   cached = out;
   return out;

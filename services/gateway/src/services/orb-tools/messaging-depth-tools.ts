@@ -54,7 +54,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { notifyUserAsync } from '../notification-service';
+import { coalesceChatPushes, chatConversationKey } from '../chat-push-coalescer';
 import { checkVoiceSendQuota } from '../voice-message-guard';
+import { getOwnCalendarEvent } from '../calendar-service';
+import { buildInviteFromEntry } from '../calendar-invite';
+import { cardToken, cardTokenMatches, isSensitiveEntry } from '../calendar-share';
+import { checkInviteSend } from '../calendar-invite-guard';
+import { CARD_CHANGED } from './calendar-social-tools';
+import { tt } from '../../i18n/catalog';
+import { getUserLocale } from '../../i18n/server-locale';
 import * as repo from './messaging-depth-tools-repository';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
@@ -360,13 +368,17 @@ export const tool_send_group_chat_message: Handler = async (args, id, sb) => {
       const { data: members } = await repo.fetchChatGroupMemberIds(sb, group.id);
       const senderName = await senderDisplayName(sb, id.user_id);
       const preview = body.length > 100 ? `${body.slice(0, 97)}...` : body;
-      for (const m of (members as Array<{ user_id: string }>) ?? []) {
-        if (m.user_id === id.user_id) continue;
-        notifyUserAsync(
-          m.user_id,
-          group.tenant_id,
-          'new_chat_message',
-          {
+      const recipientIds = ((members as Array<{ user_id: string }>) ?? [])
+        .map((m) => m.user_id)
+        .filter((uid) => uid !== id.user_id);
+      // VTID-05137: same per-conversation coalescing as the group route.
+      const prepared = await coalesceChatPushes(
+        sb,
+        chatConversationKey({ groupId: group.id, senderId: id.user_id }),
+        recipientIds.map((uid) => ({
+          userId: uid,
+          kind: 'message' as const,
+          payload: {
             title: group.name,
             body: `${senderName}: ${preview}`,
             data: {
@@ -377,8 +389,11 @@ export const tool_send_group_chat_message: Handler = async (args, id, sb) => {
               url: `/inbox/g/${group.id}/msg/${messageId}`, // VTID-04928
             },
           },
-          sb,
-        );
+        })),
+      );
+      for (const p of prepared) {
+        if (p.opts) notifyUserAsync(p.userId, group.tenant_id, 'new_chat_message', p.payload, sb, p.opts);
+        else notifyUserAsync(p.userId, group.tenant_id, 'new_chat_message', p.payload, sb);
       }
     } catch {
       /* fanout is best-effort; never fail the send because of it */
@@ -754,6 +769,27 @@ export const tool_send_calendar_invite_in_chat: Handler = async (args, id, sb) =
     }
     const event = resolvedEvent.event;
 
+    // VTID-05104: re-fetch the full own row and build the card the same way the
+    // app path does (own, one-off, manual/invite, not past, not private), so a
+    // voice invite is v2 metadata the recipient can answer.
+    const ownRow = await getOwnCalendarEvent(event.id, id.user_id);
+    // VTID-05126: any own upcoming entry; for an own entry the member chooses
+    // the title on the card and whether the place is shown.
+    const cardTitle = argString(args, 'card_title');
+    const built = await buildInviteFromEntry(id.user_id, ownRow as any, new Date(), {
+      card_title: cardTitle || undefined,
+      include_location: args.include_location === true,
+    });
+    const sensitive = isSensitiveEntry(ownRow as any);
+    if (!built.ok) {
+      return {
+        ok: false,
+        error: built.status === 404
+          ? "I couldn't find that event in your calendar."
+          : `That entry can't be sent as an invite${built.reason ? ` (${built.reason})` : ''}.`,
+      };
+    }
+
     const resolvedMember = await resolveMember(memberIdArg || memberArg, id, sb);
     if (!resolvedMember.ok) return resolvedMember;
     const target = resolvedMember.member;
@@ -770,8 +806,32 @@ export const tool_send_calendar_invite_in_chat: Handler = async (args, id, sb) =
           recipient_user_id: target.user_id,
           recipient_label: name,
           event_id: event.id,
+          card_title: built.metadata.title,
+          location_shown: built.metadata.location !== null,
+          sensitive,
+          card_token: cardToken(ownRow as any, { title: built.metadata.title, location: built.metadata.location }),
         },
-        text: `Ready to send ${name} the invite for ${speakEvent(event)}. Read this back and only call send_calendar_invite_in_chat again with confirmed=true after explicit confirmation.`,
+        text:
+          `Ready to send ${name} the invite for ${speakEvent(event)}; the card will read "${built.metadata.title}"` +
+          `${built.metadata.location ? '' : ' without the place'}. ` +
+          (sensitive ? 'This is a health appointment: say so plainly. ' : '') +
+          'Read this back and only call send_calendar_invite_in_chat again with the same arguments, this card_token and confirmed=true' +
+          (sensitive ? ' and sensitive_ack=true' : '') +
+          ' after explicit confirmation.',
+      };
+    }
+    // VTID-05126: only the card the member approved goes out (no dropped title, no added place).
+    if (!cardTokenMatches(ownRow as any, { title: built.metadata.title, location: built.metadata.location }, args.card_token)) {
+      return { ok: true, result: { stage: 'awaiting_confirmation', event_id: event.id, needs: 'card_token' }, text: CARD_CHANGED.invite };
+    }
+    // VTID-05126: a health appointment is sent only after the model surfaced what it is.
+    if (sensitive && args.sensitive_ack !== true) {
+      return {
+        ok: true,
+        result: { stage: 'awaiting_confirmation', event_id: event.id, sensitive, needs: 'sensitive_ack' },
+        text:
+          'STATUS: needs_sensitive_ack. Nothing was sent. This is a health appointment: tell the member that plainly, read back the ' +
+          'title on the card and whether the place is shown, and call again with sensitive_ack=true only after they confirm.',
       };
     }
 
@@ -799,7 +859,22 @@ export const tool_send_calendar_invite_in_chat: Handler = async (args, id, sb) =
       };
     }
 
-    const content = `📅 ${event.title} — ${fmtWhen(event.start_time)}${event.location ? ` at ${event.location}` : ''}`;
+    // VTID-05104: test accounts, tenant, relationship and send limits — the
+    // same guard the app routes use. One generic refusal.
+    const allowed = await checkInviteSend({
+      sb,
+      senderId: id.user_id,
+      tenantId,
+      receiverId: target.user_id,
+    });
+    if (!allowed.ok) {
+      return { ok: false, error: "I can't send that invite." };
+    }
+
+    // VTID-05126: the message text says only what the card shows — the member's
+    // card title, and the place only when they chose to show it.
+    const card = built.metadata;
+    const content = `📅 ${card.title} — ${fmtWhen(card.start_time)}${card.location ? ` at ${card.location}` : ''}`;
     const { error: insErr } = await repo.insertCalendarInviteChatMessage(sb, {
       tenant_id: tenantId,
       sender_id: id.user_id,
@@ -810,15 +885,8 @@ export const tool_send_calendar_invite_in_chat: Handler = async (args, id, sb) =
       // CHECK constraint, so a descriptive kind is safe and matches
       // established precedent rather than inventing a new column.
       message_type: 'calendar_invite',
-      metadata: {
-        source: 'voice',
-        kind: 'calendar_invite',
-        event_id: event.id,
-        title: event.title,
-        start_time: event.start_time,
-        end_time: event.end_time,
-        location: event.location,
-      },
+      // v2 card (ref_type / ref_id) so respond / GET can read it.
+      metadata: { ...built.metadata },
     });
     if (insErr) {
       return { ok: false, error: "I couldn't send that invite just now — want me to try again?" };
@@ -827,13 +895,15 @@ export const tool_send_calendar_invite_in_chat: Handler = async (args, id, sb) =
     try {
       if (!/^00000000-0000-0000-0000-000000000001$/i.test(target.user_id)) {
         const senderName = await senderDisplayName(sb, id.user_id);
+        const receiverLocale = await getUserLocale(sb, target.user_id);
         notifyUserAsync(
           target.user_id,
           tenantId,
           'new_chat_message',
           {
             title: senderName,
-            body: content,
+            // Generic line: no title / time / place on the lock screen.
+            body: tt('notif.calendar_invite.body', receiverLocale, { name: senderName }),
             // Path-based, not query-string — Appilix's Android in-app browser
             // silently fails to launch notification URLs containing a query
             // string (see App.tsx's BOOTSTRAP-NOTIF-MESSENGER-DIAG comment).
@@ -1125,6 +1195,10 @@ export const MESSAGING_DEPTH_TOOL_DECLARATIONS: Array<Record<string, unknown>> =
         member_user_id: { type: 'string', description: 'UUID of the recipient if already resolved.' },
         event: { type: 'string', description: 'Spoken event title (fuzzy matched against the user\'s own upcoming events).' },
         event_id: { type: 'string', description: 'Exact calendar_events UUID when already known.' },
+        card_title: { type: 'string', description: 'For an own entry: the title on the card (max 120). Omit to use the entry title.' },
+        include_location: { type: 'boolean', description: 'For an own entry: true shows the place on the card. Default false.' },
+        card_token: { type: 'string', description: 'With confirmed=true for an own entry: the card_token from the preview the member approved.' },
+        sensitive_ack: { type: 'boolean', description: 'true ONLY when the preview said sensitive=true and the member confirmed after you said it is a health appointment.' },
         confirmed: { type: 'boolean', description: 'Pass true ONLY after the user explicitly confirmed sending.' },
       },
       required: [],

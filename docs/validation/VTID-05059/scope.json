@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05059",
+  "kind": "infra",
+  "paths": [
+    ".kiro/steering/**",
+    "scripts/ci/kiro-steering/**",
+    ".github/workflows/PR-GATE.yml",
+    "docs/validation/VTID-05059/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05059/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

@@ -1,6 +1,8 @@
 # Routine: dyk-tour-progress
 
 **Schedule:** `30 10 * * *` (daily 10:30 UTC)
+**Runs in:** the gateway's routine runner (`services/gateway/src/services/routine-runner`, VTID-05103), once per UTC day at the time above — not as a claude.ai session. The steps below are the spec the runner implements: it calls the audit function behind each `$GATEWAY_URL/...` endpoint directly, records the run in `routine_runs` (`trigger = gateway-runner`), and on a breach emits the event with `source: routine.<name>`, `status: warning` and hands it to the self-healing intake. No token or URL is involved.
+
 **Catalog row:** `routines.name = 'dyk-tour-progress'`
 **OASIS VTID for emitted events:** `VTID-02018`
 

@@ -1,0 +1,18 @@
+{
+ "vtid": "VTID-05038",
+ "service": "gateway",
+ "tests": [
+  {
+   "kind": "http",
+   "name": "gateway alive after the change",
+   "path": "/alive",
+   "expect_status": 200
+  },
+  {
+   "kind": "existing",
+   "ref": "npx jest test/vtid-05038-alle-beisammen-enrollment.test.ts",
+   "cwd": "services/gateway",
+   "reason": "Group enrollment writes chat_group_members rows and staging shares the production database, so it is never exercised on staging. The login-path guard (skips service/test accounts, fails closed) and the drift guard on fire_welcome_chat_on_membership() are proven in this suite; the migration itself (enrollment before both early returns, metadata cap, both allowlists, backfill of uncapped groups only, re-runnable, aborts on an unexpected live body or > 200 rows) is proven over a throwaway Postgres by docs/validation/VTID-05038/pglite-welcome-trigger-check.mjs (outputs/pglite-welcome-trigger.txt)."
+  }
+ ]
+}

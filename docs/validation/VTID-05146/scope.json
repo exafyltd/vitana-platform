@@ -1,0 +1,29 @@
+{
+  "vtid": "VTID-05146",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261013150000_vtid_05146_autopilot_overlap_hold.sql",
+    "DATABASE_SCHEMA.md",
+    "services/gateway/src/services/dev-autopilot-overlap.ts",
+    "services/gateway/src/services/dev-autopilot-watcher.ts",
+    "services/gateway/src/services/dev-autopilot-execute.ts",
+    "services/gateway/src/services/dev-autopilot-llm-review.ts",
+    "services/gateway/src/services/dev-autopilot-pipeline-guards.ts",
+    "services/gateway/src/services/dev-autopilot-config-update.ts",
+    "services/gateway/src/services/github-service.ts",
+    "services/gateway/src/routes/dev-autopilot.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/styles.css",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "services/gateway/specs/command-hub-symbol-index.json",
+    "scripts/ci/command-hub-ownership-guard.js",
+    "scripts/ci/staging-verify/lib.cjs",
+    "scripts/ci/staging-verify/lib.test.cjs",
+    "services/gateway/test/**",
+    "docs/validation/*/staging-tests.json",
+    "docs/validation/VTID-05146/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

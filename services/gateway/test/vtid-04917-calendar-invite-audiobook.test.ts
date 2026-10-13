@@ -155,8 +155,9 @@ describe('the invite card is built on the server (VTID-04917)', () => {
     expect(await buildInviteFromEntry(SENDER, ownEntry({ status: 'cancelled' }), NOW)).toMatchObject({ ok: false, reason: 'cancelled' });
     expect(await buildInviteFromEntry(SENDER, ownEntry({ start_time: '2026-10-09T08:00:00Z', end_time: '2026-10-09T09:00:00Z' }), NOW)).toMatchObject({ ok: false, reason: 'past' });
     expect(await buildInviteFromEntry(SENDER, ownEntry({ rrule: 'FREQ=DAILY' }), NOW)).toMatchObject({ ok: false, reason: 'recurring' });
+    // VTID-05126 (owner decision 2026-10-12): every own upcoming entry can be invited to, whatever its source.
     for (const source_type of ['health_plan', 'lab_order', 'appointment', 'goal_plan', 'journey', 'autopilot', 'subscription', 'reminder', 'audiobook', 'assistant']) {
-      expect(await buildInviteFromEntry(SENDER, ownEntry({ source_type }), NOW)).toMatchObject({ ok: false, status: 409, reason: 'private_entry' });
+      expect(await buildInviteFromEntry(SENDER, ownEntry({ source_type }), NOW)).toMatchObject({ ok: true, metadata: { ref_type: 'calendar_entry' } });
     }
   });
 

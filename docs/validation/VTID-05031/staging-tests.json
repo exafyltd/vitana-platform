@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05031",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05031-webhook-verification.test.ts test/connectors/doctorbox.test.ts",
+      "cwd": "services/gateway",
+      "reason": "vendor-correct Terra/Svix/DoctorBox verification over raw bytes, fail-closed without a secret, 401/500 responses. No POST probe on staging: every webhook delivery writes an audit row to the shared database."
+    }
+  ]
+}

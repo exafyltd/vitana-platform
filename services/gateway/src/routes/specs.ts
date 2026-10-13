@@ -13,6 +13,7 @@
 import { Router, Request, Response } from 'express';
 import { createHash } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { requireServiceOrAdmin, getControlPlaneActor } from '../middleware/require-service-or-admin';
 import { runFullQualityCheck } from '../services/spec-quality-agent';
 import { runStageToolLoop } from '../services/llm-stage-tool-loop';
 import { devPlannerModel } from '../services/dev-pipeline-models';
@@ -1161,10 +1162,26 @@ router.post('/:vtid/quality-check', async (req: Request, res: Response) => {
 // POST /:vtid/approve - Approve Spec
 // ===========================================================================
 
-router.post('/:vtid/approve', async (req: Request, res: Response) => {
+/**
+ * VTID-05048: approving a spec writes spec_status='approved' (governance rule
+ * 5), so the caller must be the gateway service token or an exafy_admin JWT.
+ * The actor used to come from caller-supplied x-user-id / x-user-role headers
+ * on an unauthenticated route; those headers are now ignored.
+ */
+const APPROVED_BY_RE = /^[A-Za-z0-9_.:@-]{1,64}$/;
+
+export function resolveSpecApprover(req: Request): { userId: string; userRole: string } {
+  const actor = getControlPlaneActor(req);
+  if (actor.startsWith('service:')) {
+    const raw = typeof req.body?.approved_by === 'string' ? req.body.approved_by.trim() : '';
+    return { userId: `service:${APPROVED_BY_RE.test(raw) ? raw : 'internal'}`, userRole: 'service' };
+  }
+  return { userId: actor, userRole: 'exafy_admin' };
+}
+
+router.post('/:vtid/approve', requireServiceOrAdmin, async (req: Request, res: Response) => {
   const { vtid } = req.params;
-  const userId = req.headers['x-user-id'] as string || 'unknown';
-  const userRole = req.headers['x-user-role'] as string || 'operator';
+  const { userId, userRole } = resolveSpecApprover(req);
 
   console.log(`[VTID-01188] Approve spec requested for ${vtid} by ${userId} (${userRole})`);
 

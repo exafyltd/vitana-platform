@@ -473,7 +473,8 @@ router.post('/safe-merge', requireServiceOrAdmin, async (req: Request, res: Resp
 
 // ==================== POST /service ====================
 // Mounted at /api/v1/deploy -> final path: /api/v1/deploy/service
-router.post('/service', async (req: Request, res: Response) => {
+// VTID-05047: service token or exafy_admin only.
+router.post('/service', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const validation = DeployServiceRequestSchema.safeParse(req.body);
     if (!validation.success) {
@@ -657,7 +658,8 @@ router.get('/health', (_req: Request, res: Response) => {
  * 4. Merge execution via GitHub API
  * 5. OASIS event emission
  */
-router.post('/merge', async (req: Request, res: Response) => {
+// VTID-05047: service token or exafy_admin only.
+router.post('/merge', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const validation = CicdMergeRequestSchema.safeParse(req.body);
     if (!validation.success) {
@@ -831,7 +833,8 @@ router.post('/merge', async (req: Request, res: Response) => {
  * 4. Workflow trigger via GitHub API
  * 5. OASIS event emission
  */
-router.post('/deploy', async (req: Request, res: Response) => {
+// VTID-05047: service token or exafy_admin only.
+router.post('/deploy', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const validation = CicdDeployRequestSchema.safeParse(req.body);
     if (!validation.success) {
@@ -914,7 +917,8 @@ router.post('/deploy', async (req: Request, res: Response) => {
  * This endpoint fetches open PRs from GitHub that match claude/* branch pattern.
  * Each PR becomes an approval item that can be merged/deployed from Command Hub.
  */
-router.get('/approvals', async (_req: Request, res: Response) => {
+// VTID-05047: service token or exafy_admin only.
+router.get('/approvals', requireServiceOrAdmin, async (_req: Request, res: Response) => {
   try {
     const approvals: ApprovalItem[] = [];
 
@@ -1045,7 +1049,8 @@ router.get('/approvals', async (_req: Request, res: Response) => {
  * - For 'deploy': Triggers deploy workflow
  * - For 'merge+deploy': Merges PR then triggers deploy
  */
-router.post('/approvals/:id/approve', async (req: Request, res: Response) => {
+// VTID-05047: service token or exafy_admin only.
+router.post('/approvals/:id/approve', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const prMatch = id.match(/^pr-(\d+)$/);
@@ -1172,7 +1177,8 @@ router.post('/approvals/:id/approve', async (req: Request, res: Response) => {
  * NO fallback extraction from PR branch/title/body.
  * If body.vtid is missing or invalid, use UNKNOWN.
  */
-router.post('/approvals/:id/deny', async (req: Request, res: Response) => {
+// VTID-05047: service token or exafy_admin only.
+router.post('/approvals/:id/deny', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -1246,7 +1252,8 @@ router.post('/approvals/:id/deny', async (req: Request, res: Response) => {
  * - If payload has 'pr_number' (no 'head_branch'): VTID-01168 approval path
  * - If payload has 'head_branch': Legacy Claude Worker path
  */
-router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
+// VTID-05047: service token or exafy_admin only.
+router.post('/autonomous-pr-merge', requireServiceOrAdmin, async (req: Request, res: Response) => {
   const requestId = randomUUID();
 
   // ==================== VTID-01168: Approval Auto-Deploy Path ====================
@@ -1997,7 +2004,8 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
  * - Current locks held
  * - Concurrency configuration
  */
-router.get('/lock-status', (_req: Request, res: Response) => {
+// VTID-05047: service token or exafy_admin only.
+router.get('/lock-status', requireServiceOrAdmin, (_req: Request, res: Response) => {
   try {
     const status = cicdLockManager.getLockStatus();
     return res.status(200).json({
@@ -2021,7 +2029,8 @@ router.get('/lock-status', (_req: Request, res: Response) => {
  *
  * Body: { vtid: string, reason?: string }
  */
-router.post('/lock-release', async (req: Request, res: Response) => {
+// VTID-05047: service token or exafy_admin only.
+router.post('/lock-release', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const { vtid, reason } = req.body;
 

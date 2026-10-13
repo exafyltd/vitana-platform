@@ -1305,13 +1305,20 @@ router.get(
       if (degradeEventsErr) console.error(`${LOG_PREFIX} admin/metrics fetchVoiceDegradeEventsSince error: ${degradeEventsErr.message}`);
       const voiceDegradeCount7d = (degradeEvents as Array<unknown>)?.length ?? 0;
 
-      // 5. Marketing budget remaining
+      // 5. Marketing budget remaining (VTID-05044): the budget is per tenant,
+      // so report the sum across tenants (null when no tenant sets one) plus
+      // the per-tenant breakdown. A read error is logged, not hidden.
       let budgetRemainingCents: number | null = null;
+      const budgetByTenant: Record<string, number | null> = {};
       try {
-        const { data: budgetRow } = await repo.fetchTenantSettingsFeatureFlags(supabase);
-        const flags = (budgetRow as { feature_flags?: Record<string, unknown> } | null)?.feature_flags;
-        const val = flags?.marketing_budget_eur_remaining_cents;
-        if (typeof val === 'number') budgetRemainingCents = val;
+        const { data: budgetRows, error: budgetErr } = await repo.fetchTenantSettingsFeatureFlags(supabase);
+        if (budgetErr) console.error(`${LOG_PREFIX} admin/metrics fetchTenantSettingsFeatureFlags error: ${budgetErr.message}`);
+        ((budgetRows as Array<{ tenant_id: string; feature_flags?: Record<string, unknown> | null }>) || []).forEach((row) => {
+          const val = row.feature_flags?.marketing_budget_eur_remaining_cents;
+          const cents = typeof val === 'number' && Number.isFinite(val) ? val : null;
+          budgetByTenant[row.tenant_id] = cents;
+          if (cents !== null) budgetRemainingCents = (budgetRemainingCents ?? 0) + cents;
+        });
       } catch (err) {
         console.warn(`${LOG_PREFIX} budget query error: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -1333,6 +1340,7 @@ router.get(
         redemptions_30d: redemptionsByCampaign,
         voice_degrade_count_7d: voiceDegradeCount7d,
         marketing_budget_remaining_cents: budgetRemainingCents,
+        marketing_budget_remaining_by_tenant: budgetByTenant,
         vtid: VTID,
       });
     } catch (err: unknown) {

@@ -67,8 +67,30 @@ export async function fetchInvitationByToken(supabase: SupabaseClient, token: st
   return supabase.from('tenant_invitations').select('*').eq('token', token).is('accepted_at', null).is('revoked_at', null).single();
 }
 
-export async function markInvitationAccepted(supabase: SupabaseClient, id: string, fields: Record<string, unknown>) {
-  return supabase.from('tenant_invitations').update(fields).eq('id', id);
+/**
+ * VTID-05044: atomic claim. The update only matches while the invitation is
+ * still pending (not accepted, not revoked, not expired), so of two parallel
+ * accepts exactly one gets the row back; the other gets no row and must not
+ * grant anything. Replaces the old unconditional markInvitationAccepted,
+ * which ran after the grants.
+ */
+export async function claimInvitation(supabase: SupabaseClient, id: string, userId: string) {
+  return supabase
+    .from('tenant_invitations')
+    .update({ accepted_at: new Date().toISOString(), accepted_by: userId })
+    .eq('id', id)
+    .is('accepted_at', null)
+    .is('revoked_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .select('*')
+    .maybeSingle();
+}
+
+// ==================== auth.users (read-only) ====================
+
+/** VTID-05044: the accepting user's email/confirmation, and the inviter's exafy_admin flag. */
+export async function fetchAuthUserById(supabase: SupabaseClient, userId: string) {
+  return supabase.auth.admin.getUserById(userId);
 }
 
 // ==================== user_tenants / user_permitted_roles ====================

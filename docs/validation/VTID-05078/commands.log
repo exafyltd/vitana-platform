@@ -1,0 +1,7 @@
+# VTID-05078 commands
+git checkout -B claude/amazing-ride-wipu1l origin/main   # 0d992b49
+cd services/gateway && npx tsc --noEmit -p .
+npx jest test/vtid-05078-planner-tools.test.ts    # 13 pass
+npx jest test/vtid-04806-plannability.test.ts test/vtid-05078-planner-tools.test.ts test/vtid-03854-planning-stub-gate.test.ts test/dev-autopilot-planning.test.ts   # 49 pass
+npm run test:operator   # 64 pass
+npx jest --silent       # full gateway suite

@@ -1,0 +1,43 @@
+name: Setup operator-media bucket (VTID-05067, one-off, idempotent)
+
+# VTID-05067: creates the PRIVATE Supabase Storage bucket `operator-media` (Operator
+# Console images) through the Storage API — never an INSERT into storage.buckets.
+# Idempotent: an existing private bucket is left alone; an existing PUBLIC one is
+# refused (exit 2) for a person to decide. No client policies are created.
+# There is no generic "run a setup script" workflow in this repo, so this one-off
+# dispatch job exists for it (plan sparring record docs/validation/VTID-05067).
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "true = only report what would happen. false = create the bucket if missing."
+        required: true
+        default: 'true'
+        type: choice
+        options: [ 'true', 'false' ]
+
+permissions:
+  contents: read
+
+jobs:
+  setup-bucket:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Create operator-media bucket (Storage API)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if [ "${DRY_RUN}" = "true" ]; then
+            node scripts/supabase/setup-operator-media-bucket.mjs --dry-run
+          else
+            node scripts/supabase/setup-operator-media-bucket.mjs
+          fi

@@ -19,6 +19,12 @@
  *      the single allowed health→commerce module (hide-only safety filter).
  *   5. applyUserLimitations() only ever hides: its output is an in-order
  *      subsequence of its input.
+ *   6. (VTID-05089, Health Hub D6a) The marketplace voice tools
+ *      find_perfect_product / find_perfect_practitioner never read the
+ *      Vitana Index: a pillar filter applies only when the member names one.
+ *      The scan in 4. also bans the Index tables and the wearable features
+ *      bridge from every commerce module, because once the bridge is on the
+ *      Index can contain device-derived data.
  */
 
 import * as fs from 'fs';
@@ -38,6 +44,7 @@ import {
   type UserHealthContext,
 } from '../src/services/user-health-context';
 import { applyUserLimitations, type FilterableProduct } from '../src/services/limitations-filter';
+import { tool_find_perfect_product, tool_find_perfect_practitioner } from '../src/services/orb-tools-shared';
 
 const mockedRepo = repo as jest.Mocked<typeof repo>;
 
@@ -238,8 +245,10 @@ function commerceModules(): string[] {
 // whose field is required and nullable).
 const WEARABLE_FIELD_READ = /wearable_summary_7d(?!\s*:\s*null\b)/;
 const WEARABLE_OPT_IN = /include_wearable\s*:\s*true/;
-const HEALTH_TABLES = /['"`](wearable_daily_metrics|wearable_rollup_7d|wearable_samples|health_features_daily|biomarker_results|lab_reports)['"`]/;
+const HEALTH_TABLES = /['"`](wearable_daily_metrics|wearable_rollup_7d|wearable_samples|health_features_daily|biomarker_results|lab_reports|vitana_index_scores|vitana_pillar_agent_outputs)['"`]/;
 const WEARABLE_ANALYZER_IMPORT = /from\s+['"][^'"]*wearable-analyzer['"]/;
+// VTID-05089: the wearable -> health_features_daily bridge is health-domain only.
+const WEARABLE_BRIDGE_IMPORT = /from\s+['"][^'"]*wearable-features-bridge(-repository)?['"]/;
 
 describe('commerce/health purpose boundary — source scan (VTID-05025)', () => {
   const files = commerceModules();
@@ -268,6 +277,7 @@ describe('commerce/health purpose boundary — source scan (VTID-05025)', () => 
       expect(src).not.toMatch(WEARABLE_FIELD_READ);
       expect(src).not.toMatch(HEALTH_TABLES);
       expect(src).not.toMatch(WEARABLE_ANALYZER_IMPORT);
+      expect(src).not.toMatch(WEARABLE_BRIDGE_IMPORT);
     }
   );
 
@@ -279,6 +289,10 @@ describe('commerce/health purpose boundary — source scan (VTID-05025)', () => 
     expect('getUserHealthContext(id, { include_wearable: true })').toMatch(WEARABLE_OPT_IN);
     expect(".from('wearable_rollup_7d')").toMatch(HEALTH_TABLES);
     expect("import { analyzeWearables } from './wearable-analyzer';").toMatch(WEARABLE_ANALYZER_IMPORT);
+    expect(".from('vitana_index_scores')").toMatch(HEALTH_TABLES);
+    expect(".from('vitana_pillar_agent_outputs')").toMatch(HEALTH_TABLES);
+    expect("import { bridgeWearableDays } from '../services/wearable-features-bridge';").toMatch(WEARABLE_BRIDGE_IMPORT);
+    expect("import * as r from './wearable-features-bridge-repository';").toMatch(WEARABLE_BRIDGE_IMPORT);
   });
 
   it('limitations-filter.ts is the single allowed health→commerce module and stays hide-only in shape', () => {
@@ -299,6 +313,90 @@ describe('commerce/health purpose boundary — source scan (VTID-05025)', () => 
     expect(body).toContain("domain: 'health'");
     expect(body).toContain("source_type: 'wearable'");
     expect(body).not.toContain('marketplace');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6. Marketplace voice tools never read the Vitana Index (VTID-05089)
+// ---------------------------------------------------------------------------
+
+function sliceFunction(src: string, signature: string): string {
+  const start = src.indexOf(signature);
+  expect(start).toBeGreaterThan(-1);
+  const end = src.indexOf('\n}\n', start);
+  expect(end).toBeGreaterThan(start);
+  return src.slice(start, end);
+}
+
+describe('find_perfect_product / find_perfect_practitioner — no Index read (VTID-05089)', () => {
+  const shared = fs.readFileSync(path.join(SRC, 'services', 'orb-tools-shared.ts'), 'utf8');
+
+  it.each([
+    'export async function tool_find_perfect_product(',
+    'export async function tool_find_perfect_practitioner(',
+    'async function _getCompassGoal(',
+  ])('%s… reads no vitana_index_scores and derives no weakest pillar', (signature) => {
+    const body = sliceFunction(shared, signature);
+    expect(body).not.toMatch(/vitana_index_scores/);
+    expect(body).not.toMatch(/weakest/i);
+    expect(body).not.toMatch(HEALTH_TABLES);
+  });
+
+  it('the removed Index helper is gone from orb-tools-shared.ts', () => {
+    expect(shared).not.toContain('_getWeakestPillarAndGoal');
+  });
+
+  function recordingClient() {
+    const calls: Array<{ table: string; steps: Array<{ method: string; args: unknown[] }> }> = [];
+    const client: any = {
+      from: jest.fn((table: string) => {
+        const steps: Array<{ method: string; args: unknown[] }> = [];
+        calls.push({ table, steps });
+        const chain: any = {};
+        for (const m of ['select', 'eq', 'limit', 'order', 'contains', 'lte', 'ilike', 'in']) {
+          chain[m] = jest.fn((...args: unknown[]) => (steps.push({ method: m, args }), chain));
+        }
+        const resp = () =>
+          table === 'life_compass'
+            ? { data: { current_goal: 'sleep better' }, error: null }
+            : { data: [{ name: 'Magnesium', ingredients: [] }], error: null };
+        chain.maybeSingle = jest.fn(() => Promise.resolve(resp()));
+        chain.then = (res: any, rej: any) => Promise.resolve(resp()).then(res, rej);
+        return chain;
+      }),
+      rpc: jest.fn(),
+    };
+    return { client, calls };
+  }
+
+  const ID = { user_id: 'u1', tenant_id: 't1', role: 'community', vitana_id: null } as never;
+
+  it('find_perfect_product without a pillar issues no vitana_index_scores query and no pillar_tags filter', async () => {
+    const { client, calls } = recordingClient();
+    const r = await tool_find_perfect_product({ goal_text: 'better sleep' }, ID, client);
+    expect(r.ok).toBe(true);
+    expect(calls.map((c) => c.table)).not.toContain('vitana_index_scores');
+    expect(calls.map((c) => c.table)).not.toContain('vitana_pillar_agent_outputs');
+    const catalog = calls.find((c) => c.table === 'products_catalog');
+    expect(catalog).toBeDefined();
+    expect(catalog!.steps.some((s) => s.method === 'contains' && s.args[0] === 'pillar_tags')).toBe(false);
+    expect((r as any).result.pillar).toBeNull();
+    expect((r as any).result.compass_goal).toBe('sleep better');
+  });
+
+  it('find_perfect_product filters by pillar_tags only when the member names a pillar', async () => {
+    const { client, calls } = recordingClient();
+    await tool_find_perfect_product({ pillar: 'Sleep' }, ID, client);
+    const catalog = calls.find((c) => c.table === 'products_catalog')!;
+    expect(catalog.steps).toContainEqual({ method: 'contains', args: ['pillar_tags', ['sleep']] });
+    expect(calls.map((c) => c.table)).not.toContain('vitana_index_scores');
+  });
+
+  it('find_perfect_practitioner issues no vitana_index_scores query', async () => {
+    const { client, calls } = recordingClient();
+    const r = await tool_find_perfect_practitioner({ specialty: 'sleep' }, ID, client);
+    expect(r.ok).toBe(true);
+    expect(calls.map((c) => c.table)).not.toContain('vitana_index_scores');
   });
 });
 

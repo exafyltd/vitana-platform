@@ -35,7 +35,7 @@ interface ActorRequest extends Request {
   __control_plane_actor?: ControlPlaneActor;
 }
 
-function extractBearer(req: Request): string | null {
+export function extractBearer(req: Request): string | null {
   const header = req.header('authorization') ?? req.header('Authorization');
   if (!header || !header.toLowerCase().startsWith('bearer ')) return null;
   const token = header.slice('bearer '.length).trim();
@@ -47,8 +47,10 @@ function extractBearer(req: Request): string | null {
  * identity when GATEWAY_SERVICE_TOKEN is configured AND matches exactly. An
  * unset/empty env var must never authorise (would otherwise match an empty
  * token — which extractBearer already rejects, but be explicit).
+ * Exported (VTID-05048) so a router that stays open for reads can still tell a
+ * service caller apart from an anonymous one.
  */
-function matchesServiceToken(token: string): boolean {
+export function matchesServiceToken(token: string): boolean {
   const serviceToken = process.env.GATEWAY_SERVICE_TOKEN ?? '';
   return serviceToken.length > 0 && token === serviceToken;
 }

@@ -1,0 +1,12 @@
+# VTID-05038 commands (2026-10-10)
+# read-only, production (reads only): live function body, system groups, missing members
+#   select pg_get_functiondef(...) for fire_welcome_chat_on_membership          -> VTID-03990 body (enrollment after early returns, < 100)
+#   chat_groups is_system + member counts                                        -> FIRST 100: 100/237, Alle Beisammen: 231/237
+#   primary members not in Alle Beisammen                                        -> 16 (4 service/test accounts, 12 real, joined 2026-09-17..10-06)
+#   prosrc pre-check predicates                                                  -> has_guard t, has_100 t, has_meta_cap f, already f
+#   triggers on chat_group_members                                               -> none (backfill sends nothing)
+cd services/gateway && npx tsc --noEmit -p tsconfig.json                         # clean
+npx jest test/vtid-05038-alle-beisammen-enrollment.test.ts                        # 8 passed (outputs/jest-alle-beisammen.txt)
+# mutation: migration file removed -> drift guard reads the VTID-03990 body -> 3 tests fail (restored)
+node docs/validation/VTID-05038/pglite-welcome-trigger-check.mjs supabase/migrations/20260917084341_vtid_03990_service_bot_accounts_skip_welcome_chat.sql supabase/migrations/20261010160000_vtid_05038_welcome_trigger_enrollment_restore.sql   # 23 PASS (outputs/pglite-welcome-trigger.txt)
+# production migration: RUN-MIGRATION.yml run 38046327642 -> success; read-only post-check (outputs/post-migration-check.txt): 0 real members missing, 243 in the group, 0 welcome messages

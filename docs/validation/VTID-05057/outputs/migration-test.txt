@@ -1,0 +1,21 @@
+psql:docs/validation/VTID-05057/migration-test.sql:7: NOTICE:  drop cascades to table auth.users
+psql:docs/validation/VTID-05057/migration-test.sql:7: NOTICE:  drop cascades to 7 other objects
+DETAIL:  drop cascades to table profiles
+drop cascades to table contacts
+drop cascades to table service_bot_accounts
+drop cascades to table notification_test_actors
+drop cascades to function match_existing_contacts()
+drop cascades to function sync_profile_phone_verification()
+drop cascades to function check_phone_on_platform(text)
+psql:supabase/migrations/20261010160000_vtid_05057_contacts_phone_matching.sql:67: NOTICE:  trigger "on_auth_user_phone_verification" for relation "auth.users" does not exist, skipping
+psql:supabase/migrations/20261010160000_vtid_05057_contacts_phone_matching.sql:28: NOTICE:  column "contact_phone_e164" of relation "contacts" already exists, skipping
+psql:supabase/migrations/20261010160000_vtid_05057_contacts_phone_matching.sql:29: NOTICE:  relation "idx_contacts_phone_e164" already exists, skipping
+psql:supabase/migrations/20261010160000_vtid_05057_contacts_phone_matching.sql:31: NOTICE:  column "phone_e164" of relation "profiles" already exists, skipping
+psql:supabase/migrations/20261010160000_vtid_05057_contacts_phone_matching.sql:32: NOTICE:  column "phone_verified" of relation "profiles" already exists, skipping
+psql:supabase/migrations/20261010160000_vtid_05057_contacts_phone_matching.sql:33: NOTICE:  column "discoverable_by_phone" of relation "profiles" already exists, skipping
+psql:supabase/migrations/20261010160000_vtid_05057_contacts_phone_matching.sql:35: NOTICE:  relation "idx_profiles_phone_e164_verified" already exists, skipping
+                      result                      
+--------------------------------------------------
+ VTID-05057 migration test: all assertions passed
+(1 row)
+

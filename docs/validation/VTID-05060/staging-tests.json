@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05060",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "target": "gateway", "name": "resume pack refuses an anonymous caller", "method": "GET", "path": "/api/v1/dev-memory/resume/VTID-05047", "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "http", "target": "gateway", "name": "resume pack authenticates before it validates", "method": "GET", "path": "/api/v1/dev-memory/resume/not-a-vtid", "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "existing", "ref": "npx jest test/vtid-05060-resume-and-model-pick.test.ts test/vtid-05018-kiro-thread-memory.test.ts", "cwd": "services/gateway", "reason": "the resume pack, its route and auth, the Operator tool, and the Kiro model-pick restore" },
+    { "kind": "existing", "ref": "npx jest test/vtid-04465-operator-pipeline-regression.test.ts -t VTID-05060", "cwd": "services/gateway", "reason": "the real chat route re-applies the developer's model pick on a reopened Kiro session" }
+  ]
+}

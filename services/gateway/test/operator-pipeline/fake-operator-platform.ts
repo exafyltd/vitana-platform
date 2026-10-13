@@ -41,7 +41,7 @@ export { FAKE_SUPABASE_URL };
 export type { Row };
 
 /** The in-flight statuses the real partial unique index covers (migration 20260509000000). */
-export const INFLIGHT_UNIQUE_STATUSES = ['cooling', 'running', 'ci', 'merging', 'deploying', 'verifying'] as const;
+export const INFLIGHT_UNIQUE_STATUSES = ['cooling', 'running', 'held_overlap', 'ci', 'merging', 'deploying', 'verifying'] as const;
 
 // ---------------------------------------------------------------------------
 // PostgREST parsing
@@ -202,6 +202,10 @@ export class OperatorPlatform extends FakePlatform {
       if (url.origin === new URL(FAKE_SUPABASE_URL).origin && url.pathname.startsWith('/rest/v1/')) {
         return this.rest(url, method, init);
       }
+      // VTID-05067: Supabase Storage (the operator-media bucket), in memory.
+      if (url.origin === new URL(FAKE_SUPABASE_URL).origin && url.pathname.startsWith('/storage/v1/')) {
+        return this.storage(url, method, init);
+      }
       if (url.hostname === 'api.github.com') {
         const gh = url.pathname.startsWith(`/repos/${this.githubV1.repo}/`) ? this.githubV1 : this.github;
         return gh.handle(method, url, init.body ? JSON.parse(String(init.body)) : undefined, this.headerMap(init).authorization || '');
@@ -212,6 +216,33 @@ export class OperatorPlatform extends FakePlatform {
       this.inflight -= 1;
     }
   };
+
+  /** VTID-05067: Storage objects by "<bucket>/<path>". */
+  readonly storageObjects = new Map<string, { contentType: string; bytes: Buffer }>();
+
+  private storage(url: URL, method: string, init: any): Response {
+    const p = decodeURIComponent(url.pathname);
+    if (p.startsWith('/storage/v1/object/sign/') && method === 'POST') {
+      const key = p.slice('/storage/v1/object/sign/'.length);
+      if (!this.storageObjects.has(key)) return this.json(400, { error: 'not_found' });
+      return this.json(200, { signedURL: `/object/sign/${key}?token=fake` });
+    }
+    if (p.startsWith('/storage/v1/object/')) {
+      const key = p.slice('/storage/v1/object/'.length);
+      if (method === 'POST') {
+        const body = init.body;
+        const bytes = Buffer.isBuffer(body) ? body : body instanceof Uint8Array ? Buffer.from(body) : Buffer.from(String(body ?? ''));
+        this.storageObjects.set(key, { contentType: this.headerMap(init)['content-type'] || '', bytes });
+        return this.json(200, { Key: key });
+      }
+      if (method === 'GET') {
+        const o = this.storageObjects.get(key);
+        return o ? new Response(o.bytes, { status: 200, headers: { 'Content-Type': o.contentType } }) : this.json(400, { error: 'not_found' });
+      }
+    }
+    this.unsupported.push(`storage: ${method} ${p}`);
+    return this.json(405, { message: 'storage call not supported by the fake' });
+  }
 
   private headerMap(init: any): Record<string, string> {
     const out: Record<string, string> = {};
@@ -480,6 +511,8 @@ export class FakeGitHub {
   readonly pushes: Array<{ branch: string; sha: string; force: boolean; files: string[] }> = [];
   readonly calls: Array<{ method: string; path: string }> = [];
   readonly deletedBranches: string[] = [];
+  /** VTID-05146: comments left on PRs (e.g. the overlap-hold timeout). */
+  readonly comments: Array<{ pr: number; body: string }> = [];
   /** VTID-04612: main moved ahead of every open PR by `behindBy` commits touching `files`. Null = up to date. */
   mainAhead: { behindBy: number; files: string[] } | null = null;
   private nextPr = 3600;
@@ -563,6 +596,15 @@ export class FakeGitHub {
     const rest = path.slice(prefix.length);
     let m: RegExpExecArray | null;
 
+    // VTID-05146: the open-PR overlap check lists every open PR (one page here).
+    if (method === 'GET' && rest === '/pulls') {
+      const open = [...this.prs.values()].filter((p) => p.state === 'open');
+      return this.res(200, open.map((p) => ({ number: p.number, title: p.title, draft: false, head: { ref: p.head.ref, sha: p.head.sha } })));
+    }
+    if ((m = /^\/issues\/(\d+)\/comments$/.exec(rest)) && method === 'POST') {
+      this.comments.push({ pr: Number(m[1]), body: String(body?.body || '') });
+      return this.res(201, { id: this.comments.length });
+    }
     if (method === 'POST' && rest === '/pulls') {
       if (!this.branches.has(body.head)) return this.res(422, { message: `fake-github: head ${body.head} was never pushed` });
       if (this.prForBranch(body.head)?.state === 'open') return this.res(422, { message: 'A pull request already exists for this branch' });

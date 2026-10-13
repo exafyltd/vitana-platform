@@ -1,0 +1,25 @@
+PASS regression reproduced on the VTID-03990 body (welcome_chat_sent member not enrolled)
+PASS migration applies on the VTID-03990 body
+PASS backfill enrolls the missing real member
+PASS backfill enrolls a real member already marked welcome_chat_sent
+PASS backfill never enrolls a service bot
+PASS backfill never enrolls a test actor
+PASS backfill does not touch the capped group
+PASS backfill sends no chat message
+PASS new member is enrolled in the uncapped group
+PASS new member gets the unchanged welcome DM fan-out
+PASS capped group respects its metadata cap — members=1
+PASS member already marked welcome_chat_sent is still enrolled
+PASS a registered test actor is not enrolled
+PASS a registered test actor sends no welcome DM
+PASS a registered test actor is marked welcome_chat_sent
+PASS > 1000-member tenant: new member enrolled
+PASS > 1000-member tenant: no DM fan-out
+PASS migration is re-runnable
+PASS re-run adds nothing
+PASS an unexpected live body aborts the migration
+PASS nothing was backfilled after the abort
+PASS > 200 missing memberships aborts the migration
+PASS the function fix rolled back with it (one transaction)
+
+all checks passed

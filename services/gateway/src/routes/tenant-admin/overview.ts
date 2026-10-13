@@ -6,8 +6,11 @@
  * Endpoints:
  *   GET /summary     — Single JSON blob with all dashboard KPIs (cached 60s)
  *   GET /at-risk     — At-risk member cohort (active last 30d, no session last 14d)
- *   GET /activity    — Recent OASIS events filtered by tenant
- *   GET /alerts      — L1/L2 severity OASIS events for tenant
+ *   GET /activity    — Recent OASIS events (platform-only, VTID-05042)
+ *   GET /alerts      — L1/L2 severity OASIS events (platform-only, VTID-05042)
+ *
+ * VTID-05042: oasis_events has no tenant_id column (platform ops: deploys,
+ * VTIDs, errors), so /activity and /alerts are exafy_admin-only until WS3.
  *
  * Design principle: every number has a delta vs prior period.
  * Single round trip on load — the summary endpoint returns everything
@@ -15,7 +18,7 @@
  */
 
 import { Router, Response } from 'express';
-import { requireTenantAdmin } from '../../middleware/require-tenant-admin';
+import { requireTenantAdmin, requirePlatformScope } from '../../middleware/require-tenant-admin';
 import { AuthenticatedRequest } from '../../middleware/auth-supabase-jwt';
 import { getSupabase } from '../../lib/supabase';
 import * as repo from './overview-repository';
@@ -163,7 +166,7 @@ router.get('/at-risk', requireTenantAdmin, async (req: AuthenticatedRequest, res
 });
 
 // GET /activity — recent OASIS events for tenant
-router.get('/activity', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/activity', requireTenantAdmin, requirePlatformScope, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
@@ -196,7 +199,7 @@ router.get('/activity', requireTenantAdmin, async (req: AuthenticatedRequest, re
 });
 
 // GET /alerts — L1/L2 severity events for tenant
-router.get('/alerts', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/alerts', requireTenantAdmin, requirePlatformScope, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });

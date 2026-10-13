@@ -1,0 +1,37 @@
+{
+ "vtid": "VTID-05039",
+ "service": "gateway",
+ "tests": [
+  {
+   "kind": "http",
+   "name": "gateway alive after the change",
+   "path": "/alive",
+   "expect_status": 200
+  },
+  {
+   "kind": "http",
+   "name": "the onboarding coach stays disabled on staging (read-only GET, no member data)",
+   "path": "/api/v1/onboarding-coach/status",
+   "expect_status": 200,
+   "expect_json": {
+    "ok": true,
+    "mode": "disabled-on-staging",
+    "env": "staging"
+   }
+  },
+  {
+   "kind": "http",
+   "name": "the coach tick refuses an untokened call (rejected probe, no write)",
+   "method": "POST",
+   "path": "/api/v1/scheduled-notifications/onboarding-coach-tick",
+   "rejected_probe": true,
+   "expect_status": 401
+  },
+  {
+   "kind": "existing",
+   "ref": "npx jest test/vtid-05039-onboarding-coach-shadow-start.test.ts test/vtid-04226-eventbridge-test-contract-schedules.test.ts test/vtid-04892-onboarding-coach.test.ts",
+   "cwd": "services/gateway",
+   "reason": "This change only sets production environment values and adds one scheduler job; staging must keep the coach off (it shares the production database), which the status probe proves. The workflow pins, the absence of VOA_MODE, the staging workflow staying clean, the single daily tick job and that the pinned values resolve to shadow (and to disabled-on-staging on staging) are proven in vtid-05039; the coach's shadow-only behaviour itself stays proven in vtid-04892."
+  }
+ ]
+}

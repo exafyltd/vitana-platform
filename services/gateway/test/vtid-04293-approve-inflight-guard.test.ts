@@ -50,9 +50,9 @@ beforeEach(() => {
 describe('VTID-04293 in-flight guard', () => {
   it('covers awaiting_approval and every status the unique index covers', () => {
     expect(INFLIGHT_EXECUTION_STATUSES).toEqual(
-      expect.arrayContaining(['cooling', 'running', 'awaiting_approval', 'ci', 'merging', 'deploying', 'verifying']),
+      expect.arrayContaining(['cooling', 'running', 'awaiting_approval', 'held_overlap', 'ci', 'merging', 'deploying', 'verifying']),
     );
-    expect(INFLIGHT_EXECUTION_FILTER).toBe('&status=in.(cooling,running,awaiting_approval,ci,merging,deploying,verifying)');
+    expect(INFLIGHT_EXECUTION_FILTER).toBe('&status=in.(cooling,running,awaiting_approval,held_overlap,ci,merging,deploying,verifying)');
   });
 
   it('refuses when the finding has an execution awaiting approval', async () => {

@@ -710,6 +710,17 @@ CREATE TABLE apple_account_credentials (
 - `contacts.source` / `contacts.external_id` + unique index `(user_id, source, external_id)` — imported contacts de-duplicate per source (`google`, `icloud`, `android`); hand-added contacts keep both NULL.
 - `calendar_external_busy.source` CHECK allows `'google','microsoft','apple'` — Outlook and iCloud busy times show as grey blocks too. Times only, never titles.
 
+**Phone matching (VTID-05057, `20261010160000_vtid_05057_contacts_phone_matching.sql`, applied at Gate 2):**
+- `contacts.contact_phone_e164 TEXT[] NOT NULL DEFAULT '{}'` (+ GIN index) — every number of an imported contact in E.164, normalised by the gateway importer (`libphonenumber-js`, region from the import request, default DE). Also kept in `metadata.phones_e164`.
+- `profiles.phone_e164 TEXT`, `profiles.phone_verified BOOLEAN NOT NULL DEFAULT false`, `profiles.discoverable_by_phone BOOLEAN NOT NULL DEFAULT true` — `phone_verified`/`phone_e164` are set only by trigger `on_auth_user_phone_verification` on `auth.users` (`phone` set AND `phone_confirmed_at` not null). A number typed into a profile never matches.
+- `match_existing_contacts()` (trigger `on_phone_verified`, now on `phone_e164`/`phone_verified`/`discoverable_by_phone`) and `check_phone_on_platform()` match only a verified, discoverable member and skip `service_bot_accounts` / `notification_test_actors`. Rollback: `docs/validation/VTID-05057/rollback.down.sql`.
+
+**Phone verification (VTID-05095, `20261012180000_vtid_05095_phone_verification.sql`, applied at Gate 2):**
+- `phone_verification_challenges` — one open SMS code per member (`user_id` UNIQUE): `phone_e164`, `code_hash` (HMAC, never the code), `expires_at` (10 min), `attempts` (max 5), `consumed_at`. RLS on, no policies, no browser grants (service role only).
+- `phone_verification_sends` — one row per verification SMS (`user_id`, `phone_e164`, `sent_at`) for the limits (3/member/hour, 6/member/day, 5/number/day, a daily cap for everyone); rows older than 7 days are purged on each send. Service role only.
+- `phone_verification_begin(...)` / `phone_verification_confirm(...)` — SECURITY DEFINER, EXECUTE for `service_role` only; each step is one transaction under a per-member advisory lock.
+- `unmatch_phone_contacts()` + trigger `on_phone_a_withdrawn` on `profiles` — when a matchable number is removed, unverified, hidden or replaced, other members' contacts linked to it by phone are unlinked (rows whose e-mail matches the member stay linked). Runs before `on_phone_verified` (name order). The verified number itself lands in `auth.users` (`phone` + `phone_confirm` via the Auth admin API) and reaches `profiles` through VTID-05057's mirror. Rollback: `docs/validation/VTID-05095/rollback.down.sql`.
+
 **Rules:** tokens stay in `social_connections` (Google, Microsoft) or here encrypted (Apple). Turning an app off deletes what it left in Vitanaland (busy rows; imported contacts only when the member ticks it); turning the provider's last app off releases the grant (Google refresh token revoked, Microsoft tokens dropped, Apple credentials deleted).
 
 ### calendar_push_targets / calendar_push_links — Outlook + iCloud calendar push — APPLIED 2026-09-24 (VTID-04436)
@@ -796,6 +807,18 @@ CREATE TABLE public.founding_members (
 > Not rows in `products`, so nothing in Discover reads them. Migration
 > `20261008180000_vtid_04982_rewards_shop.sql`.
 
+> **VTID-05035 (2026-10-10): Rewards shop admin.** Storage bucket
+> `reward-shop-images` (public read, 1.4 MB per file, image/jpeg|png|webp;
+> no `storage.objects` policy for anon/authenticated, so members never write
+> to it) holds item photos under `items/<uuid>.<jpg|png|webp>`; their public
+> URLs go into `reward_shop_items.images`. Only the gateway (service role)
+> uploads, through `POST /api/v1/admin/rewards/items/image` (exafy_admin;
+> type checked by magic bytes). Also new for the admin screen:
+> `GET /api/v1/admin/rewards/shipping-fees` (all `reward_shipping_fees` rows)
+> and `DELETE /api/v1/admin/rewards/shipping-fees/:country/:currency`. No
+> table changes. Migration `20261010160000_vtid_05035_reward_shop_images_bucket.sql`;
+> the bucket is also in `PUBLIC_BUCKETS` of `scripts/aws/setup-storage-buckets.sh`.
+
 > **VTID-04809 (2026-10-01, owner decision): `user_wallets.CREDITS` is the
 > canonical VTNA ledger.** 1 VTNA = 1 CREDIT = **EUR 0.01** (pegged to EUR;
 > the USD figure is a live ECB conversion). `user_wallets.earned_balance`
@@ -817,6 +840,11 @@ CREATE TABLE public.founding_members (
 > signed-in member debit another member's earned or purchased credits (never
 > used: 0 `paywall:%` debits). Behaviour for the gateway is unchanged.
 > Migration `20261008170000_vtid_04981_consume_credits_lockdown.sql`.
+>
+> **VTID-05041 (2026-10-10):** the S2 lockdown migration
+> (`20261010164100_vtid_05041_definer_functions_lockdown.sql`) refuses to apply
+> while `authenticated`/`anon` can still execute `fn_consume_credits`, so
+> VTID-04981 is applied first.
 >
 > **VTID-04988 (2026-10-08, owner decision):** earned VTNA is spent only on
 > rewards. `feature_entitlements.allowed_burn_buckets` no longer lists
@@ -1166,6 +1194,45 @@ CREATE TABLE public.plan_sparring_shadow_log (
   `vtid.plan_sparring.tamper_detected`), not prevented. Mode changes only by a
   reviewed migration.
 
+### tenants — default / platform flags, signup default tenant, isolation health — committed, NOT yet applied (VTID-05149)
+
+Multi-tenant M0, lane A. Apply order and status: `docs/multitenancy/MIGRATION-QUEUE.md`.
+
+- **`tenants.is_default boolean NOT NULL DEFAULT false`** — the tenant new members
+  land in when signup names no usable slug (maxina). Exactly one row: at most one
+  by the partial unique index `tenants_one_default ON tenants ((true)) WHERE
+  is_default`, at least one by the constraint trigger `tenants_exactly_one_default`
+  (AFTER INSERT / UPDATE OF is_default / DELETE, `DEFERRABLE INITIALLY DEFERRED`,
+  function `tenants_assert_one_default()`, SECURITY DEFINER, `search_path` pinned,
+  no EXECUTE for PUBLIC/anon/authenticated). Swapping the default inside one
+  transaction works; leaving zero defaults fails at COMMIT.
+- **`tenants.is_platform boolean NOT NULL DEFAULT false`** — marks the future
+  platform tenant (never joinable). `CHECK tenants_default_not_platform (NOT
+  (is_default AND is_platform))`. No row has it yet.
+- **Signup triggers** `handle_new_user()` / `provision_platform_user()`: the
+  `tenant_slug` from signup metadata is honoured only for a tenant with
+  `open_signup AND is_active AND NOT is_platform` (the `switch_to_tenant_by_slug`
+  rule, VTID-05043); otherwise the `is_default` tenant (was: the oldest tenant by
+  `created_at`, which maxina and alkalma share). No tenant at all → `RAISE
+  WARNING` and the signup still succeeds without a membership. Everything they
+  write is otherwise unchanged. Migration `20261014000200_vtid_05149_signup_default_tenant.sql`
+  (md5 drift guard on both live definitions).
+- **`ci_tenant_isolation_health() RETURNS json`** (CI-only, `service_role`;
+  SECURITY DEFINER, STABLE): for every public base table with a uuid `tenant_id`
+  (except `tenants`) the rows pointing at no tenant and the NULL rows (totals +
+  top 25 tables), per-table failures in `scan_errors`; text `tenant_id` table
+  count; users with 0 / 2+ primary `user_tenants` rows; auth users without a
+  membership; `memberships` ↔ `user_tenants` drift; default / platform tenant
+  counts. Counts and table names only. MORNING-SYSTEM-HEALTH-CHECK row 21b
+  (report-only). Migration `20261014000300_vtid_05149_ci_tenant_isolation_health.sql`.
+- Gateway: `services/gateway/src/services/tenancy/tenant-context.ts` reads
+  `user_tenants` (deterministic primary) and `tenants (tenant_id, slug,
+  is_default, is_platform)` (60 s cache).
+
+### supabase_migrations.schema_migrations — audit trail, not the authority (VTID-05123)
+
+Since VTID-05123, RUN-MIGRATION writes one row per applied repo file under `supabase/migrations/` (`idempotency_key` = filename, `version`/`name` = its digit prefix and rest, `created_by` = `github-actions:RUN-MIGRATION:<run_id>`) in the same request as the migration; older rows carry MCP/dashboard apply-time versions and most repo files have no row, so "no row" never means "not applied" — MIGRATION-DRIFT-CHECK (VTID-03486) is the authority.
+
 ---
 
 ## ⚠️ DEPRECATED / DO NOT USE
@@ -1458,10 +1525,15 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-10-13 | VTID-05147 (Track S / S-M), **committed, NOT applied** (migration `20261013233000_vtid_05147_s_m_membership_role_lockdown.sql`, access + one function body; applied via `RUN-MIGRATION.yml` after the read-only `docs/validation/VTID-05147/pre-apply-checks.sql`): members can no longer write their own role or membership. Dropped policies `user_tenants_update_own` (no WITH CHECK — a member could set own `active_role='admin'` or move `tenant_id`), `rp_upsert_self`/`rp_update_self`/`rp_delete_self` and `user_active_roles_insert`/`_update` (role value was free); `INSERT/UPDATE/DELETE/TRUNCATE/TRIGGER/REFERENCES` revoked from `anon`/`authenticated` on `user_tenants`, `role_preferences`, `user_active_roles`, `user_permitted_roles` (reads and SELECT policies stay); `TRUNCATE/TRIGGER/REFERENCES` revoked on `memberships`, `app_users`. `set_role_preference()` now raises `Not authenticated` without a user and `Not a member of this tenant` (42501) for a tenant the caller has no `user_tenants` row in (exafy admins excepted; `'community'` still always allowed in an own tenant); EXECUTE for `authenticated`, `service_role` only (`PUBLIC`/`anon` revoked). The definer writers (`set_role_preference`, `me_set_active_role`, `switch_to_tenant_by_slug`, `provision_platform_user`, `handle_new_user`) are the only write paths left besides the service role. Self-check rolls the file back unless that end state holds. Rollback (re-opens the hole, owner approval): `docs/validation/VTID-05147/rollback-s-m.sql`. CI guard against reopening: `services/gateway/test/vtid-05147-s-m-membership-role-lockdown.test.ts`. | Claude Code | VTID-05147 |
+| 2026-10-13 | VTID-05137, **committed; applied via `RUN-MIGRATION.yml` before merge** (migration `20261013180000_vtid_05137_chat_push_coalescing.sql`, additive, idempotent): `user_notifications_push_outcome_check` re-created with `coalesced` added (chat push held back because the recipient was already pushed for that conversation in the last 5 minutes and has not read it; the row is still written with `push_sent_at` set and `data.push_coalesced='true'`). New partial index `idx_user_notifications_chat_conv (user_id, (data->>'conversation_key'), created_at DESC) WHERE type IN ('new_chat_message','chat_mention')` for the coalescer's one read per message. Every chat notification row now carries `data.conversation_key` (`dm:<sender>` / `group:<group>`) and `data.tag`. Written/read by `services/chat-push-coalescer.ts` + `notifyUser(..., { suppressPush: 'coalesced' })`; off switch `CHAT_PUSH_COALESCING_ENABLED=false`. Rollback `docs/validation/VTID-05137/rollback.sql`. | Claude Code | VTID-05137 |
+| 2026-10-12 | VTID-05125, **committed, NOT applied** (migration `20261013090000_vtid_05125_memory_functions_revoke_migrate.sql`, access only; applied via `RUN-MIGRATION.yml` after a read-only before-state check): the `migrate` role (AWS DMS source role for the Aurora migration) loses EXECUTE on `write_fact`, `get_current_facts`, `recall_at_time_range` and `memory_facts_semantic_search` — VTID-05041 had revoked `PUBLIC`/`anon`/`authenticated` only, and the live ACL still carried `migrate=X/postgres`. DMS never calls application RPCs. The migration refuses to apply unless `migrate` (when present) cannot execute any of the four, `service_role` still can, members still cannot, and exactly 4 overloads exist. Rollback: `docs/validation/VTID-05125/rollback.sql`. `migrate`'s EXECUTE on other service-only DEFINER functions (FU9a) and its table SELECT / `postgres` default ACL (FU9b) are separate follow-ups. | Claude Code | VTID-05125 |
+| 2026-10-10 | VTID-05041, **committed, NOT applied** (migration `20261010164100_vtid_05041_definer_functions_lockdown.sql`, access + one return shape; applied via `RUN-MIGRATION.yml` after `20261008170000_vtid_04981_consume_credits_lockdown.sql`, which it requires): `write_fact`, `get_current_facts`, `recall_at_time_range` and `memory_facts_semantic_search` (every overload) are EXECUTE for `service_role` only — `PUBLIC`/`anon`/`authenticated` revoked (they take `p_user_id`, never check `auth.uid()`, and any member could read/overwrite any member's facts). `get_user_profile_by_identifier(text)` no longer returns `email` (DROP + CREATE, body otherwise unchanged; EXECUTE for `anon`, `authenticated`, `service_role`, not `PUBLIC`). The migration refuses to apply unless that end state holds and `fn_consume_credits` is closed. Rollback (never re-exposes email): `docs/validation/VTID-05041/rollback.sql`. New SECURITY DEFINER functions in later migrations must revoke `PUBLIC` and `anon` in the same file or carry `-- definer-public: <reason>` (CI guard in `services/gateway/test/vtid-05041-definer-lockdown.test.ts`). | Claude Code | VTID-05041 |
 | 2026-10-10 | VTID-05029, **committed; applied via `RUN-MIGRATION.yml` before merge** (migration `20261010130000_vtid_05029_email_fallback.sql`, additive, idempotent): nullable `user_notifications.email_fallback_sent_at timestamptz` (row included in a fallback digest email Resend accepted; NULL = not emailed) and `user_notification_preferences.email_fallback_enabled boolean NOT NULL DEFAULT true` (member opt-out; `push_enabled=false` also suppresses). Partial indexes `idx_user_notifications_email_fallback_pending (created_at) WHERE email_fallback_sent_at IS NULL AND read_at IS NULL AND push_outcome IN ('no_device','fcm_error')` and `idx_user_notifications_email_fallback_sent (user_id, email_fallback_sent_at DESC) WHERE email_fallback_sent_at IS NOT NULL`. Written/read by `services/email/notification-email-fallback.ts` (inert until `EMAIL_FALLBACK_ENABLED=true` + Resend configured; never on staging). | Claude Code | VTID-05029 |
 | 2026-10-10 | VTID-05027, **committed; applied via `RUN-MIGRATION.yml` before merge** (migration `20261010120000_vtid_05027_push_reach_active.sql`, additive, read-only function): `push_reach_active(p_days int default 7)` → `(active, eligible, reached bigint)`. `active` = members who read a notification, opened the app (`user_device_session_log`) or sent a chat message in the window; `eligible` = active members with a recorded, non-`suppressed_*` `push_outcome`; `reached` = eligible members with a `delivered_*` outcome. Excludes `notification_test_actors` and `service_bot_accounts`. SECURITY DEFINER, `search_path=public`, EXECUTE for `service_role` only. Read by `GET /api/v1/ops/health/push-dispatch` (`active_reach_7d`; `degraded` / `active_member_reach_low` when ≥10 eligible and < 90 % reached). | Claude Code | VTID-05027 |
 | 2026-10-07 | VTID-04962, **committed; applied via `RUN-MIGRATION.yml` before merge** (migration `20261007190000_vtid_04962_user_notifications_push_outcome.sql`, additive, idempotent): nullable `user_notifications.push_outcome text` with CHECK `user_notifications_push_outcome_check` (`delivered_fcm`, `delivered_appilix`, `delivered_both`, `no_device`, `fcm_error`, `suppressed_type_disabled`, `suppressed_push_disabled`, `suppressed_dnd`, `dispatch_exception`; NULL = not recorded). Written best effort by `notifyUser()` and `POST /push-dispatch` after the push attempt; `push_sent_at` stays the handled marker and is still written first. Read by `GET /api/v1/ops/health/push-dispatch` (6h outcome counts, `degraded` / `fcm_send_errors` when FCM errors exceed 50% of ≥20 FCM attempts). | Claude Code | VTID-04962 |
 | 2026-10-05 | **VTID-04892 — Vitana Onboarding Assistant, slice 1 (shadow).** New tables (RLS on, service role writes only): `onboarding_coach_state` (one row per cohort member: stage d0…d61_90/done, pilot_stage_override, next_action_key, last_touch_at, snoozed_until, ignored_streak, opted_out_at; members read their own row), `onboarding_coach_decisions` (what the coach decided or would do, unique per member + local day + mode), `onboarding_touch_ledger` (one onboarding touch per member per local day, status pending/sent/failed, one retry). New functions (service role only): `claim_onboarding_touch(uuid, uuid, date, text, text)`, `finish_onboarding_touch(bigint, text)`. `user_proactive_touches.surface` CHECK widened to the presence pacer's 11 surfaces + `onboarding_coach` (NOT VALID then VALIDATE) — the four newer surfaces were previously rejected and never counted. Migration `20261005130000_vtid_04892_onboarding_coach.sql`. | Claude | VTID-04892 |
+| 2026-10-10 | **VTID-05038 — welcome trigger: restore Alle Beisammen enrollment.** `fire_welcome_chat_on_membership()` re-created: account guard covers `service_bot_accounts` and `notification_test_actors` (no fan-out, no enrollment), system-group enrollment runs before the `welcome_chat_sent`/`> 1000` early returns again, and the cap is `chat_groups.metadata->>'cap'` again (NULL = uncapped) — 20260917084341_vtid_03990 had reverted all of it. One-time backfill of missing primary members into uncapped system groups only (both allowlists excluded). Migration `20261010160000_vtid_05038_welcome_trigger_enrollment_restore.sql`. No table or column change. | Claude | VTID-05038 |
 | 2026-10-06 | VTID-04909, **applied 2026-10-06 10:40 UTC** via `RUN-MIGRATION.yml` run 37451365925 (VTID-04911; pre-check 0 versions / 0 acceptances; owner-approved; migration `20261006120000_vtid_04909_partner_terms_german_binding.sql`): partner terms become **German-binding**. `partner_terms_versions.binding_locale` default and CHECK `= 'de'`; `partner_terms_versions_binding_text` now requires `content.de` title + body; `publish_partner_terms_version()` hashes `sha256(UTF-8(content.de.title \|\| E'\\n' \|\| content.de.body_md))` (same construction, German substituted) and refuses without an English title + body (`PARTNER_TERMS_ENGLISH_MISSING`); new CHECK `partner_terms_acceptances_shown_locale_supported` (`de, en, es, sr, fr, pt-BR, ru, pl, ar, zh-CN, tr`); comments updated. The migration **refuses to run unless both tables hold 0 rows** (verified read-only 0/0 on 2026-10-06) and changes nothing when it refuses. Tested on a throwaway Postgres incl. the refusal (`scripts/ci/sql-tests/run-partner-terms-test.sh`, CI `SQL-PARTNER-TERMS`). Until applied, gateway draft writes (`binding_locale 'de'`) are refused by the old CHECK — no terms can be created meanwhile. | Claude Code | VTID-04909 |
 | 2026-10-04 | VTID-04868 hardening, **committed, NOT applied** (migration `20261004120000_vtid_04868_plan_sparring_hardening.sql`, review findings on PR #3899): `allocate_global_vtid` 4-arg dropped → 5-arg `(p_source, p_layer, p_module, p_sparring_id uuid DEFAULT NULL, p_plan_hash text DEFAULT NULL)` with the bounded 1000-step collision-skipping loop restored (service_role only); `_plan_sparring_gate_eval` binds a sparring id only when `metadata.plan_hash` = the session's `final_plan_hash` (`plan_hash_missing` / `plan_hash_mismatch` → `invalid`; log mode still never raises); `plan_sparring_append_round(uuid, jsonb)` dropped → `(uuid, jsonb, int p_expected_round)` raising SQLSTATE `PS409` on a stale/duplicate append or a non-`in_progress` session (service_role only). No table or config change. Rollback `docs/validation/VTID-04868/rollback.sql` reverses both VTID-04868 migrations. Tested twice + rollback on a throwaway Postgres (`scripts/ci/test-vtid-04868-plan-sparring.sh`). | Claude Code | VTID-04868 |
 | 2026-10-04 | VTID-04868, **applied live 2026-10-04 08:26 UTC (RUN-MIGRATION run 37188907901)** (migration `20261004110000_vtid_04868_plan_sparring_gate.sql`, Plan Sparring Gate P1, LOG MODE): tables `plan_sparring_sessions`, `plan_sparring_config` (row mode='log'), `plan_sparring_shadow_log` (RLS on, no anon/authenticated access); role `vitana_governance_owner` (NOLOGIN); `allocate_global_vtid` 3-arg dropped → 4-arg with `p_sparring_id uuid DEFAULT NULL` (service_role only); `submit_plan_sparring_record()`, `plan_sparring_append_round()`; BEFORE INSERT trigger `trg_plan_sparring_check` on `vtid_ledger` (log mode never raises); partial unique index `vtid_ledger_sparring_id_unique`. Rollback `docs/validation/VTID-04868/rollback.sql`. Tested twice + rollback on a throwaway Postgres (`scripts/ci/test-vtid-04868-plan-sparring.sh`). See the section above. | Claude Code | VTID-04868 |
@@ -1512,6 +1584,8 @@ CREATE TABLE my_new_table (
 | 2026-01-03 | Added risk_mitigations table for D49 Proactive Health & Lifestyle Risk Mitigation Layer | Claude | VTID-01143 |
 | 2026-09-28 | Five feature data layers that were documented/declared but never existed live, now APPLIED: autopilot_prompts + autopilot_prompt_prefs, risk_mitigations, overload_*, taste_*/user_*_profiles, preference modeling (explicit table renamed user_explicit_preferences; public.user_preferences is the settings table). New `caller_tenant_id()`. See the section at the end of this file. | Claude | VTID-04716 / 04717 / 04718 / 04719 / 04720 |
 | 2026-04-19 | Added ai_provider_policies, ai_assistant_credentials, ai_consent_log + extended connector_registry.category to include 'ai_assistant' | Claude | VTID-02403 |
+| 2026-10-13 | Seeded `routines` row `learn-outcomes` (`0 12 * * *`) for the gateway routine runner (migration 20261013210000, additive, ON CONFLICT DO NOTHING). Two documented jsonb keys, no column change: `self_healing_log.diagnosis.tests_added` (`string[]`, test files the fix PR changed; absent on rows before VTID-05148 = unknown) and `routine_runs.findings` for `learn-outcomes` (`metrics` {`window_days`, `repeat_failure` {fixes, repeated, rate, follow_up_days, by_class[], truncated}, `pattern_reuse` {state measured\|not_measured, …}, `escaped_bugs_to_tests` {with_tests, without_tests, unknown, share}}, `tests_added_step`, `graduation_step`, `high_repeat_classes`). | Claude | VTID-05148 |
+| 2026-10-13 | Seeded `routines` rows `llm-spend-budget` (`50 23 * * *`) and `llm-fallback-watch` (`15 7 * * *`) for the gateway routine runner (migration 20261013190000, additive, ON CONFLICT DO NOTHING). No schema change. | Claude | VTID-05141 |
 | 2026-04-27 | Added routines + routine_runs tables for daily Claude Code remote-agent catalog and run history | Claude | VTID-01981 |
 | 2026-04-28 | Added `pillar` + `contribution_vector` columns to `calendar_events` for typed Vitana Index linkage (replaces `pillar:*` wellness_tag heuristic on the frontend) | Claude | claude/vitana-index-navigation-VdSEQ |
 | 2026-09-23 | Triggers `trg_event_participation_calendar` (global_event_participants → calendar_events) + `trg_calendar_dedupe_event_rsvp`, so community event sign-ups reach the calendar on every path. No table/column change. | Claude | VTID-04321 |
@@ -1521,6 +1595,8 @@ CREATE TABLE my_new_table (
 | 2026-09-23 | New tables `calendar_google_sync`, `calendar_google_links`, `calendar_external_busy` for Google Calendar two-way sync (switched off). No tokens stored — they stay in `social_connections`. RLS on, no policies, no browser grants. | Claude | VTID-04372 |
 | 2026-09-24 | New tables `calendar_push_targets`, `calendar_push_links`: Outlook and iCloud calendar push into a member-owned "Vitanaland" calendar. RLS on, no policies, no browser grants. | Claude | VTID-04436 |
 | 2026-09-24 | `connected_app_settings.app_id` CHECK gains `outlook-contacts` (Outlook contacts import; rows land in `contacts` with `source='microsoft'`). | Claude | VTID-04449 |
+| 2026-10-12 | New tables `phone_verification_challenges`, `phone_verification_sends` (service role only); functions `phone_verification_begin` / `phone_verification_confirm`; trigger `on_phone_a_withdrawn` + `unmatch_phone_contacts()` on `profiles` (member phone verification by SMS code). | Claude | VTID-05095 |
+| 2026-10-10 | `contacts.contact_phone_e164`; `profiles.phone_e164`, `phone_verified`, `discoverable_by_phone`; trigger `on_auth_user_phone_verification` on `auth.users`; `match_existing_contacts()` / `check_phone_on_platform()` match only verified, discoverable members (contacts phone matching). | Claude | VTID-05057 |
 | 2026-10-06 | Triggers on `global_community_events` → `calendar_events`: the host gets an entry on create, edits to time/place/title move every live entry for the event, delete cancels them; future hosts backfilled. No table/column change. | Claude | VTID-04915 |
 | 2026-05-12 | Added `cover_url`, `cover_generated_at`, `cover_source` to `user_intents` for the Find-a-Match cover-photo flow (user upload OR server-side OpenAI Images generation OR curated fallback). Idx on `(requester_user_id, cover_generated_at)` for per-user rate-limit. | Claude | BOOTSTRAP-INTENT-COVER-GEN |
 | 2026-05-20 | Added `decision_policy` + `policy_render_block` (Phase B.1 of decision-contract refactor). Versioned, tenant-aware, time-bounded externalized policy values + localized render fragments. Schema only — no consumer reads yet (lands in Phase B.4). | Claude | VTID-03113 |
@@ -1556,6 +1632,9 @@ CREATE TABLE my_new_table (
 | 2026-10-08 | `calendar_events.valid_source_type` CHECK now also allows `'reminder'`. Triggers `trg_reminder_insert_calendar`, `trg_reminder_update_calendar`, `trg_reminder_delete_calendar` (reminders → calendar_events): a one-shot member reminder (`created_via` voice/ui, `calendar_event_id` NULL, `recurrence_rule` NULL — enforced in each trigger's WHEN) gets a calendar row (`source_type='reminder'`, `reminder_offsets='{}'`); snooze moves it, completed marks `completion_status`, cancelled/failed/deleted cancels it. One-time backfill of pending future reminders. Migration `20261008150000_vtid_04978_reminders_in_calendar.sql`. | Claude | VTID-04978 |
 | 2026-10-09 | `calendar_events.valid_source_type` CHECK now also allows `'subscription'`. Triggers `trg_subscription_insert_calendar`, `trg_subscription_update_calendar`, `trg_subscription_delete_calendar` (user_subscriptions → calendar_events): one entry at `current_period_end` (metadata.kind `renews` for a Stripe subscription that will renew, `ends` for grants and cancel-at-period-end) and one `trial_ends` entry while trialing; moved/cancelled with status/date changes; `reminder_offsets='{}'` (no reminders). The trigger function catches every error so it can never block a billing write. One-time backfill. Migration `20261009090000_vtid_04994_subscription_dates_in_calendar.sql`. | Claude | VTID-04994 |
 | 2026-10-10 | `calendar_events.valid_source_type` CHECK now also allows `'test_result'`. Triggers `trg_test_result_insert_calendar`, `trg_test_result_update_calendar`, `trg_test_result_delete_calendar` (partner_health_test_orders → calendar_events): one entry per order at `expected_result_at` (15-minute span, `event_type='health'`, `metadata.kind='test_result_expected'`, title = test name only) while the order is ordered / sample_kit_shipped / sample_received / processing and the date is in the future; moved when the date changes, cancelled on result_ready / delivered / cancelled / failed / quarantined, a cleared or past date, or delete; `reminder_offsets='{}'`. The trigger function catches every error so it can never block an order write. One-time backfill. Migration `20261010100000_vtid_04997_test_results_in_calendar.sql`. | Claude | VTID-04997 |
+| 2026-10-10 | `ci_welcome_greeting_health()` (CI-only, `service_role`): `signups_24h` and `unflagged_24h` now exclude `service_bot_accounts` and `notification_test_actors`, the accounts the welcome trigger never greets; return keys, `SECURITY DEFINER`, `search_path` and grants unchanged. Removes the false "signups but zero greetings" alarm a test-account-only 24h window raised (2026-10-08). Migration `20261010170000_vtid_05052_ci_welcome_greeting_health_exclude_test_accounts.sql`. | Claude | VTID-05052 |
+| 2026-10-12 | `ci_memory_health()` (CI-only, `service_role`): two new keys, `user_speech_turns_24h` (user turns whose summed `input_transcription` fragments exceed 20 chars, from `oasis_events`) and `transcript_turns_24h` (`memory_transcript_turns`). Every existing key, `SECURITY DEFINER`, `search_path` and grants unchanged. MORNING-SYSTEM-HEALTH-CHECK row 21 fails on zero writes only when somebody spoke. Migration `20261012160000_vtid_05088_ci_memory_health_speech_input.sql`. | Claude | VTID-05088 |
+| 2026-10-14 | `tenants.is_default` / `tenants.is_platform` (+ index `tenants_one_default`, CHECK `tenants_default_not_platform`, constraint trigger `tenants_exactly_one_default` / `tenants_assert_one_default()`); `handle_new_user()` / `provision_platform_user()` honour a signup slug only for an open, active, non-platform tenant and fall back to the `is_default` tenant instead of the oldest; new CI-only `ci_tenant_isolation_health()` (`service_role`). Committed, NOT yet applied. Migrations `20261014000100_vtid_05149_tenants_default_platform_flags.sql`, `20261014000200_vtid_05149_signup_default_tenant.sql`, `20261014000300_vtid_05149_ci_tenant_isolation_health.sql`. | Claude | VTID-05149 |
 
 ---
 
@@ -2034,7 +2113,7 @@ CREATE TABLE routine_runs (
   started_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   finished_at   TIMESTAMPTZ,
   status        TEXT NOT NULL CHECK (status IN ('running','success','failure','partial')),
-  trigger       TEXT NOT NULL DEFAULT 'cron' CHECK (trigger IN ('cron','manual')),
+  trigger       TEXT NOT NULL DEFAULT 'cron' CHECK (trigger IN ('cron','manual','gateway-runner')),
   summary       TEXT,
   findings      JSONB,
   artifacts     JSONB,
@@ -2044,7 +2123,15 @@ CREATE TABLE routine_runs (
 );
 CREATE INDEX idx_routine_runs_routine_started ON routine_runs(routine_name, started_at DESC);
 CREATE INDEX idx_routine_runs_status          ON routine_runs(status);
+-- VTID-05103: at most one gateway-runner run per routine per UTC day.
+CREATE UNIQUE INDEX uq_routine_runs_gateway_runner_day
+  ON routine_runs (routine_name, ((started_at AT TIME ZONE 'UTC')::date)) WHERE trigger = 'gateway-runner';
 ```
+
+**Gateway routine runner (VTID-05103, `20261012210000_vtid_05103_routine_runner_claim.sql`):** the nine deterministic routines run inside the gateway (`services/routine-runner`). Two functions, EXECUTE for `service_role` only:
+- `claim_routine_run(p_name text) RETURNS uuid` — inserts today's `gateway-runner` run (`status='running'`) and marks the catalog row running; returns NULL when the routine is disabled (`routines.enabled = false`) or another gateway task already claimed it today.
+- `finish_routine_run(p_id, p_status, p_summary, p_findings, p_error)` — closes the run (`finished_at`, `duration_ms`) and updates the catalog row (`last_run_*`; `consecutive_failures` reset on success, +1 on failure).
+The same migration seeds the `mobile-screen-latency-rollup` catalog row.
 
 **Auth model:** GET endpoints reuse Command Hub auth. POST/PATCH require `X-Routine-Token: $ROUTINE_INGEST_TOKEN` (shared secret env var on the gateway), so a remote sandbox routine can authenticate without a user JWT.
 
@@ -2872,6 +2959,14 @@ Both functions now write BOTH tables in the same transaction, and a one-time
 backfill aligned the existing rows. `user_active_roles` is the canonical one
 for the Command Hub; `role_preferences` stays per tenant for the member app.
 
+**VTID-05147 (`20261013233000_vtid_05147_s_m_membership_role_lockdown.sql`):
+members cannot write this table, `user_active_roles` or `user_tenants` directly any
+more** (write policies dropped, write grants revoked from `anon`/`authenticated`).
+The only member write path is `set_role_preference()` (permitted role, own tenant
+only) or `me_set_active_role()`; the gateway also treats a stored role outside
+`user_permitted_roles` ∪ active `memberships` as `community`
+(`services/gateway/src/lib/permitted-roles.ts`).
+
 Not previously documented here — the table (and `set_role_preference()`/
 `get_my_permitted_roles()`/`validate_role_assignment()`/`me_set_active_role()`)
 existed only in the live database before VTID-03832's
@@ -3319,8 +3414,10 @@ Plan and rationale: `docs/MEMORY-SYSTEM-PLAN.md`. Canonical user memory is two t
 - **`write_fact(...)`** — if the current fact for (tenant, user, entity, fact_key) has the same value (trimmed, case-insensitive) and the incoming provenance is not stronger, returns the existing id and writes nothing. Strength: `user_*` 3 > `system_observed` 2 > `assistant_inferred` 1 > other 0. A different value, or a stronger source confirming the same value, supersedes as before.
 - **Embeddings** are written by the gateway only (`services/gateway/src/services/memory-embedding.ts`): on write (`memory_items`, fire-and-forget), async after `write_fact` (facts), and by the hourly AP-0910 backfill for anything left NULL. No fallback provider — a vector from another model is never written into these columns.
 - **Search RPCs** `memory_semantic_search(vector, …)` and `memory_facts_semantic_search(vector, …)` take an untyped `vector` and compare with `<=>`; they need no change when the dimension changes.
+- **Access (VTID-05041):** `write_fact`, `get_current_facts`, `recall_at_time_range` and `memory_facts_semantic_search` are SECURITY DEFINER and take `p_user_id` without an `auth.uid()` check, so EXECUTE is `service_role` only (the gateway). Never grant them to `authenticated`/`anon`/`PUBLIC`; a member-facing path goes through the gateway. Since VTID-05125 the `migrate` (DMS) role does not hold EXECUTE either.
 - **Diary** — the broker reads both `diary_entries` (the app's Daily Diary; `user_id`, no tenant column) and `memory_diary_entries`, merged newest-first.
-- **`ci_memory_health()`** — `SECURITY DEFINER`, `service_role` only, counts only: writes/24h, `preferred_language` writes/24h, embedding coverage of rows older than 2h, `dlq_new_24h`, `memory.orchestrator.context_built` with memory / with diary, AP-0910 last run. Read by `MORNING-SYSTEM-HEALTH-CHECK.yml` check 21.
+- **`ci_memory_health()`** — `SECURITY DEFINER`, `service_role` only, counts only: writes/24h, `preferred_language` writes/24h, embedding coverage of rows older than 2h, `dlq_new_24h`, `memory.orchestrator.context_built` with memory / with diary, AP-0910 last run. Read by `MORNING-SYSTEM-HEALTH-CHECK.yml` check 21. Since VTID-05088 also `user_speech_turns_24h` and `transcript_turns_24h`, so a day nobody spoke is not read as a broken writer.
+- **`ci_welcome_greeting_health()`** — `SECURITY DEFINER`, `service_role` only (VTID-03492, VTID-05052): welcome-trigger structure (present, enabled, SECURITY DEFINER, on `user_tenants`) plus 24h `signups_24h` / `greeted_senders_24h` / `unflagged_24h`; signups exclude the welcome bot, `service_bot_accounts` and `notification_test_actors`. Read by `ALERT-WELCOME-GREETING-HEALTH.yml`, `SMOKE-WELCOME-GREETING.yml` and `MORNING-SYSTEM-HEALTH-CHECK.yml` check 9.
 - **One fact write path (VTID-04364):** every gateway fact write goes through `services/gateway/src/services/memory/remember.ts` (`rememberFact()`: Identity Lock → `write_fact` → async Titan embedding). A source-contract test fails the build if any other file calls `write_fact`.
 - **Session summaries (VTID-04365):** every session end calls `commitSessionMemory()` once. It extracts facts, and for a session with ≥ 2 user turns and ≥ 200 chars writes one `memory_items` row: `category_key = 'session_summary'`, `source = 'system'`, `importance = 50` (kept ≤ 50 so `trg_notify_memory_garden` does not notify), `content_json = { kind, session_id, channel, user_turns, summary_provider }`, written by the `memory` routing stage. `uq_memory_items_session_summary` makes it one per (user, session); a losing concurrent insert gets 23505, which is treated as already committed.
 - **Role scope (VTID-04367):** `memory_items.active_role` is NULL for personal memory (roles community / user / member / patient / none) and the role name otherwise (e.g. `developer`, `staff`, `backoffice`). Reads pass `p_active_role`; `memory_semantic_search` returns rows where `active_role IS NULL OR = p_active_role`, so personal memory is visible in every role and work-role memory only in its own role. The REST fallback uses the same filter.
@@ -3656,6 +3753,24 @@ throwaway Postgres 16 (`scripts/sql-tests/run-event-share-posts-test.sh`, CI `SQ
 `community_event_shared` is in the gateway's notification catalog (`member`, `posts`); like every new type it
 starts OFF per tenant (VTID-04674) until an admin turns it on.
 
+## Share any own calendar entry — `profile_posts.attached_snapshot`, `calendar_entry` (VTID-05126, 2026-10-12) — applied on merge
+
+Migration: `exafyltd/vitana-v1` `supabase/migrations/20261012120000_vtid_05126_profile_posts_calendar_entry_share.sql`
+(applied by that repo's `apply-vtid-05126-calendar-entry-share-migration.yml` on merge). Idempotent; tested on a
+throwaway Postgres 16 (`scripts/sql-tests/run-calendar-entry-share-test.sh`).
+
+| Object | Change |
+|---|---|
+| `profile_posts_attached_ref_type_check` | also allows `calendar_entry` (`attached_ref_id` = the author's own `calendar_events.id`). An entry that belongs to a community event / live room is still shared as that event. |
+| `profile_posts.attached_snapshot` | new `jsonb`, only for `calendar_entry` (check `profile_posts_attached_snapshot_check`: required for `calendar_entry`, null otherwise). Keys: `title` (the member may rename it for the card), `start_time`, `end_time`, `location` (only when the member chose to show it), `emoji`, `status`. Nothing else of the entry is copied. Others cannot read the author's `calendar_events` (owner-only RLS), so the feed card renders from this. |
+| `profile_posts_guard_attached_ref()` | also keeps `attached_snapshot` out of client hands: an insert carrying one raises `ATTACH_VIA_GATEWAY`; an update keeps the old one. |
+| `sync_shared_calendar_entry_snapshot()` + `trg_calendar_events_sync_shared_snapshot` | AFTER UPDATE OF `start_time, end_time, status, location` / AFTER DELETE ON `calendar_events`. Updates the snapshot of the author's `calendar_entry` posts: times and status follow the entry (delete → `cancelled`); the card title the member chose is kept; the place is updated only on a card that already shows one. |
+| `notify_community_on_public_post()` | the share branch reads the name of a `calendar_entry` from `attached_snapshot->>'title'`; same `community_event_shared` type, same 24 h per-recipient dedup on `ref_id`. Private posts notify nobody (trigger `WHEN NEW.is_public`). |
+
+Gateway: `POST /api/v1/calendar/events/:id/share-to-feed` accepts `card_title` / `include_location`;
+`POST /api/v1/calendar/feed-posts/:postId/add` copies a public `calendar_entry` post's card into the viewer's
+calendar (`source_type 'invite'`, `source_ref_type 'feed_post'`, `source_ref_id` = post id).
+
 ## Kiro write confirmations — `kiro_mcp_confirmations` (VTID-05006, 2026-10-09) — applied after merge via `RUN-MIGRATION.yml`
 
 Migration: `supabase/migrations/20261009180000_vtid_05006_kiro_mcp_confirmations.sql`. Service role only (RLS on, no policies; `anon`/`authenticated` revoked).
@@ -3727,3 +3842,181 @@ RLS on, `service_role` only.
 
 ### `auth_bridge_handle_deleted_user(p_user_id uuid, p_source text) returns jsonb`
 What `DELETE FROM auth.users` did on Supabase: the kept `before_auth_user_delete_cleanup_contacts` cleanup (phone-less inbound `contacts`), then each `auth_user_fk_map` action (CASCADE delete, SET NULL, SET DEFAULT; NO ACTION / RESTRICT rows are reported in `blocked`, not touched), with FK-ordered retries; atomic; refuses an empty map; records the result in `auth_bridge_deleted_users`. `app_users` has no FK to `auth.users`, so it stays, as before. `service_role` only.
+
+## Kiro runs — `kiro_runs`, `kiro_run_events` (VTID-05065, 2026-10-10) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261010210000_vtid_05065_kiro_runs.sql`. Service role only (RLS on, no policies; `anon`/`authenticated` revoked). Written by the gateway (`services/gateway/src/services/kiro/kiro-runs.ts`), read through `/api/v1/operator/kiro/runs` (exafy_admin, the run's own user only).
+
+`kiro_runs` — one row per Kiro turn in the Command Hub Operator:
+
+| Column | Meaning |
+|---|---|
+| `id` | uuid PK (minted by the gateway) |
+| `thread_id` | the Operator Kiro thread (`operator_threads.id`, text) |
+| `user_id` | the signed-in admin who started the run (text; only they can read, stream or cancel it) |
+| `status` | `queued` \| `running` \| `waiting_permission` → `completed` \| `refused` \| `incomplete` \| `failed` \| `cancelled` \| `interrupted`. Every status write is guarded by the unfinished statuses, so a finished run never changes again. |
+| `message` | the developer's message |
+| `reply` | Kiro's reply (when finished) |
+| `stop_reason` | Kiro's stop reason (`end_turn`, `refusal`, `max_tokens`, `cancelled`, …) |
+| `kiro_model` | the model the turn ran on |
+| `workspace` | `{ kiro_workspace, kiro_workspace_dirty }` from the turn (VTID-05064), or null |
+| `error` | why a run failed (`busy`, `not_connected`, `no_credits`, `error: …`, `gateway_shutdown`, `gateway_task_lost`) |
+| `pending_permission` | the open approval card `{ request_id, tool_call_id, title, kind, expires_at }` (null when none); an answer from another gateway task is written into it as `answer: { allow, at }` |
+| `cancel_requested_at` | set when the owner cancels a run that another gateway task is running |
+| `gateway_task` | the gateway process (random id at boot) that runs the turn |
+| `created_at` | queue order |
+| `started_at`, `ended_at`, `last_heartbeat_at` | timestamps; the owning task refreshes `last_heartbeat_at` every 30 s, and any task's sweep marks another task's unfinished run with a heartbeat older than 2 min `interrupted` |
+
+Indexes `idx_kiro_runs_thread_created (thread_id, created_at DESC)`, `idx_kiro_runs_status_heartbeat (status, last_heartbeat_at)`.
+
+`kiro_run_events` — the run's events in order:
+
+| Column | Meaning |
+|---|---|
+| `id` | bigserial PK |
+| `run_id` | `kiro_runs.id` (cascade delete) |
+| `seq` | 1, 2, 3 … per run, assigned by the owning gateway task; `UNIQUE (run_id, seq)` |
+| `type` | `kiro.message_chunk` (coalesced: one per 500 ms or 2 KB), `kiro.tool_call`, `kiro.tool_update`, `kiro.permission_request`, `kiro.permission_answer`, `kiro.turn_end`, `run.status` |
+| `payload` | the event's fields (the frame data the console receives) |
+| `created_at` | timestamp |
+
+OASIS (`CicdEventType`): `operator.kiro.run_started`, `operator.kiro.run_finished`, `operator.kiro.run_interrupted` — payload `{ run_id, thread_id, status }` only, never message text.
+
+## Operator Console images — `operator_media`, `kiro_runs.attachments`, Storage bucket `operator-media` (VTID-05067, 2026-10-11) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261011090000_vtid_05067_operator_media.sql`. Service role only (RLS on, no policies; `anon`/`authenticated` revoked). Written by the gateway (`services/gateway/src/services/operator-media.ts`) through `POST /api/v1/operator/media` (exafy_admin); read back only by the uploading admin (`GET /api/v1/operator/media/:id`, a fresh 1-hour signed URL per view — URLs are never stored).
+
+`operator_media` — one row per image pasted, dropped or picked into the Operator Console:
+
+| Column | Meaning |
+|---|---|
+| `id` | uuid PK (minted by the gateway; the `media_id` the console sends) |
+| `user_id` | the admin who uploaded it (text; the only reader) |
+| `thread_id` | the Operator thread it was uploaded for (text) |
+| `object_path` | `<user_id>/<thread_id>/<id>.<ext>` in the bucket `operator-media` (unique) |
+| `mime_type` | `image/png` \| `image/jpeg` \| `image/webp` \| `image/gif` — recognised by magic bytes, never by name |
+| `size_bytes` | 1 … 5 242 880 (5 MB) |
+| `created_at` | timestamp |
+
+Index `idx_operator_media_user_thread (user_id, thread_id, created_at DESC)`.
+
+`kiro_runs.attachments` (jsonb, nullable) — the images a Kiro run was sent with, `[{ media_id, mime_type }]`; written only when a run has images (at most 4 per message, the caller's own). The gateway reads it with a fallback to the column list without it, so runs keep listing before the migration is applied.
+
+**Storage bucket `operator-media`** — private (`public: false`), 5 MB file limit, png/jpeg/webp/gif only, no client policies (gateway service role only). Created once, idempotently, through the Storage API (`POST /storage/v1/bucket`, never an INSERT into `storage.buckets`) by `scripts/supabase/setup-operator-media-bucket.mjs` — run it from the `SETUP-OPERATOR-MEDIA-BUCKET.yml` workflow_dispatch job (`dry_run=true` first), or locally with `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE` set. An existing private bucket is left alone; an existing PUBLIC one is refused (exit 2) for a person to decide. Deleting old images (retention) is a logged follow-up, not part of VTID-05067.
+
+OASIS (`CicdEventType`): `operator.media.uploaded` — payload `{ media_id, thread_id, mime_type, size_bytes }` only, never the bytes. A Kiro run's image delivery is a run event `kiro.images` `{ count, delivery: sent | unsupported | unreadable, sent }` in `kiro_run_events`.
+### Reattach columns on `kiro_runs` (VTID-05068, 2026-10-10) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261010220000_vtid_05068_kiro_run_reattach.sql` (additive, nullable). A running run whose gateway task goes away (deploy, crash) is taken over by another task through the kiro-runner's reattach (`/sessions/reattach`, header `X-Kiro-Reattach-Token`); only if the runner refuses is it marked `interrupted` as before.
+
+| Column | Meaning |
+|---|---|
+| `reattach_nonce` | random per Kiro session; the token is `HMAC-SHA256(HKDF(GATEWAY_INTERNAL_TOKEN), 'kiro-reattach:' + nonce)` and is **never stored** |
+| `reattach_token_hash` | hex sha256 of that token (checked before the token is presented; the runner keeps only the hash too) |
+| `reattach_expires_at` | end of the reattach window once the owning task let the session go on graceful shutdown (null while it runs; after a crash the window is counted from `last_heartbeat_at`) |
+| `turn_context` | how the turn was asked (`mode`, `channel`, `requestId`, `conversation_id`, `validatedVtid`, `attachments`), so the task that finishes it records the turn the same way |
+
+OASIS: `operator.kiro.run_reattached` — payload `{ run_id, thread_id, status }` only.
+
+## Plan authorship on `dev_autopilot_plan_versions` (VTID-05077, 2026-10-12) — applied before merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261012110000_vtid_05077_plan_version_planner_model.sql` (additive, nullable). Every Dev Autopilot plan version records which provider/model actually wrote it, so a planner fallback (DeepSeek → Bedrock Opus 4.6) is visible per plan.
+
+| Column | Meaning |
+|---|---|
+| `planner_provider` | provider that wrote the plan (`deepseek`, `bedrock` on fallback, `claude_subscription` on the worker-queue path); NULL before 2026-10-12 |
+| `planner_model` | model id that wrote the plan; NULL before 2026-10-12 |
+
+OASIS (`CicdEventType`): `dev_autopilot.plan.fallback_used` — payload `{ finding_id, version, planner_provider, planner_model }`. `GET /api/v1/dev-autopilot/spend` returns `planner: { plans_24h, fallback_24h, fallback_rate_24h }` from these columns.
+
+## Dev Autopilot overlap hold and frozen scope (VTID-05146, 2026-10-13) — applied before merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261013150000_vtid_05146_autopilot_overlap_hold.sql` (constraint/index widening + two additive columns). Phase C of the Dev Autopilot autonomy plan (`docs/validation/VTID-05146/plan-sparring.md`): the autopilot never runs or merges over an open pull request that changes the same files.
+
+| Change | Meaning |
+|---|---|
+| `dev_autopilot_executions.status` CHECK gains `held_overlap` | the plan (before the claim) or the PR (before the auto-merge) shares a file with another open PR, or the PR touches `frozen_scope`; re-checked every CI-watcher tick, released when the blocking PRs merge or close |
+| `dev_autopilot_executions_finding_inflight_uniq` covers `held_overlap` | a held execution is still in flight — no second one for the same finding |
+| `dev_autopilot_config.frozen_scope` jsonb NOT NULL DEFAULT `[]` | temporary never-touch globs while people work an area: a plan touching one is never approved, an autopilot PR touching one is never merged (held). Writable through `POST /api/v1/dev-autopilot/config/update` (developer role). Initial value: `["services/gateway/src/frontend/command-hub/**"]` (app.js split, VTID-05072/05073) |
+| `dev_autopilot_config.overlap_hold_max_hours` integer NOT NULL DEFAULT 72, CHECK 1..720 | a held execution older than this ends as `failed` with `metadata.failure_reason = 'overlap_hold_timeout'`; its PR is closed with a comment; never merged |
+
+`dev_autopilot_executions.metadata` keys (no DDL): `overlap_hold = { from: 'cooling'|'ci', held_at, checked_at, blocking_prs: [{ pr, branch, files }], frozen_files }` while held; `overlap_released = { at, by, held_since }` after a release; `overlap_hold_timeout = { at, max_hours, blocking_prs }`; `llm_review_unavailable` when the pre-merge review could not run twice (fail-closed).
+
+OASIS (`CicdEventType`): `dev_autopilot.execution.held_overlap`, `dev_autopilot.execution.overlap_released`, `dev_autopilot.execution.overlap_hold_timeout`, `dev_autopilot.execution.llm_review_unavailable`. Route: `POST /api/v1/dev-autopilot/executions/:id/release-hold` (developer role) re-runs the check and releases only when nothing blocks.
+
+## Vitana Companion Messages — `companion_messages_ledger`, `companion_preferences` (VTID-05099, 2026-10-12) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261012200000_vtid_05099_companion_messages.sql` (additive). Vitana writes at most one proactive message per member per local day into the member's Vitana DM, each carrying one Unified Card System card (VTID-05085). Phase 1 is shadow only: decisions are recorded, nothing is sent. Plan: `docs/validation/VTID-05099/plan-sparring.md`.
+
+### companion_preferences (one row per member; no row = defaults)
+
+| Column | Meaning |
+|---|---|
+| `user_id` | PK, `auth.users(id)` |
+| `tenant_id` | member's tenant (nullable) |
+| `enabled` | companion messages on (default `true`) |
+| `topic_health` / `topic_community` | default `true` |
+| `topic_business` | default `false` — business / income messages are opt-in (owner decision) |
+| `delivery_window` | `'morning'` (only value today) |
+
+RLS: members select / insert / update their own row; no client delete.
+
+### companion_messages_ledger (service role only)
+
+| Column | Meaning |
+|---|---|
+| `user_id`, `tenant_id`, `local_date` | member and their local calendar day |
+| `mode` | `shadow` \| `staff` \| `live` |
+| `sender` | `companion` \| `proactive_match` (VTID-01270 claims the same slot) |
+| `moment_key`, `card_type` | the moment and its Vitana card id (`F2` Vitana Index, `F4` Talk to Vitana, `F5` Find a Match, …) |
+| `status` | `pending` → `sent` \| `failed` \| `shadow` |
+| `facts` | the only facts the message may use |
+| `composed_text`, `composed_by_model` | Vitana's note (shadow: a capped sample only) |
+| `chat_message_id` | the DM row once sent |
+| `replied_at` | set when the member replies or taps the card (back-off) |
+
+Uniqueness: `(user_id, local_date, mode)`, plus partial unique index `uq_companion_ledger_one_real_per_day (user_id, local_date) WHERE mode <> 'shadow'` — at most one real proactive Vitana DM per member per local day, whoever sends it.
+
+Functions (SECURITY DEFINER, `service_role` only): `claim_companion_message(user, tenant, local_date, mode, sender, moment_key, card_type, facts) → {ok, claimed, id|reason}`, `finish_companion_message(id, status, composed_text, model, chat_message_id)` (pending rows only), `mark_companion_replied(user)` (latest unreplied real send).
+
+Also: `user_proactive_touches.surface` CHECK gains `messenger_companion` (presence-pacer surface). OASIS (`CicdEventType`): `companion.tick.completed` — one aggregate event per tick that decided something.
+
+## "Connect your AI" — `ai_connection_grants` (VTID-05133, 2026-10-13) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261013150000_vtid_05133_ai_connection_grants.sql` (additive). What each AI assistant a member connected to Maxina (a Supabase OAuth client, e.g. ChatGPT or Claude) may use through the MCP tools. Supabase tokens are not bound to one resource, so this row is what separates the Community connector (`/mcp/community*`) from Commerce (`/mcp`, `/mcp/chatgpt`) and makes "Disconnect" in Maxina immediate. Plan: `docs/validation/VTID-05133/plan-sparring.md`.
+
+| Column | Meaning |
+|---|---|
+| `user_id` | PK part, `auth.users(id)` ON DELETE CASCADE |
+| `client_id` | PK part, Supabase `auth.oauth_clients.id` (resolved server-side from the pending authorization) |
+| `client_name`, `redirect_host`, `resource` | what the member saw on the consent screen; `resource` is the MCP URL the assistant asked for |
+| `categories` | subset of `profile`, `matches`, `people`, `activities`, `commerce` (CHECK) |
+| `revoked_at` | set when the member disconnects; every tool then refuses |
+
+RLS: members SELECT their own rows; no direct INSERT/UPDATE/DELETE for `authenticated`; `service_role` reads (gateway).
+
+Functions (SECURITY DEFINER, `authenticated`, act only as `auth.uid()`): `ai_connection_authorization_info(authorization_id) → {client_id, client_name, redirect_host, resource, product}` (pending authorizations only; `product` = `community` | `commerce` | `unknown`), `ai_connection_grant_from_authorization(authorization_id, categories)` (consent screen, before approving with Supabase; clears `revoked_at`), `ai_connection_grant_update(client_id, categories)` (active rows only), `ai_connection_grant_revoke(client_id)`.
+
+Gateway rules (`services/gateway/src/services/ai-connection-grants.ts`): Community needs an active row with the tool's category (no row → PERMISSION_NEEDED, revoked → CONNECTION_REVOKED, lookup error → 503). Commerce refuses a client whose row lacks `commerce` or is revoked; a client with no row (connected before VTID-05133) is unchanged.
+
+Read alongside (column added by `exafyltd/vitana-v1`, same VTID): `profile_privacy_settings.ai_discoverable boolean NOT NULL DEFAULT false` — a member is shown by identity to other members' AI assistants only when true (and `searchable`). OASIS (`CicdEventType`): `community.mcp.tool_called`, `community.mcp.client_refused`, `community.mcp.loopback_client_approved`.
+
+## Unified Card System — `user_enrichment_cards`, `profiles.interests` (VTID-05143, builds VTID-05085 Phase 1, 2026-10-13) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261013233000_vtid_05143_unified_card_system.sql` (additive, idempotent). Plan: `docs/validation/VTID-05085/plan-sparring.md` (§3.2, §6.2, §6.3); build record `docs/validation/VTID-05143/`. Read and written by the gateway (`services/gateway/src/routes/enrichment-cards.ts`, service_role), always for the caller's own `user_id`.
+
+### user_enrichment_cards (one row per member per dismissed enrichment card)
+
+| Column | Meaning |
+|---|---|
+| `user_id` | PK part, `auth.users(id)` ON DELETE CASCADE |
+| `card_type` | PK part, `E1`–`E11` (validated by the gateway catalog `services/enrichment/card-catalog.ts`; no CHECK so Phase 3 boost cards need no migration) |
+| `dismissed_at` | last dismissal; the card is hidden while `dismissed_at + cooldown_days > now()` |
+| `cooldown_days` | default `7` |
+| `created_at`, `updated_at` | timestamps (`updated_at` set by the gateway on dismiss) |
+
+No `completed_at`: completion is derived from the source tables (`profiles`, `profile_posts`, `social_connections` `is_active`/`disconnected_at`, `connected_app_settings` calendar apps, `contacts`, `user_device_tokens` `revoked_at IS NULL`). Index `idx_user_enrichment_cards_user (user_id)`. RLS: members select / insert / update their own rows; `service_role` all.
+
+### profiles.interests
+
+`TEXT[] DEFAULT '{}'` — the member's interests as stable slugs (`fitness`, `nutrition`, …), never display text; the app resolves labels via `screens.interests.<slug>`. Enrichment card E4 is complete when it is non-empty.

@@ -5,10 +5,11 @@
  *   POST /compute   POST /quick   POST /score   POST /override
  *   GET  /debug     GET  /config  GET  /health  GET  /tags   POST /validate
  *
- * The router itself mounts no auth middleware (mountRouterSync only tracks
- * route ownership for governance, it does not attach auth) — every endpoint
- * here is reachable unauthenticated by design, so these tests focus on
- * request validation, response shaping, and error handling rather than auth.
+ * The router mounts no router-level auth middleware (mountRouterSync only
+ * tracks route ownership for governance, it does not attach auth). Since
+ * VTID-05040 GET /debug alone is gated by requireAuth + requireExafyAdmin
+ * (mocked below; the debug cases send an admin identity). The other tests
+ * focus on request validation, response shaping, and error handling.
  */
 import request from 'supertest';
 import express from 'express';
@@ -35,6 +36,19 @@ jest.mock('../../src/services/d32-situational-awareness-engine', () => ({
 const mockEmitOasisEvent = jest.fn().mockResolvedValue(undefined);
 jest.mock('../../src/services/oasis-event-service', () => ({
   emitOasisEvent: (...args: any[]) => mockEmitOasisEvent(...args),
+}));
+
+let mockIdentity: { user_id: string; exafy_admin: boolean } | null = { user_id: 'admin-1', exafy_admin: true };
+jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
+  requireAuth: (req: any, res: any, next: any) => {
+    if (!mockIdentity) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+    req.identity = mockIdentity;
+    next();
+  },
+  requireExafyAdmin: (req: any, res: any, next: any) => {
+    if (!req.identity?.exafy_admin) return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+    next();
+  },
 }));
 
 import router from '../../src/routes/situational-awareness';
@@ -379,6 +393,17 @@ describe('Situational Awareness Routes (D32)', () => {
   // --- GET /debug ---
 
   describe('GET /api/v1/situational/debug', () => {
+    afterEach(() => { mockIdentity = { user_id: 'admin-1', exafy_admin: true }; });
+
+    it('rejects an anonymous caller with 401 (VTID-05040)', async () => {
+      mockIdentity = null;
+      const res = await request(app).get('/api/v1/situational/debug').query({ user_id: USER_ID });
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('UNAUTHENTICATED');
+      expect(res.body.available_users).toBeUndefined();
+    });
+
     it('returns 404 with no cached decision for an unknown user', async () => {
       const res = await request(app).get('/api/v1/situational/debug').query({ user_id: '99999999-9999-4999-8999-999999999999' });
 

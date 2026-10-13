@@ -184,6 +184,7 @@ export interface LiveSessionControllerDeps {
   resolveEffectiveRole: (
     userId: string,
     tenantId: string,
+    opts?: { exafyAdmin?: boolean },
   ) => Promise<string | null>;
   terminateExistingSessionsForUser: (
     userId: string,
@@ -1517,7 +1518,9 @@ export async function handleLiveSessionStart(
       }),
       usingDevFallback
         ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
-        : deps.resolveEffectiveRole(bootstrapIdentity.user_id, bootstrapIdentity.tenant_id || ''),
+        : deps.resolveEffectiveRole(bootstrapIdentity.user_id, bootstrapIdentity.tenant_id || '', {
+            exafyAdmin: bootstrapIdentity.exafy_admin === true,
+          }),
       startReads.getOnce(
         `lastSessionInfo:${bootstrapIdentity.user_id}:${clientContext?.timezone ?? ''}`,
         () => deps.fetchLastSessionInfo(bootstrapIdentity.user_id, clientContext?.timezone),

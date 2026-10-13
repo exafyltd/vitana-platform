@@ -1,0 +1,19 @@
+    ✓ rejects an anonymous caller with 401 JSON and never builds the context (167 ms)
+    ✓ rejects a member with 403 and never builds the context (78 ms)
+    ✓ serves an exafy_admin (118 ms)
+    ✓ rejects an anonymous caller with 401 JSON (48 ms)
+    ✓ rejects a member with 403 (65 ms)
+    ✓ is disabled for an exafy_admin and never calls Google Cloud TTS (27 ms)
+    ✓ rejects an anonymous caller with 401 (35 ms)
+    ✓ rejects a member asking for another tenant with FORBIDDEN_TENANT_SCOPE (26 ms)
+    ✓ serves a member in their own tenant (28 ms)
+    ✓ lets an exafy_admin render another tenant (4 ms)
+    ✓ GET /debug/memory is 404 off the sandbox (4 ms)
+    ✓ GET /debug/intent is 404 off the sandbox (25 ms)
+    ✓ finds the known debug routes (1 ms)
+    ✓ every debug route is gated or allowlisted with a reason (1 ms)
+    ✓ the gated routes named by VTID-05040 are not on the allowlist (1 ms)
+    ✓ router-level gates are really applied
+    ✓ every allowlist entry still exists (no stale exemptions) (5 ms)
+Test Suites: 1 passed, 1 total
+Tests:       17 passed, 17 total

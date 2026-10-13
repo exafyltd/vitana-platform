@@ -13,11 +13,12 @@
  * renderDevAutopilotStepsView" into one lookup instead of a multi-turn
  * search-and-scroll.
  *
- * Sources (every *.js file directly under command-hub/, the whole surface
- * this task named, not just app.js):
- *   app.js, orb-widget.js, command-hub-staging.js, intelligence-panels.js,
- *   orb-voice-bench.js, watcher.js, intent-engine.js, intelligence-cockpit-nav.js,
- *   intent-moderation.js, voice-budget.js, navigation-config.js
+ * Sources: VTID-05072 (Phase 0) made modules.json the single source of truth.
+ * The file list is now the manifest's `bundle` files plus its `indexed_only`
+ * list, read at run time — so the index tracks index.html's load order and
+ * also keeps the files index.html does not load. This replaces the old
+ * hard-coded SOURCE_FILES and adds pipeline-tree.js and kiro-console.js. The
+ * scanner logic below is unchanged.
  *
  * Finds `[async ]function name(...)` declarations AT ANY NESTING DEPTH — not
  * just top level. A first version of this scanner jumped straight past a
@@ -44,19 +45,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const GATEWAY_ROOT = path.resolve(__dirname, '..');
 const COMMAND_HUB_DIR = path.join(GATEWAY_ROOT, 'src/frontend/command-hub');
 const OUTPUT_PATH = path.join(GATEWAY_ROOT, 'specs/command-hub-symbol-index.json');
+const MANIFEST_PATH = path.join(COMMAND_HUB_DIR, 'modules.json');
 
+// VTID-05072: the file list is the manifest's bundle files (in load order)
+// followed by its indexed_only list. modules.json is the single source of truth.
+const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8'));
 const SOURCE_FILES = [
-  'app.js',
-  'orb-widget.js',
-  'command-hub-staging.js',
-  'intelligence-panels.js',
-  'orb-voice-bench.js',
-  'watcher.js',
-  'intent-engine.js',
-  'intelligence-cockpit-nav.js',
-  'intent-moderation.js',
-  'voice-budget.js',
-  'navigation-config.js',
+  ...manifest.bundle.map((entry) => entry.file),
+  ...manifest.indexed_only,
 ];
 
 const CHECK_MODE = process.argv.includes('--check');

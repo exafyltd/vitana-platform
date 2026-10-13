@@ -3,7 +3,9 @@
  *
  * Allows access if the caller is:
  *   (a) exafy_admin (super-admin, all tenants), OR
- *   (b) has active_role = 'admin' in the route's target tenant
+ *   (b) has active_role = 'admin' in the route's target tenant AND 'admin' is
+ *       in their permitted roles there (VTID-05147: user_permitted_roles or an
+ *       active memberships admin — active_role alone was member-writable)
  *
  * Expects the route to have :tenantId in the path (e.g. /api/v1/admin/tenants/:tenantId/...).
  * Rejects if:
@@ -33,16 +35,22 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.
  * Lookup the caller's active_role for a given tenant from user_tenants.
  * Returns the role string or null if not found.
  */
-async function getCallerRole(userId: string, tenantId: string): Promise<string | null> {
+async function getCallerRole(userId: string, tenantId: string): Promise<{ role: string | null; permitted: string[] | null }> {
   if (!supabaseUrl || !supabaseServiceKey) {
     console.error('[require-tenant-admin] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
-    return null;
+    return { role: null, permitted: null };
   }
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
-  const { data, error } = await repo.fetchCallerActiveRoleForTenant(supabase, userId, tenantId);
+  // VTID-05147: the permitted set is read in parallel; a read error fails closed.
+  const [{ data, error }, permitted] = await Promise.all([
+    repo.fetchCallerActiveRoleForTenant(supabase, userId, tenantId),
+    repo.fetchCallerPermittedRoles(supabase, userId, tenantId),
+  ]);
+  if (permitted.error) {
+    console.warn(`[require-tenant-admin] permitted-role read failed for user ${userId}: ${permitted.error}`);
+  }
 
-  if (error || !data) return null;
-  return data.active_role;
+  return { role: error || !data ? null : data.active_role, permitted: permitted.roles };
 }
 
 /**
@@ -117,7 +125,7 @@ export async function requireTenantAdmin(
   }
 
   // Step 5: Caller must have active_role = 'admin' in their tenant
-  const callerRole = await getCallerRole(req.identity.user_id, targetTenantId);
+  const { role: callerRole, permitted } = await getCallerRole(req.identity.user_id, targetTenantId);
 
   if (callerRole !== 'admin') {
     console.warn(
@@ -132,7 +140,52 @@ export async function requireTenantAdmin(
     return;
   }
 
+  // Step 6 (VTID-05147): active_role is a claim, not a grant — until the
+  // S-M migration a member could write it themself. 'admin' must also be in
+  // the caller's permitted roles (user_permitted_roles or active memberships).
+  if (!permitted || !permitted.includes('admin')) {
+    console.warn(
+      `[require-tenant-admin] admin_not_permitted: user ${req.identity.user_id} ` +
+      `has active_role 'admin' without a permitted admin role in tenant ${targetTenantId}`
+    );
+    res.status(403).json({
+      ok: false,
+      error: 'FORBIDDEN',
+      message: 'This action requires the admin role within your tenant.',
+    });
+    return;
+  }
+
   // Attach the resolved target tenant for downstream handlers
   (req as any).targetTenantId = targetTenantId;
   next();
+}
+
+/**
+ * VTID-05042: platform-scope guard for tenant-admin routes whose data has no
+ * tenant_id column yet (oasis_events, global_community_*, creator_profiles,
+ * media_uploads). Such a route cannot be filtered to one tenant, so it is
+ * exafy_admin-only until WS3 adds the column. Must run AFTER
+ * requireTenantAdmin (reuses the identity it attached); a tenant admin gets
+ * 403 PLATFORM_SCOPE_ONLY and the handler — and therefore every query — is
+ * never reached.
+ */
+export function requirePlatformScope(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): void {
+  if (req.identity?.exafy_admin === true) {
+    next();
+    return;
+  }
+  console.warn(
+    `[require-tenant-admin] Platform scope required: user ${req.identity?.user_id ?? 'unknown'} ` +
+    `(tenant ${req.identity?.tenant_id ?? 'none'}) on ${req.method} ${req.originalUrl}`
+  );
+  res.status(403).json({
+    ok: false,
+    error: 'PLATFORM_SCOPE_ONLY',
+    message: 'This data is not tenant-scoped yet and is available to platform administrators only.',
+  });
 }

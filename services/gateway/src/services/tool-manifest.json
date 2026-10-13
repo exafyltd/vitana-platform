@@ -1906,7 +1906,7 @@
       "status": "live",
       "vtid": "VTID-02830",
       "added_in_pr": 1883,
-      "description": "Flagship deep search — fuses pillar deficits, Life Compass goal, and multi-criteria filters into top-3 product picks with rationale.",
+      "description": "Flagship deep search — fuses the Life Compass goal, a pillar only when the member names one, and multi-criteria filters into top-3 product picks with rationale. Never reads the Vitana Index (VTID-05089).",
       "wired_in": [
         "livekit",
         "vertex"

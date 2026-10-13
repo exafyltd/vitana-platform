@@ -16,11 +16,13 @@ import { ingestScan, ScanInput } from '../services/dev-autopilot-synthesis';
 import { generatePlanVersion } from '../services/dev-autopilot-planning';
 import { approveAutoExecute, cancelExecution } from '../services/dev-autopilot-execute';
 import { approveExecution, rejectExecution, getPendingApproval } from '../services/dev-autopilot-approval';
+import { releaseHeldExecution } from '../services/dev-autopilot-watcher';
 import { bridgeFailureToSelfHealing, FailureStage } from '../services/dev-autopilot-bridge';
 import { writeAutopilotFailure } from '../services/dev-autopilot-self-heal-log';
 import { dryRunPreflight, RiskClass } from '../services/dev-autopilot-safety';
 import { emitOasisEvent } from '../services/oasis-event-service';
-import { recordOutcome, summarizeSpendToday } from '../services/dev-autopilot-outcomes';
+import { recordOutcome, summarizeSpendToday, summarizePlannerFallback } from '../services/dev-autopilot-outcomes';
+import { devPlannerModel } from '../services/dev-pipeline-models';
 import { validateConfigUpdate } from '../services/dev-autopilot-config-update';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { buildSupervisorSnapshot } from '../services/dev-autopilot-supervisor';
@@ -1093,6 +1095,20 @@ function approvalActor(req: Request): string {
   return identity?.email || identity?.user_id || 'gateway-internal';
 }
 
+// VTID-05146 (C1): "release" a held_overlap execution. Runs the overlap check
+// now and releases only when nothing blocks any more — it never skips the
+// check. 200 with { state: 'released' | 'still_held' | 'timed_out' | 'error' },
+// 404 when the row is not held.
+router.post('/executions/:id/release-hold', requireDevRole, async (req: Request, res: Response) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ ok: false, error: 'invalid execution id' });
+  // impact-allow-no-oasis: releaseHeldExecution emits the OASIS event for every
+  // state change it makes (overlap_released / overlap_hold_timeout); a check
+  // that finds the PR still blocked changes no state.
+  const r = await releaseHeldExecution(req.params.id, `release:${approvalActor(req)}`);
+  if (r.state === 'not_held') return res.status(404).json({ ok: false, error: 'execution is not held', ...r });
+  return res.json({ ok: r.state !== 'error', ...r });
+});
+
 router.get('/executions/:id/diff', requireDevRole, async (req: Request, res: Response) => {
   const r = await getPendingApproval(req.params.id);
   return res.status(r.ok ? 200 : 404).json(r);
@@ -1310,7 +1326,8 @@ router.get('/executions', requireDevRole, async (req: Request, res: Response) =>
   let statusClause: string;
   if (filter === 'active') {
     // VTID-04029: a row waiting for a human decision is still active work.
-    statusClause = 'status=in.(cooling,running,awaiting_approval,ci,merging,deploying,verifying)';
+    // VTID-05146: a held_overlap row is active work waiting for other PRs.
+    statusClause = 'status=in.(cooling,running,awaiting_approval,held_overlap,ci,merging,deploying,verifying)';
   } else if (filter === 'all') {
     statusClause = '';
   } else {
@@ -1452,7 +1469,15 @@ router.get('/spend', requireDevRole, async (_req: Request, res: Response) => {
   );
   if (!r.ok) return res.status(500).json({ ok: false, error: r.error });
   const summary = summarizeSpendToday(r.data || []);
-  return res.json({ ok: true, ...summary });
+  // VTID-05077 (A2): the planner's fallback rate, so a fallback is never
+  // silent. Best-effort — the spend answer never fails on it.
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const pv = await supaGet<Array<{ planner_provider: string | null }>>(
+    supa,
+    `/rest/v1/dev_autopilot_plan_versions?select=planner_provider&created_at=gte.${encodeURIComponent(since)}&limit=1000`,
+  );
+  const planner = pv.ok ? summarizePlannerFallback(pv.data || [], devPlannerModel().provider) : null;
+  return res.json({ ok: true, ...summary, planner });
 });
 
 export default router;

@@ -200,3 +200,10 @@ after the gateways.
 orb-agent, verification-engine, autopilot-executor with `data_backend=supabase`
 (pinned commits as above). The supabase references are pinned literals, so
 rollback never depends on describe-secret.
+
+**Update 2026-10-13 (merge of main):** main rewrote the six ALERT-* workflows
+(NEWDAY-BRIEFING-LOOP, OASIS-LEDGER-INTEGRITY, ORB-BOOTSTRAP-LATENCY,
+ORB-SESSION-STATE-HEALTH, PUSH-DISPATCH-HEALTH, WELCOME-GREETING-HEALTH) to call
+gateway health endpoints instead of Supabase REST, so they no longer need
+DATA_REST_URL; main's versions were taken. The switch now covers 15 references
+in 9 workflows.

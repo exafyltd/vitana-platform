@@ -131,12 +131,16 @@
   "notif.listing_interest.title": "Interesse no teu anúncio",
   "notif.listing_interest.body": "Alguém está interessado em «{title}».",
   "notif.chat_mention.title": "{sender} mencionou-te em «{group}»",
+  "notif.calendar_invite.body": "{name} convidou-te para um evento",
+  "notif.chat_burst.body": "{count} novas mensagens · {preview}",
   "notif.day_close.title": "Boa noite 🌙",
   "notif.day_close.body": "O dia terminou — se ainda tiver algo em mente, me conte rapidinho.",
   "notif.partner_test_status_changed.title": "Atualização de {partner_name}",
   "notif.partner_test_status_changed.body": "Há uma atualização sobre o teu {test_name}.",
   "notif.partner_test_result_ready.title": "Os teus resultados estão prontos",
   "notif.partner_test_result_ready.body": "Os teus resultados de {test_name} da {partner_name} estão prontos. Pede à Vitana para te explicar.",
+  "notif.partner_link_request.title": "Este teste é teu?",
+  "notif.partner_link_request.body": "A {partner_name} tem um resultado de {test_name} que pode ser teu. Confirma-o na app.",
   "notif.feedback_resolved.title": "Seu relato foi resolvido",
   "notif.feedback_resolved.body": "Corrigimos o problema que você relatou ({ticket}). Obrigado por nos ajudar a melhorar!",
   "email.partner_invite.subject": "Convite para {org} no Vitanaland",
@@ -190,5 +194,8 @@
   "autopilot.auto.event_rsvp_referral.title": "Inscreve-te no evento para que foste convidado",
   "autopilot.auto.event_rsvp_referral.summary": "Chegaste através de um convite para um evento. Inscreve-te para guardar o teu lugar.",
   "autopilot.auto.share_milestone.title": "Partilha a tua conquista: {milestone}",
-  "autopilot.auto.share_milestone.summary": "Alcançaste uma conquista. Partilha-a com a comunidade — vais ver a publicação antes de sair."
+  "autopilot.auto.share_milestone.summary": "Alcançaste uma conquista. Partilha-a com a comunidade — vais ver a publicação antes de sair.",
+  "sms.phone_verification.code": "O teu código Vitanaland: {code}. Não o partilhes com ninguém.",
+  "notif.vitana_companion_message.title": "Mensagem da Vitana",
+  "notif.vitana_companion_message.body": "A Vitana escreveu-te – toca para ler a mensagem dela."
 }

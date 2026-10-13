@@ -7,7 +7,7 @@
  * - GET /api/v1/governance/controls/:key/history - Get audit history
  *
  * HARD GOVERNANCE:
- * - Role gate: only Dev Admin or Governance Admin can modify controls
+ * - Auth gate (VTID-05048): POST needs GATEWAY_SERVICE_TOKEN or an exafy_admin JWT
  * - Reason is mandatory for all changes
  * - Duration is mandatory for arming (except "until manually off" for specific roles)
  * - All changes are audited and emit OASIS events
@@ -21,35 +21,39 @@ import {
   updateSystemControl,
   getControlAuditHistory,
 } from '../services/system-controls-service';
+import { requireServiceOrAdmin, getControlPlaneActor } from '../middleware/require-service-or-admin';
 
 const router = Router();
 
 // =============================================================================
-// Role Validation
+// Caller identity (VTID-05048)
 // =============================================================================
+//
+// Writes used to take the actor and role from caller-supplied x-user-id /
+// x-user-role headers, with the role defaulting to 'operator' — which was on
+// the allow list, so an unauthenticated POST with no headers at all flipped a
+// system control (the autonomy kill switches included). The POST route now
+// sits behind requireServiceOrAdmin and the actor comes from the verified
+// credential only. Reads stay open: the Command Hub lists controls without a
+// token.
 
-const ALLOWED_ROLES = ['dev_admin', 'governance_admin', 'admin', 'operator'];
+/** Optional, informational label an in-process ORB tool adds to a service call. */
+const ORB_CALLER_HEADER = 'x-orb-caller-user-id';
+const ORB_CALLER_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
- * Extract and validate user role from request headers.
- * In production, this would come from authenticated session.
+ * Actor + role for the audit row. Service token → `service:internal` (plus
+ * `/orb:<user_id>` when an ORB tool names the member it acted for — a label
+ * only, never used for authorization); exafy_admin JWT → `admin:<user_id>`.
  */
-function getUserInfo(req: Request): { userId: string; role: string } {
-  // For now, accept role from headers (would be from auth middleware in production)
-  const userId = req.headers['x-user-id']?.toString() || req.headers['x-operator-id']?.toString() || 'unknown';
-  const role = req.headers['x-user-role']?.toString() || 'operator';
-  return { userId, role };
-}
-
-/**
- * Check if user has permission to modify controls.
- * In dev environment, all authenticated users can modify controls.
- * In production, this would be restricted to specific roles.
- */
-function canModifyControls(role: string): boolean {
-  // For now, allow all authenticated users (dev environment)
-  // TODO: In production, restrict to: ['dev_admin', 'governance_admin', 'admin']
-  return ALLOWED_ROLES.includes(role.toLowerCase());
+export function resolveControlActor(req: Request): { userId: string; role: string } {
+  const actor = getControlPlaneActor(req);
+  if (actor.startsWith('service:')) {
+    const orbCaller = req.get(ORB_CALLER_HEADER)?.trim();
+    const label = orbCaller && ORB_CALLER_RE.test(orbCaller) ? `${actor}/orb:${orbCaller}` : actor;
+    return { userId: label, role: 'service' };
+  }
+  return { userId: actor, role: 'exafy_admin' };
 }
 
 // =============================================================================
@@ -130,25 +134,19 @@ router.get('/:key', async (req: Request, res: Response) => {
  *   "duration_minutes": 60
  * }
  *
+ * Auth: GATEWAY_SERVICE_TOKEN or an exafy_admin JWT (VTID-05048). The
+ * x-user-id / x-user-role headers are ignored.
+ *
  * Rules:
- * - enabled=true (arming) requires duration_minutes unless role is dev_admin
  * - enabled=false (disarming) does not require duration
  * - reason is always required
+ * - both accepted callers are platform-level, so arming without a duration
+ *   stays allowed (the old dev_admin/admin/operator behaviour)
  */
-router.post('/:key', async (req: Request, res: Response) => {
+router.post('/:key', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const { key } = req.params;
-    const { userId, role } = getUserInfo(req);
-
-    // Role check
-    if (!canModifyControls(role)) {
-      console.warn(`[VTID-01181] Unauthorized control update attempt by ${userId} (role: ${role})`);
-      return res.status(403).json({
-        ok: false,
-        error: 'forbidden',
-        message: 'Only Dev Admin or Governance Admin can modify system controls',
-      });
-    }
+    const { userId, role } = resolveControlActor(req);
 
     // Validate request body
     const parseResult = UpdateControlSchema.safeParse(req.body);
@@ -161,17 +159,6 @@ router.post('/:key', async (req: Request, res: Response) => {
     }
 
     const { enabled, reason, duration_minutes } = parseResult.data;
-
-    // Additional validation: enabling requires duration (unless dev_admin/admin/operator in dev)
-    // In dev environment, allow indefinite enabling for convenience
-    const canUseIndefinite = ['dev_admin', 'admin', 'operator'].includes(role.toLowerCase());
-    if (enabled && !duration_minutes && !canUseIndefinite) {
-      return res.status(400).json({
-        ok: false,
-        error: 'validation_failed',
-        message: 'Duration is required when enabling a control',
-      });
-    }
 
     // Update the control
     const result = await updateSystemControl(key, {

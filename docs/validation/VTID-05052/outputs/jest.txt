@@ -1,0 +1,7 @@
+    ✓ signups_24h excludes both test/service allowlists and the welcome bot (7 ms)
+    ✓ unflagged_24h excludes both test/service allowlists and the welcome bot (1 ms)
+    ✓ leaves greeted_senders_24h exactly as in v2 (2 ms)
+    ✓ keeps the return keys the workflows parse (2 ms)
+    ✓ stays SECURITY DEFINER, pinned search_path, service_role only (4 ms)
+    ✓ only redefines this one function (2 ms)
+Tests:       6 passed, 6 total

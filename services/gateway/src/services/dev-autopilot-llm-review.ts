@@ -21,12 +21,12 @@
  * llm_routing_policy 'validator' stage) to flag genuine security/
  * correctness red flags before merge.
  *
- * Fail-open, deliberately: a diff-fetch failure, an LLM call failure, or an
- * unparseable response never blocks a merge — a flaky review mechanism must
- * never become a denial-of-service on the whole autonomous pipeline. Each
- * fail-open path logs loudly so a stuck 100%-skip rate is visible instead of
- * silently degrading to "no review ever ran." Only an actual parsed "block"
- * verdict blocks.
+ * Fail-closed since VTID-05146 (autonomy plan C3): a diff-fetch failure, an
+ * LLM call failure, or an unparseable response blocks the merge (`ok: false`,
+ * `passed: false`). The watcher retries the review once; if it still cannot
+ * run, the execution fails with `llm_review_unavailable` and the PR stays open
+ * for a person. A review that did not run is not a pass. Each path logs loudly
+ * so a review outage is visible.
  *
  * Kill-switched off by default (DEV_AUTOPILOT_LLM_REVIEW_ENABLED), matching
  * this platform's standing practice for new autonomy-adjacent gates
@@ -56,8 +56,8 @@ export function isLlmMergeReviewEnabled(): boolean {
  * parent switch above; the exact string 'false' restores the single-shot
  * diff-only review. Bounds: `REVIEW_MAX_TURNS` model turns, `REVIEW_MAX_TOOL_CALLS`
  * tool calls, `REVIEW_DEADLINE_MS` wall clock — then one tool-less call for the
- * verdict. A tool or loop failure stays fail-open exactly like a single-shot
- * failure (below).
+ * verdict. A tool or loop failure is handled exactly like a single-shot
+ * failure (below): fail-closed since VTID-05146.
  */
 export function isLlmMergeReviewToolsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return (env.DEV_AUTOPILOT_LLM_REVIEW_TOOLS_ENABLED || '').toLowerCase() !== 'false';
@@ -68,9 +68,9 @@ export const REVIEW_DEADLINE_MS = 90_000;
 export const REVIEW_SYSTEM_PROMPT = 'You are a pre-merge safety reviewer for an autonomous code-change pipeline. You answer with exactly one JSON verdict object and nothing else.';
 
 export interface LlmMergeReviewResult {
-  /** false only on an infrastructure failure (diff fetch, LLM call, parse) — see `passed`, which still reads true in that case (fail-open). */
+  /** false only on an infrastructure failure (diff fetch, LLM call, parse); `passed` is then false too (fail-closed, VTID-05146). */
   ok: boolean;
-  /** false ONLY on a real, parsed "block" verdict from the model. */
+  /** false on a real, parsed "block" verdict, and on any infrastructure failure (`ok: false`). */
   passed: boolean;
   summary: string;
   error?: string;
@@ -172,8 +172,9 @@ export async function runLlmMergeReview(params: {
   try {
     files = await githubService.getPrFiles(params.repo, params.prNumber);
   } catch (err) {
-    console.warn(`${LOG_PREFIX} diff fetch failed for PR #${params.prNumber} — skipping review (fail-open):`, err);
-    return { ok: false, passed: true, summary: 'diff fetch failed — review skipped, not blocking', error: String(err) };
+    // VTID-05146 (C3): fail closed — a review that could not run never lets the merge through.
+    console.warn(`${LOG_PREFIX} diff fetch failed for PR #${params.prNumber} — merge blocked (fail-closed):`, err);
+    return { ok: false, passed: false, summary: 'diff fetch failed — review could not run, merge blocked', error: String(err) };
   }
   if (!files || files.length === 0) {
     return { ok: true, passed: true, summary: 'no files changed — nothing to review' };
@@ -226,14 +227,14 @@ export async function runLlmMergeReview(params: {
   const r = { ok: loop.ok, text: loop.text, error: loop.error };
   const meta = { provider: loop.provider, model: loop.model, tool_calls: loop.toolCalls, tools_used: loop.toolNames };
   if (!r.ok || !r.text) {
-    console.warn(`${LOG_PREFIX} review call failed for PR #${params.prNumber} — skipping review (fail-open): ${r.error}`);
-    return { ok: false, passed: true, summary: 'review call failed — skipped, not blocking', error: r.error, ...meta };
+    console.warn(`${LOG_PREFIX} review call failed for PR #${params.prNumber} — merge blocked (fail-closed): ${r.error}`);
+    return { ok: false, passed: false, summary: 'review call failed — merge blocked', error: r.error, ...meta };
   }
 
   const verdict = parseReviewVerdict(r.text);
   if (!verdict) {
-    console.warn(`${LOG_PREFIX} unparseable review response for PR #${params.prNumber} — skipping review (fail-open): ${r.text.slice(0, 200)}`);
-    return { ok: false, passed: true, summary: 'unparseable review response — skipped, not blocking', error: 'unparseable_verdict', ...meta };
+    console.warn(`${LOG_PREFIX} unparseable review response for PR #${params.prNumber} — merge blocked (fail-closed): ${r.text.slice(0, 200)}`);
+    return { ok: false, passed: false, summary: 'unparseable review response — merge blocked', error: 'unparseable_verdict', ...meta };
   }
 
   if (verdict.verdict === 'pass') {

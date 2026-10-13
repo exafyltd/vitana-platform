@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05126",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "'In meinen Kalender' route is mounted and requires auth (rejected write probe)", "method": "POST", "path": "/api/v1/calendar/feed-posts/00000000-0000-4000-8000-000000000000/add", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "share-to-feed route is mounted and requires auth (rejected write probe)", "method": "POST", "path": "/api/v1/calendar/events/00000000-0000-4000-8000-000000000000/share-to-feed", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/vtid-05126-calendar-share-any-entry.test.ts test/vtid-04916-calendar-share.test.ts test/vtid-04917-calendar-invite-audiobook.test.ts test/vtid-04918-calendar-assistant-parity.test.ts test/vtid-05104-calendar-invite-guard.test.ts test/calendar", "cwd": "services/gateway",
+      "reason": "sharing posts to the whole community, an invite messages a real person and 'In meinen Kalender' writes another member's calendar; staging shares the production Supabase project, so none of it is exercised there. These suites prove it with the real services over a fake PostgREST: the rule matrix over every source type (own + upcoming → yes; cancelled / done / ended / series → no), an event entry still shared as the event, the snapshot holding only title/times/emoji/status and the place only on request, the member's card title, the invite card's choices, 'In meinen Kalender' (public calendar_entry posts only, never the author's, current card re-read, cancelled/finished refused, idempotent), and Vitana's tools (health entries need sensitive_ack)." }
+  ]
+}

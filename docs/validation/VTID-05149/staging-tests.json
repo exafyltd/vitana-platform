@@ -1,0 +1,65 @@
+{
+  "vtid": "VTID-05149",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "auth router health answers JSON",
+      "method": "GET",
+      "path": "/api/v1/auth/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "reason": "routes/auth.ts (auto-provision now uses the default tenant) loads and is mounted"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "/auth/me refuses a caller without a token",
+      "method": "GET",
+      "path": "/api/v1/auth/me",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "unauthenticated GET; requireAuth answers 401 UNAUTHENTICATED before any lookup, nothing is provisioned"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "autopilot prefs refuses a caller without a token",
+      "method": "GET",
+      "path": "/api/v1/autopilot/prefs",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "unauthenticated GET; the route imports the middleware repository this slice changed"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "tenant-scoped route (requireAuthWithTenant) refuses a caller without a token",
+      "method": "GET",
+      "path": "/api/v1/memory/garden/entries",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "unauthenticated GET; proves the middleware module with the new tenant-context import loads"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "build-info answers JSON",
+      "method": "GET",
+      "path": "/api/v1/admin/build-info",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "reason": "the deployed commit is the verified merge commit"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05149-tenant-context.test.ts test/vtid-05149-tenant-foundation-migrations.test.ts test/middleware/auth-supabase-jwt.test.ts",
+      "cwd": "services/gateway",
+      "reason": "tenant resolution and signup are proven here, never by writes on staging (one Supabase project): the deterministic resolver, req.tenant per source, the default tenant in /auth/me auto-provision, the morning row 21b, and the migration pins; the migrations suite also runs the SQL harness (scripts/ci/sql-tests/run-tenant-foundation-test.sh) on a throwaway local cluster when a PostgreSQL binary is present (CI: SQL-TENANT-FOUNDATION.yml)"
+    }
+  ]
+}

@@ -31,10 +31,10 @@
  * Env: DOCTORBOX_WEBHOOK_SECRET — HMAC-SHA256 over the raw body, header
  * `x-doctorbox-signature` (hex digest, no prefix — simpler than Terra's
  * timestamped `t=...,v1=...` scheme since there is no real spec to match).
- * Unset secret = dev mode (matches terra.ts's own documented behaviour).
+ * VTID-05031 (Health Hub D2): an unset secret REJECTS every delivery — no dev mode.
  */
 
-import { createHmac, timingSafeEqual } from 'crypto';
+import { headerValue, verifyHexHmac } from '../runtime/webhook-signature';
 import type { Connector, NormalizedEvent, WebhookRequest } from '../types';
 import { getSupabase } from '../../lib/supabase';
 import doctorBoxAdapter from '../../services/partner-health/doctorbox-adapter';
@@ -48,17 +48,6 @@ import type { CanonicalHealthTestStatus } from '../../services/partner-health/ty
 
 const PARTNER_KEY = 'doctorbox';
 
-function verifyDoctorBoxSignature(raw_body: string, signature_header: string | undefined): boolean {
-  const secret = process.env.DOCTORBOX_WEBHOOK_SECRET;
-  if (!secret) {
-    console.warn('[doctorbox] DOCTORBOX_WEBHOOK_SECRET not set — skipping signature verification (dev mode)');
-    return true;
-  }
-  if (!signature_header) return false;
-  const computed = createHmac('sha256', secret).update(raw_body).digest('hex');
-  if (computed.length !== signature_header.length) return false;
-  return timingSafeEqual(Buffer.from(computed), Buffer.from(signature_header));
-}
 
 /** DoctorBox's own raw status labels -> the canonical vocabulary. Unknown labels fail loudly rather than guessing. */
 const STATUS_MAP: Record<string, CanonicalHealthTestStatus> = {
@@ -96,10 +85,13 @@ const doctorBoxConnector: Connector = {
         ? req.body.toString('utf8')
         : JSON.stringify(req.body);
 
-    const sig_header = req.headers['x-doctorbox-signature'];
-    const sigStr = Array.isArray(sig_header) ? sig_header[0] : sig_header;
-    if (!verifyDoctorBoxSignature(raw_body, sigStr)) {
-      return { valid: false, events: [], error: 'signature_invalid' };
+    const verdict = verifyHexHmac(
+      raw_body,
+      headerValue(req.headers['x-doctorbox-signature']),
+      process.env.DOCTORBOX_WEBHOOK_SECRET,
+    );
+    if (!verdict.ok) {
+      return { valid: false, events: [], error: verdict.error };
     }
 
     let payload: DoctorBoxWebhookPayload;

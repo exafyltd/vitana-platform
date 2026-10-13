@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05104",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05104-calendar-invite-guard.test.ts",
+      "cwd": "services/gateway",
+      "reason": "invite sends are authenticated writes and staging shares the production database, so the behaviour is proven by the Jest suite only"
+    }
+  ]
+}

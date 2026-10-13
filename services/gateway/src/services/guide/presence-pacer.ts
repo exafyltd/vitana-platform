@@ -47,7 +47,10 @@ export type ProactiveSurface =
   // VTID-04892: the Vitana Onboarding Assistant's one touch a day. Keep this
   // union and the user_proactive_touches.surface CHECK in step (migration
   // 20261005130000) — a surface missing from the CHECK is silently not counted.
-  | 'onboarding_coach';
+  | 'onboarding_coach'
+  // VTID-05099: Vitana Companion Messages — the one proactive Vitana DM a day.
+  // CHECK widened in migration 20261012200000.
+  | 'messenger_companion';
 
 export type PresenceLevel = 'quiet' | 'balanced' | 'engaged';
 

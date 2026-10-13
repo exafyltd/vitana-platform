@@ -1,8 +1,15 @@
 import { Router } from 'express';
 import { GovernanceController } from '../controllers/governance-controller';
+import { optionalAuth } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
 const controller = new GovernanceController();
+
+// VTID-05048: populate req.identity when a valid JWT is sent, so the
+// controller can decide whether a caller may name a tenant. Reads stay open
+// (the Command Hub calls them without a token); an anonymous caller is pinned
+// to the SYSTEM tenant.
+router.use(optionalAuth);
 
 // All routes prefixed with /api/v1/governance in index.ts mount
 

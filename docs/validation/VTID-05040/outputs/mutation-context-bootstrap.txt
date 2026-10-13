@@ -1,0 +1,5 @@
+    ✕ rejects an anonymous caller with 401 JSON and never builds the context (73 ms)
+    ✕ rejects a member with 403 and never builds the context (13 ms)
+    ✕ every debug route is gated or allowlisted with a reason (7 ms)
+    ✕ the gated routes named by VTID-05040 are not on the allowlist (1 ms)
+Tests:       4 failed, 13 passed, 17 total

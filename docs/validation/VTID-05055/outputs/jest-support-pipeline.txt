@@ -1,0 +1,46 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-d8/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04456-customer-support-pipeline-regression.test.ts
+  Scenario 1: a community member files a bug in the app
+    ✓ the ticket is filed for the member and announced (56 ms)
+    ✓ goes all the way: spec → dispatch → PR title → resolved, member notified (330 ms)
+    ✓ a fix that fails reopens the ticket for review instead of closing it (14 ms)
+    ✓ an unauthenticated request files nothing (13 ms)
+  Scenario 2: a member reports a bug to Vitana by voice
+    ✓ files a triaged ticket routed to Devon, with the session context (8 ms)
+    ✓ Vitana is told the hand-off happened, and Devon joins in his own (male) voice (4 ms)
+    ✓ with no male voice on the pipeline, Devon does not join — the ticket is still filed and still fixed (10 ms)
+    ✓ goes all the way: spec → dispatch → PR title → resolved (7 ms)
+    ✓ the Jev ticket-triage shadow (VTID-04879) sees the report but never changes or delays the result (2 ms)
+    ✓ a vague report files nothing and asks the member for detail (2 ms)
+    ✓ the typed voice tool (submit_bug_report) files through the same path and is fixed the same way (14 ms)
+  Scenario 3: a bug raised in the conversation with Devon
+    ✓ Devon adds what he learns to the hand-off ticket; Vitana cannot (2 ms)
+    ✓ Devon cannot write to another member's ticket (2 ms)
+    ✓ the enriched ticket reaches the spec writer with Devon's note, and is fixed (8 ms)
+    ✓ a second bug the member mentions to Devon becomes its own ticket, fixed on its own (28 ms)
+    ✓ when Devon hands the member back, Vitana returns quietly as herself (1 ms)
+  Safety rails
+    ✓ a placeholder spec never reaches Dev Autopilot (2 ms)
+    ✓ an armed kill switch stops auto-dispatch before anything is allocated (2 ms)
+    ✓ a NEW test file with "auth" in its name is kept and the ticket is dispatched (5 ms)
+    ✓ an EXISTING test with "auth" in its name stays locked (4 ms)
+    ✓ auto-dispatch is off unless FEEDBACK_AUTO_DISPATCH_ENABLED is exactly "true" (2 ms)
+    ✓ a ticket from the human-only Support screen is never auto-triaged or auto-fixed (8 ms)
+  Contract: emulated auto-triage matches the live SQL definition
+    ✓ finds the migration that last defines auto_triage_pending_feedback_tickets() (1 ms)
+    ✓ selects the same tickets and writes the same placeholder the fake does (2 ms)
+    ✓ the placeholder the database writes is one the drafter recognises and the bridge refuses (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       25 passed, 25 total
+Snapshots:   0 total
+Time:        2.136 s
+Ran all test suites matching /test\/vtid-04456-customer-support-pipeline-regression.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

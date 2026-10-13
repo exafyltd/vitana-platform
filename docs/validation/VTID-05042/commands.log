@@ -1,0 +1,15 @@
+# all from services/gateway unless noted
+$ npx jest test/admin-partner-health.test.ts test/routes/tenant-admin/audit-log.test.ts test/routes/tenant-admin/overview.test.ts test/routes/tenant-admin/community-admin.test.ts test/routes/tenant-admin/content-moderation.test.ts test/middleware/require-tenant-admin.test.ts
+Tests: 124 passed, 124 total   (outputs/jest-vtid-05042.txt)
+$ npx jest test/routes/tenant-admin
+Tests: 214 passed, 214 total   (outputs/jest-tenant-admin-all.txt)
+$ (the six changed src files reverted to origin/main) npx jest test/admin-partner-health.test.ts test/routes/tenant-admin/{audit-log,overview,community-admin,content-moderation}.test.ts
+Tests: 25 failed, 85 passed, 110 total   (outputs/mutation-src-reverted.txt)
+$ npx jest test/middleware/require-tenant-admin.test.ts test/partner-health test/services/orb-tools/admin-users-rbac-tools.test.ts test/routes/orb-livekit.test.ts
+Tests: 176 passed, 176 total
+$ npm run test:roles && npm run test:support && npm run test:operator
+105/105, 87/87, 38/38   (outputs/regression-suites.txt)
+$ npx tsc --noEmit -p . --declaration false --declarationMap false
+(exit 0)   (outputs/typecheck.txt)
+$ (repo root) node -e "lib.validateManifest(staging-tests.json, {vtid:'VTID-05042', service:'gateway'})"
+{"ok":true,"errors":[]}

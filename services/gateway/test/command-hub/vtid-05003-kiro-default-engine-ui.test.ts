@@ -9,7 +9,7 @@ import { join } from 'path';
 const FE = join(__dirname, '../../src/frontend/command-hub');
 const APP_JS = readFileSync(join(FE, 'app.js'), 'utf8');
 const CSS = readFileSync(join(FE, 'styles.css'), 'utf8');
-const BLOCK = APP_JS.slice(APP_JS.indexOf('var KIRO_TOOL_STATUS'), APP_JS.indexOf('function renderOperatorLiveTranscript() {'));
+const BLOCK = APP_JS.slice(APP_JS.indexOf('function operatorThreadEngine(thread) {'), APP_JS.indexOf('function renderOperatorLiveTranscript() {'));
 
 class El {
   tag: string; className = ''; textContent = ''; title = ''; type = ''; onclick: null | (() => void) = null;
@@ -106,7 +106,8 @@ describe('VTID-05003 fallback survives reloads', () => {
   it('history entries carry it and both restore paths put it back on the message', () => {
     expect(APP_JS).toContain('kiroMeta: kiroReplyMeta(result.meta)');
     expect(APP_JS).toContain('kiroMeta: kiroReplyMeta(m.meta)');
-    expect(APP_JS.match(/meta: msg\.kiroMeta/g)).toHaveLength(2);
+    // VTID-05064: the page-load restore (initOperatorChatSession) puts it back too — three restore paths.
+    expect(APP_JS.match(/meta: msg\.kiroMeta/g)).toHaveLength(3);
     expect(APP_JS).toContain('if (!(await waitForKiroDefault())) return;');
   });
 });

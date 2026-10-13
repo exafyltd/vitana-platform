@@ -1,0 +1,5 @@
+# old inline step (origin/main 3e92313e) vs record-oasis.sh, 1,100 results, stub curl
+old: exit 126
+…/old-step.sh: line 33: …/bin/curl: Argument list too long
+new: exit 0
+✓ recorded staging.verify.failed for gateway @ abc

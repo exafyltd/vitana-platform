@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05041",
+  "files": [
+    "supabase/migrations/20261010164100_vtid_05041_definer_functions_lockdown.sql",
+    "supabase/tests/vtid_05041_fixture.sql",
+    "supabase/tests/vtid_05041_definer_lockdown.test.sql",
+    "scripts/ci/test-vtid-05041-definer-lockdown.sh",
+    "services/gateway/test/vtid-05041-definer-lockdown.test.ts",
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-05041/**"
+  ]
+}

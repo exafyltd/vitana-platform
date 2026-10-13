@@ -24,6 +24,10 @@ jest.mock('../../src/middleware/require-tenant-admin-repository', () => ({
     data: { active_role: userId === 'u-admin' ? 'admin' : 'community' },
     error: null,
   })),
+  // VTID-05147: the tenant admin also holds a permitted admin role.
+  fetchCallerPermittedRoles: jest.fn(async (_sb: any, userId: string) => ({
+    roles: userId === 'u-admin' ? ['community', 'admin'] : ['community'],
+  })),
 }));
 
 jest.mock('@supabase/supabase-js', () => ({ createClient: jest.fn(() => ({})) }));

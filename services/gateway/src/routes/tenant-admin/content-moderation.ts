@@ -8,6 +8,11 @@
  * Community screens filter by status='approved' + is_public=true.
  * Admin sees ALL items regardless of status — the moderation queue.
  *
+ * VTID-05042: media_uploads has no tenant_id column (keyed by user_id), so
+ * every route here is exafy_admin-only (requirePlatformScope) until WS3 adds
+ * one — a tenant admin could otherwise list and approve/reject/flag every
+ * tenant's uploads.
+ *
  * Endpoints:
  *   GET  /items                — List all media uploads (filter by type, status)
  *   GET  /items/stats          — Counts by status + type
@@ -18,7 +23,7 @@
  */
 
 import { Router, Response } from 'express';
-import { requireTenantAdmin } from '../../middleware/require-tenant-admin';
+import { requireTenantAdmin, requirePlatformScope } from '../../middleware/require-tenant-admin';
 import { AuthenticatedRequest } from '../../middleware/auth-supabase-jwt';
 import { getSupabase } from '../../lib/supabase';
 import * as repo from '../../services/content-moderation/content-moderation-repository';
@@ -26,7 +31,7 @@ import * as repo from '../../services/content-moderation/content-moderation-repo
 const router = Router({ mergeParams: true });
 
 // GET /items — list media uploads (admin sees all statuses)
-router.get('/items', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/items', requireTenantAdmin, requirePlatformScope, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
@@ -49,7 +54,7 @@ router.get('/items', requireTenantAdmin, async (req: AuthenticatedRequest, res: 
 });
 
 // GET /items/stats — counts by status + type
-router.get('/items/stats', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/items/stats', requireTenantAdmin, requirePlatformScope, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
@@ -81,7 +86,7 @@ router.get('/items/stats', requireTenantAdmin, async (req: AuthenticatedRequest,
 });
 
 // GET /items/:id — single item with metadata
-router.get('/items/:id', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/items/:id', requireTenantAdmin, requirePlatformScope, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
@@ -96,7 +101,7 @@ router.get('/items/:id', requireTenantAdmin, async (req: AuthenticatedRequest, r
 });
 
 // POST /items/:id/approve — mark as approved + public
-router.post('/items/:id/approve', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/items/:id/approve', requireTenantAdmin, requirePlatformScope, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
@@ -115,7 +120,7 @@ router.post('/items/:id/approve', requireTenantAdmin, async (req: AuthenticatedR
 });
 
 // POST /items/:id/reject — mark as rejected + not public
-router.post('/items/:id/reject', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/items/:id/reject', requireTenantAdmin, requirePlatformScope, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
@@ -134,7 +139,7 @@ router.post('/items/:id/reject', requireTenantAdmin, async (req: AuthenticatedRe
 });
 
 // POST /items/:id/flag — mark as flagged for review
-router.post('/items/:id/flag', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/items/:id/flag', requireTenantAdmin, requirePlatformScope, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });

@@ -1,0 +1,1040 @@
+
+> @vitana/gateway@1.0.1 test:calendar
+> jest test/calendar test/vtid-04602-04604-go-live.test.ts test/orb-tools/calendar-management-tools.test.ts test/services/assistant-continuation/providers/next-action/calendar-upcoming.test.ts test/services/calendar-role-context.test.ts test/services/recommendation-engine/analyzers/calendar-prep-analyzer.test.ts test/vtid-04321-calendar-backend-repair.test.ts test/vtid-04331-calendar-data-model.test.ts test/vtid-04338-calendar-default-reminders.test.ts test/vtid-04356-calendar-source-producers.test.ts test/vtid-04357-calendar-work-lenses.test.ts test/vtid-04358-calendar-ics-feed.test.ts test/vtid-04372-calendar-google-sync.test.ts test/vtid-04373-calendar-reminder-quiet-hours.test.ts test/vtid-04374-calendar-maintenance.test.ts test/vtid-04436-calendar-push.test.ts test/vtid-04680-calendar-stays-clean.test.ts test/vtid-04914-calendar-prod-gates.test.ts test/vtid-04916-calendar-share.test.ts test/vtid-04995-calendar-conflicts.test.ts test/vtid-04996-calendar-find-a-time.test.ts test/vtid-04997-test-results-in-calendar-migration.test.ts test/vtid-04917-calendar-invite-audiobook.test.ts test/vtid-04917-invite-routes.test.ts test/vtid-05104-calendar-invite-guard.test.ts test/vtid-04918-calendar-assistant-parity.test.ts
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/calendar/calendar-coverage.guard.test.ts
+  calendar coverage manifest
+    ✓ lists every calendar source file (4 ms)
+    ✓ lists no file that is gone (1 ms)
+    ✓ src/types/calendar.ts is imported by each listed test (1 ms)
+    ✓ src/routes/calendar.ts is imported by each listed test (1 ms)
+    ✓ src/routes/calendar-repository.ts is imported by each listed test
+    ✓ src/services/calendar-service.ts is imported by each listed test (1 ms)
+    ✓ src/services/calendar-recurrence.ts is imported by each listed test (1 ms)
+    ✓ src/services/calendar-reminders.ts is imported by each listed test (1 ms)
+    ✓ src/services/calendar-producers.ts is imported by each listed test (1 ms)
+    ✓ src/services/calendar-work-lens.ts is imported by each listed test (1 ms)
+    ✓ src/services/calendar-ics-feed.ts is imported by each listed test (1 ms)
+    ✓ src/services/calendar-google-sync.ts is imported by each listed test
+    ✓ src/services/calendar-rescheduler.ts is imported by each listed test (1 ms)
+    ✓ src/services/calendar-prioritizer.ts is imported by each listed test
+    ✓ src/services/calendar-today.ts is imported by each listed test (1 ms)
+    ✓ src/services/journey-calendar-mapper.ts is imported by each listed test
+    ✓ src/services/connected-apps/calendar-push.ts is imported by each listed test (1 ms)
+    ✓ src/services/orb-tools/calendar-management-tools.ts is imported by each listed test
+    ✓ src/services/orb-tools/calendar-management-tools-repository.ts is imported by each listed test
+    ✓ src/services/assistant-continuation/providers/next-action/sources/calendar-upcoming.ts is imported by each listed test (1 ms)
+    ✓ src/services/assistant-continuation/providers/next-action/sources/calendar-upcoming-repository.ts is imported by each listed test
+    ✓ src/services/recommendation-engine/analyzers/calendar-prep-analyzer.ts is imported by each listed test
+    ✓ src/services/recommendation-engine/analyzers/calendar-prep-analyzer-repository.ts is imported by each listed test (1 ms)
+    ✓ src/orb/live/tools/calendar-write-guard.ts is imported by each listed test
+    ✓ src/services/calendar-share.ts is imported by each listed test (1 ms)
+    ✓ src/services/orb-tools/calendar-social-tools.ts is imported by each listed test (1 ms)
+    ✓ src/services/calendar-invite.ts is imported by each listed test
+    ✓ src/services/calendar-invite-guard.ts is imported by each listed test
+    ✓ src/services/guided-journey/audiobook-calendar.ts is imported by each listed test
+    ✓ the CALENDAR-REGRESSION workflow watches the calendar code and runs every listed test (4 ms)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [CalendarGoogleSync] user u1 failed: vitanaland_calendar_missing
+
+      355 |     const message = String(err?.message ?? err).slice(0, 500);
+      356 |     result.error = message;
+    > 357 |     console.warn(`${LOG_PREFIX} user ${state.user_id.slice(0, 8)} failed: ${message}`);
+          |             ^
+      358 |     try {
+      359 |       await patchState(state.user_id, { last_error: message });
+      360 |     } catch { /* state write failed too; logged above */ }
+
+      at Object.syncUser (src/services/calendar-google-sync.ts:357:13)
+      at Object.<anonymous> (test/vtid-04372-calendar-google-sync.test.ts:195:15)
+
+  console.warn
+    [CalendarGoogleSync] user u1 failed: google POST /freeBusy 403: nope
+
+      355 |     const message = String(err?.message ?? err).slice(0, 500);
+      356 |     result.error = message;
+    > 357 |     console.warn(`${LOG_PREFIX} user ${state.user_id.slice(0, 8)} failed: ${message}`);
+          |             ^
+      358 |     try {
+      359 |       await patchState(state.user_id, { last_error: message });
+      360 |     } catch { /* state write failed too; logged above */ }
+
+      at Object.syncUser (src/services/calendar-google-sync.ts:357:13)
+      at Object.<anonymous> (test/vtid-04372-calendar-google-sync.test.ts:202:15)
+
+  console.warn
+    [CalendarGoogleSync] user u1 failed: google POST /freeBusy 403: nope
+
+      355 |     const message = String(err?.message ?? err).slice(0, 500);
+      356 |     result.error = message;
+    > 357 |     console.warn(`${LOG_PREFIX} user ${state.user_id.slice(0, 8)} failed: ${message}`);
+          |             ^
+      358 |     try {
+      359 |       await patchState(state.user_id, { last_error: message });
+      360 |     } catch { /* state write failed too; logged above */ }
+
+      at Object.syncUser (src/services/calendar-google-sync.ts:357:13)
+      at Object.<anonymous> (test/vtid-04372-calendar-google-sync.test.ts:206:5)
+
+PASS test/vtid-04917-invite-routes.test.ts
+  sending an invite in a chat (VTID-04917)
+    ✓ a DM stores the server-built card and content, never what the client sent (34 ms)
+    ✓ a group message does the same (8 ms)
+    ✓ a refused entry answers with the reason and sends nothing (8 ms)
+    ✓ other message types are unchanged: text still stores what was sent, unknown types are refused (7 ms)
+  the calendar invite routes (VTID-04917)
+    ✓ 401 without a verified identity (9 ms)
+    ✓ answers as the verified caller, emits the OASIS event, returns where the app should go (5 ms)
+    ✓ only { response } of accepted | maybe | declined (9 ms)
+    ✓ passes refusals through without an OASIS event (3 ms)
+    ✓ the card state and the preview (11 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04918-calendar-assistant-parity.test.ts
+  the shared guard (every assistant path)
+    ✓ needs an explicit confirmation (1 ms)
+    ✓ refuses a time that has passed, but an event still running is open
+    ✓ the live session still refuses before the member has spoken (1 ms)
+  create_calendar_event (shared handler)
+    ✓ creates nothing until confirmed, and never in the past
+    ✓ writes an assistant entry for the member once confirmed (16 ms)
+  share_calendar_entry_to_feed (Phase 2 service, assistant entry point)
+    ✓ posts nothing until confirmed, and the preview carries the text to read back (1 ms)
+    ✓ a private entry is never shared
+    ✓ confirmed: the same service the app uses shares it; its refusals are named (2 ms)
+    ✓ a post approved as private stays private: the confirmation must carry the visibility (2 ms)
+  invite_to_calendar_entry (Phase 3 card, assistant entry point)
+    ✓ needs a resolved person, never the member themselves
+    ✓ sends nothing until confirmed (1 ms)
+    ✓ an entry the card builder refuses is named and nothing is sent (1 ms)
+    ✓ confirmed: the server-built card goes into the direct chat and the person gets the chat push (4 ms)
+    ✓ the send quota holds (1 ms)
+  reschedule_event never moves into the past
+    ✓ refuses a past new_start before touching the calendar (6 ms)
+  one implementation for every path
+    ✓ the shared registry carries the three handlers and declares only the two new tools (2 ms)
+    ✓ the live session adds memberHasSpoken for every calendar write tool (4 ms)
+    ✓ text chat offers the five calendar tools and runs them through the shared dispatcher (3 ms)
+    ✓ the LiveKit agent writes through the shared dispatcher, never the raw calendar route (2 ms)
+    ✓ the community role lists the real calendar tools, not the never-built get_calendar_* names (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [CalendarRescheduler] rescheduled=1 cancelled=0 errors=0
+
+      at Object.rescheduleUnactivatedTasks (src/services/calendar-rescheduler.ts:205:13)
+
+  console.log
+    [CalendarRescheduler] rescheduled=0 cancelled=1 errors=0
+
+      at Object.rescheduleUnactivatedTasks (src/services/calendar-rescheduler.ts:205:13)
+
+PASS test/vtid-04372-calendar-google-sync.test.ts
+  pure parts
+    ✓ is off unless the flag is exactly "true" and the Google client is configured (2 ms)
+    ✓ an entry becomes a Google event with no Google reminders and a link back (1 ms)
+    ✓ only the member’s own community / personal entries are pushed
+    ✓ plans create, update, no-op and delete; an entry outside the read keeps its Google copy (1 ms)
+    ✓ merges overlapping busy intervals and drops broken ones (1 ms)
+  one sync run
+    ✓ creates the Vitanaland calendar, pushes the entry, replaces busy times, records success (20 ms)
+    ✓ an event the member already deleted in Google just loses its link (10 ms)
+    ✓ a deleted Vitanaland calendar is forgotten so the next run recreates it (43 ms)
+    ✓ a failure is recorded on the state row and emitted once, not on every repeat (13 ms)
+    ✓ the tick does nothing at all while switched off (2 ms)
+  routes
+    ✓ status reports not_configured while switched off (101 ms)
+    ✓ enable: 503 while switched off, 409 with the connect link when Google is not connected, 200 when it is (202 ms)
+    ✓ disable turns it off (54 ms)
+  wiring
+    ✓ the window read adds external busy times only when busy blocks are wanted (1 ms)
+    ✓ the loop is wired at boot and pinned on staging and production (4 ms)
+    ✓ asks Google only for the app-created calendar and free/busy (8 ms)
+    ✓ the migration keeps all three tables service-role only and stores no tokens (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [OASIS Event] Emitted: calendar.maintenance.manual_run for VTID-04374 (58baa884-8748-4145-85fb-d041ca0c5faf)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [OASIS Event] Emitted: calendar.maintenance.manual_run for VTID-04374 (a07f4df0-aba6-4753-bbcf-9beeff94b648)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.error
+    [AudiobookCalendar] upsert failed for 11111111-1111-4111-8111-111111111111: boom
+
+      85 |     );
+      86 |     if (result.action === 'failed') {
+    > 87 |       console.error(`${LOG_PREFIX} upsert failed for ${userId}: ${result.error ?? 'unknown'}`);
+         |               ^
+      88 |       return 'failed';
+      89 |     }
+      90 |     return 'upserted';
+
+      at syncAudiobookCalendarEntry (src/services/guided-journey/audiobook-calendar.ts:87:15)
+      at Object.<anonymous> (test/vtid-04917-calendar-invite-audiobook.test.ts:295:12)
+
+  console.error
+    [AudiobookCalendar] sync failed for 11111111-1111-4111-8111-111111111111: network
+
+      90 |     return 'upserted';
+      91 |   } catch (err: any) {
+    > 92 |     console.error(`${LOG_PREFIX} sync failed for ${userId}: ${err?.message}`);
+         |             ^
+      93 |     return 'failed';
+      94 |   }
+      95 | }
+
+      at syncAudiobookCalendarEntry (src/services/guided-journey/audiobook-calendar.ts:92:13)
+      at Object.<anonymous> (test/vtid-04917-calendar-invite-audiobook.test.ts:297:12)
+
+  console.error
+    [AudiobookCalendar] sync failed for 11111111-1111-4111-8111-111111111111: network
+
+      90 |     return 'upserted';
+      91 |   } catch (err: any) {
+    > 92 |     console.error(`${LOG_PREFIX} sync failed for ${userId}: ${err?.message}`);
+         |             ^
+      93 |     return 'failed';
+      94 |   }
+      95 | }
+
+      at syncAudiobookCalendarEntry (src/services/guided-journey/audiobook-calendar.ts:92:13)
+      at Object.<anonymous> (test/vtid-04917-calendar-invite-audiobook.test.ts:299:12)
+
+PASS test/vtid-04917-calendar-invite-audiobook.test.ts
+  the invite card is built on the server (VTID-04917)
+    ✓ a community event the sender is going to: the event's own title, no private fields (3 ms)
+    ✓ a live room session in a public room (1 ms)
+    ✓ the sender's own one-off entry (manual or an accepted invite) (2 ms)
+    ✓ never someone else's entry, a cancelled or finished one, a series, or a private kind (13 ms)
+    ✓ an event that is over, gone or in a non-public room is not invitable (1 ms)
+    ✓ the chat routes pass only entry_id; the entry is loaded as the sender (1 ms)
+    ✓ only version-2 cards with a known reference are answerable (older client-made cards are left alone) (1 ms)
+  answering an invite (VTID-04917)
+    ✓ a free community event: Accept joins it through the participation row (the database adds the calendar entry) (3 ms)
+    ✓ a paid event (ticket price or is_paid) or a full one is never joined from the card: the event page opens (2 ms)
+    ✓ a live room opens the room (1 ms)
+    ✓ an event that is over by now is not joined
+    ✓ Maybe and No on an event are recorded and never touch the member's participation (1 ms)
+    ✓ an own entry: Accept copies it into the recipient's calendar, No removes the copy (1 ms)
+    ✓ only the recipient or a group member can answer; never the sender, never a stranger (1 ms)
+    ✓ the card state: my answer and the counts, for the sender and the members
+  the audiobook reminder in the calendar (VTID-04917)
+    ✓ starts today at the chosen local time, DST-correct (18 ms)
+    ✓ one daily entry per member with no calendar push (the audiobook dispatcher stays the only sender) (1 ms)
+    ✓ switching the reminder off cancels the entry (1 ms)
+    ✓ a calendar failure never throws (the reminder is saved either way) (12 ms)
+    ✓ 'audiobook' is an allowed source type in the code and in the newest constraint migration (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04374-calendar-maintenance.test.ts
+  isDayOver
+    ✓ false while the entry is still running or later today (2 ms)
+    ✓ true once the local day it ended on is over
+    ✓ uses the local day, not UTC: 23:30 Berlin yesterday is 21:30 UTC (1 ms)
+  nextSlot
+    ✓ tomorrow at the same local time, duration kept
+    ✓ keeps the local wall-clock time across the DST change (09:00 stays 09:00)
+    ✓ never lands in the past after a missed run (1 ms)
+  rescheduleUnactivatedTasks
+    ✓ reads one-off, uncompleted, unactivated Autopilot/journey entries only (4 ms)
+    ✓ moves an entry whose day is over; leaves today's alone (34 ms)
+    ✓ drops an entry after 3 moves instead of moving it again (10 ms)
+    ✓ a row completed in the meantime is not counted (8 ms)
+  flags and routes
+    ✓ the loop runs only on exactly "true" (1 ms)
+    ✓ a signed-in member cannot run the global jobs (55 ms)
+    ✓ Exafy staff can (65 ms)
+    ✓ the loop is wired at boot and pinned on staging and production (2 ms)
+  /meetup-reminders is retired
+    ✓ the route is a no-op and nothing reads the missing attendance table (1 ms)
+  moving your own entry
+    ✓ your own entries and Vitana suggestions move (1 ms)
+    ✓ anything a source owns does not (2 ms)
+    ✓ done, cancelled and series entries do not
+    ✓ keeps the entry length when only a new start is given (50 ms)
+    ✓ refuses a booked appointment with a reason the app can show (43 ms)
+    ✓ rejects bad input and work items before reading anything (52 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04358-calendar-ics-feed.test.ts
+  RFC 5545 formatting
+    ✓ UTC timestamps (12 ms)
+    ✓ escapes TEXT (1 ms)
+    ✓ folds at 75 octets without splitting a multi-byte character (2 ms)
+    ✓ a calendar with one event, CRLF throughout, default length when no end (2 ms)
+    ✓ never emits alarms or descriptions (1 ms)
+    ✓ pending becomes TENTATIVE; an unparseable start is skipped (1 ms)
+  tokens
+    ✓ are 256-bit base64url, and only the SHA-256 hash is ever sent to storage (1 ms)
+    ✓ rotation upserts one row per user with the hash, never the token (2 ms)
+    ✓ a malformed token never reaches the database (1 ms)
+    ✓ a well-formed token is looked up by hash (1 ms)
+    ✓ the feed reads the user own rows with no lens filter and skips busy blocks (2 ms)
+  routes
+    ✓ the feed needs no bearer and serves text/calendar, private-cached (79 ms)
+    ✓ unknown, malformed and extension-less tokens all get the same 404 (83 ms)
+    ✓ the subscription endpoints require sign-in (41 ms)
+    ✓ creating a link returns a path, never a hardcoded host (41 ms)
+    ✓ creating and turning off a link emit OASIS events that never carry the token (32 ms)
+    ✓ other calendar routes stay behind sign-in (40 ms)
+  migration
+    ✓ stores a hash only, one row per user, service role only (1 ms)
+
+  console.warn
+    [Calendar] shared-post lookup failed (window still served): postgrest down
+
+      440 |         shared = await listSharedPostIds(userId, refIds);
+      441 |       } catch (e: any) {
+    > 442 |         console.warn(`${LOG_PREFIX} shared-post lookup failed (window still served): ${e?.message}`);
+          |                 ^
+      443 |       }
+      444 |     }
+      445 |     const decorated = data.map((it: any) => {
+
+      at src/routes/calendar.ts:442:17
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04916-calendar-share.test.ts
+  what can be shared (VTID-04916)
+    ✓ community events and live room sessions, from trigger rows or legacy client rows (1 ms)
+    ✓ never health plans, lab orders, appointments, plans, journeys, Autopilot or private entries (1 ms)
+    ✓ isShareableEntry: not cancelled, not over (1 ms)
+  sharing (VTID-04916)
+    ✓ posts as the verified caller with the attached event, public by default (2 ms)
+    ✓ a card-only share is allowed (empty text), and is_public=false is kept (1 ms)
+    ✓ another member's entry is not found, whatever the caller claims (1 ms)
+    ✓ the author can never be set from the input (2 ms)
+    ✓ private entries, cancelled entries and past or missing events are refused (2 ms)
+    ✓ one share per event: the second answers ALREADY_SHARED with the first post id (1 ms)
+    ✓ at most 5 event shares per member per day (2 ms)
+    ✓ maps the database guards: unique race, hourly post limit, suspension (5 ms)
+  live room sessions (VTID-04916)
+    ✓ a scheduled session in a public room can be shared
+    ✓ cancelled, ended, past or non-public sessions cannot
+  POST /api/v1/calendar/events/:id/share-to-feed (VTID-04916)
+    ✓ 401 without a verified identity (54 ms)
+    ✓ rejects any field besides text and is_public — no author in the body (41 ms)
+    ✓ shares as the verified caller and returns the post id (41 ms)
+    ✓ passes the service status, error, reason and existing post id through (41 ms)
+    ✓ the window marks shareable entries and links ones already shared (46 ms)
+    ✓ a failing shared-post lookup never breaks the window (66 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04436-calendar-push.test.ts
+  Outlook mapping
+    ✓ a single entry is written in UTC, with no reminder of its own and shown as busy (2 ms)
+    ✓ a repeating entry keeps its own zone and wall-clock time (2 ms)
+    ✓ covers every rule shape the app writes (2 ms)
+    ✓ an entry without an end gets 30 minutes (1 ms)
+  iCloud mapping
+    ✓ a single entry is a UTC VEVENT with a stable UID and escaped text (1 ms)
+    ✓ a repeating entry carries the rule unchanged and its local time with TZID (1 ms)
+    ✓ folds long lines at 75 octets without splitting a character
+    ✓ the hash ignores DTSTAMP, so an unchanged entry is not rewritten every sync
+  planExternalPush
+    ✓ creates new, updates changed, leaves unchanged, deletes gone and no-longer-pushed (1 ms)
+    ✓ an entry the provider cannot represent is not created (and a stale copy is removed) (1 ms)
+  writers
+    ✓ Outlook: creates the Vitanaland calendar once, then writes only into it (18 ms)
+    ✓ Outlook: an existing Vitanaland calendar (earlier connection) is reused, not duplicated (15 ms)
+    ✓ Outlook: the member deleted the Vitanaland calendar → forget it and say so; next sync recreates (47 ms)
+    ✓ Outlook: an entry deleted in Vitanaland is deleted from Outlook, and a 404 there is fine (12 ms)
+    ✓ iCloud: MKCALENDAR a Vitanaland collection under the calendar home, then PUT one .ics per entry (17 ms)
+    ✓ iCloud: an existing collection (405 on MKCALENDAR) is reused (16 ms)
+    ✓ iCloud: a revoked app-specific password surfaces as AppleAuthError (11 ms)
+  busy pull skips the Vitanaland calendar
+    ✓ Outlook: pushed events (and occurrences of a pushed series) are not busy blocks (2 ms)
+    ✓ iCloud: the Vitanaland collection is never queried for busy times (3 ms)
+  wiring
+    ✓ the Outlook and iCloud calendar syncs push first, then pull without their own calendar (1 ms)
+    ✓ turning a calendar app off forgets the push state for that provider
+    ✓ CONNECTED_APPS_CALENDAR_PUSH=false is the kill switch; anything else is on
+  migration
+    ✓ two service-role-only tables, one link per provider per entry (1 ms)
+
+PASS test/vtid-04602-04604-go-live.test.ts
+  VTID-04602 voice ack default
+    ✓ AC-1 the default is 6 s (1 ms)
+  VTID-04603 one specialist job per question burst
+    ✓ AC-2 a second call in the same session while the first runs joins it (one run) (53 ms)
+    ✓ AC-3 a call right after a finished job reuses its result; after the window it runs again (12 ms)
+    ✓ AC-4 never reused across sessions, users or surfaces, or when reuse is off (27 ms)
+  VTID-04604 voice calendar writes
+    ✓ AC-5 refused before the member has spoken, even if "confirmed"
+    ✓ AC-6 refused without confirmed=true
+    ✓ AC-7 refused for a past date (the live event was dated 2026-04-15) and an invalid date (1 ms)
+    ✓ AC-8 allowed when asked, confirmed and in the future (a start within the tolerance too)
+    ✓ AC-9 memberHasSpoken reads stored user turns and live input only
+    ✓ AC-10 orb-live runs the guard before any calendar write, and the tool declares confirmed (5 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-05104-calendar-invite-guard.test.ts
+  limits and pure helpers
+    ✓ defaults 30 / 5 / 20 and is overridable by env; bad values fall back (3 ms)
+    ✓ evaluateInviteQuota windows: 24h and 7d (2 ms)
+    ✓ groupAllowsInvite and involvesExcludedAccount (1 ms)
+  checkInviteSend — direct invites
+    ✓ allows a related, in-tenant, unlimited invite (2 ms)
+    ✓ refuses a test/service account as sender and as receiver (both allowlists) (11 ms)
+    ✓ refuses a receiver in another tenant, an unknown receiver, a missing tenant, yourself and the Vitana bot (1 ms)
+    ✓ refuses with no relationship (1 ms)
+    ✓ relationship via dm is enough (1 ms)
+    ✓ relationship via dm_reverse is enough
+    ✓ relationship via group is enough
+    ✓ relationship via follow is enough (1 ms)
+    ✓ relationship via follow_reverse is enough (1 ms)
+    ✓ a prior invite alone is not a relationship (1 ms)
+    ✓ a group the sender is in without the receiver is not a relationship (1 ms)
+    ✓ the 31st invite in a day is refused, the 30th is allowed (1 ms)
+    ✓ the 6th invite to one person in a week is refused, the 5th is allowed (1 ms)
+    ✓ refusals are the same for every rule: one code, one shape, no reason in the result (1 ms)
+  checkInviteSend — group invites
+    ✓ allows a member of a group of 20, refuses 21, refuses a non-member (1 ms)
+    ✓ the group cap is env-adjustable and a group invite counts against the daily quota
+    ✓ refuses both a receiver and a group, or neither (1 ms)
+  checkInviteSend — fails closed
+    ✓ a service_bot_accounts lookup error refuses with the generic code
+    ✓ a notification_test_actors lookup error refuses with the generic code
+    ✓ a app_users lookup error refuses with the generic code
+    ✓ a user_follows lookup error refuses with the generic code
+    ✓ a chat_group_members lookup error refuses with the generic code
+    ✓ a chat_messages lookup error refuses (relationship (a) and quota) (1 ms)
+    ✓ a thrown error refuses
+    ✓ the quota read carries tenant_id, sender_id and a bounded created_at window
+  POST /chat/send with calendar_invite
+    ✓ allowed: inserts the server-built card and pushes a generic body (no title, time or place) (8 ms)
+    ✓ refused (a test account receiver): generic 403, nothing inserted, no push (4 ms)
+    ✓ refused (another tenant): generic 403, nothing inserted, no push (3 ms)
+    ✓ refused (no relationship): generic 403, nothing inserted, no push (2 ms)
+    ✓ refused over the daily limit with the very same body (3 ms)
+    ✓ non-invite messages do not go through the guard (3 ms)
+  POST /chat/groups/:id/send with calendar_invite
+    ✓ allowed in a group of 20: inserts the card, each member gets the generic push in their locale (9 ms)
+    ✓ refused in a group of 21: generic 403, nothing inserted, no push (3 ms)
+    ✓ refused for a test-account sender and over the daily limit (5 ms)
+    ✓ a non-member still gets not_a_member; text messages are unaffected and keep their push (5 ms)
+  voice tool send_calendar_invite_in_chat
+    ✓ stores a v2 card that the respond/GET path accepts, and pushes a generic body (2 ms)
+    ✓ refuses a private entry (health plan) and inserts nothing
+    ✓ refuses a past entry and inserts nothing (1 ms)
+    ✓ refuses a recurring entry and inserts nothing (1 ms)
+    ✓ refuses a cancelled entry and inserts nothing
+    ✓ refuses a recipient the guard refuses (no relationship / test account) with a generic message (1 ms)
+    ✓ the voice quota stays per user: the 6th send is rate limited, whatever the recipient (2 ms)
+    ✓ asks for confirmation without sending, and the unconfirmed stage inserts nothing (1 ms)
+  generic invite push text
+    ✓ exists in DE, EN, ES and SR with the name placeholder and no event detail (1 ms)
+
+PASS test/calendar/calendar-logic.golden.test.ts
+  recurrence
+    ✓ parses every rule shape the valid_rrule CHECK allows, and rejects the rest (5 ms)
+    ✓ expands daily-across-dst-berlin (3 ms)
+    ✓ expands daily-spring-forward-new-york (2 ms)
+    ✓ expands monthly-on-the-31st (2 ms)
+    ✓ expands weekly-byday-interval-2 (2 ms)
+    ✓ expands weekly-no-byday-uses-start-weekday (2 ms)
+    ✓ expands count-stops-series (2 ms)
+    ✓ expands count-with-window-starting-mid-series (2 ms)
+    ✓ expands until-stops-series (2 ms)
+    ✓ expands no-timezone-uses-fallback (2 ms)
+    ✓ expands invalid-timezone-uses-fallback (2 ms)
+    ✓ expands occurrence-overlapping-window-start-is-kept (2 ms)
+    ✓ expands limit-caps-results (2 ms)
+    ✓ expands bad-rule-or-window-gives-nothing (1 ms)
+    ✓ converts wall-clock times in both directions, DST gaps resolving forward (2 ms)
+  calendar window
+    ✓ role community, busy blocks on (3 ms)
+    ✓ role developer, busy blocks on (3 ms)
+    ✓ role admin, busy blocks on (3 ms)
+    ✓ role professional, busy blocks on (3 ms)
+    ✓ role super_admin, busy blocks on (2 ms)
+    ✓ role null, busy blocks on (3 ms)
+    ✓ role community, busy blocks off (3 ms)
+    ✓ a busy block never carries anything identifying (3 ms)
+    ✓ role visibility and write context (3 ms)
+    ✓ summary shape the assistant reads (2 ms)
+  move rules
+    ✓ pins which entries a member may move (1 ms)
+  reminders
+    ✓ default rules and emoji per entry kind (13 ms)
+    ✓ what fires, without quiet hours (12 ms)
+    ✓ what fires, with quiet hours 22:00–07:00 (defaults move, explicit ones stay) (14 ms)
+    ✓ the text each reminder says (14 ms)
+    ✓ quiet-hours parsing and window math (3 ms)
+    ✓ reminder keys and the loop switch (2 ms)
+  external calendars
+    ✓ which entries leave Vitanaland at all (2 ms)
+    ✓ Google event bodies (2 ms)
+    ✓ Google push plan: create, update, delete, orphan (1 ms)
+    ✓ Google free/busy is cleaned and merged (1 ms)
+    ✓ Outlook (Graph) event bodies and repeat rules (6 ms)
+    ✓ iCloud iCalendar objects (2 ms)
+    ✓ shared push plan for Outlook and iCloud (3 ms)
+    ✓ subscription (.ics) feed (2 ms)
+  work lenses
+    ✓ who gets which lens (1 ms)
+    ✓ source rows become read-only entries (5 ms)
+  maintenance and helpers
+    ✓ rescheduler: is the day over, and the next slot (6 ms)
+    ✓ today is the user's local today (3 ms)
+    ✓ producers only rewrite what changed (3 ms)
+    ✓ 90-day journey stage by day (2 ms)
+  request contracts
+    ✓ create (5 ms)
+    ✓ update, list and complete (3 ms)
+    ✓ allowed values match the database CHECK lists (1 ms)
+
+  console.log
+    [Calendar] Bulk created 2 events for user u1...
+
+      at src/routes/calendar.ts:689:13
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [CalendarProducers] completing goal step s failed (500): []
+
+      365 |       if (!resp.ok) {
+      366 |         const err = (await resp.text()).slice(0, 200);
+    > 367 |         console.warn(`${LOG_PREFIX} completing goal step ${event.source_ref_id} failed (${resp.status}): ${err}`);
+          |                 ^
+      368 |         return { completed: false, source_ref_type: type, error: err };
+      369 |       }
+      370 |       return { completed: ((await resp.json()) as unknown[]).length > 0, source_ref_type: type };
+
+      at completeSourceForCalendarEvent (src/services/calendar-producers.ts:367:17)
+      at Object.<anonymous> (test/vtid-04356-calendar-source-producers.test.ts:134:15)
+
+PASS test/vtid-04356-calendar-source-producers.test.ts
+  migration contract
+    ✓ goal_plan_steps has its calendar trigger (1 ms)
+    ✓ goal_plans has its calendar trigger
+    ✓ user_health_plans has its calendar trigger (1 ms)
+    ✓ provider_appointments has its calendar trigger
+    ✓ lab_test_orders has its calendar trigger
+    ✓ live_room_sessions has its calendar trigger (1 ms)
+    ✓ live_room_access_grants has its calendar trigger
+    ✓ every trigger body swallows calendar errors so the source write is never lost (2 ms)
+    ✓ one upsert, keyed on the source-ref unique index, keeps completions
+    ✓ an unpaid booking (pending) never shows; only paid ones do (1 ms)
+    ✓ lab orders use the lab ref type, so the lab reminder rules apply
+    ✓ a habit is a daily series and its completion is not mirrored
+    ✓ times are local to the user (1 ms)
+    ✓ backfill writes future items only
+    ✓ the helpers are not callable from the browser (1 ms)
+    ✓ every source type written is allowed by valid_source_type
+  calendar -> goal step write-back
+    ✓ ticking a goal entry off marks its step done, scoped to the user, never a habit (1 ms)
+    ✓ an already-done or habit step is reported as not completed (1 ms)
+    ✓ a failing write is reported, not thrown (5 ms)
+  gateway writers go through the contract
+    ✓ the broken goal-plan mirror is gone (the trigger replaces it)
+    ✓ Autopilot activation upserts on the recommendation id (1 ms)
+    ✓ voice-created entries use the shared role -> view mapping (5 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04914-calendar-prod-gates.test.ts
+  VTID-04914: production calendar gates
+    ✓ the step exists, runs before the final register step, and wires the two repository variables (2 ms)
+    ✓ pins all three calendar flags to "true" exactly once and keeps every other variable (18 ms)
+    ✓ with the repository variables unset, adds no Google secret reference and leaves existing secrets alone (13 ms)
+    ✓ with only one variable set, wires nothing (both or neither) (14 ms)
+    ✓ with both variables set, wires both secrets from them, replacing any old reference (17 ms)
+    ✓ works when the task definition has no secrets array (25 ms)
+  VTID-04914: staging pins the Google sync switch next to the other calendar loops
+    ✓ pins and strips CALENDAR_GOOGLE_SYNC_ENABLED (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04331-calendar-data-model.test.ts
+  types mirror the migration CHECKs
+    ✓ source types (3 ms)
+    ✓ role contexts (1 ms)
+    ✓ rrule regex is the same in SQL and TS (1 ms)
+    ✓ the create schema accepts the new columns and rejects bad ones (1 ms)
+    ✓ professional is its own lens (1 ms)
+  parseRRule
+    ✓ parses the supported parts
+    ✓ rejects what the CHECK rejects
+  expandOccurrences
+    ✓ daily habit keeps 07:30 local across the DST change (2 ms)
+    ✓ weekly BYDAY, window filter and series index (2 ms)
+    ✓ COUNT and UNTIL stop the series (2 ms)
+    ✓ monthly on the 31st skips short months (2 ms)
+    ✓ an invalid rule or window yields nothing (4 ms)
+  buildCalendarWindow
+    ✓ developer lens: own + personal in full, community as busy blocks with no details (1 ms)
+    ✓ include_busy=false hides other lenses entirely; cancelled entries never show (1 ms)
+    ✓ super admin sees everything, nothing is busy (1 ms)
+    ✓ recurring entries become one item per occurrence (1 ms)
+    ✓ toBusyBlock keeps only time fields
+  producer contract
+    ✓ creates once, then is a no-op, then updates only what changed (3 ms)
+    ✓ never moves a completed entry; reactivates a cancelled one (1 ms)
+    ✓ a lost insert race (409) becomes an update, not a failure (1 ms)
+    ✓ a series cancels keys that dropped out of the plan (3 ms)
+    ✓ completing the source ticks open entries off
+    ✓ ticking an entry off completes its recommendation through the canonical RPC (1 ms)
+    ✓ other source types are left alone (1 ms)
+    ✓ diffEntry compares instants, not strings
+  wiring
+    ✓ calendar completion completes the source
+    ✓ recommendation completion completes its calendar entries (1 ms)
+    ✓ the window route exists and is bounded
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [CalendarReminders] created=1 cancelled=0 refreshed=0 entries=1 skipped_no_tenant=0
+
+      at reconcileCalendarReminders (src/services/calendar-reminders.ts:486:15)
+
+  console.log
+    [CalendarReminders] created=1 cancelled=1 refreshed=0 entries=1 skipped_no_tenant=0
+
+      at reconcileCalendarReminders (src/services/calendar-reminders.ts:486:15)
+
+  console.log
+    [CalendarReminders] created=0 cancelled=1 refreshed=0 entries=0 skipped_no_tenant=0
+
+      at reconcileCalendarReminders (src/services/calendar-reminders.ts:486:15)
+
+PASS test/vtid-04338-calendar-default-reminders.test.ts
+  rules (owner-approved defaults)
+    ✓ meeting / event 10 min, workout 30 min, habit at time, lab evening before + 1 h (1 ms)
+    ✓ the entry’s own offsets win; {} means no reminders (1 ms)
+    ✓ emoji: own, lab, per type, fallback
+  computeDesiredReminders
+    ✓ one 10-min reminder for an event later today
+    ✓ lab tomorrow 08:00 Berlin: 19:00 local the evening before, and 07:00 local (1 ms)
+    ✓ skips cancelled, completed, beyond-horizon; keeps recently due ones for sync
+    ✓ a daily habit gets one reminder per occurrence inside the 36 h horizon, at 07:30 local (7 ms)
+    ✓ an offset longer than the time until the event still fires if inside the horizon (1 ms)
+  reminderText
+    ✓ renders every variant with the emoji and local time (2 ms)
+  catalog
+    ✓ every new key exists in DE and EN (tsc enforces), and in each translated locale (11 ms)
+  reconcile
+    ✓ creates the missing reminder with localized text, tenant and link columns (17 ms)
+    ✓ is a no-op when the reminder already exists (1 ms)
+    ✓ a moved entry: old reminder cancelled, new one created (7 ms)
+    ✓ a deleted / cancelled entry loses its pending reminders (1 ms)
+    ✓ a user without a tenant is skipped, not failed (1 ms)
+    ✓ keys normalise the occurrence timestamp (1 ms)
+  flag and wiring
+    ✓ needs the exact string "true" and does not start without it
+    ✓ startup starts the loop; staging and prod pin it (2 ms)
+  window read carries the same reminders the loop writes (VTID-04351)
+    ✓ the /events/window route decorates entries with reminderRules + entryEmoji, never busy blocks (1 ms)
+
+  console.log
+    [CalendarReminders] created=1 cancelled=0 refreshed=0 entries=1 skipped_no_tenant=0
+
+      at reconcileCalendarReminders (src/services/calendar-reminders.ts:486:15)
+
+  console.log
+    [CalendarReminders] created=1 cancelled=0 refreshed=0 entries=1 skipped_no_tenant=0
+
+      at reconcileCalendarReminders (src/services/calendar-reminders.ts:486:15)
+
+  console.log
+    [CalendarReminders] created=0 cancelled=0 refreshed=1 entries=1 skipped_no_tenant=0
+
+      at reconcileCalendarReminders (src/services/calendar-reminders.ts:486:15)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04373-calendar-reminder-quiet-hours.test.ts
+  quiet window
+    ✓ reads the preferences row; off, missing or empty windows are null (1 ms)
+    ✓ a window wrapping midnight covers the late evening and the early morning, local time (8 ms)
+    ✓ moves to one minute before the window began — yesterday evening for a morning time (1 ms)
+    ✓ is DST-aware: the night the clocks go back keeps 21:59 local (1 ms)
+  computeDesiredReminders with quiet hours
+    ✓ an early workout reminds the evening before, not inside quiet hours (4 ms)
+    ✓ a daytime reminder is untouched (1 ms)
+    ✓ a lab keeps its 19:00 heads-up and drops the moved 1-hour one (2 ms)
+    ✓ the entry’s own offsets are left where the member put them
+    ✓ a moved reminder never lands after the entry or outside the window being built (1 ms)
+  reminderText for a reminder on the day before
+    ✓ a reminder moved out of quiet hours reads "tomorrow at 06:30" (2 ms)
+    ✓ a same-day reminder keeps its "in N" wording (1 ms)
+  reconcile: quiet hours and text refresh
+    ✓ writes the reminder before quiet hours when the member has them on (26 ms)
+    ✓ a failed quiet-hours read keeps the usual time instead of failing the tick (9 ms)
+    ✓ a renamed entry gets its pending reminder text rewritten (3 ms)
+    ✓ matching text is left alone (2 ms)
+
+PASS test/vtid-04357-calendar-work-lenses.test.ts
+  who sees work items
+    ✓ nobody without the verified exafy_admin claim, whatever the role header says (1 ms)
+    ✓ staff get the lens their active role picks
+    ✓ a staff member in the community or patient view gets no work items
+  source rows become read-only items
+    ✓ deploys: prod vs staging kind, short commit, service, 10 minutes (1 ms)
+    ✓ every item is marked read-only and can never collide with a real row id (1 ms)
+    ✓ autopilot reviews: placed when staged, titled by the PR title
+    ✓ tickets: the block ends on the SLA deadline; closed statuses are dropped (1 ms)
+    ✓ ERP approvals are admin tasks titled by the capability (1 ms)
+  listWorkItems
+    ✓ no lenses → no reads at all
+    ✓ developer lens reads held executions only — never deploys (VTID-04680), never writes (1 ms)
+    ✓ admin lens reads open ticket SLAs in the window and pending ERP approvals (1 ms)
+    ✓ a failing source is logged and skipped, the others still come back (1 ms)
+    ✓ a thrown fetch fails open too (1 ms)
+  helpers
+    ✓ inWindow keeps overlapping items only
+    ✓ mergeWorkItems keeps start order across both lists (1 ms)
+  route wiring
+    ✓ grants work lenses from the verified claim, never from the header alone
+    ✓ work items carry no reminders
+    ✓ the complete route refuses work items
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04996-calendar-find-a-time.test.ts
+  computeFreeSlots (VTID-04996)
+    ✓ an empty calendar offers the start of each waking day, one slot per stretch (4 ms)
+    ✓ skips own commitments, other lenses and external calendars (1 ms)
+    ✓ a gap shorter than the duration is not offered; the next stretch is (1 ms)
+    ✓ quiet hours replace the 07-22 default (quiet 20:00-08:00 → awake 08:00-20:00 local)
+    ✓ a quiet window inside the day (13:00-15:00) leaves two waking spans (1 ms)
+    ✓ reminders, subscription dates and non-confirmed entries do not take time (1 ms)
+    ✓ an expected test-result date does not take time (1 ms)
+    ✓ the entry being moved does not block its own slot (1 ms)
+    ✓ never offers the past: starts on the next quarter hour after now (1 ms)
+    ✓ an entry without an end blocks one hour (1 ms)
+    ✓ follows the local day across the DST change (Berlin 2026-10-25 is UTC+1) (1 ms)
+    ✓ respects the range end and rejects ranges over 14 days or an empty duration (5 ms)
+    ✓ a slot ends exactly where the stretch allows (touching the next entry is fine) (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/orb-tools/calendar-management-tools.test.ts
+  calendar management tools — exports
+    ✓ reschedule_event has a handler and a declaration (1 ms)
+    ✓ cancel_event has a handler and a declaration
+    ✓ complete_event has a handler and a declaration (1 ms)
+    ✓ find_free_slot has a handler and a declaration
+    ✓ get_event_details has a handler and a declaration (1 ms)
+    ✓ check_calendar_conflicts has a handler and a declaration
+    ✓ declarations avoid Vertex-unsupported schema keys (1 ms)
+  tool_reschedule_event
+    ✓ moves an event and keeps its duration when new_end is omitted (2 ms)
+    ✓ returns a disambiguation list when the title matches several upcoming events (2 ms)
+    ✓ rejects a missing/invalid new_start (1 ms)
+    ✓ requires an authenticated user (1 ms)
+  tool_cancel_event
+    ✓ asks for confirmation before cancelling (1 ms)
+    ✓ cancels after confirm=true (2 ms)
+    ✓ says so when the event is already cancelled (1 ms)
+    ✓ requires an authenticated user (1 ms)
+  tool_complete_event
+    ✓ marks an event as skipped with notes (1 ms)
+    ✓ defaults the outcome to completed (2 ms)
+    ✓ VTID-04464: completing by voice completes the linked Autopilot recommendation (1 ms)
+    ✓ VTID-04464: a skipped entry does not complete its source (1 ms)
+    ✓ VTID-04464: a failing source completion never fails the call (1 ms)
+    ✓ rejects an unknown outcome (4 ms)
+    ✓ requires an authenticated user
+  tool_find_free_slot
+    ✓ finds the first gap between events within waking hours (3 ms)
+    ✓ starts at 8 AM local time in the requested timezone when the calendar is empty (4 ms)
+    ✓ rejects a missing duration
+    ✓ requires an authenticated user
+  tool_get_event_details
+    ✓ speaks the full details of a single match (1 ms)
+    ✓ answers plainly when nothing matches
+    ✓ errors without event_id or title_query (1 ms)
+    ✓ requires an authenticated user (2 ms)
+  tool_check_calendar_conflicts
+    ✓ names the overlapping events (1 ms)
+    ✓ defaults end_time to one hour after start_time and reports a free window (4 ms)
+    ✓ rejects a missing start_time (1 ms)
+    ✓ requires an authenticated user
+
+PASS test/vtid-04997-test-results-in-calendar-migration.test.ts
+  VTID-04997: expected test-result dates in the calendar
+    ✓ the source-type CHECK lists 'test_result' and the gateway list has it (2 ms)
+    ✓ declares insert, update and delete triggers on partner_health_test_orders
+    ✓ the update trigger fires only when a watched column really changed (trigger-level WHEN) (1 ms)
+    ✓ can never block an order write: the function catches every error
+    ✓ wants an entry only for pending orders with a future date, and shows the test name only (1 ms)
+    ✓ creates no reminders, skips test/service accounts, and is not a client RPC (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/services/calendar-role-context.test.ts
+  toWritableRoleContext — calendar role_context coercion
+    ✓ always returns a value that satisfies the valid_role_context CHECK (1 ms)
+    ✓ maps the roles that previously broke the calendar INSERT to a valid context
+    ✓ passes through already-valid contexts unchanged
+    ✓ defaults unknown / empty / nullish roles to community (1 ms)
+
+PASS test/vtid-04321-calendar-backend-repair.test.ts
+  backoffice calendar view
+    ✓ sees admin + personal entries, like staff (1 ms)
+    ✓ writes admin role_context (1 ms)
+  CALENDAR_EVENT_TYPES mirrors the valid_event_type CHECK
+    ✓ lists the 13 allowed values
+  upcoming-events: today in the user timezone
+    ✓ window spans every zone (1 ms)
+    ✓ keeps the first event on the local date and prints local time (1 ms)
+    ✓ the route uses the helper instead of setHours on the gateway clock
+  RSVP -> calendar migration
+    ✓ fires on the real sign-up table, for join and leave
+    ✓ writes a constraint-valid row with the client-compatible meetup_id
+    ✓ lets a client-written row replace the trigger row (no duplicates, no client error) (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04680-calendar-stays-clean.test.ts
+  goal-plan steps and the calendar
+    ✓ replaces the function the step trigger calls (1 ms)
+    ✓ writes no daily series — no RRULE anywhere (1 ms)
+    ✓ returns before any write for everything that is not a milestone (1 ms)
+    ✓ still cancels the entries of a plan that is no longer active
+    ✓ keeps milestone completion in step with the plan (1 ms)
+  one-shot fix for entries already written
+    ✓ is a data fix, not an automatic migration
+    ✓ only touches untouched habit and check-in entries the trigger wrote (1 ms)
+    ✓ cancels, never deletes, and takes the pending reminders with it (1 ms)
+  staff work lens
+    ✓ is opt-in on the window route
+    ✓ never reads deploys
+
+PASS test/services/assistant-continuation/providers/next-action/calendar-upcoming.test.ts
+  calendar-upcoming pure helpers
+    ✓ priorityForMinutes banding (1 ms)
+    ✓ computeMinutesUntil
+    ✓ renderLine — bands
+  produceCalendarUpcoming source
+    ✓ no rows → no_eligible_record
+    ✓ supabase error → source_unavailable (1 ms)
+    ✓ throw → errored
+    ✓ event 15min ahead → priority 92, confidence high, dedupe by id
+    ✓ event 5h ahead → priority 72, confidence low
+    ✓ empty title falls back to generic phrase
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04995-calendar-conflicts.test.ts
+  computeConflicts (VTID-04995)
+    ✓ an overlapping own entry is reported with its title (1 ms)
+    ✓ entries that only touch the boundary do not overlap
+    ✓ another lens shows as busy with no title; a connected calendar as external with no title (1 ms)
+    ✓ reminders and subscription dates never conflict; cancelled/pending entries are ignored
+    ✓ an expected test-result date is information, not committed time: it never conflicts (1 ms)
+    ✓ the entry being edited or moved does not conflict with itself, whichever occurrence
+    ✓ an entry without an end counts as one hour
+    ✓ an invalid or empty proposed window has no conflicts (1 ms)
+    ✓ across the autumn clock change (Berlin, 2026-10-25) instants decide, not wall-clock hours
+    ✓ a whole-day entry overlaps anything inside its day
+    ✓ results come back in time order and are capped at 20 (1 ms)
+
+PASS test/services/recommendation-engine/analyzers/calendar-prep-analyzer.test.ts
+  classifyCalendarPrep (pure single-event rules)
+    ✓ emits a signal for an upcoming wellness-pillar event with no prep block (1 ms)
+    ✓ returns null when the event has no pillar (6 ms)
+    ✓ returns null for cancelled events (1 ms)
+    ✓ returns null for events already in the past
+    ✓ returns null for events beyond the lookahead horizon (1 ms)
+    ✓ returns null when a prep block already exists within the prep window
+    ✓ still emits when the only nearby block is a DIFFERENT pillar
+    ✓ still emits when the nearby same-pillar block is OUTSIDE the prep window
+    ✓ ignores a cancelled prep block (does not count as prepared)
+    ✓ confidence is higher for sooner events and clamped to [0.4, 0.9] (1 ms)
+    ✓ honours a custom config
+    severity ladder
+      ✓ high for imminent same-day events (1 ms)
+      ✓ medium for imminent but next-day events
+      ✓ low for events further out than the imminent window
+  classifyCalendarPrepBatch (pure multi-user rules)
+    ✓ emits at most one signal per (user, pillar), keeping the soonest (1 ms)
+    ✓ emits separate signals for different pillars of the same user
+    ✓ keeps users isolated — u2's prep block only suppresses u2's own target, not u1's (1 ms)
+    ✓ returns an empty array when nothing qualifies
+  generateCalendarPrepFingerprint
+    ✓ is stable for the same user+pillar (daily bucket)
+    ✓ differs by pillar
+    ✓ differs by user (1 ms)
+    ✓ is a 16-char hex string (1 ms)
+
+PASS test/calendar/calendar-routes.contract.test.ts
+  route table
+    ✓ exposes exactly these routes, in this order (70 ms)
+  who may call
+    ✓ get /events refuses an anonymous caller and calls nothing (81 ms)
+    ✓ get /events/window?from=2026-10-05T00:00:00Z&to=2026-10-06T00:00:00Z refuses an anonymous caller and calls nothing (55 ms)
+    ✓ get /events/upcoming refuses an anonymous caller and calls nothing (36 ms)
+    ✓ get /events/today refuses an anonymous caller and calls nothing (39 ms)
+    ✓ get /events/history refuses an anonymous caller and calls nothing (28 ms)
+    ✓ get /events/gaps refuses an anonymous caller and calls nothing (37 ms)
+    ✓ get /conflicts refuses an anonymous caller and calls nothing (52 ms)
+    ✓ post /events refuses an anonymous caller and calls nothing (34 ms)
+    ✓ post /events/bulk refuses an anonymous caller and calls nothing (41 ms)
+    ✓ patch /events/e1 refuses an anonymous caller and calls nothing (41 ms)
+    ✓ post /events/e1/move refuses an anonymous caller and calls nothing (30 ms)
+    ✓ post /events/e1/complete refuses an anonymous caller and calls nothing (36 ms)
+    ✓ delete /events/e1 refuses an anonymous caller and calls nothing (58 ms)
+    ✓ post /journey/initialize refuses an anonymous caller and calls nothing (64 ms)
+    ✓ get /subscription refuses an anonymous caller and calls nothing (39 ms)
+    ✓ post /subscription refuses an anonymous caller and calls nothing (48 ms)
+    ✓ delete /subscription refuses an anonymous caller and calls nothing (41 ms)
+    ✓ get /google refuses an anonymous caller and calls nothing (26 ms)
+    ✓ post /google/enable refuses an anonymous caller and calls nothing (36 ms)
+    ✓ post /google/disable refuses an anonymous caller and calls nothing (37 ms)
+    ✓ post /reschedule refuses an anonymous caller and calls nothing (51 ms)
+    ✓ post /reprioritize refuses an anonymous caller and calls nothing (32 ms)
+    ✓ health and the feed are open (37 ms)
+    ✓ whole-calendar jobs are staff only (60 ms)
+  reads
+    ✓ list, upcoming, today, history, gaps, conflicts (119 ms)
+    ✓ window: validation (55 ms)
+    ✓ window: member view — emoji, reminders, movable, external busy (61 ms)
+    ✓ window: staff developer lens adds read-only work items only when asked; include flags turn parts off (136 ms)
+  writes
+    ✓ create: validation, defaults and role tagging (45 ms)
+    ✓ bulk (62 ms)
+    ✓ update and delete (78 ms)
+    ✓ move: validation, ownership rules, default duration (181 ms)
+    ✓ complete: work items are read-only, completion reaches the source (75 ms)
+    ✓ journey initialize (35 ms)
+  subscription and Google
+    ✓ feed link lifecycle (28 ms)
+    ✓ Google sync state and switch (88 ms)
+
+Test Suites: 28 passed, 28 total
+Tests:       547 passed, 547 total
+Snapshots:   0 total
+Time:        3.362 s, estimated 4 s
+Ran all test suites matching /test\/calendar|test\/vtid-04602-04604-go-live.test.ts|test\/orb-tools\/calendar-management-tools.test.ts|test\/services\/assistant-continuation\/providers\/next-action\/calendar-upcoming.test.ts|test\/services\/calendar-role-context.test.ts|test\/services\/recommendation-engine\/analyzers\/calendar-prep-analyzer.test.ts|test\/vtid-04321-calendar-backend-repair.test.ts|test\/vtid-04331-calendar-data-model.test.ts|test\/vtid-04338-calendar-default-reminders.test.ts|test\/vtid-04356-calendar-source-producers.test.ts|test\/vtid-04357-calendar-work-lenses.test.ts|test\/vtid-04358-calendar-ics-feed.test.ts|test\/vtid-04372-calendar-google-sync.test.ts|test\/vtid-04373-calendar-reminder-quiet-hours.test.ts|test\/vtid-04374-calendar-maintenance.test.ts|test\/vtid-04436-calendar-push.test.ts|test\/vtid-04680-calendar-stays-clean.test.ts|test\/vtid-04914-calendar-prod-gates.test.ts|test\/vtid-04916-calendar-share.test.ts|test\/vtid-04995-calendar-conflicts.test.ts|test\/vtid-04996-calendar-find-a-time.test.ts|test\/vtid-04997-test-results-in-calendar-migration.test.ts|test\/vtid-04917-calendar-invite-audiobook.test.ts|test\/vtid-04917-invite-routes.test.ts|test\/vtid-05104-calendar-invite-guard.test.ts|test\/vtid-04918-calendar-assistant-parity.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

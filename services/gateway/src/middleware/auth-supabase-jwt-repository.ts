@@ -14,10 +14,11 @@
  * shapes — no behavior change today. Client-agnostic (takes `sb` as a
  * param).
  *
- * `fetchPrimaryTenantForUser` is the identical query shape used at both
- * of auth-supabase-jwt.ts's two call sites (requireTenant and
- * requireAuthWithTenant) — deduplicated into one function, same as those
- * two sites already shared the same inline query before this move.
+ * `fetchPrimaryTenantForUser` was the primary-tenant query of requireTenant
+ * and requireAuthWithTenant. VTID-05149 moved both to the shared resolver
+ * (services/tenancy/tenant-context.ts); it stays only for
+ * routes/autopilot-prompts.ts, which moves with the other is_primary readers
+ * in the tenantDb slice.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -33,4 +34,11 @@ export async function fetchVitanaIdForUser(sb: SupabaseClient, userId: string, s
 
 export async function fetchPrimaryTenantForUser(sb: SupabaseClient, userId: string, signal: AbortSignal) {
   return sb.from('user_tenants').select('tenant_id').eq('user_id', userId).eq('is_primary', true).abortSignal(signal).single();
+}
+
+// VTID-05043: is the user a member of the tenant named in their token claim?
+// maybeSingle(): zero rows is "not a member", not an error.
+// VTID-05149: also returns active_role (cached with the positive result for req.tenant.role).
+export async function fetchMembershipForUserTenant(sb: SupabaseClient, userId: string, tenantId: string, signal: AbortSignal) {
+  return sb.from('user_tenants').select('tenant_id, active_role').eq('user_id', userId).eq('tenant_id', tenantId).abortSignal(signal).maybeSingle();
 }

@@ -131,12 +131,16 @@
   "notif.listing_interest.title": "İlanına ilgi var",
   "notif.listing_interest.body": "Birisi \"{title}\" ile ilgilendi.",
   "notif.chat_mention.title": "{sender} seni \"{group}\" grubunda andı",
+  "notif.calendar_invite.body": "{name} seni bir etkinliğe davet etti",
+  "notif.chat_burst.body": "{count} yeni mesaj · {preview}",
   "notif.day_close.title": "İyi geceler 🌙",
   "notif.day_close.body": "Gün sona erdi — aklında bir şey varsa, bana kısaca söyleyebilirsin.",
   "notif.partner_test_status_changed.title": "{partner_name} güncellemesi",
   "notif.partner_test_status_changed.body": "{test_name} testinle ilgili bir güncelleme var.",
   "notif.partner_test_result_ready.title": "Sonuçların hazır",
   "notif.partner_test_result_ready.body": "{partner_name} tarafından yapılan {test_name} sonuçların hazır. Vitana'dan sana açıklamasını isteyebilirsin.",
+  "notif.partner_link_request.title": "Bu senin testin mi?",
+  "notif.partner_link_request.body": "{partner_name}, sana ait olabilecek bir {test_name} sonucuna sahip. Lütfen uygulamada onayla.",
   "notif.feedback_resolved.title": "Bildirimin çözüldü",
   "notif.feedback_resolved.body": "Bildirdiğin sorunu ({ticket}) düzelttik. Gelişmemize yardım ettiğin için teşekkürler!",
   "email.partner_invite.subject": "Vitanaland'de {org} davetiyesi",
@@ -190,5 +194,8 @@
   "email.push_fallback.more": "… ve {count} tane daha",
   "email.push_fallback.cta": "Uygulamada aç",
   "email.push_fallback.why": "Bu e-postayı, hiçbir anlık bildirim sana ulaşmadığı için alıyorsun. Bunu istediğin zaman değiştirebilirsin:",
-  "email.push_fallback.settings": "Bildirim ayarları"
+  "email.push_fallback.settings": "Bildirim ayarları",
+  "sms.phone_verification.code": "Vitanaland kodun: {code}. Kimseyle paylaşma.",
+  "notif.vitana_companion_message.title": "Vitana'dan mesaj",
+  "notif.vitana_companion_message.body": "Vitana sana yazdı – mesajını okumak için dokun."
 }

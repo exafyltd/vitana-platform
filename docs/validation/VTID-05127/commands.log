@@ -1,0 +1,10 @@
+bash -n scripts/aws/setup-phone-verify-sms.sh scripts/ci/phone-verify-wiring.sh             # clean
+shellcheck scripts/aws/setup-phone-verify-sms.sh scripts/ci/phone-verify-wiring.sh          # 0 findings → outputs/shellcheck.txt
+scripts/aws/setup-phone-verify-sms.sh --env prod --monthly-limit-usd 50 --sender-id Vitana  # no credentials: prints the policy, stops at the account check, nothing changed → outputs/setup-dry-run-no-credentials.txt
+python3 -c 'yaml.safe_load(...)' on both deploy workflows; every run: block < 20,000 chars   # ok
+cd services/gateway && npx jest test/vtid-05127-phone-verify-switch-wiring.test.ts         # 25 pass → outputs/jest-vtid-05127.txt
+npx jest <every suite that reads AWS-PROD/STAGE-DEPLOY-GATEWAY.yml or the run-size limit>   # 153 suites, 2343 pass
+npx jest                                                                                    # full gateway suite → outputs/jest-full.txt
+#   full suite: 1661 passed, 1 failed (vtid-04525 flag registry: generated pins stale — the new staging PHONE_VERIFY_ENABLED pin) → outputs/jest-full-before-regen.txt
+node scripts/conversation/generate-flag-pins.mjs                                              # PHONE_VERIFY_ENABLED: { staging: "false | true", prod: null } (prod is set by scripts/ci/phone-verify-wiring.sh)
+npx jest test/services/conversation/vtid-04525-conversation-flag-registry.test.ts test/vtid-05127-phone-verify-switch-wiring.test.ts   # both pass

@@ -1,0 +1,11 @@
+# VTID-05062 commands (2026-10-10)
+
+$ cd services/gateway && npx jest test/vtid-05062-rum-nav-beacon.test.ts test/vtid-05062-screen-load-daily-report.test.ts test/vtid-05062-daily-report-route.test.ts
+Test Suites: 3 passed, 3 total; Tests: 48 passed, 48 total            — outputs/jest-vtid-05062.txt
+$ node_modules/.bin/tsc --noEmit -p .
+only the pre-existing libphonenumber-js module error (contacts-import.ts, untouched) — outputs/tsc.txt
+$ node --test scripts/ci/staging-verify/lib.test.cjs                    23/23 passed
+$ node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(require('./docs/validation/VTID-05062/staging-tests.json'))"
+{"ok":true,"errors":[]}
+# vitana-v1 side: npx vitest run (340 files, 2212 tests passed); npm run build passes.
+# Nothing was run against production or any live host.

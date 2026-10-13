@@ -1,0 +1,46 @@
+{
+  "vtid": "VTID-05055",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "member link-requests refuses an anonymous caller",
+      "path": "/api/v1/partner-health/member/link-requests",
+      "expect_status": 401
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "staff partner-health orders refuses an anonymous caller (no audit row is written before auth)",
+      "path": "/api/v1/admin/partner-health/orders",
+      "expect_status": 401
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "staff partner-health inbox refuses an anonymous caller (no audit row is written before auth)",
+      "path": "/api/v1/admin/partner-health/inbox",
+      "expect_status": 401
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "staff partner-health candidates refuses an anonymous caller (no audit row is written before auth)",
+      "path": "/api/v1/admin/partner-health/candidates/00000000-0000-0000-0000-000000000000",
+      "expect_status": 401
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/admin-partner-health.test.ts test/partner-health-member.test.ts test/partner-health/link-confirmation.test.ts test/vtid-05055-member-link-migration.test.ts",
+      "cwd": "services/gateway",
+      "reason": "confirm-match proposes instead of linking (202, no link/order insert, tt() notification, 503 without the migration), member list/confirm/decline scoped to the caller, the one-transaction confirm function and its grants, audited staff reads failing closed, partner_key from the order with no doctorbox fallback, and the migration contract. No POST and no authorized staff read on staging: both write to the database staging shares with production."
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04560-role-separation-regression.test.ts test/i18n/catalog-coverage.test.ts test/vtid-04674-notification-controls.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the domain-atlas drift guard claims the new route file, the new notif.partner_link_request keys are covered in every translated locale, and the notification catalog stays well-formed"
+    }
+  ]
+}

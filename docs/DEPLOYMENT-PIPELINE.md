@@ -152,6 +152,10 @@ validates. The test is written in the same PR as the code, never after the
 deploy. Worked example: `exafyltd/vitana-v1`
 `docs/validation/VTID-04616/staging-tests.json`.
 
+**How the range is read (VTID-05076):** one entry per change that landed on main — the first-parent chain (`git log --first-parent`). A squash merge or a direct push is its own entry; a PR merged with a merge commit is judged by the merge commit, whose subject carries the PR title and VTID, and its files are everything the merge brought into main. The ready message marks such an entry "(N branch commits)". A direct push without a VTID still fails rule 47.
+
+**One exception (VTID-05075):** a commit whose only build-relevant change is a service's `pnpm-lock.yaml` (files outside the service's build, such as evidence docs, are ignored) needs no change suite of its own. STAGING-VERIFY lists it under "Lockfile-only changes (no change suite; smoke tests only)" and records it as `lockfile_only`, so the "Staging verified — ready for deployment to production?" message names every one that ships. Any other build file in the same commit, a VTID without a manifest, or another service's lockfile (`package-lock.json`, `bun.lock`) keeps the rule as written.
+
 **Which suites run.** Every commit between the commit production serves and
 the verified commit that touches the service's deploy paths contributes its
 VTIDs' suites — so a verification proves everything a PUBLISH would ship, not
@@ -278,8 +282,27 @@ same two channels.
   breaks an older feature is then caught within a day, even when no new commit
   touches it. The OASIS event carries `metadata.full=true`.
 - **Gate 2 freshness.** Before sending the ready message, the session checks
-  the newest `staging.verify.*` event with `metadata.full=true` for the
-  service. If it is older than 24 h, the session dispatches a full run first.
+  the newest passed or failed full run under 24 h (`staging.verify.passed` /
+  `staging.verify.failed` with `metadata.full=true`) for the service;
+  superseded full runs are skipped; a failed one blocks. If there is none
+  under 24 h, the session dispatches a full run first (VTID-05144).
+- **Mid-run staging redeploy (VTID-05144).** A full run takes 22–45 min and a
+  merge in that window redeploys staging. The runner fetches `main` to resolve
+  the new stamp: a descendant of the verified commit makes the run
+  `superseded`, a non-descendant stays a failed `mismatch`. Each result
+  carries `started_at`/`ended_at`; it is attributed to the commit only if it
+  ended before `T_cut`, the earliest staging deploy run created at or after
+  the run start (lookup failure → run start: nothing attributed). An
+  attributed failure makes the run `failed`; otherwise it is `superseded`
+  (commit status `error`, "superseded — staging moved to <short>; not
+  verified", never a pass). The OASIS event carries `superseded_by`,
+  `attribution_cutoff`, `chain` and per-result `attributed`. A superseded
+  **full** run re-dispatches a full run on the newer commit (`chain` + 1, at
+  most 3 in a row; after that the nightly run is the evidence). Full runs use
+  their own concurrency group (`staging-verify-<service>-full`), so they never
+  delay a per-deploy verification. PUBLISH and the Operator run view take the
+  newest passed/failed run for the commit and fall back to a superseded one
+  only when no other exists.
 - **Where the result lands.** Besides OASIS and the job summary, the `report`
   job posts:
   - a commit status (`staging-verify`, or `staging-verify/full` for the

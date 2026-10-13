@@ -181,6 +181,66 @@ export async function searchCode(
 }
 
 /**
+ * VTID-05060: pull requests whose title names `term` (e.g. a VTID) across one
+ * or more repos, newest first — one GitHub search call (`/search/issues`,
+ * `type:pr`, one `repo:` qualifier per repo). Read-only.
+ */
+export interface GitHubPrSearchHit {
+  repo: string;
+  number: number;
+  title: string;
+  state: 'open' | 'closed';
+  merged: boolean;
+  html_url: string;
+  body: string;
+  updated_at: string;
+}
+
+export async function searchPullRequests(
+  term: string | readonly string[],
+  repos: readonly string[],
+  opts: { tokenOverride?: string; signal?: AbortSignal; perPage?: number } = {}
+): Promise<GitHubPrSearchHit[]> {
+  // VTID-05069: several terms → one batched search (`"a" OR "b"`), one call for a whole thread.
+  const terms = (typeof term === 'string' ? [term] : [...term]).map((t) => `"${t}"`).join(' OR ');
+  const q = encodeURIComponent([terms, 'in:title', 'type:pr', ...repos.map((r) => `repo:${r}`)].join(' '));
+  const perPage = Math.min(100, Math.max(1, opts.perPage ?? 10));
+  const result = await githubRequest<{ items: any[] }>(
+    `/search/issues?q=${q}&sort=updated&order=desc&per_page=${perPage}`,
+    opts.signal ? { signal: opts.signal } : {},
+    opts.tokenOverride
+  );
+  return (result.items || []).map((i: any) => ({
+    repo: String(i.repository_url || '').replace(/^.*\/repos\//, ''),
+    number: i.number,
+    title: i.title,
+    state: i.state === 'open' ? 'open' : 'closed',
+    merged: Boolean(i.pull_request?.merged_at),
+    html_url: i.html_url,
+    body: typeof i.body === 'string' ? i.body : '',
+    updated_at: i.updated_at,
+  }));
+}
+
+/**
+ * VTID-05060: GitHub compare status of `head` against `base`
+ * (`ahead` | `behind` | `identical` | `diverged`). Read-only.
+ */
+export async function compareStatus(
+  repo: string,
+  base: string,
+  head: string,
+  opts: { tokenOverride?: string; signal?: AbortSignal } = {}
+): Promise<string> {
+  const r = await githubRequest<{ status: string }>(
+    `/repos/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}?per_page=1`,
+    opts.signal ? { signal: opts.signal } : {},
+    opts.tokenOverride
+  );
+  return r.status;
+}
+
+/**
  * VTID-03835: Read-only file content read via the GitHub Contents API.
  * Defaults `ref` to `main` — there is no live checkout on the gateway
  * container to read from, so a branch/tag/SHA ref is the only option.
@@ -280,11 +340,29 @@ export async function getCombinedStatus(
 export async function getCheckRuns(
   repo: string,
   ref: string,
-  tokenOverride?: string
+  tokenOverride?: string,
+  opts: { perPage?: number } = {}
 ): Promise<{ check_runs: GitHubCheckRun[] }> {
+  // VTID-05069: optional per_page (GitHub's default page is 30 check runs).
+  const qs = opts.perPage ? `?per_page=${Math.min(100, Math.max(1, opts.perPage))}` : '';
   return githubRequest<{ check_runs: GitHubCheckRun[] }>(
-    `/repos/${repo}/commits/${ref}/check-runs`, {}, tokenOverride
+    `/repos/${repo}/commits/${ref}/check-runs${qs}`, {}, tokenOverride
   );
+}
+
+/**
+ * VTID-05069: the commits of a pull request, oldest first (one page of up to
+ * 100). Read-only; the pipeline view counts fix-forward pushes from it.
+ */
+export async function getPullRequestCommits(
+  repo: string,
+  prNumber: number,
+  tokenOverride?: string
+): Promise<Array<{ sha: string; date: string | null }>> {
+  const r = await githubRequest<Array<{ sha: string; commit?: { committer?: { date?: string } } }>>(
+    `/repos/${repo}/pulls/${prNumber}/commits?per_page=100`, {}, tokenOverride
+  );
+  return (Array.isArray(r) ? r : []).map((c) => ({ sha: c.sha, date: c.commit?.committer?.date ?? null }));
 }
 
 /**
@@ -563,14 +641,22 @@ export async function getCommitsBetween(
   base: string,
   head: string,
   limit = 5,
+  // VTID-05069: `files: false` skips the per-commit file lookups (one compare call in all).
+  opts: { files?: boolean; tokenOverride?: string } = {},
 ): Promise<Array<{ sha: string; message: string; files: string[] }>> {
   const r = await githubRequest<{ commits?: Array<{ sha: string; commit?: { message?: string } }> }>(
     `/repos/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
+    {},
+    opts.tokenOverride,
   );
   const commits = (r.commits || []).slice().reverse().slice(0, Math.max(0, limit));
   const out: Array<{ sha: string; message: string; files: string[] }> = [];
   for (const c of commits) {
     let files: string[] = [];
+    if (opts.files === false) {
+      out.push({ sha: c.sha, message: (c.commit?.message || '').split('\n')[0].slice(0, 300), files });
+      continue;
+    }
     try {
       const d = await githubRequest<{ files?: Array<{ filename: string }> }>(`/repos/${repo}/commits/${encodeURIComponent(c.sha)}`);
       files = (d.files || []).map((f) => f.filename).slice(0, 60);
@@ -727,7 +813,8 @@ export async function triggerRepositoryDispatch(
  */
 export async function getWorkflowRuns(
   repo: string,
-  workflowId: string
+  workflowId: string,
+  tokenOverride?: string
 ): Promise<{
   workflow_runs: Array<{
     id: number;
@@ -735,6 +822,9 @@ export async function getWorkflowRuns(
     conclusion: string | null;
     html_url: string;
     created_at: string;
+    // VTID-05069: already in GitHub's response; typed for the pipeline view.
+    head_sha?: string;
+    head_branch?: string | null;
   }>;
 }> {
   return githubRequest<{
@@ -744,8 +834,10 @@ export async function getWorkflowRuns(
       conclusion: string | null;
       html_url: string;
       created_at: string;
+      head_sha?: string;
+      head_branch?: string | null;
     }>;
-  }>(`/repos/${repo}/actions/workflows/${workflowId}/runs?per_page=5`);
+  }>(`/repos/${repo}/actions/workflows/${workflowId}/runs?per_page=5`, {}, tokenOverride);
 }
 
 /**
@@ -961,6 +1053,47 @@ export async function listOpenPrsBare(repo: string = DEFAULT_REPO, limit: number
   return prs.map((pr) => ({ number: pr.number, title: pr.title, branch: pr.head.ref, url: pr.html_url, updated_at: pr.updated_at }));
 }
 
+/** VTID-05146: every open PR (any author, any branch, drafts included), paged. */
+export interface OpenPullRequest { number: number; branch: string; head_sha: string; draft: boolean; title: string }
+
+export async function listOpenPullRequests(repo: string, maxPages: number = 5): Promise<{ prs: OpenPullRequest[]; complete: boolean }> {
+  const prs: OpenPullRequest[] = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const batch = await githubRequest<Array<{ number: number; title: string; draft?: boolean; head: { ref: string; sha: string } }>>(
+      `/repos/${repo}/pulls?state=open&per_page=100&page=${page}`
+    );
+    for (const pr of batch) prs.push({ number: pr.number, branch: pr.head.ref, head_sha: pr.head.sha, draft: !!pr.draft, title: pr.title });
+    if (batch.length < 100) return { prs, complete: true };
+  }
+  return { prs, complete: false };
+}
+
+/**
+ * VTID-05146: a PR's complete file list. getPrFiles returns GitHub's first page
+ * (30 files) only; this pages to GitHub's own cap (3,000 files) and says when
+ * the list is not complete.
+ */
+export async function getAllPrFiles(repo: string, prNumber: number, maxPages: number = 30): Promise<{ files: string[]; complete: boolean }> {
+  const files: string[] = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const batch = await githubRequest<Array<{ filename: string; previous_filename?: string }>>(
+      `/repos/${repo}/pulls/${prNumber}/files?per_page=100&page=${page}`
+    );
+    for (const f of batch) {
+      files.push(f.filename);
+      if (f.previous_filename) files.push(f.previous_filename);
+    }
+    if (batch.length < 100) return { files, complete: true };
+  }
+  return { files, complete: false };
+}
+
+/** VTID-05146: close a PR and leave a comment saying why. */
+export async function closePullRequestWithComment(repo: string, prNumber: number, comment: string): Promise<void> {
+  await githubRequest(`/repos/${repo}/issues/${prNumber}/comments`, { method: 'POST', body: JSON.stringify({ body: comment }) });
+  await githubRequest(`/repos/${repo}/pulls/${prNumber}`, { method: 'PATCH', body: JSON.stringify({ state: 'closed' }) });
+}
+
 /**
  * Detect which service is primarily affected by a PR
  */
@@ -996,6 +1129,9 @@ export const githubService = {
   findPrForBranch,
   getPullRequest,
   getPrFiles,
+  getAllPrFiles,
+  listOpenPullRequests,
+  closePullRequestWithComment,
   getCombinedStatus,
   getCheckRuns,
   getPrStatus,

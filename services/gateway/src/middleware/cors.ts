@@ -73,8 +73,63 @@ export const corsOptions = {
   maxAge: 86400,
 };
 
+// VTID-05079: OpenAI's plugin portal reads our OAuth discovery documents and talks to the
+// ChatGPT MCP endpoint from the browser (Origin: https://platform.openai.com). The generic
+// handler above answers any origin that is not on its allow-list with an HTML 500, so the
+// portal reported "Authorization unavailable" and never started the sign-in. Two narrow
+// rules, exact paths only, and nothing else widened (/mcp, /api/*, the Command Hub keep the
+// allow-list above):
+//   1. GET/HEAD/OPTIONS on /.well-known/*: public, unauthenticated discovery documents, any
+//      origin (`*`, no credentials).
+//   2. /mcp/chatgpt: only the OpenAI origins below, reflected exactly (never `*`). The bearer
+//      token is still required for any data; CORS only lets those pages read the response,
+//      including the WWW-Authenticate challenge that points at the sign-in metadata.
+const OPENAI_MCP_ORIGINS = ["https://platform.openai.com", "https://chatgpt.com"];
+// VTID-05133: the Maxina Community connector's ChatGPT path gets the same exact-path rule.
+const MCP_CHATGPT_PATHS = ["/mcp/chatgpt", "/mcp/community/chatgpt"];
+const WELL_KNOWN_PREFIX = "/.well-known/";
+
+/**
+ * Applies the narrow CORS rules above. Returns true when the request was handled by one of
+ * them (headers set, preflight answered), false when the generic handler must decide.
+ * Exported for tests.
+ */
+export function applyDiscoveryCors(req: Request, res: Response): boolean {
+  const path = req.path;
+  const method = req.method.toUpperCase();
+  const origin = req.headers.origin;
+
+  if (path.startsWith(WELL_KNOWN_PREFIX) && ["GET", "HEAD", "OPTIONS"].includes(method)) {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept");
+    res.setHeader("Access-Control-Max-Age", "86400");
+    return true;
+  }
+
+  if (MCP_CHATGPT_PATHS.includes(path) && ["POST", "OPTIONS"].includes(method) && typeof origin === "string" && OPENAI_MCP_ORIGINS.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept, Mcp-Protocol-Version, Mcp-Session-Id");
+    res.setHeader("Access-Control-Expose-Headers", "WWW-Authenticate, Mcp-Session-Id");
+    res.setHeader("Access-Control-Max-Age", "86400");
+    return true;
+  }
+
+  return false;
+}
+
 export function setupCors(app: Express) {
-  app.use(cors(corsOptions));
+  const generic = cors(corsOptions);
+  // Registered BEFORE the generic handler, which it bypasses for the two path rules only.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (applyDiscoveryCors(req, res)) {
+      if (req.method.toUpperCase() === "OPTIONS") return res.sendStatus(204);
+      return next();
+    }
+    return generic(req, res, next);
+  });
   app.options("*", cors(corsOptions));
 }
 
@@ -92,6 +147,12 @@ export function sseHeaders(req: Request, res: Response, next: NextFunction) {
   // an SSE route. Labelling those replies text/event-stream failed the
   // STAGING-VERIFY content-type check on the calendar window route.
   if (req.path === '/api/v1/calendar' || req.path.startsWith('/api/v1/calendar/')) return next();
+  // VTID-05065: the Kiro run stream (GET /api/v1/operator/kiro/runs/:id/stream) sets its own
+  // SSE headers after requireAdminAuth; labelling its 401/403/404 JSON replies text/event-stream
+  // failed STAGING-VERIFY ("expected application/json").
+  if (req.path.startsWith('/api/v1/operator/kiro/runs/')) return next();
+  // VTID-05069: the same for the pipeline-tree stream (GET /api/v1/operator/runs/:vtid/stream).
+  if (req.path.startsWith('/api/v1/operator/runs/')) return next();
   // VTID-04695: "/events" alone is not a stream. Every GET under /events is
   // a JSON route (OASIS events, universal-cart, product analytics,
   // voice-lab debug; calendar is exempted above) and res.json() keeps a Content-Type already

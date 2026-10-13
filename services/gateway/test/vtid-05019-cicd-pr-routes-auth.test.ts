@@ -115,7 +115,8 @@ describe('callers send the service token', () => {
     expect(near(orb, "gatewayApiCall('/api/v1/github/create-pr'", 'gatewayServiceAuthHeader()')).toBe(true);
     expect(near(orb, "gatewayApiCall('/api/v1/github/safe-merge'", 'gatewayServiceAuthHeader()')).toBe(true);
     const oc = src('services/openclaw-bridge/src/skills/vitana-cicd.ts');
-    expect(oc).toMatch(/path === '\/github\/create-pr' \|\| path === '\/github\/safe-merge'/);
+    // VTID-05047: prRouteAuth now sends the token on every gateway call (no path allowlist).
+    expect(oc).toMatch(/return t \? \{ Authorization: `Bearer \$\{t\}` \} : \{\};/);
     expect(oc).toContain('...prRouteAuth(path)');
   });
   it('both routes are mounted behind requireServiceOrAdmin', () => {

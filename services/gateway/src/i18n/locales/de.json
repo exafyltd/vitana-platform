@@ -131,12 +131,16 @@
   "notif.listing_interest.title": "Interesse an deinem Angebot",
   "notif.listing_interest.body": "Jemand hat Interesse an „{title}\" gezeigt.",
   "notif.chat_mention.title": "{sender} hat dich in „{group}“ erwähnt",
+  "notif.calendar_invite.body": "{name} hat dich zu einem Termin eingeladen",
+  "notif.chat_burst.body": "{count} neue Nachrichten · {preview}",
   "notif.day_close.title": "Gute Nacht 🌙",
   "notif.day_close.body": "Der Tag ist zu Ende — wenn dir noch was durch den Kopf geht, sag es mir kurz.",
   "notif.partner_test_status_changed.title": "Update von {partner_name}",
   "notif.partner_test_status_changed.body": "Es gibt ein Update zu deinem {test_name}.",
   "notif.partner_test_result_ready.title": "Deine Ergebnisse sind da",
   "notif.partner_test_result_ready.body": "Deine {test_name}-Ergebnisse von {partner_name} sind da. Frag Vitana, sie dir zu erklären.",
+  "notif.partner_link_request.title": "Ist das dein Test?",
+  "notif.partner_link_request.body": "{partner_name} hat ein Ergebnis für {test_name}, das zu dir gehören könnte. Bitte bestätige es in der App.",
   "notif.feedback_resolved.title": "Deine Meldung ist erledigt",
   "notif.feedback_resolved.body": "Wir haben dein gemeldetes Problem ({ticket}) behoben. Danke, dass du uns geholfen hast!",
   "email.partner_invite.subject": "Einladung zu {org} auf Vitanaland",
@@ -190,5 +194,8 @@
   "autopilot.auto.event_rsvp_referral.title": "Melde dich für das Event an, zu dem du eingeladen wurdest",
   "autopilot.auto.event_rsvp_referral.summary": "Du bist über eine Event-Einladung gekommen. Melde dich an, damit dein Platz sicher ist.",
   "autopilot.auto.share_milestone.title": "Teile deinen Meilenstein: {milestone}",
-  "autopilot.auto.share_milestone.summary": "Du hast einen Meilenstein erreicht. Teile ihn mit der Community – du siehst den Beitrag, bevor er erscheint."
+  "autopilot.auto.share_milestone.summary": "Du hast einen Meilenstein erreicht. Teile ihn mit der Community – du siehst den Beitrag, bevor er erscheint.",
+  "sms.phone_verification.code": "Dein Vitanaland-Code: {code}. Gib ihn niemandem weiter.",
+  "notif.vitana_companion_message.title": "Nachricht von Vitana",
+  "notif.vitana_companion_message.body": "Vitana hat dir geschrieben – tippe, um ihre Nachricht zu lesen."
 }

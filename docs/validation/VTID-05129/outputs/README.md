@@ -1,0 +1,25 @@
+# VTID-05129 outputs
+
+- Diagnosis input: full run https://github.com/exafyltd/vitana-platform/actions/runs/38295808979 (community-app @ bcae4d0a): 16 failing suites, all test/runner defects (see plan-sparring.md).
+- Proof run 1: https://github.com/exafyltd/vitana-platform/actions/runs/38363989362 (community-app @ 7d9c5707, full): 518 passed, 5 failed (was 16); cancelled at the 45-min job timeout during the after-run deploy check.
+  - VTID-04901, VTID-04902 (07:58): staging swapped to 2a193a17 mid-run (stage deploy 38365656444, 07:54–08:00) — the old index chunk was gone. Not a defect; the after-run check exists for this.
+  - VTID-04989 `/`: "fetch failed" again, no listed cause code, so no retry → fix-forward 1 (AC-8).
+  - VTID-04973: now measured correctly (post,info,post,info,…); the first slot is VitanaIndexCard, which renders nothing for the account (empty:hidden) — composeFeed's documented trade-off → spec checks the slot order in the DOM (vitana-v1).
+  - VTID-05081 phone journey: 1 of 4 journey runs in the same full run waited >10 s on one live-room cover image (the other 3: Events ready in ~1 s). External image latency; unchanged, re-observed in proof run 2.
+  - Job timeout → AC-9.
+- Proof run 2: https://github.com/exafyltd/vitana-platform/actions/runs/38372005093 (community-app @ 44a4f53e, full): 264 passed, 5 failed. Every one of the 16 original failures passes (VTID-04989 recovered via the new retry: "retrying GET … after fetch failed (EPIPE: write EPIPE)"; VTID-04973 passes with the slot-order check). Remaining:
+  - VTID-05107 design-contract spec (`__dirname` in ESM): another VTID's suite, already fixed on main by its owner (51bc5e37).
+  - VTID-04909 desktop (09:07:24): staging switched to 51bc5e37 mid-run (deploy 09:02–09:08); the same test passed 26 s later in the next invocation.
+  - deploy after-run: staging moved on to 7e3abbed (deploy 09:06–09:15) — correct detection.
+  - VTID-05062 / VTID-05081 phone journey: Postfach first visit 4454 / 4354 ms vs the 4000 ms budget (waiting on the /inbox route chunk), on the 7e3abbed build; the same step read 3262 and 2006 ms in the run's other two journeys.
+- Proof run 3: https://github.com/exafyltd/vitana-platform/actions/runs/38376258040 (community-app @ 7e3abbed, full): 269 passed, 2 failed.
+  - smoke phone journey (09:39, on 7e3abbed): News return 1518 ms vs the 1500 ms budget (+18 ms). The same step read 1242, 1250 and 1030 ms in the run's other three journeys (10:19–10:20, by then on 80fb08b1).
+  - deploy after-run: staging moved to 80fb08b1 (stage deploy 09:57–10:03) — the fourth mid-run deploy in three runs.
+- Phone journey across the three runs: one of about four journeys per run misses one budget by 1–11% (run 1: Events image wait; run 2: Postfach 4354/4454 vs 4000 ms; run 3: News return 1518 vs 1500 ms), a different step each time. Raised to the owner: a methodology change (or performance work) is outside the approved plan.
+- Amendment A1 (vitana-v1 #1361, fa314551): the phone journey is judged on the median of 3 passes against the same budgets (owner decision 2026-10-13; sparred, converged).
+- Proof run 4: https://github.com/exafyltd/vitana-platform/actions/runs/38402340778 (community-app @ fa314551, full, 13:06–13:49): 272 passed, 4 failed — every failure inside a deploy window, and every failing spec passed in its other executions of the same run on fa314551:
+  - VTID-04760 Audiobook (13:14:08): episode audio 502 during the staging gateway deploy 13:07–13:14:46 (VTID-05141); the same spec passed at 13:15:02, 13:15:15, 13:15:26.
+  - VTID-04812 calendar (13:17:08): + button not rendered right after that gateway deploy; the same spec passed 6 times 13:18–13:29.
+  - VTID-05081 phone journey (13:48:01): "bottom tab bar did not render" during the frontend switch to ffaabdca (VTID-05109, deploy 13:41–13:48); the journey passed at 13:09, 13:45 and 13:46 with every step's median ≤ 739 ms.
+  - deploy after-run: staging moved to ffaabdca (merge during the requested pause).
+- Outcome: all 16 original failures fixed; the phone journey is stable on medians (tab switches ~100 ms). The only remaining red comes from deploys landing mid-run in either repo.

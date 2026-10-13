@@ -1,0 +1,12 @@
+     M2 md5 handle_new_user:         eb88ecd1e6bff6baba33f1b069361052
+     M2 md5 provision_platform_user: 3fbcafeb65604e1a06fb7c66bbbac24d
+ok 1 golden: live bodies and M1+M2 write identical rows in all 7 tables + app_metadata, 4 side effects per signup in the same order
+     old bodies, alkalma physically first: a no-slug signup landed in 'alkalma' (the created_at tie decides)
+ok 2 determinism: with alkalma physically first a no-slug signup lands in maxina (is_default)
+ok 3 hardening: slugs of a closed, a platform and an inactive tenant land in the default tenant
+ok 4 invariants: second default refused, zero defaults refused at COMMIT, swap in one transaction, CHECK, delete of the default refused, fires for authenticated with EXECUTE revoked
+ok 5 no default: signup succeeds with a WARNING and creates no membership
+ok 6 ci_tenant_isolation_health: exact counts, no row content, a failing table in scan_errors, anon/authenticated denied, service_role allowed
+ok 7 guards: M2 refused before M1 and on drift (nothing clobbered), M1 refused unless exactly 2 tenants
+ok 8 rollback: M1 re-apply refused, R1 refused before R2, R3 → R2 → R1 restores the before-state (md5s, columns, constraints, ACLs), M1+M2 re-apply cleanly
+PASS vtid-05149 tenant foundation
