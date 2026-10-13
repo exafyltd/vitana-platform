@@ -8,6 +8,8 @@
  *
  *   GET  /          catalogue + the member's consents + active partners + wearable connectors
  *   POST /grant     { category, resource_id?, text_version, locale, granted_via? }
+ *                   (VTID-05164: a sync_* grant names apple_health, health_connect
+ *                   or an aggregator connector; granted_via may be native_health_sync)
  *   POST /revoke    { category, resource_id? }
  *   GET  /history   the member's own consent events, newest first, max 100
  *
@@ -33,8 +35,10 @@ import { listConnectors } from '../connectors';
 import {
   LEGACY_TEXT_VERSION,
   buildHealthConsentOasisEvent,
+  HEALTH_SYNC_SOURCE_KINDS,
   isConsentLocale,
   isHealthConsentCategoryKey,
+  isHealthSyncConsentKey,
   isMemberGrantedVia,
   listMemberConsentHistory,
   listMemberConsents,
@@ -56,6 +60,17 @@ export function wearableConnectors(): ConsentConnectorView[] {
   return listConnectors()
     .filter((c) => WEARABLE_CONNECTOR_CATEGORIES.has(String(c.category)))
     .map((c) => ({ id: c.id, display_name: c.display_name }));
+}
+
+/**
+ * VTID-05164 (C1): resources a `sync_*` consent may name — the phone health
+ * stores (HEALTH_SYNC_SOURCE_KINDS) and the aggregator connectors.
+ */
+export function healthSyncConsentResources(): string[] {
+  const aggregators = listConnectors()
+    .filter((c) => String(c.category) === 'aggregator')
+    .map((c) => c.id);
+  return [...HEALTH_SYNC_SOURCE_KINDS, ...aggregators];
 }
 
 function getIdentity(req: Request): ConsentIdentity | null {
@@ -122,6 +137,9 @@ router.post('/grant', requireAuthWithTenant, async (req: Request, res: Response)
   // The connector id is checked here; partner keys are checked against
   // partner_registry inside fn_set_health_consent.
   if (category === 'wearables' && !wearableConnectors().some((c) => c.id === resourceId)) {
+    return res.status(400).json({ ok: false, error: 'UNKNOWN_RESOURCE' });
+  }
+  if (isHealthSyncConsentKey(category) && !healthSyncConsentResources().includes(String(resourceId ?? ''))) {
     return res.status(400).json({ ok: false, error: 'UNKNOWN_RESOURCE' });
   }
 

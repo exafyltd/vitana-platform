@@ -96,8 +96,12 @@ describe('static category map', () => {
     const seed = Object.fromEntries(
       rows.map((m) => [m[1], { resource_type: m[2], scope: m[3], per_resource: m[4] === 'TRUE' }]),
     );
-    expect(seed).toEqual(HEALTH_CONSENT_CATEGORY_MAP);
-    expect(HEALTH_CONSENT_CATEGORY_KEYS).toEqual(['wearables', 'partner_results', 'ai_health_analysis', 'health_data_analytics', 'community_insights']);
+    // VTID-05164 (C1) appends five keys seeded by its own migration
+    // (test/migrations/vtid-05164-health-sync-consent-migration.test.ts checks those);
+    // the VTID-05092 seed still equals the map's first five keys exactly.
+    const d10 = Object.fromEntries(Object.entries(HEALTH_CONSENT_CATEGORY_MAP).filter(([k]) => k in seed));
+    expect(seed).toEqual(d10);
+    expect(HEALTH_CONSENT_CATEGORY_KEYS.slice(0, 5)).toEqual(['wearables', 'partner_results', 'ai_health_analysis', 'health_data_analytics', 'community_insights']);
   });
 
   it('partner_results matches the existing DoctorBox rows unchanged', () => {

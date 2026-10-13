@@ -152,6 +152,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const healthRouter = require('./routes/health').default;
   // VTID-05159: health store internal routes (Health Hub Phase 1 / A2)
   const healthStoreInternalRouter = require('./routes/health-store-internal').default;
+  // VTID-05164: Health Sync ingest, contract v1 (Health Hub Phase 1 / C1)
+  const healthIngestModule = require('./routes/health-ingest');
+  const healthIngestRouter = healthIngestModule.default;
   // VTID-01105: Memory Gateway Routes - memory write/context for ORB
   const memoryRouter = require('./routes/memory').default;
   // VTID-04388: Memory Garden on the canonical store
@@ -606,6 +609,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // type '*/*' on purpose (unlike the Stripe mounts): the signature covers whatever
   // bytes the vendor sent, whatever Content-Type it labels them with.
   app.use('/api/v1/connectors/webhook', express.raw({ type: '*/*', limit: '2mb' }));
+
+  // VTID-05164 (Health Hub C1): Health Sync batches are read by the ingest
+  // router itself (512 KB compressed, gunzip bounded at 4 MB) AFTER its gate,
+  // per-IP limit and auth. This path-scoped guard reads nothing; it only keeps
+  // the global express.json() below (2 MB, inflates gzip itself) off POST /.
+  app.use('/api/v1/health/ingest', healthIngestModule.healthIngestBodyGuard());
 
   // Middleware - IMPORTANT: JSON body parser must come before route handlers
   app.use(express.json({ limit: '2mb' }));
@@ -1176,6 +1185,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/health', healthRouter, { owner: 'health' });
   // VTID-05159: health store internal routes (maintenance, reprocess, erase-raw, store-status) — dark by default
   mountRouterSync(app, '/api/v1/health/internal', healthStoreInternalRouter, { owner: 'health-store-internal' });
+  // VTID-05164: Health Sync ingest (contract v1) — POST / and /source-state dark (409) unless HEALTH_SYNC_INGEST_ENABLED and the store are on; never on staging
+  mountRouterSync(app, '/api/v1/health/ingest', healthIngestRouter, { owner: 'health-ingest' });
 
   // VTID-01105: Memory Gateway - write/context endpoints for ORB memory
   mountRouterSync(app, '/api/v1/memory', memoryRouter, { owner: 'memory' });

@@ -45,7 +45,16 @@ export type HealthConsentCategoryKey =
   | 'partner_results'
   | 'ai_health_analysis'
   | 'health_data_analytics'
-  | 'community_insights';
+  | 'community_insights'
+  // VTID-05164 (Health Hub Phase 1 / C1, shared interface S7): Health Sync
+  // per-category ingestion consents (one per category x source) and the
+  // self-logged consent (diary, voice, manual). Seeded by
+  // 20261014130000_vtid_05164_health_sync_consent_keys.sql.
+  | 'sync_activity'
+  | 'sync_sleep'
+  | 'sync_heart'
+  | 'sync_body'
+  | 'self_logged_health';
 
 export type ConsentResourceType = 'health_category' | 'partner_integration' | 'health_source';
 
@@ -65,6 +74,50 @@ export const HEALTH_CONSENT_CATEGORY_MAP: Readonly<Record<HealthConsentCategoryK
   ai_health_analysis: { resource_type: 'health_category', scope: 'processing', per_resource: false },
   health_data_analytics: { resource_type: 'health_category', scope: 'processing', per_resource: false },
   community_insights: { resource_type: 'health_category', scope: 'processing', per_resource: false },
+  sync_activity: { resource_type: 'health_source', scope: 'ingestion:activity', per_resource: true },
+  sync_sleep: { resource_type: 'health_source', scope: 'ingestion:sleep', per_resource: true },
+  sync_heart: { resource_type: 'health_source', scope: 'ingestion:heart', per_resource: true },
+  sync_body: { resource_type: 'health_source', scope: 'ingestion:body', per_resource: true },
+  self_logged_health: { resource_type: 'health_category', scope: 'ingestion:self_logged', per_resource: false },
+});
+
+/** The VTID-05092 (D10 WP1) keys; the VTID-05164 keys follow them. */
+export const D10_WP1_CONSENT_KEYS = ['wearables', 'partner_results', 'ai_health_analysis', 'health_data_analytics', 'community_insights'] as const;
+
+/**
+ * VTID-05164 (C1): the data categories the Health Sync contract v1 carries and
+ * the per-source consent key for each (S7). Resource = the source's connector
+ * id: a phone store (HEALTH_SYNC_SOURCE_KINDS) or an aggregator connector.
+ */
+export const HEALTH_SYNC_CATEGORIES = ['activity', 'sleep', 'heart', 'body'] as const;
+export type HealthSyncCategory = (typeof HEALTH_SYNC_CATEGORIES)[number];
+export const HEALTH_SYNC_CONSENT_KEYS: Readonly<Record<HealthSyncCategory, HealthConsentCategoryKey>> = Object.freeze({
+  activity: 'sync_activity',
+  sleep: 'sync_sleep',
+  heart: 'sync_heart',
+  body: 'sync_body',
+});
+
+/** Phone health stores (connector ids, = the Health Sync v1 `source.kind`). */
+export const HEALTH_SYNC_SOURCE_KINDS = ['apple_health', 'health_connect'] as const;
+export type HealthSyncSourceKind = (typeof HEALTH_SYNC_SOURCE_KINDS)[number];
+
+export function isHealthSyncConsentKey(key: unknown): boolean {
+  return typeof key === 'string' && (Object.values(HEALTH_SYNC_CONSENT_KEYS) as string[]).includes(key);
+}
+
+/**
+ * The fail-closed enforcement point(s) of every category whose catalogue row
+ * says processing_active = true. The VTID-05164 migration test fails if a
+ * processing_active key has no entry or an entry names a file that does not
+ * check the key.
+ */
+export const HEALTH_CONSENT_ENFORCEMENT_POINTS: Readonly<Partial<Record<HealthConsentCategoryKey, readonly string[]>>> = Object.freeze({
+  sync_activity: ['services/gateway/src/routes/health-ingest.ts', 'services/gateway/src/services/health-store/consent-gate.ts'],
+  sync_sleep: ['services/gateway/src/routes/health-ingest.ts', 'services/gateway/src/services/health-store/consent-gate.ts'],
+  sync_heart: ['services/gateway/src/routes/health-ingest.ts', 'services/gateway/src/services/health-store/consent-gate.ts'],
+  sync_body: ['services/gateway/src/routes/health-ingest.ts', 'services/gateway/src/services/health-store/consent-gate.ts'],
+  self_logged_health: ['services/gateway/src/services/health-store/consent-gate.ts'],
 });
 
 export const HEALTH_CONSENT_CATEGORY_KEYS = Object.keys(HEALTH_CONSENT_CATEGORY_MAP) as HealthConsentCategoryKey[];
@@ -82,7 +135,7 @@ export function isConsentLocale(value: unknown): value is ConsentLocale {
 }
 
 /** granted_via values a member's own request may carry. */
-export const MEMBER_GRANTED_VIA = ['settings_privacy', 'settings_connected_apps', 'partner_link_confirm'] as const;
+export const MEMBER_GRANTED_VIA = ['settings_privacy', 'settings_connected_apps', 'partner_link_confirm', 'native_health_sync'] as const;
 export type MemberGrantedVia = (typeof MEMBER_GRANTED_VIA)[number];
 export type ConsentGrantedVia = MemberGrantedVia | 'checkout_flow' | 'portal_admin_backfill';
 

@@ -247,11 +247,25 @@ describe.each([
     expect(h.db.calls).not.toContain('ingestChunk');
   });
 
-  it('a (source kind, category) with no D10 key yet is refused: CONSENT_CATEGORY_MISSING', async () => {
+  it('a (source kind, category) with no D10 key is refused: CONSENT_CATEGORY_MISSING', async () => {
+    // VTID-05164 (C1) filled phone_store activity|sleep|heart|body -> sync_*; habits stays keyless.
     const phone = h.addSource(ME, 'phone_store', 'apple_health');
-    const r = await h.write(input(phone, [steps(bucketAgo(30), 5)]));
+    const water = { source_record_id: 'water-1', code: 'water_intake', unit: 'mL', start: bucketAgo(30), value: 250 };
+    const r = await h.write(input(phone, [water]));
     expect(r.ok && r.results[0].code).toBe('CONSENT_CATEGORY_MISSING');
     expect(h.rawCount()).toBe(0);
+  });
+
+  it('a phone store needs the per-source sync_<category> consent (VTID-05164 keys)', async () => {
+    const phone = h.addSource(ME, 'phone_store', 'apple_health');
+    const before = await h.write(input(phone, [steps(bucketAgo(30), 5)]));
+    expect(before.ok && before.results[0]).toMatchObject({ status: 'skipped_no_consent', code: 'CONSENT_REQUIRED' });
+    h.grant(ME, 'sync_activity', 'health_connect'); // another source's consent does not count
+    const other = await h.write(input(phone, [steps(bucketAgo(35), 5)]));
+    expect(other.ok && other.results[0].status).toBe('skipped_no_consent');
+    h.grant(ME, 'sync_activity', 'apple_health');
+    const after = await h.write(input(phone, [steps(bucketAgo(40), 5)]));
+    expect(after.ok && after.results[0].status).toBe('stored');
   });
 
   it("an unknown or another member's source: SOURCE_NOT_CONNECTED", async () => {

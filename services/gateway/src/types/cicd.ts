@@ -980,6 +980,13 @@ export type CicdEventType =
   | 'health.store.maintenance.completed'
   | 'health.store.maintenance.failed'
   | 'health.store.partition_missing'
+  // VTID-05164 (Health Hub C1): Health Sync v1 ingest. Payloads carry the batch
+  // id, source kind, category names, counts and codes — never a health value
+  // and never a record id.
+  | 'health.sync.batch.processed'
+  | 'health.sync.batch.rejected'
+  | 'health.sync.source.paused'
+  | 'health.sync.source.resumed'
   // VTID-02300: Phase 3 outbound action consent events
   | 'connector.action.requested'
   | 'connector.action.executed'

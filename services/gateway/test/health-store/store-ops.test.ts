@@ -46,14 +46,20 @@ describe('dark flag (VTID-05159)', () => {
 });
 
 describe('S7 consent-key map (VTID-05159)', () => {
-  it('ships the D10 keys that exist and null for the keys C1 adds', () => {
+  it('maps every (kind, category) to its D10 key; C1 (VTID-05164) filled the sync_* and self_logged_health entries', () => {
     for (const cat of ['activity', 'sleep', 'heart', 'body'] as const) {
+      expect(HEALTH_STORE_CONSENT_KEY_MAP.phone_store[cat]).toBe(`sync_${cat}`);
+      expect(HEALTH_STORE_CONSENT_KEY_MAP.aggregator[cat]).toBe(`sync_${cat}`);
+    }
+    for (const cat of ['labs', 'habits'] as const) {
       expect(HEALTH_STORE_CONSENT_KEY_MAP.phone_store[cat]).toBeNull();
       expect(HEALTH_STORE_CONSENT_KEY_MAP.aggregator[cat]).toBeNull();
     }
     expect(consentKeyFor('device_cloud', 'sleep')).toBe('wearables');
     expect(consentKeyFor('partner', 'labs')).toBe('partner_results');
-    for (const k of ['diary', 'voice', 'manual']) expect(consentKeyFor(k, 'habits')).toBeNull();
+    for (const k of ['diary', 'voice', 'manual']) {
+      for (const cat of ['activity', 'sleep', 'heart', 'body', 'labs', 'habits'] as const) expect(consentKeyFor(k, cat)).toBe('self_logged_health');
+    }
     expect(consentKeyFor('unknown_kind', 'activity')).toBeNull();
   });
 

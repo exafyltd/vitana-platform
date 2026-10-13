@@ -1,0 +1,14 @@
+# VTID-05164 — commands run in the worktree /home/user/wt-c1 (branch claude/health-data-integration-plan-dbxyld-c1,
+# base 0dce4cc57 = A2 VTID-05159 + B1 VTID-05161 + A1 VTID-05158 + D10 WP1 VTID-05092 + main)
+# No command touched Supabase, Aurora, S3, the gateway or any AWS API. Tests use in-memory fakes (A's S10 fake, an S6
+# fake) and Jest mocks; the SQL test ran on a throwaway local Postgres 16 cluster (unix socket, trust auth) created for
+# this run and removed afterwards.
+
+(cd services/gateway && npx tsc --noEmit -p .)   # -> outputs/tsc.txt (3 pre-existing env gaps: libphonenumber-js, client-pinpoint-sms-voice-v2)
+(cd services/gateway && UPDATE_HEALTH_SYNC_SCHEMA=1 npx jest test/health-sync/contract.test.ts)   # generated contract-v1.schema.json + lock (once)
+(cd services/gateway && UPDATE_HEALTH_SYNC_GOLDEN=1 npx jest test/health-sync/golden.test.ts)     # generated docs/programs/health-hub/health-sync-v1/golden.json (once)
+(cd services/gateway && npx jest test/health-sync test/routes/health-ingest.test.ts test/routes/health-consent-sync.test.ts test/migrations test/health-store test/routes/health.test.ts test/consent test/routes/health-consent.test.ts test/partner-health-consent.test.ts test/vtid-05025-commerce-health-boundary.test.ts test/vtid-05161-health-sources.test.ts test/vtid-04968-delegation-guard.test.ts --verbose)   # -> outputs/jest-c1.txt
+(cd services/gateway && npx jest --silent)   # full suite -> outputs/jest-full-summary.txt
+PGHOST=<local socket> PGPORT=55164 PGUSER=postgres scripts/ci/sql-tests/run-health-sync-consent-test.sh   # -> outputs/sql-health-sync-consent.txt
+node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base origin/main --head HEAD --title "VTID-05164: …"   # change suite present and valid
+node scripts/ci/validate-pr-locally.cjs --title "VTID-05164: …" --body-file pr-05164.md

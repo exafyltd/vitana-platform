@@ -12,10 +12,11 @@
  *   - partner                  -> partner_results (resource = partner id);
  *   - diary / voice / manual   -> self_logged_health.
  *
- * Keys not yet in D10's union (sync_*, self_logged_health) ship as `null`.
- * C1 (VTID-05164) adds them to D10 and fills these entries in the same PR —
- * that one-map edit is C1's only edit in this module. No key, no write: a
- * null entry refuses the sample (skipped_no_consent, CONSENT_CATEGORY_MISSING).
+ * A2 shipped the keys not yet in D10's union (sync_*, self_logged_health) as
+ * `null`; C1 (VTID-05164) added them to D10 and filled these entries in the
+ * same PR — that one-map edit is C1's only edit in this module. No key, no
+ * write: a null entry (phone_store/aggregator labs|habits) refuses the sample
+ * (skipped_no_consent, CONSENT_CATEGORY_MISSING).
  *
  * Deletions never pass through the gate (S9: a consent check never blocks a
  * deletion). The gate is an interface: the Phase 1 consent package replaces
@@ -36,20 +37,30 @@ type KeyByCategory = Readonly<Record<HealthDataCategory, HealthConsentCategoryKe
 const ALL = (key: HealthConsentCategoryKey | null): KeyByCategory =>
   Object.freeze({ activity: key, sleep: key, heart: key, body: key, labs: key, habits: key });
 
+/** phone_store / aggregator: sync_<category> for the four Health Sync categories, nothing else (VTID-05164). */
+const SYNC: KeyByCategory = Object.freeze({
+  activity: 'sync_activity',
+  sleep: 'sync_sleep',
+  heart: 'sync_heart',
+  body: 'sync_body',
+  labs: null,
+  habits: null,
+});
+
 /**
  * S7 consent-key map. `null` = no D10 key exists for this (kind, category):
- * the sample is refused. Entries C1 fills: phone_store/aggregator
+ * the sample is refused. Entries C1 (VTID-05164) filled: phone_store/aggregator
  * activity|sleep|heart|body -> sync_<category>; diary/voice/manual (every
  * category) -> self_logged_health.
  */
 export const HEALTH_STORE_CONSENT_KEY_MAP: Readonly<Record<HealthStoreSourceKind, KeyByCategory>> = Object.freeze({
-  phone_store: Object.freeze({ activity: null, sleep: null, heart: null, body: null, labs: null, habits: null }),
-  aggregator: Object.freeze({ activity: null, sleep: null, heart: null, body: null, labs: null, habits: null }),
+  phone_store: SYNC,
+  aggregator: SYNC,
   device_cloud: ALL('wearables'),
   partner: ALL('partner_results'),
-  diary: ALL(null),
-  voice: ALL(null),
-  manual: ALL(null),
+  diary: ALL('self_logged_health'),
+  voice: ALL('self_logged_health'),
+  manual: ALL('self_logged_health'),
 });
 
 export function consentKeyFor(kind: string, category: HealthDataCategory): HealthConsentCategoryKey | null {
