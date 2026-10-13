@@ -25,6 +25,8 @@
 --
 -- Exposed: nothing but the RETURNS TABLE columns. Never policy_profile, feature_flags,
 -- integrations, billing, domains, support e-mail or any other branding/profile key.
+-- Lane B's (VTID-05150) actual names are read too: tenant_settings.display_name,
+-- tenant_settings.enabled_locales (text[]), brand.colors.{accent,bg,fg}, brand.<kind>_path.
 --
 -- Rollback: docs/validation/VTID-05151/rollback-registry.sql (drops the three functions; no data).
 
@@ -76,12 +78,12 @@ AS $fn$
   SELECT src.tenant_id,
          src.slug,
          src.name,
-         coalesce(nullif(src.b ->> 'display_name', ''), src.name) AS display_name,
+         coalesce(nullif(src.sj ->> 'display_name', ''), nullif(src.b ->> 'display_name', ''), src.name) AS display_name,
          src.open_signup,
          jsonb_strip_nulls(jsonb_build_object(
-           'accent',        coalesce(src.b -> 'tokens' ->> 'accent', src.b ->> 'brand_accent'),
-           'bg',            coalesce(src.b -> 'tokens' ->> 'bg',     src.b ->> 'brand_bg'),
-           'fg',            coalesce(src.b -> 'tokens' ->> 'fg',     src.b ->> 'brand_fg'),
+           'accent',        coalesce(src.b -> 'tokens' ->> 'accent', src.b -> 'colors' ->> 'accent', src.b ->> 'brand_accent'),
+           'bg',            coalesce(src.b -> 'tokens' ->> 'bg',     src.b -> 'colors' ->> 'bg', src.b ->> 'brand_bg'),
+           'fg',            coalesce(src.b -> 'tokens' ->> 'fg',     src.b -> 'colors' ->> 'fg', src.b ->> 'brand_fg'),
            'logo_path',     coalesce(src.b -> 'assets' ->> 'logo',     src.b ->> 'logo_path'),
            'favicon_path',  coalesce(src.b -> 'assets' ->> 'favicon',  src.b ->> 'favicon_path'),
            'og_image_path', coalesce(src.b -> 'assets' ->> 'og_image', src.b ->> 'og_image_path')
@@ -96,8 +98,8 @@ AS $fn$
            'post_login_path',      CASE WHEN jsonb_typeof(src.l -> 'post_login_path') = 'string' THEN src.l -> 'post_login_path' END,
            'oauth',                CASE WHEN jsonb_typeof(src.l -> 'oauth') = 'boolean' THEN src.l -> 'oauth' END
          )) AS landing,
-         CASE WHEN jsonb_typeof(coalesce(nullif(src.sj -> 'locales', 'null'::jsonb), src.profile -> 'locales')) = 'array'
-              THEN coalesce(nullif(src.sj -> 'locales', 'null'::jsonb), src.profile -> 'locales')
+         CASE WHEN jsonb_typeof(coalesce(nullif(src.sj -> 'enabled_locales', 'null'::jsonb), nullif(src.sj -> 'locales', 'null'::jsonb), src.profile -> 'locales')) = 'array'
+              THEN coalesce(nullif(src.sj -> 'enabled_locales', 'null'::jsonb), nullif(src.sj -> 'locales', 'null'::jsonb), src.profile -> 'locales')
          END AS locales
     FROM src
    ORDER BY src.slug

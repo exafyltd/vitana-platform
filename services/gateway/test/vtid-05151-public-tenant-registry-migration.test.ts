@@ -87,7 +87,8 @@ describe('VTID-05151 public tenant registry migration', () => {
     const { body } = fnBody('_tenant_public_registry');
     // The raw rows stay inside the CTE: the final SELECT reads named columns of src only.
     const finalSelect = body.slice(body.lastIndexOf('SELECT src.tenant_id'));
-    expect(finalSelect).not.toMatch(/src\.(tj|sj)\b(?!\s*->\s*'locales')/);
+    // Only these whitelisted columns of the raw settings row may be read (lane B, VTID-05150, names included).
+    expect(finalSelect).not.toMatch(/src\.(tj|sj)\b(?!\s*->>?\s*'(locales|enabled_locales|display_name)')/);
     expect(finalSelect).not.toMatch(/to_jsonb\(/);
     const brandKeys = [...finalSelect.matchAll(/'(\w+)',\s+coalesce\(src\.b/g)].map((m) => m[1]);
     expect(brandKeys).toEqual(['accent', 'bg', 'fg', 'logo_path', 'favicon_path', 'og_image_path']);

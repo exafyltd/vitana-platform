@@ -141,4 +141,23 @@ BEGIN
 END $$;
 RESET ROLE;
 
+-- (f) lane B's (VTID-05150) actual column names: tenant_settings.display_name, enabled_locales
+-- (text[]), brand.colors.* and brand.<kind>_path are what the registry exposes.
+ALTER TABLE public.tenant_settings ADD COLUMN display_name text, ADD COLUMN enabled_locales text[];
+UPDATE public.tenant_settings
+   SET display_name = 'AlKalma Community', enabled_locales = '{de,sr}',
+       brand = '{"colors":{"accent":"#0A0B0C","bg":"#FFFFFF","fg":"#111111"},"logo_path":"alkalma/logo.png"}'
+ WHERE tenant_id = (SELECT tenant_id FROM public.tenants WHERE slug = 'alkalma');
+SET ROLE anon;
+DO $$
+BEGIN
+  ASSERT EXISTS (SELECT 1 FROM public.resolve_tenant('alkalma')
+                  WHERE display_name = 'AlKalma Community'
+                    AND locales = '["de","sr"]'::jsonb
+                    AND brand ->> 'accent' = '#0A0B0C' AND brand ->> 'fg' = '#111111'
+                    AND brand ->> 'logo_path' = 'alkalma/logo.png'),
+    'lane B column names (display_name, enabled_locales, brand.colors, brand.logo_path) are exposed';
+END $$;
+RESET ROLE;
+
 \echo 'VTID-05151: all assertions passed'
