@@ -162,11 +162,16 @@ status)
   ;;
 
 create)
+  # Re-runnable: every step below checks what already exists, so a run that
+  # failed half-way (restore done, writer or Data API or secret missing) is
+  # completed by the next run instead of being reported as done.
   C=$(describe_cluster "$CLONE_ID")
   if [ -n "$C" ]; then
-    echo "clone $CLONE_ID already exists — nothing created"; summary "$C"; exit 0
+    TAGGED=$(jq -r --arg k "$TAG_KEY" --arg v "$TAG_VALUE" '[.TagList[]? | select(.Key==$k and .Value==$v)] | length' <<<"$C")
+    [ "$TAGGED" -ge 1 ] || refuse "$CLONE_ID exists without $TAG_KEY=$TAG_VALUE — not created by this script, not touched"
+  else
+    [ "$(jq -r .Status <<<"$SRC_JSON")" = available ] || die "source $SOURCE_ID is not available"
   fi
-  [ "$(jq -r .Status <<<"$SRC_JSON")" = available ] || die "source $SOURCE_ID is not available"
   SUBNETS=$(jq -r .DBSubnetGroup <<<"$SRC_JSON")
   SGS=$(jq -r '[.VpcSecurityGroups[].VpcSecurityGroupId] | join(" ")' <<<"$SRC_JSON")
   KMS=$(jq -r '.KmsKeyId // empty' <<<"$SRC_JSON")
@@ -193,7 +198,9 @@ create)
       --parameters "ParameterName=rds.logical_replication,ParameterValue=1,ApplyMethod=pending-reboot"
   fi
 
-  # 2. Copy-on-write clone.
+  # 2. Copy-on-write clone (only if it does not exist yet).
+  if [ -n "$C" ]; then echo "clone $CLONE_ID exists — restore skipped, completing the remaining steps"
+  else
   # shellcheck disable=SC2086
   mut rds restore-db-cluster-to-point-in-time --region "$REGION" \
     --restore-type copy-on-write --use-latest-restorable-time \
@@ -202,21 +209,47 @@ create)
     --db-cluster-parameter-group-name "$CLONE_PG" \
     ${KMS:+--kms-key-id "$KMS"} --no-deletion-protection \
     --tags "Key=$TAG_KEY,Value=$TAG_VALUE"
+  fi
   wait_for db-cluster-available --db-cluster-identifier "$CLONE_ID"
 
   # 3. One writer, same class and instance parameter group as the source writer.
+  HAVE_WRITER=""
+  if ! $DRY_RUN; then
+    HAVE_WRITER=$(aws rds describe-db-instances --region "$REGION" --filters "Name=db-cluster-id,Values=$CLONE_ID" --output json \
+      | jq -r --arg w "$CLONE_WRITER" '.DBInstances[]? | select(.DBInstanceIdentifier==$w) | .DBInstanceIdentifier')
+  fi
+  if [ -n "$HAVE_WRITER" ]; then echo "writer $CLONE_WRITER exists — reused"
+  else
   mut rds create-db-instance --region "$REGION" --db-instance-identifier "$CLONE_WRITER" \
     --db-cluster-identifier "$CLONE_ID" --engine "$ENGINE" --db-instance-class "$CLASS" \
     --db-parameter-group-name "$INST_PG" --no-publicly-accessible \
     --tags "Key=$TAG_KEY,Value=$TAG_VALUE"
+  fi
   wait_for db-instance-available --db-instance-identifier "$CLONE_WRITER"
 
   # 4. Data API + a master secret of the clone's own (the source's secret is never shared).
-  mut rds enable-http-endpoint --region "$REGION" --resource-arn "$CLONE_ARN"
-  mut rds modify-db-cluster --region "$REGION" --db-cluster-identifier "$CLONE_ID" \
-    --manage-master-user-password --apply-immediately
-  wait_for db-cluster-available --db-cluster-identifier "$CLONE_ID"
-  if ! $DRY_RUN; then summary "$(describe_cluster "$CLONE_ID")"; fi
+  CUR=""; $DRY_RUN || CUR=$(describe_cluster "$CLONE_ID")
+  if [ "$(jq -r '.HttpEndpointEnabled // false' <<<"${CUR:-{\}}")" = true ]; then echo "Data API already enabled"
+  else mut rds enable-http-endpoint --region "$REGION" --resource-arn "$CLONE_ARN"; fi
+  CLONE_SECRET=$(jq -r '.MasterUserSecret.SecretArn // empty' <<<"${CUR:-{\}}")
+  if [ -n "$CLONE_SECRET" ] && [ "$CLONE_SECRET" != "$SOURCE_SECRET_ARN" ]; then echo "clone master secret already managed"
+  else
+    mut rds modify-db-cluster --region "$REGION" --db-cluster-identifier "$CLONE_ID" \
+      --manage-master-user-password --apply-immediately
+    wait_for db-cluster-available --db-cluster-identifier "$CLONE_ID"
+  fi
+
+  # 5. Verify the end state; a clone missing any piece is a failure, not "done".
+  if ! $DRY_RUN; then
+    FINAL=$(describe_cluster "$CLONE_ID")
+    [ "$(jq -r .Status <<<"$FINAL")" = available ] || die "clone is not available"
+    [ "$(jq -r '.HttpEndpointEnabled // false' <<<"$FINAL")" = true ] || die "Data API not enabled on the clone"
+    FS=$(jq -r '.MasterUserSecret.SecretArn // empty' <<<"$FINAL")
+    { [ -n "$FS" ] && [ "$FS" != "$SOURCE_SECRET_ARN" ]; } || die "clone has no master secret of its own"
+    jq -e --arg w "$CLONE_WRITER" '[.DBClusterMembers[]? | select(.DBInstanceIdentifier==$w and .IsClusterWriter)] | length == 1' <<<"$FINAL" >/dev/null \
+      || die "clone has no writer $CLONE_WRITER"
+    summary "$FINAL"
+  fi
   echo "create: done"
   ;;
 

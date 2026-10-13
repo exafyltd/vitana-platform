@@ -36,8 +36,9 @@ aws iam put-role-policy --role-name <role> --policy-name vtid-05023-cutover --po
 - **`Ec2Read`, `RdsRead`**: preflight checks: security groups, and the cluster's `rds.logical_replication`.
 - **`DataApiMigrations`, `DataApiMasterSecret`**: `RUN-MIGRATION.yml` and `MIGRATION-DRIFT-CHECK.yml` with `MIGRATION_TARGET=aurora` (part 8). This gives CI the Aurora **master** credentials, scoped by tag to the prod cluster and the rehearsal clone.
   - **Owner decision:** accept this, or ask for a follow-up that creates a dedicated `vitana_migrator` role and secret. The runner would then use that instead; the follow-up is not built.
-- **`RehearsalCloneOnly`, `RehearsalRestoreSource`, `RehearsalKms`**: `AWS-REHEARSAL-AURORA-CLONE.yml` (part 10).
-  - Every change is scoped to `vitana-aurora-rehearsal*`.
+- **`RehearsalCloneOnly`, `RehearsalRestoreSource`, `RehearsalKms`, `RehearsalManagedMasterSecret`, `RehearsalManagedMasterSecretKms`**: `AWS-REHEARSAL-AURORA-CLONE.yml` (part 10).
+  - Every change is scoped to `vitana-aurora-rehearsal*`, including deleting the clone's own parameter group at clean-up.
+  - RDS creates the clone's own managed master secret (`rds!cluster-…`), which needs `secretsmanager:CreateSecret` and KMS through Secrets Manager.
   - Production appears only as the restore source and the parameter-group copy source.
   - The script refuses any other target, and its guard test proves it.
 - **`ScheduledEdgeCalls`, `EventsConnectionSecret`, `ScheduledEdgeCallsRoles`**: `AWS-PROD-SETUP-SCHEDULED-EDGE-CALLS.yml` (part 6, cron jobs 1 and 4). It creates the bus, the connection, the API destinations, the rules, the schedules (disabled) and their two roles.

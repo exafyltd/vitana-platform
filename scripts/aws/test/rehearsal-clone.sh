@@ -43,9 +43,14 @@ J
       members='[]'; [ -f "$S/writer" ] && members='[{"DBInstanceIdentifier":"vitana-aurora-rehearsal-writer","IsClusterWriter":true}]'
       [ -n "${FAKE_EXTRA_MEMBER:-}" ] && members="[{\"DBInstanceIdentifier\":\"$FAKE_EXTRA_MEMBER\",\"IsClusterWriter\":false}]"
       tags='[{"Key":"Purpose","Value":"vtid-05023-part10-rehearsal"}]'; [ -n "${FAKE_UNTAGGED:-}" ] && tags='[]'
-      echo "{\"DBClusters\":[{\"DBClusterIdentifier\":\"vitana-aurora-rehearsal\",\"Status\":\"available\",\"Engine\":\"aurora-postgresql\",\"EngineVersion\":\"17.4\",\"Endpoint\":\"vitana-aurora-rehearsal.cluster-x\",\"CloneGroupId\":\"cg-1\",\"DBClusterParameterGroup\":\"vitana-aurora-rehearsal-cluster-params\",\"HttpEndpointEnabled\":true,\"MasterUserSecret\":$secret,\"DBClusterMembers\":$members,\"TagList\":$tags}]}"
+      http=false; [ -f "$S/http" ] && http=true
+      echo "{\"DBClusters\":[{\"DBClusterIdentifier\":\"vitana-aurora-rehearsal\",\"Status\":\"available\",\"Engine\":\"aurora-postgresql\",\"EngineVersion\":\"17.4\",\"Endpoint\":\"vitana-aurora-rehearsal.cluster-x\",\"CloneGroupId\":\"cg-1\",\"DBClusterParameterGroup\":\"vitana-aurora-rehearsal-cluster-params\",\"HttpEndpointEnabled\":$http,\"MasterUserSecret\":$secret,\"DBClusterMembers\":$members,\"TagList\":$tags}]}"
     else echo "An error occurred (DBClusterNotFoundFault)" >&2; exit 254; fi ;;
   "rds describe-db-instances")
+    if [[ "$*" == *"Values=vitana-aurora-rehearsal"* ]]; then
+      if [ -f "$S/writer" ]; then echo '{"DBInstances":[{"DBInstanceIdentifier":"vitana-aurora-rehearsal-writer","DBInstanceStatus":"available"}]}'; else echo '{"DBInstances":[]}'; fi
+      exit 0
+    fi
     echo '{"DBInstances":[{"DBInstanceIdentifier":"vitana-aurora-prod-writer","DBInstanceClass":"db.r6g.large","DBInstanceStatus":"available","DBParameterGroups":[{"DBParameterGroupName":"default.aurora-postgresql17"}]}]}' ;;
   "rds describe-db-cluster-parameter-groups")
     n=$(arg --db-cluster-parameter-group-name "$@")
@@ -55,10 +60,10 @@ J
   "rds modify-db-cluster-parameter-group") : ;;
   "rds restore-db-cluster-to-point-in-time") touch "$S/clone" ;;
   "rds create-db-instance") touch "$S/writer" ;;
-  "rds enable-http-endpoint") : ;;
+  "rds enable-http-endpoint") touch "$S/http" ;;
   "rds modify-db-cluster") touch "$S/secret" ;;
   "rds delete-db-instance") rm -f "$S/writer" ;;
-  "rds delete-db-cluster") rm -f "$S/clone" "$S/secret" ;;
+  "rds delete-db-cluster") rm -f "$S/clone" "$S/secret" "$S/http" ;;
   "rds delete-db-cluster-parameter-group") rm -f "$S/pg" ;;
   "rds-data execute-statement") echo '{}' ;;
   *) echo "fake aws: unexpected call: $svc $op $*" >&2; exit 99 ;;
@@ -152,7 +157,8 @@ grep -q -- 'enable-http-endpoint --region eu-central-1 --resource-arn arn:aws:rd
 grep -q -- '--no-deletion-protection' "$FAKE_LOG" && ok "clone has no deletion protection" || bad "deletion protection"
 ! grep -qE '^rds (modify|delete|reboot|failover|stop)[a-z-]* .*vitana-aurora-prod' "$FAKE_LOG" && ok "no modify/delete/reboot on vitana-aurora-prod" || bad "prod mutated"
 : > "$FAKE_LOG"; run create
-[ "$RC" = 0 ] && grep -q "already exists" <<<"$OUT" && [ -z "$(mutations)" ] && ok "create on an existing clone changes nothing" || bad "re-create: $OUT / $(mutations)"
+[ "$RC" = 0 ] && grep -q "restore skipped" <<<"$OUT" && [ -z "$(mutations | grep -v 'modify-db-cluster-parameter-group')" ] && ok "create on a complete clone changes nothing (only the idempotent parameter set)" || bad "re-create: $OUT / $(mutations)"
+
 
 echo "== sql: clone only, clone's own secret"
 printf -- '-- comment\nSELECT 1;\n\nSELECT 2;\n' > "$WORK/t.sql"
@@ -217,5 +223,39 @@ done < "$NEUTRALIZE"
 [ "$N" -ge 2 ] && [ "$N" = "$G" ] && ok "all $N statements start with the clone-identity guard" || bad "neutralize: $G/$N guarded"
 
 echo
+# Every rds / rds-data call the script makes is granted by the deploy-role policy
+# (Codex P2 on #4003 found delete-db-cluster-parameter-group missing).
+MISSING=$(python3 - "$SCRIPT" "$(dirname "$SCRIPT")/iam/vtid-05023-deploy-role-policy.json" <<'PY'
+import json, re, sys
+src = open(sys.argv[1]).read()
+granted = set()
+for st in json.load(open(sys.argv[2]))["Statement"]:
+    granted.update(st["Action"] if isinstance(st["Action"], list) else [st["Action"]])
+need = set()
+for svc, op in re.findall(r"\b(rds-data|rds) ((?:[a-z]+-)+[a-z]+)", src):
+    if op.startswith("wait"): continue
+    need.add(("rds-data" if svc == "rds-data" else "rds") + ":" + "".join("DB" if w == "db" else w.capitalize() for w in op.split("-")))
+print(" ".join(sorted(a for a in need if a not in granted)))
+PY
+)
+[ -z "$MISSING" ] && ok "every AWS action the clone script calls is in the deploy-role policy" || bad "policy lacks: $MISSING"
+
+# Codex P2 on #4003: a run that died after the restore must be completed by the next run.
+reset; mkdir -p "$FAKE_STATE"; touch "$FAKE_STATE/pg" "$FAKE_STATE/clone"
+run create
+M=$(mutations)
+{ [ "$RC" = 0 ] && ! grep -q restore-db-cluster-to-point-in-time <<<"$M" && grep -q create-db-instance <<<"$M" \
+  && grep -q enable-http-endpoint <<<"$M" && grep -q "modify-db-cluster --region" <<<"$M" && grep -q "create: done" <<<"$OUT"; } \
+  && ok "create resumes a half-built clone: writer, Data API and secret added, no second restore" || bad "resume: $OUT / $M"
+reset; mkdir -p "$FAKE_STATE"; touch "$FAKE_STATE/pg" "$FAKE_STATE/clone" "$FAKE_STATE/writer" "$FAKE_STATE/http"
+run create
+M=$(mutations)
+{ [ "$RC" = 0 ] && grep -q "modify-db-cluster --region" <<<"$M" && ! grep -q create-db-instance <<<"$M" && ! grep -q enable-http-endpoint <<<"$M"; } \
+  && ok "create resumes a clone missing only its master secret" || bad "resume-secret: $OUT / $M"
+reset; mkdir -p "$FAKE_STATE"; touch "$FAKE_STATE/clone"; export FAKE_UNTAGGED=1
+run create
+{ [ "$RC" != 0 ] && [ -z "$(mutations)" ]; } && ok "create refuses an existing clone without the rehearsal tag" || bad "untagged-create: $OUT / $(mutations)"
+unset FAKE_UNTAGGED
+
 echo "rehearsal-clone: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

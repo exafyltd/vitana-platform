@@ -211,7 +211,8 @@
         "rds:DeleteDBCluster",
         "rds:AddTagsToResource",
         "rds:CopyDBClusterParameterGroup",
-        "rds:ModifyDBClusterParameterGroup"
+        "rds:ModifyDBClusterParameterGroup",
+        "rds:DeleteDBClusterParameterGroup"
       ],
       "Resource": [
         "arn:aws:rds:eu-central-1:472838866351:cluster:vitana-aurora-rehearsal",
@@ -244,6 +245,29 @@
       "Condition": {
         "StringEquals": {
           "kms:ViaService": "rds.eu-central-1.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "RehearsalManagedMasterSecret",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:CreateSecret",
+        "secretsmanager:TagResource"
+      ],
+      "Resource": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:rds!cluster-*"
+    },
+    {
+      "Sid": "RehearsalManagedMasterSecretKms",
+      "Effect": "Allow",
+      "Action": [
+        "kms:DescribeKey",
+        "kms:GenerateDataKey"
+      ],
+      "Resource": "arn:aws:kms:eu-central-1:472838866351:key/*",
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": "secretsmanager.eu-central-1.amazonaws.com"
         }
       }
     },
