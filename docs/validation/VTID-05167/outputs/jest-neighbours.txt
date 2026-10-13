@@ -1,0 +1,5 @@
+PASS test/vtid-04785-session-end-telemetry.test.ts
+PASS test/vtid-04886-ops-attention-acks-timeline.test.ts
+PASS test/services/realtime/generic-cursor-relay.test.ts
+PASS test/vtid-05041-definer-lockdown.test.ts
+Tests:       50 passed, 50 total

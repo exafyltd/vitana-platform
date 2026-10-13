@@ -575,3 +575,5 @@ ALTER TABLE public.workflow_definition ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workflow_run ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workflow_step ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workflow_version ENABLE ROW LEVEL SECURITY;
+-- VTID-05167 (Life Timeline P1)
+DO $IDEMPOTENT$ BEGIN IF to_regclass('public.activity_catalog') IS NOT NULL THEN ALTER TABLE public.activity_catalog ENABLE ROW LEVEL SECURITY; END IF; END $IDEMPOTENT$;

@@ -1229,6 +1229,33 @@ Multi-tenant M0, lane A. Apply order and status: `docs/multitenancy/MIGRATION-QU
   `user_tenants` (deterministic primary) and `tenants (tenant_id, slug,
   is_default, is_platform)` (60 s cache).
 
+### user_activity_log tiers + activity_catalog — Life Timeline P1 — committed, NOT yet applied (VTID-05167)
+
+Migration `20261014130000_vtid_05167_activity_tiers.sql`, applied via `RUN-MIGRATION.yml` after Gate 2.
+
+- `user_activity_log` (and `user_activity_log_archive`, which also gains the `source` and
+  `actor_vitana_id` columns it never had) gets `tier` (`spotlight|moment|digest|silent|system`,
+  NULL = not yet classified → read as `silent`), `category`, `topic`, `pillar` /
+  `secondary_pillar` (`nutrition|hydration|exercise|sleep|mental`), `hidden_from_ai boolean
+  default false`, `hidden_at`. The archive's old 13-value `chk_activity_type` is replaced by
+  the main table's regex.
+- `activity_catalog (activity_type PK, match exact|prefix, tier, category, topic, pillar,
+  secondary_pillar, icon, sensitivity, summary_key, params text[])`: reference data, SELECT for
+  `authenticated` only. Seeded from `services/gateway/src/services/timeline/timeline-catalog.json`
+  (generated block; Jest parity test `vtid-05167-timeline-catalog.test.ts`).
+- `activity_catalog_lookup(text)`: exact, else longest prefix, else NULL.
+- Trigger `trg_classify_activity` (BEFORE INSERT): fills only NULL classification fields.
+- `backfill_activity_tiers(int)` (SECURITY DEFINER, service_role): newest-first batches, UPDATE
+  only; pg_cron `activity-tiers-backfill` every minute, unschedules itself when done.
+- `archive_old_activity_logs()` (SECURITY DEFINER, service_role; PUBLIC/anon/authenticated
+  revoked): explicit columns; moves only `silent`/`system` rows older than 180 days. pg_cron
+  `activity-log-archive-daily` 03:35 UTC. Spotlight/moment/digest rows stay until the member
+  deletes them.
+- Indexes `idx_ual_user_tier_created (user_id, tier, created_at desc)`,
+  `idx_ual_user_pillar_created (user_id, pillar, created_at desc) where pillar is not null`.
+- Gateway: `services/timeline/catalog.ts`; `timeline-projector.ts` never writes `system` types
+  (internal ORB telemetry stays in `oasis_events`).
+
 ### supabase_migrations.schema_migrations — audit trail, not the authority (VTID-05123)
 
 Since VTID-05123, RUN-MIGRATION writes one row per applied repo file under `supabase/migrations/` (`idempotency_key` = filename, `version`/`name` = its digit prefix and rest, `created_by` = `github-actions:RUN-MIGRATION:<run_id>`) in the same request as the migration; older rows carry MCP/dashboard apply-time versions and most repo files have no row, so "no row" never means "not applied" — MIGRATION-DRIFT-CHECK (VTID-03486) is the authority.
@@ -1525,6 +1552,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-10-14 | VTID-05167 (Life Timeline P1), **committed, NOT applied — applied via `RUN-MIGRATION.yml` after Gate 2** (migration `20261014130000_vtid_05167_activity_tiers.sql`, additive + idempotent): `user_activity_log`/archive classification columns, `activity_catalog` + lookup, `classify_activity` trigger, newest-first pg_cron backfill (no deletes), tier-aware `archive_old_activity_logs()` (EXECUTE revoked from PUBLIC/anon/authenticated) scheduled daily, two timeline indexes. See the section "user_activity_log tiers + activity_catalog". CI: `SQL-ACTIVITY-TIERS.yml` (throwaway Postgres). | Claude Code | VTID-05167 |
 | 2026-10-13 | VTID-05156 (Health Hub Phase 0 fix-ups, Defect 5), **committed, NOT applied — applied via `RUN-MIGRATION.yml` after Gate 2** (migration `20261014120000_vtid_05156_revoke_wearable_samples_rpc.sql`, access only; read-only before/after `has_function_privilege` check recorded in Gate 2): `health_ingest_wearable_samples(jsonb)` (SECURITY DEFINER) is EXECUTE for `service_role` only — `PUBLIC`/`anon`/`authenticated` revoked. It had been granted to `authenticated` since VTID-01078, so any signed-in member could write wearable samples through PostgREST with no consent check (live 2026-10-13: `authenticated = true`, `anon = false`, 0 rows). Its only caller, `POST /api/v1/health/wearables/ingest`, now answers 410 `ENDPOINT_RETIRED` before any database call. The migration refuses to apply unless that end state holds. `health_ingest_lab_report(jsonb)` keeps its grant (live callers; Phase 1 consent rework). Rollback: `docs/validation/VTID-05156/rollback.sql`. CI: `SQL-WEARABLE-SAMPLES-RPC-REVOKE.yml` (throwaway Postgres). | Claude Code | VTID-05156 |
 | 2026-10-13 | VTID-05158 (Health Hub Phase 1 / A1), **committed, NOT applied** — two migrations. (1) `20261014100000_vtid_05158_erase_user_data_aurora_safe.sql` (Supabase AND Aurora; applied to Supabase only after its own Gate 2): `erase_user_data()` is the VTID-04765 body except `v_auth_users := to_regclass('auth.users')` and the cascade exclusion `(v_auth_users is null or not exists (… con.confrelid = v_auth_users …))` — on Aurora (no `auth.users`) the old `'auth.users'::regclass` cast failed every call; on Supabase the table list is identical. (2) `20261014100100_vtid_05158_health_store.sql` — **APPLY TARGET: Aurora only (0T; production after the cutover). Never Supabase.** A placement guard refuses a database with both `auth.users` and `storage.objects` unless `vitana.health_store_target = 'aurora'`; MIGRATION-DRIFT-CHECK lists the eight tables as `aurora_only_tables` and fails if one appears on Supabase. Tables `health_codes`, `health_series_5m` (daily partitions, 30 days), `health_series_1h`, `health_series_1d`, `health_observations` (monthly, lifetime), `health_ingest_batches`, `health_ingest_quarantine` (monthly, 30 days), `health_store_maintenance_runs`; functions `health_store_ingest`, `health_store_ensure_partitions`, `health_store_partition_check`, `health_store_purge`, `health_store_suppress`, `health_store_unsuppress`, `health_series_daily_resolved` (SECURITY DEFINER, service_role only). OASIS namespace `health.store.*` (A2). See the section "Health Hub store" below. Tests: `scripts/ci/sql-tests/run-health-store-test.sh` (CI `SQL-HEALTH-STORE.yml`) and both `erase_user_data()` variants in `SQL-ERASE-USER-DATA.yml`. | Claude Code | VTID-05158 |
 | 2026-10-13 | VTID-05147 (Track S / S-M), **committed, NOT applied** (migration `20261013233000_vtid_05147_s_m_membership_role_lockdown.sql`, access + one function body; applied via `RUN-MIGRATION.yml` after the read-only `docs/validation/VTID-05147/pre-apply-checks.sql`): members can no longer write their own role or membership. Dropped policies `user_tenants_update_own` (no WITH CHECK — a member could set own `active_role='admin'` or move `tenant_id`), `rp_upsert_self`/`rp_update_self`/`rp_delete_self` and `user_active_roles_insert`/`_update` (role value was free); `INSERT/UPDATE/DELETE/TRUNCATE/TRIGGER/REFERENCES` revoked from `anon`/`authenticated` on `user_tenants`, `role_preferences`, `user_active_roles`, `user_permitted_roles` (reads and SELECT policies stay); `TRUNCATE/TRIGGER/REFERENCES` revoked on `memberships`, `app_users`. `set_role_preference()` now raises `Not authenticated` without a user and `Not a member of this tenant` (42501) for a tenant the caller has no `user_tenants` row in (exafy admins excepted; `'community'` still always allowed in an own tenant); EXECUTE for `authenticated`, `service_role` only (`PUBLIC`/`anon` revoked). The definer writers (`set_role_preference`, `me_set_active_role`, `switch_to_tenant_by_slug`, `provision_platform_user`, `handle_new_user`) are the only write paths left besides the service role. Self-check rolls the file back unless that end state holds. Rollback (re-opens the hole, owner approval): `docs/validation/VTID-05147/rollback-s-m.sql`. CI guard against reopening: `services/gateway/test/vtid-05147-s-m-membership-role-lockdown.test.ts`. | Claude Code | VTID-05147 |

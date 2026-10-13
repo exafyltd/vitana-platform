@@ -2690,3 +2690,8 @@ ALTER TABLE ONLY public.workflow_run ALTER COLUMN cursor SET DEFAULT 0;
 ALTER TABLE ONLY public.workflow_step ALTER COLUMN attempts SET DEFAULT 1;
 ALTER TABLE ONLY public.workflow_step ALTER COLUMN sequence SET DEFAULT 0;
 ALTER TABLE ONLY public.workflow_version ALTER COLUMN created_at SET DEFAULT CURRENT_TIMESTAMP;
+-- VTID-05167 (Life Timeline P1): new user_activity_log / archive columns and activity_catalog.
+ALTER TABLE ONLY public.user_activity_log ALTER COLUMN hidden_from_ai SET DEFAULT false;
+ALTER TABLE ONLY public.user_activity_log_archive ALTER COLUMN hidden_from_ai SET DEFAULT false;
+ALTER TABLE ONLY public.user_activity_log_archive ALTER COLUMN source SET DEFAULT 'frontend'::text;
+DO $IDEMPOTENT$ BEGIN IF to_regclass('public.activity_catalog') IS NOT NULL THEN ALTER TABLE ONLY public.activity_catalog ALTER COLUMN sensitivity SET DEFAULT 'standard'::text; ALTER TABLE ONLY public.activity_catalog ALTER COLUMN params SET DEFAULT '{}'::text[]; ALTER TABLE ONLY public.activity_catalog ALTER COLUMN updated_at SET DEFAULT now(); END IF; END $IDEMPOTENT$;
