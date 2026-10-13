@@ -33,6 +33,10 @@ jest.mock('../../src/services/enrichment/completion-resolver-repository', () => 
   fetchActiveDeviceToken: jest.fn(),
   fetchEnrichmentCardStates: jest.fn(),
   upsertEnrichmentCardDismissal: jest.fn(),
+  fetchProfileProgressFields: jest.fn(),
+  countUnseenLiveMatches: jest.fn(),
+  fetchRecentDiaryEntryTimes: jest.fn(),
+  DIARY_STREAK_LOOKBACK_DAYS: 120,
 }));
 
 const emitOasisEvent = jest.fn(async (_e: unknown) => ({ ok: true }));
@@ -58,8 +62,23 @@ const app = () => {
 
 const ok = (data: unknown) => Promise.resolve({ data, error: null } as any);
 
+/** A profile that is 100 % complete by the G1 weights (so G1 does not fire). */
+const FULL_PROGRESS = {
+  display_name: 'Mia', handle: 'mia', avatar_url: 'a', bio: 'b'.repeat(51), location: 'L',
+  links: [{ label: 'x', url: 'https://x' }], cover_url: 'c', languages: ['de'],
+  service_offerings: { offers: [{ category: 'c', title: 't' }] },
+};
+
+/** Boost sources: no boost trigger fires unless a test says so. */
+function setBoosts(over: { progress?: unknown; matches?: number; diary?: string[] } = {}) {
+  m.fetchProfileProgressFields.mockImplementation(() => ok('progress' in over ? over.progress : FULL_PROGRESS));
+  m.countUnseenLiveMatches.mockImplementation(() => Promise.resolve({ data: null, error: null, count: over.matches ?? 0 } as any));
+  m.fetchRecentDiaryEntryTimes.mockImplementation(() => ok((over.diary ?? []).map((created_at) => ({ created_at }))));
+}
+
 /** A member with nothing done, no dismissals. */
 function setNothingDone(over: Partial<Record<string, unknown>> = {}) {
+  setBoosts();
   const v: Record<string, unknown> = {
     fetchProfileEnrichmentFields: { avatar_url: null, bio: null, location: null, cover_url: null, interests: [] },
     fetchAnyProfilePost: [],
@@ -117,7 +136,7 @@ describe('auth and validation', () => {
     expect(r.status).toBe(400);
   });
 
-  it.each([['E12'], ['G4'], ['F1'], [''], [7]])('POST /dismiss with card_type %p → 400, nothing written', async (card_type) => {
+  it.each([['E12'], ['G4'], ['G5'], ['F1'], [''], [7]])('POST /dismiss with card_type %p → 400, nothing written', async (card_type) => {
     const r = await request(app()).post('/api/v1/enrichment-cards/dismiss').send({ card_type });
     expect(r.status).toBe(400);
     expect(r.body).toMatchObject({ ok: false, error: 'INVALID_CARD_TYPE' });
@@ -305,6 +324,89 @@ describe('POST /dismiss', () => {
     expect(r.body).toEqual({ ok: false, error: 'DISMISS_FAILED' });
     expect(emitOasisEvent).not.toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+describe('GET — boost cards G1–G3 (Phase 3)', () => {
+  // G3: a 5-day streak ending the day before yesterday (NOW = 2026-10-13 12:00 UTC), nothing since.
+  const STREAK_5 = ['2026-10-11T08:00:00Z', '2026-10-10T08:00:00Z', '2026-10-09T08:00:00Z', '2026-10-08T08:00:00Z', '2026-10-07T08:00:00Z'];
+
+  it('home: boost cards follow the enrichment cards, G3 → G2 → G1, with their data and localized text', async () => {
+    setBoosts({ progress: { ...FULL_PROGRESS, avatar_url: null, cover_url: null }, matches: 2, diary: STREAK_5 });
+    const r = await request(app()).get('/api/v1/enrichment-cards?screen=home');
+    expect(r.status).toBe(200);
+    expect(r.body.cards.map((c: any) => c.card_type)).toEqual([...ALL_PRIORITY, 'G3', 'G2', 'G1']);
+    const boost = r.body.cards.slice(ALL_PRIORITY.length);
+    expect(boost).toEqual([
+      {
+        card_type: 'G3', category: 'boost', priority: 1, completed: false, dismissed_until: null,
+        title: ENRICHMENT_CARD_TIPS.G3.title.de, description: ENRICHMENT_CARD_TIPS.G3.description.de,
+        data: { streak_days: 5 },
+      },
+      {
+        card_type: 'G2', category: 'boost', priority: 2, completed: false, dismissed_until: null,
+        title: ENRICHMENT_CARD_TIPS.G2.title.de, description: ENRICHMENT_CARD_TIPS.G2.description.de,
+        data: { unread_match_count: 2 },
+      },
+      {
+        card_type: 'G1', category: 'boost', priority: 3, completed: false, dismissed_until: null,
+        title: ENRICHMENT_CARD_TIPS.G1.title.de, description: ENRICHMENT_CARD_TIPS.G1.description.de,
+        data: { completion_pct: 70 },
+      },
+    ]);
+    // enrichment progress stays the top-level number
+    expect(r.body.profile_completion_pct).toBe(0);
+    for (const fn of [m.fetchProfileProgressFields, m.countUnseenLiveMatches, m.fetchRecentDiaryEntryTimes]) {
+      expect((fn as jest.Mock).mock.calls[0][1]).toBe(ME.user_id);
+    }
+  });
+
+  it.each([
+    ['profile', ['G1']],
+    ['longevity-journey', ['G3']],
+    ['vitana-index', ['G3']],
+    ['calendar', []],
+    ['messenger', []],
+  ])('screen=%s shows boost cards %p', async (screen, expected) => {
+    setBoosts({ progress: null, matches: 1, diary: STREAK_5 });
+    const r = await request(app()).get(`/api/v1/enrichment-cards?screen=${screen}`);
+    expect(r.body.cards.filter((c: any) => c.category === 'boost').map((c: any) => c.card_type)).toEqual(expected);
+  });
+
+  it('no boost card when no trigger fires (80 % profile, 0 unseen matches, entry yesterday)', async () => {
+    setBoosts({ progress: { ...FULL_PROGRESS, handle: null }, matches: 0, diary: ['2026-10-12T20:00:00Z', ...STREAK_5] });
+    const r = await request(app()).get('/api/v1/enrichment-cards?screen=home');
+    expect(r.body.cards.filter((c: any) => c.category === 'boost')).toEqual([]);
+  });
+
+  it('a dismissed boost card is hidden for 7 days (same cooldown table)', async () => {
+    setNothingDone({ fetchEnrichmentCardStates: [{ card_type: 'G2', dismissed_at: NOW.toISOString(), cooldown_days: 7 }] });
+    setBoosts({ matches: 3 });
+    let r = await request(app()).get('/api/v1/enrichment-cards?screen=home');
+    expect(r.body.cards.map((c: any) => c.card_type)).not.toContain('G2');
+    jest.setSystemTime(new Date(NOW.getTime() + 8 * DAY));
+    r = await request(app()).get('/api/v1/enrichment-cards?screen=home');
+    expect(r.body.cards.map((c: any) => c.card_type)).toContain('G2');
+  });
+
+  it('a boost read error → 500 JSON, never a list without the card', async () => {
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    (m.countUnseenLiveMatches as jest.Mock).mockImplementation(() => Promise.resolve({ data: null, error: { message: 'permission denied' } }));
+    const r = await request(app()).get('/api/v1/enrichment-cards?screen=home');
+    expect(r.status).toBe(500);
+    expect(r.body).toEqual({ ok: false, error: 'ENRICHMENT_STATE_UNAVAILABLE' });
+    spy.mockRestore();
+  });
+
+  it.each([['G1'], ['G2'], ['G3']])('POST /dismiss accepts %s and writes the caller row', async (card_type) => {
+    m.upsertEnrichmentCardDismissal.mockResolvedValue({
+      data: { card_type, dismissed_at: NOW.toISOString(), cooldown_days: 7 }, error: null,
+    } as any);
+    const r = await request(app()).post('/api/v1/enrichment-cards/dismiss').send({ card_type });
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ ok: true, card_type, dismissed_until: new Date(NOW.getTime() + 7 * DAY).toISOString() });
+    expect(m.upsertEnrichmentCardDismissal.mock.calls[0][1]).toBe(ME.user_id);
+    expect(m.upsertEnrichmentCardDismissal.mock.calls[0][2]).toBe(card_type);
   });
 });
 

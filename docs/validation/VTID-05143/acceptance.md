@@ -28,7 +28,7 @@ AC-3: `GET /api/v1/enrichment-cards?screen=` answers 401 without a token and 400
 TEST: services/gateway/test/routes/enrichment-cards.test.ts
 CURL: staging GET /api/v1/enrichment-cards?screen=home without a token -> 401 application/json
 
-AC-4: `POST /dismiss { card_type }` answers 401 without a token, 400 for anything but E1–E11 (nothing written), upserts `dismissed_at = updated_at = now()` for the caller's own `user_id` only (a `user_id` in the body is ignored) and returns `dismissed_until = dismissed_at + cooldown_days`. A dismissed card is hidden for 7 days and back on day 8 (fake clock); a stored `cooldown_days` is honoured.
+AC-4: `POST /dismiss { card_type }` answers 401 without a token, 400 for anything but E1–E11 and (since Phase 3) G1–G3 (nothing written; G4 stays 400), upserts `dismissed_at = updated_at = now()` for the caller's own `user_id` only (a `user_id` in the body is ignored) and returns `dismissed_until = dismissed_at + cooldown_days`. A dismissed card is hidden for 7 days and back on day 8 (fake clock); a stored `cooldown_days` is honoured.
 TEST: services/gateway/test/routes/enrichment-cards.test.ts
 TEST: services/gateway/test/services/enrichment/completion-resolver-repository.test.ts
 
@@ -44,6 +44,29 @@ TEST: services/gateway/test/data/enrichment-card-tips.locale-coverage.test.ts
 AC-8: The route file is claimed by an atlas domain and every role/atlas guard stays green; the gateway builds.
 TEST: npm run test:roles (outputs/test-roles.log)
 TEST: npm run build (outputs/gateway-build.log)
+
+AC-9 (Phase 3, step 15): `resolveBoostTriggers(sb, userId, now)` computes the boost triggers from three caller-scoped, read-only reads run in parallel with the E-reads: **G1** fires when the weighted profile completion (the eight sections and weights of vitana-v1 `src/hooks/useProfileProgress.ts`: identity 20, avatar 15, about 20, location 10, links 10, cover 15, languages 5, services 5) is below 80 % and returns `completion_pct`; **G2** fires when the caller has ≥ 1 live (`expires_at > now`, `action IS NULL`) and unseen (`viewed_at IS NULL`) `daily_matches` row and returns `unread_match_count`; **G3** fires when there is no `diary_entries` row yesterday or today (UTC days, the `user_diary_streak` view's boundary) and the run of consecutive entry days ending the day before yesterday is longer than 3, and returns `streak_days`. Each trigger's true/false edge is tested; any read error throws EnrichmentDataError.
+TEST: services/gateway/test/services/enrichment/boost-triggers.test.ts
+TEST: services/gateway/test/services/enrichment/completion-resolver.test.ts
+TEST: services/gateway/test/services/enrichment/completion-resolver-repository.test.ts
+
+AC-10 (Phase 3, step 15): `GET /api/v1/enrichment-cards` appends the fired, non-cooled-down boost cards after the enrichment cards, in urgency order G3 → G2 → G1 (`category: 'boost'`, `priority` 1-based within the boost category), each with localized title/description and a `data` object (G1 `{ completion_pct }`, G2 `{ unread_match_count }`, G3 `{ streak_days }`). Screens: G1 → home, profile; G2 → home; G3 → home, longevity-journey, vitana-index; every other screen none. A dismissed boost card is hidden for 7 days through the same `user_enrichment_cards` table; a boost read error answers 500 JSON. No migration.
+TEST: services/gateway/test/routes/enrichment-cards.test.ts
+TEST: services/gateway/test/services/enrichment/boost-triggers.test.ts
+
+## Decisions taken — Phase 3 boost triggers (step 15)
+
+- **G4 "Earn VTNA" is out of scope** (owner decision). It is not in the catalog, not served and not dismissible (400); its card text stays.
+- **G2 reads `daily_matches`, not `match_notifications`.** The plan named `match_notifications`; no such table exists (only a test fixture creates one; `new-day-overview-payload.ts` records the same finding). "Unread match" = a row the Matches page (`/me/matches`, vitana-v1 `useRealMatches`) lists — `expires_at > now`, `action IS NULL` — that the member has not seen yet (`viewed_at IS NULL`, set by `useMarkMatchesViewed` when the cards are on screen). Opening the Matches page therefore clears the card. Head count only, no rows read.
+- **G3 = "missed yesterday", literally.** The card text says "You missed your diary yesterday. Log today to keep your streak going.", so G3 fires when there is no entry yesterday and none today, and the streak that ended the day before yesterday is > 3 days. A streak that ended 3+ days ago is already lost and does not fire. `streak_days` is that streak's length.
+- **G3 day boundary = UTC**, the boundary of the `user_diary_streak` view and `diary-missing-relevant.ts`. G3 reads `diary_entries.created_at` directly (look-back 120 UTC days, at most 2,000 rows, newest first) instead of the view, because the view only returns streaks ending today or yesterday — exactly the ones G3 must not show.
+- **G1 reads the stored row, not the UI state.** Identity needs both `display_name` and `handle` (the editor falls back to the user id for a missing handle; the server counts only a stored one). About uses the trimmed bio > 50, the same rule as E2 (the editor shows a localized placeholder bio for an empty one; a placeholder never counts). Cover counts `cover_url` or `universal_intent_cover_url` (same as E11). Services = at least one entry in `profiles.service_offerings.offers` — the only stored service-offerings list (the frontend's `offerings` array is never loaded from the database, so the client can never reach 100 %).
+- **G1 has its own `profiles` read** (`fetchProfileProgressFields`) instead of widening the E-read, so the E-checks and their tests are unchanged; it runs in the same parallel batch.
+- **Ordering:** enrichment first, then boost (plan §3.5 and the Home "injected after enrichment cards" note); the response is not capped — the per-screen maximum (2 enrichment + 2 boost on Home) is the frontend's composition rule.
+- **Top-level `profile_completion_pct` is unchanged** (share of E1–E11); G1's weighted number travels on the card as `data.completion_pct`.
+- **Messenger shows no boost card** (the companion engine picks among enrichment cards, VTID-05099); autopilot's only planned boost is G4 (out of scope), so it shows none.
+- **The dismiss OASIS event keeps its type** `enrichment_card.dismissed` for G1–G3 too (one topic for the shared table).
+- **No migration.** `user_enrichment_cards.card_type` has no CHECK, so G1–G3 dismissals need none.
 
 ## Decisions taken (inside the approved plan)
 

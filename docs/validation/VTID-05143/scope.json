@@ -14,6 +14,7 @@
     "services/gateway/src/types/cicd.ts",
     "services/gateway/test/services/enrichment/completion-resolver.test.ts",
     "services/gateway/test/services/enrichment/completion-resolver-repository.test.ts",
+    "services/gateway/test/services/enrichment/boost-triggers.test.ts",
     "services/gateway/test/routes/enrichment-cards.test.ts",
     "services/gateway/test/data/enrichment-card-tips.locale-coverage.test.ts",
     "docs/validation/VTID-05143/**"

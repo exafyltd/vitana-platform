@@ -12,9 +12,12 @@
  * Plan of record: docs/validation/VTID-05085/plan-sparring.md
  * (hash e7abbebb1e777f3aa27eea0356a5ca697328ee180c32a24e04150e2f5a238ab7).
  *
- * Boost cards (G1–G3) get their triggers in Phase 3 (VTID-05087); feature
- * cards (F1–F11) are a static per-screen list in the frontend. Neither is
- * served from this catalog yet. Pure module: no I/O, no clock reads.
+ * Boost cards G1–G3 (Phase 3, plan §2C / §6.5): which screen shows which
+ * boost card, their urgency order (G3 → G2 → G1) and the same eligibility
+ * rule (trigger fired AND not cooling down, same `user_enrichment_cards`
+ * 7-day cooldown). G4 is out of scope (owner decision). Feature cards
+ * (F1–F11) are a static per-screen list in the frontend and are not served
+ * from this catalog. Pure module: no I/O, no clock reads.
  */
 
 export const ENRICHMENT_CARD_TYPES = [
@@ -27,6 +30,9 @@ export const BOOST_CARD_TYPES = ['G1', 'G2', 'G3'] as const;
 export type BoostCardType = (typeof BOOST_CARD_TYPES)[number];
 
 export type CardCategory = 'enrichment' | 'boost';
+
+/** Every card the dismiss endpoint accepts: E1–E11 and the boost cards in scope. */
+export type DismissibleCardType = EnrichmentCardType | BoostCardType;
 
 /** Static priority (plan §3.5). Index 0 = shown first. */
 export const ENRICHMENT_PRIORITY: readonly EnrichmentCardType[] = [
@@ -73,6 +79,48 @@ export const SCREEN_ENRICHMENT_CARDS: Readonly<Record<CardScreen, readonly Enric
   messenger: ALL_ENRICHMENT,
 };
 
+/**
+ * Boost urgency (plan §3.5 "Boost cards — trigger urgency"): G3 streak at
+ * risk (time-sensitive) → G2 unread matches (social) → G1 profile completion
+ * (persistent). Index 0 = shown first; boost cards follow enrichment cards.
+ */
+export const BOOST_PRIORITY: readonly BoostCardType[] = ['G3', 'G2', 'G1'];
+
+/**
+ * Screen → boost cards (plan §2C "Screens" column and §4):
+ *   G1 Complete Your Profile → home, profile
+ *   G2 Unread Matches        → home
+ *   G3 Streak at Risk        → home, longevity-journey, vitana-index, autopilot
+ * `autopilot` is the key the My Journey screen (/autopilot) sends, so G3's
+ * Longevity Journey placement reaches it. Every other screen (incl.
+ * messenger) shows no boost card.
+ */
+export const SCREEN_BOOST_CARDS: Readonly<Record<CardScreen, readonly BoostCardType[]>> = {
+  home: ['G1', 'G2', 'G3'],
+  profile: ['G1'],
+  'longevity-journey': ['G3'],
+  calendar: [],
+  'vitana-index': ['G3'],
+  autopilot: ['G3'],
+  community: [],
+  'make-a-post': [],
+  'talk-to-vitana': [],
+  messenger: [],
+};
+
+/** G1 fires below this weighted profile completion (plan §2C: `< 80`). */
+export const PROFILE_COMPLETION_BOOST_THRESHOLD = 80;
+/** G3 fires when the streak that ended the day before yesterday is longer than this (plan §2C: `> 3`). */
+export const STREAK_AT_RISK_MIN_EXCLUSIVE = 3;
+
+/** What each boost trigger computed — `data` is returned to the frontend on the card. */
+export type BoostTrigger =
+  | { card_type: 'G1'; fired: boolean; data: { completion_pct: number } }
+  | { card_type: 'G2'; fired: boolean; data: { unread_match_count: number } }
+  | { card_type: 'G3'; fired: boolean; data: { streak_days: number } };
+
+export type BoostTriggers = ReadonlyMap<BoostCardType, BoostTrigger>;
+
 export const DEFAULT_COOLDOWN_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -82,6 +130,20 @@ export function isCardScreen(value: unknown): value is CardScreen {
 
 export function isEnrichmentCardType(value: unknown): value is EnrichmentCardType {
   return typeof value === 'string' && (ENRICHMENT_CARD_TYPES as readonly string[]).includes(value);
+}
+
+export function isBoostCardType(value: unknown): value is BoostCardType {
+  return typeof value === 'string' && (BOOST_CARD_TYPES as readonly string[]).includes(value);
+}
+
+/** E1–E11 and G1–G3 can be dismissed (G4 is out of scope and stays 400). */
+export function isDismissibleCardType(value: unknown): value is DismissibleCardType {
+  return isEnrichmentCardType(value) || isBoostCardType(value);
+}
+
+/** 1-based urgency of a boost card within the boost category (1 = most urgent). */
+export function boostPriority(cardType: BoostCardType): number {
+  return BOOST_PRIORITY.indexOf(cardType) + 1;
 }
 
 /** 1-based static priority of an enrichment card (1 = most valuable). */
@@ -142,6 +204,38 @@ export function eligibleEnrichmentCards(
     .filter((t) => completions.get(t) === false)
     .filter((t) => !coolingDown.has(t))
     .map((t) => ({ card_type: t, category: 'enrichment' as const, priority: enrichmentPriority(t) }));
+}
+
+export type EligibleBoostCard = BoostTrigger & {
+  category: 'boost';
+  priority: number;
+};
+
+/**
+ * The one rule for which boost cards a member sees on a screen: on that
+ * screen's list, trigger fired, and not cooling down (same dismissal table
+ * and cooldown as enrichment cards). Returned in urgency order G3 → G2 → G1.
+ * A card with no computed trigger is not shown. Unknown screens return [].
+ */
+export function eligibleBoostCards(
+  boosts: BoostTriggers,
+  dismissRows: readonly EnrichmentDismissRow[],
+  screen: string,
+  now: Date,
+): EligibleBoostCard[] {
+  if (!isCardScreen(screen)) return [];
+  const onScreen = new Set<BoostCardType>(SCREEN_BOOST_CARDS[screen]);
+  const coolingDown = new Set<string>();
+  for (const row of dismissRows) {
+    if (isCoolingDown(row, now)) coolingDown.add(row.card_type);
+  }
+  const out: EligibleBoostCard[] = [];
+  for (const t of BOOST_PRIORITY) {
+    const trigger = boosts.get(t);
+    if (!onScreen.has(t) || !trigger || trigger.card_type !== t || !trigger.fired || coolingDown.has(t)) continue;
+    out.push({ ...trigger, category: 'boost', priority: boostPriority(t) });
+  }
+  return out;
 }
 
 /**
