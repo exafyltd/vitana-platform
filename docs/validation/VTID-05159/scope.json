@@ -8,6 +8,7 @@
     "services/gateway/src/services/consent/health-consent.ts",
     "services/gateway/src/types/cicd.ts",
     "services/gateway/test/health-store/**",
+    "services/gateway/test/routes/health-store-internal.test.ts",
     "services/gateway/test/vtid-05025-commerce-health-boundary.test.ts",
     "scripts/aws/setup-health-raw-bucket.sh",
     "scripts/aws/setup-health-store-alarms.sh",
