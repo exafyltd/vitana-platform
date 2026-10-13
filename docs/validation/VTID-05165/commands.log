@@ -1,0 +1,12 @@
+# VTID-05165 — commands run in the worktree /home/user/wt-c2 (branch claude/health-data-integration-plan-dbxyld-c2,
+# base bd902fb08 = C1 VTID-05164 + A2 VTID-05159 + B1 VTID-05161 + A1 VTID-05158 + D10 WP1 VTID-05092 + main)
+# No command touched Supabase, Aurora, S3, the gateway or any AWS/LLM API. Tests use A's S10 in-memory fake
+# (createFakeHealthStore) and source scans; no database, no network.
+
+(cd services/gateway && npx tsc --noEmit -p .)   # -> outputs/tsc.txt (3 pre-existing env gaps: libphonenumber-js, client-pinpoint-sms-voice-v2)
+(cd services/gateway && npx tsc -p <scratch tsconfig including test/wellness-context/**>)   # new test files type-check clean (scratch config not committed)
+(cd services/gateway && npx jest test/wellness-context test/vtid-05025-commerce-health-boundary.test.ts test/health-store test/health-sync test/routes/health-ingest.test.ts --verbose)   # -> outputs/jest-c2.txt
+(cd services/gateway && npx jest --silent)   # full suite -> outputs/jest-full-summary.txt
+python3 (sha256 of the text between the plan:begin/plan:end markers of plan-sparring.md)   # 522df112365dfa3c287c8b2a0292ff71b0c64b680768e61c8855836595bca0ba (unchanged from VTID-05164)
+node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base origin/main --head HEAD --title "VTID-05165: …"   # change suite present and valid
+node scripts/ci/validate-pr-locally.cjs --title "VTID-05165: …" --body-file pr-05165.md

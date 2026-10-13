@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05165",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "build-info answers JSON (the deployed commit is read from it)", "method": "GET", "path": "/api/v1/admin/build-info",
+      "expect_status": 200, "expect_content_type": "application/json" },
+    { "kind": "http", "name": "the Health Sync contract C2 builds on is still served read-only (v1.0)", "method": "GET", "path": "/api/v1/health/ingest/contract",
+      "expect_status": 200, "expect_json": { "ok": true, "contract_version": "1.0" } },
+    { "kind": "existing", "ref": "npx jest test/wellness-context test/vtid-05025-commerce-health-boundary.test.ts test/health-store test/health-sync", "cwd": "services/gateway",
+      "reason": "C2 adds no route and no consumer: services/wellness-context is a library that nothing in src imports yet (the boundary test pins an empty importer allowlist), WELLNESS_CONTEXT_ENABLED is set on no task definition and isWellnessContextEnabled() is false whenever VITANA_ENV=staging, so there is nothing on staging to probe beyond the deployed commit. Its behaviour is proven by Jest over A's S10 fake (the real S3/S4 store logic in memory): disabled with the flag off, consent_required without ai_health_analysis with A's read port not called, empty on STORE_PENDING/STORE_DISABLED/empty rows without a throw, a withdrawn sync_sleep removing the sleep fact, only WellnessFactKind values, the two comparison functions (direction, minimum data), the prompt always locale-wrapped in all 11 locales. The purpose-boundary scans (no importers, no commerce or provider-SDK import, store tables only inside services/health-store, the legacy-reader ratchet, no condition names in 11 locales) and the extended VTID-05025 commerce scan are source scans and run in the gateway Jest CI job." }
+  ]
+}
