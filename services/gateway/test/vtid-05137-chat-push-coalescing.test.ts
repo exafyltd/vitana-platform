@@ -253,7 +253,7 @@ describe('notifyUser with suppressPush: coalesced', () => {
 
   test('writes the in-app row, marks it handled, sends nothing, records coalesced', async () => {
     const r = await notifyUser('u1', 't1', 'new_chat_message', chatPayload, {} as any, { suppressPush: 'coalesced' });
-    expect(r).toEqual(expect.objectContaining({ pushed: 0, inapp: true, suppressed: 'coalesced' }));
+    expect(r).toEqual(expect.objectContaining({ pushed: 0, inapp: true }));
     expect(fcmSend).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
     const row = repo.insertUserNotification.mock.calls[0][1];
@@ -265,6 +265,7 @@ describe('notifyUser with suppressPush: coalesced', () => {
   test('without the option the same payload pushes as before', async () => {
     const r = await notifyUser('u1', 't1', 'new_chat_message', chatPayload, {} as any);
     expect(r.suppressed).toBeUndefined();
+    expect(repo.setNotificationPushOutcome).toHaveBeenCalledWith(expect.anything(), 'notif-1', 'delivered_appilix');
     expect(fetchMock).toHaveBeenCalled(); // deep link → Appilix first
     const row = repo.insertUserNotification.mock.calls[0][1];
     expect(row.data).not.toHaveProperty('push_coalesced');

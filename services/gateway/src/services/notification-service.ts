@@ -933,7 +933,7 @@ export async function notifyUser(
     dnd: isDnd,
   }).catch(() => undefined);
 
-  return { pushed, inapp: inappWritten, ...(pushCoalesced && { suppressed: 'coalesced' }) };
+  return { pushed, inapp: inappWritten };
 }
 
 /**

@@ -1,4 +1,3 @@
 {
-  "sms.phone_verification.code": "رمزك في Vitanaland: {code}. لا تشاركه مع أي شخص.",
-  "notif.chat_burst.body": "رسائل جديدة: {count} · {preview}"
+  "sms.phone_verification.code": "رمزك في Vitanaland: {code}. لا تشاركه مع أي شخص."
 }
