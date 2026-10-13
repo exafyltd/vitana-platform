@@ -3901,3 +3901,23 @@ Functions (SECURITY DEFINER, `authenticated`, act only as `auth.uid()`): `ai_con
 Gateway rules (`services/gateway/src/services/ai-connection-grants.ts`): Community needs an active row with the tool's category (no row → PERMISSION_NEEDED, revoked → CONNECTION_REVOKED, lookup error → 503). Commerce refuses a client whose row lacks `commerce` or is revoked; a client with no row (connected before VTID-05133) is unchanged.
 
 Read alongside (column added by `exafyltd/vitana-v1`, same VTID): `profile_privacy_settings.ai_discoverable boolean NOT NULL DEFAULT false` — a member is shown by identity to other members' AI assistants only when true (and `searchable`). OASIS (`CicdEventType`): `community.mcp.tool_called`, `community.mcp.client_refused`, `community.mcp.loopback_client_approved`.
+
+## Unified Card System — `user_enrichment_cards`, `profiles.interests` (VTID-05143, builds VTID-05085 Phase 1, 2026-10-13) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261013200000_vtid_05143_unified_card_system.sql` (additive, idempotent). Plan: `docs/validation/VTID-05085/plan-sparring.md` (§3.2, §6.2, §6.3); build record `docs/validation/VTID-05143/`. Read and written by the gateway (`services/gateway/src/routes/enrichment-cards.ts`, service_role), always for the caller's own `user_id`.
+
+### user_enrichment_cards (one row per member per dismissed enrichment card)
+
+| Column | Meaning |
+|---|---|
+| `user_id` | PK part, `auth.users(id)` ON DELETE CASCADE |
+| `card_type` | PK part, `E1`–`E11` (validated by the gateway catalog `services/enrichment/card-catalog.ts`; no CHECK so Phase 3 boost cards need no migration) |
+| `dismissed_at` | last dismissal; the card is hidden while `dismissed_at + cooldown_days > now()` |
+| `cooldown_days` | default `7` |
+| `created_at`, `updated_at` | timestamps (`updated_at` set by the gateway on dismiss) |
+
+No `completed_at`: completion is derived from the source tables (`profiles`, `profile_posts`, `social_connections` `is_active`/`disconnected_at`, `connected_app_settings` calendar apps, `contacts`, `user_device_tokens` `revoked_at IS NULL`). Index `idx_user_enrichment_cards_user (user_id)`. RLS: members select / insert / update their own rows; `service_role` all.
+
+### profiles.interests
+
+`TEXT[] DEFAULT '{}'` — the member's interests as stable slugs (`fitness`, `nutrition`, …), never display text; the app resolves labels via `screens.interests.<slug>`. Enrichment card E4 is complete when it is non-empty.
