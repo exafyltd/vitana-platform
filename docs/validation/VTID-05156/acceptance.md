@@ -37,3 +37,7 @@ TEST: npm run test:support; npm run test:operator; npm run test:roles; npx jest 
 
 OASIS_PROOF: no new OASIS event type. The retired wearable route no longer emits `health.ingest.wearable` / `health.ingest.wearable.error` (it answers 410 before any work); AC-9 asserts no event fires.
 TEST: npx jest test/routes/health.test.ts -t "retired"
+
+ROUTE_MOUNT: services/gateway/src/routes/health.ts → router.post('/wearables/ingest') (existing handler, body replaced by a 410; no new route); mounted in src/index.ts via mountRouterSync at /api/v1/health (unchanged)
+FINAL_URL: POST {gateway}/api/v1/health/wearables/ingest
+CURL_PROOF: NOT run against staging — a POST that is not a 401/403 auth-rejected probe is outside the read-only staging rule (staging shares the production database). Expected on a local or test gateway only: `curl -s -o /dev/null -w "%{http_code} %{content_type}" -X POST "$GATEWAY/api/v1/health/wearables/ingest"` → `410 application/json` with body `{"ok":false,"error":"ENDPOINT_RETIRED"}`. Proven in Jest (AC-9); staging checks only GET /alive and GET /api/v1/admin/build-info.
