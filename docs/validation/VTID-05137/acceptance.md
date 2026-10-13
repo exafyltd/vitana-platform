@@ -20,7 +20,7 @@ AC-2: A further message within 5 minutes, while the pushed one is unread, writes
   TEST: services/gateway/test/vtid-05137-chat-push-coalescing.test.ts ("a burst inside the window is held back", "writes the in-app row, marks it handled, sends nothing, records coalesced")
 AC-3: Held-back or suppressed rows never anchor the window; after the recipient reads the conversation the next message pushes at once.
   TEST: services/gateway/test/vtid-05137-chat-push-coalescing.test.ts ("held-back rows do not count as pushed", "a row whose push was suppressed (DND)…", "first message (nothing unread) pushes")
-AC-4: After the window the next push reads "{count} new messages · {preview}" in the member's language (`notif.chat_burst.body`, 11 gateway locales).
+AC-4: After the window the next push reads "{count} new messages · {preview}" in the member's language (`notif.chat_burst.body` in de, en, es, fr, pl, pt, ru, sr, tr, zh; ar falls back to EN like every key — catalog-coverage rule).
   TEST: services/gateway/test/vtid-05137-chat-push-coalescing.test.ts ("after the window the push summarises the unread messages, in the member's language")
 AC-5: Mentions always push; calendar invites and listing-interest pushes are never coalesced.
   TEST: services/gateway/test/vtid-05137-chat-push-coalescing.test.ts ("a mention always pushes"); services/gateway/test/vtid-05104-calendar-invite-guard.test.ts; services/gateway/test/vtid-04926-chat-group-mentions.test.ts
