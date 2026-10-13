@@ -361,7 +361,9 @@ export function claim(repo, key, session) {
   if (!SESSION_RE.test(session || '')) throw new Usage('--session <id> is required (session_… or kiro-YYYYMMDDHHMM-xxxx)');
   const main = defaultRemoteBranch(repo);
   const tree = git(repo, ['rev-parse', `${main}^{tree}`]);
-  const sha = git(repo, ['commit-tree', tree, '-p', main, '-m', `collab-claim ${key}`, '-m', `Collab-Session: ${session}\nCollab-Lane: ${key}`]);
+  // The claim commit is a marker, authored by the session itself — works on machines with no git identity (CI).
+  const ident = { GIT_AUTHOR_NAME: session, GIT_AUTHOR_EMAIL: `${session}@collab.invalid`, GIT_COMMITTER_NAME: session, GIT_COMMITTER_EMAIL: `${session}@collab.invalid` };
+  const sha = git(repo, ['commit-tree', tree, '-p', main, '-m', `collab-claim ${key}`, '-m', `Collab-Session: ${session}\nCollab-Lane: ${key}`], { env: { ...process.env, ...ident } });
   try {
     git(repo, ['push', 'origin', `${sha}:refs/heads/${CLAIM_PREFIX}${key}`]);
   } catch (err) {
