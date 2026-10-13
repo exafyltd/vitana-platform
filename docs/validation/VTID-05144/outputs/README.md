@@ -52,6 +52,23 @@ Local evidence (no staging, no production, no workflow dispatch):
   (gateway @ `fdf6af3e921b`, chain=2). Two supersedes in a row, each
   re-dispatching once, as designed (cap: chain < 3).
 
+- Chained run 38444220325 (chain=2, gateway @ `fdf6af3e921b`) was superseded
+  when staging moved to `c338571707dc`: 1126/1127 passed, cutoff
+  2026-10-13T18:13:02.711Z, all unattributed, `metadata.chain=2`. It dispatched
+  https://github.com/exafyltd/vitana-platform/actions/runs/38450928100
+  (gateway @ `c338571707dc`, chain=3).
+- Chained run 38450928100 (chain=3) was superseded when staging moved to
+  `1eb58a3837f5`: 1130/1133 passed, cutoff 2026-10-13T19:04:25.000Z,
+  **114 attributed results, 0 attributed failures**, 1019 unattributed.
+  This is the first after-run supersede with a non-empty attributed set. The
+  3 failures (VTID-04880, VTID-05057 ×2) ended after the cutoff and did not
+  fail the run. With chain=3 the report job does not dispatch again (cap
+  `chain < 3`).
+
 ### 2. Full run that passes (`staging.verify.passed`, `metadata.full=true`)
 
-- Pending: chained run 38444220325 (chain=2). Its result is recorded here before Gate 2.
+- Not yet: on 2026-10-13 staging redeployed about every 30 min during the day,
+  faster than a full run (~45 min). Fresh full runs were dispatched at
+  19:35Z (gateway @ `b3a5aca84be2`, community-app @ `60f0f06ec6aa`). The
+  first full run that ends `passed` or `failed` (this one or the nightly)
+  is recorded here.
