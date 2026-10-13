@@ -23,3 +23,4 @@ TEST: docs/validation/VTID-05128/outputs/reproduction.txt
 This change deploys nothing (workflow + script), so there is no staging deploy and no Gate 2. Post-merge proof: one full STAGING-VERIFY dispatch, then a read-only check that `oasis_events` holds its `staging.verify.*` row with `metadata.full = true`.
 
 OASIS_IMPACT: yes — restores recording of `staging.verify.*` events for full runs (no new topic, no shape change).
+OASIS_PROOF: scripts/ci/staging-verify/record-oasis.sh POSTs the same `staging.verify.<outcome>` event to `oasis_events` as before (topic, status, message and metadata unchanged — AC-2), now with the body read from a file; record-oasis.test.cjs asserts the posted payload for full, passed and crashed runs. Post-merge: the next full STAGING-VERIFY run's row with `metadata.full = true` is checked read-only in `oasis_events`.
