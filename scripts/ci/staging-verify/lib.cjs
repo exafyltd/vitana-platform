@@ -504,9 +504,27 @@ function evaluateStampSamples(service, stamps, sha) {
 // try. HTTP statuses, TLS/certificate errors and DNS misses are never retried.
 const RETRIABLE_FETCH_CODES = new Set([
   'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EAI_AGAIN', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT',
+  // VTID-05129 (proof run 38363989362): a bare "fetch failed" on a GET that
+  // passed a second later carried none of the codes above. Node 20 connects
+  // with happy eyeballs (IPv6 + IPv4), so a dropped connect surfaces as an
+  // AggregateError of per-address errors, and an idle keep-alive socket the
+  // CDN closed surfaces as UND_ERR_CLOSED / EPIPE / a headers timeout.
+  'UND_ERR_CLOSED', 'UND_ERR_HEADERS_TIMEOUT', 'EPIPE', 'ENETUNREACH', 'EHOSTUNREACH',
 ]);
+function retriableCause(c) {
+  if (!c) return false;
+  if (RETRIABLE_FETCH_CODES.has(c.code)) return true;
+  return Array.isArray(c.errors) && c.errors.length > 0 && c.errors.every((x) => RETRIABLE_FETCH_CODES.has(x && x.code));
+}
 function isRetriableFetchError(e) {
-  return !!e && e.name === 'TypeError' && RETRIABLE_FETCH_CODES.has(e.cause && e.cause.code);
+  return !!e && e.name === 'TypeError' && retriableCause(e.cause);
+}
+// "fetch failed" alone says nothing; name the underlying cause in the evidence.
+function describeFetchError(e) {
+  const c = e && e.cause;
+  if (!c) return String((e && e.message) || e);
+  const inner = Array.isArray(c.errors) && c.errors.length ? ` [${c.errors.map((x) => (x && (x.code || x.message)) || '?').join(', ')}]` : '';
+  return `${e.message} (${c.code || c.name || 'cause'}: ${c.message || ''}${inner})`;
 }
 
 // The one-line evidence for a failed spec. Keeps the error lines and, after a
@@ -555,6 +573,7 @@ function isToleratedAbort(record, specAllow = []) {
 module.exports = {
   evaluateStampSamples,
   isRetriableFetchError,
+  describeFetchError,
   summarizeFailure,
   DEFAULT_ALLOWED_ABORTS,
   DEFAULT_ALLOWED_ABORTS_CAP,

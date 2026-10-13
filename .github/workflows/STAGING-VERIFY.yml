@@ -72,7 +72,9 @@ jobs:
     # A failed or cancelled deploy has nothing to verify.
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # VTID-05129: a full community-app run (every docs/validation suite) takes
+    # ~45 min on its own; 45 cancelled the proof run during its final deploy check.
+    timeout-minutes: 75
     env:
       SERVICE: ${{ github.event_name == 'repository_dispatch' && 'community-app' || github.event_name == 'workflow_dispatch' && inputs.service || 'gateway' }}
       # The commit the event names. For a gateway deploy this is the deploy

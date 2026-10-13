@@ -464,6 +464,21 @@ test('VTID-05129: only dropped connections are retried', () => {
   assert.equal(lib.isRetriableFetchError(null), false);
 });
 
+test('VTID-05129: a dropped connection hidden in an AggregateError or a closed socket is retried, and named', () => {
+  const net = (cause) => Object.assign(new TypeError('fetch failed'), { cause });
+  for (const c of ['UND_ERR_CLOSED', 'UND_ERR_HEADERS_TIMEOUT', 'EPIPE', 'ENETUNREACH', 'EHOSTUNREACH']) {
+    assert.equal(lib.isRetriableFetchError(net({ code: c })), true, c);
+  }
+  const agg = (codes) => Object.assign(new AggregateError(codes.map((code) => Object.assign(new Error(code), { code }))), {});
+  assert.equal(lib.isRetriableFetchError(net(agg(['ENETUNREACH', 'ETIMEDOUT']))), true);
+  // one non-transient member (a TLS error) keeps the whole thing a real failure
+  assert.equal(lib.isRetriableFetchError(net(agg(['ETIMEDOUT', 'CERT_HAS_EXPIRED']))), false);
+  assert.equal(lib.isRetriableFetchError(net(agg([]))), false);
+  assert.match(lib.describeFetchError(net(Object.assign(new Error('other side closed'), { code: 'UND_ERR_SOCKET' }))), /fetch failed \(UND_ERR_SOCKET: other side closed\)/);
+  assert.match(lib.describeFetchError(net(agg(['ENETUNREACH', 'ETIMEDOUT']))), /\[ENETUNREACH, ETIMEDOUT\]/);
+  assert.equal(lib.describeFetchError(new Error('plain')), 'plain');
+});
+
 test('VTID-05129: a guard failure keeps the blocked requests in its summary', () => {
   const out = [
     '  ✘  1 tests/e2e/staging/x.staging.spec.ts:3:1 › page (4.8s)',
