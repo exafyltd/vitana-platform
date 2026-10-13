@@ -161,58 +161,29 @@ describe('Health Router', () => {
   });
 
   // ============================================================
-  // POST /wearables/ingest
+  // POST /wearables/ingest — RETIRED (VTID-05156)
   // ============================================================
-  describe('POST /wearables/ingest', () => {
-    it('returns 401 when Authorization header is absent', async () => {
-      const res = await request(testApp).post('/wearables/ingest').send({});
-      expect(res.status).toBe(401);
-    });
+  describe('POST /wearables/ingest (retired, VTID-05156)', () => {
+    const cases: Array<[string, Record<string, string>, unknown]> = [
+      ['no Authorization header', {}, {}],
+      ['a bearer token and a valid body', { Authorization: AUTH_HEADER }, { provider: 'fitbit', samples: [{ type: 'heart_rate', value: 72 }] }],
+      ['a bearer token and an invalid body', { Authorization: AUTH_HEADER }, { provider: 'fitbit' }],
+    ];
 
-    it('returns 400 when me_context fails', async () => {
-      supabaseMock.rpc.mockResolvedValueOnce({
-        data: null,
-        error: { message: 'DB error' },
-      });
-      const res = await request(testApp)
-        .post('/wearables/ingest')
-        .set('Authorization', AUTH_HEADER)
-        .send({ provider: 'fitbit', samples: [] });
-      expect(res.status).toBe(400);
-    });
-
-    it('returns 400 when samples field is missing', async () => {
-      supabaseMock.rpc.mockResolvedValueOnce({ data: GOOD_CTX, error: null });
-      const res = await request(testApp)
-        .post('/wearables/ingest')
-        .set('Authorization', AUTH_HEADER)
-        .send({ provider: 'fitbit' });
-      expect(res.status).toBe(400);
-      expect(res.body.error).toBe('INVALID_INPUT');
-    });
-
-    it('returns 502 for an RPC error', async () => {
-      supabaseMock.rpc
-        .mockResolvedValueOnce({ data: GOOD_CTX, error: null })
-        .mockResolvedValueOnce({ data: null, error: { message: 'DB down', code: '500' } });
-      const res = await request(testApp)
-        .post('/wearables/ingest')
-        .set('Authorization', AUTH_HEADER)
-        .send({ provider: 'fitbit', samples: [{ type: 'heart_rate', value: 72 }] });
-      expect(res.status).toBe(502);
-    });
-
-    it('returns 200 with inserted_count on success', async () => {
-      supabaseMock.rpc
-        .mockResolvedValueOnce({ data: GOOD_CTX, error: null })
-        .mockResolvedValueOnce({ data: { inserted_count: 10 }, error: null });
-      const res = await request(testApp)
-        .post('/wearables/ingest')
-        .set('Authorization', AUTH_HEADER)
-        .send({ provider: 'fitbit', samples: [{ type: 'heart_rate', value: 72 }] });
-      expect(res.status).toBe(200);
-      expect(res.body.ok).toBe(true);
-      expect(res.body.inserted_count).toBe(10);
+    it.each(cases)('answers 410 ENDPOINT_RETIRED with %s, before any database call', async (_label, headers, body) => {
+      let req = request(testApp).post('/wearables/ingest');
+      for (const [k, v] of Object.entries(headers)) req = req.set(k, v);
+      const res = await req.send(body as object);
+      expect(res.status).toBe(410);
+      expect(res.body).toEqual({ ok: false, error: 'ENDPOINT_RETIRED' });
+      // No Supabase client is built and no RPC (me_context or the revoked
+      // health_ingest_wearable_samples) is called, and no OASIS event fires.
+      expect(mockCreateUserSupabaseClient).not.toHaveBeenCalled();
+      expect(mockGetSupabase).not.toHaveBeenCalled();
+      expect(supabaseMock.rpc).not.toHaveBeenCalled();
+      expect(supabaseMock.from).not.toHaveBeenCalled();
+      expect(adminMock.rpc).not.toHaveBeenCalled();
+      expect(mockEmitOasisEvent).not.toHaveBeenCalled();
     });
   });
 

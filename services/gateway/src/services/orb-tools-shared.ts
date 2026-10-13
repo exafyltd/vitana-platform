@@ -4549,18 +4549,32 @@ export async function tool_get_day_summary(
 // Life Compass goal. They never read the Vitana Index (vitana_index_scores):
 // once the Index can contain device-derived data, an Index-driven product
 // filter would be a device-data -> commerce path (program plan section 2b).
+//
+// VTID-05156: this used to select `current_goal`, a column that does not
+// exist on life_compass — PostgREST answered 42703, the error was ignored and
+// the goal was always null. Same corrected query as tool_get_life_compass
+// above (VTID-03022): primary_goal, the one is_active row, newest first.
+// A read error is now logged instead of silently swallowed.
 async function _getCompassGoal(
   sb: SupabaseClient,
   userId: string,
+  tool: 'find_perfect_product' | 'find_perfect_practitioner',
 ): Promise<{ compass_goal: string | null }> {
   let goal: string | null = null;
   try {
-    const { data: lc } = await sb
+    const { data: lc, error } = await sb
       .from('life_compass')
-      .select('current_goal')
+      .select('primary_goal')
       .eq('user_id', userId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
-    goal = (lc?.current_goal as string) ?? null;
+    if (error) {
+      console.warn(`[${tool}] life_compass read failed: ${error.code ?? error.message}`);
+      return { compass_goal: null };
+    }
+    goal = String((lc as { primary_goal?: unknown } | null)?.primary_goal ?? '').trim() || null;
   } catch {
     /* table may not exist */
   }
@@ -4579,7 +4593,7 @@ export async function tool_find_perfect_product(
     ? (args.exclude_ingredients as string[]).map((s) => String(s).toLowerCase())
     : [];
 
-  const ctx = await _getCompassGoal(sb, identity.user_id);
+  const ctx = await _getCompassGoal(sb, identity.user_id, 'find_perfect_product');
   // VTID-05089: the pillar filter applies only when the member names one.
   const targetPillar = askedPillar;
 
@@ -4645,7 +4659,7 @@ export async function tool_find_perfect_practitioner(
   const telehealthOk = args.telehealth_ok;
   const maxPrice = args.max_price != null ? Number(args.max_price) : null;
 
-  const ctx = await _getCompassGoal(sb, identity.user_id);
+  const ctx = await _getCompassGoal(sb, identity.user_id, 'find_perfect_practitioner');
 
   let query = sb.from('services_catalog').select('*').limit(10);
   if (specialty) query = query.ilike('specialty', `%${specialty}%`);

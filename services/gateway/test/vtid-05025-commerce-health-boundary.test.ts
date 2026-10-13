@@ -358,7 +358,7 @@ describe('find_perfect_product / find_perfect_practitioner — no Index read (VT
         }
         const resp = () =>
           table === 'life_compass'
-            ? { data: { current_goal: 'sleep better' }, error: null }
+            ? { data: { primary_goal: 'sleep better' }, error: null } // VTID-05156: real column
             : { data: [{ name: 'Magnesium', ingredients: [] }], error: null };
         chain.maybeSingle = jest.fn(() => Promise.resolve(resp()));
         chain.then = (res: any, rej: any) => Promise.resolve(resp()).then(res, rej);
