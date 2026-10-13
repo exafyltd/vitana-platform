@@ -6,7 +6,7 @@
  *
  * Endpoints:
  * - POST /lab-reports/ingest - Ingest lab report data (C2)
- * - POST /wearables/ingest - Ingest wearable samples (C2)
+ * - POST /wearables/ingest - RETIRED, answers 410 (VTID-05156)
  * - GET /summary - Get health summary for a date (C3)
  * - POST /recompute/daily - Trigger daily recompute pipeline (C3)
  */
@@ -243,95 +243,23 @@ router.post('/lab-reports/ingest', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /wearables/ingest
+ * POST /wearables/ingest — RETIRED (VTID-05156).
  *
- * Ingest wearable samples (heart rate, steps, sleep, etc.)
- * Calls RPC: health_ingest_wearable_samples(payload)
+ * This used to call RPC health_ingest_wearable_samples(payload) with the
+ * member's own JWT. That RPC is SECURITY DEFINER and was granted to
+ * `authenticated`, so any signed-in member could write wearable samples with
+ * no consent check. Migration
+ * 20261014120000_vtid_05156_revoke_wearable_samples_rpc.sql revokes it from
+ * PUBLIC/anon/authenticated (service_role only). The app never called this
+ * route; the Health Hub Phase 1 Health Sync contract replaces it.
+ *
+ * Answers 410 before any auth or database call, so a retired endpoint
+ * cannot be used to probe accounts or reach the database.
  */
-router.post('/wearables/ingest', async (req: Request, res: Response) => {
-  const token = getBearerToken(req);
-  if (!token) {
-    console.warn('[VTID-01081] POST /wearables/ingest - Missing bearer token');
-    return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
-  }
-
-  const ctx = await getUserContext(token);
-  if (!ctx.ok) {
-    console.error('[VTID-01081] POST /wearables/ingest - Context error:', ctx.error);
-    if (ctx.error?.includes('JWT') || ctx.error?.includes('auth')) {
-      return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
-    }
-    return res.status(400).json({ ok: false, error: ctx.error });
-  }
-
-  const { provider, samples } = req.body;
-  if (!provider || !Array.isArray(samples)) {
-    await emitHealthIngestEvent(
-      'health.ingest.wearable.error',
-      'error',
-      'Invalid input for wearable ingest',
-      { tenant_id: ctx.tenant_id, user_id: ctx.user_id, active_role: ctx.active_role, error: 'INVALID_INPUT' }
-    );
-    return res.status(400).json({
-      ok: false,
-      error: 'INVALID_INPUT',
-      message: 'Required fields: provider, samples[]',
-    });
-  }
-
-  try {
-    const supabase = createUserSupabaseClient(token);
-
-    const rpcPayload = {
-      p_provider: provider,
-      p_samples: samples,
-    };
-
-    const { data, error } = await repo.rpcHealthIngestWearableSamples(supabase, rpcPayload);
-
-    if (error) {
-      console.error('[VTID-01081] POST /wearables/ingest - RPC error:', error.message);
-      await emitHealthIngestEvent(
-        'health.ingest.wearable.error',
-        'error',
-        `Wearable ingest failed: ${error.message}`,
-        { tenant_id: ctx.tenant_id, user_id: ctx.user_id, active_role: ctx.active_role, error: error.message, provider }
-      );
-
-      if (error.code === 'PGRST301' || error.message.includes('JWT')) {
-        return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
-      }
-      return res.status(502).json({ ok: false, error: 'UPSTREAM_ERROR', message: error.message });
-    }
-
-    const insertedCount = data?.inserted_count ?? data?.count ?? samples.length;
-
-    await emitHealthIngestEvent(
-      'health.ingest.wearable',
-      'success',
-      `Wearable samples ingested: ${insertedCount} samples from ${provider}`,
-      {
-        tenant_id: ctx.tenant_id,
-        user_id: ctx.user_id,
-        active_role: ctx.active_role,
-        inserted_count: insertedCount,
-        provider,
-        metric_count: samples.length,
-      }
-    );
-
-    console.log(`[VTID-01081] POST /wearables/ingest - Success: ${insertedCount} samples`);
-    return res.status(200).json({ ok: true, inserted_count: insertedCount });
-  } catch (err: any) {
-    console.error('[VTID-01081] POST /wearables/ingest - Unexpected error:', err.message);
-    await emitHealthIngestEvent(
-      'health.ingest.wearable.error',
-      'error',
-      `Wearable ingest error: ${err.message}`,
-      { tenant_id: ctx.tenant_id, user_id: ctx.user_id, active_role: ctx.active_role, error: err.message }
-    );
-    return res.status(500).json({ ok: false, error: err.message });
-  }
+// Retired: answers 410 to everyone before any auth or database work.
+router.post('/wearables/ingest', (_req: Request, res: Response) => { // public-route
+  // impact-allow-no-oasis — no state change: the retired endpoint does nothing.
+  return res.status(410).json({ ok: false, error: 'ENDPOINT_RETIRED' });
 });
 
 // =============================================================================
