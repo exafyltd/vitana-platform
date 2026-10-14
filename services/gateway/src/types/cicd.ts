@@ -980,6 +980,11 @@ export type CicdEventType =
   | 'health.store.maintenance.completed'
   | 'health.store.maintenance.failed'
   | 'health.store.partition_missing'
+  // VTID-05174 (Health Hub D5 remainder): account-deletion health residue.
+  // Payloads carry connector ids, statuses and counts only — never tokens,
+  // raw_payload or the member id.
+  | 'health.erasure.vendor_revoke'
+  | 'health.erasure.member_residue'
   // VTID-02300: Phase 3 outbound action consent events
   | 'connector.action.requested'
   | 'connector.action.executed'

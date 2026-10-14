@@ -44,9 +44,9 @@
     "voice": "polly:ru",
     "instruction_sha256": "59c6e5ebed4201717adf8b73a0bded5556f4fa616f26cd34792a5498ffe49a24",
     "instruction_bytes": 20129,
-    "tools_sha256": "b64378a4dc65835570e8e6eae0ef9e54c4789dd42f8cb4a3e1f5e05474ec4290",
-    "tools_bytes": 227322,
-    "tool_count": 298,
+    "tools_sha256": "41c67664f9aa155cacec768589a5c7621fdb80f05e87798abf1a76a060f8d3e1",
+    "tools_bytes": 228266,
+    "tool_count": 299,
     "deferred_tools": 0
   },
   "connect:command-hub-developer-en": {
