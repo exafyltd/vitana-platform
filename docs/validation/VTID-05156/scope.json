@@ -1,0 +1,33 @@
+{
+  "vtid": "VTID-05156",
+  "kind": "fix",
+  "paths": [
+    ".github/workflows/SQL-WEARABLE-SAMPLES-RPC-REVOKE.yml",
+    "DATABASE_SCHEMA.md",
+    "docs/programs/health-hub/STATUS.md",
+    "scripts/ci/sql-tests/run-wearable-samples-rpc-revoke-test.sh",
+    "services/gateway/src/routes/health-repository.ts",
+    "services/gateway/src/routes/health.ts",
+    "services/gateway/src/services/orb-tools-shared.ts",
+    "services/gateway/src/services/orb-tools/discovery-tools-repository.ts",
+    "services/gateway/src/services/orb-tools/discovery-tools.ts",
+    "services/gateway/test/orb-tools/discovery-tools.test.ts",
+    "services/gateway/test/orb/latency/__snapshots__/vtid-04542-voice-payload-identity.test.ts.snap",
+    "services/gateway/test/orb/latency/vtid-04542-voice-payload-identity.hashes.json",
+    "services/gateway/test/orb/live/characterization/__snapshots__/system-instruction.characterization.test.ts.snap",
+    "services/gateway/test/orb/live/characterization/__snapshots__/tool-catalog.characterization.test.ts.snap",
+    "services/gateway/test/routes/health.test.ts",
+    "services/gateway/test/vtid-05025-commerce-health-boundary.test.ts",
+    "services/gateway/test/vtid-05156-marketplace-compass-goal.test.ts",
+    "services/gateway/test/vtid-05156-people-match-health-boundary.test.ts",
+    "supabase/migrations/20261014120000_vtid_05156_revoke_wearable_samples_rpc.sql",
+    "docs/validation/VTID-05156/**"
+  ],
+  "weakens_tests": [
+    {
+      "file": "services/gateway/test/routes/health.test.ts",
+      "reason": "POST /wearables/ingest is retired (VTID-05156 Defect 5): it answers 410 ENDPOINT_RETIRED before any auth or database call, so the five tests of the old ingest behaviour (401 / me_context 400 / INVALID_INPUT 400 / RPC 502 / 200 inserted_count) no longer describe a reachable path. They are replaced by three cases (no token, token + valid body, token + invalid body) that each assert the 410 and that no Supabase client, RPC or OASIS event is touched."
+    }
+  ],
+  "red_green_exempt": []
+}

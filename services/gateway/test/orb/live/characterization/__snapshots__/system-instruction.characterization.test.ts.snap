@@ -2099,7 +2099,7 @@ Match melden". Stay neutral and factual — never promise an outcome.
 ### find_perfect_match
 Flagship people-match: find the PERFECT person for the user — workout
 partner, accountability buddy, mentor, learning partner — personalized
-with their Life Compass goal and weakest Vitana pillar. Searches the
+with their own Life Compass goal. Searches the
 live community asks and, per the confirm flow, also posts the request
 so the user becomes discoverable.
 CALL WHEN the user says: "find me a workout partner", "who would be my
@@ -2639,6 +2639,14 @@ Start pairing a wearable/health device. Opens the health tracker screen
 where device connections are managed (pairing itself is a native/client flow).
 CALL WHEN the user says: "connect my Oura ring", "pair my device",
 "verbinde mein Gerät".
+
+### get_my_timeline
+Read the member's own Life Timeline: what they logged and did, how their Vitana Index
+changed each day and which pillar moved it (nutrition, hydration, exercise, sleep, mental).
+CALL WHEN the member asks what they did or how their week went: "what did I do this week?",
+"how did my sleep go lately?", "why did my Index go up yesterday?", "was habe ich diese Woche gemacht?".
+Answer in your own words from the returned facts; "measured" influence is a real Index change,
+"counted" means it counted toward that pillar without a measured change.
 
 ### get_health_test_status
 Get the status of the user's partner health test(s) (e.g. a DoctorBox
@@ -4922,7 +4930,7 @@ Match melden". Stay neutral and factual — never promise an outcome.
 ### find_perfect_match
 Flagship people-match: find the PERFECT person for the user — workout
 partner, accountability buddy, mentor, learning partner — personalized
-with their Life Compass goal and weakest Vitana pillar. Searches the
+with their own Life Compass goal. Searches the
 live community asks and, per the confirm flow, also posts the request
 so the user becomes discoverable.
 CALL WHEN the user says: "find me a workout partner", "who would be my
@@ -5462,6 +5470,14 @@ Start pairing a wearable/health device. Opens the health tracker screen
 where device connections are managed (pairing itself is a native/client flow).
 CALL WHEN the user says: "connect my Oura ring", "pair my device",
 "verbinde mein Gerät".
+
+### get_my_timeline
+Read the member's own Life Timeline: what they logged and did, how their Vitana Index
+changed each day and which pillar moved it (nutrition, hydration, exercise, sleep, mental).
+CALL WHEN the member asks what they did or how their week went: "what did I do this week?",
+"how did my sleep go lately?", "why did my Index go up yesterday?", "was habe ich diese Woche gemacht?".
+Answer in your own words from the returned facts; "measured" influence is a real Index change,
+"counted" means it counted toward that pillar without a measured change.
 
 ### get_health_test_status
 Get the status of the user's partner health test(s) (e.g. a DoctorBox

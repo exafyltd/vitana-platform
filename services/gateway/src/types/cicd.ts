@@ -967,6 +967,15 @@ export type CicdEventType =
   // Payloads carry keys, dates, providers and counts only, never health values.
   | 'health.wearable_features.bridged'
   | 'health.wearable_features.bridge_failed'
+  // VTID-05161 (Health Hub B1): health_sources dual-write and reconciler.
+  // Payloads carry sites, codes and counts only, never member ids or health values.
+  | 'health.sources.dual_write_failed'
+  | 'health.sources.reconcile'
+  // VTID-05174 (Health Hub D5 remainder): account-deletion health residue.
+  // Payloads carry connector ids, statuses and counts only — never tokens,
+  // raw_payload or the member id.
+  | 'health.erasure.vendor_revoke'
+  | 'health.erasure.member_residue'
   // VTID-02300: Phase 3 outbound action consent events
   | 'connector.action.requested'
   | 'connector.action.executed'
@@ -1115,6 +1124,9 @@ export type CicdEventType =
   | 'partner_org.member_joined'
   | 'partner_org.activated'
   | 'partner_org.registry_linked'
+  // VTID-05023: auth -> Aurora bridge (a member provisioned / cleaned up on Aurora)
+  | 'auth_bridge.user.provisioned'
+  | 'auth_bridge.user.deleted'
   // VTID-04478: Commerce partner onboarding engine
   | 'partner_org.onboarding_started'
   | 'partner_org.company_updated'
@@ -1195,7 +1207,12 @@ export type CicdEventType =
   // VTID-05068: a running Kiro run was taken over by a new gateway task after a deploy (run id, thread id, status only)
   | 'operator.kiro.run_reattached'
   // VTID-05067: an image pasted into the Operator Console was stored (media id, thread id, type, size; never the bytes)
-  | 'operator.media.uploaded';
+  | 'operator.media.uploaded'
+  // VTID-05150: tenant provisioning (exafy_admin). Payloads carry ids, slug, counts and field
+  // names only — never an invitation token or an email address.
+  | 'tenant.provisioned'
+  | 'tenant.brand_pack.updated'
+  | 'tenant.asset.uploaded';
 
 export interface CicdOasisEvent {
   vtid: string;

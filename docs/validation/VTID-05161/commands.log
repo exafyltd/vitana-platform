@@ -1,0 +1,26 @@
+# VTID-05161 — commands run in the worktree /home/user/wt-b1 (branch claude/health-data-integration-plan-dbxyld-b1,
+# stacked on A1 origin/claude/health-data-integration-plan-dbxyld-a1 fad3f143c)
+# No command touched Supabase, Aurora or any shared database. SQL ran only on a throwaway local PostgreSQL 16.
+
+sudo -u postgres initdb -D /tmp/pg05161/data -U postgres -A trust
+sudo -u postgres pg_ctl -D /tmp/pg05161/data -o "-p 55161 -k /tmp/pg05161 -c listen_addresses=''" -w start
+export PGHOST=/tmp/pg05161 PGPORT=55161 PGUSER=postgres
+
+scripts/ci/sql-tests/run-health-sources-test.sh        # -> outputs/sql-health-sources.txt
+scripts/ci/sql-tests/run-health-store-test.sh; scripts/ci/sql-tests/run-erase-user-data-test.sh   # -> outputs/sql-a1-suites-unchanged.txt
+# mutation checks (migration edited temporarily, restored, cmp-verified):
+#   backfill without the category filter        -> "FAIL: expected 7 backfilled sources, got 8"
+#   no REVOKE on health_sources                 -> "FAIL: browser roles have more than member SELECT on health_sources"
+#   revoke migration keeps user_integrations_owner_all -> "VTID-05161 self-check: a non-SELECT policy remains"
+#   tenant order without is_primary first       -> "FAIL: integration tenant must be the primary membership (T2)"
+
+node --test scripts/ci/check-migration-drift.test.cjs; node --test <every scripts/** test>   # -> outputs/node-tests.txt
+(cd services/gateway && npx jest <VTID-05161 suites + every suite touching a changed file + migration-scanning suites + support/roles/operator + 04968 + 05025>)   # -> outputs/jest.txt
+(cd services/gateway && npx tsc --noEmit -p .)   # -> outputs/tsc.txt
+node -e "lintMigration(...)" (scripts/ci/pr-gate/lib.mjs) on both migrations   # [] []
+
+python3: sha256(text strictly between the plan markers of plan-sparring.md) = c8d7960d66b813d2d83d955f8a0a2baf84949020476b87b5502b08b2e559f24d (= p1b-plan.md)
+
+node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base <A1 head> --head HEAD --title "<title>"
+node scripts/ci/pr-gate/gate.mjs scope|sparring|weakening|migrations --base <A1 head> --head HEAD --title "<title>"
+node scripts/ci/validate-pr-locally.cjs --title "<title>" --body-file <draft> --base main   (compares origin/main...HEAD; the local main ref is not moved)

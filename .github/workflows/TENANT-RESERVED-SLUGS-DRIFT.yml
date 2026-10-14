@@ -1,0 +1,50 @@
+name: Tenant reserved slugs drift (VTID-05150)
+# A tenant's path URL is vitanaland.com/<slug>, so no tenant may take a slug
+# that is a top-level vitana-v1 route or public file. The reserved list is
+# checked in (services/gateway/src/services/tenant-provisioning/reserved-slugs.json)
+# and seeded into reserved_tenant_slugs by migration 20261014000400.
+#
+# This job checks out vitana-v1 main (read-only) and runs
+# scripts/tenants/gen-reserved-slugs.mjs --check. A new top-level segment in v1
+# fails with ::error:: naming it. Fix: a migration adding the row to
+# reserved_tenant_slugs + the regenerated JSON, in one PR.
+# Read-only: it writes nothing, opens nothing, deploys nothing.
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'   # Mondays 06:17 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout vitana-platform
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Checkout vitana-v1 (read-only)
+        uses: actions/checkout@v4
+        with:
+          repository: exafyltd/vitana-v1
+          token: ${{ secrets.VITANA_V1_READ_TOKEN || secrets.GITHUB_TOKEN }}
+          ref: main
+          path: vitana-v1
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+
+      - name: Install vitana-v1 dependencies (for its route extractor)
+        working-directory: vitana-v1
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Check reserved slugs against vitana-v1 main
+        run: node scripts/tenants/gen-reserved-slugs.mjs --v1 "$GITHUB_WORKSPACE/vitana-v1" --check

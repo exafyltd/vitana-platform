@@ -6,7 +6,7 @@
  *
  * Endpoints:
  * - POST /lab-reports/ingest - Ingest lab report data (C2)
- * - POST /wearables/ingest - Ingest wearable samples (C2)
+ * - POST /wearables/ingest - RETIRED, answers 410 (VTID-05156)
  * - GET /summary - Get health summary for a date (C3)
  * - POST /recompute/daily - Trigger daily recompute pipeline (C3)
  */
@@ -18,6 +18,7 @@ import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { CicdEventType } from '../types/cicd';
 import * as repo from './health-repository';
+import { recordIndexRecompute } from '../services/vitana-index/record-recompute';
 
 const router = Router();
 
@@ -243,95 +244,23 @@ router.post('/lab-reports/ingest', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /wearables/ingest
+ * POST /wearables/ingest — RETIRED (VTID-05156).
  *
- * Ingest wearable samples (heart rate, steps, sleep, etc.)
- * Calls RPC: health_ingest_wearable_samples(payload)
+ * This used to call RPC health_ingest_wearable_samples(payload) with the
+ * member's own JWT. That RPC is SECURITY DEFINER and was granted to
+ * `authenticated`, so any signed-in member could write wearable samples with
+ * no consent check. Migration
+ * 20261014120000_vtid_05156_revoke_wearable_samples_rpc.sql revokes it from
+ * PUBLIC/anon/authenticated (service_role only). The app never called this
+ * route; the Health Hub Phase 1 Health Sync contract replaces it.
+ *
+ * Answers 410 before any auth or database call, so a retired endpoint
+ * cannot be used to probe accounts or reach the database.
  */
-router.post('/wearables/ingest', async (req: Request, res: Response) => {
-  const token = getBearerToken(req);
-  if (!token) {
-    console.warn('[VTID-01081] POST /wearables/ingest - Missing bearer token');
-    return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
-  }
-
-  const ctx = await getUserContext(token);
-  if (!ctx.ok) {
-    console.error('[VTID-01081] POST /wearables/ingest - Context error:', ctx.error);
-    if (ctx.error?.includes('JWT') || ctx.error?.includes('auth')) {
-      return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
-    }
-    return res.status(400).json({ ok: false, error: ctx.error });
-  }
-
-  const { provider, samples } = req.body;
-  if (!provider || !Array.isArray(samples)) {
-    await emitHealthIngestEvent(
-      'health.ingest.wearable.error',
-      'error',
-      'Invalid input for wearable ingest',
-      { tenant_id: ctx.tenant_id, user_id: ctx.user_id, active_role: ctx.active_role, error: 'INVALID_INPUT' }
-    );
-    return res.status(400).json({
-      ok: false,
-      error: 'INVALID_INPUT',
-      message: 'Required fields: provider, samples[]',
-    });
-  }
-
-  try {
-    const supabase = createUserSupabaseClient(token);
-
-    const rpcPayload = {
-      p_provider: provider,
-      p_samples: samples,
-    };
-
-    const { data, error } = await repo.rpcHealthIngestWearableSamples(supabase, rpcPayload);
-
-    if (error) {
-      console.error('[VTID-01081] POST /wearables/ingest - RPC error:', error.message);
-      await emitHealthIngestEvent(
-        'health.ingest.wearable.error',
-        'error',
-        `Wearable ingest failed: ${error.message}`,
-        { tenant_id: ctx.tenant_id, user_id: ctx.user_id, active_role: ctx.active_role, error: error.message, provider }
-      );
-
-      if (error.code === 'PGRST301' || error.message.includes('JWT')) {
-        return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
-      }
-      return res.status(502).json({ ok: false, error: 'UPSTREAM_ERROR', message: error.message });
-    }
-
-    const insertedCount = data?.inserted_count ?? data?.count ?? samples.length;
-
-    await emitHealthIngestEvent(
-      'health.ingest.wearable',
-      'success',
-      `Wearable samples ingested: ${insertedCount} samples from ${provider}`,
-      {
-        tenant_id: ctx.tenant_id,
-        user_id: ctx.user_id,
-        active_role: ctx.active_role,
-        inserted_count: insertedCount,
-        provider,
-        metric_count: samples.length,
-      }
-    );
-
-    console.log(`[VTID-01081] POST /wearables/ingest - Success: ${insertedCount} samples`);
-    return res.status(200).json({ ok: true, inserted_count: insertedCount });
-  } catch (err: any) {
-    console.error('[VTID-01081] POST /wearables/ingest - Unexpected error:', err.message);
-    await emitHealthIngestEvent(
-      'health.ingest.wearable.error',
-      'error',
-      `Wearable ingest error: ${err.message}`,
-      { tenant_id: ctx.tenant_id, user_id: ctx.user_id, active_role: ctx.active_role, error: err.message }
-    );
-    return res.status(500).json({ ok: false, error: err.message });
-  }
+// Retired: answers 410 to everyone before any auth or database work.
+router.post('/wearables/ingest', (_req: Request, res: Response) => { // public-route
+  // impact-allow-no-oasis — no state change: the retired endpoint does nothing.
+  return res.status(410).json({ ok: false, error: 'ENDPOINT_RETIRED' });
 });
 
 // =============================================================================
@@ -740,17 +669,11 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
       return res.status(400).json({ ok: false, error: 'SURVEY_WRITE_FAILED', detail: surveyErr.message });
     }
 
-    // Baseline survey → baseline_survey sub-score only (max 40 per pillar).
-    // Curve: 1→10, 2→20, 3→25, 4→32, 5→40. Rating 5 is NOT 200; the Index
-    // grows through action completions, connected data, and streaks.
-    const curve = { 1: 10, 2: 20, 3: 25, 4: 32, 5: 40 } as const;
-    const scoreNutrition = curve[ratings.nutrition as 1|2|3|4|5];
-    const scoreHydration = curve[ratings.hydration as 1|2|3|4|5];
-    const scoreExercise  = curve[ratings.exercise as 1|2|3|4|5];
-    const scoreSleep     = curve[ratings.sleep as 1|2|3|4|5];
-    const scoreMental    = curve[ratings.mental as 1|2|3|4|5];
-
-    // Read 5-pillar weights from active config (default 1.0 each).
+    // VTID-05168 (sparring F15): the starting Index comes from the canonical
+    // compute — which already scores the baseline from the survey just saved —
+    // through the single locked + recorded writer. No gateway code writes
+    // vitana_index_scores directly any more (CI guard:
+    // test/vtid-05168-index-movements.test.ts).
     let weights = { nutrition: 1, hydration: 1, exercise: 1, sleep: 1, mental: 1 };
     try {
       const { data: cfg } = await repo.fetchActivePillarWeightsConfig(admin);
@@ -766,35 +689,27 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
       }
     } catch { /* keep defaults */ }
 
-    const scoreTotal = Math.min(999, Math.max(0, Math.round(
-        scoreNutrition * weights.nutrition
-      + scoreHydration * weights.hydration
-      + scoreExercise  * weights.exercise
-      + scoreSleep     * weights.sleep
-      + scoreMental    * weights.mental
-    )));
+    const { data: idx, error: scoreErr } = await recordIndexRecompute(admin, {
+      userId,
+      date: today,
+      trigger: 'baseline_survey',
+      sourceKind: 'baseline_survey',
+    });
+    if (scoreErr || !idx || idx.ok === false) {
+      const detail = scoreErr?.message ?? (idx?.error as string | undefined) ?? 'no result';
+      console.error(`[${VTID_C3}] baseline score compute failed:`, detail);
+      return res.status(400).json({ ok: false, error: 'SCORE_WRITE_FAILED', detail });
+    }
 
     const effectiveTenantId = tenantId ?? '00000000-0000-0000-0000-000000000000';
-
-    const { error: scoreErr } = await repo.upsertVitanaIndexScore(admin, {
-      tenant_id: effectiveTenantId,
-      user_id: userId,
-      date: today,
-      score_total: scoreTotal,
-      score_nutrition: scoreNutrition,
-      score_hydration: scoreHydration,
-      score_exercise: scoreExercise,
-      score_sleep: scoreSleep,
-      score_mental: scoreMental,
-      model_version: 'baseline-survey-v3-5pillar',
-      feature_inputs: { source: 'baseline_survey', ratings },
-      confidence: 0.5,
-    });
-
-    if (scoreErr) {
-      console.error(`[${VTID_C3}] baseline score write failed:`, scoreErr.message);
-      return res.status(400).json({ ok: false, error: 'SCORE_WRITE_FAILED', detail: scoreErr.message });
-    }
+    const pillars = {
+      nutrition: Number(idx.score_nutrition ?? 0),
+      hydration: Number(idx.score_hydration ?? 0),
+      exercise: Number(idx.score_exercise ?? 0),
+      sleep: Number(idx.score_sleep ?? 0),
+      mental: Number(idx.score_mental ?? 0),
+    };
+    const scoreTotal = Number(idx.score_total ?? 0);
 
     await emitHealthComputeEvent(
       'health.compute.baseline_survey',
@@ -804,13 +719,7 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
         user_id: userId,
         tenant_id: effectiveTenantId,
         score_total: scoreTotal,
-        pillars: {
-          nutrition: scoreNutrition,
-          hydration: scoreHydration,
-          exercise: scoreExercise,
-          sleep: scoreSleep,
-          mental: scoreMental,
-        },
+        pillars,
         answers,
       }
     );
@@ -822,14 +731,14 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
         ok: true,
         date: today,
         score_total: scoreTotal,
-        score_nutrition: scoreNutrition,
-        score_hydration: scoreHydration,
-        score_exercise: scoreExercise,
-        score_sleep: scoreSleep,
-        score_mental: scoreMental,
+        score_nutrition: pillars.nutrition,
+        score_hydration: pillars.hydration,
+        score_exercise: pillars.exercise,
+        score_sleep: pillars.sleep,
+        score_mental: pillars.mental,
         pillar_weights: weights,
-        model_version: 'baseline-survey-v3-5pillar',
-        confidence: 0.5,
+        model_version: (idx.model_version as string | undefined) ?? 'v3-5pillar',
+        confidence: Number(idx.confidence ?? 0.5),
       },
     });
   } catch (err: any) {

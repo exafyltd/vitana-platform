@@ -1577,7 +1577,8 @@ CREATE POLICY "Users can update own plans" ON public.user_health_plans AS PERMIS
 CREATE POLICY "Users can delete own plans" ON public.user_health_plans AS PERMISSIVE FOR DELETE TO public USING ((auth.uid() = user_id));
 CREATE POLICY "Users can insert own plans" ON public.user_health_plans AS PERMISSIVE FOR INSERT TO public WITH CHECK ((auth.uid() = user_id));
 CREATE POLICY "Users manage own hidden posts" ON public.user_hidden_posts AS PERMISSIVE FOR ALL TO authenticated USING ((user_id = auth.uid())) WITH CHECK ((user_id = auth.uid()));
-CREATE POLICY user_integrations_owner_all ON public.user_integrations AS PERMISSIVE FOR ALL TO public USING ((user_id = auth.uid())) WITH CHECK ((user_id = auth.uid()));
+-- VTID-05161: user_integrations is owner read-only (20261014100300_vtid_05161_user_integrations_revoke_browser_writes.sql).
+CREATE POLICY user_integrations_owner_select ON public.user_integrations AS PERMISSIVE FOR SELECT TO authenticated USING ((user_id = auth.uid()));
 CREATE POLICY uicl_self_update ON public.user_intent_cover_library AS PERMISSIVE FOR UPDATE TO public USING ((user_id = auth.uid()));
 CREATE POLICY uicl_self_read ON public.user_intent_cover_library AS PERMISSIVE FOR SELECT TO public USING ((user_id = auth.uid()));
 CREATE POLICY uicl_self_insert ON public.user_intent_cover_library AS PERMISSIVE FOR INSERT TO public WITH CHECK ((user_id = auth.uid()));
@@ -1713,3 +1714,8 @@ CREATE POLICY "Service role full access to worker_registry" ON public.worker_reg
 -- policies above; their write revokes live in aurora-cutover-restore-grants.sql.
 DO $HC05092$ BEGIN IF to_regclass('public.health_consent_categories') IS NOT NULL THEN EXECUTE $SQL05092$ALTER TABLE public.health_consent_categories ENABLE ROW LEVEL SECURITY$SQL05092$; END IF; END $HC05092$;
 DO $HC05092$ BEGIN IF to_regclass('public.health_consent_categories') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'health_consent_categories' AND policyname = 'health_consent_categories_select') THEN EXECUTE $SQL05092$CREATE POLICY health_consent_categories_select ON public.health_consent_categories AS PERMISSIVE FOR SELECT TO authenticated USING (true)$SQL05092$; END IF; END $HC05092$;
+
+-- VTID-05161: health_sources (Aurora only; created by 20261014100200_vtid_05161_health_sources.sql,
+-- which runs after the cutover). Guarded, so this file still runs before that migration.
+DO $HS05161$ BEGIN IF to_regclass('public.health_sources') IS NOT NULL THEN EXECUTE $SQL05161$ALTER TABLE public.health_sources ENABLE ROW LEVEL SECURITY$SQL05161$; END IF; END $HS05161$;
+DO $HS05161$ BEGIN IF to_regclass('public.health_sources') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'health_sources' AND policyname = 'health_sources_own_read') THEN EXECUTE $SQL05161$CREATE POLICY health_sources_own_read ON public.health_sources AS PERMISSIVE FOR SELECT TO authenticated USING ((user_id = auth.uid()))$SQL05161$; END IF; END $HS05161$;

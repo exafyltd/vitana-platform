@@ -18,6 +18,7 @@ import { getSupabase } from '../lib/supabase';
 import { getConnector } from '../connectors';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import * as repo from './connector-webhooks-repository';
+import { dualWriteUserConnections } from '../services/health-sources/legacy-mirror';
 import { bridgeWearableDays, isWearableFeatureBridgeEnabled, utcDateOf } from '../services/wearable-features-bridge';
 
 const router = Router();
@@ -141,6 +142,7 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
           provider_user_id: (event.payload.terra_user_id as string | undefined) ?? null,
           provider_username: (event.payload.provider as string | undefined) ?? null,
         });
+        dualWriteUserConnections(supabase, { user_id: userId, connector_id: connector.id }, 'webhook.auth_completed');
       }
 
       // On auth.revoked: flip inactive
@@ -153,6 +155,7 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
           refresh_token: null,
           token_expires_at: null,
         });
+        dualWriteUserConnections(supabase, { user_id: userId, connector_id: connector.id }, 'webhook.auth_revoked');
       }
 
       // On data events: upsert into daily metrics / workouts
@@ -250,10 +253,27 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
       signature_valid: true,
       processed: true,
       payload: parsedPayload as object,
+      // VTID-05174: erase_user_data() reaches this row directly. Only here,
+      // after signature verification; the failure sites above stay NULL
+      // (their payload is unauthenticated).
+      user_id: singleBatchMember(result.events),
     });
   }
 
   res.json({ ok: true, processed: persisted, skipped });
 });
+
+/**
+ * VTID-05174: the member a verified batch belongs to — set only when every
+ * normalized event resolved to the same non-null member; an empty, mixed or
+ * partly unresolved batch gives null (the erasure endpoint's payload match
+ * still covers those rows).
+ */
+export function singleBatchMember(events: Array<{ user_id?: string | null }>): string | null {
+  if (events.length === 0) return null;
+  const first = events[0].user_id ?? null;
+  if (!first) return null;
+  return events.every((e) => (e.user_id ?? null) === first) ? first : null;
+}
 
 export default router;

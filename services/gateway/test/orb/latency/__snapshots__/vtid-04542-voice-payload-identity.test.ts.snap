@@ -891,9 +891,9 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "instruction_bytes": 20129,
   "instruction_sha256": "59c6e5ebed4201717adf8b73a0bded5556f4fa616f26cd34792a5498ffe49a24",
   "provider": "cascaded",
-  "tool_count": 298,
-  "tools_bytes": 227351,
-  "tools_sha256": "1baaed7c6460697357aec583d5cf72914725ebced4b2e04c3f71b59a8bbbbdb9",
+  "tool_count": 299,
+  "tools_bytes": 228266,
+  "tools_sha256": "41c67664f9aa155cacec768589a5c7621fdb80f05e87798abf1a76a060f8d3e1",
   "voice": "polly:ru",
 }
 `;
@@ -1294,6 +1294,7 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "get_health_education",
   "get_next_best_action",
   "connect_health_device",
+  "get_my_timeline",
   "get_health_test_status",
   "get_health_test_result",
   "get_my_subscription",

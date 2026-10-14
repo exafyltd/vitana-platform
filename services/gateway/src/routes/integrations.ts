@@ -23,6 +23,9 @@ import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-j
 import { getSupabase } from '../lib/supabase';
 import { runPillarAgentsForUser } from '../services/pillar-agents/orchestrator';
 import * as repo from './integrations-repository';
+import { dualWriteUserIntegration } from '../services/health-sources/legacy-mirror';
+import { isHealthSourcesReadEnabled, logReadFallback, readUserIntegrationsFromSources } from '../services/health-sources/read-model';
+import { FEATURE_KEY_TO_LOG_KIND, writePillarLogMoment } from '../services/vitana-index/pillar-log-moment';
 
 const router = Router();
 
@@ -57,7 +60,13 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
     const { data, error } = await repo.fetchUserIntegrations(admin, userId);
     if (error) return res.status(400).json({ ok: false, error: error.message });
 
-    const rows = data ?? [];
+    let rows = data ?? [];
+    // VTID-05161 (B1 Change 4): integration state from health_sources when the read switch is on.
+    if (isHealthSourcesReadEnabled()) {
+      const fromSources = await readUserIntegrationsFromSources(admin, userId);
+      if (fromSources.ok) rows = fromSources.rows as typeof rows;
+      else logReadFallback('integrations.list', fromSources.code);
+    }
     const hasManual = rows.some(r => r.integration_id === 'manual-entry');
     const integrations = hasManual
       ? rows
@@ -104,6 +113,7 @@ router.post('/:integration_id/connect', requireAuth, async (req: AuthenticatedRe
   try {
     const { data, error } = await repo.upsertIntegrationConnected(admin, userId, integrationId);
     if (error) return res.status(400).json({ ok: false, error: error.message });
+    dualWriteUserIntegration(admin, { user_id: userId, integration_id: integrationId }, 'integrations.connect');
     return res.status(200).json({ ok: true, integration: data });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err.message });
@@ -120,6 +130,7 @@ router.post('/:integration_id/disconnect', requireAuth, async (req: Authenticate
   try {
     const { data, error } = await repo.upsertIntegrationDisconnected(admin, userId, integrationId);
     if (error) return res.status(400).json({ ok: false, error: error.message });
+    dualWriteUserIntegration(admin, { user_id: userId, integration_id: integrationId }, 'integrations.disconnect');
     return res.status(200).json({ ok: true, integration: data });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err.message });
@@ -177,6 +188,7 @@ router.post('/manual/log', requireAuth, async (req: AuthenticatedRequest, res: R
 
     // Mark the manual-entry integration as connected + bump last_sync_at.
     await repo.upsertManualEntryIntegrationSynced(admin, userId);
+    dualWriteUserIntegration(admin, { user_id: userId, integration_id: 'manual-entry', tenant_id: tenantId }, 'integrations.manual_log');
 
     // Re-run pillar agents so the per-agent connected_data sub-score reflects the new signal.
     const orchestratorResult = await runPillarAgentsForUser(admin, userId, date);
@@ -186,7 +198,24 @@ router.post('/manual/log', requireAuth, async (req: AuthenticatedRequest, res: R
     // the main Index total lives in vitana_index_scores and is only refreshed by
     // health_compute_vitana_index_for_user. Without this call the badge stays flat
     // after a manual log even though the agents panel updates.
-    const { data: recomputedRow, error: recomputeErr } = await repo.recomputeVitanaIndexForUser(admin, userId, date);
+    const { data: recomputedRow, error: recomputeErr } = await repo.recomputeVitanaIndexForUser(admin, userId, date, {
+      trigger: 'manual_log',
+      sourceKind: 'health_feature',
+      sourceRef: featureKey,
+    });
+
+    // VTID-05168: a manual pillar log becomes a timeline moment linked to its movement.
+    const logKind = FEATURE_KEY_TO_LOG_KIND[featureKey];
+    if (logKind) {
+      await writePillarLogMoment({
+        userId,
+        kind: logKind,
+        via: 'manual',
+        date,
+        movementId: (recomputedRow?.movement_id as string | undefined) ?? null,
+        params: logKind === 'water' && featureKey === 'water_intake' ? { amount_ml: Number(value) } : {},
+      });
+    }
 
     return res.status(200).json({
       ok: true,

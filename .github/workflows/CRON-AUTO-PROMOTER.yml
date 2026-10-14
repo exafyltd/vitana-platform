@@ -59,7 +59,9 @@ jobs:
       - name: Run auto-promoter
         working-directory: services/gateway
         env:
-          STAGING_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
+          # is https://data.vitanaland.com (Aurora) after the flip.
+          STAGING_SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
           STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           AUTO_PROMOTER_DRY_RUN: ${{ inputs.dry_run == 'false' && '0' || '1' }}
         run: npx tsx scripts/auto-promoter.ts

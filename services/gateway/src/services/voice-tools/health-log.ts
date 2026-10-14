@@ -16,6 +16,8 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import * as repo from './health-log-repository';
+import { dualWriteUserIntegration } from '../health-sources/legacy-mirror';
+import { writePillarLogMoment, type PillarLogKind } from '../vitana-index/pillar-log-moment';
 
 type LogTool = 'log_water' | 'log_sleep' | 'log_exercise' | 'log_meditation';
 
@@ -25,6 +27,21 @@ type ToolToFeature = {
   unit: string;
   bounds: { min: number; max: number };
 };
+
+const LOG_KIND: Record<LogTool, PillarLogKind> = {
+  log_water: 'water',
+  log_sleep: 'sleep',
+  log_exercise: 'exercise',
+  log_meditation: 'meditation',
+};
+
+/** Only the catalog's allowed params for health.log.* (timeline-catalog.json). */
+function momentParams(tool: LogTool, value: number, activity?: string): Record<string, string | number | undefined> {
+  if (tool === 'log_water') return { amount_ml: value };
+  if (tool === 'log_sleep') return { hours: Math.round((value / 60) * 10) / 10 };
+  if (tool === 'log_exercise') return { minutes: value, activity };
+  return { minutes: value };
+}
 
 const TOOL_MAP: Record<LogTool, ToolToFeature> = {
   log_water: {
@@ -163,9 +180,25 @@ export async function logHealthSignal(
     metadata: { source: 'voice_tool' },
     updated_at: new Date().toISOString(),
   });
+  dualWriteUserIntegration(admin, { user_id: input.user_id, integration_id: 'manual-entry', tenant_id: tenantId }, 'voice.health_log');
 
   // Recompute the Index so the badge + pillar score reflect the new signal.
-  const { data: newRow } = await repo.computeVitanaIndexForUser(admin, input.user_id, input.date);
+  const { data: newRow } = await repo.computeVitanaIndexForUser(admin, input.user_id, input.date, {
+    trigger: 'voice_log',
+    sourceKind: 'health_feature',
+    sourceRef: map.feature_key,
+  });
+
+  // VTID-05168: the log becomes a pillar moment on the member's timeline,
+  // linked to the Index movement this recompute recorded (if any).
+  await writePillarLogMoment({
+    userId: input.user_id,
+    kind: LOG_KIND[input.tool],
+    via: 'voice',
+    date: input.date,
+    movementId: (newRow?.movement_id as string | undefined) ?? null,
+    params: momentParams(input.tool, value, input.activity_type),
+  });
 
   const newTotal = (newRow?.score_total as number | undefined) ?? null;
   const pillarColumn = `score_${map.pillar}` as const;

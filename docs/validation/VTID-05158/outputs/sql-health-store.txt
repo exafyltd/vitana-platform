@@ -1,0 +1,4 @@
+# local throwaway PostgreSQL 16.13 (initdb under /tmp, unix socket only); the runner CI uses
+PASS vtid-05158 health store
+PASS vtid-05158 placement guard
+exit=0

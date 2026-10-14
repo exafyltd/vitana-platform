@@ -1,0 +1,27 @@
+# npx jest --silent (full gateway suite, HEAD of this branch) — FAIL lines and totals
+FAIL test/vtid-04402-connected-apps.test.ts
+FAIL test/autopilot-pipeline.test.ts
+FAIL test/governance.test.ts
+FAIL test/vtid-04028-operator-turn-stream.test.ts
+FAIL test/vtid-05095-phone-verification.test.ts
+FAIL test/operator-command.test.ts
+FAIL test/task-extractor.test.ts
+FAIL test/vtid-05057-contacts-phone-matching.test.ts
+FAIL test/operator-chat-oasis.test.ts
+FAIL test/vtid-04449-outlook-contacts.test.ts
+FAIL test/vtid.test.ts
+Tests:       1 failed, 200 passed
+Tests:       1 failed, 200 passed (1 ms)
+FAIL test/operator-deployments.test.ts
+FAIL test/vtid-04172-operator-simulated-tool-call-retry.test.ts
+FAIL test/vtid-03926-operator-chat-userrole.test.ts
+FAIL test/vtid-03928-operator-cross-session-memory.test.ts
+FAIL test/routes/command-hub-static-cache-headers.test.ts
+FAIL test/vtid-04439-contacts-import-collisions.test.ts
+FAIL test/vtid-04986-overview-timeseries-retired.test.ts
+FAIL test/vtid-04309-thread-messages-route.test.ts
+Test Suites: 19 failed, 2 skipped, 1690 passed, 1709 of 1711 total
+Tests:       4 failed, 24 skipped, 6 todo, 27515 passed, 27549 total
+
+# The same 19 suites with services/gateway/src reset to origin/main d577b319d: Test Suites: 19 failed, 19 total; Tests: 4 failed, 6 passed, 10 total
+# -> pre-existing local failures, identical without this change: the local node_modules lacks libphonenumber-js and @aws-sdk/client-pinpoint-sms-voice-v2 (see tsc.txt), which those suites load transitively.

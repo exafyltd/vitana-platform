@@ -63,46 +63,64 @@ async function recomputeVitanaIndexForUser(
   const admin = getSupabase();
   if (!admin) return null;
   const today = new Date().toISOString().slice(0, 10);
+  const eventId = typeof eventMetadata.event_id === 'string' ? eventMetadata.event_id : null;
 
   try {
-    // Snapshot prior row (if any) so we can compute deltas.
+    // Snapshot prior row (if any) — used only until the VTID-05168 migration is
+    // applied; afterwards the recorded movement is the source of the delta.
     const { data: priorRow } = await repo.fetchVitanaIndexScoresForUserDate(admin, userId, today);
 
-    const { data: newResult, error: rpcErr } = await repo.healthComputeVitanaIndexForUserRpc(admin, {
-      p_user_id: userId,
-      p_date: today,
-      p_model_version: 'v3-5pillar',
-    });
+    // VTID-05168: locked + recorded. The calendar_events trigger has usually
+    // recomputed (and recorded) this completion already, so this call finds
+    // nothing new; the movement recorded for this event carries the delta.
+    const { data: newResult, error: rpcErr } = await repo.recordCalendarIndexRecompute(admin, userId, today, eventId);
     if (rpcErr || !(newResult as any)?.ok) {
       console.warn('[Calendar] recompute RPC failed:', rpcErr?.message || (newResult as any)?.error);
       return null;
     }
     const n = newResult as any;
 
-    const prior = (priorRow as any) ?? {
-      score_total: 0, score_nutrition: 0, score_hydration: 0,
-      score_exercise: 0, score_sleep: 0, score_mental: 0,
-    };
-    const per_pillar_delta: Record<PillarKey, number> = {
-      nutrition: (n.score_nutrition ?? 0) - (prior.score_nutrition ?? 0),
-      hydration: (n.score_hydration ?? 0) - (prior.score_hydration ?? 0),
-      exercise:  (n.score_exercise  ?? 0) - (prior.score_exercise  ?? 0),
-      sleep:     (n.score_sleep     ?? 0) - (prior.score_sleep     ?? 0),
-      mental:    (n.score_mental    ?? 0) - (prior.score_mental    ?? 0),
-    };
-    const delta_total = (n.score_total ?? 0) - (prior.score_total ?? 0);
+    let per_pillar_delta: Record<PillarKey, number>;
+    let delta_total: number;
+    let priorTotal: number;
+    const recorded = eventId ? (await repo.fetchIndexMovementForSource(admin, userId, 'calendar_event', eventId)).data : null;
+    if (recorded) {
+      const dp = (recorded as any).delta_pillars ?? {};
+      per_pillar_delta = {
+        nutrition: Number(dp.nutrition ?? 0), hydration: Number(dp.hydration ?? 0),
+        exercise: Number(dp.exercise ?? 0), sleep: Number(dp.sleep ?? 0), mental: Number(dp.mental ?? 0),
+      };
+      delta_total = Number((recorded as any).delta_total ?? 0);
+      priorTotal = Number((recorded as any).before?.score_total ?? 0);
+    } else {
+      const prior = (priorRow as any) ?? {
+        score_total: 0, score_nutrition: 0, score_hydration: 0,
+        score_exercise: 0, score_sleep: 0, score_mental: 0,
+      };
+      per_pillar_delta = {
+        nutrition: (n.score_nutrition ?? 0) - (prior.score_nutrition ?? 0),
+        hydration: (n.score_hydration ?? 0) - (prior.score_hydration ?? 0),
+        exercise:  (n.score_exercise  ?? 0) - (prior.score_exercise  ?? 0),
+        sleep:     (n.score_sleep     ?? 0) - (prior.score_sleep     ?? 0),
+        mental:    (n.score_mental    ?? 0) - (prior.score_mental    ?? 0),
+      };
+      delta_total = (n.score_total ?? 0) - (prior.score_total ?? 0);
+      priorTotal = prior.score_total ?? 0;
+    }
 
     emitOasisEvent({
       vtid: 'SYSTEM',
       type: 'index.recomputed' as any,
       source: 'calendar-api',
       status: 'info',
-      message: `Vitana Index recomputed: ${prior.score_total ?? 0} → ${n.score_total} (Δ${delta_total >= 0 ? '+' : ''}${delta_total})`,
+      message: `Vitana Index recomputed: ${priorTotal} → ${n.score_total} (Δ${delta_total >= 0 ? '+' : ''}${delta_total})`,
+      // VTID-05168: the member is the actor, so the profiler's last_movement finds it.
+      actor_id: userId,
       payload: {
         user_id: userId,
         date: today,
         new_score_total: n.score_total,
-        prior_score_total: prior.score_total ?? 0,
+        prior_score_total: priorTotal,
         delta_total,
         per_pillar_delta,
         subscores: n.subscores,
