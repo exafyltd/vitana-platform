@@ -74,6 +74,21 @@ A new plan starts at `drafted`, a new lane at `ready`.
   session id. **Match a PR to its lane only by these keys — never by recency or "the last thing Kiro did".**
 - One VTID per lane (or per lane group the plan declares).
 
+## 3a. Seats, areas and Kiro Web automations (VTID-05145 A1)
+Owner decisions 2026-10-14: Kiro accounts are the development capacity (separate credits); each Kiro Web account
+specialises in one area. All Kiro accounts share one GitHub identity (`exafyltd`), so GitHub labels or `/kiro`
+comments cannot address one account — each account **pulls** its own work instead.
+- **Seat** = one Kiro account, 1-12 lowercase letters (`jtadic`, `exafyltd`, `hotmail`, `exafy`), listed with its
+  account and area in `vitana-platform/docs/programs/areas.yaml`. A seat's session ids are
+  `kiro-<seat>-YYYYMMDDHHMM-xxxx` (`queue.mjs session-id --agent kiro --seat <seat>`).
+- **Lane assignment:** whoever creates a Kiro lane (the `_plan` claim holder) sets `seat:` and `area:` in the lane file
+  from the area map (most specific area wins; `frontend` is the catch-all). A lane without `seat:` can be taken by any
+  Kiro session, as before.
+- **Kiro Web automations:** each Kiro Web account has one scheduled automation whose task is only "Read
+  `.kiro/automations/<seat>.md` in vitana-platform and follow it exactly." That file takes at most one lane with its own
+  seat per run and stops at once when there is none. Change what an account does by editing its file, never in Kiro.
+- `queue.mjs --seat <seat>` lists one seat's lanes; the queue table shows each lane's seat.
+
 ## 4. Session start
 1. `git fetch --prune origin` in both checkouts.
 2. Run the queue:

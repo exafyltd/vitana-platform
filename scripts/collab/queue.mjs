@@ -8,8 +8,8 @@
  * (a push without force is refused when the ref already exists). Rules: `.claude/rules/collaboration.md`.
  * The single copy of this script lives in vitana-platform; vitana-v1 CI fetches it.
  *
- *   node scripts/collab/queue.mjs [--repo <path>]... [--mine <session>] [--json] [--days 30]
- *   node scripts/collab/queue.mjs session-id --agent kiro|claude
+ *   node scripts/collab/queue.mjs [--repo <path>]... [--mine <session>] [--seat <seat>] [--json] [--days 30]
+ *   node scripts/collab/queue.mjs session-id --agent kiro [--seat <seat>]
  *   node scripts/collab/queue.mjs claim   <slug>/<lane-id> --session <id> [--repo <path>]
  *   node scripts/collab/queue.mjs release <slug>/<lane-id> --session <id> [--stale] [--repo <path>]
  *   node scripts/collab/queue.mjs claims  [--repo <path>]          (claims with age; housekeeping input)
@@ -50,7 +50,10 @@ export const PLAN_LANE = '_plan';
 const CLAIM_PREFIX = 'collab-claim/';
 const STALE_CLAIM_MS = 24 * 3600 * 1000;
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
-const SESSION_RE = /^(session_[A-Za-z0-9]+|kiro-\d{12}-[0-9a-f]{4})$/;
+// Kiro session ids may name the account seat (VTID-05145 A1): kiro-<seat>-YYYYMMDDHHMM-xxxx. Seats are letters only,
+// so a seat can never be mistaken for the 12-digit stamp; the old kiro-YYYYMMDDHHMM-xxxx form stays valid.
+const SESSION_RE = /^(session_[A-Za-z0-9]+|kiro-(?:[a-z]{1,12}-)?\d{12}-[0-9a-f]{4})$/;
+export const SEAT_RE = /^[a-z]{1,12}$/;
 
 // ── Parsing ──────────────────────────────────────────────────────────────
 
@@ -121,7 +124,8 @@ export function validateLane(fm, slug, lane, laneIds) {
   if (!fm.updated) e.push('updated is required');
   if (fm.vtid && !/^VTID-\d{5}$/.test(fm.vtid)) e.push(`bad VTID "${fm.vtid}"`);
   if (fm.state && fm.state !== 'ready' && !fm.vtid) e.push(`vtid required in state ${fm.state}`);
-  if (fm.claimed_by && !SESSION_RE.test(fm.claimed_by)) e.push(`claimed_by "${fm.claimed_by}" is not a session id (session_… or kiro-YYYYMMDDHHMM-xxxx)`);
+  if (fm.claimed_by && !SESSION_RE.test(fm.claimed_by)) e.push(`claimed_by "${fm.claimed_by}" is not a session id (session_… or kiro-[<seat>-]YYYYMMDDHHMM-xxxx)`);
+  if (fm.seat !== undefined && !SEAT_RE.test(fm.seat)) e.push(`seat "${fm.seat}" must be 1-12 lowercase letters (see docs/programs/areas.yaml)`);
   if (fm.state === 'parked' && !LANE_EDGES[fm.parked_from]) e.push('parked_from must name the non-terminal state the lane was parked from');
   for (const d of asList(fm.depends_on)) {
     if (d === lane) e.push('a lane cannot depend on itself');
@@ -236,7 +240,7 @@ export function buildQueue(collected, repoName) {
       const fm = l.fm || {};
       const deps = asList(fm.depends_on);
       rows.push({ repo: repoName, slug, lane: l.lane, state: fm.state || '?', next_actor: fm.next_actor || '?', executor: pfm.executor || '',
-        claimed_by: claimOf(slug, l.lane)?.session || '', blocked: deps.some((d) => states.get(d) !== 'done'), depends_on: deps,
+        seat: fm.seat || '', area: fm.area || '', claimed_by: claimOf(slug, l.lane)?.session || '', blocked: deps.some((d) => states.get(d) !== 'done'), depends_on: deps,
         vtid: fm.vtid || '', branch: fm.branch || l.ref, pr: fm.pr || '', updated: fm.updated || '', last: lastLog(l.text) });
     }
   }
@@ -250,8 +254,8 @@ function lastLog(text) {
 }
 
 export function renderTable(rows) {
-  const head = '| repo | spec | lane | state | next | claimed by | blocked | VTID | branch / PR | updated | last log |\n|---|---|---|---|---|---|---|---|---|---|---|';
-  const body = rows.map((r) => `| ${r.repo} | ${r.slug} | ${r.lane} | ${r.state} | ${r.next_actor} | ${r.claimed_by || '—'} | ${r.blocked ? 'blocked' : ''} | ${r.vtid} | ${r.pr || r.branch} | ${r.updated} | ${String(r.last).replace(/\|/g, '/')} |`);
+  const head = '| repo | spec | lane | seat | state | next | claimed by | blocked | VTID | branch / PR | updated | last log |\n|---|---|---|---|---|---|---|---|---|---|---|---|';
+  const body = rows.map((r) => `| ${r.repo} | ${r.slug} | ${r.lane} | ${r.seat || ''} | ${r.state} | ${r.next_actor} | ${r.claimed_by || '—'} | ${r.blocked ? 'blocked' : ''} | ${r.vtid} | ${r.pr || r.branch} | ${r.updated} | ${String(r.last).replace(/\|/g, '/')} |`);
   return rows.length ? [head, ...body].join('\n') : '_No specs with a handoff.md._';
 }
 
@@ -389,11 +393,12 @@ export function release(repo, key, session, { stale = false, now = Date.now() } 
   return { ok: true, broke: c.session !== session ? c.session : null };
 }
 
-export function sessionId(agent, now = new Date()) {
+export function sessionId(agent, now = new Date(), seat = '') {
   if (agent !== 'kiro') throw new Usage('only Kiro sessions generate an id; a Claude cloud session uses its session_… id');
   const p = (n) => String(n).padStart(2, '0');
   const stamp = `${now.getUTCFullYear()}${p(now.getUTCMonth() + 1)}${p(now.getUTCDate())}${p(now.getUTCHours())}${p(now.getUTCMinutes())}`;
-  return `kiro-${stamp}-${randomBytes(2).toString('hex')}`;
+  if (seat && !SEAT_RE.test(seat)) throw new Usage(`--seat "${seat}" must be 1-12 lowercase letters`);
+  return `kiro-${seat ? `${seat}-` : ''}${stamp}-${randomBytes(2).toString('hex')}`;
 }
 
 // ── CLI ─────────────────────────────────────────────────────────────────
@@ -421,7 +426,7 @@ function main(argv) {
   const args = parseArgs(argv);
   const cmd = args._[0] || 'queue';
   const repo = path.resolve(args.repo[0]);
-  if (cmd === 'session-id') { console.log(sessionId(args.agent)); return 0; }
+  if (cmd === 'session-id') { console.log(sessionId(args.agent, new Date(), args.seat || '')); return 0; }
   if (cmd === 'claim' || cmd === 'release') {
     const r = cmd === 'claim' ? claim(repo, args._[1], args.session) : release(repo, args._[1], args.session, { stale: args.stale });
     console.log(JSON.stringify(r));
@@ -459,6 +464,7 @@ function main(argv) {
     let rows = [];
     for (const r of args.repo) rows = rows.concat(buildQueue(collect(path.resolve(r), { days: Number(args.days || 30) }), path.basename(path.resolve(r))));
     if (args.mine) rows = rows.filter((r) => r.claimed_by === args.mine);
+    if (args.seat) rows = rows.filter((r) => r.seat === args.seat);
     console.log(args.json ? JSON.stringify(rows, null, 2) : renderTable(rows));
     return 0;
   }

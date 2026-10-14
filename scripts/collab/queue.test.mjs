@@ -252,3 +252,39 @@ test('validate: PR without spec changes and without trailers passes untouched', 
     assert.deepEqual(validateRange(f.work, { base, head, branch: 'claude/whatever' }).errors, []);
   } finally { f.done(); }
 });
+
+// ── VTID-05145 A1: seats ──
+
+test('seat session ids: generated with a seat, old form still valid, bad seat refused', () => {
+  const id = sessionId('kiro', new Date(Date.UTC(2026, 9, 14, 16, 5)), 'jtadic');
+  assert.match(id, /^kiro-jtadic-202610141605-[0-9a-f]{4}$/);
+  assert.throws(() => sessionId('kiro', new Date(), 'J-Tadic'));
+  assert.throws(() => sessionId('kiro', new Date(), 'k1'));
+  const ids = new Set(['a', 'b']);
+  assert.deepEqual(validateLane(parseFrontMatter(laneMd('a', { claimed_by: id })), 'cards', 'a', ids), []);
+  assert.deepEqual(validateLane(parseFrontMatter(laneMd('a', { claimed_by: S1 })), 'cards', 'a', ids), []);
+});
+
+test('lane seat: valid seat passes, malformed seat fails', () => {
+  const ids = new Set(['a']);
+  assert.deepEqual(validateLane(parseFrontMatter(laneMd('a', { seat: 'exafyltd', area: 'messenger' })), 'cards', 'a', ids), []);
+  assert.ok(validateLane(parseFrontMatter(laneMd('a', { seat: 'Kiro-1' })), 'cards', 'a', ids).some((e) => e.includes('seat')));
+});
+
+test('queue rows carry seat; a seat-session lane PR validates', () => {
+  const f = fixture();
+  try {
+    write(f.work, '.kiro/specs/cards/handoff.md', planMd({ state: 'executing', sparring_record: 'x.md', vtids: ['VTID-00001'], executor: 'kiro', next_actor: 'kiro' }));
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { next_actor: 'kiro', seat: 'jtadic', area: 'backoffice' }));
+    const base = commit(f.work, 'seed', { 'Collab-Session': S2, 'Collab-Lane': 'cards/_plan' });
+    sh(f.work, 'push', '-q', 'origin', 'main');
+    sh(f.work, 'fetch', '-q', 'origin');
+    const rows = buildQueue(collect(f.work), 'r');
+    assert.equal(rows.find((r) => r.lane === 'card-01').seat, 'jtadic');
+    const seatSession = 'kiro-jtadic-202610141605-ab12';
+    sh(f.work, 'checkout', '-q', '-b', 'kiro/cards/card-01');
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { state: 'executing', vtid: 'VTID-00002', seat: 'jtadic', claimed_by: seatSession, updated: '2026-10-14T16:10Z' }));
+    const head = commit(f.work, 'work', { 'Collab-Session': seatSession, 'Collab-Lane': 'cards/card-01' });
+    assert.deepEqual(validateRange(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors, []);
+  } finally { f.done(); }
+});
