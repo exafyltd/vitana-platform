@@ -64,7 +64,7 @@ create trigger trg_calendar_completion_recompute after update of completion_stat
   for each row execute function public.vitana_trg_calendar_completion_recompute();
 create function public.health_compute_vitana_index(p_date date, p_model_version text default 'v3-5pillar') returns jsonb
   language sql security definer as $$ select '{"ok":true,"legacy":true}'::jsonb $$;
-create function public.health_compute_vitana_index(p_date date)
+create function public.health_compute_vitana_index(p_date date default current_date)
   returns table(user_id uuid, score_total integer, score_nutrition integer, score_hydration integer, score_exercise integer,
                 score_sleep integer, score_mental integer, confidence numeric, model_version text, feature_inputs jsonb)
   language sql security definer as $$ select null::uuid, 0, 0, 0, 0, 0, 0, 0::numeric, 'legacy', '{}'::jsonb $$;
@@ -181,6 +181,8 @@ do $$ begin
     then raise exception 'service_role cannot record'; end if;
   if has_table_privilege('authenticated', 'public.vitana_index_movements', 'insert')
     then raise exception 'members can write movements'; end if;
+  if pg_get_function_arguments('public.health_compute_vitana_index(date)'::regprocedure) <> 'p_date date DEFAULT CURRENT_DATE'
+    then raise exception 'the live default of health_compute_vitana_index(date) was dropped'; end if;
 end $$;
 
 -- Concurrency fixture for the runner (second phase).

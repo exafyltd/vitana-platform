@@ -314,7 +314,8 @@ REVOKE ALL ON FUNCTION public.health_compute_vitana_index(date, text) FROM PUBLI
 REVOKE ALL ON FUNCTION public.health_compute_vitana_index(date, text) FROM anon;
 GRANT EXECUTE ON FUNCTION public.health_compute_vitana_index(date, text) TO authenticated, service_role;
 
-CREATE OR REPLACE FUNCTION public.health_compute_vitana_index(p_date date)
+-- The live function has DEFAULT CURRENT_DATE; CREATE OR REPLACE may not drop a default (42P13).
+CREATE OR REPLACE FUNCTION public.health_compute_vitana_index(p_date date DEFAULT CURRENT_DATE)
 RETURNS TABLE(user_id uuid, score_total integer, score_nutrition integer, score_hydration integer,
               score_exercise integer, score_sleep integer, score_mental integer, confidence numeric,
               model_version text, feature_inputs jsonb)
