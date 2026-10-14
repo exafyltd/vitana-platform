@@ -21,7 +21,7 @@ applies (sparring before any VTID, the two owner gates, never test against produ
    saying which session's claim you broke and why (through a PR, with the trailers).
 5. For every lane whose `next_actor` is `claude`, not `blocked` and not claimed — oldest `updated` first, at most
    three lanes per run: claim it, then continue it per the rules (spar a `drafted` plan and send Gate 1; implement an
-   approved lane; review an `in-review` lane: check the PR against `tasks.md` acceptance and CI, comment on GitHub,
+   approved lane only when it is `executor: claude` — an `executor: kiro` lane you review, never implement; review an `in-review` lane: check the PR against `tasks.md` acceptance and CI, comment on GitHub,
    append a review entry with `Collab-Review`, set `verified` or send it back to `executing`). If every lane of a plan
    is `done` and the plan is not, take the `_plan` claim and move the plan forward.
 6. For every open PR in either repo labelled `executor:kiro` whose head commit has no review from you yet, review it the

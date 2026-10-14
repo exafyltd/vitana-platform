@@ -99,10 +99,19 @@ coordinator: in `handoff.md`), commit with the trailers, push the branch / open 
 `release <slug>/<lane-id> --session <id>` when you hand the lane to someone else.
 
 ## 7. Roles
-- **Kiro authors → Claude executes:** Kiro pushes the spec as PR `plan(<slug>): …` with `handoff.md`
-  (`author: kiro`, `state: drafted`, `next_actor: claude`) and its lanes (`ready`). Claude Code spars it (Kiro has
-  no subagents), sends Gate 1, allocates VTIDs on "yes", then each lane runs on its own.
-- **Claude authors → Kiro executes:** same, reversed; Claude sets `next_actor: kiro` on the lanes after Gate 1.
+**Default roles — fixed (owner decision 2026-10-14, VTID-05192).** Claude Code is the author, the coordinator
+(`_plan` claim) and the reviewer of every plan, and the only agent that merges and sends Gate 1 / Gate 2. Kiro is the
+executor of lanes (`executor: kiro`). Kiro authors a plan only when the owner asks Kiro directly for one; Claude Code
+then spars it as below. Claude Code executes a lane only when the owner assigns it (`executor: claude`) or for the
+coordinator's own commits.
+
+- **Claude authors → Kiro executes (the default):** Claude Code pushes the spec as PR `plan(<slug>): …` with
+  `handoff.md` (`author: claude`, `executor: kiro`) and its lanes (`ready`), spars it, sends Gate 1, allocates VTIDs
+  on "yes", then sets `next_actor: kiro` on the lanes.
+- **Kiro authors → Claude executes (only when the owner asks Kiro for a plan):** Kiro pushes the spec as PR
+  `plan(<slug>): …` with `handoff.md` (`author: kiro`, `state: drafted`, `next_actor: claude`) and its lanes
+  (`ready`). Claude Code spars it (Kiro has no subagents), sends Gate 1, allocates VTIDs on "yes", then each lane runs
+  on its own.
 - Per lane, independently and in parallel: executor claims → implements → PR → `in-review`, `next_actor` = the
   other agent → reviewer checks the PR against `tasks.md` acceptance and CI, comments on GitHub, appends a review
   entry → `verified` → merge → `done`. Changes requested → `executing`, `next_actor` = executor.
@@ -111,11 +120,25 @@ coordinator: in `handoff.md`), commit with the trailers, push the branch / open 
 - Every existing rule is unchanged: sparring before a VTID, the two owner gates, never test against production,
   staging tests read-only.
 
+## 7a. What the executor never does
+Applies to Kiro, and to Claude Code whenever it executes a lane. The executor never:
+- allocates a VTID, takes a `_plan` claim or edits `handoff.md`;
+- merges or approves a PR, dispatches a workflow, or deploys;
+- writes to a live system, even though its credentials allow it: no Supabase writes (`execute_sql` with
+  INSERT/UPDATE/DELETE/DDL, `apply_migration`, `deploy_edge_function`, branch/project/secret tools) and no mutating
+  AWS call (ECS, ELB, ECR, IAM or Secrets Manager writes).
+
+Reading for diagnosis is fine. A database change is a migration file in the lane's PR. Blocked → a log entry and
+`next_actor: claude`, never a workaround.
+
 ## 8. Waking each agent
 - Claude: the Routine whose prompt is `vitana-platform/scripts/collab/routine-prompt.md` (weekdays, 3×/day) works
   every lane with `next_actor: claude`, reviews open `executor:kiro` PRs, and cleans up claims.
-- Kiro runs only on the owner's machine: the owner opens a session and types "continue"; the steering file makes it
-  run §4.
+- Kiro runs when the owner starts it — in Kiro IDE on the owner's machine, or as a **Kiro Web** cloud session
+  (app.kiro.dev) on `vitana-platform` — and types "continue"; the steering file makes it run §4. Kiro Web clones
+  `exafyltd/vitana-v1` next to it (the Kiro GitHub app covers both repos) so `queue.mjs --repo … --repo …` works as in
+  the IDE. If the session cannot get the second checkout, it runs `queue.mjs --repo <available repo>` only, works
+  lanes in that repo, and leaves cross-repo lanes alone.
 
 ## 9. CI
 PR-GATE step **Collab handoff** (`queue.mjs validate`) checks every changed `handoff.md` / lane file, every state
