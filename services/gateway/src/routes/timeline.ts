@@ -212,6 +212,7 @@ router.get('/learning-prefs', requireAuth, async (req: AuthenticatedRequest, res
 });
 
 router.put('/learning-prefs', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: the member's own privacy action on their own rows; an OASIS event would keep a trace of what they hid or deleted.
   const userId = userOf(req);
   if (!userId) return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID_P5 });
   const { category, learn } = req.body ?? {};
@@ -251,6 +252,7 @@ router.get('/usage-data/export', requireAuth, async (req: AuthenticatedRequest, 
 });
 
 router.delete('/usage-data', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: the member's own privacy action on their own rows; an OASIS event would keep a trace of what they hid or deleted.
   const userId = userOf(req);
   if (!userId) return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID_P5 });
   const sb = dbOr500(res);
@@ -282,6 +284,7 @@ router.get('/routines', requireAuth, async (req: AuthenticatedRequest, res: Resp
 });
 
 router.delete('/routines/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: the member's own privacy action on their own rows; an OASIS event would keep a trace of what they hid or deleted.
   const userId = userOf(req);
   if (!userId) return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID_P5 });
   if (!UUID_RE.test(req.params.id)) return res.status(400).json({ ok: false, error: 'invalid_id', vtid: VTID_P5 });
@@ -326,6 +329,7 @@ router.get('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
 });
 
 router.post('/:id/hide-from-ai', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: the member's own privacy action on their own rows; an OASIS event would keep a trace of what they hid or deleted.
   const userId = userOf(req);
   if (!userId) return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID });
   if (!UUID_RE.test(req.params.id)) return res.status(400).json({ ok: false, error: 'invalid_id', vtid: VTID });
@@ -340,6 +344,7 @@ router.post('/:id/hide-from-ai', requireAuth, async (req: AuthenticatedRequest, 
 });
 
 router.delete('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: the member's own privacy action on their own rows; an OASIS event would keep a trace of what they hid or deleted.
   const userId = userOf(req);
   if (!userId) return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID });
   if (!UUID_RE.test(req.params.id)) return res.status(400).json({ ok: false, error: 'invalid_id', vtid: VTID });
