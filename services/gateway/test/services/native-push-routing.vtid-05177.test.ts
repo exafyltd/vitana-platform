@@ -120,6 +120,15 @@ beforeAll(() => {
   process.env.APPILIX_IOS_APP_KEY = 'ios-app-key';
   process.env.APPILIX_IOS_API_KEY = 'ios-api-key';
   delete process.env.APPILIX_APP_URL;
+});
+
+// The global setup (test/__mocks__/setup-tests.ts) calls jest.restoreAllMocks()
+// after every test, so console spies installed once in beforeAll only silence
+// the first test. Re-install them per test: the dispatch paths log every
+// FCM/Appilix call, and unsilenced they print ~1.6 MB, which overflows the
+// STAGING-VERIFY runner's spawnSync buffer and kills the run before Jest's
+// summary (VTID-05177 staging verify @2dc187f86).
+beforeEach(() => {
   jest.spyOn(console, 'log').mockImplementation(() => undefined);
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);
   jest.spyOn(console, 'error').mockImplementation(() => undefined);
