@@ -10,6 +10,13 @@ inclusion: always
     where a piece of work stands, run `scripts/dev/resume-vtid.sh <VTID>` and paste its output into the chat.
 - The always-included rules are the full `CLAUDE.md` (about 1,000 lines) — the same load a Claude Code session
   carries. Path-scoped references (`.claude/rules/*.md`) load only when you work on matching files.
+- **Your role: implementer (VTID-05192).** Claude Code plans, spars, coordinates, reviews and merges; you implement
+  the lanes assigned to Kiro. You never: allocate a VTID; take a `_plan` claim or edit `handoff.md`; merge or approve a
+  PR; dispatch a workflow or deploy; write to a live system, even though your credentials allow it — no Supabase
+  writes (`execute_sql` with INSERT/UPDATE/DELETE/DDL, `apply_migration`, `deploy_edge_function`, branch/project/secret
+  tools) and no mutating AWS call (ECS, ELB, ECR, IAM or Secrets Manager writes). Reading for diagnosis is fine. A
+  database change is a migration file in the lane's PR. Blocked → a log entry and `next_actor: claude`, never a
+  workaround.
 - **Collaboration with Claude Code (VTID-05145).** At the start of every session: generate your session id
   (`node <vitana-platform>/scripts/collab/queue.mjs session-id --agent kiro`) and say it, with your lane, in your first
   reply; `git fetch --prune origin`; run the queue (`queue.mjs --repo <vitana-platform> --repo <vitana-v1>`) and work a

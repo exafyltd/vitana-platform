@@ -110,6 +110,9 @@ Git is the only channel between Claude Code and Kiro sessions — the owner neve
 `node <vitana-platform>/scripts/collab/queue.mjs --repo <vitana-platform> --repo <vitana-v1>` and work lanes whose
 `next_actor` is you; state your session id + lane in your first reply; claim a lane before touching it, one session per
 lane; push and update the lane file before ending. Full rules: `.claude/rules/collaboration.md`.
+**Default roles (owner decision 2026-10-14, VTID-05192):** Claude Code plans, spars, coordinates, reviews, merges and
+sends both gates; Kiro implements lanes and never merges, deploys or writes to a live system. See
+`.claude/rules/collaboration.md` §7–§7a.
 
 ---
 
