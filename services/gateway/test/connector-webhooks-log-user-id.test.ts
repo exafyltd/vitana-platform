@@ -14,7 +14,11 @@ import request from 'supertest';
 jest.mock('../src/lib/supabase', () => ({ getSupabase: jest.fn(() => ({})) }));
 jest.mock('../src/services/oasis-event-service', () => ({ emitOasisEvent: jest.fn(async () => ({ ok: true })) }));
 jest.mock('../src/services/health-sources/legacy-mirror', () => ({ dualWriteUserConnections: jest.fn() }));
+// Keep the module's real constants (COLUMN_FEATURES, WORKOUT_FEATURE_KEY):
+// health-features/feature-spec.ts reads them at import time via the
+// record-to-health-store dual-write that connector-webhooks imports (VTID-05162).
 jest.mock('../src/services/wearable-features-bridge', () => ({
+  ...jest.requireActual('../src/services/wearable-features-bridge'),
   bridgeWearableDays: jest.fn(),
   isWearableFeatureBridgeEnabled: jest.fn(() => false),
   utcDateOf: jest.fn(() => null),
