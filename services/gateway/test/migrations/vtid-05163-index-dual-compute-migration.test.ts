@@ -126,7 +126,7 @@ describe('SQL-INDEX-DUAL-COMPUTE.yml — the drift guard runs whenever the live 
   it('its path triggers cover every migration that defines the live Index function or its streak helper', () => {
     const dir = path.join(REPO, 'supabase/migrations');
     const defining = fs.readdirSync(dir).filter((f) => f.endsWith('.sql'))
-      .filter((f) => /CREATE OR REPLACE FUNCTION public\.(health_compute_vitana_index_for_user|vitana_pillar_streak_days)\(/.test(fs.readFileSync(path.join(dir, f), 'utf8')))
+      .filter((f) => /CREATE OR REPLACE FUNCTION public\.(health_compute_vitana_index_for_user|health_compute_vitana_index_core|vitana_pillar_streak_days)\(|RENAME TO health_compute_vitana_index_core\b/.test(fs.readFileSync(path.join(dir, f), 'utf8')))
       .map((f) => `supabase/migrations/${f}`);
     expect(defining.length).toBeGreaterThanOrEqual(3);
     for (const f of defining) expect([f, patterns.some((p) => globMatch(p, f))]).toEqual([f, true]);

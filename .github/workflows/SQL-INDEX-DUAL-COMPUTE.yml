@@ -22,6 +22,9 @@ on:
       - 'supabase/migrations/20260423140000_vitana_index_compute_for_user.sql'
       - 'supabase/migrations/20260424120000_pillar_tags_community_engagement.sql'
       - 'supabase/migrations/*vitana_index*.sql'
+      # VTID-05168 renamed the live formula to health_compute_vitana_index_core.
+      - 'supabase/migrations/20261014140000_vtid_05168_index_movements.sql'
+      - 'supabase/migrations/*index_movements*.sql'
       - 'supabase/migrations/*index_dual_compute*.sql'
       - 'supabase/migrations/*health_features*.sql'
       - 'supabase/migrations/*health_sources*.sql'

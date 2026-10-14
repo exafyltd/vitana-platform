@@ -43,9 +43,40 @@ extract() {
     on && /^\$\$;[[:space:]]*$/ { exit }
   ' "$file"
 }
+# The live Index formula: VTID-05168 renamed health_compute_vitana_index_for_user
+# to health_compute_vitana_index_core (body untouched) and re-created the old name
+# as a thin wrapper. So take the newest _core definition if one exists, else the
+# newest _for_user definition that holds the formula (skips the wrapper), and
+# install it under the name the test SQL calls.
+extract_formula() {
+  local file f body
+  file=$(grep -l "CREATE OR REPLACE FUNCTION public\.health_compute_vitana_index_core(" $M/*.sql | sort | tail -n 1 || true)
+  if [ -n "$file" ]; then
+    echo "-- health_compute_vitana_index_for_user (live formula: _core) from $(basename "$file")"
+    awk -v fn="CREATE OR REPLACE FUNCTION public.health_compute_vitana_index_core(" '
+      index($0, fn) == 1 { on = 1 }
+      on { print }
+      on && /^\$\$;[[:space:]]*$/ { exit }
+    ' "$file" | sed 's/^CREATE OR REPLACE FUNCTION public\.health_compute_vitana_index_core(/CREATE OR REPLACE FUNCTION public.health_compute_vitana_index_for_user(/'
+    return
+  fi
+  for f in $(grep -l "CREATE OR REPLACE FUNCTION public\.health_compute_vitana_index_for_user(" $M/*.sql | sort -r || true); do
+    body=$(awk -v fn="CREATE OR REPLACE FUNCTION public.health_compute_vitana_index_for_user(" '
+      index($0, fn) == 1 { on = 1 }
+      on { print }
+      on && /^\$\$;[[:space:]]*$/ { exit }
+    ' "$f")
+    if printf '%s\n' "$body" | grep -q 'INSERT INTO public.vitana_index_scores'; then
+      echo "-- health_compute_vitana_index_for_user from $(basename "$f")"
+      printf '%s\n' "$body"
+      return
+    fi
+  done
+  echo "FAIL: no migration defines the live Index formula" >&2; exit 1
+}
 {
   extract vitana_pillar_streak_days
-  extract health_compute_vitana_index_for_user
+  extract_formula
 } > "$work/live-functions.sql"
 grep -q 'INSERT INTO public.vitana_index_scores' "$work/live-functions.sql" || { echo "FAIL: live _for_user not extracted" >&2; exit 1; }
 grep -c '^\$\$;' "$work/live-functions.sql" | grep -qx 2 || { echo "FAIL: expected two complete function bodies" >&2; exit 1; }
