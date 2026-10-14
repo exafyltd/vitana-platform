@@ -64,6 +64,8 @@ import { WALLET_PAYMENTS_TOOL_HANDLERS, WALLET_PAYMENTS_TOOL_DECLARATIONS } from
 import { MESSAGING_DEPTH_TOOL_HANDLERS, MESSAGING_DEPTH_TOOL_DECLARATIONS } from './orb-tools/messaging-depth-tools';
 import { EVENTS_TICKETS_TOOL_HANDLERS, EVENTS_TICKETS_TOOL_DECLARATIONS } from './orb-tools/events-tickets-tools';
 import { HEALTH_DEPTH_TOOL_HANDLERS, HEALTH_DEPTH_TOOL_DECLARATIONS } from './orb-tools/health-depth-tools';
+// VTID-05171: Life Timeline — get_my_timeline.
+import { TIMELINE_TOOL_HANDLERS, TIMELINE_TOOL_DECLARATIONS } from './orb-tools/timeline-tools';
 // VTID-03885: Partner Health Test Integration — DoctorBox is Partner #001.
 import { PARTNER_HEALTH_TEST_TOOL_HANDLERS, PARTNER_HEALTH_TEST_TOOL_DECLARATIONS } from './orb-tools/partner-health-test-tools';
 // WAVE-2-VOICE-CATALOG-V2 — second wave of the approved 425-tool expansion:
@@ -5379,6 +5381,8 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   ...MESSAGING_DEPTH_TOOL_HANDLERS,
   ...EVENTS_TICKETS_TOOL_HANDLERS,
   ...HEALTH_DEPTH_TOOL_HANDLERS,
+  // VTID-05171: Life Timeline
+  ...TIMELINE_TOOL_HANDLERS,
   // VTID-03885: Partner Health Test Integration
   ...PARTNER_HEALTH_TEST_TOOL_HANDLERS,
   // WAVE-2-VOICE-CATALOG-V2
@@ -5445,6 +5449,8 @@ export const NEW_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = [
   ...MESSAGING_DEPTH_TOOL_DECLARATIONS,
   ...EVENTS_TICKETS_TOOL_DECLARATIONS,
   ...HEALTH_DEPTH_TOOL_DECLARATIONS,
+  // VTID-05171: Life Timeline
+  ...TIMELINE_TOOL_DECLARATIONS,
   // VTID-03885: Partner Health Test Integration
   ...PARTNER_HEALTH_TEST_TOOL_DECLARATIONS,
   // WAVE-4-VOICE-CATALOG-V2 (community)

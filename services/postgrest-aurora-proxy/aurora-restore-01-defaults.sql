@@ -2697,3 +2697,5 @@ ALTER TABLE ONLY public.user_activity_log_archive ALTER COLUMN source SET DEFAUL
 DO $IDEMPOTENT$ BEGIN IF to_regclass('public.activity_catalog') IS NOT NULL THEN ALTER TABLE ONLY public.activity_catalog ALTER COLUMN sensitivity SET DEFAULT 'standard'::text; ALTER TABLE ONLY public.activity_catalog ALTER COLUMN params SET DEFAULT '{}'::text[]; ALTER TABLE ONLY public.activity_catalog ALTER COLUMN updated_at SET DEFAULT now(); END IF; END $IDEMPOTENT$;
 -- VTID-05168 (Life Timeline P2): vitana_index_movements
 DO $IDEMPOTENT$ BEGIN IF to_regclass('public.vitana_index_movements') IS NOT NULL THEN ALTER TABLE ONLY public.vitana_index_movements ALTER COLUMN id SET DEFAULT gen_random_uuid(); ALTER TABLE ONLY public.vitana_index_movements ALTER COLUMN at SET DEFAULT now(); END IF; END $IDEMPOTENT$;
+-- VTID-05171 (Life Timeline P5): timeline_learning_prefs
+DO $IDEMPOTENT$ BEGIN IF to_regclass('public.timeline_learning_prefs') IS NOT NULL THEN ALTER TABLE ONLY public.timeline_learning_prefs ALTER COLUMN learn SET DEFAULT true; ALTER TABLE ONLY public.timeline_learning_prefs ALTER COLUMN updated_at SET DEFAULT now(); END IF; END $IDEMPOTENT$;

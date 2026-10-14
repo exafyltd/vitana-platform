@@ -10,6 +10,13 @@
  *   GET    /api/v1/timeline/:id                 one moment, readable, with its Index influence
  *   POST   /api/v1/timeline/:id/hide-from-ai    { hidden: boolean }
  *   DELETE /api/v1/timeline/:id
+ *   GET    /api/v1/timeline/learning-prefs      VTID-05171: per-category "Vitana may learn from this" (missing = on)
+ *   PUT    /api/v1/timeline/learning-prefs      { category, learn } — app_usage off deletes the app-usage routines
+ *   GET    /api/v1/timeline/usage-data          how many stored-but-silent rows (screen visits, technical traces)
+ *   GET    /api/v1/timeline/usage-data/export   those rows as a JSON download
+ *   DELETE /api/v1/timeline/usage-data          delete them all (+ the app-usage routines)
+ *   GET    /api/v1/timeline/routines            the routines Vitana noticed (user_routines, confidence ≥ 0.5)
+ *   DELETE /api/v1/timeline/routines/:id        forget one
  *
  * Auth: requireAuth; the user comes from the JWT only and every read/write is
  * filtered by it. Text is { key, params } — the app renders it in the
@@ -31,6 +38,13 @@ import {
   movementFor,
   toMoment,
 } from '../services/timeline/timeline-reader';
+import {
+  APP_USAGE_ROUTINE_KINDS,
+  LEARNABLE_CATEGORIES,
+  fetchLearningPrefs,
+  isLearnableCategory,
+  setLearningPref,
+} from '../services/timeline/learning-prefs';
 
 const router = Router();
 const VTID = 'VTID-05169';
@@ -176,6 +190,112 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
   }
 });
 
+// ---------------------------------------------------------------------------
+// VTID-05171 — learning switches and the member's usage data. Declared before
+// '/:id' so the paths are never read as an id.
+// ---------------------------------------------------------------------------
+const VTID_P5 = 'VTID-05171';
+const USAGE_EXPORT_LIMIT = 10_000;
+
+router.get('/learning-prefs', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = userOf(req);
+  if (!userId) return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID_P5 });
+  const sb = dbOr500(res);
+  if (!sb) return;
+  const prefs = await fetchLearningPrefs(sb, userId);
+  return res.json({
+    ok: true,
+    available: prefs.available,
+    prefs: LEARNABLE_CATEGORIES.map((category) => ({ category, learn: !prefs.off.has(category) })),
+    vtid: VTID_P5,
+  });
+});
+
+router.put('/learning-prefs', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: the member's own privacy action on their own rows; an OASIS event would keep a trace of what they hid or deleted.
+  const userId = userOf(req);
+  if (!userId) return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID_P5 });
+  const { category, learn } = req.body ?? {};
+  if (!isLearnableCategory(category)) return res.status(400).json({ ok: false, error: 'invalid_category', vtid: VTID_P5 });
+  if (typeof learn !== 'boolean') return res.status(400).json({ ok: false, error: 'learn_must_be_boolean', vtid: VTID_P5 });
+  const sb = dbOr500(res);
+  if (!sb) return;
+  const r = await setLearningPref(sb, userId, category, learn);
+  if (!r.ok) {
+    return r.reason === 'unavailable'
+      ? res.status(409).json({ ok: false, error: 'not_available_yet', vtid: VTID_P5 })
+      : res.status(500).json({ ok: false, error: 'save_failed', vtid: VTID_P5 });
+  }
+  return res.json({ ok: true, category, learn, routines_deleted: r.routines_deleted, vtid: VTID_P5 });
+});
+
+router.get('/usage-data', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = userOf(req);
+  if (!userId) return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID_P5 });
+  const sb = dbOr500(res);
+  if (!sb) return;
+  const r = await repo.countUsageRows(sb, userId);
+  if (r.error) return res.status(500).json({ ok: false, error: 'usage_count_failed', vtid: VTID_P5 });
+  return res.json({ ok: true, available: !r.missingSchema, count: r.count, vtid: VTID_P5 });
+});
+
+router.get('/usage-data/export', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = userOf(req);
+  if (!userId) return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID_P5 });
+  const sb = dbOr500(res);
+  if (!sb) return;
+  const r = await repo.fetchUsageRows(sb, userId, USAGE_EXPORT_LIMIT);
+  if (r.missingSchema) return res.status(409).json({ ok: false, error: 'not_available_yet', vtid: VTID_P5 });
+  if (r.error) return res.status(500).json({ ok: false, error: 'usage_export_failed', vtid: VTID_P5 });
+  res.setHeader('Content-Disposition', 'attachment; filename="vitana-usage-data.json"');
+  return res.json({ ok: true, exported_at: new Date().toISOString(), truncated: r.rows.length >= USAGE_EXPORT_LIMIT, rows: r.rows, vtid: VTID_P5 });
+});
+
+router.delete('/usage-data', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: the member's own privacy action on their own rows; an OASIS event would keep a trace of what they hid or deleted.
+  const userId = userOf(req);
+  if (!userId) return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID_P5 });
+  const sb = dbOr500(res);
+  if (!sb) return;
+  const r = await repo.deleteUsageRows(sb, userId);
+  if (r.missingSchema) return res.status(409).json({ ok: false, error: 'not_available_yet', vtid: VTID_P5 });
+  if (r.error) return res.status(500).json({ ok: false, error: 'usage_delete_failed', vtid: VTID_P5 });
+  // What was learned from it goes too.
+  const routines = await sb.from('user_routines').delete({ count: 'exact' }).eq('user_id', userId).in('routine_kind', [...APP_USAGE_ROUTINE_KINDS]);
+  return res.json({ ok: true, deleted: r.deleted, routines_deleted: routines.error ? 0 : routines.count ?? 0, vtid: VTID_P5 });
+});
+
+router.get('/routines', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = userOf(req);
+  if (!userId) return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID_P5 });
+  const sb = dbOr500(res);
+  if (!sb) return;
+  const { data, error } = await sb
+    .from('user_routines')
+    .select('id, routine_kind, routine_key, metadata, confidence, evidence_count, last_observed')
+    .eq('user_id', userId)
+    .gte('confidence', 0.5)
+    .order('confidence', { ascending: false })
+    .limit(50);
+  if (error) return res.status(500).json({ ok: false, error: 'routines_failed', vtid: VTID_P5 });
+  // The app renders each routine from kind + metadata in the member's language;
+  // the English title/summary are for the model only and are not sent.
+  return res.json({ ok: true, routines: data ?? [], vtid: VTID_P5 });
+});
+
+router.delete('/routines/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: the member's own privacy action on their own rows; an OASIS event would keep a trace of what they hid or deleted.
+  const userId = userOf(req);
+  if (!userId) return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID_P5 });
+  if (!UUID_RE.test(req.params.id)) return res.status(400).json({ ok: false, error: 'invalid_id', vtid: VTID_P5 });
+  const sb = dbOr500(res);
+  if (!sb) return;
+  const { error, count } = await sb.from('user_routines').delete({ count: 'exact' }).eq('user_id', userId).eq('id', req.params.id);
+  if (error) return res.status(500).json({ ok: false, error: 'forget_failed', vtid: VTID_P5 });
+  if (!count) return res.status(404).json({ ok: false, error: 'not_found', vtid: VTID_P5 });
+  return res.json({ ok: true, id: req.params.id, vtid: VTID_P5 });
+});
+
 router.get('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const userId = userOf(req);
   if (!userId) return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID });
@@ -209,6 +329,7 @@ router.get('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
 });
 
 router.post('/:id/hide-from-ai', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: the member's own privacy action on their own rows; an OASIS event would keep a trace of what they hid or deleted.
   const userId = userOf(req);
   if (!userId) return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID });
   if (!UUID_RE.test(req.params.id)) return res.status(400).json({ ok: false, error: 'invalid_id', vtid: VTID });
@@ -223,6 +344,7 @@ router.post('/:id/hide-from-ai', requireAuth, async (req: AuthenticatedRequest, 
 });
 
 router.delete('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: the member's own privacy action on their own rows; an OASIS event would keep a trace of what they hid or deleted.
   const userId = userOf(req);
   if (!userId) return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID });
   if (!UUID_RE.test(req.params.id)) return res.status(400).json({ ok: false, error: 'invalid_id', vtid: VTID });

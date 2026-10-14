@@ -579,3 +579,5 @@ ALTER TABLE public.workflow_version ENABLE ROW LEVEL SECURITY;
 DO $IDEMPOTENT$ BEGIN IF to_regclass('public.activity_catalog') IS NOT NULL THEN ALTER TABLE public.activity_catalog ENABLE ROW LEVEL SECURITY; END IF; END $IDEMPOTENT$;
 -- VTID-05168 (Life Timeline P2)
 DO $IDEMPOTENT$ BEGIN IF to_regclass('public.vitana_index_movements') IS NOT NULL THEN ALTER TABLE public.vitana_index_movements ENABLE ROW LEVEL SECURITY; END IF; END $IDEMPOTENT$;
+-- VTID-05171 (Life Timeline P5)
+DO $IDEMPOTENT$ BEGIN IF to_regclass('public.timeline_learning_prefs') IS NOT NULL THEN ALTER TABLE public.timeline_learning_prefs ENABLE ROW LEVEL SECURITY; END IF; END $IDEMPOTENT$;

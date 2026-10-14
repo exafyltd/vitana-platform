@@ -152,3 +152,35 @@ export async function deleteRow(sb: SupabaseClient, userId: string, id: string) 
   const res = await sb.from('user_activity_log').delete().eq('user_id', userId).eq('id', id).select('id').maybeSingle();
   return { found: !!res.data, error: res.error ?? null };
 }
+
+// VTID-05171 — the member's own usage data: the stored-but-never-shown rows
+// (silent: screen visits, sign-ins…; system: technical traces).
+export const USAGE_TIERS = ['silent', 'system'] as const;
+
+export async function countUsageRows(sb: SupabaseClient, userId: string) {
+  const res = await sb.from('user_activity_log').select('id', { count: 'exact', head: true }).eq('user_id', userId).in('tier', [...USAGE_TIERS]);
+  if (isMissingSchema(res.error)) return { count: null, missingSchema: true, error: null };
+  return { count: res.count ?? 0, missingSchema: false, error: res.error ?? null };
+}
+
+export async function fetchUsageRows(sb: SupabaseClient, userId: string, limit: number) {
+  const res = await sb
+    .from('user_activity_log')
+    .select('activity_type, activity_data, created_at, tier, category')
+    .eq('user_id', userId)
+    .in('tier', [...USAGE_TIERS])
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (isMissingSchema(res.error)) return { rows: [] as Array<Record<string, unknown>>, missingSchema: true, error: null };
+  return { rows: (res.data ?? []) as Array<Record<string, unknown>>, missingSchema: false, error: res.error ?? null };
+}
+
+export async function deleteUsageRows(sb: SupabaseClient, userId: string) {
+  const res = await sb.from('user_activity_log').delete({ count: 'exact' }).eq('user_id', userId).in('tier', [...USAGE_TIERS]);
+  if (isMissingSchema(res.error)) return { deleted: 0, missingSchema: true, error: null };
+  if (res.error) return { deleted: 0, missingSchema: false, error: res.error };
+  // Rows the daily archive already moved (VTID-05167 archives silent/system after 180 days).
+  const arch = await sb.from('user_activity_log_archive').delete({ count: 'exact' }).eq('user_id', userId).in('tier', [...USAGE_TIERS]);
+  if (arch.error && !isMissingSchema(arch.error)) return { deleted: res.count ?? 0, missingSchema: false, error: arch.error };
+  return { deleted: (res.count ?? 0) + (arch.error ? 0 : arch.count ?? 0), missingSchema: false, error: null };
+}
