@@ -25,6 +25,10 @@
  *      The scan in 4. also bans the Index tables and the wearable features
  *      bridge from every commerce module, because once the bridge is on the
  *      Index can contain device-derived data.
+ *   7. (VTID-05159 / VTID-05165, Health Hub Phase 1) The scan in 4. also bans
+ *      the health store's tables (HEALTH_STORE_TABLES, S5), any import of
+ *      services/health-store/* and any import of services/wellness-context
+ *      (the only sanctioned health->AI path) from every commerce module.
  */
 
 import * as fs from 'fs';
@@ -251,6 +255,8 @@ const LEGACY_HEALTH_TABLES = ['wearable_daily_metrics', 'wearable_rollup_7d', 'w
 const HEALTH_TABLES = new RegExp(`['"\`](${[...LEGACY_HEALTH_TABLES, ...HEALTH_STORE_TABLES].join('|')})['"\`]`);
 // VTID-05159: commerce never imports the health store (writer, readers, catalogue, fake).
 const HEALTH_STORE_IMPORT = /from\s+['"][^'"]*services\/health-store\/[^'"]*['"]|from\s+['"]\.{1,2}\/(\.\.\/)*health-store\/[^'"]*['"]|require\(\s*['"][^'"]*health-store\/[^'"]*['"]\s*\)/;
+// VTID-05165 (Health Hub C2): commerce never imports the wellness AI context (the only sanctioned health->AI path).
+const WELLNESS_CONTEXT_IMPORT = /from\s+['"][^'"]*wellness-context(\/[^'"]*)?['"]|require\(\s*['"][^'"]*wellness-context(\/[^'"]*)?['"]\s*\)|import\(\s*['"][^'"]*wellness-context(\/[^'"]*)?['"]\s*\)/;
 const WEARABLE_ANALYZER_IMPORT = /from\s+['"][^'"]*wearable-analyzer['"]/;
 // VTID-05089: the wearable -> health_features_daily bridge is health-domain only.
 const WEARABLE_BRIDGE_IMPORT = /from\s+['"][^'"]*wearable-features-bridge(-repository)?['"]/;
@@ -284,6 +290,7 @@ describe('commerce/health purpose boundary — source scan (VTID-05025)', () => 
       expect(src).not.toMatch(WEARABLE_ANALYZER_IMPORT);
       expect(src).not.toMatch(WEARABLE_BRIDGE_IMPORT);
       expect(src).not.toMatch(HEALTH_STORE_IMPORT);
+      expect(src).not.toMatch(WELLNESS_CONTEXT_IMPORT);
     }
   );
 
@@ -307,6 +314,12 @@ describe('commerce/health purpose boundary — source scan (VTID-05025)', () => 
     expect("import { HEALTH_CODES } from '../../health-store/catalogue';").toMatch(HEALTH_STORE_IMPORT);
     expect("const x = require('../services/health-store/reader');").toMatch(HEALTH_STORE_IMPORT);
     expect("import { resolveHealthSource } from '../services/health-sources/health-sources';").not.toMatch(HEALTH_STORE_IMPORT);
+    // VTID-05165: the wellness AI context.
+    expect("import { buildWellnessContext } from '../services/wellness-context';").toMatch(WELLNESS_CONTEXT_IMPORT);
+    expect("import { buildWellnessSystemPrompt } from '../../wellness-context/prompt';").toMatch(WELLNESS_CONTEXT_IMPORT);
+    expect("const w = require('../services/wellness-context/context');").toMatch(WELLNESS_CONTEXT_IMPORT);
+    expect("const w = await import('../wellness-context');").toMatch(WELLNESS_CONTEXT_IMPORT);
+    expect("import { getUserHealthContext } from '../services/user-health-context';").not.toMatch(WELLNESS_CONTEXT_IMPORT);
   });
 
   it('limitations-filter.ts is the single allowed health→commerce module and stays hide-only in shape', () => {
@@ -315,6 +328,7 @@ describe('commerce/health purpose boundary — source scan (VTID-05025)', () => 
     expect(src).not.toMatch(WEARABLE_FIELD_READ);
     expect(src).not.toMatch(HEALTH_TABLES);
     expect(src).not.toMatch(HEALTH_STORE_IMPORT);
+    expect(src).not.toMatch(WELLNESS_CONTEXT_IMPORT);
   });
 
   it('wearable-analyzer recommendations stay in the health domain (never marketplace)', () => {

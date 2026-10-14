@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05165",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/wellness-context/**",
+    "services/gateway/test/wellness-context/**",
+    "services/gateway/test/vtid-05025-commerce-health-boundary.test.ts",
+    "docs/programs/health-hub/STATUS.md",
+    "docs/validation/VTID-05165/**"
+  ]
+}

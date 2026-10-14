@@ -1,0 +1,666 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-c2/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-c2/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-c2/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/health-sync/adapter.test.ts
+  ✓ the fixed clock used here is the store clock
+  consent per category (fail closed)
+    ✓ drops unconsented records before A: A gets only consented samples, its raw archive and quarantine never see the rest
+    ✓ checks each category present once (at most 4 reads), with the phone store as the resource
+    ✓ another source’s consent does not count (per category x source)
+    ✓ no consented category and no deletion -> 403 CONSENT_REQUIRED; nothing is created or written
+    ✓ a consent read that throws is "not granted"
+    ✓ deletions pass through whatever the consent state, and the change hook fires for committed deletions
+  idempotency through A (S3)
+    ✓ the same batch twice is a replay: same outcome, replay:true, nothing written twice
+    ✓ a record resent in a new batch is duplicate; a changed value with the same record_id is updated
+    ✓ the same batch_id with different content is 409 BATCH_ID_REUSED (not retryable)
+  per-record codes from A (S3 mapping)
+    ✓ unit mismatch, implausible, out of window, misaligned, unsupported type
+    ✓ the mapping table matches the shared interfaces
+    ✓ a chunk A could not store is a retryable STORE_UNAVAILABLE record (re-send in a new batch)
+  store and source states
+    ✓ STORE_PENDING when B’s table is absent; STORE_UNAVAILABLE when B fails
+    ✓ STORE_PENDING when A’s tables are absent; STORE_DISABLED is 409 INGEST_DISABLED
+    ✓ a phone store is created on first sync with the install id, and reused after
+    ✓ a paused or disconnected source answers 409 SOURCE_PAUSED and writes nothing
+    ✓ never throws: a throwing source, store or emitter gives an outcome
+  OASIS
+    ✓ payloads carry batch id, source kind, categories, counts and codes — never a value or a record id
+    ✓ an emit failure is logged and never fails the batch
+  aggregator channel (Phase 2 interface)
+    ✓ a fixture adapter maps normalised events into a v1 batch; consent and source are the aggregator’s
+    ✓ an aggregator that is not connected is not created by a delivery
+    ✓ nothing mappable -> null; an adapter batch that breaks the schema is INVALID_BATCH
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"internal","batch_id":"011170af-dafa-465b-8c99-63e1f8309d25","items":2,"stored":2,"updated":0,"duplicate":0,"deleted":0,"not_found":0,"quarantined":0,"invalid":0,"skipped_no_consent":0,"store_unavailable":0,"latency_ms":3}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"internal","batch_id":"19252038-2771-41e5-9efb-30c6b69c8e02","items":1,"stored":1,"updated":0,"duplicate":0,"deleted":0,"not_found":0,"quarantined":0,"invalid":0,"skipped_no_consent":0,"store_unavailable":0,"latency_ms":2}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"internal","batch_id":"a807d229-f7af-4706-bfac-6570cc4f695c","items":1,"stored":1,"updated":0,"duplicate":0,"deleted":0,"not_found":0,"quarantined":0,"invalid":0,"skipped_no_consent":0,"store_unavailable":0,"latency_ms":1}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"internal","batch_id":"44ef01fc-7bb6-4b94-8b73-6cb094df0ddc","items":1,"stored":0,"updated":0,"duplicate":1,"deleted":0,"not_found":0,"quarantined":0,"invalid":0,"skipped_no_consent":0,"store_unavailable":0,"latency_ms":0}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"internal","batch_id":"3137bdc0-f204-4a50-a3e8-2c72da892caa","items":1,"stored":0,"updated":1,"duplicate":0,"deleted":0,"not_found":0,"quarantined":0,"invalid":0,"skipped_no_consent":0,"store_unavailable":0,"latency_ms":5}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"internal","batch_id":"1ce69cc7-92e8-43a9-8be9-3c6cd797a5bb","items":1,"stored":0,"updated":0,"duplicate":0,"deleted":0,"not_found":0,"quarantined":0,"invalid":0,"skipped_no_consent":1,"store_unavailable":0,"latency_ms":0}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"internal","batch_id":"907632fa-6c71-4cb9-948c-7cd7c35d734a","items":1,"stored":0,"updated":0,"duplicate":0,"deleted":0,"not_found":0,"quarantined":0,"invalid":0,"skipped_no_consent":1,"store_unavailable":0,"latency_ms":1}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"internal","batch_id":"894ab65d-fd9f-4455-8721-ba9eee4fee45","items":1,"stored":0,"updated":0,"duplicate":0,"deleted":0,"not_found":0,"quarantined":0,"invalid":0,"skipped_no_consent":1,"store_unavailable":0,"latency_ms":3}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"internal","batch_id":"2bd899c7-2f9b-43ce-84a4-424b8026434c","items":1,"stored":0,"updated":0,"duplicate":0,"deleted":0,"not_found":0,"quarantined":0,"invalid":0,"skipped_no_consent":1,"store_unavailable":0,"latency_ms":0}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"internal","batch_id":"fecdff66-8a83-4ac8-966b-632f14da39d7","items":1,"stored":1,"updated":0,"duplicate":0,"deleted":0,"not_found":0,"quarantined":0,"invalid":0,"skipped_no_consent":0,"store_unavailable":0,"latency_ms":1}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"internal","batch_id":"81fac348-88fc-4f30-9b4d-19259d8a85e4","items":2,"stored":2,"updated":0,"duplicate":0,"deleted":0,"not_found":0,"quarantined":0,"invalid":0,"skipped_no_consent":0,"store_unavailable":0,"latency_ms":2}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"internal","batch_id":"b65fc58b-b7ab-47f0-a819-513321ac8adf","items":3,"stored":0,"updated":0,"duplicate":0,"deleted":2,"not_found":1,"quarantined":0,"invalid":0,"skipped_no_consent":0,"store_unavailable":0,"latency_ms":17}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"internal","batch_id":"dd0ce5ac-0e41-4b2c-b754-be0d7ee72c7e","items":1,"stored":1,"updated":0,"duplicate":0,"deleted":0,"not_found":0,"quarantined":0,"invalid":0,"skipped_no_consent":0,"store_unavailable":0,"latency_ms":14}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"internal","batch_id":"e7f92b5e-54de-4941-811c-eee892f2118b","items":1,"stored":0,"updated":0,"duplicate":0,"deleted":0,"not_found":0,"quarantined":0,"invalid":0,"skipped_no_consent":1,"store_unavailable":0,"latency_ms":5}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"internal","batch_id":"49a9b06f-78c9-4879-83d2-6e0e09073c74","items":1,"stored":1,"updated":0,"duplicate":0,"deleted":0,"not_found":0,"quarantined":0,"invalid":0,"skipped_no_consent":0,"store_unavailable":0,"latency_ms":1}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"internal","batch_id":"ea2239de-691a-4489-ad01-74d56e391aa5","items":2,"stored":1,"updated":0,"duplicate":0,"deleted":0,"not_found":0,"quarantined":1,"invalid":0,"skipped_no_consent":0,"store_unavailable":0,"latency_ms":2}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"internal","batch_id":"a4cf4c8c-8002-47ae-afe1-6bcf473e42f1","items":1,"stored":0,"updated":0,"duplicate":0,"deleted":0,"not_found":0,"quarantined":0,"invalid":0,"skipped_no_consent":1,"store_unavailable":0,"latency_ms":0}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"internal","batch_id":"fd9dfb05-ca81-46a1-ab3e-3bee984fe45c","items":1,"stored":1,"updated":0,"duplicate":0,"deleted":0,"not_found":0,"quarantined":0,"invalid":0,"skipped_no_consent":0,"store_unavailable":0,"latency_ms":1}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"internal","batch_id":"f4c1e4ba-5f81-4a34-96f1-293da08ee56a","items":2,"stored":2,"updated":0,"duplicate":0,"deleted":0,"not_found":0,"quarantined":0,"invalid":0,"skipped_no_consent":0,"store_unavailable":0,"latency_ms":2}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+PASS test/health-store/contract.test.ts
+  health store contract — S10 fake (VTID-05159)
+    ✓ disabled: STORE_DISABLED and nothing is read or written
+    ✓ stores a series bucket and a record; the reader returns the daily values
+    ✓ batch replay: same batch_id + content -> replay:true, nothing written; new content -> BATCH_ID_REUSED
+    ✓ replace mode: same key + same content -> duplicate, new content -> updated
+    ✓ no consent: skipped_no_consent (CONSENT_REQUIRED), no S3 object, no store write
+    ✓ a (source kind, category) with no D10 key is refused: CONSENT_CATEGORY_MISSING
+    ✓ a phone store needs the per-source sync_<category> consent (VTID-05164 keys)
+    ✓ an unknown or another member's source: SOURCE_NOT_CONNECTED
+    ✓ deletions are processed without consent and fire the change hook with the dates
+    ✓ suppress hides rows from every read and fires the hook; unsuppress restores them
+    ✓ suppress deletes the raw batches of that source
+    ✓ reads require a purpose; ai_context requires ai_health_analysis (fail closed, repository not called)
+    ✓ quarantines an implausible value without its value; valid items in the same batch are stored
+    ✓ the raw archive holds only the consented subset
+    ✓ more than 5,000 items: INVALID_INPUT
+    ✓ consent id is stored on rows and on the batch row
+  health store contract — real module with mocks (VTID-05159)
+    ✓ disabled: STORE_DISABLED and nothing is read or written
+    ✓ stores a series bucket and a record; the reader returns the daily values
+    ✓ batch replay: same batch_id + content -> replay:true, nothing written; new content -> BATCH_ID_REUSED
+    ✓ replace mode: same key + same content -> duplicate, new content -> updated
+    ✓ no consent: skipped_no_consent (CONSENT_REQUIRED), no S3 object, no store write
+    ✓ a (source kind, category) with no D10 key is refused: CONSENT_CATEGORY_MISSING
+    ✓ a phone store needs the per-source sync_<category> consent (VTID-05164 keys)
+    ✓ an unknown or another member's source: SOURCE_NOT_CONNECTED
+    ✓ deletions are processed without consent and fire the change hook with the dates
+    ✓ suppress hides rows from every read and fires the hook; unsuppress restores them
+    ✓ suppress deletes the raw batches of that source
+    ✓ reads require a purpose; ai_context requires ai_health_analysis (fail closed, repository not called)
+    ✓ quarantines an implausible value without its value; valid items in the same batch are stored
+    ✓ the raw archive holds only the consented subset
+    ✓ more than 5,000 items: INVALID_INPUT
+    ✓ consent id is stored on rows and on the batch row
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/routes/health-ingest.test.ts
+  ingest gate (409, nothing read)
+    ✓ the gate function: exact true, not staging, store on
+    ✓ staging, flag set: POST / and POST /source-state answer 409 before auth, the body or any port
+    ✓ production, flag unset: POST / and POST /source-state answer 409 before auth, the body or any port
+    ✓ production, store off: POST / and POST /source-state answer 409 before auth, the body or any port
+  POST / — auth and identity
+    ✓ 401 JSON without a token
+    ✓ a body user_id is INVALID_BATCH (strict schema); identity is the JWT member
+    ✓ an AI-delegated token is refused before the router (delegatedTokenGuard)
+  POST / — body, encoding and schema
+    ✓ gzip happy path through the index.ts parser order: 200 with counts, consent and source state
+    ✓ a gzip bomb (> 4 MB inflated) is 413 BATCH_TOO_LARGE
+    ✓ a body over 512 KB as sent is 413 BATCH_TOO_LARGE
+    ✓ 415 UNSUPPORTED_ENCODING for another content type or encoding
+    ✓ bad JSON and a bad gzip stream are 400 INVALID_BATCH
+    ✓ an unknown major is 400 UNSUPPORTED_CONTRACT_VERSION with the supported majors
+    ✓ every batch error body has { ok:false, error, retryable } and no database message
+  rate limits
+    ✓ the per-IP limit answers 429 with Retry-After BEFORE auth runs
+    ✓ the per-member limit runs after auth, keyed by the JWT user
+    ✓ per-member concurrency: a second batch while one is in flight is 429
+  GET /contract and GET /status
+    ✓ /contract is public, read-only, version 1.0 with four categories and no glucose code
+    ✓ /status needs a member (401 JSON) and validates its query
+    ✓ /status on staging: readable, ingest_enabled:false, store state, consent per sync category, store_pending
+  POST /source-state — OS permission revoked -> paused
+    ✓ os_permission_revoked pauses the source (OS_PERMISSION_REVOKED) and emits health.sync.source.paused
+    ✓ active resumes only a paused source; a disconnected one stays disconnected
+    ✓ no source yet: nothing is created; a bad body is 400
+  index.ts wiring
+    ✓ the body guard is mounted before the global JSON parser; the router after the delegation guard
+    ✓ the route file is claimed by the health domain of the atlas (^health)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.error
+    {"event":"health_store_change_hook_failed","code":"HEALTH_STORE_HOOK_FAILED","error":"Error"}
+
+      59 |             () => undefined,
+      60 |             (err) => {
+    > 61 |               console.error(
+         |                       ^
+      62 |                 JSON.stringify({
+      63 |                   event: 'health_store_change_hook_failed',
+      64 |                   code: HEALTH_STORE_HOOK_FAILED,
+
+      at src/services/health-store/change-hook.ts:61:23
+
+PASS test/health-store/ingest.test.ts
+  writeHealthSamples never throws (VTID-05159)
+    ✓ a throwing repository (listBatchCountsSince) gives a result, not an exception
+    ✓ a throwing repository (firstBatchForSource) gives a result, not an exception
+    ✓ a throwing repository (findBatch) gives a result, not an exception
+    ✓ a throwing repository (insertQuarantine) gives a result, not an exception
+    ✓ a throwing repository (ingestChunk) gives a result, not an exception
+    ✓ a throwing repository (insertBatch) gives a result, not an exception
+    ✓ a throwing S3 client, consent read, source lookup, hook or emitter gives a result
+    ✓ a garbage input gives INVALID_INPUT
+  round trips and order (VTID-05159)
+    ✓ one consent read per category present, one S3 put, one RPC per chunk
+    ✓ chunks at 2,000 items
+    ✓ S3 failure -> STORE_UNAVAILABLE, no RPC, no batch row
+    ✓ store not applied -> STORE_PENDING before anything is archived
+    ✓ ingest function missing -> STORE_PENDING and the raw object is removed again
+  partition routing (VTID-05159)
+    ✓ 23514 -> ensure_partitions once, the chunk is retried once and stored
+    ✓ still failing -> that chunk is store_unavailable, logged + alarmed, other chunks stored, no throw
+  quota (VTID-05159)
+    ✓ the 501st batch of the day -> QUOTA_EXCEEDED + one health.store.quota.exceeded
+    ✓ 50,000 items/day after the 7-day backfill grace; 250,000 inside it
+  validation and quarantine (VTID-05159)
+    ✓ each reason is quarantined with no value; valid items stored
+    ✓ series older than 30 days go to the hourly tier (hour-aligned)
+    ✓ daily attribution follows the batch time zone (Europe/Berlin, DST end day)
+    ✓ stats codes keep n/sum/min/max; the daily value is the mean
+  sources, deletions, reprocess (VTID-05159)
+    ✓ a disconnected source refuses samples but still processes deletions
+    ✓ a malformed deletion is invalid; a series deletion needs "<code>:<start>"
+    ✓ reprocess re-runs a stored raw batch with the CURRENT consent: revoked -> nothing written
+    ✓ first data for a source emits health.store.source.first_data once, with ids and counts only
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    {"event":"health_store_partition_check","vtid":"VTID-05159","missing":0,"partitions":[]}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_capacity","vtid":"VTID-05159","series_5m_rows_estimate":0,"connected_device_sources":null}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_maintenance","vtid":"VTID-05159","ok":true,"partitions_created":0,"partitions_dropped":0,"rows_purged":0,"missing_partitions":[],"errors":[]}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_maintenance","vtid":"VTID-05159","ok":false,"partitions_created":0,"partitions_dropped":null,"rows_purged":null,"missing_partitions":null,"errors":["purge:STORE_UNAVAILABLE"]}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"internal","batch_id":"49798c56-fc5e-4813-afe1-d6a6236878c6","items":1,"stored":1,"updated":0,"duplicate":0,"deleted":0,"not_found":0,"quarantined":0,"invalid":0,"skipped_no_consent":0,"store_unavailable":0,"latency_ms":11}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.log
+    {"event":"health_store_ingest","vtid":"VTID-05159","via":"reprocess","batch_id":"fced1f08-07c8-4b20-94c6-9b92d17af186","items":1,"stored":0,"updated":0,"duplicate":0,"deleted":0,"not_found":0,"quarantined":0,"invalid":0,"skipped_no_consent":1,"store_unavailable":0,"latency_ms":1}
+
+      at Object.log (src/services/health-store/ingest.ts:189:28)
+
+  console.error
+    {"event":"health_store_raw_batch_failed","op":"erase","code":"AccessDenied"}
+
+      85 | function logFailure(op: string, err: unknown): void {
+      86 |   const e = err as { name?: unknown; Code?: unknown } | null;
+    > 87 |   console.error(
+         |           ^
+      88 |     JSON.stringify({ event: 'health_store_raw_batch_failed', op, code: String(e?.name ?? e?.Code ?? 'unknown') }),
+      89 |   );
+      90 | }
+
+      at logFailure (src/services/health-store/raw-batch-store.ts:87:11)
+      at Object.erasePrefix (src/services/health-store/raw-batch-store.ts:177:9)
+      at src/routes/health-store-internal.ts:139:18
+
+  console.error
+    [VTID-05092] consent id lookup failed (treated as not granted): x
+
+      261 |       .maybeSingle();
+      262 |     if (error) {
+    > 263 |       console.error(`[${HEALTH_CONSENT_VTID}] consent id lookup failed (treated as not granted): ${error.message}`);
+          |               ^
+      264 |       return null;
+      265 |     }
+      266 |     const id = (data as { id?: unknown } | null)?.id;
+
+      at Object.findActiveHealthConsentId (src/services/consent/health-consent.ts:263:15)
+      at Object.<anonymous> (test/health-store/internal-routes.test.ts:329:12)
+
+  console.error
+    [VTID-05092] consent id lookup threw (treated as not granted): Error: net
+
+      267 |     return typeof id === 'string' && id.length > 0 ? id : null;
+      268 |   } catch (err) {
+    > 269 |     console.error(`[${HEALTH_CONSENT_VTID}] consent id lookup threw (treated as not granted): ${String(err)}`);
+          |             ^
+      270 |     return null;
+      271 |   }
+      272 | }
+
+      at Object.findActiveHealthConsentId (src/services/consent/health-consent.ts:269:13)
+      at Object.<anonymous> (test/health-store/internal-routes.test.ts:330:12)
+
+PASS test/health-store/internal-routes.test.ts
+  GET /store-status (VTID-05159)
+    ✓ needs a member JWT (401 JSON without one)
+    ✓ reports {enabled:false, reason:"staging"} on staging and the flag state elsewhere
+  POST /maintenance (VTID-05159)
+    ✓ rejects without X-Gateway-Internal (401), with a wrong one (403), and fails closed with no token configured (503)
+    ✓ store off -> 404 HEALTH_STORE_DISABLED, nothing read
+    ✓ store on -> ensure then purge (+ partition check on request), 200
+    ✓ a failing run answers 500 MAINTENANCE_FAILED with codes, never a DB message
+  POST /reprocess (VTID-05159)
+    ✓ needs the service token or an exafy_admin JWT; off -> 404; bad body -> 400
+    ✓ re-checks the CURRENT consent: revoked -> nothing written
+  POST /erase-raw (VTID-05159)
+    ✓ needs the service token; no bucket -> 404 HEALTH_STORE_DISABLED (A3 counts it as nothing to erase)
+    ✓ deletes only the member's prefix, lists again and reports residual — even with the store flag off
+    ✓ a source_id narrows the erasure to that source (withdrawal)
+    ✓ bad ids -> 400; an S3 failure -> 503 STORE_UNAVAILABLE
+  raw-batch store over S3 (VTID-05159)
+    ✓ keys and prefixes; never a bucket-wide prefix
+    ✓ puts gzip JSON with SSE-KMS, reads it back, pages through listings when erasing
+  S7 findActiveHealthConsentId (VTID-05159)
+    ✓ returns the active row id with the same query as hasHealthConsent
+    ✓ fails closed: no row, an error, a throw, an unknown category or a missing resource -> null
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/health-sync/golden.test.ts
+  golden fixtures (docs/programs/health-hub/health-sync-v1/golden.json)
+    ✓ every published case answers exactly as recorded
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+(node:30758) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/vtid-05025-commerce-health-boundary.test.ts
+  getUserHealthContext — wearable data is opt-in (VTID-05025)
+    ✓ does not query the wearable rollup when include_wearable is omitted
+    ✓ does not query the wearable rollup when include_wearable is false
+    ✓ queries and maps the rollup only when include_wearable === true
+  getUserHealthContext — cache is keyed by include flags (VTID-05025)
+    ✓ never serves a wearable-loaded context to a caller that did not opt in
+    ✓ serves the same option variant from cache
+    ✓ invalidateUserHealthContext() drops every option variant for the user
+  inferPrimaryCondition — no device-derived condition (VTID-05025)
+    ✓ returns null for a context whose only signal is low sleep / low HRV wearable data
+    ✓ keeps the member-stated condition precedence unchanged
+    ✓ still maps upcoming travel to jet-lag
+  commerce/health purpose boundary — source scan (VTID-05025)
+    ✓ covers the expected commerce modules
+    ✓ services/recommendation-engine/analyzers/marketplace-analyzer-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ services/recommendation-engine/analyzers/marketplace-analyzer.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ services/feed-ranker.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ routes/discover-feed-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ routes/discover-feed.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ routes/discover-recommendations-public-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ routes/discover-recommendations-public.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ routes/discover-recommendations-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ routes/discover-recommendations.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ routes/discover-search-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ routes/discover-search.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ services/shopping-agent/agent-core-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ services/shopping-agent/agent-core.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ services/shopping-agent/reorder-core-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ services/shopping-agent/reorder-core.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ services/orb-tools/marketplace-discovery-tools-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ services/orb-tools/marketplace-discovery-tools.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ services/orb-tools/marketplace-guide-tools-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ services/orb-tools/marketplace-guide-tools.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ services/orb-tools/marketplace-journey-tools-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ services/orb-tools/marketplace-journey-tools.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ services/orb-tools/marketplace-va-shared-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ services/orb-tools/marketplace-va-shared.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ services/context-pack-builder.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ the scan patterns catch real violations and allow only the null initialiser
+    ✓ limitations-filter.ts is the single allowed health→commerce module and stays hide-only in shape
+    ✓ wearable-analyzer recommendations stay in the health domain (never marketplace)
+  find_perfect_product / find_perfect_practitioner — no Index read (VTID-05089)
+    ✓ export async function tool_find_perfect_product(… reads no vitana_index_scores and derives no weakest pillar
+    ✓ export async function tool_find_perfect_practitioner(… reads no vitana_index_scores and derives no weakest pillar
+    ✓ async function _getCompassGoal(… reads no vitana_index_scores and derives no weakest pillar
+    ✓ the removed Index helper is gone from orb-tools-shared.ts
+    ✓ find_perfect_product without a pillar issues no vitana_index_scores query and no pillar_tags filter
+    ✓ find_perfect_product filters by pillar_tags only when the member names a pillar
+    ✓ find_perfect_practitioner issues no vitana_index_scores query
+  applyUserLimitations — hide-only (VTID-05025)
+    ✓ for 500 generated product lists and contexts, never adds or reorders products
+    ✓ with no limitations at all, returns every product in its original order
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/health-store/infra-scripts.test.ts
+  setup-health-raw-bucket.sh (VTID-05159)
+    ✓ dry run (default) prints the full plan and calls no AWS API
+    ✓ refuses staging and an unknown environment
+    ✓ encrypts with SSE-KMS and a bucket key in the plan
+  setup-health-store-alarms.sh (VTID-05159)
+    ✓ dry run calls nothing and plans the maintenance, partition and placement alarms
+    ✓ refuses staging; 0t needs an explicit log group
+    ✓ the metric filters match the log lines the gateway writes
+  setup-eventbridge-cron-migration.sh: gateway-health-store-maintenance (VTID-05159)
+    ✓ is not created unless HEALTH_STORE_GATEWAY_URL names a store-enabled gateway
+    ✓ with the production gateway: hourly at :23 UTC, internal token, production secret
+    ✓ refuses staging, and a non-production gateway without its token secret
+
+PASS test/wellness-context/context.test.ts
+  dark gate
+    ✓ flag off -> disabled; no consent read, no store read, no locale lookup
+    ✓ isWellnessContextEnabled: exact "true", and never on staging
+    ✓ the purpose union is closed and has no commerce member; any other purpose is disabled and reads nothing
+    ✓ a missing identity is disabled
+  consent (fail closed, nothing cached)
+    ✓ no ai_health_analysis -> consent_required and A's read port is not called
+    ✓ a consent read error is not granted
+    ✓ ai_health_analysis but no sync_* on any source -> empty; nothing is read
+    ✓ a category consented on any one source (Health Connect) is enough
+    ✓ a withdrawn sync_sleep removes the sleep fact at the next call, and sleep data is no longer read
+    ✓ A's own I5 check answering consent_required is reported as consent_required
+  the read goes only through A's S4 port, purpose ai_context
+    ✓ one read, codes of the consented facts, 30-day window ending on the last complete day
+    ✓ the port answering STORE_PENDING -> empty, no throw
+    ✓ the port answering STORE_DISABLED -> empty, no throw
+    ✓ the port answering STORE_UNAVAILABLE -> empty, no throw
+    ✓ the port answering INVALID_INPUT -> empty, no throw
+    ✓ the port answering PURPOSE_REQUIRED -> empty, no throw
+    ✓ the real fake store with its tables absent (STORE_PENDING) -> empty, no throw
+    ✓ empty rows -> empty
+    ✓ a throwing port or locale lookup never throws out
+  facts end to end over the fake store
+    ✓ computes both implemented facts from the member's own baseline; only WellnessFactKind values appear
+    ✓ too little data gives no fact -> empty
+  comparison functions (pure)
+    ✓ direction: lower / higher / stable (within ±5 %)
+    ✓ windows: recent = last 7 days, baseline = last 30 days, both ending on the reference date
+    ✓ minimum data: fewer than 4 recent days or 14 baseline days gives no fact
+    ✓ a zero baseline gives no fact; other codes and out-of-window rows are ignored
+  buildWellnessSystemPrompt
+    ✓ always wraps with the user locale (de)
+    ✓ always wraps with the user locale (en)
+    ✓ always wraps with the user locale (es)
+    ✓ always wraps with the user locale (sr)
+    ✓ always wraps with the user locale (fr)
+    ✓ always wraps with the user locale (pt)
+    ✓ always wraps with the user locale (ru)
+    ✓ always wraps with the user locale (pl)
+    ✓ always wraps with the user locale (zh)
+    ✓ always wraps with the user locale (ar)
+    ✓ always wraps with the user locale (tr)
+    ✓ covers all 11 shipped locales
+    ✓ renders the facts as a data block and every boundary rule; non-catalogue kinds are dropped
+    ✓ no facts unless status is ok; still locale-wrapped with the rules
+    ✓ boundary rules are intent, not finished speech: no quoted sentences
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.error
+    {"event":"health_store_change_hook_failed","code":"HEALTH_STORE_HOOK_FAILED","error":"Error"}
+
+      59 |             () => undefined,
+      60 |             (err) => {
+    > 61 |               console.error(
+         |                       ^
+      62 |                 JSON.stringify({
+      63 |                   event: 'health_store_change_hook_failed',
+      64 |                   code: HEALTH_STORE_HOOK_FAILED,
+
+      at src/services/health-store/change-hook.ts:61:23
+
+  console.error
+    {"event":"health_store_change_hook_failed","code":"HEALTH_STORE_HOOK_FAILED","error":"Error"}
+
+      59 |             () => undefined,
+      60 |             (err) => {
+    > 61 |               console.error(
+         |                       ^
+      62 |                 JSON.stringify({
+      63 |                   event: 'health_store_change_hook_failed',
+      64 |                   code: HEALTH_STORE_HOOK_FAILED,
+
+      at src/services/health-store/change-hook.ts:61:23
+
+PASS test/health-store/store-ops.test.ts
+  dark flag (VTID-05159)
+    ✓ off by default, forced off on staging, off without a bucket
+  S7 consent-key map (VTID-05159)
+    ✓ maps every (kind, category) to its D10 key; C1 (VTID-05164) filled the sync_* and self_logged_health entries
+    ✓ a per-resource key with no resource is CONSENT_REQUIRED without a read; one read per (key, resource)
+  S4 readers (VTID-05159)
+    ✓ value comes from the best-ranked source; every source is listed
+    ✓ record daily rules: sum for sleep sessions, last for weight; records attributed in the requested tz
+    ✓ tier readers return 5-minute and hourly buckets; suppressed rows never appear
+    ✓ missing purpose / ai_context without consent never call the repository; bad input is INVALID_INPUT
+  S8 change hook and S9 withdrawal (VTID-05159)
+    ✓ a throwing or rejecting hook never fails the primitive; the others still run
+    ✓ hooks run after the commit: the hook already sees the suppressed rows
+    ✓ unregister stops a hook; the registry counts hooks
+    ✓ withdrawal works with the store flag off; bad input is INVALID_INPUT; a raw erase failure is reported, not fatal
+    ✓ suppressed rows are hard-deleted by the purge after 7 days
+  maintenance run (VTID-05159)
+    ✓ ensure -> purge, logs the run and emits maintenance.completed (counts only)
+    ✓ the 02:xx UTC run adds the partition check and the capacity snapshot; a gap alarms
+    ✓ a failing step -> ok:false, maintenance.failed with codes, never throws
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/health-sync/contract.test.ts
+  schema lock (S1)
+    ✓ the committed JSON Schema equals the schema generated from the zod source
+    ✓ its sha256 is locked for the current contract version — a schema change needs a version bump
+    ✓ the schema is strict and has no identity field
+  data catalogue v1
+    ✓ covers activity, sleep, heart and body with A catalogue codes, a UCUM unit, a range and an OS type
+    ✓ has no glucose / CGM / HbA1c, reproductive or clinical code, and the published document has none either
+    ✓ A codes outside v1 (vo2_max, sleep_efficiency, blood pressure, habits) are not accepted
+  GET /contract document
+    ✓ names the version, supported majors, four categories with their sync_* keys, limits and every error code
+  parseHealthSyncBatch
+    ✓ accepts a valid batch
+    ✓ a body user_id or tenant_id is INVALID_BATCH (unknown field) — identity only from the JWT
+    ✓ unknown fields at every level are refused with their path
+    ✓ contract version: a new major or a newer minor is UNSUPPORTED_CONTRACT_VERSION, garbage is INVALID_BATCH
+    ✓ limits: more than 1,000 records or deletions is INVALID_BATCH
+    ✓ times need an offset; the source platform must match the store
+    ✓ validation details never echo submitted values
+
+PASS test/health-store/catalogue.test.ts
+  S2 catalogue (VTID-05159)
+    ✓ parses the A1 seed
+    ✓ TypeScript catalogue equals the SQL seed, field by field
+    ✓ keys and ids are unique
+    ✓ every code has a unit, kind, category, range and daily rule
+    ✓ has no glucose / CGM / HbA1c code (owner decision 7)
+    ✓ the category list equals the SQL CHECK
+    ✓ lookups
+    ✓ source rank: device cloud > phone > aggregator > partner > self-logged; unknown last
+  S5 HEALTH_STORE_TABLES (VTID-05159)
+    ✓ names exactly the six member-data tables A1 creates
+    ✓ only services/health-store/** references the store tables in gateway source
+
+PASS test/wellness-context/wellness-context-boundary.test.ts
+  (a) wellness-context has no importers outside the allowlist
+    ✓ the module exists
+    ✓ no src file outside services/wellness-context imports it
+  (b) wellness-context imports no commerce module and no provider SDK
+    ✓ services/wellness-context/comparisons.ts imports only the allowlisted modules
+    ✓ services/wellness-context/context.ts imports only the allowlisted modules
+    ✓ services/wellness-context/index.ts imports only the allowlisted modules
+    ✓ services/wellness-context/prompt.ts imports only the allowlisted modules
+    ✓ services/wellness-context/types.ts imports only the allowlisted modules
+    ✓ the patterns catch real violations
+  (c) A's tables are referenced only inside services/health-store/**
+    ✓ HEALTH_STORE_TABLES is the S5 list
+    ✓ no src file outside services/health-store references a store table
+    ✓ wellness-context makes no direct database call and reaches the store only through S4 (health-store/reader)
+    ✓ the pattern catches a store table and ignores the catalogue table
+  (d) ratchet: legacy AI readers of device/lab data keep only today's importers
+    ✓ services/user-health-context.ts
+    ✓ services/user-health-context-repository.ts
+    ✓ services/gemini-operator.ts
+    ✓ services/orb-tools/health-depth-tools.ts
+    ✓ services/orb-tools/health-depth-tools-repository.ts
+    ✓ services/recommendation-engine/analyzers/wearable-analyzer.ts
+    ✓ services/recommendation-engine/analyzers/wearable-analyzer-repository.ts
+    ✓ get_wearable_metrics is referenced only by today's files
+    ✓ the wellness context imports none of the legacy readers
+  (e) the rendered prompt names no disease or condition in any of the 11 locales
+    ✓ the denylist covers every shipped locale
+    ✓ locale de
+    ✓ locale en
+    ✓ locale es
+    ✓ locale sr
+    ✓ locale fr
+    ✓ locale pt
+    ✓ locale ru
+    ✓ locale pl
+    ✓ locale zh
+    ✓ locale ar
+    ✓ locale tr
+    ✓ the boundary rules alone name no condition
+    ✓ the detector catches condition names (sanity)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 13 passed, 13 total
+Tests:       291 passed, 291 total
+Snapshots:   0 total
+Time:        5.867 s
+Ran all test suites matching /test\/wellness-context|test\/vtid-05025-commerce-health-boundary.test.ts|test\/health-store|test\/health-sync|test\/routes\/health-ingest.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
