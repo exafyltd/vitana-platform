@@ -159,6 +159,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const memoryRouter = require('./routes/memory').default;
   // VTID-04388: Memory Garden on the canonical store
   const memoryGardenRouter = require('./routes/memory-garden').default;
+  // VTID-05169: Life Timeline API (Index spotlight, moments, hide/delete)
+  const timelineRouter = require('./routes/timeline').default;
   // VTID-04407/04408: developer memory (morning pack, Operator thread handoffs)
   const devMemoryRouter = require('./routes/dev-memory').default;
   // VTID-01099: Memory Governance Routes - visibility, lock, delete, export
@@ -234,6 +236,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const internalMarketplaceSyncRouter = require('./routes/internal-marketplace-sync').default;
   // VTID-05023 part 4: auth.users webhook -> Aurora provisioning (service token only)
   const authBridgeRouter = require('./routes/auth-bridge').default;
+  // VTID-05174 (Health Hub D5 remainder): account-deletion health residue (service token only)
+  const healthErasureInternalRouter = require('./routes/health-erasure-internal').default;
   // VTID-02000: User limitations CRUD + impact counter
   const userLimitationsRouter = require('./routes/user-limitations').default;
   // VTID-02000: Wearables waitlist (Phase 0 stub — still works alongside Phase 1 connector flow)
@@ -442,6 +446,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminUsersLookupRouter = require('./routes/admin-users-lookup').default;
   // Phase 0 staging build (P0.3): /admin/health + /admin/build-info diagnostics.
   const adminHealthRouter = require('./routes/admin-health').default;
+  // VTID-05177: GET /api/v1/app-config — auth-free native app remote config.
+  const appConfigRouter = require('./routes/app-config').default;
   // Phase D (DEV-COMHU voice budget watch): admin observability for the Vertex
   // system_instruction budget. See services/voice-budget-watch.ts.
   const voiceBudgetWatchRouter = require('./routes/voice-budget-watch').default;
@@ -1198,6 +1204,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/memory', semanticMemoryRouter, { owner: 'semantic-memory' });
   // VTID-04388: /api/v1/memory/garden/{entries,categories}
   mountRouterSync(app, '/api/v1', memoryGardenRouter, { owner: 'memory-garden' });
+  // VTID-05169: /api/v1/timeline{,/spotlight,/summary,/:id,/:id/hide-from-ai}
+  mountRouterSync(app, '/api/v1/timeline', timelineRouter, { owner: 'timeline' });
   mountRouterSync(app, '/api/v1/dev-memory', devMemoryRouter, { owner: 'dev-memory' });
 
   // VTID-01095: Daily Scheduler - daily recompute pipeline
@@ -1272,6 +1280,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/i18n-ops', adminI18nOpsRouter, { owner: 'admin-i18n-ops' });
   mountRouterSync(app, '/api/v1/internal/marketplace', internalMarketplaceSyncRouter, { owner: 'marketplace-sync' });
   mountRouterSync(app, '/api/v1/internal/auth-bridge', authBridgeRouter, { owner: 'auth-bridge' });
+  mountRouterSync(app, '/api/v1/internal/health-erasure', healthErasureInternalRouter, { owner: 'health-erasure-internal' });
 
   // VTID-02000: User limitations + impact counter (user-facing /ecosystem/preferences)
   mountRouterSync(app, '/api/v1/user/limitations', userLimitationsRouter, { owner: 'user-limitations' });
@@ -1378,6 +1387,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Phase 0 staging build (P0.3): /admin/health + /admin/build-info — auth-free
   // env-identity probes used by the STAGE-DEPLOY smoke and isolation checks.
   mountRouterSync(app, '/api/v1/admin', adminHealthRouter, { owner: 'admin-health' });
+  // VTID-05177: native app remote config — no auth, no member data, all flags
+  // off by default; per-IP rate limit inside the router.
+  mountRouterSync(app, '/api/v1/app-config', appConfigRouter, { owner: 'app-config' });
 
   // VTID-03460 (Watcher Phase 1): /timeline + /health are admin-gated;
   // /session-step is gated on WATCHER_SESSION_TOKEN and closed when unset.

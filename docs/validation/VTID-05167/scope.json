@@ -1,0 +1,19 @@
+{
+  "vtid": "VTID-05167",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/timeline/**",
+    "services/gateway/src/services/timeline-projector.ts",
+    "services/gateway/test/vtid-05167-timeline-catalog.test.ts",
+    "scripts/timeline/generate-activity-catalog-seed.mjs",
+    "supabase/migrations/20261014130000_vtid_05167_activity_tiers.sql",
+    "scripts/ci/sql-tests/vtid-05167-activity-tiers.test.sql",
+    "scripts/ci/sql-tests/run-activity-tiers-test.sh",
+    ".github/workflows/SQL-ACTIVITY-TIERS.yml",
+    "scripts/ci/migration-drift-baseline.json",
+    "services/postgrest-aurora-proxy/aurora-restore-0*.sql",
+    "DATABASE_SCHEMA.md",
+    ".kiro/specs/life-timeline/**",
+    "docs/validation/VTID-05167/**"
+  ]
+}

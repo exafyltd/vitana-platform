@@ -1,0 +1,25 @@
+{
+  "vtid": "VTID-05174",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "build-info answers JSON (the runner confirms the verified commit from it)",
+      "path": "/api/v1/admin/build-info",
+      "expect_status": 200,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "gateway alive after the change",
+      "path": "/alive",
+      "expect_status": 200
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/health-erasure-internal.test.ts test/connector-webhooks-log-user-id.test.ts",
+      "cwd": "services/gateway",
+      "reason": "POST /api/v1/internal/health-erasure/member-residue deletes and rewrites rows (user_connections tokens, connector_webhooks_log, partner_health_result_inbox) in the database staging shares with production, and on staging it answers 409 STAGING_READ_ONLY by design before any database call; staging suites send only GETs. The webhook-log user_id is set only on a signature-verified vendor webhook, which a read-only suite cannot send. Both suites mock every database call and prove auth (401/403), the 400 and 409 guards, the three erasure parts with residual re-selects, complete semantics, the OASIS payloads (no tokens, raw_payload or member id), the single mount and the atlas claim, and the user_id rule on the success and the three failure log sites."
+    }
+  ]
+}

@@ -34,6 +34,7 @@ import type { JourneyMode } from '../types/guided-journey';
 import { getOrbTopicSeed } from '../services/guided-journey/checklist-service';
 import { synthesizeAudiobookTopicMp3 } from '../services/guided-journey/audiobook-episode-audio';
 import { GATEWAY_LOCALES, type GatewayLocale } from '../i18n/catalog';
+import { writeTimelineRow } from '../services/timeline-projector';
 
 const router = Router();
 
@@ -200,6 +201,17 @@ router.post('/session-listened', requireAuth, async (req: AuthenticatedRequest, 
             reason: 'guided_session_listen',
           },
         });
+        // VTID-05168: the +2 is its own labelled contribution on the timeline
+        // (catalog journey.session.listened, cross-pillar). It is added on read,
+        // never written to vitana_index_scores, so it is never folded into a
+        // recorded movement it did not cause.
+        void writeTimelineRow({
+          user_id: userId,
+          activity_type: 'journey.session.listened',
+          activity_data: { topic: topicId },
+          dedupe_key: `journey-listen:${topicId}:${new Date().toISOString().slice(0, 10)}`,
+          source: 'projector:guided_journey',
+        }).catch(() => undefined);
       }
     } catch (err: any) {
       console.warn(`[BOOTSTRAP-GUIDED-JOURNEY-POPUP] index award skipped (non-fatal): ${err?.message}`);
