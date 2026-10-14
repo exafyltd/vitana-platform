@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { HEALTH_STORE_TABLES } from '../../src/services/health-store/tables';
 import { HEALTH_FEATURES_TABLES } from '../../src/services/health-features/health-features-repository';
+import { INDEX_DUAL_COMPUTE_TABLE } from '../../src/services/health-features/index-dual-compute-repository';
 
 const SRC = path.join(__dirname, '../../src');
 
@@ -34,14 +35,16 @@ describe('health store tables are package A only (S5, VTID-05162)', () => {
     expect(offenders.map(rel)).toEqual([]);
   });
 
-  it('B2 tables are named only by services/health-features/**', () => {
-    const re = quoted(HEALTH_FEATURES_TABLES);
+  it('B2 tables (and B3\'s vitana_index_dual_compute) are named only by services/health-features/**', () => {
+    const re = quoted([...HEALTH_FEATURES_TABLES, INDEX_DUAL_COMPUTE_TABLE]);
     const offenders = ALL.filter((f) => !rel(f).startsWith('services/health-features/')).filter((f) => re.test(fs.readFileSync(f, 'utf8')));
     expect(offenders.map(rel)).toEqual([]);
   });
 
-  it('services/health-features/** reaches the store only through S3 / S4 / S2 / S8 / flags', () => {
-    const allowed = new Set(['ingest', 'reader', 'catalogue', 'change-hook', 'flags']);
+  // VTID-05163 (B3): + consent-gate — the dual-compute classifier reads the S7
+  // consent-key map (consentKeyFor, read-only) to tell consent_withheld apart.
+  it('services/health-features/** reaches the store only through S3 / S4 / S2 / S8 / S7 key map / flags', () => {
+    const allowed = new Set(['ingest', 'reader', 'catalogue', 'change-hook', 'flags', 'consent-gate']);
     for (const f of ALL.filter((x) => rel(x).startsWith('services/health-features/'))) {
       for (const m of fs.readFileSync(f, 'utf8').matchAll(/from\s+['"]\.\.\/health-store\/([^'"]+)['"]/g)) {
         expect([rel(f), allowed.has(m[1])]).toEqual([rel(f), true]);

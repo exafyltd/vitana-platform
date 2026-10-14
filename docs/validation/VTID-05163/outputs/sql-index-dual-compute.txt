@@ -1,0 +1,10 @@
+-- vitana_pillar_streak_days from 20260423130000_vitana_index_compute_v3.sql
+-- health_compute_vitana_index_for_user from 20260424120000_pillar_tags_community_engagement.sql
+PASS vtid-05163 drift guard (fixture matrix x 16 start-date pairs)
+PASS vtid-05163 key-class routing
+PASS vtid-05163 stable + grants
+PASS vtid-05163 dual-compute table
+PASS vtid-05163 erasure discovery
+PASS vtid-05163 index dual compute
+PASS vtid-05163 rollback fix-up
+PASS vtid-05163 placement guard

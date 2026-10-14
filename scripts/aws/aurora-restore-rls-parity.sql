@@ -1725,3 +1725,7 @@ DO $HC05092$ BEGIN IF to_regclass('public.health_consent_categories') IS NOT NUL
 DO $HF05162$ BEGIN IF to_regclass('public.health_features_daily_v2') IS NOT NULL THEN EXECUTE $SQL05162$ALTER TABLE public.health_features_daily_v2 ENABLE ROW LEVEL SECURITY$SQL05162$; END IF; END $HF05162$;
 DO $HF05162$ BEGIN IF to_regclass('public.health_features_daily_legacy_shadow') IS NOT NULL THEN EXECUTE $SQL05162$ALTER TABLE public.health_features_daily_legacy_shadow ENABLE ROW LEVEL SECURITY$SQL05162$; END IF; END $HF05162$;
 DO $HF05162$ BEGIN IF to_regclass('public.health_features_derivation_pending') IS NOT NULL THEN EXECUTE $SQL05162$ALTER TABLE public.health_features_derivation_pending ENABLE ROW LEVEL SECURITY$SQL05162$; END IF; END $HF05162$;
+
+-- VTID-05163: vitana_index_dual_compute (Aurora only; created by 20261014100800_vtid_05163_index_dual_compute.sql after
+-- the cutover). Service role only: RLS on, no policy.
+DO $IX05163$ BEGIN IF to_regclass('public.vitana_index_dual_compute') IS NOT NULL THEN EXECUTE $SQL05163$ALTER TABLE public.vitana_index_dual_compute ENABLE ROW LEVEL SECURITY$SQL05163$; END IF; END $IX05163$;

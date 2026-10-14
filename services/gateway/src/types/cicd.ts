@@ -985,6 +985,10 @@ export type CicdEventType =
   // never member ids or health values.
   | 'health.features.dual_write_failed'
   | 'health.features.derivation_catch_up'
+  // VTID-05163 (Health Hub B3): the daily Vitana Index dual-compute report —
+  // aggregates only (counts, percentiles, stage verdicts), never a member id
+  // or a health value.
+  | 'health.index.dual_compute.report'
   // VTID-05174 (Health Hub D5 remainder): account-deletion health residue.
   // Payloads carry connector ids, statuses and counts only — never tokens,
   // raw_payload or the member id.

@@ -179,9 +179,23 @@ export interface BridgeInput {
   dates: string[];
 }
 
+/**
+ * VTID-05163 (Health Hub B3): where the bridge's rows go once a cutover mode
+ * is on (HEALTH_FEATURES_SOURCE derived_device / derived). The bridge then
+ * no longer writes health_features_daily — the derivation takes its place —
+ * and its rows go to the legacy shadow (rollback), with the same insert-only
+ * plus "update only bridge-owned rows" rules, and no Index recompute.
+ */
+export interface BridgeShadowWriter {
+  insertIgnoringExisting(rows: Record<string, unknown>[]): Promise<{ error: unknown }>;
+  updateBridgeOwned(row: Record<string, unknown>): Promise<{ error: unknown }>;
+}
+
 export interface BridgeOptions {
   env?: NodeJS.ProcessEnv;
   now?: Date;
+  /** VTID-05163: write the shadow instead of health_features_daily (cutover). Default: health_features_daily. */
+  shadow?: BridgeShadowWriter;
 }
 
 export type BridgeResult =
@@ -273,7 +287,15 @@ export async function bridgeWearableDays(
     }
 
     let indexRecomputed = false;
-    if (rows.length > 0) {
+    if (rows.length > 0 && opts.shadow) {
+      // VTID-05163 cutover: the bridge's rows are kept for rollback only.
+      const ins = await opts.shadow.insertIgnoringExisting(rows);
+      if (ins?.error) throw new BridgeError('insert_shadow_failed');
+      for (const row of rows) {
+        const up = await opts.shadow.updateBridgeOwned(row);
+        if (up?.error) throw new BridgeError('update_shadow_failed');
+      }
+    } else if (rows.length > 0) {
       const ins = await repo.insertFeatureRowsIgnoringExisting(sb, rows);
       if (ins?.error) throw new BridgeError('insert_features_failed');
       for (const row of rows) {
@@ -310,6 +332,7 @@ export async function bridgeWearableDays(
         rows_written: rows.length,
         days: dates.length,
         index_recomputed: indexRecomputed,
+        ...(opts.shadow ? { target: 'legacy_shadow' } : {}),
       },
     });
 

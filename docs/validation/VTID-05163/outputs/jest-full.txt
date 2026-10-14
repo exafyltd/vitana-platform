@@ -1,0 +1,6 @@
+# full npx jest on HEAD (local): Test Suites: 19 failed, 2 skipped, 1697 passed, 1716 of 1718 total
+# Tests:       4 failed, 24 skipped, 6 todo, 27620 passed, 27654 total
+# B2 base (docs/validation/VTID-05162/outputs/jest-full.txt): 19 failed, 2 skipped, 1691 passed; 4 failed tests.
+# The six new B3 suites account for the +6 passed suites (cutover, cutover-writers, index-dual-compute,
+# daily-recompute-dual-compute, admin-dual-compute-route, vtid-05163 migration); the 19 failing suites and 4 failing
+# tests are the base's local libphonenumber-js / pinpoint module gap (suites that load those modules), unchanged.

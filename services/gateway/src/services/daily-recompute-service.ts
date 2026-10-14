@@ -26,6 +26,12 @@ import {
   runNightlyFeatureDerivation,
   type NightlyDerivationResult,
 } from './health-features/derive-daily-features';
+import {
+  defaultDualComputeDeps,
+  isIndexDualComputeEnabled,
+  runIndexDualComputeForBatch,
+  type DualComputeBatchResult,
+} from './health-features/index-dual-compute';
 
 const VTID = 'VTID-01095';
 
@@ -81,6 +87,13 @@ export interface RecomputeBatchResponse {
    * failed / next_cursor.
    */
   features_v2?: NightlyDerivationResult & { catch_up_markers?: number };
+  /**
+   * VTID-05163 (Health Hub B3): the Vitana Index dual-compute final step for
+   * this batch's users whose `index` stage succeeded. Present only when
+   * VITANA_INDEX_DUAL_COMPUTE_ENABLED is on (never on staging). Its counts
+   * never change ok / processed / failed / next_cursor.
+   */
+  dual_compute?: DualComputeBatchResult;
 }
 
 export interface RecomputeStatusResponse {
@@ -293,7 +306,9 @@ async function executePipelineForUser(
   tenantId: string,
   userId: string,
   runDate: string
-): Promise<{ ok: boolean; run_id: string; error?: string }> {
+): Promise<{ ok: boolean; run_id: string; error?: string; stage_status?: Partial<Record<PipelineStage, StageStatus>> }> {
+  // VTID-05163: every return carries the per-stage status map, so the batch's
+  // final dual-compute step can pick the users whose `index` stage succeeded.
   // Get or create run record
   const { run, isNew, error: runError } = await getOrCreateRun(supabaseUrl, supabaseKey, tenantId, userId, runDate);
 
@@ -304,7 +319,7 @@ async function executePipelineForUser(
   // If already completed, skip
   if (run.status === 'completed') {
     console.log(`[${VTID}] Run ${run.id} already completed for user ${userId}, date ${runDate}`);
-    return { ok: true, run_id: run.id };
+    return { ok: true, run_id: run.id, stage_status: { ...run.stage_status } };
   }
 
   // Emit started event
@@ -424,7 +439,7 @@ async function executePipelineForUser(
       });
 
       console.error(`[${VTID}] Stage ${stage} failed for run ${run.id}: ${stageError}`);
-      return { ok: false, run_id: run.id, error: `Stage ${stage} failed: ${stageError}` };
+      return { ok: false, run_id: run.id, error: `Stage ${stage} failed: ${stageError}`, stage_status: { ...stageStatus } };
     }
   }
 
@@ -478,7 +493,7 @@ async function executePipelineForUser(
     console.warn(`[VTID-01270] Proactive match import failed: ${err.message}`);
   }
 
-  return { ok: true, run_id: run.id };
+  return { ok: true, run_id: run.id, stage_status: { ...stageStatus } };
 }
 
 /**
@@ -557,6 +572,8 @@ export async function processDailyRecomputeBatch(
   let failed = 0;
   const runIds: string[] = [];
   const errors: Array<{ user_id: string; error: string }> = [];
+  // VTID-05163: whether each processed user's `index` stage succeeded this run.
+  const indexOutcomes: Array<{ user_id: string; index_ok: boolean }> = [];
 
   // Process each user
   for (const user of users) {
@@ -566,6 +583,7 @@ export async function processDailyRecomputeBatch(
     }
 
     const result = await executePipelineForUser(supabaseUrl, supabaseKey, tenant_id, user.user_id, date);
+    indexOutcomes.push({ user_id: user.user_id, index_ok: result.stage_status?.index?.status === 'success' });
 
     if (result.ok) {
       processed++;
@@ -587,6 +605,10 @@ export async function processDailyRecomputeBatch(
   // VTID-05162 (Health Hub B2): derived health features (shadow table, dark).
   const featuresV2 = await runFeaturesV2Step(tenant_id, users.map((u) => u.user_id), date, !cursor);
 
+  // VTID-05163 (Health Hub B3): the Index dual-compute, the batch's final step
+  // (after every user's stages). Dark; never changes the fields above.
+  const dualCompute = await runDualComputeStep(tenant_id, date, indexOutcomes, !cursor);
+
   console.log(
     `[${VTID}] Batch complete: processed=${processed}, skipped=${skipped}, failed=${failed}, next_cursor=${nextCursor || 'null'}`
   );
@@ -600,7 +622,30 @@ export async function processDailyRecomputeBatch(
     run_ids: runIds,
     errors: errors.length > 0 ? errors : undefined,
     ...(featuresV2 ? { features_v2: featuresV2 } : {}),
+    ...(dualCompute ? { dual_compute: dualCompute } : {}),
   };
+}
+
+/**
+ * VTID-05163: the Vitana Index dual-compute for one batch (plan Change 11).
+ * Dark unless VITANA_INDEX_DUAL_COMPUTE_ENABLED is exactly 'true' and not
+ * staging; never throws; its counts never touch the batch's own result fields.
+ */
+async function runDualComputeStep(
+  tenantId: string,
+  runDate: string,
+  users: Array<{ user_id: string; index_ok: boolean }>,
+  firstBatch: boolean,
+): Promise<DualComputeBatchResult | null> {
+  try {
+    if (!isIndexDualComputeEnabled()) return null;
+    const sb = getSupabase();
+    if (!sb) return null;
+    return await runIndexDualComputeForBatch(defaultDualComputeDeps(sb), { tenant_id: tenantId, run_date: runDate, users, first_batch: firstBatch });
+  } catch (err: any) {
+    console.warn(`[VTID-05163] index dual-compute step failed: ${err?.name ?? 'error'}`);
+    return null;
+  }
 }
 
 /**

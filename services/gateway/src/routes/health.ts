@@ -18,6 +18,8 @@ import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { CicdEventType } from '../types/cicd';
 import * as repo from './health-repository';
+import { isFeatureSqlCutOver } from '../services/health-features/cutover';
+import { deriveFeaturesForRecompute } from '../services/health-features/recompute-features-step';
 import { recordIndexRecompute } from '../services/vitana-index/record-recompute';
 
 const router = Router();
@@ -310,8 +312,12 @@ router.post('/recompute/daily', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    // Step 1: Compute daily features
-    const { data: featuresResult, error: featuresError } = await repo.rpcHealthComputeFeaturesDaily(supabase, date);
+    // Step 1: Compute daily features. VTID-05163 (Health Hub B3): in the
+    // `derived` cutover mode W-sql is skipped and the member-day is derived
+    // from the health store instead (same result shape); otherwise unchanged.
+    const { data: featuresResult, error: featuresError } = isFeatureSqlCutOver()
+      ? await deriveFeaturesForRecompute(supabase, date)
+      : await repo.rpcHealthComputeFeaturesDaily(supabase, date);
 
     if (featuresError) {
       console.error(`[${VTID_C3}] health_compute_features_daily failed:`, featuresError.message);

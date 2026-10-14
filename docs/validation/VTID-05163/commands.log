@@ -1,0 +1,30 @@
+# VTID-05163 — commands run in the worktree /home/user/wt-b3 (branch claude/health-data-integration-plan-dbxyld-b3,
+# stacked on B2 claude/health-data-integration-plan-dbxyld-b2 9e5a3ca3d)
+# No command touched Supabase, Aurora or any shared database. SQL ran only on a throwaway local PostgreSQL 16.
+
+sudo -u postgres initdb -D /tmp/pg05163/data -U postgres -A trust
+sudo -u postgres pg_ctl -D /tmp/pg05163/data -o "-p 55463 -k /tmp/pg05163 -c listen_addresses=''" -w start
+export PGHOST=/tmp/pg05163 PGPORT=55463 PGUSER=postgres
+
+scripts/ci/sql-tests/run-index-dual-compute-test.sh        # -> outputs/sql-index-dual-compute.txt
+scripts/ci/sql-tests/run-health-features-v2-test.sh; scripts/ci/sql-tests/run-health-sources-test.sh; scripts/ci/sql-tests/run-health-store-test.sh; scripts/ci/sql-tests/run-erase-user-data-test.sh   # -> outputs/sql-a1-b1-b2-suites-unchanged.txt
+# drift-guard mutation checks (projection copy edited temporarily, restored, cmp-verified) — each FAILed the guard:
+#   band edge  COUNT(*) >= 11 -> >= 12                 -> "FAIL drift guard [band nutrition rows 11]"
+#   ratio edge v_ratio >= 0.30 -> >= 0.31              -> "FAIL drift guard [balance exactly 0.30]"
+#   mental tag 'match' dropped                         -> "FAIL drift guard [baseline + completions]"
+#   sleep streak tag 'recovery' dropped                -> "FAIL drift guard [streak calendar only]"
+#   f.date >= CURRENT_DATE-7 -> >                      -> "FAIL drift guard [row exactly 7 days old]"
+#   confidence 0.85 -> 0.8                             -> "FAIL drift guard [key wearable_sleep_duration]"
+#   biomarker_glucose routed to v2                     -> "FAIL drift guard [band nutrition rows 3] (… self_from …)"
+# Aurora parity lines (the two VTID-05163 DO blocks) run on a scratch database: no-op without the table; RLS on +
+# service_role INSERT with it.
+
+node --test scripts/ci/check-migration-drift.test.cjs     # -> outputs/node-tests.txt
+(cd services/gateway && npx jest test/health-features test/migrations/vtid-05163-* test/migrations/vtid-05162-* test/migrations/vtid-05161 test/health-store test/vtid-05161-* test/vtid-05025-* test/vtid-05089-* <every suite touching a changed writer / route> test/vtid-04662-service-health-registered-routes.test.ts test/vtid-04968-delegation-guard.test.ts; npm run test:support; npm run test:operator; npm run test:roles)   # -> outputs/jest.txt
+(cd services/gateway && npx jest)                          # -> outputs/jest-full.txt (same 19 failing suites as the B2 base)
+(cd services/gateway && npx tsc --noEmit -p .)             # -> outputs/tsc.txt
+
+python3: sha256(text strictly between the plan markers of plan-sparring.md) = c8d7960d66b813d2d83d955f8a0a2baf84949020476b87b5502b08b2e559f24d (= VTID-05162's record)
+
+node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base origin/main --head HEAD --title "<title>"
+node scripts/ci/validate-pr-locally.cjs --title "<title>" --body-file <draft>

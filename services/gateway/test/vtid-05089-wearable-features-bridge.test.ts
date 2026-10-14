@@ -393,3 +393,37 @@ describe('bridgeWearableDays (VTID-05089)', () => {
     expect(db.client.from).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// VTID-05163 (Health Hub B3): after a cutover the bridge writes the legacy
+// shadow (rollback), never health_features_daily, and recomputes nothing.
+// ---------------------------------------------------------------------------
+
+describe('bridgeWearableDays with a shadow writer (VTID-05163 cutover)', () => {
+  it('same rows and rules into the shadow; health_features_daily untouched; no Index RPC', async () => {
+    const db = createFakeDb({ wearable_daily_metrics: [OURA_DAY] });
+    const shadow: Row[] = [{ tenant_id: T, user_id: U, date: '2026-10-11', feature_key: 'wearable_steps', feature_value: 9, metadata: { source: 'voice_tool' } }];
+    const writer = {
+      insertIgnoringExisting: jest.fn(async (rows: Row[]) => {
+        for (const r of rows) if (!shadow.some((s) => s.date === r.date && s.feature_key === r.feature_key)) shadow.push({ ...r });
+        return { error: null };
+      }),
+      updateBridgeOwned: jest.fn(async (row: Row) => {
+        const s = shadow.find((x) => x.date === row.date && x.feature_key === row.feature_key && x.metadata?.source === 'wearable_bridge');
+        if (s) Object.assign(s, row);
+        return { error: null };
+      }),
+    };
+    const res = await bridgeWearableDays(db.client, { tenantId: T, userId: U, dates: ['2026-10-11'] }, { env: ON, now: NOW, shadow: writer });
+    expect(res).toEqual({ ok: true, features_written: 7, days: 1, index_recomputed: false });
+    expect(db.tables.health_features_daily).toEqual([]);
+    expect(db.writes.filter((w) => w.table === 'health_features_daily')).toEqual([]);
+    expect(db.rpcCalls).toEqual([]);
+    expect(shadow.find((s) => s.feature_key === 'wearable_steps')!.feature_value).toBe(9); // a member's own row is kept
+    expect(shadow).toHaveLength(7);
+    expect((mockEmit.mock.calls[0][0] as any).payload.target).toBe('legacy_shadow');
+    writer.insertIgnoringExisting.mockResolvedValueOnce({ error: { message: 'x' } } as never);
+    expect(await bridgeWearableDays(db.client, { tenantId: T, userId: U, dates: ['2026-10-11'] }, { env: ON, now: NOW, shadow: writer }))
+      .toEqual({ ok: false, error_code: 'insert_shadow_failed' });
+  });
+});

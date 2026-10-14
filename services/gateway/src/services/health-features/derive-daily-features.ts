@@ -26,9 +26,13 @@
  *   - A successful derivation deletes the member-day's pending marker
  *     (health_features_derivation_pending); the nightly catch-up derives every
  *     marker older than 5 minutes first.
- *   - Nothing a member sees reads health_features_daily_v2 (B3 compares it);
- *     B3's cutover publishes into health_features_daily (target 'live'),
- *     which this package does not implement.
+ *   - Nothing a member sees reads health_features_daily_v2 (B3 compares it).
+ *     VTID-05163 (B3): once a cutover mode is on (cutover.ts), target 'live'
+ *     also publishes the mode's keys for dates >= C into health_features_daily
+ *     (metadata.source 'derived_v2', insert-only + update only derived rows,
+ *     stale derived rows deleted) — every derivation path (post-write, the
+ *     S8 hook, the nightly passes) uses derivationTargetFor(env), so in
+ *     `legacy` mode nothing here touches health_features_daily.
  *   - Forced off on staging (shared production database). Never throws.
  */
 
@@ -51,11 +55,13 @@ import {
   HEALTH_FEATURES_VTID,
 } from './feature-spec';
 import { isFeatureDerivationEnabled } from './flags';
+import { cutoverKeys, derivationTargetFor, getHealthFeaturesCutover } from './cutover';
 import {
   featuresErrorCode,
   healthFeaturesRepository,
   type FeatureV2Row,
   type HealthFeaturesRepository,
+  type LiveDerivedRow,
 } from './health-features-repository';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -216,25 +222,36 @@ export type DerivationErrorCode =
   | 'STORE_UNAVAILABLE'
   | 'FEATURES_STORE_PENDING'
   | 'FEATURES_STORE_UNAVAILABLE'
+  | 'CUTOVER_OFF'
   | 'THREW';
 
 export type DeriveAndStoreResult =
-  | { ok: true; dates: number; upserted: number; deleted: number }
+  | { ok: true; dates: number; upserted: number; deleted: number; published?: number; unpublished?: number }
   | { ok: false; code: DerivationErrorCode };
 
-/** `target` is 'v2' in this package; B3 adds 'live' for the cutover. */
+/**
+ * `target` 'v2' (B2): health_features_daily_v2 only. 'live' (VTID-05163, B3
+ * cutover): v2 as well, then the cutover mode's keys for dates >= C are
+ * published into health_features_daily; 'live' with the switch off answers
+ * CUTOVER_OFF and writes nothing.
+ */
 export async function deriveAndStore(
   deps: DerivationDeps,
   identity: HealthStoreIdentity,
   dates: string[],
-  target: 'v2' = 'v2',
+  target: 'v2' | 'live' = 'v2',
 ): Promise<DeriveAndStoreResult> {
   try {
     if (deps.env.VITANA_ENV === 'staging') return { ok: false, code: 'STAGING' };
-    if (!validIdentity(identity) || !Array.isArray(dates) || target !== 'v2') return { ok: false, code: 'INVALID_INPUT' };
+    if (!validIdentity(identity) || !Array.isArray(dates) || (target !== 'v2' && target !== 'live')) return { ok: false, code: 'INVALID_INPUT' };
+    const cutover = getHealthFeaturesCutover(deps.env);
+    if (target === 'live' && (cutover.source === 'legacy' || !cutover.cutover_date)) return { ok: false, code: 'CUTOVER_OFF' };
+    const liveKeys = new Set(target === 'live' ? cutoverKeys(cutover.source) : []);
     let upserted = 0;
     let deleted = 0;
     let total = 0;
+    let published = 0;
+    let unpublished = 0;
     for (const win of windows(dates)) {
       const read = await deps.read(identity, {
         codes: [...FEATURE_SPEC_CODES],
@@ -284,11 +301,58 @@ export async function deriveAndStore(
         deleted += keys.length;
       }
 
+      // VTID-05163 (B3): the cutover publish into health_features_daily.
+      if (target === 'live' && cutover.cutover_date) {
+        const from = cutover.cutover_date;
+        const pubDates = win.filter((d) => d >= from);
+        if (pubDates.length > 0) {
+          const rows: LiveDerivedRow[] = derived
+            .filter((f) => f.date >= from && liveKeys.has(f.feature_key))
+            .map((f) => ({
+              tenant_id: identity.tenant_id,
+              user_id: identity.user_id,
+              date: f.date,
+              feature_key: f.feature_key,
+              feature_value: f.feature_value,
+              feature_unit: f.feature_unit,
+              sample_count: f.sample_count,
+              confidence: f.confidence,
+              metadata: { source: DERIVED_SOURCE, derivation_version: DERIVATION_VERSION, source_kinds: f.source_kinds },
+              updated_at: nowIso,
+            }));
+          if (rows.length > 0) {
+            const ins = await deps.repo.insertLiveIgnoringExisting(rows);
+            if (ins.error) return { ok: false, code: featuresErrorCode(ins.error) };
+            for (const row of rows) {
+              const up = await deps.repo.updateLiveDerivedRow(row);
+              if (up.error) return { ok: false, code: featuresErrorCode(up.error) };
+            }
+            published += rows.length;
+          }
+          const liveExisting = await deps.repo.listLiveDerivedKeys(identity.tenant_id, identity.user_id, pubDates);
+          if (liveExisting.error) return { ok: false, code: featuresErrorCode(liveExisting.error) };
+          const pubKeep = new Set(rows.map((r) => `${r.date}|${r.feature_key}`));
+          const liveStale = new Map<string, string[]>();
+          for (const r of liveExisting.data ?? []) {
+            const date = String(r.date).slice(0, 10);
+            if (date < from || !liveKeys.has(r.feature_key) || pubKeep.has(`${date}|${r.feature_key}`)) continue;
+            liveStale.set(date, [...(liveStale.get(date) ?? []), r.feature_key]);
+          }
+          for (const [date, keys] of liveStale) {
+            const del = await deps.repo.deleteLiveDerived(identity.tenant_id, identity.user_id, date, keys);
+            if (del.error) return { ok: false, code: featuresErrorCode(del.error) };
+            unpublished += keys.length;
+          }
+        }
+      }
+
       const cleared = await deps.repo.deletePending(identity.tenant_id, identity.user_id, win);
       if (cleared.error) safeLog(deps, { event: 'health_features_pending_clear_failed', code: featuresErrorCode(cleared.error) });
       total += win.length;
     }
-    return { ok: true, dates: total, upserted, deleted };
+    return target === 'live'
+      ? { ok: true, dates: total, upserted, deleted, published, unpublished }
+      : { ok: true, dates: total, upserted, deleted };
   } catch {
     return { ok: false, code: 'THREW' };
   }
@@ -325,7 +389,7 @@ export async function rederiveMemberFeatures(
       dates = (listed.data ?? []).map((r) => String(r.date).slice(0, 10));
       if (dates.length === 0) return { ok: true, dates: 0, upserted: 0, deleted: 0 };
     }
-    const res = await deriveAndStore(deps, identity, dates);
+    const res = await deriveAndStore(deps, identity, dates, derivationTargetFor(deps.env));
     safeLog(deps, res.ok
       ? { event: 'health_features_rederived', dates: res.dates, upserted: res.upserted, deleted: res.deleted }
       : { event: 'health_features_rederive_failed', code: res.code });
@@ -407,7 +471,7 @@ export async function runFeatureDerivationCatchUp(
     }
     result.members = byMember.size;
     for (const g of byMember.values()) {
-      const res = await deriveAndStore(deps, g.identity, g.markers.map((m) => String(m.date).slice(0, 10)));
+      const res = await deriveAndStore(deps, g.identity, g.markers.map((m) => String(m.date).slice(0, 10)), derivationTargetFor(deps.env));
       if (res.ok) {
         result.derived_members++;
       } else {
@@ -454,7 +518,7 @@ export async function runNightlyFeatureDerivation(
         result.skipped_budget++;
         continue;
       }
-      const res = await deriveAndStore(deps, { tenant_id: input.tenant_id, user_id: userId }, dates);
+      const res = await deriveAndStore(deps, { tenant_id: input.tenant_id, user_id: userId }, dates, derivationTargetFor(deps.env));
       if (res.ok) result.derived++;
       else result.failed++;
     }
