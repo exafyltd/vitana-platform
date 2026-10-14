@@ -1371,3 +1371,5 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_version ON public.workflow_version
 -- VTID-05167 (Life Timeline P1)
 CREATE INDEX IF NOT EXISTS idx_ual_user_tier_created ON public.user_activity_log USING btree (user_id, tier, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ual_user_pillar_created ON public.user_activity_log USING btree (user_id, pillar, created_at DESC) WHERE (pillar IS NOT NULL);
+-- VTID-05168 (Life Timeline P2)
+DO $IDEMPOTENT$ BEGIN IF to_regclass('public.vitana_index_movements') IS NOT NULL THEN CREATE INDEX IF NOT EXISTS idx_vim_user_at ON public.vitana_index_movements USING btree (user_id, at DESC); CREATE INDEX IF NOT EXISTS idx_vim_user_source ON public.vitana_index_movements USING btree (user_id, source_kind, source_ref) WHERE (source_ref IS NOT NULL); END IF; END $IDEMPOTENT$;

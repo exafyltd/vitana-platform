@@ -14,6 +14,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { recordIndexRecompute } from '../services/vitana-index/record-recompute';
 
 export async function fetchVitanaIndexScoresForUserDate(sb: SupabaseClient, userId: string, date: string) {
   return sb
@@ -24,9 +25,27 @@ export async function fetchVitanaIndexScoresForUserDate(sb: SupabaseClient, user
     .maybeSingle();
 }
 
-export async function healthComputeVitanaIndexForUserRpc(
-  sb: SupabaseClient,
-  args: { p_user_id: string; p_date: string; p_model_version: string },
-) {
-  return sb.rpc('health_compute_vitana_index_for_user', args);
+/** VTID-05168: locked + recorded recompute for a calendar completion. */
+export async function recordCalendarIndexRecompute(sb: SupabaseClient, userId: string, date: string, eventId: string | null) {
+  return recordIndexRecompute(sb, {
+    userId,
+    date,
+    trigger: 'calendar_completion',
+    sourceKind: eventId ? 'calendar_event' : null,
+    sourceRef: eventId,
+  });
+}
+
+/** VTID-05168: the movement recorded for one source (null before the migration is applied). */
+export async function fetchIndexMovementForSource(sb: SupabaseClient, userId: string, sourceKind: string, sourceRef: string) {
+  const res = await sb
+    .from('vitana_index_movements')
+    .select('delta_total, delta_pillars, before, after, at')
+    .eq('user_id', userId)
+    .eq('source_kind', sourceKind)
+    .eq('source_ref', sourceRef)
+    .order('at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return { data: res?.error ? null : (res?.data ?? null) };
 }

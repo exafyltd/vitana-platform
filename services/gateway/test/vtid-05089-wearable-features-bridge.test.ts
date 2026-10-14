@@ -260,7 +260,11 @@ describe('bridgeWearableDays (VTID-05089)', () => {
       metadata: { source: 'wearable_bridge', provider: 'oura', metric_date: '2026-10-11' },
       updated_at: NOW.toISOString(),
     });
-    expect(db.rpcCalls).toEqual([{ name: 'health_compute_vitana_index_for_user', params: { p_user_id: U, p_date: '2026-10-12' } }]);
+    // VTID-05168: the recompute goes through the locked + recorded writer, tagged as a wearable sync.
+    expect(db.rpcCalls).toEqual([{
+      name: 'vitana_index_recompute_and_record',
+      params: { p_user_id: U, p_date: '2026-10-12', p_trigger: 'wearable_sync', p_source_kind: 'wearable_bridge', p_source_ref: 'oura', p_model_version: 'v3-5pillar' },
+    }]);
   });
 
   it('only reads this member in this tenant (another member / tenant is never bridged)', async () => {
