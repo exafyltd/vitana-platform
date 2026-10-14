@@ -1,0 +1,27 @@
+{
+  "vtid": "VTID-05177",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/routes/app-config.ts",
+    "services/gateway/src/services/app-config/**",
+    "services/gateway/src/services/push-routing.ts",
+    "services/gateway/src/services/native-push-flags.ts",
+    "services/gateway/src/services/notification-service.ts",
+    "services/gateway/src/services/notification-service-repository.ts",
+    "services/gateway/src/services/reminders-dispatch.ts",
+    "services/gateway/src/routes/scheduled-notifications.ts",
+    "services/gateway/src/routes/notifications.ts",
+    "services/gateway/src/routes/notifications-repository.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/orb/developer/domain-atlas.ts",
+    "services/gateway/test/services/native-push-harness.vtid-05177.ts",
+    "services/gateway/test/services/native-push-golden.vtid-05177.test.ts",
+    "services/gateway/test/services/native-push-routing.vtid-05177.test.ts",
+    "services/gateway/test/services/__golden__/vtid-05177-push-switch-off.json",
+    "services/gateway/test/routes/notifications-token.vtid-05177.test.ts",
+    "services/gateway/test/app-config.test.ts",
+    "services/gateway/test/vtid-04674-notification-controls-wiring.test.ts",
+    "services/gateway/test/vtid-04883-community-ranking.test.ts",
+    "docs/validation/VTID-05177/**"
+  ]
+}

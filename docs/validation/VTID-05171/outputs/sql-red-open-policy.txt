@@ -1,0 +1,1 @@
+(mutation: policy USING (true)) -> psql: ERROR:  FAIL: member sees 2 pref rows, expected only their own

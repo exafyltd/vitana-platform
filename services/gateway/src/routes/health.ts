@@ -18,6 +18,7 @@ import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { CicdEventType } from '../types/cicd';
 import * as repo from './health-repository';
+import { recordIndexRecompute } from '../services/vitana-index/record-recompute';
 
 const router = Router();
 
@@ -671,17 +672,11 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
       return res.status(400).json({ ok: false, error: 'SURVEY_WRITE_FAILED', detail: surveyErr.message });
     }
 
-    // Baseline survey → baseline_survey sub-score only (max 40 per pillar).
-    // Curve: 1→10, 2→20, 3→25, 4→32, 5→40. Rating 5 is NOT 200; the Index
-    // grows through action completions, connected data, and streaks.
-    const curve = { 1: 10, 2: 20, 3: 25, 4: 32, 5: 40 } as const;
-    const scoreNutrition = curve[ratings.nutrition as 1|2|3|4|5];
-    const scoreHydration = curve[ratings.hydration as 1|2|3|4|5];
-    const scoreExercise  = curve[ratings.exercise as 1|2|3|4|5];
-    const scoreSleep     = curve[ratings.sleep as 1|2|3|4|5];
-    const scoreMental    = curve[ratings.mental as 1|2|3|4|5];
-
-    // Read 5-pillar weights from active config (default 1.0 each).
+    // VTID-05168 (sparring F15): the starting Index comes from the canonical
+    // compute — which already scores the baseline from the survey just saved —
+    // through the single locked + recorded writer. No gateway code writes
+    // vitana_index_scores directly any more (CI guard:
+    // test/vtid-05168-index-movements.test.ts).
     let weights = { nutrition: 1, hydration: 1, exercise: 1, sleep: 1, mental: 1 };
     try {
       const { data: cfg } = await repo.fetchActivePillarWeightsConfig(admin);
@@ -697,35 +692,27 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
       }
     } catch { /* keep defaults */ }
 
-    const scoreTotal = Math.min(999, Math.max(0, Math.round(
-        scoreNutrition * weights.nutrition
-      + scoreHydration * weights.hydration
-      + scoreExercise  * weights.exercise
-      + scoreSleep     * weights.sleep
-      + scoreMental    * weights.mental
-    )));
+    const { data: idx, error: scoreErr } = await recordIndexRecompute(admin, {
+      userId,
+      date: today,
+      trigger: 'baseline_survey',
+      sourceKind: 'baseline_survey',
+    });
+    if (scoreErr || !idx || idx.ok === false) {
+      const detail = scoreErr?.message ?? (idx?.error as string | undefined) ?? 'no result';
+      console.error(`[${VTID_C3}] baseline score compute failed:`, detail);
+      return res.status(400).json({ ok: false, error: 'SCORE_WRITE_FAILED', detail });
+    }
 
     const effectiveTenantId = tenantId ?? '00000000-0000-0000-0000-000000000000';
-
-    const { error: scoreErr } = await repo.upsertVitanaIndexScore(admin, {
-      tenant_id: effectiveTenantId,
-      user_id: userId,
-      date: today,
-      score_total: scoreTotal,
-      score_nutrition: scoreNutrition,
-      score_hydration: scoreHydration,
-      score_exercise: scoreExercise,
-      score_sleep: scoreSleep,
-      score_mental: scoreMental,
-      model_version: 'baseline-survey-v3-5pillar',
-      feature_inputs: { source: 'baseline_survey', ratings },
-      confidence: 0.5,
-    });
-
-    if (scoreErr) {
-      console.error(`[${VTID_C3}] baseline score write failed:`, scoreErr.message);
-      return res.status(400).json({ ok: false, error: 'SCORE_WRITE_FAILED', detail: scoreErr.message });
-    }
+    const pillars = {
+      nutrition: Number(idx.score_nutrition ?? 0),
+      hydration: Number(idx.score_hydration ?? 0),
+      exercise: Number(idx.score_exercise ?? 0),
+      sleep: Number(idx.score_sleep ?? 0),
+      mental: Number(idx.score_mental ?? 0),
+    };
+    const scoreTotal = Number(idx.score_total ?? 0);
 
     await emitHealthComputeEvent(
       'health.compute.baseline_survey',
@@ -735,13 +722,7 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
         user_id: userId,
         tenant_id: effectiveTenantId,
         score_total: scoreTotal,
-        pillars: {
-          nutrition: scoreNutrition,
-          hydration: scoreHydration,
-          exercise: scoreExercise,
-          sleep: scoreSleep,
-          mental: scoreMental,
-        },
+        pillars,
         answers,
       }
     );
@@ -753,14 +734,14 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
         ok: true,
         date: today,
         score_total: scoreTotal,
-        score_nutrition: scoreNutrition,
-        score_hydration: scoreHydration,
-        score_exercise: scoreExercise,
-        score_sleep: scoreSleep,
-        score_mental: scoreMental,
+        score_nutrition: pillars.nutrition,
+        score_hydration: pillars.hydration,
+        score_exercise: pillars.exercise,
+        score_sleep: pillars.sleep,
+        score_mental: pillars.mental,
         pillar_weights: weights,
-        model_version: 'baseline-survey-v3-5pillar',
-        confidence: 0.5,
+        model_version: (idx.model_version as string | undefined) ?? 'v3-5pillar',
+        confidence: Number(idx.confidence ?? 0.5),
       },
     });
   } catch (err: any) {

@@ -1,0 +1,43 @@
+name: SQL-COMPANION-WIRING
+run-name: 'companion wiring against a throwaway Postgres [VTID: VTID-05171] (${{ github.ref_name }})'
+
+# VTID-05171 — runs the Life Timeline P5 migration (four routine kinds,
+# timeline_learning_prefs defaults, category list, owner-only RLS,
+# anon privileges, idempotency) against a disposable Postgres container.
+# Never runs against Supabase or Aurora.
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/*companion_wiring*.sql'
+      - 'scripts/ci/sql-tests/**'
+      - '.github/workflows/SQL-COMPANION-WIRING.yml'
+  workflow_dispatch:
+
+jobs:
+  sql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the companion wiring test
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -o pipefail
+          scripts/ci/sql-tests/run-companion-wiring-test.sh 2>&1 | tee /tmp/companion-wiring.log
+      - name: Assert the test ran to the end
+        run: grep -q '^PASS vtid-05171 companion wiring' /tmp/companion-wiring.log

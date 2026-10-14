@@ -1,0 +1,2 @@
+throwaway Postgres: stand-ins → pre-apply-capture.sql → migration → rollback.sql (with pre-apply-definitions.sql)
+roundtrip rc=0; core gone=t; recording fn gone=t; restored health_compute_vitana_index_for_user scores 200; overload body restored=t
