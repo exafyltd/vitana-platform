@@ -320,6 +320,10 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
       signature_valid: true,
       processed: true,
       payload: parsedPayload as object,
+      // VTID-05174: erase_user_data() reaches this row directly. Only here,
+      // after signature verification; the failure sites above stay NULL
+      // (their payload is unauthenticated).
+      user_id: singleBatchMember(result.events),
     });
   }
 
@@ -329,5 +333,18 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
   }
   res.json({ ok: true, processed: persisted, skipped });
 });
+
+/**
+ * VTID-05174: the member a verified batch belongs to — set only when every
+ * normalized event resolved to the same non-null member; an empty, mixed or
+ * partly unresolved batch gives null (the erasure endpoint's payload match
+ * still covers those rows).
+ */
+export function singleBatchMember(events: Array<{ user_id?: string | null }>): string | null {
+  if (events.length === 0) return null;
+  const first = events[0].user_id ?? null;
+  if (!first) return null;
+  return events.every((e) => (e.user_id ?? null) === first) ? first : null;
+}
 
 export default router;

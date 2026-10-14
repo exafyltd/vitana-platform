@@ -300,7 +300,8 @@ describe('VTID-04883 wiring', () => {
     after('src/services/assistant-continuation/providers/next-action/composer.ts', 'const ranked = rank(results);', /void shadowNextAction\([\s\S]+?\)\.catch\(\(\) => undefined\);/);
     after('src/services/intent-find-match.ts', 'exact-name short-circuit non-fatal', /if \(!exactPersonMatch\) \{\s+void shadowMatchRerank\([\s\S]+?\)\.catch\(\(\) => undefined\);/);
     after('src/services/recommendation-engine/recommendation-generator.ts', 'recommendations = rankedOrder', /void shadowSuggestionPick\([\s\S]+?\)\.catch\(\(\) => undefined\);/);
-    after('src/services/notification-service.ts', 'sendPushToUser(userId, tenantId, payload, supabase, { outcome: fcmTally })', /void shadowNotificationWorth\([\s\S]+?\)\.catch\(\(\) => undefined\);\s+return \{ pushed, inapp: inappWritten \};/);
+    // VTID-05177: notifyUser's push now goes through dispatchPush() (push-routing.ts).
+    after('src/services/notification-service.ts', 'const dispatched = await dispatchPush({', /void shadowNotificationWorth\([\s\S]+?\)\.catch\(\(\) => undefined\);\s+return \{ pushed, inapp: inappWritten \};/);
     after('src/routes/discover-feed.ts', 'const ranked = rankFeedProducts(', /void shadowFeedPick\([\s\S]+?\)\.catch\(\(\) => undefined\);/);
     const ranker = src('src/services/voice-tools/community-member-ranker.ts');
     expect(ranker).toMatch(/void shadowMemberTiebreak\([\s\S]+?\)\.catch\(\(\) => undefined\);/);

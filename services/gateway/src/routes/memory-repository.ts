@@ -16,6 +16,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { recordIndexRecompute, type IndexRecomputeTrigger } from '../services/vitana-index/record-recompute';
 
 export async function writeMemoryItemRpc(
   sb: SupabaseClient,
@@ -56,8 +57,20 @@ export async function addMemoryDiaryEntryRpc(
 }
 
 /** Shared by both the diary-write hook and the diary-read reconcile path. */
-export async function recomputeVitanaIndexForUser(sb: SupabaseClient, userId: string, date: unknown) {
-  return sb.rpc('health_compute_vitana_index_for_user', { p_user_id: userId, p_date: date });
+/** VTID-05168: locked + recorded recompute (see services/vitana-index/record-recompute.ts). */
+export async function recomputeVitanaIndexForUser(
+  sb: SupabaseClient,
+  userId: string,
+  date: unknown,
+  source: { trigger?: IndexRecomputeTrigger; sourceKind?: string | null; sourceRef?: string | null } = {},
+) {
+  return recordIndexRecompute(sb, {
+    userId,
+    date: String(date),
+    trigger: source.trigger ?? 'diary',
+    sourceKind: source.sourceKind ?? null,
+    sourceRef: source.sourceRef ?? null,
+  });
 }
 
 export async function fetchUserTenantId(sb: SupabaseClient, userId: string) {

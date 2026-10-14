@@ -16,6 +16,7 @@
 import * as admin from 'firebase-admin';
 import { SupabaseClient } from '@supabase/supabase-js';
 import * as repo from './notification-service-repository';
+import { dispatchPush } from './push-routing';
 import {
   isNotificationTypeAllowed,
   isMemberCategoryAllowed,
@@ -317,8 +318,13 @@ export async function recordPushOutcome(
  */
 export async function sendPushNotification(
   deviceToken: string,
-  payload: NotificationPayload
+  payload: NotificationPayload,
+  opts?: { badge?: number },
 ): Promise<FcmSendResult> {
+  // VTID-05177: an APNs badge is set only for an ios_native token on the
+  // notifyUser native pass (NATIVE_PUSH_DIRECT_ENABLED). Without `badge` the
+  // message is exactly today's.
+  const badge = opts?.badge;
   try {
     await fcm.send({
       token: deviceToken,
@@ -334,6 +340,14 @@ export async function sendPushNotification(
         ? {
             android: { notification: { tag: payload.tag } },
             apns: { headers: { 'apns-collapse-id': payload.tag.slice(0, 64) } },
+          }
+        : {}),
+      ...(badge !== undefined
+        ? {
+            apns: {
+              ...(payload.tag ? { headers: { 'apns-collapse-id': payload.tag.slice(0, 64) } } : {}),
+              payload: { aps: { badge } },
+            },
           }
         : {}),
       webpush: {
@@ -368,16 +382,40 @@ export async function sendPushToUser(
   tenantId: string,
   payload: NotificationPayload,
   supabase: SupabaseClient<any, any, any>,
-  opts?: { excludeAppilixTagged?: boolean; outcome?: PushFanoutOutcome }
+  opts?: {
+    excludeAppilixTagged?: boolean;
+    outcome?: PushFanoutOutcome;
+    /**
+     * VTID-05177 — set only by dispatchPush() while NATIVE_PUSH_DIRECT_ENABLED
+     * is on. 'native' = device_type ios_native/android_native; 'legacy' =
+     * every other token (web push, Appilix). Unset = today's query and token
+     * set, unchanged.
+     */
+    tokenClass?: PushTokenClass;
+    /**
+     * VTID-05177 — badge source for ios_native targets. Called at most once
+     * per call, and only when an ios_native token is among the targets; a
+     * null result (count failed) leaves the badge out.
+     */
+    iosBadge?: () => Promise<number | null>;
+  }
 ): Promise<number> {
   // Only devices this user still OWNS (VTID-03481). A revoked row means the
   // device was taken over by another account, or the user signed out on it —
   // pushing there would buzz a phone that now belongs to someone else, which
   // is how one device ended up receiving the same post notification once per
   // account that had ever signed in on it.
-  const { data: tokens } = await repo.fetchLiveDeviceTokensForUser(supabase, userId, tenantId);
+  const tokenClass = opts?.tokenClass;
+  const { data: rawTokens } = tokenClass
+    ? await repo.fetchLiveDeviceTokensForUser(supabase, userId, tenantId, { withDeviceType: true })
+    : await repo.fetchLiveDeviceTokensForUser(supabase, userId, tenantId);
+  const allTokens = rawTokens as LiveDeviceToken[] | null;
 
-  if (!tokens?.length) return 0;
+  if (!allTokens?.length) return 0;
+
+  const tokens = tokenClass
+    ? allTokens.filter((t) => isNativeDeviceType(t.device_type) === (tokenClass === 'native'))
+    : allTokens;
 
   // Tokens registered from inside the Appilix WebView (tagged "Appilix " by
   // registerAppilixDevice()) can only be tapped safely via an Appilix-native
@@ -395,9 +433,17 @@ export async function sendPushToUser(
   // VTID-04962: only an accepted send counts. Compare against the result
   // strings explicitly — every FcmSendResult is a truthy string.
   const tally = opts?.outcome ?? newPushFanoutOutcome();
+  let badge: number | undefined;
+  if (opts?.iosBadge && targets.some((t) => t.device_type === 'ios_native')) {
+    const count = await opts.iosBadge().catch(() => null);
+    badge = typeof count === 'number' ? count : undefined;
+  }
   let sent = 0;
-  for (const { fcm_token } of targets) {
-    const result = await sendPushNotification(fcm_token, payload);
+  for (const { fcm_token, device_type } of targets) {
+    const result =
+      badge !== undefined && device_type === 'ios_native'
+        ? await sendPushNotification(fcm_token, payload, { badge })
+        : await sendPushNotification(fcm_token, payload);
     if (result === 'sent') {
       sent++;
       tally.sent++;
@@ -625,6 +671,25 @@ export async function sendAppilixPush(
     credentialSets.map((c) => sendAppilixPushWithCredentials(userId, payload, c.platform, c.appKey, c.apiKey))
   );
   return results.some((sent) => sent === true);
+}
+
+// ── Native token classes (VTID-05177) ─────────────────────────
+// Routing itself lives in ./push-routing.ts (dispatchPush). Kept here: the
+// token-class vocabulary sendPushToUser filters on.
+
+export type PushTokenClass = 'native' | 'legacy';
+
+export const NATIVE_DEVICE_TYPES = ['ios_native', 'android_native'] as const;
+export type NativeDeviceType = (typeof NATIVE_DEVICE_TYPES)[number];
+
+interface LiveDeviceToken {
+  fcm_token: string;
+  device_label: string | null;
+  device_type?: string | null;
+}
+
+export function isNativeDeviceType(v: unknown): v is NativeDeviceType {
+  return v === 'ios_native' || v === 'android_native';
 }
 
 // ── Dynamic Category Preference Check ────────────────────────
@@ -872,33 +937,33 @@ export async function notifyUser(
     // of every notification.
     // VTID-03507 widens this: signed out EVERYWHERE, or still signed in
     // elsewhere but no longer the owner of the phone Appilix would reach.
-    const appilixSuppressed =
-      (await isSignedOutOnAllKnownDevices(userId, supabase)) ||
-      (await hasLostDeviceToAnotherAccount(userId, supabase));
-
-    if (payload.data?.url) {
-      // Notifications with deep-link URLs must go through Appilix first.
-      // Appilix honors open_link_url on tap; FCM-delivered notifications
-      // crash the Appilix WebView ("Something went wrong") because FCM
-      // doesn't pass the URL to Appilix's native tap handler.
-      appilixSent = appilixSuppressed ? false : await sendAppilixPush(userId, payload);
-      if (!appilixSent) {
-        // Appilix reported no device for this user (e.g. its client-side
-        // identity registration never took) — do NOT retry via raw FCM on
-        // an Appilix-tagged token, since that's the exact delivery path
-        // that crashes the WebView on tap. Only non-Appilix tokens (real
-        // browser web-push) are safe to fall back to here.
-        pushed = await sendPushToUser(userId, tenantId, payload, supabase, {
-          excludeAppilixTagged: true,
-          outcome: fcmTally,
-        });
-      }
-    } else {
-      pushed = await sendPushToUser(userId, tenantId, payload, supabase, { outcome: fcmTally });
-      if (pushed === 0 && !appilixSuppressed) {
-        appilixSent = await sendAppilixPush(userId, payload);
-      }
-    }
+    //
+    // Deep-link pushes go Appilix-first: Appilix honors open_link_url on tap,
+    // while an FCM-delivered notification crashes the Appilix WebView
+    // ("Something went wrong") because FCM doesn't pass the URL to Appilix's
+    // native tap handler. If Appilix reports no device, the FCM fallback
+    // skips Appilix-tagged tokens — the exact delivery path that crashes the
+    // WebView — so only real browser web-push tokens are tried. Without a
+    // URL: FCM first, Appilix only if FCM reached zero tokens.
+    //
+    // VTID-05177: the routing lives in dispatchPush(); with the native
+    // switches unset it makes exactly the calls this block made before.
+    const dispatched = await dispatchPush({
+      userId,
+      tenantId,
+      payload,
+      supabase,
+      policy: {
+        kind: 'deep_link_split',
+        hasDeepLink: !!payload.data?.url,
+        suppression: 'signed_out_or_lost_device',
+        excludeAppilixTaggedOnFallback: true,
+      },
+      outcome: fcmTally,
+      iosBadge: true,
+    });
+    pushed = dispatched.sent;
+    appilixSent = dispatched.appilixSent;
   }
 
   // VTID-04962: record what actually happened on the row this call wrote.

@@ -1229,6 +1229,71 @@ Multi-tenant M0, lane A. Apply order and status: `docs/multitenancy/MIGRATION-QU
   `user_tenants` (deterministic primary) and `tenants (tenant_id, slug,
   is_default, is_platform)` (60 s cache).
 
+### user_activity_log tiers + activity_catalog — Life Timeline P1 — committed, NOT yet applied (VTID-05167)
+
+Migration `20261014130000_vtid_05167_activity_tiers.sql`, applied via `RUN-MIGRATION.yml` after Gate 2.
+
+- `user_activity_log` (and `user_activity_log_archive`, which also gains the `source` and
+  `actor_vitana_id` columns it never had) gets `tier` (`spotlight|moment|digest|silent|system`,
+  NULL = not yet classified → read as `silent`), `category`, `topic`, `pillar` /
+  `secondary_pillar` (`nutrition|hydration|exercise|sleep|mental`), `hidden_from_ai boolean
+  default false`, `hidden_at`. The archive's old 13-value `chk_activity_type` is replaced by
+  the main table's regex.
+- `activity_catalog (activity_type PK, match exact|prefix, tier, category, topic, pillar,
+  secondary_pillar, icon, sensitivity, summary_key, params text[])`: reference data, SELECT for
+  `authenticated` only. Seeded from `services/gateway/src/services/timeline/timeline-catalog.json`
+  (generated block; Jest parity test `vtid-05167-timeline-catalog.test.ts`).
+- `activity_catalog_lookup(text)`: exact, else longest prefix, else NULL.
+- Trigger `trg_classify_activity` (BEFORE INSERT): fills only NULL classification fields.
+- `backfill_activity_tiers(int)` (SECURITY DEFINER, service_role): newest-first batches, UPDATE
+  only; pg_cron `activity-tiers-backfill` every minute, unschedules itself when done.
+- `archive_old_activity_logs()` (SECURITY DEFINER, service_role; PUBLIC/anon/authenticated
+  revoked): explicit columns; moves only `silent`/`system` rows older than 180 days. pg_cron
+  `activity-log-archive-daily` 03:35 UTC. Spotlight/moment/digest rows stay until the member
+  deletes them.
+- Indexes `idx_ual_user_tier_created (user_id, tier, created_at desc)`,
+  `idx_ual_user_pillar_created (user_id, pillar, created_at desc) where pillar is not null`.
+- Gateway: `services/timeline/catalog.ts`; `timeline-projector.ts` never writes `system` types
+  (internal ORB telemetry stays in `oasis_events`).
+
+### vitana_index_movements + the single locked Index writer — Life Timeline P2 — committed, NOT yet applied (VTID-05168)
+
+Migration `20261014140000_vtid_05168_index_movements.sql`, applied via `RUN-MIGRATION.yml` after Gate 2
+(capture `docs/validation/VTID-05168/pre-apply-capture.sql` first; rollback `rollback.sql` replays it).
+
+- `vitana_index_movements (id, tenant_id, user_id, at, score_date, trigger, source_kind, source_ref,
+  before jsonb, after jsonb, delta_total, delta_pillars jsonb, balance_before, balance_after)`: one row per
+  recompute that changed a score. Owner-read RLS (`authenticated`, `auth.uid() = user_id`); no member writes.
+  Indexes `(user_id, at desc)`, `(user_id, source_kind, source_ref) where source_ref is not null`.
+- `health_compute_vitana_index_for_user` body **renamed** to `health_compute_vitana_index_core` (unchanged
+  formula; EXECUTE service_role only, `migrate` revoked).
+- `vitana_index_recompute_and_record(user, date, trigger, source_kind, source_ref, model_version)` (SECURITY
+  DEFINER, service_role only): per-member `pg_advisory_xact_lock` → before (today's row, else the latest
+  earlier one) → core → after → movement only when a score changed. Returns the core result plus
+  `movement_id`, `delta_total`, `per_pillar_delta`, `prior_score_total`.
+- Every writer goes through it: `health_compute_vitana_index_for_user` (old name, wrapper, trigger
+  `unspecified`), `scheduler_vitana_index_compute_daily` (`daily`), `vitana_trg_calendar_completion_recompute`
+  (`calendar_completion` + event id), the member overloads `health_compute_vitana_index(date,text)` and
+  `(date)` (`self_heal`; grants unchanged; now the canonical formula — owner decision D4). The one-argument
+  overload is ambiguous with `(date, text DEFAULT …)` and cannot be called with one argument (true before
+  this change too).
+- Gateway: `services/vitana-index/record-recompute.ts` (falls back to the old RPC only while the recording
+  function does not exist); no gateway code writes `vitana_index_scores` (CI guard
+  `test/vtid-05168-index-movements.test.ts`).
+
+### timeline_learning_prefs + four routine kinds — Life Timeline P5 — committed, NOT yet applied (VTID-05171)
+
+Migration `20261014150000_vtid_05171_companion_wiring.sql`, applied via `RUN-MIGRATION.yml` after Gate 2.
+
+- `user_routines.routine_kind` also accepts `screen_habit`, `active_hours`, `feature_affinity`,
+  `pillar_rhythm` — written only by the Timeline Habit Rollup (AP-0916,
+  `services/timeline/habit-rollup.ts`). The five VTID-01936 kinds are unchanged.
+- `timeline_learning_prefs (user_id, category, learn default true, updated_at)`, PK `(user_id, category)`,
+  category ∈ the timeline catalog categories minus `index`/`system`, plus `app_usage`. Missing row = on.
+  Owner-only RLS (`authenticated`, `auth.uid() = user_id`, all commands); anon revoked. Written through
+  `PUT /api/v1/timeline/learning-prefs`; read by the profiler (query filter) and the rollup. `app_usage`
+  off deletes the app-usage routines.
+
 ### supabase_migrations.schema_migrations — audit trail, not the authority (VTID-05123)
 
 Since VTID-05123, RUN-MIGRATION writes one row per applied repo file under `supabase/migrations/` (`idempotency_key` = filename, `version`/`name` = its digit prefix and rest, `created_by` = `github-actions:RUN-MIGRATION:<run_id>`) in the same request as the migration; older rows carry MCP/dashboard apply-time versions and most repo files have no row, so "no row" never means "not applied" — MIGRATION-DRIFT-CHECK (VTID-03486) is the authority.
@@ -1525,6 +1590,9 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-10-14 | VTID-05168 (Life Timeline P2), **committed, NOT applied — applied via `RUN-MIGRATION.yml` after Gate 2** (migration `20261014140000_vtid_05168_index_movements.sql`; capture `docs/validation/VTID-05168/pre-apply-capture.sql` first): `vitana_index_movements`; canonical compute renamed `health_compute_vitana_index_core`; `vitana_index_recompute_and_record()` (advisory-locked, service_role) is the only writer of `vitana_index_scores` — old-name wrapper, nightly scheduler, calendar trigger and both member overloads route through it. See the section "vitana_index_movements + the single locked Index writer". CI: `SQL-INDEX-MOVEMENTS.yml` (throwaway Postgres + two-connection concurrency). | Claude Code | VTID-05168 |
+| 2026-10-14 | VTID-05171 (Life Timeline P5), **committed, NOT applied — applied via `RUN-MIGRATION.yml` after Gate 2** (migration `20261014150000_vtid_05171_companion_wiring.sql`): `user_routines` kind check + `screen_habit`/`active_hours`/`feature_affinity`/`pillar_rhythm`; new `timeline_learning_prefs` (owner-only RLS, missing row = on). See the section "timeline_learning_prefs + four routine kinds". | Claude Code | VTID-05171 |
+| 2026-10-14 | VTID-05167 (Life Timeline P1), **committed, NOT applied — applied via `RUN-MIGRATION.yml` after Gate 2** (migration `20261014130000_vtid_05167_activity_tiers.sql`, additive + idempotent): `user_activity_log`/archive classification columns, `activity_catalog` + lookup, `classify_activity` trigger, newest-first pg_cron backfill (no deletes), tier-aware `archive_old_activity_logs()` (EXECUTE revoked from PUBLIC/anon/authenticated) scheduled daily, two timeline indexes. See the section "user_activity_log tiers + activity_catalog". CI: `SQL-ACTIVITY-TIERS.yml` (throwaway Postgres). | Claude Code | VTID-05167 |
 | 2026-10-13 | VTID-05163 (Health Hub Phase 1 / B3), **committed, NOT applied** — `20261014100800_vtid_05163_index_dual_compute.sql` — **APPLY TARGET: Aurora only (0T; production after the cutover). Never Supabase** (it reads `health_features_daily_v2`). Same placement guard as VTID-05158/05161/05162, plus a precondition that `health_features_daily_v2` exists; MIGRATION-DRIFT-CHECK lists `vitana_index_dual_compute` in `aurora_only_tables`. Creates the read-only Index projection `vitana_index_project_for_user(uuid, date, date)`, `vitana_pillar_streak_days_projected(uuid, text, date, date)` and `vitana_index_projected_feature_rows(uuid, date, date)` (all STABLE SECURITY DEFINER, EXECUTE for `service_role` only; a copy of the live Index arithmetic over one row set built from `health_features_daily` and `health_features_daily_v2` per key class) and the table `vitana_index_dual_compute` (one row per member, run date and scope; service-role only; no FK to `auth.users`, no `erasure_registry` entry — `erase_user_data()` finds it). The live Index functions, `vitana_index_scores`, the calendar trigger and every reader are unchanged. Also committed, **never applied by a deploy**: the rollback data fix-up `data-fixups/20261014100900_vtid_05163_rollback_health_features.sql` (owner-run only, one transaction, post-condition guard). OASIS `health.index.dual_compute.report`. See the section "Health Hub Vitana Index dual-compute" below. Tests: `scripts/ci/sql-tests/run-index-dual-compute-test.sh` (CI `SQL-INDEX-DUAL-COMPUTE.yml`; the functional drift guard). | Claude Code | VTID-05163 |
 | 2026-10-13 | VTID-05162 (Health Hub Phase 1 / B2), **committed, NOT applied** — `20261014100700_vtid_05162_health_features_v2.sql` — **APPLY TARGET: Aurora only (0T; production after the cutover). Never Supabase.** Same placement guard as VTID-05158/05161; MIGRATION-DRIFT-CHECK lists the three tables in `aurora_only_tables`. Creates `health_features_daily_v2` (health_features_daily derived from the health store: same columns and unique key, plus `derivation_version`, `source_kinds`), `health_features_daily_legacy_shadow` (same columns as health_features_daily; empty until B3's cutover) and `health_features_derivation_pending` (one marker per member-day, unique `(tenant_id, user_id, date)`). All three service-role only (RLS on, no policy, nothing for `anon`/`authenticated`), no FK to `auth.users`, no `erasure_registry` entry: `erase_user_data()` finds them by its catalogue scan. OASIS `health.features.dual_write_failed`, `health.features.derivation_catch_up`. See the section "Health Hub derived features" below. Tests: `scripts/ci/sql-tests/run-health-features-v2-test.sh` (CI `SQL-HEALTH-FEATURES-V2.yml`). | Claude Code | VTID-05162 |
 | 2026-10-13 | VTID-05161 (Health Hub Phase 1 / B1), **committed, NOT applied** — two migrations. (1) `20261014100200_vtid_05161_health_sources.sql` — **APPLY TARGET: Aurora only (0T; production after the cutover). Never Supabase.** Same placement guard as VTID-05158; MIGRATION-DRIFT-CHECK lists `health_sources` in `aurora_only_tables`. Creates `health_sources` (one connection model, S6), backfills it from `user_connections` rows with `category IN ('wearable','aggregator')` and from `user_integrations` (tenant = primary `user_tenants` row), adds `health_sources_connection_status()` and `health_sources_reconcile_counts()` (STABLE SECURITY DEFINER, service_role only). (2) `20261014100300_vtid_05161_user_integrations_revoke_browser_writes.sql` — **APPLY TARGET: Supabase via `RUN-MIGRATION.yml`, only after this change's Gate 2** (Aurora gets the same end state from `scripts/aws/aurora-restore-rls-parity.sql` / `aurora-cutover-restore-grants.sql`): revokes INSERT/UPDATE/DELETE on `user_integrations` from `anon`/`authenticated` and replaces the `FOR ALL` policy `user_integrations_owner_all` with SELECT-only `user_integrations_owner_select`; self-check by effect. OASIS `health.sources.dual_write_failed`, `health.sources.reconcile`. See the section "Health Hub connection model" below. Tests: `scripts/ci/sql-tests/run-health-sources-test.sh` (CI `SQL-HEALTH-SOURCES.yml`). | Claude Code | VTID-05161 |

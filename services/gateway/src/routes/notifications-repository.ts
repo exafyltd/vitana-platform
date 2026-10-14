@@ -28,7 +28,18 @@ export async function revokeOtherAccountsDeviceToken(sb: SupabaseClient, fcmToke
 /** POST /token — claim/re-claim this device token for the registering user. */
 export async function upsertDeviceToken(
   sb: SupabaseClient,
-  row: { user_id: string; tenant_id: string | null; fcm_token: string; device_label: string | null; updated_at: string },
+  row: {
+    user_id: string;
+    tenant_id: string | null;
+    fcm_token: string;
+    device_label: string | null;
+    updated_at: string;
+    // VTID-05177: present only for a native-app token. Today's web and
+    // Appilix clients never set them, so their upsert keeps exactly today's
+    // keys and a re-registration never overwrites a stored value with null.
+    device_type?: 'ios_native' | 'android_native';
+    app_version?: string | null;
+  },
 ) {
   return sb.from('user_device_tokens').upsert(
     {
