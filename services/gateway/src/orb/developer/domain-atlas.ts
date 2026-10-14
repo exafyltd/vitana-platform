@@ -109,8 +109,8 @@ export const DOMAIN_ATLAS: readonly AtlasDomain[] = [
     title: 'Memory and intelligence',
     summary:
       'The member brain: memory_items and memory_facts (write_fact), the relationship graph, Cognee extraction after sessions, the retrieval router and the context pack, plus the awareness engines (signals, situational, emotional, life stage, forecasting).',
-    routes: [/^memory/, /^semantic-memory$/, /^relationships/, /^personalization/, /^signal-detection$/, /^situational-awareness$/, /^social-context$/, /^emotional-cognitive/, /^life-stage-awareness/, /^longitudinal-adaptation/, /^predictive-forecasting$/, /^positive-trajectory-reinforcement$/, /^overload-detection$/, /^repair-patterns$/, /^risk-mitigation$/, /^opportunity-surfacing/, /^environmental-mobility-context$/, /^awareness-config/, /^taste-alignment/, /^social-alignment$/, /^goal-planner$/, /^capabilities/, /^boundary-consent$/, /^consent-actions/, /^user-limitations/, /^tenant-admin\/(insights|knowledge)/],
-    code: ['services/cognee-extractor-client.ts', 'services/retrieval-router.ts', 'services/context-pack-builder.ts', 'services/orb-memory-bridge.ts'],
+    routes: [/^memory/, /^timeline$/, /^semantic-memory$/, /^relationships/, /^personalization/, /^signal-detection$/, /^situational-awareness$/, /^social-context$/, /^emotional-cognitive/, /^life-stage-awareness/, /^longitudinal-adaptation/, /^predictive-forecasting$/, /^positive-trajectory-reinforcement$/, /^overload-detection$/, /^repair-patterns$/, /^risk-mitigation$/, /^opportunity-surfacing/, /^environmental-mobility-context$/, /^awareness-config/, /^taste-alignment/, /^social-alignment$/, /^goal-planner$/, /^capabilities/, /^boundary-consent$/, /^consent-actions/, /^user-limitations/, /^tenant-admin\/(insights|knowledge)/],
+    code: ['services/cognee-extractor-client.ts', 'services/retrieval-router.ts', 'services/context-pack-builder.ts', 'services/orb-memory-bridge.ts', 'services/timeline/'],
     tables: ['memory_items', 'memory_facts', 'memory_garden_config', 'relationship_nodes', 'relationship_edges', 'user_session_summaries'],
     flags: [],
     docs: ['CLAUDE.md §14', 'docs/MEMORY-SYSTEM-PLAN.md'],
