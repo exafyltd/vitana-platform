@@ -1,0 +1,19 @@
+    ✓ calls the recording function with trigger and source (5 ms)
+    ✓ falls back to the legacy RPC only while the recording function is missing ({
+    ✓ falls back to the legacy RPC only while the recording function is missing ({
+    ✓ returns any other error without retrying (1 ms)
+    ✓ every trigger the gateway sends is a valid SQL trigger token (1 ms)
+    ✓ health.log.water is a visible moment of the hydration pillar (1 ms)
+    ✓ health.log.meal is a visible moment of the nutrition pillar (1 ms)
+    ✓ health.log.exercise is a visible moment of the exercise pillar
+    ✓ health.log.sleep is a visible moment of the sleep pillar (1 ms)
+    ✓ health.log.meditation is a visible moment of the mental pillar (1 ms)
+    ✓ health.log.mood is a visible moment of the mental pillar
+    ✓ health.log.stress is a visible moment of the mental pillar
+    ✓ every mapped feature key is one the Index counts
+    ✓ writes the moment with the movement id and only the provided params (1 ms)
+    ✓ a voice water log writes health.log.water linked to the recorded movement (2 ms)
+    ✓ no gateway code writes vitana_index_scores directly (68 ms)
+    ✓ only record-recompute.ts calls the legacy or core compute RPC (61 ms)
+    ✓ the migration routes every SQL-side recompute through the recording function (1 ms)
+Tests:       18 passed, 18 total

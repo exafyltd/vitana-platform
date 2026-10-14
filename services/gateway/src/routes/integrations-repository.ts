@@ -14,6 +14,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { recordIndexRecompute, type IndexRecomputeTrigger } from '../services/vitana-index/record-recompute';
 
 /** GET / — list the authenticated user's integrations. */
 export async function fetchUserIntegrations(sb: SupabaseClient, userId: string) {
@@ -101,6 +102,18 @@ export async function upsertManualEntryIntegrationSynced(sb: SupabaseClient, use
 }
 
 /** POST /manual/log — recompute the canonical Index row after a manual log. */
-export async function recomputeVitanaIndexForUser(sb: SupabaseClient, userId: string, date: string) {
-  return sb.rpc('health_compute_vitana_index_for_user', { p_user_id: userId, p_date: date });
+/** VTID-05168: locked + recorded recompute (see services/vitana-index/record-recompute.ts). */
+export async function recomputeVitanaIndexForUser(
+  sb: SupabaseClient,
+  userId: string,
+  date: string,
+  source: { trigger?: IndexRecomputeTrigger; sourceKind?: string | null; sourceRef?: string | null } = {},
+) {
+  return recordIndexRecompute(sb, {
+    userId,
+    date: date,
+    trigger: source.trigger ?? 'manual_log',
+    sourceKind: source.sourceKind ?? null,
+    sourceRef: source.sourceRef ?? null,
+  });
 }

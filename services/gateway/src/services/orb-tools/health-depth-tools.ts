@@ -90,6 +90,7 @@ import * as repo from './health-depth-tools-repository';
 import { dualWriteUserIntegration } from '../health-sources/legacy-mirror';
 import { recordToHealthStore } from '../health-features/record-to-health-store';
 import { writerValuesForFeature, type HealthWriterId, type WriterValue } from '../health-features/feature-spec';
+import { FEATURE_KEY_TO_LOG_KIND, writePillarLogMoment } from '../vitana-index/pillar-log-moment';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
 
@@ -194,8 +195,24 @@ async function upsertHealthFeatureAndRecompute(
     /* non-fatal — mirrors health-log.ts */
   }
 
-  const { data: newRow } = await repo.computeVitanaIndexForUser(sb, id.user_id, opts.date);
+  const { data: newRow } = await repo.computeVitanaIndexForUser(sb, id.user_id, opts.date, {
+    trigger: 'voice_log',
+    sourceKind: 'health_feature',
+    sourceRef: opts.featureKey,
+  });
   const r = newRow as Record<string, unknown> | null;
+
+  // VTID-05168: meal / mood logs become pillar moments, linked to the movement.
+  const kind = FEATURE_KEY_TO_LOG_KIND[opts.featureKey];
+  if (kind === 'meal' || kind === 'mood') {
+    await writePillarLogMoment({
+      userId: id.user_id,
+      kind,
+      via: 'voice',
+      date: opts.date,
+      movementId: typeof r?.movement_id === 'string' ? (r.movement_id as string) : null,
+    });
+  }
   const newTotal = typeof r?.score_total === 'number' ? r.score_total : null;
   const pillarCol = PILLAR_SCORE_COLUMN[opts.pillar];
   const pillarScoreAfter = typeof r?.[pillarCol] === 'number' ? (r[pillarCol] as number) : null;

@@ -1,0 +1,6 @@
+# VTID-05169 commands (stacked on VTID-05168)
+cd services/gateway && npx jest test/routes/vtid-05169-timeline.test.ts   -> outputs/jest-vtid-05169.txt
+npx jest test/vtid-04560-role-separation-regression.test.ts   -> outputs/jest-roles.txt
+npx tsc --noEmit -p .   -> outputs/tsc.txt
+node scripts/collab/queue.mjs claim life-timeline/p3 --session session_01BRavW51BdMPjaEFJrJV11G
+# No production read or write.

@@ -1,0 +1,2 @@
+PASS vtid-05168 index movements (sequential)
+ERROR:  concurrency: B must carry only exercise +15 (stale before?): {"sleep": 0, "mental": 0, "exercise": 15, "hydration": 10, "nutrition": 0}

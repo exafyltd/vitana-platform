@@ -174,6 +174,7 @@ JOBS=(
   "autopilot-memory-daily-learning-digest|10 * * * *|UTC|/api/v1/automations/cron/AP-0907|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
   "autopilot-memory-daily-learning-episode|45 * * * *|UTC|/api/v1/automations/cron/AP-0914|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
   "autopilot-memory-diary-theme-rollup|25 4 * * *|UTC|/api/v1/automations/cron/AP-0915|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-memory-timeline-habit-rollup|15 4 * * *|UTC|/api/v1/automations/cron/AP-0916|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
   # VTID-04677: the scheduled-notifications routes require X-Gateway-Internal
   # (production token). NOTE: the reminders, daily-pace and night-push jobs
   # below are defined but have never been created in AWS — reminders run
