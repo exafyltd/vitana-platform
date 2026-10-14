@@ -15,6 +15,8 @@ import {
   processDailyRecomputeBatch,
   getDailyRecomputeStatus,
 } from '../services/daily-recompute-service';
+import { getSupabase } from '../lib/supabase';
+import { maybeRunNightlyHealthSourcesReconcile } from '../services/health-sources/reconcile';
 
 const router = Router();
 const VTID = 'VTID-01095';
@@ -86,6 +88,10 @@ router.post('/daily-recompute', async (req: Request, res: Response) => {
     });
 
     const elapsed_ms = Date.now() - startTime;
+
+    // VTID-05161 (B1 Change 5): once a day, the read-only health_sources
+    // reconciler (counts only). Not awaited; never changes this response.
+    void maybeRunNightlyHealthSourcesReconcile(getSupabase(), { cursor })?.catch(() => {});
 
     console.log(
       `[${VTID}] Batch complete: processed=${result.processed}, skipped=${result.skipped}, failed=${result.failed}, elapsed=${elapsed_ms}ms`

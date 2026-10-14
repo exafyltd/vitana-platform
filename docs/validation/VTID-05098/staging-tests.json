@@ -11,7 +11,7 @@
       "expect_body_contains": [
         "app.js?v=20261120-vtid-05148",
         "styles.css?v=20261120-vtid-05148",
-        "loops-catalog.js?v=20261120-vtid-05148",
+        "loops-catalog.js?v=20261121-vtid-05153",
         "loops-catalog.css?v=20261117-vtid-05098"
       ]
     },
@@ -30,7 +30,7 @@
     {
       "kind": "http",
       "name": "served loops-catalog.js shows each overlap's outcome",
-      "path": "/command-hub/loops-catalog.js?v=20261120-vtid-05148",
+      "path": "/command-hub/loops-catalog.js?v=20261121-vtid-05153",
       "expect_status": 200,
       "expect_content_type": "javascript",
       "expect_body_contains": [
