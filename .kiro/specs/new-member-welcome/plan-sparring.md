@@ -30,8 +30,11 @@ Four lanes, one VTID each, executor Kiro:
   `src/hooks/useAllNewsFeed.ts` (source cards only for opted-in newcomers), Settings/wizard off-switch, tests.
 - `say-hello-composer` [platform + v1] — gateway route `POST /api/v1/community/new-member/:userId/greeting-suggestion`,
   `src/components/home/NewMemberCard.tsx`, new `NewMemberGreetingComposer.tsx`, `src/i18n/{de,en,…}/**`, tests, screenshots.
-  Independent of the opt-in lane.
-- `grouped-welcome-notifications` [platform] — coalesce greeting-DM pushes per recipient (see S4), tests. Independent lane.
+  depends_on `new-member-card-optin` (the server guard reads the opt-in) and `grouped-welcome-notifications` (so no
+  greeting DM can reach a newcomer before the push grouping exists).
+- `grouped-welcome-notifications` [platform] — coalesce greeting-DM pushes per recipient (see S4), tests. No dependencies.
+  Merge order: opt-in and grouping first (parallel), then the composer; the card button keeps navigating to the DM thread
+  until the composer lane lands, so there is no window with greetings but no grouping or no opt-out.
 
 ## Decisions on the six open questions (the planner's positions, to be attacked)
 **S1 — team-welcome text: `tt()` catalog (Option A).** Launch locales: `de` and `en` are `ready` for the closed pilot; every
@@ -111,14 +114,27 @@ claims per invocation.
   composer whose Send creates that DM. The thread stays reachable from the avatar/profile.
   `fetchGreetedMemberIds` (`new-member-greeted.ts`) is unchanged: it already counts viewer-sent DMs, which is exactly what Send
   creates, so the card hides after Send and for members who already greeted by DM.
-- Abuse bound: one greeting DM per (member, newcomer) because the card hides after Send; the gateway keeps its normal DM
-  auth, block and rate-limit rules; the grouped-notification lane (S4) keeps the newcomer's phone from being flooded.
+- **Server-side greeting guard (new, from round-3 finding F10).** `POST /api/v1/chat/send` enforces no block, mute or rate
+  limit for plain text DMs today (`routes/chat.ts:58-125`; the VTID-05104 `checkInviteSend` guard covers only calendar invites),
+  and that stays as is: it is a pre-existing gap for ordinary DMs, outside this plan, reported to the owner as a follow-up
+  note. For DMs carrying `metadata.source='new_member_greeting'` the route adds a guard modelled on `checkInviteSend`
+  (`services/calendar-invite-guard.ts`), fail-closed, answering one generic refusal status: (a) the receiver has not blocked or
+  muted the sender (`user_blocked_authors` / `user_muted_authors`, the tables `useAllNewsFeed.ts` already honours); (b) the
+  receiver has `community_intro_opt_in` true and joined within the card's 7-day window; (c) neither party is in
+  `service_bot_accounts` ∪ `notification_test_actors`; (d) no earlier greeting DM from this sender to this receiver exists
+  (SELECT on the tag), so "one greeting per pair" is enforced by the server, not only by the card hiding; (e) a per-sender cap
+  of greetings per hour. Omitting the tag only makes it an ordinary DM — exactly what any member can send today — so the tag
+  adds restrictions and cannot be used to bypass them. The newcomer set is cross-tenant (`global_community_profiles`);
+  tenant behaviour of `/send` is unchanged from the current "Say hello" button, which also lands in the same inbox.
 
 ## Test plan (no test writes to staging or production — CLAUDE.md rules 31–32, 46–48)
 - CI simulation, in-memory DB + fake clock (golden scenarios): Mariia at day 0; Jovana day 1; Alex day 2, never the same
   day; each sender sent once across retries and re-sign-in; `failed` retried once then stays failed; pre-rollout member gets
   nothing; excluded account gets nothing and a lookup error ⇒ skip; sender never messages themselves; locale not `ready` ⇒ `en`;
   reply lands as an inbound DM; staging mode refuses to send.
+- Greeting guard (golden scenarios, in-memory DB): blocked/muted sender ⇒ refused; non-opted-in or older-than-7-days
+  receiver ⇒ refused; excluded account ⇒ refused; second greeting from the same sender to the same receiver ⇒ refused;
+  hourly cap ⇒ refused; guard lookup error ⇒ refused; untagged ordinary DM ⇒ behaves exactly as today.
 - Part B: opted-out newcomer ⇒ no card; opted-in ⇒ card; pressing Say Hello alone sends nothing; Try-another varies and never
   repeats in a session; Send creates exactly one DM with `metadata.source='new_member_greeting'`, from the pressing member to the
   newcomer; double-submit blocked; greeted card hides; N greeting DMs in 24 h ⇒ N in-app rows, one push, summary in the
@@ -170,3 +186,18 @@ backing post, `post_kind`, the notify-trigger replacement or a comment path, so 
 F8 and F9 are **superseded** (kept above as the record). New surface for the partner to attack: the DM send path
 (`POST /api/v1/chat/send`), the `metadata.source='new_member_greeting'` tag, the greeting-DM push grouping (S4) built next to
 `chat-push-coalescer.ts`, and the abuse/flood bound. Planner responses to round-3 findings follow below.
+
+### Round 3 — planner responses
+Partner verified: `POST /send` is the right path (`chat.ts:58`); `metadata` is stored verbatim (`chat.ts:84,126-135`,
+`chat-repository.ts:20-21`) and is in scope at the notification dispatch (`chat.ts:249-257`), where `coalesceChatPushes` is keyed
+`dm:<senderId>`; `fetchGreetedMemberIds` needs no change. Superseded F2, F3, F6, F8, F9 → closed-by-scope-change (no contest).
+- **F10 [major] — plan claimed normal DM block/rate-limit rules that do not exist.** ACCEPTED, and verified independently:
+  `chat.ts:89` is the calendar-invite branch only. The false claim is removed. Plain DMs stay as they are (pre-existing gap,
+  noted for the owner, not built here); tagged greeting DMs get the server-side guard (a)–(e) listed in Part B, including a
+  server-enforced one-greeting-per-pair, so the abuse bound no longer rests on the UI.
+- **F11 [minor] — grouping lane independent ⇒ a window with ungrouped pushes.** ACCEPTED. `say-hello-composer` now depends_on
+  `grouped-welcome-notifications`; until it lands the card button still opens the DM thread as today.
+- **F12 [minor] — composer before opt-in ⇒ no opt-out control.** ACCEPTED. `say-hello-composer` now depends_on
+  `new-member-card-optin`; the guard also checks the opt-in server-side.
+- Q1: not a new gap, a pre-existing one; the plan no longer implies otherwise. Q2: the pilot allowlist limits Part A recipients
+  only, not who may greet — which is why the grouping lane gates the composer instead of relying on the pilot.
