@@ -62,13 +62,17 @@ const ALL_ENRICHMENT: readonly EnrichmentCardType[] = ENRICHMENT_CARD_TYPES;
 
 /**
  * Screen → enrichment cards (plan §2A "Screens" column and §4).
+ *   - profile: only the cards that enrich the profile itself — E1–E7, E11
+ *     (VTID-05211, owner 2026-10-15). Connectors (E8, E9) and notifications
+ *     (E10) are not profile content; the frontend `CARD_SCREENS.profile.allow`
+ *     carries the same list (VTID-05210).
  *   - calendar: E8 only (plan §4 Calendar: "Enrichment: E8").
  *   - messenger: E1–E11 (VTID-05099: the companion engine picks one).
  *   - vitana-index, talk-to-vitana: no enrichment cards in the plan.
  */
 export const SCREEN_ENRICHMENT_CARDS: Readonly<Record<CardScreen, readonly EnrichmentCardType[]>> = {
   home: ALL_ENRICHMENT,
-  profile: ALL_ENRICHMENT,
+  profile: ['E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'E7', 'E11'],
   'longevity-journey': ['E4', 'E5'],
   calendar: ['E8'],
   'vitana-index': [],
@@ -184,7 +188,10 @@ export interface EligibleEnrichmentCard {
 /**
  * The one rule for which enrichment cards a member sees on a screen:
  * on that screen's list, known to be incomplete (`completions.get(t) === false`
- * — a card with no known state is not shown), and not cooling down.
+ * — a card with no known state is not shown), not cooling down, and not
+ * `unavailable` — a card whose action cannot work on this stack (VTID-05211:
+ * E6/E7 while the Meta OAuth client is not configured; the caller computes
+ * the set with `unavailableEnrichmentCards()` so this module stays pure).
  * Returned in static priority order. Unknown screens return [].
  */
 export function eligibleEnrichmentCards(
@@ -192,6 +199,7 @@ export function eligibleEnrichmentCards(
   dismissRows: readonly EnrichmentDismissRow[],
   screen: string,
   now: Date,
+  unavailable: ReadonlySet<string> = new Set(),
 ): EligibleEnrichmentCard[] {
   if (!isCardScreen(screen)) return [];
   const onScreen = new Set<EnrichmentCardType>(SCREEN_ENRICHMENT_CARDS[screen]);
@@ -203,6 +211,7 @@ export function eligibleEnrichmentCards(
     .filter((t) => onScreen.has(t))
     .filter((t) => completions.get(t) === false)
     .filter((t) => !coolingDown.has(t))
+    .filter((t) => !unavailable.has(t))
     .map((t) => ({ card_type: t, category: 'enrichment' as const, priority: enrichmentPriority(t) }));
 }
 

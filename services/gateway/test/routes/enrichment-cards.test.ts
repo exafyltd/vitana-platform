@@ -94,8 +94,31 @@ function setNothingDone(over: Partial<Record<string, unknown>> = {}) {
 
 const ALL_PRIORITY = ['E1', 'E2', 'E3', 'E6', 'E7', 'E8', 'E9', 'E4', 'E5', 'E10', 'E11'];
 
+/** VTID-05211: E6/E7 are served only where the Meta OAuth clients exist. */
+const META_ENV = ['INSTAGRAM_CLIENT_ID', 'INSTAGRAM_CLIENT_SECRET', 'FACEBOOK_CLIENT_ID', 'FACEBOOK_CLIENT_SECRET'] as const;
+const savedEnv: Record<string, string | undefined> = {};
+function setMetaConfigured(on: { instagram: boolean; facebook: boolean }) {
+  for (const k of META_ENV) {
+    const provider = k.startsWith('INSTAGRAM') ? 'instagram' : 'facebook';
+    if (on[provider]) process.env[k] = `test-${k.toLowerCase()}`;
+    else delete process.env[k];
+  }
+}
+
+beforeAll(() => {
+  for (const k of META_ENV) savedEnv[k] = process.env[k];
+});
+afterAll(() => {
+  for (const k of META_ENV) {
+    if (savedEnv[k] === undefined) delete process.env[k];
+    else process.env[k] = savedEnv[k];
+  }
+});
+
 beforeEach(() => {
   jest.clearAllMocks();
+  // Default: a stack with both Meta OAuth clients, so every card can work.
+  setMetaConfigured({ instagram: true, facebook: true });
   identity = ME;
   supa = {};
   getUserLocale.mockResolvedValue('de');
@@ -168,7 +191,8 @@ describe('GET — screen filtering, priority, completion', () => {
   });
 
   it.each([
-    ['profile', ALL_PRIORITY],
+    // VTID-05211: Profile = the cards that enrich the profile (no E8, E9, E10).
+    ['profile', ['E1', 'E2', 'E3', 'E6', 'E7', 'E4', 'E5', 'E11']],
     ['messenger', ALL_PRIORITY],
     ['calendar', ['E8']],
     ['longevity-journey', ['E4', 'E5']],
@@ -429,5 +453,61 @@ describe('eligibleEnrichmentCards — the shared rule (route + Messenger compani
     const rows = [{ card_type: 'E8', dismissed_at: NOW.toISOString(), cooldown_days: 7 }];
     expect(eligibleEnrichmentCards(allIncomplete, rows, 'calendar', new Date(NOW.getTime() + 7 * DAY - 1))).toEqual([]);
     expect(eligibleEnrichmentCards(allIncomplete, rows, 'calendar', new Date(NOW.getTime() + 7 * DAY + 1))).toHaveLength(1);
+  });
+});
+
+// VTID-05211 (plan profile-vitana-cards, R7): no card whose action cannot work.
+describe('E6/E7 need the Meta OAuth clients (no dead cards)', () => {
+  const SOCIAL_SCREENS: Array<[string, string[]]> = [
+    ['home', ALL_PRIORITY],
+    ['profile', ['E1', 'E2', 'E3', 'E6', 'E7', 'E4', 'E5', 'E11']],
+    ['community', ['E3', 'E6', 'E7']],
+    ['messenger', ALL_PRIORITY],
+  ];
+  const without = (list: string[], ...drop: string[]) => list.filter((t) => !drop.includes(t));
+
+  it.each(SOCIAL_SCREENS)('screen=%s without either client: neither E6 nor E7', async (screen, full) => {
+    setMetaConfigured({ instagram: false, facebook: false });
+    const r = await request(app()).get(`/api/v1/enrichment-cards?screen=${screen}`);
+    expect(r.status).toBe(200);
+    expect(r.body.cards.map((c: any) => c.card_type)).toEqual(without(full, 'E6', 'E7'));
+  });
+
+  it.each(SOCIAL_SCREENS)('screen=%s with only Facebook configured: E7 but not E6', async (screen, full) => {
+    setMetaConfigured({ instagram: false, facebook: true });
+    const r = await request(app()).get(`/api/v1/enrichment-cards?screen=${screen}`);
+    expect(r.body.cards.map((c: any) => c.card_type)).toEqual(without(full, 'E6'));
+  });
+
+  it('a client id without its secret does not count as configured', async () => {
+    setMetaConfigured({ instagram: true, facebook: true });
+    delete process.env.INSTAGRAM_CLIENT_SECRET;
+    const r = await request(app()).get('/api/v1/enrichment-cards?screen=community');
+    expect(r.body.cards.map((c: any) => c.card_type)).toEqual(['E3', 'E7']);
+  });
+
+  it('once the clients exist the cards come back without anything else changing', async () => {
+    setMetaConfigured({ instagram: false, facebook: false });
+    const before = await request(app()).get('/api/v1/enrichment-cards?screen=community');
+    expect(before.body.cards.map((c: any) => c.card_type)).toEqual(['E3']);
+    setMetaConfigured({ instagram: true, facebook: true });
+    const after = await request(app()).get('/api/v1/enrichment-cards?screen=community');
+    expect(after.body.cards.map((c: any) => c.card_type)).toEqual(['E3', 'E6', 'E7']);
+  });
+
+  it('profile_completion_pct still counts E6/E7 (unchanged by what is shown)', async () => {
+    setMetaConfigured({ instagram: false, facebook: false });
+    const r = await request(app()).get('/api/v1/enrichment-cards?screen=home');
+    expect(r.body.profile_completion_pct).toBe(0);
+    setNothingDone({ fetchActiveSocialConnections: [{ provider: 'instagram' }, { provider: 'facebook' }] });
+    const r2 = await request(app()).get('/api/v1/enrichment-cards?screen=home');
+    expect(r2.body.profile_completion_pct).toBe(Math.round((2 / 11) * 100));
+  });
+
+  it('eligibleEnrichmentCards drops the unavailable set and keeps the rest in priority order', () => {
+    const allIncomplete = new Map(ALL_PRIORITY.map((t) => [t, false]));
+    expect(eligibleEnrichmentCards(allIncomplete, [], 'profile', NOW, new Set(['E6', 'E7'])).map((c) => c.card_type)).toEqual([
+      'E1', 'E2', 'E3', 'E4', 'E5', 'E11',
+    ]);
   });
 });
