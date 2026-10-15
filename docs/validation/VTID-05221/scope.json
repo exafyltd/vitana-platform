@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05221",
+  "kind": "docs",
+  "paths": [
+    ".kiro/specs/multi-tenant/**",
+    "docs/validation/VTID-05221/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05221/plan-sparring.md",
+  "collab_allow_initial": ["multi-tenant"],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
