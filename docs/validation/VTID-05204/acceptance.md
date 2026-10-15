@@ -18,5 +18,6 @@ AC-3: No other file content changes: the diff is the one rule file plus `docs/va
   TEST: git diff --stat origin/main...HEAD
 AC-4: Out of scope and not present: country/website inference, "Your assistant can do this", PR-template or CI
 enforcement of the UX acceptance section (raised as separate follow-up plans after merge).
+  TEST: git diff --name-only origin/main...HEAD  (only the rule file + docs/validation/VTID-05204/**; no src/, services/ or .github/ path)
 
 This repo's file: `.claude/rules/backend.md`.
