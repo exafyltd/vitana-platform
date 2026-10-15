@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05020",
+  "kind": "docs",
+  "paths": [
+    ".kiro/specs/health-native/**",
+    "docs/validation/VTID-05020/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05020/plan-sparring.md",
+  "collab_allow_initial": ["health-native"],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
