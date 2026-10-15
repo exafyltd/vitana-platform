@@ -2,9 +2,10 @@
 slug: new-member-welcome
 author: kiro
 executor: kiro
-next_actor: claude
-state: drafted
-updated: 2026-10-15T09:40Z
+next_actor: owner
+state: sparred
+sparring_record: .kiro/specs/new-member-welcome/plan-sparring.md
+updated: 2026-10-15T11:30Z
 ---
 # Handoff — New-member welcome experience (MAXINA)
 
@@ -43,3 +44,8 @@ Drafted requirements.md, design.md, tasks.md, content-welcome-seed.md, this hand
 chat_messages), and News Feed (NewMemberCard, profile_post_comments, composer.ts) read-only.
 Resolved the three sender handles to production user_ids read-only. No VTID, no lane claim, no
 writes to any live system. next_actor: claude for sparring + Gate 1.
+### 2026-10-15T11:30Z · session_01LKkSBuw1tGgnKzjhfcmAxj · drafted → sparred
+Took the `_plan` claim. Sparred with the independent partner (2 rounds, CONVERGED): F1–F9 answered, six open questions S1–S6
+decided in the record, plan hash `a538f236fda83b38`. Record: `plan-sparring.md` (copied to `docs/validation/<first VTID>/` on approval).
+next_actor: owner — Gate 1 sent. No VTID allocated, no code written. On "yes": allocate four VTIDs, set the four lanes
+`next_actor: kiro`, state → approved.

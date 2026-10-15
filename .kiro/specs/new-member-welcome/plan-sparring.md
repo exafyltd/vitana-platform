@@ -1,7 +1,9 @@
 # new-member-welcome — Plan sparring record
 
-- **Plan hash:** (filled after the last revision)
-- **Change class:** standard · **Partner:** `plan-sparring-partner` (independent, read-only, Claude Opus 4.6 on Bedrock)
+- **Plan hash (sha256 of the text between the plan markers, first 16 hex):** `a538f236fda83b38`
+- **Verdict:** CONVERGED (round 2: F1–F7 closed; F8–F9 minor, accepted into the plan)
+- **Owner approval (Gate 1):** pending
+- **Change class:** standard · **Rounds:** 2 · **Partner:** `plan-sparring-partner` (independent, read-only, Claude Opus 4.6 on Bedrock)
 - **Coordinator session:** `session_01LKkSBuw1tGgnKzjhfcmAxj` (`_plan` claim `new-member-welcome/_plan`)
 - **Author of the draft:** Kiro `kiro-202610150924-9ecd` (PR exafyltd/vitana-platform#4123)
 - **VTIDs:** none yet — allocated only after the owner's Gate 1 "yes". On approval this file is copied to
@@ -96,8 +98,11 @@ claims per invocation.
   `is_public = true` (comments need a readable post), so the migration `CREATE OR REPLACE`s `notify_community_on_public_post()`
   (trigger `trg_notify_community_post`, AFTER INSERT) from the LATEST body — VTID-05126,
   `20261012120000_vtid_05126_profile_posts_calendar_entry_share.sql:124`, keeping its share and attachment branches — adding an
-  early return for `post_kind = 'welcome'` after the test-actor check. A CI test inserts a welcome post into a database built
-  from all migrations and asserts zero `user_notifications` rows.
+  early return for `post_kind = 'welcome'` after the test-actor check. The backing post sets `mentions` NULL (the
+  unconditional `trg_notify_post_mention_insert` must not fire). `trg_profile_posts_guard` (suspension check, 20/hour limit,
+  no role bypass) still runs on the service-role insert and correctly blocks a welcome post for a suspended newcomer — no
+  change, covered by a test. A CI test inserts a welcome post into a database built from all migrations and asserts zero
+  `user_notifications` rows.
 - Card: `useAllNewsFeed.ts` sources newcomers only where `community_intro_opt_in`; maps the card to the backing post id.
 - Composer: inline editable greeting (`NewMemberGreetingComposer.tsx`), "Try another", "in {language}" affordance, Send posts
   exactly one comment through the existing `useFeedPostInteractions('post', welcomePostId).addComment`; never auto-sends;
@@ -128,8 +133,6 @@ claims per invocation.
 VTNA reward rules; VOA slices 3, 5, 6; email; changing the VTID-03089 newcomer fan-out DM.
 <!-- plan:end -->
 
-## Round 1
-(pending)
 
 ## Round 1 — partner findings (verbatim summary) and planner responses
 Partner verified: `post_kind` absent (TRUE); card source `global_community_profiles` last 7 days, `useAllNewsFeed.ts:199-204`
@@ -150,3 +153,14 @@ FALSE); `requireScheduledNotificationsAuth` used (TRUE). Planner re-verified F1�
 - **F6 [minor] — `post_kind` CHECK pre-empts VOA slice 5.** ACCEPTED. CHECK allows only `NULL`/`'welcome'`; slice 5 ALTERs.
 - **F7 [minor] — which locales are `ready` at launch.** ACCEPTED. `de`, `en` for the pilot; fallback chain for the rest; full set
   required before widening; recorded under "Decisions taken".
+
+## Round 2 — partner response
+F1–F7: all **closed**. Partner verified (a) VTID-05126 (`20261012120000_…:124`) is the latest of six definitions of
+`notify_community_on_public_post()`; the only later migration (`20261013160000_vtid_05133_ai_discoverable.sql`) does not touch
+it; (b) the `welcome` early return belongs right after the test-actor guard (`:131`), before the tenant lookup.
+New findings, both minor:
+- **F8** — `trg_notify_post_mention_insert` fires on every `profile_posts` insert. ACCEPTED: backing post sets `mentions` NULL;
+  the zero-notification CI test covers it.
+- **F9** — `trg_profile_posts_guard` (suspension, 20/hour) has no service-role bypass. ACCEPTED: behaviour is correct (no welcome
+  post for a suspended newcomer); stated in the plan and covered by a test.
+**Verdict: CONVERGED.** F8/F9 were added to the plan after the partner's last pass (documentation only; hash above covers them).
