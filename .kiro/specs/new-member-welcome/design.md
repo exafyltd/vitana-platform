@@ -18,6 +18,9 @@ the gateway allowlist and would message every signup from day one).
 
 ## Part A — Three private team welcome messages
 
+> **Owner decision 2026-10-15:** no per-sender wording/consent approval; the three welcomes are sent automatically. Where this
+> section says the senders approve their wording, that step is removed.
+
 ### A.1 Senders config (configurable, not hardcoded)
 New TS config module `services/gateway/src/services/welcome-team/config.ts` (same shape as
 `companion/config.ts`): mode (`disabled-on-staging | off | shadow | staff | live`), the
@@ -113,6 +116,11 @@ onboarding-coach-tick or add a sibling `welcome-team-tick`; production gateway o
 ---
 
 ## Part B — "Say Hello 👋" on new-member cards
+
+> **AMENDED 2026-10-15 by the coordinator after sparring (owner decision D2 = b).** The greeting is a private DM sent on the
+> sender's explicit Send, not a comment: B.2 (backing post, `post_kind`), the comment-based B.4 greeted logic and the
+> comment-notification B.5 below are **superseded**. Authoritative design: `plan-sparring.md` (plan block, Part B, S4). Where
+> this section and the plan block differ, the plan block wins.
 
 ### B.1 Opt-in to being introduced (requirement 2.1)
 New column (vitana-v1 migration) `profiles.community_intro_opt_in boolean` (or

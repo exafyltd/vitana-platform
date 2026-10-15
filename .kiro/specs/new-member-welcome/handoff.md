@@ -2,9 +2,10 @@
 slug: new-member-welcome
 author: kiro
 executor: kiro
-next_actor: claude
-state: drafted
-updated: 2026-10-15T09:40Z
+next_actor: owner
+state: sparred
+sparring_record: .kiro/specs/new-member-welcome/plan-sparring.md
+updated: 2026-10-15T12:10Z
 ---
 # Handoff — New-member welcome experience (MAXINA)
 
@@ -43,3 +44,22 @@ Drafted requirements.md, design.md, tasks.md, content-welcome-seed.md, this hand
 chat_messages), and News Feed (NewMemberCard, profile_post_comments, composer.ts) read-only.
 Resolved the three sender handles to production user_ids read-only. No VTID, no lane claim, no
 writes to any live system. next_actor: claude for sparring + Gate 1.
+### 2026-10-15T11:30Z · session_01LKkSBuw1tGgnKzjhfcmAxj · drafted → sparred
+Took the `_plan` claim. Sparred with the independent partner (2 rounds, CONVERGED): F1–F9 answered, six open questions S1–S6
+decided in the record, plan hash `a538f236fda83b38`. Record: `plan-sparring.md` (copied to `docs/validation/<first VTID>/` on approval).
+next_actor: owner — Gate 1 sent. No VTID allocated, no code written. On "yes": allocate four VTIDs, set the four lanes
+`next_actor: kiro`, state → approved.
+
+### 2026-10-15T11:40Z · session_01LKkSBuw1tGgnKzjhfcmAxj · sparred (revised after owner decision D2 = b)
+Owner answered D2 between sparring rounds: the greeting is a private DM on explicit Send, not a public comment. Plan rewritten,
+re-sparred (rounds 3–4, CONVERGED), plan hash now `d0ed907dc2c4f75e`. Spec files amended to match: requirements 2.4/2.9/2.11,
+design.md Part B banner, tasks.md lanes B/C/D rewritten. **`tasks.md` and `plan-sparring.md` are authoritative for lane
+dependencies:** `say-hello-composer` depends_on `new-member-card-optin` + `grouped-welcome-notifications`; the grouping lane is
+now platform-side and dependency-free. The `lanes/*.md` files still show the pre-D2 dependencies and design pointers — the
+collab validator allows one work lane per PR, so each lane file is updated in its own commit when that lane is released to Kiro.
+No backing post / `post_kind` / trigger work remains. next_actor: owner — Gate 1 re-sent. Still no VTID, no code.
+
+### 2026-10-15T12:10Z · session_01LKkSBuw1tGgnKzjhfcmAxj · sparred (owner answered D1 and sender consent)
+Owner: D1 = default ON; no sender approval — the three welcomes go out automatically. Plan (S1, S3), seed file and design.md
+note amended; plan hash now in `plan-sparring.md` header. Still `sparred`, next_actor: owner — waiting for the explicit Gate 1
+approval of the plan. No VTID, no code.
