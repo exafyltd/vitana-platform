@@ -2,10 +2,11 @@
 slug: new-member-welcome
 author: kiro
 executor: kiro
-next_actor: owner
-state: sparred
+next_actor: kiro
+state: approved
+vtids: [VTID-05205, VTID-05206, VTID-05207, VTID-05208]
 sparring_record: .kiro/specs/new-member-welcome/plan-sparring.md
-updated: 2026-10-15T12:10Z
+updated: 2026-10-15T12:45Z
 ---
 # Handoff — New-member welcome experience (MAXINA)
 
@@ -63,3 +64,15 @@ No backing post / `post_kind` / trigger work remains. next_actor: owner — Gate
 Owner: D1 = default ON; no sender approval — the three welcomes go out automatically. Plan (S1, S3), seed file and design.md
 note amended; plan hash now in `plan-sparring.md` header. Still `sparred`, next_actor: owner — waiting for the explicit Gate 1
 approval of the plan. No VTID, no code.
+
+### 2026-10-15T12:45Z · session_01LKkSBuw1tGgnKzjhfcmAxj · sparred → approved
+Owner approved at Gate 1 ("yes", 2026-10-15; plan hash `f7cdefc3043249c5`; D1 default ON; no sender approval step; greeting is a
+DM on explicit Send). VTIDs allocated and set `in_progress`/`approved` in the ledger: VTID-05205 `team-welcome-backend`,
+VTID-05206 `new-member-card-optin`, VTID-05207 `say-hello-composer`, VTID-05208 `grouped-welcome-notifications`.
+Record copied to `docs/validation/VTID-05205/plan-sparring.md`. **For Kiro:** `tasks.md` and `plan-sparring.md` (the plan
+block) are authoritative — requirements/design text that still says "comment" or "backing post" is superseded (banner in
+`design.md`). Each lane PR copies the sparring record into its own `docs/validation/<VTID>/plan-sparring.md`, adds
+`scope.json`/`acceptance.md`/`staging-tests.json` there, and carries the `Collab-Session`/`Collab-Lane` trailers.
+Lane files are handed over one PR each (validator allows one work lane per PR); until a lane's file shows `next_actor: kiro`
+and `vtid`, do not start it. Order: `team-welcome-backend`, `new-member-card-optin`, `grouped-welcome-notifications` in
+parallel; `say-hello-composer` last. Never allocate VTIDs, merge, deploy or write to Supabase/AWS (collaboration §7a).
