@@ -1098,6 +1098,35 @@ Every automation send carries `data.automation_id`.
 
 ---
 
+### Policy approval + Project Manager tables (VTID-05214)
+
+Migration `20261015180000_vtid_05214_plan_sparring_policy_approval.sql` (rollback
+`docs/validation/VTID-05214/rollback.sql`; tested on a throwaway Postgres by
+`scripts/ci/test-vtid-05214-policy-approval.sh`). Owner decision 2026-10-14: a sparring session that converged is
+approved by policy instead of the owner, when it asked for it at creation.
+
+```sql
+ALTER TABLE public.plan_sparring_sessions
+  ADD COLUMN approval_policy      text,         -- 'converged-auto-v1' | NULL (set at creation by the gateway)
+  ADD COLUMN policy_approved_at   timestamptz,  -- set by the gateway sparring service only
+  ADD COLUMN policy_approval_rule text;         -- = approval_policy when approved
+-- CHECK: policy_approved_at needs verdict = 'converged', final_plan_hash, approval_policy, rule = approval_policy.
+-- _plan_sparring_gate_eval accepts human_approved_by OR a policy approval of a converged session;
+-- plan_sparring_append_round freezes on either.
+
+CREATE TABLE public.pm_digests (               -- Project Manager decisions / digests / Gate-2 batches (append-only)
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  kind text NOT NULL,                          -- decision | digest | gate2_batch
+  mode text NOT NULL,                          -- dry_run | live
+  payload jsonb NOT NULL DEFAULT '{}',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE public.pm_lease (                 -- one row; a PM tick acts only while it holds the lease
+  id int PRIMARY KEY CHECK (id = 1), holder text, expires_at timestamptz NOT NULL DEFAULT 'epoch'
+);
+-- RLS on both; service_role only (pm_digests: SELECT, INSERT; pm_lease: SELECT, UPDATE(holder, expires_at)).
+```
+
 ### plan_sparring_sessions / plan_sparring_config / plan_sparring_shadow_log — Plan Sparring Gate, LOG MODE (VTID-04868) — committed, NOT yet applied
 
 Every new plan is sparred by an independent partner before its VTID is

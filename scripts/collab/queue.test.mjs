@@ -457,3 +457,31 @@ test('validate: a lane whose spec lives in the other repo is read through fetchL
     assert.ok(validateRange(f.work, { base, head, fetchLane: other }).errors.some((e) => e.includes('claimed_by')));
   } finally { f.done(); }
 });
+
+test('VTID-05214: a ci-plan-spar commit may take a plan drafted → approved and write VTIDs into ready lanes; nobody else may', () => {
+  const f = fixture();
+  try {
+    write(f.work, '.kiro/specs/cards/handoff.md', planMd());
+    write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', { next_actor: 'kiro' }));
+    const base = commit(f.work, 'plan', { 'Collab-Session': S1, 'Collab-Lane': 'cards/_plan' });
+    sh(f.work, 'push', '-q', 'origin', 'main');
+    sh(f.work, 'checkout', '-q', '-b', 'kiro/cards/_plan');
+    write(f.work, '.kiro/specs/cards/handoff.md', planMd({ state: 'approved', sparring_record: 'x.md', vtids: ['VTID-09001'], next_actor: 'kiro' }));
+    write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', { next_actor: 'kiro', vtid: 'VTID-09001' }));
+    const head = commit(f.work, 'spar', { 'Collab-Session': 'ci-plan-spar', 'Collab-Lane': 'cards/_plan' });
+    assert.deepEqual(validateRange(f.work, { base, head }).errors, []);
+    // the same change from a normal session is refused (illegal transition + lane edit)
+    sh(f.work, 'checkout', '-q', '-b', 'other', base);
+    write(f.work, '.kiro/specs/cards/handoff.md', planMd({ state: 'approved', sparring_record: 'x.md', vtids: ['VTID-09001'], next_actor: 'kiro' }));
+    write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', { next_actor: 'kiro', vtid: 'VTID-09001' }));
+    const h2 = commit(f.work, 'spar', { 'Collab-Session': S2, 'Collab-Lane': 'cards/_plan' });
+    const e = validateRange(f.work, { base, head: h2 }).errors;
+    assert.ok(e.some((x) => x.includes('illegal transition')), e.join('\n'));
+    assert.ok(e.some((x) => x.includes('lanes/a.md')), e.join('\n'));
+    // ci-plan-spar may not move a lane out of ready
+    sh(f.work, 'checkout', '-q', '-b', 'third', base);
+    write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', { next_actor: 'kiro', vtid: 'VTID-09001', state: 'executing' }));
+    const h3 = commit(f.work, 'x', { 'Collab-Session': 'ci-plan-spar', 'Collab-Lane': 'cards/_plan' });
+    assert.ok(validateRange(f.work, { base, head: h3 }).errors.some((x) => x.includes('lanes/a.md')));
+  } finally { f.done(); }
+});

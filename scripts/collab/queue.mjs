@@ -60,6 +60,7 @@ const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
 const SESSION_RE = /^(session_[A-Za-z0-9]+|kiro-(?:[a-z]{1,12}-)?\d{12}-[0-9a-f]{4}|pm-agent|ci-plan-spar)$/;
 export const SEAT_RE = /^[a-z]{1,12}$/;
 export const isSessionId = (s) => SESSION_RE.test(s || '');
+const CI_PLAN_SPAR = 'ci-plan-spar';
 /** The seat named in a seat-scoped Kiro session id, else ''. */
 export const seatOf = (s) => (/^kiro-([a-z]{1,12})-\d{12}-[0-9a-f]{4}$/.exec(s || '') || [])[1] || '';
 
@@ -345,14 +346,19 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
     }
     if (laneIds.size && !headFiles.some((p) => classifyPath(p).kind === 'plan')) errors.push(`.kiro/specs/${slug}: lanes without a handoff.md`);
   }
+  // 2. Lane / session separation (§9): commits that touch spec state carry matching trailers.
+  const commits = commitsInRange(repo, base, head);
   for (const { p, c } of touched) {
     const before = parseFrontMatter(showFile(repo, mergeBase, p));
     const after = parseFrontMatter(showFile(repo, head, p));
+    // VTID-05214: PLAN-SPAR.yml sparred the plan inside this PR, so a plan file may move from (new | drafted | sparred)
+    // straight to sparred | approved | parked when a ci-plan-spar commit made that change.
+    const ciSparred = c.kind === 'plan' && commits.some((k) => k.session === CI_PLAN_SPAR && k.files.includes(p))
+      && ['drafted', 'sparred', undefined].includes(before?.state) && ['drafted', 'sparred', 'approved', 'parked'].includes(after?.state);
+    if (ciSparred) continue;
     for (const x of checkTransition(c.kind, before, after, { allowInitial: allowInitial.includes(c.slug) })) errors.push(`${p}: ${x}`);
   }
 
-  // 2. Lane / session separation (§9): commits that touch spec state carry matching trailers.
-  const commits = commitsInRange(repo, base, head);
   const laneTrailers = new Set(commits.map((k) => k.lane).filter(Boolean).flatMap((l) => l.split(',').map((s) => s.trim())));
   const workLanes = [...laneTrailers].filter((l) => !l.endsWith(`/${PLAN_LANE}`));
   if (workLanes.length > 1) errors.push(`one PR per lane: commits name ${workLanes.length} lanes (${workLanes.join(', ')})`);
@@ -372,6 +378,9 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
       if (k.lane === key) continue;
       // The coordinator declares the lanes: a `_plan` commit may create a lane file, never edit one.
       if (c.kind === 'lane' && k.lane === `${c.slug}/${PLAN_LANE}` && showFile(repo, `${k.sha}^`, f) === null) continue;
+      // VTID-05214: PLAN-SPAR.yml writes the allocated VTID into a lane that is still `ready`.
+      if (c.kind === 'lane' && k.session === CI_PLAN_SPAR && k.lane === `${c.slug}/${PLAN_LANE}`
+        && parseFrontMatter(showFile(repo, k.sha, f))?.state === 'ready') continue;
       if (c.kind === 'lane' && k.review === key && !frontMatterChanged(repo, k.sha, f)) continue; // reviewer appends a log entry
       errors.push(`${short}: changes ${f} but its Collab-Lane is "${k.lane || 'none'}" (needs "${key}"${c.kind === 'lane' ? `, or Collab-Review: ${key} with the front matter unchanged` : ''})`);
     }
