@@ -14,8 +14,10 @@
 <!-- plan:begin -->
 ## Goal
 Refine the approved VOA plan (`docs/plans/VITANA-ONBOARDING-ASSISTANT-PLAN.md` §4.5.5) into (A) three private welcome
-DMs from Mariia, Jovana and Alex Blue, and (B) a "Say Hello 👋" greeting composer on the new-member feed card with
-grouped notifications for the newcomer. Spec: `.kiro/specs/new-member-welcome/{requirements,design,tasks,content-welcome-seed}.md`.
+DMs from Mariia, Jovana and Alex Blue, and (B) a "Say Hello 👋" greeting composer on the new-member feed card that, on the
+member's explicit Send, delivers a private DM to the newcomer, with grouped notifications for the newcomer.
+**Owner decision 2026-10-15 (D2 = option b): the greeting is a DM from the member who pressed Send, not a public comment;
+nothing is sent until that member presses Send (requirements 2.4/2.10 stay).** Spec: `.kiro/specs/new-member-welcome/{requirements,design,tasks,content-welcome-seed}.md`.
 Nothing existing is deleted; the VTID-03089 newcomer "Hello" DM fan-out stays.
 
 ## Change class and scope
@@ -24,12 +26,12 @@ Four lanes, one VTID each, executor Kiro:
 - `team-welcome-backend` [platform] — `services/gateway/src/services/welcome-team/**` (new), a tick route in
   `services/gateway/src/routes/scheduled-notifications.ts`, one migration (`welcome_team_claims` + claim/finish RPCs),
   `catalog.ts` + `locales/*.json` (3 body keys × 11 locales), tests, `docs/validation/<VTID>/staging-tests.json`.
-- `new-member-card-optin` [v1] — migration (`community_intro_opt_in`, `profile_posts.post_kind`, welcome-post backing),
-  `src/hooks/useAllNewsFeed.ts`, `src/lib/new-member-greeted.ts`, tests.
+- `new-member-card-optin` [v1] — migration (`community_intro_opt_in` on `global_community_profiles`),
+  `src/hooks/useAllNewsFeed.ts` (source cards only for opted-in newcomers), Settings/wizard off-switch, tests.
 - `say-hello-composer` [platform + v1] — gateway route `POST /api/v1/community/new-member/:userId/greeting-suggestion`,
   `src/components/home/NewMemberCard.tsx`, new `NewMemberGreetingComposer.tsx`, `src/i18n/{de,en,…}/**`, tests, screenshots.
-  depends_on `new-member-card-optin`.
-- `grouped-welcome-notifications` [v1] — one migration, tests. depends_on `new-member-card-optin`.
+  Independent of the opt-in lane.
+- `grouped-welcome-notifications` [platform] — coalesce greeting-DM pushes per recipient (see S4), tests. Independent lane.
 
 ## Decisions on the six open questions (the planner's positions, to be attacked)
 **S1 — team-welcome text: `tt()` catalog (Option A).** Launch locales: `de` and `en` are `ready` for the closed pilot; every
@@ -56,9 +58,13 @@ checks that existing RLS policies and the `REPLICA IDENTITY FULL` realtime publi
 reading, so it is flagged as **owner decision D1** with the strict alternative (default `false` + explicit toggle shown in
 the wizard) priced: the card shows far fewer newcomers.
 
-**S4 — grouping window: 24 h per newcomer** (the VTID-04916 precedent). The first greeting notifies immediately
-("{n} people said hello 👋" starts at n=1); further greetings in the window update the same `user_notifications` row's
-count and do NOT push again; a new window starts after 24 h. Localised through `_notif_user_locale`.
+**S4 — grouping window: 24 h per newcomer, applied to greeting DMs.** Greeting DMs carry `metadata.source='new_member_greeting'`.
+Today `chat-push-coalescer.ts` (VTID-05137) allows one push per conversation per 5 min, i.e. per SENDER, so 200 different
+greeters would still mean 200 pushes. The lane adds a second rule in the gateway's chat-notification path for tagged DMs: the
+first greeting DM in a 24 h window pushes normally; later tagged DMs in the window write their in-app `user_notifications` row
+(the bell stays complete) but do not push, and the pushed/in-app summary reads "{n} people said hello 👋" localised via
+`_notif_user_locale`. Off switch env var, fails open like the existing coalescer. Premise to verify in round 3: tagged DMs
+reach that notification path via `POST /api/v1/chat/send` (`routes/chat.ts:58`) and `metadata` survives it.
 
 **S5 — cohort: members whose `user_tenants.created_at >= WELCOME_ROLLOUT_AT` only.** No "last 30 days" back-fill: it would
 DM people who joined weeks ago and is not needed for requirement 1.7. The cohort gate is the only retro-protection.
@@ -90,41 +96,33 @@ claims per invocation.
 - Writes happen only in the production gateway, only in `live` mode, only for allowlisted pilot members until the owner
   widens it. Staging and CI never write to a live system.
 
-## Part B — design summary (lanes B/C/D)
-- Backing post: one service-role `profile_posts` row with `post_kind='welcome'` per opted-in newcomer so the synthetic card
-  has a comment target. `post_kind` is added by this plan (it does not exist in `supabase/migrations` today — VOA slice 5 owns
-  `'inspiration'`; the migration defines the column once with a CHECK allowing only `NULL` and `'welcome'`, and slice 5
-  adds `'inspiration'` by ALTER in its own plan). A trigger lets only service_role set it. The backing post is
-  `is_public = true` (comments need a readable post), so the migration `CREATE OR REPLACE`s `notify_community_on_public_post()`
-  (trigger `trg_notify_community_post`, AFTER INSERT) from the LATEST body — VTID-05126,
-  `20261012120000_vtid_05126_profile_posts_calendar_entry_share.sql:124`, keeping its share and attachment branches — adding an
-  early return for `post_kind = 'welcome'` after the test-actor check. The backing post sets `mentions` NULL (the
-  unconditional `trg_notify_post_mention_insert` must not fire). `trg_profile_posts_guard` (suspension check, 20/hour limit,
-  no role bypass) still runs on the service-role insert and correctly blocks a welcome post for a suspended newcomer — no
-  change, covered by a test. A CI test inserts a welcome post into a database built from all migrations and asserts zero
-  `user_notifications` rows.
-- Card: `useAllNewsFeed.ts` sources newcomers only where `community_intro_opt_in`; maps the card to the backing post id.
-- Composer: inline editable greeting (`NewMemberGreetingComposer.tsx`), "Try another", "in {language}" affordance, Send posts
-  exactly one comment through the existing `useFeedPostInteractions('post', welcomePostId).addComment`; never auto-sends;
-  disabled while in flight.
+## Part B — design summary (lanes `new-member-card-optin`, `say-hello-composer`, `grouped-welcome-notifications`)
+- **No backing post, no `post_kind`, no trigger replacement, no comment path** (all dropped by the owner's D2 = b; the round-1
+  findings F2, F6, F8, F9 about that path no longer apply).
+- Card: `useAllNewsFeed.ts` sources newcomers only where `community_intro_opt_in` (column on `global_community_profiles`, see S3).
+- Composer: "Say Hello 👋" opens an inline editable greeting (`NewMemberGreetingComposer.tsx`), prefilled with a suggestion,
+  "Try another", an "in {language}" affordance. **Send** delivers ONE DM to the newcomer from the member who pressed it, through
+  the same gateway endpoint the inbox uses (`POST /api/v1/chat/send`, `routes/chat.ts:58`) with
+  `metadata.source='new_member_greeting'`; disabled while in flight (no double submit); on success the composer collapses and the
+  card hides for that member. Never auto-sends — pressing "Say Hello" alone sends nothing.
 - Suggestion route: Bedrock-only via the `composer.ts` pattern (English intent, sender-locale system prompt, `avoid` list,
   validation, ~120-char cap, no links/markdown, no invented interests). Authenticated member only; per-viewer rate limit.
-- **Deliberate behaviour change:** today "Say hello" navigates to a DM (`NewMemberCard.tsx:104`); it becomes the inline composer
-  and a PUBLIC comment under the welcome post (requirement 2.4). The DM stays reachable from the newcomer's profile and avatar;
-  the card no longer routes to it. `fetchGreetedMemberIds` becomes the union of viewer-sent DMs (`chat_messages`, as today, so
-  previously greeted cards stay hidden) and comments the viewer wrote under the newcomer's welcome post. Flagged at Gate 1
-  as owner decision D2.
-- Grouped notification: a trigger on `profile_post_comments` for `post_kind='welcome'` posts upserts one grouped
-  `user_notifications` row per newcomer per 24 h window.
+- **Deliberate behaviour change:** today "Say hello" navigates to the DM thread (`NewMemberCard.tsx:104`); it becomes the inline
+  composer whose Send creates that DM. The thread stays reachable from the avatar/profile.
+  `fetchGreetedMemberIds` (`new-member-greeted.ts`) is unchanged: it already counts viewer-sent DMs, which is exactly what Send
+  creates, so the card hides after Send and for members who already greeted by DM.
+- Abuse bound: one greeting DM per (member, newcomer) because the card hides after Send; the gateway keeps its normal DM
+  auth, block and rate-limit rules; the grouped-notification lane (S4) keeps the newcomer's phone from being flooded.
 
 ## Test plan (no test writes to staging or production — CLAUDE.md rules 31–32, 46–48)
 - CI simulation, in-memory DB + fake clock (golden scenarios): Mariia at day 0; Jovana day 1; Alex day 2, never the same
   day; each sender sent once across retries and re-sign-in; `failed` retried once then stays failed; pre-rollout member gets
   nothing; excluded account gets nothing and a lookup error ⇒ skip; sender never messages themselves; locale not `ready` ⇒ `en`;
   reply lands as an inbound DM; staging mode refuses to send.
-- Part B: opted-out newcomer ⇒ no card/post; opted-in ⇒ card mapped to post; greeted card hides; Try-another varies and never
-  repeats in a session; Send posts exactly one comment; double-submit blocked; N greetings in 24 h ⇒ one grouped row, one push,
-  right language; backing-post creation fires no tenant push.
+- Part B: opted-out newcomer ⇒ no card; opted-in ⇒ card; pressing Say Hello alone sends nothing; Try-another varies and never
+  repeats in a session; Send creates exactly one DM with `metadata.source='new_member_greeting'`, from the pressing member to the
+  newcomer; double-submit blocked; greeted card hides; N greeting DMs in 24 h ⇒ N in-app rows, one push, summary in the
+  newcomer's language, and the existing per-conversation coalescing is unchanged for ordinary DMs.
 - Read-only staging specs: status GET reports `disabled-on-staging`; card absent for the non-opted-in test account; routes
   return JSON not HTML. Screenshots desktop 1400×900 + mobile 390×844, LTR and `ar` RTL for the composer.
 - Live rollout: closed pilot (allowlist) then widening, each a separate owner-visible step; Gate 2 from STAGING-VERIFY evidence.
@@ -164,3 +162,11 @@ New findings, both minor:
 - **F9** — `trg_profile_posts_guard` (suspension, 20/hour) has no service-role bypass. ACCEPTED: behaviour is correct (no welcome
   post for a suspended newcomer); stated in the plan and covered by a test.
 **Verdict: CONVERGED.** F8/F9 were added to the plan after the partner's last pass (documentation only; hash above covers them).
+
+## Round 3 — scope change after round 2 (owner decision, 2026-10-15)
+Between rounds the owner answered D2: the greeting is a **private DM from the pressing member** (option b: composer → explicit
+Send → DM), not a public comment under a welcome post. The plan block above was rewritten accordingly; Part B no longer has a
+backing post, `post_kind`, the notify-trigger replacement or a comment path, so round-1 findings F2, F3 (comment direction), F6,
+F8 and F9 are **superseded** (kept above as the record). New surface for the partner to attack: the DM send path
+(`POST /api/v1/chat/send`), the `metadata.source='new_member_greeting'` tag, the greeting-DM push grouping (S4) built next to
+`chat-push-coalescer.ts`, and the abuse/flood bound. Planner responses to round-3 findings follow below.
