@@ -8,7 +8,7 @@ area: frontend
 depends_on: []
 claimed_by: kiro-202610151240-0371
 branch: kiro/profile-vitana-cards/card-actions
-pr: https://github.com/exafyltd/vitana-v1/pull/1431
+pr: https://github.com/exafyltd/vitana-v1/pull/1430
 updated: 2026-10-15T20:30Z
 ---
 # Card actions that work (vitana-v1)
@@ -24,7 +24,7 @@ next_actor: claude.
 Owner approved the plan at Gate 1; VTID-05212 allocated. Lane handed to Kiro: `next_actor: kiro`, seat `exafyltd`. Start by claiming the lane.
 
 ### 2026-10-15T20:30Z · kiro-202610151240-0371 · ready → executing (implementation complete, PR open)
-Implemented C1–C7 in exafyltd/vitana-v1#1431 (branch `kiro/profile-vitana-cards/card-actions`).
+Implemented C1–C7 in exafyltd/vitana-v1#1430 (branch `kiro/profile-vitana-cards/card-actions`).
 - **C1 G1:** `firstOpenProfileStep()` reads the cached `screen=profile` list only, with fallback `/me/profile#about`.
   On `/me/profile` the tap now opens the editor.
 - **C2 F4:** `activateOrb()` first, else `/comm/talk-to-vitana`, which is now `CARD_DEEP_LINKS.F4`. The fix is in one
