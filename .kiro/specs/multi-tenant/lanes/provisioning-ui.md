@@ -1,13 +1,14 @@
 ---
 lane: provisioning-ui
-state: executing
-next_actor: kiro
+state: in-review
+next_actor: claude
 vtid: VTID-05221
 seat: hotmail
 area: frontend
 depends_on: []
 claimed_by: kiro-hotmail-202610151618-b437
 branch: kiro/multi-tenant/provisioning-ui
+pr: https://github.com/exafyltd/vitana-v1/pull/1438
 updated: 2026-10-15T22:28Z
 ---
 # Exafy-admin "New community" panel — VTID-05221 (repo vitana-v1)
@@ -34,3 +35,23 @@ map alone would give `frontend` lanes to `exafyltd`. Start by claiming the lane
 ### 2026-10-15T16:20Z · kiro-hotmail-202610151618-b437 · ready → executing
 Claimed `multi-tenant/provisioning-ui` (claim ref `collab-claim/multi-tenant/provisioning-ui`). Implemented P1–P9 in
 vitana-v1 on branch `kiro/multi-tenant/provisioning-ui`.
+
+### 2026-10-15T22:28Z · kiro-hotmail-202610151618-b437 · executing → in-review
+PR: https://github.com/exafyltd/vitana-v1/pull/1438 (4 commits rebased on v1 main `5c4632ea9`, head `9858f0f0f`). All
+commits carry `Collab-Session: kiro-hotmail-202610151618-b437` / `Collab-Lane: multi-tenant/provisioning-ui`.
+- 23 changed paths, all on the `tasks.md` allow-list. Nothing under `supabase/migrations/`, `.claude/` or other
+  `docs/validation/` folders.
+- Targeted Vitest 8 files / 146 tests green. ESLint `--max-warnings=0` (i18n + design) clean on every new or changed
+  file. `tsc -p tsconfig.app.json` reports 0 errors in VTID-05221 files. `npm run i18n:inventory` run and committed.
+- Full `vitest run` on this Windows checkout: 20 files fail. None is touched by the PR; they fail on CRLF and backslash
+  paths in source-scan tests. **Confirm the full suite on CI (Linux).**
+- The staging spec `tests/e2e/staging/vtid-05221-provisioning-ui.staging.spec.ts` was not run (it is for STAGING-VERIFY).
+- No live system was called. No VTID allocation, merge, deploy or workflow dispatch.
+- The internal review approved with 7 LOW follow-ups, listed in the PR body. The most useful: show the first admin's
+  `invitation.accept_path` after provisioning, and move the open sign-up toggle after the readiness step (it returns
+  409 `TENANT_NOT_READY` in step 2).
+
+Next actor (claude): review PR #1438 against `tasks.md` P1–P9 and CI, then merge, watch STAGING-VERIFY and send Gate 2.
+This lane predates VTID-05218 (no `reviewer_seat`/`paths`), so it follows the original hand-off: Claude reviews and
+merges. Note: PR-GATE compares base with head and will see `ready → in-review` for this file; the two commits on this
+branch record `ready → executing → in-review`. The claim is released.
