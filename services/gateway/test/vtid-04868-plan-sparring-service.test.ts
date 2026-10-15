@@ -73,6 +73,19 @@ jest.mock('../src/services/plan-sparring/plan-sparring-repository', () => ({
     Object.assign(s, clone(approval));
     return { data: [{ id }], error: null };
   },
+  // VTID-05214: mirrors recordPolicyApproval's guards (and the table CHECK).
+  recordPolicyApproval: async (_sb: unknown, id: string, approval: Row) => {
+    store.calls.push('recordPolicyApproval');
+    const s = store.sessions.get(id)!;
+    if (s.verdict !== 'converged' || s.approval_policy !== approval.rule || s.policy_approved_at || s.human_approved_by) return { data: [], error: null };
+    Object.assign(s, { policy_approved_at: approval.at, policy_approval_rule: approval.rule });
+    return { data: [{ id }], error: null };
+  },
+  fetchPolicyApprovedNonConverged: async () => {
+    store.calls.push('fetchPolicyApprovedNonConverged');
+    const rows = [...store.sessions.values()].filter((x) => x.policy_approved_at && x.verdict !== 'converged');
+    return { data: clone(rows.map((x) => ({ id: x.id, verdict: x.verdict, policy_approval_rule: x.policy_approval_rule ?? null }))), error: null };
+  },
   fetchConfig: async () => {
     store.calls.push('fetchConfig');
     return { data: store.config ? clone(store.config) : null, error: null };
@@ -742,7 +755,7 @@ describe('reconciler (hourly, read-only, off by default)', () => {
     const types = (emit.mock.calls as any[]).map((c) => c[0].type).sort();
     expect(types).toEqual(['vtid.plan_sparring.break_glass', 'vtid.plan_sparring.tamper_detected', 'vtid.plan_sparring.tamper_detected', 'vtid.plan_sparring.tamper_detected']);
     // Read-only: only read functions of the repository were touched.
-    expect(new Set(store.calls)).toEqual(new Set(['fetchTriggerStatus', 'fetchLedgerRowsWithoutSparring', 'fetchConfig']));
+    expect(new Set(store.calls)).toEqual(new Set(['fetchTriggerStatus', 'fetchLedgerRowsWithoutSparring', 'fetchConfig', 'fetchPolicyApprovedNonConverged']));
   });
 
   it('pages the ledger to exhaustion: 450 rows across 3 pages are all reported, none skipped, none re-reported', async () => {
@@ -814,5 +827,67 @@ describe('reconciler (hourly, read-only, off by default)', () => {
     const emit = jest.fn(async () => ({}));
     const d = await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 }, newReconcilerState());
     expect(d.map((x) => x.check).sort()).toEqual(['config_missing', 'trigger_status_unreadable']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// VTID-05214: policy approval of converged plans (converged-auto-v1)
+// ---------------------------------------------------------------------------
+describe('VTID-05214 policy approval', () => {
+  const R1 = [{ finding_id: 'R1-F1', disposition: 'accepted', rationale: 'done' }];
+  async function round1(policy?: string) {
+    const r1 = makeDeps([READ3, submit(review())]);
+    const { session } = await createSparringSession({ ...createBody(), ...(policy ? { approval_policy: policy } : {}) }, r1.deps);
+    return session;
+  }
+
+  it('rejects an unknown approval policy at creation', async () => {
+    const { deps } = makeDeps([]);
+    await expect(createSparringSession({ ...createBody(), approval_policy: 'yolo' }, deps)).rejects.toMatchObject({ status: 400, code: 'approval_policy_invalid' });
+  });
+
+  it('a converged session that asked for converged-auto-v1 is approved by policy; rounds and owner approval are then refused', async () => {
+    const s = await round1('converged-auto-v1');
+    expect(store.sessions.get(s.id)!.approval_policy).toBe('converged-auto-v1');
+    const r2 = makeDeps([submit(review({ findings: [], premise_checks: [] }))]);
+    const after = await submitPlannerRound(s.id, { responses: R1, revised_plan_text: PLAN_V2 }, r2.deps);
+    expect(after.verdict).toBe('converged');
+    expect(after.policy_approval_rule).toBe('converged-auto-v1');
+    expect(typeof after.policy_approved_at).toBe('string');
+    expect(after.human_approved_by).toBeNull();
+    const { deps } = makeDeps([]);
+    await expect(submitPlannerRound(s.id, { responses: [], revised_plan_text: PLAN_V2 }, deps)).rejects.toMatchObject({ status: 409, code: 'already_approved' });
+    await expect(approveSparringSession(s.id, { user_id: ADMIN }, { final_plan_hash: after.final_plan_hash }, deps)).rejects.toMatchObject({ status: 409, code: 'already_approved' });
+  });
+
+  it('without the policy a converged session waits for the owner (no policy approval)', async () => {
+    const s = await round1();
+    const r2 = makeDeps([submit(review({ findings: [], premise_checks: [] }))]);
+    const after = await submitPlannerRound(s.id, { responses: R1, revised_plan_text: PLAN_V2 }, r2.deps);
+    expect(after.verdict).toBe('converged');
+    expect(after.policy_approved_at ?? null).toBeNull();
+    expect(store.calls).not.toContain('recordPolicyApproval');
+  });
+
+  it('an escalated session is never policy-approved', async () => {
+    const s = await round1('converged-auto-v1');
+    const major = (id: string) => review({ findings: [{ id, severity: 'major', claim: 'still broken', evidence: ev('services/gateway/src/index.ts'), suggestion: 's' }], premise_checks: [] });
+    const r2 = makeDeps([readCalls(['services/gateway/src/index.ts'], 'q'), submit(major('R2-F1'))]);
+    const s2 = await submitPlannerRound(s.id, { responses: R1, revised_plan_text: PLAN_V2 }, r2.deps);
+    expect(s2.verdict).toBe('in_progress');
+    const r3 = makeDeps([readCalls(['services/gateway/src/index.ts'], 'q'), submit(major('R3-F1'))]);
+    const s3 = await submitPlannerRound(s.id, { responses: [{ finding_id: 'R2-F1', disposition: 'accepted', rationale: 'x' }], revised_plan_text: PLAN_V2 + '\n' }, r3.deps);
+    expect(s3.verdict).toBe('escalated');
+    expect(s3.policy_approved_at ?? null).toBeNull();
+    expect(store.calls).not.toContain('recordPolicyApproval');
+  });
+
+  it('reconciler reports a policy approval on a non-converged session', async () => {
+    const s = await round1('converged-auto-v1');
+    Object.assign(store.sessions.get(s.id)!, { policy_approved_at: '2026-10-15T00:00:00Z', policy_approval_rule: 'converged-auto-v1' });
+    const emit = jest.fn(async () => ({}));
+    const d = await runPlanSparringReconcile({ sb: {} as never, emit, now: () => Date.parse('2026-10-15T10:00:00Z') }, newReconcilerState());
+    expect(d.map((x) => x.check)).toContain('policy_approval_on_non_converged');
+    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ type: 'vtid.plan_sparring.tamper_detected', payload: expect.objectContaining({ check: 'policy_approval_on_non_converged' }) }));
   });
 });

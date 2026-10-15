@@ -60,6 +60,7 @@ const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
 const SESSION_RE = /^(session_[A-Za-z0-9]+|kiro-(?:[a-z]{1,12}-)?\d{12}-[0-9a-f]{4}|pm-agent|ci-plan-spar)$/;
 export const SEAT_RE = /^[a-z]{1,12}$/;
 export const isSessionId = (s) => SESSION_RE.test(s || '');
+const CI_PLAN_SPAR = 'ci-plan-spar';
 /** The seat named in a seat-scoped Kiro session id, else ''. */
 export const seatOf = (s) => (/^kiro-([a-z]{1,12})-\d{12}-[0-9a-f]{4}$/.exec(s || '') || [])[1] || '';
 
@@ -85,8 +86,13 @@ export function globToRegex(glob) {
   return new RegExp(`^${re}$`);
 }
 export const matchesAny = (file, globs) => asList(globs).some((g) => globToRegex(g).test(file));
-/** Does a declared lane glob reach into a governance path? (the glob matches one, or a governance glob matches it) */
-export const globTouchesGovernance = (glob) => GOVERNANCE_PATHS.some((gp) => {
+// Representative files under every governance path: a declared glob that matches any of them (e.g. `**/*.yml`,
+// `*.md`) reaches governance even when it does not name the directory.
+const GOVERNANCE_PROBES = ['.github/workflows/PR-GATE.yml', '.github/CODEOWNERS', '.claude/rules/collaboration.md',
+  '.claude/skills/x/SKILL.md', '.claude/settings.json', '.kiro/steering/x.md', '.kiro/automations/x.md',
+  'scripts/collab/queue.mjs', 'scripts/collab/x.test.mjs', 'CLAUDE.md', 'docs/programs/areas.yaml'];
+/** Does a declared lane glob reach into a governance path? (it matches a governance file, names one, or is named by one) */
+export const globTouchesGovernance = (glob) => GOVERNANCE_PROBES.some((f) => globToRegex(glob).test(f)) || GOVERNANCE_PATHS.some((gp) => {
   const probe = String(glob).replace(/\*\*.*$/, '').replace(/\*.*$/, '');
   return globToRegex(gp).test(probe.replace(/\/$/, '')) || globToRegex(glob).test(gp.replace(/\/\*\*$/, '')) || globToRegex(glob).test(gp);
 });
@@ -345,14 +351,19 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
     }
     if (laneIds.size && !headFiles.some((p) => classifyPath(p).kind === 'plan')) errors.push(`.kiro/specs/${slug}: lanes without a handoff.md`);
   }
+  // 2. Lane / session separation (§9): commits that touch spec state carry matching trailers.
+  const commits = commitsInRange(repo, base, head);
   for (const { p, c } of touched) {
     const before = parseFrontMatter(showFile(repo, mergeBase, p));
     const after = parseFrontMatter(showFile(repo, head, p));
+    // VTID-05214: PLAN-SPAR.yml sparred the plan inside this PR, so a plan file may move from (new | drafted | sparred)
+    // straight to sparred | approved | parked when a ci-plan-spar commit made that change.
+    const ciSparred = c.kind === 'plan' && commits.some((k) => k.session === CI_PLAN_SPAR && k.files.includes(p))
+      && ['drafted', 'sparred', undefined].includes(before?.state) && ['drafted', 'sparred', 'approved', 'parked'].includes(after?.state);
+    if (ciSparred) continue;
     for (const x of checkTransition(c.kind, before, after, { allowInitial: allowInitial.includes(c.slug) })) errors.push(`${p}: ${x}`);
   }
 
-  // 2. Lane / session separation (§9): commits that touch spec state carry matching trailers.
-  const commits = commitsInRange(repo, base, head);
   const laneTrailers = new Set(commits.map((k) => k.lane).filter(Boolean).flatMap((l) => l.split(',').map((s) => s.trim())));
   const workLanes = [...laneTrailers].filter((l) => !l.endsWith(`/${PLAN_LANE}`));
   if (workLanes.length > 1) errors.push(`one PR per lane: commits name ${workLanes.length} lanes (${workLanes.join(', ')})`);
@@ -372,6 +383,9 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
       if (k.lane === key) continue;
       // The coordinator declares the lanes: a `_plan` commit may create a lane file, never edit one.
       if (c.kind === 'lane' && k.lane === `${c.slug}/${PLAN_LANE}` && showFile(repo, `${k.sha}^`, f) === null) continue;
+      // VTID-05214: PLAN-SPAR.yml writes the allocated VTID into a lane that is still `ready`.
+      if (c.kind === 'lane' && k.session === CI_PLAN_SPAR && k.lane === `${c.slug}/${PLAN_LANE}`
+        && parseFrontMatter(showFile(repo, k.sha, f))?.state === 'ready') continue;
       if (c.kind === 'lane' && k.review === key && !frontMatterChanged(repo, k.sha, f)) continue; // reviewer appends a log entry
       errors.push(`${short}: changes ${f} but its Collab-Lane is "${k.lane || 'none'}" (needs "${key}"${c.kind === 'lane' ? `, or Collab-Review: ${key} with the front matter unchanged` : ''})`);
     }
@@ -429,7 +443,22 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null }) 
   let source = 'this repo';
   if (text === null && fetchLane) { text = fetchLane(lanePath); source = 'vitana-platform'; }
   if (text === null || text === undefined) { errors.push(`lane ${key}: ${lanePath} not found in this repo or vitana-platform`); return { applies: true, errors, warnings, lane: key }; }
-  const fm = parseFrontMatter(text) || {};
+  let fm = parseFrontMatter(text) || {};
+  // The lane's permissions are the BASE revision's (VTID-05213 review): a lane PR must not widen its own `paths`,
+  // `executor`, `seat` or `reviewer_seat`. Only a Claude Code session (session_…) may change them, and only on a lane
+  // that already was `executor: claude`. A lane that is new in this PR is created by its plan (`_plan` commit).
+  const mergeBase = gitOk(repo, ['merge-base', base, head]);
+  const baseFm = source === 'this repo' && mergeBase ? parseFrontMatter(showFile(repo, mergeBase, lanePath)) : null;
+  if (baseFm) {
+    const PERM = ['executor', 'seat', 'reviewer_seat', 'paths'];
+    const changed = PERM.filter((k) => JSON.stringify(asList(baseFm[k])) !== JSON.stringify(asList(fm[k])));
+    const sessions = new Set(commits.filter((k) => k.files.includes(lanePath)).map((k) => k.session));
+    const claudeOnly = sessions.size > 0 && [...sessions].every((x) => /^session_/.test(x));
+    if (changed.length && !(baseFm.executor === 'claude' && claudeOnly)) {
+      errors.push(`lane ${key}: ${changed.join(', ')} changed in a lane PR — lane permissions come from the base revision (only Claude Code may change them, on an executor: claude lane)`);
+    }
+    if (!(baseFm.executor === 'claude' && claudeOnly)) fm = { ...fm, ...Object.fromEntries(PERM.map((k) => [k, baseFm[k]])) };
+  }
   const paths = asList(fm.paths);
   const changed = git(repo, ['diff', '--name-only', `${base}...${head}`]).split('\n').filter(Boolean);
   const own = (f) => f.startsWith(`.kiro/specs/${slug}/`) || (fm.vtid && f.startsWith(`docs/validation/${fm.vtid}/`));
@@ -497,6 +526,49 @@ export function validatePrograms(programs) {
     }
   }
   return e;
+}
+
+/** Seat names from docs/programs/areas.yaml at `ref` (the keys of its top-level `seats:` map); null when absent. */
+export function loadSeats(repo, ref) {
+  const text = showFile(repo, ref, 'docs/programs/areas.yaml');
+  if (text === null) return null;
+  const seats = new Set();
+  let inSeats = false;
+  for (const line of text.split(/\r?\n/)) {
+    if (/^\S/.test(line)) { inSeats = /^seats:\s*(#.*)?$/.test(line); continue; }
+    const m = inSeats && /^ {2}([a-z]{1,12}):/.exec(line);
+    if (m) seats.add(m[1]);
+  }
+  return seats;
+}
+
+/**
+ * VTID-05213 review: registry checks for the specs this PR touches — every `seat` / `reviewer_seat` names a seat of
+ * areas.yaml (`claude` is a reviewer), and once a programme registry exists, every touched spec belongs to one.
+ */
+export function validateRegistry(repo, { head, touched, repoName, seats, programs }) {
+  const e = [];
+  for (const p of touched) {
+    const c = classifyPath(p);
+    if (!c || c.kind !== 'lane' || !seats) continue;
+    const fm = parseFrontMatter(showFile(repo, head, p)) || {};
+    if (fm.seat && !seats.has(fm.seat)) e.push(`${p}: seat "${fm.seat}" is not a seat of docs/programs/areas.yaml`);
+    if (fm.reviewer_seat && fm.reviewer_seat !== 'claude' && !seats.has(fm.reviewer_seat)) e.push(`${p}: reviewer_seat "${fm.reviewer_seat}" is not a seat of docs/programs/areas.yaml`);
+  }
+  if (programs.length) {
+    const idx = programIndex(programs);
+    for (const slug of new Set(touched.map((p) => classifyPath(p)?.slug).filter(Boolean))) {
+      if (!idx.has(`${repoName}:${slug}`)) e.push(`.kiro/specs/${slug}: not listed by any docs/programs/<id>/program.md (specs: [${repoName}:${slug}])`);
+    }
+  }
+  return e;
+}
+
+/** The repository's name from its origin URL (CI checkouts and worktrees may live in other directories). */
+export function repoNameOf(repo) {
+  const url = gitOk(repo, ['remote', 'get-url', 'origin']) || '';
+  const m = /([^/:]+?)(?:\.git)?\/?$/.exec(url);
+  return m && !url.startsWith('/') ? m[1] : path.basename(repo);
 }
 
 /** `<repo>:<slug>` → programme id. */
@@ -603,7 +675,16 @@ function main(argv) {
     }
     const r = validateRange(repo, { base: args.base, head: args.head, branch: args.branch || '', allowInitial,
       fetchLane: args['lane-repo'] ? ghFetcher(args['lane-repo']) : null });
-    r.errors.push(...validatePrograms(loadPrograms(repo, args.head)));
+    const programs = loadPrograms(repo, args.head);
+    r.errors.push(...validatePrograms(programs));
+    // Seats are checked against areas.yaml from this repo, else from vitana-platform main (fetchLane reads any file).
+    const fetch = args['lane-repo'] ? ghFetcher(args['lane-repo']) : null;
+    let seats = loadSeats(repo, args.head);
+    if (!seats && fetch) {
+      const t = fetch('docs/programs/areas.yaml');
+      if (t) { seats = new Set(); let on = false; for (const l of t.split(/\r?\n/)) { if (/^\S/.test(l)) { on = /^seats:/.test(l); continue; } const m = on && /^ {2}([a-z]{1,12}):/.exec(l); if (m) seats.add(m[1]); } }
+    }
+    r.errors.push(...validateRegistry(repo, { head: args.head, touched: r.touched, repoName: repoNameOf(repo), seats, programs }));
     let md;
     try {
       const rows = buildQueue(collect(repo), path.basename(repo));

@@ -6,6 +6,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
+  validateRegistry, loadSeats,
   parseFrontMatter, classifyPath, validatePlan, validateLane, checkTransition,
   collect, buildQueue, validateRange, claim, release, listClaims, sessionId,
   scopeCheck, globToRegex, matchesAny, globTouchesGovernance, isSessionId, seatOf, loadPrograms, validatePrograms, programIndex,
@@ -384,11 +385,13 @@ test('scope-check: a governance path inside paths still needs executor claude; c
     write(f.work, 'CLAUDE.md', 'x');
     const head = commit(f.work, 'w', { 'Collab-Session': S1, 'Collab-Lane': 'cards/card-01' });
     assert.ok(scopeCheck(f.work, { base, head }).errors.some((x) => x.includes('governance path')));
-    sh(f.work, 'checkout', '-q', '-b', 'claude/x', base);
-    write(f.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { next_actor: 'claude', vtid: 'VTID-00002', executor: 'claude', paths: ['CLAUDE.md'], updated: '2026-10-15T10:00Z' }));
-    write(f.work, 'CLAUDE.md', 'y');
-    const h2 = commit(f.work, 'w', { 'Collab-Session': S2, 'Collab-Lane': 'cards/card-01' });
-    assert.deepEqual(scopeCheck(f.work, { base, head: h2 }).errors, []);
+  } finally { f.done(); }
+  const g = fixture();
+  try {
+    const base = scopeFixture(g, { executor: 'claude', paths: ['CLAUDE.md'] });
+    write(g.work, 'CLAUDE.md', 'y');
+    const h2 = commit(g.work, 'w', { 'Collab-Session': S2, 'Collab-Lane': 'cards/card-01' });
+    assert.deepEqual(scopeCheck(g.work, { base, head: h2 }).errors, []);
   } finally { f.done(); }
 });
 
@@ -455,5 +458,81 @@ test('validate: a lane whose spec lives in the other repo is read through fetchL
     assert.deepEqual(validateRange(f.work, { base, head, branch: 'kiro/plat/lane-x', fetchLane }).errors, []);
     const other = () => laneMd('lane-x', { claimed_by: EX });
     assert.ok(validateRange(f.work, { base, head, fetchLane: other }).errors.some((e) => e.includes('claimed_by')));
+  } finally { f.done(); }
+});
+
+test('VTID-05214: a ci-plan-spar commit may take a plan drafted → approved and write VTIDs into ready lanes; nobody else may', () => {
+  const f = fixture();
+  try {
+    write(f.work, '.kiro/specs/cards/handoff.md', planMd());
+    write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', { next_actor: 'kiro' }));
+    const base = commit(f.work, 'plan', { 'Collab-Session': S1, 'Collab-Lane': 'cards/_plan' });
+    sh(f.work, 'push', '-q', 'origin', 'main');
+    sh(f.work, 'checkout', '-q', '-b', 'kiro/cards/_plan');
+    write(f.work, '.kiro/specs/cards/handoff.md', planMd({ state: 'approved', sparring_record: 'x.md', vtids: ['VTID-09001'], next_actor: 'kiro' }));
+    write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', { next_actor: 'kiro', vtid: 'VTID-09001' }));
+    const head = commit(f.work, 'spar', { 'Collab-Session': 'ci-plan-spar', 'Collab-Lane': 'cards/_plan' });
+    assert.deepEqual(validateRange(f.work, { base, head }).errors, []);
+    // the same change from a normal session is refused (illegal transition + lane edit)
+    sh(f.work, 'checkout', '-q', '-b', 'other', base);
+    write(f.work, '.kiro/specs/cards/handoff.md', planMd({ state: 'approved', sparring_record: 'x.md', vtids: ['VTID-09001'], next_actor: 'kiro' }));
+    write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', { next_actor: 'kiro', vtid: 'VTID-09001' }));
+    const h2 = commit(f.work, 'spar', { 'Collab-Session': S2, 'Collab-Lane': 'cards/_plan' });
+    const e = validateRange(f.work, { base, head: h2 }).errors;
+    assert.ok(e.some((x) => x.includes('illegal transition')), e.join('\n'));
+    assert.ok(e.some((x) => x.includes('lanes/a.md')), e.join('\n'));
+    // ci-plan-spar may not move a lane out of ready
+    sh(f.work, 'checkout', '-q', '-b', 'third', base);
+    write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', { next_actor: 'kiro', vtid: 'VTID-09001', state: 'executing' }));
+    const h3 = commit(f.work, 'x', { 'Collab-Session': 'ci-plan-spar', 'Collab-Lane': 'cards/_plan' });
+    assert.ok(validateRange(f.work, { base, head: h3 }).errors.some((x) => x.includes('lanes/a.md')));
+  } finally { f.done(); }
+});
+
+test('VTID-05213 review: a lane PR cannot widen its own permissions; Claude may adjust a claude lane', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, LANE);
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { ...LANE, executor: 'claude', paths: ['**'], state: 'executing', vtid: 'VTID-00002', claimed_by: JT }));
+    write(f.work, '.github/workflows/evil.yml', 'x');
+    const head = commit(f.work, 'widen', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+    const e = scopeCheck(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors;
+    assert.ok(e.some((x) => x.includes('executor, paths changed in a lane PR')), e.join('\n'));
+    assert.ok(e.some((x) => x.startsWith('.github/workflows/evil.yml is outside')), 'judged against the base paths: ' + e.join('\n'));
+    // a Claude session on a claude lane may extend the paths it works in
+    sh(f.work, 'checkout', '-q', 'main');
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { next_actor: 'claude', vtid: 'VTID-00002', executor: 'claude', paths: ['a/**'] }));
+    const b2 = commit(f.work, 'claude lane', { 'Collab-Session': S2, 'Collab-Lane': 'cards/_plan' });
+    sh(f.work, 'checkout', '-q', '-b', 'claude/x', b2);
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { next_actor: 'claude', vtid: 'VTID-00002', executor: 'claude', paths: ['a/**', 'b/**'], state: 'executing' }));
+    write(f.work, 'b/x.ts', 'x');
+    const h2 = commit(f.work, 'extend', { 'Collab-Session': S2, 'Collab-Lane': 'cards/card-01' });
+    assert.deepEqual(scopeCheck(f.work, { base: b2, head: h2 }).errors, []);
+  } finally { f.done(); }
+});
+
+test('VTID-05213 review: unanchored globs that reach governance files are refused for Kiro lanes', () => {
+  for (const g of ['**/*.yml', '**/*.mjs', '*.md', '**/SKILL.md', '.*/**']) assert.ok(globTouchesGovernance(g), g);
+  assert.ok(!globTouchesGovernance('src/**/*.tsx'));
+});
+
+test('VTID-05213 review: seats must exist in areas.yaml; a touched spec must be in a programme once the registry exists', () => {
+  const f = fixture();
+  try {
+    write(f.work, 'docs/programs/areas.yaml', '# x\nseats:\n  jtadic:   { account: a }\n  exafyltd: { account: b }\nareas:\n  frontend:\n    seat: exafyltd\n');
+    write(f.work, '.kiro/specs/cards/handoff.md', planMd());
+    write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', { seat: 'nobody', reviewer_seat: 'claude' }));
+    write(f.work, '.kiro/specs/cards/lanes/b.md', laneMd('b', { seat: 'jtadic', reviewer_seat: 'unknown' }));
+    const head = commit(f.work, 'x');
+    const seats = loadSeats(f.work, head);
+    assert.deepEqual([...seats].sort(), ['exafyltd', 'jtadic']);
+    const touched = ['.kiro/specs/cards/lanes/a.md', '.kiro/specs/cards/lanes/b.md'];
+    const e = validateRegistry(f.work, { head, touched, repoName: 'work', seats, programs: [] });
+    assert.ok(e.some((x) => x.includes('seat "nobody"')));
+    assert.ok(e.some((x) => x.includes('reviewer_seat "unknown"')));
+    assert.equal(e.length, 2);
+    const prog = [{ id: 'p', path: 'docs/programs/p/program.md', fm: { specs: ['work:other'] } }];
+    assert.ok(validateRegistry(f.work, { head, touched, repoName: 'work', seats: null, programs: prog }).some((x) => x.includes('not listed by any')));
+    assert.deepEqual(validateRegistry(f.work, { head, touched, repoName: 'work', seats: null, programs: [{ ...prog[0], fm: { specs: ['work:cards'] } }] }), []);
   } finally { f.done(); }
 });
