@@ -275,6 +275,7 @@ describe('Commerce MCP: every status-shaped response carries the suggestion', ()
     const src: string = require('fs').readFileSync(require('path').resolve(__dirname, '../src/services/commerce-mcp.ts'), 'utf8');
     const calls = [...src.matchAll(/shapeStatus\(([^)]*)\)/g)].map((m) => m[1]).filter((a) => !a.includes(': Record<string, any>'));
     expect(calls.length).toBeGreaterThan(0);
-    for (const args of calls) expect(args.split(',').length).toBe(3);
+    // Top-level arguments only: drop generic type arguments such as Record<string, any>.
+    for (const args of calls) expect(args.replace(/<[^>]*>/g, '').split(',').length).toBe(3);
   });
 });
