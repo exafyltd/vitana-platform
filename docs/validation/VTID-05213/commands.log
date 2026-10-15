@@ -1,0 +1,4 @@
+$ node --test scripts/collab/queue.test.mjs
+# tests 26 # pass 26 # fail 0 
+$ mutation: governance-path rule disabled -> 1 fail; reviewer_seat != seat rule disabled -> 1 fail (restored)
+$ vitana-v1 range validated with the platform lane file: validate [] / scope-check []
