@@ -1,0 +1,24 @@
+{
+  "vtid": "VTID-05205",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261015150000_vtid_05205_welcome_team_claims.sql",
+    "services/gateway/src/services/welcome-team/**",
+    "services/gateway/src/routes/community-welcome-team.ts",
+    "services/gateway/src/routes/scheduled-notifications.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/src/i18n/catalog.ts",
+    "services/gateway/src/i18n/locales/*.json",
+    "services/gateway/package.json",
+    "services/gateway/test/vtid-05205-*.test.ts",
+    "services/gateway/test/vtid-04226-eventbridge-test-contract-schedules.test.ts",
+    "scripts/aws/setup-eventbridge-cron-migration.sh",
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-05205/**",
+    ".kiro/specs/new-member-welcome/lanes/team-welcome-backend.md"
+  ],
+  "sparring_record": "docs/validation/VTID-05205/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
