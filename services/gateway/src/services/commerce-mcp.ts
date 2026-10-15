@@ -624,8 +624,9 @@ async function connectStore(ctx: McpCallContext, args: Record<string, unknown>):
   const started = await startConnection(ctx.supabase, ctx.caller, orgId, {}, { reuseExisting: true });
   if (started.status >= 400) return fromService(started);
   const conn = (started.body as any).connection ?? {};
+  const suggestions = await companySuggestionsFor(ctx, started.body as Record<string, any>);
   return toolOk({
-    ...shapeStatus(started.body as Record<string, any>, ctx.portalUrl),
+    ...shapeStatus(started.body as Record<string, any>, ctx.portalUrl, suggestions),
     recognised: true,
     detection: { confidence: det.confidence ?? 'none', ...supplierData({ platform_name: cleanText(det.platform_name) }) },
     supplier_data_note: SUPPLIER_DATA_NOTE,
@@ -695,9 +696,9 @@ export async function callCommerceTool(ctx: McpCallContext, name: string, rawArg
         if (!parsed.ok) return toolError('invalid_input', parsed.error);
       }
       if (args.business_type !== undefined && !hasFacts) {
-        return fromService(
+        return fromServiceWithSuggestions(
+          ctx,
           await setMissingPartnerType(s, ctx.caller, orgId, args.business_type, { source: 'commerce-mcp' }),
-          (b) => shapeStatus(b, ctx.portalUrl),
         );
       }
       if (args.confirmed !== true) {
@@ -744,8 +745,11 @@ export async function callCommerceTool(ctx: McpCallContext, name: string, rawArg
       const orgId = str(args.organization_id);
       if (!orgId) return toolError('invalid_input', 'organization_id is required');
       // A 10 s overall budget (VIES alone may take 8 s): slow checks come back partial.
-      return fromService(await checkVerification(s, ctx.caller, orgId, { budgetMs: 10_000 }), (b) => ({
-        ...shapeStatus(b, ctx.portalUrl),
+      const checked = await checkVerification(s, ctx.caller, orgId, { budgetMs: 10_000 });
+      if (checked.status >= 400) return fromService(checked);
+      const suggestions = await companySuggestionsFor(ctx, checked.body as Record<string, any>);
+      return fromService(checked, (b) => ({
+        ...shapeStatus(b, ctx.portalUrl, suggestions),
         verification: b.verification,
       }));
     }
@@ -757,7 +761,7 @@ export async function callCommerceTool(ctx: McpCallContext, name: string, rawArg
       if (args.confirmed !== true) {
         return toolError('confirmation_required', 'Ask the supplier to confirm the submission, then call again with confirmed=true.');
       }
-      return fromService(await submitForVerification(s, ctx.caller, orgId, { source: 'commerce-mcp' }), (b) => shapeStatus(b, ctx.portalUrl));
+      return fromServiceWithSuggestions(ctx, await submitForVerification(s, ctx.caller, orgId, { source: 'commerce-mcp' }));
     }
     default:
       return toolError('not_found', `Unknown tool: ${name}`);

@@ -268,3 +268,13 @@ describe('Commerce MCP status: suggested values', () => {
     expect(a.next_action.how).toBeUndefined();
   });
 });
+
+describe('Commerce MCP: every status-shaped response carries the suggestion', () => {
+  it('no handler calls shapeStatus without the suggestion argument', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const src: string = require('fs').readFileSync(require('path').resolve(__dirname, '../src/services/commerce-mcp.ts'), 'utf8');
+    const calls = [...src.matchAll(/shapeStatus\(([^)]*)\)/g)].map((m) => m[1]).filter((a) => !a.includes(': Record<string, any>'));
+    expect(calls.length).toBeGreaterThan(0);
+    for (const args of calls) expect(args.split(',').length).toBe(3);
+  });
+});
