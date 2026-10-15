@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05209",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/commerce-company-inference.ts",
+    "services/gateway/src/routes/partner-onboarding.ts",
+    "services/gateway/src/services/commerce-mcp.ts",
+    "services/gateway/test/vtid-05209-company-suggestions.test.ts",
+    "docs/validation/VTID-05209/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": [],
+  "sparring_record": "docs/validation/VTID-05209/plan-sparring.md"
+}

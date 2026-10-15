@@ -1,0 +1,8 @@
+$ gate.mjs scope
+✅ **scope** — 8 changed file(s), all inside the scope of VTID-05209
+$ gate.mjs sparring
+✅ **sparring record** — present and approved for VTID-05209
+$ gate.mjs weakening
+✅ **test weakening** — 1 changed test file(s), none weakened without a declaration
+$ node -e "JSON.parse(staging-tests.json)"
+valid JSON

@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05209",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "registration suggestions route is mounted and requires a login", "path": "/api/v1/partner-onboarding/company-suggestions", "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "http", "name": "business suggestions route is mounted and requires a login", "path": "/api/v1/partner-onboarding/00000000-0000-4000-8000-000000000000/company-suggestions", "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "http", "name": "build-info answers JSON (the runner confirms the verified commit from it)", "path": "/api/v1/admin/build-info", "expect_status": 200, "expect_content_type": "application/json" },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05209-company-suggestions.test.ts test/commerce-mcp.test.ts test/vtid-04940-commerce-mcp-supplier-data.test.ts test/vtid-04941-commerce-mcp-automation.test.ts test/partner-onboarding.test.ts",
+      "cwd": "services/gateway",
+      "reason": "An authenticated suggestion reads the caller's own account and a business's saved facts in the database staging shares with production; the read-only staging suite has no signed-in gateway probe. These suites mock Supabase and the auth lookup and prove the inference rules, route order and reachability, org-admin scoping, read-only behaviour and the Commerce MCP status shape."
+    }
+  ]
+}
