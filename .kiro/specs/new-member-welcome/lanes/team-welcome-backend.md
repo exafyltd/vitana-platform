@@ -6,7 +6,8 @@ vtid: VTID-05205
 depends_on: []
 claimed_by: kiro-202610150924-9ecd
 branch: kiro/new-member-welcome/team-welcome-backend
-updated: 2026-10-15T14:30Z
+pr: https://github.com/exafyltd/vitana-platform/pull/4133
+updated: 2026-10-15T14:35Z
 ---
 # Three team welcome DMs (gateway + migration)
 
