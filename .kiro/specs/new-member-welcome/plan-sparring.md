@@ -7,8 +7,8 @@
 - **Coordinator session:** `session_01LKkSBuw1tGgnKzjhfcmAxj` (`_plan` claim `new-member-welcome/_plan`)
 - **Author of the draft:** Kiro `kiro-202610150924-9ecd` (PR exafyltd/vitana-platform#4123)
 - **VTIDs (allocated 2026-10-15 after Gate 1, log-mode gate):** VTID-05205 `team-welcome-backend`, VTID-05206 `new-member-card-optin`,
-  VTID-05207 `say-hello-composer`, VTID-05208 `grouped-welcome-notifications`. Copy of this record:
-  `docs/validation/VTID-05205/plan-sparring.md`.
+  VTID-05207 `say-hello-composer`, VTID-05208 `grouped-welcome-notifications`. Each lane PR copies this record to
+  `docs/validation/<its VTID>/plan-sparring.md`.
 
 # Plan — New-member welcome experience (three team DMs + "Say Hello 👋" card)
 

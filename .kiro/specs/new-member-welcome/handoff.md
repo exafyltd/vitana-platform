@@ -69,7 +69,9 @@ approval of the plan. No VTID, no code.
 Owner approved at Gate 1 ("yes", 2026-10-15; plan hash `f7cdefc3043249c5`; D1 default ON; no sender approval step; greeting is a
 DM on explicit Send). VTIDs allocated and set `in_progress`/`approved` in the ledger: VTID-05205 `team-welcome-backend`,
 VTID-05206 `new-member-card-optin`, VTID-05207 `say-hello-composer`, VTID-05208 `grouped-welcome-notifications`.
-Record copied to `docs/validation/VTID-05205/plan-sparring.md`. **For Kiro:** `tasks.md` and `plan-sparring.md` (the plan
+The record lives at `.kiro/specs/new-member-welcome/plan-sparring.md`; each lane PR copies it to its own
+`docs/validation/<VTID>/plan-sparring.md` (a plan-level PR must not add `docs/validation/<VTID>/`, the PR validation gate ties
+it to one VTID). **For Kiro:** `tasks.md` and `plan-sparring.md` (the plan
 block) are authoritative — requirements/design text that still says "comment" or "backing post" is superseded (banner in
 `design.md`). Each lane PR copies the sparring record into its own `docs/validation/<VTID>/plan-sparring.md`, adds
 `scope.json`/`acceptance.md`/`staging-tests.json` there, and carries the `Collab-Session`/`Collab-Lane` trailers.
