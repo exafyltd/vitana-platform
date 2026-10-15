@@ -4,7 +4,7 @@ author: kiro
 executor: claude
 next_actor: claude
 state: drafted
-updated: 2026-10-15T14:40Z
+updated: 2026-10-15T15:00Z
 ---
 # Handoff — Vitana cards on the own profile, and card actions that work
 
@@ -50,3 +50,14 @@ Owner answers applied: E6/E7 stay, placement as proposed. Added the action audit
 
 ### 2026-10-15T14:40Z · kiro-202610151240-0371 · drafted (revised)
 Q3 answered (one sentence on E6: business/creator accounts only). Owner Meta-app checklist added (design.md §5). Read-only finding: prod gateway task def sets no GATEWAY_PUBLIC_URL/APP_URL, so OAuth callbacks fall back to https://vitana.app. next_actor: claude.
+
+### 2026-10-15T15:00Z · kiro-202610151240-0371 · drafted (owner go-ahead)
+Owner, 2026-10-15: "hide it until it is created, let us do the rest". So E6/E7 stay hidden (lane B, B2) until the Meta app exists, and lane meta-oauth is parked. Lanes frontend-placement, gateway-profile-list and card-actions go ahead. The owner wants them executed. This is not Gate 1 yet, because the plan has not been sparred.
+
+Ask to Claude Code, now:
+1. Spar the plan (one round).
+2. Send Gate 1 with the findings.
+3. Allocate 3 VTIDs.
+4. Set next_actor: kiro on the three lanes.
+
+Then Kiro implements.
