@@ -11,6 +11,23 @@ No renames, no logic edits, no wrappers; top-level statements stay in `app.js`.
 - `operator-console.js`: 197,320 bytes (192.7 KB; under the 350 KB guard).
 - Top-level function set across the bundle: unchanged (proved by test).
 
+## Acceptance criteria
+
+AC-1 Selection is deterministic: an acorn-based script seeds `renderOperator*`, takes the exclusive-callee fixpoint with string-literal exclusion, stays app.js-only, and emits the 90-function list byte-identically on re-run.
+TEST: node scripts/dev/select-extraction.mjs (re-run byte-identical) AND npx jest test/command-hub/vtid-05073-operator-console-extraction.test.ts -t "case b"
+
+AC-2 The 90 functions are moved unchanged (AST-identical, original order) into `operator-console.js`, which is registered in `modules.json` and `index.html` with its `<script>` tag before app.js; both files pass `node --check`.
+TEST: npx jest test/command-hub/vtid-05073-operator-console-extraction.test.ts -t "case a" AND -t "case c"
+
+AC-3 The top-level function set across the whole bundle is unchanged by the move (each moved function is gone from app.js and present exactly once in operator-console.js; no function is declared in two bundle files).
+TEST: npx jest test/command-hub/vtid-05073-operator-console-extraction.test.ts -t "case b" AND npx jest test/command-hub/vtid-05072-bundle-manifest.test.ts -t "case 2"
+
+AC-4 Cache-bust and guards are consistent: `index.html` carries `?v=20261116-vtid-05073` for app.js/operator-console.js/styles.css, the ownership guard allowlists VTID-05073, and the symbol index regenerates in sync.
+TEST: node scripts/generate-command-hub-symbol-index.mjs --check (outputs/symbol-index-check.log) AND npx jest test/command-hub/vtid-05072-bundle-manifest.test.ts -t "case 4"
+
+AC-5 All command-hub string-pin suites pass with assertion text unchanged after the coupled reads are re-pointed through the shared bundle helper.
+TEST: npx jest test/command-hub (outputs/jest-command-hub.log — 44 suites / 821 tests, no assertion text edited)
+
 ## Plan item → proving check
 
 | Plan item (KIRO-INSTRUCTIONS §2 / plan.md) | Proof |
