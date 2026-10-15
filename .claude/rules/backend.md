@@ -1118,6 +1118,14 @@ Standing rules for any Commerce change:
    `"true"`, so every production publish keeps payouts on. To switch them off,
    dispatch with `env_overrides` setting both to `"false"`; the post-deploy
    check then expects `false`.
+9. **The API serves the AI-led, low-friction onboarding UX (VTID-05204, owner rule 2026-10-15).** The
+   frontend contract lives in `exafyltd/vitana-v1` `CLAUDE.md` → "Commerce UX contract".
+   - Never require a field from the client just because an internal model has it: infer it, default it, or
+     let the connected AI supply it; require it only when it is legally or operationally necessary.
+   - Onboarding status keeps stable, human-facing checklist semantics. Any new or changed status field must
+     say, per open step, whether the system/AI can complete it or a human must (legal acceptance,
+     identity/verification, payment/bank details, destructive actions, final sensitive confirmations).
+   - Return plain business concepts to the client, not internal implementation terms.
 
 ---
 
