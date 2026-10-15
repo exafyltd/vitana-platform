@@ -6,6 +6,11 @@ No migration. No change to registration/company validation, verification, terms 
 
 VALIDATION_PROFILE: gateway_backend
 
+ROUTE_MOUNT: services/gateway/src/routes/partner-onboarding.ts → router.get('/company-suggestions', requireAuth, …) registered before router.get('/:orgId', …), and router.get('/:orgId/company-suggestions', requireAuth, requireOrgAdmin(), …); the router is already mounted in src/index.ts via mountRouterSync(app, '/api/v1/partner-onboarding', partnerOnboardingRouter, …) — no new mount, no new route file
+FINAL_URL: GET {gateway}/api/v1/partner-onboarding/company-suggestions and GET {gateway}/api/v1/partner-onboarding/:orgId/company-suggestions
+CURL_PROOF: staging only, read-only, by STAGING-VERIFY (`staging-tests.json` tests 1–2): both URLs on https://preview-aws-gateway.vitanaland.com → 401 `application/json` without a login; the signed-in 200 shape is read by the frontend staging spec (vitana-v1 VTID-05209). Never run against production. Local proof: Jest AC-2/AC-3.
+OASIS_PROOF: none — read-only routes, no new OASIS event.
+
 ## Acceptance criteria
 
 AC-1: `inferCompanyFacts` — saved values always win; country from the EU VAT prefix (`EL`→GR), the website's country-code domain (multi-part suffixes such as `.co.uk` read first; generic/vanity endings give nothing) or, with no website known, the confirmed business email's domain; website from a confirmed, non-free-mail email domain; two reliable sources that disagree give no country. No IP lookup and no network I/O.
