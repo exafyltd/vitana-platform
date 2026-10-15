@@ -18,3 +18,7 @@ AC-5: The collab validator accepts a ci-plan-spar commit taking a plan drafted �
   TEST: scripts/collab/queue.test.mjs
 AC-6: PLAN-SPAR.yml runs only on same-repository `plan(` PRs, from the base branch's code, with PLAN_SPAR_ENABLED=true; it skips its own commits.
   TEST: .github/workflows/PLAN-SPAR.yml (review: pull_request_target + base checkout + head-as-data; `if:` same-repo + title + variable; guard step)
+
+## OASIS
+
+OASIS_PROOF: services/gateway/test/vtid-04868-plan-sparring-service.test.ts — "VTID-05214 policy approval › reconciler reports a policy approval on a non-converged session" asserts the emitted event `vtid.plan_sparring.tamper_detected` with `payload.check = policy_approval_on_non_converged`. No other new OASIS event; sparring rounds stay out of OASIS (VTID-04868 F3).
