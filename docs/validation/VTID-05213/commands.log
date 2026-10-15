@@ -1,0 +1,3 @@
+$ node --test scripts/collab/queue.test.mjs
+# tests 25 # pass 25 # fail 0 
+$ mutation: governance-path rule disabled -> 1 fail; reviewer_seat != seat rule disabled -> 1 fail (restored: 25/25)
