@@ -1,6 +1,6 @@
 # new-member-welcome — Plan sparring record
 
-- **Plan hash (sha256 of the text between the plan markers, first 16 hex):** `d0ed907dc2c4f75e`
+- **Plan hash (sha256 of the text between the plan markers, first 16 hex):** `f7cdefc3043249c5`
 - **Verdict:** CONVERGED (round 4 closing pass after the owner's D2 = b scope change: F10–F12 closed; F13 minor accepted)
 - **Owner approval (Gate 1):** pending
 - **Change class:** standard · **Rounds:** 4 (R1 findings, R2 close, R3 scope change, R4 close) · **Partner:** `plan-sparring-partner` (independent, read-only, Claude Opus 4.6 on Bedrock)
@@ -41,8 +41,9 @@ Four lanes, one VTID each, executor Kiro:
 other locale falls back along the existing chain (locale → `en` → `de`, `catalog.ts`). Widening beyond the pilot allowlist
 requires all of `es sr fr pt ru pl zh tr` `ready` (a rollout-checklist gate; `ar` may follow). Fallback-to-`en` for pilot
 members is recorded under "Decisions taken" at Gate 2. A written message from a named person falls under the catalog rule,
-not rule 41 (which covers *spoken* lines; VOA §4.5.5 decided the same). Each sender approves their exact wording once; the
-approval is recorded in the lane's VTID. Locale gate: the send is allowed only for locales whose three keys are `ready`;
+not rule 41 (which covers *spoken* lines; VOA §4.5.5 decided the same). **Owner decision 2026-10-15: the welcomes go out
+automatically, without a per-sender approval step** (this reverses the VOA §4.5.5 sender-approval precedent for these three
+senders; the wording is the seed text in `content-welcome-seed.md`, reviewed through the normal locale review only). Locale gate: the send is allowed only for locales whose three keys are `ready`;
 for any other locale the member gets the `en` text (existing catalog fallback), never a half-translated one. `ar` may ship
 later (falls back to `en`). Community-greeting *suggestions* (Part B) stay model-composed because a human edits them.
 
@@ -58,8 +59,8 @@ tested; the ledger's one-touch-per-day budget stays untouched by welcomes.
 rollout, `false` for everyone else; visible off-switch in Settings and in the registration wizard.** The card source today is
 that table (last 7 days, `useAllNewsFeed.ts:199-204`); the migration adds `community_intro_opt_in` to it directly and
 checks that existing RLS policies and the `REPLICA IDENTITY FULL` realtime publication are unaffected. Requirement 2.1 says "explicit choice" — default-on is the one place the plan departs from a strict
-reading, so it is flagged as **owner decision D1** with the strict alternative (default `false` + explicit toggle shown in
-the wizard) priced: the card shows far fewer newcomers.
+reading, so it is **owner decision D1, answered 2026-10-15: default ON** — new members are included automatically, with the off-switch. The
+strict alternative (default `false` + explicit toggle) is not taken.
 
 **S4 — grouping window: 24 h per newcomer, applied to greeting DMs.** Greeting DMs carry `metadata.source='new_member_greeting'`.
 Today `chat-push-coalescer.ts` (VTID-05137) allows one push per conversation per 5 min, i.e. per SENDER, so 200 different
@@ -210,3 +211,14 @@ client. New finding, minor: **F13** — the one-per-pair and hourly-cap queries 
 (no index). ACCEPTED: the plan now bounds the lookup by `sender_id` + `receiver_id` + the 7-day window before the tag test.
 **Verdict: CONVERGED.** F13's wording change is in the plan (hash above covers it). The round-3 scope change used the one extra
 round the skill allows; the record shows 4 rounds because of it.
+
+### Owner decisions after round 4 (2026-10-15) — implementation of owner decisions, not re-argued with the partner
+- **D1 = default ON.** New members after rollout are included automatically, with the off-switch (the plan's S3 default; the
+  strict default-off alternative is not taken).
+- **No sender approval.** Mariia, Jovana and Alex Blue do not approve their wording or the automation; the three welcomes go
+  out automatically. This removes the VOA §4.5.5 sender-approval step for these senders (S1 sentence and the seed file amended).
+  Consequences recorded: messages are sent from three real members' accounts without them being asked, and replies land in
+  those members' inboxes. The S6 display-name check (`WELCOME_SENDER_NAMES_CONFIRMED`) stays: it is about what newcomers see,
+  not sender consent.
+- Plan hash changed to `f7cdefc3043249c5` because the S1 and S3 sentences changed; the partner's CONVERGED verdict covers the design, and
+  these two sentences are owner decisions applied verbatim.

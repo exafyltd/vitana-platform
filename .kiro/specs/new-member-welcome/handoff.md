@@ -5,7 +5,7 @@ executor: kiro
 next_actor: owner
 state: sparred
 sparring_record: .kiro/specs/new-member-welcome/plan-sparring.md
-updated: 2026-10-15T11:40Z
+updated: 2026-10-15T12:10Z
 ---
 # Handoff — New-member welcome experience (MAXINA)
 
@@ -58,3 +58,8 @@ dependencies:** `say-hello-composer` depends_on `new-member-card-optin` + `group
 now platform-side and dependency-free. The `lanes/*.md` files still show the pre-D2 dependencies and design pointers — the
 collab validator allows one work lane per PR, so each lane file is updated in its own commit when that lane is released to Kiro.
 No backing post / `post_kind` / trigger work remains. next_actor: owner — Gate 1 re-sent. Still no VTID, no code.
+
+### 2026-10-15T12:10Z · session_01LKkSBuw1tGgnKzjhfcmAxj · sparred (owner answered D1 and sender consent)
+Owner: D1 = default ON; no sender approval — the three welcomes go out automatically. Plan (S1, S3), seed file and design.md
+note amended; plan hash now in `plan-sparring.md` header. Still `sparred`, next_actor: owner — waiting for the explicit Gate 1
+approval of the plan. No VTID, no code.

@@ -18,6 +18,9 @@ the gateway allowlist and would message every signup from day one).
 
 ## Part A — Three private team welcome messages
 
+> **Owner decision 2026-10-15:** no per-sender wording/consent approval; the three welcomes are sent automatically. Where this
+> section says the senders approve their wording, that step is removed.
+
 ### A.1 Senders config (configurable, not hardcoded)
 New TS config module `services/gateway/src/services/welcome-team/config.ts` (same shape as
 `companion/config.ts`): mode (`disabled-on-staging | off | shadow | staff | live`), the

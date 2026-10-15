@@ -1,8 +1,8 @@
-# Team-welcome seed wording (tt() catalog) — for sparring + sender approval
+# Team-welcome seed wording (tt() catalog) — for sparring and locale review
 
 Author: kiro, 2026-10-15. This is the **Option A (catalog)** seed wording for the three team
 welcome DMs (design.md §A.2, requirement 1.4). Status: DRAFT for the sparring partner and
-for Mariia / Jovana / Alex Blue to approve their own wording before any live send.
+(Owner decision 2026-10-15: no per-sender approval step — the welcomes are sent automatically.)
 
 Conventions (verified against `services/gateway/src/i18n/catalog.ts` + `locales/*.json`):
 - Keys registered in `catalog.ts` (`GatewayI18nKey` union); translations in
@@ -13,8 +13,8 @@ Conventions (verified against `services/gateway/src/i18n/catalog.ts` + `locales/
   if unknown — see the no-name variant note under each sender).
 - **du-form**, warm, natural, concise. One short message each. The rule-41 ban on hardcoded
   sentences does NOT apply here: these are written messages FROM named people, governed by
-  the catalog rule (VOA §4.5.5 precedent). Each sender approves their exact wording once;
-  that approval is recorded in the lane's VTID.
+  the catalog rule (VOA §4.5.5 precedent). Owner decision 2026-10-15: no per-sender
+  approval step; the wording goes through the normal locale review only.
 - These are chat DM bodies (not push), so no title key — one body key per sender.
 - Per-locale status starts `unverified` and flips to `ready` only after the locale review,
   same as every other catalog addition.
@@ -95,5 +95,5 @@ each lands `unverified` → `ready` after review. `ar` is RTL and may ship after
 ## Open points for the senders / sparring
 - Mariia's account display_name is "maksinamariia" (not "Mariia Maksina"); if the DM renders
   a "from" name from the account, fix the account before go-live (design S6).
-- Each sender confirms their own wording and consents to the automation once (recorded in the
-  lane VTID), exactly as VOA §4.5.5 requires for the Mariia welcome.
+- ~~Each sender confirms their own wording and consents to the automation once~~ — removed by owner decision 2026-10-15; the
+  welcomes are sent automatically (recorded in the sparring record and the lane VTIDs).
