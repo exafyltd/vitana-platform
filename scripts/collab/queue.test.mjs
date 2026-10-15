@@ -442,3 +442,18 @@ test('programme registry: shape, a spec in two programmes, queue --program colum
     assert.match(out, /\| work \| alpha \| cards \|/);
   } finally { f.done(); }
 });
+
+test('validate: a lane whose spec lives in the other repo is read through fetchLane', () => {
+  const f = fixture();
+  try {
+    const base = sh(f.work, 'rev-parse', 'HEAD');
+    sh(f.work, 'checkout', '-q', '-b', 'kiro/plat/lane-x');
+    write(f.work, 'src/a.ts', 'x');
+    const head = commit(f.work, 'w', { 'Collab-Session': JT, 'Collab-Lane': 'plat/lane-x' });
+    assert.ok(validateRange(f.work, { base, head }).errors.some((e) => e.includes('does not exist')));
+    const fetchLane = () => laneMd('lane-x', { claimed_by: JT });
+    assert.deepEqual(validateRange(f.work, { base, head, branch: 'kiro/plat/lane-x', fetchLane }).errors, []);
+    const other = () => laneMd('lane-x', { claimed_by: EX });
+    assert.ok(validateRange(f.work, { base, head, fetchLane: other }).errors.some((e) => e.includes('claimed_by')));
+  } finally { f.done(); }
+});

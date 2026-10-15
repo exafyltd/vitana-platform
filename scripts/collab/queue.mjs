@@ -14,7 +14,7 @@
  *   node scripts/collab/queue.mjs release <slug>/<lane-id> --session <id> [--stale] [--repo <path>]
  *   node scripts/collab/queue.mjs claims  [--repo <path>]          (claims with age; housekeeping input)
  *   node scripts/collab/queue.mjs validate --base <sha> --head <sha> [--repo .] [--branch <name>]
- *                                         [--allow-initial=<slug>] [--summary <file>]
+ *                                         [--allow-initial=<slug>] [--lane-repo <owner/repo>] [--summary <file>]
  *   node scripts/collab/queue.mjs scope-check --base <sha> --head <sha> [--repo .] [--branch <name>]
  *                                         [--lane-repo <owner/repo>] [--summary <file>]   (VTID-05213 Lane scope)
  *   node scripts/collab/queue.mjs [...] --program <id>             (lanes of one programme, docs/programs/<id>/program.md)
@@ -325,7 +325,7 @@ function frontMatterChanged(repo, sha, p) {
   return fm(a) !== fm(b);
 }
 
-export function validateRange(repo, { base, head, branch = '', allowInitial = [] }) {
+export function validateRange(repo, { base, head, branch = '', allowInitial = [], fetchLane = null }) {
   const errors = [];
   const warnings = [];
   const changed = git(repo, ['diff', '--name-only', `${base}...${head}`]).split('\n').filter(Boolean);
@@ -380,8 +380,10 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
     if (sessions.size > 1) errors.push(`lane ${lane}: commits from ${sessions.size} sessions (${[...sessions].join(', ')}) — one session per lane`);
     const [slug, id] = lane.split('/');
     if (id === PLAN_LANE) continue;
-    const fm = parseFrontMatter(showFile(repo, head, `.kiro/specs/${slug}/lanes/${id}.md`));
-    if (!fm) { errors.push(`Collab-Lane ${lane}: .kiro/specs/${slug}/lanes/${id}.md does not exist`); continue; }
+    // A vitana-v1 PR may work a lane whose spec lives in vitana-platform (VTID-05213): fetchLane reads it there.
+    const lanePath = `.kiro/specs/${slug}/lanes/${id}.md`;
+    const fm = parseFrontMatter(showFile(repo, head, lanePath) ?? (fetchLane ? fetchLane(lanePath) : null));
+    if (!fm) { errors.push(`Collab-Lane ${lane}: ${lanePath} does not exist${fetchLane ? ' here or in vitana-platform' : ''}`); continue; }
     const s = [...sessions][0];
     if (fm.claimed_by && fm.claimed_by !== s) errors.push(`lane ${lane}: claimed_by is ${fm.claimed_by} but the commits come from ${s}`);
   }
@@ -599,7 +601,8 @@ function main(argv) {
       if (!/^docs\/validation\/VTID-\d{5}\/scope\.json$/.test(p)) continue;
       try { allowInitial.push(...asList(JSON.parse(showFile(repo, args.head, p) || '{}').collab_allow_initial)); } catch { /* scope guard reports bad JSON */ }
     }
-    const r = validateRange(repo, { base: args.base, head: args.head, branch: args.branch || '', allowInitial });
+    const r = validateRange(repo, { base: args.base, head: args.head, branch: args.branch || '', allowInitial,
+      fetchLane: args['lane-repo'] ? ghFetcher(args['lane-repo']) : null });
     r.errors.push(...validatePrograms(loadPrograms(repo, args.head)));
     let md;
     try {

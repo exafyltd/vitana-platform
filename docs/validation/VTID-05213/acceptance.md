@@ -16,6 +16,8 @@ AC-3: `pm-agent` and `ci-plan-spar` are accepted session ids; `pm` is not.
   TEST: scripts/collab/queue.test.mjs
 AC-4: Programme registry: front matter validated, a spec in two programmes fails, `queue --program` filters and shows the programme column.
   TEST: scripts/collab/queue.test.mjs
+AC-7: `validate` reads a lane file that lives in the other repo through the same fetch (vitana-v1 PRs for platform-hosted plans).
+  TEST: scripts/collab/queue.test.mjs
 AC-5: All earlier queue/claim/validate behaviour is unchanged (existing 17 tests).
   TEST: scripts/collab/queue.test.mjs
 AC-6: PR-GATE has a separate "Lane scope" job in both repos (vitana-v1 fetches queue.mjs and the lane file from vitana-platform main, and skips until this PR is on main).
