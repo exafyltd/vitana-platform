@@ -2,12 +2,13 @@
 
 - **Plan hash (sha256 of the text between the plan markers, first 16 hex):** `f7cdefc3043249c5`
 - **Verdict:** CONVERGED (round 4 closing pass after the owner's D2 = b scope change: F10–F12 closed; F13 minor accepted)
-- **Owner approval (Gate 1):** pending
+- **Owner approval (Gate 1):** 2026-10-15, owner "yes" in the Claude Code session `session_01LKkSBuw1tGgnKzjhfcmAxj` (plan hash `f7cdefc3043249c5`; D1 = default ON, no sender approval)
 - **Change class:** standard · **Rounds:** 4 (R1 findings, R2 close, R3 scope change, R4 close) · **Partner:** `plan-sparring-partner` (independent, read-only, Claude Opus 4.6 on Bedrock)
 - **Coordinator session:** `session_01LKkSBuw1tGgnKzjhfcmAxj` (`_plan` claim `new-member-welcome/_plan`)
 - **Author of the draft:** Kiro `kiro-202610150924-9ecd` (PR exafyltd/vitana-platform#4123)
-- **VTIDs:** none yet — allocated only after the owner's Gate 1 "yes". On approval this file is copied to
-  `docs/validation/<first VTID>/plan-sparring.md` in the first lane's PR.
+- **VTIDs (allocated 2026-10-15 after Gate 1, log-mode gate):** VTID-05205 `team-welcome-backend`, VTID-05206 `new-member-card-optin`,
+  VTID-05207 `say-hello-composer`, VTID-05208 `grouped-welcome-notifications`. Copy of this record:
+  `docs/validation/VTID-05205/plan-sparring.md`.
 
 # Plan — New-member welcome experience (three team DMs + "Say Hello 👋" card)
 
