@@ -20,7 +20,9 @@ local-only notes, no copy-paste. A session that cannot push says so to the owner
 | File | Written by | Content |
 |---|---|---|
 | `requirements.md`, `design.md`, `tasks.md` | the author | Kiro's spec format. Each task group in `tasks.md` carries `<!-- lane: <lane-id> -->`. |
-| `handoff.md` | only the holder of the `_plan` claim (coordinator) | plan-level front matter + append-only log |
+| `plan.md` | the planner | the plan between `<!-- plan:begin -->` / `<!-- plan:end -->` (what PLAN-SPAR spars) |
+| `sparring/` | PLAN-SPAR (`round-<n>.md`, `state.json`, `verdict.md`); the planner (`responses-<n>.md`) | the CI sparring record |
+| `handoff.md` | only the holder of the `_plan` claim (coordinator), or PLAN-SPAR | plan-level front matter + append-only log |
 | `lanes/<lane-id>.md` | only the session holding that lane's claim (a reviewer may append a log entry) | lane front matter + append-only log |
 
 `handoff.md` front matter:
@@ -46,6 +48,11 @@ parked_from: <state>         # only when parked
 next_actor: claude | kiro | owner
 vtid: VTID-xxxxx             # required from executing on
 depends_on: [<lane-id>, ...] # lanes that must be done first
+executor: kiro | claude      # who builds it (VTID-05213)
+seat: <seat>                 # the Kiro account that builds it (docs/programs/areas.yaml)
+reviewer_seat: <seat>|claude # who reviews it — never the lane's own seat
+paths:                       # the only files the lane may change (Lane scope); required from executing on
+  - src/pages/messages/**
 claimed_by: <session id>     # the session working it
 branch: <branch>
 pr: <url>
@@ -88,6 +95,11 @@ comments cannot address one account — each account **pulls** its own work inst
   `.kiro/automations/<seat>.md` in vitana-platform and follow it exactly." That file takes at most one lane with its own
   seat per run and stops at once when there is none. Change what an account does by editing its file, never in Kiro.
 - `queue.mjs --seat <seat>` lists one seat's lanes; the queue table shows each lane's seat.
+- **Lane fields (VTID-05213):** `executor: kiro|claude` (who builds it), `reviewer_seat` (who reviews it: another Kiro
+  seat, never the lane's own `seat`, or `claude`) and `paths` (globs of the only files the lane may change; required once
+  it is `executing`). The PR-GATE check **Lane scope** fails a lane PR that changes anything else, and any change to a
+  governance path (`.github/**`, `.claude/**`, `.kiro/steering/**`, `.kiro/automations/**`, `scripts/collab/**`,
+  `CLAUDE.md`, `docs/programs/areas.yaml`) from a lane that is not `executor: claude`.
 
 ## 4. Session start
 1. `git fetch --prune origin` in both checkouts.
@@ -102,7 +114,8 @@ comments cannot address one account — each account **pulls** its own work inst
 `node <vitana-platform>/scripts/collab/queue.mjs claim <slug>/<lane-id> --session <id> --repo <repo>`
 pushes `refs/heads/collab-claim/<slug>/<lane-id>` without force. Git refuses it when another session holds the
 lane → the script names the holder → **pick another lane, never work it in parallel**. Plan-level steps
-(sparring, Gate 1, allocating VTIDs, `approved→executing`, `executing→…→done`, Gate 2) need the `_plan` claim.
+(sparring, Gate 1, allocating VTIDs, `approved→executing`, `executing→…→done`, Gate 2) need the `_plan` claim —
+except what PLAN-SPAR does inside a plan PR (§7).
 - A session without a claim never edits `handoff.md` or a lane file.
 - An owner instruction about a lane another session holds → tell the owner which session holds it and leave it.
 - A claim older than 24 h with no new commit on the lane's branch may be broken:
@@ -114,31 +127,40 @@ coordinator: in `handoff.md`), commit with the trailers, push the branch / open 
 `release <slug>/<lane-id> --session <id>` when you hand the lane to someone else.
 
 ## 7. Roles
-**Default roles — fixed (owner decision 2026-10-14, VTID-05192).** Claude Code is the author, the coordinator
-(`_plan` claim) and the reviewer of every plan, and the only agent that merges and sends Gate 1 / Gate 2. Kiro is the
-executor of lanes (`executor: kiro`). Kiro authors a plan only when the owner asks Kiro directly for one; Claude Code
-then spars it as below. Claude Code executes a lane only when the owner assigns it (`executor: claude`) or for the
-coordinator's own commits.
+**Kiro plans, builds and reviews; the Project Manager merges and sends Gate 2; Claude Code handles exceptions**
+(owner decisions 2026-10-14, Project Manager plan v2, VTID-05218 — replaces the VTID-05192 split). Kiro accounts carry
+the work because each has its own credits.
 
-- **Claude authors → Kiro executes (the default):** Claude Code pushes the spec as PR `plan(<slug>): …` with
-  `handoff.md` (`author: claude`, `executor: kiro`) and its lanes (`ready`), spars it, sends Gate 1, allocates VTIDs
-  on "yes", then sets `next_actor: kiro` on the lanes.
-- **Kiro authors → Claude executes (only when the owner asks Kiro for a plan):** Kiro pushes the spec as PR
-  `plan(<slug>): …` with `handoff.md` (`author: kiro`, `state: drafted`, `next_actor: claude`) and its lanes
-  (`ready`). Claude Code spars it (Kiro has no subagents), sends Gate 1, allocates VTIDs on "yes", then each lane runs
-  on its own.
-- Per lane, independently and in parallel: executor claims → implements → PR → `in-review`, `next_actor` = the
-  other agent → reviewer checks the PR against `tasks.md` acceptance and CI, comments on GitHub, appends a review
-  entry → `verified` → merge → `done`. Changes requested → `executing`, `next_actor` = executor.
-- The coordinator moves the plan to `done` once every lane is `done` and sends Gate 2 when the release deploys.
-- The owner is `next_actor` only at Gate 1, Gate 2 and the four Autonomy-Contract stop cases.
-- Every existing rule is unchanged: sparring before a VTID, the two owner gates, never test against production,
-  staging tests read-only.
+- **Planning — either agent.** The owner gives an initiative to Claude Code or to a Kiro session; that agent is the
+  planner. It pushes the spec as PR `plan(<slug>): …` with `plan.md` (the plan between `<!-- plan:begin -->` and
+  `<!-- plan:end -->`), `handoff.md` (`state: drafted`, `author_seat` for Kiro) and its lanes (`ready`, each with
+  `executor`, `seat`, `reviewer_seat`, `paths`, `depends_on`).
+- **Sparring — CI.** `PLAN-SPAR.yml` spars every `plan(` PR through the gateway (Kiro holds no credential); the planner
+  answers each round in `sparring/responses-<n>.md` and pushes. A converged plan is **approved by policy**
+  (`converged-auto-v1`) — that replaces the owner's Gate 1 for it — and its lanes get their VTIDs. Not converged after
+  the re-plan session → `parked`, on the board, no message. Claude Code may still spar its own plans with its local
+  partner; the owner then answers Gate 1 as before.
+- **Building — the lane's seat** (`executor: kiro`), or Claude Code for `executor: claude` lanes (governance paths).
+- **Reviewing — the lane's `reviewer_seat`.** Per lane, independently and in parallel: executor claims → implements →
+  PR → `in-review`, `next_actor: kiro` (the reviewer seat picks it up) → the reviewer checks the PR against `tasks.md`
+  acceptance, CI and Lane scope, comments on GitHub and appends a review entry (`review: approve|changes`, commit
+  trailer `Collab-Review`, front matter untouched) → the Project Manager (until it runs, Claude Code) sets `verified`
+  from an `approve` entry on the PR's current head and merges, or sends the lane back to `executing`, `next_actor: kiro`.
+- **Merging and Gate 2 — the Project Manager** (`services/gateway/src/services/project-manager/`, VTID-05216/05217) by
+  rule: verified lane, review from `reviewer_seat` on the current head, every required check green incl. Lane scope,
+  no conflict, dependencies done. Until it runs `live`, Claude Code merges a `verified` lane on the same rule.
+- **Claude Code — exceptions only:** `executor: claude` lanes, lanes nobody picked up (reassigned to `claude`), parked
+  plans and lanes it can fix, partner outages, and anything touching a governance path.
+- The owner is asked only Gate 2 (and Gate 1 for a plan Claude Code sparred itself). Mid-flight stops (security or
+  data-loss risk, a failure surviving 3 fixes) park the lane and show it on the board.
+- Every existing rule is unchanged: sparring before a VTID, never test against production, staging tests read-only.
 
-## 7a. What the executor never does
-Applies to Kiro, and to Claude Code whenever it executes a lane. The executor never:
-- allocates a VTID, takes a `_plan` claim or edits `handoff.md`;
-- merges or approves a PR, dispatches a workflow, or deploys;
+## 7a. What the executor and the reviewer never do
+Applies to Kiro (as executor, reviewer or planner), and to Claude Code whenever it executes a lane. They never:
+- allocate a VTID (CI and the coordinator do), take a `_plan` claim of a plan they did not author, or edit another
+  lane's file;
+- merge or approve a PR on GitHub (the Project Manager merges), dispatch a workflow, or deploy;
+- review their own lane (a lane's `seat` never reviews it);
 - writes to a live system, even though its credentials allow it: no Supabase writes (`execute_sql` with
   INSERT/UPDATE/DELETE/DDL, `apply_migration`, `deploy_edge_function`, branch/project/secret tools) and no mutating
   AWS call (ECS, ELB, ECR, IAM or Secrets Manager writes).
@@ -147,8 +169,11 @@ Reading for diagnosis is fine. A database change is a migration file in the lane
 `next_actor: claude`, never a workaround.
 
 ## 8. Waking each agent
-- Claude: the Routine whose prompt is `vitana-platform/scripts/collab/routine-prompt.md` (weekdays, 3×/day) works
-  every lane with `next_actor: claude`, reviews open `executor:kiro` PRs, and cleans up claims.
+- Kiro Web seats: their scheduled automation (`.kiro/automations/<seat>.md`) does at most one item per run, in this
+  order — answer a sparring round of a plan it authored, review one lane where it is `reviewer_seat`, build one lane of
+  its seat.
+- Claude: the Routine whose prompt is `vitana-platform/scripts/collab/routine-prompt.md` (weekdays, 3×/day) works only
+  the exceptions in §7 and cleans up claims.
 - Kiro runs when the owner starts it — in Kiro IDE on the owner's machine, or as a **Kiro Web** cloud session
   (app.kiro.dev) on `vitana-platform` — and types "continue"; the steering file makes it run §4. Kiro Web clones
   `exafyltd/vitana-v1` next to it (the Kiro GitHub app covers both repos) so `queue.mjs --repo … --repo …` works as in
@@ -158,4 +183,6 @@ Reading for diagnosis is fine. A database change is a migration file in the lane
 ## 9. CI
 PR-GATE step **Collab handoff** (`queue.mjs validate`) checks every changed `handoff.md` / lane file, every state
 change, and the session/lane trailers, and prints the queue in the job summary. Report-only until 2026-10-20, then
-it counts toward the PR-GATE verdict.
+it counts toward the PR-GATE verdict. The separate check **Lane scope** (`queue.mjs scope-check`, VTID-05213) is red on
+its own when a lane PR leaves its `paths`. **PLAN-SPAR** (VTID-05214) spars `plan(` PRs; its commits carry
+`Collab-Session: ci-plan-spar` and may move a plan from `drafted` to `sparred`, `approved` or `parked`.
