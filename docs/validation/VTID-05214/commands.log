@@ -1,0 +1,8 @@
+$ node --test scripts/collab/*.test.mjs
+# tests 34 # pass 34 # fail 0 
+$ (services/gateway) npx jest test/vtid-04868 test/vtid-05214 test/plans-spar
+Test Suites: 7 passed, 7 total Tests:       119 passed, 119 total 
+$ scripts/ci/test-vtid-05214-policy-approval.sh (local Postgres 16)
+VTID-05214: all assertions passed / VTID-05214: rollback + re-apply passed
+$ mutation: policy approval without the converged check -> escalation test fails (restored)
+$ npx tsc --noEmit -p services/gateway -> ok
