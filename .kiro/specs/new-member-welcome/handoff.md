@@ -32,9 +32,13 @@ Lanes (all `ready`, executor kiro): team-welcome-backend; new-member-card-optin;
 say-hello-composer (depends_on new-member-card-optin); grouped-welcome-notifications
 (depends_on new-member-card-optin).
 
+Seed wording for the three welcomes (Option A, tt() catalog) is drafted in
+`content-welcome-seed.md` — en+de in full, EN source + intent notes for the other 9 locales,
+for the sparring partner and the three senders to approve.
+
 ## Log
 ### 2026-10-15T09:40Z · kiro-202610150924-9ecd · created → drafted
-Drafted requirements.md, design.md, tasks.md, this handoff. Investigated existing onboarding
+Drafted requirements.md, design.md, tasks.md, content-welcome-seed.md, this handoff. Investigated existing onboarding
 (VOA coach engine, touch ledger, welcome trigger), messaging (fire_welcome_chat_on_membership,
 chat_messages), and News Feed (NewMemberCard, profile_post_comments, composer.ts) read-only.
 Resolved the three sender handles to production user_ids read-only. No VTID, no lane claim, no

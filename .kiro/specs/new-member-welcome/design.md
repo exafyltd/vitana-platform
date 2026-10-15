@@ -46,6 +46,10 @@ Two conventions collide and the partner should rule:
   natural, varied; honours "message-generation conventions". Con: a human sender's "voice"
   is model-generated; needs guardrails and the senders approve the *intent*, not the words.
 
+Seed wording for Option A is drafted in `content-welcome-seed.md` (en+de in full,
+EN source + intent notes for the other 9 locales), for the sparring partner and the three
+senders to approve.
+
 **Recommendation:** Option A (catalog) for the three team welcomes — they are messages
 *from named people* who approve their wording, exactly VOA's decided treatment; keep model
 composition for the *community greeting suggestions* (Part B), which are drafts a human
