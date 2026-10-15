@@ -3,8 +3,6 @@ lane: gateway-profile-list
 state: ready
 next_actor: kiro
 vtid: VTID-05211
-seat: exafyltd
-area: frontend
 depends_on: []
 updated: 2026-10-15T14:19Z
 ---
@@ -20,4 +18,4 @@ Drafted. next_actor: claude (spar → Gate 1 → allocate the VTID).
 Profile list now E1–E7, E11. Added B2: hide E6/E7 while the Meta OAuth credentials are not configured (R7). next_actor: claude.
 
 ### 2026-10-15T14:19Z · session_012cmH1XjbSwZqQxxAbKu321 · ready → ready (handed to Kiro)
-Owner approved the plan at Gate 1; VTID-05211 allocated. Lane handed to Kiro: `next_actor: kiro`, seat `exafyltd`. Start by claiming the lane.
+Owner approved the plan at Gate 1; VTID-05211 allocated. Lane handed to Kiro: `next_actor: kiro`. Start by claiming the lane.
