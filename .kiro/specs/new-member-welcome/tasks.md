@@ -30,44 +30,42 @@ depends_on: []
 - [ ] A7. `docs/validation/<VTID>/staging-tests.json`: read-only status GET only.
 
 <!-- lane: new-member-card-optin -->
-## Lane B — New-member card opt-in + backing welcome post + feed source  [vitana-v1 + migration]
+## Lane B — New-member card opt-in + feed source  [vitana-v1 + migration]
 depends_on: []
-- [ ] B1. Migration: `community_intro_opt_in` column (table per S3) + default per owner;
-      `profile_posts.post_kind` incl. `'welcome'` with service_role-only set trigger and
-      `trg_notify_community_post` skip (reuse VOA's planned `post_kind` work; coordinate so it
-      is defined once).
-- [ ] B2. Service-role creation of one `post_kind='welcome'` backing post per opted-in
-      newcomer (so the card has a comment target); no tenant push.
-- [ ] B3. `useAllNewsFeed.ts`: source welcome cards only for opted-in newcomers; map to the
-      backing post id.
-- [ ] B4. Extend `fetchGreetedMemberIds` to also count a comment the viewer authored on the
-      newcomer's welcome post.
-- [ ] B5. CI/unit coverage: opted-out → no card/post; opt-in → card maps to post; greeted hides.
+(Amended after sparring, owner D2 = b: no backing post, no `post_kind`, no trigger work.)
+- [ ] B1. Migration: `community_intro_opt_in` column on `global_community_profiles` (plain table) + default per owner decision
+      D1 (plan default: true for members registering after rollout, false for everyone else); verify existing RLS and the
+      `REPLICA IDENTITY FULL` realtime publication are unaffected.
+- [ ] B2. `useAllNewsFeed.ts`: source new-member cards only for opted-in newcomers.
+- [ ] B3. Off-switch for the newcomer in Settings and in the registration wizard (i18n, `t()`).
+- [ ] B4. CI/unit coverage: opted-out → no card; opted-in → card; default applies only to post-rollout joiners.
 
 <!-- lane: say-hello-composer -->
-## Lane C — "Say Hello 👋" composer + suggestion endpoint  [vitana-platform + vitana-v1]
-depends_on: [new-member-card-optin]
-- [ ] C1. Gateway route `POST /api/v1/community/new-member/:userId/greeting-suggestion`
-      (Bedrock via composer pattern, sender-locale system prompt, `avoid` list, validation,
-      length cap, no-invented-interest guard). Returns `{ suggestion, language }`.
-- [ ] C2. `NewMemberGreetingComposer.tsx` + wire into `NewMemberCard.tsx`: inline editable
-      composer, Send + "Try another"; CSP-safe (Tailwind + ui/*, no inline/CDN); `t()` labels;
-      "in {language}" affordance.
-- [ ] C3. Send posts exactly one comment via `useFeedPostInteractions('post', welcomePostId)
-      .addComment`; disable while in flight (no duplicate); collapse + mark greeted on success;
-      never auto-send.
-- [ ] C4. CI simulation + RTL: Try-another varies & no session repeat; no auto-post; double-submit
-      prevented; suggestion language correct.
-- [ ] C5. Targeted visual verification (desktop 1400×900 + mobile 390×844) of the card +
-      composer open state — screenshots in the PR (CLAUDE.md rule 26–28).
+## Lane C — "Say Hello 👋" composer + suggestion endpoint + greeting guard  [vitana-platform + vitana-v1]
+depends_on: [new-member-card-optin, grouped-welcome-notifications]
+- [ ] C1. Gateway route `POST /api/v1/community/new-member/:userId/greeting-suggestion` (Bedrock via composer pattern,
+      sender-locale system prompt, `avoid` list, validation, length cap, no-invented-interest guard). Returns `{ suggestion, language }`.
+- [ ] C2. Greeting guard in `routes/chat.ts` `POST /send` for `metadata.source='new_member_greeting'`, modelled on
+      `services/calendar-invite-guard.ts`, fail-closed, one generic refusal: receiver blocked/muted sender
+      (`user_blocked_authors`/`user_muted_authors`), receiver not opted in or outside the 7-day window, test/service exclusion
+      (`fetchExcludedTestServiceAccountIdsStrict`), one greeting per sender→receiver (bounded query), hourly cap. Untagged DMs
+      unchanged.
+- [ ] C3. `NewMemberGreetingComposer.tsx` + wire into `NewMemberCard.tsx`: inline editable composer, Send + "Try another",
+      "in {language}" affordance; CSP-safe; `t()` labels. Send = ONE DM via `POST /api/v1/chat/send` with
+      `metadata.source='new_member_greeting'`; disabled in flight; collapse on success; pressing "Say Hello" alone sends nothing.
+- [ ] C4. CI simulation + RTL: guard scenarios (each refusal reason, lookup error → refuse, untagged DM unchanged), Try-another
+      varies, no auto-send, double-submit prevented, suggestion language correct.
+- [ ] C5. Targeted visual verification (desktop 1400×900 + mobile 390×844, LTR and `ar` RTL) of the card + composer open state.
 
 <!-- lane: grouped-welcome-notifications -->
-## Lane D — Grouped welcome-comment notifications  [vitana-v1 migration]
-depends_on: [new-member-card-optin]
-- [ ] D1. Migration: welcome-comment notification groups per newcomer per window (reuse the
-      vtid_04916 / cumulative-like precedent), localized via `_notif_user_locale`, window per S4.
-- [ ] D2. CI simulation: N greetings in the window → one grouped notification row, correct
-      language, no per-greeter push storm.
+## Lane D — Grouped greeting-DM notifications  [vitana-platform]
+depends_on: []
+- [ ] D1. In the `routes/chat.ts` notification dispatch (`chat.ts:249-257`), for `metadata.source='new_member_greeting'` apply a
+      recipient-keyed 24 h rule next to `chat-push-coalescer.ts`: first greeting pushes, later ones write the in-app row but do
+      not push; summary "{n} people said hello 👋" localised via the recipient's locale. Off switch env var, fails open like the
+      existing coalescer. Ordinary DMs untouched.
+- [ ] D2. CI simulation: N greeting DMs from N senders in 24 h → N in-app rows, one push, correct language; ordinary DM
+      coalescing unchanged.
 
 ## Acceptance (all lanes)
 Maps 1:1 to requirements.md EARS clauses. A lane is `verified` only when its CI simulation is

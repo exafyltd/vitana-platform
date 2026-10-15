@@ -98,8 +98,9 @@ Acceptance (EARS):
     "Say Hello 👋" button.
 2.3 WHEN a sender taps "Say Hello 👋" THEN the system SHALL open an editable, short
     greeting addressed to the newcomer by name, generated for review (not sent).
-2.4 WHEN the sender presses Send THEN the greeting SHALL be published as a comment under
-    the welcome card. The system SHALL NEVER post without the sender's explicit Send.
+2.4 WHEN the sender presses Send THEN the greeting SHALL be delivered as a private direct
+    message from that sender to the newcomer (owner decision 2026-10-15, D2 = option b —
+    supersedes "public comment"). The system SHALL NEVER send without the sender's explicit Send.
 2.5 WHEN the sender presses "Try another" THEN the system SHALL offer a different
     suggestion, varying naturally in wording and sentence structure, avoiding repeats
     within the session.
@@ -110,8 +111,11 @@ Acceptance (EARS):
     affordance).
 2.8 The system SHALL prevent accidental duplicate submissions (disable control while a
     submit is in flight; a greeted card is hidden/collapsed for that sender afterwards).
-2.9 Welcome-comment notifications to the newcomer SHALL be grouped (per-newcomer window)
-    so many greetings do not overwhelm them.
+2.9 Greeting-DM notifications to the newcomer SHALL be grouped (per-newcomer 24 h window:
+    first greeting pushes, later ones are in-app only) so many greetings do not overwhelm them.
+2.11 The server SHALL refuse a greeting DM when the newcomer blocked/muted the sender, is not
+    opted in or is outside the 7-day card window, either party is a test/service account, the
+    sender already greeted this newcomer, or the sender is over the hourly cap (fail-closed).
 2.10 No community greeting SHALL ever be sent automatically.
 
 ## Requirement 3 — Language, config, conventions, verification

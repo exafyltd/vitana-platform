@@ -5,7 +5,7 @@ executor: kiro
 next_actor: owner
 state: sparred
 sparring_record: .kiro/specs/new-member-welcome/plan-sparring.md
-updated: 2026-10-15T11:30Z
+updated: 2026-10-15T11:40Z
 ---
 # Handoff — New-member welcome experience (MAXINA)
 
@@ -49,3 +49,12 @@ Took the `_plan` claim. Sparred with the independent partner (2 rounds, CONVERGE
 decided in the record, plan hash `a538f236fda83b38`. Record: `plan-sparring.md` (copied to `docs/validation/<first VTID>/` on approval).
 next_actor: owner — Gate 1 sent. No VTID allocated, no code written. On "yes": allocate four VTIDs, set the four lanes
 `next_actor: kiro`, state → approved.
+
+### 2026-10-15T11:40Z · session_01LKkSBuw1tGgnKzjhfcmAxj · sparred (revised after owner decision D2 = b)
+Owner answered D2 between sparring rounds: the greeting is a private DM on explicit Send, not a public comment. Plan rewritten,
+re-sparred (rounds 3–4, CONVERGED), plan hash now `d0ed907dc2c4f75e`. Spec files amended to match: requirements 2.4/2.9/2.11,
+design.md Part B banner, tasks.md lanes B/C/D rewritten. **`tasks.md` and `plan-sparring.md` are authoritative for lane
+dependencies:** `say-hello-composer` depends_on `new-member-card-optin` + `grouped-welcome-notifications`; the grouping lane is
+now platform-side and dependency-free. The `lanes/*.md` files still show the pre-D2 dependencies and design pointers — the
+collab validator allows one work lane per PR, so each lane file is updated in its own commit when that lane is released to Kiro.
+No backing post / `post_kind` / trigger work remains. next_actor: owner — Gate 1 re-sent. Still no VTID, no code.

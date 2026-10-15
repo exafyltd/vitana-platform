@@ -1,9 +1,9 @@
 # new-member-welcome — Plan sparring record
 
-- **Plan hash (sha256 of the text between the plan markers, first 16 hex):** `a538f236fda83b38`
-- **Verdict:** CONVERGED (round 2: F1–F7 closed; F8–F9 minor, accepted into the plan)
+- **Plan hash (sha256 of the text between the plan markers, first 16 hex):** `d0ed907dc2c4f75e`
+- **Verdict:** CONVERGED (round 4 closing pass after the owner's D2 = b scope change: F10–F12 closed; F13 minor accepted)
 - **Owner approval (Gate 1):** pending
-- **Change class:** standard · **Rounds:** 2 · **Partner:** `plan-sparring-partner` (independent, read-only, Claude Opus 4.6 on Bedrock)
+- **Change class:** standard · **Rounds:** 4 (R1 findings, R2 close, R3 scope change, R4 close) · **Partner:** `plan-sparring-partner` (independent, read-only, Claude Opus 4.6 on Bedrock)
 - **Coordinator session:** `session_01LKkSBuw1tGgnKzjhfcmAxj` (`_plan` claim `new-member-welcome/_plan`)
 - **Author of the draft:** Kiro `kiro-202610150924-9ecd` (PR exafyltd/vitana-platform#4123)
 - **VTIDs:** none yet — allocated only after the owner's Gate 1 "yes". On approval this file is copied to
@@ -122,7 +122,7 @@ claims per invocation.
   muted the sender (`user_blocked_authors` / `user_muted_authors`, the tables `useAllNewsFeed.ts` already honours); (b) the
   receiver has `community_intro_opt_in` true and joined within the card's 7-day window; (c) neither party is in
   `service_bot_accounts` ∪ `notification_test_actors`; (d) no earlier greeting DM from this sender to this receiver exists
-  (SELECT on the tag), so "one greeting per pair" is enforced by the server, not only by the card hiding; (e) a per-sender cap
+  (SELECT bounded by `sender_id` + `receiver_id` + the 7-day card window first, then the tag, so it stays within index range), so "one greeting per pair" is enforced by the server, not only by the card hiding; (e) a per-sender cap
   of greetings per hour. Omitting the tag only makes it an ordinary DM — exactly what any member can send today — so the tag
   adds restrictions and cannot be used to bypass them. The newcomer set is cross-tenant (`global_community_profiles`);
   tenant behaviour of `/send` is unchanged from the current "Say hello" button, which also lands in the same inbox.
@@ -201,3 +201,12 @@ Partner verified: `POST /send` is the right path (`chat.ts:58`); `metadata` is s
   `new-member-card-optin`; the guard also checks the opt-in server-side.
 - Q1: not a new gap, a pre-existing one; the plan no longer implies otherwise. Q2: the pilot allowlist limits Part A recipients
   only, not who may greet — which is why the grouping lane gates the composer instead of relying on the pilot.
+
+### Round 4 — partner closing pass (after the scope change)
+F10, F11, F12 **closed**; F2, F3, F6, F8, F9 closed-by-scope-change. Partner verified `calendar-invite-guard.ts` is a workable model
+(fail-closed, single generic refusal, `fetchExcludedTestServiceAccountIdsStrict` reusable, pure quota split) and that
+`user_blocked_authors` / `user_muted_authors` / `global_community_profiles` are already read by gateway services with the service
+client. New finding, minor: **F13** — the one-per-pair and hourly-cap queries filter `chat_messages` on `metadata->>'source'`
+(no index). ACCEPTED: the plan now bounds the lookup by `sender_id` + `receiver_id` + the 7-day window before the tag test.
+**Verdict: CONVERGED.** F13's wording change is in the plan (hash above covers it). The round-3 scope change used the one extra
+round the skill allows; the record shows 4 rounds because of it.

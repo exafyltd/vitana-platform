@@ -114,6 +114,11 @@ onboarding-coach-tick or add a sibling `welcome-team-tick`; production gateway o
 
 ## Part B — "Say Hello 👋" on new-member cards
 
+> **AMENDED 2026-10-15 by the coordinator after sparring (owner decision D2 = b).** The greeting is a private DM sent on the
+> sender's explicit Send, not a comment: B.2 (backing post, `post_kind`), the comment-based B.4 greeted logic and the
+> comment-notification B.5 below are **superseded**. Authoritative design: `plan-sparring.md` (plan block, Part B, S4). Where
+> this section and the plan block differ, the plan block wins.
+
 ### B.1 Opt-in to being introduced (requirement 2.1)
 New column (vitana-v1 migration) `profiles.community_intro_opt_in boolean` (or
 `global_community_profiles` — partner picks the table the card reads, S3). Default per owner:
