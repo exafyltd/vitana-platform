@@ -1,7 +1,6 @@
 ---
 lane: meta-oauth
-state: parked
-parked_from: ready
+state: ready
 next_actor: claude
 depends_on: [gateway-profile-list]
 updated: 2026-10-15T15:00Z
@@ -24,5 +23,5 @@ and the Instagram provider still uses the Basic Display API, which Meta retired 
 ### 2026-10-15T14:40Z · kiro-202610151240-0371 · ready (revised)
 Owner is creating the Meta app (checklist design.md §5); values arrive as GitHub repo secrets. Added D0 (prod GATEWAY_PUBLIC_URL + provisioning workflow). Q3 approved. next_actor: claude.
 
-### 2026-10-15T15:00Z · kiro-202610151240-0371 · ready → parked
+### 2026-10-15T15:00Z · kiro-202610151240-0371 · ready (on hold, owner)
 Owner: hide E6/E7 until the Meta app is created; lane B2 does that. Resume this lane once the 4 GitHub secrets exist (design.md §5). next_actor: claude.
