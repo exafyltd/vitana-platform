@@ -30,7 +30,10 @@ Four lanes, one VTID each, executor Kiro:
 - `grouped-welcome-notifications` [v1] — one migration, tests. depends_on `new-member-card-optin`.
 
 ## Decisions on the six open questions (the planner's positions, to be attacked)
-**S1 — team-welcome text: `tt()` catalog (Option A).** A written message from a named person falls under the catalog rule,
+**S1 — team-welcome text: `tt()` catalog (Option A).** Launch locales: `de` and `en` are `ready` for the closed pilot; every
+other locale falls back along the existing chain (locale → `en` → `de`, `catalog.ts`). Widening beyond the pilot allowlist
+requires all of `es sr fr pt ru pl zh tr` `ready` (a rollout-checklist gate; `ar` may follow). Fallback-to-`en` for pilot
+members is recorded under "Decisions taken" at Gate 2. A written message from a named person falls under the catalog rule,
 not rule 41 (which covers *spoken* lines; VOA §4.5.5 decided the same). Each sender approves their exact wording once; the
 approval is recorded in the lane's VTID. Locale gate: the send is allowed only for locales whose three keys are `ready`;
 for any other locale the member gets the `en` text (existing catalog fallback), never a half-translated one. `ar` may ship
@@ -44,10 +47,10 @@ paced coaching touch; each has its own claim row (`welcome_team_claims`, PK `(us
 computed from `user_tenants.created_at + staggerDays`. "Never the same day" is guaranteed by stagger offsets 0/1/2 days and
 tested; the ledger's one-touch-per-day budget stays untouched by welcomes.
 
-**S3 — opt-in column on the profile table the card reads; default `true` for members who register after rollout, `false`
-for everyone else; visible off-switch in Settings and in the registration wizard.** The card source today is
-`global_community_profiles` (last 7 days); the migration adds `community_intro_opt_in` to the underlying table and exposes
-it through that view. Requirement 2.1 says "explicit choice" — default-on is the one place the plan departs from a strict
+**S3 — opt-in column on `global_community_profiles` (a plain table, verified); default `true` for members who register after
+rollout, `false` for everyone else; visible off-switch in Settings and in the registration wizard.** The card source today is
+that table (last 7 days, `useAllNewsFeed.ts:199-204`); the migration adds `community_intro_opt_in` to it directly and
+checks that existing RLS policies and the `REPLICA IDENTITY FULL` realtime publication are unaffected. Requirement 2.1 says "explicit choice" — default-on is the one place the plan departs from a strict
 reading, so it is flagged as **owner decision D1** with the strict alternative (default `false` + explicit toggle shown in
 the wizard) priced: the card shows far fewer newcomers.
 
@@ -63,7 +66,9 @@ DM people who joined weeks ago and is not needed for requirement 1.7. The cohort
 message says "I'm Alex". The DM renders the real sender profile, so the newcomer would see those names. Pre-flight (a gate in
 the rollout checklist, read-only check by the tick's status endpoint): the three senders' display names are the names the
 senders want newcomers to see — fixed by the account owners, not by migration. The tick refuses to go `live` while
-`WELCOME_SENDER_NAMES_CONFIRMED` is unset.
+`WELCOME_SENDER_NAMES_CONFIRMED` is unset. **No backlog on go-live:** `WELCOME_ROLLOUT_AT` is set to the moment the mode is
+flipped to `live`, so nobody who registered during the confirmation delay is in the cohort, and the tick caps sends at N
+claims per invocation.
 
 ## Part A — design summary (lane `team-welcome-backend`)
 - Config module `welcome-team/config.ts`: `mode` (`disabled-on-staging | off | shadow | live`), explicit send switch,
@@ -78,21 +83,32 @@ senders want newcomers to see — fixed by the account owners, not by migration.
   (no-name variant when unknown) → insert the 1:1 `chat_messages` row authored by the sender account
   (`metadata.source='welcome_team'`, `sender_slug`, `done_by_vitana=false` for the human accounts, `automated=true`) →
   `finish_welcome_message`. Replies are ordinary inbound DMs to the sender's own inbox (no new routing).
+- "Production gateway only" reuses the staging predicate of `onboarding-coach/config.ts` (the one that yields
+  `disabled-on-staging`); a golden scenario asserts the tick sends nothing when that predicate is true.
 - Writes happen only in the production gateway, only in `live` mode, only for allowlisted pilot members until the owner
   widens it. Staging and CI never write to a live system.
 
 ## Part B — design summary (lanes B/C/D)
 - Backing post: one service-role `profile_posts` row with `post_kind='welcome'` per opted-in newcomer so the synthetic card
   has a comment target. `post_kind` is added by this plan (it does not exist in `supabase/migrations` today — VOA slice 5 owns
-  `'inspiration'`; the migration defines the column once with a check list incl. both kinds). A trigger lets only
-  service_role set it; `trg_notify_community_post` skips `'welcome'` so creating the card fires no tenant-wide push.
+  `'inspiration'`; the migration defines the column once with a CHECK allowing only `NULL` and `'welcome'`, and slice 5
+  adds `'inspiration'` by ALTER in its own plan). A trigger lets only service_role set it. The backing post is
+  `is_public = true` (comments need a readable post), so the migration `CREATE OR REPLACE`s `notify_community_on_public_post()`
+  (trigger `trg_notify_community_post`, AFTER INSERT) from the LATEST body — VTID-05126,
+  `20261012120000_vtid_05126_profile_posts_calendar_entry_share.sql:124`, keeping its share and attachment branches — adding an
+  early return for `post_kind = 'welcome'` after the test-actor check. A CI test inserts a welcome post into a database built
+  from all migrations and asserts zero `user_notifications` rows.
 - Card: `useAllNewsFeed.ts` sources newcomers only where `community_intro_opt_in`; maps the card to the backing post id.
 - Composer: inline editable greeting (`NewMemberGreetingComposer.tsx`), "Try another", "in {language}" affordance, Send posts
   exactly one comment through the existing `useFeedPostInteractions('post', welcomePostId).addComment`; never auto-sends;
   disabled while in flight.
 - Suggestion route: Bedrock-only via the `composer.ts` pattern (English intent, sender-locale system prompt, `avoid` list,
   validation, ~120-char cap, no links/markdown, no invented interests). Authenticated member only; per-viewer rate limit.
-- `fetchGreetedMemberIds` also counts a comment the viewer wrote under the newcomer's welcome post.
+- **Deliberate behaviour change:** today "Say hello" navigates to a DM (`NewMemberCard.tsx:104`); it becomes the inline composer
+  and a PUBLIC comment under the welcome post (requirement 2.4). The DM stays reachable from the newcomer's profile and avatar;
+  the card no longer routes to it. `fetchGreetedMemberIds` becomes the union of viewer-sent DMs (`chat_messages`, as today, so
+  previously greeted cards stay hidden) and comments the viewer wrote under the newcomer's welcome post. Flagged at Gate 1
+  as owner decision D2.
 - Grouped notification: a trigger on `profile_post_comments` for `post_kind='welcome'` posts upserts one grouped
   `user_notifications` row per newcomer per 24 h window.
 
@@ -114,3 +130,23 @@ VTNA reward rules; VOA slices 3, 5, 6; email; changing the VTID-03089 newcomer f
 
 ## Round 1
 (pending)
+
+## Round 1 — partner findings (verbatim summary) and planner responses
+Partner verified: `post_kind` absent (TRUE); card source `global_community_profiles` last 7 days, `useAllNewsFeed.ts:199-204`
+(TRUE); coach `shadow` only, `config.ts:46` (TRUE); `global_community_profiles` is a TABLE, not a view (the plan said view →
+FALSE); `requireScheduledNotificationsAuth` used (TRUE). Planner re-verified F1–F3 independently in the code before answering.
+
+- **F1 [major] — plan called `global_community_profiles` a view.** ACCEPTED. Verified: `CREATE TABLE`
+  (`20250917153624_…sql:5`). Plan text corrected; migration adds the column directly and checks RLS and realtime.
+- **F2 [major] — `trg_notify_community_post` fires on a `is_public=true` backing post.** ACCEPTED. Verified: AFTER INSERT trigger;
+  function last replaced in VTID-05126. Plan now names the approach (replace the function from its latest body with an early
+  return for `'welcome'`; keep `is_public=true`) and adds a CI test over all migrations asserting zero notifications.
+- **F3 [major] — "Say hello" changes from private DM to public comment, undocumented.** ACCEPTED. Verified:
+  `NewMemberCard.tsx:104`. Plan now states it is deliberate, the DM remains reachable from the profile, and greeted-detection is
+  the union of DMs and comments. Raised to the owner as D2.
+- **F4 [minor] — how the tick knows it is on staging.** ACCEPTED. Reuses the coach staging predicate; golden scenario added.
+- **F5 [minor] — backlog burst when the names flag flips.** ACCEPTED. `WELCOME_ROLLOUT_AT` = flip time (no backlog by
+  construction) plus a per-invocation cap.
+- **F6 [minor] — `post_kind` CHECK pre-empts VOA slice 5.** ACCEPTED. CHECK allows only `NULL`/`'welcome'`; slice 5 ALTERs.
+- **F7 [minor] — which locales are `ready` at launch.** ACCEPTED. `de`, `en` for the pilot; fallback chain for the rest; full set
+  required before widening; recorded under "Decisions taken".
