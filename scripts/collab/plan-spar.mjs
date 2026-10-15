@@ -27,7 +27,10 @@ import { parseFrontMatter } from './queue.mjs';
 
 export const POLICY = 'converged-auto-v1';
 export const MAX_SESSIONS = 2;
+// Partner-side failures (not a plan problem): the plan goes to Claude, never parked. Only the gateway's own
+// RETRYABLE_REASONS (plan-sparring-service.ts) are re-run automatically; anything else waits for Claude Code.
 const INFRA_REASONS = ['model_unavailable', 'code_access_unavailable', 'deadline_exceeded', 'partner_output_invalid'];
+const RETRYABLE_REASONS = ['model_unavailable', 'code_access_unavailable', 'deadline_exceeded'];
 const POLL_MS = 20_000;
 const WAIT_MS = 25 * 60_000;
 
@@ -122,6 +125,11 @@ export function gatewayClient({ baseUrl, token, fetchImpl = fetch, sleep = (ms) 
       if (!lost(r)) throw new Error(`round ${n}: HTTP ${r.status} ${JSON.stringify(r.json)}`);
       return waitFor(id, n);
     },
+    async get(id) {
+      if (!/^[0-9a-f-]{36}$/i.test(String(id))) return null;
+      const g = await call('GET', `/api/v1/plans/spar/${id}`);
+      return g.json?.session ?? null;
+    },
     async allocate(body) {
       const r = await call('POST', '/api/v1/vtid/allocate', body);
       const vtid = r.json?.vtid ?? r.json?.data?.vtid;
@@ -175,7 +183,7 @@ export async function step({ dir, slug, baseSha, repo, client, allocate = false,
   const prefix = (k) => (k > 1 ? `s${k}-` : '');
   let session;
   let action;
-  const retryInfra = cur && cur.verdict === 'escalated' && cur.infra;
+  const retryInfra = cur && cur.verdict === 'escalated' && cur.infra && cur.retryable;
   const replan = cur && cur.verdict === 'escalated' && !cur.infra && state.sessions.length < MAX_SESSIONS && cur.plan_text_sha !== sha(planText);
   if (!cur || retryInfra || replan) {
     action = !cur ? 'create' : retryInfra ? 'retry' : 'replan';
@@ -187,6 +195,12 @@ export async function step({ dir, slug, baseSha, repo, client, allocate = false,
     state.sessions.push({ id: session.id, submitted: [], plan_text_sha: sha(planText) });
   } else if (cur.verdict === 'in_progress') {
     const n = cur.rounds;
+    // state.json lives on the PR branch, so it is untrusted: the session must be this plan's own (producer
+    // ci-plan-spar.<slug>) and still at the round the state claims, or nothing is submitted.
+    const live = await client.get(cur.id);
+    if (!live || live.producer !== `ci-plan-spar.${slug}` || live.verdict !== 'in_progress' || live.rounds.length !== n) {
+      throw new Error(`sparring/state.json names session ${cur.id}, which is not this plan's in-progress session at round ${n}`);
+    }
     const respPath = path.join(sdir, `${prefix(state.sessions.length)}responses-${n}.md`);
     if (!existsSync(respPath) || cur.submitted.includes(n)) return { action: 'waiting_for_planner', wrote };
     action = 'round';
@@ -203,6 +217,7 @@ export async function step({ dir, slug, baseSha, repo, client, allocate = false,
   entry.rounds = session.rounds.length;
   entry.verdict = session.verdict;
   entry.infra = (session.escalation_reasons ?? []).some((x) => INFRA_REASONS.includes(x));
+  entry.retryable = (session.escalation_reasons ?? []).some((x) => RETRYABLE_REASONS.includes(x));
   entry.final_plan_hash = session.final_plan_hash ?? null;
   entry.policy_approved_at = session.policy_approved_at ?? null;
   write(statePath, `${JSON.stringify(state, null, 2)}\n`);

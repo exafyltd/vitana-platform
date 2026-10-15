@@ -32,10 +32,13 @@ const sess = (id, rounds, verdict, extra = {}) => ({
 
 function fakeClient(script) {
   const calls = [];
+  let last = null;
+  const take = () => { last = script.shift(); return last; };
   return {
     calls,
-    create: async (b) => { calls.push(['create', b]); return script.shift(); },
-    round: async (id, n, b) => { calls.push(['round', id, n, b]); return script.shift(); },
+    create: async (b) => { calls.push(['create', b]); return take(); },
+    round: async (id, n, b) => { calls.push(['round', id, n, b]); return take(); },
+    get: async (id) => (last && last.id === id ? { producer: 'ci-plan-spar.cards', ...last } : null),
     allocate: async (b) => { calls.push(['allocate', b]); return `VTID-0900${calls.filter((c) => c[0] === 'allocate').length}`; },
   };
 }
@@ -168,4 +171,34 @@ test('gateway client: a lost long call is recovered by polling the session', asy
   assert.equal(s.rounds.length, 2);
   assert.deepEqual(seq, ['POST /api/v1/plans/spar/S1/rounds', 'GET /api/v1/plans/spar/S1', 'GET /api/v1/plans/spar/S1']);
   assert.equal(await c.allocate({ source: 'x' }), 'VTID-09009');
+});
+
+test('review fix: a round is only submitted to this plan\'s own in-progress session', async () => {
+  const f = spec();
+  try {
+    const c = fakeClient([sess('S1', [[finding('R1-F1')]], 'in_progress')]);
+    await step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'r', client: c });
+    respond(f.s, 'responses-1.md', [{ finding_id: 'R1-F1', disposition: 'accepted', rationale: 'x' }]);
+    // the PR edits state.json to point at another plan's session
+    const sp = path.join(f.s, 'sparring/state.json');
+    const st = JSON.parse(readFileSync(sp, 'utf8'));
+    st.sessions[0].id = 'OTHER';
+    writeFileSync(sp, JSON.stringify(st));
+    c.get = async (id) => ({ id, producer: 'ci-plan-spar.other', verdict: 'in_progress', rounds: [{}] });
+    await assert.rejects(step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'r', client: c }), /not this plan's in-progress session/);
+    assert.ok(!c.calls.some((x) => x[0] === 'round'));
+  } finally { f.done(); }
+});
+
+test('review fix: partner_output_invalid goes to Claude but is not auto-retried (the gateway would dedup it)', async () => {
+  const f = spec();
+  try {
+    const bad = sess('S1', [[]], 'escalated', { escalation_reasons: ['partner_output_invalid'] });
+    const c = fakeClient([bad]);
+    const r = await step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'r', client: c });
+    assert.equal(r.action, 'create+escalated-infra');
+    assert.equal(parseFrontMatter(readFileSync(path.join(f.s, 'handoff.md'), 'utf8')).next_actor, 'claude');
+    assert.equal((await step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'r', client: c })).action, 'nothing_to_do');
+    assert.equal(c.calls.filter((x) => x[0] === 'create').length, 1);
+  } finally { f.done(); }
 });
