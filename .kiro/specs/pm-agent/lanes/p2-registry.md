@@ -1,6 +1,6 @@
 ---
 lane: p2-registry
-state: in-review
+state: executing
 next_actor: kiro
 vtid: VTID-05215
 executor: kiro
@@ -32,5 +32,7 @@ Claimed (`collab-claim/pm-agent/p2-registry`). Added `docs/programs/<id>/program
 `health-hub` and `standalone` (specs outside the named programmes), links only; every current `.kiro/specs/*` spec in
 both repos is listed by exactly one programme. Evidence in `docs/validation/VTID-05215/`. `paths` unchanged: Lane scope
 already allows the lane's own spec folder and `docs/validation/VTID-05215/`, and refuses a `paths` change in a lane PR.
-### 2026-10-15T22:53Z · kiro-202610151913-51bd · ready → executing → in-review
+### 2026-10-15T22:53Z · kiro-202610151913-51bd · ready → executing (PR opened, ready for review)
 Implementation approved; branch pushed and PR opened. Reviewer seat `jtadic` picks it up (`next_actor: kiro`).
+`in-review` is not reachable from `ready` in one PR (`LANE_EDGES`: ready → executing only), so the lane records
+`executing` here; the reviewer moves it to `in-review`.
