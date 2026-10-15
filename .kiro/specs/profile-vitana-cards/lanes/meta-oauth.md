@@ -3,7 +3,7 @@ lane: meta-oauth
 state: ready
 next_actor: claude
 depends_on: [gateway-profile-list]
-updated: 2026-10-15T14:10Z
+updated: 2026-10-15T14:40Z
 ---
 # Instagram and Facebook connect working (vitana-platform)
 
@@ -19,3 +19,6 @@ Kiro has no access to either and makes no AWS writes.
 ### 2026-10-15T14:10Z · kiro-202610151240-0371 · created → ready
 Drafted. A read-only check on 2026-10-15 found no INSTAGRAM_/FACEBOOK_ env or secret on any gateway task definition,
 and the Instagram provider still uses the Basic Display API, which Meta retired on 2024-12-04. next_actor: claude.
+
+### 2026-10-15T14:40Z · kiro-202610151240-0371 · ready (revised)
+Owner is creating the Meta app (checklist design.md §5); values arrive as GitHub repo secrets. Added D0 (prod GATEWAY_PUBLIC_URL + provisioning workflow). Q3 approved. next_actor: claude.
