@@ -9,7 +9,9 @@
  *   200 { ok, screen, locale, cards: [{ card_type, category, priority, completed,
  *         dismissed_until, title, description[, data] }], profile_completion_pct }
  *   The caller's incomplete, non-cooled-down enrichment cards for that screen,
- *   in static priority order, followed by the boost cards (G1–G3) whose
+ *   in static priority order — minus the cards whose action cannot work on
+ *   this stack (VTID-05211: E6/E7 while Instagram/Facebook OAuth is not
+ *   configured) — followed by the boost cards (G1–G3) whose
  *   trigger fired, in urgency order G3 → G2 → G1, each with a `data` object:
  *   G1 { completion_pct }, G2 { unread_match_count }, G3 { streak_days }.
  *   Localized title/description from data/enrichment-card-tips.ts. `priority`
@@ -41,6 +43,7 @@ import {
   isDismissibleCardType,
 } from '../services/enrichment/card-catalog';
 import { loadEnrichmentCardState } from '../services/enrichment/completion-resolver';
+import { unavailableEnrichmentCards } from '../services/enrichment/card-availability';
 import { upsertEnrichmentCardDismissal } from '../services/enrichment/completion-resolver-repository';
 import { emitOasisEvent } from '../services/oasis-event-service';
 
@@ -75,7 +78,9 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
       loadEnrichmentCardState(sb, identity.user_id, now),
       forced ? Promise.resolve(forced) : getUserLocale(sb, identity.user_id),
     ]);
-    const enrichment = eligibleEnrichmentCards(state.completions, state.dismissals, screen, now).map((c) => ({
+    // VTID-05211: no card whose action cannot work here (E6/E7 without Meta OAuth).
+    const unavailable = unavailableEnrichmentCards();
+    const enrichment = eligibleEnrichmentCards(state.completions, state.dismissals, screen, now, unavailable).map((c) => ({
       ...c,
       completed: false,
       dismissed_until: null,
