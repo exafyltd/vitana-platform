@@ -63,6 +63,7 @@ import {
   lookupDomainProofTxt,
   readEmailConfirmation,
 } from '../services/partner-verification-io';
+import { inferCompanyFacts } from '../services/commerce-company-inference';
 
 const router = Router();
 
@@ -240,6 +241,58 @@ router.post('/start', requireAuth, async (req: Request, res: Response) => {
   // VTID-04847: the rules live in services/partner-onboarding-service.ts.
   const r = await startOnboarding(supabase, callerOf(req, callerId), req.body ?? {});
   return res.status(r.status).json(r.body);
+});
+
+// ==================== Company suggestions (VTID-05209) ====================
+
+/**
+ * Country and website Vitanaland can already suggest (saved values, VAT ID
+ * prefix, website domain, the caller's confirmed business email). Read-only:
+ * a suggestion is stored only when the supplier confirms it through
+ * POST /partner-orgs/register or PATCH /:orgId/company. Plain facts only.
+ */
+async function sendSuggestions(
+  res: Response,
+  supabase: Supa,
+  callerId: string,
+  stored: { country?: string | null; website?: string | null; vat_id?: string | null } | null,
+  query: Request['query'],
+) {
+  const typed = (k: string) => (typeof query[k] === 'string' ? String(query[k]).slice(0, 2048) : null);
+  const needsEmail = !(stored?.country && stored?.website);
+  const email = needsEmail ? await readEmailConfirmation(supabase as any, callerId) : { status: 'unavailable' as const, email: null };
+  const s = inferCompanyFacts({
+    stored,
+    website: typed('website'),
+    vatId: typed('vat_id'),
+    email: email.email,
+    emailConfirmed: email.status === 'confirmed',
+  });
+  return res.status(200).json({ ok: true, country: s.country, website: s.website });
+}
+
+// Registered before GET /:orgId, which would otherwise capture this path.
+router.get('/company-suggestions', requireAuth, async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const callerId = getCallerId(req);
+  if (!callerId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  return sendSuggestions(res, supabase, callerId, null, req.query);
+});
+
+router.get('/:orgId/company-suggestions', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const callerId = getCallerId(req);
+  if (!callerId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const { data, error } = await supabase
+    .from('partner_organizations')
+    .select('country, website, vat_id')
+    .eq('id', req.params.orgId)
+    .maybeSingle();
+  if (error) return res.status(500).json({ ok: false, error: 'LOOKUP_FAILED' });
+  if (!data) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+  return sendSuggestions(res, supabase, callerId, data, req.query);
 });
 
 // ==================== Status ====================
