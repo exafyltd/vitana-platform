@@ -21,3 +21,4 @@ AC-7: `validate` reads a lane file that lives in the other repo through the same
 AC-5: All earlier queue/claim/validate behaviour is unchanged (existing 17 tests).
   TEST: scripts/collab/queue.test.mjs
 AC-6: PR-GATE has a separate "Lane scope" job in both repos (vitana-v1 fetches queue.mjs and the lane file from vitana-platform main, and skips until this PR is on main).
+  TEST: the "Lane scope" check run on this PR (job lane-scope in .github/workflows/PR-GATE.yml) passes for lane pm-agent/p0-lane-scope
