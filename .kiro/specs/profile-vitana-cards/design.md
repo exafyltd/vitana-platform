@@ -54,10 +54,45 @@ after the member chooses "I have a business/creator account". This is decision Q
 
 - **Q1 — answered:** E6/E7 stay on the profile.
 - **Q2 — answered:** placement as proposed.
-- **Q3 — open, for the owner via sparring:** how to handle personal Instagram accounts (see the limit in §3). Kiro
-  recommends one sentence in the E6 description. That needs no extra screen.
-- **Q4 — open:** a Meta app, if one already exists outside AWS, must come from the owner. None is configured
-  anywhere today.
+- **Q3 — answered (owner 2026-10-15):** one sentence in the E6 description saying that only business and creator
+  Instagram accounts can be connected.
+- **Q4 — in progress:** the owner creates the Meta app using the checklist in §5.
+
+## 5. Owner checklist for the Meta app (lane D prerequisite)
+
+1. At developers.facebook.com, under the Vitana business portfolio, create one app. Complete **Business
+   Verification**; Meta requires it before the app may serve all users.
+2. **App settings → Basic:**
+   - privacy policy `https://vitanaland.com/privacy`
+   - terms `https://vitanaland.com/terms`
+   - data deletion instructions `https://vitanaland.com/delete-account`
+   - app icon, category and contact email
+3. **Facebook Login:**
+   - valid OAuth redirect URIs:
+     - `https://<prod gateway>/api/v1/social-accounts/callback/facebook`
+     - `https://preview-aws-gateway.vitanaland.com/api/v1/social-accounts/callback/facebook`
+   - permissions `public_profile`, `email`
+4. **Instagram → "API setup with Instagram login":**
+   - the same two redirect URIs with `/callback/instagram`
+   - permission `instagram_business_basic`
+5. **App Review:** request access for every user (Advanced Access) to these permissions, then switch the app to
+   **Live**. Until approval, only people with an app role (admin, developer or tester) can connect, which is enough
+   for staging.
+6. Add the staging test people as testers: one Instagram business or creator account and one Facebook account.
+7. Put 4 values as **GitHub repository secrets in vitana-platform**. Never paste them into chat or a PR:
+   - `FACEBOOK_CLIENT_ID` / `FACEBOOK_CLIENT_SECRET` (the Meta App ID and App Secret)
+   - `INSTAGRAM_CLIENT_ID` / `INSTAGRAM_CLIENT_SECRET` (the Instagram App ID and Instagram App Secret on the
+     Instagram login setup page; these are different from the Meta App ID)
+
+   Claude Code then binds them to the gateways with a provisioning workflow, staging first. This follows the
+   `AWS-PROVISION-APPILIX-SECRETS.yml` pattern.
+
+**Finding for Claude Code (read-only, 2026-10-15):**
+- The production gateway task definition `vitana-gateway-awsdr:198` sets neither `GATEWAY_PUBLIC_URL` nor `APP_URL`.
+- So `social-connect-service.ts` L25 builds every OAuth callback on its fallback `https://vitana.app`. This affects
+  Google and YouTube too.
+- Before step 3, confirm the production gateway's public domain and set `GATEWAY_PUBLIC_URL`. The `<prod gateway>`
+  above must be that domain.
 
 Alternatives considered for placement:
 - **Each card in its own tab:** rejected, it splits one task into 3–4 mounts.

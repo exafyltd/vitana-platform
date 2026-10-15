@@ -72,11 +72,18 @@ Blocked until both of these exist:
 - Claude Code has provisioned `INSTAGRAM_CLIENT_ID/SECRET` and `FACEBOOK_CLIENT_ID/SECRET` (Secrets Manager → gateway
   task definitions, through the canonical workflow, staging first).
 
+- [ ] **D0.**
+  - The production `GATEWAY_PUBLIC_URL` is set (`design.md` §5 finding). The value comes from Claude Code; Kiro does
+    not write to AWS.
+  - Add a `AWS-PROVISION-META-OAUTH-SECRETS.yml` workflow file that copies the `AWS-PROVISION-APPILIX-SECRETS.yml`
+    pattern for the 4 secrets. Claude Code dispatches it.
 - [ ] **D1.** `social-connect-service.ts`: move the Instagram provider to Instagram Login (`www.instagram.com/oauth/authorize`,
   `instagram_business_basic`, the token exchange, `graph.instagram.com/me?fields=user_id,username`, and the long-lived
   token exchange). Check the Facebook v19 config against the current Graph API version.
 - [ ] **D2.** Unit tests for the new URLs, scopes and profile mapping (`profile_url`, username).
-- [ ] **D3.** E6 copy, per decision Q3 (professional accounts only), in every locale through the i18n pipeline.
+- [ ] **D3.** E6 description gets one sentence saying only business and creator Instagram accounts can be connected
+  (Q3, owner-approved). It goes into every locale through the i18n pipeline: the gateway tips plus vitana-v1
+  `screens.vitanaCards.E6`.
 - [ ] **D4. Staging:** connect a test Instagram professional account and a test Facebook account. The card then
   disappears (E6/E7 completion via `social_connections`).
 

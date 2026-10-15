@@ -4,7 +4,7 @@ author: kiro
 executor: claude
 next_actor: claude
 state: drafted
-updated: 2026-10-15T14:10Z
+updated: 2026-10-15T14:40Z
 ---
 # Handoff — Vitana cards on the own profile, and card actions that work
 
@@ -47,3 +47,6 @@ Analysis and plan drafted at the owner's request. next_actor: claude (spar → G
 ### 2026-10-15T14:10Z · kiro-202610151240-0371 · drafted (revised)
 Owner answers applied: E6/E7 stay, placement as proposed. Added the action audit, the `card-actions` lane and the
 `meta-oauth` lane. Read-only AWS check: no Instagram/Facebook credentials exist on any gateway. next_actor: claude.
+
+### 2026-10-15T14:40Z · kiro-202610151240-0371 · drafted (revised)
+Q3 answered (one sentence on E6: business/creator accounts only). Owner Meta-app checklist added (design.md §5). Read-only finding: prod gateway task def sets no GATEWAY_PUBLIC_URL/APP_URL, so OAuth callbacks fall back to https://vitana.app. next_actor: claude.
