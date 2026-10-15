@@ -1,10 +1,12 @@
 ---
 slug: profile-vitana-cards
 author: kiro
-executor: claude
-next_actor: claude
-state: drafted
-updated: 2026-10-15T15:00Z
+executor: kiro
+next_actor: kiro
+state: approved
+vtids: [VTID-05210, VTID-05211, VTID-05212]
+sparring_record: .kiro/specs/profile-vitana-cards/plan-sparring.md
+updated: 2026-10-15T16:00Z
 ---
 # Handoff — Vitana cards on the own profile, and card actions that work
 
@@ -61,3 +63,6 @@ Ask to Claude Code, now:
 4. Set next_actor: kiro on the three lanes.
 
 Then Kiro implements.
+
+### 2026-10-15T16:00Z · session_012cmH1XjbSwZqQxxAbKu321 · drafted → approved
+Sparred (2 rounds, CONVERGED, plan hash `92964488a27e7401`) and approved by the owner at Gate 1. VTIDs: VTID-05210 `frontend-placement`, VTID-05211 `gateway-profile-list`, VTID-05212 `card-actions`. Lane `meta-oauth` stays parked (owner: hide E6/E7 until the Meta app exists; only B2 ships). The sparring partner's decisions are binding for the executor: G1 reads the cached `useEnrichmentCards('profile')` and falls back to `/me/profile#about`; the F4 ORB-first logic lives once in `TalkToVitanaCard`; C5 also appends `?return=mobile` to the social-connect fetch. Lanes are handed to Kiro in one PR each.
