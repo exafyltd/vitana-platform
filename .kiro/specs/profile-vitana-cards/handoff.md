@@ -4,34 +4,46 @@ author: kiro
 executor: claude
 next_actor: claude
 state: drafted
-updated: 2026-10-15T13:20Z
+updated: 2026-10-15T14:10Z
 ---
-# Handoff — Vitana cards on the own profile
+# Handoff — Vitana cards on the own profile, and card actions that work
 
-The owner asked Kiro directly for this plan on 2026-10-15. On the profile, keep only the cards that enrich the
-profile, and move them below the profile itself.
+The owner asked Kiro directly for this plan on 2026-10-15:
+- on the profile, keep only the cards that enrich the profile;
+- move them below the profile;
+- make every Vitana card's action button work.
 
-**Next actor: Claude Code.** This follows collaboration §7, "Kiro authors → Claude executes":
-1. Claude Code spars the plan (skill `plan-sparring`).
-2. Claude Code sends Gate 1 to the owner.
-3. On "yes", Claude Code allocates the VTIDs and assigns the lanes. Kiro can implement them if Claude Code sets
-   `next_actor: kiro`.
+The owner then answered:
+- keep E6/E7 (Instagram, Facebook) on the profile;
+- placement as proposed.
+
+**Next actor: Claude Code** (collaboration §7, "Kiro authors → Claude executes"):
+1. Spar the plan.
+2. Send Gate 1.
+3. Allocate the VTIDs.
+4. Assign the lanes (Kiro implements them if Claude sets `next_actor: kiro`).
 
 Kiro has not allocated a VTID and has changed no code.
 
-Summary:
-- **R1:** the profile shows only E1–E5, E11 and G1. It drops E6–E10 and F2 Vitana Index, F4 Talk to Vitana and
-  F7 Invite.
-- **R2:** the cards move from above the ID card to the enrich-your-profile zone next to the Cover Library tile:
-  - mobile: the Posts tab, the default tab;
-  - desktop: below `ProfileLayout`.
+Lanes (all `ready`):
+- `frontend-placement` (vitana-v1): profile = E1–E7, E11, G1; placed in the Posts tab (mobile) and below
+  `ProfileLayout` (desktop), next to the Cover Library tile.
+- `gateway-profile-list` (vitana-platform): the same list on the server; E6/E7 hidden while Meta OAuth is not
+  configured (no dead cards).
+- `card-actions` (vitana-v1): fixes G1 (does nothing on the profile), F4 (opens the assistant settings page instead
+  of a conversation), E8/E9 (the hash is ignored), F8 (stuck busy), and E6/E7 in Appilix; plus a click test for every
+  card.
+- `meta-oauth` (vitana-platform; depends_on `gateway-profile-list`): **blocked on the owner**. It needs:
+  - a Meta app;
+  - secrets provisioned by Claude Code;
+  - a migration off the Instagram Basic Display API, which Meta retired on 2024-12-04.
 
-Lanes (both `ready`, independent):
-- `frontend-placement` (vitana-v1)
-- `gateway-profile-list` (vitana-platform)
-
-Sparring questions: `design.md` §4.
+Open decisions: `design.md` §4, Q3 (only professional Instagram accounts can connect) and Q4 (does a Meta app exist?).
 
 ## Log
 ### 2026-10-15T13:20Z · kiro-202610151240-0371 · created → drafted
 Analysis and plan drafted at the owner's request. next_actor: claude (spar → Gate 1 → VTIDs).
+
+### 2026-10-15T14:10Z · kiro-202610151240-0371 · drafted (revised)
+Owner answers applied: E6/E7 stay, placement as proposed. Added the action audit, the `card-actions` lane and the
+`meta-oauth` lane. Read-only AWS check: no Instagram/Facebook credentials exist on any gateway. next_actor: claude.

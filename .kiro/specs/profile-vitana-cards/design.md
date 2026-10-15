@@ -1,76 +1,66 @@
-# Design — Vitana cards on the own profile
+# Design — Vitana cards on the own profile, and card actions that work
 
 ## 1. Card list (R1, R5)
 
 **vitana-v1 `src/components/vitana/vitana-card-catalog.ts`**
 ```ts
 /** Profile shows only cards that enrich the profile itself (owner 2026-10-15). */
-export const PROFILE_ENRICHMENT_CARDS = ['E1', 'E2', 'E3', 'E4', 'E5', 'E11'] as const;
+export const PROFILE_ENRICHMENT_CARDS = ['E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'E7', 'E11'] as const;
 profile: { server: 'profile', allow: [...PROFILE_ENRICHMENT_CARDS, 'G1'], boost: ['G1'], features: [] },
 ```
-- `allow` must list G1. `isServerCardPlaced` checks `allow` before `boost`, so a missing G1 would hide the card.
-- `features: []` removes F2, F4 and F7 from the profile.
-- This uses the existing `allow` lever (already used by `make-a-post`). No new mechanism.
+- `allow` must contain G1, because `isServerCardPlaced` checks `allow` before `boost`.
+- This uses the existing `allow` mechanism, already used by `make-a-post`.
 
 **vitana-platform `services/gateway/src/services/enrichment/card-catalog.ts`**
-```ts
-profile: ['E1', 'E2', 'E3', 'E4', 'E5', 'E11'],
-```
-- The server order stays `ENRICHMENT_PRIORITY` filtered: E1, E2, E3, E4, E5, E11.
-- `SCREEN_BOOST_CARDS.profile` stays `['G1']`.
+- `profile: ['E1','E2','E3','E4','E5','E6','E7','E11']`.
+- The server order is the filtered `ENRICHMENT_PRIORITY`: E1, E2, E3, E6, E7, E4, E5, E11.
 
-## 2. Placement (R2) — where the cards fit best
+## 2. Placement (R2) — owner-confirmed as proposed
 
-The guiding idea: the member sees **their profile first**, and the cards sit in the place where the member already
-improves the profile. That place already exists: the **Cover Library tile** (VTID-02806) is an "enrich your profile"
-action on both layouts. The cards move next to it, so there is one "improve your profile" zone instead of a banner
-stack above the ID card.
+The cards move into the existing "improve your profile" zone next to the Cover Library tile (VTID-02806).
 
-**Mobile (`EditProfilePage.tsx`, Posts tab — the default tab, `useState<MobileProfileTab>("posts")`)**
+- **Mobile, Posts tab** (the default tab). Order inside it:
+  1. Showcase header and hint
+  2. Autopilot banner
+  3. **G1** (stacked)
+  4. **The enrichment carousel**
+  5. Cover Library tile
+  6. Posts
 
-New order:
-1. ID card switcher
-2. Stats
-3. Sticky tab bar
-4. Posts tab:
-   1. Showcase header + hint
-   2. Autopilot banner
-   3. **G1 Complete your profile** (stacked)
-   4. **Enrichment carousel** (E1–E5, E11)
-   5. Cover Library tile
-   6. Posts
+  The whole page then reads: ID card → stats → sticky tabs → Posts tab as above. The cards stay inside
+  `!isBusinessTab`.
+- **Desktop:** below `<ProfileLayout>`, in the Cover Library container, before the tile.
+- **Mounts:**
+  - `<EnrichmentCardStrip screen="profile" layout="stacked" only="features" />` (holds only G1 now);
+  - `<EnrichmentCardStrip screen="profile" layout="carousel" maxCards={8} only="server" />`.
 
-Why this place:
-- The Posts tab is the default, so the cards stay reachable without searching. But they come only after the
-  profile itself (ID card, stats, tabs).
-- E3 "Share your first post" sits directly above the (empty) posts list.
-- The block is inside `!isBusinessTab`, as the tabs are today, so the Business segment stays clean.
-- **G1 comes first.** It is the umbrella card with the percentage. The concrete steps follow in the carousel.
+## 3. Card actions (R6, R7)
 
-**Desktop (`EditProfilePage.tsx`)**
-- Remove the strip container above `<ProfileLayout>`.
-- Mount G1 + the carousel **below `<ProfileLayout>`**, in the existing `container mx-auto px-4 mt-4` block, right
-  before the Cover Library tile.
-- The desktop page then reads: ID card → stats → split navigation → showcase → autopilot suggestions →
-  enrich-your-profile zone (G1, carousel, Cover Library).
+| Card | Fix |
+|---|---|
+| **G1** | Opens the first open profile step. It reads the cached `useEnrichmentCards('profile')`, takes the first card whose `CARD_DEEP_LINKS` entry starts with `/me/profile#`, and navigates there. The `useProfileEditorDeepLink` hash consumer then opens the drawer, so this also works when the member is already on `/me/profile`. Fallback: `/me/profile#about`. |
+| **F4** | Opens a conversation with Vitana through the existing `activateOrb()` (`src/lib/orbActivate.ts`). If the ORB widget is not available, it navigates to `/comm/talk-to-vitana`, the existing Talk to Vitana page. `CARD_DEEP_LINKS.F4` becomes `/comm/talk-to-vitana`. |
+| **E8 / E9** | `ConnectedApps.tsx`: add `id="calendar"` and `id="contacts"` anchors on the Mail/Calendar/Contacts section, plus a `location.hash` effect that calls `scrollIntoView` and consumes the hash (same pattern as `useProfileEditorDeepLink`). `CARD_DEEP_LINKS.E8` becomes `/connectors#calendar`. |
+| **F8** | When `accept()` returns no URL, reset `busy` and decline the tip, so the card neither freezes nor comes back. |
+| **E6 / E7 (now)** | The gateway leaves E6/E7 out of `eligibleEnrichmentCards` while `INSTAGRAM_CLIENT_ID` / `FACEBOOK_CLIENT_ID` are unset (one `isSocialProviderConfigured(provider)` helper next to `getOAuthUrl`). Result: no dead card anywhere (Home, Community, Messenger, Profile), and `profile_completion_pct` is unchanged. |
+| **E6 / E7 (working)** | (a) **Owner:** a Meta app with Facebook Login and the "Instagram API with Instagram Login", with the redirect URIs `…/api/v1/social-accounts/callback/{instagram,facebook}` and app review for the permissions. (b) **Claude Code:** puts the 4 values into Secrets Manager and the gateway task definitions through the canonical provisioning workflow. (c) **Code:** move the Instagram provider from the retired Basic Display API to Instagram Login (`www.instagram.com/oauth/authorize`, scope `instagram_business_basic`, `graph.instagram.com/me?fields=user_id,username`). Also send `?return=mobile` and start the poller for instagram/facebook inside Appilix. |
+| E1, E5 | No change. They open the Identity drawer and the About drawer (the location field is in About). |
 
-**Mounts:**
-- G1: `<EnrichmentCardStrip screen="profile" layout="stacked" only="features" />`, which holds only G1 now.
-- Carousel: `<EnrichmentCardStrip screen="profile" layout="carousel" maxCards={6} only="server" />`.
+**Limit to know:** Meta's current Instagram API only connects **professional** (business or creator) Instagram
+accounts. Personal accounts can no longer be connected by any app. The E6 copy should say this, or E6 shows only
+after the member chooses "I have a business/creator account". This is decision Q3.
 
-Both mounts share one cached request (`useEnrichmentCards`), as today.
+## 4. Decisions
 
-## 3. Alternatives considered
+- **Q1 — answered:** E6/E7 stay on the profile.
+- **Q2 — answered:** placement as proposed.
+- **Q3 — open, for the owner via sparring:** how to handle personal Instagram accounts (see the limit in §3). Kiro
+  recommends one sentence in the E6 description. That needs no extra screen.
+- **Q4 — open:** a Meta app, if one already exists outside AWS, must come from the owner. None is configured
+  anywhere today.
 
-- **Each card in "its" tab** (E2/E4/E5 in About, E3 in Posts, E1/E11 near the ID card): this places the cards most
-  precisely, but splits one task into 3–4 mounts, and the About tab is not the default tab. Rejected for now.
-  It is the follow-up option if the owner wants it.
-- **Between the stats and the sticky tab bar:** still above the content, and it pushes the tabs down. Rejected.
-- **The very bottom of the page:** behind a long posts list the cards stop working as nudges. Rejected.
-- **A section heading "Enrich your profile":** this needs a new key in every locale. Left out. The strip already has
-  its aria-label (`screens.vitanaCards.stripLabel`).
-
-## 4. Questions for sparring
-
-- **Q1:** E6/E7 classed as "not profile" (they are data imports, not the visible links). Agree?
-- **Q2:** Order inside the Posts tab: cards before the Cover Library tile (proposed) or after it?
+Alternatives considered for placement:
+- **Each card in its own tab:** rejected, it splits one task into 3–4 mounts.
+- **Between the stats and the tabs:** rejected, the cards would still sit above the content.
+- **The page bottom:** rejected, nobody sees the cards there.
+- **A section heading:** rejected, it would need a new key in every locale.
