@@ -26,9 +26,14 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { readCommandHubBundle } from './command-hub/bundle';
 
 const FE = path.resolve(__dirname, '../src/frontend/command-hub');
-const APP_JS = fs.readFileSync(path.join(FE, 'app.js'), 'utf8');
+// VTID-05073: sendChatMessage, switchOperatorThread, reattachFollowedExecutions
+// and the exec-follow helpers this suite pins moved into operator-console.js
+// (initOperatorChatSession stays in app.js). Read the whole Command Hub bundle
+// so both resolve. Assertions unchanged.
+const APP_JS = readCommandHubBundle();
 const INDEX_HTML = fs.readFileSync(path.join(FE, 'index.html'), 'utf8');
 const GUARD_JS = fs.readFileSync(path.resolve(__dirname, '../../../scripts/ci/command-hub-ownership-guard.js'), 'utf8');
 
