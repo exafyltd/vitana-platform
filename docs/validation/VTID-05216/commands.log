@@ -1,0 +1,19 @@
+# VTID-05216 (pm-agent/p3-observe-decide) — commands log
+
+Built the Project Manager observe + decide engine (dry_run) per plan §6, phase P3.
+
+## Implementation
+- services/gateway/src/services/project-manager/ — config.ts, types.ts, observe.ts, decide.ts, emit.ts, index.ts
+- services/gateway/src/routes/project-manager.ts — GET /api/v1/project-manager/status
+- services/gateway/src/index.ts — route registration
+- services/gateway/src/orb/developer/domain-atlas.ts — added /^project-manager$/ to the agents/orchestrator domain
+  (VTID-04562 route-domain drift guard requires every gateway route file to be claimed by a domain)
+
+## Verification
+- npx tsc --noEmit — clean
+- npx jest test/project-manager — 52 tests green across 3 suites (decide table tests, route, tick/config)
+- Decide rules table-tested: merge (each precondition false → no merge), reassign, park, gate-2 batch timing
+
+## Notes
+- dry_run only: emits OASIS pm.decision events; no act/merge/deploy (that is P4).
+- pm_lease / policy-approval tables come from p1 (plan-spar migration); the lease safely no-ops until p1 lands.
