@@ -68,3 +68,9 @@ TEST: `services/gateway/test/project-manager/route.test.ts`.
 ## Local checks
 - `npx tsc --noEmit` (gateway): PASS, 0 errors.
 - `npx jest test/project-manager` (gateway): 3 suites, 52 tests, all PASS.
+
+## Route mount
+
+ROUTE_MOUNT: `services/gateway/src/routes/project-manager.ts` registered at `/api/v1/project-manager` in `services/gateway/src/index.ts`; GET `/status` returns the PM mode and current decision list (read-only).
+FINAL_URL: `https://preview-aws-gateway.vitanaland.com/api/v1/project-manager/status` (staging)
+CURL_PROOF: not run from this session (no gateway call permitted); the read route is proven by `services/gateway/test/project-manager/route.test.ts` and the staging probe in `staging-tests.json` (GET /api/v1/project-manager/status → 200). dry_run: the endpoint returns mode + decisions, performs no action.
