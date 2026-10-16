@@ -1,6 +1,6 @@
 ---
 lane: p5-rules
-state: executing
+state: in-review
 next_actor: claude
 vtid: VTID-05218
 executor: claude
@@ -12,7 +12,7 @@ paths:
   - CLAUDE.md
   - scripts/collab/routine-prompt.md
   - .claude/skills/plan-sparring/**
-updated: 2026-10-15T20:10Z
+updated: 2026-10-16T05:55Z
 claimed_by: session_01J2m8CtCfCH4VEGqmp6HrDh
 branch: ccr-ca63b286-optl8c
 ---
@@ -29,3 +29,7 @@ Created with the plan (Gate 1 yes 2026-10-15).
 Rules for the new roles in both repos (collaboration §2, §3a, §5, §7, §7a, §8, §9; CLAUDE.md roles, Autonomy
 Contract, rules 51/54), plan-sparring skill (CI path), both Kiro Web automations (planner / reviewer / builder,
 one item per run), routine prompt (exceptions only).
+
+### 2026-10-16T05:55Z · session_01J2m8CtCfCH4VEGqmp6HrDh · executing → in-review
+Merged as #4146 (`257d3e0f0`) and vitana-v1 #1437 (`5c4632ea9`), all checks green. Nothing deploys, so no
+Gate 2. VTID-05218 completed in the ledger. Next: verified → done (one edge per PR).
