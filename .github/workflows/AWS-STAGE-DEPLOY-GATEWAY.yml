@@ -1218,7 +1218,7 @@ jobs:
                           {name:"AUTOMATIONS_DELIVERY_MODE", value:"shadow"},
                           {name:"AUTOPILOT_HEARTBEAT_ENABLED", value:"true"},
                           {name:"PM_AGENT_ENABLED", value:"true"},
-                          {name:"PM_MODE", value:"dry_run"},
+                          {name:"PM_MODE", value:"live"},
                           {name:"DEFAULT_TENANT_ID", value:"2e7528b8-472a-4356-88da-0280d4639cce"},
                           {name:"TTS_PROVIDER", value:"polly"},
                           {name:"TTS_POLLY_STRICT", value:"true"},
