@@ -1,0 +1,29 @@
+---
+id: standalone
+title: Standalone work (specs outside the named programmes)
+status: active
+priority: 3
+repos: [vitana-platform, vitana-v1]
+specs:
+  - vitana-platform:pm-agent
+  - vitana-platform:claude-sessions-handover
+  - vitana-v1:chat-ux
+  - vitana-v1:vitana-chat-markdown
+docs:
+  - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
+  - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
+  - vitana-v1:.kiro/specs/chat-ux/plan-sparring.md
+  - vitana-v1:docs/validation/VTID-05193/plan-sparring.md
+exit_criteria:
+  - Every spec listed here is done or has moved to a named programme
+next_review: 2026-10-22
+---
+# Standalone work
+
+Programme registry entry (VTID-05215). Every current `.kiro/specs/*` spec belongs to exactly one programme; specs that
+belong to none of the named programmes are listed here until the owner assigns them to one. Links only.
+
+- `vitana-platform:pm-agent` — Project Manager Agent
+- `vitana-platform:claude-sessions-handover` — handover of ongoing Claude Code sessions to Kiro
+- `vitana-v1:chat-ux` — chat UX
+- `vitana-v1:vitana-chat-markdown` — Vitana chat replies render Markdown
