@@ -14,11 +14,13 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { readCommandHubBundle } from './command-hub/bundle';
 
-const SOURCE = fs.readFileSync(
-  path.join(__dirname, '../src/frontend/command-hub/app.js'),
-  'utf8'
-);
+// VTID-05073: the thread-menu / archive / share / sidebar-row functions this
+// suite pins moved into operator-console.js. Read the whole Command Hub
+// bundle so both the moved functions and the ones still in app.js resolve.
+// Assertions unchanged.
+const SOURCE = readCommandHubBundle();
 
 const CSS = fs.readFileSync(
   path.join(__dirname, '../src/frontend/command-hub/styles.css'),

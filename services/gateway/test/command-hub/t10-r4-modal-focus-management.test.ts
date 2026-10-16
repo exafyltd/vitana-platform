@@ -21,6 +21,7 @@
  */
 
 import { readFileSync } from 'fs';
+import { readCommandHubBundle } from './bundle';
 import { join } from 'path';
 
 const APP_JS_PATH = join(__dirname, '../../src/frontend/command-hub/app.js');
@@ -116,10 +117,12 @@ describe('T10 region 4: deliberately NOT converted this pass', () => {
   const appJs = readFileSync(APP_JS_PATH, 'utf8');
 
   it('renderOperatorOverlay (streaming chat) is untouched — no attachModalA11y call', () => {
-    const fnIdx = appJs.indexOf('function renderOperatorOverlay(');
+    // VTID-05073: renderOperatorOverlay was extracted to operator-console.js; read it from the bundle.
+    const bundle = readCommandHubBundle();
+    const fnIdx = bundle.indexOf('function renderOperatorOverlay(');
     expect(fnIdx).toBeGreaterThan(-1);
-    const nextFnIdx = appJs.indexOf('\nfunction ', fnIdx + 1);
-    const body = appJs.slice(fnIdx, nextFnIdx === -1 ? appJs.length : nextFnIdx);
+    const nextFnIdx = bundle.indexOf('\nfunction ', fnIdx + 1);
+    const body = bundle.slice(fnIdx, nextFnIdx === -1 ? bundle.length : nextFnIdx);
     expect(body).not.toContain('attachModalA11y(');
   });
 
