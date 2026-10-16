@@ -1,0 +1,18 @@
+{
+  "vtid": "VTID-05217",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "project-manager status endpoint returns mode and decisions (P4 live mode enabled)",
+      "path": "/api/v1/project-manager/status",
+      "expect_status": 200
+    },
+    {
+      "kind": "http",
+      "name": "health endpoint unaffected",
+      "path": "/api/v1/vtid/health",
+      "expect_status": 200
+    }
+  ]
+}
