@@ -1,0 +1,18 @@
+VTID-05208 local verification — 2026-10-16, Windows/PowerShell, cwd services/gateway (worktree .worktrees/nmw-grouped-notif)
+
+npx tsc --noEmit                                   -> exit 0
+npx eslint src/services/new-member-greeting-push.ts src/routes/chat.ts src/services/chat-push-coalescer.ts src/i18n/catalog.ts test/vtid-05208-*.test.ts test/i18n/catalog-coverage.test.ts
+                                                   -> exit 2, "ESLint couldn't find a configuration file" — the repo tracks no ESLint config
+                                                      (git ls-files | grep eslint is empty), so `npm run lint` cannot run on main either; not caused by this change
+node node_modules/jest/bin/jest.js --ci --forceExit test/vtid-05208-new-member-greeting-push.test.ts test/vtid-05208-greeting-send-route.test.ts test/vtid-05137-chat-push-coalescing.test.ts test/i18n test/chat-vitana-reply.test.ts test/vtid-05104-calendar-invite-guard.test.ts test/vtid-04917-invite-routes.test.ts test/vtid-05100-companion-delivery.test.ts test/vtid-04962-push-outcome.test.ts test/vtid-04926-chat-group-mentions.test.ts
+                                                   -> exit 0, Test Suites 12 passed / 12, Tests 239 passed / 239
+mutation check: inverted `push: !pushedInWindow` in new-member-greeting-push.ts
+                                                   -> 6 tests failed (a, b D2 golden, c, d, e, 23 h/25 h); reverted, suite green again
+npm run test:roles                                 -> exit 0, Tests 105 passed / 105
+npm run build                                      -> fails under cmd.exe only because prebuild/copy scripts use POSIX rm/cp/mkdir
+npm run build --script-shell "C:\Program Files\Git\bin\bash.exe"
+                                                   -> exit 0 (prebuild rm -rf dist, tsc, copy-frontend, copy-data); dist/services/new-member-greeting-push.js emitted (dist/ is gitignored)
+node -e JSON.parse(scope.json, staging-tests.json, all 11 locale files) -> ok
+fc.exe /b .kiro/specs/new-member-welcome/plan-sparring.md docs/validation/VTID-05208/plan-sparring.md -> no differences
+
+Not run: anything against staging or production (no gateway calls made; GATEWAY_SERVICE_TOKEN not needed).
