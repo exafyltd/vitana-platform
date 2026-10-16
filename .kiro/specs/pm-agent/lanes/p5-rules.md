@@ -1,6 +1,6 @@
 ---
 lane: p5-rules
-state: verified
+state: done
 next_actor: claude
 vtid: VTID-05218
 executor: claude
@@ -12,8 +12,7 @@ paths:
   - CLAUDE.md
   - scripts/collab/routine-prompt.md
   - .claude/skills/plan-sparring/**
-updated: 2026-10-16T06:00Z
-claimed_by: session_01J2m8CtCfCH4VEGqmp6HrDh
+updated: 2026-10-16T06:05Z
 branch: ccr-ca63b286-optl8c
 ---
 # P5 — rules, CLAUDE.md, Kiro automations and steering for the new roles (VTID-05218)
@@ -37,3 +36,6 @@ Gate 2. VTID-05218 completed in the ledger. Next: verified → done (one edge pe
 ### 2026-10-16T06:00Z · session_01J2m8CtCfCH4VEGqmp6HrDh · in-review → verified
 AC-1…AC-4 met on main (#4146 / v1 #1437): rules identical in both repos, collab tests 39/39, validator green. Nothing
 deploys. Next: done.
+
+### 2026-10-16T06:05Z · session_01J2m8CtCfCH4VEGqmp6HrDh · verified → done
+Lane closed. VTID-05218 is terminal in the ledger.
