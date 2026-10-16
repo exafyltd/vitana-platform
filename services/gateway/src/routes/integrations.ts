@@ -25,6 +25,8 @@ import { runPillarAgentsForUser } from '../services/pillar-agents/orchestrator';
 import * as repo from './integrations-repository';
 import { dualWriteUserIntegration } from '../services/health-sources/legacy-mirror';
 import { isHealthSourcesReadEnabled, logReadFallback, readUserIntegrationsFromSources } from '../services/health-sources/read-model';
+import { recordToHealthStore } from '../services/health-features/record-to-health-store';
+import { writerValuesForFeature } from '../services/health-features/feature-spec';
 import { FEATURE_KEY_TO_LOG_KIND, writePillarLogMoment } from '../services/vitana-index/pillar-log-moment';
 
 const router = Router();
@@ -185,6 +187,17 @@ router.post('/manual/log', requireAuth, async (req: AuthenticatedRequest, res: R
     if (featErr) {
       return res.status(400).json({ ok: false, error: 'FEATURE_WRITE_FAILED', detail: featErr.message });
     }
+
+    // VTID-05162 (Health Hub B2): dual-write into the health store after the
+    // legacy write landed (dark: HEALTH_STORE_DUAL_WRITE_SELF_LOGGED). Keys with
+    // no store code (biomarker_*, macro_balance, hydration_log, …) stay legacy-only.
+    // The response never depends on it. Members without a tenant row are skipped.
+    await recordToHealthStore(
+      admin,
+      { tenant_id: tenantId ?? '', user_id: userId },
+      'manual',
+      writerValuesForFeature(featureKey, value, date, 'replace'),
+    ).catch(() => undefined);
 
     // Mark the manual-entry integration as connected + bump last_sync_at.
     await repo.upsertManualEntryIntegrationSynced(admin, userId);

@@ -20,6 +20,8 @@ import { emitOasisEvent } from '../services/oasis-event-service';
 import * as repo from './connector-webhooks-repository';
 import { dualWriteUserConnections } from '../services/health-sources/legacy-mirror';
 import { bridgeWearableDays, isWearableFeatureBridgeEnabled, utcDateOf } from '../services/wearable-features-bridge';
+import { recordToHealthStore } from '../services/health-features/record-to-health-store';
+import { writerValuesForDailyMetrics } from '../services/health-features/feature-spec';
 
 const router = Router();
 
@@ -187,7 +189,19 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
             }
           }
           const dm = await repo.upsertWearableDailyMetrics(supabase, patch);
-          if (!dm?.error) noteBridgeDay(userId, tenantId, metric_date);
+          if (!dm?.error) {
+            noteBridgeDay(userId, tenantId, metric_date);
+            // VTID-05162 (Health Hub B2): dual-write the day's metrics into the
+            // health store after the legacy upsert landed (dark:
+            // HEALTH_STORE_DUAL_WRITE_DEVICE). Never changes this response.
+            await recordToHealthStore(
+              supabase,
+              { tenant_id: tenantId, user_id: userId },
+              'webhook_daily',
+              writerValuesForDailyMetrics(patch, metric_date),
+              { legacy_user_connection_id: userConnectionId, connector_id: connector.id },
+            ).catch(() => undefined);
+          }
         }
       } else if (event.topic === 'connector.wearable.workout.recorded') {
         if (tenantId) {
@@ -208,7 +222,30 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
             max_hr: (event.payload.max_hr as number | null) ?? null,
             raw: event.raw ?? null,
           });
-          if (!wo?.error) noteBridgeDay(userId, tenantId, utcDateOf(startedAt));
+          if (!wo?.error) {
+            noteBridgeDay(userId, tenantId, utcDateOf(startedAt));
+            // VTID-05162 (Health Hub B2): one workout record keyed
+            // <connector>:<external_workout_id> (dark: HEALTH_STORE_DUAL_WRITE_DEVICE).
+            const day = utcDateOf(startedAt);
+            const externalId = (event.payload.external_workout_id as string | null) ?? null;
+            const minutes = event.payload.duration_minutes;
+            if (day) {
+              await recordToHealthStore(
+                supabase,
+                { tenant_id: tenantId, user_id: userId },
+                'webhook_workout',
+                [{
+                  code: 'workout',
+                  date: day,
+                  start: new Date(Date.parse(startedAt)).toISOString(),
+                  value: typeof minutes === 'number' ? minutes : null,
+                  // No vendor id: the start time identifies the workout (decision inside the plan).
+                  external_id: externalId ?? `started:${new Date(Date.parse(startedAt)).toISOString()}`,
+                }],
+                { legacy_user_connection_id: userConnectionId, connector_id: connector.id },
+              ).catch(() => undefined);
+            }
+          }
         }
       }
 

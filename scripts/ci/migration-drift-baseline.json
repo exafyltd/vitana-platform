@@ -156,6 +156,21 @@
       "table": "health_sources",
       "vtid": "VTID-05161",
       "reason": "Health Hub connection model (Phase 1 B1): Aurora only — 0T, production after the cutover. Never Supabase (migration placement guard)."
+    },
+    {
+      "table": "health_features_daily_v2",
+      "vtid": "VTID-05162",
+      "reason": "Health Hub derived features (Phase 1 B2): Aurora only — 0T, production after the cutover. Never Supabase (migration placement guard)."
+    },
+    {
+      "table": "health_features_daily_legacy_shadow",
+      "vtid": "VTID-05162",
+      "reason": "Health Hub derived features rollback shadow (Phase 1 B2): Aurora only — 0T, production after the cutover. Never Supabase (migration placement guard)."
+    },
+    {
+      "table": "health_features_derivation_pending",
+      "vtid": "VTID-05162",
+      "reason": "Health Hub derived features pending markers (Phase 1 B2): Aurora only — 0T, production after the cutover. Never Supabase (migration placement guard)."
     }
   ]
 }

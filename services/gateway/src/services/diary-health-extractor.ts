@@ -43,6 +43,8 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import * as repo from './diary-health-extractor-repository';
 import { rememberFact } from './memory/remember'; // VTID-04364
+import { recordToHealthStore } from './health-features/record-to-health-store';
+import { writerValuesForFeature, type WriterValue } from './health-features/feature-spec';
 
 export interface DiaryFeatureWrite {
   feature_key: string;
@@ -300,6 +302,7 @@ export async function persistDiaryHealthFeatures(
 
   let written = 0;
   let failed = 0;
+  const storeValues: WriterValue[] = []; // VTID-05162: the writes whose legacy row landed
   for (const w of writes) {
     try {
       const { error } = await repo.upsertHealthFeatureDaily(admin, {
@@ -318,11 +321,20 @@ export async function persistDiaryHealthFeatures(
         failed += 1;
       } else {
         written += 1;
+        storeValues.push(...writerValuesForFeature(w.feature_key, w.feature_value, date, 'replace'));
       }
     } catch (e: any) {
       console.warn(`[VTID-01977] feature write threw (${w.feature_key}): ${e?.message ?? e}`);
       failed += 1;
     }
+  }
+
+  // VTID-05162 (Health Hub B2): dual-write the successful writes into the
+  // health store (dark: HEALTH_STORE_DUAL_WRITE_SELF_LOGGED). One chokepoint for
+  // all three diary call sites (routes/memory.ts, services/memory/diary.ts,
+  // orb-tools-shared.ts). Never changes this function's result.
+  if (storeValues.length > 0) {
+    await recordToHealthStore(admin, { tenant_id: tenantId, user_id: userId }, 'diary', storeValues).catch(() => undefined);
   }
 
   // BOOTSTRAP-MEMORY-DAILY-LEARNING (diary de-silo): the diary previously

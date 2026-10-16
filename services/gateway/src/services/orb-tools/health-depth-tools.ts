@@ -88,6 +88,8 @@ import {
 } from '../../lib/vitana-pillars';
 import * as repo from './health-depth-tools-repository';
 import { dualWriteUserIntegration } from '../health-sources/legacy-mirror';
+import { recordToHealthStore } from '../health-features/record-to-health-store';
+import { writerValuesForFeature, type HealthWriterId, type WriterValue } from '../health-features/feature-spec';
 import { FEATURE_KEY_TO_LOG_KIND, writePillarLogMoment } from '../vitana-index/pillar-log-moment';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
@@ -158,6 +160,8 @@ async function upsertHealthFeatureAndRecompute(
     value: number;
     unit: string;
     metadata: Record<string, unknown>;
+    /** VTID-05162: the health-store dual-write for this legacy write. */
+    store: { writer: HealthWriterId; values: WriterValue[] };
   },
 ): Promise<{ ok: true; pillarScoreAfter: number | null; totalAfter: number | null; indexDelta: number | null } | { ok: false; error: string }> {
   const tenantId = await resolveHealthTenantId(id, sb);
@@ -177,6 +181,11 @@ async function upsertHealthFeatureAndRecompute(
     metadata: opts.metadata,
   });
   if (featErr) return { ok: false, error: `feature_write_failed: ${featErr.message}` };
+
+  // VTID-05162 (Health Hub B2): dual-write into the health store after the
+  // legacy write landed (dark: HEALTH_STORE_DUAL_WRITE_SELF_LOGGED). The tool's
+  // result never depends on it.
+  await recordToHealthStore(sb, { tenant_id: tenantId, user_id: id.user_id }, opts.store.writer, opts.store.values).catch(() => undefined);
 
   // Mark manual-entry integration connected (mirrors logHealthSignal / manual/log).
   try {
@@ -244,6 +253,8 @@ export async function tool_log_meal(args: OrbToolArgs, id: OrbToolIdentity, sb: 
       value: newCount,
       unit: 'meal',
       metadata: { description: description || null, meal_type: mealType, calories, source: 'voice_tool' },
+      // An event writer: one meal record per call (a new id each time), never the running count.
+      store: { writer: 'orb_meal', values: writerValuesForFeature('meal_log', 1, date, 'event') },
     });
     if (!out.ok) return { ok: false, error: out.error };
 
@@ -294,6 +305,7 @@ export async function tool_log_vitals(args: OrbToolArgs, id: OrbToolIdentity, sb
         value: heartRate,
         unit: 'bpm',
         metadata: { source: 'voice_tool_vitals' },
+        store: { writer: 'orb_vitals', values: writerValuesForFeature('wearable_heart_rate', heartRate, date, 'replace') },
       });
       if (!out.ok) return { ok: false, error: out.error };
       indexDelta = out.indexDelta;
@@ -323,6 +335,15 @@ export async function tool_log_vitals(args: OrbToolArgs, id: OrbToolIdentity, sb
     if (wearableRows.length > 0) {
       const { error: wErr } = await repo.insertWearableSamples(sb, wearableRows);
       if (wErr) return { ok: false, error: `wearable_write_failed: ${wErr.message}` };
+      // VTID-05162 (Health Hub B2): weight and blood pressure into the health
+      // store too (dark). The catalogue does not accept blood pressure yet
+      // (catalogue_allowed=false), so the store quarantines those items
+      // (CATEGORY_NOT_ALLOWED) and counts them; nothing here depends on it.
+      const vitals: WriterValue[] = [];
+      if (weightKg !== null) vitals.push({ code: 'body_weight', date, value: weightKg });
+      if (systolic !== null) vitals.push({ code: 'blood_pressure_systolic', date, value: systolic });
+      if (diastolic !== null) vitals.push({ code: 'blood_pressure_diastolic', date, value: diastolic });
+      await recordToHealthStore(sb, { tenant_id: tenantId, user_id: id.user_id }, 'orb_vitals', vitals).catch(() => undefined);
     }
 
     const deltaText = indexDelta !== null && indexDelta > 0 ? ` Vitana Index up ${indexDelta}.` : '';
@@ -367,6 +388,7 @@ export async function tool_log_mood(args: OrbToolArgs, id: OrbToolIdentity, sb: 
       value: score,
       unit: 'score_1_5',
       metadata: { mood_label: label || null, notes: notes || null, source: 'voice_tool' },
+      store: { writer: 'orb_mood', values: writerValuesForFeature('mood_entry', score, date, 'replace') },
     });
     if (!out.ok) return { ok: false, error: out.error };
     const deltaText = out.indexDelta !== null && out.indexDelta > 0 ? ` Vitana Index up ${out.indexDelta}.` : '';

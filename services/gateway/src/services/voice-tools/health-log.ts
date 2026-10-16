@@ -17,6 +17,8 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import * as repo from './health-log-repository';
 import { dualWriteUserIntegration } from '../health-sources/legacy-mirror';
+import { recordToHealthStore } from '../health-features/record-to-health-store';
+import { writerValuesForFeature } from '../health-features/feature-spec';
 import { writePillarLogMoment, type PillarLogKind } from '../vitana-index/pillar-log-moment';
 
 type LogTool = 'log_water' | 'log_sleep' | 'log_exercise' | 'log_meditation';
@@ -169,6 +171,16 @@ export async function logHealthSignal(
   if (featErr) {
     return { ok: false, error: `feature_write_failed: ${featErr.message}` };
   }
+
+  // VTID-05162 (Health Hub B2): dual-write into the health store after the
+  // legacy write landed (dark: HEALTH_STORE_DUAL_WRITE_SELF_LOGGED). The tool's
+  // result never depends on it.
+  await recordToHealthStore(
+    admin,
+    { tenant_id: effectiveTenantId, user_id: input.user_id },
+    'voice',
+    writerValuesForFeature(map.feature_key, value, input.date, 'replace'),
+  ).catch(() => undefined);
 
   // Mark manual-entry integration connected (mirrors integrations.ts).
   await repo.upsertManualEntryUserIntegration(admin, {

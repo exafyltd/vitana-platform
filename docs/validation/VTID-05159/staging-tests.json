@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05159",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "health store status is mounted and needs a signed-in member (no token -> 401 JSON)", "method": "GET", "path": "/api/v1/health/internal/store-status", "expect_status": 401 },
+    { "kind": "http", "name": "health store status rejects an invalid bearer (401 JSON, not an HTML 404)", "method": "GET", "path": "/api/v1/health/internal/store-status", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "the existing health router still answers JSON (the internal mount does not shadow it)", "method": "GET", "path": "/api/v1/health/", "expect_status": 200, "expect_json": { "ok": true, "service": "health-gateway" } },
+    { "kind": "existing", "ref": "npx jest test/health-store test/routes/health-store-internal.test.ts test/vtid-05025-commerce-health-boundary.test.ts", "cwd": "services/gateway",
+      "reason": "A2 ships dark: HEALTH_STORE_ENABLED is forced off when VITANA_ENV=staging (store-status reports {enabled:false, reason:'staging'} to a signed-in member, proven by routes/health-store-internal.test.ts because the http runner signs nobody in), the store's tables are Aurora-only and absent from the shared Supabase project, and no raw bucket exists, so on staging nothing reads or writes health data. The read-only GETs above prove the internal router is mounted, refuses unauthenticated callers with JSON, and leaves the existing /api/v1/health router untouched. Every write path (writeHealthSamples' S3 contract, consent gate, raw archive, validation/quarantine, chunking, partition retry, quota, idempotency, readers, suppression, change hook, maintenance, reprocess, erase-raw, the infra scripts' dry runs) is proven by Jest over the in-memory twin of the A1 SQL functions and a fake S3 client; POST probes are never sent to staging." }
+  ]
+}

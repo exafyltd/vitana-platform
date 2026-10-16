@@ -1,0 +1,4 @@
+# npx tsc --noEmit -p . (services/gateway). The only error is pre-existing and environmental: libphonenumber-js is missing from the worktree's symlinked node_modules (src/services/connected-apps/contacts-import.ts, VTID-05057, untouched here). No error in any file this change touches.
+# all error lines: 1
+# non-TS2742 error lines:
+src/services/connected-apps/contacts-import.ts(24,82): error TS2307: Cannot find module 'libphonenumber-js' or its corresponding type declarations.

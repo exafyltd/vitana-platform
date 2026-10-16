@@ -10,6 +10,7 @@ import { getSupabase } from '../lib/supabase';
 import { emitClickOutbound } from './reward-events';
 import * as repo from './action-executors-repository';
 import { CALENDAR_EVENT_TYPES } from '../types/calendar';
+import { recordToHealthStore } from './health-features/record-to-health-store';
 
 export function registerAllActionExecutors(): void {
   // ---- shopping_add_to_list ----
@@ -95,18 +96,35 @@ export function registerAllActionExecutors(): void {
     const duration_minutes = typeof args.duration_minutes === 'number' ? args.duration_minutes : null;
     const calories = typeof args.calories === 'number' ? args.calories : null;
 
+    const started_at = typeof args.started_at === 'string' ? args.started_at : new Date().toISOString();
     const { data, error } = await repo.insertManualWearableWorkout(supabase, {
       tenant_id: ctx.tenant_id,
       user_id: ctx.user_id,
       provider: 'manual',
       external_workout_id: `manual-${ctx.action_id}`,
       workout_type,
-      started_at: typeof args.started_at === 'string' ? args.started_at : new Date().toISOString(),
+      started_at,
       duration_minutes,
       calories,
     });
 
     if (error) return { ok: false, error: error.message };
+
+    // VTID-05162 (Health Hub B2): dual-write into the health store after the
+    // legacy insert landed (dark: HEALTH_STORE_DUAL_WRITE_DEVICE). One workout
+    // record per action (the action id is the per-call key), on the UTC day it
+    // started — the day D6a counts it on. The result never depends on it.
+    const startedMs = Date.parse(started_at);
+    if (Number.isFinite(startedMs)) {
+      const startIso = new Date(startedMs).toISOString();
+      await recordToHealthStore(
+        supabase,
+        { tenant_id: ctx.tenant_id, user_id: ctx.user_id },
+        'manual_workout',
+        [{ code: 'workout', date: startIso.slice(0, 10), start: startIso, value: duration_minutes, detail: { workout_type: String(workout_type).slice(0, 64) } }],
+        { call_id: String(ctx.action_id) },
+      ).catch(() => undefined);
+    }
     return {
       ok: true,
       external_id: data.id,

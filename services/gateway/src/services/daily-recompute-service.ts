@@ -18,6 +18,14 @@
 import { randomUUID } from 'crypto';
 import { CicdEventType } from '../types/cicd';
 import { emitOasisEvent } from './oasis-event-service';
+import { getSupabase } from '../lib/supabase';
+import { isFeatureDerivationEnabled } from './health-features/flags';
+import {
+  defaultDerivationDeps,
+  runFeatureDerivationCatchUp,
+  runNightlyFeatureDerivation,
+  type NightlyDerivationResult,
+} from './health-features/derive-daily-features';
 
 const VTID = 'VTID-01095';
 
@@ -66,6 +74,13 @@ export interface RecomputeBatchResponse {
   next_cursor: string | null;
   run_ids: string[];
   errors?: Array<{ user_id: string; error: string }>;
+  /**
+   * VTID-05162 (Health Hub B2): the health_features_daily_v2 nightly pass for
+   * this batch's users (previous 2 days; markers caught up on the first batch).
+   * Present only when a dual-write flag is on. Never changes ok / processed /
+   * failed / next_cursor.
+   */
+  features_v2?: NightlyDerivationResult & { catch_up_markers?: number };
 }
 
 export interface RecomputeStatusResponse {
@@ -569,6 +584,9 @@ export async function processDailyRecomputeBatch(
   // Determine next cursor
   const nextCursor = users.length === limit ? users[users.length - 1].user_id : null;
 
+  // VTID-05162 (Health Hub B2): derived health features (shadow table, dark).
+  const featuresV2 = await runFeaturesV2Step(tenant_id, users.map((u) => u.user_id), date, !cursor);
+
   console.log(
     `[${VTID}] Batch complete: processed=${processed}, skipped=${skipped}, failed=${failed}, next_cursor=${nextCursor || 'null'}`
   );
@@ -581,7 +599,34 @@ export async function processDailyRecomputeBatch(
     next_cursor: nextCursor,
     run_ids: runIds,
     errors: errors.length > 0 ? errors : undefined,
+    ...(featuresV2 ? { features_v2: featuresV2 } : {}),
   };
+}
+
+/**
+ * VTID-05162: the nightly health_features_daily_v2 pass for one batch — the
+ * marker catch-up on the run's first batch, then the previous 2 days for the
+ * batch's users. Dark unless a dual-write flag is on; never on staging; never
+ * throws; its counts never touch the batch's own result fields.
+ */
+async function runFeaturesV2Step(
+  tenantId: string,
+  userIds: string[],
+  runDate: string,
+  firstBatch: boolean,
+): Promise<RecomputeBatchResponse['features_v2'] | null> {
+  try {
+    if (!isFeatureDerivationEnabled()) return null;
+    const sb = getSupabase();
+    if (!sb) return null;
+    const deps = defaultDerivationDeps(sb);
+    const catchUp = firstBatch ? await runFeatureDerivationCatchUp(deps) : null;
+    const nightly = await runNightlyFeatureDerivation(deps, { tenant_id: tenantId, user_ids: userIds, run_date: runDate });
+    return { ...nightly, ...(catchUp ? { catch_up_markers: catchUp.markers_found } : {}) };
+  } catch (err: any) {
+    console.warn(`[VTID-05162] features v2 nightly step failed: ${err?.name ?? 'error'}`);
+    return null;
+  }
 }
 
 /**

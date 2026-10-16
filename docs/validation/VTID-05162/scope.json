@@ -1,0 +1,30 @@
+{
+  "vtid": "VTID-05162",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261014100700_vtid_05162_health_features_v2.sql",
+    "scripts/ci/sql-tests/vtid-05162-health-features-v2.test.sql",
+    "scripts/ci/sql-tests/run-health-features-v2-test.sh",
+    ".github/workflows/SQL-HEALTH-FEATURES-V2.yml",
+    "scripts/ci/migration-drift-baseline.json",
+    "scripts/aws/aurora-restore-rls-parity.sql",
+    "scripts/aws/aurora-cutover-restore-grants.sql",
+    "services/gateway/src/services/health-features/**",
+    "services/gateway/src/services/health-sources/health-sources.ts",
+    "services/gateway/src/services/diary-health-extractor.ts",
+    "services/gateway/src/services/voice-tools/health-log.ts",
+    "services/gateway/src/services/orb-tools/health-depth-tools.ts",
+    "services/gateway/src/services/action-executors.ts",
+    "services/gateway/src/services/daily-recompute-service.ts",
+    "services/gateway/src/routes/integrations.ts",
+    "services/gateway/src/routes/connector-webhooks.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/test/health-features/**",
+    "services/gateway/test/migrations/vtid-05162-health-features-v2-migration.test.ts",
+    "services/gateway/test/vtid-05025-commerce-health-boundary.test.ts",
+    "DATABASE_SCHEMA.md",
+    "docs/programs/health-hub/STATUS.md",
+    "docs/validation/VTID-05162/**"
+  ]
+}

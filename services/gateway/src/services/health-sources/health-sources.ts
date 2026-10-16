@@ -292,3 +292,28 @@ export async function listHealthSources(sb: SupabaseClient, identity: HealthIden
     return { ok: false, code: 'STORE_UNAVAILABLE' };
   }
 }
+
+/**
+ * VTID-05162 (B2): the device-cloud source a legacy user_connections row was
+ * mirrored into (B1 dual-write / backfill, keyed by legacy_user_connection_id),
+ * checked against `identity` through the S6 lookup. Same result shape and
+ * codes as resolveHealthSource; never throws; never creates (device clouds
+ * come from their connection flows).
+ */
+export async function resolveHealthSourceByLegacyConnection(
+  sb: SupabaseClient,
+  identity: HealthIdentity,
+  legacyUserConnectionId: string,
+): Promise<ResolveHealthSourceResult> {
+  try {
+    const legacyId = nonEmpty(legacyUserConnectionId);
+    if (!validIdentity(identity) || !legacyId) return { ok: false, code: 'SOURCE_NOT_CONNECTED' };
+    const { data, error } = await repo.fetchSourceIdByLegacyConnection(sb, legacyId);
+    if (error) return storeFailure(error);
+    const id = (data as { id?: string } | null)?.id;
+    if (!id) return { ok: false, code: 'SOURCE_NOT_CONNECTED' };
+    return await resolveHealthSource(sb, identity, { source_id: id });
+  } catch {
+    return { ok: false, code: 'STORE_UNAVAILABLE' };
+  }
+}
