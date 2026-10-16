@@ -172,6 +172,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const onboardingCoachRouter = require('./routes/onboarding-coach').default;
   // VTID-05099: Vitana Companion Messages — read-only engine status
   const companionRouter = require('./routes/companion').default;
+  // VTID-05205: team welcome DMs (Mariia, Jovana, Alex Blue) — read-only tick status
+  const welcomeTeamRouter = require('./routes/community-welcome-team').default;
   // Real-time My Journey celebrations — daily-goal, phase milestone, progress thresholds
   const celebrationsRouter = require('./routes/celebrations').default;
   // VTID-02601: Reminders feature — voice-creatable + audio-interrupt delivery
@@ -1197,6 +1199,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/scheduled-notifications', scheduledNotificationsRouter, { owner: 'scheduled-notifications' });
   mountRouterSync(app, '/api/v1/onboarding-coach', onboardingCoachRouter, { owner: 'onboarding-coach' });
   mountRouterSync(app, '/api/v1/companion', companionRouter, { owner: 'companion' });
+  mountRouterSync(app, '/api/v1/welcome-team', welcomeTeamRouter, { owner: 'community-welcome-team' });
   mountRouterSync(app, '/api/v1/celebrations', celebrationsRouter, { owner: 'celebrations' });
   mountRouterSync(app, '/api/v1/reminders', remindersRouter, { owner: 'reminders' });
 
