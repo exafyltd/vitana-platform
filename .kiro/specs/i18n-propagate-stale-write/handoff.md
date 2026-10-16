@@ -1,0 +1,23 @@
+---
+slug: i18n-propagate-stale-write
+author: kiro
+author_seat: exafyltd
+executor: claude
+next_actor: claude
+state: drafted
+updated: 2026-10-16T10:25Z
+---
+# Handoff — I18N-PROPAGATE stale-write fix
+
+Plan authored by Kiro (session `kiro-202610152203-0347`) while finishing the desktop Spotlight fix-forward
+(exafyltd/vitana-v1#1399), where the `I18N-PROPAGATE` bot reverted human translations (`6b698ac98` over `2f5c0cbf4`,
+re-applied in `ab05df942`). Code repo: exafyltd/vitana-v1. Spec in vitana-platform because PLAN-SPAR runs only here.
+
+One lane, `fix-workflow` (`executor: claude`, it changes `.github/**`). Root cause, fix and test plan: `plan.md`.
+
+## Log
+### 2026-10-16T10:25Z · kiro-202610152203-0347 · created → drafted
+Investigated read-only: the workflow YAML, `scripts/translate-keys.mjs`, `scripts/i18n-stamp-source.mjs`, run
+38443615525's job timings and `collect` log, and the three commits on #1399. Drafted requirements, design, tasks, plan,
+this handoff and `lanes/fix-workflow.md`. No VTID, no claim on the lane, no live writes, no workflow dispatched.
+next_actor: claude — PLAN-SPAR spars the plan; then allocate the VTID and execute the lane (governance path).
