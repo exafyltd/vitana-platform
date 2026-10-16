@@ -1,0 +1,97 @@
+# Plan — desktop-spotlight-finish
+
+Author: Kiro, session `kiro-202610152203-0347`, seat `exafyltd`. Repo: `exafyltd/vitana-v1` (frontend only; no
+backend, no migration, no gateway change). Spec: `requirements.md`, `design.md`, `tasks.md`, `lanes/*.md` in this folder.
+The spec lives in `exafyltd/vitana-platform` (where PLAN-SPAR runs); all code, tests and `docs/validation/<VTID>/`
+live in `exafyltd/vitana-v1`, and every lane `paths:` entry is a vitana-v1 path.
+
+<!-- plan:begin -->
+## Goal
+Finish the Spotlight desktop redesign (`.kiro/specs/desktop-spotlight/`, VTID-05105 … 05117) to its "System-wide done"
+state: every screen route `migrated` in `src/design/screen-manifest.json` (except one product question) and every
+non-chrome entry of `scripts/ci/pr-gate/baseline/design.json` at 0. No change to the design contract
+(`docs/design-system/SPOTLIGHT_RULES.md`): no new archetype, card size, token or ESLint rule.
+
+## Measured state (origin/main 5c4632ea9, 2026-10-16, `npx eslint src/pages src/components -f json`)
+- `design/no-raw-palette` 3,220 lines in 411 files (the handover's "~3,340"; batch 1 #1411 took 60 files to 0).
+- `design/no-arbitrary-size` 359 lines in 208 files (420 values: 47 identical to a scale class, 38 within 2 px,
+  335 to keep — 175 px > 2 px off, 113 vh/dvh, 13 %, 26 calc/vw/ch/min).
+- `design/no-page-spinner` 27 in 24 page files.
+- `design/no-raw-content-card` 50 / 50 files; `design/no-physical-direction` 32 / 16 files (18 in chrome);
+  `design/require-screen-frame` 6 / 6 files.
+- Total 3,694 errors in 541 files (`design.json` carries 3,705). Six sidebar/ORB chrome files hold 58 of them and stay
+  (SR-01): `AppLayout`, `dev/DevSidebar`, `vitanaland/OrbDiscoveryHint`, `mobile/MobileBottomNav`,
+  `mobile/SideDrawerNav`, `mobile/TopAppBar`.
+- Manifest: 346 routes, 329 `migrated`, 17 `legacy`.
+
+## Decisions (each decided by Kiro under owner delegation 2026-10-16)
+The owner wrote on 2026-10-16: "you can decide yourself and move on, get the redesign of vitanaland desktop done".
+1. **Raw palette colours** — decided by Kiro under owner delegation 2026-10-16: option A (owner 2026-10-14) — map each
+   to the nearest existing token (SPOTLIGHT_RULES §E, extended in design.md §2), accept small shifts, no new tokens;
+   continue from where batch 1 (#1411, 60 files) stopped. Literals that no token can carry without inverting contrast
+   in one theme (media scrims, text on photos/video, third-party brand marks) keep the escape hatch with a reason.
+2. **Arbitrary sizes** — decided by Kiro under owner delegation 2026-10-16: no new size tokens; identical Tailwind
+   class where one exists; nearest class when the difference is ≤ 2 px; otherwise keep with
+   `// design-allow-next-line: <reason>`.
+3. **Page spinners → skeletons** — owner approved 2026-10-16 (after asking to see the mobile version too): the 22
+   data-loading page spinners become skeletons on desktop (Spotlight) **and** on mobile, using the same
+   `ArchetypeSkeleton` / `VCardSkeleton` shaped like each page's final layout — header and bottom nav stay, content
+   cross-fades in, no layout shift. One shared `SpotlightLoading` (in `src/components/layout/spotlight/skeletons/`,
+   built on the existing `ArchetypeSkeleton`, `VCardSkeleton` and shadcn `Skeleton`); no bespoke per-page skeletons.
+   The 5 action-in-progress spinners (`LiveRoomViewer`, `CreatorOnboarded`, `DeleteAccount`, `RedeemVoucher`,
+   `TicketPurchaseSuccess`) keep a spinner, each with a `design-allow-next-line` reason. An MP4 (spinner before vs
+   skeleton after, desktop and mobile) goes to the owner.
+4. **Older open items** — decided by Kiro under owner delegation 2026-10-16: public profile `/u/:identifier` and
+   `/me/profile` → `detail` (contract §A lists public profile under `detail`); `/redeem`, `/delete-account` → `form`;
+   `/tickets/success`, `/tickets/demo` → `detail`; `/shop` → `immersive` inside the app shell (SR-04); Commerce portal →
+   app shell for signed-in members on the app host on desktop Spotlight (the phone app already does this,
+   VTID-03999), standalone for guests and `commerce.vitanaland.com`, no new step/field/dialog, PR carries "UX
+   acceptance"; pure redirect components leave the manifest. `/business/sell-earn` stays unchanged — who may see it is
+   a product question → open owner item.
+5. **`desktop_spotlight` production flag** — decided by Kiro under owner delegation 2026-10-16: unchanged, no flag
+   flip; it is an owner/production decision → open owner item.
+6. **File ownership** (Kiro, within the plan): every file with findings belongs to exactly one lane, and that lane
+   clears every `design/*` rule in it, so no two PRs edit one file. Shared: the two ratchet baselines (every lane) and
+   `docs/SCREEN_INVENTORY.md` (the three lanes that add copy, each in its own new i18n shard).
+7. **Raw `Card` and physical directions** (Kiro, within the contract): content items → `VCard`, panels → `Panel`
+   (identical DOM); logical properties, centring/slide/sheet-direction cases keep the escape hatch.
+
+## Lanes (all `ready`, executor kiro; seat → reviewer_seat)
+| Lane | Seat → reviewer | Scope (files with findings) | depends_on |
+|---|---|---|---|
+| `skeletons` | exafyltd → hotmail | `SpotlightLoading` + 20 spinner pages (21 → skeletons, 2 action spinners kept) | — |
+| `public-profile` | exafyltd → hotmail | `src/components/profile/**` + 3 profile pages (67) | skeletons |
+| `commerce-shell` | exafyltd → hotmail | commerce components/pages, `ShopFeed`, `UniversalCart`, portal login (28) | — |
+| `remaining-screens` | exafyltd → hotmail | redeem, tickets, delete-account, phone fallbacks, tickets/voucher components (17) + manifest generator/test, design-contract spec | skeletons, public-profile, commerce-shell |
+| `colours-batch-2` | exafyltd → hotmail | health, journey, supplements, diary, memory (86) | — |
+| `colours-batch-3` | exafyltd → hotmail | community, sharing, event game, live rooms, meetups, events, crossover, feed, home (81) | — |
+| `colours-batch-4` | exafyltd → hotmail | discover, wallet, payment, calendar, business, reseller, orders, subscription, intents (96) | — |
+| `colours-batch-5` | exafyltd → hotmail | shared popups, settings, AI, dev, admin, messages, onboarding (85, explicit list) | — |
+| `colours-backoffice` | jtadic → exafyltd | 3 BackOffice dialogs (area `backoffice`) | — |
+| `sizes` | exafyltd → hotmail | 52 files with size/card/direction findings and no palette finding | — |
+Exact `paths` globs are in each `lanes/<id>.md`; a self-check over the ESLint report found 0 files in two lanes and 0
+files outside every lane (chrome excepted). Eight lanes can run in parallel; `public-profile` waits for `skeletons`,
+`remaining-screens` goes last.
+
+## Test plan
+- Per lane: `npx vitest run` (incl. new unit tests named in `tasks.md`), `npm run build`, `npm run lint`, `npm test`
+  (manifest + nav-registry tests), PR-GATE design ratchet (`gate.mjs ratchet-design` vs base) and Lane scope green;
+  no file worse on any rule; baselines lowered for owned files only.
+- Staging: once CI assigns the VTIDs, each lane adds `docs/validation/<VTID>/staging-tests.json` naming its read-only
+  spec `tests/e2e/staging/vtid-<VTID>-<lane>.staging.spec.ts` (1440×900 with `?spotlight=1`, and 390×844; sign in,
+  navigate, read; network guard aborts every non-GET except sign-in; never `vitanaland.com`). STAGING-VERIFY on the
+  merge commit is the done criterion; `design-contract.staging.spec.ts` covers every route flipped to `migrated`.
+- Skeletons: Vitest desktop and mobile branches (skeleton, `aria-busy`, no spinner) and the 5 kept action spinners;
+  staging spec with delayed GETs asserts the skeleton and no page spinner at both 1400×900 (`?spotlight=1`) and
+  390×844 (app bar and bottom nav visible), CLS < 0.1 at both; MP4 `docs/validation/<VTID>/spinner-vs-skeleton.mp4`
+  (desktop and mobile, before/after).
+- Colour shifts: listed by category in each PR body with 1440 light/dark and 390 screenshots for Gate 2.
+- Commerce: "UX acceptance" section in the PR; friction unchanged.
+- No What's New entry (redesign of existing screens). No new routes, so no nav-registry or native parity ledger change.
+
+## Open owner items (not decided here)
+`desktop_spotlight` in production; `/business/sell-earn` visibility for non-resellers; I18N-PROPAGATE stale-write bug
+(own plan); the three failing STAGING-VERIFY suites of the earlier plan (VTID-05111/05117, branch
+`kiro/desktop-spotlight/staging-fix-forward`); an admin-role staging test account; removal of the Spotlight-off code
+paths (separate sparred plan).
+<!-- plan:end -->
