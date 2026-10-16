@@ -1,13 +1,29 @@
 ---
 lane: grouped-welcome-notifications
-state: in_progress
-next_actor: kiro
+state: in-review
+next_actor: claude
+executor: kiro
 claimed_by: kiro-202610151913-51bd
 vtid: VTID-05208
 seat: exafyltd
+reviewer_seat: claude
 area: messenger
 depends_on: []
-updated: 2026-10-16T12:00Z
+branch: kiro/new-member-welcome/grouped-welcome-notifications
+pr:
+paths:
+  - .kiro/specs/new-member-welcome/lanes/grouped-welcome-notifications.md
+  - DATABASE_SCHEMA.md
+  - docs/validation/VTID-05208/**
+  - services/gateway/src/i18n/catalog.ts
+  - services/gateway/src/i18n/locales/*.json
+  - services/gateway/src/routes/chat.ts
+  - services/gateway/src/services/chat-push-coalescer.ts
+  - services/gateway/src/services/new-member-greeting-push.ts
+  - services/gateway/test/i18n/catalog-coverage.test.ts
+  - services/gateway/test/vtid-05208-greeting-send-route.test.ts
+  - services/gateway/test/vtid-05208-new-member-greeting-push.test.ts
+updated: 2026-10-16T09:34:27Z
 ---
 # Grouped greeting-DM notifications
 
@@ -34,3 +50,9 @@ tagged `metadata.source='new_member_greeting'`, fail-open grouping, fail-closed 
 `NEW_MEMBER_GREETING_PUSH_GROUPING_ENABLED`), wired into `POST /chat/send`; catalog keys
 `notif.new_member_greeting_burst.{title,body}` in all 11 locales; Jest suites `vtid-05208-*`; validation pack
 `docs/validation/VTID-05208/`. No migration. Committed locally; push/PR by the ship step.
+
+### 2026-10-16T09:34:27Z · kiro-202610151913-51bd · ready → executing → in-review
+Built D1–D2: recipient-keyed 24 h grouping of new-member greeting DM pushes (`new-member-greeting-push.ts`, wired into
+`POST /chat/send`), burst catalog keys in all 11 locales, validation pack. Local checks: `tsc --noEmit` exit 0; Jest 12/12
+suites, 239/239 tests; mutation check caught by 6 tests; `npm run test:roles` 105/105; `npm run build` (bash shell) exit 0.
+Nothing run against staging or production. Pushed and PR opened; next_actor: claude for review and merge.
