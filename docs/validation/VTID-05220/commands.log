@@ -1,0 +1,1 @@
+VTID-05220 (pm-agent/p7-switch-on): added PM_AGENT_ENABLED=true + PM_MODE=dry_run to AWS-STAGE-DEPLOY-GATEWAY.yml (strip-list + pin). PM switches ON in dry_run on staging - observes, emits pm.decision, merges nothing. Flip PM_MODE=live after the dry_run soak. Prod stays off.
