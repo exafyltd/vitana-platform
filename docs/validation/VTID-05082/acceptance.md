@@ -4,6 +4,7 @@ Command Hub operator chat inline SVG rendering.
 
 VALIDATION_PROFILE: command_hub_frontend
 OASIS_IMPACT: no
+DEPENDENCY_CHANGE: added jsdom (gateway devDependency) solely for the VTID-05082 SVG sanitizer unit test — the shipped Command Hub code uses the browser's native DOMParser/XMLSerializer and adds no runtime dependency.
 
 Each criterion below is one `AC-N` line with exactly one `TEST:` / `UI:` token
 within 12 lines. There are no HTTP endpoints added, so there is no `CURL:`.
