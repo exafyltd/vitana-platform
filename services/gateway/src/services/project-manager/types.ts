@@ -216,3 +216,62 @@ export const CI_FAIL_PARK_THRESHOLD = 3;
 export const REQUIRED_MERGE_CHECKS = ['Lane scope', 'Collab handoff'] as const;
 /** The optional GitHub App check: when present on the head it must be success. */
 export const CLAUDE_APPROVALS_CHECK = 'Claude Approvals';
+
+// ---------------------------------------------------------------------------
+// Act layer (VTID-05217 / P4) — the piece that ACTS on P3's decisions in `live`.
+// ---------------------------------------------------------------------------
+
+/**
+ * Governance paths (plan §1). A lane whose `paths` match any of these may only
+ * be merged by the PM when its reviewer is `claude` — the act layer's final
+ * guard (plan §6.3 "Never: merge a PR that touches a governance path unless its
+ * reviewer is claude"). Prefix match against each lane path glob.
+ */
+export const GOVERNANCE_PATHS = [
+  '.github/',
+  '.claude/',
+  '.kiro/steering/',
+  '.kiro/automations/',
+  'scripts/collab/',
+  'CLAUDE.md',
+  'docs/programs/areas.yaml',
+] as const;
+
+/** The reviewer value that unlocks a governance-path merge. */
+export const GOVERNANCE_REVIEWER = 'claude';
+
+/** The session trailer the PM stamps on its own lane-file commits (plan §6.3, R1 F6). */
+export const PM_SESSION = 'pm-agent';
+
+/** The Operator Chat Gate-2 question (the existing run-view wording, plan §6.3). */
+export const GATE2_QUESTION = 'Staging verified — ready for deployment to production?';
+
+/** Per-decision act outcome, reported back for the status snapshot and tests. */
+export type ActStatus =
+  | 'merged'
+  | 'already_merged'
+  | 'merge_refused'
+  | 'governance_blocked'
+  | 'reassigned'
+  | 'parked'
+  | 'gate2_posted'
+  | 'skipped_not_live'
+  | 'skipped_no_lease';
+
+/** The result of acting on one decision. */
+export interface ActResult {
+  decision: PmDecision;
+  status: ActStatus;
+  /** Human-readable detail (merge sha, refusal reason, park reason, etc.). */
+  detail?: string;
+}
+
+/** The commit list between production and the verified commit, for a Gate-2 message. */
+export interface Gate2Evidence {
+  /** The verified (staging) commit the Gate-2 message is pinned to. */
+  verified_commit: string;
+  /** The commit currently live in production. */
+  production_commit: string;
+  /** Every commit between production and the verified commit (oldest→newest). */
+  commits: string[];
+}

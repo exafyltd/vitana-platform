@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05217",
+  "lane": "pm-agent/p4-act",
+  "validation_profile": "gateway_backend",
+  "paths": [
+    "services/gateway/src/services/project-manager/**",
+    "services/gateway/src/routes/cicd.ts",
+    "services/gateway/test/**",
+    "docs/validation/VTID-05217/**"
+  ]
+}
