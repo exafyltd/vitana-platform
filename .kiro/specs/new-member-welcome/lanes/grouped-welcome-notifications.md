@@ -10,7 +10,7 @@ reviewer_seat: claude
 area: messenger
 depends_on: []
 branch: kiro/new-member-welcome/grouped-welcome-notifications
-pr:
+pr: https://github.com/exafyltd/vitana-platform/pull/4153
 paths:
   - .kiro/specs/new-member-welcome/lanes/grouped-welcome-notifications.md
   - DATABASE_SCHEMA.md
