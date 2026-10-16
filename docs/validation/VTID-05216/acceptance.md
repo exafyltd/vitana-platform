@@ -6,12 +6,12 @@ no deploy, no VTID allocation, no Supabase/AWS write. `live` act is P4.
 
 One AC per plan P3 item → its test.
 
-## AC1 — Two switches gate the PM (plan §6)
+## AC-1 — Two switches gate the PM (plan §6)
 `PM_AGENT_ENABLED` (default off) and `PM_MODE=off|dry_run|live` (default `dry_run`) gate the loop; unknown
 `PM_MODE` falls back to `dry_run`; the 10-minute tick interval is configurable.
 - TEST: `services/gateway/test/project-manager/tick-and-config.test.ts` → `describe('config switches')`.
 
-## AC2 — OBSERVE is a typed, read-only seam with a stub (p1/p2 not merged)
+## AC-2 — OBSERVE is a typed, read-only seam with a stub (p1/p2 not merged)
 Typed `ObservedState`/`ObservedLane`/`ObservedPr`/`ReviewEntry` interfaces model registry, both-repo
 queue/lane state, open PRs with CI check conclusions + Lane scope + Collab handoff + the optional
 "Claude Approvals" App check, review entries, STAGING-VERIFY and ledger inputs. P3 ships a `PmObserver`
@@ -20,7 +20,7 @@ interface + `StubObserver` (empty world) because the live sources depend on p1 (
 - TEST: `services/gateway/src/services/project-manager/observe.ts` (interface + stub) exercised by
   `tick-and-config.test.ts` (`runDecideTick` with `StubObserver` → empty decisions, snapshot recorded).
 
-## AC3 — DECIDE is pure and table-tested: MERGE rule (plan §6.2)
+## AC-3 — DECIDE is pure and table-tested: MERGE rule (plan §6.2)
 A lane PR is merge-eligible only when ALL hold: lane `verified`; last review entry from the lane's
 `reviewer_seat`, on the PR's **current head sha**, verdict `approve`; all required checks green on that head
 incl. Lane scope and Collab handoff; if a "Claude Approvals" App check run exists on the head it is `success`;
@@ -31,22 +31,22 @@ precondition individually false → no merge, plus the all-true case → merge-e
   `describe('mergeDecision — all preconditions true')` + `describe('mergeDecision — each precondition
   individually false')`.
 
-## AC4 — DECIDE: REASSIGN rule (plan §6.2)
+## AC-4 — DECIDE: REASSIGN rule (plan §6.2)
 A lane `ready` >24h whose seat ran no automation in the window → next seat for the area, else `claude`; the
 same for a review waiting >24h.
 - TEST: `decide.test.ts` → `describe('reassignDecision')`.
 
-## AC5 — DECIDE: PARK rules (plan §6.2)
+## AC-5 — DECIDE: PARK rules (plan §6.2)
 A lane whose PR failed CI on 3 consecutive pushes; a lane flagged `risk:` by its reviewer; a claim >48h with
 no branch activity (released).
 - TEST: `decide.test.ts` → `describe('parkDecision')`.
 
-## AC6 — DECIDE: GATE-2 BATCH timing (plan §6.2)
+## AC-6 — DECIDE: GATE-2 BATCH timing (plan §6.2)
 For deploying lanes merged + passing STAGING-VERIFY without a Gate 2: send when every deploying lane of the
 plan is verified on staging, OR 4h after the first, whichever first.
 - TEST: `decide.test.ts` → `describe('gate2Decisions — all-verified vs 4h-elapsed timing')`.
 
-## AC7 — Decisions are reported as `pm.decision` only (dry_run), never acted on
+## AC-7 — Decisions are reported as `pm.decision` only (dry_run), never acted on
 `decide()` returns typed decisions with no side effects; `runDecideTick` observes → decides → reports through
 an injectable emitter and records a snapshot. No merge/deploy/dispatch/allocate code exists in P3. Mode `off`
 → no decisions; park takes precedence over merge for a troubled lane.
@@ -59,7 +59,7 @@ this lane's path scope. P3 therefore reports decisions through a typed `PmDecisi
 (`LoggingDecisionEmitter` default) and the read route's decision list; registering the `pm.decision` topic
 and swapping the emitter to `emitOasisEvent` is a one-line change in the lane that owns the union (P4/P7).
 
-## AC8 — Read route (plan §6.3, test plan)
+## AC-8 — Read route (plan §6.3, test plan)
 `GET /api/v1/project-manager/status` returns the mode and the current decision list; auth is the service token
 or an exafy_admin JWT (`requireServiceOrAdmin`). Registered in `index.ts`. The 10-min `setInterval` is behind
 `PM_AGENT_ENABLED` and is a no-op otherwise; it only ever calls decide+report, never act.
