@@ -5,7 +5,7 @@ executor: kiro
 next_actor: kiro
 state: drafted
 author_seat: exafyltd
-updated: 2026-10-16T09:56Z
+updated: 2026-10-16T11:45Z
 ---
 # Handoff — Finish the Spotlight desktop redesign
 Follow-up to `.kiro/specs/desktop-spotlight/` (Claude Code session `session_01Sxnx4eGehRHRqqwu4YmJA6`, handover
@@ -33,3 +33,9 @@ Next: PLAN-SPAR spars the `plan(desktop-spotlight-finish)` PR; this session answ
 PLAN-SPAR runs only on `exafyltd/vitana-platform`, so the spec (vitana-v1 commit 939109cfb, unchanged except the
 repo-split notes and `(repo vitana-v1)` in each lane title) moved here and the plan PR opens here. The vitana-v1 branch
 `kiro/desktop-spotlight-finish/plan` stays pushed with no PR (superseded); its `_plan` claim is released.
+### 2026-10-16T11:45Z · kiro-202610152203-0347 · sparring blocked
+PLAN-SPAR disabled (vars.PLAN_SPAR_ENABLED unset); plan needs sparring by Claude Code/Command Hub Operator before
+VTIDs; lanes are being built as draft PRs meanwhile (kiro-202610152203-0347, owner instruction 2026-10-16 'continue
+building'). Evidence: PLAN-SPAR run 38894106530 on PR #4158 skipped at the job condition; no `sparring/round-<n>.md`
+exists. The only other review, Codex on 2ddbb6f, failed on usage limits and posted no findings, so there is nothing
+to answer yet.
