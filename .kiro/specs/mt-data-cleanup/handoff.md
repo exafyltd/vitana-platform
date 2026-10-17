@@ -3,9 +3,9 @@ slug: mt-data-cleanup
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: kiro
+next_actor: claude
 state: drafted
-updated: 2026-11-01T13:00Z
+updated: 2026-10-17T11:09Z
 ---
 # Handoff — mt-data-cleanup (WS2 orphan data cleanup, quarantine, NOT NULL hardening)
 
@@ -49,3 +49,6 @@ as a cross-spec dependency. CROSS-SPEC-DECISIONS.md: no item names mt-data-clean
 applied — four DB lanes, each a full §4.7-split lane; none is sub-one-PR, so none merged). queue.mjs validators
 (parseFrontMatter/validatePlan/validateLane) run on handoff.md + all lanes = 0 errors; tasks.md "Allowed paths" equals
 the union of the four lanes' paths exactly. No source-code edits, no live-system calls. Awaiting PLAN-SPAR.
+
+### 2026-10-17T11:09Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
