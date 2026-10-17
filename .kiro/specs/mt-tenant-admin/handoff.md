@@ -3,9 +3,9 @@ slug: mt-tenant-admin
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: kiro
+next_actor: claude
 state: drafted
-updated: 2026-10-17T13:40Z
+updated: 2026-10-17T11:12Z
 ---
 # Handoff — mt-tenant-admin (program `docs/MULTI-TENANT-PLAN.md` §6 WS4 rest)
 
@@ -100,3 +100,6 @@ vitana-platform-1 today:
 No change to lane count, structure, migrations, ownership (O2/O4), the C3 ordering, or the cross-spec rulings. Re-ran
 the `queue.mjs` validators (0 errors), re-pushed the branch (same recipe) to update the PR, then deleted
 `sparring/INTERNAL-REVIEW.json` so a fresh review round can run.
+
+### 2026-10-17T11:12Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
