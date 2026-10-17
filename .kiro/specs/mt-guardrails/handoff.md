@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-17T10:53Z
+updated: 2026-10-17T15:29Z
 ---
 # Handoff — mt-guardrails (WS0 guardrails and test tooling)
 
@@ -46,3 +46,6 @@ the kiro lanes to `next_actor: kiro`.
 
 ### 2026-10-17T10:53Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-17T15:29Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
