@@ -3,9 +3,9 @@ slug: mt-launch
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: kiro
+next_actor: claude
 state: drafted
-updated: 2026-10-15T17:10Z
+updated: 2026-10-17T14:26Z
 ---
 # Handoff — mt-launch (WS8 Tenant Launch engineering)
 
@@ -64,3 +64,6 @@ Addressed both internal-review findings (verified read-only in platform code fir
   are dark-safe without it. Added mt-identity's `MT_RESOLUTION_V2` to `## Depends on` as an operational dependency.
 Validators re-run on `handoff.md` + all five lanes (0 errors). tasks.md Allowed paths == lane `paths` for every lane.
 No product-behaviour change (same dark-by-default intent, correct per-tenant mechanism). Deleted INTERNAL-REVIEW.json.
+
+### 2026-10-17T14:26Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
