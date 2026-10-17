@@ -3,9 +3,9 @@ slug: mt-m3
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: kiro
+next_actor: claude
 state: drafted
-updated: 2026-10-15T16:52Z
+updated: 2026-10-17T11:45Z
 ---
 # Handoff — mt-m3 (M3 generally provisionable; program `docs/MULTI-TENANT-PLAN.md` v5.1 §6/§7)
 
@@ -58,3 +58,6 @@ Internal adversarial review verdict REJECTED on one MEDIUM + two LOW. All three 
   Lane C 8-column whitelist stays pinned by the existing harness case.
 Lane set, paths and front matter unchanged; validators re-run clean. INTERNAL-REVIEW.json deleted. Re-pushed
 `kiro/mt-m3/plan`.
+
+### 2026-10-17T11:45Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
