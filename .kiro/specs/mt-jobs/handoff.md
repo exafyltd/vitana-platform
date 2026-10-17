@@ -3,9 +3,9 @@ slug: mt-jobs
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: kiro
+next_actor: claude
 state: drafted
-updated: 2026-10-15T16:40Z
+updated: 2026-10-17T14:26Z
 ---
 # Handoff — mt-jobs (WS6: jobs & events loop over active tenants)
 
@@ -38,3 +38,6 @@ automation-event sites, EventBridge scripts `setup-eventbridge-*.sh`. Confirmed 
 needed). Applied CROSS-SPEC-DECISIONS: lane-count merge (4 code lanes + 1 governance lane), DB/code split N/A (no DB
 lane), governance paths → executor claude. Next: PLAN-SPAR spars this plan PR; on convergence it allocates one VTID
 per lane and flips the kiro lanes to `next_actor: kiro`.
+
+### 2026-10-17T14:26Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
