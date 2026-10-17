@@ -3,9 +3,9 @@ slug: mt-native-health
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: kiro
+next_actor: claude
 state: drafted
-updated: 2026-10-17T11:52Z
+updated: 2026-10-17T11:56Z
 ---
 # mt-native-health — WS9 native tenancy delta + WS10 health-×-tenancy contract
 
@@ -51,3 +51,6 @@ Internal adversarial review returned REJECTED (0 HIGH, 2 MEDIUM, 3 NIT). Address
   `switch_to_tenant_by_slug`'s store (verified in `supabase/tests/vtid_05147_fixture.sql:537-540`).
 Removed 5 stale lane files from the interrupted earlier run. Re-ran validators: 0 errors. Re-pushed; deleted
 INTERNAL-REVIEW.json.
+
+### 2026-10-17T11:56Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
