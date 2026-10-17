@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-17T11:45Z
+updated: 2026-10-17T15:33Z
 ---
 # Handoff — mt-m3 (M3 generally provisionable; program `docs/MULTI-TENANT-PLAN.md` v5.1 §6/§7)
 
@@ -61,3 +61,6 @@ Lane set, paths and front matter unchanged; validators re-run clean. INTERNAL-RE
 
 ### 2026-10-17T11:45Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-17T15:33Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
