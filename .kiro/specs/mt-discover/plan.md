@@ -12,20 +12,20 @@ tenant-gated and adds the Community/Network scope, on top of the global supplier
    returns zero matches (confirmed 2026-10-15). The commerce architecture designs it
    (`docs/COMMERCE-SUPPLIER-INFRASTRUCTURE-ARCHITECTURE.md` §7 step 7, §5.7, the §"what makes an offering visible"
    list). So no tenant↔supplier eligibility exists; every Discover reader is global.
-2. Every `products` reader filters only `is_active`/`availability`, no tenant/supplier gate. OPEN-query (discovery)
-   readers: `routes/discover-feed-repository.ts:40`
-   (`.from('products').eq('is_active',true).eq('availability','in_stock')`), `routes/discover-search-repository.ts:29`,
-   `services/orb-tools/marketplace-discovery-tools.ts` (search/browse),
-   `services/orb-tools/marketplace-guide-tools-repository.ts:42,55`,
-   `services/orb-tools/marketplace-journey-tools-repository.ts:33,67`,
-   `services/automation-handlers/health-wellness-repository.ts:91` (`fetchActiveProductsByTopicKeys`). BY-ID readers:
-   `routes/discover-recommendations-repository.ts:23` (`fetchActiveProductForRecommendation`, `.eq('id',…)` — initiates
-   a NEW recommendation), `services/automation-handlers/health-action-initiative-repository.ts:81` (`fetchProductById`,
-   `.eq('id',…)`), and three hydration lookups `routes/shop-feed-repository.ts:32`,
-   `services/orb-tools/cart-checkout-tools-repository.ts:36`, `services/checkout/checkout-service-repository.ts:42`
-   (all `fetchProductsByIds`). No single predicate; each surface re-queries.
-   `shop-feed-repository.ts:43 fetchRankedShopVideosPage` reads `shop_videos` only, NOT `products`/`merchants`, so it
-   is out of the predicate's scope; see Fix for the discovery-vs-fulfilment rule.
+2. Every `products`/`merchants` reader filters only `is_active`/`availability`, no tenant/supplier gate, and there is
+   no single predicate. A fresh `from('products')|from('merchants')` sweep of `services/gateway/src` (2026-10-17) is
+   the plan-of-record list the generated inventory must reproduce; design "What exists" carries the full file:line
+   set, classified **discovery** (12 readers: open feed/search/browse + the by-id discovery initiator
+   `discover-recommendations-repository.ts:23`), **fulfilment** (by-id hydration of an already-held item, incl.
+   `shop-feed:32`, `cart-checkout:36/:41`, `checkout:42`, `health-action-initiative:81`, `universal-cart-context:45`,
+   `reorder-core:24`, `click-redirect:20`), and **admin/ingestion** (admin/supplier surface by `merchant_id`/org:
+   admin-marketplace, catalog-ingest, the two marketplace-sync + shopify-sync repos, vcaop-portal, partner-onboarding*,
+   partner-review/setup, admin-scanners/marketplace, `credit-recommender-repository.ts:114`). The 2026-10-17 sweep
+   added readers the earlier draft hand-listed around — the orb-tools `marketplace-*-repository`, `gemini-operator`,
+   `intent-matcher`, the analyzer and shopping-agent repos — so the lane's `paths` now cover the full set and the
+   build-failing lint can annotate/route each file in-scope (otherwise Lane-scope CI fails the first touch).
+   `shop-feed-repository.ts:43 fetchRankedShopVideosPage` reads `shop_videos` only, NOT `products`/`merchants`, out of
+   scope.
 3. `tenant_catalog_overrides` exists (foundation migration `20260416120000_vtid_02000_marketplace_foundation.sql`,
    RLS `_select` bare `tenant_id = current_tenant_id()`) but is enforced nowhere — the commerce architecture
    confirms "exists but is not enforced anywhere" (§"Partner↔tenant relationship" row).
@@ -67,20 +67,16 @@ tenant-gated and adds the Community/Network scope, on top of the global supplier
   `services/gateway/src/services/discover/tenant-visibility.ts` — v1 = `products.is_active`
   AND `supplier_tenant_relationships` active for the resolved tenant AND no `tenant_catalog_overrides` hide for that
   tenant, PLUS the scope term (`distribution = 'community'` → tenant has an active relationship; `'network'` →
-  every tenant), with the `tenant_catalog_overrides` hide applied in BOTH modes. The predicate serves TWO reader
-  classes, split by this rule: a reader is **discovery** (FULL predicate) when it SURFACES offerings the member has
-  not already chosen (open feed/search/browse, OR a by-id lookup that INITIATES a discovery action such as creating a
-  recommendation, which must not succeed for a product not visible in the member's tenant); a reader is **fulfilment**
-  (NOT relationship/distribution-filtered) when it HYDRATES an item the member already has (cart, saved, in-flight/past
-  order, reorder), so an order is never 404'd when a supplier is later suspended. By this rule the by-id
-  `discover-recommendations-repository.ts:23` (`fetchActiveProductForRecommendation`) is DISCOVERY; the three
-  `fetchProductsByIds` (shop-feed:32, cart-checkout:36, checkout:42) and the by-id `fetchProductById`
-  (`health-action-initiative-repository.ts:81`) are FULFILMENT (full set in Problem 2).
+  every tenant), with the `tenant_catalog_overrides` hide applied in BOTH modes. The predicate serves THREE reader
+  classes (full list + rationale in design "What exists"/Rule 3; Problem 2 enumerates them): **discovery** (FULL
+  predicate); **fulfilment** (by-id hydration of an already-held item, unfiltered, so an order is never 404'd when a
+  supplier is later suspended); **admin/ingestion** (admin/supplier surface by `merchant_id`/org, unfiltered). A
+  GENERATED inventory (`scripts/ci/discover-reader-inventory.*`) tags each reader `discovery|fulfilment|admin`; a
+  build-failing lint asserts discovery goes through the predicate, fulfilment is annotated `// discover-inventory:
+  fulfilment`, admin `// discover-inventory: admin` (both unfiltered), and anything unclassified fails. The lane's
+  `paths` cover the full swept set so the lint can annotate/route each file without the PR leaving scope.
   `shop-feed-repository.ts:43 fetchRankedShopVideosPage` reads `shop_videos`, is NOT a `products`/`merchants` reader,
-  out of the predicate's scope (`shop_videos` scoping is a separate concern, out of scope here). A GENERATED inventory
-  (`scripts/ci/discover-reader-inventory.*`) tags each `products`/`merchants` reader `discovery|fulfilment`; a
-  build-failing lint asserts every discovery reader goes through the predicate and every fulfilment reader is
-  annotated (`// discover-inventory: fulfilment`) and left unfiltered. Health-category offerings additionally require
+  out of scope. Health-category offerings additionally require
   the Health plan trust level 2 + signed DPA before listing (gate in the predicate, discovery class). Add a
   **per-query** lineage guard (the §7.2 ranking-guard idea applied per-query, not per-module): it fails only when the
   SAME query that reads `products`/`merchants` also touches
@@ -149,8 +145,10 @@ Discover becomes tenant-gated from the first non-Maxina tenant (M2); existing pr
 Maxina only (D7), so Maxina Discover is unchanged while the flag is off.
 
 ## Risks
-- Missing a `products`/`merchants` reader leaves a global leak. Mitigation: the GENERATED inventory + build-failing
-  lint, not a hand-list; every new reader must register.
+- Missing a `products`/`merchants` reader leaves a global leak, or forces an out-of-paths edit that fails Lane-scope
+  CI. Mitigation: the GENERATED inventory + build-failing lint (three classes: discovery/fulfilment/admin), not a
+  hand-list; the lane's `paths` cover the FULL 2026-10-17 sweep so every reader can be annotated/routed in-scope;
+  every new reader must register or the build fails.
 - `partner_tenant.tenant_id` backfill mis-maps a supplier. Mitigation: snapshot `bak_*`, map only unambiguous
   rows, free text that is not a resolvable tenant → NULL (platform); reviewed read-only post-check.
 - Dual enforcement (RLS + predicate) could diverge. Mitigation: predicate is the single read path, RLS the backstop;

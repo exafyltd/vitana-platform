@@ -25,10 +25,13 @@ Links (read, do not copy):
   active relationship; WHERE `distribution='network'`, the system SHALL show it in every tenant, in both cases minus
   that tenant's `tenant_catalog_overrides` hides (applied in BOTH Community and Network mode).
 - R3 WHEN a new `products`/`merchants` reader is added, a GENERATED inventory + build-failing lint SHALL classify it
-  `discovery` (surfaces not-yet-chosen offerings — open query OR a by-id discovery initiator) or `fulfilment`
-  (by-id hydration of an already-held item) and SHALL require every `discovery` reader to go through the shared
-  predicate and every `fulfilment` reader to be annotated and NOT relationship/distribution-filtered, so a
-  known/saved/in-flight product is never hidden from checkout. `shop_videos`-only readers (e.g.
+  into exactly one of three dispositions and fail on anything unclassified: `discovery` (surfaces not-yet-chosen
+  offerings — open query OR a by-id discovery initiator; MUST go through the shared predicate), `fulfilment` (by-id
+  hydration of an already-held item; annotated `// discover-inventory: fulfilment`, NOT relationship/distribution-
+  filtered, so a known/saved/in-flight product is never hidden from checkout), or `admin` (admin/back-office/
+  supplier-portal and catalog-ingestion readers served to an admin/supplier surface, NOT a member Discover/ORB
+  surface; annotated `// discover-inventory: admin`, unfiltered, admin-guarded). The distinguishing rule for `admin`
+  is the surface it serves (admin/supplier, not member). `shop_videos`-only readers (e.g.
   `fetchRankedShopVideosPage`) are not `products`/`merchants` readers and are out of the inventory's scope.
 - R4 WHEN a `products`/`merchants` reader is built, a PER-QUERY build-failing lineage guard SHALL fail if the SAME
   query that reads `products`/`merchants` also reads

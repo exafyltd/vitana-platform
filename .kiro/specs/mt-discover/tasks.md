@@ -37,13 +37,32 @@ Allowed paths:
 `services/gateway/src/routes/discover-search-repository.ts`,
 `services/gateway/src/routes/discover-recommendations-repository.ts`,
 `services/gateway/src/routes/shop-feed-repository.ts`,
+`services/gateway/src/routes/universal-cart-context-repository.ts`,
+`services/gateway/src/routes/click-redirect-repository.ts`,
+`services/gateway/src/routes/admin-marketplace-repository.ts`,
+`services/gateway/src/routes/catalog-ingest-repository.ts`,
+`services/gateway/src/routes/vcaop-portal-my-products.ts`,
+`services/gateway/src/routes/partner-onboarding-catalogue.ts`,
+`services/gateway/src/routes/partner-onboarding.ts`,
 `services/gateway/src/services/orb-tools/marketplace-discovery-tools.ts`,
-`services/gateway/src/services/orb-tools/marketplace-guide-tools-repository.ts`,
-`services/gateway/src/services/orb-tools/marketplace-journey-tools-repository.ts`,
+`services/gateway/src/services/orb-tools/marketplace-*-repository.ts`,
 `services/gateway/src/services/orb-tools/cart-checkout-tools-repository.ts`,
 `services/gateway/src/services/automation-handlers/health-wellness-repository.ts`,
 `services/gateway/src/services/automation-handlers/health-action-initiative-repository.ts`,
 `services/gateway/src/services/checkout/checkout-service-repository.ts`,
+`services/gateway/src/services/gemini-operator-repository.ts`,
+`services/gateway/src/services/intent-matcher-repository.ts`,
+`services/gateway/src/services/partner-onboarding-service.ts`,
+`services/gateway/src/services/partner-review.ts`,
+`services/gateway/src/services/partner-setup.ts`,
+`services/gateway/src/services/shopify-sync-repository.ts`,
+`services/gateway/src/services/marketplace-sync/shared-repository.ts`,
+`services/gateway/src/services/marketplace-sync/amazon-sync-repository.ts`,
+`services/gateway/src/services/admin-scanners/marketplace-repository.ts`,
+`services/gateway/src/services/recommendation-engine/analyzers/marketplace-analyzer-repository.ts`,
+`services/gateway/src/services/recommendation-commissions/credit-recommender-repository.ts`,
+`services/gateway/src/services/shopping-agent/agent-core-repository.ts`,
+`services/gateway/src/services/shopping-agent/reorder-core-repository.ts`,
 `scripts/ci/discover-reader-inventory.mjs`,
 `services/gateway/test/vtid-*-discover-tenant-visibility.test.ts`,
 `services/gateway/test/vtid-*-discover-lineage-guard.test.ts`,
@@ -51,21 +70,45 @@ Allowed paths:
 
 - [ ] P1 `services/gateway/src/services/discover/tenant-visibility.ts`: the v1 predicate (R1/R2) + health-category
       trust-2+DPA gate (R8); scope term (`distribution`), overrides hide in BOTH modes.
-- [ ] P2 Route every DISCOVERY reader through the predicate: the open-query readers plus the by-id discovery
-      initiator `discover-recommendations-repository.ts:23` (`fetchActiveProductForRecommendation`). Leave the
-      FULFILMENT by-id hydration readers unfiltered + annotated `// discover-inventory: fulfilment`:
-      `shop-feed-repository.ts:32`, `cart-checkout-tools-repository.ts:36`, `checkout-service-repository.ts:42`
-      (`fetchProductsByIds`) and `health-action-initiative-repository.ts:81` (`fetchProductById`). Do NOT touch
-      `shop-feed-repository.ts:43 fetchRankedShopVideosPage` (reads `shop_videos`, not a products reader). No
-      behaviour change while flags off; a saved/in-flight order is never 404'd.
+- [ ] P2 Route every DISCOVERY reader through the predicate and annotate every FULFILMENT and ADMIN/INGESTION reader.
+      The lane owns the FULL swept set (2026-10-17), classified:
+      **DISCOVERY (full predicate):** `discover-feed-repository.ts:40`, `discover-search-repository.ts:29,:37`,
+      `discover-recommendations-repository.ts:23` (by-id discovery initiator),
+      `orb-tools/marketplace-discovery-tools-repository.ts` (searchProducts :34, searchProductByTitleTop1 :47,
+      fetchProductsByCategory :51, fetchDealsProducts :68, fetchProductById :43),
+      `orb-tools/marketplace-va-shared-repository.ts` (fetchProductByFuzzyTitle :44, fetchProductById :35),
+      `orb-tools/marketplace-guide-tools-repository.ts:42,:55`,
+      `orb-tools/marketplace-journey-tools-repository.ts:33,:67`,
+      `automation-handlers/health-wellness-repository.ts:91`,
+      `gemini-operator-repository.ts` (operator search :39, fetchDiscoverFeed :62),
+      `intent-matcher-repository.ts:32`,
+      `recommendation-engine/analyzers/marketplace-analyzer-repository.ts:40`,
+      `shopping-agent/agent-core-repository.ts:27`.
+      **FULFILMENT (by-id hydration, unfiltered + `// discover-inventory: fulfilment`):** `shop-feed-repository.ts:32`,
+      `cart-checkout-tools-repository.ts:36,:41` (not :45 searchActiveProductsByTitle — that is DISCOVERY),
+      `checkout-service-repository.ts:42`, `health-action-initiative-repository.ts:81`,
+      `universal-cart-context-repository.ts:45`, `shopping-agent/reorder-core-repository.ts:24`,
+      `click-redirect-repository.ts:20` (redirect of a chosen product),
+      `orb-tools/marketplace-journey-tools-repository.ts:51,:55`,
+      `orb-tools/marketplace-discovery-tools-repository.ts` (fetchProductTitlesByIds, fetchProductTitleById).
+      **ADMIN/INGESTION (unfiltered, admin-guarded + `// discover-inventory: admin`):** `admin-marketplace-repository.ts`,
+      `catalog-ingest-repository.ts`, `vcaop-portal-my-products.ts`, `partner-onboarding-catalogue.ts`,
+      `partner-onboarding.ts`, `partner-onboarding-service.ts`, `partner-review.ts`, `partner-setup.ts`,
+      `shopify-sync-repository.ts`, `marketplace-sync/shared-repository.ts`, `marketplace-sync/amazon-sync-repository.ts`,
+      `admin-scanners/marketplace-repository.ts`, `recommendation-commissions/credit-recommender-repository.ts:114`.
+      Do NOT touch `shop-feed-repository.ts:43 fetchRankedShopVideosPage` (reads `shop_videos`, not a products reader).
+      No behaviour change while flags off; a saved/in-flight order is never 404'd.
 - [ ] P3 `scripts/ci/discover-reader-inventory.mjs`: GENERATED inventory tagging each `products`/`merchants` reader
-      `discovery|fulfilment` + build-failing lint (R3: discovery goes through the predicate, fulfilment is annotated
-      + unfiltered) + PER-QUERY lineage guard (R4: fails only when the same query that reads `products`/`merchants`
-      also reads health_*/wearable_*/biomarker_*/lab_*/vitana_index_*; must NOT flag a sibling function in a mixed
-      file — tolerate `health-wellness-repository.ts` and `health-action-initiative-repository.ts`).
+      `discovery|fulfilment|admin` + build-failing lint (R3: discovery goes through the predicate; fulfilment is
+      annotated `// discover-inventory: fulfilment` + unfiltered; admin/ingestion/supplier-portal is annotated
+      `// discover-inventory: admin` + unfiltered + admin-guarded; anything unclassified fails) + PER-QUERY lineage
+      guard (R4: fails only when the same query that reads `products`/`merchants` also reads
+      health_*/wearable_*/biomarker_*/lab_*/vitana_index_*; must NOT flag a sibling function in a mixed file —
+      tolerate `health-wellness-repository.ts` and `health-action-initiative-repository.ts`).
 - [ ] P4 Dark behind `MT_RESOLUTION_V2` + `mt.discover_tenant_gate` / `mt.network_enabled`.
 - [ ] P5 Vitest: predicate (community/network, overrides, relationship active/inactive, health gate); inventory lint
-      (a bypassing discovery reader fails; an unannotated fulfilment reader fails); per-query lineage guard (fails on
+      (a bypassing discovery reader fails; an unannotated fulfilment reader fails; an unclassified admin/ingestion
+      reader fails); per-query lineage guard (fails on
       a health_* read in the SAME query as a products read; PASSES a mixed file whose health read is a sibling
       function); isolation suite (supplier active only in T_A absent in T_B incl. ORB; network offering in both;
       fulfilment-by-id read of a known T_A product still resolves when the supplier is suspended for the tenant).
