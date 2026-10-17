@@ -59,7 +59,8 @@ export interface ChatPushDecision {
   unreadCount: number;
 }
 
-interface ChatNotificationRow {
+// Exported (VTID-05208) so new-member-greeting-push.ts reuses the same rows/rule.
+export interface ChatNotificationRow {
   user_id: string;
   created_at: string;
   push_sent_at: string | null;
@@ -68,7 +69,7 @@ interface ChatNotificationRow {
 }
 
 /** A row whose push actually went out (not held back, not suppressed). */
-function wasPushed(row: ChatNotificationRow): boolean {
+export function wasPushed(row: ChatNotificationRow): boolean {
   if (!row.push_sent_at) return false;
   if (row.data && row.data.push_coalesced === 'true') return false;
   const outcome = row.push_outcome || '';

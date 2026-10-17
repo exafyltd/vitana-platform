@@ -1,3 +1,5 @@
 {
-  "sms.phone_verification.code": "رمزك في Vitanaland: {code}. لا تشاركه مع أي شخص."
+  "sms.phone_verification.code": "رمزك في Vitanaland: {code}. لا تشاركه مع أي شخص.",
+  "notif.new_member_greeting_burst.title": "مرحبًا بك في المجتمع 👋",
+  "notif.new_member_greeting_burst.body": "{count} أشخاص ألقوا عليك التحية 👋"
 }

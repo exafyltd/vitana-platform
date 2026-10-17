@@ -264,6 +264,11 @@ export type GatewayI18nKey =
   // VTID-05137: body of the one push a burst of chat messages gets
   // ("{count} new messages · {preview}") — see chat-push-coalescer.ts
   | 'notif.chat_burst.body'
+  // VTID-05208: the push a newcomer gets when several members greeted them by
+  // private DM within 24 h ("{count} people said hello 👋") — see
+  // new-member-greeting-push.ts
+  | 'notif.new_member_greeting_burst.title'
+  | 'notif.new_member_greeting_burst.body'
   // VTID-03604: nightly goodnight push — the "you didn't open ORB tonight"
   // counterpart to the spoken day-close. Fixed catalog text, not
   // LLM-composed: unlike the ORB voice path (CLAUDE.md NEVER-rule 41), a
