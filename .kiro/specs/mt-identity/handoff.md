@@ -3,9 +3,9 @@ slug: mt-identity
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: kiro
+next_actor: claude
 state: drafted
-updated: 2026-11-01T12:00Z
+updated: 2026-10-17T10:53Z
 ---
 # Handoff — mt-identity (WS1 identity, tenancy resolution & roles — the "rest" after VTID-05149)
 
@@ -71,3 +71,6 @@ actually have a user-private policy and marked the 5 no-policy tables out of sco
 `20250831083908_…`–`20250831091149_…` range. O1 (`isHealthTable()` owned here) unchanged. queue.mjs validators
 (parseFrontMatter/validatePlan/validateLane) re-run on handoff.md + all lanes = 0 errors; tasks.md Allowed paths
 identical to each lane's paths (unchanged). No source-code edits, no live-system calls.
+
+### 2026-10-17T10:53Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
