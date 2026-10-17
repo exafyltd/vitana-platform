@@ -1,0 +1,566 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-d10w1/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-d10w1/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-d10w1/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/connectors/doctorbox.test.ts
+  doctorbox connector — signature verification
+    ✓ rejects every request when the secret is unset (fail closed, VTID-05031) (9 ms)
+    ✓ rejects an invalid signature when a secret is configured (1 ms)
+    ✓ accepts a valid signature when a secret is configured (1 ms)
+  doctorbox connector — identity resolution
+    ✓ rejects a payload with no external_order_ref (1 ms)
+    ✓ rejects when the partner is not registered (1 ms)
+    ✓ quarantines (never guesses) when no order matches the external_order_ref (4 ms)
+  doctorbox connector — test.status_changed
+    ✓ maps a known raw status and delegates to recordStatusChange (3 ms)
+    ✓ rejects an unmapped raw status rather than guessing
+  doctorbox connector — test.result_ready
+    ✓ delegates through the adapter + ingestPartnerResult (1 ms)
+    ✓ reports a quarantined outcome as valid (the webhook itself was legitimate) (1 ms)
+  doctorbox connector — unknown event
+    ✓ rejects an unrecognized event type (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.error
+    [VTID-05055] health_test.staff_read not written for GET /orders: insert failed — failing closed
+
+      153 |     });
+      154 |     if (!result?.ok) {
+    > 155 |       console.error(`[VTID-05055] health_test.staff_read not written for ${route}: ${result?.error ?? 'unknown'} — failing closed`);
+          |               ^
+      156 |       return false;
+      157 |     }
+      158 |     return true;
+
+      at auditStaffRead (src/routes/admin-partner-health.ts:155:15)
+      at src/routes/admin-partner-health.ts:225:19
+
+  console.error
+    [VTID-05055] health_test.staff_read not written for GET /inbox: insert failed — failing closed
+
+      153 |     });
+      154 |     if (!result?.ok) {
+    > 155 |       console.error(`[VTID-05055] health_test.staff_read not written for ${route}: ${result?.error ?? 'unknown'} — failing closed`);
+          |               ^
+      156 |       return false;
+      157 |     }
+      158 |     return true;
+
+      at auditStaffRead (src/routes/admin-partner-health.ts:155:15)
+      at src/routes/admin-partner-health.ts:312:19
+
+  console.error
+    [VTID-05055] health_test.staff_read not written for GET /candidates/:inboxId: insert failed — failing closed
+
+      153 |     });
+      154 |     if (!result?.ok) {
+    > 155 |       console.error(`[VTID-05055] health_test.staff_read not written for ${route}: ${result?.error ?? 'unknown'} — failing closed`);
+          |               ^
+      156 |       return false;
+      157 |     }
+      158 |     return true;
+
+      at auditStaffRead (src/routes/admin-partner-health.ts:155:15)
+      at src/routes/admin-partner-health.ts:358:19
+
+  console.error
+    [VTID-05055] health_test.staff_read threw for GET /orders: Error: network — failing closed
+
+      158 |     return true;
+      159 |   } catch (err) {
+    > 160 |     console.error(`[VTID-05055] health_test.staff_read threw for ${route}: ${String(err)} — failing closed`);
+          |             ^
+      161 |     return false;
+      162 |   }
+      163 | }
+
+      at auditStaffRead (src/routes/admin-partner-health.ts:160:13)
+      at src/routes/admin-partner-health.ts:225:19
+
+  console.warn
+    [VTID-05055] upload-result: body partner_key=doctorbox ignored; order order-1 belongs to partner_key=acme-labs.
+
+      408 |
+      409 |   if (bodyPartnerKey && bodyPartnerKey !== partnerKey) {
+    > 410 |     console.warn(`[VTID-05055] upload-result: body partner_key=${bodyPartnerKey} ignored; order ${orderId} belongs to partner_key=${partnerKey}.`);
+          |             ^
+      411 |     await emitOasisEvent({
+      412 |       vtid: VTID_D8,
+      413 |       type: 'health_test.partner_key_mismatch',
+
+      at src/routes/admin-partner-health.ts:410:13
+
+  console.error
+    [VTID-05055] upload-result: order order-1 has no partner_registry row — refusing (no default partner).
+
+      403 |   const partnerKey = typeof registry?.partner_key === 'string' && registry.partner_key ? registry.partner_key : null;
+      404 |   if (!partnerKey) {
+    > 405 |     console.error(`[VTID-05055] upload-result: order ${orderId} has no partner_registry row — refusing (no default partner).`);
+          |             ^
+      406 |     return res.status(500).json({ ok: false, error: 'PARTNER_NOT_REGISTERED' });
+      407 |   }
+      408 |
+
+      at src/routes/admin-partner-health.ts:405:13
+
+  console.warn
+    [VTID-05055] upload-result: body partner_key=doctorbox ignored; order order-1 belongs to partner_key=labcorp-api.
+
+      408 |
+      409 |   if (bodyPartnerKey && bodyPartnerKey !== partnerKey) {
+    > 410 |     console.warn(`[VTID-05055] upload-result: body partner_key=${bodyPartnerKey} ignored; order ${orderId} belongs to partner_key=${partnerKey}.`);
+          |             ^
+      411 |     await emitOasisEvent({
+      412 |       vtid: VTID_D8,
+      413 |       type: 'health_test.partner_key_mismatch',
+
+      at src/routes/admin-partner-health.ts:410:13
+
+  console.warn
+    [VTID-05055] link-requests: proposal columns missing (migration not applied) — answering an empty list.
+
+      67 |   if (error) {
+      68 |     if (isMissingSchemaError(error)) {
+    > 69 |       console.warn('[VTID-05055] link-requests: proposal columns missing (migration not applied) — answering an empty list.');
+         |               ^
+      70 |       return res.json({ ok: true, requests: [] });
+      71 |     }
+      72 |     return res.status(500).json({ ok: false, error: 'LINK_REQUESTS_UNAVAILABLE' });
+
+      at src/routes/partner-health-member.ts:69:15
+
+PASS test/admin-partner-health.test.ts
+  admin-partner-health — auth
+    ✓ 401 without any token (35 ms)
+    ✓ 403 for an authenticated caller with no admin/partner-org access at all (VTID-03932) (5 ms)
+  GET /orders
+    ✓ returns orders (admin scope, no partner_id filter) (4 ms)
+  GET /orders — org-scoped access (VTID-03932)
+    ✓ staff sees any order for their org's linked partner (4 ms)
+    ✓ professional sees only orders assigned to them (6 ms)
+  PATCH /orders/:id
+    ✓ 400 when status is result_ready (derived state, not settable here) (12 ms)
+    ✓ 404 when the order does not exist (4 ms)
+    ✓ 200 happy path — delegates to recordStatusChange (4 ms)
+    ✓ 403 when a professional attempts to PATCH an order not assigned to them (VTID-03932) (6 ms)
+    ✓ 200 when a professional PATCHes an order assigned to them (4 ms)
+  GET /inbox
+    ✓ returns unresolved inbox rows (3 ms)
+  GET /candidates/:inboxId
+    ✓ returns a note (no candidates) when the raw payload has no merchant_id (3 ms)
+    ✓ returns ranked candidates when a merchant_id is present (3 ms)
+  POST /inbox/:id/upload-result
+    ✓ 400 when order_id is missing (3 ms)
+    ✓ 200 happy path — delegates to the adapter + ingestPartnerResult (3 ms)
+  POST /inbox/:id/confirm-match
+    ✓ 400 when matched_user_id/matched_tenant_id are missing (3 ms)
+    ✓ 404 when the inbox row does not exist (3 ms)
+    ✓ 409 when the inbox row is already resolved (2 ms)
+  POST /inbox/:id/confirm-match — member proposal (VTID-05055)
+    ✓ 202 — writes the proposal, notifies the member with tt() keys, creates NO link and NO order (9 ms)
+    ✓ 400 USER_NOT_IN_TENANT when the named user is not a member of the named tenant (3 ms)
+    ✓ 409 when the row is already waiting for a member (3 ms)
+    ✓ 409 MEMBER_DECLINED when the same member already declined this row (3 ms)
+    ✓ 202 for a DIFFERENT member after someone else declined (13 ms)
+    ✓ 409 when the compare-and-set updates no row (changed concurrently) (3 ms)
+    ✓ 503 MEMBER_CONFIRMATION_UNAVAILABLE without the migration — and never the old direct link (3 ms)
+    ✓ 403 for a professional-only org member (full partner access required) (3 ms)
+  audited staff reads (VTID-05055)
+    ✓ GET /orders emits health_test.staff_read with the actor and ids only (4 ms)
+    ✓ GET /inbox emits health_test.staff_read without raw_payload and selects the proposal columns (3 ms)
+    ✓ GET /inbox falls back to the legacy column list when the migration is missing (2 ms)
+    ✓ GET /candidates/:inboxId emits health_test.staff_read with the candidate user ids (2 ms)
+    ✓ GET /orders fails closed with 503 AUDIT_UNAVAILABLE when the audit event is not written (14 ms)
+    ✓ GET /inbox fails closed with 503 AUDIT_UNAVAILABLE when the audit event is not written (4 ms)
+    ✓ GET /candidates/inbox-1 fails closed with 503 AUDIT_UNAVAILABLE when the audit event is not written (4 ms)
+    ✓ fails closed when the audit emit throws (3 ms)
+    ✓ 401 and 403 paths emit nothing (8 ms)
+  POST /inbox/:id/upload-result — partner_key from the order (VTID-05055)
+    ✓ a body 'doctorbox' on a self-registered partner's order → ingestion runs with the org's own key and the manual format (4 ms)
+    ✓ derives doctorbox from the order (no body key needed) and records no manual format (2 ms)
+    ✓ 500 PARTNER_NOT_REGISTERED when the order has no partner_registry row — never a 'doctorbox' default (4 ms)
+    ✓ 400 NO_ADAPTER for a non-manual partner without an adapter (3 ms)
+  POST /inbox/manual
+    ✓ 400 when partner_id or raw_payload is missing (6 ms)
+    ✓ 403 for a professional-only org member (assigned-order-only, not full access) (2 ms)
+    ✓ 201 happy path for admin — no candidates given, reason=no_match (4 ms)
+    ✓ 201 happy path for the org's own staff — candidate user ids given, reason=ambiguous_match (2 ms)
+  VTID-05042 — tenant admin has no partner-health access
+    ✓ get /orders → 403 FORBIDDEN, no data table touched (5 ms)
+    ✓ patch /orders/order-1 → 403 FORBIDDEN, no data table touched (2 ms)
+    ✓ get /inbox → 403 FORBIDDEN, no data table touched (3 ms)
+    ✓ get /candidates/inbox-1 → 403 FORBIDDEN, no data table touched (3 ms)
+    ✓ post /inbox/inbox-1/upload-result → 403 FORBIDDEN, no data table touched (2 ms)
+    ✓ post /inbox/manual → 403 FORBIDDEN, no data table touched (3 ms)
+    ✓ post /inbox/inbox-1/confirm-match → 403 FORBIDDEN, no data table touched (2 ms)
+    ✓ exafy_admin keeps the unfiltered admin scope (unchanged) (2 ms)
+
+PASS test/partner-health-member.test.ts
+  auth
+    ✓ get /api/v1/partner-health/member/link-requests → 401 without a user token, nothing read or written (20 ms)
+    ✓ post /api/v1/partner-health/member/link-requests/inbox-1/confirm → 401 without a user token, nothing read or written (12 ms)
+    ✓ post /api/v1/partner-health/member/link-requests/inbox-1/decline → 401 without a user token, nothing read or written (4 ms)
+  GET /link-requests
+    ✓ lists only the caller's pending rows, scoped by user_id and not by the session tenant (5 ms)
+    ✓ answers an empty list when the proposal columns are missing (migration not applied) (8 ms)
+    ✓ 500 on any other database error (never an empty list that hides a fault) (3 ms)
+  POST /link-requests/:id/confirm
+    ✓ 404 for another member's row — no existence leak, no RPC (8 ms)
+    ✓ happy path: creates the link + order through fn_confirm_partner_link_request, member is the actor (4 ms)
+    ✓ a member whose session is in tenant B confirms a request proposed in tenant A (the stored tenant is re-checked in the RPC) (6 ms)
+    ✓ second confirm → 409 (row no longer pending), no RPC (3 ms)
+    ✓ race: the RPC reports not_pending → 409 (3 ms)
+    ✓ 503 when the migration is not applied — never the old direct link (3 ms)
+  POST /link-requests/:id/decline
+    ✓ sets declined + appends the member to member_declined_user_ids, leaves the row unresolved, emits link_declined (3 ms)
+    ✓ 404 for another member's row (3 ms)
+    ✓ 409 when no longer pending (2 ms)
+    ✓ 503 when the migration is not applied (2 ms)
+  route mount
+    ✓ index.ts mounts the member router exactly once, at /api/v1/partner-health/member (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [VTID-05055] fn_confirm_partner_link_request missing — migration not applied; refusing (no fallback to a direct link).
+
+      69 |   if (error) {
+      70 |     if (isMissingSchemaError(error)) {
+    > 71 |       console.warn('[VTID-05055] fn_confirm_partner_link_request missing — migration not applied; refusing (no fallback to a direct link).');
+         |               ^
+      72 |       return { ok: false, status: 503, error: 'MEMBER_CONFIRMATION_UNAVAILABLE' };
+      73 |     }
+      74 |     // Rolled back by Postgres: the row is still 'pending_member'.
+
+      at materializeMemberConfirmedLink (src/services/partner-health/link-confirmation.ts:71:15)
+      at test/partner-health/link-confirmation.test.ts:115:17
+
+  console.warn
+    [VTID-05055] fn_confirm_partner_link_request missing — migration not applied; refusing (no fallback to a direct link).
+
+      69 |   if (error) {
+      70 |     if (isMissingSchemaError(error)) {
+    > 71 |       console.warn('[VTID-05055] fn_confirm_partner_link_request missing — migration not applied; refusing (no fallback to a direct link).');
+         |               ^
+      72 |       return { ok: false, status: 503, error: 'MEMBER_CONFIRMATION_UNAVAILABLE' };
+      73 |     }
+      74 |     // Rolled back by Postgres: the row is still 'pending_member'.
+
+      at materializeMemberConfirmedLink (src/services/partner-health/link-confirmation.ts:71:15)
+      at test/partner-health/link-confirmation.test.ts:115:17
+
+  console.error
+    [VTID-05055] member confirm failed for inbox inbox-1: duplicate key value violates unique constraint "partner_health_test_orders_partner_ext_uidx"
+
+      73 |     }
+      74 |     // Rolled back by Postgres: the row is still 'pending_member'.
+    > 75 |     console.error(`[VTID-05055] member confirm failed for inbox ${row.id}: ${error.message}`);
+         |             ^
+      76 |     return { ok: false, status: 500, error: 'CONFIRM_FAILED' };
+      77 |   }
+      78 |
+
+      at materializeMemberConfirmedLink (src/services/partner-health/link-confirmation.ts:75:13)
+      at Object.<anonymous> (test/partner-health/link-confirmation.test.ts:122:19)
+
+PASS test/partner-health/link-confirmation.test.ts
+  materializeMemberConfirmedLink
+    ✓ success → link + order, health_test.order_created with the member as actor (3 ms)
+    ✓ RPC not_pending → 409, nothing emitted (1 ms)
+    ✓ RPC not_in_tenant → 409, nothing written (1 ms)
+    ✓ function missing (migration pending) → 503 MEMBER_CONFIRMATION_UNAVAILABLE (11 ms)
+    ✓ function missing (migration pending) → 503 MEMBER_CONFIRMATION_UNAVAILABLE (2 ms)
+    ✓ an RPC error leaves the row pending_member (rolled back) and a retry succeeds (3 ms)
+    ✓ the order stands when the audit emit fails (logged, not hidden, not rolled back) (1 ms)
+  declineMemberLink
+    ✓ pending_member → declined, member appended, row stays unresolved (1 ms)
+    ✓ 404 when the row is not the caller's; 409 when no longer pending; 409 when the CAS updates nothing
+  isMissingSchemaError
+    ✓ recognises missing columns/functions, nothing else
+  migration contract — fn_confirm_partner_link_request
+    ✓ exists, is SECURITY DEFINER with SET search_path = public and returns jsonb (1 ms)
+    ✓ EXECUTE is revoked from PUBLIC, anon and authenticated and granted to service_role only (1 ms)
+    ✓ locks the row, re-checks tenant membership on the STORED tenant, writes what confirm-match wrote (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/partner-health/org-access.test.ts
+  resolveOrgHealthAccess
+    ✓ returns null when the caller has no partner org membership (2 ms)
+    ✓ grants full access for org_admin/staff membership
+    ✓ grants assigned-only access for professional membership (1 ms)
+    ✓ a full-access org membership takes priority over a professional membership on the same partner
+  hasFullPartnerAccess / canActOnOrder / allVisiblePartnerIds
+    ✓ admin scope has full access to everything and no partner_id filter (1 ms)
+    ✓ full-access org partner: any order for that partner is actionable, assignment irrelevant (1 ms)
+    ✓ assigned-only org partner: only the order assigned to this caller is actionable
+    ✓ a partner outside both lists is never actionable
+    ✓ allVisiblePartnerIds unions both lists for org scope (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/partner-health-consent.test.ts
+  partner-health-consent — auth
+    ✓ 401 without a user token (8 ms)
+    ✓ 401 on grant/revoke without a user token, nothing written (13 ms)
+  GET /
+    ✓ 400 without partner_key/scope (4 ms)
+    ✓ 400 on an unrecognized scope (3 ms)
+    ✓ 200 happy path — reports the real granted state (12 ms)
+  POST /grant
+    ✓ 400 without partner_key/scope (4 ms)
+    ✓ 200 — delegates to partner_results with the legacy text version, then emits health.consent.granted (6 ms)
+    ✓ 400 UNKNOWN_RESOURCE for a partner_key that is not an active/sandbox partner (validated in fn_set_health_consent) (4 ms)
+    ✓ 400 UNSUPPORTED_SCOPE for an order_tracking write (no consent category), nothing written (4 ms)
+    ✓ 503 CONSENT_STORE_PENDING before the migration (nothing written, no event) (3 ms)
+    ✓ 500 when the write fails — a code, never the database message (4 ms)
+    ✓ an already-active grant changes nothing and emits nothing (3 ms)
+  POST /revoke
+    ✓ 400 without partner_key/scope (3 ms)
+    ✓ 200 — delegates the revoke and emits health.consent.revoked; an OASIS failure does not fail it (4 ms)
+  source
+    ✓ no longer opts out of OASIS and no longer writes the consent tables directly (1 ms)
+
+PASS test/vtid-05055-member-link-migration.test.ts
+  VTID-05055 migration
+    ✓ exists (1 ms)
+    ✓ is additive only — no drops, no RLS/policy changes, no deletes (1 ms)
+    ✓ adds every proposal column idempotently, all nullable except the declined-users array (1 ms)
+    ✓ constrains member_link_status to the three states (1 ms)
+    ✓ indexes pending requests by the proposed member (member reads are scoped by user)
+    ✓ switches partner_link_request ON exactly like VTID-04926 (idempotent, keeps an admin "off") (1 ms)
+  VTID-05055 gateway registries agree with the migration
+    ✓ the admin notification catalog lists partner_link_request as member/health with localized text (1 ms)
+    ✓ the notification type config sends it as push + in-app (1 ms)
+    ✓ the OASIS event union has the new health_test.* types (1 ms)
+    ✓ the notification text is translated in every shipped locale, DE in du-form (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/migrations/vtid-04765-erase-user-data-migration.test.ts
+  VTID-04765 erase_user_data migration
+    ✓ only service_role can execute it (1 ms)
+    ✓ runs with a fixed search_path (1 ms)
+    ✓ every retained table has a reason, and the ledgers keep the account they reference (1 ms)
+    ✓ leaves auth-cascading tables to the auth delete and skips partitions
+    ✓ refuses a null user (8 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/partner-health/ingestion.test.ts
+  ingestPartnerResult
+    ✓ quarantines when consent is missing, and never writes partner_health_results (2 ms)
+    ✓ quarantines invalid payloads after recording provenance, never projecting into biomarker_results (1 ms)
+    ✓ projects a valid result into lab_reports/biomarker_results, flips status, notifies, and emits result_ready (2 ms)
+    ✓ is idempotent on a duplicate webhook delivery — one write, one notification, one event, ever
+  recordStatusChange
+    ✓ writes a history row, updates the order, emits status_changed, and notifies for a non-terminal status (1 ms)
+    ✓ does not notify for the terminal delivered status
+  quarantineUnmatchedResult
+    ✓ inserts an inbox row with the given reason and emits result_quarantined, never touching partner_health_results (2 ms)
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2182:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2189:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2213:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:2238:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:2441:11)
+
+(node:15946) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/vtid-04560-role-separation-regression.test.ts
+  resolveAssistantProfile — the screen decides, the token verifies
+    ✓ work surface command-hub serves role /command-hub/autopilot/live/ from the first byte (6 ms)
+    ✓ work surface admin serves role /admin/dashboard from the first byte (1 ms)
+    ✓ work surface backoffice serves role /backoffice/dashboard from the first byte (1 ms)
+    ✓ work surface commerce serves role /commerce/org from the first byte (1 ms)
+    ✓ the device never changes the surface: a phone on the Command Hub is still the Command Hub
+    ✓ community screens serve the declared member role; a work role there is narrowed to community (1 ms)
+    ✓ a declared surface wins over the route (the host knows what it renders)
+    ✓ an unknown declared surface falls back to the route, never to a crash or undefined
+    ✓ Command Hub without an exafy_admin claim is unverified — still the developer persona, never community (1 ms)
+    ✓ anonymous sessions stay on the member surface with no role
+    ✓ clampRoleToProfile: stored roles never leak across surfaces
+    ✓ session helpers read the profile; sessions without one keep the legacy derivation
+  greeting ladder — a work surface never reaches a member rung
+    ✓ developer on the Command Hub opens with work_surface_open — normal ladder (context resolved) (3 ms)
+    ✓ developer on the Command Hub opens with work_surface_open — safe-fast ladder (context NOT resolved — the 300 ms gate case) (1 ms)
+    ✓ admin surface opens with its own role opener (1 ms)
+    ✓ backoffice surface opens with its own role opener (1 ms)
+    ✓ commerce surface opens with its own role opener (10 ms)
+    ✓ no facts loaded → the opener offers to check, it does not invent
+    ✓ VTID-04586: a work surface skips the member payload gathers — normal ladder (context resolved)
+    ✓ VTID-04586: a work surface skips the member payload gathers — safe-fast ladder (context NOT resolved — the 300 ms gate case)
+    ✓ VTID-04586: the member surface still gathers — normal ladder (context resolved)
+    ✓ VTID-04586: the member surface still gathers — safe-fast ladder (context NOT resolved — the 300 ms gate case)
+    ✓ VTID-04586: the opener speaks from the loaded facts and calls no tool first (1 ms)
+    ✓ VTID-04586: the developer conduct rule no longer demands a tool call for facts the snapshot covers (1 ms)
+    ✓ a genuine transport reconnect stays silent on a work surface too
+    ✓ the member surface is untouched: no surface field, or vitanaland, never takes the work rung (1 ms)
+    ✓ workSurfaceGreetingFields feeds the rung from the session; member sessions add nothing
+  system instruction — each surface carries only its own Vitana
+    ✓ Command Hub: developer supervisor conduct, the work context, and no member content even when it is concatenated in (20 ms)
+    ✓ Command Hub with no work context carries no bootstrap at all (never the member brain) (2 ms)
+    ✓ admin: work conduct block, no member content (3 ms)
+    ✓ backoffice: work conduct block, no member content (2 ms)
+    ✓ commerce: work conduct block, no member content (2 ms)
+    ✓ member surface keeps the member Vitana exactly as before (2 ms)
+    ✓ every surface keeps the stop-and-farewell rule (3 ms)
+    ✓ extractWorkSurfaceContext keeps only the marked section
+  text path — engineering context only for the console and developer/admin callers
+    ✓ the Operator Console itself (no custom instruction) keeps it
+    ✓ developer caller with a custom instruction keeps it
+    ✓ admin caller with a custom instruction keeps it (1 ms)
+    ✓ infra caller with a custom instruction keeps it
+    ✓ exafy_admin caller with a custom instruction keeps it
+    ✓ member caller community never receives it
+    ✓ member caller patient never receives it
+    ✓ member caller professional never receives it (1 ms)
+    ✓ member caller staff never receives it
+    ✓ member caller undefined never receives it
+  source contracts — the wiring cannot silently disappear
+    ✓ the controller resolves the profile from the declared surface/view_role and stores it on the session (1 ms)
+    ✓ work surfaces skip the member brain and the member wake-brief (1 ms)
+    ✓ the old route override and phone-means-community rule are gone (4 ms)
+    ✓ the setup envelope reads role, surface and tools from the profile (2 ms)
+    ✓ every greeting context carries the work-surface fields
+    ✓ the Nova prewarm resolves the same profile and member role as the session start (1 ms)
+    ✓ the widget declares surface + view_role and restarts on a role switch (1 ms)
+    ✓ the Command Hub declares the developer surface (2 ms)
+  VTID-04561 role registry — one declarative answer per role
+    ✓ every Vitana role has an entry
+    ✓ member-plane roles are served on the member surface by the member ladder; work roles on their surface
+    ✓ privileged voice tools follow the registry, never a member role
+    ✓ the profile persona comes from the registry (1 ms)
+    ✓ the tool catalog has no hard-coded privileged-role list left (2 ms)
+  VTID-04561 one role truth — both switchers write both tables
+    ✓ set_role_preference (community app) also writes user_active_roles
+    ✓ me_set_active_role (Command Hub) also writes role_preferences (1 ms)
+    ✓ the Command Hub switches into the community app of its own environment (13 ms)
+  VTID-04562 domain atlas — a map that cannot silently fall behind the code
+    ✓ every gateway route file is claimed by at least one domain (drift guard) (10 ms)
+    ✓ keys are unique and every domain names code, tables and docs or flags (2 ms)
+    ✓ the developer's words find the right domain (1 ms)
+    ✓ the prompt index is one line per domain and names the lookup tool (1 ms)
+  VTID-04562 live system snapshot — facts with a timestamp, never a throw
+    ✓ critical facts lead the highlights (kill switch, provider outage, error spike) (1 ms)
+    ✓ a clean system says so instead of inventing a problem (1 ms)
+    ✓ a failed source renders as unavailable, the rest still renders (1 ms)
+    ✓ snapshots are cached and concurrent builds coalesce into one
+  VTID-04562 developer knowledge loader — fails open, never member memory
+    ✓ snapshot, atlas and engineering memory all reach the session (2 ms)
+    ✓ failing sources degrade to null, the atlas stays (1 ms)
+    ✓ the Command Hub loader is registered and the member surface gets nothing (4 ms)
+    ✓ the developer loader reads dev_agent_memory, never the member memory tables (1 ms)
+  VTID-04562 developer knowledge tools
+    ✓ both tools are declared for developers and registered with a handler (8 ms)
+    ✓ a community caller is refused
+    ✓ dev_domain_atlas answers a topic with code, tables and docs
+    ✓ the developer conduct block names both tools (1 ms)
+  VTID-04562 text path — the tool-result turn is gated like the main turn
+    ✓ sendToolResultsToVertex only loads the pack for engineering callers (1 ms)
+  VTID-04563 deep dive — read-only tools with guard rails
+    ✓ the probe only GETs /alive and /api/v1/* on the two known hosts (1 ms)
+    ✓ file windows are numbered and bounded (1 ms)
+    ✓ a screen resolves by id, route or title to its App.tsx mount (5 ms)
+    ✓ the executor routes every tool and never throws (7 ms)
+  VTID-04563 deep dive — only developers, on the planner stage, with telemetry
+    ✓ member and admin-surface callers are refused before any model call (1 ms)
+    ✓ a developer question runs bounded on the planner stage and reports findings with telemetry (3 ms)
+    ✓ a loop failure is reported as failed, never as findings (1 ms)
+    ✓ the target is registered for the Command Hub only, read tier (1 ms)
+    ✓ the Command Hub catalog declares dev_deep_dive; the member and admin catalogs never do (2 ms)
+    ✓ a delegation caller carries the served role from the profile
+    ✓ orb-live dispatches dev_deep_dive to the async runner (5 ms)
+  VTID-04564 the Operator Console shares the developer knowledge and deep dive
+    ✓ the console declares the same three developer tools the voice assistant has (2 ms)
+    ✓ engineering callers get the atlas in the prompt; the snapshot stays one tool call away (1 ms)
+    ✓ the console deep dive requires the verified caller on the thread
+  VTID-04565 developer-assistant evaluation set
+    ✓ 60+ questions, every domain covered, every expected tool declared (6 ms)
+    ✓ the atlas routes at least 90% of the questions to the right domain (3 ms)
+    ✓ the live eval script refuses any host but staging and uses the machine credential (1 ms)
+  VTID-04565 telemetry — which Vitana served, and how deep dives went
+    ✓ profiles are counted per surface and resolution (1 ms)
+    ✓ the snapshot reports them and reads them in its one events query (1 ms)
+  VTID-04654 admin opener — facts are the insights, and the briefing is not fetched twice
+    ✓ each numbered insight becomes one fact with its detail; the instruction text is never a fact (4 ms)
+    ✓ a block without numbered items still yields plain lines, minus headings (1 ms)
+    ✓ the admin opener carries the insights as its facts
+    ✓ the admin instruction says the briefing is already loaded, so the no-tool opener has no conflict (3 ms)
+  VTID-04655 me_set_active_role writes role_preferences for a real Supabase token
+    ✓ the preference tenant falls back to the token claim, then the primary membership, members only (1 ms)
+    ✓ the backfill only repairs single-membership users (user_active_roles carries no tenant)
+    ✓ authorization is unchanged: still current_tenant_id() + check_role_permitted, exafy-admin otherwise (3 ms)
+  VTID-04656 the live eval sends thread ids the chat route accepts
+    ✓ the eval script sends a UUID, which is what the route validates (1 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 10 passed, 10 total
+Tests:       243 passed, 243 total
+Snapshots:   0 total
+Time:        4.226 s
+Ran all test suites matching /test\/partner-health|test\/partner-health-member.test.ts|test\/admin-partner-health.test.ts|test\/vtid-04560-role-separation-regression.test.ts|test\/connectors|test\/vtid-05055-member-link-migration.test.ts|test\/migrations\/vtid-04765-erase-user-data-migration.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

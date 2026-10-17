@@ -1119,6 +1119,10 @@ export type CicdEventType =
   | 'health_test.link_proposed'
   | 'health_test.link_declined'
   | 'health_test.partner_key_mismatch'
+  // VTID-05092: per-category health consent (Health Hub D10). Payload: category,
+  // resource_id, text_version, locale, granted_via — never health values.
+  | 'health.consent.granted'
+  | 'health.consent.revoked'
   // VTID-03932: Commerce Partner Onboarding — self-service partner org registration
   | 'partner_org.registered'
   | 'partner_org.member_invited'
