@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-17T14:26Z
+updated: 2026-10-17T15:32Z
 ---
 # Handoff — mt-jobs (WS6: jobs & events loop over active tenants)
 
@@ -41,3 +41,6 @@ per lane and flips the kiro lanes to `next_actor: kiro`.
 
 ### 2026-10-17T14:26Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-17T15:32Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
