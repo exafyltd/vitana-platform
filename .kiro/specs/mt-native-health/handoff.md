@@ -3,9 +3,9 @@ slug: mt-native-health
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: kiro
+next_actor: claude
 state: drafted
-updated: 2026-10-17T15:38Z
+updated: 2026-10-17T15:43Z
 ---
 # mt-native-health — WS9 native tenancy delta + WS10 health-×-tenancy contract
 
@@ -99,3 +99,6 @@ code:
 Plan body trimmed to ~15.1k chars (condensed Out-of-scope / Depends-on / Owner-decisions / Fix bullets). Re-ran
 validators: 0 errors (below). Prepared commit via the private-index recipe for the parent to fast-forward; deleted
 INTERNAL-REVIEW.json.
+
+### 2026-10-17T15:43Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
