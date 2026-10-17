@@ -1,5 +1,5 @@
 # Sparring round 1 — escalated
 
-Session: `8423d355-887d-4357-a7c8-27d28ab4ab0c` · plan hash `9c1ca9c6f4a46936bd92978543d33a5612f70c78de0d7f6efef7024381bf8128`
+Session: `362438e1-5a12-4ecb-8c74-a5d658a9e08e` · plan hash `9c1ca9c6f4a46936bd92978543d33a5612f70c78de0d7f6efef7024381bf8128`
 
-**Partner error:** model_unavailable: Bedrock invoke_failed: Model access is denied due to IAM user or service role is not authorized to perform the required AWS Marketplace actions (aws-marketplace:ViewSubscriptions, aws-marketplace:Subscribe) to enable access to this model. Refer to the Amazon Bedrock documentation for further details. Your AWS Marketplace subscription for this model cannot be completed at this time. If you recently fixed this issue, try again after 5 minutes.
+**Partner error:** evidence_floor_not_met: finding R1-F1 cites no file you read with read_file; every premise check must cite a file you read with read_file; round 1 needs at least 3 premise checks citing read_file results (have 0)
