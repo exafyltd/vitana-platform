@@ -3,9 +3,9 @@ slug: mt-guardrails
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: kiro
+next_actor: claude
 state: drafted
-updated: 2026-10-16T21:44Z
+updated: 2026-10-17T10:53Z
 ---
 # Handoff — mt-guardrails (WS0 guardrails and test tooling)
 
@@ -43,3 +43,6 @@ MIGRATION-QUEUE CI check present today) and vitana-v1 (What's New entries/drafte
 one claude governance lane for the CI/workflow wiring. No migration (reserved range 20261101020000–
 025959 unused). Next: PLAN-SPAR spars this plan; on convergence it allocates one VTID per lane and flips
 the kiro lanes to `next_actor: kiro`.
+
+### 2026-10-17T10:53Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
