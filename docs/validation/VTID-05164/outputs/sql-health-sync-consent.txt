@@ -1,0 +1,3 @@
+PASS vtid-05164 health sync consent
+PASS vtid-05164 prerequisite guard
+exit 0

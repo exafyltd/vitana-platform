@@ -1,0 +1,162 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-d10w1/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/consent/health-consent-premigration.test.ts
+  pre-migration: withdrawal always works (GDPR Art. 7(3))
+    ✓ new route: revoke → 200, revoked_at written, legacy-column audit row, OASIS revoke event (52 ms)
+    ✓ legacy route: revoke → 200 { ok: true }, only the caller's DoctorBox row revoked (16 ms)
+    ✓ revoke of a consent the member does not hold → 200 changed:false, no write, no event (4 ms)
+    ✓ audit insert failure → revoke still 200, consent revoked, failure counted and logged loudly, OASIS still sent (8 ms)
+    ✓ a per-resource revoke without a resource is 400, never a silent success (4 ms)
+    ✓ grant stays fail-closed on both routes: 503 CONSENT_STORE_PENDING, nothing written (7 ms)
+    ✓ legacy GET keeps working (12 ms)
+    ✓ the ingestion consent check (checkDataSharingConsent / hasHealthConsent) keeps working, scoped to the member (1 ms)
+    ✓ GET / and GET /history answer store_pending with legacy columns (5 ms)
+  post-migration: paths unchanged
+    ✓ revoke goes through fn_set_health_consent only — no direct table write (4 ms)
+    ✓ legacy revoke and grants go through the function (7 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/routes/health-consent.test.ts
+  auth
+    ✓ get /api/v1/health/consents → 401 without a token, nothing called (13 ms)
+    ✓ get /api/v1/health/consents/history → 401 without a token, nothing called (5 ms)
+    ✓ post /api/v1/health/consents/grant → 401 without a token, nothing called (10 ms)
+    ✓ post /api/v1/health/consents/revoke → 401 without a token, nothing called (4 ms)
+  POST /grant
+    ✓ grants with the JWT identity; a body user_id/tenant_id is ignored (6 ms)
+    ✓ passes x-request-id through and accepts the member granted_via values (4 ms)
+    ✓ 400 INVALID_REQUEST for {} (field category), nothing written (4 ms)
+    ✓ 400 INVALID_REQUEST for {"category":"ai_health_analysis","locale":"de"} (field text_version), nothing written (3 ms)
+    ✓ 400 INVALID_REQUEST for {"category":"ai_health_analysis","text_version":"v1"} (field locale), nothing written (3 ms)
+    ✓ 400 INVALID_REQUEST for {"category":"ai_health_analysis","text_version":"v1","locale":"xx"} (field locale), nothing written (2 ms)
+    ✓ 400 INVALID_REQUEST for {"category":"ai_health_analysis","text_version":"v1","locale":"de","granted_via":"portal_admin_backfill"} (field granted_via), nothing written (3 ms)
+    ✓ 400 INVALID_REQUEST for {"category":"ai_health_analysis","text_version":"v1","locale":"de","granted_via":"checkout_flow"} (field granted_via), nothing written (2 ms)
+    ✓ 400 INVALID_REQUEST for {"category":"ai_health_analysis","text_version":"v1","locale":"de","resource_id":42} (field resource_id), nothing written (2 ms)
+    ✓ 400 UNKNOWN_CATEGORY for a category that is not in the catalogue (2 ms)
+    ✓ 409 STALE_TEXT_VERSION for the reserved legacy label (only the legacy route may record it) (2 ms)
+    ✓ wearables: only a known wearable/aggregator connector id (9 ms)
+    ✓ service 400 UNKNOWN_RESOURCE is answered as-is, with no OASIS event (2 ms)
+    ✓ service 409 STALE_TEXT_VERSION is answered as-is, with no OASIS event (2 ms)
+    ✓ service 503 CONSENT_STORE_PENDING is answered as-is, with no OASIS event (2 ms)
+    ✓ service 500 CONSENT_WRITE_FAILED is answered as-is, with no OASIS event (2 ms)
+    ✓ emits health.consent.granted AFTER the commit, with no health values (3 ms)
+    ✓ no event for an idempotent grant (nothing changed) (6 ms)
+  POST /revoke
+    ✓ revokes with the JWT identity; no version needed; any resource id (a member can always withdraw) (3 ms)
+    ✓ an OASIS failure (ok:false or a throw) never fails the revoke (4 ms)
+    ✓ 400 for an unknown or missing category; a service write failure is passed through as a code (6 ms)
+  GET / and GET /history
+    ✓ GET / lists the caller only and passes the wearable connectors (3 ms)
+    ✓ GET / answers the service error code (2 ms)
+    ✓ GET /history is scoped to the caller (query user_id ignored) (3 ms)
+  route mount
+    ✓ index.ts mounts the router exactly once at /api/v1/health/consents (1 ms)
+    ✓ no mutating handler opts out of OASIS (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/consent/health-consent.test.ts
+  static category map
+    ✓ equals the migration seed exactly (2 ms)
+    ✓ partner_results matches the existing DoctorBox rows unchanged
+    ✓ category-wide consents are stored under their own key; per-resource ones need a resource
+  hasHealthConsent — fail closed, pre-migration columns only
+    ✓ true for an active row, queried by tenant/user/resource_type/resource_id/scope/revoked_at only (1 ms)
+    ✓ per-partner check uses the partner key (1 ms)
+    ✓ false when no row (1 ms)
+    ✓ false on a DB error (never treated as consent)
+    ✓ false when the client throws (1 ms)
+    ✓ false without a resource for a per-resource category, and for an unknown category — no query
+    ✓ legacy checkDataSharingConsent keeps its signature and fails closed (1 ms)
+  setHealthConsent — one transaction through fn_set_health_consent
+    ✓ calls the function with the given identity and every audit field (1 ms)
+    ✓ a revoke sends no version and no granted_via
+    ✓ a GRANT answers CONSENT_STORE_PENDING (503) when the function does not exist yet (1 ms)
+    ✓ maps function codes to API codes (4 ms)
+    ✓ a database error answers a code, never the database message (1 ms)
+    ✓ a thrown client error answers CONSENT_WRITE_FAILED (1 ms)
+    ✓ an unknown category is refused before the database
+  OASIS event
+    ✓ grant → health.consent.granted, payload has exactly category/resource/version/locale/granted_via (1 ms)
+    ✓ revoke → health.consent.revoked
+    ✓ a failed or thrown emit is counted, never thrown (1 ms)
+  listMemberConsents
+    ✓ before the migration: store_pending, legacy columns only, legacy rows mapped to partner_results (1 ms)
+    ✓ after the migration: catalogue + version/locale per row (1 ms)
+    ✓ a real read error answers CONSENTS_UNAVAILABLE
+  listMemberConsentHistory
+    ✓ own events only, newest first, max 100, no snapshots or actor ids (1 ms)
+    ✓ before the migration: retries with the legacy columns and flags store_pending (1 ms)
+    ✓ any other error answers CONSENT_HISTORY_UNAVAILABLE
+  isConsentStoreMissing
+    ✓ recognises a missing table, column or function, and nothing else (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/partner-health-consent.test.ts
+  partner-health-consent — auth
+    ✓ 401 without a user token (4 ms)
+    ✓ 401 on grant/revoke without a user token, nothing written (8 ms)
+  GET /
+    ✓ 400 without partner_key/scope (2 ms)
+    ✓ 400 on an unrecognized scope (9 ms)
+    ✓ 200 happy path — reports the real granted state (2 ms)
+  POST /grant
+    ✓ 400 without partner_key/scope (2 ms)
+    ✓ 200 — delegates to partner_results with the legacy text version, then emits health.consent.granted (2 ms)
+    ✓ 400 UNKNOWN_RESOURCE for a partner_key that is not an active/sandbox partner (validated in fn_set_health_consent) (3 ms)
+    ✓ 400 UNSUPPORTED_SCOPE for an order_tracking write (no consent category), nothing written (2 ms)
+    ✓ 503 CONSENT_STORE_PENDING before the migration (nothing written, no event) (2 ms)
+    ✓ 500 when the write fails — a code, never the database message (2 ms)
+    ✓ an already-active grant changes nothing and emits nothing (2 ms)
+  POST /revoke
+    ✓ 400 without partner_key/scope (2 ms)
+    ✓ 200 — delegates the revoke and emits health.consent.revoked; an OASIS failure does not fail it (3 ms)
+  source
+    ✓ no longer opts out of OASIS and no longer writes the consent tables directly
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/migrations/vtid-05092-health-consent-migration.test.ts
+  VTID-05092 health consent migration
+    ✓ exists (1 ms)
+    ✓ is additive: no table/column drop, no delete, no truncate; only the granted_via check and the trigger are replaced (4 ms)
+    ✓ seeds the five categories without overwriting a later version bump (1 ms)
+    ✓ has no default-on column: nothing defaults to granted (1 ms)
+    ✓ the catalogue is readable by members and written by no browser role
+    ✓ widens granted_via additively (1 ms)
+    ✓ revokes browser writes, explaining it is defense in depth
+    ✓ makes events append-only: UPDATE trigger + UPDATE/DELETE revoked from service_role, no DELETE trigger (erase_user_data) (1 ms)
+    ✓ fn_set_health_consent is SECURITY DEFINER with a fixed search_path, EXECUTE for service_role only (1 ms)
+    ✓ writes the consent and its event inside the one function body (no exception handler that could swallow the audit insert) (1 ms)
+    ✓ adds the quarantine release column
+  VTID-05092 registries and parity scripts agree with the migration
+    ✓ declares the OASIS event types (1 ms)
+    ✓ the Aurora grants restore no longer gives browser roles writes on the consent tables (3 ms)
+    ✓ the Aurora RLS parity script carries the catalogue policy
+
+Test Suites: 5 passed, 5 total
+Tests:       97 passed, 97 total
+Snapshots:   0 total
+Time:        1.289 s
+Ran all test suites matching /test\/consent\/health-consent.test.ts|test\/consent\/health-consent-premigration.test.ts|test\/routes\/health-consent.test.ts|test\/partner-health-consent.test.ts|test\/migrations\/vtid-05092-health-consent-migration.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

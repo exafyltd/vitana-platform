@@ -1,0 +1,6 @@
+# test/consent/health-consent-premigration.test.ts must fail when the pre-migration revoke fallback is broken (run 2026-10-12, services/gateway).
+== mutation: the fallback's audit insert also writes category_key (a column that does not exist pre-migration)
+Tests:       2 failed, 9 passed, 11 total
+== mutation: a revoke answers 503 CONSENT_STORE_PENDING when fn_set_health_consent is missing (the pre-fix behaviour)
+Tests:       6 failed, 5 passed, 11 total
+# Source restored after each mutation; unmodified: Tests: 11 passed, 11 total

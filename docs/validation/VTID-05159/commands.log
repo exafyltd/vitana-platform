@@ -1,0 +1,13 @@
+# VTID-05159 — commands run in the worktree /home/user/wt-a2 (branch claude/health-data-integration-plan-dbxyld-a2,
+# base 67a3088af = A1 VTID-05158 + B1 VTID-05161 + D10 WP1 VTID-05092)
+# No command touched Supabase, Aurora, S3, the gateway or any AWS API. Tests use in-memory fakes and Jest mocks;
+# the infra scripts ran only in their default dry-run mode with a fake `aws` on PATH (no call recorded).
+
+(cd services/gateway && npx tsc --noEmit -p .)   # -> outputs/tsc.txt (3 pre-existing env gaps: libphonenumber-js, client-pinpoint-sms-voice-v2)
+(cd services/gateway && npx jest test/health-store test/vtid-05025-commerce-health-boundary.test.ts test/vtid-05161-health-sources.test.ts)   # -> outputs/jest-health-store.txt
+(cd services/gateway && npx jest)   # full suite -> outputs/jest-full-summary.txt
+bash scripts/aws/setup-health-raw-bucket.sh prod          # dry run
+bash scripts/aws/setup-health-store-alarms.sh prod        # dry run
+DEFAULT_TENANT_ID=<uuid> HEALTH_STORE_GATEWAY_URL=https://gateway.vitanaland.com bash scripts/aws/setup-eventbridge-cron-migration.sh --dry-run --only gateway-health-store
+node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base origin/main --head HEAD --title "VTID-05159: …"   # change suite present and valid
+node scripts/ci/validate-pr-locally.cjs --title "VTID-05159: …" --body-file pr-05159.md

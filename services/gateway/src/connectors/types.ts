@@ -17,7 +17,10 @@ export type ConnectorCategory =
   | 'productivity'
   | 'aggregator'
   // VTID-03885: Partner Health Test Integration — DoctorBox is Partner #001.
-  | 'health_lab';
+  | 'health_lab'
+  // VTID-05164: phone health stores (Apple Health, Health Connect), read on the
+  // device by the native app and sent through Health Sync v1.
+  | 'health_store';
 
 export type AuthType =
   | 'oauth2'

@@ -6,7 +6,7 @@
  *
  * Endpoints:
  * - POST /lab-reports/ingest - Ingest lab report data (C2)
- * - POST /wearables/ingest - RETIRED, answers 410 (VTID-05156)
+ * - POST /wearables/ingest - RETIRED, answers 410 SUPERSEDED (VTID-05156; body VTID-05164)
  * - GET /summary - Get health summary for a date (C3)
  * - POST /recompute/daily - Trigger daily recompute pipeline (C3)
  */
@@ -255,12 +255,15 @@ router.post('/lab-reports/ingest', async (req: Request, res: Response) => {
  * route; the Health Hub Phase 1 Health Sync contract replaces it.
  *
  * Answers 410 before any auth or database call, so a retired endpoint
- * cannot be used to probe accounts or reach the database.
+ * cannot be used to probe accounts or reach the database. Since VTID-05164 the
+ * body names the replacement: { ok:false, error:'SUPERSEDED',
+ * use:'/api/v1/health/ingest' } (Health Sync v1).
  */
 // Retired: answers 410 to everyone before any auth or database work.
 router.post('/wearables/ingest', (_req: Request, res: Response) => { // public-route
   // impact-allow-no-oasis — no state change: the retired endpoint does nothing.
-  return res.status(410).json({ ok: false, error: 'ENDPOINT_RETIRED' });
+  // VTID-05164: superseded by Health Sync v1 (consent per category, POST /api/v1/health/ingest).
+  return res.status(410).json({ ok: false, error: 'SUPERSEDED', use: '/api/v1/health/ingest' });
 });
 
 // =============================================================================

@@ -1,0 +1,18 @@
+{
+  "vtid": "VTID-05159",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/health-store/**",
+    "services/gateway/src/routes/health-store-internal.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/services/consent/health-consent.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/test/health-store/**",
+    "services/gateway/test/routes/health-store-internal.test.ts",
+    "services/gateway/test/vtid-05025-commerce-health-boundary.test.ts",
+    "scripts/aws/setup-health-raw-bucket.sh",
+    "scripts/aws/setup-health-store-alarms.sh",
+    "scripts/aws/setup-eventbridge-cron-migration.sh",
+    "docs/validation/VTID-05159/**"
+  ]
+}
