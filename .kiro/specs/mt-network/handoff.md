@@ -3,9 +3,9 @@ slug: mt-network
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: kiro
+next_actor: claude
 state: drafted
-updated: 2026-10-15T16:40Z
+updated: 2026-10-17T11:10Z
 ---
 # Handoff — mt-network (WS3 Network layer & community/network scopes)
 
@@ -27,3 +27,6 @@ Lanes (DB split from code per §4.7; never across repos; messenger paths → sea
 ## Log
 ### 2026-10-15T16:40Z · kiro-hotmail-202610151618-b437 · created → drafted
 Authored the mt-network spec (plan/requirements/design/tasks/handoff + 11 lane files) and pushed it as the `plan(mt-network)` PR for PLAN-SPAR. Premises re-verified against HEAD today: inverted messenger labels `Messages.tsx:153-154`; service-role `/send` writing `tenant_id/sender_id` `chat.ts:51-54,58,126-129` via `insertChatMessage` `chat-repository.ts:20-23`; `resolve_recipient_candidates(p_global:true)` `orb-tools-shared.ts:2054-2061,2278-2282,2431-2435`; no existing `send_message`/`send_message_as`/`request_connection`/`respond_connection` RPC. CROSS-SPEC "Network groups" (owned here, M3, flagged) and "Lane count" (merge rule) applied. Next: PLAN-SPAR spars the plan; on convergence the lanes get their VTIDs and flip to `next_actor: kiro`.
+
+### 2026-10-17T11:10Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
