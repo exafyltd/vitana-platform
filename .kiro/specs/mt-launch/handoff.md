@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-17T14:26Z
+updated: 2026-10-17T15:33Z
 ---
 # Handoff — mt-launch (WS8 Tenant Launch engineering)
 
@@ -67,3 +67,6 @@ No product-behaviour change (same dark-by-default intent, correct per-tenant mec
 
 ### 2026-10-17T14:26Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-17T15:33Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
