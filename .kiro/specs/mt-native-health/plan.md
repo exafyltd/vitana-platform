@@ -18,14 +18,22 @@ re-verified in current code (2026-10-15).
    (`services/notification-service-repository.ts:38-42`) and `sendPushToUser(userId, tenantId, …)`
    fetches with it (`services/notification-service.ts:380-411`). A dual member registering in tenant B
    rewrites the single row's `tenant_id` to B, so tenant-A pushes match zero rows and are silently lost.
-2. **No server-side active-tenant switch for the app.** No `switch_active_tenant(slug)` RPC exists
-   (grep: 0 hits in `services/gateway/src/**` and `supabase/migrations/**`). The native app resolves tenant
-   from the JWT claim only; it has `TenantProvider` (`apps/mobile/src/identity/TenantProvider.tsx`,
-   referenced `apps/mobile/app/_layout.tsx:26,51`) and portal screens `apps/mobile/app/(public)/maxina.tsx`,
-   `alkalma.tsx`, but no in-app picker/join and no device-stored-last-tenant validated server-side.
-3. **Reserved slugs are not enforced for the app's path/deep-link slugs.** `provision_tenant` (B lane,
-   migration `20261014000500`) exists but there is no reserved-slug list derived from
-   `vitana-v1/src/navigation/registry/screens.json` top-level routes enforced on tenant creation.
+2. **The server-side active-tenant switch already exists; the gaps are an in-app picker/join and `/<slug>`
+   routing, not the RPC.** `public.switch_to_tenant_by_slug(p_tenant_slug text)` is live and hardened
+   (`20261010180200_vtid_05043_…:38-125`): SECURITY DEFINER, caller from `auth.uid()`, validates `user_tenants`
+   membership, joins only `open_signup` tenants else raises `TENANT_NOT_JOINABLE` (42501), raises on unknown slug,
+   sets `raw_app_meta_data->'active_tenant_id'`. The native app ALREADY does the client half:
+   `apps/mobile/src/identity/TenantProvider.tsx:115` calls it, maps 42501 → `not_joinable`, `:122-126`
+   `refreshSession()` → reads the new claim → `setActiveTenantId` → stores the slug. MISSING: an in-app community
+   picker + "join this community" screen, and `/<slug>` universal-link routing through
+   `apps/mobile/app/+native-intent.tsx` (no silent Maxina default). NO new `switch_active_tenant` RPC — reuse the
+   existing one.
+3. **Reserved slugs are ALREADY shipped and applied (VTID-05150), not a gap.** `public.reserved_tenant_slugs`
+   created + seeded (`20261014000400_…:129-170`), `provision_tenant` raises `RESERVED_SLUG` (`20261014000500_…:124`),
+   `services/gateway/src/services/tenant-provisioning/reserved-slugs.ts` pre-checks, and `gen-reserved-slugs.mjs` +
+   `TENANT-RESERVED-SLUGS-DRIFT.yml` sync it from `screens.json` (MIGRATION-QUEUE rows 5–6 applied 2026-10-13;
+   VTID-05150 is this spec's DONE dependency). This spec does NOT re-create or re-plan any of it. The only genuinely
+   missing DB change in this area is the per-device transport one-owner flag (Problem #4).
 4. **No per-device transport one-owner flag.** `user_device_tokens` has `device_type`
    (`ios_native|android_native`, VTID-05177) but no `appilix|native` transport flag with a one-owner
    invariant per device (the Appilix→native cutover guarantee). `user_device_tokens_one_active_owner`
@@ -47,29 +55,39 @@ re-verified in current code (2026-10-15).
    already shipped it (re-verify at slice start).
 
 ## Fix (per lane)
-- **native-tenant-switch** (vitana-v1 `apps/mobile`): client `switchActiveTenant(slug)` → calls the DB RPC →
-  `refreshSession()` → waits for the new claim before fetching tenant data; device-stored last tenant is only
-  an INPUT, re-validated server-side on launch; in-app community picker + "join this community" screen;
-  universal-link `/<slug>` routed through `apps/mobile/app/+native-intent.tsx` to the switch, never a silent
-  Maxina default. No Maxina constants beyond the exempted store identifiers (D16).
-- **switch-tenant-rpc-db** (platform DB): SECURITY DEFINER `switch_active_tenant(p_slug)` — derives caller from
-  `auth.uid()`, validates `user_tenants` membership, sets the `active_tenant_id` preference, rejects non-members
-  (→ join flow) and unknown/reserved slugs; `reserved_tenant_slugs` seeded from `screens.json` top-level routes;
-  `provision_tenant` rejects a reserved slug; per-device `transport text CHECK (transport IN ('appilix','native'))`
-  on `user_device_tokens` with a one-owner-per-device partial unique index (VTID-03481 invariant). Expand/contract,
-  rollback migration, read-only pre/post checks.
+- **native-tenant-switch** (vitana-v1 `apps/mobile`): the client switch (RPC call, `refreshSession()`, claim-gate,
+  stored-slug re-validation) already exists in `TenantProvider.tsx:112-126`; this lane adds ONLY the delta — an
+  in-app community picker screen (`list_public_tenants`), a "join this community" screen reached on the
+  `not_joinable` return, and `/<slug>` universal-link routing through `apps/mobile/app/+native-intent.tsx` to the
+  existing `switchActiveTenant`/`switch_to_tenant_by_slug` path (never a silent Maxina default). It gates
+  tenant-data queries on the claim already set by `TenantProvider`. No Maxina constants beyond the exempted store
+  identifiers (D16).
+- **switch-tenant-rpc-db** (platform DB): the switch RPC (`switch_to_tenant_by_slug`, `20261010180200`) and reserved
+  slugs (VTID-05150) already exist — this lane creates NEITHER. Its sole genuine DB delta is the per-device transport
+  one-owner flag: `user_device_tokens.transport text CHECK (transport IN ('appilix','native'))` + a
+  one-owner-per-device partial unique index (VTID-03481). IF a real switch-RPC gap is confirmed at build time (none
+  is known — `TenantProvider.tsx:116` already maps 42501 → `not_joinable`), extend `switch_to_tenant_by_slug` in
+  place, keeping its `GRANT EXECUTE … TO authenticated` / `REVOKE … FROM PUBLIC, anon` grants (`20261010180200:126-127`),
+  never a parallel RPC. Expand/contract, rollback migration, read-only pre/post checks.
 - **push-tenant-fanout** (platform gateway): stop overwriting `tenant_id` on token upsert; fetch tokens by
   `user_id` only for delivery; derive per-tenant push copy + deep link from the notification row's `tenant_id`;
   honour the transport flag so exactly one transport serves a device. Dark behind `mt.native_push_tenant_fanout`.
-- **health-home-tenant-db** (platform DB): `app_users.health_home_tenant_id uuid` (FK `tenants`), backfilled to
-  each user's current primary membership, set-once (NOT changed on `is_primary` change); a BEFORE-INSERT trigger
-  sets it at first health write for new users; health tables stay `user_id`-owned. Expand/contract, rollback,
-  pre/post checks. Health table membership references `mt-identity`'s canonical `isHealthTable()` predicate
-  (CROSS-SPEC O1) — this lane never defines its own list.
-- **health-db-accessor** (platform gateway): `healthDb(userId)` resolves the frozen home tenant itself and is the
-  only path to health tables; health tables EXCLUDED from `TENANT_TABLES`; convert the named session-tenant
-  readers/writers in Problem #5 to `healthDb`; a generated inventory + lint routes every health reader/writer
-  through it. Dark behind `mt.health_home_tenant`.
+- **health-home-tenant-db** (platform DB): `app_users.health_home_tenant_id uuid` (FK `tenants`), backfilled
+  set-once (NOT changed on `is_primary` change) by a deterministic rule: the user's `is_primary=true`
+  `user_tenants` row; when none/ambiguous, the `is_default`/`is_platform` tenant the user is a member of, else the
+  oldest `user_tenants` row by `created_at` — the same tie-break `20261014000200_vtid_05149_signup_default_tenant.sql`
+  uses, so the pgTAP "backfill matches current primary" assertion is well-defined for every row. A BEFORE-INSERT
+  trigger sets it at first health write for new users; health tables stay `user_id`-owned. Expand/contract,
+  rollback, pre/post checks. Health table membership references `mt-identity`'s canonical `isHealthTable()`
+  predicate (CROSS-SPEC O1) — this lane never defines its own list.
+- **health-db-accessor** (platform gateway): `healthDb(userId)` (new, at `services/gateway/src/services/health-db.ts`
+  — no `services/health/` dir exists) resolves the frozen home tenant itself and is the only path to health tables;
+  health tables EXCLUDED from `TENANT_TABLES`; convert the Problem #5 readers/writers at their REAL paths
+  (`routes/*-repository.ts`, `services/automation-handlers/*-repository.ts`,
+  `services/diary-health-extractor-repository.ts` — the lane lists them exactly and re-verifies at build time); a
+  generated inventory + lint fails on any bypass. States whether `healthDb` subsumes the existing ORB resolver
+  `resolveHealthTenantId()` (`services/orb-tools/health-depth-tools.ts:118`) so the two cannot diverge — the
+  frozen-home-tenant rule is authoritative. Dark behind `mt.health_home_tenant`.
 - **ota-compat-gate** (vitana-v1 `apps/mobile`): every OTA bundle manifest declares `min_native_version` (+ required
   plugin versions); the shell reports its version/plugins at startup and on device registration; the client refuses
   an incompatible bundle and stays on its last compatible one; native-dependent features gated by runtime capability
@@ -83,9 +101,10 @@ re-verified in current code (2026-10-15).
 ## Migrations
 Spec range `20261101130000`–`20261101135959`. Executor renumbers if a later migration exists at build time and adds
 MIGRATION-QUEUE rows at the stated position (after the applied rows 1–8).
-- `20261101130000_mt_native_health_switch_tenant_rpc.sql` — `switch_active_tenant`, `reserved_tenant_slugs`,
-  `provision_tenant` reserved-slug guard, `user_device_tokens.transport` + one-owner index (switch-tenant-rpc-db).
-  Rollback `docs/validation/<vtid>/rollback-switch-tenant.sql`.
+- `20261101130000_mt_native_health_transport_flag.sql` — `user_device_tokens.transport` + one-owner partial unique
+  index (switch-tenant-rpc-db); plus, only if a real switch-RPC gap is confirmed at build time, an in-place
+  `CREATE OR REPLACE` of `switch_to_tenant_by_slug` (never a new RPC). Does NOT touch `reserved_tenant_slugs` or
+  `provision_tenant` (already shipped by VTID-05150). Rollback `docs/validation/<vtid>/rollback-transport-flag.sql`.
 - `20261101131000_mt_native_health_home_tenant.sql` — `app_users.health_home_tenant_id` + backfill + set-once trigger
   (health-home-tenant-db). Rollback `docs/validation/<vtid>/rollback-health-home.sql`.
 MIGRATION-QUEUE position: appended after row 8, order switch-tenant-rpc-db → health-home-tenant-db; both depend on
@@ -94,9 +113,10 @@ MIGRATION-QUEUE position: appended after row 8, order switch-tenant-rpc-db → h
 applied by Claude via RUN-MIGRATION after merge; owner approves the apply.
 
 ## Tests
-- pgTAP: `switch_active_tenant` rejects a non-member and a reserved slug; sets the preference for a member;
-  `transport` one-owner invariant holds under re-registration; `health_home_tenant_id` is set-once and unchanged on
-  `is_primary` change.
+- pgTAP: the `transport` one-owner invariant holds under re-registration (one active transport per device);
+  `health_home_tenant_id` is set-once and unchanged on `is_primary` change, and the backfill tie-break resolves one
+  row per user. (`switch_to_tenant_by_slug`'s own member/non-member/unknown-slug behaviour is already covered by its
+  VTID-05043 tests; this spec re-tests only an in-place extension if one is actually made.)
 - Vitest/Jest (gateway): token upsert no longer writes `tenant_id`; delivery fetches by `user_id`; a dual member
   (`ab_dual`) receives pushes from both tenants with per-tenant copy (contract test); every health reader/writer goes
   through `healthDb`; health tables are not in `TENANT_TABLES` (inventory lint).
@@ -135,17 +155,22 @@ Native shell, screen ports, EAS/TestFlight/Play builds, Health Hub phases 0–5 
 re-keying to user-only unique keys (Health plan); full tenant switching UI (M3, D8); custom domains / white-label apps
 (M3); messenger/Discover/matching Network scope (mt-network, mt-discover); `supplier_tenant_relationships`
 (mt-discover); `platform_only_accounts` view (mt-community-isolation M2); `isHealthTable()` predicate definition
-(mt-identity — referenced only).
+(mt-identity — referenced only); the active-tenant switch RPC `switch_to_tenant_by_slug` (VTID-05043, live —
+reused not rebuilt); the `reserved_tenant_slugs` table / `provision_tenant` reserved-slug guard / screens.json
+drift sync (VTID-05150, applied — referenced not rebuilt).
 
 ## Depends on
 Specs: `mt-identity` (membership unification, `tenant_id_for_policies()`, `TENANT_TABLES`/`tenantDb`, canonical
-`isHealthTable()` — CROSS-SPEC O1), `mt-guardrails` (isolation suite, DB lints, local stack). Done: A VTID-05149
-(`tenants.is_default`/`is_platform`, migration `20261014000100`), B VTID-05150 (`provision_tenant`), C VTID-05151
-(public tenant registry). Program: `health-native` (VTID-05020/05021) — this spec is its tenancy delta, not a
-replacement.
+`isHealthTable()` — CROSS-SPEC O1), `mt-guardrails` (isolation suite, DB lints, local stack). Done (reused, not
+rebuilt): A VTID-05149 (`tenants.is_default`/`is_platform`, migration `20261014000100`), B VTID-05150
+(`provision_tenant`, `reserved_tenant_slugs` + reserved-slug guard + `reserved-slugs.ts`/`TENANT-RESERVED-SLUGS-DRIFT.yml`,
+`20261014000400`/`20261014000500`), C VTID-05151 (public tenant registry `list_public_tenants`), S3 VTID-05043
+(`switch_to_tenant_by_slug`, `20261010180200`). Program: `health-native` (VTID-05020/05021) — this spec is its
+tenancy delta, not a replacement.
 
 ## Owner decisions
-Implements decided items: D4 native iOS+Android, D5 `vitanaland.com/<slug>` + reserved slugs, D8 one active tenant per
+Implements decided items: D4 native iOS+Android, D5 `vitanaland.com/<slug>` (reserved-slug enforcement already shipped
+by VTID-05150, referenced not rebuilt), D8 one active tenant per
 session + minimal server-side switch in N1, D16 platform-branded store identity (no Maxina constants beyond store ids),
 D18 tenant operators get no health data, D19 OTA promoted by PUBLISH. No new decisions proposed.
 <!-- plan:end -->

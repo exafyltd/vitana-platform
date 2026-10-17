@@ -17,12 +17,16 @@ its two programs — Health Hub `docs/programs/health-hub/HEALTH-HUB-PLAN.md` (V
 
 - **R1 (Dual-member push).** WHEN a member belongs to two tenants and registers a device in either, THE SYSTEM SHALL
   keep delivering pushes for both tenants, with per-tenant copy and deep link derived from the notification's tenant.
-- **R2 (Active-tenant switch).** WHEN the native app requests a tenant by slug (deep link, picker, or stored last
-  tenant), THE SYSTEM SHALL validate membership server-side, set the active-tenant preference, and only then let the app
-  fetch tenant data; IF the caller is not a member THEN it SHALL route to a "join this community" flow; IF the slug is
-  unknown or reserved THEN it SHALL reject.
-- **R3 (Reserved slugs).** THE SYSTEM SHALL maintain a reserved-slug list derived from `screens.json` top-level routes
-  and WHEN `provision_tenant` is called with a reserved slug THE SYSTEM SHALL reject it.
+- **R2 (Active-tenant switch — delta only).** The server-side switch already exists
+  (`switch_to_tenant_by_slug`, VTID-05043: validates membership, sets `active_tenant_id`, raises
+  `TENANT_NOT_JOINABLE`/unknown-slug) and the client already calls it (`TenantProvider.tsx:112-126`). WHEN the native
+  app receives a `/<slug>` universal link, or a member opens the community picker, THE SYSTEM SHALL route it through
+  the EXISTING switch and only then fetch tenant data; IF the caller is not a member (the `not_joinable` return) THEN
+  it SHALL show a "join this community" screen; it SHALL NOT add a parallel switch or a new RPC.
+- **R3 (Reserved slugs — already met by VTID-05150).** Reserved-slug enforcement
+  (`reserved_tenant_slugs` + `provision_tenant` `RESERVED_SLUG`, synced from `screens.json` by
+  `gen-reserved-slugs.mjs`/`TENANT-RESERVED-SLUGS-DRIFT.yml`) is already shipped and applied; this spec references it
+  and SHALL NOT re-create or re-seed it.
 - **R4 (Transport one-owner).** THE SYSTEM SHALL record a per-device transport (`appilix`|`native`) and SHALL ensure
   exactly one transport serves a given device at a time.
 - **R5 (Frozen health home tenant).** THE SYSTEM SHALL assign each member a set-once `health_home_tenant_id` and WHEN a

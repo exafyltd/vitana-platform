@@ -3,9 +3,9 @@ slug: mt-native-health
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: claude
+next_actor: kiro
 state: drafted
-updated: 2026-10-17T11:56Z
+updated: 2026-10-17T13:30Z
 ---
 # mt-native-health — WS9 native tenancy delta + WS10 health-×-tenancy contract
 
@@ -52,5 +52,28 @@ Internal adversarial review returned REJECTED (0 HIGH, 2 MEDIUM, 3 NIT). Address
 Removed 5 stale lane files from the interrupted earlier run. Re-ran validators: 0 errors. Re-pushed; deleted
 INTERNAL-REVIEW.json.
 
-### 2026-10-17T11:56Z · ci-plan-spar · escalated (partner unavailable)
-The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+### 2026-10-17T13:30Z · kiro-hotmail-202610151618-b437 · (internal review round 2) → drafted
+Second internal adversarial review returned REJECTED (3 HIGH, 2 MEDIUM, 1 LOW). All fixed, premises re-verified in
+current code:
+- HIGH W1 (reserved slugs already shipped/applied by VTID-05150): verified `reserved_tenant_slugs`
+  (`20261014000400:129-170`), `provision_tenant` `RESERVED_SLUG` (`20261014000500:124`), `reserved-slugs.ts`,
+  `gen-reserved-slugs.mjs`/`TENANT-RESERVED-SLUGS-DRIFT.yml`. Reframed Problem #3 / R3; removed the create-table and
+  provision_tenant-guard work from `switch-tenant-rpc-db` and `tasks.md`.
+- HIGH W2 (switch RPC already exists): verified `switch_to_tenant_by_slug` (`20261010180200:38-127`) and the native
+  client half (`TenantProvider.tsx:112-126` calls it, maps 42501→`not_joinable`, refreshSession, claim-gate, stored
+  slug). Corrected Problem #2 / R2; `switch-tenant-rpc-db` re-scoped to the transport flag only (reuse the RPC, extend
+  in place only if a real gap appears); `native-tenant-switch` re-scoped to picker/join + `/<slug>` routing.
+- HIGH W3 (health-db-accessor paths non-existent): verified real paths — `routes/integrations-repository.ts`,
+  `routes/health-repository.ts`, `services/automation-handlers/health-wellness-repository.ts`,
+  `services/automation-handlers/health-action-initiative-repository.ts`,
+  `services/diary-health-extractor-repository.ts`; accessor placed at `services/gateway/src/services/health-db.ts`
+  (no `repositories/` or `services/health/` dir). Lane `paths`, `tasks.md` allowed paths and `design.md` updated;
+  `resolveHealthTenantId()` convergence note added (`services/orb-tools/health-depth-tools.ts:118`).
+- MEDIUM-4 (cross-repo screens.json seeding): removed from `switch-tenant-rpc-db`; the applied `reserved_tenant_slugs`
+  table is the source.
+- MEDIUM-5 (backfill tie-break): stated the deterministic rule (is_primary → is_default/is_platform → oldest by
+  created_at, matching `20261014000200`) in plan.md, design.md, tasks.md; pgTAP asserts one row per user.
+- LOW (grant naming): design.md now states `GRANT EXECUTE … TO authenticated` / `REVOKE … FROM PUBLIC, anon`
+  explicitly, matching `20261010180200:126-127`.
+Migration `20261101130000` renamed `..._transport_flag.sql`; plan body trimmed to ~15.3k chars. Re-ran validators: 0
+errors (below). Re-pushed (force); deleted INTERNAL-REVIEW.json.
