@@ -225,6 +225,30 @@ JOBS=(
   "gateway-welcome-team-tick|*/15 * * * *|UTC|/api/v1/scheduled-notifications/welcome-team-tick|{}|{\"auth\":\"gateway_internal\",\"token_secret_id\":\"$PROD_INTERNAL_TOKEN_SECRET_ID\"}"
 )
 
+# VTID-05159 — health store maintenance (Health Hub Phase 1 / A2): hourly at
+# :23 UTC, ensure partitions -> purge; the 02:23 run adds the daily partition
+# check. Created ONLY for an environment where the store is enabled: set
+# HEALTH_STORE_GATEWAY_URL to that gateway (production go-live, plan Rollout
+# 6, or the 0T gateway). Unset (the default) = the job is not in this run.
+# Staging is refused: the store is forced off there. A production URL uses
+# the production internal token; any other gateway names its token secret in
+# HEALTH_STORE_TOKEN_SECRET_ID (the Lambda role reads only the staging and
+# production token secrets today: a 0T secret needs its read grant added to
+# read-gateway-internal-token when 0T exists). The route answers 404 HEALTH_STORE_DISABLED
+# while the store is off. Silence: re-run with --only gateway-health-store-maintenance --delete.
+HEALTH_STORE_GATEWAY_URL="${HEALTH_STORE_GATEWAY_URL:-}"
+if [[ -n "$HEALTH_STORE_GATEWAY_URL" ]]; then
+  case "$HEALTH_STORE_GATEWAY_URL" in
+    https://preview-aws-gateway.vitanaland.com) echo "ERROR: HEALTH_STORE_GATEWAY_URL must not be staging (the health store is forced off there)." >&2; exit 1 ;;
+    https://gateway.vitanaland.com) health_store_token_secret_id="${HEALTH_STORE_TOKEN_SECRET_ID:-$PROD_INTERNAL_TOKEN_SECRET_ID}" ;;
+    https://*)
+      health_store_token_secret_id="${HEALTH_STORE_TOKEN_SECRET_ID:-}"
+      if [[ -z "$health_store_token_secret_id" ]]; then echo "ERROR: HEALTH_STORE_TOKEN_SECRET_ID is required for $HEALTH_STORE_GATEWAY_URL." >&2; exit 1; fi ;;
+    *) echo "ERROR: HEALTH_STORE_GATEWAY_URL must be an https URL (got: $HEALTH_STORE_GATEWAY_URL)" >&2; exit 1 ;;
+  esac
+  JOBS+=("gateway-health-store-maintenance|23 * * * *|UTC|/api/v1/health/internal/maintenance|{}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$HEALTH_STORE_GATEWAY_URL\",\"token_secret_id\":\"$health_store_token_secret_id\"}")
+fi
+
 # VTID-04352: --only narrows JOBS to the requested name prefixes.
 if [[ ${#ONLY_PREFIXES[@]} -gt 0 ]]; then
   SELECTED=()

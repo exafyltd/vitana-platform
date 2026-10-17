@@ -152,6 +152,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const backofficeCommandsRouter = require('./routes/backoffice-commands').default;
   // VTID-01081 + VTID-01103: Health Gateway (C2 ingest + C3 compute)
   const healthRouter = require('./routes/health').default;
+  // VTID-05159: health store internal routes (Health Hub Phase 1 / A2)
+  const healthStoreInternalRouter = require('./routes/health-store-internal').default;
   // VTID-01105: Memory Gateway Routes - memory write/context for ORB
   const memoryRouter = require('./routes/memory').default;
   // VTID-04388: Memory Garden on the canonical store
@@ -211,6 +213,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const partnerHealthConsentRouter = require('./routes/partner-health-consent').default;
   // VTID-05055: member confirms/declines a partner link staff proposed
   const partnerHealthMemberRouter = require('./routes/partner-health-member').default;
+  // VTID-05092: the member's per-category health consents (catalogue, grant, revoke, history)
+  const healthConsentRouter = require('./routes/health-consent').default;
   // VTID-03932: Commerce Partner Onboarding — self-service partner org registration + roster
   const partnerOrgsRouter = require('./routes/partner-orgs').default;
   // VTID-04478: Commerce partner onboarding engine (checklist, submit, lifecycle)
@@ -1184,6 +1188,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01081 + VTID-01103: Health Gateway (C2 ingest + C3 compute)
   mountRouterSync(app, '/api/v1/health', healthRouter, { owner: 'health' });
+  // VTID-05159: health store internal routes (maintenance, reprocess, erase-raw, store-status) — dark by default
+  mountRouterSync(app, '/api/v1/health/internal', healthStoreInternalRouter, { owner: 'health-store-internal' });
 
   // VTID-01105: Memory Gateway - write/context endpoints for ORB memory
   mountRouterSync(app, '/api/v1/memory', memoryRouter, { owner: 'memory' });
@@ -1238,6 +1244,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/partner-health/consent', partnerHealthConsentRouter, { owner: 'partner-health-consent' });
   // VTID-05055: member-confirmed partner links (list / confirm / decline own requests)
   mountRouterSync(app, '/api/v1/partner-health/member', partnerHealthMemberRouter, { owner: 'partner-health-member' });
+  // VTID-05092: per-category health consent (Health Hub D10) — member-scoped, JWT identity only
+  mountRouterSync(app, '/api/v1/health/consents', healthConsentRouter, { owner: 'health-consent' });
   // VTID-03932: Commerce Partner Onboarding — self-service partner org registration + roster
   mountRouterSync(app, '/api/v1/partner-orgs', partnerOrgsRouter, { owner: 'partner-orgs' });
   // VTID-04478: Commerce partner onboarding engine
