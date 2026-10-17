@@ -2,10 +2,10 @@
 slug: native-wave2-home-feed-news
 author: kiro
 executor: kiro
-next_actor: kiro
+next_actor: claude
 state: drafted
 author_seat: exafyltd
-updated: 2026-10-16T12:00Z
+updated: 2026-10-17T14:17Z
 ---
 # Handoff — Native Wave 2: Home / Feed / News screen ports
 First Wave 2 screen-port batch of the native Maxina app program (`docs/programs/native-app/NATIVE-APP-PLAN.md`,
@@ -31,3 +31,6 @@ Next: PLAN-SPAR spars the `plan(native-wave2-home-feed-news)` PR; this session a
 dependency order — `news` and `community-hub` in parallel, `home` after `news` is `done` (it depends on the
 `NewsArticleCard` twin that `news` owns). Reviewer seat `hotmail` reviews each lane. Device-runtime parity (task 7/8
 in each lane) waits on the owner's G1 isolated test environment.
+
+### 2026-10-17T14:17Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
