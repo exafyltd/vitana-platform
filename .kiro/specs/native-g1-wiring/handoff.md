@@ -2,10 +2,10 @@
 slug: native-g1-wiring
 author: kiro
 executor: kiro
-next_actor: kiro
+next_actor: claude
 state: drafted
 author_seat: exafyltd
-updated: 2026-10-17T10:56Z
+updated: 2026-10-17T14:17Z
 ---
 # Handoff — Point dev/QA native builds at the G1 test backend (Wave 1 exit)
 Native app program VTID-05021 (`docs/programs/native-app/NATIVE-APP-PLAN.md`), Wave 1 exit (§5 row at
@@ -35,3 +35,6 @@ Next: PLAN-SPAR spars the `plan(native-g1-wiring)` PR; this session answers each
 `sparring/responses-<n>.md`. On convergence CI writes the VTIDs into the lanes; then seat `exafyltd`
 claims `env-profiles` first (the others depend on it or on `fixture-gateway`), and `real-g1-switch` waits
 for the owner to provision G1.
+
+### 2026-10-17T14:17Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
