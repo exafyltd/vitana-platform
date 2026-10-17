@@ -1,0 +1,70 @@
+---
+slug: mt-track-s
+author: kiro
+author_seat: hotmail
+executor: kiro
+next_actor: kiro
+state: drafted
+updated: 2026-10-15T20:10:00Z
+---
+# Handoff — mt-track-s (Track S security hotfixes S-A..S-L + Health Phase 0 live defects / WS10)
+
+Highest-priority workstream of the multi-tenant program (`docs/MULTI-TENANT-PLAN.md` §3 + WS10). Planner: Kiro, seat
+`hotmail`. The spec records that **16 of 17 Track S / WS10 items are already closed in production** (verified in current
+code 2026-10-15, every premise cited at `file:line` in `plan.md` ## Problem) and plans only the one open residual.
+
+Shipped already (build on, never re-plan): S-A VTID-05040 · S-B/S-D VTID-05041 · S-C VTID-04981 · S-E VTID-05043 ·
+S-F/S-L VTID-05042 · S-G VTID-05044 · S-H VTID-05049/05120 · S-I VTID-05048 · S-M VTID-05147 · WS10 tokens VTID-05030 ·
+WS10 webhooks VTID-05031 · WS10 confirmation/audit VTID-05055. S-K is closed in current `billing.ts`.
+
+Lanes:
+- `s-j-route-inventory` — executor **kiro** (seat `exafyltd`, area `frontend`, reviewer_seat `jtadic`), repo
+  **vitana-v1**, `ready`. Removes the dead `linkedin-import` edge function (flagged for removal by VTID-05049) and adds
+  an edge-function caller-auth inventory test. Code-only, no migration. HELD at `next_actor: owner` until PLAN-SPAR
+  allocates its VTID (then it flips to `kiro`).
+
+Migrations: none. Reserved range `20261101010000`–`20261101015959` is unused and recorded only to reserve it.
+
+## Log
+### 2026-10-15T17:40:00Z · kiro-hotmail-202610151618-b437 · created → drafted
+Wrote the spec (plan.md, requirements.md, design.md, tasks.md, lanes/s-j-route-inventory.md). Verified every Track S
+item (S-A..S-M) and all four WS10 Health Phase 0 defects against current code with `file:line` citations: 16 CLOSED, 1
+(S-J) with a small open residual (dead `linkedin-import` edge function + no committed edge-function auth inventory
+test). The gateway-side generated route inventory and realtime-channel RLS are left to WS0 (M0), stated as an open
+question for sparring. Single lane in vitana-v1. Next: PLAN-SPAR spars this plan; on converged, VTIDs are allocated and
+the lane flips to `next_actor: kiro`.
+
+### 2026-10-15T18:30:00Z · kiro-hotmail-202610151618-b437 · drafted (internal-review revision)
+Addressed INTERNAL-REVIEW (REJECTED, 2 MEDIUM + 1 LOW). Verified both premises in current code:
+`vitana-v1/vitest.config.ts:22` is `include: ['src/**/*.test.{ts,tsx}']` and `vitana-v1/package.json` `"test"` is
+`node scripts/check-edge-data-client.mjs && node scripts/check-realtime-helper.mjs && vitest run` — so a vitest
+`.test.ts` under `supabase/functions/**` would never run. Fixes applied across plan.md / requirements.md / design.md /
+tasks.md / lanes/s-j-route-inventory.md: (MEDIUM-1 + LOW/NIT-1) the S-J inventory gate is now a node
+`scripts/check-edge-function-auth.mjs` wired into `npm test` beside the existing `check-*.mjs` gates, not a vitest file,
+and the "Vitest/Deno" ambiguity is dropped; (MEDIUM-2) lane `paths` and tasks.md "Allowed paths:" now cover
+`scripts/check-edge-function-auth.mjs` + `package.json` (replacing the uncollectable `__tests__/…test.ts` glob) and
+remain identical — `package.json` is not a governance path, so `executor: kiro` stands. Re-verified the S-J OPEN
+residual still holds (`linkedin-import/index.ts` still ships + `config.toml:72`; no `src/**` consumer; `requireUser`/
+`forbidden` exported from `_shared/caller-auth.ts:100,124`). queue.mjs validators re-run on handoff.md and
+lanes/s-j-route-inventory.md (0 errors); tasks.md "Allowed paths:" identical to the lane `paths`. Open HIGH/MEDIUM
+after this pass: 0.
+
+### 2026-10-15T20:10:00Z · kiro-hotmail-202610151618-b437 · drafted (internal-review round 2 revision)
+Addressed INTERNAL-REVIEW round 2 (REJECTED: 1 MEDIUM + 1 LOW) and one HIGH gap it surfaced that round 1 missed, all
+re-verified in current code with file:line:
+- **MEDIUM-1** — `vitana-v1/supabase/config.toml:72-74` has a `[functions.linkedin-import]` block (`verify_jwt = true`).
+  Deleting the function orphans it. Added `supabase/config.toml` to the lane `paths` + identical tasks.md "Allowed
+  paths:", and a T2 step to remove the block. Not a governance path → `executor: kiro` unaffected.
+- **HIGH (new)** — the collected vitest suite `vitana-v1/src/lib/edge-functions-caller-identity.s4.test.ts` reads
+  `linkedin-import/index.ts` and asserts the functions dir contains it (`:77-82,:90-93,:107-110,:198`). Deleting the
+  function breaks this suite, and it is NOT in `src/**`-excluded territory (vitest `include` is `src/**/*.test.{ts,tsx}`
+  — it IS collected). Added the file to `paths` + tasks.md and a T2a step to drop `linkedin-import` from its four
+  assertions while keeping `social-media-import`/`fetch-user-context`. Round 1 missed this because it treated the
+  deletion as isolated; it is not — a collected suite references the file.
+- **LOW-1** — rewrote ## Staging verification to drop the edge-function invoke (a POST the read-only network guard
+  aborts); the CI inventory gate + the updated Vitest suite are the authoritative proof (rule 48).
+Re-verified: `linkedin-import/index.ts` still ships with the VTID-05049 "flagged for removal" comment and uses
+`requireUser`/`forbidden` from `_shared/caller-auth.ts:100,124`; no `src/**` runtime consumer of `linkedin-import`
+(only the test file + spec docs); `vitest.config.ts:22` include glob and `package.json` `"test"` chain unchanged.
+queue.mjs validators re-run on handoff.md and lanes/s-j-route-inventory.md (0 errors); tasks.md "Allowed paths:"
+identical to the lane `paths` (6 entries). Open HIGH/MEDIUM after this pass: 0.
