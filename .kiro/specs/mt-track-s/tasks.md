@@ -1,0 +1,53 @@
+# Tasks — mt-track-s (Track S security hotfixes + Health Phase 0 live defects)
+
+Authoritative plan: `plan.md` (between the `plan:begin`/`plan:end` markers). Lane files: `lanes/`.
+Almost all of Track S / WS10 is already closed (see `plan.md` ## Problem and `requirements.md`); this spec plans only
+the S-J residual.
+
+<!-- lane: s-j-route-inventory -->
+## s-j-route-inventory — remove dead `linkedin-import`, add edge-function auth inventory test (VTID: allocated by PLAN-SPAR after approval, Kiro, repo vitana-v1)
+
+Allowed paths:
+- `supabase/functions/linkedin-import/**`
+- `supabase/config.toml`
+- `src/lib/edge-functions-caller-identity.s4.test.ts`
+- `scripts/check-edge-function-auth.mjs`
+- `package.json`
+- `docs/validation/**`
+
+(Allowed paths are vitana-v1 paths and are identical to `lanes/s-j-route-inventory.md` `paths:`. The gate is a node
+`scripts/check-edge-function-auth.mjs` wired into `package.json` `"test"`, matching the repo's existing
+`scripts/check-edge-data-client.mjs` / `scripts/check-realtime-helper.mjs` convention — a vitest `.test.ts` under
+`supabase/functions/**` would never be collected because `vitest.config.ts` `include` is `src/**/*.test.{ts,tsx}`
+(verified `vitana-v1/vitest.config.ts:22`, `vitana-v1/package.json` `"test"`). `supabase/config.toml` and the
+collected vitest suite `src/lib/edge-functions-caller-identity.s4.test.ts` are in scope because deleting
+`linkedin-import` orphans its `config.toml` registration and breaks that suite — see T2 / T2a.)
+
+- [ ] T1 Confirm `linkedin-import` is unused: grep both repos for `linkedin-import` and `functions.invoke('linkedin-import'`.
+      IF a live consumer exists, STOP, record it in the lane log, set `next_actor: claude` — do not delete.
+- [ ] T2 Delete `vitana-v1/supabase/functions/linkedin-import/**` (VTID-05049 flagged it for removal; `social-media-import`
+      replaced it) AND remove the orphaned `[functions.linkedin-import]` block from `vitana-v1/supabase/config.toml`
+      (`:72-74`, `verify_jwt = true`) so no registration of a deleted function is left behind.
+- [ ] T2a Update the collected vitest suite `vitana-v1/src/lib/edge-functions-caller-identity.s4.test.ts`: drop
+      `'linkedin-import'` from the four places that read the now-deleted file — the `the five functions use caller-auth`
+      loop (`:77-82`), the profile-import loop `['linkedin-import','social-media-import']` (`:90-93`), the
+      `linkedin-import is flagged for removal` case (`:107-110`), and the `arrayContaining([...])` scan assertion
+      (`:198`). Keep `social-media-import` / `fetch-user-context` coverage unchanged. This file is under `src/**`, so
+      vitest collects it; without this edit `npm test` fails on the missing file.
+- [ ] T3 Add `vitana-v1/scripts/check-edge-function-auth.mjs` (follow the shape of `scripts/check-edge-data-client.mjs`:
+      walk `supabase/functions/**`): enumerate every `supabase/functions/*/index.ts`, pass each that imports
+      `_shared/caller-auth.ts` or calls `requireUser` (or is on an explicit in-file public allowlist with a one-line
+      stated reason, e.g. a webhook that verifies a vendor signature), exit non-zero otherwise. Add it to `package.json`
+      `"test"` next to the two existing `check-*.mjs` scripts (…`&& node scripts/check-edge-function-auth.mjs && vitest run`).
+      The gate must fail if `linkedin-import` reappears ungated.
+- [ ] T4 `docs/validation/<vtid>/`: copy of `plan-sparring.md`, `scope.json` (kind chore, the allowed paths),
+      `staging-tests.json` (the read-only staging spec if added, plus the inventory gate).
+
+Acceptance: `linkedin-import` is gone, including its `supabase/config.toml` registration; the collected suite
+`src/lib/edge-functions-caller-identity.s4.test.ts` no longer references `linkedin-import` and still covers
+`social-media-import`/`fetch-user-context`; `node scripts/check-edge-function-auth.mjs` exits 0 on the current function
+set and non-zero on a planted ungated function; full `npm test` green (the new check runs inside the `"test"` chain;
+nav registry, design manifest, i18n lint unaffected — no App.tsx route added); no migration; PR title
+`VTID-xxxxx (mt-track-s/s-j-route-inventory): …`; commits carry `Collab-Session: <kiro id>` and
+`Collab-Lane: mt-track-s/s-j-route-inventory`. Kiro never calls a write endpoint against any live system; staging
+verification is read-only.
