@@ -50,6 +50,28 @@ describe('nextAction', () => {
     expect(a.supplier_action).toEqual(expect.any(String));
     expect(a.link).toBe(link);
   });
+  // VTID-05090: a step whose text Vitanaland has not published yet is nothing the supplier can do.
+  test.each([
+    ['dpa', 'dpa_not_published', /data processing agreement/],
+    ['terms', 'terms_not_published', /Partner Terms/],
+  ])('%s with %s → a waiting action with no link', (step, code, text) => {
+    const a = nextAction({ next_step: step, complete: false, steps: [{ key: step, missing: [code] }] }, false, link);
+    expect(a).toEqual({ step, tool: null, supplier_action: expect.stringMatching(text), link: null });
+    expect(a.supplier_action).toMatch(/nothing to do yet/);
+  });
+  test.each([
+    ['dpa', 'Sign the data processing agreement on Vitanaland.'],
+    ['terms', 'Read and accept the Partner Terms on Vitanaland.'],
+  ])('%s published → the sign/accept action with the portal link', (step, action) => {
+    const a = nextAction({ next_step: step, complete: false, steps: [{ key: step, detail: { current_version: 'v1' } as never }] }, false, link);
+    expect(a).toEqual({ step, tool: null, supplier_action: action, link });
+  });
+  test('shapeStatus: a lab waiting for the DPA text gets the waiting next_action', () => {
+    const checklist = { next_step: 'dpa', complete: false, submit_ready: true, steps: [{ key: 'dpa', required: true, status: 'todo', missing: ['dpa_not_published'] }] };
+    const out: any = shapeStatus({ ok: true, organization: { ...ORG, partner_type: 'lab' }, checklist }, 'https://portal.example');
+    expect(out.next_action).toMatchObject({ step: 'dpa', tool: null, link: null });
+    expect(out.steps[0]).toMatchObject({ step: 'dpa', missing: ['dpa_not_published'] });
+  });
   test('a complete checklist points at submit_for_verification', () => {
     expect(nextAction({ next_step: null, complete: true }, false, link)).toMatchObject({ tool: 'submit_for_verification' });
   });

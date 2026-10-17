@@ -1,0 +1,27 @@
+psql:../../../supabase/migrations/20261005130000_vtid_04895_partner_terms_lifecycle.sql:104: NOTICE:  trigger "trg_partner_terms_versions_guard" for relation "public.partner_terms_versions" does not exist, skipping
+psql:../../../supabase/migrations/20261005130000_vtid_04895_partner_terms_lifecycle.sql:111: NOTICE:  policy "partner_terms_versions_select" for relation "public.partner_terms_versions" does not exist, skipping
+psql:../../../supabase/migrations/20261005130000_vtid_04895_partner_terms_lifecycle.sql:172: NOTICE:  trigger "trg_partner_terms_acceptances_check" for relation "public.partner_terms_acceptances" does not exist, skipping
+psql:../../../supabase/migrations/20261005130000_vtid_04895_partner_terms_lifecycle.sql:192: NOTICE:  trigger "trg_partner_terms_acceptances_append_only" for relation "public.partner_terms_acceptances" does not exist, skipping
+psql:../../../supabase/migrations/20261005130000_vtid_04895_partner_terms_lifecycle.sql:55: NOTICE:  relation "partner_terms_versions" already exists, skipping
+psql:../../../supabase/migrations/20261005130000_vtid_04895_partner_terms_lifecycle.sql:60: NOTICE:  relation "partner_terms_versions_one_published" already exists, skipping
+psql:../../../supabase/migrations/20261005130000_vtid_04895_partner_terms_lifecycle.sql:124: NOTICE:  column "terms_version_id" of relation "partner_terms_acceptances" already exists, skipping
+psql:../../../supabase/migrations/20261005130000_vtid_04895_partner_terms_lifecycle.sql:124: NOTICE:  column "content_sha256" of relation "partner_terms_acceptances" already exists, skipping
+psql:../../../supabase/migrations/20261005130000_vtid_04895_partner_terms_lifecycle.sql:124: NOTICE:  column "shown_locale" of relation "partner_terms_acceptances" already exists, skipping
+psql:../../../supabase/migrations/20261005130000_vtid_04895_partner_terms_lifecycle.sql:141: NOTICE:  relation "partner_terms_acceptances_org_version_id_uidx" already exists, skipping
+PASS vtid-04895 partner terms lifecycle
+psql:../../../supabase/migrations/20261005130000_vtid_04895_partner_terms_lifecycle.sql:104: NOTICE:  trigger "trg_partner_terms_versions_guard" for relation "public.partner_terms_versions" does not exist, skipping
+psql:../../../supabase/migrations/20261005130000_vtid_04895_partner_terms_lifecycle.sql:111: NOTICE:  policy "partner_terms_versions_select" for relation "public.partner_terms_versions" does not exist, skipping
+psql:../../../supabase/migrations/20261005130000_vtid_04895_partner_terms_lifecycle.sql:172: NOTICE:  trigger "trg_partner_terms_acceptances_check" for relation "public.partner_terms_acceptances" does not exist, skipping
+psql:../../../supabase/migrations/20261005130000_vtid_04895_partner_terms_lifecycle.sql:192: NOTICE:  trigger "trg_partner_terms_acceptances_append_only" for relation "public.partner_terms_acceptances" does not exist, skipping
+psql:../../../supabase/migrations/20261006120000_vtid_04909_partner_terms_german_binding.sql:122: NOTICE:  constraint "partner_terms_acceptances_shown_locale_supported" of relation "partner_terms_acceptances" does not exist, skipping
+PASS vtid-04909 partner terms german binding
+psql:../../../supabase/migrations/20261012200000_vtid_05090_partner_dpa.sql:109: NOTICE:  trigger "trg_partner_dpa_versions_guard" for relation "public.partner_dpa_versions" does not exist, skipping
+psql:../../../supabase/migrations/20261012200000_vtid_05090_partner_dpa.sql:116: NOTICE:  policy "partner_dpa_versions_select" for relation "public.partner_dpa_versions" does not exist, skipping
+psql:../../../supabase/migrations/20261012200000_vtid_05090_partner_dpa.sql:243: NOTICE:  trigger "trg_partner_dpa_signatures_check" for relation "public.partner_dpa_signatures" does not exist, skipping
+psql:../../../supabase/migrations/20261012200000_vtid_05090_partner_dpa.sql:263: NOTICE:  trigger "trg_partner_dpa_signatures_append_only" for relation "public.partner_dpa_signatures" does not exist, skipping
+psql:../../../supabase/migrations/20261012200000_vtid_05090_partner_dpa.sql:270: NOTICE:  policy "partner_dpa_signatures_select" for relation "public.partner_dpa_signatures" does not exist, skipping
+psql:../../../supabase/migrations/20261012200000_vtid_05090_partner_dpa.sql:59: NOTICE:  relation "partner_dpa_versions" already exists, skipping
+psql:../../../supabase/migrations/20261012200000_vtid_05090_partner_dpa.sql:65: NOTICE:  relation "partner_dpa_versions_one_published" already exists, skipping
+psql:../../../supabase/migrations/20261012200000_vtid_05090_partner_dpa.sql:212: NOTICE:  relation "partner_dpa_signatures" already exists, skipping
+PASS vtid-05090 partner dpa lifecycle
+PASS vtid-04909 migration refuses unless empty

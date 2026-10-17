@@ -355,6 +355,16 @@ const STEP_SUPPLIER_ACTIONS: Record<string, string> = {
 };
 
 /**
+ * VTID-05090: an on-screen step whose text Vitanaland has not published yet
+ * (partner terms, data processing agreement). The supplier cannot do anything
+ * about it, so there is no link to send them to.
+ */
+const NOT_PUBLISHED_MISSING: Record<string, { code: string; action: string }> = {
+  terms: { code: 'terms_not_published', action: 'Vitanaland is still preparing the Partner Terms; nothing to do yet.' },
+  dpa: { code: 'dpa_not_published', action: 'Vitanaland is still preparing the data processing agreement; nothing to do yet.' },
+};
+
+/**
  * VTID-04941: what to do next, in one object. Wraps next_step: the tool the
  * assistant can call, or what only the supplier can do and the link for it.
  */
@@ -382,6 +392,10 @@ export function nextAction(
   if (!step) return { step: null, tool: null, supplier_action: null, link: null };
   if (step === 'mapping' && isCatalogueMapping(checklist.steps?.find((s) => s.key === 'mapping'))) {
     return { step, tool: 'add_product', supplier_action: CATALOGUE_MAPPING_ACTION, link: null };
+  }
+  const waiting = NOT_PUBLISHED_MISSING[step];
+  if (waiting && checklist.steps?.find((s) => s.key === step)?.missing?.includes(waiting.code)) {
+    return { step, tool: null, supplier_action: waiting.action, link: null };
   }
   const tool = STEP_TOOLS[step] ?? null;
   const supplierAction = STEP_SUPPLIER_ACTIONS[step] ?? (tool ? null : 'Finish this step on Vitanaland.');
