@@ -83,11 +83,23 @@ native-dependent features (HealthKit, Health Connect, native push, transport fla
 detection. Old-binary fixture test.
 
 ### lineage-guard-health (vitana-platform governance — executor claude)
-Build-failing guard test modelled on commerce architecture §7.2: no tenant-admin/tenant-owner analytics surface reads
-`health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*` (D18). ORB tool-dispatcher health/commerce rule (Apple
-5.1.3) enforced in the dispatcher (not the declared catalog), covering `use_tool`, proven on Nova and the Vertex Serbian
-bridge — only if `health-native` has not already shipped it (re-verify). Governance paths (`.github/**` /workflow and the
-guard wiring) make this an `executor: claude` lane.
+Build-failing guard test modelled on commerce architecture §7.2, applied **per-query/per-read, NOT per-module** (the
+mt-discover resolution — a module-granular rule turns RED on existing mixed modules). **Surface set it scans
+(concrete, by path):** `services/gateway/src/routes/tenant-admin/*-repository.ts` and their route modules — today
+`overview-repository.ts`, `kpis-repository.ts`, `insights-repository.ts`, `product-analytics-repository.ts`,
+`community-admin-repository.ts`, `audit-log-repository.ts`, `health-index-repository.ts`. The guard flags a specific
+`.from('<table>')` read of a per-member health table `health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*`
+inside that set (D18). It MUST NOT flag: (a) a tenant-level aggregate read — e.g. `health-index-repository.ts` reads
+`tenant_health_index_daily` (a per-tenant snapshot, not a per-member health table), which is allowed; (b) a
+member-facing health reader/writer that legitimately reads a health table (the `healthDb` consumers converted in
+`health-db-accessor`: `routes/integrations-repository.ts`, `routes/health-repository.ts`,
+`services/automation-handlers/health-wellness-repository.ts`,
+`services/automation-handlers/health-action-initiative-repository.ts`,
+`services/diary-health-extractor-repository.ts`), which sit outside the surface set. The membership of
+`health_*` et al. references `mt-identity`'s `isHealthTable()` (CROSS-SPEC O1), never a local list. ORB tool-dispatcher
+health/commerce rule (Apple 5.1.3) enforced in the dispatcher (not the declared catalog), covering `use_tool`, proven on
+Nova and the Vertex Serbian bridge — only if `health-native` has not already shipped it (re-verify). Governance paths
+(`.github/**` /workflow and the guard wiring) make this an `executor: claude` lane.
 
 ## Rules every successor follows
 - Never test against production; staging specs read-only; native runtime verification on the D11 local stack / fixture

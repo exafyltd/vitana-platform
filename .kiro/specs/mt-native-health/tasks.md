@@ -141,8 +141,16 @@ Allowed paths:
 - services/gateway/test/guards/mt-native-health-lineage-guard.test.ts
 - services/gateway/test/orb/mt-native-health-dispatch.test.ts
 
-- [ ] Build-failing guard test (commerce arch §7.2 pattern): no tenant-admin/tenant-owner analytics surface reads
-      `health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*` (D18).
+- [ ] Build-failing guard test (commerce arch §7.2 pattern), **per-query/per-read NOT per-module** (mt-discover
+      resolution): scan the concrete surface set `services/gateway/src/routes/tenant-admin/*-repository.ts` + their
+      routes (overview, kpis, insights, product-analytics, community-admin, audit-log, health-index) and fail a
+      specific `.from('<table>')` read of a per-member health table
+      `health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*` (D18, membership via `isHealthTable()`). MUST NOT
+      fail a tenant-level aggregate (`health-index-repository.ts` → `tenant_health_index_daily`) or a member-facing
+      `healthDb` reader outside the set (`routes/integrations-repository.ts`, `routes/health-repository.ts`,
+      `services/automation-handlers/health-wellness-repository.ts`,
+      `services/automation-handlers/health-action-initiative-repository.ts`,
+      `services/diary-health-extractor-repository.ts`).
 - [ ] Re-verify whether `health-native` already ships the ORB health/commerce dispatcher rule; if not, enforce it in the
       tool dispatcher (not the declared catalog), covering `use_tool`, proven on Nova and the Vertex Serbian bridge.
 - [ ] `npm run test:roles` green when the ORB dispatcher is touched; no spoken sentence hardcoded (rule 41).

@@ -40,19 +40,19 @@ re-verified in current code (2026-10-15).
    (one active row per token) exists already (`routes/notifications.ts:95-97`).
 5. **Health identity is keyed by session tenant, not a frozen home tenant.** `app_users` has no
    `health_home_tenant_id` column (grep: 0 hits). Health readers/writers use the session tenant today
-   (per MULTI-TENANT-PLAN §4.9: `integrations-repository.ts:84`, `diary-health-extractor-repository.ts:24`,
-   `health-repository.ts:52`, `health-wellness-repository.ts:44,50`, `health-action-initiative-repository.ts:54`).
-   A dual member in a tenant-B session would write/read a different health series than in tenant A, because
-   `health_features_daily UNIQUE (tenant_id, user_id, …)` keys on tenant.
+   (§4.9: `integrations-repository.ts:84`, `diary-health-extractor-repository.ts:24`, `health-repository.ts:52`,
+   `health-wellness-repository.ts:44,50`, `health-action-initiative-repository.ts:54`). A dual member in a tenant-B
+   session reads/writes a different series than in tenant A — `health_features_daily UNIQUE (tenant_id, user_id, …)`
+   keys on tenant.
 6. **No `healthDb(userId)` accessor and no `TENANT_TABLES` exclusion for health.** Neither `healthDb` nor
    `TENANT_TABLES` exists yet (grep: 0 hits) — `tenantDb`/`TENANT_TABLES` are introduced by `mt-identity`.
    Health tables must be EXCLUDED from `TENANT_TABLES` and reached only through a user-keyed `healthDb`.
 7. **No OTA compatibility gate.** `apps/mobile` has remote-config/push/links (VTID-05178) but no
    `min_native_version` manifest gate; incompatible bundles are not refused.
 8. **Lineage guard + ORB health/commerce dispatcher rule not yet enforced for tenancy (D18, Apple 5.1.3).**
-   The commerce-architecture ranking guard pattern (§7.2) is not applied to tenant-admin/analytics surfaces,
-   and the ORB tool-dispatcher health/commerce separation is owned here only if `health-native` has not
-   already shipped it (re-verify at slice start).
+   The commerce §7.2 guard pattern is not applied to the tenant-admin analytics surface
+   (`services/gateway/src/routes/tenant-admin/*-repository.ts`), and the ORB dispatcher health/commerce
+   separation is owned here only if `health-native` has not shipped it (re-verify at slice start).
 
 ## Fix (per lane)
 - **native-tenant-switch** (vitana-v1 `apps/mobile`): the client switch (RPC call, `refreshSession()`, claim-gate,
@@ -80,23 +80,25 @@ re-verified in current code (2026-10-15).
   trigger sets it at first health write for new users; health tables stay `user_id`-owned. Expand/contract,
   rollback, pre/post checks. Health table membership references `mt-identity`'s canonical `isHealthTable()`
   predicate (CROSS-SPEC O1) — this lane never defines its own list.
-- **health-db-accessor** (platform gateway): `healthDb(userId)` (new, at `services/gateway/src/services/health-db.ts`
-  — no `services/health/` dir exists) resolves the frozen home tenant itself and is the only path to health tables;
-  health tables EXCLUDED from `TENANT_TABLES`; convert the Problem #5 readers/writers at their REAL paths
-  (`routes/*-repository.ts`, `services/automation-handlers/*-repository.ts`,
-  `services/diary-health-extractor-repository.ts` — the lane lists them exactly and re-verifies at build time); a
-  generated inventory + lint fails on any bypass. States whether `healthDb` subsumes the existing ORB resolver
-  `resolveHealthTenantId()` (`services/orb-tools/health-depth-tools.ts:118`) so the two cannot diverge — the
-  frozen-home-tenant rule is authoritative. Dark behind `mt.health_home_tenant`.
+- **health-db-accessor** (platform gateway): `healthDb(userId)` (new, `services/gateway/src/services/health-db.ts` —
+  no `services/health/` dir) resolves the frozen home tenant itself and is the only path to health tables; health
+  tables EXCLUDED from `TENANT_TABLES`; convert the Problem #5 readers/writers at their REAL paths (re-verified at
+  build time); a generated inventory + lint fails on any bypass. States whether `healthDb` subsumes the ORB resolver
+  `resolveHealthTenantId()` (`services/orb-tools/health-depth-tools.ts:118`) — the frozen-home-tenant rule is
+  authoritative. Dark behind `mt.health_home_tenant`.
 - **ota-compat-gate** (vitana-v1 `apps/mobile`): every OTA bundle manifest declares `min_native_version` (+ required
   plugin versions); the shell reports its version/plugins at startup and on device registration; the client refuses
   an incompatible bundle and stays on its last compatible one; native-dependent features gated by runtime capability
   detection, not bundle version.
-- **lineage-guard-health** (platform, governance SQL/workflow — executor claude, CROSS-SPEC O1): build-failing guard
-  test (modelled on commerce architecture §7.2) that no tenant-admin/tenant-owner analytics surface reads
-  `health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*` (D18); the ORB tool-dispatcher health/commerce rule
-  (Apple 5.1.3) if `health-native` has not shipped it, enforced in the dispatcher (not the declared catalog), proven on
-  Nova and the Vertex Serbian bridge.
+- **lineage-guard-health** (platform, governance — executor claude, CROSS-SPEC O1): build-failing guard, **per-query
+  not per-module** (the mt-discover resolution), scanning the concrete surface set
+  `services/gateway/src/routes/tenant-admin/*-repository.ts` (overview, kpis, insights, product-analytics,
+  community-admin, audit-log, health-index) + their routes — fails a `.from()` read of a per-member health table
+  `health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*` there (D18). It does NOT fail a tenant-level
+  aggregate (`health-index-repository.ts` → `tenant_health_index_daily`) or a member-facing `healthDb` reader
+  (Problem #5 files), which are outside the set. `isHealthTable()` defines membership (O1). Plus the ORB
+  dispatcher health/commerce rule (Apple 5.1.3) if `health-native` has not shipped it — enforced in the dispatcher,
+  proven on Nova and the Vertex Serbian bridge.
 
 ## Migrations
 Spec range `20261101130000`–`20261101135959`. Executor renumbers if a later migration exists at build time and adds
@@ -152,27 +154,22 @@ the OTA channel promotion are owner-gated (D19) and out of this spec's merge pat
 
 ## Out of scope
 Native shell, screen ports, EAS/TestFlight/Play builds, Health Hub phases 0–5 (all `health-native`); health table
-re-keying to user-only unique keys (Health plan); full tenant switching UI (M3, D8); custom domains / white-label apps
-(M3); messenger/Discover/matching Network scope (mt-network, mt-discover); `supplier_tenant_relationships`
-(mt-discover); `platform_only_accounts` view (mt-community-isolation M2); `isHealthTable()` predicate definition
-(mt-identity — referenced only); the active-tenant switch RPC `switch_to_tenant_by_slug` (VTID-05043, live —
-reused not rebuilt); the `reserved_tenant_slugs` table / `provision_tenant` reserved-slug guard / screens.json
-drift sync (VTID-05150, applied — referenced not rebuilt).
+re-keying to user-only unique keys (Health plan); full tenant switching UI + custom domains (M3, D8); Network scope
+(mt-network); `supplier_tenant_relationships` (mt-discover); `platform_only_accounts` (mt-community-isolation M2);
+`isHealthTable()` definition (mt-identity); and all work reused-not-rebuilt: the `switch_to_tenant_by_slug` RPC
+(VTID-05043) and reserved slugs / `provision_tenant` guard / screens.json drift sync (VTID-05150, applied).
 
 ## Depends on
-Specs: `mt-identity` (membership unification, `tenant_id_for_policies()`, `TENANT_TABLES`/`tenantDb`, canonical
-`isHealthTable()` — CROSS-SPEC O1), `mt-guardrails` (isolation suite, DB lints, local stack). Done (reused, not
-rebuilt): A VTID-05149 (`tenants.is_default`/`is_platform`, migration `20261014000100`), B VTID-05150
-(`provision_tenant`, `reserved_tenant_slugs` + reserved-slug guard + `reserved-slugs.ts`/`TENANT-RESERVED-SLUGS-DRIFT.yml`,
-`20261014000400`/`20261014000500`), C VTID-05151 (public tenant registry `list_public_tenants`), S3 VTID-05043
-(`switch_to_tenant_by_slug`, `20261010180200`). Program: `health-native` (VTID-05020/05021) — this spec is its
-tenancy delta, not a replacement.
+Specs: `mt-identity` (membership unification, `TENANT_TABLES`/`tenantDb`, canonical `isHealthTable()` — O1),
+`mt-guardrails` (isolation suite, DB lints, local stack). Done (reused, not rebuilt): A VTID-05149
+(`tenants.is_default`/`is_platform`, `20261014000100`), B VTID-05150 (reserved slugs + guard + drift sync,
+`20261014000400`/`20261014000500`), C VTID-05151 (`list_public_tenants`), S3 VTID-05043 (`switch_to_tenant_by_slug`,
+`20261010180200`). Program: `health-native` (VTID-05020/05021) — this spec is its tenancy delta, not a replacement.
 
 ## Owner decisions
-Implements decided items: D4 native iOS+Android, D5 `vitanaland.com/<slug>` (reserved-slug enforcement already shipped
-by VTID-05150, referenced not rebuilt), D8 one active tenant per
-session + minimal server-side switch in N1, D16 platform-branded store identity (no Maxina constants beyond store ids),
-D18 tenant operators get no health data, D19 OTA promoted by PUBLISH. No new decisions proposed.
+Implements: D4 native iOS+Android; D5 `vitanaland.com/<slug>` (reserved slugs shipped by VTID-05150); D8 one active
+tenant per session + the N1 server-side switch; D16 platform-branded store identity (no Maxina constants beyond store
+ids); D18 tenant operators get no health data; D19 OTA promoted by PUBLISH. No new decisions proposed.
 <!-- plan:end -->
 
 ## Open questions for sparring

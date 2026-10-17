@@ -3,16 +3,17 @@ slug: mt-native-health
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: claude
+next_actor: kiro
 state: drafted
-updated: 2026-10-17T15:33Z
+updated: 2026-10-17T15:38Z
 ---
 # mt-native-health — WS9 native tenancy delta + WS10 health-×-tenancy contract
 
 Multi-tenant program spec 13 of 14 (MULTI-TENANT-PLAN §6, WS9 + WS10). It plans ONLY the tenancy delta on top of the
-already-approved `health-native` spec (VTID-05020/05021): the native active-tenant switch and picker/join, per-tenant
-push fan-out, reserved slugs, the per-device transport one-owner flag, the frozen health home tenant + `healthDb`
-accessor, the OTA compatibility gate, and the D18 lineage guard + ORB health/commerce dispatcher rule. The native shell,
+already-approved `health-native` spec (VTID-05020/05021): the native active-tenant picker/join (reusing the existing `switch_to_tenant_by_slug` RPC, VTID-05043), per-tenant
+push fan-out, the per-device transport one-owner flag, the frozen health home tenant + `healthDb`
+accessor, the OTA compatibility gate, and the D18 lineage guard + ORB health/commerce dispatcher rule.
+Reserved slugs are already shipped and applied (VTID-05150) and are referenced, not rebuilt. The native shell,
 screen ports, builds and Health Hub phases themselves stay in `health-native` and are not re-planned here.
 
 Authored by Kiro seat hotmail (session kiro-hotmail-202610151618-b437). Pushed as `plan(mt-native-health)` for PLAN-SPAR
@@ -22,7 +23,7 @@ to spar via CI; VTIDs are allocated by PLAN-SPAR on convergence (none allocated 
 
 ## Lanes
 - `native-tenant-switch` (vitana-v1, seat exafy) — client switch + picker/join + universal-link routing.
-- `switch-tenant-rpc-db` (vitana-platform DB, seat hotmail) — `switch_active_tenant` RPC, reserved slugs, transport flag.
+- `switch-tenant-rpc-db` (vitana-platform DB, seat hotmail) — per-device transport one-owner flag (DB); reuses the existing `switch_to_tenant_by_slug` RPC (VTID-05043), does not rebuild it.
 - `push-tenant-fanout` (vitana-platform gateway, seat jtadic) — per-tenant push fan-out, fetch tokens by user_id.
 - `health-home-tenant-db` (vitana-platform DB, seat hotmail) — `app_users.health_home_tenant_id` + backfill + set-once.
 - `health-db-accessor` (vitana-platform gateway, seat jtadic) — `healthDb(userId)` + TENANT_TABLES exclusion + conversions.
@@ -78,8 +79,23 @@ current code:
 Migration `20261101130000` renamed `..._transport_flag.sql`; plan body trimmed to ~15.3k chars. Re-ran validators: 0
 errors (below). Re-pushed (force); deleted INTERNAL-REVIEW.json.
 
-### 2026-10-17T12:54Z · ci-plan-spar · escalated (partner unavailable)
-The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
-
-### 2026-10-17T15:33Z · ci-plan-spar · escalated (partner unavailable)
-The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+### 2026-10-17T15:38Z · kiro-hotmail-202610151618-b437 · (internal review round 3) → drafted
+Third internal adversarial review returned REJECTED (0 HIGH, 2 MEDIUM). Both fixed, premises re-verified in current
+code:
+- MEDIUM-1 (handoff.md stale Lanes index + non-existent `switch_active_tenant` RPC): the `## Lanes` index line for
+  `switch-tenant-rpc-db` now reads "per-device transport one-owner flag (DB); reuses the existing
+  `switch_to_tenant_by_slug` RPC (VTID-05043), does not rebuild it", and the opening paragraph drops "reserved slugs"
+  from the delta list (reserved slugs shipped/applied by VTID-05150, referenced not rebuilt). This matches the round-2
+  re-scope already carried by plan.md/tasks.md/design.md/the lane file; `switch_active_tenant` (never existed) removed.
+- MEDIUM-2 (D18 lineage guard: undefined surface + unstated granularity): applied the mt-discover resolution
+  (CROSS-SPEC-DECISIONS, per-QUERY not per-module) to R8 (requirements.md), plan.md Problem/Fix #8, design.md and
+  tasks.md and the `lineage-guard-health` lane. Named the concrete surface set the guard scans —
+  `services/gateway/src/routes/tenant-admin/*-repository.ts` + their routes, enumerated today as overview, kpis,
+  insights, product-analytics, community-admin, audit-log, health-index (verified by listing the dir and grepping
+  `.from(` in each `*-repository.ts`). Stated it fails only a specific `.from('<table>')` read of a per-member health
+  table there; explicitly does NOT fail (a) a tenant-level aggregate — `health-index-repository.ts` reads
+  `tenant_health_index_daily` (verified `:21,:30`), not a per-member health table — or (b) the member-facing `healthDb`
+  readers outside the set (the five Problem #5 files). Membership via `mt-identity`'s `isHealthTable()` (O1).
+Plan body trimmed to ~15.1k chars (condensed Out-of-scope / Depends-on / Owner-decisions / Fix bullets). Re-ran
+validators: 0 errors (below). Prepared commit via the private-index recipe for the parent to fast-forward; deleted
+INTERNAL-REVIEW.json.

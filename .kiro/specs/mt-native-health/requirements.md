@@ -38,7 +38,18 @@ its two programs — Health Hub `docs/programs/health-hub/HEALTH-HUB-PLAN.md` (V
   THE SYSTEM SHALL refuse it and keep the last compatible bundle; native-dependent features SHALL be gated by runtime
   capability detection, not bundle version.
 - **R8 (Health data never leaves the member — D18).** THE SYSTEM SHALL prevent any tenant-admin/tenant-owner analytics
-  surface from reading `health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*`, enforced by a build-failing guard.
+  surface — the concrete set `services/gateway/src/routes/tenant-admin/*-repository.ts` (today: `overview-repository.ts`,
+  `kpis-repository.ts`, `insights-repository.ts`, `product-analytics-repository.ts`, `community-admin-repository.ts`,
+  `audit-log-repository.ts`, `health-index-repository.ts`) and their route modules — from reading per-member health
+  tables `health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*`, enforced by a build-failing guard. The guard
+  SHALL be **per-query/per-read** (match the specific `.from('<health_table>')` read inside that surface set), NOT
+  per-module, mirroring the mt-discover resolution: a tenant-level aggregate read (e.g. `health-index-repository.ts`
+  reading `tenant_health_index_daily`, which is not a per-member health table) is allowed, and a member-facing health
+  reader/writer that legitimately reads a health table (R6's `healthDb` consumers:
+  `routes/integrations-repository.ts`, `routes/health-repository.ts`,
+  `services/automation-handlers/health-wellness-repository.ts`,
+  `services/automation-handlers/health-action-initiative-repository.ts`,
+  `services/diary-health-extractor-repository.ts`) is OUTSIDE the surface set and SHALL NOT be failed.
 - **R9 (ORB health/commerce separation — Apple 5.1.3).** WHEN an ORB session carries HealthKit/Health-Connect-derived
   context and the current turn has no commerce intent, THE SYSTEM SHALL refuse product/cart/shopping handlers in the tool
   dispatcher (including `use_tool`), on Nova and the Vertex Serbian bridge. Re-verify at slice start whether
