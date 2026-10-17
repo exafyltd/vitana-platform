@@ -3,9 +3,9 @@ slug: mt-discover
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: kiro
+next_actor: claude
 state: drafted
-updated: 2026-10-17T13:44Z
+updated: 2026-10-17T14:04Z
 ---
 # Handoff — mt-discover (Commerce & Discover × tenancy, WS11 + Discover scope of §4.11)
 
@@ -78,3 +78,6 @@ INITIATES a new discovery action is DISCOVERY (gated) — so `discover-recommend
 requirements R1/R3, design, tasks P2.
 Plan body ~15.3k chars (within ~15k soft bound). queue.mjs validators re-run on handoff.md + all 4 lanes: 0 errors.
 Open HIGH/MEDIUM after this pass: 0.
+
+### 2026-10-17T14:04Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
