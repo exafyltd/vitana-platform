@@ -1,0 +1,17 @@
+{
+  "verdict": "APPROVED",
+  "findings": [
+    {
+      "severity": "LOW",
+      "file": ".kiro/specs/mt-guardrails/plan.md",
+      "issue": "plan.md Fix 6, design.md ci-wiring and lanes/ci-wiring.md describe `scripts/ci/**` as a governance path, but scripts/collab/queue.mjs GOVERNANCE_PATHS (line 69) lists only `scripts/collab/**` under scripts/**, not `scripts/ci/**`. The lane is still correctly executor: claude because it also touches `.github/workflows/MT-GUARDRAILS.yml` (which is governance).",
+      "fix": "In the three docs, attribute the governance classification to the `.github/**` workflow file rather than to `scripts/ci/**`; `scripts/ci/mt/**` is ordinary platform scripting bundled into the claude lane for cohesion. Wording only; no front-matter or lane-assignment change needed."
+    },
+    {
+      "severity": "LOW",
+      "file": ".kiro/specs/mt-guardrails/plan.md",
+      "issue": "The '## Open questions for sparring' item asks to confirm v1-golden-edge fixture repo ownership (platform vs vitana-v1), defaulting to platform. Non-blocking by rubric; recorded for completeness.",
+      "fix": "No change needed. The platform default is correct — it keeps CROSS-SPEC O3 single-repo and avoids a cross-repo lane."
+    }
+  ]
+}
