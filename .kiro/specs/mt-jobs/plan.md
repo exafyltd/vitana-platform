@@ -1,0 +1,63 @@
+---
+change_class: standard
+---
+# mt-jobs (WS6): scheduled jobs and automation events loop over active tenants
+
+<!-- plan:begin -->
+## Problem
+WS6 of the multi-tenant program (`docs/MULTI-TENANT-PLAN.md` §6). The scheduled jobs and
+automation-event dispatchers resolve a single tenant from `DEFAULT_TENANT_ID` (= Maxina) and the
+EventBridge schedules that drive them send one hardcoded tenant in the body. Verified 2026-10-15:
+
+1. **Autopilot heartbeat loop** runs one tenant only: `index.ts:1840` `heartbeatTenantId = process.env.DEFAULT_TENANT_ID`, `runHeartbeatCycle(heartbeatTenantId)` at `:1849`. A second tenant's heartbeat automations never fire.
+2. **Scheduled-notification routes** take the tenant from the request body or `DEFAULT_TENANT_ID`: `scheduled-notifications.ts:105` `getTenantId = req.body?.tenant_id || process.env.DEFAULT_TENANT_ID`. Every route under it is single-tenant: `/night-push` (`:1525`, `getTenantId` `:1527`), `/whats-new` (VTID-04733), `/daily-pace-notifications`, `/recommendation-expiry`, `/signal-cleanup`, `/welcome-team-tick` (VTID-05205). Per-user timezone resolution already exists (`getUserTimezone(supa, user_id, tenantId)` `:1567`), so only the tenant fan-out is single-tenant, not the per-user clock.
+3. **Community scan** (CA-5): `autopilot-recommendations.ts:2281` `POST /community-scan` → `runCommunityScan(sb, …)` (`scan-runner.ts:255`) processes members whose local hour is 07/17, driven by an hourly EventBridge tick; it has no tenant parameter and reads members platform-wide — but every other member-fan-out around it is tenant-scoped by `DEFAULT_TENANT_ID`.
+4. **Morning brief** (`morning-brief-scheduler.ts:132`) already fetches each user's `tenant_id` from `app_users` (`morning-brief-scheduler-repository.ts:41`) and passes it through — the candidate query is the only thing that is not tenant-loop-scoped.
+5. **Memory embedding backfill loop** reads its tenant list from the env var `MEMORY_EMBEDDING_BACKFILL_TENANT_IDS` (`memory-embedding-backfill-loop.ts:38-44`), not the DB — a new tenant is silently excluded until an operator edits the env.
+6. **Automation events** dispatched from member routes pin `process.env.DEFAULT_TENANT_ID` as the actor tenant: `community.ts:274,382,482`, `match-feedback.ts:280`, `matchmaking.ts:576`, `admin-signups.ts:205`, `groups-events-tools.ts:360` (`id.tenant_id || DEFAULT_TENANT_ID`). A member of a second tenant dispatches events tagged as Maxina.
+7. **EventBridge scripts** send one tenant: `scripts/aws/setup-eventbridge-whats-new.sh:40` `TENANT_ID=${DEFAULT_TENANT_ID:-2e7528b8…}` in the target input; `setup-eventbridge-push-dispatch.sh`, `setup-eventbridge-daily-feature-tip.sh`, `setup-eventbridge-cron-migration.sh` are the same single-tenant shape.
+
+Data already present (M0, applied — do NOT re-create): `tenants.is_active` / `is_default` / `is_platform` (`20261014000100`), `tenant_settings.timezone` (`20261014000400`). The active-tenant list and per-tenant timezone are therefore a read, not a migration.
+
+## Fix
+Dark by default behind `MT_RESOLUTION_V2` (env master) and `tenant_settings.feature_flags.mt.jobs_tenant_loop`; off ⇒ byte-for-byte today's single-tenant behaviour (reads `DEFAULT_TENANT_ID`). Four code lanes + one governance lane:
+
+1. **`jobs-env-prepare` (executor claude, governance):** the EventBridge scripts and schedules stop pinning one `TENANT_ID` in the target input; the gateway resolves the active-tenant set itself. The schedules keep firing hourly/daily with an empty/tenant-less body; `jobs-tenant-loop.ts` (lane 2) expands it. Removes the single-tenant `DEFAULT_TENANT_ID` default from the four `setup-eventbridge-*.sh` target inputs. Governance paths (`.github/**` if any workflow drives a schedule, `scripts/aws/**` is NOT governance but EventBridge infra is Claude-owned by the brief's lane rule) → executor claude. No code reads change until lane 2 ships.
+2. **`jobs-tenant-loop` (DB-free code, seat jtadic):** add `services/gateway/src/services/mt-flags.ts` (`isJobsTenantLoopEnabled(env, settings)` reading `MT_RESOLUTION_V2` + `tenant_settings.feature_flags.mt.jobs_tenant_loop`) and `services/gateway/src/services/jobs/job-tenant-loop.ts` — `activeTenantIds(sb)` (`tenants WHERE is_active AND NOT is_platform`), `tenantTimezone(sb, tenantId)` (`tenant_settings.timezone`, fallback `Europe/Berlin`), and `forEachActiveTenant(sb, fn)`. The heartbeat loop (`index.ts:1838-1866`) and every `scheduled-notifications.ts` route iterate `activeTenantIds` when the flag is on (one context per tenant), else the single `DEFAULT_TENANT_ID` as today. `mt-flags.ts` + `job-tenant-loop.ts` are the shared gate the brief names — they also gate the mt-launch APIs and the M2 flag flips (stated in 'Depends on').
+3. **`jobs-automation-actor-tenant` (DB-free code, seat jtadic):** the seven event-dispatch sites in Problem 6 resolve the actor's real tenant from the verified identity / primary-tenant lookup instead of `DEFAULT_TENANT_ID` when the flag is on; off ⇒ unchanged. Shares `job-tenant-loop.ts`'s primary-tenant resolver so the fallback is `resolvePrimaryTenant`, never Maxina.
+4. **`jobs-community-scan-tenant` (DB-free code, seat jtadic):** `runCommunityScan` and the `/community-scan` route gain an optional `tenantId`; when the flag is on the hourly tick loops active tenants (scan each tenant's members with that tenant's timezone), else platform-wide as today. The memory-embedding-backfill loop's tenant source changes from the env var to `activeTenantIds(sb)` when the flag is on (env var stays the override for off/pinned), closing Problem 5.
+
+## Migrations
+None. The active-tenant list (`tenants.is_active`/`is_platform`) and per-tenant timezone (`tenant_settings.timezone`) already exist and are applied (M0: `20261014000100`, `20261014000400`). mt-jobs reads them. Spec version range `20261101100000`–`20261101105959` is reserved for mt-jobs in case a later premise re-verification needs one; no row is added to MIGRATION-QUEUE now.
+
+## Tests
+- Vitest: `mt-flags.ts` (off when `MT_RESOLUTION_V2` unset; off when the per-tenant flag absent; on when both). `job-tenant-loop.ts` (`activeTenantIds` excludes `is_platform` and inactive; `tenantTimezone` fallback; `forEachActiveTenant` builds one context per tenant). Each converted route/loop: flag off ⇒ exactly one `DEFAULT_TENANT_ID` pass (regression pin); flag on with two active tenants ⇒ two passes, each with its own tenant + timezone.
+- Vitest: the seven automation-event sites emit the actor's real tenant (flag on) and `DEFAULT_TENANT_ID` (flag off); `tenant_id` never Maxina for a non-Maxina actor.
+- Community scan: `runCommunityScan` honours `tenantId`; two-tenant loop processes each tenant's members only. Memory-backfill tenant source = DB when on, env when off.
+- Keep green (rule 42e): `npm run test:operator` (heartbeat/automation-executor path). `job-tenant-loop` has no live calls.
+
+## Staging verification (read-only, rule 48)
+`docs/validation/<vtid>/staging-tests.json` per lane. Staging reads production Supabase, so the staging spec only asserts, read-only, that `GET /api/v1/scheduled-notifications/health` reports its auth mode and that the active-tenant count the loop would use matches `tenants WHERE is_active AND NOT is_platform` (a read). No schedule is triggered against staging; the fan-out is proven by Vitest. Network guard aborts every non-GET.
+
+## Rollout
+Dark by default (`MT_RESOLUTION_V2` + `tenant_settings.feature_flags.mt.jobs_tenant_loop`). Merge → staging deploy → STAGING-VERIFY → Gate 2 → PUBLISH, flag OFF. The flag flip to loop all active tenants is an M2 step owned by the mt-launch sequence, after a second real tenant exists (owner-approved). No DB apply (no migration). The EventBridge-script change (lane 1) is applied by Claude/owner against the AWS estate, not by Kiro — a Kiro lane never makes a mutating AWS call.
+
+## Risks
+- Flag-on fan-out multiplies per-tenant work on hot tables (`user_notifications`, `chat_messages`); the loop builds one context per tenant and reuses the existing per-user batching — no new per-row cost. Mitigation: Vitest asserts one query per tenant, not per user, for the tenant list.
+- A second active tenant with a bad `tenant_settings.timezone` must not break the loop: `tenantTimezone` falls back to `Europe/Berlin` and the per-user `getUserTimezone` still applies. Pinned by test.
+- `DEFAULT_TENANT_ID` still read on the flag-off path: removing it is deferred to the M2 flip, not this spec, so a half-rolled-out fleet never loses the single-tenant path.
+
+## Out of scope
+- Removing `DEFAULT_TENANT_ID` from the codebase entirely (M2 cleanup after the flag is permanently on).
+- The resolution chain / access-token hook / `TenantContext` (mt-identity WS1) — mt-jobs consumes `resolvePrimaryTenant` and the active-tenant read, it does not build them.
+- Community-table RLS / scope (mt-community-isolation, mt-network).
+- Tenant-owner analytics and the launch content pipeline (mt-launch WS8).
+
+## Depends on
+- **mt-identity (WS1):** `resolvePrimaryTenant()` + `TenantContext`. mt-jobs' actor-tenant resolver uses it; until it ships, lane 3 falls back to the primary `user_tenants` row read directly (stated in the lane). Not a hard blocker for lanes 1/2/4.
+- Done M0: `tenants.is_active/is_default/is_platform` (VTID-05149), `tenant_settings.timezone` (VTID-05150). Read-only.
+- **Downstream:** the shared `mt-flags.ts` and `job-tenant-loop.ts` added here gate the **mt-launch APIs** and the **M2 flag flips** — mt-launch depends on this spec's lane 2.
+<!-- plan:end -->
+
+## Open questions for sparring
+- Should the memory-embedding-backfill env var (`MEMORY_EMBEDDING_BACKFILL_TENANT_IDS`) be kept as a permanent override even after the flag is on, or removed once the DB loop is proven? (Default: keep as override; cross-spec with mt-launch M2 cleanup.)
