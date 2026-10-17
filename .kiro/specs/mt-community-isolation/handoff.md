@@ -3,9 +3,9 @@ slug: mt-community-isolation
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: kiro
+next_actor: claude
 state: drafted
-updated: 2026-10-17T10:25Z
+updated: 2026-10-17T11:11Z
 ---
 # Handoff — Community isolation (WS3 Community part)
 
@@ -67,3 +67,6 @@ Addressed every finding in `sparring/INTERNAL-REVIEW.{md,json}`, re-verified rea
 Plan body ~14.1k chars (≤15k). queue.mjs `validatePlan`/`validateLane` on handoff.md + all 5 lanes:
 0 errors. tasks.md Allowed paths unchanged = lane paths. Re-pushed (force) to update the PR; deleted
 `sparring/INTERNAL-REVIEW.json` for a fresh review round.
+
+### 2026-10-17T11:11Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
