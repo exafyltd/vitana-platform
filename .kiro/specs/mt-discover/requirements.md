@@ -15,19 +15,26 @@ Links (read, do not copy):
 - Sibling: mt-network owns messenger/Network-groups scope; mt-discover owns ONLY Discover + offering distribution.
 
 ## EARS requirements
-- R1 WHEN a DISCOVERY `products`/`merchants` reader (open feed/search/browse) runs for a resolved tenant, the system
-  SHALL apply ONE shared Discover visibility predicate (v1: `is_active` AND an active `supplier_tenant_relationships`
-  row for the tenant AND no `tenant_catalog_overrides` hide, PLUS the scope term) and SHALL NOT return offerings a
-  supplier is not active for; a FULFILMENT reader (by explicit product id) SHALL resolve the known item unfiltered.
+- R1 WHEN a DISCOVERY `products`/`merchants` reader runs for a resolved tenant — any open feed/search/browse query,
+  OR a by-id lookup that INITIATES a new discovery action (e.g. creating a product recommendation) — the system SHALL
+  apply ONE shared Discover visibility predicate (v1: `is_active` AND an active `supplier_tenant_relationships` row
+  for the tenant AND no `tenant_catalog_overrides` hide, PLUS the scope term) and SHALL NOT return offerings a
+  supplier is not active for; a FULFILMENT reader (a by-id lookup that HYDRATES an item the member already has —
+  cart/saved/in-flight/past order/reorder) SHALL resolve the known item unfiltered.
 - R2 WHERE an offering has `distribution='community'`, the system SHALL show it only in tenants whose supplier has an
   active relationship; WHERE `distribution='network'`, the system SHALL show it in every tenant, in both cases minus
   that tenant's `tenant_catalog_overrides` hides (applied in BOTH Community and Network mode).
 - R3 WHEN a new `products`/`merchants` reader is added, a GENERATED inventory + build-failing lint SHALL classify it
-  as `discovery` or `fulfilment` and SHALL require every `discovery` reader to go through the shared predicate and
-  every `fulfilment` (by-explicit-id) reader to be annotated and NOT relationship/distribution-filtered, so a
-  known/saved/in-flight product is never hidden from checkout.
-- R4 WHEN any reader in the inventory is built, a build-failing lineage guard SHALL fail if it reads
-  `health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*`.
+  `discovery` (surfaces not-yet-chosen offerings — open query OR a by-id discovery initiator) or `fulfilment`
+  (by-id hydration of an already-held item) and SHALL require every `discovery` reader to go through the shared
+  predicate and every `fulfilment` reader to be annotated and NOT relationship/distribution-filtered, so a
+  known/saved/in-flight product is never hidden from checkout. `shop_videos`-only readers (e.g.
+  `fetchRankedShopVideosPage`) are not `products`/`merchants` readers and are out of the inventory's scope.
+- R4 WHEN a `products`/`merchants` reader is built, a PER-QUERY build-failing lineage guard SHALL fail if the SAME
+  query that reads `products`/`merchants` also reads
+  `health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*`; it SHALL NOT fail on an unrelated sibling function
+  in the same file (the known mixed files are `health-wellness-repository.ts` and
+  `health-action-initiative-repository.ts`).
 - R5 WHEN a supplier onboards, the system SHALL offer a "which communities" step that creates `proposed`
   `supplier_tenant_relationships` rows, and a tenant SHALL be able to accept/decline (`proposed→active|declined`).
 - R6 WHEN a signup carries `signup_intent='commerce'`, the system SHALL route it to the platform-tenant path only;

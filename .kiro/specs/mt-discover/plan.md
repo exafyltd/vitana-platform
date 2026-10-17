@@ -12,18 +12,20 @@ tenant-gated and adds the Community/Network scope, on top of the global supplier
    returns zero matches (confirmed 2026-10-15). The commerce architecture designs it
    (`docs/COMMERCE-SUPPLIER-INFRASTRUCTURE-ARCHITECTURE.md` §7 step 7, §5.7, the §"what makes an offering visible"
    list). So no tenant↔supplier eligibility exists; every Discover reader is global.
-2. Every `products`/`merchants` reader filters only `is_active`/`availability`, no tenant/supplier gate:
-   `routes/discover-feed-repository.ts:40` (`.from('products').eq('is_active',true).eq('availability','in_stock')`),
-   `routes/discover-search-repository.ts:29`, `routes/discover-recommendations-repository.ts:23`,
-   `routes/shop-feed-repository.ts:34`, `services/orb-tools/marketplace-discovery-tools.ts` (search/browse),
+2. Every `products` reader filters only `is_active`/`availability`, no tenant/supplier gate. OPEN-query (discovery)
+   readers: `routes/discover-feed-repository.ts:40`
+   (`.from('products').eq('is_active',true).eq('availability','in_stock')`), `routes/discover-search-repository.ts:29`,
+   `services/orb-tools/marketplace-discovery-tools.ts` (search/browse),
    `services/orb-tools/marketplace-guide-tools-repository.ts:42,55`,
    `services/orb-tools/marketplace-journey-tools-repository.ts:33,67`,
-   `services/orb-tools/cart-checkout-tools-repository.ts:37,41,45`,
-   `services/automation-handlers/health-wellness-repository.ts:91`,
-   `services/automation-handlers/health-action-initiative-repository.ts:81`,
-   `services/checkout/checkout-service-repository.ts:42`. There is no single predicate; each surface re-queries.
-   Two of these are by-id FULFILMENT lookups (`shop-feed-repository.ts:32`, `cart-checkout-tools-repository.ts:36`,
-   `checkout-service-repository.ts:42` — all `fetchProductsByIds`), not open discovery queries; see Fix.
+   `services/automation-handlers/health-wellness-repository.ts:91` (`fetchActiveProductsByTopicKeys`). BY-ID readers:
+   `routes/discover-recommendations-repository.ts:23` (`fetchActiveProductForRecommendation`, `.eq('id',…)` — initiates
+   a NEW recommendation), `services/automation-handlers/health-action-initiative-repository.ts:81` (`fetchProductById`,
+   `.eq('id',…)`), and three hydration lookups `routes/shop-feed-repository.ts:32`,
+   `services/orb-tools/cart-checkout-tools-repository.ts:36`, `services/checkout/checkout-service-repository.ts:42`
+   (all `fetchProductsByIds`). No single predicate; each surface re-queries.
+   `shop-feed-repository.ts:43 fetchRankedShopVideosPage` reads `shop_videos` only, NOT `products`/`merchants`, so it
+   is out of the predicate's scope; see Fix for the discovery-vs-fulfilment rule.
 3. `tenant_catalog_overrides` exists (foundation migration `20260416120000_vtid_02000_marketplace_foundation.sql`,
    RLS `_select` bare `tenant_id = current_tenant_id()`) but is enforced nowhere — the commerce architecture
    confirms "exists but is not enforced anywhere" (§"Partner↔tenant relationship" row).
@@ -41,8 +43,12 @@ tenant-gated and adds the Community/Network scope, on top of the global supplier
 8. Referral earnings (`services/gateway/src/services/recommendation-commissions/credit-recommender.ts`) credit the
    recommender platform-wide with no tenant attribution (D26).
 9. Health-category offerings (labs, practitioners) have no trust-level-2 + DPA gate before listing.
-10. The lineage guard (§4.9/§4.10): no build-failing test stops the `products`/`merchants` readers reading
-    `health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*`.
+10. The lineage guard (§4.9/§4.10): no build-failing test stops a `products`/`merchants` reader query from reading
+    `health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*`. It must be per-query, because
+    `health-wellness-repository.ts` and `health-action-initiative-repository.ts` each read `products` in one function
+    AND health tables in sibling functions (verified: `health-wellness-repository.ts:91` products vs `:28,:32,:44,:50,
+    :55,:68` health; `health-action-initiative-repository.ts:81` products vs `:26,:30,:54,:60,:64` health) — a
+    module-granular guard would turn RED on this existing, unrelated code.
 
 ## Fix (per lane)
 - **supplier-relationships-db** (DB, repo vitana-platform): create `supplier_tenant_relationships`
@@ -53,9 +59,8 @@ tenant-gated and adds the Community/Network scope, on top of the global supplier
   active for Maxina only); backfill `partner_tenant.tenant_id` free-text → real tenant UUID or NULL (platform),
   referenced by — not duplicated in — `supplier_tenant_relationships` (ALWAYS 9); add
   `product_orders.buyer_tenant_id uuid` (nullable, expand-only, no default) carrying the purchase's tenant (D26) —
-  the concrete commission-attribution row (`credit-recommender-repository.ts:28`); `recommendation_commissions`
-  already carries `recommender_user_id`, so no column there; added dark, read only by `supplier-onboarding-communities`
-  S4. Migrations in range
+  the commission-attribution row (`credit-recommender-repository.ts:28`); `recommendation_commissions` already
+  carries `recommender_user_id`, so no column there; added dark, read only by S4. Migrations in range
   20261101120000–20261101125959, rollback files, MIGRATION-QUEUE rows at the WS11 position, read-only pre/post
   checks. DB applied by Claude via RUN-MIGRATION after merge.
 - **discover-shared-predicate** (CODE, repo vitana-platform): ONE shared Discover visibility predicate module
@@ -63,32 +68,40 @@ tenant-gated and adds the Community/Network scope, on top of the global supplier
   AND `supplier_tenant_relationships` active for the resolved tenant AND no `tenant_catalog_overrides` hide for that
   tenant, PLUS the scope term (`distribution = 'community'` → tenant has an active relationship; `'network'` →
   every tenant), with the `tenant_catalog_overrides` hide applied in BOTH modes. The predicate serves TWO reader
-  classes: **discovery** readers (open feed/search/browse — the Problem-2 set minus the three by-id lookups) apply
-  the FULL predicate; **fulfilment** readers (by explicit product id: `shop-feed-repository.ts:32`,
-  `cart-checkout-tools-repository.ts:36`, `checkout-service-repository.ts:42` — all `fetchProductsByIds`) resolve a
-  KNOWN item and are NOT relationship/distribution-filtered, so an in-flight/saved order is never 404'd when a
-  supplier is later suspended for the tenant. A GENERATED reader inventory
-  (`scripts/ci/discover-reader-inventory.*`) tags each reader `discovery|fulfilment`; a build-failing lint asserts
-  every discovery reader goes through the predicate and every fulfilment reader is annotated
-  (`// discover-inventory: fulfilment`) and left unfiltered. Health-category offerings additionally require the
-  Health plan trust level 2 + signed DPA before listing (gate in the predicate, discovery class). Add a lineage
-  guard (build-failing test, modelled on commerce arch §7.2 ranking guard) that fails if any inventory reader (either
-  class) reads `health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*`. Dark behind `MT_RESOLUTION_V2` +
-  `tenant_settings.feature_flags.mt.discover_tenant_gate` / `mt.network_enabled`. Includes the Discover isolation
-  suite (a supplier active only in T_A never appears in T_B discovery, incl. ORB answers; a fulfilment-by-id read of
-  a known T_A product still resolves).
+  classes, split by this rule: a reader is **discovery** (FULL predicate) when it SURFACES offerings the member has
+  not already chosen (open feed/search/browse, OR a by-id lookup that INITIATES a discovery action such as creating a
+  recommendation, which must not succeed for a product not visible in the member's tenant); a reader is **fulfilment**
+  (NOT relationship/distribution-filtered) when it HYDRATES an item the member already has (cart, saved, in-flight/past
+  order, reorder), so an order is never 404'd when a supplier is later suspended. By this rule the by-id
+  `discover-recommendations-repository.ts:23` (`fetchActiveProductForRecommendation`) is DISCOVERY; the three
+  `fetchProductsByIds` (shop-feed:32, cart-checkout:36, checkout:42) and the by-id `fetchProductById`
+  (`health-action-initiative-repository.ts:81`) are FULFILMENT (full set in Problem 2).
+  `shop-feed-repository.ts:43 fetchRankedShopVideosPage` reads `shop_videos`, is NOT a `products`/`merchants` reader,
+  out of the predicate's scope (`shop_videos` scoping is a separate concern, out of scope here). A GENERATED inventory
+  (`scripts/ci/discover-reader-inventory.*`) tags each `products`/`merchants` reader `discovery|fulfilment`; a
+  build-failing lint asserts every discovery reader goes through the predicate and every fulfilment reader is
+  annotated (`// discover-inventory: fulfilment`) and left unfiltered. Health-category offerings additionally require
+  the Health plan trust level 2 + signed DPA before listing (gate in the predicate, discovery class). Add a
+  **per-query** lineage guard (the §7.2 ranking-guard idea applied per-query, not per-module): it fails only when the
+  SAME query that reads `products`/`merchants` also touches
+  `health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*`, and MUST NOT flag an unrelated sibling function in
+  the same file — `health-wellness-repository.ts` and `health-action-initiative-repository.ts` are the known mixed
+  files (health reads in sibling functions, not in the `products` reader) and the guard must tolerate them.
+  Dark behind `MT_RESOLUTION_V2` + `mt.discover_tenant_gate` / `mt.network_enabled`. Includes the Discover isolation
+  suite (a supplier active only in T_A never in T_B discovery incl. ORB; a fulfilment-by-id read of a known T_A
+  product still resolves).
 - **supplier-onboarding-communities** (CODE, repo vitana-platform): add the "which communities" step to supplier
   onboarding (portal + Commerce MCP + voice) that creates `proposed` `supplier_tenant_relationships` rows; a tenant
   accept/decline API flips `proposed→active|declined`. Platform tenant + `signup_intent='commerce'` path:
   commerce signup drops hardcoded Maxina; `signup_intent` (untrusted client metadata) can only route to the
   platform path, never grant anything (platform tenant per O5/§4.10). Referral/commission attribution carries the
-  buyer's active tenant; recommender earnings follow the recommender's tenant (D26). Dark behind the mt flags.
+  buyer's tenant; recommender earnings follow the recommender's tenant (D26). Dark behind the mt flags.
 - **discover-mode-ui** (CODE, repo vitana-v1): a SEPARATE Discover Community/Network scope control (not the Discover
-  tab pill, not `MobileModePill`), default Community, remembered per surface; the supplier "which communities" UI
-  and the tenant accept/decline UI follow the Commerce UX contract (AI-led, one dominant action, no internal
-  concepts, "UX acceptance" section in the PR). Spotlight contract, i18n DE-first du-form, RTL. Dark behind
-  `mt.network_enabled`; no new App.tsx route (control added to the existing Discover screen) → no nav-registry /
-  screen-manifest / parity-ledger change (if a new route is added, those three updates are in the lane).
+  tab pill, not `MobileModePill`), default Community, remembered per surface; the supplier "which communities" and
+  tenant accept/decline UI follow the Commerce UX contract (AI-led, one dominant action, no internal concepts, "UX
+  acceptance" PR section). Spotlight, i18n DE-first du-form, RTL. Dark behind `mt.network_enabled`; no new App.tsx
+  route (control on the existing Discover screen) → no nav-registry / screen-manifest / parity-ledger change (if a
+  route is added, those three updates ship in the lane).
 
 ## Migrations
 Lane supplier-relationships-db, version range 20261101120000–20261101125959 (executor renumbers if a later
@@ -107,14 +120,14 @@ Each has a pre-approved rollback under `docs/validation/<vtid>/`, read-only `liv
 ## Tests
 - Vitest/Jest (gateway): the shared predicate (community/network scope, overrides hide in both modes, supplier
   relationship active/inactive, health-category trust-2+DPA gate); the generated reader inventory lint; the lineage
-  guard (fails on a health_* read in any inventory reader); supplier onboarding "which communities" creates
-  `proposed` rows and accept/decline flips state; referral attribution carries the buyer's tenant.
+  guard (per-query: fails on a health_* read in the SAME query as a products read; passes a mixed-module file whose
+  health read is a sibling function); supplier onboarding "which communities" creates `proposed` rows and
+  accept/decline flips state; referral attribution carries the buyer's tenant.
 - pgTAP: `supplier_tenant_relationships` RLS (T_B member reads 0 T_A rows); `products.distribution` CHECK;
   default-active-for-maxina seed.
-- Discover isolation suite (contract): a supplier active only in T_A never appears in T_B's feed/search/ORB answers;
-  a network offering appears in both; a tenant's `tenant_catalog_overrides` hide removes it in both modes in that
-  tenant; a FULFILMENT by-id read of a known T_A product still resolves even when the supplier is suspended for the
-  reader's tenant (no mid-checkout 404).
+- Discover isolation suite (contract): a supplier active only in T_A never in T_B feed/search/ORB; a network offering
+  in both; a `tenant_catalog_overrides` hide removes it in both modes in that tenant; a FULFILMENT by-id read of a
+  known T_A product still resolves when the supplier is suspended for the reader's tenant (no mid-checkout 404).
 - Vitest (vitana-v1): the Discover scope control (default Community, per-surface memory, separate from the tab
   pill); supplier "which communities" + accept/decline UI validation; no write request on render.
 - Required suites when touched: `npm run test:support` (42c), `npm run test:operator` (42e); ORB dispatcher tests on
@@ -140,8 +153,10 @@ Maxina only (D7), so Maxina Discover is unchanged while the flag is off.
   lint, not a hand-list; every new reader must register.
 - `partner_tenant.tenant_id` backfill mis-maps a supplier. Mitigation: snapshot `bak_*`, map only unambiguous
   rows, free text that is not a resolvable tenant → NULL (platform); reviewed read-only post-check.
-- Dual enforcement (RLS + predicate) could diverge. Mitigation: the predicate is the single read path; RLS is the
-  backstop; the isolation suite asserts both.
+- Dual enforcement (RLS + predicate) could diverge. Mitigation: predicate is the single read path, RLS the backstop;
+  the isolation suite asserts both.
+- A module-granular lineage guard would RED-flag existing mixed files. Mitigation: the guard is per-query (above);
+  tests pin that a sibling health read in the same file does not fail a `products` reader.
 
 ## Out of scope
 - The full eligibility engine (commerce arch step 5 requirement rules) — M2 is the v1 predicate only.

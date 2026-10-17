@@ -1,14 +1,16 @@
 # Design — mt-discover (Commerce & Discover × tenancy)
 
 ## What exists (read these, do not copy them)
-- Discover readers (all global today, `is_active`/`availability` only):
-  `services/gateway/src/routes/discover-feed-repository.ts:40`, `discover-search-repository.ts:29`,
-  `discover-recommendations-repository.ts:23`, `shop-feed-repository.ts:34`;
+- `products` readers (all global today, `is_active`/`availability` only). Open-query:
+  `services/gateway/src/routes/discover-feed-repository.ts:40`, `discover-search-repository.ts:29`;
   ORB tools `services/gateway/src/services/orb-tools/marketplace-discovery-tools.ts`,
-  `marketplace-guide-tools-repository.ts:42,55`, `marketplace-journey-tools-repository.ts:33,67`,
-  `cart-checkout-tools-repository.ts:37,41,45`;
-  automation handlers `services/automation-handlers/health-wellness-repository.ts:91`,
-  `health-action-initiative-repository.ts:81`; `services/checkout/checkout-service-repository.ts:44`.
+  `marketplace-guide-tools-repository.ts:42,55`, `marketplace-journey-tools-repository.ts:33,67`;
+  automation handler `services/automation-handlers/health-wellness-repository.ts:91`
+  (`fetchActiveProductsByTopicKeys`). By-id (`.eq('id',…)`): `discover-recommendations-repository.ts:23`
+  (`fetchActiveProductForRecommendation`), `automation-handlers/health-action-initiative-repository.ts:81`
+  (`fetchProductById`), `shop-feed-repository.ts:32` / `orb-tools/cart-checkout-tools-repository.ts:36` /
+  `services/checkout/checkout-service-repository.ts:42` (all `fetchProductsByIds`). NOTE: `shop-feed-repository.ts:43
+  fetchRankedShopVideosPage` reads `shop_videos`, NOT `products`/`merchants` — not a reader of this predicate.
 - `tenant_catalog_overrides`: foundation migration `20260416120000_vtid_02000_marketplace_foundation.sql`
   (bare `_select` RLS); not enforced anywhere (commerce arch §"Partner↔tenant relationship").
 - `partner_tenant.tenant_id` written `caller.tenantId || 'platform'` at
@@ -44,29 +46,41 @@
 
 ### discover-shared-predicate (CODE, vitana-platform)
 - `services/gateway/src/services/discover/tenant-visibility.ts`: the single predicate (R1/R2) + the health-category
-  trust-2 + DPA gate (R8). It serves TWO reader classes (verified against current code), because a tenant-visibility
-  gate on a by-id fulfilment lookup would 404 an in-flight order instead of fixing discovery:
-  - **discovery** readers (open feed/search/browse): `discover-feed-repository.ts:40`,
-    `discover-search-repository.ts:29`, `discover-recommendations-repository.ts:23`,
-    `shop-feed-repository.ts fetchRankedShopVideosPage` (the feed query, not the by-id one),
+  trust-2 + DPA gate (R8). It serves TWO reader classes (verified against current code), split by this rule — a
+  tenant-visibility gate on a hydration lookup would 404 an in-flight order instead of fixing discovery:
+  - **discovery** = a reader that SURFACES offerings the member has not already chosen. That is any open
+    feed/search/browse query, AND a by-id lookup that INITIATES a new discovery action (e.g. creating a
+    recommendation of a product — it must not succeed for a product not visible in the member's tenant). They apply
+    the FULL predicate (relationship + distribution scope + overrides hide + health gate). Verified:
+    `discover-feed-repository.ts:40`, `discover-search-repository.ts:29`,
     `orb-tools/marketplace-discovery-tools.ts`, `marketplace-guide-tools-repository.ts:42,55`,
-    `marketplace-journey-tools-repository.ts:33,67`, `automation-handlers/health-wellness-repository.ts:91`,
-    `health-action-initiative-repository.ts:81`. These apply the FULL predicate (relationship + distribution scope +
-    overrides hide + health gate).
-  - **fulfilment** readers (by explicit product id — hydration/cart/checkout/reorder): confirmed in code as
-    `shop-feed-repository.ts:32 fetchProductsByIds` (anchor + saved-products hydration),
+    `marketplace-journey-tools-repository.ts:33,67`, `automation-handlers/health-wellness-repository.ts:91`
+    (`fetchActiveProductsByTopicKeys`), and the by-id initiator `discover-recommendations-repository.ts:23`
+    (`fetchActiveProductForRecommendation`, `.eq('id', productId)`).
+  - **fulfilment** = a reader that HYDRATES an item the member already has (cart/saved/in-flight/past order/reorder).
+    These resolve a KNOWN item by id and MUST NOT be filtered by relationship/distribution — otherwise a product a
+    member saved or has in cart while the supplier was active (now suspended for the tenant) silently 404s
+    mid-checkout. Verified: `shop-feed-repository.ts:32 fetchProductsByIds` (anchor + saved-products hydration),
     `orb-tools/cart-checkout-tools-repository.ts:36 fetchProductsByIds`,
-    `services/checkout/checkout-service-repository.ts:42 fetchProductsByIds`. These resolve a KNOWN item by id and
-    MUST NOT be filtered by relationship/distribution — otherwise a product a member saved or has in cart while the
-    supplier was active (now suspended for the tenant) silently 404s mid-checkout. They may honour an explicit
-    `tenant_catalog_overrides` hide only if product policy later wants it, but never relationship/distribution. The
-    inventory lint requires each fulfilment reader to be annotated `// discover-inventory: fulfilment` (sibling of
-    `shop-feed-repository.ts fetchProductsByIds` reorder-core's by-id reader, out of this spec's path set, carries
-    the same annotation when it is next touched).
-- `scripts/ci/discover-reader-inventory.*`: GENERATED list of `products`/`merchants` readers tagging each as
-  `discovery` or `fulfilment`; a build-failing lint asserts every `discovery` reader goes through the predicate and
-  every `fulfilment` reader is annotated and NOT relationship/distribution-filtered (R3), and the lineage guard
-  fails on a health_* read in EITHER class (R4), modelled on commerce arch §7.2 ranking guard.
+    `services/checkout/checkout-service-repository.ts:42 fetchProductsByIds`, and the by-id enrichment
+    `automation-handlers/health-action-initiative-repository.ts:81 fetchProductById` (hydrates an existing automation
+    context, not an open browse). They may honour an explicit `tenant_catalog_overrides` hide only if product policy
+    later wants it, but never relationship/distribution. The inventory lint requires each fulfilment reader to be
+    annotated `// discover-inventory: fulfilment`.
+  - **NOT a `products`/`merchants` reader at all:** `shop-feed-repository.ts:43 fetchRankedShopVideosPage` reads
+    `shop_videos` (its select carries no product id), so the products-visibility predicate has nothing to gate there
+    and the generated inventory will not detect it. Removed from the discovery list. Tenant scoping of the shop-video
+    feed (`shop_videos` ↔ creator/product linkage) is a separate concern, out of scope here.
+- `scripts/ci/discover-reader-inventory.*`: GENERATED list of `products`/`merchants` readers tagging each
+  `discovery` or `fulfilment` by the rule above; a build-failing lint asserts every `discovery` reader goes through
+  the predicate and every `fulfilment` reader is annotated and NOT relationship/distribution-filtered (R3). The
+  lineage guard (R4) is **per-query, not per-module** — the §7.2 ranking-guard idea applied per query: it fails only
+  when the SAME query that reads `products`/`merchants` (or that reader function's own join/sub-select) also touches a
+  `health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*` table, and MUST NOT flag an unrelated sibling
+  function in the same file. `health-wellness-repository.ts` (products at `:91`; health at `:28,:32,:44,:50,:55,:68`)
+  and `health-action-initiative-repository.ts` (products at `:81`; health at `:26,:30,:54,:60,:64`) are the known
+  mixed-module files the guard MUST tolerate; a module-granular copy of §7.2 would RED-flag this existing unrelated
+  code the instant these files enter the inventory.
 - Dark behind `MT_RESOLUTION_V2` + `tenant_settings.feature_flags.mt.discover_tenant_gate` / `mt.network_enabled`.
 - Discover isolation suite: supplier active only in T_A never in T_B (feed/search/ORB); network offering in both;
   override hide removes it in both modes in that tenant.
@@ -93,9 +107,13 @@
    apply.
 2. Dark by default (`MT_RESOLUTION_V2`, `tenant_settings.feature_flags.mt.*`); no exception in this spec.
 3. ONE shared Discover predicate — never re-implement per surface; new readers register in the generated inventory
-   tagged `discovery` (full predicate) or `fulfilment` (by-explicit-id, unfiltered, annotated). Never gate a
-   by-id fulfilment lookup by relationship/distribution.
-4. Lineage guard: no `products`/`merchants` reader reads `health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*`.
+   tagged `discovery` (surfaces not-yet-chosen offerings — open query OR a by-id lookup that INITIATES discovery;
+   full predicate) or `fulfilment` (by-explicit-id hydration of an item the member already has; unfiltered,
+   annotated `// discover-inventory: fulfilment`). Never gate a fulfilment hydration lookup by
+   relationship/distribution.
+4. Lineage guard is PER-QUERY: it fails only when the same query that reads `products`/`merchants` also touches
+   `health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*`; it must NOT flag a sibling function in the same
+   file (the known mixed files are `health-wellness-repository.ts` and `health-action-initiative-repository.ts`).
 5. `platform_only_accounts` is created by mt-community-isolation M2 (O5); this spec references it only.
 6. Network groups and messenger scope live in mt-network; this spec owns only Discover + offering distribution.
 7. Production read-only for every session and test (rules 31–32, 48); the executor never writes to a live system

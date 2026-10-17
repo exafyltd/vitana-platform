@@ -51,16 +51,24 @@ Allowed paths:
 
 - [ ] P1 `services/gateway/src/services/discover/tenant-visibility.ts`: the v1 predicate (R1/R2) + health-category
       trust-2+DPA gate (R8); scope term (`distribution`), overrides hide in BOTH modes.
-- [ ] P2 Route every DISCOVERY reader through the predicate; leave the three by-id FULFILMENT readers
-      (`shop-feed-repository.ts:32`, `cart-checkout-tools-repository.ts:36`, `checkout-service-repository.ts:42`
-      `fetchProductsByIds`) unfiltered + annotated `// discover-inventory: fulfilment` (no behaviour change while
-      flags off; a saved/in-flight order is never 404'd).
-- [ ] P3 `scripts/ci/discover-reader-inventory.mjs`: GENERATED inventory tagging each reader `discovery|fulfilment`
-      + build-failing lint (R3: discovery goes through the predicate, fulfilment is annotated + unfiltered) + lineage
-      guard (R4, no health_*/wearable_*/biomarker_*/lab_*/vitana_index_* read in either class).
+- [ ] P2 Route every DISCOVERY reader through the predicate: the open-query readers plus the by-id discovery
+      initiator `discover-recommendations-repository.ts:23` (`fetchActiveProductForRecommendation`). Leave the
+      FULFILMENT by-id hydration readers unfiltered + annotated `// discover-inventory: fulfilment`:
+      `shop-feed-repository.ts:32`, `cart-checkout-tools-repository.ts:36`, `checkout-service-repository.ts:42`
+      (`fetchProductsByIds`) and `health-action-initiative-repository.ts:81` (`fetchProductById`). Do NOT touch
+      `shop-feed-repository.ts:43 fetchRankedShopVideosPage` (reads `shop_videos`, not a products reader). No
+      behaviour change while flags off; a saved/in-flight order is never 404'd.
+- [ ] P3 `scripts/ci/discover-reader-inventory.mjs`: GENERATED inventory tagging each `products`/`merchants` reader
+      `discovery|fulfilment` + build-failing lint (R3: discovery goes through the predicate, fulfilment is annotated
+      + unfiltered) + PER-QUERY lineage guard (R4: fails only when the same query that reads `products`/`merchants`
+      also reads health_*/wearable_*/biomarker_*/lab_*/vitana_index_*; must NOT flag a sibling function in a mixed
+      file — tolerate `health-wellness-repository.ts` and `health-action-initiative-repository.ts`).
 - [ ] P4 Dark behind `MT_RESOLUTION_V2` + `mt.discover_tenant_gate` / `mt.network_enabled`.
-- [ ] P5 Vitest: predicate (community/network, overrides, relationship active/inactive, health gate); inventory lint;
-      lineage guard; isolation suite (supplier active only in T_A absent in T_B incl. ORB; network offering in both).
+- [ ] P5 Vitest: predicate (community/network, overrides, relationship active/inactive, health gate); inventory lint
+      (a bypassing discovery reader fails; an unannotated fulfilment reader fails); per-query lineage guard (fails on
+      a health_* read in the SAME query as a products read; PASSES a mixed file whose health read is a sibling
+      function); isolation suite (supplier active only in T_A absent in T_B incl. ORB; network offering in both;
+      fulfilment-by-id read of a known T_A product still resolves when the supplier is suspended for the tenant).
 - [ ] P6 ORB dispatcher tests on Nova + Vertex Serbian bridge if the ORB product/cart tool dispatch changes (42h).
 
 Acceptance: full gateway Vitest/Jest green; inventory lint + lineage guard red when a reader bypasses/reads health;

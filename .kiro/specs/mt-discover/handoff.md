@@ -3,9 +3,9 @@ slug: mt-discover
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: claude
+next_actor: kiro
 state: drafted
-updated: 2026-10-17T12:52Z
+updated: 2026-10-17T13:44Z
 ---
 # Handoff — mt-discover (Commerce & Discover × tenancy, WS11 + Discover scope of §4.11)
 
@@ -56,5 +56,25 @@ commission-attribution row at `credit-recommender-repository.ts:28 fetchProductO
 design, tasks D4. Plan body 13.7k chars (<= 15k). queue.mjs validators re-run on handoff.md + all 4 lanes: 0 errors.
 Open HIGH/MEDIUM after this pass: 0.
 
-### 2026-10-17T12:52Z · ci-plan-spar · escalated (partner unavailable)
-The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+### 2026-10-17T13:44Z · kiro-hotmail-202610151618-b437 · internal review fixes (drafted)
+Resolved the second internal-review pass: 1 HIGH + 2 MEDIUM (INTERNAL-REVIEW.json verdict REJECTED). Each premise
+re-verified against current code (file:line):
+(1) **HIGH — lineage-guard granularity.** The guard is now specified PER-QUERY, not per-module: it fails only when
+the SAME query that reads `products`/`merchants` also touches a health_*/wearable_*/biomarker_*/lab_*/vitana_index_*
+table, and must NOT flag a sibling function in the same file. Verified the two mixed-module files that a per-module
+guard would RED-flag: `health-wellness-repository.ts` (products `:91`; health `:28,:32,:44,:50,:55,:68`) and
+`health-action-initiative-repository.ts` (products `:81`; health `:26,:30,:54,:60,:64`). Named both as the files the
+guard must tolerate. Updated plan Problem 10 + Fix + Risks, requirements R4, design Rule 4 + predicate section, tasks
+P3/P5, lane `discover-shared-predicate` body.
+(2) **MEDIUM — wrong discovery reader.** `shop-feed-repository.ts:43 fetchRankedShopVideosPage` reads `shop_videos`,
+NOT `products`/`merchants` (verified: select carries no product id), so it is not a predicate reader at all. Removed
+from the discovery list everywhere; stated `shop_videos` scoping is a separate concern, out of scope. Updated plan
+Problem 2 + Fix, design (readers list + predicate + removed from discovery), requirements R3, tasks P2.
+(3) **MEDIUM — by-id classification rule.** Added the explicit discovery-vs-fulfilment rule: a by-id lookup that
+INITIATES a new discovery action is DISCOVERY (gated) — so `discover-recommendations-repository.ts:23`
+(`fetchActiveProductForRecommendation`) is DISCOVERY; a by-id lookup that HYDRATES an already-held item is FULFILMENT
+(unfiltered) — so `fetchProductsByIds` (shop-feed:32/cart-checkout:36/checkout:42) and
+`health-action-initiative-repository.ts:81 fetchProductById` are FULFILMENT. Updated plan Problem 2 + Fix,
+requirements R1/R3, design, tasks P2.
+Plan body ~15.3k chars (within ~15k soft bound). queue.mjs validators re-run on handoff.md + all 4 lanes: 0 errors.
+Open HIGH/MEDIUM after this pass: 0.

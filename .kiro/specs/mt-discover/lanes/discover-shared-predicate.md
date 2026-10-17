@@ -43,8 +43,11 @@ Branch `kiro/mt-discover/discover-shared-predicate`; PR title
 `Collab-Lane: mt-discover/discover-shared-predicate`. When the PR is open: set `state: in-review`, `next_actor: kiro`
 (reviewer seat `hotmail`), `pr: <url>`, append a log entry, release the claim.
 
-The reader inventory is GENERATED, not hand-listed; the lint and the lineage guard are build-failing. If the ORB
-product/cart tool dispatch is changed, add the Nova + Vertex Serbian bridge dispatcher tests (42h).
+The reader inventory is GENERATED, not hand-listed; the lint and the lineage guard are build-failing. The lineage
+guard is PER-QUERY (fails only when the same query that reads `products`/`merchants` also reads a health table), and
+must tolerate the mixed files `health-wellness-repository.ts` / `health-action-initiative-repository.ts` whose health
+reads are in sibling functions. `shop-feed-repository.ts:43 fetchRankedShopVideosPage` reads `shop_videos` and is NOT
+in scope. If the ORB product/cart tool dispatch is changed, add the Nova + Vertex Serbian bridge dispatcher tests (42h).
 
 ## Log
 ### 2026-10-15T16:40Z · kiro-hotmail-202610151618-b437 · created → ready
