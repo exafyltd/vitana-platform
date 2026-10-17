@@ -3,9 +3,9 @@ slug: mt-discover
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: kiro
+next_actor: claude
 state: drafted
-updated: 2026-10-17T15:10Z
+updated: 2026-10-17T15:47Z
 ---
 # Handoff — mt-discover (Commerce & Discover × tenancy, WS11 + Discover scope of §4.11)
 
@@ -117,3 +117,6 @@ design Rule 3 + inventory-generator description, plan Fix, tasks P3/P5, lane bod
 (3) **NIT — plan body length.** Tightened Problem 2/Fix (reference design for the full list rather than restating) →
 plan body 15.4k chars, in line with the prior pass's ~15.3k (within the ~15k soft bound). queue.mjs validators re-run
 on handoff.md + all 4 lanes: 0 errors. Deleted sparring/INTERNAL-REVIEW.json. Open HIGH/MEDIUM after this pass: 0.
+
+### 2026-10-17T15:47Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
