@@ -1,13 +1,13 @@
 {
   "sessions": [
     {
-      "id": "a9c3cdda-12ed-48fc-becb-0995befa261a",
+      "id": "a85abafa-3ef8-4540-b50c-a457a3fefde5",
       "submitted": [],
       "plan_text_sha": "ea047501",
       "rounds": 1,
       "verdict": "escalated",
-      "infra": true,
-      "retryable": true,
+      "infra": false,
+      "retryable": false,
       "final_plan_hash": "54374f1f3e37dc81afa32041a11f0cc758e7cc352e70f1ece109efefe6171c5f",
       "policy_approved_at": null
     }
