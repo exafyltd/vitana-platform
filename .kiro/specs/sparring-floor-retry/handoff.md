@@ -5,7 +5,7 @@ author_seat: exafy
 executor: claude
 next_actor: claude
 state: drafted
-updated: 2026-10-18T19:30Z
+updated: 2026-10-18T19:57Z
 ---
 # Handoff — sparring-floor-retry
 
@@ -31,3 +31,6 @@ Accepted R1-F1…F4. I read all 10 stranded sessions (GET only): every round-1 t
 2026-10-17T18:39Z and 18:44Z, and every reason is evidence_floor_not_met. So the plan now keys on "every code read
 failed" (relabel as code_access_unavailable, plus a one-time legacy reclassification) rather than making the floor
 reason retryable in general.
+
+### 2026-10-18T19:57Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
