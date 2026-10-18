@@ -5,7 +5,7 @@ author_seat: exafyltd
 executor: claude
 next_actor: claude
 state: drafted
-updated: 2026-10-16T10:25Z
+updated: 2026-10-18T22:45Z
 ---
 # Handoff — I18N-PROPAGATE stale-write fix
 
@@ -21,3 +21,9 @@ Investigated read-only: the workflow YAML, `scripts/translate-keys.mjs`, `script
 38443615525's job timings and `collect` log, and the three commits on #1399. Drafted requirements, design, tasks, plan,
 this handoff and `lanes/fix-workflow.md`. No VTID, no claim on the lane, no live writes, no workflow dispatched.
 next_actor: claude — PLAN-SPAR spars the plan; then allocate the VTID and execute the lane (governance path).
+
+### 2026-10-18T22:45Z · kiro-202610182052-5ce2 · sparring round 1 answered
+Claimed `_plan`. Answered R1-F1, R1-F2, R1-F3 (all accepted) in `sparring/responses-1.md` after re-reading the
+vitana-v1 premises at `5c4632ea9` and `origin/main` `704b5def4` (unchanged). Plan block now carries verbatim premise
+excerpts, the explicit collect/pivot retry shape, file-scope rules and test scenarios h–k. No VTID, no live writes,
+no workflow dispatched. next_actor: claude — the push starts PLAN-SPAR round 2.
