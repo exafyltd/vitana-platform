@@ -18,10 +18,14 @@ product with its own identity and Maxina's behaviour cannot be golden-tested as 
 2. **`getEffectiveConfig(surfaceKey, tenantId)` already exists** (`ai-personality-service.ts:659`) layering
    code default ← global DB (`getPersonalityConfig`) ← tenant override from `tenant_assistant_config`
    (`system_prompt_override`, `voice_config_override`, `tool_overrides`, `model_routing_override`,
-   `extra_config`). It is consumed by `routes/tenant-admin/assistant-config.ts:21,62`. The orb profile
-   already carries `personaKey: PersonalitySurfaceKey | null` (`orb/profile/role-registry.ts:40`,
-   `assistant-profile.ts:63`, `orb/live/surface.ts:64`), but the live instruction builders do not call
-   `getEffectiveConfig` per tenant.
+   `extra_config`). It is consumed by `routes/tenant-admin/assistant-config.ts:21,62`. **Its tenant override
+   replaces `base_identity` WHOLESALE** -- `ai-personality-service.ts:687`
+   `merged.base_identity = tenantConfig.system_prompt_override` overwrites the entire string, including the
+   fixed Vitana name/pronunciation/three-names/safety rules, not just the tenant block, so the fixed Vitana
+   identity is NOT structurally protected by today's merge. The orb profile already carries
+   `personaKey: PersonalitySurfaceKey | null` (`orb/profile/role-registry.ts:40`, `assistant-profile.ts:63`);
+   `orb/live/surface.ts` imports `PersonalitySurfaceKey` (`:16`) and documents the voice_live overlay (`:63`).
+   The live instruction builders do not call `getEffectiveConfig` per tenant.
 3. **Pre-login story + greetings are Maxina-literal.** `routes/orb-live.ts:7413`
    `buildAnonymousSystemInstruction(lang, voiceStyle, ctx, …)` (called `:7652`) and the greeting pools
    (`orb/instruction/greeting-pools.ts`) hardcode the Maxina story/offer. Rule 41: these are composed by the
@@ -50,7 +54,10 @@ unless the lane names an exception; Maxina renders byte-identical (golden equali
   `getEffectiveConfig(surfaceKey, ctx.tenantId)` keyed on the resolved `TenantContext`. Greetings,
   journey-modes, first-time welcome and tool descriptions emit INTENTS, never finished sentences (rule 41).
   Maxina's facts live in its pack row; with no tenant override the assembled block is byte-identical to
-  today. Reads only; no migration.
+  today. The FIXED Vitana identity block is assembled from code, never from `system_prompt_override`, so a
+  tenant pack can only supply the TENANT facts/intents and can never overwrite the name/pronunciation/
+  three-names/safety rules (closing the wholesale-overwrite path at `ai-personality-service.ts:687`); the
+  rule-41 guard test asserts the fixed block is always present. Reads only; no migration.
 - **Lane `kb-overlay-db` (kiro, platform supabase/migrations).** Expand-only migration adding
   `knowledge_docs.tenant_id uuid NULL` (FK `tenants`, context/overlay only; NULL = platform baseline) with
   rollback, `lock_timeout`, read-only pre/post checks, and a MIGRATION-QUEUE row. No backfill of content;
@@ -122,6 +129,9 @@ with mt-guardrails. Creating a real tenant pack is a later owner-approved step (
   as the gate; the fixed block is lifted verbatim.
 - Rule 41: a refactor could accidentally template a spoken sentence. Mitigation: the rule-41 guard test and
   INTENT-only emission; `{{brand}}` banned from spoken strings by test.
+- The existing tenant override overwrites `base_identity` wholesale (`ai-personality-service.ts:687`), which
+  could drop the fixed Vitana identity under a tenant pack. Mitigation: the split assembles the fixed block
+  from code outside the override path; a test asserts the three-names/safety block survives a tenant override.
 - i18n neutralisation is wide (~120 files). Mitigation: `{{brand}}` default = Maxina; ESLint i18n gate;
   per-shard review; DE-first.
 - CROSS-SPEC O3 golden coupling. Mitigation: `whats-new-drafter` depends on mt-guardrails `v1-golden-edge`;

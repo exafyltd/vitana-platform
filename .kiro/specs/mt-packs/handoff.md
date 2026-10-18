@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-17T15:31Z
+updated: 2026-10-17T16:30Z
 ---
 # Handoff — mt-packs (WS5): Assistant & content packs
 
@@ -93,3 +93,20 @@ The sparring partner could not review (code_access_unavailable). Not a plan prob
 
 ### 2026-10-17T15:31Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-17T16:30Z Â· kiro-hotmail-202610151618-b437 Â· replan (evidence_floor_not_met) â†’ drafted
+PLAN-SPAR session `a5b179ee-0ba7-4109-afdc-17fbd1b009ad` escalated with `evidence_floor_not_met` (round 1 cited
+0 premise checks; infra=false). Re-verified premises against platform tip and refined plan.md with a genuine
+finding: the existing `getEffectiveConfig` tenant override **replaces `base_identity` wholesale** at
+`services/gateway/src/services/ai-personality-service.ts:687`
+(`merged.base_identity = tenantConfig.system_prompt_override`), so the fixed Vitana identity (name,
+pronunciation, three-names rule, safety) is NOT structurally protected by the current merge â€” a tenant pack
+could silently drop it. plan.md Problem #2, the `persona-pack` Fix and Risks now require the fixed block to be
+assembled from code outside the override path, with a test asserting it survives a tenant override. Also
+corrected the imprecise `orb/live/surface.ts:64` citation: `surface.ts` imports `PersonalitySurfaceKey` (`:16`)
+and documents the voice_live overlay (`:63`); the `personaKey` field lives on `role-registry.ts:40` /
+`assistant-profile.ts:63`. Verified this round via read_file: `ai-personality-service.ts` (`:36/:65/:81/:86`
+surface list + hardcoded base_identity, `:659/:687` effective-config merge + wholesale overwrite),
+`orb-live.ts:7413/:7652` (`buildAnonymousSystemInstruction`), the four `kb/instruction-manual/maxina` readers
+(`live-system-instruction.ts:1282`, `checklist-regenerate.ts:125-129`, `orb-tools-shared.ts:1991`,
+`retrieval-router.ts:95`), and `surface.ts:16/:63`. No lane/path/dep change. Next: re-push and re-spar.
