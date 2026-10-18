@@ -37,8 +37,9 @@ Allowed paths:
       `settings.feature_flags.mt.jobs_tenant_loop` truthy).
 - [ ] L2 `jobs/job-tenant-loop.ts`: `activeTenantIds(sb)`, `tenantTimezone(sb, tenantId)` (fallback `Europe/Berlin`),
       `forEachActiveTenant(sb, fn)`, `resolveActorTenant(sb, identity)` (primary-tenant resolver, never `DEFAULT_TENANT_ID`).
-- [ ] L3 Heartbeat loop (`index.ts:1838-1866`): when the flag is on, run `runHeartbeatCycle` per active tenant; off,
-      the single `DEFAULT_TENANT_ID` pass unchanged.
+- [ ] L3 Heartbeat loop (`index.ts:1842-1866`; `heartbeatTenantId` assignment `:1844`, `runHeartbeatCycle` call
+      `:1853`): when the flag is on, run `runHeartbeatCycle` per active tenant; off, the single `DEFAULT_TENANT_ID`
+      pass unchanged.
 - [ ] L4 `scheduled-notifications.ts`: `getTenantId`-driven routes iterate `forEachActiveTenant` under the flag; off,
       unchanged. Per-user `getUserTimezone` untouched.
 - [ ] L5 Vitest: flag matrix; `activeTenantIds` excludes `is_platform`/inactive; `tenantTimezone` fallback; each

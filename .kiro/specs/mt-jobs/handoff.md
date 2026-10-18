@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-17T15:32Z
+updated: 2026-10-17T16:30Z
 ---
 # Handoff — mt-jobs (WS6: jobs & events loop over active tenants)
 
@@ -44,3 +44,13 @@ The sparring partner could not review (code_access_unavailable). Not a plan prob
 
 ### 2026-10-17T15:32Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-17T16:30Z · kiro-hotmail-202610151618-b437 · replan → re-spar (round 1 escalated: evidence_floor_not_met)
+Round 1 escalated `evidence_floor_not_met` (0 premise checks on the partner side) plus two prior `partner unavailable`
+escalations — no plan finding to answer. Re-verified all seven premises against tip `41482d7` today and corrected the
+drifted file:line citations in `plan.md` / `tasks.md`: heartbeat `index.ts:1840`→`:1844` (assignment) + call
+`:1849`→`:1853`, block `1838-1866`→`1842-1866`; `getTenantId` def `scheduled-notifications.ts:105`→`:104`;
+`/night-push` `getTenantId(req)` `:1527`→`:1526`; memory backfill `memory-embedding-backfill-loop.ts:38-44`→`:38-43`.
+Verified unchanged and exact: the seven automation-event sites (`community.ts:274,382,482`, `match-feedback.ts:280`,
+`matchmaking.ts:576`, `admin-signups.ts:205`, `groups-events-tools.ts:360`), community-scan route `:2281`/`:2294`,
+`scan-runner.ts:255`, `getUserTimezone` `:1567`. Response recorded in `sparring/responses-1.md`. Re-pushed to re-spar.
