@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-18T19:15Z
+updated: 2026-10-18T19:31Z
 ---
 # Handoff — mt-track-s (Track S security hotfixes S-A..S-L + Health Phase 0 live defects / WS10)
 
@@ -93,3 +93,17 @@ VTID-05049 "flagged for removal" comment and imports `requireUser, forbidden` fr
 `src/**` reference to `linkedin-import` is that one test file (no runtime consumer). No lane/path/dependency change;
 plan body unchanged except the three citations. queue.mjs validators re-run on handoff.md and
 lanes/s-j-route-inventory.md (0 errors); tasks.md "Allowed paths:" identical to the lane `paths` (6 entries).
+
+### 2026-10-18T19:31Z · kiro-hotmail-202610151618-b437 · drafted (answered s2-round-1 — all findings off-spec)
+Fresh session `7bf15cbe-7042-4a54-9813-7f4efaac2935` (plan_text_sha `b73e525`, verdict in_progress) raised three
+findings in `sparring/s2-round-1.md` (1 blocker + 2 major). Every finding describes lanes/routes that do not exist in
+mt-track-s: `command-hub-tenant-module` + `scripts/ci/command-hub-ownership-guard.js` (R1-F1), a `tenant-admin-api`
+lane scoping `admin-signups.ts`/`admin-autopilot.ts` via `require-tenant-admin.ts` (R1-F2), and tenant-scoping of
+`admin-moderation.ts`/`admin-signups.ts` auth guards (R1-F3). mt-track-s has one OPEN lane, `s-j-route-inventory`
+(vitana-v1): delete the dead `linkedin-import` edge function + add the node edge-function auth inventory gate; its
+`paths` contain no gateway route, Command Hub file or tenant-admin middleware. The round's header session id
+(`643ff85b…`) and plan hash (`53ed8eac…`) also do not match this session, so it reviewed another spec's plan
+(mt-tenant-admin / mt-frontend-brand material; Command Hub guard belongs to mt-frontend-brand and moderation to
+mt-tenant-admin P2/P3 per CROSS-SPEC-DECISIONS.md). All three rejected with code-cited rationale in
+`sparring/s2-responses-1.md`; plan.md unchanged (no legitimate mt-track-s change these findings warrant). queue.mjs
+validators re-run on handoff.md and lanes/s-j-route-inventory.md (0 errors).
