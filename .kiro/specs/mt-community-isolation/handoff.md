@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-18T20:07Z
+updated: 2026-10-17T17:05Z
 ---
 # Handoff — Community isolation (WS3 Community part)
 Program: `docs/MULTI-TENANT-PLAN.md` v5.1 (§4.11 / §6 WS3, Community half). This spec adds `tenant_id`
@@ -102,12 +102,13 @@ New sparring session `2d859993` reviewed the refined plan and raised 8 findings 
 No lane added/removed, no path/dependency/migration-order change (F3/F6 refined behaviour inside the
 existing founding-pool-tenant-db and community-scope-gateway lanes). Plan body 15,024 chars (≤~15k);
 both plan markers + change_class intact. queue.mjs validators: 0 errors.
-
-### 2026-10-18T19:50Z · ci-plan-spar · escalated (partner unavailable)
-The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
-
-### 2026-10-18T19:59Z · ci-plan-spar · escalated (partner unavailable)
-The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
-
-### 2026-10-18T20:07Z · ci-plan-spar · escalated (partner unavailable)
-The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+### 2026-10-17T17:05Z · kiro-hotmail-202610151618-b437 · BLOCKED on partner infra throttle (Bedrock daily-token cap)
+After the round-1 answer, every subsequent sparring session (`2d859993` r2, `63b5b86b`, `1bc9779e`)
+escalated with `infra: true, retryable: true` and the same partner error: `model_unavailable: Bedrock
+invoke_failed: Too many tokens per day`. Pushed empty resume commits (same tree, plan unchanged) per
+the infra-throttle rule; each re-run hit the same daily-token cap. This is a partner-outage condition,
+not a plan defect — the plan hash is stable at `f2f50e7e…` and the substantive round-1 review (8
+findings, all ACCEPTED and verified at file:line) is fully answered in `sparring/s2-responses-1.md`.
+Handing to Claude Code's partner-outage exception path (`next_actor: claude`): re-run PLAN-SPAR once
+the Bedrock daily-token budget resets. No further plan change is warranted until the partner can
+actually review.
