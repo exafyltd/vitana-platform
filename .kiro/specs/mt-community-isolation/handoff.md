@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-17T17:05Z
+updated: 2026-10-18T20:13Z
 ---
 # Handoff — Community isolation (WS3 Community part)
 Program: `docs/MULTI-TENANT-PLAN.md` v5.1 (§4.11 / §6 WS3, Community half). This spec adds `tenant_id`
@@ -112,3 +112,6 @@ findings, all ACCEPTED and verified at file:line) is fully answered in `sparring
 Handing to Claude Code's partner-outage exception path (`next_actor: claude`): re-run PLAN-SPAR once
 the Bedrock daily-token budget resets. No further plan change is warranted until the partner can
 actually review.
+
+### 2026-10-18T20:13Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
