@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-18T08:28Z
+updated: 2026-10-18T14:58Z
 ---
 # Handoff — mt-guardrails (WS0 guardrails and test tooling)
 
@@ -75,3 +75,6 @@ existing raw-psql + RAISE harness, not pgTAP/`pg_prove` (none exists in the repo
 file, and now also depends on `generated-inventories` for the shared health-table-list constant.
 R1-F2: `test:support`/`test:operator`/`test:roles` verified present in `services/gateway/package.json`;
 the row-21b `SUPABASE_URL` binding fix is folded into the ci-wiring lane.
+
+### 2026-10-18T14:58Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
