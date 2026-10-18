@@ -42,9 +42,15 @@ guardrails that must exist before any isolation work. Verified against platform 
 
 Already in place (build on, do not re-plan): `ci_tenant_isolation_health()` (VTID-05149, migration
 `20261014000300`, applied; `DATABASE_SCHEMA.md`) wired report-only into
-`MORNING-SYSTEM-HEALTH-CHECK.yml` row 21b — WS0's *production* isolation monitoring is DONE. The
-`isHealthTable()` predicate is owned by mt-identity (CROSS-SPEC O1); this spec's lints reference it,
-never their own list.
+`MORNING-SYSTEM-HEALTH-CHECK.yml` row 21b — WS0's *production* isolation monitoring is DONE, with one
+pre-existing discrepancy this spec must account for (R1-F2): row 21b binds `SUPABASE_URL:
+${{ secrets.SUPABASE_URL }}` directly (`MORNING-SYSTEM-HEALTH-CHECK.yml:546`), while the other RPC
+checks (rows 5–12 at :172, row 21 at :501) use `vars.DATA_REST_URL || secrets.SUPABASE_URL` for the
+Aurora cutover — so post-Aurora row 21b could query a stale endpoint vs the rest. The `isHealthTable()`
+predicate referenced by CROSS-SPEC O1 does **not** exist in either repo yet (R1-F1); until mt-identity
+ships it, this spec's health-table list is a shared constant that lane 2 creates (below), sourced from
+`docs/MULTI-TENANT-PLAN.md` §2 — a single definition, not a scattered local copy. Lane 3 switches to
+mt-identity's `isHealthTable()` when it ships.
 
 ## Fix (per lane)
 1. **`local-test-stack`** (kiro, seat hotmail, repo platform) — committed D11 local-stack config
@@ -58,12 +64,17 @@ never their own list.
    tenant policy, DEFINER without revoke/caller check, realtime table without tenant RLS, storage
    policy) with an owner-tagged allowlist file. The bare-policy counter (N3 gate) lives here and reads
    ZERO today only once policies are rewritten — it reports the current count, not a hard 0, in WS0.
-   Depends on `local-test-stack`.
+   Also produces the **shared health-table-list constant** (checked-in config) enumerated from
+   `docs/MULTI-TENANT-PLAN.md` §2 — `health_features_daily`, `biomarker_results`, `wearable_samples`,
+   `partner_health_test_orders`, `data_sharing_consents` — the single source of truth consumed by the
+   pgTAP lane and the lints until mt-identity's `isHealthTable()` predicate ships (then they switch to
+   it and this constant is retired). Depends on `local-test-stack`.
 3. **`pgtap-isolation-suite`** (kiro, seat hotmail, repo platform) — `supabase/tests/**` pgTAP specs
    run by `pg_prove` against the local stack: b_member sees 0 T_A rows and a T_A-tenant write by
-   b_member fails, per the 18 tenant tables and the health tables (via the mt-identity
-   `isHealthTable()` list, not a local copy). ab_dual read/write single-series health assertion.
-   Depends on `local-test-stack`.
+   b_member fails, per the 18 tenant tables and the health tables (via the shared health-table-list
+   constant from `generated-inventories`, switching to mt-identity's `isHealthTable()` predicate when
+   it ships — never a scattered local copy). ab_dual read/write single-series health assertion.
+   Depends on `local-test-stack` and `generated-inventories` (for the health-table-list constant).
 4. **`gateway-scope-lint-contract`** (kiro, seat jtadic, repo platform) — a static lint over
    `services/gateway/src` repositories banning header/query-supplied tenant outside admin routes; a
    route-inventory Jest test (every route with no auth middleware must be on a committed public
@@ -79,7 +90,10 @@ never their own list.
 6. **`ci-wiring`** (claude, governance) — wires lanes 2–5 and the MIGRATION-QUEUE validator into CI
    (`.github/workflows/**`, `scripts/ci/**`), report-only first per the PR-GATE pattern (its own
    `config.json` enforce switch), then enforcing. Adds the MIGRATION-QUEUE CI check (file shape, apply
-   order, one row per migration file) replacing the review rule. Governance paths → `executor: claude`,
+   order, one row per migration file) replacing the review rule. Also folds the R1-F2 one-line fix:
+   align `MORNING-SYSTEM-HEALTH-CHECK.yml` row 21b's `SUPABASE_URL` binding to
+   `vars.DATA_REST_URL || secrets.SUPABASE_URL` (matching rows 5–12/21) so the production isolation
+   signal follows the Aurora cutover instead of a stale endpoint. Governance paths → `executor: claude`,
    `next_actor: claude`. Depends on lanes 2–5 producing the commands it runs.
 
 ## Migrations
@@ -135,8 +149,10 @@ list referenced here. Each later slice is its own sparred spec.
 Done: VTID-05147 (S-M), VTID-05149 (A: `ci_tenant_isolation_health`, `TenantContext`), VTID-05150 (B),
 VTID-05151 (C). Within this spec: `generated-inventories` → `local-test-stack`;
 `pgtap-isolation-suite` → `local-test-stack`; `gateway-scope-lint-contract` → `generated-inventories`;
-`ci-wiring` → lanes 2–5. The `isHealthTable()` predicate: mt-identity (CROSS-SPEC O1). Cross-spec O3:
-mt-packs P4 depends on `maxina-golden-suite`'s `v1-golden-edge`.
+`ci-wiring` → lanes 2–5. The `isHealthTable()` predicate is NOT yet available (CROSS-SPEC O1, R1-F1):
+this spec's health-table list is the shared constant from `generated-inventories` until mt-identity
+ships the predicate, then lane 3 and the lints switch to it. Cross-spec O3: mt-packs P4 depends on
+`maxina-golden-suite`'s `v1-golden-edge`.
 
 ## Owner decisions
 None new. D11 (local stack), D13 (no synthetic/production tenant — WS0 runs on the local stack only),
