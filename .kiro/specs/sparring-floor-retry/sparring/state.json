@@ -1,12 +1,10 @@
 {
   "sessions": [
     {
-      "id": "d0be51a3-2a9e-4557-b7e7-6fd39d26836e",
-      "submitted": [
-        1
-      ],
+      "id": "798679a9-6027-43c9-ba33-64217311f741",
+      "submitted": [],
       "plan_text_sha": "fac5864e",
-      "rounds": 2,
+      "rounds": 1,
       "verdict": "escalated",
       "infra": true,
       "retryable": true,

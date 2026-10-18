@@ -5,7 +5,7 @@ author_seat: exafy
 executor: claude
 next_actor: claude
 state: drafted
-updated: 2026-10-18T22:06Z
+updated: 2026-10-18T22:12Z
 ---
 # Handoff — sparring-floor-retry
 
@@ -49,3 +49,6 @@ creates a fresh one) and never reads `responses-2.md`; a responses file is only 
 `in_progress` branch. Left `next_actor: claude`, `state: drafted` unchanged — the partner-outage retry
 belongs to Claude Code / PLAN-SPAR, not to the plan author. No VTID, no live write, no merge; nothing
 outside this one item.
+
+### 2026-10-18T22:12Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
