@@ -14,7 +14,8 @@ paths:
   - "docs/validation/**"
 claimed_by: kiro-exafy-202610181501-d321
 branch: kiro/health-native/n6b-ios-voice
-updated: 2026-10-18T15:02Z
+pr: https://github.com/exafyltd/vitana-platform/pull/4183
+updated: 2026-10-18T15:03Z
 ---
 # N6b — ORB iOS voice module: build + device verification on macOS (vitana-v1 #1392)
 
