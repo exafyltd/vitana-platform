@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-18T20:22Z
+updated: 2026-10-18T20:25Z
 ---
 # Handoff — mt-jobs (WS6: jobs & events loop over active tenants)
 
@@ -62,4 +62,7 @@ Answered all five s2-round-1 findings in `sparring/s2-responses-1.md` and update
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
 
 ### 2026-10-18T20:22Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-18T20:25Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
