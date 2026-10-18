@@ -6,13 +6,40 @@ The spec lives in `exafyltd/vitana-platform` (where PLAN-SPAR runs); all code, t
 live in `exafyltd/vitana-v1`, and every lane `paths:` entry is a vitana-v1 path.
 
 <!-- plan:begin -->
-## Goal
-Finish the Spotlight desktop redesign (`.kiro/specs/desktop-spotlight/`, VTID-05105 … 05117) to its "System-wide done"
-state: every screen route `migrated` in `src/design/screen-manifest.json` (except one product question) and every
-non-chrome entry of `scripts/ci/pr-gate/baseline/design.json` at 0. No change to the design contract
-(`docs/design-system/SPOTLIGHT_RULES.md`): no new archetype, card size, token or ESLint rule.
+## Repos and pinned refs (R1-F4)
+This spec and its sparring live in `exafyltd/vitana-platform` (PLAN-SPAR runs only there). **Every code path, command
+and baseline below is in `exafyltd/vitana-v1`**, pinned at `exafyltd/vitana-v1@704b5def4` (origin/main, 2026-10-18).
+vitana-platform carries no code change for this plan. Premise paths, all in vitana-v1 at that ref:
+- Earlier plan: `.kiro/specs/desktop-spotlight/{requirements,design,tasks,handoff}.md` + `lanes/`.
+- Contract: `docs/design-system/SPOTLIGHT_RULES.md`. Manifest: `src/design/screen-manifest.json` (key `screens`,
+  346 entries: 329 `migrated`, 17 `legacy`), test `src/design/screen-manifest.test.ts`, sync `npm run design:manifest`
+  (`scripts/design/screen-manifest.mjs --sync`).
+- Rules: `eslint-rules/design/{no-raw-palette,no-arbitrary-size,no-page-spinner,no-raw-content-card,
+  no-physical-direction,require-screen-frame}.js`, all `error` in `eslint.config.js:215-220`; test
+  `src/design/eslint-design-rules.test.ts`.
+- Design ratchet: `scripts/ci/pr-gate/gate.mjs:100` (`ratchet-design <eslint-json> --base <sha> --head <sha>`),
+  `gate.mjs:124` (`baseline-design <eslint-json>`); `scripts/ci/pr-gate/lib.mjs:112` (`countDesign`: severity-2
+  `design/*` per file), `lib.mjs:132` (`chooseDesignBaseline`: BASE commit's baseline unless the PR changes
+  `eslint-rules/design/**`); baseline `scripts/ci/pr-gate/baseline/design.json` (544 files, 3,705 errors at the ref);
+  test `scripts/ci/pr-gate/__tests__/design-ratchet.test.mjs`; CI step "Design ratchet" `.github/workflows/PR-GATE.yml:150-153`.
+- Skeleton building blocks: `src/components/layout/spotlight/skeletons/ArchetypeSkeleton.tsx`, `VCardSkeleton` from
+  `src/components/ui/vcard` (used at `src/components/community/spotlight/SocialStates.tsx:4`).
+Round 1 cited `exafyltd/vitana-platform:scripts/ci/pr-gate/gate.mjs`, which is a different gate (no design check);
+the vitana-v1 gate above is the one every lane's PR runs. **Partner readability:** the sparring session is pinned only
+to vitana-platform today; giving it a vitana-v1 ref is the governance lane `native-g1-wiring/spar-vitana-v1-ref`
+(executor claude; `scripts/collab/plan-spar.mjs` sends `extra_refs: { 'exafyltd/vitana-v1': <sha> }`). Refs pin at
+session creation, so after that lane merges this plan is re-pushed to open a new session that can read vitana-v1.
+**Gating:** no lane of this spec moves `approved → executing` until a session with the vitana-v1 ref has sparred it.
 
-## Measured state (origin/main 5c4632ea9, 2026-10-16, `npx eslint src/pages src/components -f json`)
+## Goal
+Finish the Spotlight desktop redesign (vitana-v1 `.kiro/specs/desktop-spotlight/`, VTID-05105 … 05117) to its
+"System-wide done" state: every screen route `migrated` in vitana-v1 `src/design/screen-manifest.json` (except one
+product question) and every non-chrome entry of vitana-v1 `scripts/ci/pr-gate/baseline/design.json` at 0. No change to
+the design contract (`docs/design-system/SPOTLIGHT_RULES.md`): no new archetype, card size, token or ESLint rule, and
+no change to `eslint-rules/design/**` (so every lane is measured against the BASE commit's baseline, `lib.mjs:132`).
+
+## Measured state (vitana-v1 origin/main 5c4632ea9, 2026-10-16, `npx eslint src/pages src/components -f json`;
+baseline and manifest totals re-checked unchanged at 704b5def4, 2026-10-18)
 - `design/no-raw-palette` 3,220 lines in 411 files (the handover's "~3,340"; batch 1 #1411 took 60 files to 0).
 - `design/no-arbitrary-size` 359 lines in 208 files (420 values: 47 identical to a scale class, 38 within 2 px,
   335 to keep — 175 px > 2 px off, 113 vh/dvh, 13 %, 26 calc/vw/ch/min).
@@ -74,9 +101,19 @@ files outside every lane (chrome excepted). Eight lanes can run in parallel; `pu
 `remaining-screens` goes last.
 
 ## Test plan
-- Per lane: `npx vitest run` (incl. new unit tests named in `tasks.md`), `npm run build`, `npm run lint`, `npm test`
-  (manifest + nav-registry tests), PR-GATE design ratchet (`gate.mjs ratchet-design` vs base) and Lane scope green;
-  no file worse on any rule; baselines lowered for owned files only.
+- Per lane, all in vitana-v1: `npm test` (= `vitest run`, incl. `src/design/screen-manifest.test.ts`, the
+  nav-registry tests and the new unit tests named in `tasks.md`), `npm run build`, `npm run lint`. Design ratchet
+  locally before push: `npx eslint . -f json -o $TMP/eslint.json` then
+  `node scripts/ci/pr-gate/gate.mjs ratchet-design $TMP/eslint.json --base origin/main --head HEAD` → "no file gained
+  design violations"; then `node scripts/ci/pr-gate/gate.mjs baseline-design $TMP/eslint.json` and commit
+  `scripts/ci/pr-gate/baseline/design.json` with only the lane's own files lowered (any other file's line changing
+  in that diff is a lane-scope error). Same for `ratchet-eslint` / `baseline-eslint` (`baseline/eslint.json`).
+- **PR-GATE is report-only (R1-F3).** vitana-v1 `scripts/ci/pr-gate/config.json:2` has `"enforce": false`, so the
+  "Design ratchet" step (`PR-GATE.yml:150-153`, `continue-on-error`) only reports; the Verdict step
+  (`PR-GATE.yml:181-190`) prints "would fail: design …" instead of failing. This plan does not flip `enforce` (the
+  owner's kill switch). Instead the done criterion is explicit: a lane PR is not marked ready, and its reviewer seat
+  does not pass it, unless that PR's PR-GATE summary shows "✅ design ratchet" and `design`, `eslint`, `tsc`,
+  `scope` and `build` are absent from any "would fail" line. The reviewer records that line in the review.
 - Staging: once CI assigns the VTIDs, each lane adds `docs/validation/<VTID>/staging-tests.json` naming its read-only
   spec `tests/e2e/staging/vtid-<VTID>-<lane>.staging.spec.ts` (1440×900 with `?spotlight=1`, and 390×844; sign in,
   navigate, read; network guard aborts every non-GET except sign-in; never `vitanaland.com`). STAGING-VERIFY on the

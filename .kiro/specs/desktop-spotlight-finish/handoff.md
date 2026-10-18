@@ -5,7 +5,7 @@ executor: kiro
 next_actor: kiro
 state: drafted
 author_seat: exafyltd
-updated: 2026-10-16T11:45Z
+updated: 2026-10-18T22:46Z
 ---
 # Handoff — Finish the Spotlight desktop redesign
 Follow-up to `.kiro/specs/desktop-spotlight/` (Claude Code session `session_01Sxnx4eGehRHRqqwu4YmJA6`, handover
@@ -39,3 +39,12 @@ VTIDs; lanes are being built as draft PRs meanwhile (kiro-202610152203-0347, own
 building'). Evidence: PLAN-SPAR run 38894106530 on PR #4158 skipped at the job condition; no `sparring/round-<n>.md`
 exists. The only other review, Codex on 2ddbb6f, failed on usage limits and posted no findings, so there is nothing
 to answer yet.
+### 2026-10-18T22:46Z · kiro-202610182052-5ce2 · answered sparring round 1
+Stale-released the `_plan` claim of kiro-202610152203-0347 (held since 2026-10-16, no session commits since then;
+the only later commit was the PLAN-SPAR round 97a2d7f41) and claimed it. Answered round 1 in
+`sparring/responses-1.md`. R1-F1, R1-F2 and R1-F3 accepted: the plan cited vitana-platform's gate. `ratchet-design`,
+`baseline/design.json` and the report-only `enforce: false` are all in vitana-v1, and the plan block now pins
+`exafyltd/vitana-v1@704b5def4` with `file:line` for each premise. R1-F3 adds an explicit reviewer-checked PR-GATE
+criterion. R1-F4 is deferred to `native-g1-wiring/spar-vitana-v1-ref`, so the partner cannot read vitana-v1 yet. Gate:
+no lane moves `approved → executing` until a session with that ref has sparred this plan. No VTID allocated, no
+product code changed, no live system touched.
