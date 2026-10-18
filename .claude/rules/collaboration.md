@@ -159,14 +159,33 @@ the work because each has its own credits.
 Applies to Kiro (as executor, reviewer or planner), and to Claude Code whenever it executes a lane. They never:
 - allocate a VTID (CI and the coordinator do), take a `_plan` claim of a plan they did not author, or edit another
   lane's file;
-- merge or approve a PR on GitHub (the Project Manager merges), dispatch a workflow, or deploy;
+- merge or approve a PR on GitHub (the Project Manager merges), dispatch a workflow, or deploy — **except under the
+  owner-directed exception in §7b below**;
 - review their own lane (a lane's `seat` never reviews it);
 - writes to a live system, even though its credentials allow it: no Supabase writes (`execute_sql` with
   INSERT/UPDATE/DELETE/DDL, `apply_migration`, `deploy_edge_function`, branch/project/secret tools) and no mutating
-  AWS call (ECS, ELB, ECR, IAM or Secrets Manager writes).
+  AWS call (ECS, ELB, ECR, IAM or Secrets Manager writes) — **except the staging-only merge/deploy in §7b**.
 
 Reading for diagnosis is fine. A database change is a migration file in the lane's PR. Blocked → a log entry and
 `next_actor: claude`, never a workaround.
+
+## 7b. Owner-directed merge/deploy exception (owner decision 2026-10-18, VTID-05218 amendment)
+Owner decision: until the Project Manager runs `live` end to end, a Kiro session **may merge a PR and let it
+auto-deploy to staging** — but only when ALL of the following hold:
+- the owner has **explicitly instructed this specific merge in the conversation** (a standing "merge my lanes"
+  does not count — it is per PR, or per a named set the owner lists);
+- the PR targets `main` and its deploy path is **staging only** (`AWS-STAGE-DEPLOY-GATEWAY.yml` and the other
+  `AWS-STAGE-*` / preview workflows). Production (PUBLISH, `publish-to-prod.sh`, any `AWS-PROD-DEPLOY-*`) is **still
+  forbidden to Kiro** — that stays the owner's PUBLISH decision at Gate 2;
+- the session records the merge in the lane log (or the plan's handoff) with the owner-instruction reference and the
+  merge commit SHA, so the override is auditable;
+- every other guardrail is unchanged: never test/write against production, sparring before a VTID, staging tests
+  read-only. A failing *governance-artifact* check that is a known false positive for the change (e.g. a lane-less
+  governance PR, or a missing-VTID evidence pack for an owner-authorized bypass) may be `--admin`-overridden; a real
+  red test or build is never overridden.
+
+This exception exists so sessions finish end to end to a verified staging build instead of stalling at the merge;
+the two owner gates and the production boundary are untouched.
 
 ## 8. Waking each agent
 - Kiro Web seats: their scheduled automation (`.kiro/automations/<seat>.md`) does at most one item per run, in this
