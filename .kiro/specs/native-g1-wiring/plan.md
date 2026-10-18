@@ -68,11 +68,14 @@ Supabase project and every frontend (incl. preview/staging) writes to it";
    (`vitana-platform:.github/workflows/NATIVE-CI.yml`) and is therefore `executor: claude`,
    `reviewer_seat: claude` (collaboration §3a). All other lanes are `executor: kiro`, `seat: exafyltd`,
    `reviewer_seat: hotmail`.
-8. **A new `NATIVE-CI.yml`, not an extension of `MOBILE-DEVICE-E2E.yml`** (R1-F6). The existing
+8. **A new `NATIVE-CI.yml`, not an extension of `MOBILE-DEVICE-E2E.yml`** (R1-F6, R2-F2). The existing
    `vitana-platform:.github/workflows/MOBILE-DEVICE-E2E.yml` runs the **web** frontend in an iOS Simulator
-   via Safari / the accessibility tree — a different concern from bundling the **native Expo** JS. The new
-   `NATIVE-CI.yml` is `workflow_dispatch`-only (and native-path push), so it adds no automatic macOS-runner
-   cost and does not overlap `MOBILE-DEVICE-E2E.yml`'s triggers.
+   via Safari / the accessibility tree — a different concern from bundling the **native Expo** JS.
+   `NATIVE-CI.yml` triggers on `push`/`pull_request` filtered to `apps/mobile/**` **plus**
+   `workflow_dispatch`, and **every step runs on `ubuntu-latest`** (offline Metro bundle + jest-expo; no
+   simulator, no device, no macOS runner). So there is no macOS-runner cost at all, and no overlap with
+   `MOBILE-DEVICE-E2E.yml` (which is dispatch-only on macOS for the web app). The `native-ci-workflow`
+   lane's acceptance pins `runs-on: ubuntu-latest` so the implementer cannot write `macos-15`.
 
 ## Lanes (all `ready`; no `vtid` until CI assigns it)
 | Lane | Executor / seat → reviewer | Scope | depends_on | next_actor |
@@ -83,6 +86,16 @@ Supabase project and every frontend (incl. preview/staging) writes to it";
 | `fixture-gateway` | kiro / exafyltd → hotmail | `tools/fixture-gateway/**`, `tests/fixture-gateway/**` (vitana-v1 repo root) | — | kiro |
 | `deep-link-push-smoke` | kiro / exafyltd → hotmail | `apps/mobile/tests/g1-smoke/**`, `apps/mobile/src/push/g1-test-provider.ts` | env-profiles, fixture-gateway | kiro |
 | `real-g1-switch` | kiro / exafyltd → hotmail | `apps/mobile/env/test-g1.g1.example.json`, `docs/validation/g1/**` | deep-link-push-smoke | **owner** |
+| `spar-vitana-v1-ref` | **claude** / — → claude | `vitana-platform:.github/workflows/PLAN-SPAR.yml` | — | **claude** |
+
+**`spar-vitana-v1-ref` (R1-F1) gates convergence.** The sparring partner cannot verify this plan's
+vitana-v1 `file:line` premises from a platform-only session. This lane (`executor: claude`, governance
+path `vitana-platform:.github/workflows/PLAN-SPAR.yml`) adds a pinned vitana-v1 checkout / `extra_ref` to
+PLAN-SPAR so the partner can read `apps/mobile/**`. It is a durable tracked artefact (its own lane file,
+branch, PR, VTID — collaboration §1/§2), not a prose note. **This plan's `approved→executing` transition
+is blocked until `spar-vitana-v1-ref` merges and the native plans are re-sparred with the vitana-v1 ref
+live** — so no implementation lane ratifies an unverifiable premise. Only Claude Code can execute it
+(governance path); the planner seat cannot.
 
 Path ownership (R1-F3, R1-F4): no file is in two lanes and no in-scope file is orphaned. Paths that are
 **not** under `apps/mobile/**`, listed explicitly:
@@ -97,6 +110,18 @@ Path ownership (R1-F3, R1-F4): no file is in two lanes and no in-scope file is o
 per lane). `eas-profiles` (`executor: kiro`, vitana-v1, `apps/mobile/eas.json`) and `native-ci-workflow`
 (`executor: claude`, vitana-platform, `.github/workflows/NATIVE-CI.yml`) each get their own branch/PR/VTID;
 `native-ci-workflow` depends on `eas-profiles`, which depends on `env-profiles`.
+
+**Validation docs are in each lane's scope (R2-F1).** Every lane commits
+`docs/validation/<VTID>/{scope.json,staging-tests.json,plan-sparring.md}` at the **vitana-v1 repo root**
+(for the one vitana-platform lane, `native-ci-workflow`, at the platform repo root). This is NOT under
+`apps/mobile/**` and NOT the `real-g1-switch` lane's G1-outcome dir `docs/validation/g1/**` — it is each
+lane's own VTID dir. Every lane file's `paths:` therefore includes `docs/validation/VTID-*/scope.json`,
+`.../staging-tests.json`, `.../plan-sparring.md` (a `VTID-*` glob because CI assigns the VTID after
+convergence). The `real-g1-switch` lane carries both its G1-outcome glob and its own-VTID validation
+globs. Added to the non-`apps/mobile` exceptions above: `docs/validation/VTID-*/**` for every lane.
+
+**The vitana-v1 sparring ref is tracked as a `claude` lane (R1-F1), not a prose note.** See
+`spar-vitana-v1-ref` below.
 
 ## Test plan
 - Per lane (from `apps/mobile`): `npm ci`, `npm test` (jest-expo + RN Testing Library), `npm run
