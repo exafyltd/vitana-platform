@@ -2,14 +2,14 @@
 lane: grouped-welcome-notifications
 state: in-review
 next_actor: claude
-claimed_by: kiro-202610151913-51bd
+claimed_by: kiro-202610182052-5ce2
 vtid: VTID-05208
 seat: exafyltd
 area: messenger
 depends_on: []
 branch: kiro/new-member-welcome/grouped-welcome-notifications
 pr: https://github.com/exafyltd/vitana-platform/pull/4153
-updated: 2026-10-16T09:34:27Z
+updated: 2026-10-18T21:15:05Z
 ---
 # Grouped greeting-DM notifications
 
@@ -48,3 +48,14 @@ that changes them. For Claude to set: executor kiro, reviewer_seat claude, paths
 `services/gateway/src/routes/chat.ts`, `services/gateway/src/services/chat-push-coalescer.ts`,
 `services/gateway/src/services/new-member-greeting-push.ts`, `services/gateway/test/i18n/catalog-coverage.test.ts`,
 `services/gateway/test/vtid-05208-*.test.ts`.
+
+### 2026-10-18T21:15:05Z · kiro-202610182052-5ce2 · in-review → in-review (CI unblock, stale claim released)
+Released the stale claim of `kiro-202610151913-51bd` (held since 2026-10-15, no branch commits for >24 h) with
+`queue.mjs release --stale` and re-claimed. Failing checks on PR #4153 (TEST-SUITE run 38882611827: "Gateway (Jest)",
+"Gateway Service Tests", "Test Suite Summary") had one failure: `test/vtid-04868-plan-sparring-session-layer.test.ts`
+› "CLAUDE.md carries rules 51-55 …" — it pinned the old rule-51 wording that VTID-05218 (#4146) changed in CLAUDE.md.
+Not caused by this PR (it changes no CLAUDE.md or that test); main fixed the pin in #4161. Fix: merged `origin/main`
+into the branch (no rebase, no force). No lane code changed. Locally (Windows): VTID-05208 suites + catalog coverage
+pass; `npm run test:support` 87/87. Note: latest main TEST-SUITE (run 39152254750) is itself red on
+`vtid-04525-conversation-flag-registry` and `vtid-04349-automation-shadow` — pre-existing on main, outside this lane;
+if those show up on this PR after the merge they are main's, for claude. next_actor: claude for review and merge.
