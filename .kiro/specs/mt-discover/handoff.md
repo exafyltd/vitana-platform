@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-15T17:05Z
+updated: 2026-10-18T20:02Z
 ---
 # Handoff — mt-discover (Commerce & Discover × tenancy, WS11 + Discover scope of §4.11)
 
@@ -157,3 +157,6 @@ Risks + DB Fix + Migrations + Tests, tasks D4/D6, lane `supplier-relationships-d
 reuses the existing `tenant_id` (extend `fetchProductOrderForCommission` `credit-recommender-repository.ts:28` to
 select it, in `supplier-onboarding-communities` S4). Plan Problem 8 + Fix + Migrations + Tests, tasks D4/S4 updated.
 queue.mjs validators re-run on handoff.md + all 4 lanes: 0 errors.
+
+### 2026-10-18T20:02Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
