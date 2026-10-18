@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-17T15:29Z
+updated: 2026-10-18T19:15Z
 ---
 # Handoff — mt-track-s (Track S security hotfixes S-A..S-L + Health Phase 0 live defects / WS10)
 
@@ -74,3 +74,22 @@ The sparring partner could not review (code_access_unavailable). Not a plan prob
 
 ### 2026-10-17T15:29Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-18T19:15Z · kiro-hotmail-202610151618-b437 · drafted (replan after partner evidence-floor no-op)
+Round 1 (session `57140e67…`) escalated with `infra: false` on a partner-harness error, not a plan defect:
+`evidence_floor_not_met` — the partner cited no file it read and produced 0 premise checks (round-1.md). Per the
+replan rule for a stale/no-op escalation, re-verified the S-J premises against current vitana-v1 code today and
+tightened three drifted line citations so a fresh session spars the live plan:
+- `vitana-v1/vitest.config.ts` `include: ['src/**/*.test.{ts,tsx}']` is at **:19** (was cited `:22`) — corrected in
+  plan.md ## Fix and lanes/s-j-route-inventory.md.
+- `vitana-v1/src/lib/edge-functions-caller-identity.s4.test.ts`: the five-functions loop including `'linkedin-import'`
+  is at **:77-88** (was `:77-82`), the profile-import loop at **:90-92** (was `:90-93`), the `flagged for removal`
+  case still at **:107-110**, and the `arrayContaining([...])` scan assertion at **:272** (was `:198`) — corrected in
+  plan.md ## Fix, tasks.md T2a, and the lane body.
+Re-confirmed the S-J OPEN residual still holds: `supabase/functions/linkedin-import/index.ts` still ships with the
+VTID-05049 "flagged for removal" comment and imports `requireUser, forbidden` from `_shared/caller-auth.ts`
+(index.ts:1-4); `supabase/config.toml:72` still has `[functions.linkedin-import]`; `package.json:29` `"test"` is
+`node scripts/check-edge-data-client.mjs && node scripts/check-realtime-helper.mjs && vitest run`; and the only
+`src/**` reference to `linkedin-import` is that one test file (no runtime consumer). No lane/path/dependency change;
+plan body unchanged except the three citations. queue.mjs validators re-run on handoff.md and
+lanes/s-j-route-inventory.md (0 errors); tasks.md "Allowed paths:" identical to the lane `paths` (6 entries).

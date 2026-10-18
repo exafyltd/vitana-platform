@@ -83,7 +83,7 @@ close the last gap without re-touching shipped code.
   (`vitana-v1/scripts/check-edge-function-auth.mjs`, wired into `package.json` `"test"` beside the existing
   `check-edge-data-client.mjs`/`check-realtime-helper.mjs`) that exits non-zero if a Supabase edge function under
   `vitana-v1/supabase/functions/**` lacks a caller-auth gate (imports `_shared/caller-auth.ts` / calls `requireUser`,
-  or is on an explicit public allowlist with a stated reason). A node script, not a vitest `.test.ts`: `vitest.config.ts:22`
+  or is on an explicit public allowlist with a stated reason). A node script, not a vitest `.test.ts`: `vitest.config.ts:19`
   `include` is `src/**/*.test.{ts,tsx}`, so a test under `supabase/functions/**` is never collected. This is
   the narrow, in-repo, verifiable half of S-J's "route inventory"; the gateway-side generated route inventory and
   realtime-channel RLS stay in WS0 (M0), out of scope here. Confirm no app code imports `linkedin-import` before
@@ -95,9 +95,9 @@ close the last gap without re-touching shipped code.
   registration of the deleted function — leaving it is the exact dead-reference S-J closes); and
   (ii) update the existing **collected** vitest suite `vitana-v1/src/lib/edge-functions-caller-identity.s4.test.ts`,
   which today reads `linkedin-import/index.ts` and asserts on it in four spots (the `VTID-05049 the five functions`
-  loop that includes `'linkedin-import'` at `:77-82`; the profile-import loop `['linkedin-import','social-media-import']`
-  at `:90-93`; the `linkedin-import is flagged for removal` case at `:107-110`; and the `arrayContaining([...])` scan
-  assertion at `:198`). After deletion `readFileSync` on the gone file throws and the `arrayContaining` expectation
+  loop that includes `'linkedin-import'` at `:77-88`; the profile-import loop `['linkedin-import','social-media-import']`
+  at `:90-92`; the `linkedin-import is flagged for removal` case at `:107-110`; and the `arrayContaining([...])` scan
+  assertion at `:272`). After deletion `readFileSync` on the gone file throws and the `arrayContaining` expectation
   fails, so the suite must drop `linkedin-import` from those four places (keeping `social-media-import`/`fetch-user-context`
   coverage intact). That file is under `src/**`, so it IS collected by vitest — it must be inside the lane's `paths` or
   the Lane-scope CI check reddens the PR.

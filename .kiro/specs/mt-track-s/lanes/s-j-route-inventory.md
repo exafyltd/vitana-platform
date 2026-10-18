@@ -30,12 +30,12 @@ This is the one open piece of Track S / S-J: everything else (S-A..S-M, WS10 a�
 Scope: vitana-v1 code only. `paths` above are vitana-v1 paths and are identical to `tasks.md` "Allowed paths:". The
 inventory gate is a standalone node script wired into `npm test` (the repo's convention — `package.json` `"test"` runs
 `node scripts/check-edge-data-client.mjs && node scripts/check-realtime-helper.mjs && vitest run`; a vitest `.test.ts`
-under `supabase/functions/**` would never be collected because `vitest.config.ts:22` `include` is `src/**/*.test.{ts,tsx}`),
+under `supabase/functions/**` would never be collected because `vitest.config.ts:19` `include` is `src/**/*.test.{ts,tsx}`),
 so the lane touches `scripts/check-edge-function-auth.mjs` and `package.json`. Deleting `linkedin-import` also requires
 two companion edits that the `paths` must cover so the deletion is complete and `npm test` stays green:
 `supabase/config.toml` (remove the orphaned `[functions.linkedin-import]` block at `:72-74`) and the collected vitest
 suite `src/lib/edge-functions-caller-identity.s4.test.ts` (drop `linkedin-import` from its four assertions — it reads
-the gone file at `:77-82,:90-93,:107-110` and asserts the dir contains it at `:198`). Neither `package.json`,
+the gone file at `:77-88,:90-92,:107-110` and asserts the dir contains it at `:272`). Neither `package.json`,
 `supabase/config.toml` nor that test file is a governance path, so `executor: kiro` stands. The spec folder itself lives
 in vitana-platform (collaboration §2, cross-repo plan); the lane's PR is against vitana-v1. This lane adds its own
 `docs/validation/<vtid>/` (copy of `plan-sparring.md`, `scope.json`, `staging-tests.json`).

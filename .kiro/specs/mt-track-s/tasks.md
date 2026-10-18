@@ -30,9 +30,9 @@ collected vitest suite `src/lib/edge-functions-caller-identity.s4.test.ts` are i
       (`:72-74`, `verify_jwt = true`) so no registration of a deleted function is left behind.
 - [ ] T2a Update the collected vitest suite `vitana-v1/src/lib/edge-functions-caller-identity.s4.test.ts`: drop
       `'linkedin-import'` from the four places that read the now-deleted file — the `the five functions use caller-auth`
-      loop (`:77-82`), the profile-import loop `['linkedin-import','social-media-import']` (`:90-93`), the
+      loop (`:77-88`), the profile-import loop `['linkedin-import','social-media-import']` (`:90-92`), the
       `linkedin-import is flagged for removal` case (`:107-110`), and the `arrayContaining([...])` scan assertion
-      (`:198`). Keep `social-media-import` / `fetch-user-context` coverage unchanged. This file is under `src/**`, so
+      (`:272`). Keep `social-media-import` / `fetch-user-context` coverage unchanged. This file is under `src/**`, so
       vitest collects it; without this edit `npm test` fails on the missing file.
 - [ ] T3 Add `vitana-v1/scripts/check-edge-function-auth.mjs` (follow the shape of `scripts/check-edge-data-client.mjs`:
       walk `supabase/functions/**`): enumerate every `supabase/functions/*/index.ts`, pass each that imports
