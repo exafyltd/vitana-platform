@@ -31,9 +31,11 @@ pieces are still open and verified today against platform `origin/main`:
 4. `tenantDb`/`TENANT_TABLES`/`isHealthTable`/`healthDb` do not exist (only a forward-reference comment at
    `services/gateway/src/middleware/auth-supabase-jwt-repository.ts:21`). Tenant-table access is ad hoc; health tables
    are not systematically excluded.
-5. Slug maps with fake tenant ids are live: `routes/me.ts:15-26` (`TENANT_SLUGS`/`SLUG_TO_TENANT_ID` mapping
-   `…0001`→vitana, `…0002`→maxina), `routes/dev-auth.ts:26-29`, `services/orb-memory-bridge.ts` `DEV_IDENTITY`
-   (`TENANT_ID`/`TENANT_SLUG` dev constants, ~lines 65-77).
+5. Slug maps with fake tenant ids are live and each hold FOUR hardcoded `…0001`–`…0004` ids
+   (vitana/maxina/alkalma/earthlings), not two: `routes/me.ts:15` (`TENANT_SLUGS`, id→slug, read at `me.ts:270,408`)
+   and `routes/me.ts:23` (`SLUG_TO_TENANT_ID`, slug→id); `routes/dev-auth.ts:26` (`SLUG_TO_TENANT_ID`, read at
+   `dev-auth.ts:491`); `services/orb-memory-bridge.ts:66` `DEV_IDENTITY` (`TENANT_ID`/`TENANT_SLUG` dev constants at
+   `:70-71`).
 6. `bootstrap_admin_user` pins `tenants.name IN ('Maxina','Alkalma','Earthlings')` / `name = 'Maxina'` (wrong key
    column) and writes `memberships` — vitana-v1 migrations `20250831083908_…` through `20250831091149_…` (several
    copies).
@@ -68,8 +70,9 @@ D14), not here.
    dual-write path. Expand/contract; snapshot first.
 5. **tenant-db-and-slug-cleanup (CODE, gateway; depends on helpers-and-policy-rewrite).** `tenantDb(ctx)` +
    schema-derived `TENANT_TABLES`; the canonical `isHealthTable()` predicate (ruling O1 — defined here, referenced by
-   other specs) with health tables EXCLUDED and routed through `healthDb(userId)` (frozen home tenant); remove the
-   three slug maps / fake tenant ids / `limit(1)`, using the DB registry + `TenantContext`. All reads dark behind
+   other specs) with health tables EXCLUDED and routed through `healthDb(userId)` (frozen home tenant); remove the four
+   slug-map / fake-id sites — `me.ts:15`+`:23`, `dev-auth.ts:26`, `orb-memory-bridge.ts:66` (each a four-entry
+   `…0001`–`…0004` map) — and the `limit(1)`, using the DB registry + `TenantContext`. All reads dark behind
    `MT_RESOLUTION_V2` / `tenant_settings.feature_flags.mt.*`.
 
 ## Migrations

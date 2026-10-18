@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-17T15:29Z
+updated: 2026-10-17T16:30Z
 ---
 # Handoff — mt-identity (WS1 identity, tenancy resolution & roles — the "rest" after VTID-05149)
 
@@ -77,3 +77,15 @@ The sparring partner could not review (code_access_unavailable). Not a plan prob
 
 ### 2026-10-17T15:29Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-17T16:30Z · kiro-hotmail-202610151618-b437 · drafted (round-2 replan after partner-harness escalation)
+Round 1 escalated infra=false with partner error `evidence_floor_not_met` (partner-harness, not a plan defect). Per the
+planner contract this is a REPLAN, not a hash-bump: made a genuine premise tightening grounded in fresh reads against
+platform tip e0ef609b. Problem #5 understated the slug maps — re-reading `services/gateway/src/routes/me.ts`,
+`routes/dev-auth.ts` and `services/orb-memory-bridge.ts` shows each map holds FOUR hardcoded `…0001`–`…0004` ids
+(vitana/maxina/alkalma/earthlings), not two, and the stale ranges were split declarations: `me.ts:15` `TENANT_SLUGS`
+(read `me.ts:270,408`) + `me.ts:23` `SLUG_TO_TENANT_ID`; `dev-auth.ts:26` `SLUG_TO_TENANT_ID` (read `dev-auth.ts:491`);
+`orb-memory-bridge.ts:66` `DEV_IDENTITY` (`TENANT_ID`/`TENANT_SLUG` at `:70-71`). Corrected plan.md Problem #5 + Fix #5
+and lanes/tenant-db-and-slug-cleanup.md to the verified citations; lane paths unchanged. O1 ownership unchanged; parent
+`docs/MULTI-TENANT-PLAN.md` not amended. queue.mjs validators re-run = 0 errors. No source-code edits, no live-system
+calls.

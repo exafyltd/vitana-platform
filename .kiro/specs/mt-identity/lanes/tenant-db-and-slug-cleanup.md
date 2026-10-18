@@ -35,8 +35,10 @@ Scope (gateway code, all dark behind `MT_RESOLUTION_V2` / `tenant_settings.featu
   `TENANT_TABLES` and reached only through a user-keyed `healthDb(userId)` that resolves the frozen health home
   tenant. This file is the single source other specs reference — they never keep their own list; adding a health
   table extends this predicate here.
-- Remove the slug maps / fake tenant ids / `limit(1)`: `routes/me.ts:15-26` (`TENANT_SLUGS` / `SLUG_TO_TENANT_ID`
-  with `…0001`/`…0002`), `routes/dev-auth.ts:26-29`, `services/orb-memory-bridge.ts:70-71` — replace with the
+- Remove the slug maps / fake tenant ids / `limit(1)` — each map holds four `…0001`–`…0004` ids
+  (vitana/maxina/alkalma/earthlings), not two: `routes/me.ts:15` (`TENANT_SLUGS`, read at `me.ts:270,408`) +
+  `routes/me.ts:23` (`SLUG_TO_TENANT_ID`), `routes/dev-auth.ts:26` (`SLUG_TO_TENANT_ID`, read at `dev-auth.ts:491`),
+  `services/orb-memory-bridge.ts:66` `DEV_IDENTITY` (`TENANT_ID`/`TENANT_SLUG` at `:70-71`) — replace with the
   DB-backed registry / `TenantContext` (VTID-05149) and the canonical resolver.
 
 Does NOT redefine `current_tenant_id()` and does NOT enable the hook (DB lanes own those). No new route → no
@@ -51,3 +53,8 @@ trailers `Collab-Session` + `Collab-Lane: mt-identity/tenant-db-and-slug-cleanup
 ### 2026-11-01T00:00Z · kiro-hotmail-202610151618-b437 · created → ready
 Created by the mt-identity planner. Verified read-only: `tenantDb`/`TENANT_TABLES`/`isHealthTable`/`healthDb` do not
 exist yet; slug maps live at the three cited sites. Held pending PLAN-SPAR VTID allocation.
+### 2026-10-17T16:30Z · kiro-hotmail-202610151618-b437 · ready (round-2 premise tightening)
+Re-verified the slug-map sites against platform tip e0ef609b: `me.ts:15` `TENANT_SLUGS` + `me.ts:23`
+`SLUG_TO_TENANT_ID` (read at `me.ts:270,408`), `dev-auth.ts:26` `SLUG_TO_TENANT_ID` (read at `dev-auth.ts:491`),
+`orb-memory-bridge.ts:66` `DEV_IDENTITY` (`:70-71`). Each map holds four `…0001`–`…0004` ids, not two; corrected the
+citation. Paths unchanged.
