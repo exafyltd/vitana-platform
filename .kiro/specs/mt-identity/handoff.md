@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-17T16:55Z
+updated: 2026-10-17T17:20Z
 ---
 # Handoff — mt-identity (WS1 identity, tenancy resolution & roles — the "rest" after VTID-05149)
 
@@ -105,3 +105,15 @@ steady-state path uses `ON CONFLICT (tenant_id, user_id) DO NOTHING` with a zero
 14,786 chars (< 15k), both markers + change_class intact. queue.mjs validators re-run on handoff + all lanes = 0
 errors; tasks.md Allowed paths unchanged (no path edits). Parent plan not amended. No source-code edits, no live-system
 calls.
+
+### 2026-10-17T17:20Z · kiro-hotmail-202610151618-b437 · drafted (answered sparring session 2, round 2)
+Round 2 acknowledged all five R1 findings as addressed and raised one new major, R2-F1. ACCEPTED. My R1-F2 fix added a
+`…0001` lint whose carve-out was both self-contradictory (it exempted the two slug-map files that lane 5a DELETES — a
+false safe harbour that would let a partially-applied removal pass) and incomplete (it omitted
+`services/gateway/src/lib/vitana-bot.ts:9` `VITANA_BOT_USER_ID='…0001'`, a legitimate, intentional bot USER id — not a
+tenant id — documented at `docs/MULTI-TENANT-PLAN.md:28`, which would make the lint fail on every run). Verified
+`vitana-bot.ts:9` read-only. Rewrote the lint assertion in plan.md (Tests + Fix #5) and the tenant-db lane: no `…0001`
+survives in gateway TS source outside exactly `lib/vitana-bot.ts` and `DEV_IDENTITY`'s resolved `DEV_TENANT_SLUG`
+default; the removed slug-map files are explicitly NOT exempt. Answered in `sparring/s2-responses-2.md`. No path edits
+(the lint lives in the lane's existing test file). queue.mjs validators re-run = 0 errors. Parent not amended. No
+source-code edits, no live-system calls.

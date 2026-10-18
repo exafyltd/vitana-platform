@@ -88,8 +88,10 @@ D14), not here.
    the DB registry + `TenantContext`. (b) `orb-memory-bridge.ts:66` `DEV_IDENTITY` is a dev-only fallback constant with
    no session to resolve, so it is NOT iterated like a map: drive `TENANT_ID`/`TENANT_SLUG` from a `DEV_TENANT_SLUG`
    env var defaulting to `vitana` (DB-registry-backed in the sandbox), keeping the pinned dev user `…0099`. A test
-   asserts no `…0001` literal survives outside `DEV_IDENTITY`'s resolved default and the two slug-map sites. All reads
-   dark behind `MT_RESOLUTION_V2` / `tenant_settings.feature_flags.mt.*`.
+   asserts no `…0001` literal survives in gateway TS source outside exactly two intentional sites — `lib/vitana-bot.ts`
+   (`VITANA_BOT_USER_ID`, bot USER id, program §2) and `DEV_IDENTITY`'s resolved `DEV_TENANT_SLUG` default; the removed
+   slug-map files are NOT exempt (so a partial removal fails the lint). All reads dark behind `MT_RESOLUTION_V2` /
+   `tenant_settings.feature_flags.mt.*`.
 
 ## Migrations
 Range `20261101030000`–`20261101035959` (verified free: newest existing migration is `20261015180000`). Files
@@ -118,8 +120,10 @@ data move. Applied by Claude via RUN-MIGRATION after merge (sessions never apply
   other tenant.
 - Vitest (gateway): `tenantDb` injects the tenant predicate; `isHealthTable()` matches the health table set and
   health tables are absent from `TENANT_TABLES`; `healthDb` resolves the frozen home tenant; the two slug maps are
-  gone and resolution goes through `TenantContext`; and no `…0001` literal survives outside `DEV_IDENTITY`'s resolved
-  `DEV_TENANT_SLUG` default and the two slug-map sites.
+  gone and resolution goes through `TenantContext`; and no `…0001` literal survives in gateway TypeScript source
+  OUTSIDE exactly two intentional sites — `lib/vitana-bot.ts` (`VITANA_BOT_USER_ID`, the bot USER id, program §2) and
+  `DEV_IDENTITY`'s resolved `DEV_TENANT_SLUG` default in `orb-memory-bridge.ts`. The removed slug-map files are NOT
+  carved out (lane 5a deletes them), so a leftover `…0001` there fails the lint — catching a partial removal.
 - Required suites when touched: `npm run test:support` (42c), `npm run test:operator` (42e), `npm run test:roles`
   (42h — the role-source lane touches the role registry path). Maxina golden suite unchanged (program WS0).
 

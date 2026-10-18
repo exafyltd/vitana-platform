@@ -18,7 +18,7 @@ paths:
   - services/gateway/src/routes/dev-auth.ts
   - services/gateway/src/services/orb-memory-bridge.ts
   - services/gateway/test/mt-identity-slug-cleanup.test.ts
-updated: 2026-10-17T16:55Z
+updated: 2026-10-17T17:20Z
 ---
 # tenant-db-and-slug-cleanup — tenantDb/TENANT_TABLES, canonical isHealthTable()/healthDb, remove slug maps (CODE)
 
@@ -43,8 +43,10 @@ Scope (gateway code, all dark behind `MT_RESOLUTION_V2` / `tenant_settings.featu
   of the DB registry / `TenantContext` (VTID-05149). (b) `services/orb-memory-bridge.ts:66` `DEV_IDENTITY` is a
   single dev-only fallback CONSTANT (user `…0099`) pinned to `TENANT_ID='…0001'`/`TENANT_SLUG='vitana'`, NOT a map and
   with no session to resolve — drive it from a `DEV_TENANT_SLUG` env var defaulting to `vitana` (DB-registry-backed in
-  the sandbox), keep the pinned dev user. A test asserts no `…0001` literal survives outside the resolved default and
-  the two slug-map sites.
+  the sandbox), keep the pinned dev user. A Vitest lint asserts no `…0001` literal survives in gateway TS source
+  outside exactly two intentional sites — `lib/vitana-bot.ts` (`VITANA_BOT_USER_ID`, the bot USER id, program §2) and
+  `DEV_IDENTITY`'s resolved `DEV_TENANT_SLUG` default; the removed slug-map files are NOT exempt, so a partial removal
+  fails the lint.
 
 Does NOT redefine `current_tenant_id()` and does NOT enable the hook (DB lanes own those). No new route → no
 nav-registry / screen-manifest / parity-ledger change. New user-visible strings (none expected) would be i18n DE-first.
@@ -67,3 +69,9 @@ Paths unchanged.
 Partner finding R1-F2 (major): `DEV_IDENTITY` is NOT a four-entry map — it is a single dev-user struct (`…0099`)
 pinned to `…0001`/vitana. Corrected the scope split into (a) the two four-entry maps and (b) the `DEV_IDENTITY`
 constant driven by `DEV_TENANT_SLUG` (default vitana). Added the O1 interface signatures (R1-F3). Paths unchanged.
+### 2026-10-17T17:20Z · kiro-hotmail-202610151618-b437 · ready (answered sparring s2 round-2)
+Partner finding R2-F1 (major): my `…0001` lint carve-out was both self-contradictory (exempting the slug-map files
+lane 5a deletes = false safe harbour for a partial removal) and incomplete (omitting `lib/vitana-bot.ts:9`
+`VITANA_BOT_USER_ID`, a legitimate bot USER id per program §2 / MULTI-TENANT-PLAN.md:28). Verified `vitana-bot.ts:9`.
+Rewrote the lint to exempt exactly `lib/vitana-bot.ts` and `DEV_IDENTITY`'s resolved default, and to NOT exempt the
+removed slug-map files. Paths unchanged.
