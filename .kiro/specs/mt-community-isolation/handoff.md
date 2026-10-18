@@ -5,10 +5,9 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-17T15:31Z
+updated: 2026-10-17T16:10Z
 ---
 # Handoff — Community isolation (WS3 Community part)
-
 Program: `docs/MULTI-TENANT-PLAN.md` v5.1 (§4.11 / §6 WS3, Community half). This spec adds `tenant_id`
 + expand/contract + RLS to the community content tables and scopes the Community read surfaces
 (directory, `find_community_member`, superlatives, ORB `global_search`, recipient resolution,
@@ -16,12 +15,10 @@ social-memory resolver, events, `connect-people`, daily matches) to the member's
 scopes the Founding pool per tenant, creates the `platform_only_accounts` view (cross-spec O5), and
 adds per-tenant test/service account rules. The Network layer (scope columns, `network_visible`,
 `send_message*`, Network groups) is a sibling spec; moderation is mt-tenant-admin (O4).
-
 Dark by default (`tenant_settings.feature_flags.mt.community_scope`); depends on WS1's resolver
 (`tenant_id_for_policies()`, `is_member()`, `TenantContext`, membership canonicalisation). Migrations
 are expand-only (no `SET NOT NULL` here — WS2 backfills existing rows). C3 migration version is pinned
 to `20261101070160` (cross-spec ordering). Lane C range `20261101060000–065959`.
-
 Lanes:
 - `community-tenant-db` — DB, platform (seat `hotmail`), `ready` HELD. tenant_id + RLS on the
   community tables; realtime predicate.
@@ -32,10 +29,8 @@ Lanes:
   the Community read pools + social-memory resolver, dark behind the flag.
 - `community-matches-v1` — CODE, vitana-v1 (seat `exafyltd`), `ready` HELD. `generate-daily-matches`
   tenant-scoped pool + `daily_matches` tenant write, dark behind the flag.
-
 All lanes `next_actor: owner` and HELD until PLAN-SPAR converges and allocates the VTIDs (it flips the
 lane to `kiro` itself). DB lanes are split from code lanes (§4.7); seats per areas.yaml.
-
 ## Log
 ### 2026-10-15T16:30Z · kiro-hotmail-202610151618-b437 · created → drafted
 Drafted the Community-isolation spec (WS3 Community half) from program plan §4.11/§6 and
@@ -45,7 +40,6 @@ superlatives.ts, discovery-tools global_search, social-memory-repository.ts:259-
 billing-repository.ts:141 founding, generate-daily-matches/index.ts:110-153). Five lanes, DB split
 from code, published as a plan PR. Next: PLAN-SPAR spars the PR; the planner answers each round and
 on convergence VTIDs are allocated and the lanes flip to kiro.
-
 ### 2026-10-17T10:25Z · kiro-hotmail-202610151618-b437 · internal-review fixes (3 MEDIUM + 1 NIT)
 Addressed every finding in `sparring/INTERNAL-REVIEW.{md,json}`, re-verified read-only in code:
 - **F1 (MEDIUM) — founding premise corrected.** `founding_members.tenant_id uuid NOT NULL` and
@@ -67,9 +61,23 @@ Addressed every finding in `sparring/INTERNAL-REVIEW.{md,json}`, re-verified rea
 Plan body ~14.1k chars (≤15k). queue.mjs `validatePlan`/`validateLane` on handoff.md + all 5 lanes:
 0 errors. tasks.md Allowed paths unchanged = lane paths. Re-pushed (force) to update the PR; deleted
 `sparring/INTERNAL-REVIEW.json` for a fresh review round.
-
 ### 2026-10-17T11:11Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (code_access_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
-
 ### 2026-10-17T15:31Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+### 2026-10-17T16:10Z · kiro-hotmail-202610151618-b437 · replan after round-1 escalation (evidence_floor_not_met)
+Round-1 escalated `evidence_floor_not_met` (partner cited 0 read_file premise checks) — a partner/CI
+condition, not a plan defect. Per the PLAN-SPAR replan rule, applied a genuine refinement: re-verified
+every cited premise against origin/main today and corrected drifted file:line references so each
+premise now points at the exact current line —
+- premise 1: `community-member-ranker-repository.ts:20` (is_visible pool), members directory now cites
+  `community-members-repository.ts:24`;
+- premise 2 (daily matches): visible pool `generate-daily-matches/index.ts:99-113`, by-id fetch
+  `:166-169` (was `:110-153`);
+- premise 3 (social memory): corrected the path to
+  `services/gateway/src/services/social-memory/social-memory-repository.ts` (was `.../voice-tools/...`),
+  `.eq('tenant_id', tenantId)` at `:259,:337,:378,:612,:710` confirmed;
+- premise 5 (founding): global `CHECK (BETWEEN 1 AND 1000)` `:46`, `v_max_seats` `:76`,
+  `max(seat_number)+1` `:131`, `countFoundingSeats` `billing-repository.ts:143` (was `:57,:127`).
+Founding lane body updated to the verified lines. No scope, lane, path, dependency or migration-order
+change. Plan body 14,385 chars (≤15k); both plan markers + change_class intact.
