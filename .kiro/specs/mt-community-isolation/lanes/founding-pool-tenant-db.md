@@ -18,15 +18,22 @@ HELD: `next_actor: owner`, no `vtid` until PLAN-SPAR converges and allocates it 
 (`<!-- lane: founding-pool-tenant-db -->`); design: `../design.md`.
 Makes the Founding pool per tenant (program plan D10). **`founding_members.tenant_id` and
 `claim_founding_seat(p_user_id, p_tenant_id)` already exist and are populated** (VTID-04859,
-`supabase/migrations/20261003100000_vtid_04859_founding_1000.sql:60,66,99-112`), so this lane does
+`supabase/migrations/20261003100000_vtid_04859_founding_1000.sql:66,107-115`), so this lane does
 **no column add and no `tenant_id` backfill** — it verifies the column is already populated, then
-makes the cap and seat numbering per tenant: a per-tenant `seat_number` sequence (replacing the
-table-wide `max(seat_number)+1` at `:131`), `UNIQUE (tenant_id, seat_number)` + a per-tenant cap check
-(replacing the global `UNIQUE`/`CHECK (seat_number BETWEEN 1 AND 1000)` at `:46`), and `v_max_seats`
-(`:76`) as a per-tenant cap. `bak_founding_members` snapshot first; the new per-tenant uniqueness is
-validated against existing rows before the global constraints are dropped; pre-approved rollback
-migration; read-only pre/post checks. Separate DB lane (independent table + RPC, own queue row).
-Version in `20261101061000–061959`.
+makes the cap and seat numbering per tenant: per-tenant seat allocation `max(seat_number)+1 WHERE
+tenant_id = p_tenant_id` (replacing the table-wide `max(seat_number)+1` at `:131`),
+`UNIQUE (tenant_id, seat_number)` + a per-tenant cap check (replacing the global
+`UNIQUE`/`CHECK (seat_number BETWEEN 1 AND 1000)` at `:46`), and `v_max_seats` (`:76`) as a per-tenant
+cap. **Advisory lock strategy (decided):** the current single platform-wide key
+`pg_advisory_xact_lock(hashtext('vtid_04859_founding_1000'))` (`:117`) becomes a per-tenant key
+`hashtext('vtid_04859_founding_1000_' || p_tenant_id::text)` — keeping the global key would serialise
+every tenant's signups (scaling regression); dropping it would let concurrent same-tenant calls race
+on `max(seat_number) WHERE tenant_id = X` and violate `UNIQUE (tenant_id, seat_number)`. "Per-tenant
+sequence" here means this per-tenant max+lock, NOT a Postgres `SEQUENCE` object. `bak_founding_members`
+snapshot first; the new per-tenant uniqueness is validated against existing rows before the global
+constraints are dropped; pre-approved rollback migration; read-only pre/post checks; pgTAP proves
+concurrent same-tenant claims do not collide and two tenants may both hold seat 1. Separate DB lane
+(independent table + RPC, own queue row). Version in `20261101061000–061959`.
 Rules (§7a) as in the sibling DB lane: no live writes; the migration file is applied by Claude via
 RUN-MIGRATION after merge; add the MIGRATION-QUEUE row in this PR after the community-tables rows.
 Gateway `countFoundingSeats`/`/founding-status` tenant scoping is read-only reporting and ships in the

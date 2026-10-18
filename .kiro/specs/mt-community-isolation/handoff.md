@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-17T16:10Z
+updated: 2026-10-17T16:40Z
 ---
 # Handoff — Community isolation (WS3 Community part)
 Program: `docs/MULTI-TENANT-PLAN.md` v5.1 (§4.11 / §6 WS3, Community half). This spec adds `tenant_id`
@@ -81,3 +81,24 @@ premise now points at the exact current line —
   `max(seat_number)+1` `:131`, `countFoundingSeats` `billing-repository.ts:143` (was `:57,:127`).
 Founding lane body updated to the verified lines. No scope, lane, path, dependency or migration-order
 change. Plan body 14,385 chars (≤15k); both plan markers + change_class intact.
+### 2026-10-17T16:40Z · kiro-hotmail-202610151618-b437 · answered sparring session 2 round-1 (8 findings)
+New sparring session `2d859993` reviewed the refined plan and raised 8 findings (6 major, 2 minor);
+`sparring/s2-responses-1.md` answers every one. All 8 ACCEPTED after read-only re-verification:
+- **F1** — `tool_global_search` groups/products/services already scoped (`discovery-tools.ts:225+`);
+  only people (`:172`)/posts (`:198`)/events (`:214`) unscoped. Narrowed premise 1 + the gateway fix.
+- **F2/F5** — `fetchUpcomingEvents(limit=40)` (`:487`) and `fetchCandidatePosts(…)` (`:420`) have no
+  `tenantId`; adding the filter is a breaking signature change. Plan now names both, their new param,
+  and every caller (`social-context-builder.ts:141`, `tool_browse_news_feed`) + Vitest.
+- **F3** — advisory lock (`:117`) is a single platform-wide key; mandated a per-tenant key
+  `hashtext('vtid_04859_founding_1000_' || p_tenant_id::text)` + pgTAP concurrency test; clarified
+  "per-tenant sequence" ≠ SEQUENCE object.
+- **F4** — `resolve_recipient_candidates` already tenant-scoped (`p_global:false`); removed from the
+  code fix list, left as a read-only assertion only.
+- **F6** — ranker's `community_groups`/`community_group_members` are distinct VTID-01084 tables;
+  `community_groups` already has `tenant_id` + RLS (`20251231100000_…:35,133,146-147`), so no DB
+  column/RLS add — only the ranker applying the filter (gateway lane). Added premise 8.
+- **F7** — corrected founding citation `:60,66,99-112` → `:66,107-115` (`:60` is the RLS policy).
+- **F8** — social-memory fix restated as a membership CHECK via WS1 `is_member()`, not a source swap.
+No lane added/removed, no path/dependency/migration-order change (F3/F6 refined behaviour inside the
+existing founding-pool-tenant-db and community-scope-gateway lanes). Plan body 15,024 chars (≤~15k);
+both plan markers + change_class intact. queue.mjs validators: 0 errors.
