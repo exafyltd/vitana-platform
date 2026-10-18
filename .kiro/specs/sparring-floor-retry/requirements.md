@@ -1,10 +1,12 @@
 # Requirements — sparring-floor-retry
 
-1. WHEN round 1 of a sparring session escalates with `evidence_floor_not_met`, THE gateway SHALL treat the
-   session as retryable (no plan-hash dedup on the next create), unless it has `human_approved_by`.
-2. WHEN PLAN-SPAR records such an escalation, THE state entry SHALL be `infra: true, retryable: true`, and the
-   handoff log SHALL say the partner could not review. The plan SHALL NOT be parked.
-3. WHEN an existing state entry says `infra: false` but the live session's reasons are now retryable, THE next
-   PLAN-SPAR run SHALL retry it by replacing the session, without using up one of the plan's `MAX_SESSIONS`.
-4. Escalations for real non-convergence (`round_cap_reached`, a round ≥2 failure, `partner_output_invalid`)
+1. WHEN a partner round made at least one code-tool call and none succeeded, THE gateway SHALL escalate it as
+   `code_access_unavailable`, whatever the floor or output check said.
+2. WHEN a create matches a stored session escalated with `evidence_floor_not_met` or `partner_output_invalid` whose
+   round-1 tool log is all failed, THE gateway SHALL start a new session instead of deduplicating, unless the
+   session has `human_approved_by`.
+3. WHEN PLAN-SPAR meets a legacy escalated entry (`infra: false, retryable: false`) whose live session has that
+   shape, THE next run SHALL replace the session without using up one of `MAX_SESSIONS`, and SHALL check each such
+   entry at most once.
+4. A round-1 floor failure with at least one successful read, `round_cap_reached`, and every round ≥2 escalation
    SHALL behave exactly as today.

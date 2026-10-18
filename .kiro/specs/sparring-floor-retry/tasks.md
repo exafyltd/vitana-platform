@@ -1,13 +1,13 @@
 # Tasks — sparring-floor-retry
 
 <!-- lane: floor-retry-code -->
-- [ ] T1 Gateway: add `evidence_floor_not_met` to `RETRYABLE_REASONS` in `plan-sparring-service.ts`; add
-      service tests: no dedup for floor sessions, dedup kept for `round_cap_reached`.
-- [ ] T2 `plan-spar.mjs`: add the reason to `INFRA_REASONS` / `RETRYABLE_REASONS`; legacy-state recompute
-      via `client.get` in `step()`.
-- [ ] T3 `plan-spar.test.mjs`: fresh floor escalation → infra/retryable + "partner unavailable" log; legacy
-      entry retried with the session count unchanged and no `s2-` files; `round_cap_reached` legacy not retried.
-- [ ] T4 Verify: node tests, gateway Jest suite, `tsc --noEmit`, `scripts/ci/test-vtid-04868-plan-sparring.sh`;
-      after staging deploy, one push to mt-identity yields a new session with read_file-cited findings.
+- [ ] T1 `partner.ts`: export `codeAccessFailed`; both failure exits return `code_access_unavailable` when it holds.
+- [ ] T2 `plan-sparring-service.ts`: create dedup also re-runs floor/output-invalid sessions whose round-1
+      `tool_log` is all failed.
+- [ ] T3 `plan-spar.mjs`: one-time legacy reclassification (`reclassified` marker) feeding the `retryInfra` path.
+- [ ] T4 Tests: gateway scenarios (all-failed reads → `code_access_unavailable`; partial reads → floor kept; dedup
+      bypassed only for all-failed). `plan-spar.test.mjs` (a)–(d) with `c.get` overrides and `c.calls` assertions.
+- [ ] T5 Verify: node tests, both gateway Jest suites, `tsc --noEmit`. After the staging deploy, one push to
+      mt-identity yields a new session with read_file-cited findings, and the session count stays 1.
 
 Acceptance: requirements 1–4 hold, and all listed suites are green.
