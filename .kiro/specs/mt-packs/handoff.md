@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-17T16:30Z
+updated: 2026-10-17T16:45Z
 ---
 # Handoff — mt-packs (WS5): Assistant & content packs
 
@@ -94,13 +94,13 @@ The sparring partner could not review (code_access_unavailable). Not a plan prob
 ### 2026-10-17T15:31Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
 
-### 2026-10-17T16:30Z Â· kiro-hotmail-202610151618-b437 Â· replan (evidence_floor_not_met) â†’ drafted
+### 2026-10-17T16:30Z · kiro-hotmail-202610151618-b437 · replan (evidence_floor_not_met) → drafted
 PLAN-SPAR session `a5b179ee-0ba7-4109-afdc-17fbd1b009ad` escalated with `evidence_floor_not_met` (round 1 cited
 0 premise checks; infra=false). Re-verified premises against platform tip and refined plan.md with a genuine
 finding: the existing `getEffectiveConfig` tenant override **replaces `base_identity` wholesale** at
 `services/gateway/src/services/ai-personality-service.ts:687`
 (`merged.base_identity = tenantConfig.system_prompt_override`), so the fixed Vitana identity (name,
-pronunciation, three-names rule, safety) is NOT structurally protected by the current merge â€” a tenant pack
+pronunciation, three-names rule, safety) is NOT structurally protected by the current merge — a tenant pack
 could silently drop it. plan.md Problem #2, the `persona-pack` Fix and Risks now require the fixed block to be
 assembled from code outside the override path, with a test asserting it survives a tenant override. Also
 corrected the imprecise `orb/live/surface.ts:64` citation: `surface.ts` imports `PersonalitySurfaceKey` (`:16`)
@@ -110,3 +110,24 @@ surface list + hardcoded base_identity, `:659/:687` effective-config merge + who
 `orb-live.ts:7413/:7652` (`buildAnonymousSystemInstruction`), the four `kb/instruction-manual/maxina` readers
 (`live-system-instruction.ts:1282`, `checklist-regenerate.ts:125-129`, `orb-tools-shared.ts:1991`,
 `retrieval-router.ts:95`), and `surface.ts:16/:63`. No lane/path/dep change. Next: re-push and re-spar.
+
+### 2026-10-17T16:45Z · kiro-hotmail-202610151618-b437 · spar round 1 (session 1896989e) answered → drafted
+Session `1896989e-d566-482a-ae2f-56784ba0d901` round 1: 2 blockers, 2 majors, 1 minor — all ACCEPTED (verified
+against the tip), responses in `sparring/s2-responses-1.md`.
+- R1-F1 (blocker): `buildLiveSystemInstruction` is sync (`live-system-instruction.ts:463`, reads
+  `getPersonalityConfigSync` `:26/:576/:594`); keep it sync and pass a PRE-FETCHED tenant config object in as a
+  parameter (call site `orb-live.ts:7678`), plus a `getEffectiveConfigSync` over a session-start cache. No async
+  cascade.
+- R1-F2 (blocker): `buildAnonymousSystemInstruction` is ~128 lines in `orb-live.ts` (`:7413`–`:7541`); EXTRACT
+  it verbatim into `orb/live/instruction/anonymous-system-instruction.ts` (snapshot-gated), leaving a ~3-line
+  import+call. Added `services/gateway/src/routes/orb-live.ts` to persona-pack paths + tasks Allowed paths.
+- R1-F3 (major): the anonymous path has no `TenantContext` (`orb-live.ts:7651`); the extracted builder takes a
+  `tenantId` param populated from a widget slug/host validated server-side against `tenants` (never client-trusted);
+  unknown slug → Maxina baseline.
+- R1-F4 (major): `buildFirstTimeWelcomeLine` (`greeting-pools.ts:177`, finished Maxina sentences `:181`–`:186`)
+  moved into persona-pack scope → FACTS+INTENTS + rule-41 guard + Maxina golden.
+- R1-F5 (minor): kb-overlay-code BUILDS the pack-id resolution (`resolveManualDir()` at
+  `checklist-regenerate.ts:121` hardcodes the path); no path change (files already scoped), design note added.
+Updated plan.md (Problem #3, persona-pack + kb-overlay-code Fix, Tests, Risks, Out of scope), tasks.md
+(persona-pack Allowed paths + P2–P5, kb K1), lanes `persona-pack` and `kb-overlay-code`. queue.mjs validators on
+handoff.md + all 7 lanes → 0 errors; tasks markers 1:1; Allowed paths == lane paths. Next: push → next round.

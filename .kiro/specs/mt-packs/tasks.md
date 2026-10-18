@@ -11,20 +11,32 @@ Allowed paths:
 - services/gateway/src/orb/profile/**
 - services/gateway/src/orb/live/instruction/**
 - services/gateway/src/orb/instruction/greeting-pools.ts
+- services/gateway/src/routes/orb-live.ts
 - services/gateway/test/mt-packs-persona-*.test.ts
 
 - [ ] P1 Split `voice_live.base_identity` (and surface defaults embedding tenant facts) into a FIXED Vitana
       identity block (name, pronunciations, three-names rule, safety, role separation — Maxina-free) and a
       TENANT block assembled from pack FACTS + English INTENTS. Maxina's facts seed its pack row.
-- [ ] P2 Resolve the tenant block via `getEffectiveConfig(surfaceKey, ctx.tenantId)` in the live instruction
-      builders (`orb/live/instruction/**`), keyed on the resolved `TenantContext`. Greetings/journey-modes/
-      first-time-welcome/tool descriptions emit INTENTS only (rule 41). `orb-live.ts` is NOT in scope beyond
-      what the instruction module exposes (hot-file rule, program §8).
-- [ ] P3 Dark by default (`MT_RESOLUTION_V2` + `tenant_settings.feature_flags.mt.packs`): no tenant override →
-      Maxina output byte-identical.
-- [ ] P4 Tests `services/gateway/test/mt-packs-persona-*.test.ts`: Maxina golden byte-identity; a fixture
-      tenant's facts produce its block; rule-41 guard (no finished spoken sentence, no `{{brand}}` in spoken
-      strings); `npm run test:roles` (42h), `npm run test:support` (42c), `npm run test:operator` (42e) green.
+- [ ] P2 PRE-FETCH the tenant config at session start and pass the resolved config OBJECT into the SYNC
+      `buildLiveSystemInstruction` (`orb/live/instruction/live-system-instruction.ts:463`, reads
+      `getPersonalityConfigSync`) as a new parameter — the `orb-live.ts:7678` call site gains one argument only,
+      no `async` cascade (hot-file §8). Add `getEffectiveConfigSync(surfaceKey, tenantId)` over a
+      session-start-prewarmed cache (mirrors `getPersonalityConfigSync`) for builders off the envelope path.
+- [ ] P3 EXTRACT `buildAnonymousSystemInstruction` verbatim out of `orb-live.ts` into
+      `orb/live/instruction/anonymous-system-instruction.ts` (behaviour-identical move, snapshot-gated), leaving
+      a ~3-line import+call in `orb-live.ts`. The extracted builder takes a resolved `tenantId` param; the
+      anonymous session-start handler validates the widget-supplied slug/host against `tenants` (never trusts
+      the client) and threads `tenantId` in. Unknown/absent slug → null → Maxina baseline. Rewrite
+      `buildFirstTimeWelcomeLine` (`greeting-pools.ts:177`) to emit FACTS+INTENTS, no finished spoken sentence
+      (rule 41). Greetings/journey-modes/tool descriptions emit INTENTS only.
+- [ ] P4 Dark by default (`MT_RESOLUTION_V2` + `tenant_settings.feature_flags.mt.packs`): no tenant override →
+      every assembled surface (live, anonymous, welcome) byte-identical to Maxina today.
+- [ ] P5 Tests `services/gateway/test/mt-packs-persona-*.test.ts`: Maxina golden byte-identity; a fixture
+      tenant's facts produce its block; the FIXED Vitana block survives a tenant `system_prompt_override`; the
+      extracted anonymous builder snapshot is behaviour-identical for Maxina and renders a fixture tenant on a
+      validated slug; `buildFirstTimeWelcomeLine` emits no finished spoken sentence; rule-41 guard (no `{{brand}}`
+      in spoken strings); `npm run test:roles` (42h), `npm run test:support` (42c), `npm run test:operator`
+      (42e) green.
 
 Acceptance: all Jest green incl. the three named suites; Maxina golden unchanged; dark by default; PR gate
 scope/sparring green; PR title `VTID-xxxxx (mt-packs/persona-pack): …`; commit trailers `Collab-Session` /
@@ -63,8 +75,11 @@ Allowed paths:
 - services/gateway/src/orb/live/instruction/live-system-instruction.ts
 - services/gateway/test/mt-packs-kb-overlay-*.test.ts
 
-- [ ] K1 Baseline pack id defaults to `maxina` (neutral baseline id; directory not moved). KB resolution reads
-      the baseline then overlays `knowledge_docs WHERE tenant_id = ctx.tenantId`.
+- [ ] K1 BUILD the pack-id resolution the plan assumes (it does not exist today): a single helper derives the
+      KB directory from a resolved pack id (default `maxina`, directory NOT moved), replacing the hardcoded
+      `kb/instruction-manual/maxina` in `checklist-regenerate.ts:121` `resolveManualDir()` (`:124`–`:129`),
+      `retrieval-router.ts:95` and `orb-tools-shared.ts:1991`. KB resolution then reads the baseline and overlays
+      `knowledge_docs WHERE tenant_id = ctx.tenantId`.
 - [ ] K2 Readers (`retrieval-router.ts`, `orb-tools-shared.ts`, `checklist-regenerate.ts`,
       `live-system-instruction.ts`) pass the resolved tenant; baseline-only tenants resolve unchanged.
 - [ ] K3 Tests `services/gateway/test/mt-packs-kb-overlay-*.test.ts`: baseline-only resolves Maxina manual

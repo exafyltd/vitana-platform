@@ -11,6 +11,7 @@ paths:
   - services/gateway/src/orb/profile/**
   - services/gateway/src/orb/live/instruction/**
   - services/gateway/src/orb/instruction/greeting-pools.ts
+  - services/gateway/src/routes/orb-live.ts
   - services/gateway/test/mt-packs-persona-*.test.ts
 updated: 2026-10-15T19:05Z
 ---
@@ -23,8 +24,12 @@ Split `voice_live.base_identity` (`ai-personality-service.ts:86`) into a FIXED V
 TENANT block assembled from pack FACTS + English INTENTS; resolve the tenant block via
 `getEffectiveConfig(surfaceKey, ctx.tenantId)` (`:659`) in the live instruction builders. Rule 41 is absolute:
 no templated spoken sentence, no `{{brand}}` in spoken strings. Maxina output byte-identical with no override
-(golden equality). Dark by default (`MT_RESOLUTION_V2`, `tenant_settings.feature_flags.mt.packs`). `orb-live.ts`
-is out of scope beyond ≤20-line hot-file touches (program §8). This lane adds its own
+(golden equality). Dark by default (`MT_RESOLUTION_V2`, `tenant_settings.feature_flags.mt.packs`).
+`buildLiveSystemInstruction` stays SYNC — the tenant config is pre-fetched at session start and passed in as a
+parameter; `buildAnonymousSystemInstruction` is extracted verbatim into
+`orb/live/instruction/anonymous-system-instruction.ts` (snapshot-gated) and takes a server-validated `tenantId`.
+`orb-live.ts` is touched ONLY for the ~3-line import+call swap and one-argument call-site additions (program §8
+hot-file cap; no logic rewritten there). This lane adds its own
 `docs/validation/<vtid>/` (plan-sparring.md copy, scope.json, staging-tests.json).
 
 **HELD:** `next_actor: owner` until PLAN-SPAR allocates this lane's VTID; PLAN-SPAR flips it to `kiro`. The
@@ -47,3 +52,13 @@ covers only `routes/backoffice-*.ts` and `services/backoffice*/**`; this lane's 
 (`ai-personality-service.ts`, `orb/profile/**`, `orb/live/instruction/**`, `orb/instruction/greeting-pools.ts`)
 match no area, and no general `gateway` area exists. `area` dropped (optional); `seat: jtadic` kept. No path or
 scope change.
+
+### 2026-10-17T16:45Z · kiro-hotmail-202610151618-b437 · spar round 1 (session 1896989e) → ready
+Added `services/gateway/src/routes/orb-live.ts` to paths (and tasks.md Allowed paths identically) for the
+F1/F2/F3 fixes: the SYNC `buildLiveSystemInstruction` keeps its signature and receives a pre-fetched tenant
+config as a parameter (call site `orb-live.ts:7678`), and `buildAnonymousSystemInstruction` is extracted
+verbatim into `orb/live/instruction/anonymous-system-instruction.ts` (snapshot-gated) leaving a ~3-line
+import+call. Verified: `buildLiveSystemInstruction` is sync and reads `getPersonalityConfigSync`
+(`live-system-instruction.ts:26,463,576,594`); `buildAnonymousSystemInstruction` spans `orb-live.ts:7413`–`:7541`
+with Maxina literals (`:7437`, `:7492`) on the no-JWT anonymous path (`:7651`); `buildFirstTimeWelcomeLine`
+(`greeting-pools.ts:177`) emits finished Maxina sentences (`:181`–`:186`). No seat/reviewer/dep change.

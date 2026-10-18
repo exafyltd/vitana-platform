@@ -26,10 +26,13 @@ product with its own identity and Maxina's behaviour cannot be golden-tested as 
    `personaKey: PersonalitySurfaceKey | null` (`orb/profile/role-registry.ts:40`, `assistant-profile.ts:63`);
    `orb/live/surface.ts` imports `PersonalitySurfaceKey` (`:16`) and documents the voice_live overlay (`:63`).
    The live instruction builders do not call `getEffectiveConfig` per tenant.
-3. **Pre-login story + greetings are Maxina-literal.** `routes/orb-live.ts:7413`
-   `buildAnonymousSystemInstruction(lang, voiceStyle, ctx, …)` (called `:7652`) and the greeting pools
-   (`orb/instruction/greeting-pools.ts`) hardcode the Maxina story/offer. Rule 41: these are composed by the
-   model from English INTENTS + FACTS — never templated spoken sentences.
+3. **Pre-login story + greetings are Maxina-literal; the anonymous builder is a 128-line hot-file block.**
+   `routes/orb-live.ts:7413` `buildAnonymousSystemInstruction` is ~128 lines (`:7413`–`:7541`) inside the
+   18k-line `orb-live.ts`, hardcoding the Maxina identity/story (`:7437`, `:7492`) on the UNAUTHENTICATED path —
+   no JWT, no resolved `TenantContext` (called `:7651`–`:7652` with `session.clientContext`, no `tenantId`).
+   `buildFirstTimeWelcomeLine` (`orb/instruction/greeting-pools.ts:177`) returns FINISHED spoken sentences with
+   "Maxina" literals across de/en/es/sr (`:181`–`:186`) — a rule-41 violation in the voice path. All must be
+   composed by the model from English INTENTS + FACTS, never templated sentences.
 4. **KB is pinned to one pack.** `kb/instruction-manual/maxina/*` is referenced as the sole manual in
    `orb/live/instruction/live-system-instruction.ts:1282`, `services/orb-tools-shared.ts:1991`,
    `services/retrieval-router.ts:95`, `services/guided-journey/checklist-regenerate.ts:125-131`. No tenant
@@ -45,29 +48,39 @@ product with its own identity and Maxina's behaviour cannot be golden-tested as 
 Per lane. All code dark by default behind `MT_RESOLUTION_V2` + `tenant_settings.feature_flags.mt.packs`
 unless the lane names an exception; Maxina renders byte-identical (golden equality, WS0 Maxina golden suite).
 
-- **Lane `persona-pack` (kiro, platform gateway).** Split `voice_live.base_identity` (and the other surface
-  defaults that embed tenant facts) into a FIXED Vitana identity block (name, pronunciations, three-names
-  rule, safety, role separation — unchanged, Maxina-free) and a TENANT block assembled at runtime from pack
-  FACTS (community name + pronunciation, anchor person, story, offer, tone) and English INTENTS. The live
-  instruction builders (`buildLiveSystemInstruction`, `buildAnonymousSystemInstruction` in `routes/orb-live.ts`,
-  via `orb/live/instruction/live-system-instruction.ts`) resolve the tenant block through
-  `getEffectiveConfig(surfaceKey, ctx.tenantId)` keyed on the resolved `TenantContext`. Greetings,
-  journey-modes, first-time welcome and tool descriptions emit INTENTS, never finished sentences (rule 41).
-  Maxina's facts live in its pack row; with no tenant override the assembled block is byte-identical to
-  today. The FIXED Vitana identity block is assembled from code, never from `system_prompt_override`, so a
-  tenant pack can only supply the TENANT facts/intents and can never overwrite the name/pronunciation/
-  three-names/safety rules (closing the wholesale-overwrite path at `ai-personality-service.ts:687`); the
-  rule-41 guard test asserts the fixed block is always present. Reads only; no migration.
+- **Lane `persona-pack` (kiro, platform gateway).** Split `voice_live.base_identity` (and other surface
+  defaults embedding tenant facts) into a FIXED Vitana block (name, pronunciations, three-names, safety, role
+  separation — Maxina-free) and a TENANT block assembled at runtime from pack FACTS (community name, anchor,
+  story, offer, tone) + English INTENTS. The FIXED block is built from code, never from `system_prompt_override`,
+  so a pack supplies only TENANT facts/intents and can never overwrite name/pronunciation/three-names/safety
+  (closing the wholesale overwrite at `ai-personality-service.ts:687`); a test asserts it survives a tenant
+  override. **F1 sync/async:** `buildLiveSystemInstruction` (`live-system-instruction.ts:463`) is SYNC, reads
+  `getPersonalityConfigSync` (`:26/:576/:594`), and must stay sync (its `orb-live.ts:7678` call site + hot-file
+  §8 cap forbid an async cascade); so the tenant config is PRE-FETCHED at session start and the resolved object
+  passed in as a new parameter (one-argument call-site change, no `async`). A `getEffectiveConfigSync` over a
+  session-start cache (mirrors `getPersonalityConfigSync`) covers builders off the envelope. **F2+F3 anonymous:**
+  `buildAnonymousSystemInstruction` is first EXTRACTED verbatim out of `orb-live.ts` into
+  `orb/live/instruction/anonymous-system-instruction.ts` (behaviour-identical, snapshot-gated, mirroring the
+  earlier `buildLiveSystemInstruction` lift), leaving a ~3-line import+call (§8). That path has NO
+  `TenantContext`, so the extracted builder takes a `tenantId` param: the widget passes a slug/host to the
+  anonymous session-start endpoint (`frontend-brand-neutralise` F2), the server VALIDATES it against `tenants`
+  (never client-trusted) and threads `tenantId` in; unknown/absent slug → null → Maxina baseline (byte-identical).
+  **F4 welcome:** `buildFirstTimeWelcomeLine` (`greeting-pools.ts:177`) is rewritten to emit FACTS+INTENTS (name
+  from the resolved pack), never finished sentences; a rule-41 guard test enforces it; Maxina golden-matched.
+  Greetings, journey-modes and tool descriptions emit INTENTS only (rule 41). No tenant override → every surface
+  byte-identical to today. Reads only; no migration.
 - **Lane `kb-overlay-db` (kiro, platform supabase/migrations).** Expand-only migration adding
   `knowledge_docs.tenant_id uuid NULL` (FK `tenants`, context/overlay only; NULL = platform baseline) with
   rollback, `lock_timeout`, read-only pre/post checks, and a MIGRATION-QUEUE row. No backfill of content;
   Maxina's manual stays baseline (NULL).
-- **Lane `kb-overlay-code` (kiro, platform gateway).** KB resolution reads the platform baseline
-  (`kb/instruction-manual/<pack>`, default `maxina` kept as the baseline pack id) then overlays
-  `knowledge_docs WHERE tenant_id = ctx.tenantId` on top; retrieval/knowledge packs
-  (`orb/profile/role-registry.ts` `knowledgePacks`, `services/retrieval-router.ts`,
-  `services/orb-tools-shared.ts`, `checklist-regenerate.ts`) pass the resolved tenant. Baseline-only tenants
-  behave exactly as today. Depends on `kb-overlay-db`.
+- **Lane `kb-overlay-code` (kiro, platform gateway).** The baseline-pack-id abstraction does NOT exist today
+  (resolve F5): `checklist-regenerate.ts:121` `resolveManualDir()` hardcodes `kb/instruction-manual/maxina`
+  across five candidates (`:124`–`:129`), and `retrieval-router.ts:95` / `orb-tools-shared.ts:1991` use the same
+  literal — so this lane BUILDS a helper deriving the KB directory from a resolved pack id (default `maxina`,
+  directory NOT moved) and updates each consumer to call it. KB resolution reads the baseline then overlays
+  `knowledge_docs WHERE tenant_id = ctx.tenantId`; the readers (`retrieval-router.ts`, `orb-tools-shared.ts`,
+  `checklist-regenerate.ts`, `live-system-instruction.ts:1282`) pass the resolved tenant. Baseline-only tenants
+  (null/`maxina`) behave as today. Depends on `kb-overlay-db`.
 - **Lane `brand-content-templating` (kiro, platform gateway).** `{{brand}}` templating ONLY for UI/push/email
   and `tt()` catalog entries (never spoken strings): push copy, feature tips (`data/feature-tips.ts`),
   tool descriptions, server-side notification copy render `{{brand}}` from the resolved tenant brand pack
@@ -97,9 +110,11 @@ unless the lane names an exception; Maxina renders byte-identical (golden equali
 
 ## Tests
 - `persona-pack`: Jest — assembled instruction/intents rendered with Maxina config are byte-identical to
-  today (Maxina golden suite); a second fixture tenant's facts produce its block; no finished spoken sentence
-  is emitted (rule 41 guard); `npm run test:roles` (42h) green; `npm run test:support` (42c),
-  `npm run test:operator` (42e) green.
+  today (Maxina golden suite); a second fixture tenant's facts produce its block; the FIXED Vitana block
+  survives a tenant `system_prompt_override`; the extracted `anonymous-system-instruction.ts` passes a
+  behaviour-identity snapshot for Maxina and renders a fixture tenant's facts when a validated slug resolves a
+  `tenantId`; `buildFirstTimeWelcomeLine` emits no finished spoken sentence (rule 41 guard) and golden-matches
+  Maxina; `npm run test:roles` (42h) green; `npm run test:support` (42c), `npm run test:operator` (42e) green.
 - `kb-overlay-db`: pgTAP (`supabase/tests/mt/`, run by mt-guardrails' `scripts/mt/pgtap/run.*` + CI `pg_prove`
   from `ci-wiring`) — column exists, nullable, FK present; a baseline (NULL) doc still resolves.
 - `kb-overlay-code`: Jest — baseline-only tenant resolves Maxina manual unchanged; an overlay doc for a
@@ -132,13 +147,20 @@ with mt-guardrails. Creating a real tenant pack is a later owner-approved step (
 - The existing tenant override overwrites `base_identity` wholesale (`ai-personality-service.ts:687`), which
   could drop the fixed Vitana identity under a tenant pack. Mitigation: the split assembles the fixed block
   from code outside the override path; a test asserts the three-names/safety block survives a tenant override.
+- Extracting `buildAnonymousSystemInstruction` from `orb-live.ts` (hot file) could drift the anonymous prompt.
+  Mitigation: the extraction is a verbatim behaviour-identical move gated by a snapshot test BEFORE any
+  tenant-parameterisation; the `orb-live.ts` edit is a ~3-line import+call swap within the §8 cap.
+- An anonymous tenant slug is attacker-controllable. Mitigation: the server validates the slug against
+  `tenants` and never trusts the client; an unknown slug falls back to the Maxina baseline, never errors.
 - i18n neutralisation is wide (~120 files). Mitigation: `{{brand}}` default = Maxina; ESLint i18n gate;
   per-shard review; DE-first.
 - CROSS-SPEC O3 golden coupling. Mitigation: `whats-new-drafter` depends on mt-guardrails `v1-golden-edge`;
   the fixture regeneration is declared and reviewed in the same PR.
 
 ## Out of scope
-- `orb-live.ts` large edits beyond ≤20-line hot-file touches (program §8 hot-file rule).
+- `orb-live.ts` large edits beyond the behaviour-identical extraction of `buildAnonymousSystemInstruction`
+  into its own module plus the resulting ~3-line import+call swap and the one-argument additions at the two
+  builder call sites (all within the program §8 ≤20-line hot-file cap). No logic is rewritten inside `orb-live.ts`.
 - Per-tenant navigation, per-tenant voice persona (M3+).
 - Creating a real tenant content pack / Tenant Pack intake (WS8).
 - Network/Discover/scope work (mt-network, mt-community-isolation, mt-discover).
