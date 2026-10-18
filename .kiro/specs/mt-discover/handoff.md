@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-17T15:47Z
+updated: 2026-10-15T16:50Z
 ---
 # Handoff — mt-discover (Commerce & Discover × tenancy, WS11 + Discover scope of §4.11)
 
@@ -120,3 +120,18 @@ on handoff.md + all 4 lanes: 0 errors. Deleted sparring/INTERNAL-REVIEW.json. Op
 
 ### 2026-10-17T15:47Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-15T16:50Z · kiro-hotmail-202610151618-b437 · replan refinement (drafted)
+Round 1 escalated with partner error `evidence_floor_not_met` (no plan content disputed). Replanned with one genuine
+refinement verified against current code (file:line), not cosmetic: **reclassified
+`credit-recommender-repository.ts:114 fetchMerchantCommissionEligibility` from ADMIN/INGESTION to FULFILMENT.** Read
+the function (lines 110–117): it is a by-explicit-`merchant_id` lookup of `recommendation_commission_eligible` /
+`recommendation_commission_rate_override`, called by the commission engine on an already-placed order
+(`credit-recommender-repository.ts:28 fetchProductOrderForCommission` reads `product_orders`; `:52,:92,:105,:122`
+operate on `recommendation_commissions`). It serves no admin/back-office/supplier surface and no member Discover/ORB
+surface, so by the spec's own definitions it is fulfilment (by-explicit-id read of an already-held item → unfiltered,
+`// discover-inventory: fulfilment`), not admin. The wrong class would have put `// discover-inventory: admin` on a
+post-purchase commission read. Updated plan Problem 2 and tasks P2 (moved it from the ADMIN/INGESTION list to the
+FULFILMENT list with the by-merchant_id rationale). No lane-path change (the file is already in
+`discover-shared-predicate`'s paths and the lane body describes classes generically, not per-file). queue.mjs
+validators re-run on handoff.md + all 4 lanes: 0 errors.

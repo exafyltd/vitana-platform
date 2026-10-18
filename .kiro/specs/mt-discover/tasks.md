@@ -90,12 +90,14 @@ Allowed paths:
       `universal-cart-context-repository.ts:45`, `shopping-agent/reorder-core-repository.ts:24`,
       `click-redirect-repository.ts:20` (redirect of a chosen product),
       `orb-tools/marketplace-journey-tools-repository.ts:51,:55`,
-      `orb-tools/marketplace-discovery-tools-repository.ts` (fetchProductTitlesByIds, fetchProductTitleById).
+      `orb-tools/marketplace-discovery-tools-repository.ts` (fetchProductTitlesByIds, fetchProductTitleById),
+      `recommendation-commissions/credit-recommender-repository.ts:114` (fetchMerchantCommissionEligibility —
+      by-explicit-merchant_id commission read on an already-placed order; serves no admin/member surface).
       **ADMIN/INGESTION (unfiltered, admin-guarded + `// discover-inventory: admin`):** `admin-marketplace-repository.ts`,
       `catalog-ingest-repository.ts`, `vcaop-portal-my-products.ts`, `partner-onboarding-catalogue.ts`,
       `partner-onboarding.ts`, `partner-onboarding-service.ts`, `partner-review.ts`, `partner-setup.ts`,
       `shopify-sync-repository.ts`, `marketplace-sync/shared-repository.ts`, `marketplace-sync/amazon-sync-repository.ts`,
-      `admin-scanners/marketplace-repository.ts`, `recommendation-commissions/credit-recommender-repository.ts:114`.
+      `admin-scanners/marketplace-repository.ts`.
       Do NOT touch `shop-feed-repository.ts:43 fetchRankedShopVideosPage` (reads `shop_videos`, not a products reader).
       No behaviour change while flags off; a saved/in-flight order is never 404'd.
 - [ ] P3 `scripts/ci/discover-reader-inventory.mjs`: GENERATED inventory tagging each `products`/`merchants` reader

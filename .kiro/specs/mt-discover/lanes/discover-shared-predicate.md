@@ -87,3 +87,9 @@ HIGH-1 + MEDIUM-1 (INTERNAL-REVIEW REJECTED). A full `from('products')|from('mer
 tasks `Allowed paths` block so the generated build-failing lint can annotate/route each one without the PR leaving
 its paths (Lane scope). Added the third sanctioned disposition **admin/ingestion** (`// discover-inventory: admin`)
 for admin/back-office/supplier-portal + catalog-ingestion readers. Full swept list in handoff.md log.
+
+### 2026-10-15T16:50Z · kiro-hotmail-202610151618-b437 · replan refinement (ready)
+`credit-recommender-repository.ts:114 fetchMerchantCommissionEligibility` reclassified from ADMIN/INGESTION to
+FULFILMENT (verified lines 110–117: a by-explicit-`merchant_id` commission-eligibility read on an already-placed
+order, no admin/member surface). Lane paths unchanged (the file is already in `paths`); the lint annotation for that
+reader becomes `// discover-inventory: fulfilment`. Plan Problem 2 + tasks P2 updated.

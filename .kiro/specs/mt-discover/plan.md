@@ -18,14 +18,15 @@ tenant-gated and adds the Community/Network scope, on top of the global supplier
    set, classified **discovery** (12 readers: open feed/search/browse + the by-id discovery initiator
    `discover-recommendations-repository.ts:23`), **fulfilment** (by-id hydration of an already-held item, incl.
    `shop-feed:32`, `cart-checkout:36/:41`, `checkout:42`, `health-action-initiative:81`, `universal-cart-context:45`,
-   `reorder-core:24`, `click-redirect:20`), and **admin/ingestion** (admin/supplier surface by `merchant_id`/org:
+   `reorder-core:24`, `click-redirect:20`, and `credit-recommender-repository.ts:114 fetchMerchantCommissionEligibility`
+   — a by-explicit-`merchant_id` commission-eligibility read on an already-placed order, no admin/member surface, so
+   fulfilment not admin), and **admin/ingestion** (admin/supplier surface by `merchant_id`/org:
    admin-marketplace, catalog-ingest, the two marketplace-sync + shopify-sync repos, vcaop-portal, partner-onboarding*,
-   partner-review/setup, admin-scanners/marketplace, `credit-recommender-repository.ts:114`). The 2026-10-17 sweep
-   added readers the earlier draft hand-listed around — the orb-tools `marketplace-*-repository`, `gemini-operator`,
-   `intent-matcher`, the analyzer and shopping-agent repos — so the lane's `paths` now cover the full set and the
-   build-failing lint can annotate/route each file in-scope (otherwise Lane-scope CI fails the first touch).
-   `shop-feed-repository.ts:43 fetchRankedShopVideosPage` reads `shop_videos` only, NOT `products`/`merchants`, out of
-   scope.
+   partner-review/setup, admin-scanners/marketplace). The 2026-10-17 sweep added the orb-tools
+   `marketplace-*-repository`, `gemini-operator`, `intent-matcher`, the analyzer and shopping-agent repos the earlier
+   draft hand-listed around, so the lane `paths` now cover the full set and the build-failing lint can annotate/route
+   each file in-scope (else Lane-scope CI fails the first touch). `shop-feed-repository.ts:43 fetchRankedShopVideosPage`
+   reads `shop_videos` only, NOT `products`/`merchants`, out of scope.
 3. `tenant_catalog_overrides` exists (foundation migration `20260416120000_vtid_02000_marketplace_foundation.sql`,
    RLS `_select` bare `tenant_id = current_tenant_id()`) but is enforced nowhere — the commerce architecture
    confirms "exists but is not enforced anywhere" (§"Partner↔tenant relationship" row).
