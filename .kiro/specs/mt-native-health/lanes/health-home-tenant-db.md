@@ -7,34 +7,35 @@ executor: kiro
 seat: hotmail
 reviewer_seat: jtadic
 paths:
-  - supabase/migrations/20261101131000_mt_native_health_home_tenant.sql
-  - supabase/migrations/*mt_native_health_home_tenant*rollback*.sql
+  - supabase/migrations/20261101130000_*.sql
+  - supabase/migrations/20261101130100_*.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
-  - test/db/mt-native-health-home-tenant.sql
-updated: 2026-10-17T11:48Z
+  - services/gateway/test/mt-native-health/health-home-tenant.pgtap.sql
+updated: 2026-10-15T16:40Z
 ---
-# Frozen health home tenant — app_users.health_home_tenant_id (DB) — mt-native-health (repo vitana-platform)
+# Frozen health home tenant (DB) — mt-native-health/health-home-tenant-db (repo vitana-platform)
 
-Plan: `.kiro/specs/mt-native-health/plan.md` (health-home-tenant-db) and `tasks.md`. Design: `design.md`.
+Plan: `.kiro/specs/mt-native-health/plan.md` (authoritative) and the `health-home-tenant-db` group of `tasks.md`
+(tasks H1–H4, allowed paths, acceptance). Design and the rules you must follow: `design.md`.
 
-HELD until PLAN-SPAR allocates this lane's VTID. DB lane — migration + pre-approved rollback + read-only pre/post
-checks, applied by Claude via RUN-MIGRATION after merge, never by the executor (§7a). Depends on `mt-identity`
-(membership unification — the backfill reads each user's current primary `user_tenants` row) and A-M1
-`tenants.is_default`/`is_platform` (`20261014000100`) for the FK/default — cross-spec deps, stated here (lane
-`depends_on` lists lanes of THIS spec only; this lane shares the migration queue position after `switch-tenant-rpc-db`
-but has no in-spec lane dependency).
+**HELD:** `next_actor: owner` until PLAN-SPAR allocates the VTID; it then flips to `kiro` and the lane gets its
+`vtid`. Do not start before then.
 
-Health table membership is referenced via `mt-identity`'s canonical `isHealthTable()` predicate (CROSS-SPEC O1) — this
-lane never defines its own list. `health_home_tenant_id` is set-once and NOT changed when `is_primary` changes.
+Rules for the executor (collaboration §7a): no VTID allocation, no `_plan` claim, no edit of `handoff.md` or another
+lane's file, no merge/approve/deploy/workflow dispatch, no Supabase or AWS writes — **a database change is a
+migration file in this PR; Claude applies it via RUN-MIGRATION after merge.** Work only inside the allowed paths.
+Add `docs/validation/<vtid>/plan-sparring.md` (copy), `scope.json`, `staging-tests.json`, `rollback.sql`,
+`live-before.sql`/`post-apply-checks.sql`.
 
-§7a: no VTID allocation, no `_plan` claim, no merge/approve/deploy, no Supabase/AWS writes. Allowed paths only. Own
-`docs/validation/<vtid>/` (plan-sparring copy, scope.json, live-before + post-apply SQL) — not in `paths`. Backfill
-batched/off-peak per §4.7.
+Depends on mt-identity's membership unification (canonical `user_tenants.is_primary`): the MIGRATION-QUEUE row sorts
+AFTER those rows; cite them when you add the row.
 
-PR title `VTID-xxxxx (mt-native-health/health-home-tenant-db): …`; trailers `Collab-Session: <id>`,
-`Collab-Lane: mt-native-health/health-home-tenant-db`.
+Branch `kiro/mt-native-health/health-home-tenant-db`; PR title
+`VTID-xxxxx (mt-native-health/health-home-tenant-db): …`; commit trailers `Collab-Session: <your kiro session id>`
+and `Collab-Lane: mt-native-health/health-home-tenant-db`. When the PR is open: set `state: in-review`,
+`next_actor: kiro` (the reviewer seat `jtadic` picks it up), `pr: <url>`, append a log entry, release the claim.
 
 ## Log
-### 2026-10-17T11:48Z · kiro-hotmail-202610151618-b437 · created → ready
-Lane created (held). `health_home_tenant_id uuid REFERENCES tenants`, backfill to current primary membership,
-set-once BEFORE-INSERT trigger at first health write; health tables stay user-owned.
+### 2026-10-15T16:40Z · kiro-hotmail-202610151618-b437 · created → ready
+Lane drafted by the hotmail Kiro seat (DB/migrations work → seat `hotmail`, reviewer `jtadic`). HELD at
+`next_actor: owner` until PLAN-SPAR allocates the VTID. First lane of the spec; no in-spec dependencies.

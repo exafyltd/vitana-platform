@@ -1,159 +1,115 @@
-# Tasks — mt-native-health (WS9 native tenancy delta + WS10 health-×-tenancy contract)
+# Tasks — mt-native-health
 
-Program: MULTI-TENANT-PLAN §6 (WS9/WS10). Companion `health-native` (VTID-05020/05021) owns the native shell, screen
-ports, builds and Health Hub phases; this spec is the tenancy delta only. VTID: allocated by PLAN-SPAR after approval.
-Acceptance for every lane: its own PR checks green (incl. Lane scope), no writes to staging/production, dark by default,
-read-only `docs/validation/<VTID>/staging-tests.json` for anything that deploys.
+Authoritative plan: `plan.md`. Lane files: `lanes/`. VTID: allocated by PLAN-SPAR after approval.
 
-## switch-tenant-rpc-db — transport one-owner flag (DB); reuse existing switch RPC (repo vitana-platform)
-<!-- lane: switch-tenant-rpc-db -->
-Allowed paths:
-- supabase/migrations/20261101130000_mt_native_health_transport_flag.sql
-- supabase/migrations/*mt_native_health_transport_flag*rollback*.sql
-- docs/multitenancy/MIGRATION-QUEUE.md
-- test/db/mt-native-health-transport-flag.sql
-
-Do NOT create a `switch_active_tenant` RPC or a `reserved_tenant_slugs` table: the switch RPC
-(`switch_to_tenant_by_slug`, `20261010180200`, VTID-05043) and reserved slugs (`20261014000400`/`20261014000500`,
-VTID-05150) already exist and are applied. Do NOT re-seed reserved slugs from the cross-repo
-`vitana-v1/src/navigation/registry/screens.json` (`scripts/tenants/gen-reserved-slugs.mjs` +
-`TENANT-RESERVED-SLUGS-DRIFT.yml` already keep the applied table synced).
-
-- [ ] `user_device_tokens.transport text CHECK (transport IN ('appilix','native'))` + partial unique index enforcing one
-      active transport-owner per device (VTID-03481 invariant). `lock_timeout`; expand/contract.
-- [ ] ONLY if a real switch-RPC gap is confirmed at build time (none known — `TenantProvider.tsx:116` already maps
-      42501 → `not_joinable`): extend `switch_to_tenant_by_slug` in place via `CREATE OR REPLACE`, keeping its
-      `GRANT EXECUTE … TO authenticated` / `REVOKE … FROM PUBLIC, anon` grants. Never a parallel RPC.
-- [ ] Pre-approved rollback migration; read-only `live-before.sql` + `post-apply-checks.sql` in docs/validation.
-- [ ] MIGRATION-QUEUE rows appended after row 8 (order: switch-tenant-rpc-db → health-home-tenant-db), with cross-spec
-      depends-on (`mt-identity`, A-M1 `20261014000100`).
-- [ ] pgTAP: transport one-owner holds on re-registration (one active transport per device).
-Acceptance: migration + rollback apply cleanly on the D11 local stack; pgTAP green; no live apply by the executor; no
-`switch_active_tenant`/`reserved_tenant_slugs` re-creation.
-
-## native-tenant-switch — client switch + picker/join + universal-link routing (repo vitana-v1)
-<!-- lane: native-tenant-switch -->
-Allowed paths:
-- apps/mobile/src/identity/**
-- apps/mobile/src/screens/tenant/**
-- apps/mobile/app/+native-intent.tsx
-- apps/mobile/app/(public)/**
-- apps/mobile/tests/tenant-switch.test.tsx
-- apps/mobile/parity/ledger.json
-
-The client switch already exists: `TenantProvider.tsx:112-126` calls `switch_to_tenant_by_slug`, maps 42501 →
-`not_joinable`, does `refreshSession()`, gates on the new claim and re-validates the stored slug. Build ONLY the delta
-below; do not add a parallel switch or a new RPC.
-
-- [ ] In-app community picker (`list_public_tenants`) + "join this community" screen reached on the `not_joinable`
-      return from the existing `switchActiveTenant`.
-- [ ] `app/+native-intent.tsx` routes a `/<slug>` universal link to the existing switch; never a silent Maxina default.
-- [ ] Device-stored last tenant stays an input, re-validated server-side on launch (already in TenantProvider — extend
-      only if the picker/join flow needs it).
-- [ ] No Maxina constant beyond store identifiers (D16); 11 locales DE-first du-form + RTL; parity ledger synced.
-- [ ] Vitest: a tenant-B deep link for a tenant-A-only member lands on the join screen with no tenant data fetched;
-      the picker lists public tenants and switches via the existing path.
-Acceptance: tests green against the fake gateway / local stack; no switch RPC call against a live system; no duplicate
-client switch added.
-
-## push-tenant-fanout — per-tenant push fan-out, fetch tokens by user_id (repo vitana-platform)
-<!-- lane: push-tenant-fanout -->
-Allowed paths:
-- services/gateway/src/routes/notifications.ts
-- services/gateway/src/routes/notifications-repository.ts
-- services/gateway/src/services/notification-service.ts
-- services/gateway/src/services/notification-service-repository.ts
-- services/gateway/test/services/mt-native-health-push-fanout.test.ts
-
-- [ ] `upsertDeviceToken` no longer writes `tenant_id` (expand/contract: column kept, not load-bearing for delivery).
-- [ ] `fetchLiveDeviceTokensForUser` / `sendPushToUser` fetch by `user_id` only; per-tenant copy + deep link derived
-      from the notification row's `tenant_id`; transport flag honoured (one transport per device).
-- [ ] Dark behind `tenant_settings.feature_flags.mt.native_push_tenant_fanout`.
-- [ ] Contract test: `ab_dual` receives pushes from BOTH tenants with per-tenant copy (fake Supabase / local stack).
-- [ ] `npm run test:support` green; Maxina golden push copy unchanged.
-Acceptance: tests green; no sign-in probe or push against production.
-
-## health-home-tenant-db — app_users.health_home_tenant_id + backfill + set-once (repo vitana-platform)
 <!-- lane: health-home-tenant-db -->
+## health-home-tenant-db — frozen health home tenant (DB) (repo vitana-platform)
+
 Allowed paths:
-- supabase/migrations/20261101131000_mt_native_health_home_tenant.sql
-- supabase/migrations/*mt_native_health_home_tenant*rollback*.sql
-- docs/multitenancy/MIGRATION-QUEUE.md
-- test/db/mt-native-health-home-tenant.sql
+- `supabase/migrations/20261101130000_*.sql`
+- `supabase/migrations/20261101130100_*.sql`
+- `docs/multitenancy/MIGRATION-QUEUE.md`
+- `services/gateway/test/mt-native-health/health-home-tenant.pgtap.sql`
 
-- [ ] `app_users.health_home_tenant_id uuid REFERENCES tenants`; backfill set-once (batched/off-peak) by a
-      deterministic rule: the user's `is_primary=true` `user_tenants` row; when none/ambiguous, the
-      `is_default`/`is_platform` tenant the user belongs to, else the oldest `user_tenants` row by `created_at`
-      (same tie-break as `20261014000200_vtid_05149_signup_default_tenant.sql`).
-- [ ] BEFORE-INSERT trigger sets it at the first health write for new users; never changed on `is_primary` change.
-- [ ] Health table membership referenced via `mt-identity`'s `isHealthTable()` (CROSS-SPEC O1) — no local list.
-- [ ] Pre-approved rollback; read-only `live-before.sql` + `post-apply-checks.sql`; `lock_timeout`; expand/contract.
-- [ ] MIGRATION-QUEUE row appended after switch-tenant-rpc-db's row.
-- [ ] pgTAP: `health_home_tenant_id` set-once; unchanged on `is_primary` change; the backfill tie-break resolves
-      exactly one row per user (including users with zero/multiple primary rows).
-Acceptance: migration + rollback apply cleanly on the local stack; pgTAP green; no live apply by the executor.
+- [ ] H1 Migration `20261101130000_*`: add `app_users.health_home_tenant_id uuid NULL REFERENCES tenants(id)` + index.
+- [ ] H2 Migration `20261101130100_*`: `health_home_tenant_id(p_user uuid)` STABLE SECURITY DEFINER resolver
+      (`coalesce(column, primary user_tenants row)`, never reads `app_metadata`); batched backfill with `lock_timeout`,
+      snapshot to a `bak_*` table (30-day retention); leave NULL for members with 0 or 2+ primary memberships.
+- [ ] H3 Add the two rows to `docs/multitenancy/MIGRATION-QUEUE.md` AFTER mt-identity's membership-unification rows,
+      with depends-on, rollback path and read-only pre/post-check references.
+- [ ] H4 pgTAP: resolver is stable across sessions for ab_dual; backfill idempotent; ambiguous members stay NULL.
 
-## health-db-accessor — healthDb(userId) + TENANT_TABLES exclusion + reader/writer conversion (repo vitana-platform)
-<!-- lane: health-db-accessor -->
+Acceptance: migrations are expand-only and reversible (`docs/validation/<VTID>/rollback.sql`); pre-check counts
+ambiguous members; post-check asserts every member has a home tenant or is quarantined; pgTAP green; MIGRATION-QUEUE
+row present. Kiro never applies the migration — Claude applies via RUN-MIGRATION after merge. The lane adds its own
+`docs/validation/<vtid>/`.
+
+<!-- lane: health-tenant-accessor -->
+## health-tenant-accessor — user-keyed healthDb accessor + inventory lint (repo vitana-platform)
+
 Allowed paths:
-- services/gateway/src/services/health-db.ts
-- services/gateway/src/routes/integrations-repository.ts
-- services/gateway/src/routes/health-repository.ts
-- services/gateway/src/services/automation-handlers/health-wellness-repository.ts
-- services/gateway/src/services/automation-handlers/health-action-initiative-repository.ts
-- services/gateway/src/services/diary-health-extractor-repository.ts
-- services/gateway/test/services/mt-native-health-healthdb.test.ts
+- `services/gateway/src/data/health-db.ts`
+- `services/gateway/src/routes/integrations-repository.ts`
+- `services/gateway/src/services/diary-health-extractor-repository.ts`
+- `services/gateway/src/routes/health-repository.ts`
+- `services/gateway/src/services/automation-handlers/health-wellness-repository.ts`
+- `services/gateway/src/services/automation-handlers/health-action-initiative-repository.ts`
+- `services/gateway/scripts/gen-health-reader-inventory.mjs`
+- `services/gateway/test/mt-native-health/health-reader-inventory.test.ts`
+- `services/gateway/test/mt-native-health/health-db.test.ts`
 
-- [ ] `healthDb(userId)` (new file `services/gateway/src/services/health-db.ts`) resolves `health_home_tenant_id`
-      itself; it is the only path to health tables.
-- [ ] Health tables EXCLUDED from `mt-identity`'s `TENANT_TABLES`.
-- [ ] Convert the §4.9 session-tenant readers/writers at their REAL paths (`routes/integrations-repository.ts`,
-      `routes/health-repository.ts`, `services/automation-handlers/health-wellness-repository.ts`,
-      `services/automation-handlers/health-action-initiative-repository.ts`,
-      `services/diary-health-extractor-repository.ts`; re-verify each at build time) to `healthDb`.
-- [ ] State whether `healthDb` subsumes `resolveHealthTenantId()`
-      (`services/gateway/src/services/orb-tools/health-depth-tools.ts:118`) so the two resolvers do not diverge.
-- [ ] Generated inventory + lint fails the build on any health reader/writer that bypasses `healthDb`.
-- [ ] Dark behind `mt.health_home_tenant`.
-- [ ] Vitest: `ab_dual` in a tenant-B session writes and reads the same single health series.
-Acceptance: tests green; lint fails on a seeded bypass; no live writes.
+- [ ] A1 `health-db.ts`: `healthDb(userId)` resolving the frozen home tenant via `health_home_tenant_id()`; dark
+      behind `MT_RESOLUTION_V2` (off = current session-tenant behaviour).
+- [ ] A2 Convert the two writers and three readers above to route through `healthDb` instead of a session tenant.
+- [ ] A3 `gen-health-reader-inventory.mjs`: generate the inventory of `.from('<health table>')` sites across
+      `services/gateway/src`, using the `isHealthTable()` table set from mt-identity.
+- [ ] A4 `health-reader-inventory.test.ts`: build-failing lint that every inventory entry goes through `healthDb`
+      (allowlist: the accessor + service-role platform jobs); fails on a planted session-tenant health read.
+- [ ] A5 `health-db.test.ts`: `healthDb` resolves the same tenant for a dual member in either session.
 
-## ota-compat-gate — OTA min_native_version compatibility gate (repo vitana-v1)
-<!-- lane: ota-compat-gate -->
+Acceptance: Vitest green incl. the new lint; the five repos no longer read a session tenant for health; flag off
+preserves today's behaviour; `npm run test:support` / `npm run test:operator` green if the touched code intersects
+them. depends_on health-home-tenant-db. The lane adds its own `docs/validation/<vtid>/`.
+
+<!-- lane: health-analytics-lineage-guard -->
+## health-analytics-lineage-guard — tenant-analytics/commerce health-read guard (repo vitana-platform)
+
 Allowed paths:
-- apps/mobile/src/ota/**
-- apps/mobile/src/updates/**
-- apps/mobile/tests/ota-compat.test.ts
-- apps/mobile/parity/ledger.json
+- `services/gateway/scripts/gen-health-lineage-inventory.mjs`
+- `services/gateway/test/mt-native-health/health-lineage-guard.test.ts`
+- `services/gateway/test/mt-native-health/health-lineage-guard.pgtap.sql`
+- `services/gateway/src/constants/health-lineage-exempt.ts`
 
-- [ ] OTA bundle manifest declares `min_native_version` + required plugin versions.
-- [ ] Shell reports its version/plugins at startup and on device registration.
-- [ ] Update client refuses an incompatible bundle and keeps the last compatible one.
-- [ ] Native-dependent features gated by runtime capability detection, not bundle version.
-- [ ] Vitest: old-binary fixture → incompatible bundle refused, last compatible kept.
-Acceptance: tests green; OTA channel promotion left owner-gated (D19), out of this lane.
+- [ ] G1 `gen-health-lineage-inventory.mjs`: generate the tenant-analytics + commerce reader module inventory
+      (tenant-admin overview/KPIs/health-index, tenant-owner analytics, exports, Discover feed/search, ORB
+      product/cart tools, autopilot offers).
+- [ ] G2 `health-lineage-exempt.ts`: the explicit member-coaching exemption list (community-autopilot scan, news
+      feed, morning brief, health-wellness/health-action automations), each with a one-line reason.
+- [ ] G3 `health-lineage-guard.test.ts`: build-failing guard that no inventoried, non-exempt module reads a table in
+      `isHealthTable()` (mt-identity); planting a health read in a tenant-analytics module fails the build.
+- [ ] G4 `health-lineage-guard.pgtap.sql`: a T_B tenant admin reads zero rows of each health table.
 
-## lineage-guard-health — D18 analytics guard + ORB health/commerce dispatcher rule (repo vitana-platform, executor claude)
-<!-- lane: lineage-guard-health -->
+Acceptance: guard fails on a planted violation and passes on the current tree; exemptions justified; pgTAP green.
+depends_on health-tenant-accessor. References mt-identity's `isHealthTable()` — never re-lists health tables. The
+lane adds its own `docs/validation/<vtid>/`.
+
+<!-- lane: native-push-tenant -->
+## native-push-tenant — per-tenant native push (repo vitana-platform)
+
 Allowed paths:
-- .github/workflows/mt-native-health-lineage-guard.yml
-- services/gateway/src/orb/live/tools/health-commerce-dispatch-guard.ts
-- services/gateway/test/guards/mt-native-health-lineage-guard.test.ts
-- services/gateway/test/orb/mt-native-health-dispatch.test.ts
+- `services/gateway/src/routes/notifications.ts`
+- `services/gateway/src/routes/notifications-repository.ts`
+- `services/gateway/src/services/notification-service-repository.ts`
+- `services/gateway/test/mt-native-health/native-push-tenant.test.ts`
 
-- [ ] Build-failing guard test (commerce arch §7.2 pattern), **per-query/per-read NOT per-module** (mt-discover
-      resolution): scan the concrete surface set `services/gateway/src/routes/tenant-admin/*-repository.ts` + their
-      routes (overview, kpis, insights, product-analytics, community-admin, audit-log, health-index) and fail a
-      specific `.from('<table>')` read of a per-member health table
-      `health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*` (D18, membership via `isHealthTable()`). MUST NOT
-      fail a tenant-level aggregate (`health-index-repository.ts` → `tenant_health_index_daily`) or a member-facing
-      `healthDb` reader outside the set (`routes/integrations-repository.ts`, `routes/health-repository.ts`,
-      `services/automation-handlers/health-wellness-repository.ts`,
-      `services/automation-handlers/health-action-initiative-repository.ts`,
-      `services/diary-health-extractor-repository.ts`).
-- [ ] Re-verify whether `health-native` already ships the ORB health/commerce dispatcher rule; if not, enforce it in the
-      tool dispatcher (not the declared catalog), covering `use_tool`, proven on Nova and the Vertex Serbian bridge.
-- [ ] `npm run test:roles` green when the ORB dispatcher is touched; no spoken sentence hardcoded (rule 41).
-- [ ] Workflow wiring runs the guard in CI.
-Acceptance: guard test red on a seeded violation, green otherwise; ORB dispatch tests green on both pipelines; executor
-claude, reviewed by a Kiro seat.
+- [ ] P1 Fetch device tokens by `user_id` only (drop the tenant filter on fetch).
+- [ ] P2 Derive each push's copy and deep link from the notification row's `tenant_id`, not the token's stored tenant.
+- [ ] P3 Preserve the one-active-transport-per-device invariant (`appilix` | `native`); dark behind
+      `NATIVE_PUSH_DIRECT_ENABLED` (native) and `MT_RESOLUTION_V2` (per-tenant delivery).
+- [ ] P4 Contract test: ab_dual with one registered device receives a push from each tenant with that tenant's copy
+      and deep link.
+
+Acceptance: Vitest/contract green; token fetch is user-keyed; delivery copy/link follows the notification tenant;
+flags off preserve today's behaviour. depends_on health-home-tenant-db (shared resolved-tenant helper). The lane adds
+its own `docs/validation/<vtid>/`. (Executor: verify the exact repository file names at implementation time; the
+allowed paths list the current notification repos — narrow to the real ones in the lane PR.)
+
+<!-- lane: native-tenant-isolation-tests -->
+## native-tenant-isolation-tests — native tenancy contract tests (repo vitana-v1)
+
+Allowed paths:
+- `apps/mobile/tests/mt-native-health/tenant-resolution.test.tsx`
+- `apps/mobile/tests/mt-native-health/deep-link-nonmember.test.tsx`
+- `apps/mobile/tests/mt-native-health/push-identity.test.ts`
+
+- [ ] N1 `tenant-resolution.test.tsx`: the resolved tenant comes only from the JWT claim path
+      (`src/identity/TenantProvider.tsx`), never from `device-storage`/deep-link slug alone.
+- [ ] N2 `deep-link-nonmember.test.tsx`: a deep link to a tenant the member does not belong to resolves to the
+      "join this community" screen and fetches no tenant data (`src/linking/resolve-link.ts`).
+- [ ] N3 `push-identity.test.ts`: push registration (`src/push/registration.ts`) sends only `user_id`-scoped
+      identity, no client-chosen tenant.
+
+Acceptance: `npm test` (apps/mobile Jest) green; tests use the existing fake-gateway/fixture harness
+(`tests/helpers/`), fixture tenants T_A/T_B; no production calls; no app source changed (tests only — if a test
+reveals a real source gap, log it and set `next_actor: claude`, do not expand scope). The lane adds its own
+`docs/validation/<vtid>/` under vitana-v1.
