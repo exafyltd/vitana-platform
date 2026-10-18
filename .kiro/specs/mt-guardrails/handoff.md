@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-18T18:40Z
+updated: 2026-10-18T21:09Z
 ---
 # Handoff — mt-guardrails (WS0 guardrails and test tooling)
 WS0 of the multi-tenant program (`docs/MULTI-TENANT-PLAN.md` §6 "Guard rails & test env", the M0
@@ -92,3 +92,6 @@ cannot gate them. R2-F3 (minor): moved the pgTAP spec from `supabase/tests/mt/**
 `SQL-MT-ISOLATION.yml`'s `paths:` stays on `scripts/ci/sql-tests/**`; isolation-suite `paths` and its
 tasks.md Allowed paths updated to the two co-located files, and `SQL-MT-ISOLATION.yml` added to
 ci-wiring's `paths`. plan.md, tasks.md and the three lanes updated. Push fires round 3.
+
+### 2026-10-18T21:09Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
