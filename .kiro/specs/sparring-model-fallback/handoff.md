@@ -3,9 +3,9 @@ slug: sparring-model-fallback
 author: kiro
 author_seat: exafy
 executor: kiro
-next_actor: kiro
+next_actor: claude
 state: drafted
-updated: 2026-10-18T15:10Z
+updated: 2026-10-18T15:16Z
 ---
 # Handoff — sparring-model-fallback
 
@@ -30,3 +30,6 @@ Lanes:
 Authored the spec grounded in the real code (partner.ts runPartnerPass, bedrock.ts buildBedrockRequestBody,
 llm-defaults.ts NO_FALLBACK_STAGES). Pushed as plan( PR for PLAN-SPAR to spar. No VTID allocated by this
 session. Next: PLAN-SPAR round 1.
+
+### 2026-10-18T15:16Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
