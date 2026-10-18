@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-18T19:31Z
+updated: 2026-10-18T20:03Z
 ---
 # Handoff — mt-track-s (Track S security hotfixes S-A..S-L + Health Phase 0 live defects / WS10)
 
@@ -107,3 +107,28 @@ lane scoping `admin-signups.ts`/`admin-autopilot.ts` via `require-tenant-admin.t
 mt-tenant-admin P2/P3 per CROSS-SPEC-DECISIONS.md). All three rejected with code-cited rationale in
 `sparring/s2-responses-1.md`; plan.md unchanged (no legitimate mt-track-s change these findings warrant). queue.mjs
 validators re-run on handoff.md and lanes/s-j-route-inventory.md (0 errors).
+
+### 2026-10-18T20:03Z · kiro-hotmail-202610151618-b437 · drafted (answered s2-round-2 — real findings, plan updated)
+Round 2 (same session `7bf15cbe…`, plan hash `6dfbd440…`, verdict in_progress) corrected the record: the
+`s2-round-1.md` *text* I answered last round was itself cross-contaminated with another spec's content; round 2
+restates the partner's TRUE findings, which ARE about mt-track-s. Verified each against current code and
+accepted/fixed all four in `sparring/s2-responses-2.md` + plan.md:
+- **R2-F1 [major] accepted** — source deletion does not undeploy a Supabase edge function. Verified
+  `vitana-v1/.github/workflows/supabase-functions-deploy.yml` only redeploys changed folders (no delete step) and
+  `SUPABASE-FUNCTIONS-RETIRE.yml` is the dispatch-only, ALLOWLIST-gated undeploy (linkedin-import not yet on the
+  allowlist; refuses while source present). Added a two-move closure to ## Fix/## Rollout/## Risks: (1) this Kiro lane
+  deletes source/config/test refs; (2) a post-merge governance follow-up (executor **claude** — edits
+  `.github/workflows/**`, dispatches the workflow, writes live Supabase) adds linkedin-import to the RETIRE ALLOWLIST
+  and dispatches it, proven by its Confirm step. S-J 'still shipped' satisfied only once that run reports it absent.
+- **R1-F3 [accepted]** — VTID-05044 closed BOTH S-G and S-K (verified: the S-K .maybeSingle→aggregate fix is annotated
+  VTID-05044 at billing.ts:1308 + billing-repository.ts:281). Depends On now reads 'VTID-05044 (S-G + S-K)' and
+  Problem #11 cites billing.ts:1305-1322 / billing-repository.ts:281-289 with the VTID.
+- **R1-F2 [accepted, scoped]** — the inventory gate now must assert the caller-auth import AND an actual gate call
+  (requireUser/isServiceRoleCaller/isTriggerSecretCaller), stated as a static heuristic (Deno funcs node/Vitest can't
+  execute); before-the-body ordering stays covered by the collected s4 suite.
+- **R1-F1 [accepted, evidence]** — the partner has no vitana-v1 pin so can't verify the line citations; all were
+  re-verified accurate 2026-10-18 (config.toml:72, vitest.config.ts:19, package.json:29, s4 at :77-88/:90-92/:107-110/:272,
+  index.ts:1-4) and the lane carries docs/validation evidence; no citation changed.
+Plan body trimmed back to ≈15.6k chars after the additions, both plan markers + change_class intact. queue.mjs
+validators re-run on handoff.md and lanes/s-j-route-inventory.md (0 errors); tasks.md "Allowed paths:" identical to
+the lane `paths` (6 entries).

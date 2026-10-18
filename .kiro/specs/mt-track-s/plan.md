@@ -23,15 +23,14 @@ CLOSED (with the migration/route that closed it, cited at current `file:line`) o
    (`20261010164100_vtid_05041_…sql:70-120, 206-215`).
 5. **S-E** `switch_to_tenant_by_slug` self-enrolled into ANY slug + gateway trusted `active_metadata`. **CLOSED** —
    join restricted to `open_signup AND is_active AND NOT is_platform`
-   (`supabase/migrations/20261010180200_vtid_05043_s3_switch_tenant_open_signup_only.sql:38-125`); the four primary-
-   membership side-effect triggers are guarded (`20261010180000_vtid_05043_s3_membership_side_effect_guard.sql`); and
-   members can no longer write `user_tenants`/role rows at all (VTID-05147, see S-M).
+   (`.../20261010180200_vtid_05043_s3_switch_tenant_open_signup_only.sql:38-125`); the four primary-membership
+   side-effect triggers guarded (`20261010180000_vtid_05043_s3_membership_side_effect_guard.sql`); and members can no
+   longer write `user_tenants`/role rows at all (VTID-05147, see S-M).
 6. **S-F** tenant admins could read every tenant's auth audit log and other tenants' community events/groups/rooms.
-   **CLOSED** — the access log (`oasis_events`, no tenant column) is platform-only/exafy_admin and the admin-action log
-   is tenant-scoped (`services/gateway/src/routes/tenant-admin/audit-log.ts:9`,
-   `audit-log-repository.ts:24-29`, VTID-05042); cross-tenant overview reads require `requirePlatformScope`
-   (`tenant-admin/overview.ts:169,202`). `requireTenantAdmin` now also intersects the stored role with the permitted
-   set (VTID-05147 AC-6).
+   **CLOSED** — the access log (`oasis_events`) is platform-only/exafy_admin, the admin-action log tenant-scoped
+   (`services/gateway/src/routes/tenant-admin/audit-log.ts:9`, `audit-log-repository.ts:24-29`, VTID-05042);
+   cross-tenant overview reads need `requirePlatformScope` (`tenant-admin/overview.ts:169,202`); `requireTenantAdmin`
+   intersects stored role with the permitted set (VTID-05147 AC-6).
 7. **S-G** invitations: accept without email match; no role allowlist on create. **CLOSED** — create validates every
    role against `VITANA_ROLES` and refuses super-admin-only roles from a tenant admin; accept requires a confirmed,
    matching email and re-checks roles, claiming atomically before any write
@@ -53,24 +52,22 @@ CLOSED (with the migration/route that closed it, cited at current `file:line`) o
     auth gate. The broader "generated route inventory" and realtime-channel RLS are WS0 (M0), not Track S.
 11. **S-K** billing `fetchTenantSettingsFeatureFlags` was an unscoped `.maybeSingle()` (silently null since the 2nd
     `tenant_settings` row). **CLOSED** — the admin-metrics path reads all rows and aggregates per tenant, no
-    `.maybeSingle()` (`services/gateway/src/routes/billing.ts:1314-1320`,
-    `billing-repository.ts:287-289`).
+    `.maybeSingle()` (`services/gateway/src/routes/billing.ts:1305-1322`,
+    `billing-repository.ts:281-289`, VTID-05044 — the same VTID that closed S-G; both call sites carry its annotation).
 12. **S-L** tenant admins saw every tenant's lab orders/results via `requirePartnerHealthAccess`. **CLOSED** — the
     tenant-admin branch is removed; only exafy_admin or a partner-org membership grants access
     (`services/gateway/src/routes/admin-partner-health.ts:62-100`, VTID-05042). This also closes two WS10 defects
     (unlogged partner-staff reads → `auditStaffRead` fails closed, `:121-168`; staff linking a member to an order
     without confirmation → confirm-match is a member-confirmed proposal, `:36-53`, VTID-05055).
 13. **S-M** members could escalate their own tenant role / move their membership. **CLOSED** (prior spec, VTID-05147):
-    all client write paths to `user_tenants` / `role_preferences` / `user_active_roles` / `user_permitted_roles`
-    revoked; `set_role_preference` checks membership; `requireTenantAdmin` tightened. Evidence:
+    all client write paths to `user_tenants`/`role_preferences`/`user_active_roles`/`user_permitted_roles` revoked;
+    `set_role_preference` checks membership; `requireTenantAdmin` tightened. Evidence:
     `docs/validation/VTID-05147/acceptance.md`, `supabase/migrations/20261013233000_vtid_05147_…sql`.
-14. **WS10 Health Phase 0 live defects** (re-verified at slice start per the plan): **all CLOSED.**
-    (a) plaintext OAuth tokens — wearable tokens are sealed and connect is refused without the key
-    (`services/gateway/src/routes/wearables.ts:21,219-257`; `sealToken`/`openToken` via
-    `lib/connection-token-crypto`, VTID-05030); (b) webhooks failing open without a secret — every verifier returns
-    `secret_not_configured` on an unset secret (`services/gateway/src/connectors/runtime/webhook-signature.ts:1-96`,
-    VTID-05031); (c) unlogged partner-staff reads and (d) staff linking without member confirmation — both closed by
-    S-L above (VTID-05042/05055).
+14. **WS10 Health Phase 0 live defects**: **all CLOSED.** (a) plaintext OAuth tokens — wearable tokens sealed, connect
+    refused without the key (`services/gateway/src/routes/wearables.ts:21,219-257`; `sealToken`/`openToken` via
+    `lib/connection-token-crypto`, VTID-05030); (b) webhooks failing open — every verifier returns
+    `secret_not_configured` on an unset secret (`.../connectors/runtime/webhook-signature.ts:1-96`, VTID-05031);
+    (c)/(d) unlogged partner-staff reads and staff linking without confirmation — both closed by S-L (VTID-05042/05055).
 
 Net: of 13 Track S items + 4 WS10 defects, **16 are CLOSED and 1 (S-J) has a small open residual.**
 
@@ -84,27 +81,33 @@ close the last gap without re-touching shipped code.
   `check-edge-data-client.mjs`/`check-realtime-helper.mjs`) that exits non-zero if a Supabase edge function under
   `vitana-v1/supabase/functions/**` lacks a caller-auth gate (imports `_shared/caller-auth.ts` / calls `requireUser`,
   or is on an explicit public allowlist with a stated reason). A node script, not a vitest `.test.ts`: `vitest.config.ts:19`
-  `include` is `src/**/*.test.{ts,tsx}`, so a test under `supabase/functions/**` is never collected. This is
-  the narrow, in-repo, verifiable half of S-J's "route inventory"; the gateway-side generated route inventory and
-  realtime-channel RLS stay in WS0 (M0), out of scope here. Confirm no app code imports `linkedin-import` before
+  `include` is `src/**/*.test.{ts,tsx}`, so a test under `supabase/functions/**` is never collected. This is the
+  in-repo half of S-J's "route inventory"; the gateway-side generated inventory and realtime-channel RLS stay in WS0
+  (M0). Confirm no app code imports `linkedin-import` before
   deleting it (grep `functions.invoke('linkedin-import'` / string references — `social-media-import` replaced it per
   VTID-05049). Code-only, no migration. The lane adds its own `docs/validation/<vtid>/`.
-  Deleting the function requires two companion edits inside the same lane, so the removal is complete and `npm test`
-  stays green (both verified in current code 2026-10-15):
-  (i) remove the `[functions.linkedin-import]` block from `vitana-v1/supabase/config.toml:72-74` (an orphaned
-  registration of the deleted function — leaving it is the exact dead-reference S-J closes); and
-  (ii) update the existing **collected** vitest suite `vitana-v1/src/lib/edge-functions-caller-identity.s4.test.ts`,
-  which today reads `linkedin-import/index.ts` and asserts on it in four spots (the `VTID-05049 the five functions`
-  loop that includes `'linkedin-import'` at `:77-88`; the profile-import loop `['linkedin-import','social-media-import']`
-  at `:90-92`; the `linkedin-import is flagged for removal` case at `:107-110`; and the `arrayContaining([...])` scan
-  assertion at `:272`). After deletion `readFileSync` on the gone file throws and the `arrayContaining` expectation
-  fails, so the suite must drop `linkedin-import` from those four places (keeping `social-media-import`/`fetch-user-context`
-  coverage intact). That file is under `src/**`, so it IS collected by vitest — it must be inside the lane's `paths` or
-  the Lane-scope CI check reddens the PR.
+  Deleting the function requires two companion edits in the same lane so `npm test` stays green (verified 2026-10-15):
+  (i) remove the orphaned `[functions.linkedin-import]` block from `vitana-v1/supabase/config.toml:72-74`; and
+  (ii) update the **collected** vitest suite `vitana-v1/src/lib/edge-functions-caller-identity.s4.test.ts`, which reads
+  `linkedin-import/index.ts` and asserts on it at four spots — the five-functions loop `:77-88`, the profile-import
+  loop `:90-92`, the `flagged for removal` case `:107-110`, and the `arrayContaining([...])` scan `:272` — dropping
+  `linkedin-import` from all four (keeping `social-media-import`/`fetch-user-context`). That file is under `src/**`, so
+  vitest collects it and it must be in the lane's `paths` or Lane-scope CI reddens the PR.
 
 Because this lane changes only vitana-v1 code + a test, it ships dark-exempt (there is no runtime behaviour to flag —
 deleting an uncalled function and adding a test change nothing a member can reach), stated here as the one named
 exception, mirroring how prior Track S slices shipped (each was a security fix, not a flagged read path).
+
+**Source deletion does NOT undeploy the function (verified 2026-10-18).** `supabase-functions-deploy.yml` only
+redeploys changed folders and never deletes removed ones, so dropping the directory just stops `linkedin-import` being
+re-deployed; a deployed copy stays invocable. Undeploy is only via `SUPABASE-FUNCTIONS-RETIRE.yml` (dispatch-only
+`supabase functions delete`, `ALLOWLIST`-gated — `linkedin-import` not yet on it — refusing any name still under
+`supabase/functions/`). So closure is two moves: (1) **this lane's PR** deletes source + config block + test refs
+(Kiro); (2) **after merge** a governance follow-up adds `linkedin-import` to the RETIRE `ALLOWLIST` and dispatches it
+(executor **claude** — it edits `.github/workflows/**`, dispatches a workflow and writes to live Supabase, none of
+which Kiro does). No second lane for (2); it is a one-line governance action tracked in `handoff.md`. The retire
+`Confirm` step (a read of the function list) is the proof — STAGING-VERIFY can't (invoking is a POST the guard aborts,
+rule 48).
 
 ## Migrations
 None. (The realtime-channel RLS that S-J alludes to is a WS0 item, not this slice; this spec adds no migration, so its
@@ -113,8 +116,12 @@ reserved range `20261101010000`–`20261101015959` stays unused and is recorded 
 ## Tests
 - `s-j-route-inventory`: a node inventory script `scripts/check-edge-function-auth.mjs` (the repo's convention for an
   edge-function gate — see `scripts/check-edge-data-client.mjs`, both wired into `package.json` `"test"`) over
-  `vitana-v1/supabase/functions/**`, asserting each function either gates the caller (`_shared/caller-auth.ts` /
-  `requireUser`) or is on a documented public allowlist; it exits non-zero if `linkedin-import` reappears without a gate.
+  `vitana-v1/supabase/functions/**`, asserting each function BOTH imports `_shared/caller-auth.ts` AND actually calls
+  one of its gate functions (`requireUser` / `isServiceRoleCaller` / `isTriggerSecretCaller`), or is on a documented
+  in-file public allowlist with a stated reason; it exits non-zero if `linkedin-import` reappears without a gate.
+  It is a static heuristic (an unused import alone does not pass), not control-flow proof — the functions are Deno that
+  node/Vitest cannot execute, the constraint the s4 suite already states; before-the-body ordering (`await requireUser`
+  precedes `req.json()`) is already asserted there, so this gate is the tree-wide floor that no NEW function is ungated.
   It runs inside the `"test"` chain, so a plain `npm test` executes it (a vitest `.test.ts` under
   `supabase/functions/**` would not run — `vitest.config.ts` `include` is `src/**/*.test.{ts,tsx}`). The rest of
   `npm test` (nav registry, design manifest, i18n lint) stays green — no App.tsx route added, so no nav-registry /
@@ -122,30 +129,33 @@ reserved range `20261101010000`–`20261101015959` stays unused and is recorded 
 - No pgTAP/contract/golden here (no DB change, no shared instruction surface touched).
 
 ## Staging verification
-Read-only (rule 48). The authoritative proof that the function is gone is the CI inventory gate plus the updated
-Vitest suite — both run against the committed source, not a live service, and are the right place for this check. No
-staging invoke is used to confirm the removal: invoking a Supabase edge function is a POST, and the staging network
-guard aborts every non-GET, so such a probe could not run read-only. A read-only staging spec, if added at all, does
-no more than sign in as the test user (`a27552a3-0257-4305-8ed0-351a80fd3701`) and load a GET-only page; it never
-invokes a function and never writes. No production probe (rules 31/31b/48). exafy-admin-only / server-gated
-behaviours are proven by Vitest, since staging writes to the production Supabase project.
+Read-only (rule 48). The source-level proof is the CI inventory gate + the updated Vitest suite, both against committed
+source, not a live service; the deployed-surface proof is the retire workflow's own `Confirm` step (## Rollout), a read
+of the project function list. No staging invoke confirms the removal — invoking an edge function is a POST the staging
+guard aborts, so it cannot run read-only. A read-only staging spec, if added, only signs in as the test user
+(`a27552a3-0257-4305-8ed0-351a80fd3701`) and loads a GET-only page. No production probe (rules 31/31b/48).
 
 ## Rollout
 Code-only; dark-exempt as stated in ## Fix. Kiro PR → reviewer_seat review → Project Manager merge → staging deploy →
-STAGING-VERIFY → Gate 2 → PUBLISH. No DB apply (no migration). No owner-only step. Deleting the unused function is
-reversible by reverting the PR; no data is touched.
+STAGING-VERIFY → Gate 2 → PUBLISH. No DB apply (no migration). Deleting the unused function is reversible by reverting
+the PR; no data is touched. **Governance follow-up after merge (executor claude, not Kiro):** add `linkedin-import` to
+`SUPABASE-FUNCTIONS-RETIRE.yml`'s `ALLOWLIST` and dispatch it to undeploy the live copy (confirmed by its `Confirm`
+step; source stays in git history for recovery). This is the only step touching a live system, deliberately outside
+the Kiro lane.
 
 ## Risks
-- A hidden consumer of `linkedin-import` (removed function). Mitigation: the lane greps both repos for
-  `functions.invoke('linkedin-import'` and any string reference before deleting; VTID-05049 already recorded that
-  `social-media-import` replaced it and nothing calls it.
-- The inventory gate over-fits or misses a function. Mitigation: it enumerates directories under
-  `supabase/functions/**` and checks for the gate import or allowlist membership, so a new ungated function fails CI.
-  Running as a node script in the `"test"` chain (not a vitest file outside the `include` glob) is what guarantees it
-  actually runs — a `.test.ts` under `supabase/functions/**` would be silently skipped and the gate would never fire.
+- A hidden consumer of `linkedin-import`. Mitigation: the lane greps both repos for `functions.invoke('linkedin-import'`
+  / string refs before deleting; VTID-05049 recorded `social-media-import` replaced it and nothing calls it (confirmed
+  2026-10-18: only `src/**` ref is the s4 test).
+- The inventory gate over-fits or misses a function. Mitigation: it walks `supabase/functions/**` for the gate
+  import-and-call pair or allowlist membership, so a new ungated function fails CI; running as a node script in the
+  `"test"` chain (not a `.test.ts` outside the `include` glob) is what guarantees it actually runs.
 - Deleting `linkedin-import` breaks the existing collected suite `src/lib/edge-functions-caller-identity.s4.test.ts`
   (it reads the gone file). Mitigation: that file is in the lane `paths` and T2a updates its four `linkedin-import`
   assertions in the same PR, so `npm test` stays green; the suite still covers `social-media-import`/`fetch-user-context`.
+- Source deletion leaves an already-deployed `linkedin-import` live (the deploy workflow never deletes removed
+  functions). Mitigation: the ## Rollout retire follow-up (ALLOWLIST add + dispatch, executor claude) undeploys it and
+  confirms; S-J's "still shipped" is satisfied only once that run reports it absent — tracked, not assumed.
 
 ## Out of scope
 - Everything already CLOSED above (S-A..S-I, S-K, S-L, S-M, WS10 a–d) — do not re-touch shipped code or migrations.
@@ -155,14 +165,14 @@ reversible by reverting the PR; no data is touched.
 
 ## Depends on
 - Done VTIDs this spec builds on and must not duplicate: VTID-05040 (S-A), VTID-05041 (S-B/S-D), VTID-04981 (S-C),
-  VTID-05043 (S-E), VTID-05042 (S-F/S-L), VTID-05044 (S-G), VTID-05049/05120 (S-H), VTID-05048 (S-I), VTID-05030 (WS10
-  tokens), VTID-05031 (WS10 webhooks), VTID-05055 (WS10 confirmation/audit), VTID-05147 (S-M).
+  VTID-05043 (S-E), VTID-05042 (S-F/S-L), VTID-05044 (S-G + S-K — one VTID closed both; see Problem #11),
+  VTID-05049/05120 (S-H), VTID-05048 (S-I), VTID-05030 (WS10 tokens), VTID-05031 (WS10 webhooks), VTID-05055 (WS10
+  confirmation/audit), VTID-05147 (S-M).
 - No lane in another mt-* spec; no lane dependency inside this spec (single lane).
 
 ## Owner decisions
-None new. The dark-by-default exception for this code-only, member-invisible lane is stated in ## Fix for the record
-(same shape as the exafy-only exception in the mt-spec example). D13 (no synthetic tenant in production) and the
-production-read-only posture stand.
+None new. The dark-by-default exception for this code-only, member-invisible lane is stated in ## Fix for the record.
+D13 (no synthetic tenant in production) and the production-read-only posture stand.
 <!-- plan:end -->
 
 ## Open questions for sparring
