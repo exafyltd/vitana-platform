@@ -9,7 +9,7 @@ depends_on: []
 claimed_by: kiro-hotmail-202610151618-b437
 branch: kiro/multi-tenant/provisioning-ui
 pr: https://github.com/exafyltd/vitana-v1/pull/1438
-updated: 2026-10-15T22:28Z
+updated: 2026-10-18T22:22Z
 ---
 # Exafy-admin "New community" panel — VTID-05221 (repo vitana-v1)
 
@@ -55,3 +55,12 @@ Next actor (claude): review PR #1438 against `tasks.md` P1–P9 and CI, then mer
 This lane predates VTID-05218 (no `reviewer_seat`/`paths`), so it follows the original hand-off: Claude reviews and
 merges. Note: PR-GATE compares base with head and will see `ready → in-review` for this file; the two commits on this
 branch record `ready → executing → in-review`. The claim is released.
+
+### 2026-10-18T22:22Z Â· kiro-hotmail-202610151618-b437 Â· in-review (PR refreshed)
+vitana-v1#1438 had become CONFLICTING. Merged origin/main into the branch (no rebase, no force), took main's side for the one
+conflict (src/i18n/en/screens.json, outside the lane's own files); head now 403154df2, MERGEABLE. Vitest 146/146 and
+ESLint clean on the lane files. Remaining red checks are not caused by this PR: pr-gate fails on the public ECR
+postgres:16 pull limit (	oomanyrequests, also on #1446), and Vitest (jsdom) fails in
+ConversationView.deeplink-scroll.vtid-05201.test.tsx (@/lib/i18n-toast mock lacks getI18nLocale), which is red on v1
+main 704b5def too (UNIT-TESTS 39111020642). Next actor claude: re-run pr-gate once the ECR limit clears, fix or
+quarantine the main-red VTID-05201 test, review against tasks.md P1â€“P9, merge.
