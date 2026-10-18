@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-18T20:17Z
+updated: 2026-10-18T20:19Z
 ---
 # Handoff — Community isolation (WS3 Community part)
 Program: `docs/MULTI-TENANT-PLAN.md` v5.1 (§4.11 / §6 WS3, Community half). This spec adds `tenant_id`
@@ -117,4 +117,7 @@ actually review.
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
 
 ### 2026-10-18T20:17Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-18T20:19Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
