@@ -2,10 +2,10 @@
 slug: desktop-spotlight-finish
 author: kiro
 executor: kiro
-next_actor: kiro
+next_actor: claude
 state: drafted
 author_seat: exafyltd
-updated: 2026-10-18T22:46Z
+updated: 2026-10-18T22:49Z
 ---
 # Handoff — Finish the Spotlight desktop redesign
 Follow-up to `.kiro/specs/desktop-spotlight/` (Claude Code session `session_01Sxnx4eGehRHRqqwu4YmJA6`, handover
@@ -48,3 +48,6 @@ the only later commit was the PLAN-SPAR round 97a2d7f41) and claimed it. Answere
 criterion. R1-F4 is deferred to `native-g1-wiring/spar-vitana-v1-ref`, so the partner cannot read vitana-v1 yet. Gate:
 no lane moves `approved → executing` until a session with that ref has sparred this plan. No VTID allocated, no
 product code changed, no live system touched.
+
+### 2026-10-18T22:49Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
