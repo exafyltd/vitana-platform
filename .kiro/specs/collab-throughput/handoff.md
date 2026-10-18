@@ -5,7 +5,7 @@ author_seat: exafy
 executor: claude
 next_actor: claude
 state: drafted
-updated: 2026-10-18T20:40Z
+updated: 2026-10-18T22:45Z
 ---
 # Handoff — collab-throughput
 
@@ -29,3 +29,6 @@ how often the authoring seats' automations run.
 Authored from the measured bottlenecks (queue ~0.9 s per branch diff × 496 branches; run 39157408933's silent
 `unknown_finding`; 10 sessions with 0 successful reads on 2026-10-17). Pushed as a plan( PR for PLAN-SPAR. No VTID
 allocated by this session.
+
+### 2026-10-18T22:45Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
