@@ -56,10 +56,16 @@ Allowed paths: `services/gateway/src/routes/admin-tenants.ts`,
 is NOT in scope — it already exists and is hardened (`routes/tenant-admin/invitations.ts`, VTID-05044); this lane does
 not create `admin-invitations.ts` and does not edit the existing route.
 
-- [ ] A2 Scope moderation/signups/notifications/users/audit admin reads by `req.targetTenantId` (resolved by
-      `requireTenantAdmin`; caller's own tenant = `req.identity.tenant_id`), keeping the exafy-admin bypass
-      (`require-tenant-admin.ts:97-99,102,160`); add tenant predicates in the repositories (no `getTenantId(req)` helper
-      exists — do not call one).
+- [ ] A1 Auth-guard decision (no widening by default): ADD new `requireTenantAdmin`-guarded tenant-scoped endpoints
+      ALONGSIDE the existing exafy-admin-only ones (`admin-signups.ts:32,62,113,… requireExafyAdmin`;
+      `admin-moderation.ts:25,51` inline `verifyExafyAdmin`). Do NOT replace those guards (that would widen
+      exafy-admin-only funnel/report data to tenant-admins) unless the owner approved the widening in the plan's
+      `## Owner decisions`.
+- [ ] A2 In each new scoped read, derive the tenant from `req.targetTenantId` for a tenant-admin AND branch on
+      `req.identity.exafy_admin` to OMIT the tenant filter — because `require-tenant-admin.ts:96` returns before
+      `:159`, so `req.targetTenantId` is unset for an exafy-admin and a bare `targetTenantId || identity.tenant_id`
+      (the `admin-autopilot.ts:23-24` pattern) would silently scope the exafy-admin to their own tenant. No exported
+      `getTenantId(req)` helper exists — do not call one. Add the tenant predicate in the repositories.
 - [ ] A3 Update the `/admin/init-events` entry in `e2e/fixtures/routes.ts` (`ADMIN_ROUTES`) to match the frontend
       guard/removal done in the `tenant-admin-pages` lane, so the route-inventory test stays green. (No gateway
       `admin-init-events.ts` route is created — `/admin/init-events` is a vitana-v1 frontend page.)
@@ -67,9 +73,10 @@ not create `admin-invitations.ts` and does not edit the existing route.
 - [ ] A5 exafy-admin deactivate/archive routes over the lifecycle RPCs; deactivated-tenant posture (member → default,
       exafy-admin read ok). Dark behind `MT_RESOLUTION_V2` + `tenant_settings.feature_flags.mt.*`.
 - [ ] A6 Jest/Vitest in `services/gateway/test/mt-tenant-admin-*.test.ts`: scoped reads (b_admin
-      sees 0 T_A rows); route-inventory test green with the updated `/admin/init-events` fixture entry; readiness shape;
-      deactivated-tenant posture. (The accept route is covered by VTID-05044, not re-tested here.) Plus
-      `npm run test:support` + `npm run test:operator` stay green.
+      sees 0 T_A rows); **an exafy-admin still sees cross-tenant rows on the new scoped endpoints (the
+      `req.identity.exafy_admin` branch is exercised, not scoped to one tenant)**; route-inventory test green with the
+      updated `/admin/init-events` fixture entry; readiness shape; deactivated-tenant posture. (The accept route is
+      covered by VTID-05044, not re-tested here.) Plus `npm run test:support` + `npm run test:operator` stay green.
 - [ ] A7 `docs/validation/<vtid>/`: `scope.json`, `staging-tests.json` (read-only specs), plan-sparring copy.
 
 Acceptance: full gateway test suite green; scoped reads prove tenant isolation (via `req.targetTenantId`); the
@@ -85,8 +92,8 @@ Allowed paths: `services/gateway/src/frontend/command-hub/tenant-admin.js`,
 `services/gateway/src/frontend/command-hub/tenant-admin.css`,
 `services/gateway/src/frontend/command-hub/modules.json`, `services/gateway/src/frontend/command-hub/index.html`,
 `services/gateway/src/frontend/command-hub/app.js`,
-`services/gateway/test/mt-tenant-admin-command-hub-*.test.ts`. The lane also creates `docs/validation/<vtid>/`.
-Depends on `tenant-admin-api`.
+`services/gateway/test/mt-tenant-admin-command-hub-*.test.ts`, `scripts/ci/command-hub-ownership-guard.js`. The lane
+also creates `docs/validation/<vtid>/`. Depends on `tenant-admin-api`.
 
 - [ ] C1 `tenant-admin.js` (`kind:"module"`) exposing `window.TenantAdmin.render()` + `tenant-admin.css`; register in
       `modules.json` (before `app.js`) and `index.html`. CSP: external JS only, no inline script/style, nodes via
@@ -96,8 +103,13 @@ Depends on `tenant-admin-api`.
       re-delivery. exafy-admin only + server-gated.
 - [ ] C4 Test in `services/gateway/test/mt-tenant-admin-command-hub-*.test.ts`: module registered; render builds nodes
       via `textContent`; app.js diff is a single case.
+- [ ] C5 CI ownership guard: append the allocated VTID to `ALLOWED_VTID_PATTERN` at
+      `scripts/ci/command-hub-ownership-guard.js:1051` (one-line pattern add, same mechanism as prior Command Hub
+      VTIDs), in THIS PR, so the guard (`:15` PROTECTED_PATH, `:1115` branch/PR-title test) does not block the module
+      files.
 
-Acceptance: new module loads without large app.js edits; CSP clean; exafy-admin-only. PR title `VTID-xxxxx
+Acceptance: new module loads without large app.js edits; CSP clean; exafy-admin-only; the command-hub ownership-guard
+PR check passes (VTID appended to `ALLOWED_VTID_PATTERN`). PR title `VTID-xxxxx
 (mt-tenant-admin/command-hub-tenant-module): …`; commits carry `Collab-Session` / `Collab-Lane: mt-tenant-admin/
 command-hub-tenant-module`.
 

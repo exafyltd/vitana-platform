@@ -17,7 +17,7 @@ paths:
   - services/gateway/src/services/tenant-provisioning/**
   - services/gateway/test/mt-tenant-admin-*.test.ts
   - e2e/fixtures/routes.ts
-updated: 2026-10-15T16:18Z
+updated: 2026-10-18T00:00Z
 ---
 # Tenant-admin gateway API — accept, scoped reads, init-events, readiness, lifecycle (repo vitana-platform)
 
@@ -30,11 +30,17 @@ still-`ready` lane and flips `next_actor` to kiro on a converged plan. Do not se
 
 Scope: the invitation-accept route is OUT of scope — it already exists and is hardened
 (`services/gateway/src/routes/tenant-admin/invitations.ts` `acceptRouter`, mounted `index.ts:1429`, VTID-05044); this
-lane does NOT create `admin-invitations.ts` and does NOT edit the existing route. This lane: tenant-scopes every
-moderation/signups/notifications/users/audit admin read by `req.targetTenantId` (resolved by `requireTenantAdmin`,
-`require-tenant-admin.ts:102,160`;
-the caller's own tenant is `req.identity.tenant_id`) keeping the exafy-admin bypass the middleware already provides
-(`:97-99`) — there is NO exported `getTenantId(req)` helper, do not call one; update the `/admin/init-events` entry in
+lane does NOT create `admin-invitations.ts` and does NOT edit the existing route. This lane adds tenant-scoped
+moderation/signups/notifications/users/audit admin reads. **Auth-guard decision (no widening by default): ADD new
+`requireTenantAdmin`-guarded endpoints ALONGSIDE the existing exafy-admin-only ones** (`admin-signups.ts:32,62,113,…`
+use `requireExafyAdmin`; `admin-moderation.ts:25,51` use inline `verifyExafyAdmin`); do NOT replace those guards
+unless the owner approved the widening in the plan's `## Owner decisions`. Each new scoped read derives the tenant
+from `req.targetTenantId` for a tenant-admin (resolved by `requireTenantAdmin`, `require-tenant-admin.ts:102,159`) AND
+**branches on `req.identity.exafy_admin` to omit the tenant filter** — the middleware returns at
+`require-tenant-admin.ts:96` before setting `targetTenantId`, so for an exafy-admin `req.targetTenantId` is unset and a
+bare `targetTenantId || req.identity.tenant_id` (the `admin-autopilot.ts:23-24` pattern) silently scopes them to their
+own tenant. There is NO exported `getTenantId(req)` helper, do not call one. Also: update the `/admin/init-events`
+entry in
 `e2e/fixtures/routes.ts` (`ADMIN_ROUTES`) so the route-inventory test stays green AFTER the `tenant-admin-pages` lane
 guards or removes that FRONTEND route (there is no gateway `admin-init-events.ts` route — it is a vitana-v1 React page);
 extend `GET /admin/tenants/:id/readiness` with first-admin-invitation delivery + lifecycle; expose exafy-admin
@@ -53,3 +59,12 @@ system (staging tests read-only, rule 48). Work only inside the allowed paths. B
 Created by the mt-* program planner (session kiro-hotmail-202610151618-b437, holding `mt-tenant-admin/_plan`). Gateway
 code lane, seat `jtadic` (platform gateway work per areas.yaml uncovered-work rule), reviewer seat `hotmail` (≠ seat).
 Separate from the DB lanes per §4.7. Held for PLAN-SPAR VTID allocation.
+
+### 2026-10-18T00:00Z · kiro-hotmail-202610151618-b437 · sparring round (s2-r1) — scope clarified (no path change)
+PLAN-SPAR findings R1-F2 + R1-F3 (both major). F2: `require-tenant-admin.ts:96` returns before `:159`, so
+`req.targetTenantId` is unset for an exafy-admin and the `admin-autopilot.ts:23-24` `targetTenantId || tenant_id`
+pattern would silently scope an exafy-admin to their own tenant — the lane now requires an explicit
+`req.identity.exafy_admin` branch in every scoped read, with a Vitest asserting the cross-tenant view (A6). F3: the
+current reads are exafy-admin-only (`admin-signups.ts requireExafyAdmin`, `admin-moderation.ts verifyExafyAdmin`); the
+lane ADDS new `requireTenantAdmin` endpoints beside them rather than replacing the guards (no widening), any widening
+held for owner approval. No `paths` change.
