@@ -86,6 +86,11 @@ close the last gap without re-touching shipped code.
   (M0). Confirm no app code imports `linkedin-import` before
   deleting it (grep `functions.invoke('linkedin-import'` / string references — `social-media-import` replaced it per
   VTID-05049). Code-only, no migration. The lane adds its own `docs/validation/<vtid>/`.
+  **vitana-v1 citations are pinned to `exafyltd/vitana-v1@5c4632ea9`** (re-verified 2026-10-18): `supabase/config.toml:72`
+  `[functions.linkedin-import]` (+ `:73` `verify_jwt = true`); `vitest.config.ts:19` `include: ['src/**/*.test.{ts,tsx}']`;
+  `package.json:29` `"test"` chain; `supabase/functions/linkedin-import/index.ts:4` imports `requireUser` from
+  `_shared/caller-auth.ts`, `:5-7` the VTID-05049 removal comment. T1 re-checks them at the lane's base commit first;
+  a mismatch stops the lane (log + `next_actor: claude`).
   Deleting the function requires two companion edits in the same lane so `npm test` stays green (verified 2026-10-15):
   (i) remove the orphaned `[functions.linkedin-import]` block from `vitana-v1/supabase/config.toml:72-74`; and
   (ii) update the **collected** vitest suite `vitana-v1/src/lib/edge-functions-caller-identity.s4.test.ts`, which reads

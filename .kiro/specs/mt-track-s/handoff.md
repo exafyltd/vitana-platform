@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-18T20:03Z
+updated: 2026-10-18T22:45Z
 ---
 # Handoff — mt-track-s (Track S security hotfixes S-A..S-L + Health Phase 0 live defects / WS10)
 
@@ -132,3 +132,13 @@ accepted/fixed all four in `sparring/s2-responses-2.md` + plan.md:
 Plan body trimmed back to ≈15.6k chars after the additions, both plan markers + change_class intact. queue.mjs
 validators re-run on handoff.md and lanes/s-j-route-inventory.md (0 errors); tasks.md "Allowed paths:" identical to
 the lane `paths` (6 entries).
+### 2026-10-18T22:45:00Z · kiro-202610182052-5ce2 · drafted (s2 round-2 answer repaired)
+PLAN-SPAR run 39161855041 failed with `HTTP 400 unknown_finding:R1-F1`. The previous `s2-responses-2.md` listed
+R1-F1..F3 in its JSON, but the gateway accepts only the answered round's own finding ids
+(`plan-sparring-service.ts:341-345`), and s2-round-2 has only R2-F1. Rewrote `s2-responses-2.md`: the JSON now
+answers R2-F1 (accepted; the retire follow-up runs on the deploy path with executor **claude**, never Kiro). The
+corrected round-1 answers replace the contaminated, canned `s2-responses-1` rejections (copied from another spec:
+command-hub / tenant-admin-api text). They are carried in the R2-F1 rationale and the plan: R1-F1 accepted (plan ## Fix
+now pins the vitana-v1 citations to `vitana-v1@5c4632ea9`, all re-verified); R1-F2 accepted, scoped (import plus
+gate call, static heuristic, ordering covered by s4 :93-96); R1-F3 accepted (VTID-05044 = S-G + S-K, billing.ts:1308,
+billing-repository.ts:281). No command was run against a live system.
