@@ -546,12 +546,49 @@ describe('later rounds + verdict', () => {
 
   it('model failure in a later round escalates; no rounds accepted after a terminal verdict', async () => {
     const s = await round1();
-    const { deps, llmCalls } = makeDeps([() => ({ ok: false, error: 'throttled' })]);
+    // Non-throttle generic failure: escalates after exactly ONE call, no fallback retry.
+    const { deps, llmCalls } = makeDeps([() => ({ ok: false, error: 'down' })]);
     const after = await submitPlannerRound(s.id, { responses: [{ finding_id: 'R1-F1', disposition: 'accepted', rationale: 'ok' }], revised_plan_text: PLAN_V2 }, deps);
     expect(after.verdict).toBe('escalated');
     expect(after.escalation_reasons).toEqual(['model_unavailable']);
     expect(llmCalls).toHaveLength(1);
     await expect(submitPlannerRound(s.id, { responses: [], revised_plan_text: PLAN_V2 }, deps)).rejects.toMatchObject({ status: 409 });
+  });
+});
+
+// ===========================================================================
+// VTID (sparring-model-fallback): Opus 4.6 throttle → one Sonnet 4.6 fallback retry
+// ===========================================================================
+describe('sparring-model-fallback: throttle retries once on the Bedrock fallback', () => {
+  it('a "Too many tokens per day" throttle retries ONCE on the fallback model and the round proceeds on success', async () => {
+    // Turn 1 primary throttles (Opus 4.6 daily cap) → fallback retry returns the evidence-reading
+    // turn (READ3) → turn 2 submits the review. A normal round is [READ3, submit]; here the first
+    // READ3 is served by the fallback after the primary throttle.
+    const { deps, llmCalls } = makeDeps([
+      () => ({ ok: false, error: 'Bedrock invoke_failed: Too many tokens per day', provider: 'bedrock', model: 'eu.anthropic.claude-opus-4-6-v1' }),
+      READ3,
+      submit(review()),
+    ]);
+    const { session } = await createSparringSession(createBody(), deps);
+    // Three LLM calls: throttled primary, the fallback retry (READ3), then the submit turn.
+    expect(llmCalls).toHaveLength(3);
+    // The fallback retry carried the Bedrock Sonnet override, never a non-bedrock provider.
+    expect(llmCalls[1].opts.providerOverride).toBe('bedrock');
+    expect(llmCalls[1].opts.modelOverride).toBe('eu.anthropic.claude-sonnet-4-6');
+    // The round completed (not escalated on model_unavailable) because the fallback answered.
+    expect(session.verdict).not.toBe('escalated');
+    const fb = session.model_log.find((m) => (m as { fallback?: boolean }).fallback);
+    expect(fb).toBeDefined();
+  });
+
+  it('a non-throttle failure (AccessDenied) does NOT retry — one call, escalated', async () => {
+    const { deps, llmCalls } = makeDeps([
+      () => ({ ok: false, error: 'Bedrock invoke_failed: AccessDeniedException', provider: 'bedrock', model: 'eu.anthropic.claude-opus-4-6-v1' }),
+    ]);
+    const { session } = await createSparringSession(createBody(), deps);
+    expect(llmCalls).toHaveLength(1);
+    expect(session.verdict).toBe('escalated');
+    expect(session.escalation_reasons).toEqual(['model_unavailable']);
   });
 });
 
