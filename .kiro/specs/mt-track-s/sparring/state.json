@@ -14,14 +14,15 @@
     {
       "id": "7bf15cbe-7042-4a54-9813-7f4efaac2935",
       "submitted": [
-        1
+        1,
+        2
       ],
-      "plan_text_sha": "b73e525",
-      "rounds": 2,
-      "verdict": "in_progress",
-      "infra": false,
-      "retryable": false,
-      "final_plan_hash": null,
+      "plan_text_sha": "c654e62e",
+      "rounds": 3,
+      "verdict": "escalated",
+      "infra": true,
+      "retryable": true,
+      "final_plan_hash": "811cf34df6b8910809d95ca1ee99c6090075ce391f34934766f124e319e09721",
       "policy_approved_at": null
     }
   ]
