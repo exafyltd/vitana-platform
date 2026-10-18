@@ -4,7 +4,7 @@ author: kiro
 executor: claude
 next_actor: claude
 state: drafted
-updated: 2026-10-18T20:10Z
+updated: 2026-10-18T20:30Z
 ---
 # Handoff — collab-queue-perf
 `queue.mjs` collect() spawns one git process per branch, per spec file and per claim; on Windows that is
@@ -19,3 +19,6 @@ Corrects the earlier estimate: one git spawn is 0.13–0.4 s (not 0.9 s per diff
 149 s end to end because vitana-platform's cost is spec-file reads, not branch diffs. Branch cleanup and
 vitana-v1 auto-delete are left out on purpose (owner decision, deletes branches on GitHub). Next: PLAN-SPAR
 spars this PR; Claude Code builds the lane, possibly together with `sparring-floor-retry/floor-retry-code`.
+
+### 2026-10-18T20:30Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
