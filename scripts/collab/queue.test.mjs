@@ -5,8 +5,9 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
-  validateRegistry, loadSeats,
+  validateRegistry, loadSeats, catFileBatch, gitSpawns, renderTable,
   parseFrontMatter, classifyPath, validatePlan, validateLane, checkTransition,
   collect, buildQueue, validateRange, claim, release, listClaims, sessionId,
   scopeCheck, globToRegex, matchesAny, globTouchesGovernance, isSessionId, seatOf, loadPrograms, validatePrograms, programIndex,
@@ -441,7 +442,7 @@ test('programme registry: shape, a spec in two programmes, queue --program colum
     assert.ok(e.some((x) => x.includes('<repo>:<slug>')));
     assert.deepEqual(validatePrograms([programs.find((p) => p.id === 'alpha')]), []);
     assert.equal(programIndex(programs).get('work:cards'), 'alpha');
-    const out = execFileSync('node', [path.join(path.dirname(new URL(import.meta.url).pathname), 'queue.mjs'), '--repo', f.work, '--program', 'alpha'], { encoding: 'utf8' });
+    const out = execFileSync('node', [path.join(path.dirname(fileURLToPath(import.meta.url)), 'queue.mjs'), '--repo', f.work, '--program', 'alpha'], { encoding: 'utf8' });
     assert.match(out, /\| work \| alpha \| cards \|/);
   } finally { f.done(); }
 });
@@ -534,5 +535,263 @@ test('VTID-05213 review: seats must exist in areas.yaml; a touched spec must be 
     const prog = [{ id: 'p', path: 'docs/programs/p/program.md', fm: { specs: ['work:other'] } }];
     assert.ok(validateRegistry(f.work, { head, touched, repoName: 'work', seats: null, programs: prog }).some((x) => x.includes('not listed by any')));
     assert.deepEqual(validateRegistry(f.work, { head, touched, repoName: 'work', seats: null, programs: [{ ...prog[0], fm: { specs: ['work:cards'] } }] }), []);
+  } finally { f.done(); }
+});
+
+// ── collab-queue-perf / queue-batch-read: batched reads ──
+
+// The implementation of collect()/listClaims() before the batched read (origin/main a7433dfef), kept verbatim as the
+// reference the new one must equal. Private git helpers: these calls are NOT counted by gitSpawns.
+const REF_CLAIM_PREFIX = 'collab-claim/';
+function refGit(repo, args, opts = {}) {
+  return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts }).trimEnd();
+}
+function refGitOk(repo, args) {
+  try { return refGit(repo, args); } catch { return null; }
+}
+const refShowFile = (repo, ref, p) => refGitOk(repo, ['show', `${ref}:${p}`]);
+function refSpecFilesAt(repo, ref) {
+  const out = refGitOk(repo, ['ls-tree', '-r', '--name-only', ref, '--', '.kiro/specs']);
+  return out ? out.split('\n').filter((p) => classifyPath(p)) : [];
+}
+function refDefaultRemoteBranch(repo) {
+  const sym = refGitOk(repo, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']);
+  if (sym) return sym;
+  for (const b of ['origin/main', 'origin/master']) if (refGitOk(repo, ['rev-parse', '--verify', '-q', b])) return b;
+  return null;
+}
+function listClaimsReference(repo) {
+  const out = refGitOk(repo, ['for-each-ref', '--format=%(refname)%09%(objectname)%09%(committerdate:unix)', `refs/remotes/origin/${REF_CLAIM_PREFIX}`]);
+  if (!out) return [];
+  return out.split('\n').filter(Boolean).map((line) => {
+    const [ref, sha, ts] = line.split('\t');
+    const key = ref.slice(`refs/remotes/origin/${REF_CLAIM_PREFIX}`.length);
+    const msg = refGitOk(repo, ['log', '-1', '--format=%B', sha]) || '';
+    const session = (/^Collab-Session:\s*(\S+)/m.exec(msg) || [])[1] || null;
+    const [slug, ...rest] = key.split('/');
+    return { key, slug, lane: rest.join('/'), sha, session, at: Number(ts) * 1000 };
+  });
+}
+function collectReference(repo, { days = 30, now = Date.now() } = {}) {
+  const main = refDefaultRemoteBranch(repo);
+  if (!main) throw new Error(`${repo}: no origin/main — run git fetch origin`);
+  const best = new Map();
+  const consider = (ref, p) => {
+    const text = refShowFile(repo, ref, p);
+    if (text === null) return;
+    const fm = parseFrontMatter(text);
+    const prev = best.get(p);
+    if (!prev || (fm?.updated || '') > (prev.fm?.updated || '')) best.set(p, { path: p, ref, fm, text, ...classifyPath(p) });
+  };
+  for (const p of refSpecFilesAt(repo, main)) consider(main, p);
+  const since = Math.floor((now - days * 86400000) / 1000);
+  const refs = (refGitOk(repo, ['for-each-ref', '--format=%(refname:short)%09%(committerdate:unix)', 'refs/remotes/origin']) || '')
+    .split('\n').filter(Boolean).map((l) => l.split('\t'))
+    .filter(([r, ts]) => r !== main && r !== 'origin/HEAD' && r !== 'origin' && !r.startsWith(`origin/${REF_CLAIM_PREFIX}`) && Number(ts) >= since);
+  for (const [ref] of refs) {
+    const changed = refGitOk(repo, ['diff', '--name-only', `${main}...${ref}`, '--', '.kiro/specs']);
+    if (!changed) continue;
+    for (const p of changed.split('\n')) if (classifyPath(p)) consider(ref, p);
+  }
+  return { main, files: [...best.values()], claims: listClaimsReference(repo) };
+}
+
+/** `sh` with a fixed author/committer date (ISO). */
+function shAt(cwd, isoDate, ...args) {
+  return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t', GIT_AUTHOR_DATE: isoDate, GIT_COMMITTER_DATE: isoDate } }).trim();
+}
+
+const spawnsOf = (fn) => { const before = gitSpawns.count; const value = fn(); return { value, spawns: gitSpawns.count - before }; };
+
+test('catFileBatch: byte-accurate multi-byte, CRLF, empty, no trailing LF, binary, large, missing, newline query — one process', () => {
+  const f = fixture();
+  try {
+    sh(f.work, 'config', 'core.autocrlf', 'false');
+    const multi = 'Größe ✓ 🙂\r\nzeile 2\r\n';
+    const binary = Buffer.from(Array.from({ length: 512 }, (_, i) => i % 256));
+    const large = `${'ü'.repeat(600000)}\n🙂\n`; // > 1 MB of UTF-8
+    write(f.work, 'a.md', multi);
+    write(f.work, 'empty.md', '');
+    write(f.work, 'b.md', 'x');
+    write(f.work, 'bin.dat', binary);
+    write(f.work, 'large.md', large);
+    const sha = commit(f.work, 'blobs subject');
+    sh(f.work, 'push', '-q', 'origin', 'main');
+    sh(f.work, 'fetch', '-q', 'origin');
+    const qs = ['origin/main:a.md', 'origin/main:empty.md', 'origin/main:b.md', 'origin/main:bin.dat', 'origin/main:large.md',
+      'origin/main:nope.md', 'bad\nquery', sha, 'origin/main:a.md'];
+    const { value: m, spawns } = spawnsOf(() => catFileBatch(f.work, qs));
+    assert.equal(spawns, 1);
+    assert.equal(m.get('origin/main:a.md'), multi);
+    assert.equal(m.get('origin/main:empty.md'), '');
+    assert.equal(m.get('origin/main:b.md'), 'x');
+    assert.equal(m.get('origin/main:bin.dat'), binary.toString('utf8'));
+    assert.equal(m.get('origin/main:large.md'), large);
+    assert.equal(m.get('origin/main:nope.md'), null);
+    assert.equal(m.get('bad\nquery'), null);
+    assert.ok(m.get(sha).includes('\n\nblobs subject'));
+    assert.equal(m.size, 8);
+    assert.equal(spawnsOf(() => catFileBatch(f.work, ['x\ny'])).spawns, 0, 'nothing sendable → no process');
+  } finally { f.done(); }
+});
+
+/** Fixture covering every collect() edge case; returns the repo with remote branches + claims fetched. */
+function batchFixture() {
+  const f = fixture();
+  sh(f.work, 'config', 'core.autocrlf', 'false');
+  write(f.work, '.kiro/specs/cards/notes.md', 'notes\n');
+  write(f.work, '.kiro/specs/gone/handoff.md', planMd({ slug: 'gone' }));
+  write(f.work, '.kiro/specs/gone/lanes/g-1.md', laneMd('g-1'));
+  write(f.work, '.kiro/specs/gone2/handoff.md', planMd({ slug: 'gone2' }));
+  // CRLF lane file on main
+  write(f.work, '.kiro/specs/crlf/handoff.md', planMd({ slug: 'crlf' }).replace(/\n/g, '\r\n'));
+  write(f.work, '.kiro/specs/crlf/lanes/c-1.md', laneMd('c-1').replace(/\n/g, '\r\n'));
+  seedSpec(f);
+  const branch = (name, fn) => {
+    sh(f.work, 'checkout', '-q', '-b', name, 'main');
+    fn();
+    sh(f.work, 'push', '-q', 'origin', name);
+    sh(f.work, 'checkout', '-q', 'main');
+  };
+  const card02 = laneMd('card-02', { next_actor: 'kiro', depends_on: ['card-01'] });
+  branch('kiro/cards/card-01', () => {
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { state: 'executing', vtid: 'VTID-00002', claimed_by: S1, updated: '2026-10-13T11:00Z' }));
+    commit(f.work, 'work', { 'Collab-Session': S1, 'Collab-Lane': 'cards/card-01' });
+  });
+  branch('kiro/cards/revert', () => {
+    write(f.work, '.kiro/specs/cards/lanes/card-02.md', laneMd('card-02', { next_actor: 'kiro', updated: '2026-10-13T12:00Z' }));
+    commit(f.work, 'change');
+    write(f.work, '.kiro/specs/cards/lanes/card-02.md', card02);
+    commit(f.work, 'revert');
+  });
+  branch('kiro/newspec/_plan', () => {
+    write(f.work, '.kiro/specs/newspec/handoff.md', planMd({ slug: 'newspec' }));
+    write(f.work, '.kiro/specs/newspec/lanes/n-1.md', laneMd('n-1'));
+    // added then removed on the branch: must not appear
+    write(f.work, '.kiro/specs/newspec/lanes/n-tmp.md', laneMd('n-tmp'));
+    commit(f.work, 'plan');
+    rmSync(path.join(f.work, '.kiro/specs/newspec/lanes/n-tmp.md'));
+    commit(f.work, 'drop tmp');
+  });
+  branch('kiro/old/x', () => {
+    write(f.work, '.kiro/specs/cards/lanes/card-02.md', laneMd('card-02', { next_actor: 'kiro', updated: '2026-10-14T00:00Z' }));
+    sh(f.work, 'add', '-A');
+    shAt(f.work, '2020-01-01T00:00:00Z', 'commit', '-q', '-m', 'old');
+  });
+  branch('kiro/gone/revert', () => {
+    write(f.work, '.kiro/specs/gone/lanes/g-1.md', laneMd('g-1', { updated: '2026-10-15T00:00Z' }));
+    commit(f.work, 'change');
+    write(f.work, '.kiro/specs/gone/lanes/g-1.md', laneMd('g-1'));
+    commit(f.work, 'revert');
+  });
+  branch('kiro/gone2/mod', () => {
+    write(f.work, '.kiro/specs/gone2/handoff.md', planMd({ slug: 'gone2', updated: '2026-10-15T00:00Z' }));
+    commit(f.work, 'modify');
+  });
+  branch('kiro/cards/rename', () => {
+    sh(f.work, 'mv', '.kiro/specs/cards/notes.md', '.kiro/specs/cards/notes2.md');
+    commit(f.work, 'rename');
+  });
+  branch('kiro/crlf/c-1', () => {
+    write(f.work, '.kiro/specs/crlf/lanes/c-1.md', laneMd('c-1', { updated: '2026-10-15T00:00Z' }).replace(/\n/g, '\r\n'));
+    // a large lane file (≈ 0.8 MB of log; the old git show had a 1 MB maxBuffer) and a binary-ish one
+    write(f.work, '.kiro/specs/crlf/lanes/big.md', `${laneMd('big')}${'### entry ü\n'.repeat(60000)}`);
+    write(f.work, '.kiro/specs/crlf/lanes/bin.md', Buffer.concat([Buffer.from(laneMd('bin')), Buffer.from([0, 0xff, 0xfe, 0x80, 0x0a])]));
+    commit(f.work, 'crlf work');
+  });
+  branch('kiro/merged/main-into-branch', () => {
+    write(f.work, 'src/x.ts', 'x');
+    commit(f.work, 'unrelated');
+  });
+  // main moves on: delete gone/ and gone2/, then merge main into a branch (merge must not inject main's files)
+  rmSync(path.join(f.work, '.kiro/specs/gone'), { recursive: true, force: true });
+  rmSync(path.join(f.work, '.kiro/specs/gone2'), { recursive: true, force: true });
+  write(f.work, '.kiro/specs/cards/handoff.md', planMd({ state: 'executing', sparring_record: 'x.md', vtids: ['VTID-00001'], executor: 'kiro', next_actor: 'kiro', updated: '2026-10-13T10:30Z' }));
+  commit(f.work, 'delete gone specs');
+  sh(f.work, 'push', '-q', 'origin', 'main');
+  sh(f.work, 'checkout', '-q', 'kiro/merged/main-into-branch');
+  sh(f.work, 'merge', '-q', '--no-edit', 'main');
+  sh(f.work, 'push', '-q', 'origin', 'kiro/merged/main-into-branch');
+  sh(f.work, 'checkout', '-q', 'main');
+  sh(f.work, 'fetch', '-q', 'origin');
+  assert.equal(claim(f.work, 'cards/card-01', S1).ok, true);
+  assert.equal(claim(f.work, 'newspec/_plan', S2).ok, true);
+  sh(f.work, 'fetch', '-q', '--prune', 'origin');
+  return f;
+}
+
+const GONE2 = '.kiro/specs/gone2/handoff.md';
+
+test('collect: batched read equals the old implementation (except the documented stale-branch case); ≤ 6 git spawns', () => {
+  const f = batchFixture();
+  try {
+    const { value: got, spawns } = spawnsOf(() => collect(f.work, { days: 30 }));
+    assert.ok(spawns <= 6, `collect used ${spawns} git processes`);
+    const ref = collectReference(f.work, { days: 30 });
+    // Documented difference: a stale branch that modified a spec main has since deleted no longer resurrects it.
+    const g2 = ref.files.find((x) => x.path === GONE2);
+    assert.equal(g2?.ref, 'origin/kiro/gone2/mod', 'the old implementation resurrected the deleted spec');
+    assert.equal(got.files.some((x) => x.path === GONE2), false);
+    const refFiltered = { ...ref, files: ref.files.filter((x) => x.path !== GONE2) };
+    assert.deepEqual(got.main, ref.main);
+    assert.deepEqual(got.claims, ref.claims);
+    assert.deepEqual(got.files, refFiltered.files);
+    const at = (p) => got.files.find((x) => x.path === p);
+    assert.equal(at('.kiro/specs/cards/lanes/card-01.md').ref, 'origin/kiro/cards/card-01');
+    assert.equal(at('.kiro/specs/cards/lanes/card-02.md').ref, 'origin/main', 'reverted branch never wins; old branch outside the window');
+    assert.equal(at('.kiro/specs/cards/handoff.md').ref, 'origin/main', 'a merge of main into a branch does not inject main files');
+    assert.ok(at('.kiro/specs/newspec/handoff.md') && at('.kiro/specs/newspec/lanes/n-1.md'));
+    assert.equal(at('.kiro/specs/newspec/lanes/n-tmp.md'), undefined, 'added then removed on the branch');
+    assert.equal(got.files.some((x) => x.path.startsWith('.kiro/specs/gone/')), false, 'reverted change on a deleted spec stays gone');
+    assert.equal(at('.kiro/specs/crlf/lanes/c-1.md').ref, 'origin/kiro/crlf/c-1');
+    assert.ok(at('.kiro/specs/crlf/lanes/c-1.md').text.includes('\r\n'));
+    assert.ok(at('.kiro/specs/crlf/lanes/big.md').text.length > 500000);
+    assert.ok(at('.kiro/specs/crlf/lanes/bin.md'));
+    assert.deepEqual(got.claims.map((c) => c.session).sort(), [S1, S2].sort());
+    assert.equal(JSON.stringify(buildQueue(got, 'r')), JSON.stringify(buildQueue(refFiltered, 'r')));
+    assert.equal(renderTable(buildQueue(got, 'r')), renderTable(buildQueue(refFiltered, 'r')));
+    // every ref "recent" (the 2020 branch included) and no ref recent at all
+    for (const now of [Date.parse('2020-01-05T00:00:00Z'), Date.now() + 400 * 86400000]) {
+      const r = spawnsOf(() => collect(f.work, { days: 30, now }));
+      assert.ok(r.spawns <= 6, `collect used ${r.spawns} git processes`);
+      const old = collectReference(f.work, { days: 30, now });
+      assert.deepEqual(r.value, { ...old, files: old.files.filter((x) => x.path !== GONE2) });
+    }
+    assert.ok(spawnsOf(() => collect(f.work, { days: 30, now: Date.now() + 400 * 86400000 })).spawns <= 4, 'no recent refs → no rev-list/log');
+  } finally { f.done(); }
+});
+
+test('listClaims: one for-each-ref + one cat-file; equals the old implementation', () => {
+  const f = fixture();
+  try {
+    sh(f.work, 'fetch', '-q', 'origin');
+    assert.deepEqual(spawnsOf(() => listClaims(f.work)).value, []);
+    assert.equal(claim(f.work, 'cards/card-01', S1).ok, true);
+    assert.equal(claim(f.work, 'cards/card-02', S2).ok, true);
+    assert.equal(claim(f.work, 'other/_plan', S2).ok, true);
+    const { value: c, spawns } = spawnsOf(() => listClaims(f.work));
+    assert.ok(spawns <= 2, `listClaims used ${spawns} git processes`);
+    assert.deepEqual(c, listClaimsReference(f.work));
+    assert.deepEqual(c.map((x) => x.session), [S1, S2, S2]);
+  } finally { f.done(); }
+});
+
+test('collect: spawn count does not grow with branch count', () => {
+  const f = fixture();
+  try {
+    seedSpec(f);
+    for (let i = 0; i < 15; i++) {
+      sh(f.work, 'checkout', '-q', '-b', `kiro/cards/b-${i}`, 'main');
+      write(f.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { next_actor: 'kiro', updated: `2026-10-13T11:${String(i).padStart(2, '0')}Z` }));
+      write(f.work, `.kiro/specs/cards/lanes/x-${i}.md`, laneMd(`x-${i}`));
+      commit(f.work, `b${i}`);
+      sh(f.work, 'push', '-q', 'origin', `kiro/cards/b-${i}`);
+    }
+    sh(f.work, 'checkout', '-q', 'main');
+    sh(f.work, 'fetch', '-q', 'origin');
+    const { value, spawns } = spawnsOf(() => collect(f.work));
+    assert.ok(spawns <= 6, `collect used ${spawns} git processes`);
+    assert.deepEqual(value, collectReference(f.work));
+    assert.equal(value.files.find((x) => x.path === '.kiro/specs/cards/lanes/card-01.md').ref, 'origin/kiro/cards/b-14');
   } finally { f.done(); }
 });
