@@ -44,7 +44,7 @@ read-only):
    end to end).
 5. **No Command Hub tenant module.** The Command Hub loads JS via `modules.json` + `index.html` script tags; a new
    screen is a `kind:"module"` file exposing `window.X.render()` that `app.js` calls from its render switch
-   (pattern: `loops-catalog.js`, `modules.json:7`). There is no tenant-provisioning module yet.
+   (pattern: `loops-catalog.js`, `modules.json:6`). There is no tenant-provisioning module yet.
 6. **Readiness is minimal.** `GET /admin/tenants/:id/readiness` (`admin-tenants.ts:536`) reports a fixed set; WS4 needs
    first-admin-invitation delivery state and lifecycle (active/deactivated) surfaced.
 
