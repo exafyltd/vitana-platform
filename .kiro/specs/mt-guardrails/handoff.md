@@ -10,7 +10,7 @@ updated: 2026-10-18T08:28Z
 # Handoff — mt-guardrails (WS0 guardrails and test tooling)
 
 WS0 of the multi-tenant program (`docs/MULTI-TENANT-PLAN.md` §6 "Guard rails & test env", the M0
-blocker): the local test stack, generated inventories, DB and gateway lints, pgTAP isolation suite,
+blocker): the local test stack, generated inventories, DB and gateway lints, the isolation suite,
 contract tests, Maxina golden suite and the MIGRATION-QUEUE CI check that every later isolation slice
 depends on. Plan: `plan.md`. Requirements, design and successor rules: `requirements.md`, `design.md`,
 `tasks.md`. Nothing here deploys or writes to a live system; the only production signal reused is the
@@ -20,8 +20,8 @@ Lanes:
 - `local-test-stack` — kiro (seat hotmail), repo vitana-platform, `ready`.
 - `generated-inventories` — kiro (seat hotmail), repo vitana-platform, `ready` (depends on
   local-test-stack).
-- `pgtap-isolation-suite` — kiro (seat hotmail), repo vitana-platform, `ready` (depends on
-  local-test-stack).
+- `isolation-suite` — kiro (seat hotmail), repo vitana-platform, `ready` (depends on
+  local-test-stack, generated-inventories).
 - `gateway-scope-lint-contract` — kiro (seat jtadic), repo vitana-platform, `ready` (depends on
   generated-inventories).
 - `maxina-golden-suite` — kiro (seat jtadic), repo vitana-platform, `ready`.
@@ -67,3 +67,11 @@ The sparring partner could not review (model_unavailable). Not a plan problem: C
 
 ### 2026-10-18T08:28Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-18T10:00Z · kiro-hotmail-202610151618-b437 · spar round-1 → answered
+Answered PLAN-SPAR round 1 (both findings accepted). R1-F1: the isolation suite uses the repo's
+existing raw-psql + RAISE harness, not pgTAP/`pg_prove` (none exists in the repo); the lane
+`pgtap-isolation-suite` is renamed to `isolation-suite` across plan.md, tasks.md, lanes/ and this
+file, and now also depends on `generated-inventories` for the shared health-table-list constant.
+R1-F2: `test:support`/`test:operator`/`test:roles` verified present in `services/gateway/package.json`;
+the row-21b `SUPABASE_URL` binding fix is folded into the ci-wiring lane.

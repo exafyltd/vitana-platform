@@ -21,10 +21,15 @@ guardrails that must exist before any isolation work. Verified against platform 
    tenant RLS, and storage policies, with an owner-tagged allowlist. None exist today
    (`scripts/ci/` has `check-migration-drift.cjs` and VTID-specific checks only; no inventory/lint
    generator).
-3. **No pgTAP isolation suite.** No `pgtap`/`pg_prove` anywhere in CI or scripts. The plan needs
-   per-table/function pgTAP asserting b_member reads 0 T_A rows and a T_A-tenant write by b_member
-   fails (§4.2 "pgTAP asserts a_member cannot read a_admin's user-private rows on every one of the 18
-   tables and the health tables").
+3. **No tenant-isolation SQL suite.** `supabase/tests/` holds only per-VTID assertion specs; none
+   covers cross-tenant isolation. The plan needs per-table/function assertions that b_member reads 0
+   T_A rows and a T_A-tenant write by b_member fails (§4.2 "a_member cannot read a_admin's user-private
+   rows on every one of the 18 tables and the health tables"). It uses the repo's **established
+   raw-psql + RAISE pattern** (`\set ON_ERROR_STOP 1`, `*.test.sql` + a `scripts/ci/test-*.sh` runner
+   that spins up a throwaway Postgres via `initdb`/`pg_ctl`), e.g.
+   `supabase/tests/vtid_05147_s_m_lockdown.test.sql:1` + `scripts/ci/test-vtid-05147-s-m-lockdown.sh:34`
+   — NOT pgTAP/`pg_prove`, which exists nowhere in the repo and would be a second competing SQL-test
+   framework in the same directory.
 4. **No gateway tenant-scope lint or contract tests.** No lint over the gateway repositories that bans
    header/query-supplied tenant outside admin routes (S-I shape, §3), no route-inventory test (a route
    with no auth middleware must be on a public allowlist, §6 WS0, S-J), and no route×role×tenant
@@ -57,7 +62,7 @@ mt-identity's `isHealthTable()` when it ships.
    snapshot + fixture seed: tenants T_A/T_B, members a_member/a_admin/b_member/b_admin/ab_dual, a
    `CANARY_A_<uuid>` marker in representative T_A rows. Schema from a production *schema* dump
    (structure only, never data), checked in with a regenerate script. A `make`/npm entry brings the
-   stack up for the pgTAP, inventory and contract lanes. No production access of any kind.
+   stack up for the isolation-suite, inventory and contract lanes. No production access of any kind.
 2. **`generated-inventories`** (kiro, seat hotmail, repo platform) — generators that read the local
    schema (never production) and emit checked-in inventories of tables, functions, routes, edge
    functions, realtime tables and storage buckets, plus the DB lints (nullable `tenant_id`, missing
@@ -67,14 +72,19 @@ mt-identity's `isHealthTable()` when it ships.
    Also produces the **shared health-table-list constant** (checked-in config) enumerated from
    `docs/MULTI-TENANT-PLAN.md` §2 — `health_features_daily`, `biomarker_results`, `wearable_samples`,
    `partner_health_test_orders`, `data_sharing_consents` — the single source of truth consumed by the
-   pgTAP lane and the lints until mt-identity's `isHealthTable()` predicate ships (then they switch to
+   isolation-suite lane and the lints until mt-identity's `isHealthTable()` predicate ships (then they switch to
    it and this constant is retired). Depends on `local-test-stack`.
-3. **`pgtap-isolation-suite`** (kiro, seat hotmail, repo platform) — `supabase/tests/**` pgTAP specs
-   run by `pg_prove` against the local stack: b_member sees 0 T_A rows and a T_A-tenant write by
-   b_member fails, per the 18 tenant tables and the health tables (via the shared health-table-list
-   constant from `generated-inventories`, switching to mt-identity's `isHealthTable()` predicate when
-   it ships — never a scattered local copy). ab_dual read/write single-series health assertion.
-   Depends on `local-test-stack` and `generated-inventories` (for the health-table-list constant).
+3. **`isolation-suite`** (kiro, seat hotmail, repo platform) — `supabase/tests/**` isolation specs in
+   the repo's **existing raw-psql + RAISE pattern** (`\set ON_ERROR_STOP 1`, `*.test.sql` + a
+   `scripts/ci/test-*.sh` runner using `initdb`/`pg_ctl`, matching `vtid_05147_s_m_lockdown.test.sql` /
+   `test-vtid-05147-s-m-lockdown.sh`), run against the local stack: b_member sees 0 T_A rows and a
+   T_A-tenant write by b_member fails, per the 18 tenant tables and the health tables (via the shared
+   health-table-list constant from `generated-inventories`, switching to mt-identity's `isHealthTable()`
+   predicate when it ships — never a scattered local copy). ab_dual read/write single-series health
+   assertion. Deliberately NOT pgTAP: no `pgtap`/`pg_prove` exists in the repo, and adding it would be a
+   second SQL-test framework in `supabase/tests/`; this lane reuses the established pattern so there is
+   one SQL-test harness. Depends on `local-test-stack` and `generated-inventories` (for the
+   health-table-list constant).
 4. **`gateway-scope-lint-contract`** (kiro, seat jtadic, repo platform) — a static lint over
    `services/gateway/src` repositories banning header/query-supplied tenant outside admin routes; a
    route-inventory Jest test (every route with no auth middleware must be on a committed public
@@ -98,8 +108,9 @@ mt-identity's `isHealthTable()` when it ships.
 
 ## Migrations
 None. `ci_tenant_isolation_health()` already exists (VTID-05149, `20261014000300`, applied). The
-bare-policy lint and inventories read the schema read-only; pgTAP needs the `pgtap` extension in the
-local/CI Postgres only, created by the local-stack setup, not a production migration. Reserved range if
+bare-policy lint and inventories read the schema read-only; the isolation suite runs on a throwaway
+local/CI Postgres (`initdb`/`pg_ctl`) created by the local-stack setup, not a production migration, and
+needs no extra extension. Reserved range if
 a WS0 slice later needs one: `20261101020000`–`20261101025959` (NN=02); none used in this spec.
 MIGRATION-QUEUE position: none (adds no migration).
 
@@ -107,11 +118,14 @@ MIGRATION-QUEUE position: none (adds no migration).
 - `local-test-stack`: a smoke script brings the stack up and asserts the fixtures load; no live calls.
 - `generated-inventories`: unit tests on each generator over a tiny fixture schema; the committed
   inventories regenerate byte-identically (drift test).
-- `pgtap-isolation-suite`: `pg_prove` green against the local stack (the suite itself).
+- `isolation-suite`: the `scripts/ci/test-*.sh` runner green against the throwaway local Postgres (the
+  suite itself), same harness shape as `test-vtid-05147-s-m-lockdown.sh`.
 - `gateway-scope-lint-contract`: Jest — lint flags a header/query-tenant repository, passes a clean
   one; route-inventory test; contract tests over fixtures (no `CANARY_A` leak).
 - `maxina-golden-suite`: Jest byte-equality; required suites `npm run test:support` (rule 42c),
-  `npm run test:operator` (rule 42e), `npm run test:roles` (rule 42h) stay green.
+  `npm run test:operator` (rule 42e), `npm run test:roles` (rule 42h) stay green — all three are
+  verified present in `services/gateway/package.json` ("test:support"/"test:operator"/"test:roles"
+  scripts), so the dependency is real, not assumed.
 - `ci-wiring`: `node --test` self-tests for the new scripts; the workflows run on this PR report-only.
 
 ## Staging verification
@@ -131,8 +145,9 @@ Gate 2 (deploys nothing).
 ## Risks
 - A lint/golden suite red on day one is ignored (the VTID-03480/03486 lesson): every new check lands
   report-only with a visible, shrinking baseline, never a hard 0 on existing drift.
-- pgTAP/`pg_prove` adds a CI dependency; `ci-wiring` installs it in the job, and the local-stack script
-  creates the extension — no new production dependency.
+- The isolation suite reuses the existing raw-psql + RAISE harness (`scripts/ci/test-*.sh` +
+  `initdb`/`pg_ctl`), so it adds no new SQL-test framework and no new production dependency — one SQL
+  harness across the repo.
 - Golden byte-equality is brittle to intended copy changes; the suite documents the regenerate step and
   mt-packs P4's O3 fixture update is a declared, reviewed golden change, not a surprise.
 - Cross-repo temptation: the What's New drafter golden could be split to vitana-v1; it is kept in the
@@ -148,7 +163,7 @@ list referenced here. Each later slice is its own sparred spec.
 ## Depends on
 Done: VTID-05147 (S-M), VTID-05149 (A: `ci_tenant_isolation_health`, `TenantContext`), VTID-05150 (B),
 VTID-05151 (C). Within this spec: `generated-inventories` → `local-test-stack`;
-`pgtap-isolation-suite` → `local-test-stack`; `gateway-scope-lint-contract` → `generated-inventories`;
+`isolation-suite` → `local-test-stack`; `gateway-scope-lint-contract` → `generated-inventories`;
 `ci-wiring` → lanes 2–5. The `isHealthTable()` predicate is NOT yet available (CROSS-SPEC O1, R1-F1):
 this spec's health-table list is the shared constant from `generated-inventories` until mt-identity
 ships the predicate, then lane 3 and the lints switch to it. Cross-spec O3: mt-packs P4 depends on
