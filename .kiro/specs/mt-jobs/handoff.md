@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-17T16:30Z
+updated: 2026-10-18T20:09Z
 ---
 # Handoff — mt-jobs (WS6: jobs & events loop over active tenants)
 
@@ -54,3 +54,6 @@ drifted file:line citations in `plan.md` / `tasks.md`: heartbeat `index.ts:1840`
 Verified unchanged and exact: the seven automation-event sites (`community.ts:274,382,482`, `match-feedback.ts:280`,
 `matchmaking.ts:576`, `admin-signups.ts:205`, `groups-events-tools.ts:360`), community-scan route `:2281`/`:2294`,
 `scan-runner.ts:255`, `getUserTimezone` `:1567`. Response recorded in `sparring/responses-1.md`. Re-pushed to re-spar.
+
+### 2026-10-18T20:09Z u{00B7} kiro-hotmail-202610151618-b437 u{00B7} re-spar round (session 5871c575 round 1, in_progress)
+Answered all five s2-round-1 findings in `sparring/s2-responses-1.md` and updated `plan.md` + `tasks.md` + the four lane files (paths unchanged). R1-F1 accepted: the EventBridge tenant pin is NOT a schedule target input -- whats-new.sh/daily-feature-tip.sh pin it in the Lambda --environment Variables (whats-new.sh:204,218) + inline handler body (whats-new.sh:158, daily-feature-tip.sh:190), cron-migration.sh in the schedule Input body of ~26 jobs (:156-188), push-dispatch.sh pins none; Problem 7 + lane 1 + E1 reworded per mechanism. R1-F2 rejected: morning-brief-scheduler.ts exists at services/gateway/src/services/guide/ (partner missed the guide/ subpath) -- re-verified it fetches per-user tenant_id at :130-131 and passes it at :140/:152; added the full path to the plan. R1-F3 accepted: groups-events-tools.ts:357-360 is a fallback (id.tenant_id || DEFAULT_TENANT_ID), not a direct pin -- split into six pins + one fallback, annotated, dedicated no-regression test (A2). R1-F4 accepted: the /community-scan route emits one OASIS event per call (:2299-2309) -> emit ONE aggregated event after the per-tenant loop (C1/C3). R1-F5 accepted: the heartbeat setInterval is registered once at startup (index.ts:1848) -> flag + activeTenantIds evaluated inside each tick, mid-flight-toggle test added (L3/L5). Also re-anchored the plan verification line to tip `d4bc696` and fixed setInterval :1850->:1848. Pushed to start the next round.

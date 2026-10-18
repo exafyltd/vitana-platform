@@ -21,8 +21,11 @@ Plan: `.kiro/specs/mt-jobs/plan.md` (authoritative) and the `jobs-community-scan
 
 `runCommunityScan` (`scan-runner.ts:255`) + the `/community-scan` route (`autopilot-recommendations.ts:2281`) loop
 active tenants under the flag, each tenant's members with that tenant's timezone; off, platform-wide as today. The
-memory-embedding backfill loop's tenant source becomes `activeTenantIds(sb)` under the flag
-(`MEMORY_EMBEDDING_BACKFILL_TENANT_IDS` the off/pinned override). Depends on `jobs-tenant-loop`.
+route currently emits one `community_autopilot.scan.completed` OASIS event per call
+(`autopilot-recommendations.ts:2299-2309`); under the loop it emits ONE aggregated event after the full loop (each
+tenant's `ScanRunSummary` in the payload), never N per tick. The memory-embedding backfill loop's tenant source
+becomes `activeTenantIds(sb)` under the flag (`MEMORY_EMBEDDING_BACKFILL_TENANT_IDS` the off/pinned override).
+Depends on `jobs-tenant-loop`.
 
 **Held:** `next_actor: owner` until PLAN-SPAR allocates this lane's VTID and flips it to `next_actor: kiro`. Rules
 (collaboration §7a): no VTID allocation, no `_plan` claim, no `handoff.md` edit, no merge/approve, no deploy, no
@@ -34,3 +37,5 @@ Supabase/AWS write. Work only inside the allowed paths. Branch `kiro/mt-jobs/job
 ## Log
 ### 2026-10-15T16:40Z · kiro-hotmail-202610151618-b437 · created → ready
 Depends on `jobs-tenant-loop` (shared loop/resolver). Seat `jtadic`, reviewer `exafy`.
+### 2026-10-18T20:08Z u{00B7} kiro-hotmail-202610151618-b437 u{00B7} re-spar round (s2-round-1 R1-F4)
+Added the OASIS aggregation decision: the per-call emit at autopilot-recommendations.ts:2299-2309 becomes ONE aggregated event after the per-tenant loop, not N per tick. C1/C3 updated. Paths unchanged.

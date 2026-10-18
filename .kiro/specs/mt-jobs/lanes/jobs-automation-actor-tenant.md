@@ -21,10 +21,12 @@ updated: 2026-10-15T16:40Z
 Plan: `.kiro/specs/mt-jobs/plan.md` (authoritative) and the `jobs-automation-actor-tenant` section of `tasks.md`
 (A1–A3, allowed paths, acceptance). Design: `design.md`.
 
-The seven event-dispatch sites (`community.ts:274,382,482`, `match-feedback.ts:280`, `matchmaking.ts:576`,
-`admin-signups.ts:205`, `groups-events-tools.ts:360`) resolve the actor's real tenant via `resolveActorTenant`
-(from `jobs-tenant-loop`) when the flag is on; off, `DEFAULT_TENANT_ID` unchanged. Depends on `jobs-tenant-loop`
-for the resolver.
+Six direct-pin sites (`community.ts:274,382,482`, `match-feedback.ts:280`, `matchmaking.ts:576`,
+`admin-signups.ts:205`) and one fallback site (`groups-events-tools.ts:357-360`, `id.tenant_id || DEFAULT_TENANT_ID`)
+resolve the actor's real tenant via `resolveActorTenant` (from `jobs-tenant-loop`) when the flag is on; off,
+`DEFAULT_TENANT_ID` unchanged. The fallback site already tries the session tenant first — annotate it separately and
+pin its `id.tenant_id`-present path with a dedicated no-regression test (A2). Depends on `jobs-tenant-loop` for the
+resolver.
 
 **Held:** `next_actor: owner` until PLAN-SPAR allocates this lane's VTID and flips it to `next_actor: kiro`. Rules
 (collaboration §7a): no VTID allocation, no `_plan` claim, no `handoff.md` edit, no merge/approve, no deploy, no
@@ -36,3 +38,5 @@ Supabase/AWS write. Work only inside the allowed paths. Branch `kiro/mt-jobs/job
 ## Log
 ### 2026-10-15T16:40Z · kiro-hotmail-202610151618-b437 · created → ready
 Depends on `jobs-tenant-loop` (shared resolver). Seat `jtadic`, reviewer `exafy`.
+### 2026-10-18T20:07Z u{00B7} kiro-hotmail-202610151618-b437 u{00B7} re-spar round (s2-round-1 R1-F3)
+Split the dispatch sites into six direct pins + one fallback (groups-events-tools.ts:357-360). The fallback''s id.tenant_id-present path is already correct and gets a dedicated no-regression test. Paths unchanged.
