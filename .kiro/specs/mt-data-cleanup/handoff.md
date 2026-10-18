@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-18T20:13Z
+updated: 2026-10-18T20:19Z
 ---
 # Handoff — mt-data-cleanup (WS2 orphan data cleanup, quarantine, NOT NULL hardening)
 
@@ -66,4 +66,7 @@ Session 2 engaged (plan hash 8e78c46d). All 7 findings ACCEPTED and applied to p
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
 
 ### 2026-10-18T20:13Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-18T20:19Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
