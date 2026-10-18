@@ -9,15 +9,21 @@ Allowed paths:
 - `supabase/migrations/20261101130000_*.sql`
 - `supabase/migrations/20261101130100_*.sql`
 - `docs/multitenancy/MIGRATION-QUEUE.md`
+- `docs/MULTI-TENANT-PLAN.md`
 - `services/gateway/test/mt-native-health/health-home-tenant.pgtap.sql`
 
 - [ ] H1 Migration `20261101130000_*`: add `app_users.health_home_tenant_id uuid NULL REFERENCES tenants(id)` + index.
 - [ ] H2 Migration `20261101130100_*`: `health_home_tenant_id(p_user uuid)` STABLE SECURITY DEFINER resolver
       (`coalesce(column, primary user_tenants row)`, never reads `app_metadata`); batched backfill with `lock_timeout`,
       snapshot to a `bak_*` table (30-day retention); leave NULL for members with 0 or 2+ primary memberships.
+      Open the backfill with a `RAISE EXCEPTION` guard that aborts unless every member has exactly one primary
+      `user_tenants` row (round-1 F6: self-enforces mt-identity ordering).
 - [ ] H3 Add the two rows to `docs/multitenancy/MIGRATION-QUEUE.md` AFTER mt-identity's membership-unification rows,
       with depends-on, rollback path and read-only pre/post-check references.
 - [ ] H4 pgTAP: resolver is stable across sessions for ab_dual; backfill idempotent; ambiguous members stay NULL.
+- [ ] H5 Round-1 F4 program-doc correction: in `docs/MULTI-TENANT-PLAN.md`, replace §6 WS9's "Capacitor iOS/Android
+      projects around the SPA" with the verified reality (Expo/React Native, `apps/mobile/`), record D17 as settled
+      in the decision register, and recompute the plan-body hash on line 4.
 
 Acceptance: migrations are expand-only and reversible (`docs/validation/<VTID>/rollback.sql`); pre-check counts
 ambiguous members; post-check asserts every member has a home tenant or is quarantined; pgTAP green; MIGRATION-QUEUE
@@ -42,9 +48,12 @@ Allowed paths:
       behind `MT_RESOLUTION_V2` (off = current session-tenant behaviour).
 - [ ] A2 Convert the two writers and three readers above to route through `healthDb` instead of a session tenant.
 - [ ] A3 `gen-health-reader-inventory.mjs`: generate the inventory of `.from('<health table>')` sites across
-      `services/gateway/src`, using the `isHealthTable()` table set from mt-identity.
-- [ ] A4 `health-reader-inventory.test.ts`: build-failing lint that every inventory entry goes through `healthDb`
-      (allowlist: the accessor + service-role platform jobs); fails on a planted session-tenant health read.
+      `services/gateway/src` FIRST; classify each entry (a) convert-to-`healthDb`, (b) user-keyed-already (e.g.
+      `wearables-repository.ts:72` `wearable_rollup_7d`, `:77` `wearable_daily_metrics` — `user_id`-only), or
+      (c) service-role job. Table set from mt-identity's `isHealthTable()` (round-1 F5).
+- [ ] A4 `health-reader-inventory.test.ts`: lint ships WARNING-ONLY and is promoted to build-failing in the SAME PR
+      that clears every (a) conversion (round-1 F5); allowlist = (b)+(c) + the accessor; fails on a planted
+      session-tenant health read once promoted.
 - [ ] A5 `health-db.test.ts`: `healthDb` resolves the same tenant for a dual member in either session.
 
 Acceptance: Vitest green incl. the new lint; the five repos no longer read a session tenant for health; flag off
@@ -65,8 +74,10 @@ Allowed paths:
       product/cart tools, autopilot offers).
 - [ ] G2 `health-lineage-exempt.ts`: the explicit member-coaching exemption list (community-autopilot scan, news
       feed, morning brief, health-wellness/health-action automations), each with a one-line reason.
-- [ ] G3 `health-lineage-guard.test.ts`: build-failing guard that no inventoried, non-exempt module reads a table in
-      `isHealthTable()` (mt-identity); planting a health read in a tenant-analytics module fails the build.
+- [ ] G3 `health-lineage-guard.test.ts`: guard that no inventoried, non-exempt module reads a table in the forbidden
+      set; planting a health read in a tenant-analytics module fails. The forbidden set is a local `HEALTH_TABLES`
+      constant marked `// CROSS-SPEC O1: mt-identity replaces this with isHealthTable()` (round-1 F3: no hard block
+      on mt-identity); warning-only until health-tenant-accessor's (a) conversions merge, then build-failing.
 - [ ] G4 `health-lineage-guard.pgtap.sql`: a T_B tenant admin reads zero rows of each health table.
 
 Acceptance: guard fails on a planted violation and passes on the current tree; exemptions justified; pgTAP green.
@@ -77,17 +88,20 @@ lane adds its own `docs/validation/<vtid>/`.
 ## native-push-tenant — per-tenant native push (repo vitana-platform)
 
 Allowed paths:
-- `services/gateway/src/routes/notifications.ts`
-- `services/gateway/src/routes/notifications-repository.ts`
 - `services/gateway/src/services/notification-service-repository.ts`
+- `services/gateway/src/services/push-routing.ts`
 - `services/gateway/test/mt-native-health/native-push-tenant.test.ts`
 
-- [ ] P1 Fetch device tokens by `user_id` only (drop the tenant filter on fetch).
-- [ ] P2 Derive each push's copy and deep link from the notification row's `tenant_id`, not the token's stored tenant.
+- [ ] P1 Add `fetchLiveDeviceTokensForUserAcrossTenants(sb, userId, opts?)` in `notification-service-repository.ts`
+      (identical to `fetchLiveDeviceTokensForUser:28` but WITHOUT `.eq('tenant_id', tenantId):41`); leave the
+      existing function UNCHANGED (round-1 F2 — it is shared by the legacy path).
+- [ ] P2 Route the native `tokenClass` pass (`push-routing.ts:177`) to the new variant only when `MT_RESOLUTION_V2`
+      is on; derive each push's copy and deep link from the notification row's `tenant_id` (`dispatchPush` arg,
+      `push-routing.ts:95`), not the token's stored tenant.
 - [ ] P3 Preserve the one-active-transport-per-device invariant (`appilix` | `native`); dark behind
-      `NATIVE_PUSH_DIRECT_ENABLED` (native) and `MT_RESOLUTION_V2` (per-tenant delivery).
+      `NATIVE_PUSH_DIRECT_ENABLED` (native) and `MT_RESOLUTION_V2` (across-tenant fetch).
 - [ ] P4 Contract test: ab_dual with one registered device receives a push from each tenant with that tenant's copy
-      and deep link.
+      and deep link; the legacy path (flag off) is unchanged.
 
 Acceptance: Vitest/contract green; token fetch is user-keyed; delivery copy/link follows the notification tenant;
 flags off preserve today's behaviour. depends_on health-home-tenant-db (shared resolved-tenant helper). The lane adds

@@ -61,7 +61,17 @@ is the tenancy layer those two programs consume.
 
 ## Log
 ### 2026-10-15T16:40Z · kiro-hotmail-202610151618-b437 · created → drafted
-Spec drafted by the hotmail Kiro seat as the WS9/WS10 tenancy contract. Premises re-verified against code at tip
-41482d70 (native app is Expo not Capacitor; health identity tenant-keyed; `health_home_tenant_id`/`healthDb`/
+Spec drafted by the hotmail Kiro seat as the WS9/WS10 tenancy contract. Premises re-verified against code
+(native app is Expo not Capacitor; health identity tenant-keyed; `health_home_tenant_id`/`healthDb`/
 `isHealthTable` absent). Pushed as a `plan(mt-native-health)` PR for PLAN-SPAR. Lanes are HELD (`next_actor: owner`
-in each lane) until PLAN-SPAR allocates the VTIDs. Next: PLAN-SPAR spars `plan.md`; the planner answers each round.
+in each lane) until PLAN-SPAR allocates the VTIDs.
+
+### 2026-10-18T21:40Z · kiro-hotmail-202610151618-b437 · answered sparring round-1
+Round-1 (session f554b163) returned 8 findings (2 blocker, 4 major, 2 minor); the earlier escalation was an infra
+throttle only (Bedrock daily-token limit) and is resolved. All 8 verified against code and ACCEPTED; answers in
+`sparring/responses-1.md`. Changes applied to `plan.md`/`tasks.md`/lanes: named `fetchLiveDeviceTokensForUser`
++ the new across-tenant variant and dropped the spurious native-push→health-home dependency (F2/F8); inventory
+generated-first + warning-until-conversions-clear (F5); local `HEALTH_TABLES` fallback for `isHealthTable()` (F3);
+backfill `RAISE EXCEPTION` guard self-enforcing membership canonicality (F6); program-doc §6 WS9 Capacitor→Expo
+correction + D17 + plan-body hash added to the DB lane (F4); vitana-v1 premises pin recorded (F1); notifications
+flag line numbers corrected to :25/:77 (F7). Next: PLAN-SPAR round-2 on the updated plan.
