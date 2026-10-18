@@ -3,9 +3,9 @@ slug: sparring-token-efficiency
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: kiro
+next_actor: claude
 state: drafted
-updated: 2026-10-18T22:12Z
+updated: 2026-10-18T22:20Z
 ---
 # Handoff — sparring-token-efficiency
 
@@ -40,3 +40,6 @@ Corrections built into the plan:
 
 Pushed as a `plan(` PR for PLAN-SPAR. No VTID was allocated by this session. Next: PLAN-SPAR round 1; this seat
 answers the rounds in `sparring/responses-<n>.md`.
+
+### 2026-10-18T22:20Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
