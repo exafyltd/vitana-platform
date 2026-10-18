@@ -3,15 +3,15 @@
 Authoritative plan: `plan.md`. Lane files: `lanes/`. VTID: allocated by PLAN-SPAR after approval.
 
 <!-- lane: messaging-send-db -->
-## messaging-send-db — scope column, send/connection RPCs, client-write revokes (VTID: allocated by PLAN-SPAR, Kiro, repo vitana-platform)
+## messaging-send-db — chat_messages scope, send RPCs, RLS lockdown (VTID: allocated by PLAN-SPAR, Kiro, repo vitana-platform)
 
 Allowed paths: `supabase/migrations/20261101050***_*.sql`, `docs/multitenancy/MIGRATION-QUEUE.md`, `scripts/ci/migration-drift-baseline.json`, `services/gateway/test/mt-network-messaging-send-db.pgtap.test.ts`
 
-- [ ] 1 Expand/contract migration: add `chat_messages.scope` CHECK `('community','network')`, `DEFAULT 'community'`, backfill, drop default; add `global_community_profiles.messaging_preference` + `message_first_contact_log`.
+- [ ] 1 Expand/contract migration: add `chat_messages.scope` CHECK `('community','network')`, `DEFAULT 'community'`, backfill, drop default. (`messaging_preference` moved to `network-visibility-db`.)
 - [ ] 2 `send_message()` / `send_message_as()` SECURITY DEFINER with the §4.11 community/network checks; `send_message_as` EXECUTE to `service_role` only.
-- [ ] 3 Revoke client INSERT on `chat_messages`/`global_messages`; revoke client INSERT/UPDATE on `connection_requests`; add `request_connection()`/`respond_connection()`.
+- [ ] 3 DROP the catch-all `service_role_manage_chat` policy (R1-F3) and replace with narrow SELECT + `read_at`-UPDATE policies; revoke the authenticated client INSERT on `chat_messages`. (The `connection_requests`/`global_messages` revokes moved to the v1 lanes.)
 - [ ] 4 Rollback migration under `docs/validation/<vtid>/` + read-only pre/post checks; MIGRATION-QUEUE rows in position; drift-baseline entries for not-yet-live objects.
-- [ ] 5 pgTAP: bare client INSERT fails; self-inserted `accepted` fails; network send/request to a "nobody" or non-`network_visible` recipient fails; community send without a shared tenant fails.
+- [ ] 5 pgTAP: a bare authenticated client INSERT fails; a direct service-role INSERT fails after the policy drop; a `send_message` to a "nobody"/non-`network_visible` recipient fails; a community send without a shared tenant fails.
 
 Acceptance: pgTAP green locally; migration files lint; MIGRATION-QUEUE updated in the same PR; rollback present. Kiro never applies the migration — Claude applies via RUN-MIGRATION after merge.
 
@@ -20,7 +20,7 @@ Acceptance: pgTAP green locally; migration files lint; MIGRATION-QUEUE updated i
 
 Allowed paths: `services/gateway/src/routes/chat.ts`, `services/gateway/src/routes/chat-repository.ts`, `services/gateway/src/services/orb-tools-shared.ts`, `services/gateway/src/services/intents-share-repository.ts`, `services/gateway/src/services/chat-groups-repository.ts`, `services/gateway/src/services/upstream-message-handler-repository.ts`, `services/gateway/src/services/chat-writer-inventory.ts`, `services/gateway/test/mt-network-messaging-send-gateway.test.ts`, `services/gateway/test/mt-network-chat-writer-lint.test.ts`
 
-- [ ] 1 Rewrite `/send` (`chat.ts:58`) to call `send_message()` with a per-request user-JWT client (not service role).
+- [ ] 1 Rewrite `/send` (`chat.ts:54`) to call `send_message()` with a per-request user-JWT client (not service role).
 - [ ] 2 Route ORB voice send/share-link, intent share, gateway group send and the ORB live bridge through `send_message_as(req.identity.user_id, …)`.
 - [ ] 3 Thread identity `(scope, tenant_id if community, peer)` in the recent-conversations path.
 - [ ] 4 Generated writer inventory + lint test: `chat_messages`/`global_messages` inserts only inside the two RPCs plus the system-writer allowlist (`/vitana-reply` `chat.ts:281`, welcome-chat, notification bots), all `scope='community'`.
@@ -29,16 +29,17 @@ Allowed paths: `services/gateway/src/routes/chat.ts`, `services/gateway/src/rout
 Acceptance: `npm test` (gateway) green incl. writer lint; `npm run test:support` green; dark behind `mt.network_enabled`.
 
 <!-- lane: network-visibility-db -->
-## network-visibility-db — network_visible column + rule-45 trigger (VTID: allocated by PLAN-SPAR, Kiro, repo vitana-platform)
+## network-visibility-db — network_visible + connection RPCs (VTID: allocated by PLAN-SPAR, Kiro, repo vitana-v1)
 
-Allowed paths: `supabase/migrations/20261101051***_*.sql`, `docs/multitenancy/MIGRATION-QUEUE.md`, `scripts/ci/migration-drift-baseline.json`, `services/gateway/test/mt-network-visibility-db.pgtap.test.ts`
+Allowed paths: `supabase/migrations/20261101051***_*.sql`, `supabase/tests/mt-network-visibility-db.pgtap.sql`
 
-- [ ] 1 Add `global_community_profiles.network_visible boolean NOT NULL DEFAULT false` + `network_visible_decided_at`.
-- [ ] 2 BEFORE INSERT/UPDATE trigger forcing `network_visible=false` for `service_bot_accounts`/`notification_test_actors`/`platform_only_accounts` (rules 43–45).
-- [ ] 3 Backfill existing rows false; rollback migration + pre/post checks; MIGRATION-QUEUE row.
-- [ ] 4 pgTAP: a rule-45 actor cannot be set `network_visible=true`.
+- [ ] 1 Add `global_community_profiles.network_visible boolean NOT NULL DEFAULT false` + `network_visible_decided_at` + `messaging_preference` (everyone/connections/nobody, default connections). (v1 table, R1-F5.)
+- [ ] 2 BEFORE INSERT/UPDATE trigger forcing `network_visible=false` for `service_bot_accounts`/`notification_test_actors`/`platform_only_accounts` (rules 43–45); backfill existing rows false.
+- [ ] 3 Revoke client INSERT/UPDATE on `connection_requests` (v1 table); add SECURITY DEFINER `request_connection()`/`respond_connection()` (caller bound to `auth.uid()`, only recipient sets `accepted`, network request requires `network_visible` + preference ≠ nobody + no block + rate limit, `message` capped and dropped for network).
+- [ ] 4 Rollback migration + read-only pre/post checks in the PR; note the platform MIGRATION-QUEUE position in the PR body (queue row is a platform-side follow-up, not this v1 PR).
+- [ ] 5 pgTAP: a rule-45 actor cannot be set `network_visible=true`; a self-inserted `accepted` connection fails; a network `request_connection` to a non-`network_visible`/"nobody" recipient fails.
 
-Acceptance: pgTAP green; migration lints; queue updated; rollback present.
+Acceptance: pgTAP green; migration lints; rollback present; queue position noted for the platform follow-up.
 
 <!-- lane: messenger-wiring -->
 ## messenger-wiring — fix inverted labels, scope wiring, one-time prompt (VTID: allocated by PLAN-SPAR, Kiro, repo vitana-v1)
@@ -54,28 +55,28 @@ Allowed paths: `src/pages/Messages.tsx`, `src/hooks/useGlobalMessages.ts`, `src/
 Acceptance: `npx vitest run` green; ESLint (i18n + design) clean on new/changed files; dark behind `mt.network_enabled`.
 
 <!-- lane: legacy-messages-migration-db -->
-## legacy-messages-migration-db — migrate & retire legacy message tables (VTID: allocated by PLAN-SPAR, Kiro, repo vitana-platform)
+## legacy-messages-migration-db — migrate & retire legacy message tables (VTID: allocated by PLAN-SPAR, Kiro, repo vitana-v1)
 
-Allowed paths: `supabase/migrations/20261101052***_*.sql`, `docs/multitenancy/MIGRATION-QUEUE.md`, `scripts/ci/migration-drift-baseline.json`, `services/gateway/test/mt-network-legacy-migration.pgtap.test.ts`
+Allowed paths: `supabase/migrations/20261101052***_*.sql`, `supabase/tests/mt-network-legacy-migration.pgtap.sql`
 
-- [ ] 1 Snapshot `bak_messages`/`bak_message_threads`/`bak_global_message_threads`/`bak_global_messages` (retain 30 days).
-- [ ] 2 Migrate `messages`/`message_threads` into `chat_messages` with `scope` per D15; freeze + migrate `global_message_threads`/`global_messages` into `chat_groups`.
-- [ ] 3 Drop the legacy tables; rollback restores from `bak_*`; pre/post row-count checks; MIGRATION-QUEUE row.
+- [ ] 1 Snapshot `bak_messages`/`bak_message_threads`/`bak_global_message_threads`/`bak_global_messages` (retain 30 days). (All source tables are v1, R1-F4.)
+- [ ] 2 Freeze + migrate `messages`/`message_threads` into `chat_messages` with `scope` per D15; migrate `global_message_threads`/`global_messages` into `chat_groups` (platform targets in the same Supabase project).
+- [ ] 3 Drop the legacy tables; rollback restores from `bak_*`; read-only pre/post row-count checks in the PR; note the platform MIGRATION-QUEUE position in the PR body (platform follow-up).
 - [ ] 4 pgTAP on the shared-tenant→community / else→network mapping.
 
-Acceptance: pgTAP green; migration lints; queue updated; rollback restores exact counts. Depends on messaging-send-db (scope column) and network-visibility-db.
+Acceptance: pgTAP green; migration lints; rollback restores exact counts; queue position noted. Depends on messaging-send-db (platform `chat_messages.scope`) and network-visibility-db.
 
 <!-- lane: matching-intent-scope-db -->
-## matching-intent-scope-db — daily_matches/intent scope + Vitana Index removal (VTID: allocated by PLAN-SPAR, Kiro, repo vitana-platform)
+## matching-intent-scope-db — daily_matches/intent scope + Vitana Index removal (VTID: allocated by PLAN-SPAR, Kiro, repo vitana-v1)
 
-Allowed paths: `supabase/migrations/20261101053***_*.sql`, `docs/multitenancy/MIGRATION-QUEUE.md`, `scripts/ci/migration-drift-baseline.json`, `services/gateway/test/mt-network-matching-scope.pgtap.test.ts`
+Allowed paths: `supabase/migrations/20261101053***_*.sql`, `supabase/tests/mt-network-matching-scope.pgtap.sql`
 
-- [ ] 1 Add `daily_matches.scope` (+ tenant context) and backfill per D15.
-- [ ] 2 Intent matchers default `'public'` → caller scope; `community`→tenant branch, `network`→public restricted to `network_visible`; add a scope param to `resolve_recipient_candidates`.
-- [ ] 3 Remove Vitana Index inputs from matching; `match_reasons` carries no health-derived code (D25); register the matchers in the lineage-guard inventory.
-- [ ] 4 Rollback + pre/post checks; MIGRATION-QUEUE row; pgTAP + a `match_reasons` no-health-code test.
+- [ ] 1 Add `daily_matches.scope` (+ tenant context) and backfill per D15, respecting the existing unique key `(tenant_id,user_id,match_date,match_type,target_id)`. (v1 `daily_matches` `20251111124306`, not platform `matches_daily` — R1-F1/F2.)
+- [ ] 2 Intent matchers (`compute_intent_matches`, v1 `20260501*`) `p_visibility` default `'public'` → caller scope; `community`→tenant branch, `network`→public restricted to `network_visible`. (`resolve_recipient_candidates` scope lives in `orb-recipient-scope-gateway`.)
+- [ ] 3 Remove Vitana Index inputs from matching; `daily_matches.match_reasons` carries no health-derived code (D25); register the v1 recompute (`generate-daily-matches`) + intent matchers in the lineage-guard inventory.
+- [ ] 4 Rollback + read-only pre/post checks in the PR; pgTAP + a `match_reasons` no-health-code test; note the platform MIGRATION-QUEUE position in the PR body (platform follow-up).
 
-Acceptance: pgTAP green; migration lints; queue updated; rollback present. Depends on network-visibility-db.
+Acceptance: pgTAP green; migration lints; rollback present; queue position noted. Depends on network-visibility-db.
 
 <!-- lane: orb-recipient-scope-gateway -->
 ## orb-recipient-scope-gateway — ORB recipient/search scope (VTID: allocated by PLAN-SPAR, Kiro, repo vitana-platform)
