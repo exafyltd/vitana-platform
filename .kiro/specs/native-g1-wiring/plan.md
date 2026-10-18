@@ -8,12 +8,23 @@ Author: Kiro, seat `exafyltd`. Repo: `exafyltd/vitana-v1` (native app `apps/mobi
 Point dev/QA native builds at the G1 test backend via per-profile env + build profiles, and prove the
 Wave 1 exit path — a signed-in member navigates the full shell, receives a push and opens its deep link —
 on both platforms. Because the G1 isolated test backend is an owner-only gate that **does not exist yet**
-(`docs/programs/native-app/NATIVE-APP-PLAN.md:95` §2a; `.kiro/specs/health-native/handoff.md:52`
-"Waiting on the owner" #4), the exit criterion of this plan is the env/profile scaffolding **plus** a
-local **fixture-gateway** smoke that proves that path offline. The one step that points a build at the
-**real** G1 is gated on the owner (`real-g1-switch`, `next_actor: owner`) and never points any build at
-production or staging (both share the production database — root `CLAUDE.md` "Why no host is exempt";
-`apps/mobile/src/config/env.ts:9`).
+(`vitana-v1:docs/programs/native-app/NATIVE-APP-PLAN.md:95` §2a;
+`vitana-platform:.kiro/specs/health-native/handoff.md:52` "Waiting on the owner" #4), the exit criterion
+of this plan is the env/profile scaffolding **plus** a local **fixture-gateway** smoke that proves that
+path offline. The one step that points a build at the **real** G1 is gated on the owner
+(`real-g1-switch`, `next_actor: owner`) and never points any build at production or staging (both share
+the production database — `vitana-platform:CLAUDE.md` rule 31 (VTID-03506): "There is exactly one
+Supabase project and every frontend (incl. preview/staging) writes to it";
+`vitana-v1:apps/mobile/src/config/env.ts:9`).
+
+> **Repo note (R1-F1, R1-F2).** Every unqualified `file:line` in this plan is in **vitana-v1** unless
+> prefixed `vitana-platform:`. This spec was authored into `vitana-platform` so PLAN-SPAR could fire, but
+> the native code it premises on lives in `vitana-v1`, so the sparring partner cannot read those paths
+> from a platform-only session. Resolving R1-F1 requires a governance change owned by Claude Code: either
+> add `vitana-v1` as a pinned second checkout / `extra_ref` in `PLAN-SPAR.yml` so the partner can verify
+> native `file:line` claims, or relocate this spec to `vitana-v1` and have the sparring call pass a
+> vitana-v1 ref. Until that lands, the native `file:line` citations below are stated by the planner from a
+> real read of vitana-v1 `origin/main` but are not independently partner-verifiable.
 
 ## Measured state (origin/main, worktree `nat-g1-wiring-plan`)
 - Parity ledger `apps/mobile/parity/ledger.json` v2: **435 route rows** — 428 `not_started`, 5
@@ -53,20 +64,39 @@ production or staging (both share the production database — root `CLAUDE.md` "
    a dev-only fixture; the parity ledger, `screens.json`, `exclusions.json` and `screen-manifest` are
    untouched. If any lane needed a member-visible route it would add all four in that PR; none does.
 7. **File ownership:** every file this plan touches belongs to exactly one lane (disjoint `paths`,
-   `design.md §1`); only `build-profiles` touches a governance path (`.github/**`) and is therefore
-   `executor: claude`, `reviewer_seat: claude` (collaboration §3a). All other lanes are `executor: kiro`,
-   `seat: exafyltd`, `reviewer_seat: hotmail`.
+   `design.md §1`); only `native-ci-workflow` touches a governance path
+   (`vitana-platform:.github/workflows/NATIVE-CI.yml`) and is therefore `executor: claude`,
+   `reviewer_seat: claude` (collaboration §3a). All other lanes are `executor: kiro`, `seat: exafyltd`,
+   `reviewer_seat: hotmail`.
+8. **A new `NATIVE-CI.yml`, not an extension of `MOBILE-DEVICE-E2E.yml`** (R1-F6). The existing
+   `vitana-platform:.github/workflows/MOBILE-DEVICE-E2E.yml` runs the **web** frontend in an iOS Simulator
+   via Safari / the accessibility tree — a different concern from bundling the **native Expo** JS. The new
+   `NATIVE-CI.yml` is `workflow_dispatch`-only (and native-path push), so it adds no automatic macOS-runner
+   cost and does not overlap `MOBILE-DEVICE-E2E.yml`'s triggers.
 
 ## Lanes (all `ready`; no `vtid` until CI assigns it)
 | Lane | Executor / seat → reviewer | Scope | depends_on | next_actor |
 |---|---|---|---|---|
-| `env-profiles` | kiro / exafyltd → hotmail | `src/config/env.ts`, `env/**`, `tests/env*` | — | kiro |
-| `build-profiles` | **claude** / — → claude | `eas.json`, `.github/workflows/NATIVE-CI.yml` | env-profiles | claude |
-| `fixture-gateway` | kiro / exafyltd → hotmail | `tools/fixture-gateway/**`, `tests/fixture-gateway/**` | — | kiro |
-| `deep-link-push-smoke` | kiro / exafyltd → hotmail | `tests/g1-smoke/**`, `src/push/g1-test-provider.ts` | env-profiles, fixture-gateway | kiro |
-| `real-g1-switch` | kiro / exafyltd → hotmail | `env/test-g1.g1.example.json`, `docs/validation/g1/**` | deep-link-push-smoke | **owner** |
-All `paths` are under `apps/mobile/**` except `build-profiles` (`.github/**`) and `real-g1-switch`
-(`docs/validation/g1/**`). A self-check confirms no file is in two lanes and no in-scope file is orphaned.
+| `env-profiles` | kiro / exafyltd → hotmail | `apps/mobile/src/config/env.ts`, `apps/mobile/env/**`, `apps/mobile/tests/env*` | — | kiro |
+| `eas-profiles` | kiro / exafyltd → hotmail | `apps/mobile/eas.json` | env-profiles | kiro |
+| `native-ci-workflow` | **claude** / — → claude | `.github/workflows/NATIVE-CI.yml` (vitana-platform) | eas-profiles | claude |
+| `fixture-gateway` | kiro / exafyltd → hotmail | `tools/fixture-gateway/**`, `tests/fixture-gateway/**` (vitana-v1 repo root) | — | kiro |
+| `deep-link-push-smoke` | kiro / exafyltd → hotmail | `apps/mobile/tests/g1-smoke/**`, `apps/mobile/src/push/g1-test-provider.ts` | env-profiles, fixture-gateway | kiro |
+| `real-g1-switch` | kiro / exafyltd → hotmail | `apps/mobile/env/test-g1.g1.example.json`, `docs/validation/g1/**` | deep-link-push-smoke | **owner** |
+
+Path ownership (R1-F3, R1-F4): no file is in two lanes and no in-scope file is orphaned. Paths that are
+**not** under `apps/mobile/**`, listed explicitly:
+- `fixture-gateway`: `tools/fixture-gateway/**`, `tests/fixture-gateway/**` are at the **vitana-v1 repo
+  root** (mirroring `tools/orb-fake-gateway/`), not inside `apps/mobile/`.
+- `deep-link-push-smoke`: its tests live under `apps/mobile/tests/g1-smoke/**` (inside `apps/mobile/`).
+- `native-ci-workflow`: `.github/workflows/NATIVE-CI.yml` is in **vitana-platform** (governance path →
+  `executor: claude`).
+- `real-g1-switch`: `docs/validation/g1/**` (vitana-v1 repo root).
+
+**`build-profiles` is split into two lanes (R1-F4):** a cross-repo lane is illegal (one `branch:`/`pr:`
+per lane). `eas-profiles` (`executor: kiro`, vitana-v1, `apps/mobile/eas.json`) and `native-ci-workflow`
+(`executor: claude`, vitana-platform, `.github/workflows/NATIVE-CI.yml`) each get their own branch/PR/VTID;
+`native-ci-workflow` depends on `eas-profiles`, which depends on `env-profiles`.
 
 ## Test plan
 - Per lane (from `apps/mobile`): `npm ci`, `npm test` (jest-expo + RN Testing Library), `npm run
@@ -85,7 +115,8 @@ All `paths` are under `apps/mobile/**` except `build-profiles` (`.github/**`) an
   **real** G1 (both platforms) recorded in `docs/validation/g1/`.
 - Each lane adds read-only `docs/validation/<VTID>/{scope.json,staging-tests.json,plan-sparring.md}`; no
   suite ever targets production or staging; staging specs read-only (program §6,
-  `NATIVE-APP-PLAN.md:233`). No What's New entry (configuration/test work, no new finished feature).
+  `vitana-v1:docs/programs/native-app/NATIVE-APP-PLAN.md:233`). No What's New entry (configuration/test
+  work, no new finished feature).
 
 ## Open owner items (not decided here)
 - Provisioning G1 itself (owner, program §2a / handoff #4) — unblocks `real-g1-switch`.
