@@ -16,8 +16,10 @@ updated: 2026-10-15T16:40Z
 
 Plan: `.kiro/specs/mt-m3/plan.md`; tasks H1–H4 in `tasks.md`; design in `design.md`. Adds a host arm that resolves
 `req.hostname` through `resolve_tenant(host,…)` before the slug/claim arms (context only; data still needs `is_member`;
-host tenant ≠ member → the existing join posture). Dark behind `MT_RESOLUTION_V2`. Depends on `tenant-domains-db`
-(the table + the host arg must exist first). The lane adds its own `docs/validation/<vtid>/`.
+host tenant ≠ member → the existing join posture). Adds `'host'` to the `TenantSource` union (`tenant-context.ts:22`)
+and updates every consumer (`auth-supabase-jwt.ts:35,579,607,617`) so TypeScript still compiles. Dark behind
+`MT_RESOLUTION_V2`. Depends on `tenant-domains-db` (the table + the host arg must exist first). The lane adds its own
+`docs/validation/<vtid>/`.
 
 Rules (collaboration §7a): no VTID allocation, no `_plan` claim, no `handoff.md` edit, no merge/approve/deploy/dispatch,
 no Supabase/AWS writes. Work only inside the allowed paths. Branch `kiro/mt-m3/host-resolution-gw`; PR title

@@ -24,8 +24,10 @@ Allowed paths: `supabase/migrations/20261101140000_vtid_*_mt_tenant_domains.sql`
       resolves a VERIFIED host, falls back to slug, rejects a reserved-slug host; an UNVERIFIED host (`verified_at IS
       NULL`) and a host on an INACTIVE or PLATFORM tenant BOTH resolve empty; the returned column set and the slug-only
       behaviour are pinned.
-- [ ] D4 MIGRATION-QUEUE rows after mt-tenant-admin's `070600`; add `tenant_domains` to `migration-drift-baseline.json`,
-      note its removal in the post-apply PR. Read-only pre/post check SQL in `docs/validation/<vtid>/`.
+- [ ] D4 MIGRATION-QUEUE rows appended after the current live last row (today row 8 `20261014000700`), + an mt-m3
+      header range note `20261101140000–145959`; the `1101140000+` range sorts after any mt-tenant-admin `070xxx` rows
+      so no re-position is needed. Add `tenant_domains` to `migration-drift-baseline.json`, note its removal in the
+      post-apply PR. Read-only pre/post check SQL in `docs/validation/<vtid>/`.
 
 Acceptance: expand-only; rollbacks + pre/post checks; QUEUE rows; pgTAP green. No Supabase/AWS writes. PR title
 `VTID-xxxxx (mt-m3/tenant-domains-db): …`; commits carry `Collab-Session` / `Collab-Lane: mt-m3/tenant-domains-db`.
@@ -38,7 +40,9 @@ Allowed paths: `services/gateway/src/services/tenancy/tenant-context.ts`,
 also creates `docs/validation/<vtid>/`.
 
 - [ ] H1 Add a host arm: resolve `req.hostname` through `resolve_tenant(host,…)` BEFORE the slug/claim arms; sets context
-      only. Dark behind `MT_RESOLUTION_V2`.
+      only. Add `'host'` to the `TenantSource` union (`tenant-context.ts:22`) and update every consumer so TS compiles
+      (`auth-supabase-jwt.ts:35,579,607,617` — `PrimaryTenantOutcome`, `tokenTenantOrigin`, the `source` param). Dark
+      behind `MT_RESOLUTION_V2`.
 - [ ] H2 Membership still required for data: host tenant ≠ member → the existing join posture, never a silent default.
 - [ ] H3 Jest/Vitest: host arm precedence; no data without membership (contract test); flag-off path byte-identical to
       today. `npm run test:support` + `npm run test:operator` stay green if touched.
@@ -96,10 +100,14 @@ Allowed paths: `supabase/migrations/20261101141000_vtid_*_mt_provision_erp_reque
 `docs/validation/<vtid>/`.
 
 - [ ] E1 `20261101141000` extend `provision_tenant()` to idempotently record the ERP bootstrap request
-      (`tenant_settings.feature_flags.erp.bootstrap_requested`); every existing assertion still holds.
+      (`tenant_settings.feature_flags.erp.bootstrap_requested`). Because the `tenant_settings` INSERT is `ON CONFLICT
+      (tenant_id) DO NOTHING`, add a guarded `UPDATE ... jsonb_set(feature_flags,'{erp,bootstrap_requested}','true',true)
+      WHERE tenant_id = v_tid AND NOT (feature_flags #> '{erp,bootstrap_requested}' = 'true')` AFTER the INSERT so an
+      already-provisioned re-run still records it; every existing assertion still holds.
 - [ ] E2 `20261101141100` `ci_tenant_isolation_health_by_tenant()` — the existing counts grouped per tenant, summing to
       `ci_tenant_isolation_health()`; the latter unchanged.
-- [ ] E3 pgTAP: ERP request idempotent + existing provision assertions; per-tenant counts sum to the global function.
+- [ ] E3 pgTAP: ERP request idempotent (assert the flag is set on BOTH first-run and a re-run on an
+      already-provisioned tenant) + existing provision assertions; per-tenant counts sum to the global function.
 - [ ] E4 MIGRATION-QUEUE rows after `tenant-domains-db`; drift-baseline maintenance around apply; read-only pre/post
       checks in `docs/validation/<vtid>/`.
 

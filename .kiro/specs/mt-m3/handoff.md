@@ -3,9 +3,9 @@ slug: mt-m3
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: claude
+next_actor: kiro
 state: drafted
-updated: 2026-10-17T19:36Z
+updated: 2026-10-17T20:10Z
 ---
 # Handoff — mt-m3 (M3 generally provisionable; program `docs/MULTI-TENANT-PLAN.md` v5.1 §6/§7)
 
@@ -73,3 +73,16 @@ The sparring partner could not review (model_unavailable). Not a plan problem: C
 
 ### 2026-10-17T19:36Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-17T20:10Z · kiro-hotmail-202610151618-b437 · answered round-1 (still drafted)
+Sparring round-1 came back `in_progress` with 4 findings (2 major, 2 minor); all ACCEPTED and fixed after re-verifying
+each premise against `origin/main` and the concurrent plan branches (`responses-1.md`):
+- **R1-F1 (major)** mt-tenant-admin is a concurrent, unmerged sibling plan branch (`kiro/mt-tenant-admin/plan`), not a
+  merged artifact. Problem #7 + Depends-on reframed: runbook references the O2 RPCs by signature only, degrades to a TODO.
+- **R1-F2 (major)** live MIGRATION-QUEUE ends at row 8 with no mt-tenant-admin/0701xx rows. ## Migrations + tasks.md D4
+  now append after the live last row with an mt-m3 range note; mt-m3's `1101140000+` range sorts after any `070xxx`.
+- **R1-F3 (minor)** `host-resolution-gw` now extends the `TenantSource` union with `'host'` and audits the consumers at
+  `auth-supabase-jwt.ts:35,579,607,617` (plan Fix #2, tasks H1, lane body).
+- **R1-F4 (minor)** `provision_tenant`'s `ON CONFLICT DO NOTHING` would drop a feature_flags ERP flag on re-run; a
+  guarded `jsonb_set` UPDATE after the INSERT + a both-paths pgTAP assertion added (plan Fix #5, tasks E1/E3, lane body).
+Plan body trimmed back under ~15k chars; markers + change_class intact. Re-pushed `kiro/mt-m3/plan`; next round starts.
