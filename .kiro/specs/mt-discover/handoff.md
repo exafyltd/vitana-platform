@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-15T16:50Z
+updated: 2026-10-15T17:05Z
 ---
 # Handoff — mt-discover (Commerce & Discover × tenancy, WS11 + Discover scope of §4.11)
 
@@ -135,3 +135,25 @@ post-purchase commission read. Updated plan Problem 2 and tasks P2 (moved it fro
 FULFILMENT list with the by-merchant_id rationale). No lane-path change (the file is already in
 `discover-shared-predicate`'s paths and the lane body describes classes generically, not per-file). queue.mjs
 validators re-run on handoff.md + all 4 lanes: 0 errors.
+
+### 2026-10-15T17:05Z · kiro-hotmail-202610151618-b437 · sparring round-1 fixes (drafted)
+Answered the three findings of partner session `9ba4ff16` (s2-round-1.md), all ACCEPTED after verifying each premise
+at file:line, in `sparring/s2-responses-1.md`:
+(1) **R1-F1 [blocker].** `fetchProductsByIds` (`shop-feed-repository.ts:32`) is dual-use — the module comment at
+`:31` states it serves BOTH video-anchor hydration (a discovery surface) AND saved-products hydration. The single
+"fulfilment → unfiltered" stamp left anchor-surfaced products tenant-ungated (a T_A-only supplier would reach T_B via
+a shop video). Split the two call sites: anchor path = DISCOVERY (predicate-gated), saved-products = FULFILMENT. Plan
+Problem 2 + Fix + Tests, tasks P2/P5, lane body updated.
+(2) **R1-F2 [major].** The "dual enforcement (RLS + predicate)" risk was false: `products_select`/`merchants_select`
+(`...foundation.sql:729/:735`) gate only `is_active = TRUE` (no tenant term) and products reads use the service-role
+client (RLS bypassed). Made RLS a real backstop: the DB lane's 4th migration now replaces those policies with
+tenant-scoped ones (active `supplier_tenant_relationships` for `current_tenant_id()`, or `distribution='network'`),
+flag-guarded/inert for Maxina; stated the predicate is fail-closed and the sole layer for service-role reads. Plan
+Risks + DB Fix + Migrations + Tests, tasks D4/D6, lane `supplier-relationships-db` path+body updated.
+(3) **R1-F3 [major].** `product_orders` already has `tenant_id UUID NOT NULL`
+(`20260416120000_vtid_02000_marketplace_foundation.sql`), the buyer's tenant, filtered in
+`health-action-initiative-repository.ts:71` / `admin-scanners/marketplace-repository.ts:42`. A new nullable
+`buyer_tenant_id` would be NULL for all orders until a write path existed (silent-fallback). Dropped the column; D26
+reuses the existing `tenant_id` (extend `fetchProductOrderForCommission` `credit-recommender-repository.ts:28` to
+select it, in `supplier-onboarding-communities` S4). Plan Problem 8 + Fix + Migrations + Tests, tasks D4/S4 updated.
+queue.mjs validators re-run on handoff.md + all 4 lanes: 0 errors.

@@ -10,11 +10,11 @@ paths:
   - supabase/migrations/20261101120000_*_supplier_tenant_relationships.sql
   - supabase/migrations/20261101120100_*_products_distribution.sql
   - supabase/migrations/20261101120200_*_partner_tenant_backfill.sql
-  - supabase/migrations/20261101120300_*_referral_tenant_attribution.sql
+  - supabase/migrations/20261101120300_*_products_merchants_tenant_rls.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
   - services/gateway/test/vtid-*-supplier-tenant-relationships.test.ts
-updated: 2026-10-15T16:40Z
+updated: 2026-10-15T17:05Z
 ---
 # supplier-relationships-db — tenant↔supplier + offering distribution (VTID allocated by PLAN-SPAR, repo vitana-platform)
 
@@ -44,3 +44,12 @@ Created, HELD at `next_actor: owner`. DB lane: `supplier_tenant_relationships`, 
 `partner_tenant.tenant_id` backfill, referral attribution column. Split from the gateway code lanes per §4.7.
 Start by claiming (`node scripts/collab/queue.mjs claim mt-discover/supplier-relationships-db --session <id>
 --repo <vitana-platform>`) once PLAN-SPAR has set the VTID and `executing`.
+
+### 2026-10-15T17:05Z · kiro-hotmail-202610151618-b437 · sparring round-1 fixes (ready)
+Round-1 findings R1-F2/R1-F3 (session `9ba4ff16`). The 4th migration is no longer a `product_orders.buyer_tenant_id`
+column: D26 reuses the existing `product_orders.tenant_id UUID NOT NULL`
+(`20260416120000_vtid_02000_marketplace_foundation.sql`), so the new column (NULL for all historical/new orders,
+silent-fallback risk) is dropped (R1-F3). The 4th migration is now
+`20261101120300_*_products_merchants_tenant_rls.sql`: it replaces `products_select`/`merchants_select` (today
+`is_active = TRUE` only, `...foundation.sql:729/:735`) with tenant-scoped policies so RLS is a genuine backstop for
+user-JWT reads (R1-F2), flag-guarded (inert for Maxina, D7). Path + task D4/D6 updated to match.

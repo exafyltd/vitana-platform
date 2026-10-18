@@ -10,7 +10,7 @@ Allowed paths:
 `supabase/migrations/20261101120000_*_supplier_tenant_relationships.sql`,
 `supabase/migrations/20261101120100_*_products_distribution.sql`,
 `supabase/migrations/20261101120200_*_partner_tenant_backfill.sql`,
-`supabase/migrations/20261101120300_*_referral_tenant_attribution.sql`,
+`supabase/migrations/20261101120300_*_products_merchants_tenant_rls.sql`,
 `docs/multitenancy/MIGRATION-QUEUE.md`,
 `scripts/ci/migration-drift-baseline.json`,
 `services/gateway/test/vtid-*-supplier-tenant-relationships.test.ts`
@@ -19,11 +19,16 @@ Allowed paths:
       seed for existing network merchants (D7); expand only.
 - [ ] D2 `products.distribution` column (expand/contract: DEFAULT 'community' → backfill → drop default), CHECK.
 - [ ] D3 `partner_tenant.tenant_id` free-text → UUID/NULL backfill; snapshot `bak_*` first; unresolvable → NULL.
-- [ ] D4 `ALTER TABLE product_orders ADD COLUMN buyer_tenant_id uuid` (nullable, expand-only, no default) — the
-      commission-attribution row (`credit-recommender-repository.ts:28`); added dark, read by S4 only.
+- [ ] D4 Replace `products_select`/`merchants_select` RLS (`...foundation.sql:729/:735`, today `is_active = TRUE`
+      only) with tenant-scoped policies (`is_active AND (distribution='network' OR EXISTS active
+      supplier_tenant_relationships for current_tenant_id())`), flag-guarded so inert for Maxina (R1-F2). NO
+      `product_orders` column — D26 reuses the existing `product_orders.tenant_id` (R1-F3); `credit-recommender`
+      selecting it is the `supplier-onboarding-communities` S4 code change, not a DB task.
 - [ ] D5 rollback files, `live-before.sql`/`post-apply-checks.sql`, `lock_timeout`+retries, MIGRATION-QUEUE rows at
       the WS11 position (depends on A-M1 `is_default`/`is_platform` + mt-identity classification), drift-baseline add.
-- [ ] D6 pgTAP: RLS (T_B member reads 0 T_A rows), `distribution` CHECK, Maxina-only seed.
+- [ ] D6 pgTAP: `supplier_tenant_relationships` RLS (T_B member reads 0 T_A rows), `distribution` CHECK, Maxina-only
+      seed, and the new tenant-scoped `products`/`merchants` RLS (T_B user-JWT read sees 0 T_A-only supplier rows; a
+      `network` product visible to both; flag off → Maxina sees all) (R1-F2).
 
 Acceptance: pgTAP green; migrations lint clean; queue rows + rollback present; drift-baseline updated; adds its own
 `docs/validation/<vtid>/`. Executor never applies the migration — Claude does via RUN-MIGRATION after merge.
@@ -83,8 +88,12 @@ Allowed paths:
       `gemini-operator-repository.ts` (operator search :39, fetchDiscoverFeed :62),
       `intent-matcher-repository.ts:32`,
       `recommendation-engine/analyzers/marketplace-analyzer-repository.ts:40`,
-      `shopping-agent/agent-core-repository.ts:27`.
-      **FULFILMENT (by-id hydration, unfiltered + `// discover-inventory: fulfilment`):** `shop-feed-repository.ts:32`,
+      `shopping-agent/agent-core-repository.ts:27`, and the **video-anchor call site** of
+      `shop-feed-repository.ts:32 fetchProductsByIds` (R1-F1: the module comment at :31 marks it reused for BOTH
+      anchor-hydration AND saved-products hydration — the anchor path is a discovery surface, split into its own
+      function/annotated call site and routed through the predicate).
+      **FULFILMENT (by-id hydration, unfiltered + `// discover-inventory: fulfilment`):** the **saved-products call
+      site** of `shop-feed-repository.ts:32` (the other half of the R1-F1 split),
       `cart-checkout-tools-repository.ts:36,:41` (not :45 searchActiveProductsByTitle — that is DISCOVERY),
       `checkout-service-repository.ts:42`, `health-action-initiative-repository.ts:81`,
       `universal-cart-context-repository.ts:45`, `shopping-agent/reorder-core-repository.ts:24`,
@@ -112,8 +121,9 @@ Allowed paths:
       (a bypassing discovery reader fails; an unannotated fulfilment reader fails; an unclassified admin/ingestion
       reader fails); per-query lineage guard (fails on
       a health_* read in the SAME query as a products read; PASSES a mixed file whose health read is a sibling
-      function); isolation suite (supplier active only in T_A absent in T_B incl. ORB; network offering in both;
-      fulfilment-by-id read of a known T_A product still resolves when the supplier is suspended for the tenant).
+      function); isolation suite (supplier active only in T_A absent in T_B incl. ORB **and absent via a shop-video
+      anchor** — R1-F1; network offering in both; a saved-products/cart/checkout fulfilment-by-id read of a known
+      T_A product still resolves when the supplier is suspended for the tenant).
 - [ ] P6 ORB dispatcher tests on Nova + Vertex Serbian bridge if the ORB product/cart tool dispatch changes (42h).
 
 Acceptance: full gateway Vitest/Jest green; inventory lint + lineage guard red when a reader bypasses/reads health;
@@ -135,8 +145,9 @@ Allowed paths:
 - [ ] S1 "Which communities" step (service + onboarding routes + Commerce MCP + voice path) → `proposed` relationships.
 - [ ] S2 Tenant accept/decline API (`proposed→active|declined`).
 - [ ] S3 Platform tenant + `signup_intent='commerce'` path: drop hardcoded Maxina; `signup_intent` routes only (R6).
-- [ ] S4 Referral attribution carries the buyer's tenant; recommender earnings follow recommender's tenant (R7, D26);
-      no ranking influence.
+- [ ] S4 Referral attribution reads the buyer's tenant from the EXISTING `product_orders.tenant_id` (extend
+      `fetchProductOrderForCommission`, `credit-recommender-repository.ts:28`, to select it — R1-F3; no new column);
+      recommender earnings follow recommender's tenant (R7, D26); no ranking influence; never silently NULL.
 - [ ] S5 Dark behind the mt flags.
 - [ ] S6 Vitest: "which communities" creates `proposed` rows; accept/decline flips state; attribution carries buyer
       tenant; commerce signup no longer hardcodes Maxina.

@@ -72,8 +72,11 @@ catalog-ingestion reads+writes, served to an admin/supplier surface not a member
 admin-guarded, `// discover-inventory: admin`). The lineage guard is PER-QUERY (fails only when the same query that
 reads `products`/`merchants` also reads a health table), and must tolerate the mixed files
 `health-wellness-repository.ts` / `health-action-initiative-repository.ts` whose health reads are in sibling
-functions. `shop-feed-repository.ts:43 fetchRankedShopVideosPage` reads `shop_videos` and is NOT in scope. If the ORB
-product/cart tool dispatch is changed, add the Nova + Vertex Serbian bridge dispatcher tests (42h).
+functions. `shop-feed-repository.ts:43 fetchRankedShopVideosPage` reads `shop_videos` and is NOT in scope.
+`fetchProductsByIds` (`shop-feed-repository.ts:32`) is DUAL-USE (R1-F1): split the video-anchor call site (DISCOVERY,
+predicate-gated) from the saved-products call site (FULFILMENT, unfiltered) — the lint classifies by call site, not
+whole-function. If the ORB product/cart tool dispatch is changed, add the Nova + Vertex Serbian bridge dispatcher
+tests (42h).
 
 ## Log
 ### 2026-10-15T16:40Z · kiro-hotmail-202610151618-b437 · created → ready
@@ -93,3 +96,10 @@ for admin/back-office/supplier-portal + catalog-ingestion readers. Full swept li
 FULFILMENT (verified lines 110–117: a by-explicit-`merchant_id` commission-eligibility read on an already-placed
 order, no admin/member surface). Lane paths unchanged (the file is already in `paths`); the lint annotation for that
 reader becomes `// discover-inventory: fulfilment`. Plan Problem 2 + tasks P2 updated.
+
+### 2026-10-15T17:05Z · kiro-hotmail-202610151618-b437 · sparring round-1 fix R1-F1 (ready)
+`fetchProductsByIds` (`shop-feed-repository.ts:32`) is dual-use (module comment at :31: reused for anchor-hydration
+AND saved-products hydration). A single fulfilment stamp left the video-anchor path (a discovery surface)
+tenant-ungated — a supplier active only in T_A could surface to T_B via a shop-video anchor. Fix: split the two call
+sites, route the anchor path through the predicate (DISCOVERY), keep saved-products FULFILMENT. P2/P5 + plan Problem
+2/Fix/Tests + the isolation suite updated to assert the anchor path is gated.
