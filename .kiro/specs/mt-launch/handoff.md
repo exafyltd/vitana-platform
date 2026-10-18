@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-18T19:20Z
+updated: 2026-10-18T20:01Z
 ---
 # Handoff — mt-launch (WS8 Tenant Launch engineering)
 
@@ -80,3 +80,6 @@ Session `3857a677` round 1 produced 5 findings (1 blocker, 2 major, 2 minor); ev
 - **R1-F4 (minor, accepted):** added explicit VTID merge-order guard — `support-landing` merges only after `pack-intake-admin` closes; lanes not merged (DB/code split, §4.7).
 - **R1-F5 (minor, accepted):** `community-invites.ts:79` is only an OASIS event payload; removed as attribution evidence, /claim path (:54-82) is tenant-agnostic.
 Validators re-run on handoff.md + all five lanes (0 errors); tasks.md markers 1:1, Allowed paths == lane paths. Plan body ~15.8k chars, markers + change_class intact. Re-pushed to start the next round.
+
+### 2026-10-18T20:01Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
