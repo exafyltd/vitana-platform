@@ -86,16 +86,22 @@ Supabase project and every frontend (incl. preview/staging) writes to it";
 | `fixture-gateway` | kiro / exafyltd → hotmail | `tools/fixture-gateway/**`, `tests/fixture-gateway/**` (vitana-v1 repo root) | — | kiro |
 | `deep-link-push-smoke` | kiro / exafyltd → hotmail | `apps/mobile/tests/g1-smoke/**`, `apps/mobile/src/push/g1-test-provider.ts` | env-profiles, fixture-gateway | kiro |
 | `real-g1-switch` | kiro / exafyltd → hotmail | `apps/mobile/env/test-g1.g1.example.json`, `docs/validation/g1/**` | deep-link-push-smoke | **owner** |
-| `spar-vitana-v1-ref` | **claude** / — → claude | `vitana-platform:.github/workflows/PLAN-SPAR.yml` | — | **claude** |
+| `spar-vitana-v1-ref` | **claude** / — → claude | `vitana-platform:.github/workflows/PLAN-SPAR.yml`, `vitana-platform:scripts/collab/plan-spar.mjs` | — | **claude** |
 
 **`spar-vitana-v1-ref` (R1-F1) gates convergence.** The sparring partner cannot verify this plan's
-vitana-v1 `file:line` premises from a platform-only session. This lane (`executor: claude`, governance
-path `vitana-platform:.github/workflows/PLAN-SPAR.yml`) adds a pinned vitana-v1 checkout / `extra_ref` to
-PLAN-SPAR so the partner can read `apps/mobile/**`. It is a durable tracked artefact (its own lane file,
-branch, PR, VTID — collaboration §1/§2), not a prose note. **This plan's `approved→executing` transition
-is blocked until `spar-vitana-v1-ref` merges and the native plans are re-sparred with the vitana-v1 ref
-live** — so no implementation lane ratifies an unverifiable premise. Only Claude Code can execute it
-(governance path); the planner seat cannot.
+vitana-v1 `file:line` premises because the session is created pinned only to `vitana-platform`. This lane
+(`executor: claude`, governance paths `vitana-platform:.github/workflows/PLAN-SPAR.yml` and
+`vitana-platform:scripts/collab/plan-spar.mjs`) makes the fix in **two files, no gateway change** — the
+gateway already accepts `extra_refs` and `github-tools.ts` already allowlists `exafyltd/vitana-v1`:
+`plan-spar.mjs` sends `extra_refs: { 'exafyltd/vitana-v1': <main SHA> }`, and `PLAN-SPAR.yml` resolves that
+SHA (`gh api repos/exafyltd/vitana-v1/commits/main --jq .sha`) and passes it in. It is a durable tracked
+artefact (its own lane file, branch, PR, VTID — collaboration §1/§2), to land in one Claude Code PR with
+`plan(sparring-floor-retry)` #4186's `floor-retry-code` lane (both edit `plan-spar.mjs`). **Refs pin at
+session creation**, so the current session cannot read vitana-v1 even after the fix — a fresh session (a
+later plan-text push) is needed. **This plan's `approved→executing` transition is blocked until
+`spar-vitana-v1-ref` merges and the native plans re-spar in a new session with the vitana-v1 ref live** —
+so no implementation lane ratifies an unverifiable premise. Only Claude Code can execute it (governance
+path); the planner seat cannot.
 
 Path ownership (R1-F3, R1-F4): no file is in two lanes and no in-scope file is orphaned. Paths that are
 **not** under `apps/mobile/**`, listed explicitly:
@@ -120,8 +126,18 @@ lane's own VTID dir. Every lane file's `paths:` therefore includes `docs/validat
 convergence). The `real-g1-switch` lane carries both its G1-outcome glob and its own-VTID validation
 globs. Added to the non-`apps/mobile` exceptions above: `docs/validation/VTID-*/**` for every lane.
 
-**The vitana-v1 sparring ref is tracked as a `claude` lane (R1-F1), not a prose note.** See
-`spar-vitana-v1-ref` below.
+**The vitana-v1 sparring ref is tracked as a `claude` lane (R1-F1), not a prose note.** The sparring
+partner cannot read this plan's vitana-v1 `file:line` premises because the session is created pinned only
+to `vitana-platform`. The fix is **two governance files, no gateway change** (the gateway already accepts
+`extra_refs` and `github-tools.ts` already allowlists `exafyltd/vitana-v1`): `scripts/collab/plan-spar.mjs`
+sends `extra_refs: { 'exafyltd/vitana-v1': <main SHA> }` in `client.create`, and
+`.github/workflows/PLAN-SPAR.yml` resolves that SHA (`gh api repos/exafyltd/vitana-v1/commits/main --jq
+.sha`) and passes it in. This is the `spar-vitana-v1-ref` lane (`executor: claude`), to land in one Claude
+Code PR together with `plan(sparring-floor-retry)` #4186's `floor-retry-code` lane (both edit
+`plan-spar.mjs`). **Refs pin at session creation**, so the current session cannot read vitana-v1 even after
+the fix — a fresh session (a later plan-text push) is required for the ref to take effect. **This plan's
+`approved→executing` is blocked until `spar-vitana-v1-ref` merges and the native plans re-spar in a new
+session with the vitana-v1 ref live.** Only Claude Code can execute it (governance path).
 
 ## Test plan
 - Per lane (from `apps/mobile`): `npm ci`, `npm test` (jest-expo + RN Testing Library), `npm run
