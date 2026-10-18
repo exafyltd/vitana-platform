@@ -5,7 +5,7 @@ author_seat: exafy
 executor: claude
 next_actor: claude
 state: drafted
-updated: 2026-10-18T22:45Z
+updated: 2026-10-18T23:05Z
 ---
 # Handoff — collab-throughput
 
@@ -31,4 +31,7 @@ Authored from the measured bottlenecks (queue ~0.9 s per branch diff × 496 bran
 allocated by this session.
 
 ### 2026-10-18T22:45Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-18T23:05Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
