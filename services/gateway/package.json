@@ -29,6 +29,7 @@
     "test:roles": "jest test/vtid-04560-role-separation-regression.test.ts",
     "test:screens-catalog-sync": "REGEN_SCREENS_CHECK=1 jest test/vtid-05080-regen-screens-catalog-check.test.ts",
     "test:onboarding": "jest test/vtid-04892-onboarding-coach.test.ts test/vtid-04892-onboarding-journey-pacer.test.ts",
+    "test:welcome-team": "jest test/vtid-05205-welcome-team.test.ts",
     "test:companion": "jest test/vtid-05099-companion-messages.test.ts test/vtid-05099-proactive-match-daily-limit.test.ts test/vtid-05100-companion-delivery.test.ts test/vtid-05101-companion-generators.test.ts",
     "test:nav-redirect": "jest test/nav-redirect",
     "test:voice-identity": "jest test/orb/latency"

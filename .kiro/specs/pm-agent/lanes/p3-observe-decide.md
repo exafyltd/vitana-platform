@@ -11,6 +11,7 @@ paths:
   - services/gateway/src/services/project-manager/**
   - services/gateway/src/routes/project-manager.ts
   - services/gateway/src/index.ts
+  - services/gateway/src/orb/developer/domain-atlas.ts
   - services/gateway/test/**
 updated: 2026-10-15T16:40Z
 ---

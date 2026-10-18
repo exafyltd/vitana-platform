@@ -22,9 +22,14 @@
 
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { readCommandHubBundle } from './bundle';
 
 const CH = join(__dirname, '../../src/frontend/command-hub');
 const SRC = readFileSync(join(CH, 'app.js'), 'utf8');
+// VTID-05073: the Operator Dashboard and Runbook fetchers moved to
+// operator-console.js; their pipeline-summary call sites are checked against
+// the full bundle. Everything else here stays in app.js and reads SRC.
+const BUNDLE = readCommandHubBundle();
 const INDEX_HTML = readFileSync(join(CH, 'index.html'), 'utf8');
 
 const OLD_TABS = ['live-metrics', 'recent-events', 'errors-violations', 'release-feed'];
@@ -260,7 +265,11 @@ describe('VTID-04887 (3): browser callers of the pipeline summary use the admin 
     const code = SRC.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
     expect(code).not.toContain('/api/v1/autopilot/pipeline/summary');
     // Operator Dashboard + Runbook (fetch) and Vitana Recommends (fetchWT).
-    expect((code.match(/fetch\('\/api\/v1\/ops\/pipeline-summary', \{/g) || []).length).toBe(2);
+    // VTID-05073: the Dashboard/Runbook fetchers moved to operator-console.js,
+    // so the two `fetch(...)` call sites are counted against the whole bundle;
+    // the Vitana Recommends `fetchWT(...)` stayed in app.js.
+    const bundleCode = BUNDLE.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+    expect((bundleCode.match(/fetch\('\/api\/v1\/ops\/pipeline-summary', \{/g) || []).length).toBe(2);
     expect((code.match(/fetchWT\('\/api\/v1\/ops\/pipeline-summary'/g) || []).length).toBe(1);
   });
 

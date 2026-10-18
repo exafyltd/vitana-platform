@@ -1,0 +1,47 @@
+# VTID-05073 Phase 1 — commands run (real). Windows/PowerShell, Node v24.11.1.
+# CI runs these gates on Linux / Node 20.x. Full captured output is in outputs/.
+# This is a mechanical move: 90 top-level function declarations cut from app.js
+# and pasted unchanged into operator-console.js (loaded before app.js). No renames,
+# no logic edits. See acceptance.md for the plan-item -> proof mapping.
+
+## STEP 2 — selection script (acorn seeds renderOperator*, fixpoint, string-literal exclusion, app.js-only)
+cd services/gateway && node scripts/dev/select-extraction.mjs   # 90 fns -> docs/validation/VTID-05073/moved-functions.json (deterministic; re-run byte-identical)
+
+## STEP 3 — mechanical move + manifest / script-tag + node --check
+# (edited src/frontend/command-hub/operator-console.js — 90 fns pasted in original order)
+# (edited modules.json: operator-console.js entry marked extracted, before app.js)
+# (edited index.html: <script> tag for operator-console.js before app.js)
+node --check src/frontend/command-hub/operator-console.js        # OK
+node --check src/frontend/command-hub/app.js                     # OK
+
+## STEP 4 — ?v= bump, ownership-guard allowlist, symbol-index regen
+# (index.html app.js + operator-console.js + styles.css bumped to ?v=20261116-vtid-05073)
+# (command-hub-ownership-guard.js ALLOWED_VTID_PATTERN includes VTID-05073)
+cd services/gateway && node scripts/generate-command-hub-symbol-index.mjs        # 1036 fns / 16 files
+
+## STEP 7 — local checks (from services/gateway) — logs in outputs/
+npx tsc --noEmit                                                 # PASS
+npx jest test/command-hub                                        # 44 suites / 821 tests PASS -> outputs/jest-command-hub.txt
+npm run test:roles                                               # 105 PASS                    -> outputs/test-roles.txt
+npm run test:support                                             # 87 PASS                     -> outputs/test-support.txt
+npm run test:operator                                            # 63 pass, 1 pre-existing Windows-only fail -> outputs/test-operator.txt
+node scripts/generate-command-hub-symbol-index.mjs --check       # in sync (1036 fns / 16 files) -> outputs/symbol-index-check.txt
+
+## Build + root CI gates
+# (npm run build uses POSIX rm/mkdir -p/cp -r; on Windows done as tsc + robocopy to dist/)
+cd services/gateway && npx tsc                                   # PASS                         -> outputs/build.txt
+robocopy src/frontend/command-hub dist/frontend/command-hub /E   # populate dist for the fingerprint
+# from repo root:
+node scripts/ci/command-hub-golden-fingerprint.js                # PASS, all golden markers      -> outputs/golden-fingerprint.txt
+node scripts/ci/command-hub-ownership-guard.js                   # PASS, VTID-05073 allowlisted   -> outputs/ownership-guard.txt
+
+## Pre-existing-failure verification (test:operator 1 fail is a Windows-only path-separator
+## artifact in the runner's selectAssetReferencingTests, unrelated to the extraction;
+## both expected suites are present, only the separator differs — CI (Linux) is the final judge).
+
+## STEP 3 (ledger) — attempted
+# Attempted gateway PATCH https://gateway.vitanaland.com/api/v1/vtid/VTID-05073 (Authorization: Bearer $env:GATEWAY_SERVICE_TOKEN) -> no status-update endpoint.
+# Per gateway-auth rule, no unauthenticated or Supabase-direct fallback. Ledger update best-effort, non-blocking.
+
+## rule 47 — staging change-suite
+# (added docs/validation/VTID-05073/staging-tests.json so STAGING-VERIFY runs this VTID's own suite)

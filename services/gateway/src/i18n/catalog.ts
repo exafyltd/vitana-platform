@@ -279,7 +279,16 @@ export type GatewayI18nKey =
   // VTID-05100: push for a Vitana Companion Message. The DM itself is composed
   // by the model (rule 41); the lock-screen title/body are fixed catalog text.
   | 'notif.vitana_companion_message.title'
-  | 'notif.vitana_companion_message.body';
+  | 'notif.vitana_companion_message.body'
+  // VTID-05205: the three team welcome DMs for new members (written messages
+  // from Mariia, Jovana and Alex Blue — catalog rule, not rule 41). {name} =
+  // the newcomer's first name; *_noname when the profile has none.
+  | 'welcome_team.mariia.body'
+  | 'welcome_team.mariia.body_noname'
+  | 'welcome_team.jovana.body'
+  | 'welcome_team.jovana.body_noname'
+  | 'welcome_team.alex.body'
+  | 'welcome_team.alex.body_noname';
 
 type LocaleCatalog = Record<GatewayI18nKey, string>;
 

@@ -1,0 +1,456 @@
+{
+  "generated_at": "2026-10-13",
+  "seed_prefix": "renderOperator",
+  "functions": [
+    {
+      "name": "clearOperatorChatSession",
+      "file": "app.js",
+      "line": 631
+    },
+    {
+      "name": "buildOperatorChatContext",
+      "file": "app.js",
+      "line": 647
+    },
+    {
+      "name": "appendToStoredOperatorThread",
+      "file": "app.js",
+      "line": 802
+    },
+    {
+      "name": "startNewOperatorThread",
+      "file": "app.js",
+      "line": 820
+    },
+    {
+      "name": "dismissOperatorThreadId",
+      "file": "app.js",
+      "line": 1020
+    },
+    {
+      "name": "startRenamingOperatorThread",
+      "file": "app.js",
+      "line": 1211
+    },
+    {
+      "name": "cancelRenamingOperatorThread",
+      "file": "app.js",
+      "line": 1217
+    },
+    {
+      "name": "commitRenamingOperatorThread",
+      "file": "app.js",
+      "line": 1227
+    },
+    {
+      "name": "deleteOperatorThread",
+      "file": "app.js",
+      "line": 1247
+    },
+    {
+      "name": "archiveOperatorThread",
+      "file": "app.js",
+      "line": 1279
+    },
+    {
+      "name": "unarchiveOperatorThread",
+      "file": "app.js",
+      "line": 1300
+    },
+    {
+      "name": "shareOperatorThread",
+      "file": "app.js",
+      "line": 1316
+    },
+    {
+      "name": "renderThreadMenuButton",
+      "file": "app.js",
+      "line": 1337
+    },
+    {
+      "name": "renderThreadMenu",
+      "file": "app.js",
+      "line": 1361
+    },
+    {
+      "name": "renderEditableThreadTitle",
+      "file": "app.js",
+      "line": 1409
+    },
+    {
+      "name": "renderOperatorThreadRow",
+      "file": "app.js",
+      "line": 1476
+    },
+    {
+      "name": "renderOperatorSessionsSidebar",
+      "file": "app.js",
+      "line": 1518
+    },
+    {
+      "name": "generateDeploySummary",
+      "file": "app.js",
+      "line": 5848
+    },
+    {
+      "name": "operatorDictationSupported",
+      "file": "app.js",
+      "line": 23418
+    },
+    {
+      "name": "stopOperatorDictation",
+      "file": "app.js",
+      "line": 23422
+    },
+    {
+      "name": "startOperatorDictation",
+      "file": "app.js",
+      "line": 23435
+    },
+    {
+      "name": "operatorDictationErrorMessage",
+      "file": "app.js",
+      "line": 23507
+    },
+    {
+      "name": "renderOperatorOverlay",
+      "file": "app.js",
+      "line": 23523
+    },
+    {
+      "name": "describeToolActivity",
+      "file": "app.js",
+      "line": 23651
+    },
+    {
+      "name": "renderOperatorMicButton",
+      "file": "app.js",
+      "line": 23668
+    },
+    {
+      "name": "renderOperatorChat",
+      "file": "app.js",
+      "line": 23694
+    },
+    {
+      "name": "parseSseFrames",
+      "file": "app.js",
+      "line": 24092
+    },
+    {
+      "name": "updateOperatorLiveTranscriptDom",
+      "file": "app.js",
+      "line": 24123
+    },
+    {
+      "name": "applyOperatorTurnFrame",
+      "file": "app.js",
+      "line": 24143
+    },
+    {
+      "name": "streamOperatorTurn",
+      "file": "app.js",
+      "line": 24167
+    },
+    {
+      "name": "requestOperatorTurn",
+      "file": "app.js",
+      "line": 24212
+    },
+    {
+      "name": "formatToolDuration",
+      "file": "app.js",
+      "line": 24237
+    },
+    {
+      "name": "formatTokenCount",
+      "file": "app.js",
+      "line": 24243
+    },
+    {
+      "name": "formatTurnCostUsd",
+      "file": "app.js",
+      "line": 24248
+    },
+    {
+      "name": "formatTurnCostBadge",
+      "file": "app.js",
+      "line": 24255
+    },
+    {
+      "name": "describeTurnCost",
+      "file": "app.js",
+      "line": 24275
+    },
+    {
+      "name": "extractFollowedExecutionIds",
+      "file": "app.js",
+      "line": 24317
+    },
+    {
+      "name": "renderOperatorExecutionFollow",
+      "file": "app.js",
+      "line": 24413
+    },
+    {
+      "name": "operatorThreadEngine",
+      "file": "app.js",
+      "line": 24522
+    },
+    {
+      "name": "activeOperatorEngine",
+      "file": "app.js",
+      "line": 24526
+    },
+    {
+      "name": "canChangeOperatorEngine",
+      "file": "app.js",
+      "line": 24531
+    },
+    {
+      "name": "kiroConsole",
+      "file": "app.js",
+      "line": 24537
+    },
+    {
+      "name": "kiroConsoleHasRuns",
+      "file": "app.js",
+      "line": 24541
+    },
+    {
+      "name": "kiroThreadBusy",
+      "file": "app.js",
+      "line": 24547
+    },
+    {
+      "name": "kiroIsConnected",
+      "file": "app.js",
+      "line": 24552
+    },
+    {
+      "name": "setActiveOperatorEngine",
+      "file": "app.js",
+      "line": 24556
+    },
+    {
+      "name": "fetchKiroStatus",
+      "file": "app.js",
+      "line": 24569
+    },
+    {
+      "name": "loadKiroStatus",
+      "file": "app.js",
+      "line": 24577
+    },
+    {
+      "name": "waitForKiroDefault",
+      "file": "app.js",
+      "line": 24601
+    },
+    {
+      "name": "renderKiroStoppedEarly",
+      "file": "app.js",
+      "line": 24623
+    },
+    {
+      "name": "appendReplyWithKiroNotices",
+      "file": "app.js",
+      "line": 24636
+    },
+    {
+      "name": "renderKiroWorkspaceLost",
+      "file": "app.js",
+      "line": 24645
+    },
+    {
+      "name": "applyDefaultOperatorEngine",
+      "file": "app.js",
+      "line": 24655
+    },
+    {
+      "name": "renderKiroFallbackAction",
+      "file": "app.js",
+      "line": 24663
+    },
+    {
+      "name": "continueInOperator",
+      "file": "app.js",
+      "line": 24674
+    },
+    {
+      "name": "onKiroRunFinished",
+      "file": "app.js",
+      "line": 24690
+    },
+    {
+      "name": "initKiroConsoleHost",
+      "file": "app.js",
+      "line": 24698
+    },
+    {
+      "name": "onKiroMessageSent",
+      "file": "app.js",
+      "line": 24731
+    },
+    {
+      "name": "renderKiroLegacyMessage",
+      "file": "app.js",
+      "line": 24749
+    },
+    {
+      "name": "endKiroSession",
+      "file": "app.js",
+      "line": 24776
+    },
+    {
+      "name": "ensureKiroModels",
+      "file": "app.js",
+      "line": 24791
+    },
+    {
+      "name": "kiroModelName",
+      "file": "app.js",
+      "line": 24805
+    },
+    {
+      "name": "selectKiroModel",
+      "file": "app.js",
+      "line": 24811
+    },
+    {
+      "name": "renderKiroModelSelect",
+      "file": "app.js",
+      "line": 24830
+    },
+    {
+      "name": "renderOperatorEngineSwitch",
+      "file": "app.js",
+      "line": 24852
+    },
+    {
+      "name": "fetchKiroKeyStatus",
+      "file": "app.js",
+      "line": 24900
+    },
+    {
+      "name": "kiroKeyInput",
+      "file": "app.js",
+      "line": 24918
+    },
+    {
+      "name": "linkKiroKey",
+      "file": "app.js",
+      "line": 24940
+    },
+    {
+      "name": "revokeKiroKey",
+      "file": "app.js",
+      "line": 24969
+    },
+    {
+      "name": "kiroKeyStatusText",
+      "file": "app.js",
+      "line": 24989
+    },
+    {
+      "name": "renderKiroKeyControls",
+      "file": "app.js",
+      "line": 24999
+    },
+    {
+      "name": "renderKiroThreadPanel",
+      "file": "app.js",
+      "line": 25068
+    },
+    {
+      "name": "renderChatTurnElsewhereBanner",
+      "file": "app.js",
+      "line": 25122
+    },
+    {
+      "name": "renderOperatorLiveTranscript",
+      "file": "app.js",
+      "line": 25137
+    },
+    {
+      "name": "sendChatMessage",
+      "file": "app.js",
+      "line": 25175
+    },
+    {
+      "name": "renderOperatorTicker",
+      "file": "app.js",
+      "line": 25507
+    },
+    {
+      "name": "renderOperatorHistory",
+      "file": "app.js",
+      "line": 25812
+    },
+    {
+      "name": "uploadOperatorFile",
+      "file": "app.js",
+      "line": 28267
+    },
+    {
+      "name": "fetchOperatorTaskQueue",
+      "file": "app.js",
+      "line": 30979
+    },
+    {
+      "name": "renderOperatorTaskQueueView",
+      "file": "app.js",
+      "line": 31007
+    },
+    {
+      "name": "fetchOperatorDashboard",
+      "file": "app.js",
+      "line": 31177
+    },
+    {
+      "name": "renderOperatorDashboardView",
+      "file": "app.js",
+      "line": 31227
+    },
+    {
+      "name": "fetchOperatorEventStream",
+      "file": "app.js",
+      "line": 31558
+    },
+    {
+      "name": "startOperatorEventStreamRefresh",
+      "file": "app.js",
+      "line": 31588
+    },
+    {
+      "name": "renderOperatorEventStreamView",
+      "file": "app.js",
+      "line": 31605
+    },
+    {
+      "name": "fetchOperatorDeployments",
+      "file": "app.js",
+      "line": 31783
+    },
+    {
+      "name": "renderOperatorDeploymentsView",
+      "file": "app.js",
+      "line": 31821
+    },
+    {
+      "name": "fetchOperatorRunbook",
+      "file": "app.js",
+      "line": 32005
+    },
+    {
+      "name": "renderOperatorRunbookView",
+      "file": "app.js",
+      "line": 32049
+    },
+    {
+      "name": "renderOperatorLocalizationView",
+      "file": "app.js",
+      "line": 53466
+    }
+  ]
+}

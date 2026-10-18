@@ -11,9 +11,14 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { readCommandHubBundle } from './command-hub/bundle';
 
 const FE = path.resolve(__dirname, '../src/frontend/command-hub');
-const APP_JS = fs.readFileSync(path.join(FE, 'app.js'), 'utf8');
+// VTID-05073: sendChatMessage, renderOperatorChat,
+// renderOperatorExecutionFollow and extractFollowedExecutionIds moved into
+// operator-console.js. Read the whole Command Hub bundle so the sliced,
+// eval'd bodies still resolve. Assertions are unchanged.
+const APP_JS = readCommandHubBundle();
 const CSS = fs.readFileSync(path.join(FE, 'styles.css'), 'utf8');
 const INDEX_HTML = fs.readFileSync(path.join(FE, 'index.html'), 'utf8');
 const ROUTE_TS = fs.readFileSync(path.resolve(__dirname, '../src/routes/dev-autopilot.ts'), 'utf8');
@@ -42,7 +47,13 @@ function loadHelpers(): {
 } {
   const constStart = APP_JS.indexOf('\nvar OPERATOR_EXEC_FOLLOW_TOOLS = {');
   expect(constStart).toBeGreaterThan(-1);
-  const constEnd = APP_JS.indexOf('\n// The execution ids a finished turn should follow', constStart);
+  // VTID-05073: the `// The execution ids a finished turn should follow`
+  // comment that used to bound this slice moved into operator-console.js with
+  // extractFollowedExecutionIds, so it no longer sits right after the vars in
+  // the bundle. The three OPERATOR_EXEC_FOLLOW_* / _TERMINAL_LABELS vars are a
+  // contiguous block in app.js terminated by the next top-level function, so
+  // bound the slice on that instead — same vars, same eval scope.
+  const constEnd = APP_JS.indexOf('\nfunction ', constStart);
   const consts = APP_JS.slice(constStart, constEnd);
   const src = consts + fnBody('extractFollowedExecutionIds') + fnBody('describeFollowedStep') +
     '\nreturn { extractFollowedExecutionIds, describeFollowedStep, OPERATOR_EXEC_TERMINAL_LABELS };';

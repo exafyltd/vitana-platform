@@ -8,8 +8,12 @@
  * Opus 4.6); every thinking / redacted_thinking block is handed back verbatim
  * on the assistant turn it came from, which the API requires across tool turns.
  *
- * A failed model call ends the pass immediately with `model_unavailable` —
- * there is no retry on another model and no other provider is called.
+ * A failed model call ends the pass with `model_unavailable` and no other
+ * provider is called — EXCEPT a retryable throttle on the primary (Opus 4.6),
+ * which triggers exactly ONE retry of that turn on the Bedrock Sonnet 4.6
+ * fallback (VTID sparring-model-fallback). That retry is logged loudly, is
+ * Bedrock-only (the provider!=='bedrock' guard still holds), and is not a
+ * router-level fallback (plan_sparring stays in NO_FALLBACK_STAGES).
  */
 
 import type {
@@ -19,6 +23,7 @@ import type {
   LLMRouterToolCall,
   LLMStage,
 } from '../llm-router';
+import { resolvePlanSparringFallbackModel } from '../../constants/llm-defaults';
 import { PARTNER_CODE_TOOLS, type ToolExecution } from './github-tools';
 import {
   PARTNER_SYSTEM_PROMPT,
@@ -40,6 +45,25 @@ export const PARTNER_SUBMIT_NUDGE = 'You must finish this round by calling submi
 
 export type CallLlm = (stage: LLMStage, prompt: string, opts: LLMRouterOpts) => Promise<LLMRouterResult>;
 export type ExecuteTool = (name: string, args: Record<string, unknown>) => Promise<ToolExecution>;
+
+/**
+ * VTID (sparring-model-fallback): a RETRYABLE throttle on the primary partner
+ * model (Opus 4.6). Matches the fresh-subscription daily-token cap
+ * ("Too many tokens per day") and generic Bedrock throttling/rate-limit
+ * errors. ONLY these trigger the one-shot Sonnet 4.6 fallback; auth, invalid
+ * request, content and all other errors still end the pass as model_unavailable
+ * with no retry.
+ */
+export function isRetryableThrottle(error: string | undefined): boolean {
+  const e = (error || '').toLowerCase();
+  return (
+    /too many tokens per day/.test(e) ||
+    /throttl/.test(e) ||
+    /rate ?limit/.test(e) ||
+    /too many requests/.test(e) ||
+    /\b429\b/.test(e)
+  );
+}
 
 export interface PartnerPassInput {
   round: number;
@@ -80,14 +104,12 @@ export async function runPartnerPass(input: PartnerPassInput): Promise<PartnerPa
   let invalidSubmissions = 0;
   let nudged = false;
   let lastProblem = '';
+  const fallbackModel = resolvePlanSparringFallbackModel();
 
   const fail = (reason: EscalationReason, error: string): PartnerPassResult => ({ ok: false, reason, error, toolLog, modelLog });
 
-  for (let turn = 1; turn <= PARTNER_MAX_TURNS_PER_ROUND; turn++) {
-    if (now() - startedAt > input.deadlineMs) return fail('deadline_exceeded', `partner pass exceeded ${input.deadlineMs}ms`);
-
-    const t0 = now();
-    const r = await input.callLlm(PARTNER_STAGE, prompt, {
+  const invoke = (p: string, useFallback: boolean): Promise<LLMRouterResult> =>
+    input.callLlm(PARTNER_STAGE, p, {
       service: 'plan-sparring',
       vtid: null,
       allowFallback: false,
@@ -97,7 +119,17 @@ export async function runPartnerPass(input: PartnerPassInput): Promise<PartnerPa
       maxTokens: PARTNER_MAX_OUTPUT_TOKENS,
       thinking: { type: 'adaptive' },
       effort: 'high',
+      // VTID (sparring-model-fallback): the throttle fallback overrides only the
+      // model, still on bedrock, so the provider!=='bedrock' guard below stays
+      // satisfied and no Google/Anthropic-direct answer can slip through.
+      ...(useFallback ? { providerOverride: 'bedrock' as const, modelOverride: fallbackModel } : {}),
     });
+
+  for (let turn = 1; turn <= PARTNER_MAX_TURNS_PER_ROUND; turn++) {
+    if (now() - startedAt > input.deadlineMs) return fail('deadline_exceeded', `partner pass exceeded ${input.deadlineMs}ms`);
+
+    const t0 = now();
+    let r = await invoke(prompt, false);
     modelLog.push({
       round: input.round,
       provider: r.provider,
@@ -108,6 +140,30 @@ export async function runPartnerPass(input: PartnerPassInput): Promise<PartnerPa
       ok: r.ok,
       ...(r.ok ? {} : { error: (r.error || 'unknown').slice(0, 500) }),
     });
+
+    // VTID (sparring-model-fallback): on a RETRYABLE throttle only (e.g. the
+    // Opus 4.6 fresh-subscription daily cap), retry this turn ONCE on the
+    // Sonnet 4.6 fallback. Logged loudly; never silent. Any other failure
+    // falls through to model_unavailable with no retry.
+    if (!r.ok && isRetryableThrottle(r.error)) {
+      console.warn(
+        `[plan-sparring] primary partner model throttled (${(r.error || '').slice(0, 120)}); ` +
+          `falling back to ${fallbackModel} for round ${input.round}, turn ${turn}`,
+      );
+      const tf = now();
+      r = await invoke(prompt, true);
+      modelLog.push({
+        round: input.round,
+        provider: r.provider,
+        model: r.model,
+        latency_ms: now() - tf,
+        input_tokens: r.usage?.inputTokens ?? 0,
+        output_tokens: r.usage?.outputTokens ?? 0,
+        ok: r.ok,
+        fallback: true,
+        ...(r.ok ? {} : { error: (r.error || 'unknown').slice(0, 500) }),
+      });
+    }
 
     if (!r.ok) return fail('model_unavailable', r.error || 'partner model call failed');
     // Defence in depth: the router never falls back for this stage, but if a

@@ -39,11 +39,13 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { readCommandHubBundle } from './command-hub/bundle';
 
-const SOURCE = fs.readFileSync(
-  path.join(__dirname, '../src/frontend/command-hub/app.js'),
-  'utf8'
-);
+// VTID-05073: renderEditableThreadTitle, renderOperatorThreadRow and
+// renderOperatorChat moved into operator-console.js (_renderAppCore stays in
+// app.js). Read the whole Command Hub bundle so both resolve. Assertions
+// unchanged.
+const SOURCE = readCommandHubBundle();
 
 function functionBody(source: string, signature: string): string {
   const start = source.indexOf(signature);
