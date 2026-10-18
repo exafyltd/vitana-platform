@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-11-01T13:55Z
+updated: 2026-10-18T20:05Z
 ---
 # Handoff — mt-data-cleanup (WS2 orphan data cleanup, quarantine, NOT NULL hardening)
 
@@ -61,3 +61,6 @@ Session 1 escalated `evidence_floor_not_met`/`infra:false` (partner harness: a r
 
 ### 2026-11-01T13:55Z · kiro-hotmail-202610151618-b437 · answered s2 round-1 → drafted
 Session 2 engaged (plan hash 8e78c46d). All 7 findings ACCEPTED and applied to plan.md; responses in `sparring/s2-responses-1.md`. Verified read-only: **R1-F1** parent line 65 (§4.11) says `chat_messages.tenant_id` is already NOT NULL — removed from Lane 4 (live `information_schema` pre-check added; its …0001 rows are Lane 1); honours the parent per the batch rule. **R1-F2** the five NULL-fallback writers (01135:357,540 / 01144:193,454 / 01137/01138/01139) still set `v_tenant_id := '…0001'` — repointed to canonical `user_tenants` in Lane 1 (raise on 0/2+). **R1-F3** fill trigger uses a direct `SECURITY DEFINER` `user_tenants` lookup, not `current_tenant_id()`. **R1-F4** fill trigger named to sort after `trg_enforce_notification_type_controls` (`DATABASE_SCHEMA.md:1085`). **R1-F5** every new DEFINER function `REVOKE EXECUTE … FROM PUBLIC, anon, authenticated`. **R1-F6** bot-id citation corrected to `services/gateway/src/lib/vitana-bot.ts:9` (parent line 28). **R1-F7** d43–d50 added to the baseline and `analyze_orphan_rows()` table list. plan.md repaired to valid UTF-8 (an earlier push had codepage-mangled it); body …15k, markers + change_class intact; queue.mjs validators 0 errors. Lane bodies unchanged this round; executor applies the lane-level detail at implementation. Re-pushed, next round starts.
+
+### 2026-10-18T20:05Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
