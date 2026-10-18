@@ -11,7 +11,7 @@ paths:
   - supabase/tests/local-stack/**
   - scripts/mt/stack/**
   - docs/multitenancy/LOCAL-STACK.md
-updated: 2026-10-18T16:20Z
+updated: 2026-10-18T18:40Z
 ---
 # D11 local Supabase stack + fixtures — mt-guardrails/local-test-stack (repo vitana-platform)
 Plan: `.kiro/specs/mt-guardrails/plan.md` (authoritative) and the `local-test-stack` section of
@@ -21,12 +21,14 @@ lane's VTID after the plan converges. Do not start before then.
 Rules for the executor (collaboration §7a): no VTID allocation, no `_plan` claim, no edit of
 `handoff.md`, no merge/approve/deploy/workflow dispatch, no Supabase or AWS writes against any live
 system. The schema snapshot comes from a `--schema-only` dump (structure only, never data); fixtures are
-synthetic (D11/D13). This lane also **installs the `pgtap` extension + `pg_prove`** into the local
-stack: pgTAP is required by the hash-stamped parent plan §4.2/§4.9 (R1-F2) and is first introduced into
-the repo here, so the `isolation-suite` lane can run its pgTAP assertions against this running stack
-over external `psql`. Pin the `pgtap`/`pg_prove` versions so local and CI (ci-wiring) match. Work only
-inside the allowed paths. Add this lane's own `docs/validation/<vtid>/` (plan copy, `scope.json`,
-`staging-tests.json`).
+synthetic (D11/D13). This lane brings up Postgres from the **`supabase/postgres` image pinned by exact
+tag** (it ships the `pgtap` extension; stock `postgres:16` does not) and installs **`pg_prove` from a
+pinned `libtap-parser-sourcehandler-pgtap-perl` apt version** on the host — the one install mechanism
+`ci-wiring` reuses verbatim, so local and CI never diverge (R2-F1). pgTAP is required by the
+hash-stamped parent plan §4.2/§4.9 (R1-F2) and is first introduced into the repo here, so the
+`isolation-suite` lane can run its pgTAP assertions against this running stack over external `psql`.
+Record the pinned image tag and apt version. Work only inside the allowed paths. Add this lane's own
+`docs/validation/<vtid>/` (plan copy, `scope.json`, `staging-tests.json`).
 Branch `kiro/mt-guardrails/local-test-stack`; PR title `VTID-xxxxx (mt-guardrails/local-test-stack): …`;
 commit trailers `Collab-Session: <your kiro session id>` and `Collab-Lane:
 mt-guardrails/local-test-stack`. When the PR is open: set `state: in-review`, `next_actor: kiro`,
@@ -41,3 +43,9 @@ R1-F2 (accepted): the parent plan §4.2/§4.9 mandates pgTAP for the isolation a
 now installs the `pgtap` extension + `pg_prove` into the local stack (first introduction into the repo,
 path (a) — no parent amendment) and pins their versions for CI parity. The `isolation-suite` lane runs
 pgTAP against this running stack over external `psql` (R1-F1).
+### 2026-10-18T18:40Z · kiro-hotmail-202610151618-b437 · spar round-2 → concrete pinned install
+R2-F1 (accepted): named the one concrete, pinned install mechanism this lane and `ci-wiring` share
+verbatim — the `supabase/postgres` image pinned by exact tag (ships `pgtap`; stock `postgres:16` does
+not) for the server, and `pg_prove` from a pinned `libtap-parser-sourcehandler-pgtap-perl` apt version
+on the host — so the "same versions across local and CI" determinism guarantee is now verifiable. T4
+updated accordingly; `paths` unchanged.

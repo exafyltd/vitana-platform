@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-18T16:20Z
+updated: 2026-10-18T18:40Z
 ---
 # Handoff — mt-guardrails (WS0 guardrails and test tooling)
 WS0 of the multi-tenant program (`docs/MULTI-TENANT-PLAN.md` §6 "Guard rails & test env", the M0
@@ -78,3 +78,17 @@ suite now connects to lane 1's running stack over external `psql` via `pg_prove`
 R1-F3 (minor): the generated-inventories lane now references `scripts/ci/aurora-migration-inventory.cjs`
 (VTID-03494) for output-format reuse. plan.md, tasks.md, the isolation-suite/local-test-stack/
 generated-inventories/ci-wiring lanes updated accordingly. Push fires round 2.
+### 2026-10-18T18:40Z · kiro-hotmail-202610151618-b437 · spar round-2 → answered (3 findings, all accepted)
+Answered PLAN-SPAR round 2 (session e7f1e151) in `sparring/responses-2.md`; three findings, all
+accepted. R2-F1 (major): named one concrete, pinned install mechanism shared verbatim by lane 1 and
+lane 6 — the `supabase/postgres` image pinned by exact tag (ships `pgtap`; stock `postgres:16` does
+not) for the server + `pg_prove` from a pinned `libtap-parser-sourcehandler-pgtap-perl` apt version on
+the host. R2-F2 (major): chose path B — the new checks are standalone workflows (`MT-GUARDRAILS.yml` +
+a dedicated `SQL-MT-ISOLATION.yml`), not PR-GATE steps, so they land report-only via their own
+`scripts/ci/mt/config.json` `report_only` flag (warn-and-exit-0 while true), flipped by a later
+governance PR to `report_only=false`; PR-GATE's `enforce` gates only the Verdict `OUTCOMES` checks and
+cannot gate them. R2-F3 (minor): moved the pgTAP spec from `supabase/tests/mt/**` to
+`scripts/ci/sql-tests/mt-isolation.test.sql`, beside the runner, matching the VTID-05149 layout so
+`SQL-MT-ISOLATION.yml`'s `paths:` stays on `scripts/ci/sql-tests/**`; isolation-suite `paths` and its
+tasks.md Allowed paths updated to the two co-located files, and `SQL-MT-ISOLATION.yml` added to
+ci-wiring's `paths`. plan.md, tasks.md and the three lanes updated. Push fires round 3.

@@ -7,9 +7,10 @@ reviewer_seat: hotmail
 depends_on: [local-test-stack, generated-inventories, isolation-suite, gateway-scope-lint-contract, maxina-golden-suite]
 paths:
   - .github/workflows/MT-GUARDRAILS.yml
+  - .github/workflows/SQL-MT-ISOLATION.yml
   - .github/workflows/MORNING-SYSTEM-HEALTH-CHECK.yml
   - scripts/ci/mt/**
-updated: 2026-10-18T16:20Z
+updated: 2026-10-18T18:40Z
 ---
 # CI wiring + MIGRATION-QUEUE check — mt-guardrails/ci-wiring (governance, repo vitana-platform)
 Plan: `.kiro/specs/mt-guardrails/plan.md` (authoritative) and the `ci-wiring` section of `tasks.md`
@@ -20,11 +21,17 @@ owner-held (collaboration §3a / §7a; the Lane scope check would reject a kiro 
 Kiro seat (`hotmail`) reviews it. There is no `seat` because Kiro does not build it.
 Depends on all five kiro lanes being `done` — it wires the commands they produce (inventory/lint
 generators, the pgTAP isolation suite, gateway scope lint, contract tests, golden suite) into CI and
-adds the MIGRATION-QUEUE validator. Land report-only first via `scripts/ci/mt/config.json` `enforce`,
-then flip to enforcing in a later governance change (the PR-GATE pattern). The isolation suite needs
-`pgtap`/`pg_prove` **installed in the job** (pinned to the same versions the local-test-stack lane
-uses) and run via `scripts/ci/sql-tests/run-mt-isolation-test.sh` against a job-local Postgres service;
-wire a shrinking baseline like `check-migration-drift`.
+adds the MIGRATION-QUEUE validator. **Report-only path (R2-F2, path B):** the new checks are standalone
+workflows (`MT-GUARDRAILS.yml` for the non-SQL checks; a dedicated `SQL-MT-ISOLATION.yml` for the pgTAP
+suite, modelled on `SQL-TENANT-FOUNDATION.yml` with `paths:` on `scripts/ci/sql-tests/**`), so they are
+NOT gated by PR-GATE's `scripts/ci/pr-gate/config.json` `enforce` (that flag only governs the Verdict
+`OUTCOMES` checks — scope/kiro-steering/sparring/weakening/red-green). Each new workflow reads its OWN
+`scripts/ci/mt/config.json` `report_only` flag (default `true`): warn-and-exit-0 even on failure. The
+flip to enforcing is a later governance PR that sets `report_only=false`. The pgTAP isolation suite
+uses the local-test-stack lane's **identical install mechanism** — the pinned `supabase/postgres` image
+(ships `pgtap`) as the Postgres service + `pg_prove` from the same pinned
+`libtap-parser-sourcehandler-pgtap-perl` apt version (R2-F1) — then runs
+`scripts/ci/sql-tests/run-mt-isolation-test.sh`; wire a shrinking baseline like `check-migration-drift`.
 Branch `claude/mt-guardrails/ci-wiring`; PR title `VTID-xxxxx (mt-guardrails/ci-wiring): —`; commit
 trailers `Collab-Session: <session id>` and `Collab-Lane: mt-guardrails/ci-wiring`. Add this lane's own
 `docs/validation/<vtid>/`.
@@ -45,3 +52,10 @@ in the job** (pinned to the local-test-stack versions) and run the pgTAP suite v
 raw-psql wording. R1-F1 (accepted): the runner path moved under `scripts/ci/sql-tests/` alongside the
 VTID-05149 tenant tests. The row-21b URL-binding fix (align `SUPABASE_URL` to
 `vars.DATA_REST_URL || secrets.SUPABASE_URL`) stays folded into this governance lane.
+### 2026-10-18T18:40Z · kiro-hotmail-202610151618-b437 · spar round-2 → report-only path + pinned install
+R2-F2 (accepted): the new checks are standalone workflows (`MT-GUARDRAILS.yml` + a dedicated
+`SQL-MT-ISOLATION.yml`), NOT PR-GATE steps, so PR-GATE's `enforce` cannot gate them; each reads its own
+`scripts/ci/mt/config.json` `report_only` flag (warn-and-exit-0 while true), flipped by a later
+governance PR setting `report_only=false`. Added `.github/workflows/SQL-MT-ISOLATION.yml` to `paths`.
+R2-F1 (accepted): the job uses lane 1's identical mechanism — pinned `supabase/postgres` image (ships
+`pgtap`) + pinned `pg_prove` apt version — then runs the runner. No install divergence local↔CI.

@@ -14,9 +14,11 @@ Allowed paths:
 - [ ] T2 Fixture seed in `supabase/tests/fixtures/`: tenants T_A/T_B; members a_member, a_admin,
       b_member, b_admin, ab_dual; `CANARY_A_<uuid>` markers in representative T_A rows; idempotent.
 - [ ] T3 `scripts/mt/stack/up.*` brings the disposable local Postgres up and seeds it with no live call.
-- [ ] T4 Install the `pgtap` extension + `pg_prove` into the local stack and pin their versions (first
-      introduction of pgTAP into the repo, mandated by parent plan §4.2/§4.9 — R1-F2) so the
-      isolation-suite lane and ci-wiring run the same versions.
+- [ ] T4 Bring the stack up from the **`supabase/postgres` image pinned by exact tag** (ships `pgtap`;
+      stock `postgres:16` does not) and install **`pg_prove` from a pinned
+      `libtap-parser-sourcehandler-pgtap-perl` apt version** on the host — the one install mechanism
+      ci-wiring reuses verbatim (R2-F1). First introduction of pgTAP into the repo, mandated by parent
+      plan §4.2/§4.9 (R1-F2). Record the pinned image tag and apt version so lane 6 matches exactly.
 - [ ] T5 Smoke test asserts the fixtures load and `pgtap`/`pg_prove` are available; document in
       `docs/multitenancy/LOCAL-STACK.md`.
 Acceptance: the up+seed script runs green locally and in a CI service container; `pgtap`/`pg_prove`
@@ -51,20 +53,23 @@ mt-guardrails/generated-inventories`.
 <!-- lane: isolation-suite -->
 ## isolation-suite — tenant-isolation SQL suite, pgTAP (repo vitana-platform)
 Allowed paths:
-- `supabase/tests/mt/**`
+- `scripts/ci/sql-tests/mt-isolation.test.sql`
 - `scripts/ci/sql-tests/run-mt-isolation-test.sh`
-- [ ] P1 `supabase/tests/mt/*.sql` **pgTAP** specs (the hash-stamped parent plan §4.2 at `:51` and §4.9
-      at `:61` mandate pgTAP for these assertions; parent hash
-      `869182cc6aef344b107c6a8915fe2271bbd1bc982febb198f09027e7eb451326`): for each of the 18 tenant
-      tables (plan §2) and the health tables (via the shared health-table-list constant from
-      `generated-inventories`), assert b_member sees 0 T_A/`CANARY_A` rows. First introduction of pgTAP
-      into the repo, path (a) — no parent amendment (R1-F2).
+- [ ] P1 `scripts/ci/sql-tests/mt-isolation.test.sql` **pgTAP** specs — placed beside the runner in
+      `scripts/ci/sql-tests/`, exactly as VTID-05149 places `vtid-05149-tenant-foundation.test.sql`
+      next to its runner, so `SQL-MT-ISOLATION.yml`'s `paths:` trigger stays on `scripts/ci/sql-tests/**`
+      like every `SQL-*.yml` (R2-F3). The hash-stamped parent plan §4.2 at `:51` and §4.9 at `:61`
+      mandate pgTAP; parent hash `869182cc6aef344b107c6a8915fe2271bbd1bc982febb198f09027e7eb451326`.
+      For each of the 18 tenant tables (plan §2) and the health tables (via the shared health-table-list
+      constant from `generated-inventories`), assert b_member sees 0 T_A/`CANARY_A` rows. First
+      introduction of pgTAP into the repo, path (a) — no parent amendment (R1-F2).
 - [ ] P2 pgTAP: assert a b_member write with a T_A `tenant_id` is rejected by RLS; ab_dual reads and
       writes one health series (§4.9).
-- [ ] P3 `scripts/ci/sql-tests/run-mt-isolation-test.sh` runs the specs via `pg_prove` over **external
-      `psql`** against lane 1's running local stack (same harness location as
-      `scripts/ci/sql-tests/run-tenant-foundation-test.sh`), NOT `initdb`/`pg_ctl` (R1-F1). `pgtap`/
-      `pg_prove` are provided by the `local-test-stack` lane.
+- [ ] P3 `scripts/ci/sql-tests/run-mt-isolation-test.sh` runs `mt-isolation.test.sql` via `pg_prove`
+      over **external `psql`** against lane 1's running local stack (both files co-located in
+      `scripts/ci/sql-tests/`, like `run-tenant-foundation-test.sh` + its `.test.sql`, R2-F3), NOT
+      `initdb`/`pg_ctl` (R1-F1). The pinned `supabase/postgres` image (ships `pgtap`) and `pg_prove`
+      are provided by the `local-test-stack` lane.
 Acceptance: `scripts/ci/sql-tests/run-mt-isolation-test.sh` green (`pg_prove`) against the local stack;
 no production access. Depends on `local-test-stack` (running stack + `pgtap`/`pg_prove`) and
 `generated-inventories`. PR title `VTID-xxxxx (mt-guardrails/isolation-suite): —`; trailers
@@ -107,18 +112,24 @@ mt-guardrails/maxina-golden-suite`.
 ## ci-wiring — CI wiring + MIGRATION-QUEUE check (governance, repo vitana-platform)
 Allowed paths:
 - `.github/workflows/MT-GUARDRAILS.yml`
+- `.github/workflows/SQL-MT-ISOLATION.yml`
 - `.github/workflows/MORNING-SYSTEM-HEALTH-CHECK.yml`
 - `scripts/ci/mt/**`
-- [ ] C1 `MT-GUARDRAILS.yml` runs the inventory/lint generators, the **pgTAP** isolation suite
-      (`scripts/ci/sql-tests/run-mt-isolation-test.sh` via `pg_prove`), the gateway scope lint, the
-      contract tests and the golden suite; report-only via `scripts/ci/mt/config.json` `enforce`, then
-      enforcing.
+- [ ] C1 `MT-GUARDRAILS.yml` runs the inventory/lint generators, the gateway scope lint, the contract
+      tests and the golden suite; the pgTAP isolation suite gets its OWN standalone
+      `SQL-MT-ISOLATION.yml` (modelled on `SQL-TENANT-FOUNDATION.yml`, `paths:` on
+      `scripts/ci/sql-tests/**`). Both land **report-only via a `scripts/ci/mt/config.json`
+      `report_only` flag (default `true`): warn-and-exit-0 even on failure** — NOT PR-GATE's `enforce`,
+      which gates only the Verdict `OUTCOMES` checks (R2-F2). Flip target: a later governance PR setting
+      `report_only=false`.
 - [ ] C2 `scripts/ci/mt/migration-queue-check.mjs` + `.test.mjs` validates
       `docs/multitenancy/MIGRATION-QUEUE.md` (one row per migration file, apply order, each names a
       rollback), replacing the review rule.
-- [ ] C3 **Install `pgtap`/`pg_prove` in the job** (pinned to the `local-test-stack` versions) and run
-      the pgTAP suite against a job-local Postgres service (R1-F2/R1-F1); wire a shrinking baseline (the
-      drift-check pattern). Fold the row-21b fix: align `MORNING-SYSTEM-HEALTH-CHECK.yml` row 21b's
+- [ ] C3 `SQL-MT-ISOLATION.yml` uses lane 1's **identical install mechanism** — the pinned
+      `supabase/postgres` image (ships `pgtap`) as the Postgres service + `pg_prove` from the same
+      pinned `libtap-parser-sourcehandler-pgtap-perl` apt version — then runs
+      `scripts/ci/sql-tests/run-mt-isolation-test.sh` (R2-F1 / R1-F2 / R1-F1); wire a shrinking baseline
+      (the drift-check pattern). Fold the row-21b fix: align `MORNING-SYSTEM-HEALTH-CHECK.yml` row 21b's
       `SUPABASE_URL` binding to `vars.DATA_REST_URL || secrets.SUPABASE_URL` (matching rows 5—12/21).
 Acceptance: `node --test scripts/ci/mt/*.test.mjs` green; the workflow runs report-only on its own PR;
 the queue check flags a malformed row and passes the current file. Governance lane (`executor: claude`,
