@@ -5,7 +5,7 @@ author_seat: exafy
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-18T15:16Z
+updated: 2026-10-18T17:49Z
 ---
 # Handoff — sparring-model-fallback
 
@@ -32,4 +32,7 @@ llm-defaults.ts NO_FALLBACK_STAGES). Pushed as plan( PR for PLAN-SPAR to spar. N
 session. Next: PLAN-SPAR round 1.
 
 ### 2026-10-18T15:16Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-18T17:49Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
