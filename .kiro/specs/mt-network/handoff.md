@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-18T20:19Z
+updated: 2026-10-18T20:29Z
 ---
 # Handoff — mt-network (WS3 Network layer & community/network scopes)
 Planner: Kiro (seat `hotmail`), session `kiro-hotmail-202610151618-b437`, holding the `mt-network/_plan` claim. This spec implements program `docs/MULTI-TENANT-PLAN.md` §4.11 + §6 WS3: the two-scope (`community`/`network`) model for messenger, Find-a-Match and ORB recipient resolution, the network-presence opt-in, enforced message/connection sends, the legacy-message migration, and (M3, flagged) Network groups (D27, owned here). Plan: `plan.md`. Requirements/design/tasks: `requirements.md`, `design.md`, `tasks.md`.
@@ -40,4 +40,7 @@ The sparring partner could not review (model_unavailable). Not a plan problem: C
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
 
 ### 2026-10-18T20:19Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-18T20:29Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
