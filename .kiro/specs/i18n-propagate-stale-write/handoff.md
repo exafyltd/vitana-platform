@@ -5,7 +5,7 @@ author_seat: exafyltd
 executor: claude
 next_actor: claude
 state: drafted
-updated: 2026-10-18T22:45Z
+updated: 2026-10-18T22:48Z
 ---
 # Handoff — I18N-PROPAGATE stale-write fix
 
@@ -27,3 +27,6 @@ Claimed `_plan`. Answered R1-F1, R1-F2, R1-F3 (all accepted) in `sparring/respon
 vitana-v1 premises at `5c4632ea9` and `origin/main` `704b5def4` (unchanged). Plan block now carries verbatim premise
 excerpts, the explicit collect/pivot retry shape, file-scope rules and test scenarios h–k. No VTID, no live writes,
 no workflow dispatched. next_actor: claude — the push starts PLAN-SPAR round 2.
+
+### 2026-10-18T22:48Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
