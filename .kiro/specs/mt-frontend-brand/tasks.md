@@ -48,21 +48,23 @@ Allowed paths:
 
 - [ ] B1 Replace the literal `maxina` slug in `CommerceJoin.tsx` (142/149/176) with the active
       slug from `useTenant`; keep Maxina as the default when the active tenant is Maxina.
-- [ ] B2 `AuthGuard.tsx:271`: derive the OAuth redirect base from the active tenant slug,
+- [ ] B2 `AuthGuard.tsx:267,271`: derive the OAuth redirect base from the active tenant slug,
       Maxina as fallback.
-- [ ] B3 `RedeemVoucher.tsx` / `RedemptionLanding.tsx`: navigate to the active tenant's portal
-      path, Maxina as fallback.
+- [ ] B3 `RedeemVoucher.tsx` (:65,108,135,161) / `RedemptionLanding.tsx` (:47,51 + logo :61):
+      navigate to / render the active tenant's portal path and logo, Maxina as fallback.
 - [ ] B4 `store-links.ts`: read per-tenant store URLs from the brand pack when present, else
       the current Maxina constants (compiled fallback).
-- [ ] B5 `useTenantMeta()` hook sets `document.title`, favicon href and OG `<meta>` from the
-      registry, Maxina fallback. Mount it by adding one `useTenantMeta()` call to the existing
+- [ ] B5 `useTenantMeta()` hook sets `document.title` and favicon href ONLY from the registry,
+      Maxina fallback. It does NOT mutate OG/`<meta>` tags (round-1 R1-F4: JS-set OG is invisible
+      to share-card crawlers; per-tenant share cards are owned by the server-side OG worker lane
+      `email-brand-code`). Mount it by adding one `useTenantMeta()` call to the existing
       `AppHooksInitializer` in `src/App.tsx:469` (import + one call only; no new route, no JSX
       element — so no nav-registry/screen-manifest/parity change).
 - [ ] B6 i18n `src/i18n/de/tenantBrand.json` first (du-form), mirror to `en/`; no raw JSX text;
       `npm run i18n:inventory`.
 - [ ] B7 Vitest: signup posts the active slug; redirect/navigate derive from the slug;
-      `useTenantMeta` sets title/favicon/OG with Maxina fallback; store-links fall back; a test
-      asserts `AppHooksInitializer` calls `useTenantMeta` (the hook is actually mounted).
+      `useTenantMeta` sets title/favicon (NOT OG) with Maxina fallback; store-links fall back; a
+      test asserts `AppHooksInitializer` calls `useTenantMeta` (the hook is actually mounted).
 Acceptance: full `npx vitest run` green; ESLint i18n + design clean on new files; Spotlight
 tokens + logical start/end; RTL verified; the `src/App.tsx` edit adds no route/JSX element,
 only the `useTenantMeta()` call (no nav-registry/screen-manifest/parity change).
@@ -74,10 +76,16 @@ Allowed paths:
 - `src/lib/admin-api.ts`
 - `src/lib/admin-api.test.ts`
 
+Preparatory plumbing (round-1 R1-F2): this lane only makes the client SEND the headers and
+fixes the JSDoc. No gateway route `adminFetch` calls reads them yet; the gateway-side
+tenant-scoping reads are a named WS7 follow-on VTID (plan Out of scope).
+
 - [ ] AF1 Inject `X-Vitana-Tenant` (active tenant id) and `X-Vitana-Active-Role` in
-      `adminFetch` when known, from the tenant/role source callers already use; fix the JSDoc.
+      `adminFetch` when known, from the tenant/role source callers already use; fix the JSDoc
+      (`admin-api.ts:5-7`) so it matches the code. Gateway CORS already allows both headers
+      (`services/gateway/src/middleware/cors.ts:67`).
 - [ ] AF2 Vitest pins both headers present with a tenant/role, absent without, Authorization
-      unchanged.
+      unchanged. The test proves client-send only — not that any gateway route consumes them.
 Acceptance: full `npx vitest run` green; no behaviour change for calls without a tenant/role.
 
 <!-- lane: email-brand-db -->
@@ -114,8 +122,8 @@ Allowed paths:
 - [ ] EC1 `_shared/tenant-brand.ts`: resolve sender/logo/brand/site-name from the
       `email-brand-db` helper by a tenant id, Maxina values as fallback.
 - [ ] EC2 Each email edge fn resolves sender/logo/brand from the row's tenant; OG workers emit
-      the resolved site name/title suffix. No literal `MAXINA`/`VITANA` left in the resolved
-      path.
+      the resolved site name/title suffix (this lane owns ALL per-tenant share-card branding,
+      R1-F4). No literal `MAXINA`/`VITANA` left in the resolved path.
 - [ ] EC3 Owner runbook `docs/validation/<vtid>/runbook-supabase.md`: the Supabase Auth email
       templates + redirect allowlist steps (owner-only; no script).
 - [ ] EC4 Vitest/Deno: each fn selects by tenant and falls back to Maxina; OG site name
@@ -130,7 +138,8 @@ Allowed paths:
 - `services/gateway/test/middleware/cors.test.ts`
 
 - [ ] CC1 Merge an env/config origin list onto the compiled `ALLOWED_ORIGINS` default (keep
-      every current origin). ≤20-line change in its own PR (hot file).
+      every current origin). Touch only the origin list — the `allowedHeaders` array
+      (`cors.ts:67`) already permits the tenant headers. ≤20-line change in its own PR (hot file).
 - [ ] CC2 Jest: default list still allows every current origin; a configured extra origin is
       allowed; an unknown origin is blocked.
 Acceptance: `npm test` in the gateway green; no live call.
@@ -140,4 +149,3 @@ Acceptance: `npm test` in the gateway green; no live call.
      scripts/ci/command-hub-ownership-guard.js for DEV-COMHU-*/allowlisted VTIDs, which a
      fresh PLAN-SPAR VTID is not. The data it needs (GET /api/v1/admin/tenants) already
      exists (admin-tenants.ts:76), so nothing in this spec is blocked. -->
-
