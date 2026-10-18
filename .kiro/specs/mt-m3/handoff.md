@@ -3,9 +3,9 @@ slug: mt-m3
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: kiro
+next_actor: claude
 state: drafted
-updated: 2026-10-17T20:10Z
+updated: 2026-10-18T20:20Z
 ---
 # Handoff — mt-m3 (M3 generally provisionable; program `docs/MULTI-TENANT-PLAN.md` v5.1 §6/§7)
 
@@ -86,3 +86,6 @@ each premise against `origin/main` and the concurrent plan branches (`responses-
 - **R1-F4 (minor)** `provision_tenant`'s `ON CONFLICT DO NOTHING` would drop a feature_flags ERP flag on re-run; a
   guarded `jsonb_set` UPDATE after the INSERT + a both-paths pgTAP assertion added (plan Fix #5, tasks E1/E3, lane body).
 Plan body trimmed back under ~15k chars; markers + change_class intact. Re-pushed `kiro/mt-m3/plan`; next round starts.
+
+### 2026-10-18T20:20Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
