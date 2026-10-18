@@ -31,11 +31,12 @@ pieces are still open and verified today against platform `origin/main`:
 4. `tenantDb`/`TENANT_TABLES`/`isHealthTable`/`healthDb` do not exist (only a forward-reference comment at
    `services/gateway/src/middleware/auth-supabase-jwt-repository.ts:21`). Tenant-table access is ad hoc; health tables
    are not systematically excluded.
-5. Slug maps with fake tenant ids are live and each hold FOUR hardcoded `…0001`–`…0004` ids
-   (vitana/maxina/alkalma/earthlings), not two: `routes/me.ts:15` (`TENANT_SLUGS`, id→slug, read at `me.ts:270,408`)
-   and `routes/me.ts:23` (`SLUG_TO_TENANT_ID`, slug→id); `routes/dev-auth.ts:26` (`SLUG_TO_TENANT_ID`, read at
-   `dev-auth.ts:491`); `services/orb-memory-bridge.ts:66` `DEV_IDENTITY` (`TENANT_ID`/`TENANT_SLUG` dev constants at
-   `:70-71`).
+5. Two distinct fake-tenant-id shapes are live. (a) Two FOUR-entry slug maps (`…0001`–`…0004` =
+   vitana/maxina/alkalma/earthlings, not two): `routes/me.ts:15` (`TENANT_SLUGS`, id→slug, read at `me.ts:270,408`) +
+   `routes/me.ts:23` (`SLUG_TO_TENANT_ID`, slug→id), and `routes/dev-auth.ts:26` (`SLUG_TO_TENANT_ID`, read at
+   `dev-auth.ts:491`). (b) A dev-sandbox IDENTITY CONSTANT, not a map: `services/orb-memory-bridge.ts:66`
+   `DEV_IDENTITY` is a single struct (user `…0099`) pinned to `TENANT_ID='…0001'`/`TENANT_SLUG='vitana'` — one value,
+   no 0002–0004 — used as the fallback identity when a sandbox request has no authenticated session.
 6. `bootstrap_admin_user` pins `tenants.name IN ('Maxina','Alkalma','Earthlings')` / `name = 'Maxina'` (wrong key
    column) and writes `memberships` — vitana-v1 migrations `20250831083908_…` through `20250831091149_…` (several
    copies).
@@ -47,7 +48,12 @@ D14), not here.
 1. **helpers-and-policy-rewrite (DB).** Add `tenant_id_for_policies()` — a NEW name, not a redefine of
    `current_tenant_id()` — and `is_member(tenant_id)` as a STABLE SECURITY DEFINER pair over the unique
    `(tenant_id, user_id)` index, with the N2 degraded path `coalesce(<claim if is_member>, <auth.uid()'s primary
-   user_tenants row>)`, called through `(select …)` so Postgres evaluates them once per statement. Rewrite each of the
+   user_tenants row>)`. `(select tenant_id_for_policies())` is uncorrelated so Postgres hoists it to an initPlan — one
+   indexed lookup per statement on the hot user-private tables (`user_notifications`/`chat_messages`). `(select
+   is_member(tenant_id))` on tenant-shared tables is CORRELATED on the outer `tenant_id` column, so it runs once per
+   row, NOT an initPlan; acceptable because `is_member()` is STABLE SECURITY DEFINER over the unique index (one index
+   probe/call) and the test plan adds an EXPLAIN check bounding the per-row cost on the largest tenant-shared table
+   (`live_rooms`). Rewrite each of the
    **19 bare policies on the 11 tables above** to `user_id = auth.uid() AND tenant_id = (select tenant_id_for_policies())`
    (user-private) or `(select is_member(tenant_id))` (tenant-shared, owner-tagged). The 5 named tables with NO policy
    (`access_audit_log`, `consents`, `retrieval_traces`, `role_sessions`, `user_roles`) are **out of scope for a
@@ -59,21 +65,31 @@ D14), not here.
    it updates the per-table list, not this plan.
 2. **membership-unification (DB).** `user_tenants` (with `is_primary`/`active_role`) becomes canonical; backfill the
    drifted rows (recount read-only at implementation); `memberships` becomes a view over `user_tenants` with a
-   dual-write trigger for legacy writers; a nightly drift report reads 0 when converged. Expand/contract; snapshot
-   first; the view cutover must not perturb the four `user_tenants` AFTER INSERT triggers (N1 side-effect guard).
+   dual-write trigger for legacy writers; a nightly drift report reads 0 when converged. The dual-write trigger body
+   (steady state, not just the backfill) writes `INSERT INTO user_tenants … ON CONFLICT (tenant_id, user_id) DO
+   NOTHING`, so a legacy idempotent re-insert of an existing `memberships` row is a no-op and NEVER re-fires the four
+   `user_tenants` AFTER INSERT triggers (the VTID-03990 duplicate-welcome-DM shape, program §3/S-E). Expand/contract;
+   snapshot first; the view cutover must not perturb the four AFTER INSERT triggers (N1 side-effect guard).
 3. **access-token-hook-shadow (DB).** The hook function reads the active `user_tenants` membership (treating
    `app_metadata.active_tenant_id` as a preference only) and emits `tenant_id_shadow` ONLY, failing open
    (`EXCEPTION WHEN OTHERS` → original claims, single indexed lookup, short statement timeout). A mismatch-log table
-   records shadow-vs-membership disagreements as decisions for the 7-day soak. Migrations only — no auth config here.
+   records shadow-vs-membership disagreements as decisions for the 7-day soak; it is **service-role-only** — the
+   migration runs `REVOKE ALL … FROM PUBLIC, anon, authenticated; GRANT ALL … TO service_role; ALTER TABLE … ENABLE
+   ROW LEVEL SECURITY` with NO policy (RLS then denies every non-service-role read), so `authenticated`/PostgREST can
+   never read another user's shadow-claim rows. Migrations only — no auth config here.
 4. **role-source-and-bootstrap (DB, depends on membership-unification).** One role source of truth; the others derive
    from it. Fix `bootstrap_admin_user` to key on `tenants.is_default` and write canonical `user_tenants` through the
    dual-write path. Expand/contract; snapshot first.
-5. **tenant-db-and-slug-cleanup (CODE, gateway; depends on helpers-and-policy-rewrite).** `tenantDb(ctx)` +
-   schema-derived `TENANT_TABLES`; the canonical `isHealthTable()` predicate (ruling O1 — defined here, referenced by
-   other specs) with health tables EXCLUDED and routed through `healthDb(userId)` (frozen home tenant); remove the four
-   slug-map / fake-id sites — `me.ts:15`+`:23`, `dev-auth.ts:26`, `orb-memory-bridge.ts:66` (each a four-entry
-   `…0001`–`…0004` map) — and the `limit(1)`, using the DB registry + `TenantContext`. All reads dark behind
-   `MT_RESOLUTION_V2` / `tenant_settings.feature_flags.mt.*`.
+5. **tenant-db-and-slug-cleanup (CODE, gateway; depends on helpers-and-policy-rewrite).** Ship the O1 interface
+   (the contract other specs reference, spelled out so it can't drift): `type TENANT_TABLES` (schema-derived set),
+   `isHealthTable(tableName: string): boolean`, `tenantDb(ctx: TenantContext)`, `healthDb(userId: string)` — health
+   tables EXCLUDED from `TENANT_TABLES` and reachable only via `healthDb` (frozen home tenant). Two cleanups: (a) the
+   two four-entry slug maps — `me.ts:15`+`:23`, `dev-auth.ts:26` — and the `limit(1)` are REMOVED, resolving through
+   the DB registry + `TenantContext`. (b) `orb-memory-bridge.ts:66` `DEV_IDENTITY` is a dev-only fallback constant with
+   no session to resolve, so it is NOT iterated like a map: drive `TENANT_ID`/`TENANT_SLUG` from a `DEV_TENANT_SLUG`
+   env var defaulting to `vitana` (DB-registry-backed in the sandbox), keeping the pinned dev user `…0099`. A test
+   asserts no `…0001` literal survives outside `DEV_IDENTITY`'s resolved default and the two slug-map sites. All reads
+   dark behind `MT_RESOLUTION_V2` / `tenant_settings.feature_flags.mt.*`.
 
 ## Migrations
 Range `20261101030000`–`20261101035959` (verified free: newest existing migration is `20261015180000`). Files
@@ -93,13 +109,17 @@ data move. Applied by Claude via RUN-MIGRATION after merge (sessions never apply
   after the rewrite (and, read-only, on the health tables, which already enforce it); tenant-shared policies
   (`is_member`) admit same-tenant members only, not another tenant; the 5 no-policy tables are not asserted (nothing
   to isolate yet — WS2/WS10). The bare-policy lint reads 0; the hook fails open (returns original claims on a forced
-  error) and emits only
-  `tenant_id_shadow`; `is_member()`/degraded fallback resolve the right tenant with the hook OFF.
+  error) and emits only `tenant_id_shadow`; `is_member()`/degraded fallback resolve the right tenant with the hook
+  OFF. `tenant_claim_mismatch_log` denies a read by the `authenticated` role (RLS, no policy) and admits
+  `service_role`. Re-inserting an already-present `memberships` row through the dual-write trigger creates ZERO extra
+  `chat_messages`/founding seats/autopilot rows/live rooms (VTID-03990 contract applied to the steady-state trigger).
+  An EXPLAIN check bounds the per-row `is_member()` cost on the largest tenant-shared table (`live_rooms`).
 - Local-stack test with the hook OFF after the policy rewrite: members still see their own rows and nothing of the
   other tenant.
 - Vitest (gateway): `tenantDb` injects the tenant predicate; `isHealthTable()` matches the health table set and
-  health tables are absent from `TENANT_TABLES`; `healthDb` resolves the frozen home tenant; slug-map removal leaves
-  no `…0001`/`…0002` literal and resolution goes through `TenantContext`.
+  health tables are absent from `TENANT_TABLES`; `healthDb` resolves the frozen home tenant; the two slug maps are
+  gone and resolution goes through `TenantContext`; and no `…0001` literal survives outside `DEV_IDENTITY`'s resolved
+  `DEV_TENANT_SLUG` default and the two slug-map sites.
 - Required suites when touched: `npm run test:support` (42c), `npm run test:operator` (42e), `npm run test:roles`
   (42h — the role-source lane touches the role registry path). Maxina golden suite unchanged (program WS0).
 

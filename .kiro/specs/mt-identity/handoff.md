@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-17T16:30Z
+updated: 2026-10-17T16:55Z
 ---
 # Handoff — mt-identity (WS1 identity, tenancy resolution & roles — the "rest" after VTID-05149)
 
@@ -88,4 +88,20 @@ platform tip e0ef609b. Problem #5 understated the slug maps — re-reading `serv
 `orb-memory-bridge.ts:66` `DEV_IDENTITY` (`TENANT_ID`/`TENANT_SLUG` at `:70-71`). Corrected plan.md Problem #5 + Fix #5
 and lanes/tenant-db-and-slug-cleanup.md to the verified citations; lane paths unchanged. O1 ownership unchanged; parent
 `docs/MULTI-TENANT-PLAN.md` not amended. queue.mjs validators re-run = 0 errors. No source-code edits, no live-system
+calls.
+
+### 2026-10-17T16:55Z · kiro-hotmail-202610151618-b437 · drafted (answered sparring session 2, round 1)
+New PLAN-SPAR session `2cc96038` reviewed the refined plan (plan_text_sha `12ceab50`) and raised 5 findings, all
+code-cited. Answered in `sparring/s2-responses-1.md`: all five ACCEPTED. (F1 blocker) `tenant_claim_mismatch_log` now
+specifies service-role-only access (REVOKE from PUBLIC/anon/authenticated, GRANT to service_role, RLS enabled with no
+policy = deny), in plan.md Fix #3 + the hook-shadow lane + a pgTAP deny/admit test. (F2 major) corrected my own
+round-2 over-reach: `orb-memory-bridge.ts:66` `DEV_IDENTITY` is a single dev-user struct (`…0099`) pinned to
+`…0001`/vitana, NOT a four-entry map — split Problem #5 / Fix #5 into (a) the two four-entry maps and (b) the
+`DEV_IDENTITY` constant driven by a `DEV_TENANT_SLUG` env var (default vitana). (F3) added the O1 TypeScript interface
+signatures (`TENANT_TABLES`, `isHealthTable`, `tenantDb`, `healthDb`) to Fix #5 + the lane. (F4) split the policy cost
+claim: `(select tenant_id_for_policies())` is an initPlan on hot user-private tables; `(select is_member(tenant_id))`
+is correlated/per-row on tenant-shared tables, bounded by an EXPLAIN check on `live_rooms`. (F5) the dual-write trigger
+steady-state path uses `ON CONFLICT (tenant_id, user_id) DO NOTHING` with a zero-side-effect pgTAP test. plan.md now
+14,786 chars (< 15k), both markers + change_class intact. queue.mjs validators re-run on handoff + all lanes = 0
+errors; tasks.md Allowed paths unchanged (no path edits). Parent plan not amended. No source-code edits, no live-system
 calls.

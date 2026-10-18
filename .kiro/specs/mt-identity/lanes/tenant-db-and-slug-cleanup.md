@@ -18,7 +18,7 @@ paths:
   - services/gateway/src/routes/dev-auth.ts
   - services/gateway/src/services/orb-memory-bridge.ts
   - services/gateway/test/mt-identity-slug-cleanup.test.ts
-updated: 2026-11-01T00:00Z
+updated: 2026-10-17T16:55Z
 ---
 # tenant-db-and-slug-cleanup — tenantDb/TENANT_TABLES, canonical isHealthTable()/healthDb, remove slug maps (CODE)
 
@@ -29,17 +29,22 @@ helpers the tenantDb predicates line up with). Gateway code lane — seat `jtadi
 per the brief's lane-assignment rule), reviewer `hotmail`.
 
 Scope (gateway code, all dark behind `MT_RESOLUTION_V2` / `tenant_settings.feature_flags.mt.*`):
-- `tenantDb(ctx)` — a service-role wrapper that injects the tenant predicate for a schema-derived `TENANT_TABLES`
-  list; raw access stays only in allowlisted platform/cron code.
+- The **O1 interface** (spelled out so downstream specs cannot drift): `type TENANT_TABLES` (schema-derived),
+  `isHealthTable(tableName: string): boolean`, `tenantDb(ctx: TenantContext)`, `healthDb(userId: string)`. `tenantDb`
+  is a service-role wrapper that injects the tenant predicate for `TENANT_TABLES`; raw access stays only in
+  allowlisted platform/cron code.
 - The **canonical `isHealthTable()` predicate** (cross-spec ruling **O1**): health tables are EXCLUDED from
   `TENANT_TABLES` and reached only through a user-keyed `healthDb(userId)` that resolves the frozen health home
   tenant. This file is the single source other specs reference — they never keep their own list; adding a health
   table extends this predicate here.
-- Remove the slug maps / fake tenant ids / `limit(1)` — each map holds four `…0001`–`…0004` ids
-  (vitana/maxina/alkalma/earthlings), not two: `routes/me.ts:15` (`TENANT_SLUGS`, read at `me.ts:270,408`) +
-  `routes/me.ts:23` (`SLUG_TO_TENANT_ID`), `routes/dev-auth.ts:26` (`SLUG_TO_TENANT_ID`, read at `dev-auth.ts:491`),
-  `services/orb-memory-bridge.ts:66` `DEV_IDENTITY` (`TENANT_ID`/`TENANT_SLUG` at `:70-71`) — replace with the
-  DB-backed registry / `TenantContext` (VTID-05149) and the canonical resolver.
+- Two distinct fake-id shapes (verified at tip e0ef609b): (a) two FOUR-entry slug maps `…0001`–`…0004` —
+  `routes/me.ts:15` `TENANT_SLUGS` (read at `me.ts:270,408`) + `routes/me.ts:23` `SLUG_TO_TENANT_ID`,
+  `routes/dev-auth.ts:26` `SLUG_TO_TENANT_ID` (read at `dev-auth.ts:491`) — plus the `limit(1)`, all REMOVED in favour
+  of the DB registry / `TenantContext` (VTID-05149). (b) `services/orb-memory-bridge.ts:66` `DEV_IDENTITY` is a
+  single dev-only fallback CONSTANT (user `…0099`) pinned to `TENANT_ID='…0001'`/`TENANT_SLUG='vitana'`, NOT a map and
+  with no session to resolve — drive it from a `DEV_TENANT_SLUG` env var defaulting to `vitana` (DB-registry-backed in
+  the sandbox), keep the pinned dev user. A test asserts no `…0001` literal survives outside the resolved default and
+  the two slug-map sites.
 
 Does NOT redefine `current_tenant_id()` and does NOT enable the hook (DB lanes own those). No new route → no
 nav-registry / screen-manifest / parity-ledger change. New user-visible strings (none expected) would be i18n DE-first.
@@ -56,5 +61,9 @@ exist yet; slug maps live at the three cited sites. Held pending PLAN-SPAR VTID 
 ### 2026-10-17T16:30Z · kiro-hotmail-202610151618-b437 · ready (round-2 premise tightening)
 Re-verified the slug-map sites against platform tip e0ef609b: `me.ts:15` `TENANT_SLUGS` + `me.ts:23`
 `SLUG_TO_TENANT_ID` (read at `me.ts:270,408`), `dev-auth.ts:26` `SLUG_TO_TENANT_ID` (read at `dev-auth.ts:491`),
-`orb-memory-bridge.ts:66` `DEV_IDENTITY` (`:70-71`). Each map holds four `…0001`–`…0004` ids, not two; corrected the
-citation. Paths unchanged.
+`orb-memory-bridge.ts:66` `DEV_IDENTITY` (`:70-71`). The two `me.ts`/`dev-auth.ts` maps hold four `…0001`–`…0004` ids.
+Paths unchanged.
+### 2026-10-17T16:55Z · kiro-hotmail-202610151618-b437 · ready (answered sparring s2 round-1)
+Partner finding R1-F2 (major): `DEV_IDENTITY` is NOT a four-entry map — it is a single dev-user struct (`…0099`)
+pinned to `…0001`/vitana. Corrected the scope split into (a) the two four-entry maps and (b) the `DEV_IDENTITY`
+constant driven by `DEV_TENANT_SLUG` (default vitana). Added the O1 interface signatures (R1-F3). Paths unchanged.

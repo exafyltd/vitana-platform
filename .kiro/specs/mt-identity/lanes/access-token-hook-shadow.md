@@ -10,7 +10,7 @@ paths:
   - supabase/migrations/20261101032000_vtid_xxxxx_access_token_hook_shadow.sql
   - supabase/migrations/20261101032100_vtid_xxxxx_tenant_claim_mismatch_log.sql
   - supabase/migrations/20261101032000_vtid_xxxxx_access_token_hook_shadow_rollback.sql
-updated: 2026-11-01T00:00Z
+updated: 2026-10-17T16:55Z
 ---
 # access-token-hook-shadow — custom access-token hook in SHADOW (DB)
 
@@ -22,7 +22,10 @@ Scope (program plan §4.2 rollout step a): the Supabase custom access-token hook
 `user_tenants` membership (validating `app_metadata.active_tenant_id` as a *preference* only) and emits
 **`tenant_id_shadow` only** — never a top-level `tenant_id`. It must fail open (`EXCEPTION WHEN OTHERS` → original
 claims; single indexed lookup; short statement timeout). Add a mismatch-log table that records, as decisions not
-heartbeats, where the shadow claim disagrees with membership (the 7-day shadow soak).
+heartbeats, where the shadow claim disagrees with membership (the 7-day shadow soak). The log table is
+**service-role-only**: the `…032100` migration runs `REVOKE ALL … FROM PUBLIC, anon, authenticated; GRANT ALL … TO
+service_role; ALTER TABLE … ENABLE ROW LEVEL SECURITY` with NO policy, so RLS denies every `authenticated`/PostgREST
+read of another user's shadow-claim rows. A pgTAP test asserts the `authenticated` deny and the `service_role` admit.
 
 **OUT OF SCOPE here, by owner rule and the brief:** the hook GO-LIVE (emitting real `tenant_id`) and its Supabase
 auth-config enablement are a SEPARATE later lane, applied by the owner per D14 after the policy rewrite and
@@ -38,3 +41,7 @@ trailers `Collab-Session` + `Collab-Lane: mt-identity/access-token-hook-shadow`.
 ### 2026-11-01T00:00Z · kiro-hotmail-202610151618-b437 · created → ready
 Created by the mt-identity planner. Verified read-only: no access-token hook exists in current migrations. Held
 pending PLAN-SPAR VTID allocation.
+### 2026-10-17T16:55Z · kiro-hotmail-202610151618-b437 · ready (answered sparring s2 R1-F1)
+Blocker R1-F1: the net-new `tenant_claim_mismatch_log` table had no access-control spec. Added service-role-only
+posture (REVOKE PUBLIC/anon/authenticated, GRANT service_role, RLS enabled with no policy = deny) + a pgTAP deny/admit
+test. Paths unchanged.
