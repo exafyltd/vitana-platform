@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-17T16:45Z
+updated: 2026-10-18T19:57Z
 ---
 # Handoff — mt-packs (WS5): Assistant & content packs
 
@@ -131,3 +131,6 @@ against the tip), responses in `sparring/s2-responses-1.md`.
 Updated plan.md (Problem #3, persona-pack + kb-overlay-code Fix, Tests, Risks, Out of scope), tasks.md
 (persona-pack Allowed paths + P2–P5, kb K1), lanes `persona-pack` and `kb-overlay-code`. queue.mjs validators on
 handoff.md + all 7 lanes → 0 errors; tasks markers 1:1; Allowed paths == lane paths. Next: push → next round.
+
+### 2026-10-18T19:57Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
