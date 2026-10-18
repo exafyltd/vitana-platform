@@ -5,7 +5,7 @@ author_seat: exafy
 executor: claude
 next_actor: claude
 state: drafted
-updated: 2026-10-18T19:57Z
+updated: 2026-10-18T22:06Z
 ---
 # Handoff — sparring-floor-retry
 
@@ -34,3 +34,18 @@ reason retryable in general.
 
 ### 2026-10-18T19:57Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-18T22:06Z · kiro-exafy-202610182201-a62f · drafted (round 2 is an infra escalation, not findings)
+Answered the Planner (A) item for round 2. `round-2.md` is a partner-outage infra escalation, not a
+plan-critique round: the partner (Claude Opus 4.6 on Bedrock) returned
+`model_unavailable: Bedrock invoke_failed: Too many tokens per day`, and the round has zero findings.
+`sparring/state.json` has `verdict: escalated`, `infra: true`, `retryable: true`, `submitted: [1]`.
+Wrote `sparring/responses-2.md` with an empty `[]` disposition array and a note explaining why — there
+is nothing to accept/reject/defer, so no `plan.md` change (plan hash preserved for a clean re-spar).
+This is a Claude Code / CI re-run concern per CLAUDE.md rule 53 (no silent fallback; a failed partner
+call is retried) and collaboration §7 (Claude Code handles partner outages). Mechanically,
+`plan-spar.mjs` `step()` takes the `retryInfra` path on the next push (pops the escalated session,
+creates a fresh one) and never reads `responses-2.md`; a responses file is only consumed on the
+`in_progress` branch. Left `next_actor: claude`, `state: drafted` unchanged — the partner-outage retry
+belongs to Claude Code / PLAN-SPAR, not to the plan author. No VTID, no live write, no merge; nothing
+outside this one item.
