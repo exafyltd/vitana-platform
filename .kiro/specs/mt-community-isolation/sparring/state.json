@@ -13,13 +13,15 @@
     },
     {
       "id": "2d859993-c312-448c-92f4-d1e53f68e147",
-      "submitted": [],
-      "plan_text_sha": "1fd1f3d5",
-      "rounds": 1,
-      "verdict": "in_progress",
-      "infra": false,
-      "retryable": false,
-      "final_plan_hash": null,
+      "submitted": [
+        1
+      ],
+      "plan_text_sha": "b174f024",
+      "rounds": 2,
+      "verdict": "escalated",
+      "infra": true,
+      "retryable": true,
+      "final_plan_hash": "f2f50e7e8e3cf5fc1b07a8a8f220cfbda98dd2d3eb0cff4c1100cc11b87647e4",
       "policy_approved_at": null
     }
   ]

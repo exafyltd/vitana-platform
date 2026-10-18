@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-17T16:40Z
+updated: 2026-10-18T19:50Z
 ---
 # Handoff — Community isolation (WS3 Community part)
 Program: `docs/MULTI-TENANT-PLAN.md` v5.1 (§4.11 / §6 WS3, Community half). This spec adds `tenant_id`
@@ -102,3 +102,6 @@ New sparring session `2d859993` reviewed the refined plan and raised 8 findings 
 No lane added/removed, no path/dependency/migration-order change (F3/F6 refined behaviour inside the
 existing founding-pool-tenant-db and community-scope-gateway lanes). Plan body 15,024 chars (≤~15k);
 both plan markers + change_class intact. queue.mjs validators: 0 errors.
+
+### 2026-10-18T19:50Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
