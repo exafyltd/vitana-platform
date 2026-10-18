@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-18T20:14Z
+updated: 2026-10-18T20:22Z
 ---
 # Handoff — mt-jobs (WS6: jobs & events loop over active tenants)
 
@@ -59,4 +59,7 @@ Verified unchanged and exact: the seven automation-event sites (`community.ts:27
 Answered all five s2-round-1 findings in `sparring/s2-responses-1.md` and updated `plan.md` + `tasks.md` + the four lane files (paths unchanged). R1-F1 accepted: the EventBridge tenant pin is NOT a schedule target input -- whats-new.sh/daily-feature-tip.sh pin it in the Lambda --environment Variables (whats-new.sh:204,218) + inline handler body (whats-new.sh:158, daily-feature-tip.sh:190), cron-migration.sh in the schedule Input body of ~26 jobs (:156-188), push-dispatch.sh pins none; Problem 7 + lane 1 + E1 reworded per mechanism. R1-F2 rejected: morning-brief-scheduler.ts exists at services/gateway/src/services/guide/ (partner missed the guide/ subpath) -- re-verified it fetches per-user tenant_id at :130-131 and passes it at :140/:152; added the full path to the plan. R1-F3 accepted: groups-events-tools.ts:357-360 is a fallback (id.tenant_id || DEFAULT_TENANT_ID), not a direct pin -- split into six pins + one fallback, annotated, dedicated no-regression test (A2). R1-F4 accepted: the /community-scan route emits one OASIS event per call (:2299-2309) -> emit ONE aggregated event after the per-tenant loop (C1/C3). R1-F5 accepted: the heartbeat setInterval is registered once at startup (index.ts:1848) -> flag + activeTenantIds evaluated inside each tick, mid-flight-toggle test added (L3/L5). Also re-anchored the plan verification line to tip `d4bc696` and fixed setInterval :1850->:1848. Pushed to start the next round.
 
 ### 2026-10-18T20:14Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-18T20:22Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.

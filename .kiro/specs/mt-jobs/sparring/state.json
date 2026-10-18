@@ -12,12 +12,10 @@
       "policy_approved_at": null
     },
     {
-      "id": "5871c575-a41b-49a5-848b-4b5d04377f22",
-      "submitted": [
-        1
-      ],
+      "id": "791f6bbe-b0a7-4e6f-ad5a-8d24b288ecff",
+      "submitted": [],
       "plan_text_sha": "34edaf1e",
-      "rounds": 2,
+      "rounds": 1,
       "verdict": "escalated",
       "infra": true,
       "retryable": true,
