@@ -86,6 +86,12 @@ Observed: the re-pushes at 2026-10-18T18:42–18:45Z ran PLAN-SPAR green and com
 One lane, `floor-retry-code`, **executor: claude**. `scripts/collab/**` is a governance path (collaboration §3a).
 Reviewer seat `exafy`.
 
+## Coordination
+
+`plan-spar.mjs` is also edited by `plan(sparring-token-efficiency)` #4189 (lane `plan-spar-reasons`, adds
+`token_budget` to the reason lists) and `plan(collab-throughput)` #4191. All three are Claude Code lanes. This one
+goes first. The others rebase on it.
+
 ## Out of scope
 
 - The evidence floor itself (3 cited premise checks in round 1 stays).
