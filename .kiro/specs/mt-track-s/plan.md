@@ -22,8 +22,9 @@ CLOSED (with the migration/route that closed it, cited at current `file:line`) o
    shape, anon EXECUTE kept, a self-check refuses to apply if the result type still mentions email
    (`20261010164100_vtid_05041_…sql:70-120, 206-215`).
 5. **S-E** `switch_to_tenant_by_slug` self-enrolled into ANY slug + gateway trusted `active_metadata`. **CLOSED** —
-   join restricted to `open_signup AND is_active AND NOT is_platform`
-   (`.../20261010180200_vtid_05043_s3_switch_tenant_open_signup_only.sql:38-125`); the four primary-membership
+   self-join only when `tenants.open_signup` (the parent §3 S-E rule; `.../20261010180200_vtid_05043_s3_switch_tenant_open_signup_only.sql:57,77`
+   — this RPC checks ONLY `open_signup`; the `is_active AND NOT is_platform` triple is in the signup triggers,
+   `20261014000200_vtid_05149_signup_default_tenant.sql:113,173`, not here — residual in ## Out of scope); the four primary-membership
    side-effect triggers guarded (`20261010180000_vtid_05043_s3_membership_side_effect_guard.sql`); and members can no
    longer write `user_tenants`/role rows at all (VTID-05147, see S-M).
 6. **S-F** tenant admins could read every tenant's auth audit log and other tenants' community events/groups/rooms.
@@ -36,9 +37,9 @@ CLOSED (with the migration/route that closed it, cited at current `file:line`) o
    matching email and re-checks roles, claiming atomically before any write
    (`services/gateway/src/routes/tenant-admin/invitations.ts:15-24, 56-74, 207-253`, VTID-05044).
 8. **S-H** edge functions trusting body `user_id` with service role. **CLOSED** — `social-media-import` derives the
-   user from `auth.user.id` not the body (`vitana-v1/supabase/functions/social-media-import/index.ts:40,44`); the
+   user from `auth.user.id` not the body (`vitana-v1/supabase/functions/social-media-import/index.ts:33,40,43`); the
    unused `linkedin-import` is auth-gated as defence in depth and flagged for removal
-   (`vitana-v1/supabase/functions/linkedin-import/index.ts:5-9`, VTID-05049). Campaign/discount functions resolve
+   (`vitana-v1/supabase/functions/linkedin-import/index.ts:4,6-8`, VTID-05049). Campaign/discount functions resolve
    audience from the campaign row, not caller identity (`vitana-v1/supabase/functions/_shared/campaign-audience.ts`,
    VTID-05120).
 9. **S-I** caller-supplied `x-tenant-id` / `x-user-id` / `?tenant_id`. **CLOSED** — the headers are ignored and the
@@ -47,7 +48,8 @@ CLOSED (with the migration/route that closed it, cited at current `file:line`) o
    (a non-trusted caller is pinned to `SYSTEM`) — all VTID-05048.
 10. **S-J** `/debug/*` routes and non-private realtime channels. **MOSTLY CLOSED, one residual OPEN** — `/debug/tts`
     and `/debug/context-bootstrap` are exafy_admin (`orb-live.ts:15513,15554`), `/debug/memory` and `/debug/intent` are
-    dev-sandbox-gated (`:15332,15421`). **OPEN:** the dead `linkedin-import` edge function is still shipped (flagged for
+    dev-sandbox-only and ANONYMOUS (no `requireAuth`; 404 outside dev-sandbox, `:15332,15421`) — adding
+    `requireAuth` is a WS0 backlog item (## Out of scope). **OPEN:** the dead `linkedin-import` edge function is still shipped (flagged for
     removal by VTID-05049) and there is no committed route/channel inventory test proving every mounted route has an
     auth gate. The broader "generated route inventory" and realtime-channel RLS are WS0 (M0), not Track S.
 11. **S-K** billing `fetchTenantSettingsFeatureFlags` was an unscoped `.maybeSingle()` (silently null since the 2nd
@@ -86,17 +88,20 @@ close the last gap without re-touching shipped code.
   (M0). Confirm no app code imports `linkedin-import` before
   deleting it (grep `functions.invoke('linkedin-import'` / string references — `social-media-import` replaced it per
   VTID-05049). Code-only, no migration. The lane adds its own `docs/validation/<vtid>/`.
-  **vitana-v1 citations are pinned to `exafyltd/vitana-v1@5c4632ea9`** (re-verified 2026-10-18): `supabase/config.toml:72`
-  `[functions.linkedin-import]` (+ `:73` `verify_jwt = true`); `vitest.config.ts:19` `include: ['src/**/*.test.{ts,tsx}']`;
-  `package.json:29` `"test"` chain; `supabase/functions/linkedin-import/index.ts:4` imports `requireUser` from
-  `_shared/caller-auth.ts`, `:5-7` the VTID-05049 removal comment. T1 re-checks them at the lane's base commit first;
-  a mismatch stops the lane (log + `next_actor: claude`).
+  **vitana-v1 citations pinned to `exafyltd/vitana-v1@32a82e6b6`** (re-verified 2026-10-19; the partner has no v1
+  ref, so these are the planner's verified reads): `supabase/config.toml:72-73` `[functions.linkedin-import]` +
+  `verify_jwt = true`; `vitest.config.ts:19` `include: ['src/**/*.test.{ts,tsx}']`; `package.json:29` `"test"` =
+  `check-edge-data-client.mjs && check-realtime-helper.mjs && vitest run` (both scripts exist); `linkedin-import/index.ts:4`
+  imports `requireUser`, `:6-8` the VTID-05049 removal comment; `git grep linkedin-import -- src supabase/functions`
+  (excl. its own dir) hits ONLY the s4 test, no `functions.invoke` in v1 or platform `services/`;
+  `SUPABASE-FUNCTIONS-RETIRE.yml:42-45` `ALLOWLIST` lacks it. T1 re-checks all of these at the lane's base commit
+  first; any mismatch stops the lane (log + `next_actor: claude`).
   Deleting the function requires two companion edits in the same lane so `npm test` stays green (verified 2026-10-15):
   (i) remove the orphaned `[functions.linkedin-import]` block from `vitana-v1/supabase/config.toml:72-74`; and
   (ii) update the **collected** vitest suite `vitana-v1/src/lib/edge-functions-caller-identity.s4.test.ts`, which reads
   `linkedin-import/index.ts` and asserts on it at four spots — the five-functions loop `:77-88`, the profile-import
-  loop `:90-92`, the `flagged for removal` case `:107-110`, and the `arrayContaining([...])` scan `:272` — dropping
-  `linkedin-import` from all four (keeping `social-media-import`/`fetch-user-context`). That file is under `src/**`, so
+  loop `:90-92`, the `flagged for removal` case `:107-110`, and the `arrayContaining([...])` scan `:272` (plus the `:6` header comment) — dropping
+  `linkedin-import` from all (keeping `social-media-import`/`fetch-user-context`). That file is under `src/**`, so
   vitest collects it and it must be in the lane's `paths` or Lane-scope CI reddens the PR.
 
 Because this lane changes only vitana-v1 code + a test, it ships dark-exempt (there is no runtime behaviour to flag —
@@ -127,8 +132,7 @@ reserved range `20261101010000`–`20261101015959` stays unused and is recorded 
   It is a static heuristic (an unused import alone does not pass), not control-flow proof — the functions are Deno that
   node/Vitest cannot execute, the constraint the s4 suite already states; before-the-body ordering (`await requireUser`
   precedes `req.json()`) is already asserted there, so this gate is the tree-wide floor that no NEW function is ungated.
-  It runs inside the `"test"` chain, so a plain `npm test` executes it (a vitest `.test.ts` under
-  `supabase/functions/**` would not run — `vitest.config.ts` `include` is `src/**/*.test.{ts,tsx}`). The rest of
+  It runs inside the `"test"` chain, so a plain `npm test` executes it. The rest of
   `npm test` (nav registry, design manifest, i18n lint) stays green — no App.tsx route added, so no nav-registry /
   screen-manifest / parity-ledger change. 42c/42e/42h untouched (no support/operator/role surface changed).
 - No pgTAP/contract/golden here (no DB change, no shared instruction surface touched).
@@ -142,19 +146,13 @@ guard aborts, so it cannot run read-only. A read-only staging spec, if added, on
 
 ## Rollout
 Code-only; dark-exempt as stated in ## Fix. Kiro PR → reviewer_seat review → Project Manager merge → staging deploy →
-STAGING-VERIFY → Gate 2 → PUBLISH. No DB apply (no migration). Deleting the unused function is reversible by reverting
-the PR; no data is touched. **Governance follow-up after merge (executor claude, not Kiro):** add `linkedin-import` to
-`SUPABASE-FUNCTIONS-RETIRE.yml`'s `ALLOWLIST` and dispatch it to undeploy the live copy (confirmed by its `Confirm`
-step; source stays in git history for recovery). This is the only step touching a live system, deliberately outside
-the Kiro lane.
+STAGING-VERIFY → Gate 2 → PUBLISH. No DB apply. Reversible by reverting the PR; no data touched. Then the retire
+follow-up described in ## Fix (executor claude, the only live-system step, outside the Kiro lane).
 
 ## Risks
-- A hidden consumer of `linkedin-import`. Mitigation: the lane greps both repos for `functions.invoke('linkedin-import'`
-  / string refs before deleting; VTID-05049 recorded `social-media-import` replaced it and nothing calls it (confirmed
-  2026-10-18: only `src/**` ref is the s4 test).
+- A hidden consumer of `linkedin-import`. Mitigation: T1's both-repo grep (pin block in ## Fix) before deleting.
 - The inventory gate over-fits or misses a function. Mitigation: it walks `supabase/functions/**` for the gate
-  import-and-call pair or allowlist membership, so a new ungated function fails CI; running as a node script in the
-  `"test"` chain (not a `.test.ts` outside the `include` glob) is what guarantees it actually runs.
+  import-and-call pair or allowlist membership, so a new ungated function fails CI in the `"test"` chain.
 - Deleting `linkedin-import` breaks the existing collected suite `src/lib/edge-functions-caller-identity.s4.test.ts`
   (it reads the gone file). Mitigation: that file is in the lane `paths` and T2a updates its four `linkedin-import`
   assertions in the same PR, so `npm test` stays green; the suite still covers `social-media-import`/`fetch-user-context`.
@@ -167,6 +165,11 @@ the Kiro lane.
 - The gateway-side **generated route inventory**, the **realtime-channel RLS** (`system-notifications`,
   `user:<id>:calls`), the DB lint and the isolation/golden suites — all WS0 (M0 foundation), each its own sparred slice.
 - Any tenancy resolution / policy classification (WS1), data cleanup (WS2), Network layer (WS3).
+- **Tracked residuals (not this lane, noted in `handoff.md`):** (a) hardening `switch_to_tenant_by_slug`'s lookup to
+  `open_signup AND is_active AND NOT is_platform` (matching the VTID-05149 signup triggers) — the parent §3 S-E rule
+  is `open_signup` only and hands the full join flow to WS3, so it belongs to that slice; today `open_signup` defaults
+  `false` and no tenant has `is_platform` (`20261014000100_vtid_05149_…sql:13,44`). (b) `requireAuth` on the anonymous
+  dev-sandbox `/debug/memory` / `/debug/intent` — WS0 route-inventory backlog.
 
 ## Depends on
 - Done VTIDs this spec builds on and must not duplicate: VTID-05040 (S-A), VTID-05041 (S-B/S-D), VTID-04981 (S-C),

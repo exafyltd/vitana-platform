@@ -1,35 +1,23 @@
-# Responses to s2-round-1 (mt-track-s)
-
-All three findings describe lanes, routes and auth-middleware changes that do **not** exist anywhere in the
-mt-track-s plan or its one lane. mt-track-s has a single OPEN lane, `s-j-route-inventory` (vitana-v1), whose entire
-scope is: delete the dead `linkedin-import` edge function and add a node edge-function caller-auth inventory gate
-(`plan.md` ## Fix; `lanes/s-j-route-inventory.md` `paths`: `supabase/functions/linkedin-import/**`,
-`supabase/config.toml`, `src/lib/edge-functions-caller-identity.s4.test.ts`, `scripts/check-edge-function-auth.mjs`,
-`package.json`, `docs/validation/**`). It touches no gateway route, no Command Hub file, and no tenant-admin
-middleware. The round's own header session id (`643ff85b-f098-4544-ac74-55fda8d4644c`) and plan hash
-(`53ed8eac…`) do not match this session (`7bf15cbe-7042-4a54-9813-7f4efaac2935`, plan_text_sha `b73e525` in
-`state.json`), so the round targeted a different spec's plan (its findings are mt-tenant-admin / mt-frontend-brand
-material). Each finding is therefore rejected with a code-cited reason, and the plan is unchanged — there is no
-legitimate mt-track-s change these findings warrant.
+# Responses — session 2 round 1 (session d0c274cd)
 
 ```json
 [
   {
     "finding_id": "R1-F1",
-    "disposition": "rejected",
-    "rationale": "Not applicable to mt-track-s. No lane named 'command-hub-tenant-module' exists in this spec; the only lane is 's-j-route-inventory' (lanes/s-j-route-inventory.md:1 'lane: s-j-route-inventory'). Its paths (lanes/s-j-route-inventory.md:9-15) are all vitana-v1 paths and include no 'services/gateway/src/frontend/command-hub/**' file, so scripts/ci/command-hub-ownership-guard.js:15 PROTECTED_PATH='services/gateway/src/frontend/command-hub/' never matches this spec's PR. plan.md ## Fix plans only the vitana-v1 edge-function deletion + inventory gate; a grep of plan.md for 'command-hub' returns nothing. The finding reviewed another spec (mt-frontend-brand owns the Command Hub guard per CROSS-SPEC-DECISIONS.md).",
+    "disposition": "accepted",
+    "rationale": "The partner has no vitana-v1 ref, so the planner re-verified every v1 premise at exafyltd/vitana-v1@32a82e6b6 (origin/main, 2026-10-19) and the plan now pins that commit with the exact reads: supabase/config.toml:72-73 [functions.linkedin-import] + verify_jwt = true; vitest.config.ts:19 include ['src/**/*.test.{ts,tsx}']; package.json:29 test = check-edge-data-client.mjs && check-realtime-helper.mjs && vitest run (both scripts exist); linkedin-import/index.ts:4 imports requireUser, :6-8 the VTID-05049 removal comment (was cited :5-7, corrected); social-media-import/index.ts:33,40,43 requireUser + auth.user.id (was :40,44, corrected); s4 test references at :6 (header comment, now listed), :77, :90, :107-108, :272; git grep linkedin-import over src and supabase/functions (excluding its own dir) hits only the s4 test, and no functions.invoke('linkedin-import') exists in v1 or platform services/; SUPABASE-FUNCTIONS-RETIRE.yml:42-45 ALLOWLIST does not list it. T1 re-checks all of them at the lane's base commit and stops the lane on any mismatch.",
     "deferred_to": ""
   },
   {
     "finding_id": "R1-F2",
-    "disposition": "rejected",
-    "rationale": "Not applicable to mt-track-s. This spec plans no 'tenant-admin-api' lane and no scoped-read route handler, and never claims 'requireTenantAdmin already supports both' as a mitigation. The sole OPEN lane changes no gateway code (lanes/s-j-route-inventory.md:9-15 are vitana-v1 edge-function/test/config paths). require-tenant-admin.ts, admin-autopilot.ts and admin-signups.ts are not in any mt-track-s path. plan.md's only mention of requireTenantAdmin is in Problem item 6 (S-F), describing already-shipped VTID-05147 behaviour (plan.md ## Problem #6, cited to tenant-admin/overview.ts and VTID-05147 AC-6), which is CLOSED and explicitly Out of scope (plan.md ## Out of scope: 'do not re-touch shipped code'). The targetTenantId fallback regression belongs to the tenant-admin spec, not here.",
+    "disposition": "accepted",
+    "rationale": "Confirmed: 20261010180200_vtid_05043_s3_switch_tenant_open_signup_only.sql:57 selects only tenant_id, open_signup and :77 branches on open_signup alone; the open_signup AND is_active AND NOT is_platform triple exists only in the VTID-05149 signup triggers (20261014000200_vtid_05149_signup_default_tenant.sql:113,173). The S-E closure record now says the RPC checks only open_signup, which is the parent docs/MULTI-TENANT-PLAN.md section 3 S-E rule (self-enrolment only for open_signup = true tenants; the full join flow is WS3). Adding is_active / NOT is_platform to the RPC is recorded under Out of scope as a tracked residual for the WS3 join-flow slice (and in handoff.md), not added to this lane: the hash-locked parent defines the hotfix rule as open_signup only, open_signup defaults false, and no tenant has is_platform yet (20261014000100_vtid_05149_tenants_default_platform_flags.sql:13,44).",
     "deferred_to": ""
   },
   {
     "finding_id": "R1-F3",
-    "disposition": "rejected",
-    "rationale": "Not applicable to mt-track-s. There is no 'tenant-admin-api' lane and no task that tenant-scopes 'moderation / signups / notifications / users / audit admin reads'; admin-moderation.ts and admin-signups.ts are not in any mt-track-s lane path (lanes/s-j-route-inventory.md:9-15). The spec does not change any auth guard: the sole lane deletes supabase/functions/linkedin-import/** and adds scripts/check-edge-function-auth.mjs + the config.toml/s4-test companion edits (plan.md ## Fix, tasks.md T1-T4). Moderation RPC/guard ownership is mt-tenant-admin P2/P3 per CROSS-SPEC-DECISIONS.md (O4), not Track S. No security-model widening occurs in this spec.",
+    "disposition": "accepted",
+    "rationale": "Confirmed at services/gateway/src/routes/orb-live.ts:15332 and :15421: neither route has requireAuth; both only 404 outside dev-sandbox. The S-J record now reads 'dev-sandbox-only and ANONYMOUS (no requireAuth)', and adding requireAuth is listed under Out of scope as a WS0 route-inventory backlog item.",
     "deferred_to": ""
   }
 ]

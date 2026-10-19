@@ -145,3 +145,11 @@ billing-repository.ts:281). No command was run against a live system.
 
 ### 2026-10-18T22:47Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-19T17:50Z · kiro-hotmail-202610151618-b437 · drafted (s2 round-1 answered, session d0c274cd)
+The resumed session d0c274cd raised R1-F1..F3; all accepted. R1-F1: vitana-v1 citations re-verified and re-pinned to
+vitana-v1@32a82e6b6 (removal comment `linkedin-import/index.ts:6-8`, `social-media-import/index.ts:33,40,43`, s4 header
+comment `:6` added). R1-F2: S-E record corrected — `switch_to_tenant_by_slug` checks only `open_signup` (parent §3
+S-E rule). Tracked residual (not this lane): harden its lookup to `open_signup AND is_active AND NOT is_platform` in
+the WS3 join-flow slice. R1-F3: `/debug/memory` + `/debug/intent` recorded as anonymous dev-sandbox-only; tracked
+residual: `requireAuth` in the WS0 route-inventory backlog. No lane/path change. No live system touched.
