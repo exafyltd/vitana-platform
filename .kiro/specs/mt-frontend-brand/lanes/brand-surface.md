@@ -1,7 +1,7 @@
 ---
 lane: brand-surface
 state: ready
-next_actor: owner
+next_actor: kiro
 depends_on: []
 executor: kiro
 seat: exafyltd
@@ -19,7 +19,8 @@ paths:
   - src/i18n/de/tenantBrand.json
   - src/i18n/en/tenantBrand.json
   - docs/SCREEN_INVENTORY.md
-updated: 2026-10-16T17:20Z
+updated: 2026-10-19T20:32Z
+vtid: VTID-05242
 ---
 # brand-surface — member-facing brand constants tenant-driven (repo vitana-v1)
 
@@ -66,3 +67,6 @@ Verified premises re-hold on the current vitana-v1 checkout (R1-F1): `useTenant.
 `CommerceJoin.tsx:142,149,176`, `AuthGuard.tsx:267,271`, `RedeemVoucher.tsx:65,108,135,161`,
 `RedemptionLanding.tsx:47,51`, `App.tsx:469/772`. plan.md Fix + tasks.md B5/B7 updated to match.
 State unchanged (`ready`).
+
+### 2026-10-19T20:32Z · ci-plan-spar · ready (VTID allocated)
+VTID-05242 allocated after policy approval (converged-auto-v1).

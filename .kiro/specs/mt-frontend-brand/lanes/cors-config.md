@@ -1,7 +1,7 @@
 ---
 lane: cors-config
 state: ready
-next_actor: owner
+next_actor: kiro
 depends_on: []
 executor: kiro
 seat: jtadic
@@ -9,7 +9,8 @@ reviewer_seat: exafyltd
 paths:
   - services/gateway/src/middleware/cors.ts
   - services/gateway/test/middleware/cors.test.ts
-updated: 2026-10-15T16:40Z
+updated: 2026-10-19T20:32Z
+vtid: VTID-05243
 ---
 # cors-config — config-driven CORS allowlist (repo vitana-platform)
 
@@ -36,3 +37,6 @@ Created and held. Premise: hardcoded `ALLOWED_ORIGINS` array + patterns in `cors
 allowed-headers list already includes `X-Vitana-Tenant`/`X-Vitana-Active-Role` (`:71`). Open
 question (plan.md): if sparring prefers Claude for platform chrome, flip to
 `executor: claude, next_actor: claude`. Reviewer seat `exafyltd` (≠ `jtadic`).
+
+### 2026-10-19T20:32Z · ci-plan-spar · ready (VTID allocated)
+VTID-05243 allocated after policy approval (converged-auto-v1).

@@ -1,7 +1,7 @@
 ---
 lane: email-brand-code
 state: ready
-next_actor: owner
+next_actor: kiro
 depends_on: [email-brand-db]
 executor: kiro
 seat: exafyltd
@@ -17,7 +17,8 @@ paths:
   - supabase/functions/og-short/index.ts
   - supabase/functions/_shared/tenant-brand.ts
   - supabase/functions/_shared/tenant-brand.test.ts
-updated: 2026-10-15T16:40Z
+updated: 2026-10-19T20:32Z
+vtid: VTID-05244
 ---
 # email-brand-code — edge fns & OG workers read branding by tenant (repo vitana-v1)
 
@@ -43,3 +44,6 @@ On PR open: `state: in-review`, `next_actor: kiro`, `pr: <url>`, log entry, rele
 Created and held. Premises: hardcoded sender/brand in `voucher-send-email/index.ts:265,344,359`,
 `send-appointment-email/index.ts:262`, siblings; OG `VITANA` site name in `og-share/index.ts:91,96,97`
 and the other og-* workers. depends_on `email-brand-db`. Reviewer seat `jtadic` (≠ `exafyltd`).
+
+### 2026-10-19T20:32Z · ci-plan-spar · ready (VTID allocated)
+VTID-05244 allocated after policy approval (converged-auto-v1).

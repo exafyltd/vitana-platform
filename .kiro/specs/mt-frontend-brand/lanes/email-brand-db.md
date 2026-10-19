@@ -1,7 +1,7 @@
 ---
 lane: email-brand-db
 state: ready
-next_actor: owner
+next_actor: kiro
 depends_on: []
 executor: kiro
 seat: hotmail
@@ -9,7 +9,8 @@ reviewer_seat: exafyltd
 paths:
   - supabase/migrations/20261101090000_vtid_xxxxx_tenant_email_branding.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
-updated: 2026-10-15T16:40Z
+updated: 2026-10-19T20:32Z
+vtid: VTID-05245
 ---
 # email-brand-db — tenant-keyed email branding helper (repo vitana-v1, DB)
 
@@ -36,3 +37,6 @@ trailers `Collab-Session`/`Collab-Lane`. On PR open: `state: in-review`, `next_a
 Created and held. DB lane split from `email-brand-code` per §4.7. Seeds Maxina's current email
 branding so behaviour is byte-identical until a tenant overrides. Seat `hotmail`
 (supabase/migrations + DB lanes per the brief); reviewer seat `exafyltd` (≠ `hotmail`).
+
+### 2026-10-19T20:32Z · ci-plan-spar · ready (VTID allocated)
+VTID-05245 allocated after policy approval (converged-auto-v1).

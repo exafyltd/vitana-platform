@@ -1,7 +1,7 @@
 ---
 lane: theme-tokens
 state: ready
-next_actor: owner
+next_actor: kiro
 depends_on: []
 executor: kiro
 seat: exafyltd
@@ -15,7 +15,8 @@ paths:
   - packages/tokens/**
   - packages/core/src/extracted/**
   - docs/SCREEN_INVENTORY.md
-updated: 2026-10-15T16:40Z
+updated: 2026-10-19T20:32Z
+vtid: VTID-05246
 ---
 # theme-tokens — tenant theme actually renders (repo vitana-v1)
 
@@ -39,3 +40,6 @@ staging-tests.json, plan copy). Branch `kiro/mt-frontend-brand/theme-tokens`; PR
 Created and held (`next_actor: owner`). Premise: `useTenant.tsx:124-133` sets `--brand-*`;
 golden `tenant-registry.maxina-golden.test.tsx:172-183` confirms nothing consumes them yet (C2).
 Reviewer seat `jtadic` (≠ build seat `exafyltd`).
+
+### 2026-10-19T20:32Z · ci-plan-spar · ready (VTID allocated)
+VTID-05246 allocated after policy approval (converged-auto-v1).

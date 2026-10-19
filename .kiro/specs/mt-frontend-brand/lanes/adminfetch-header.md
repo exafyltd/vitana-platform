@@ -1,7 +1,7 @@
 ---
 lane: adminfetch-header
 state: ready
-next_actor: owner
+next_actor: kiro
 depends_on: []
 executor: kiro
 seat: exafyltd
@@ -9,7 +9,8 @@ reviewer_seat: jtadic
 paths:
   - src/lib/admin-api.ts
   - src/lib/admin-api.test.ts
-updated: 2026-10-16T17:20Z
+updated: 2026-10-19T20:32Z
+vtid: VTID-05241
 ---
 # adminfetch-header — adminFetch sends documented tenant headers (repo vitana-v1)
 
@@ -51,3 +52,6 @@ explicitly preparatory plumbing and moved the gateway-side reads to a named WS7 
 (plan Out of scope). R1-F3 (minor, accepted): corrected the CORS citation to `cors.ts:67`
 (allowedHeaders array; `:71` was the VTID-02036 credentials comment). plan.md + tasks.md AF1–AF2
 updated. State unchanged (`ready`).
+
+### 2026-10-19T20:32Z · ci-plan-spar · ready (VTID allocated)
+VTID-05241 allocated after policy approval (converged-auto-v1).
