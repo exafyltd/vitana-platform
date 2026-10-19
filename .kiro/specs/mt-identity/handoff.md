@@ -4,8 +4,9 @@ author: kiro
 author_seat: hotmail
 executor: kiro
 next_actor: claude
-state: drafted
-updated: 2026-10-19T18:00Z
+state: parked
+updated: 2026-10-19T17:58Z
+parked_from: drafted
 ---
 # Handoff — mt-identity (WS1 identity, tenancy resolution & roles — the "rest" after VTID-05149)
 
@@ -146,3 +147,6 @@ migration re-verified `20261015180000` (range free). Parent plan not amended. No
 Round 2 acknowledged R1-F1/F3/F4 and raised R2-F1 (major), ACCEPTED: verified `tenant-context.ts` has no slug→id
 lookup (`loadTenantFlags()` builds only `byId`) while `dev-auth.ts:491` needs one. Lane `tenant-db-and-slug-cleanup`
 adds `bySlug` + `getTenantIdBySlug()` (tasks T3b) and two paths. Validators = 0 errors. No live-system calls.
+
+### 2026-10-19T17:58Z · ci-plan-spar · drafted → parked
+Not converged after 2 sparring sessions (round_cap_reached). Parked with the open findings in sparring/.
