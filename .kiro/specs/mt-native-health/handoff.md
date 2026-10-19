@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-18T20:46Z
+updated: 2026-10-20T09:00Z
 ---
 # Handoff — mt-native-health (multi-tenant program WS9 tenancy delta + WS10 health×tenancy)
 
@@ -90,3 +90,10 @@ The sparring partner could not review (model_unavailable). Not a plan problem: C
 
 ### 2026-10-18T20:46Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+### 2026-10-20T09:00Z · kiro-hotmail-202610151618-b437 · drafted (answered sparring round 1, session fca982e6)
+All four findings accepted. R1-F1: one notification = one tenant; contract test narrowed, `notification-service.ts`
+added to native-push-tenant for an `acrossTenants` opt on `sendPushToUser`. R1-F2/F4: risk rewritten (`limit(1)`
+off-path vs frozen home tenant); writers+readers flip together behind one flag, after the backfill post-check, with a
+read-only pre-flip count. R1-F3: local `HEALTH_TABLES` dropped per CROSS-SPEC O1; guard imports mt-identity's
+`isHealthTable` (stated cross-spec dependency) and commits its inventory as a fixture. Also dropped the earlier F4 edit
+of the hash-locked `docs/MULTI-TENANT-PLAN.md`. Next: PLAN-SPAR round 2.

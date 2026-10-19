@@ -8,9 +8,10 @@ seat: jtadic
 reviewer_seat: hotmail
 paths:
   - services/gateway/src/services/notification-service-repository.ts
+  - services/gateway/src/services/notification-service.ts
   - services/gateway/src/services/push-routing.ts
   - services/gateway/test/mt-native-health/native-push-tenant.test.ts
-updated: 2026-10-15T16:40Z
+updated: 2026-10-20T09:00Z
 ---
 # Per-tenant native push — mt-native-health/native-push-tenant (repo vitana-platform)
 
@@ -47,3 +48,7 @@ entry, release the claim.
 Lane drafted by the hotmail Kiro seat (gateway/services work → seat `jtadic`, reviewer `hotmail`). HELD until
 PLAN-SPAR allocates the VTID. Independent lane (round-1 F8: removed the spurious `health-home-tenant-db` dependency;
 round-1 F2: named `fetchLiveDeviceTokensForUser` + the new across-tenant variant).
+### 2026-10-20T09:00Z · kiro-hotmail-202610151618-b437 · ready (answered sparring round 1, session fca982e6)
+R1-F1: one notification = one tenant; `notifyUser` (`notification-service.ts:809`) builds one payload and the new
+variant only widens which devices it reaches. The fetch lives in `sendPushToUser` (`:410-411`), so
+`notification-service.ts` joins the paths for an `acrossTenants` opt. Contract test narrowed (tasks P2/P4).

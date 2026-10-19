@@ -16,7 +16,7 @@ paths:
   - services/gateway/scripts/gen-health-reader-inventory.mjs
   - services/gateway/test/mt-native-health/health-reader-inventory.test.ts
   - services/gateway/test/mt-native-health/health-db.test.ts
-updated: 2026-10-15T16:40Z
+updated: 2026-10-20T09:00Z
 ---
 # User-keyed healthDb accessor + inventory lint — mt-native-health/health-tenant-accessor (repo vitana-platform)
 
@@ -40,3 +40,6 @@ and `Collab-Lane: mt-native-health/health-tenant-accessor`. When the PR is open:
 ### 2026-10-15T16:40Z · kiro-hotmail-202610151618-b437 · created → ready
 Lane drafted by the hotmail Kiro seat (gateway/services work → seat `jtadic`, reviewer `hotmail`). HELD until
 PLAN-SPAR allocates the VTID. Depends on `health-home-tenant-db` (needs the resolver + column).
+### 2026-10-20T09:00Z · kiro-hotmail-202610151618-b437 · ready (answered sparring round 1, session fca982e6)
+R1-F2/F4: writers and readers convert in one PR behind one flag; flag off keeps the `limit(1)` path; the flip waits
+for the backfill post-check; a read-only pre-flip count goes in `docs/validation/<vtid>/` (tasks A2). Paths unchanged.

@@ -10,9 +10,8 @@ paths:
   - supabase/migrations/20261101130000_*.sql
   - supabase/migrations/20261101130100_*.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
-  - docs/MULTI-TENANT-PLAN.md
   - services/gateway/test/mt-native-health/health-home-tenant.pgtap.sql
-updated: 2026-10-15T16:40Z
+updated: 2026-10-20T09:00Z
 ---
 # Frozen health home tenant (DB) — mt-native-health/health-home-tenant-db (repo vitana-platform)
 
@@ -36,9 +35,7 @@ Branch `kiro/mt-native-health/health-home-tenant-db`; PR title
 and `Collab-Lane: mt-native-health/health-home-tenant-db`. When the PR is open: set `state: in-review`,
 `next_actor: kiro` (the reviewer seat `jtadic` picks it up), `pr: <url>`, append a log entry, release the claim.
 
-This lane's PR also carries the round-1 F4 program-doc correction: update `docs/MULTI-TENANT-PLAN.md` §6 WS9
-(Capacitor → Expo/React Native, `apps/mobile/`), the D17 register row, and the plan-body hash on line 4. The
-backfill migration opens with a `RAISE EXCEPTION` guard (round-1 F6) that aborts unless every member has exactly one
+`docs/MULTI-TENANT-PLAN.md` is hash-locked: this lane never edits it. The backfill migration opens with a `RAISE EXCEPTION` guard (round-1 F6) that aborts unless every member has exactly one
 primary `user_tenants` row, so it never freezes a wrong home tenant if mt-identity's membership unification has not
 run yet.
 
@@ -47,3 +44,6 @@ run yet.
 Lane drafted by the hotmail Kiro seat (DB/migrations work → seat `hotmail`, reviewer `jtadic`). HELD at
 `next_actor: owner` until PLAN-SPAR allocates the VTID. First lane of the spec; no in-spec dependencies. Round-1
 F4/F6 folded in: program-doc correction added to paths; backfill self-enforces primary-membership canonicality.
+### 2026-10-20T09:00Z · kiro-hotmail-202610151618-b437 · ready (answered sparring round 1, session fca982e6)
+Removed `docs/MULTI-TENANT-PLAN.md` from paths and the program-doc edit: the parent plan is hash-locked and is not
+amended; the Capacitor→Expo drift is recorded in this spec only.
