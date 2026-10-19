@@ -15,6 +15,8 @@ paths:
   - .github/workflows/ALERT-PLAN-SPARRING-CODE-ACCESS.yml
   - services/gateway/src/routes/plans-spar.ts
   - services/gateway/src/services/plan-sparring/github-tools.ts
+  - services/gateway/src/services/plan-sparring/partner.ts
+  - services/gateway/src/services/plan-sparring/plan-sparring-service.ts
   - services/gateway/test/**
   - docs/validation/**
 updated: 2026-10-18T20:40Z

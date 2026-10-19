@@ -11,3 +11,7 @@
       dispatch green, and a queue run timed and recorded. Read-only; no production calls.
 
 Acceptance: requirements 1–5 hold, and all listed suites are green.
+
+- [ ] T5 (D) Partner-pass concurrency cap (`PLAN_SPARRING_MAX_CONCURRENT_PASSES`, default 2); clip tool results
+      older than the current turn to 4,000 chars; per-round token totals in the session record and `round-<n>.md`;
+      the throttle escalation names its cause and when to retry. Jest for each.

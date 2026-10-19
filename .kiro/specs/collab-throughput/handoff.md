@@ -35,3 +35,9 @@ The sparring partner could not review (model_unavailable). Not a plan problem: C
 
 ### 2026-10-18T23:05Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-18T23:30Z · kiro-exafy-202610181845-661d · drafted (scope D added)
+Round 1 escalated `model_unavailable`: both Opus 4.6 and the Sonnet 4.6 fallback returned "Too many tokens per
+day" (that is the account's daily limit, not a plan problem). Added D (sparring token budget: concurrency cap,
+clipping old tool results, token totals per round). I'll push after the daily limit resets, so the retry doesn't
+burn more of it.

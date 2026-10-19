@@ -67,6 +67,26 @@ Measured 2026-10-18 on the owner's Windows checkout and in CI:
   `secrets.GATEWAY_SERVICE_TOKEN`, and fails the job on a non-200, a non-JSON answer, or `ok: false`. Same shape as
   `ALERT-PUSH-DISPATCH-HEALTH.yml`. It is read-only and never touches production.
 
+### D. Sparring token budget (gateway)
+Measured 2026-10-18: on account 472838866351 both partner models now return `Too many tokens per day`, including
+the Sonnet 4.6 fallback (session model logs 798679a9…, b9c1eb9b…, d0be51a3…: primary and fallback both throttled).
+Sonnet 4.6 took ~6.6M input tokens in the 19:16–20:16Z hour, during a batch of ~13 concurrent plan pushes.
+Service Quotas lists only per-minute token quotas for both models, so this daily limit is not a quota we can
+raise. Every gateway stage in `llm-defaults.ts` (planner, worker, validator, operator, memory, triage, vision,
+classifier) also runs on `eu.anthropic.claude-sonnet-4-6` in the same account, so sparring draws from the
+budget member-facing calls use.
+- **Concurrency cap:** at most `PLAN_SPARRING_MAX_CONCURRENT_PASSES` (default 2) partner passes run at once per
+  gateway task. Extra creates and rounds wait their turn inside the existing PLAN-SPAR wait window
+  (`plan-spar.mjs` already polls `GET /:id` for up to 25 min). They never fail because they waited.
+- **Smaller history:** tool results stored in the conversation history are clipped to 4,000 chars once the turn
+  that read them is over. The current turn still gets the full 20,000-char result. This cuts the input that grows
+  every turn (round-1 turns reach ~77k input tokens today).
+- **A visible budget:** the session record and `round-<n>.md` show the input and output token totals per round,
+  so a runaway pass shows up in the PR.
+- **A throttle is an outage:** when both models are throttled, the round escalates `model_unavailable` (already
+  infra and retryable). This change only adds the cause and the next try time to the round file ("partner models
+  throttled until the daily limit resets; push again after it").
+
 ## Lanes
 
 One lane, `throughput-code`, **executor: claude**. A–C touch `scripts/collab/**` and `.github/**`, which are
@@ -91,6 +111,9 @@ not `depends_on`.
   rules exactly, and a test feeds the same cases to both.
 - C: the health route spends one GitHub read per repo per PLAN-SPAR run and per alert run (~100/day). That is far
   under the fine-grained token's rate limit.
+- D: clipping old tool results could drop evidence the partner wants to re-cite. It can re-read the file, since
+  `read_file` is pinned to the same ref, and the evidence check uses the tool log, not the history. A waiting
+  pass can outlast PLAN-SPAR's 25-min wait. Then the existing poll recovers it on the next push, as today.
 
 ## Verification
 
@@ -101,6 +124,8 @@ not `depends_on`.
   - B: unknown, duplicate, missing and malformed responses each give `responses_invalid` with the right ids, no
     gateway `round` call, and a comment file. A valid set still calls `round`.
   - C: health `ok: false` means no `create` / `round` call and exit 1.
+- Gateway Jest (D): a third concurrent pass waits until one of two running passes finishes; history tool results
+  older than the current turn are clipped and current-turn results are not; round token totals are recorded.
 - Gateway Jest: the health route answers 401 without auth, `ok: true` when both reads return 200, `ok: false` with a
   per-repo status when one fails, and `token_configured: false` when the token is unset. `npx tsc --noEmit`.
 - After merge and the staging deploy: `GET https://preview-aws-gateway.vitanaland.com/api/v1/plans/spar/health`
