@@ -1,8 +1,11 @@
 # Plan — plan sparring forwards a companion `vitana-v1` ref
 
-A plan PR declares companion repo refs in `handoff.md` front matter (`spar_refs:`); `plan-spar.mjs`
-resolves each to a 40-hex SHA and forwards `extra_refs` to the gateway so the sparring partner can
-`read_file` against `vitana-v1`. Absent → byte-identical no-op.
+A plan PR declares a companion repo ref in `handoff.md` front matter (`spar_refs:`); `plan-spar.mjs`
+reads it, overlays it (winning) on the always-on `--extra-ref-vitana-v1` CLI arg for the same key, and
+forwards the merged `extra_refs` to the gateway so the sparring partner can `read_file` against
+`vitana-v1`. For any repo other than the plan's own `--repo`, only a verbatim 40-hex SHA is accepted
+(no cross-repo commits API call). Absent → `step()`'s `extra_refs` is exactly what the CLI arg alone
+produces today.
 
 <!-- plan:begin -->
 ## Problem
@@ -40,42 +43,73 @@ VTID-05215 already landed a narrower mechanism on `main`: `PLAN-SPAR.yml` resolv
 commit, and it is not declared or reviewable in the PR diff.
 
 This plan generalizes that into a per-plan, reviewable declaration: a plan names the exact
-companion ref (branch, tag or SHA) it needs in `handoff.md` front matter, and only plans that
-declare one forward it. The two can coexist — the front-matter path is additive and the design is
-written so a plan that declares nothing stays byte-identical — but the intent is that the typed
-`spar_refs:` declaration supersedes the always-`main` arg. Whether to retire the `--extra-ref-vitana-v1`
-arg in the same lane or leave it as a fallback is a decision for the sparring partner / review (see
-"Decisions deferred" below).
+companion commit (a 40-hex SHA) it needs in `handoff.md` front matter.
+
+**Explicit precedence between the CLI arg and `spar_refs` (R1-F1).** Both the always-on
+`--extra-ref-vitana-v1` arg and `spar_refs` target the same map key `exafyltd/vitana-v1`, so the merge
+order must be pinned in code, not left to intent. The rule: `main()` first builds the CLI-arg map
+(today's `extraRefs = /^[0-9a-f]{40}$/.test(v1Sha) ? { 'exafyltd/vitana-v1': v1Sha } : {}`), then
+overlays the parsed `spar_refs` on top of it (`{ ...cliRefs, ...sparRefs }`), so a plan that declares a
+specific companion commit in `spar_refs` **wins** for that key and the always-`main` CLI value is
+replaced; a plan that declares nothing keeps the CLI arg's value. Only when `spar_refs` is absent AND
+the CLI arg resolves nothing is `extra_refs` omitted entirely.
+
+Because the CLI arg is still present and already sends `extra_refs` for every plan PR in production
+CI, the no-op guarantee is stated precisely: **relative to `step()`'s default `extraRefs = null` (not
+production CI)**, a plan that declares no `spar_refs` produces a byte-identical `create` body. The CLI
+arg stays as a fallback for the common `vitana-v1@main` case; retiring it is a one-line follow-up (see
+"Decisions deferred").
 
 ## Goal
 
-Let a plan declare one or more companion repo refs and forward them as `extra_refs`, without changing
-behavior for the common single-repo plan:
+Let a plan declare a companion repo ref and forward it as `extra_refs`, without changing behavior for
+the common single-repo plan:
 
-- A plan declares companion refs in `handoff.md` front matter under a new `spar_refs:` block list
-  (`- exafyltd/vitana-v1: <branch|tag|40-hex-sha>`), read from the PR head's files that
-  `plan-spar.mjs` already reads. No new secret, no new workflow input.
-- `plan-spar.mjs` resolves each declared ref to an immutable 40-hex SHA (a 40-hex value verbatim with
-  no API call; a branch/tag via `GET /repos/{owner}/{repo}/commits/{ref}` using the token already in
-  the PLAN-SPAR job) and forwards `extra_refs = { '<repo>': <sha> }` on `create`.
+- A plan declares a companion ref in `handoff.md` front matter under a new `spar_refs:` block list
+  (`- exafyltd/vitana-v1: <40-hex-sha>`). `step()` **newly reads and parses `handoff.md` front
+  matter** for this (today it reads `plan.md` as the create input and only writes `handoff.md` in the
+  converged/escalated branches); `handoff.md` is therefore added to this lane's `paths` scope. No new
+  secret, no new workflow input. (R1-F4)
+- **Trigger requirement (R1-F4):** the workflow `paths:` filter and `detectSlug` match only
+  `.kiro/specs/*/plan.md` and `sparring/*responses-*.md`, never `handoff.md`, so a `spar_refs` edit
+  **must accompany a `plan.md` or responses change** to fire the spar step. This lane relies on that
+  (a first `spar_refs` is always introduced alongside the plan it belongs to); extending
+  `detectSlug`/`paths:` to trigger on a lone `handoff.md` `spar_refs` change is a documented follow-up
+  (design F3), not built here.
+- **SHA-only for cross-repo (R1-F2):** `resolveRef` accepts a verbatim 40-hex SHA with **no API
+  call**. Branch/tag resolution via `GET /repos/{owner}/{repo}/commits/{ref}` is **not** used for any
+  repo other than the plan's own `--repo`, because the only CI tokens (`PLAN_SPAR_PUSH_TOKEN`,
+  `github.token`) are scoped to `vitana-platform` and cannot read the private `exafyltd/vitana-v1`
+  (the cross-repo read credential `PLAN_SPARRING_GITHUB_TOKEN` is server-side only,
+  `github-tools.ts:11-14`). A non-SHA companion ref is a loud declaration error. Resolving a
+  branch/tag cross-repo is deferred until a CI-accessible `contents:read` secret for `vitana-v1`
+  exists (see "Decisions deferred").
 - Only repos in `PLAN_SPARRING_REPOS` may be declared, and never the plan's own `--repo`; a bad
   declaration fails the step loudly (non-zero exit), never spars silently without the ref.
-- **Byte-identical no-op (critical):** `spar_refs` absent → `extra_refs` stays `undefined` → the
-  `create` body is byte-identical to today; `plan_text` is never touched (companion refs live in
-  `handoff.md`, outside the hashed plan block), so dedup/replan detection is unaffected.
+- **No-op relative to `step()`'s default (critical, R1-F1):** `spar_refs` absent and the CLI arg
+  resolving nothing → `extra_refs` is omitted → the `create` body matches `step()` with its default
+  `extraRefs = null`. (Against production CI, which already passes `--extra-ref-vitana-v1`, the body is
+  unchanged from today's CLI-arg behavior, not from a no-`extra_refs` baseline.) `plan_text` is never
+  touched (companion refs live in `handoff.md`, outside the hashed plan block), so dedup/replan
+  detection is unaffected.
 
 ## Scope (what changes)
 
 - `scripts/collab/plan-spar.mjs` — add a `PLAN_SPARRING_REPOS` const (mirroring
-  `github-tools.ts:21`, with the gateway as the real validator), a pure exported `parseSparRefs(fm)`
-  and an exported `resolveRef(repo, ref, { token, fetchImpl })`; thread `token`/`fetchImpl` through
-  `step()`/`main()`; compute the conditional `extra_refs` once **before** the
-  `if (!cur || retryInfra || replan)` branch (so create/retry/replan all forward the same ref) and
-  spread it into the single `client.create` (`:192–195`).
-- `.github/workflows/PLAN-SPAR.yml` — make the GitHub token available to the Spar step for
-  `resolveRef` (one `env:` line, value `secrets.PLAN_SPAR_PUSH_TOKEN || github.token` — the same
-  value already used for the head checkout at `:60`). The `run:` command line is unchanged; no new
-  CLI arg.
+  `github-tools.ts:21`, with the gateway as the real validator), a pure exported
+  `parseSparRefs(handoffFrontMatter)` and an exported `resolveRef(repo, ref, { ownRepo })` that
+  returns a verbatim 40-hex SHA and throws loudly on a non-SHA cross-repo ref; `step()` reads
+  `handoff.md` and parses its front matter for `spar_refs`.
+- **Resolve inside the create branch only (R1-F3):** `extra_refs` is consumed only by `client.create`;
+  a later `client.round` forwards nothing (the gateway pins refs from the stored round's `repo_refs`,
+  `plan-sparring-service.ts:356-358`). So the merge (CLI arg overlaid by `spar_refs`), the `resolveRef`
+  call and the fail-loud contract all live **inside** the `if (!cur || retryInfra || replan)` branch
+  where `client.create` runs, and are spread into that single `create` (`:192-196`). The
+  `round`/`waiting_for_planner`/`nothing_to_do` paths never touch `spar_refs`, so a companion ref that
+  moved or was deleted after the session was created cannot fail-loud and block a later round.
+- `.github/workflows/PLAN-SPAR.yml` — unchanged by this lane. The always-on `--extra-ref-vitana-v1`
+  arg stays as-is; no new `env:` line and no new CLI arg are needed, because SHA-only resolution for
+  the cross-repo key makes no commits API call (R1-F2).
 - `scripts/collab/plan-spar.test.mjs` — the nine unit tests in design "Test plan" (all with an
   injected `client` and a test-only `fetchImpl`; no live calls).
 
@@ -87,25 +121,39 @@ behavior for the common single-repo plan:
   Documented as a follow-up (design F2), deliberately not built here.
 - Writing `repo_refs` into `state.json` / rendering it in `renderRound()`.
 - VTID allocation, approval policy, round/response flow, dedup, retry/escalation logic.
-- Any `vitana-v1` `src/**` change — this lane touches only `scripts/collab/**` and
-  `.github/workflows/PLAN-SPAR.yml` in `vitana-platform`.
+- Any `vitana-v1` `src/**` change — this lane touches only `scripts/collab/**` in `vitana-platform`
+  (`plan-spar.mjs`, `plan-spar.test.mjs`); `.github/workflows/PLAN-SPAR.yml` is no longer changed
+  (R1-F2). The lane's `paths` scope also includes `.kiro/specs/*/handoff.md` so `step()` may read the
+  `spar_refs` front matter (R1-F4).
 
 ## Verification
 
 - Unit tests above (`node --test scripts/collab/plan-spar.test.mjs`), `node --check` on the script.
-- The no-op case (no `spar_refs`) is proven by a byte-identical `create` body test, so every existing
-  plan PR spars exactly as today.
+- The no-op case is proven by a byte-identical `create` body test against `step()`'s default
+  `extraRefs = null` (R1-F1); a second test asserts that with only the CLI arg present and no
+  `spar_refs`, the `create` body equals today's CLI-arg behavior, so every existing plan PR spars
+  exactly as today.
+- A test asserts a non-SHA cross-repo `spar_refs` entry throws loudly and makes no API call (R1-F2),
+  and that `spar_refs` overlays (wins over) the CLI arg for the `exafyltd/vitana-v1` key (R1-F1).
+- A test asserts a `round` on an existing in-progress session never calls `resolveRef` and succeeds
+  even if the declared companion ref is unresolvable (R1-F3).
 - Integration (not automated here, no production write): the first real two-repo plan PR that
   declares `spar_refs` runs PLAN-SPAR on staging-gateway and shows `exafyltd/vitana-v1` in that
   session's per-round `repo_refs` (`GET /api/v1/plans/spar/:id`). Read-only, staging only.
 
 ## Decisions deferred to the sparring partner / review
 
-- Whether this lane also retires the always-`main` `--extra-ref-vitana-v1` arg from `PLAN-SPAR.yml`
-  (and the `v1Sha` handling in `plan-spar.mjs`), or leaves it as a fallback alongside `spar_refs`.
-  Default in this plan: leave it, keep this lane additive and minimal; retiring it is a one-line
-  follow-up once a real two-repo plan has exercised `spar_refs`.
-- The exact fail-loud shape for a malformed `spar_refs` entry (anchored regex rejecting an
-  inline-commented / multi-token value) — specified in design "Front-matter shape" / "Input
-  validation" and covered by test 9.
+- Retiring the always-`main` `--extra-ref-vitana-v1` arg from `PLAN-SPAR.yml` (and the `v1Sha`
+  handling in `plan-spar.mjs`) is a separate one-line follow-up, deferred out of this lane. This plan
+  now keeps the arg as a documented fallback with `spar_refs` overlaying it (R1-F1), so the two have a
+  defined precedence rather than an undefined one; the follow-up only removes the redundant fallback
+  once a real two-repo plan has exercised `spar_refs`.
+- **Branch/tag resolution for `vitana-v1` (deferred, R1-F2):** resolving a non-SHA companion ref
+  cross-repo needs a CI-accessible `contents:read` credential for the private `exafyltd/vitana-v1`
+  (the server-side-only `PLAN_SPARRING_GITHUB_TOKEN` is not in the CI job; `github.token` /
+  `PLAN_SPAR_PUSH_TOKEN` are single-repo). Deferred to a follow-up lane that provisions and
+  scope-verifies such a secret. Until then this lane is SHA-only for the cross-repo key.
+- The exact fail-loud shape for a malformed `spar_refs` entry (anchored 40-hex regex rejecting an
+  inline-commented / multi-token / non-SHA value) — specified in design "Front-matter shape" / "Input
+  validation" and covered by the validation test.
 <!-- plan:end -->
