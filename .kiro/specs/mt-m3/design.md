@@ -13,8 +13,9 @@
 - Monitoring: `supabase/migrations/20261014000300_vtid_05149_ci_tenant_isolation_health.sql` →
   `ci_tenant_isolation_health()`; wired report-only in `.github/workflows/MORNING-SYSTEM-HEALTH-CHECK.yml`.
 - Switching: `vitana-v1/src/hooks/useTenant.tsx` `setTenantBySlug()` (`switch_to_tenant_by_slug` RPC + `refreshSession`,
-  `:148,207`); exafy-admin switch in `src/pages/admin/TenantManagement.tsx` gated by `canSwitchTenant`
-  (`src/lib/permissions.ts:24` = `exafy.admin` + `tenant.switch`). Portal join: `src/pages/portals/TenantPortal.tsx:190`.
+  `:170,190,208`); exafy-admin switch section (`:150`) in the admin route `src/pages/admin/TenantManagement.tsx`
+  (`App.tsx:2158`); `canSwitchTenant` (`src/lib/permissions.ts:24` = `exafy.admin` + `tenant.switch`). Portal join:
+  `src/pages/portals/TenantPortal.tsx:178-193`.
 - Native: `vitana-v1/public/.well-known/apple-app-site-association` (one appID `62Q26QSEJW.com.exafy.maxina`,
   `paths:["*"]`), `vitana-v1/public/.well-known/assetlinks.json`.
 - Provisioning panel to polish: VTID-05221 `src/components/admin/tenant-provisioning/**`,
@@ -27,14 +28,14 @@
 `20261101140000_…_mt_tenant_domains.sql`: `tenant_domains(id, tenant_id uuid fk tenants, host citext, is_primary bool,
 verified_at timestamptz, created_at)` — unique on `host`; RLS enabled, no client policy (service-role/exafy-admin only);
 host format check; reject a host equal to a reserved slug (consult `reserved_tenant_slugs`).
-`20261101140100_…_mt_resolve_tenant_host.sql`: extend `resolve_tenant` with an optional `host` arg (additive; the slug
-behaviour is pinned by a test) — a verified host wins, else slug. **The host arm resolves a host ONLY when its
+`20261101140100_…_mt_resolve_tenant_host.sql`: add a separate no-DEFAULT 2-arg overload `resolve_tenant(p_host text,
+p_slug text)`; the 1-arg `resolve_tenant(p_slug)` is untouched and pinned byte-identical — a verified host wins, else slug. **The host arm resolves a host ONLY when its
 `tenant_domains` row has `verified_at IS NOT NULL`, and resolves it THROUGH `_tenant_public_registry()`** (the same
 internal source `resolve_tenant(p_slug)` already uses, which filters `t.is_active AND is_platform = false`, verified at
 `20261014000600_…:74-77`), so an unverified host, or a host on an inactive/platform tenant, resolves to nothing and the
 call falls through to the slug arm. The host arm MUST NOT add any `tenant_domains` column to the returned set (D2/Rule 4).
 Rollbacks `_rollback.sql`; read-only pre/post checks;
-MIGRATION-QUEUE rows after mt-tenant-admin's `070600`; `tenant_domains` added to `migration-drift-baseline.json` until
+MIGRATION-QUEUE rows after the live last row (mt-m3 range note); `tenant_domains` added to `migration-drift-baseline.json` until
 applied, removed in the post-apply PR. Expand-only.
 
 ### host-resolution-gw (vitana-platform, gateway code)
@@ -64,8 +65,9 @@ question); keeps every existing `provision_tenant` assertion.
 grouped per tenant, summing to `ci_tenant_isolation_health()`. Rollbacks + pre/post checks + QUEUE rows. Expand/contract.
 
 ### monitoring-erp-gw (vitana-platform, gateway code)
-Surface the per-tenant counts on the existing admin health read; wire the ERP bootstrap-request consumer into the
-BackOffice ERP path (idempotent). Dark behind the flag. Depends on `provision-erp-monitoring-db`.
+Surface the per-tenant counts and, per tenant, the `erp.bootstrap_requested` flag on the existing admin health read —
+display-only, no ERP bridge call (a consumer is a separate ERP-bootstrap spec). Dark behind the flag. Depends on
+`provision-erp-monitoring-db`.
 
 ### morning-health-pertenant (vitana-platform, governance — executor: claude)
 One edit to `.github/workflows/MORNING-SYSTEM-HEALTH-CHECK.yml` adding the per-tenant breakdown (read-only, report-only).

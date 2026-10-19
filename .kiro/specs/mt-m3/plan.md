@@ -15,11 +15,11 @@ platform/v1 `origin/main` today (file:line below). Predecessors M0 S-M/A/B/C are
    `services/gateway/src/middleware/auth-supabase-jwt.ts` resolves tenant only from the JWT `active_tenant_id` claim
    (`:283`) with a `user_tenants` fallback; `req.hostname` is used only for CORS/affiliate parsing, never resolution.
    `resolve_tenant` (VTID-05151) takes a slug only.
-2. **No member-facing tenant switching UI (D8: "switching UI in M3").** `src/hooks/useTenant.tsx` has
-   `setTenantBySlug()` (calls the `switch_to_tenant_by_slug` RPC + `refreshSession()`, `:148,207`), and
-   `src/pages/admin/TenantManagement.tsx` switches as an **exafy-admin** action gated by `canSwitchTenant` =
-   `exafy.admin` + `tenant.switch` (`src/lib/permissions.ts:24`). A normal dual member has no UI to switch between their
-   own communities. The portal join flow (`src/pages/portals/TenantPortal.tsx:190`) is joining, not switching.
+2. **No member-facing tenant switching UI (D8: "switching UI in M3").** v1 `src/hooks/useTenant.tsx` has
+   `setTenantBySlug()` (`:170`; `switch_to_tenant_by_slug` RPC `:190` + `refreshSession()` `:208`).
+   `src/pages/admin/TenantManagement.tsx` is an admin route (`App.tsx:2158`, `requiredRole="admin"`) with an exafy-admin
+   switch section (`:150`); `canSwitchTenant` = `exafy.admin` + `tenant.switch` (`src/lib/permissions.ts:24`). A normal
+   dual member has no switch UI. The portal flow (`TenantPortal.tsx:178-193`) is joining, not switching.
 3. **Custom domains are not deliverable natively.** AASA ships one appID `62Q26QSEJW.com.exafy.maxina` with `paths:["*"]`
    (`vitana-v1/public/.well-known/apple-app-site-association`) and one `assetlinks.json`; §4.8/D5 say a custom domain
    needs associated-domain entitlements compiled into the binary (an app release per domain), and the single
@@ -35,14 +35,10 @@ platform/v1 `origin/main` today (file:line below). Predecessors M0 S-M/A/B/C are
 6. **Price/currency are provisioned once, never per-tenant overridable (D2/D9).** `provision_tenant` writes a single
    `tenant_settings.currency` (`:155`); D2 permits de-hardcoding the price-DISPLAY read path only (one shared VTNA
    wallet, shared plans/prices, no invoicing) — no per-tenant economy.
-7. **No offboarding runbook.** Deactivate/archive is **owned by mt-tenant-admin** (cross-spec O2). That spec is being
-   planned concurrently on branch `kiro/mt-tenant-admin/plan` (not yet merged to `main`): its `tenant-lifecycle-db` lane
-   owns `deactivate_tenant(slug)`/`archive_tenant(slug)` + the closing switch RPC (migrations `20261101070300`/`070350`),
-   and `tenant-admin-api` the API. mt-m3 does NOT verify or redefine those RPCs and must not re-plan them; it only needs
-   the operator-facing offboarding/archive **runbook** that references them, written so it degrades to a documented TODO
-   if mt-tenant-admin has not merged when this lane implements (the runbook names the RPCs by signature, not by proven
-   `file:line`). Confirmed today: `.kiro/specs/mt-tenant-admin/` does not exist on `main` — the dependency is a sibling
-   plan branch, not a merged artifact.
+7. **No offboarding runbook.** Deactivate/archive is **owned by mt-tenant-admin** (cross-spec O2), planned concurrently
+   on unmerged branch `kiro/mt-tenant-admin/plan` (`tenant-lifecycle-db`: `deactivate_tenant(slug)`/`archive_tenant(slug)`
+   + closing switch RPC). mt-m3 does not redefine them; it writes only the operator **runbook**, naming the RPCs by
+   signature and degrading to a documented TODO if mt-tenant-admin has not merged.
 
 Network groups (D27) are owned by mt-network and are explicitly **not** planned here (CROSS-SPEC "Network groups").
 
@@ -51,10 +47,13 @@ Dark by default via `MT_RESOLUTION_V2` + `tenant_settings.feature_flags.mt.*` un
 
 1. **`tenant-domains-db` (DB, vitana-platform).** New `tenant_domains(tenant_id fk, host citext unique, is_primary,
    verified_at, created_at)`, RLS service-role/exafy-admin only (no client writes), host format check, no host equal to
-   a reserved slug; extend `resolve_tenant(host, slug)` to resolve a host ONLY when `verified_at IS NOT NULL` and ONLY
-   through `_tenant_public_registry()` (already filters `is_active AND is_platform = false`, `20261014000600_…:74-77`),
-   else slug — an unverified/inactive/platform host resolves empty. The host arm must not widen the returned field set
-   (Lane C whitelist). Range 20261101140000–; rollback + pre/post checks; QUEUE rows after the live last row. Expand-only.
+   a reserved slug. Add the program's `resolve_tenant(host, slug)` (§4.1) as a SEPARATE 2-arg overload
+   `resolve_tenant(p_host text, p_slug text)` with NO parameter DEFAULTs, so a 1-arg or `{p_slug}`-only call can only bind
+   the untouched VTID-05151 `resolve_tenant(p_slug text)` (`20261014000600_…:133`; its only caller is v1
+   `src/lib/tenant-registry.ts:219`, named `{ p_slug }`; the gateway has none). It resolves a host ONLY when
+   `verified_at IS NOT NULL` and ONLY through `_tenant_public_registry()` (filters `is_active AND is_platform = false`,
+   `:74-77`), else delegates to the 1-arg slug function — unverified/inactive/platform host → empty. Same 8-column
+   return as the 1-arg (Lane C whitelist), same grants. Rollback drops only the 2-arg overload. Expand-only.
 2. **`host-resolution-gw` (gateway code).** Add a host arm to `TenantContext` resolution
    (`services/gateway/src/services/tenancy/tenant-context.ts` + the middleware read in `auth-supabase-jwt.ts`): resolve
    `req.hostname` through `resolve_tenant(host,…)` BEFORE the slug/claim arms, membership still required for data
@@ -62,7 +61,13 @@ Dark by default via `MT_RESOLUTION_V2` + `tenant_settings.feature_flags.mt.*` un
    `TenantSource` union (`tenant-context.ts:22`, today `'token' | 'exafy_admin_token' | 'primary' |
    'membership_fallback'`); the lane audits every `TenantSource` consumer in the gateway (the type is referenced in
    `auth-supabase-jwt.ts:35,579,607,617` — `PrimaryTenantOutcome`, `tokenTenantOrigin`) and adds the `'host'` case so
-   TypeScript still compiles. Dark behind `MT_RESOLUTION_V2`. Depends on `tenant-domains-db`.
+   TypeScript still compiles. **Hot-path budget** (the middleware runs on every request, `AUTH_LOOKUP_TIMEOUT_MS=2500`,
+   `auth-supabase-jwt.ts:63-69`): the lookup fires ONLY when `MT_RESOLUTION_V2` is on AND `req.hostname` is not a
+   platform host (`vitanaland.com` + subdomains, `localhost`, staging/ALB hosts — one constant in `tenant-context.ts`),
+   so the default path-slug case pays nothing; results (hits AND misses) go in a bounded host→tenant cache with the
+   60s TTL of `tenantMetaCache` (`tenant-context.ts:66-86`); the RPC uses the existing `abortAfter(AUTH_LOOKUP_TIMEOUT_MS)`
+   (`:71`) — timeout/error → logged, host arm yields nothing, next arm runs (context only; data still needs membership).
+   Depends on `tenant-domains-db`.
 3. **`tenant-switcher-ui` (vitana-v1, frontend).** A member-facing community switcher for members of ≥2 tenants: list
    the member's own memberships from `useMemberships()` (`list_my_memberships`, not the public registry — registry only
    resolves slug/brand for display), call the existing `setTenantBySlug()` (reuse `switch_to_tenant_by_slug` +
@@ -81,11 +86,16 @@ Dark by default via `MT_RESOLUTION_V2` + `tenant_settings.feature_flags.mt.*` un
    adds, AFTER that INSERT, a guarded `UPDATE tenant_settings SET feature_flags = jsonb_set(feature_flags,
    '{erp,bootstrap_requested}', 'true'::jsonb, true) WHERE tenant_id = v_tid AND NOT (feature_flags #>
    '{erp,bootstrap_requested}' = 'true'::jsonb)`, so first-run and re-run both end with the flag set exactly once.
+   `erp` becomes a **governed key** like `jev`: the same migration re-creates `tenant_settings_merge_feature_flags()`
+   (`20261014000400_…:175-193`, top-level `||` merge) dropping `- 'jev' - 'erp'` for `p_allow_governed = false`, so a
+   tenant-admin PUT cannot replace/erase it (rollback restores the `jev`-only body).
    (b) add `ci_tenant_isolation_health_by_tenant()` returning the existing counts grouped per tenant; expand/contract,
    rollback, pre/post checks, QUEUE rows; `ci_tenant_isolation_health()` unchanged (reused).
-6. **`monitoring-erp-gw` (gateway code).** Surface the per-tenant isolation counts on the existing admin health read and
-   wire the ERP bootstrap-request consumer into the BackOffice ERP path; dark behind the flag. Depends on
-   `provision-erp-monitoring-db`.
+6. **`monitoring-erp-gw` (gateway code, display-only).** On the existing admin health read
+   (`services/gateway/src/routes/admin-health.ts`) surface the per-tenant isolation counts AND, per tenant, whether
+   `feature_flags.erp.bootstrap_requested` is set — read-only, dark behind the flag. **No ERP action is dispatched:** the
+   erp-bridge is an execute-only client (`backoffice/erp-bridge-client.ts:17,45`, `execute(req)`) with no bootstrap
+   concept, so a consumer is a separate ERP-bootstrap spec (deferred). Depends on `provision-erp-monitoring-db`.
 7. **`morning-health-pertenant` (governance, executor: claude).** One edit to
    `.github/workflows/MORNING-SYSTEM-HEALTH-CHECK.yml` to also report the per-tenant breakdown (report-only, read-only).
    `.github/**` is a governance path (collaboration §3a / queue.mjs `GOVERNANCE_PATHS`), so this lane is `executor:
@@ -99,25 +109,26 @@ Dark by default via `MT_RESOLUTION_V2` + `tenant_settings.feature_flags.mt.*` un
 ## Migrations
 Range **20261101140000–20261101145959** (free; grep `20261101` across `supabase/migrations/**` = 0 today). Files:
 - `20261101140000_vtid_*_mt_tenant_domains.sql` (+ `..._rollback.sql`) — lane `tenant-domains-db`.
-- `20261101140100_vtid_*_mt_resolve_tenant_host.sql` (+ rollback) — lane `tenant-domains-db` (extends `resolve_tenant`).
-- `20261101141000_vtid_*_mt_provision_erp_request.sql` (+ rollback) — lane `provision-erp-monitoring-db`.
+- `20261101140100_vtid_*_mt_resolve_tenant_host.sql` (+ rollback) — lane `tenant-domains-db` (2-arg overload).
+- `20261101141000_vtid_*_mt_provision_erp_request.sql` (+ rollback) — lane `provision-erp-monitoring-db` (+ merge fn).
 - `20261101141100_vtid_*_mt_isolation_health_by_tenant.sql` (+ rollback) — lane `provision-erp-monitoring-db`.
-MIGRATION-QUEUE position: the live `docs/multitenancy/MIGRATION-QUEUE.md` ends at row 8 (`20261014000700`, VTID-05151
-M2), ranges only for S-M/A/B/C, no mt-tenant-admin rows yet. Concrete rule: **append after the current last row; add a
-header range note for mt-m3 (`20261101140000–145959`), as S-M/A/B/C are recorded.** mt-m3's `1101140000+` range sorts
-strictly after any mt-tenant-admin `070xxx` rows, so no re-position is needed whether that spec lands first or not. Each
-file ships read-only pre/post-check SQL for RUN-MIGRATION; `migration-drift-baseline.json` carries the not-yet-live
-`tenant_domains` and the PR removes it after apply. Expand/contract; `lock_timeout` + retries; applied by Claude.
+MIGRATION-QUEUE: the live queue ends at row 8 (`20261014000700`); **append after the current last row with an mt-m3
+header range note**; the `1101140000+` range sorts after any mt-tenant-admin `070xxx` rows, so no re-position is needed.
+Each file ships read-only pre/post-check SQL; `migration-drift-baseline.json` carries the not-yet-live `tenant_domains`
+until apply. Expand/contract; `lock_timeout` + retries; applied by Claude.
 
 ## Tests
-- pgTAP (DB lanes): `tenant_domains` RLS (b_member/anon no read/write; exafy-admin/service only); `resolve_tenant`
-  resolves a VERIFIED host, falls back to slug, rejects a reserved-slug host, resolves EMPTY for an unverified host and
-  for a host on an inactive/platform tenant; returned column set pinned (no `tenant_domains` column). `provision_tenant`
-  records the ERP request idempotently on first-run AND re-run and keeps its existing assertions;
-  `ci_tenant_isolation_health_by_tenant()` sums to `ci_tenant_isolation_health()`.
+- pgTAP (DB lanes): `tenant_domains` RLS (b_member/anon no read/write; exafy-admin/service only); the
+  2-arg `resolve_tenant(p_host, p_slug)` resolves a VERIFIED host, falls back to slug, rejects a reserved-slug host,
+  resolves EMPTY for an unverified host and for a host on an inactive/platform tenant; the legacy 1-arg
+  `resolve_tenant(p_slug)` output is byte-identical before/after and a `{p_slug}`-only call binds it; both return the
+  same 8 columns (no `tenant_domains` column). `provision_tenant` records the ERP request idempotently on first-run AND
+  re-run; a `p_allow_governed=false` merge sending `erp` does not erase it; `ci_tenant_isolation_health_by_tenant()`
+  sums to `ci_tenant_isolation_health()`.
 - Jest/Vitest (gateway): host arm resolves before slug/claim and never grants data without membership (contract test:
-  host tenant ≠ member → join posture); per-tenant health counts shape; ERP consumer idempotent. `npm run test:support`
-  + `npm run test:operator` stay green (42c/42e) if touched.
+  host tenant ≠ member → join posture); no lookup for a platform host or with the flag off; cache hit skips the RPC;
+  timeout falls through; per-tenant health + ERP-flag shape, no ERP bridge call. `npm run test:support` +
+  `npm run test:operator` stay green (42c/42e) if touched.
 - Vitest (v1): switcher lists only the member's memberships, hidden for single-tenant members, calls `setTenantBySlug`;
   AASA/assetlinks validity + custom-domain universal-link guard; price render reads tenant currency; wizard custom-domain
   field posts to `tenant_domains`. ESLint i18n + design clean on new files; `npm test` (nav registry/design manifest).
@@ -138,8 +149,9 @@ this spec adds only the runbook.
 ## Risks
 - Host resolution opening a cross-tenant path if membership is not re-checked. Mitigation: host sets context only; data
   still requires `is_member`; contract test on host tenant ≠ member.
-- `resolve_tenant` signature change breaking VTID-05151 callers. Mitigation: additive optional host arg; slug behaviour
-  pinned by a test. Adding `'host'` to `TenantSource` audited for exhaustive consumers (Fix #2).
+- `resolve_tenant` overload confusing VTID-05151 callers. Mitigation: 1-arg function untouched; separate 2-arg overload
+  with no DEFAULTs (no ambiguous binding); legacy output pinned. `'host'` in `TenantSource` audited (Fix #2).
+- Host lookup stalling every request. Mitigation: platform-host skip, flag gate, 60s cache, `abortAfter` (Fix #2).
 - Custom-domain expectation outrunning native reality. Mitigation: runbook + guard test make the per-domain release
   explicit; no silent universal-link claim.
 - Price de-hardcoding drifting into a per-tenant economy. Mitigation: display-only, D2/D9 fenced, review checks no
@@ -151,13 +163,12 @@ this spec adds only the runbook.
 - Per-tenant money beyond currency-display de-hardcoding: wallet, plans, Stripe accounts, tax, invoices, coupons (M3+ /
   D2/D9).
 - Per-tenant navigation, per-tenant voice persona, white-label app builds, actual store submission.
+- Any consumer that acts on `erp.bootstrap_requested` (ERP bridge dispatch) — a separate ERP-bootstrap spec.
 
 ## Depends on
-- Specs: **mt-tenant-admin** (O2 — `deactivate_tenant`/`archive_tenant` + closing switch RPC, owned by its
-  `tenant-lifecycle-db` lane on branch `kiro/mt-tenant-admin/plan`, not yet merged — runbook reference only, degrades to
-  a TODO if it implements first). **mt-identity** (`is_member()`, `TenantContext`) for the host arm's membership check.
-  **mt-frontend-brand** (its CORS allowlist reads `tenant_domains` hosts — this spec creates that table; recorded, not a
-  front-matter `depends_on`, different spec).
+- Specs: **mt-tenant-admin** (O2 RPCs, unmerged sibling — runbook reference only, see Problem #7). **mt-identity**
+  (`is_member()`, `TenantContext`) for the host arm's membership check. **mt-frontend-brand** (its CORS allowlist reads
+  `tenant_domains` hosts; recorded, not a front-matter `depends_on`).
 - Done: VTID-05147 (S-M), VTID-05149 (A: `is_default`/`is_platform`, `TenantContext`, `ci_tenant_isolation_health()`),
   VTID-05150 (B: `provision_tenant`, admin-tenants API), VTID-05151 (C: `resolve_tenant`, public registry, `useTenant`).
 - Within this spec: `host-resolution-gw` depends on `tenant-domains-db`; `monitoring-erp-gw` and
@@ -171,9 +182,7 @@ domain go-live and native release remain owner-gated steps named under Rollout.
 <!-- plan:end -->
 
 ## Open questions for sparring
-- Does `resolve_tenant` get an optional `host` argument (additive) or a sibling `resolve_tenant_by_host`? Proposed:
-  additive optional arg so VTID-05151's slug callers are untouched (pinned by a test). Cross-spec with mt-frontend-brand,
-  which already assumes `tenant_domains` hosts feed the CORS allowlist.
-- ERP bootstrap request shape: a `tenant_settings.feature_flags.erp.bootstrap_requested` flag vs a dedicated
-  `tenant_bootstrap_requests` row. Proposed: the flag (smaller, no new table), BackOffice ERP job reads it; revisit if a
-  per-request audit trail is needed.
+- Settled (round 1, R1-F3): `resolve_tenant(p_host, p_slug)` is a separate no-DEFAULT 2-arg overload; the 1-arg slug
+  function is untouched. Cross-spec with mt-frontend-brand (CORS allowlist reads `tenant_domains` hosts).
+- Settled (round 1, R1-F1/F4): the ERP request is a governed `feature_flags.erp.bootstrap_requested` flag, displayed
+  only; acting on it is a separate ERP-bootstrap spec.

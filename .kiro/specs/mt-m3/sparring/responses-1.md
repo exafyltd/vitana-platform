@@ -1,32 +1,38 @@
-# Responses to sparring round 1 — mt-m3
+# Responses to sparring round 1 — mt-m3 (session 8a83bc72)
 
-Planner: kiro-hotmail-202610151618-b437. Every premise re-verified against `origin/main`
-(`8fdcbf47576737e970e4eb9a9c5021267bbe0e0b`) and the concurrent plan branches today.
+Planner: kiro-hotmail-202610151618-b437. Premises re-verified against vitana-platform `origin/main` and vitana-v1
+`origin/main` (`32a82e6b68407fc1b45b7a7eca43123c9a0e067b`).
 
 ```json
 [
   {
     "finding_id": "R1-F1",
     "disposition": "accepted",
-    "rationale": "Verified: `.kiro/specs/mt-tenant-admin/` does not exist on main (ls-tree origin/main returns nothing) nor on this plan branch tip. It exists only on sibling plan branch `kiro/mt-tenant-admin/plan` (6387a912d6eb243b7d5be5875c0ab6af8e480935), whose `lanes/tenant-lifecycle-db.md` owns `deactivate_tenant(slug)`/`archive_tenant(slug)` + the closing switch RPC (migrations 20261101070300/070350). The plan's claim 'verified in .kiro/specs/mt-tenant-admin/tasks.md' overstated a not-yet-merged artifact as proven. Fixed: Problem #7 and Depends-on now say mt-tenant-admin is a concurrent, unmerged sibling plan branch per CROSS-SPEC O2, the runbook references the RPCs by signature only and degrades to a documented TODO if it implements first. mt-m3 does not re-verify or redefine those RPCs.",
+    "rationale": "Verified: services/gateway/src/services/backoffice/erp-bridge-client.ts:17 (BridgeExecuteRequest) and :45 (ErpBridgeClient { execute(req) }) form an execute-only HTTP client with no bootstrap concept, and no gateway code reads erp.bootstrap_requested. Lane 6 is descoped to display-only: the admin health read (routes/admin-health.ts) reports, per tenant, whether feature_flags.erp.bootstrap_requested is set; no ERP bridge call. services/gateway/src/services/backoffice/** removed from the monitoring-erp-gw lane paths and tasks Allowed paths; tasks M2/M3, design, requirements R4.1 and plan Fix #6 / Out of scope updated. An acting consumer is deferred to a separate ERP-bootstrap spec.",
     "deferred_to": null
   },
   {
     "finding_id": "R1-F2",
     "disposition": "accepted",
-    "rationale": "Verified against docs/multitenancy/MIGRATION-QUEUE.md on main: the live queue ends at row 8 (20261014000700, VTID-05151 M2); its header lists ranges only for S-M/A/B/C; there is no mt-tenant-admin block and no `070600`/`0701xx` reservations. The plan's ordering anchor ('after mt-tenant-admin's 070600 block and after every 0701xx reservation') pointed at rows that do not exist in the live queue. Fixed with a concrete rule in ## Migrations and tasks.md D4: append after the current live last row and add an mt-m3 header range note (20261101140000-145959). Note mt-m3's own 1101140000+ range sorts strictly after any mt-tenant-admin 070xxx rows, so no re-position is required whether that spec merges first or not — removing the dependency on an unmerged reservation entirely.",
+    "rationale": "Verified: auth-supabase-jwt.ts:63-69 (runs on every request, AUTH_LOOKUP_TIMEOUT_MS = 2500), abortAfter at :71; tenant-context.ts:66-86 holds the 60s tenantMetaCache pattern. Plan Fix #2, new task H1b and the host-resolution-gw lane body now require: lookup only when MT_RESOLUTION_V2 is on AND req.hostname is not a platform host (one constant in tenant-context.ts: vitanaland.com + subdomains, localhost, staging/ALB hosts), so the default path-slug case pays nothing; a bounded host->tenant cache of hits and misses with the 60s TTL; the RPC under abortAfter(AUTH_LOOKUP_TIMEOUT_MS); timeout/error logged and the next arm runs. H3 tests cover platform-host skip, cache hit and timeout fall-through.",
     "deferred_to": null
   },
   {
     "finding_id": "R1-F3",
     "disposition": "accepted",
-    "rationale": "Verified: tenant-context.ts:22 defines `TenantSource = 'token' | 'exafy_admin_token' | 'primary' | 'membership_fallback'` with no 'host' variant, and TenantContext.source: TenantSource (:28). The type is consumed in the middleware the lane edits — auth-supabase-jwt.ts:35 (import), :579 (PrimaryTenantOutcome), :607 (tokenTenantOrigin return), :617 (source param). Adding a host arm requires adding 'host' to the union and updating those consumers or TS fails to compile. Fixed: plan Fix #2, tasks.md H1 and the host-resolution-gw lane body now call out the union extension and the exact consumer audit (file:line).",
+    "rationale": "Verified: 20261014000600_vtid_05151_public_tenant_registry.sql:133 defines resolve_tenant(p_slug text); its only caller is vitana-v1 src/lib/tenant-registry.ts:219 (rpc('resolve_tenant', { p_slug }), GET); the gateway has no resolve_tenant caller. docs/MULTI-TENANT-PLAN.md:52 names the anonymous RPC resolve_tenant(host, slug), so the name is kept in the parent's favour but the shape is pinned: a SEPARATE 2-arg overload resolve_tenant(p_host text, p_slug text) with NO parameter DEFAULTs. A 1-arg or {p_slug}-only call can therefore only bind the untouched 1-arg function (no ambiguous resolution). The 1-arg function is not modified; rollback drops only the overload. pgTAP pins the 1-arg output byte-identical before/after, a {p_slug}-only call binding it, and both overloads returning the same 8 columns. Plan Fix #1/Tests/Risks/open questions, tasks D2/D3, design and the tenant-domains-db lane body updated.",
     "deferred_to": null
   },
   {
     "finding_id": "R1-F4",
     "disposition": "accepted",
-    "rationale": "Verified: provision_tenant's tenant_settings INSERT uses `ON CONFLICT (tenant_id) DO NOTHING` (20261014000500_vtid_05150_provision_tenant.sql ~:154-165). The plan proposes the ERP flag as a feature_flags JSONB key (feature_flags.erp.bootstrap_requested) — exactly the case the conflict-skip would silently drop on an already-provisioned re-run. Fixed: plan Fix #5, tasks.md E1 and the provision-erp-monitoring-db lane body now specify a guarded UPDATE with jsonb_set AFTER the INSERT (`WHERE tenant_id = v_tid AND NOT (feature_flags #> '{erp,bootstrap_requested}' = 'true')`), and tasks.md E3 pins a pgTAP assertion that the flag is set on BOTH first-run and a re-run on an already-provisioned tenant.",
+    "rationale": "Verified: tenant_settings_merge_feature_flags() in 20261014000400_vtid_05150_tenant_brand_pack.sql:175-193 merges top-level with || and strips only 'jev' when p_allow_governed = false, so a tenant-admin PUT sending {\"erp\":...} would replace the stored erp object. 'erp' is declared a governed key: the provision-erp-monitoring-db migration (20261101141000) re-creates the merge function with - 'jev' - 'erp' for non-governed callers (grants unchanged; rollback restores the jev-only body). Tasks E1/E3 add a pgTAP case: a p_allow_governed=false merge sending erp leaves the stored flag intact, an exafy-admin merge still can change it. Plan Fix #5, lane body and requirements R4.1 updated.",
+    "deferred_to": null
+  },
+  {
+    "finding_id": "R1-F5",
+    "disposition": "accepted",
+    "rationale": "Re-verified against vitana-v1 origin/main 32a82e6b: useTenant.tsx setTenantBySlug is defined at :170 (switch_to_tenant_by_slug RPC :190, refreshSession :208; :148 is a different refresh), so the plan's ':148,207' was wrong and is corrected to :170/:190/:208. permissions.ts:24 canSwitchTenant = exafy.admin && tenant.switch holds (consumed via usePermissions.ts:19). TenantManagement.tsx is an admin route (App.tsx:2158, requiredRole=\"admin\") with an exafy-admin switch section at :150; it does not reference canSwitchTenant directly, wording corrected. TenantPortal.tsx join flow is :178-193 (corrected from :190). useMemberships() with no tenantId invokes list_my_memberships (useMemberships.ts:23-30) and returns rows with tenant_id + tenants.slug, so tasks S1 now dedupes by tenant_id. Both AASA and assetlinks.json exist in public/.well-known/. Plan Problem #2, design and tasks S1 updated.",
     "deferred_to": null
   }
 ]

@@ -46,8 +46,9 @@ program records; it does not copy them.
    entitlements list that host; a guard test SHALL prevent silently assuming universal-link coverage for a new host.
 
 ### R4 — ERP auto-bootstrap + per-tenant monitoring (lanes `provision-erp-monitoring-db`, `monitoring-erp-gw`, `morning-health-pertenant`)
-1. WHEN a tenant is provisioned THE `provision_tenant()` RPC SHALL idempotently record an ERP bootstrap request the
-   BackOffice ERP path consumes.
+1. WHEN a tenant is provisioned THE `provision_tenant()` RPC SHALL idempotently record an ERP bootstrap request as the
+   governed flag `feature_flags.erp.bootstrap_requested` (a tenant-admin merge cannot erase it); acting on it is a
+   separate ERP-bootstrap spec.
 2. THE SYSTEM SHALL provide `ci_tenant_isolation_health_by_tenant()` returning the existing isolation counts per tenant,
    summing to `ci_tenant_isolation_health()`; `ci_tenant_isolation_health()` SHALL be unchanged.
 3. THE admin health read SHALL surface the per-tenant counts, and `MORNING-SYSTEM-HEALTH-CHECK.yml` SHALL report them

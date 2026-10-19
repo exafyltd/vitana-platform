@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-18T20:46Z
+updated: 2026-10-19T20:31Z
 ---
 # Handoff — mt-m3 (M3 generally provisionable; program `docs/MULTI-TENANT-PLAN.md` v5.1 §6/§7)
 
@@ -98,3 +98,12 @@ The sparring partner could not review (model_unavailable). Not a plan problem: C
 
 ### 2026-10-18T20:46Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-19T20:31Z · kiro-hotmail-202610151618-b437 · answered round-1 of session 8a83bc72 (still drafted)
+New sparring session after the throttle resume; round-1 returned 5 findings (3 major, 2 minor), all ACCEPTED
+(`sparring/responses-1.md`):
+- **R1-F1** `monitoring-erp-gw` descoped to display-only (erp-bridge is execute-only); `backoffice/**` path removed.
+- **R1-F2** host arm hot-path budget: platform-host skip, flag gate, 60s bounded cache, `abortAfter` (task H1b).
+- **R1-F3** `resolve_tenant(p_host, p_slug)` is a separate no-DEFAULT overload; 1-arg slug function untouched + pinned.
+- **R1-F4** `erp` made a governed key in `tenant_settings_merge_feature_flags()` (tasks E1/E3).
+- **R1-F5** v1 citations re-verified at `32a82e6b`; line numbers corrected (`useTenant.tsx:170/190/208` etc.).

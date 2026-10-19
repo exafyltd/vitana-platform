@@ -18,7 +18,9 @@ Plan: `.kiro/specs/mt-m3/plan.md`; tasks H1–H4 in `tasks.md`; design in `desig
 `req.hostname` through `resolve_tenant(host,…)` before the slug/claim arms (context only; data still needs `is_member`;
 host tenant ≠ member → the existing join posture). Adds `'host'` to the `TenantSource` union (`tenant-context.ts:22`)
 and updates every consumer (`auth-supabase-jwt.ts:35,579,607,617`) so TypeScript still compiles. Dark behind
-`MT_RESOLUTION_V2`. Depends on `tenant-domains-db` (the table + the host arg must exist first). The lane adds its own
+`MT_RESOLUTION_V2`. Hot path (task H1b): no lookup for platform hosts or with the flag off, a 60s bounded host cache,
+`abortAfter(AUTH_LOOKUP_TIMEOUT_MS)`, timeout → next arm. Depends on `tenant-domains-db` (the table + the 2-arg
+`resolve_tenant(p_host, p_slug)` overload must exist first). The lane adds its own
 `docs/validation/<vtid>/`.
 
 Rules (collaboration §7a): no VTID allocation, no `_plan` claim, no `handoff.md` edit, no merge/approve/deploy/dispatch,

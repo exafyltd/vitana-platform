@@ -15,15 +15,17 @@ Allowed paths: `supabase/migrations/20261101140000_vtid_*_mt_tenant_domains.sql`
 - [ ] D1 `20261101140000` `tenant_domains(id, tenant_id uuid FK tenants, host citext UNIQUE, is_primary bool,
       verified_at, created_at)`; RLS enabled with NO client policy (service-role/exafy-admin only); host format check;
       reject a host equal to a `reserved_tenant_slugs` entry. Rollback drops the table.
-- [ ] D2 `20261101140100` extend `resolve_tenant` with an optional `host` arg (additive): resolve a host ONLY when its
-      `tenant_domains` row has `verified_at IS NOT NULL` and ONLY through `_tenant_public_registry()` (so the
-      `is_active AND is_platform = false` filter still applies), else the existing slug arm; an unverified/inactive/
-      platform host resolves empty and falls through to slug. Returned field set unchanged — no `tenant_domains` column
-      added (Lane C whitelist). Rollback restores the prior definition.
+- [ ] D2 `20261101140100` add a SEPARATE 2-arg overload `resolve_tenant(p_host text, p_slug text)` with NO parameter
+      DEFAULTs; the VTID-05151 1-arg `resolve_tenant(p_slug text)` is NOT touched (its caller v1
+      `src/lib/tenant-registry.ts:219` passes `{ p_slug }` and keeps binding it). The overload resolves a host ONLY when
+      its `tenant_domains` row has `verified_at IS NOT NULL` and ONLY through `_tenant_public_registry()` (so the
+      `is_active AND is_platform = false` filter still applies), else returns `resolve_tenant(p_slug)`; an unverified/
+      inactive/platform host resolves empty and falls through to slug. Same 8-column return and grants as the 1-arg —
+      no `tenant_domains` column (Lane C whitelist). Rollback drops only the 2-arg overload.
 - [ ] D3 pgTAP: `tenant_domains` RLS (anon/b_member cannot read or write; service/exafy-admin can); `resolve_tenant`
       resolves a VERIFIED host, falls back to slug, rejects a reserved-slug host; an UNVERIFIED host (`verified_at IS
-      NULL`) and a host on an INACTIVE or PLATFORM tenant BOTH resolve empty; the returned column set and the slug-only
-      behaviour are pinned.
+      NULL`) and a host on an INACTIVE or PLATFORM tenant BOTH resolve empty; the 1-arg `resolve_tenant(p_slug)` output
+      is byte-identical before/after and a `{p_slug}`-only call binds it; both overloads return the same 8 columns.
 - [ ] D4 MIGRATION-QUEUE rows appended after the current live last row (today row 8 `20261014000700`), + an mt-m3
       header range note `20261101140000–145959`; the `1101140000+` range sorts after any mt-tenant-admin `070xxx` rows
       so no re-position is needed. Add `tenant_domains` to `migration-drift-baseline.json`, note its removal in the
@@ -43,9 +45,14 @@ also creates `docs/validation/<vtid>/`.
       only. Add `'host'` to the `TenantSource` union (`tenant-context.ts:22`) and update every consumer so TS compiles
       (`auth-supabase-jwt.ts:35,579,607,617` — `PrimaryTenantOutcome`, `tokenTenantOrigin`, the `source` param). Dark
       behind `MT_RESOLUTION_V2`.
+- [ ] H1b Hot-path budget (`AUTH_LOOKUP_TIMEOUT_MS=2500`, `auth-supabase-jwt.ts:63-69`): look up ONLY when the flag is
+      on AND `req.hostname` is not a platform host (one constant in `tenant-context.ts`: `vitanaland.com` + subdomains,
+      `localhost`, staging/ALB hosts); bounded host→tenant cache (hits and misses) with the 60s `tenantMetaCache` TTL
+      (`tenant-context.ts:66-86`); RPC under `abortAfter(AUTH_LOOKUP_TIMEOUT_MS)` (`:71`); timeout/error → logged, the
+      host arm yields nothing and the next arm runs.
 - [ ] H2 Membership still required for data: host tenant ≠ member → the existing join posture, never a silent default.
 - [ ] H3 Jest/Vitest: host arm precedence; no data without membership (contract test); flag-off path byte-identical to
-      today. `npm run test:support` + `npm run test:operator` stay green if touched.
+      today; no RPC for a platform host; cache hit skips the RPC; timeout falls through to the next arm. `npm run test:support` + `npm run test:operator` stay green if touched.
 - [ ] H4 `docs/validation/<vtid>/`: `scope.json`, `staging-tests.json` (read-only), plan-sparring copy.
 
 Acceptance: dark behind the flag; tests green; depends on `tenant-domains-db`. No live writes. PR title
@@ -60,9 +67,11 @@ Allowed paths (vitana-v1): `src/components/tenant-switcher/**`, `src/pages/setti
 `i18n-source-stamps/**`.
 
 - [ ] S1 `CommunitySwitcher` in `src/components/tenant-switcher/`: list the member's own memberships from
-      `useMemberships()` (`list_my_memberships`), using the public registry only to resolve each membership's slug/brand
-      for display (never list the public registry itself); switch via `useTenant().setTenantBySlug`; hidden when <2
-      memberships; NOT exafy-admin-gated.
+      `useMemberships()` (no-arg → `list_my_memberships`, `src/hooks/useMemberships.ts:23-30`; rows carry
+      `tenant_id` + `tenants.slug`, deduped by `tenant_id`), using the public registry only to resolve each membership's
+      brand for display (never list the public registry itself); switch via `useTenant().setTenantBySlug`
+      (`useTenant.tsx:170`); hidden when <2 distinct tenants; NOT exafy-admin-gated (`canSwitchTenant`,
+      `permissions.ts:24`, stays the admin path).
 - [ ] S2 Mount in Settings (`src/pages/settings/**`); Spotlight tokens, logical start/end, skeletons; RTL.
 - [ ] S3 i18n `src/i18n/de/tenantSwitcher.json` first (du-form), mirrored to `en/`; `npm run i18n:inventory`.
 - [ ] S4 Vitest: lists only own memberships; hidden for a single-tenant member; calls the switch; no non-GET on render.
@@ -77,8 +86,8 @@ manifest) unaffected unless a route is added (then registry+manifest+parity rows
 ## native-domains-aasa — AASA/assetlinks custom-domain readiness (repo vitana-v1)
 
 Allowed paths (vitana-v1): `public/.well-known/apple-app-site-association`, `public/.well-known/assetlinks.json`,
-`apps/mobile/parity/**`, `scripts/native/**`, `src/lib/universal-links/**`,
-`src/lib/universal-links/universal-links.test.ts`, `docs/validation/VTID-*/**`.
+`apps/mobile/parity/**`, `scripts/native/**`, `src/lib/universal-links/**` (incl. its test file),
+`docs/validation/VTID-*/**`.
 
 - [ ] N1 Keep the single `vitanaland.com` AASA/assetlinks set covering path-slug tenants; add a README/generation note.
 - [ ] N2 Guard test (`src/lib/universal-links/`): committed AASA/assetlinks stay valid JSON + shape; a `tenant_domains`
@@ -103,11 +112,14 @@ Allowed paths: `supabase/migrations/20261101141000_vtid_*_mt_provision_erp_reque
       (`tenant_settings.feature_flags.erp.bootstrap_requested`). Because the `tenant_settings` INSERT is `ON CONFLICT
       (tenant_id) DO NOTHING`, add a guarded `UPDATE ... jsonb_set(feature_flags,'{erp,bootstrap_requested}','true',true)
       WHERE tenant_id = v_tid AND NOT (feature_flags #> '{erp,bootstrap_requested}' = 'true')` AFTER the INSERT so an
-      already-provisioned re-run still records it; every existing assertion still holds.
+      already-provisioned re-run still records it; every existing assertion still holds. Make `erp` a governed key: the
+      same migration re-creates `tenant_settings_merge_feature_flags()` (`20261014000400_…:175-193`) dropping
+      `- 'jev' - 'erp'` when `p_allow_governed = false`; grants unchanged; rollback restores the `jev`-only body.
 - [ ] E2 `20261101141100` `ci_tenant_isolation_health_by_tenant()` — the existing counts grouped per tenant, summing to
       `ci_tenant_isolation_health()`; the latter unchanged.
 - [ ] E3 pgTAP: ERP request idempotent (assert the flag is set on BOTH first-run and a re-run on an
-      already-provisioned tenant) + existing provision assertions; per-tenant counts sum to the global function.
+      already-provisioned tenant) + existing provision assertions; a `p_allow_governed=false` merge sending `{"erp":…}`
+      leaves the stored flag intact (an exafy-admin merge still can); per-tenant counts sum to the global function.
 - [ ] E4 MIGRATION-QUEUE rows after `tenant-domains-db`; drift-baseline maintenance around apply; read-only pre/post
       checks in `docs/validation/<vtid>/`.
 
@@ -116,15 +128,16 @@ Acceptance: expand/contract; rollbacks + pre/post checks; QUEUE rows; pgTAP gree
 `Collab-Lane: mt-m3/provision-erp-monitoring-db`.
 
 <!-- lane: monitoring-erp-gw -->
-## monitoring-erp-gw — per-tenant health surface + ERP consumer (repo vitana-platform)
+## monitoring-erp-gw — per-tenant health + ERP-request display (repo vitana-platform)
 
 Allowed paths: `services/gateway/src/routes/admin-health.ts`,
-`services/gateway/src/services/backoffice/**`, `services/gateway/test/mt-m3-monitoring-erp*.test.ts`. The lane also
-creates `docs/validation/<vtid>/`.
+`services/gateway/test/mt-m3-monitoring-erp*.test.ts`. The lane also creates `docs/validation/<vtid>/`.
 
 - [ ] M1 Surface `ci_tenant_isolation_health_by_tenant()` on the existing admin health read; dark behind the flag.
-- [ ] M2 Wire the ERP bootstrap-request consumer into the BackOffice ERP path (idempotent).
-- [ ] M3 Jest/Vitest: per-tenant counts shape; ERP consumer idempotent; flag-off path unchanged.
+- [ ] M2 Display-only: per tenant, report whether `tenant_settings.feature_flags.erp.bootstrap_requested` is set. No ERP
+      action — the erp-bridge is execute-only (`backoffice/erp-bridge-client.ts:17,45`); a consumer is a separate
+      ERP-bootstrap spec.
+- [ ] M3 Jest/Vitest: per-tenant counts + ERP-flag shape; no erp-bridge call; flag-off path unchanged.
 - [ ] M4 `docs/validation/<vtid>/`: `scope.json`, `staging-tests.json` (read-only), plan-sparring copy.
 
 Acceptance: dark behind the flag; tests green; depends on `provision-erp-monitoring-db`. No live writes. PR title
