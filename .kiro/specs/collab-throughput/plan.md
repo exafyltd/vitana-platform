@@ -90,11 +90,10 @@ budget member-facing calls use.
   PLAN-SPAR's HTTP call times out or the proxy drops it, the existing `waitFor` poll in `plan-spar.mjs` recovers
   the result, as it does for a slow pass today. The pass deadline starts when the slot is acquired, so waiting
   never counts against it.
-- **Smaller history:** tool results stored in the conversation history are clipped to 4,000 chars once the turn
-  that read them is over. The current turn still gets the full 20,000-char result. This cuts the input that grows
-  every turn (round-1 turns reach ~77k input tokens today).
-- **A visible budget:** the session record and `round-<n>.md` show the input and output token totals per round,
-  so a runaway pass shows up in the PR.
+- **Not here:** prompt caching, per-session token budgets and per-turn quota accounting are
+  `plan(sparring-token-efficiency)` #4189 (seat hotmail). That plan keeps old tool results untrimmed so the cached
+  prefix holds, so this plan no longer clips history. The concurrency cap is the only budget item here, and it
+  composes with #4189: caching lowers the cost per pass, and the cap limits how many passes run at once.
 - **A throttle is an outage:** when both models are throttled, the round escalates `model_unavailable` (already
   infra and retryable). This change only adds the cause and the next try time to the round file ("partner models
   throttled until the daily limit resets; push again after it").
@@ -123,9 +122,11 @@ not `depends_on`.
   rules exactly, and a test feeds the same cases to both.
 - C: the health route spends one GitHub read per repo per PLAN-SPAR run and per alert run (~100/day). That is far
   under the fine-grained token's rate limit.
-- D: clipping old tool results could drop evidence the partner wants to re-cite. It can re-read the file, since
-  `read_file` is pinned to the same ref, and the evidence check uses the tool log, not the history. A waiting
-  pass can outlast PLAN-SPAR's 25-min wait. Then the existing poll recovers it on the next push, as today.
+- D: a waiting pass can outlast PLAN-SPAR's 25-min wait. Then the existing poll recovers it on the next push, as
+  today.
+- `plan-spar.mjs` is edited by this plan, #4186 (`sparring-floor-retry`) and #4189's `plan-spar-reasons` lane.
+  All three are Claude Code lanes. Build them in one session, in the order #4186 → #4189 reasons → this plan, each
+  rebased on the last.
 
 ## Verification
 
@@ -138,8 +139,7 @@ not `depends_on`.
   - C: health `ok: false` means no `create` / `round` call and exit 1.
   - B/C: `step()` writes nothing outside the spec directory; `main()` with `--comment-file` writes the report.
 - Gateway Jest (D): a third concurrent pass waits until one of two running passes finishes, and its deadline
-  starts at acquisition; history tool results
-  older than the current turn are clipped and current-turn results are not; round token totals are recorded.
+  starts at acquisition; the throttle escalation's round file names the cause and says to push again later.
 - Gateway Jest: the health route answers 401 without auth, `ok: true` when both reads return 200, `ok: false` with a
   per-repo status when one fails, and `token_configured: false` when the token is unset. `npx tsc --noEmit`.
 - After merge and the staging deploy: `GET https://preview-aws-gateway.vitanaland.com/api/v1/plans/spar/health`
