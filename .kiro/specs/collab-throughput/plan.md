@@ -44,10 +44,12 @@ Measured 2026-10-18 on the owner's Windows checkout and in CI:
 - In `step()`'s `in_progress` branch, after `client.get(cur.id)` (already fetched as `live`), compare the parsed
   responses with `live.rounds[n-1].review.findings[].id`. Collect three lists: unknown ids, duplicate ids, and
   missing ids.
-- If any list is non-empty: send nothing to the gateway, return `{ action: 'responses_invalid', problems }`, write a
-  plain-language report to the step summary and to `$RUNNER_TEMP/plan-spar-comment.md`, and exit 1. The report names
-  each id and states the rule ("answer every finding of round n exactly once; earlier rounds' findings go in the
-  plan text").
+- If any list is non-empty: send nothing to the gateway and return `{ action: 'responses_invalid', problems }`.
+  `step()` writes no file outside its spec directory. `main()` sees that action, writes a plain-language report to
+  the step summary and to the path given by a new `--comment-file <path>` argument (PLAN-SPAR.yml passes
+  `$RUNNER_TEMP/plan-spar-comment.md`), and exits 1. The report names each id and states the rule ("answer every
+  finding of round n exactly once; earlier rounds' findings go in the plan text"). `main()` also writes the
+  comment file for the health failure in C and for any gateway 4xx on create or round.
 - PLAN-SPAR.yml `Comment` step: `if: always() && steps.guard.outputs.skip != 'true'`. Use
   `--body-file "$RUNNER_TEMP/plan-spar-comment.md"` when that file exists, otherwise today's body. The `Commit the
   round` step stays success-only.
@@ -59,6 +61,9 @@ Measured 2026-10-18 on the owner's Windows checkout and in CI:
   `requireServiceOrAdmin`). For each repo in `PLAN_SPARRING_REPOS` it does one contents read of `README.md` at that
   repo's `main` HEAD with `PLAN_SPARRING_GITHUB_TOKEN`. It returns
   `{ ok, repos: { <repo>: { ok, status } }, token_configured }`. It sends no model call and writes nothing.
+  `router.get('/health', …)` is registered **before** `router.get('/:id', …)` in `plans-spar.ts` (Express matches
+  in order, and `/:id` would take `id = 'health'` and fail the UUID check). A Jest test pins that
+  `GET /api/v1/plans/spar/health` reaches the health handler, not the session read.
 - `plan-spar.mjs`: before `client.create` / `client.round`, call the health route once. If `ok: false`, exit 1 with
   "sparring partner cannot read code (<repo>: HTTP <status>); no session was started". That way an outage never
   creates a session the plan has to pay for. The comment step from B carries the message.
@@ -68,16 +73,23 @@ Measured 2026-10-18 on the owner's Windows checkout and in CI:
   `ALERT-PUSH-DISPATCH-HEALTH.yml`. It is read-only and never touches production.
 
 ### D. Sparring token budget (gateway)
-Measured 2026-10-18: on account 472838866351 both partner models now return `Too many tokens per day`, including
-the Sonnet 4.6 fallback (session model logs 798679a9…, b9c1eb9b…, d0be51a3…: primary and fallback both throttled).
+Measured 2026-10-18: on account 472838866351 both Bedrock partner models returned `Too many tokens per day`,
+including the Sonnet 4.6 fallback (session model logs 798679a9…, b9c1eb9b…, d0be51a3…: primary and fallback both
+throttled). Since #4192 (VTID-05236) a DeepSeek tier sits behind Sonnet, so a pass no longer escalates at that
+point. It still spends the shared Bedrock budget first, so the budget work below still applies.
 Sonnet 4.6 took ~6.6M input tokens in the 19:16–20:16Z hour, during a batch of ~13 concurrent plan pushes.
 Service Quotas lists only per-minute token quotas for both models, so this daily limit is not a quota we can
 raise. Every gateway stage in `llm-defaults.ts` (planner, worker, validator, operator, memory, triage, vision,
 classifier) also runs on `eu.anthropic.claude-sonnet-4-6` in the same account, so sparring draws from the
 budget member-facing calls use.
-- **Concurrency cap:** at most `PLAN_SPARRING_MAX_CONCURRENT_PASSES` (default 2) partner passes run at once per
-  gateway task. Extra creates and rounds wait their turn inside the existing PLAN-SPAR wait window
-  (`plan-spar.mjs` already polls `GET /:id` for up to 25 min). They never fail because they waited.
+- **Concurrency cap:** an in-process semaphore in `plan-sparring-service.ts` wraps every `runPartnerPass` call
+  (create and round). At most `PLAN_SPARRING_MAX_CONCURRENT_PASSES` (default 2) passes run at once **per gateway
+  process**. It is not coordinated across ECS tasks, so with N tasks the account-wide ceiling is 2·N. Staging runs
+  one gateway task today, and a cross-task lock is out of scope. A waiting request is held open (no 429). The
+  session row is written before the wait, so `GET /:id` already shows it `in_progress` with no new round. If
+  PLAN-SPAR's HTTP call times out or the proxy drops it, the existing `waitFor` poll in `plan-spar.mjs` recovers
+  the result, as it does for a slow pass today. The pass deadline starts when the slot is acquired, so waiting
+  never counts against it.
 - **Smaller history:** tool results stored in the conversation history are clipped to 4,000 chars once the turn
   that read them is over. The current turn still gets the full 20,000-char result. This cuts the input that grows
   every turn (round-1 turns reach ~77k input tokens today).
@@ -124,7 +136,9 @@ not `depends_on`.
   - B: unknown, duplicate, missing and malformed responses each give `responses_invalid` with the right ids, no
     gateway `round` call, and a comment file. A valid set still calls `round`.
   - C: health `ok: false` means no `create` / `round` call and exit 1.
-- Gateway Jest (D): a third concurrent pass waits until one of two running passes finishes; history tool results
+  - B/C: `step()` writes nothing outside the spec directory; `main()` with `--comment-file` writes the report.
+- Gateway Jest (D): a third concurrent pass waits until one of two running passes finishes, and its deadline
+  starts at acquisition; history tool results
   older than the current turn are clipped and current-turn results are not; round token totals are recorded.
 - Gateway Jest: the health route answers 401 without auth, `ok: true` when both reads return 200, `ok: false` with a
   per-repo status when one fails, and `token_configured: false` when the token is unset. `npx tsc --noEmit`.
