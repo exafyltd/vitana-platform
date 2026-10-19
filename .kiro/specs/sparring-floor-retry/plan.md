@@ -47,7 +47,10 @@ Observed: the re-pushes at 2026-10-18T18:42–18:45Z ran PLAN-SPAR green and com
 ## Changes
 
 1. `services/gateway/src/services/plan-sparring/`:
-   - `github-tools.ts`: every failed tool call records `status` in its `ToolLogEntry`. That is the GitHub HTTP
+   - `types.ts`: `ToolLogEntry` gains `status?: number` (R2-F1).
+   - `github-tools.ts`: every failed tool call records `status` in its `ToolLogEntry`. Network errors (the catch
+     block) and the no-token guard pass `status: 0`. Local refusals (invalid path, no pinned ref, not a readable
+     file) pass none. That is the GitHub HTTP
      status, `0` for a network error or a missing token, and absent for a local refusal (invalid path, not a
      readable file, no pinned ref).
    - `partner.ts` exports
