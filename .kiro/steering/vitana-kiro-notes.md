@@ -4,19 +4,36 @@ inclusion: always
 # Working in Kiro on Vitana (VTID-05059)
 
 - Kiro IDE has no Claude Code skills, hooks or subagents. The rules still apply unchanged:
-  - **Plan sparring is never skipped.** Spar a new plan through the Command Hub Operator or a Claude Code session
-    (skill `plan-sparring`) before any VTID is allocated.
+  - **Plan sparring is never skipped.** Push the plan as a `plan(<slug>): …` PR; PLAN-SPAR spars it in CI (Claude
+    Opus 4.6 on Bedrock, no fallback). Answer every round in `sparring/responses-<n>.md`. No VTID before it converges.
   - The Claude Code PreToolUse sparring reminder and the SessionStart morning-pack hook do not run here. To load
     where a piece of work stands, run `scripts/dev/resume-vtid.sh <VTID>` and paste its output into the chat.
 - The always-included rules are the full `CLAUDE.md` (about 1,000 lines) — the same load a Claude Code session
   carries. Path-scoped references (`.claude/rules/*.md`) load only when you work on matching files.
-- **Your role: implementer (VTID-05192).** Claude Code plans, spars, coordinates, reviews and merges; you implement
-  the lanes assigned to Kiro. You never: allocate a VTID; take a `_plan` claim or edit `handoff.md`; merge or approve a
-  PR; dispatch a workflow or deploy; write to a live system, even though your credentials allow it — no Supabase
-  writes (`execute_sql` with INSERT/UPDATE/DELETE/DDL, `apply_migration`, `deploy_edge_function`, branch/project/secret
-  tools) and no mutating AWS call (ECS, ELB, ECR, IAM or Secrets Manager writes). Reading for diagnosis is fine. A
-  database change is a migration file in the lane's PR. Blocked → a log entry and `next_actor: claude`, never a
-  workaround.
+- **Your role (collaboration §7, VTID-05218; §7b, owner decision 2026-10-18).** You plan, build and review, and you
+  carry each change end to end to a verified staging build:
+  plan PR → PLAN-SPAR → converge (policy approval) → VTID (CI) → build → independent review → merge → staging deploy →
+  STAGING-VERIFY → Gate 2 message to the owner.
+  - **Merge (§7b):** you may merge only when all of these hold:
+    - the owner explicitly instructed that merge in this conversation, per PR or as a set they listed;
+    - the PR targets `main` and its deploy path is staging only;
+    - the review is from another reviewer, on the current head;
+    - every required check is green.
+
+    Record the owner's instruction and the merge SHA in the lane log (or the plan's handoff). Use `--admin` only for a
+    known false positive on a governance-artifact check, never for a failing test or build.
+  - **Never:**
+    - deploy production (PUBLISH, `publish-to-prod.sh`, any `AWS-PROD-DEPLOY-*`): that is the owner's Gate 2;
+    - allocate a VTID by hand, or before sparring has converged;
+    - review your own lane;
+    - test against production;
+    - write to a live system outside the staging pipeline, even though your credentials allow it. That means no
+      Supabase writes (`execute_sql` with INSERT/UPDATE/DELETE/DDL, `apply_migration`, `deploy_edge_function`,
+      branch/project/secret tools) and no hand-made mutating AWS call (ECS, ELB, ECR, IAM or Secrets Manager).
+
+    Reading for diagnosis is fine. A database change is a migration file in the lane's PR.
+  - **No merge instruction yet:** stop at a green, reviewed PR and ask the owner for it in one line. Blocked any other
+    way → a log entry and `next_actor: claude`, never a workaround.
 - **Collaboration with Claude Code (VTID-05145).** At the start of every session: generate your session id
   (`node <vitana-platform>/scripts/collab/queue.mjs session-id --agent kiro`) and say it, with your lane, in your first
   reply; `git fetch --prune origin`; run the queue (`queue.mjs --repo <vitana-platform> --repo <vitana-v1>`) and work a
