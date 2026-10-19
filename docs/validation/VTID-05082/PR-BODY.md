@@ -8,13 +8,12 @@
   The three validator markers below are REQUIRED in the PR body:
     - VALIDATION_PROFILE: selects the command_hub_frontend validator profile.
     - OASIS_IMPACT: no — this change emits no OASIS events.
-    - DEPENDENCY_CHANGE: satisfies validator-path-guard.cjs exit-23 (a lockfile
-      changed, so the body must declare why). Without this line the guard rejects.
+    (No DEPENDENCY_CHANGE: marker is needed — the jsdom devDependency was
+    dropped during the merge so no lockfile changes; see the jsdom note below.)
 -->
 
 VALIDATION_PROFILE: command_hub_frontend
 OASIS_IMPACT: no
-DEPENDENCY_CHANGE: added jsdom (gateway devDependency) solely for the VTID-05082 SVG sanitizer unit test — the shipped Command Hub code uses the browser's native DOMParser/XMLSerializer and adds no runtime dependency.
 
 ## 🎯 VTID Reference
 
@@ -60,13 +59,14 @@ Single hook: only `renderOperatorChat`'s reply path (`!isSent`) changed;
 - [x] `dist/frontend/command-hub/{operator-console.js,app.js,styles.css,index.html}` — built mirror committed (Build Gate)
 - [x] `scripts/ci/command-hub-ownership-guard.js` — one documenting allowlist comment (no pattern edit)
 - [x] `test/command-hub/vtid-05082-svg-render.test.ts` — 12 tests incl. mandatory hostile-SVG
-- [x] `package.json` / `package-lock.json` — test-only `jsdom` devDependency (declared above)
+- [x] no dependency change — `jsdom` was dropped; the sanitizer unit test imports jsdom lazily and auto-skips when it is absent (lockfiles unchanged from main)
 - [x] `docs/validation/VTID-05082/` — acceptance (AC-1..AC-16) + real guard outputs
 
 ## 🧪 Testing
 
-- [x] Automated tests added (12/12 pass, incl. hostile-SVG)
-- [x] CI guards re-run locally: ownership 12/12, golden fingerprint PASS, CSP gate exit 0, `node --check` exit 0
+- [x] Automated tests added — 12 unit tests incl. the mandatory hostile-SVG test; pass locally (12/12) where jsdom is present
+- [ ] jsdom not in the gateway pnpm lockfile → the suite auto-skips in CI (lazy import). RE-ENABLE: add jsdom to gateway devDependencies + regenerate pnpm-lock.yaml (needs the merge seat / a pnpm environment). The shipped sanitizer is browser-native and unaffected.
+- [x] CI guards: Golden Fingerprint PASS, Path Ownership PASS, Bundle Syntax PASS, Lane scope PASS, pr-gate PASS (CI run on head)
 - [ ] Verified in staging — AC-7 lightbox desktop (1400×900) + mobile (390×844) screenshots OWED (no drivable browser locally; capture during the staging walkthrough)
 
 ## 🔁 Handoff (VTID-05060)

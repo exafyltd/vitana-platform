@@ -4,7 +4,13 @@ Command Hub operator chat inline SVG rendering.
 
 VALIDATION_PROFILE: command_hub_frontend
 OASIS_IMPACT: no
-DEPENDENCY_CHANGE: added jsdom (gateway devDependency) solely for the VTID-05082 SVG sanitizer unit test — the shipped Command Hub code uses the browser's native DOMParser/XMLSerializer and adds no runtime dependency.
+JSDOM NOTE: the sanitizer unit test needs a real XML DOM (DOMParser/XMLSerializer).
+jsdom is NOT in the gateway pnpm lockfile and a Kiro session cannot regenerate
+pnpm-lock.yaml, so jsdom was dropped from package.json (lockfiles unchanged from
+main) and the test imports jsdom lazily, auto-skipping when it is absent — so
+`pnpm install --frozen-lockfile` stays green. RE-ENABLE the test in CI: add jsdom
+to the gateway devDependencies and regenerate pnpm-lock.yaml, then it runs as-is
+(it passes locally, 12/12, where jsdom is present).
 
 > MERGE NOTE: VTID-05073 moved renderOperatorChat and the operator-chat helpers
 > from app.js into operator-console.js after this branch was cut. The SVG block
