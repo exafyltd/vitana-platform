@@ -110,6 +110,8 @@ Allowed paths:
 - `services/gateway/src/routes/presence-did-you-know.ts`
 - `services/gateway/src/routes/presence-did-you-know-repository.ts`
 - `services/gateway/test/mt-identity-primary-tenant-readers.test.ts`
+- `services/gateway/src/services/tenancy/tenant-context.ts`
+- `services/gateway/test/mt-identity-tenant-slug-lookup.test.ts`
 
 - [ ] T1 `tenantDb(ctx)` wrapping the service-role client and injecting the tenant predicate for a schema-derived
       `TENANT_TABLES`; raw access allowlisted to platform/cron code. Dark behind `MT_RESOLUTION_V2` /
@@ -122,6 +124,9 @@ Allowed paths:
       from `TENANT_TABLES`; `healthDb` resolves the frozen home tenant; `me.ts`/`dev-auth.ts`/`orb-memory-bridge.ts`
       hold no `…0001`–`…0004` literal; ratchet: other `…0001` literals outside `lib/vitana-bot.ts` never exceed the
       recorded baseline.
+- [ ] T3b Add `bySlug` + `getTenantIdBySlug(slug)` to `tenant-context.ts` (`loadTenantFlags()` builds only `byId`);
+      `dev-auth.ts:491` uses it (unknown → 400 with live slug list, unavailable → 503); `me.ts:270,408` use
+      `getTenantMeta(id)?.slug`. Vitest `mt-identity-tenant-slug-lookup.test.ts`: both directions round-trip, unknown → null.
 - [ ] T4b Move the last `fetchPrimaryTenantForUser` callers (`routes/autopilot-prompts.ts:109`, `routes/presence.ts:55`,
       `routes/presence-did-you-know.ts:63`) to `resolvePrimaryTenant()` behind the flag; mark the three repo fns
       `@deprecated` and rewrite the `auth-supabase-jwt-repository.ts:17` forward-reference; Vitest

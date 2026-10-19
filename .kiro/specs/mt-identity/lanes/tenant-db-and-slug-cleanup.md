@@ -25,7 +25,9 @@ paths:
   - services/gateway/src/routes/presence-did-you-know.ts
   - services/gateway/src/routes/presence-did-you-know-repository.ts
   - services/gateway/test/mt-identity-primary-tenant-readers.test.ts
-updated: 2026-10-19T17:45Z
+  - services/gateway/src/services/tenancy/tenant-context.ts
+  - services/gateway/test/mt-identity-tenant-slug-lookup.test.ts
+updated: 2026-10-19T18:00Z
 ---
 # tenant-db-and-slug-cleanup — tenantDb/TENANT_TABLES, canonical isHealthTable()/healthDb, remove slug maps (CODE)
 
@@ -47,7 +49,10 @@ Scope (gateway code, all dark behind `MT_RESOLUTION_V2` / `tenant_settings.featu
 - Two distinct fake-id shapes (verified at tip e0ef609b): (a) two FOUR-entry slug maps `…0001`–`…0004` —
   `routes/me.ts:15` `TENANT_SLUGS` (read at `me.ts:270,408`) + `routes/me.ts:23` `SLUG_TO_TENANT_ID`,
   `routes/dev-auth.ts:26` `SLUG_TO_TENANT_ID` (read at `dev-auth.ts:491`) — plus the `limit(1)`, all REMOVED in favour
-  of the DB registry / `TenantContext` (VTID-05149). (b) `services/orb-memory-bridge.ts:66` `DEV_IDENTITY` is a
+  of the DB registry / `TenantContext` (VTID-05149). `tenant-context.ts` has no slug→id lookup today (`loadTenantFlags()`
+  builds only `byId`), so this lane adds a `bySlug` map there and `getTenantIdBySlug(slug): Promise<string | null>`;
+  `dev-auth.ts:491` uses it (unknown slug → same 400 with the live slug list; registry unavailable → 503) and
+  `me.ts:270,408` use `(await getTenantMeta(id))?.slug ?? null`. (b) `services/orb-memory-bridge.ts:66` `DEV_IDENTITY` is a
   single dev-only fallback CONSTANT (user `…0099`) pinned to `TENANT_ID='…0001'`/`TENANT_SLUG='vitana'`, NOT a map and
   with no session to resolve — drive it from a `DEV_TENANT_SLUG` env var defaulting to `vitana` (DB-registry-backed in
   the sandbox), keep the pinned dev user; `dev-auth.ts:364` (`DEV_TENANT_ID || '…0001'`) falls back to
@@ -92,3 +97,6 @@ removed slug-map files. Paths unchanged.
 R1-F1 (major) accepted: added the three `fetchPrimaryTenantForUser` callers (autopilot-prompts, presence,
 presence-did-you-know) + their repo files + a new readers test to paths. R1-F3 accepted: the literal lint is now
 zero-in-touched-files + a repo-wide ratchet with `lib/vitana-bot.ts` as the ONE exempt site.
+### 2026-10-19T18:00Z · kiro-hotmail-202610151618-b437 · ready (answered sparring s2 session ee011de1 round-2)
+R2-F1 (major) accepted: `tenant-context.ts` gains `bySlug` + `getTenantIdBySlug()` for `dev-auth.ts:491`; added
+`tenant-context.ts` and `test/mt-identity-tenant-slug-lookup.test.ts` to paths.

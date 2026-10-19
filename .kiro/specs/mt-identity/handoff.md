@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-19T17:45Z
+updated: 2026-10-19T18:00Z
 ---
 # Handoff — mt-identity (WS1 identity, tenancy resolution & roles — the "rest" after VTID-05149)
 
@@ -142,3 +142,7 @@ marks the repo fns `@deprecated` and gains 7 paths (tasks.md T4b). F3: the `…0
 touched files plus a baseline ratchet with `lib/vitana-bot.ts` the ONE exempt site. F4: bot user `…0001` and
 `service_bot_accounts` excluded from the membership backfill/drift counts, pgTAP zero-side-effect check. Newest
 migration re-verified `20261015180000` (range free). Parent plan not amended. No live-system calls.
+### 2026-10-19T18:00Z · kiro-hotmail-202610151618-b437 · drafted (answered sparring session ee011de1, round 2)
+Round 2 acknowledged R1-F1/F3/F4 and raised R2-F1 (major), ACCEPTED: verified `tenant-context.ts` has no slug→id
+lookup (`loadTenantFlags()` builds only `byId`) while `dev-auth.ts:491` needs one. Lane `tenant-db-and-slug-cleanup`
+adds `bySlug` + `getTenantIdBySlug()` (tasks T3b) and two paths. Validators = 0 errors. No live-system calls.

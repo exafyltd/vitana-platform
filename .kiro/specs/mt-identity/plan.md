@@ -10,8 +10,7 @@ Program `docs/MULTI-TENANT-PLAN.md` v5.1, §4.2/§4.3, workstream WS1. VTID-0514
 (`services/gateway/src/services/tenancy/tenant-context.ts`) and `ci_tenant_isolation_health()`. The remaining WS1
 pieces are still open and verified today against platform `origin/main`:
 
-1. No tenant-claim access-token hook exists (grep of `supabase/migrations/**` for an access-token hook / shadow claim
-   returns nothing). Browser JWTs carry no top-level `tenant_id`, so `current_tenant_id()` returns NULL for them
+1. No tenant-claim access-token hook exists in `supabase/migrations/**`. Browser JWTs carry no top-level `tenant_id`, so `current_tenant_id()` returns NULL for them
    (program §2).
 2. Bare `tenant_id = current_tenant_id()` policies (no `auth.uid()`/`current_user_id()`/`is_member`/`is_tenant_admin`/
    service-role check) fail closed while the claim is NULL and would open tenant-wide the instant `current_tenant_id()`
@@ -21,25 +20,21 @@ pieces are still open and verified today against platform `origin/main`:
    (`_select`), `event_attendance` (`_select`), `live_highlights` (`_select`), `live_room_attendance` (`_select`),
    `live_rooms` (select/insert/update), `products_catalog` (select/insert), `services_catalog` (select/insert),
    `tenant_catalog_overrides` (`_select`). This supersedes the program §2 "26 on 18" figure (2026-10-10), which drifted.
-   Of the 18 program-listed tables, 7 are the health set (already carry `AND user_id = current_user_id()` —
-   §4.9/O1, excluded), 2 (`tenants`, `relationship_edges`) carry no bare policy (tenants = `USING(true)` public
-   registry + service-role; relationship_edges = all guarded/service-role), and **5 have NO RLS policy at all** —
+   Of the 18 program-listed tables, 7 are the health set (already `AND user_id = current_user_id()`, O1, excluded),
+   `tenants`/`relationship_edges` carry no bare policy, and **5 have NO RLS policy at all** —
    `access_audit_log`, `consents`, `retrieval_traces`, `role_sessions`, `user_roles`. No `tenant_id_for_policies()` or
    `is_member()` helper exists.
 3. Membership stores disagree: `memberships` vs `user_tenants` (program §2: 15 rows only in one, 18 only in the
    other), plus `user_permitted_roles` / `role_preferences` / `active_role` as competing role sources.
 4. `tenantDb`/`TENANT_TABLES`/`isHealthTable`/`healthDb` do not exist (only a forward-reference comment at
-   `services/gateway/src/middleware/auth-supabase-jwt-repository.ts:21`). Tenant-table access is ad hoc; health tables
-   are not systematically excluded.
+   `middleware/auth-supabase-jwt-repository.ts:17-21`). Tenant-table access is ad hoc; health tables are not excluded.
 5. Two distinct fake-tenant-id shapes are live. (a) Two FOUR-entry slug maps (`…0001`–`…0004` =
    vitana/maxina/alkalma/earthlings, not two): `routes/me.ts:15` (`TENANT_SLUGS`, id→slug, read at `me.ts:270,408`) +
    `routes/me.ts:23` (`SLUG_TO_TENANT_ID`, slug→id), and `routes/dev-auth.ts:26` (`SLUG_TO_TENANT_ID`, read at
-   `dev-auth.ts:491`). (b) A dev-sandbox IDENTITY CONSTANT, not a map: `services/orb-memory-bridge.ts:66`
-   `DEV_IDENTITY` is a single struct (user `…0099`) pinned to `TENANT_ID='…0001'`/`TENANT_SLUG='vitana'` — one value,
-   no 0002–0004 — used as the fallback identity when a sandbox request has no authenticated session.
+   `dev-auth.ts:491`). (b) A dev-sandbox constant, not a map: `services/orb-memory-bridge.ts:66` `DEV_IDENTITY`
+   (user `…0099`) pinned to `TENANT_ID='…0001'`/`TENANT_SLUG='vitana'`, the no-session sandbox fallback.
 6. `bootstrap_admin_user` pins `tenants.name IN ('Maxina','Alkalma','Earthlings')` / `name = 'Maxina'` (wrong key
-   column) and writes `memberships` — vitana-v1 migrations `20250831083908_…` through `20250831091149_…` (several
-   copies).
+   column) and writes `memberships` (vitana-v1 `20250831083908_…`–`20250831091149_…`).
 
 ## Fix
 DB lanes are split from CODE lanes (§4.7). Five lanes; the hook GO-LIVE is deliberately a SEPARATE later lane (owner
@@ -87,7 +82,10 @@ D14), not here.
    `isHealthTable(tableName: string): boolean`, `tenantDb(ctx: TenantContext)`, `healthDb(userId: string)` — health
    tables EXCLUDED from `TENANT_TABLES` and reachable only via `healthDb` (frozen home tenant). Two cleanups: (a) the
    two four-entry slug maps — `me.ts:15`+`:23`, `dev-auth.ts:26` — and the `limit(1)` are REMOVED, resolving through
-   the DB registry + `TenantContext`. (b) `orb-memory-bridge.ts:66` `DEV_IDENTITY` is a dev-only fallback constant with
+   the DB registry. `tenant-context.ts` has no slug→id lookup today (`loadTenantFlags()` builds only `byId`), so this
+   lane adds a `bySlug` map there (from the already-fetched `slug` column) and `getTenantIdBySlug(slug): Promise<string
+   | null>`. `dev-auth.ts:491` uses it (unknown slug → the same 400 with the live slug list; registry unavailable →
+   503); `me.ts:270,408` use `(await getTenantMeta(id))?.slug ?? null`. (b) `orb-memory-bridge.ts:66` `DEV_IDENTITY` is a dev-only fallback constant with
    no session to resolve, so it is NOT iterated like a map: drive `TENANT_ID`/`TENANT_SLUG` from a `DEV_TENANT_SLUG`
    env var defaulting to `vitana` (DB-registry-backed in the sandbox), keeping the pinned dev user `…0099`; so no
    `…0001` literal remains in that file. `dev-auth.ts:364` (`DEV_TENANT_ID || '…0001'`) falls back to
@@ -129,7 +127,7 @@ data move. Applied by Claude via RUN-MIGRATION after merge (sessions never apply
   other tenant.
 - Vitest (gateway): `tenantDb` injects the tenant predicate; `isHealthTable()` matches the health table set and
   health tables are absent from `TENANT_TABLES`; `healthDb` resolves the frozen home tenant; the two slug maps are
-  gone and resolution goes through `TenantContext`; with the flag on, the three former `fetchPrimaryTenantForUser`
+  gone; `getTenantMeta(id)`/`getTenantIdBySlug(slug)` round-trip on stubbed flags and an unknown slug → null; with the flag on, the three former `fetchPrimaryTenantForUser`
   callers resolve via `resolvePrimaryTenant()` (existing `vtid-05121-autopilot-prompts-…` test stays green). Literal
   lint, two parts: (1) `me.ts`, `dev-auth.ts`, `orb-memory-bridge.ts` contain NO `…0001`–`…0004` literal (no carve-out,
   so a partial removal fails); (2) ratchet: `…0001` literals in gateway TS outside the ONE intentional site
