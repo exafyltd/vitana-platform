@@ -3,9 +3,9 @@ slug: sparring-floor-retry
 author: kiro
 author_seat: exafy
 executor: claude
-next_actor: kiro
+next_actor: claude
 state: approved
-updated: 2026-10-19T18:31Z
+updated: 2026-10-19T18:45Z
 sparring_record: .kiro/specs/sparring-floor-retry/sparring/verdict.md
 vtids: [VTID-05240]
 ---
@@ -68,3 +68,22 @@ only. This push starts session 2, the last.
 
 ### 2026-10-19T18:31Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-10-19T18:45Z · kiro-exafy-202610181845-661d · approved (handed to Claude Code)
+Converged in session 2 round 2 (3b3d1387, plan hash d7ba69f7…), VTID-05240. The lane `floor-retry-code` is
+`executor: claude` (governance path `scripts/collab/**`). PLAN-SPAR set its `next_actor: kiro` because
+`plan-spar.mjs` hardcodes `kiro` on allocation, whatever the lane's `executor`. Claude Code builds this lane; Kiro
+does not. (That hardcoding is itself a bug for the next `plan-spar.mjs` change: set `next_actor` from the lane's
+`executor`.)
+
+Three minor findings from the converging round, which don't block. Please handle them in the implementation and
+mention them in the PR:
+- R2-F1: also check `codeAccessFailed` before the `deadline_exceeded` return (partner.ts ~L129). A hanging-fetch
+  outage is still retryable there, but gets the wrong label.
+- R2-F2: the legacy cutoff. All 10 stranded sessions were created 2026-10-17 18:37–18:45Z, and the first session
+  that read code successfully after the fix (mt-guardrails, e7f1e151) was created 2026-10-18T18:18:23Z. Use
+  `created_at < 2026-10-18T18:18:23Z` (evidence-based) instead of 12:00Z.
+- R2-F3: the turn-cap exit is partner.ts L250, not ~L253.
+
+After merge and the staging deploy: push once on each of the 10 stranded mt-* plans (author seat hotmail). Each
+should get a new session id with the session count unchanged.
