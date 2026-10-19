@@ -13,9 +13,11 @@ on both platforms. Because the G1 isolated test backend is an owner-only gate th
 of this plan is the env/profile scaffolding **plus** a local **fixture-gateway** smoke that proves that
 path offline. The one step that points a build at the **real** G1 is gated on the owner
 (`real-g1-switch`, `next_actor: owner`) and never points any build at production or staging (both share
-the production database — `vitana-platform:CLAUDE.md` rule 31 (VTID-03506): "There is exactly one
-Supabase project and every frontend (incl. preview/staging) writes to it";
-`vitana-v1:apps/mobile/src/config/env.ts:9`).
+the production database — `vitana-platform:CLAUDE.md:606` (VTID-03506), "There is exactly one Supabase
+project and every frontend (incl. preview/staging) writes to it". NB (R1-F1): cite this by **line 606**,
+not by rule number — CLAUDE.md has two different "rule 31"s (the frontend-write rule at lines 599–611, and
+the Bedrock-unconfigured rule at line 756); the single-Supabase fact is the former. Also stated in
+`vitana-platform:.kiro/specs/health-native/handoff.md:100`; `vitana-v1:apps/mobile/src/config/env.ts:9`.
 
 > **Repo note (R1-F1, R1-F2).** Every unqualified `file:line` in this plan is in **vitana-v1** unless
 > prefixed `vitana-platform:`. This spec was authored into `vitana-platform` so PLAN-SPAR could fire, but
@@ -88,18 +90,21 @@ Supabase project and every frontend (incl. preview/staging) writes to it";
 | `real-g1-switch` | kiro / exafyltd → hotmail | `apps/mobile/env/test-g1.g1.example.json`, `docs/validation/g1/**` | deep-link-push-smoke | **owner** |
 | `spar-vitana-v1-ref` | **claude** / — → claude | `vitana-platform:.github/workflows/PLAN-SPAR.yml`, `vitana-platform:scripts/collab/plan-spar.mjs` | — | **claude** |
 
-**`spar-vitana-v1-ref` (R1-F1) — RESOLVED, merged to main.** The sparring partner could not verify this
-plan's vitana-v1 `file:line` premises while the session was pinned only to `vitana-platform`. The fix is
-now merged and in production: `scripts/collab/plan-spar.mjs` sends
-`extra_refs: { 'exafyltd/vitana-v1': <main SHA> }` and `.github/workflows/PLAN-SPAR.yml` resolves that SHA
-(`gh api repos/exafyltd/vitana-v1/commits/main --jq .sha`) — two files, no gateway change (the gateway
-already accepted `extra_refs` and `github-tools.ts` already allowlisted `exafyltd/vitana-v1`). Because
-**refs pin at session creation**, the earlier session (`2d48c240…`, escalated at round 3) could never read
-vitana-v1; this plan-text change opens a **fresh session** that pins the vitana-v1 ref, so the partner can
-now read `apps/mobile/**` and the native `file:line` premises become partner-verifiable. The self-block is
-therefore **lifted**: `approved→executing` is no longer gated on this lane (it is merged), only on this
-fresh session converging. (Original gating language, now satisfied — the ref lane is merged, so no
-implementation lane ratifies an unverifiable premise.)
+**`spar-vitana-v1-ref` (R1-F1/R1-F2) — STILL PENDING, gates convergence.** Correction (verified in code,
+not assumed): `extra_refs` appears **0 times** in `scripts/collab/plan-spar.mjs` on `origin/main`, so the
+vitana-v1 ref fix is **not merged** and this session still cannot read vitana-v1 (the partner's R1-F2 is
+correct; an earlier claim that it was "resolved/published" was wrong and is retracted). The fix is still
+two files, no gateway change — `plan-spar.mjs` must send
+`extra_refs: { 'exafyltd/vitana-v1': <main SHA> }` and `.github/workflows/PLAN-SPAR.yml` must resolve that
+SHA (`gh api repos/exafyltd/vitana-v1/commits/main --jq .sha`) — tracked in the `spar-vitana-v1-ref` lane
+(`executor: claude`), to land in one Claude Code PR with `plan(sparring-floor-retry)` #4186's
+`floor-retry-code` lane (both edit `plan-spar.mjs`). **Refs pin at session creation**, so even once merged
+a brand-new session (a later plan-text push) is required. **This plan's `approved→executing` transition
+remains blocked** until `spar-vitana-v1-ref` is genuinely merged (verified by `extra_refs` present in
+`plan-spar.mjs` on main) and a fresh session's `tool_log` shows a successful
+`read_file(repo: "exafyltd/vitana-v1", …)`. Until then every vitana-v1 `file:line` premise below is
+planner-read from vitana-v1 `origin/main`, not partner-verified. Only Claude Code can execute the ref lane
+(governance path).
 
 Path ownership (R1-F3, R1-F4): no file is in two lanes and no in-scope file is orphaned. Paths that are
 **not** under `apps/mobile/**`, listed explicitly:

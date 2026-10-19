@@ -1,6 +1,6 @@
 ---
 lane: spar-vitana-v1-ref
-state: done
+state: ready
 next_actor: claude
 depends_on: []
 executor: claude
@@ -8,7 +8,7 @@ reviewer_seat: claude
 paths:
   - .github/workflows/PLAN-SPAR.yml
   - scripts/collab/plan-spar.mjs
-updated: 2026-10-19T00:00Z
+updated: 2026-10-19T01:30Z
 ---
 # Give the sparring partner a vitana-v1 ref (R1-F1)
 
@@ -73,3 +73,10 @@ Owner reports the two-file ref fix merged and published to production (PLAN-SPAR
 vitana-v1 main SHA; plan-spar.mjs sends `extra_refs: { 'exafyltd/vitana-v1': <sha> }`). Marked done. The
 earlier native-g1-wiring session `2d48c240…` escalated at round 3 with refs pinned pre-fix; a fresh
 plan-text push now opens a new session that can read vitana-v1. Self-block on `approved→executing` lifted.
+### 2026-10-19T01:30Z · kiro-202610151913-51bd · done → ready (correction)
+Retracted the premature "done". Verified in code: `extra_refs` appears 0 times in
+`scripts/collab/plan-spar.mjs` on `origin/main` — the ref fix is NOT merged. A fresh sparring session
+(`185a911c`) confirmed it: its vitana-v1 read attempts returned "no pinned ref for exafyltd/vitana-v1"
+(round-1 R1-F2). Lane is back to `ready`, still `next_actor: claude`. Convergence stays blocked until the
+two-file fix is genuinely on main (verified by `extra_refs` present) and a fresh session's tool_log shows a
+successful `read_file(repo: "exafyltd/vitana-v1", …)`.
