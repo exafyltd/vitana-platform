@@ -50,11 +50,17 @@ Pinned refs: `exafyltd/vitana-platform@3cbe82e4c`, `exafyltd/vitana-v1@704b5def4
      stays `assistant`: `connect_store` starts or reuses it and already returns any consent screen as
      `supplier_action` (`commerce-mcp.ts:587`).
    - `terms`, `dpa`, `billing_mandate`, `results_channel`, `tracking_test`, `team` → `supplier`.
-   - `verification`, from the codes in `step.missing` ∪ `step.detail.missing`, first match wins:
-     `detail.review_note` present, or any of `email_not_verified`, `domain_proof` → `supplier`; else any of
-     `vat_id`, `vat_invalid`, `email_check_unavailable`, `domain_check_unavailable`, `vat_check_unavailable`,
-     `facts_changed` → `assistant`; else (`business_verification*`, `licence*`, or `in_progress` with no code)
-     → `vitanaland`. An unknown code counts as `supplier`, so a new check never silently claims the AI can do it.
+   - `verification`, first match wins:
+     1. `step.missing` contains `facts_changed` → `assistant` (re-run `check_verification` on the new facts).
+        `step.detail.missing` is then ignored: `buildChecklist` keeps the stored row's `detail` when the result is
+        stale (`partner-onboarding-checklist.ts:258`–`:267`), so its codes describe the old facts.
+     2. `step.detail.review_note` present → `supplier`.
+     3. Otherwise the codes in `step.missing` ∪ `step.detail.missing`: any of `email_not_verified`, `domain_proof`
+        → `supplier`; else any of `website` (prepended when the org has no website host,
+        `partner-onboarding-service.ts:720`), `vat_id`, `vat_invalid`, `email_check_unavailable`,
+        `domain_check_unavailable`, `vat_check_unavailable` → `assistant` (`update_business`, `check_verification`);
+        else (`business_verification*`, `licence*`, or `in_progress` with no code) → `vitanaland`.
+     4. An unknown code counts as `supplier`, so a new check never silently claims the AI can do it.
    - `account` is always `done` today; it maps to `supplier` if that ever changes.
 2. `buildChecklist` sets `step.owner = stepOwner(step)` on every open required step (additive field; no other field
    changes; no gateway test compares a whole step object, so existing suites stay as they are). Every response that
@@ -64,6 +70,10 @@ Pinned refs: `exafyltd/vitana-platform@3cbe82e4c`, `exafyltd/vitana-v1@704b5def4
 3. `commerce-mcp.ts`: one source for the split — `ON_SCREEN_STEPS` becomes "steps whose fixed owner is
    `supplier`", derived from the checklist module, so the two lists cannot drift. `shapeStatus` adds `owner` to each
    open step and to `next_action`; `done_on_vitanaland`, `link`, `tool` and `supplier_action` stay byte for byte.
+   `next_action.owner` is the owner of `next_action.step`, with the cases `nextAction` (`commerce-mcp.ts:361`)
+   produces outside the checklist: the typeless pseudo-step `business_type` (`:370`) → `assistant`
+   (`update_business`); no step but tool `submit_for_verification` (`:380`, checklist complete) → `assistant` (it
+   still needs the supplier's `confirmed: true`, as today); no step and no tool → `null`.
    One `INSTRUCTIONS` sentence (`:61`): "Each open step has an owner: assistant (you can do it now), supplier (only
    the supplier can — give them the link), vitanaland (nothing to do; Vitanaland is reviewing it)."
 4. No new route, no migration, no write, no change to lifecycle, submit, verification or terms logic.
@@ -99,8 +109,10 @@ OAuth client, `services/ai-connection-grants.ts`); any change to `nextAction`'s 
 rules, lifecycle or submit.
 
 ## Tests
-- Gateway (Jest, mocked Supabase): `stepOwner` table for every step key and every verification code incl. an unknown
-  code → `supplier` and `review_note` → `supplier`; `buildChecklist` sets `owner` only on open required steps and
+- Gateway (Jest, mocked Supabase): `stepOwner` table for every step key and every verification code incl. `website`,
+  an unknown code → `supplier` and `review_note` → `supplier`; a stale row (`facts_changed` with old
+  `email_not_verified` still in `detail.missing`) → `assistant`; `next_action.owner` for the typeless, complete and
+  empty cases; `buildChecklist` sets `owner` only on open required steps and
   changes nothing else (existing checklist suites unchanged apart from the added field); `shapeStatus` carries
   `owner` on steps and `next_action` with `done_on_vitanaland`/`tool`/`supplier_action` unchanged; every
   `ON_SCREEN_STEPS` key has fixed owner `supplier` and every `STEP_TOOLS` key except `verification` has `assistant`.

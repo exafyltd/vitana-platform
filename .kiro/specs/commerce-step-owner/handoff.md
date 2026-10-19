@@ -5,7 +5,7 @@ author_seat: jtadic
 executor: kiro
 next_actor: kiro
 state: drafted
-updated: 2026-10-19T13:25Z
+updated: 2026-10-19T13:32Z
 ---
 # Handoff — commerce-step-owner
 
@@ -26,3 +26,7 @@ Owner instruction 2026-10-19 ("yes, go ahead") after the Commerce onboarding aud
 at vitana-platform@3cbe82e4c and vitana-v1@704b5def4 (file:line in `plan.md`). Pushed as a `plan(` PR for
 PLAN-SPAR. No VTID allocated, no product code changed, no live system touched. Next: PLAN-SPAR spars it; seat
 `jtadic` answers each round in `sparring/responses-<n>.md`.
+
+### 2026-10-19T13:32Z · kiro-jtadic-202610191323-d24a · answered sparring round 1
+R1-F1 (stale verification codes), R1-F2 (`website` code) and R1-F3 (`next_action.owner` outside the checklist)
+accepted and folded into the plan block; answers in `sparring/responses-1.md`. No VTID allocated, no product code.
