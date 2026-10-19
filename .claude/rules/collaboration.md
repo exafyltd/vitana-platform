@@ -148,7 +148,8 @@ the work because each has its own credits.
   from an `approve` entry on the PR's current head and merges, or sends the lane back to `executing`, `next_actor: kiro`.
 - **Merging and Gate 2 — the Project Manager** (`services/gateway/src/services/project-manager/`, VTID-05216/05217) by
   rule: verified lane, review from `reviewer_seat` on the current head, every required check green incl. Lane scope,
-  no conflict, dependencies done. Until it runs `live`, Claude Code merges a `verified` lane on the same rule.
+  no conflict, dependencies done. Until it runs `live`, Claude Code merges a `verified` lane on the same rule — or a
+  Kiro session does, when the owner explicitly instructs that merge in the conversation (§7b).
 - **Claude Code — exceptions only:** `executor: claude` lanes, lanes nobody picked up (reassigned to `claude`), parked
   plans and lanes it can fix, partner outages, and anything touching a governance path.
 - The owner is asked only Gate 2 (and Gate 1 for a plan Claude Code sparred itself). Mid-flight stops (security or
@@ -183,6 +184,11 @@ auto-deploy to staging** — but only when ALL of the following hold:
   read-only. A failing *governance-artifact* check that is a known false positive for the change (e.g. a lane-less
   governance PR, or a missing-VTID evidence pack for an owner-authorized bypass) may be `--admin`-overridden; a real
   red test or build is never overridden.
+
+An unattended run (a Kiro Web automation, the Claude Routine) has no owner conversation, so §7b never applies to it:
+it stops at `in-review` as before. §7b covers only the merge and the staging deploy that the merge triggers — not
+dispatching other workflows, applying migrations, or any Supabase/AWS write (staging shares the production Supabase
+project).
 
 This exception exists so sessions finish end to end to a verified staging build instead of stalling at the merge;
 the two owner gates and the production boundary are untouched.

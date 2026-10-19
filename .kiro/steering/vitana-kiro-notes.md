@@ -11,8 +11,11 @@ inclusion: always
 - The always-included rules are the full `CLAUDE.md` (about 1,000 lines) — the same load a Claude Code session
   carries. Path-scoped references (`.claude/rules/*.md`) load only when you work on matching files.
 - **Your role: implementer (VTID-05192).** Claude Code plans, spars, coordinates, reviews and merges; you implement
-  the lanes assigned to Kiro. You never: allocate a VTID; take a `_plan` claim or edit `handoff.md`; merge or approve a
-  PR; dispatch a workflow or deploy; write to a live system, even though your credentials allow it — no Supabase
+  the lanes assigned to Kiro. You never: allocate a VTID; take a `_plan` claim or edit `handoff.md`; approve a PR;
+  dispatch a workflow; deploy to production; merge a PR — **except under `.claude/rules/collaboration.md` §7b** (owner
+  decision 2026-10-18: the owner explicitly instructs that merge in the conversation, the PR auto-deploys to staging
+  only, and you record the instruction and merge SHA in the lane log; never in an unattended automation run); write to
+  a live system, even though your credentials allow it — no Supabase
   writes (`execute_sql` with INSERT/UPDATE/DELETE/DDL, `apply_migration`, `deploy_edge_function`, branch/project/secret
   tools) and no mutating AWS call (ECS, ELB, ECR, IAM or Secrets Manager writes). Reading for diagnosis is fine. A
   database change is a migration file in the lane's PR. Blocked → a log entry and `next_actor: claude`, never a

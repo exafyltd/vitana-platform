@@ -121,8 +121,10 @@ lane; push and update the lane file before ending. Full rules: `.claude/rules/co
 **Roles (owner decisions 2026-10-14, Project Manager plan v2, VTID-05218 — replaces VTID-05192):** Kiro plans, builds
 and reviews (one Kiro account reviews another's lane); CI spars every `plan(` PR (`PLAN-SPAR.yml`) and a converged plan
 is approved by policy; the Project Manager merges by rule and sends Gate 2; Claude Code handles exceptions only
-(governance-path lanes, unpicked or parked work, partner outages). Kiro never merges, deploys or writes to a live
-system. See `.claude/rules/collaboration.md` §7–§7a.
+(governance-path lanes, unpicked or parked work, partner outages). Kiro never deploys to production and never writes
+to a live system. **§7b (owner decision 2026-10-18):** a Kiro session may merge a PR — which then auto-deploys to
+staging only — when the owner explicitly instructs that merge in the conversation, and records it in the lane log; an
+unattended automation run never merges. See `.claude/rules/collaboration.md` §7–§7b.
 
 ---
 

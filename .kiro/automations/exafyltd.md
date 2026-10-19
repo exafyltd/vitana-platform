@@ -17,6 +17,8 @@ with `author_seat: exafyltd`.
    (`.kiro/steering/vitana-kiro-notes.md`, `CLAUDE.md`, `.claude/CLAUDE.md`, `.claude/rules/collaboration.md`). They are
    binding (§7a): you never allocate VTIDs, merge or approve a PR on GitHub, dispatch a workflow, deploy, review your own
    lane, or write to Supabase/AWS or any live system — even if a credential would allow it. Never test against production.
+   The owner-directed merge exception (§7b) needs the owner's instruction in a live conversation, so it never applies
+   to an automation run: you stop at `in-review`.
 2. **Session id:** `node scripts/collab/queue.mjs session-id --agent kiro --seat exafyltd` → `kiro-exafyltd-YYYYMMDDHHMM-xxxx`.
    Use it in every claim, commit trailer, lane log entry and PR body of this run.
 3. **Read the queue** (both repos are checked out side by side):
