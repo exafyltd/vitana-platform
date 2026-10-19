@@ -6,14 +6,13 @@
  * untrusted: it is allowlist-sanitized before any data URI is built, and shown
  * only through an <img> (never inline in the live DOM).
  *
- * operator-console.js is a plain browser script with no build step, so the SVG
- * helper block is sliced out of the source and evaluated against a jsdom window
- * that supplies the browser globals the helpers use (DOMParser, XMLSerializer,
- * btoa, document, window, console). The assertions then exercise the real
- * shipped code. jsdom is imported lazily; when it is not installed the suite
- * auto-skips (see the describeDom guard below) rather than failing the build —
- * the fake-dom helper used by other command-hub tests cannot parse untrusted
- * XML, which this sanitizer security test genuinely requires.
+ * The SVG helpers ship as svg-preview.js, a standalone bundle module (an IIFE
+ * that attaches window.SvgPreview). The test runs the whole module against a
+ * jsdom window and exercises the real shipped functions off window.SvgPreview.
+ * jsdom is imported lazily; when it is not installed the suite auto-skips (see
+ * the describeDom guard below) rather than failing the build — the fake-dom
+ * helper used by other command-hub tests cannot parse untrusted XML, which this
+ * sanitizer security test genuinely requires.
  */
 
 import { readFileSync } from 'fs';
@@ -35,11 +34,12 @@ try {
 }
 const describeDom = JSDOM ? describe : describe.skip;
 
-// VTID-05073 moved renderOperatorChat (and the SVG helper block that lives
-// beside it) out of app.js into operator-console.js. The helpers are sliced
-// from operator-console.js, which is where they are defined and shipped.
-const APP_JS_PATH = join(__dirname, '../../src/frontend/command-hub/operator-console.js');
-const APP_JS = readFileSync(APP_JS_PATH, 'utf8');
+// VTID-05082: the SVG helpers ship as a standalone bundle module,
+// svg-preview.js (an IIFE attaching window.SvgPreview). The test evaluates the
+// whole module against a jsdom window and reads the real shipped functions off
+// window.SvgPreview — no slicing, the exact bytes that ship.
+const SVG_PREVIEW_PATH = join(__dirname, '../../src/frontend/command-hub/svg-preview.js');
+const SVG_PREVIEW_SRC = readFileSync(SVG_PREVIEW_PATH, 'utf8');
 
 interface SvgHelpers {
   extractSvgPayloads: (content: unknown) => string[];
@@ -49,41 +49,23 @@ interface SvgHelpers {
 }
 
 /**
- * Slices the self-contained SVG-preview helper block out of app.js and
- * evaluates it in a scope wired to a jsdom window, returning the pure helpers.
- * The block runs from the VTID-05082 marker comment to just before
- * `function renderOperatorChat()`.
+ * Evaluates svg-preview.js against a jsdom window and returns window.SvgPreview.
+ * The module is a self-contained IIFE, so running it as-is is the faithful test.
  */
 function loadSvgHelpers(): SvgHelpers {
-  const startMarker = '// === VTID-05082 / DEV-COMHU-0205: Operator chat inline SVG rendering ===';
-  const start = APP_JS.indexOf(startMarker);
-  if (start === -1) throw new Error('VTID-05082 SVG helper block not found in app.js');
-  const end = APP_JS.indexOf('\nfunction renderOperatorChat()', start);
-  if (end === -1) throw new Error('renderOperatorChat boundary not found after the SVG block');
-  const block = APP_JS.slice(start, end);
-
   const dom = new JSDOM('<!DOCTYPE html><body></body>');
   const w = dom.window as unknown as Record<string, unknown>;
+  // jsdom's window lacks btoa/unescape in this environment; wire the globals
+  // svg-preview.js reads off `root` (the window it is handed).
+  (w as any).btoa = (globalThis as any).btoa || ((s: string) => Buffer.from(s, 'binary').toString('base64'));
+  (w as any).unescape = (globalThis as any).unescape;
+  (w as any).encodeURIComponent = encodeURIComponent;
 
   // eslint-disable-next-line no-new-func
-  const factory = new Function(
-    'window', 'document', 'DOMParser', 'XMLSerializer', 'btoa', 'unescape', 'encodeURIComponent', 'console', 'Blob', 'URL',
-    block +
-      '\nreturn { extractSvgPayloads: extractSvgPayloads, sanitizeSvgMarkup: sanitizeSvgMarkup, toUtf8Base64Safe: toUtf8Base64Safe, buildSvgDataUrl: buildSvgDataUrl };',
-  );
-
-  return factory(
-    w,
-    (w as any).document,
-    (w as any).DOMParser,
-    (w as any).XMLSerializer,
-    (globalThis as any).btoa,
-    (globalThis as any).unescape,
-    (globalThis as any).encodeURIComponent,
-    console,
-    (w as any).Blob,
-    (w as any).URL,
-  ) as SvgHelpers;
+  const run = new Function('window', 'self', SVG_PREVIEW_SRC + '\nreturn window.SvgPreview;');
+  const api = run(w, w) as SvgHelpers;
+  if (!api) throw new Error('svg-preview.js did not attach window.SvgPreview');
+  return api;
 }
 
 const SVG_NS = 'xmlns="http://www.w3.org/2000/svg"';
@@ -211,5 +193,57 @@ describeDom('VTID-05082: buildSvgDataUrl (base64, UTF-8 safe round-trip)', () =>
     expect(doc.documentElement.nodeName.toLowerCase()).toBe('svg');
     expect(decoded).toContain('🎉');
     expect(decoded).toContain('€');
+  });
+});
+
+describeDom('VTID-05082: runtime observer integration (scanContainer)', () => {
+  // Full module API, including the runtime integration surface.
+  function loadFull(): any {
+    const dom = new JSDOM('<!DOCTYPE html><body><div class="chat-messages"></div></body>');
+    const w = dom.window as unknown as Record<string, unknown>;
+    (w as any).btoa = (globalThis as any).btoa || ((s: string) => Buffer.from(s, 'binary').toString('base64'));
+    (w as any).unescape = (globalThis as any).unescape;
+    (w as any).encodeURIComponent = encodeURIComponent;
+    // eslint-disable-next-line no-new-func
+    const run = new Function('window', 'self', SVG_PREVIEW_SRC + '\nreturn { api: window.SvgPreview, window: window };');
+    return run(w, w);
+  }
+
+  it('AC-1/AC-2: a reply bubble whose text contains <svg> gets a sibling preview', () => {
+    const { api, window: w } = loadFull();
+    const container = w.document.querySelector('.chat-messages');
+    const bubble = w.document.createElement('div');
+    bubble.className = 'message-bubble';
+    bubble.textContent = 'Here is the mockup: <svg ' + SVG_NS + '><rect width="10" height="10"/></svg>';
+    container.appendChild(bubble);
+    api.scanContainer(container);
+    const preview = container.querySelector('.chat-svg-preview');
+    expect(preview).not.toBeNull();
+    const img = preview.querySelector('img.chat-svg-preview-img');
+    expect(img).not.toBeNull();
+    expect(img.getAttribute('src').startsWith('data:image/svg+xml;base64,')).toBe(true);
+  });
+
+  it('AC-9: a sent (user) bubble containing <svg> is NOT turned into a preview', () => {
+    const { api, window: w } = loadFull();
+    const container = w.document.querySelector('.chat-messages');
+    const bubble = w.document.createElement('div');
+    bubble.className = 'message-bubble message-sent';
+    bubble.textContent = 'look <svg ' + SVG_NS + '><rect width="5" height="5"/></svg>';
+    container.appendChild(bubble);
+    api.scanContainer(container);
+    expect(container.querySelector('.chat-svg-preview')).toBeNull();
+  });
+
+  it('is idempotent: scanning twice does not duplicate the preview', () => {
+    const { api, window: w } = loadFull();
+    const container = w.document.querySelector('.chat-messages');
+    const bubble = w.document.createElement('div');
+    bubble.className = 'message-bubble';
+    bubble.textContent = '<svg ' + SVG_NS + '><circle r="4"/></svg>';
+    container.appendChild(bubble);
+    api.scanContainer(container);
+    api.scanContainer(container);
+    expect(container.querySelectorAll('.chat-svg-preview').length).toBe(1);
   });
 });
