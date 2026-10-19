@@ -1,0 +1,18 @@
+# VTID-05217 (pm-agent/p4-act) — commands log
+
+Built the Project Manager act layer per plan §6.3, phase P4 (stacked on P3).
+
+## Implementation
+- services/gateway/src/services/project-manager/act.ts — merge/reassign/park/Gate-2 act operations (live mode only)
+- services/gateway/src/services/project-manager/lease.ts — pm_lease acquisition; safely no-ops when the table is absent (p1 not yet merged)
+- services/gateway/src/routes/cicd.ts — safe-merge logic exported as an in-process typed function (merged | already_merged | refused); route behaviour unchanged
+- services/gateway/src/services/project-manager/index.ts, types.ts — wiring
+
+## Verification
+- npx tsc --noEmit — clean
+- npx jest test/project-manager — 77 tests green (act integration tests with fake GitHub + in-memory DB, safe-merge-fn tests)
+- Asserted in tests: never deploys/dispatches/allocates; never merges a governance-path PR without a claude review; already-merged is a no-op; lease absent -> tick no-ops.
+
+## Notes
+- Act is gated behind PM_MODE=live; dry_run/off perform no actions.
+- Merge goes only through the in-process safe-merge; never a direct GitHub merge, workflow dispatch, or deploy.

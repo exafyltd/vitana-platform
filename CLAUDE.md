@@ -63,7 +63,15 @@ safety.
    in the release, and a "Decisions taken" list. A change that deploys
    nothing has no Gate 2; it is done when merged with green checks.
 
-**The owner's "yes" at Gate 1 is the standing instruction for everything up
+**Policy approval replaces Gate 1 for CI-sparred plans (owner decision
+2026-10-14, VTID-05214/05218).** A plan sparred by `PLAN-SPAR.yml` whose
+session converged is approved by the policy `converged-auto-v1` (recorded on
+the sparring record and accepted by the `vtid_ledger` gate); it is not sent to
+the owner. A plan that does not converge after its re-plan session is parked
+on the Command Hub board, with no message. A plan Claude Code spars with its
+own local partner still goes to the owner as Gate 1.
+
+**The owner's "yes" at Gate 1 (or the policy approval) is the standing instruction for everything up
 to Gate 2 for that plan's VTIDs.** It is recorded as the approval line in
 `docs/validation/<VTID>/plan-sparring.md` (with the plan hash) and in the
 ledger row's metadata. That record is an audit trail; the protection is the
@@ -110,9 +118,11 @@ Git is the only channel between Claude Code and Kiro sessions — the owner neve
 `node <vitana-platform>/scripts/collab/queue.mjs --repo <vitana-platform> --repo <vitana-v1>` and work lanes whose
 `next_actor` is you; state your session id + lane in your first reply; claim a lane before touching it, one session per
 lane; push and update the lane file before ending. Full rules: `.claude/rules/collaboration.md`.
-**Default roles (owner decision 2026-10-14, VTID-05192):** Claude Code plans, spars, coordinates, reviews, merges and
-sends both gates; Kiro implements lanes and never merges, deploys or writes to a live system. See
-`.claude/rules/collaboration.md` §7–§7a.
+**Roles (owner decisions 2026-10-14, Project Manager plan v2, VTID-05218 — replaces VTID-05192):** Kiro plans, builds
+and reviews (one Kiro account reviews another's lane); CI spars every `plan(` PR (`PLAN-SPAR.yml`) and a converged plan
+is approved by policy; the Project Manager merges by rule and sends Gate 2; Claude Code handles exceptions only
+(governance-path lanes, unpicked or parked work, partner outages). Kiro never merges, deploys or writes to a live
+system. See `.claude/rules/collaboration.md` §7–§7a.
 
 ---
 
@@ -469,7 +479,8 @@ Applies to both repos and to every plan producer — Claude Code sessions,
 Operator Chat/Console, task intake, Dev Autopilot, self-healing, voice,
 email intake, routines. Procedure: skill `.claude/skills/plan-sparring/`.
 
-51. **Plan → sparring → owner approval → VTID → code.** No VTID is
+51. **Plan → sparring → owner approval (or, for a CI-sparred plan that
+    converged, policy approval `converged-auto-v1`, VTID-05214) → VTID → code.** No VTID is
     allocated for a plan that has not been sparred, and no VTID is ever
     allocated for the sparring itself.
 52. **The partner is independent and adversarial.** It sees the plan and the
@@ -480,12 +491,17 @@ email intake, routines. Procedure: skill `.claude/skills/plan-sparring/`.
     two passes for every change class; cap 3 rounds (standard). A rejection
     the partner still disputes is unresolved and goes to the owner.
 53. **Partner model: Claude Opus 4.6 on AWS Bedrock** (owner decision
-    2026-10-04), one config value (`PLAN_SPARRING_MODEL`). **No fallback** —
-    a failed partner call escalates to the owner; never Sonnet, DeepSeek or
-    Google silently.
+    2026-10-04), one config value (`PLAN_SPARRING_MODEL`). **Fallback chain
+    (owner decision 2026-10-19 — sparring must never stop on burned quota):**
+    Opus 4.6 → Bedrock Sonnet 4.6 (`PLAN_SPARRING_FALLBACK_MODEL`) → DeepSeek
+    `deepseek-v4-pro` (`PLAN_SPARRING_LAST_RESORT_MODEL`; kill switch
+    `PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED=false`). The chain lives in the
+    partner pass (`plan-sparring/partner.ts`), is sticky per round, logged
+    loudly and recorded per entry in `model_log.fallback_tier`. Only when all
+    three fail does the session escalate `model_unavailable`. Never Google.
 54. **The gate is the database**, not this text: a `vtid_ledger` trigger
     checks every new VTID for a converged-or-escalated, owner-approved
-    sparring record with a matching plan hash. It runs in log mode first,
+    sparring record (or a converged, policy-approved one) with a matching plan hash. It runs in log mode first,
     then enforce. While sessions can run `execute_sql` as `postgres`, a
     disabled trigger or changed mode is **detected (hourly reconciler → P1),
     not prevented** — an accepted residual (owner decision 2026-10-04) until

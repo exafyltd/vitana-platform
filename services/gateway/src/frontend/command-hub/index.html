@@ -25,6 +25,10 @@
   <script src="/command-hub/kiro-console.js?v=20261114-vtid-05071"></script>
   <!-- VTID-05084: before app.js, which hands Autonomy → Loops to window.LoopsCatalog -->
   <script src="/command-hub/loops-catalog.js?v=20261121-vtid-05153"></script>
+  <!-- VTID-05082: before app.js, which hands the rendered Operator transcript to window.OperatorSvgRender -->
+  <script src="/command-hub/operator-svg-render.js?v=20261121-vtid-05082"></script>
+  <!-- VTID-05073: Operator Console functions extracted from app.js (before app.js; app.js calls them at call time) -->
+  <script src="/command-hub/operator-console.js?v=20261120-vtid-05148"></script>
   <script src="/command-hub/app.js?v=20261121-vtid-05082"></script>
   <!-- VTID-04626: Voice Self-Healing screen -->
   <script src="/command-hub/voice-self-healing.js?v=20261014-vtid-04626-2"></script>

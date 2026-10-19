@@ -209,7 +209,7 @@ describe('VTID-05077 planner fallback rate on the autopilot screen', () => {
     const app = fs.readFileSync(path.join(__dirname, '../src/frontend/command-hub/app.js'), 'utf8');
     expect(app).toContain("label: 'Planner fallback 24h'");
     const html = fs.readFileSync(path.join(__dirname, '../src/frontend/command-hub/index.html'), 'utf8');
-    expect(html).toContain('/command-hub/app.js?v=20261120-vtid-05148');
+    expect(html).toContain('/command-hub/app.js?v=20261121-vtid-05082');
   });
 
   it('plan versions record who wrote them (migration + insert)', () => {

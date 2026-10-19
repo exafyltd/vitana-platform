@@ -5,11 +5,21 @@
  */
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { extractedOperatorBlock, readCommandHubBundle } from './bundle';
 
 const FE = join(__dirname, '../../src/frontend/command-hub');
 const APP_JS = readFileSync(join(FE, 'app.js'), 'utf8');
 const CSS = readFileSync(join(FE, 'styles.css'), 'utf8');
-const BLOCK = APP_JS.slice(APP_JS.indexOf('function operatorThreadEngine(thread) {'), APP_JS.indexOf('function renderOperatorLiveTranscript() {'));
+// VTID-05073: the operatorThreadEngine..renderOperatorLiveTranscript functions
+// moved to operator-console.js; their module vars stayed in app.js.
+// extractedOperatorBlock() rebuilds the original executable slice unchanged.
+const BUNDLE = readCommandHubBundle();
+const BLOCK = extractedOperatorBlock(
+  'function operatorThreadEngine(thread) {',
+  'function renderOperatorLiveTranscript() {',
+  ['state', 'document', 'fetch', 'buildContextHeaders', 'renderApp', 'saveOperatorThreadsIndex', 'updateOperatorLiveTranscriptDom', 'showToast', 'confirm', 'console', 'startNewOperatorThread'],
+  ['kiroReplyMeta'],
+);
 
 class El {
   tag: string; className = ''; textContent = ''; title = ''; type = ''; onclick: null | (() => void) = null;
@@ -104,11 +114,14 @@ describe('VTID-05003 fallback survives reloads', () => {
     expect(api.kiroReplyMeta({ provider: 'bedrock' })).toBeUndefined();
   });
   it('history entries carry it and both restore paths put it back on the message', () => {
-    expect(APP_JS).toContain('kiroMeta: kiroReplyMeta(result.meta)');
+    // VTID-05073: the result.meta restore (in sendChatMessage) and waitForKiroDefault
+    // call site moved to operator-console.js; the m.meta restore and the three
+    // msg.kiroMeta restores stayed in app.js.
+    expect(BUNDLE).toContain('kiroMeta: kiroReplyMeta(result.meta)');
     expect(APP_JS).toContain('kiroMeta: kiroReplyMeta(m.meta)');
     // VTID-05064: the page-load restore (initOperatorChatSession) puts it back too — three restore paths.
     expect(APP_JS.match(/meta: msg\.kiroMeta/g)).toHaveLength(3);
-    expect(APP_JS).toContain('if (!(await waitForKiroDefault())) return;');
+    expect(BUNDLE).toContain('if (!(await waitForKiroDefault())) return;');
   });
 });
 
@@ -134,10 +147,11 @@ describe('VTID-05003 no silent fallback', () => {
 
 describe('VTID-05003 wiring (source check)', () => {
   it('new threads apply the default and re-read the status; replies render the fallback', () => {
-    const start = APP_JS.slice(APP_JS.indexOf('function startNewOperatorThread(opts) {'), APP_JS.indexOf('function startNewOperatorThread(opts) {') + 1500);
+    // VTID-05073: startNewOperatorThread and the kiroFallback call site moved to operator-console.js.
+    const start = BUNDLE.slice(BUNDLE.indexOf('function startNewOperatorThread(opts) {'), BUNDLE.indexOf('function startNewOperatorThread(opts) {') + 1500);
     expect(start).toContain('applyDefaultOperatorEngine(thread, opts && opts.engine);');
     expect(start).toContain('if (!(opts && opts.engine)) fetchKiroStatus(true);');
-    expect(APP_JS).toContain('var kiroFallback = !isSent ? renderKiroFallbackAction(msg) : null;');
+    expect(BUNDLE).toContain('var kiroFallback = !isSent ? renderKiroFallbackAction(msg) : null;');
   });
   it('styles and cache-bust', () => {
     expect(CSS).toContain('.kiro-fallback-btn');

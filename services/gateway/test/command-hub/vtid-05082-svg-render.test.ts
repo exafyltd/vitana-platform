@@ -6,64 +6,62 @@
  * untrusted: it is allowlist-sanitized before any data URI is built, and shown
  * only through an <img> (never inline in the live DOM).
  *
- * app.js is a plain browser script with no build step, so — matching this
- * repo's established pattern for app.js (see
- * test/command-hub/escape-html.test.ts) — the SVG helper block is sliced out of
- * the source and evaluated directly against a jsdom window that supplies the
- * browser globals the helpers use (DOMParser, XMLSerializer, btoa, document,
- * window, console). The assertions then exercise the real shipped code.
+ * The helpers live in operator-svg-render.js, a plain browser IIFE module that
+ * publishes window.OperatorSvgRender (no build step). Matching this repo's
+ * pattern for Command Hub scripts, the shipped file is read from source and
+ * evaluated against a jsdom window that supplies the browser globals it uses
+ * (DOMParser, XMLSerializer, btoa, document, window, console). The assertions
+ * then exercise the real shipped code.
+ *
+ * Decision B (VTID-05073 freeze): renderOperatorChat in operator-console.js is
+ * never edited. app.js's _renderAppCore calls enhanceOperatorChat on the built
+ * DOM, which post-processes the transcript; that hook is covered below too.
  */
 
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { JSDOM } from 'jsdom';
 
-const APP_JS_PATH = join(__dirname, '../../src/frontend/command-hub/app.js');
-const APP_JS = readFileSync(APP_JS_PATH, 'utf8');
+const COMMAND_HUB_DIR = join(__dirname, '../../src/frontend/command-hub');
+const MODULE_PATH = join(COMMAND_HUB_DIR, 'operator-svg-render.js');
+const MODULE_JS = readFileSync(MODULE_PATH, 'utf8');
+const APP_JS = readFileSync(join(COMMAND_HUB_DIR, 'app.js'), 'utf8');
+const OPERATOR_CONSOLE_JS = readFileSync(join(COMMAND_HUB_DIR, 'operator-console.js'), 'utf8');
 
 interface SvgHelpers {
   extractSvgPayloads: (content: unknown) => string[];
   sanitizeSvgMarkup: (raw: unknown) => string;
   toUtf8Base64Safe: (s: unknown) => string;
   buildSvgDataUrl: (markup: string) => string;
+  enhanceOperatorChat: (root: unknown, chatMessages: unknown) => number;
+  document: Document;
 }
 
 /**
- * Slices the self-contained SVG-preview helper block out of app.js and
- * evaluates it in a scope wired to a jsdom window, returning the pure helpers.
- * The block runs from the VTID-05082 marker comment to just before
- * `function renderOperatorChat()`.
+ * Evaluates operator-svg-render.js in a scope wired to a fresh jsdom window and
+ * returns what it published on window.OperatorSvgRender (plus that document).
  */
 function loadSvgHelpers(): SvgHelpers {
-  const startMarker = '// === VTID-05082 / DEV-COMHU-0205: Operator chat inline SVG rendering ===';
-  const start = APP_JS.indexOf(startMarker);
-  if (start === -1) throw new Error('VTID-05082 SVG helper block not found in app.js');
-  const end = APP_JS.indexOf('\nfunction renderOperatorChat()', start);
-  if (end === -1) throw new Error('renderOperatorChat boundary not found after the SVG block');
-  const block = APP_JS.slice(start, end);
-
   const dom = new JSDOM('<!DOCTYPE html><body></body>');
-  const w = dom.window as unknown as Record<string, unknown>;
-
+  const w = dom.window as unknown as Record<string, any>;
   // eslint-disable-next-line no-new-func
   const factory = new Function(
     'window', 'document', 'DOMParser', 'XMLSerializer', 'btoa', 'unescape', 'encodeURIComponent', 'console', 'Blob', 'URL',
-    block +
-      '\nreturn { extractSvgPayloads: extractSvgPayloads, sanitizeSvgMarkup: sanitizeSvgMarkup, toUtf8Base64Safe: toUtf8Base64Safe, buildSvgDataUrl: buildSvgDataUrl };',
+    MODULE_JS + '\nreturn window.OperatorSvgRender;',
   );
-
-  return factory(
+  const api = factory(
     w,
-    (w as any).document,
-    (w as any).DOMParser,
-    (w as any).XMLSerializer,
+    w.document,
+    w.DOMParser,
+    w.XMLSerializer,
     (globalThis as any).btoa,
     (globalThis as any).unescape,
     (globalThis as any).encodeURIComponent,
     console,
-    (w as any).Blob,
-    (w as any).URL,
-  ) as SvgHelpers;
+    w.Blob,
+    w.URL,
+  );
+  return { ...api, document: w.document } as SvgHelpers;
 }
 
 const SVG_NS = 'xmlns="http://www.w3.org/2000/svg"';
@@ -191,5 +189,76 @@ describe('VTID-05082: buildSvgDataUrl (base64, UTF-8 safe round-trip)', () => {
     expect(doc.documentElement.nodeName.toLowerCase()).toBe('svg');
     expect(decoded).toContain('🎉');
     expect(decoded).toContain('€');
+  });
+});
+
+describe('VTID-05082: enhanceOperatorChat (post-render hook, decision B)', () => {
+  const SVG_REPLY = 'mockup:\n```svg\n<svg ' + SVG_NS + '><rect width="10" height="10"/></svg>\n```';
+
+  /** Builds a transcript shaped like renderOperatorChat's output for `msgs`. */
+  function transcript(doc: Document, msgs: { type: string }[]): { root: HTMLElement; messages: HTMLElement } {
+    const root = doc.createElement('div');
+    const container = doc.createElement('div');
+    container.className = 'chat-container';
+    const messages = doc.createElement('div');
+    messages.className = 'chat-messages';
+    for (const m of msgs) {
+      const sent = m.type === 'user' || m.type === 'sent';
+      const bubble = doc.createElement('div');
+      bubble.className = 'message-bubble ' + (sent ? 'message-sent' : 'message-reply');
+      messages.appendChild(bubble);
+      const meta = doc.createElement('div');
+      meta.className = 'message-meta';
+      messages.appendChild(meta);
+    }
+    container.appendChild(messages);
+    root.appendChild(container);
+    return { root, messages };
+  }
+
+  it('inserts a sanitized <img> preview right after the reply bubble', () => {
+    const h = loadSvgHelpers();
+    const msgs = [{ type: 'user', content: 'draw it' }, { type: 'reply', content: SVG_REPLY }];
+    const { root, messages } = transcript(h.document, msgs);
+    expect(h.enhanceOperatorChat(root, msgs)).toBe(1);
+    const replyBubble = messages.querySelectorAll('.message-bubble')[1];
+    const preview = replyBubble.nextElementSibling as HTMLElement;
+    expect(preview.className).toBe('chat-svg-preview');
+    const img = preview.querySelector('img') as HTMLImageElement;
+    expect(img.getAttribute('src')!.startsWith('data:image/svg+xml;base64,')).toBe(true);
+    // Never inline SVG markup in the live DOM, never an inline style attribute.
+    expect(preview.querySelector('svg rect')).toBeNull();
+    expect(preview.querySelector('[style]')).toBeNull();
+  });
+
+  it('never scans a user-authored (sent) message', () => {
+    const h = loadSvgHelpers();
+    const msgs = [{ type: 'user', content: SVG_REPLY }];
+    const { root, messages } = transcript(h.document, msgs);
+    expect(h.enhanceOperatorChat(root, msgs)).toBe(0);
+    expect(messages.querySelector('.chat-svg-preview')).toBeNull();
+  });
+
+  it('fails closed when the bubbles do not line up with the messages', () => {
+    const h = loadSvgHelpers();
+    const msgs = [{ type: 'user', content: 'x' }, { type: 'reply', content: SVG_REPLY }];
+    const { root, messages } = transcript(h.document, [{ type: 'reply' }, { type: 'user' }]);
+    expect(h.enhanceOperatorChat(root, msgs)).toBe(0);
+    expect(messages.querySelector('.chat-svg-preview')).toBeNull();
+  });
+
+  it('is idempotent across repeated passes over the same DOM', () => {
+    const h = loadSvgHelpers();
+    const msgs = [{ type: 'reply', content: SVG_REPLY }];
+    const { root, messages } = transcript(h.document, msgs);
+    h.enhanceOperatorChat(root, msgs);
+    h.enhanceOperatorChat(root, msgs);
+    expect(messages.querySelectorAll('.chat-svg-preview')).toHaveLength(1);
+  });
+
+  it('is wired from app.js _renderAppCore and leaves operator-console.js untouched', () => {
+    expect(APP_JS).toContain('window.OperatorSvgRender.enhanceOperatorChat(root, state.chatMessages)');
+    expect(OPERATOR_CONSOLE_JS).not.toContain('OperatorSvgRender');
+    expect(OPERATOR_CONSOLE_JS).not.toContain('extractSvgPayloads');
   });
 });

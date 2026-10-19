@@ -5,6 +5,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { readCommandHubBundle } from './command-hub/bundle';
 import {
   resolveOperatorThreadIdForVoice,
   isCommandHubVoiceSession,
@@ -113,7 +114,10 @@ describe('operator-threads storage', () => {
 
 describe('Command Hub wiring (source contract)', () => {
   const hub = path.join(__dirname, '../src/frontend/command-hub');
-  const app = fs.readFileSync(path.join(hub, 'app.js'), 'utf8');
+  // VTID-05073: the console chat-turn wiring and syncOperatorVoiceTurns moved
+  // into operator-console.js. Read the whole Command Hub bundle so both the
+  // moved code and the code still in app.js resolve. Assertions unchanged.
+  const app = readCommandHubBundle();
   const widget = fs.readFileSync(path.join(hub, 'orb-widget.js'), 'utf8');
   const handler = fs.readFileSync(path.join(__dirname, '../src/orb/live/session/upstream-message-handler.ts'), 'utf8');
 

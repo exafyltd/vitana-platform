@@ -24,9 +24,13 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { readCommandHubBundle } from './command-hub/bundle';
 
 const FE = path.resolve(__dirname, '../src/frontend/command-hub');
-const APP_JS = fs.readFileSync(path.join(FE, 'app.js'), 'utf8');
+// VTID-05073: the turn-cost helpers and renderOperatorChat moved into
+// operator-console.js. Read the whole Command Hub bundle so the sliced,
+// eval'd function bodies still resolve. Assertions are unchanged.
+const APP_JS = readCommandHubBundle();
 const INDEX_HTML = fs.readFileSync(path.join(FE, 'index.html'), 'utf8');
 // Editing anything under command-hub/ requires the ownership guard's marker.
 const GUARD_JS = fs.readFileSync(
