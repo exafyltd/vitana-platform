@@ -4,8 +4,10 @@ author: kiro
 author_seat: jtadic
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-19T13:32Z
+state: approved
+updated: 2026-10-19T13:36Z
+sparring_record: .kiro/specs/commerce-step-owner/sparring/verdict.md
+vtids: [VTID-05237, VTID-05238]
 ---
 # Handoff — commerce-step-owner
 
@@ -30,3 +32,6 @@ PLAN-SPAR. No VTID allocated, no product code changed, no live system touched. N
 ### 2026-10-19T13:32Z · kiro-jtadic-202610191323-d24a · answered sparring round 1
 R1-F1 (stale verification codes), R1-F2 (`website` code) and R1-F3 (`next_action.owner` outside the checklist)
 accepted and folded into the plan block; answers in `sparring/responses-1.md`. No VTID allocated, no product code.
+
+### 2026-10-19T13:36Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
