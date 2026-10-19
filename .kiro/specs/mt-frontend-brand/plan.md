@@ -7,18 +7,26 @@ change_class: standard
 ## Problem
 Lane C (VTID-05151) delivered the DB-driven registry, generic `/:slug` portal and
 DB-driven `useTenant`. WS7 "rest" (MULTI-TENANT-PLAN §6 WS7) is still Maxina-hardcoded.
-Premises re-verified against current code (2026-10-15). The vitana-v1 premises below were
-re-verified by reading the current vitana-v1 checkout (round-1 R1-F1): every file:line holds.
+Premises re-verified against current code. vitana-v1 premises are pinned to vitana-v1
+`origin/main` @ `32a82e6b` (the review session cannot read v1 — R1-F2); the two
+security-relevant ones are quoted with platform citations in item 2 and are re-checked by
+each lane's executor at build time (a mismatch stops the lane, `next_actor: claude`).
 
 1. **Theme tokens are set but never consumed.** `vitana-v1/src/hooks/useTenant.tsx:122-133`
    sets `--brand-accent/-bg/-fg` on `documentElement`; its own comment says "nothing
    consumes them yet — C2", and `src/lib/tenant-registry.maxina-golden.test.tsx:172-183`
    asserts no `.tsx/.css` consumes `var(--brand-*)`. So brand colour never renders.
-2. **adminFetch JSDoc lies.** `src/lib/admin-api.ts:5-7` claims it injects
-   `X-Vitana-Tenant`/`X-Vitana-Active-Role`; the code (`admin-api.ts:33-41`) sends only
-   `Content-Type` + `Authorization`. The gateway CORS already allows those headers
-   (`services/gateway/src/middleware/cors.ts:67`, the `allowedHeaders` array), so adding
-   them is safe. No gateway route that `adminFetch` calls reads them yet — see Fix.
+2. **adminFetch JSDoc lies.** `src/lib/admin-api.ts:7` claims "Injects X-Vitana-Tenant and
+   X-Vitana-Active-Role context headers"; the `fetch` at `admin-api.ts:35-42` sets only
+   `"Content-Type"`, `Authorization: Bearer …` and `...init.headers`. The gateway CORS already
+   allows those headers (`services/gateway/src/middleware/cors.ts:67`), so adding them is safe.
+   No route `adminFetch` calls reads them: the only gateway readers are
+   `routes/autopilot-recommendations.ts:406,430,1799,2336` (mounted `/api/v1/autopilot/recommendations`,
+   `index.ts:905`), `routes/calendar.ts:186,1054` and `routes/memory-garden.ts:48`. adminFetch's
+   path prefixes (v1 `git grep adminFetch(`) are `/admin/*`, `/api/v1/{admin,community,conversation,
+   partner-health,patient,vcaop,voice-lab}/*`; its autopilot calls (`useAdminAutopilot.ts:143-322`)
+   hit `/api/v1/admin/autopilot` = `routes/admin-autopilot.ts` (`index.ts:555,1489`), which reads
+   neither header. No calendar/memory-garden adminFetch call exists.
 3. **Hardcoded `maxina` slug in signup/commerce.** `src/pages/CommerceJoin.tsx:142,149,176`
    writes `tenant_slug: 'maxina'`; `src/components/AuthGuard.tsx:267,271` falls back to
    `.../' + (readStoredTenantSlug('tenant_slug') || 'maxina')` as the OAuth redirect base.
@@ -75,8 +83,7 @@ tokens; RTL logical props.
 `admin-api.ts`: inject `X-Vitana-Tenant` (active tenant id) + `X-Vitana-Active-Role` from
 `useTenant`/role source when present, and fix the JSDoc so it matches the code. **No gateway
 route that `adminFetch` calls reads these headers yet** — the only current readers
-(`autopilot-recommendations.ts:430,1799,2336`, `calendar.ts:1054`) are not adminFetch targets,
-and `reminders.ts:58` records that header-based tenant resolution was removed there. So this
+(Problem 2) are not adminFetch targets, and `reminders.ts:58` records that header-based tenant resolution was removed there. So this
 lane is explicitly preparatory: it fixes the lying JSDoc (member-neutral value today) and sends
 the headers so a WS7 follow-on can add the gateway-side tenant-scoping reads. The Vitest proves
 only that the client SENDS the headers (present with a tenant/role, absent without) — not that
@@ -100,10 +107,16 @@ documented in the lane's `docs/validation/<vtid>/` runbook, not scripted (Kiro n
 a live system). depends_on: `email-brand-db`.
 
 **Lane `cors-config` (kiro, jtadic, gateway)** — `services/gateway/src/middleware/cors.ts`:
-read the allowed-origin list from config/env (keep the current array as the compiled
-default so nothing is removed) so a new tenant's custom origin can be added without a code
-edit. The `allowedHeaders` array (`cors.ts:67`) already permits the tenant headers; this lane
-touches only the origin list. Hot file; ≤20-line change in its own PR. Not a governance path
+a new tenant origin is added by env, not a code edit (R1-F1). Mechanism: the existing
+gateway pattern for env origin lists (`services/outbound-http-worker.ts:151`, comma-split
+`OUTBOUND_HTTP_ALLOWED_ORIGINS`), no new config module. A new `CORS_EXTRA_ORIGINS` is
+parsed ONCE at module load into a module-scope array (trim, drop empties, keep only exact
+`https://` origins with no path/wildcard), **appended** to `ALLOWED_ORIGINS` (`cors.ts:7-39`) —
+augment, never replace; unset = today's list exactly. Takes effect on task restart/deploy (an
+ECS env change redeploys), no hot reload. Untouched: `ALLOWED_ORIGIN_PATTERNS` (`:45-50`),
+`isOriginAllowed` (`:52-55`, still checks list then patterns), `allowedHeaders` (`:67`), and the
+narrow `applyDiscoveryCors` rules (`OPENAI_MCP_ORIGINS`/`MCP_CHATGPT_PATHS`/`WELL_KNOWN_PREFIX`,
+`:87-121`) — an extra origin never widens `/mcp/chatgpt`. Hot file; ≤20-line change in its own PR. Not a governance path
 (`services/gateway/src/**`), so executor kiro seat `jtadic` (uncovered-platform gateway rule);
 reviewer a different seat.
 
@@ -136,8 +149,11 @@ has a migration.
 - `email-brand-db`: pgTAP/SQL — helper returns the seeded Maxina row; expand-only.
 - `email-brand-code`: Vitest/Deno — each edge fn selects sender/logo/brand by tenant and
   falls back to Maxina; OG worker emits the resolved site name.
-- `cors-config`: Jest — the default list still allows every current origin; a configured
-  extra origin is allowed; an unknown one is blocked (rule-48 posture, no live call).
+- `cors-config`: Jest `services/gateway/test/middleware/cors.test.ts` (`jest.isolateModules`
+  per env value) — unset env: every current origin + pattern still allowed;
+  a configured extra origin is allowed; a malformed/wildcard entry is ignored; an unknown
+  origin blocked; `/.well-known/*` and `/mcp/chatgpt` behave exactly as before (an extra origin
+  is NOT reflected on `/mcp/chatgpt`). No live call.
 
 ## Staging verification
 Read-only (rule 48). `theme-tokens`/`brand-surface`/`adminfetch-header`: a Playwright

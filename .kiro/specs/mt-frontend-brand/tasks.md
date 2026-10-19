@@ -82,7 +82,8 @@ tenant-scoping reads are a named WS7 follow-on VTID (plan Out of scope).
 
 - [ ] AF1 Inject `X-Vitana-Tenant` (active tenant id) and `X-Vitana-Active-Role` in
       `adminFetch` when known, from the tenant/role source callers already use; fix the JSDoc
-      (`admin-api.ts:5-7`) so it matches the code. Gateway CORS already allows both headers
+      (`admin-api.ts:7`; the fetch at `:35-42`) so it matches the code. First re-check both
+      premises at build time (plan Problem 2); a mismatch stops the lane. Gateway CORS already allows both headers
       (`services/gateway/src/middleware/cors.ts:67`).
 - [ ] AF2 Vitest pins both headers present with a tenant/role, absent without, Authorization
       unchanged. The test proves client-send only — not that any gateway route consumes them.
@@ -137,11 +138,16 @@ Allowed paths:
 - `services/gateway/src/middleware/cors.ts`
 - `services/gateway/test/middleware/cors.test.ts`
 
-- [ ] CC1 Merge an env/config origin list onto the compiled `ALLOWED_ORIGINS` default (keep
-      every current origin). Touch only the origin list — the `allowedHeaders` array
-      (`cors.ts:67`) already permits the tenant headers. ≤20-line change in its own PR (hot file).
-- [ ] CC2 Jest: default list still allows every current origin; a configured extra origin is
-      allowed; an unknown origin is blocked.
+- [ ] CC1 Parse `CORS_EXTRA_ORIGINS` (comma-split, same pattern as
+      `services/outbound-http-worker.ts:151`) ONCE at module load; keep only exact `https://`
+      origins (no path, no wildcard); APPEND to the compiled `ALLOWED_ORIGINS` (`cors.ts:7-39`) —
+      never replace; unset = today's list. Restart/deploy to apply, no hot reload. Leave
+      `ALLOWED_ORIGIN_PATTERNS` (`:45-50`), `isOriginAllowed` (`:52-55`), `allowedHeaders` (`:67`)
+      and `applyDiscoveryCors` (`:87-121`, MCP/.well-known rules) unchanged. Hot file, own PR.
+- [ ] CC2 Jest (`jest.isolateModules` per env value): unset env allows every current origin and
+      pattern; a configured extra origin is allowed; malformed/wildcard entries ignored; an
+      unknown origin blocked; `/.well-known/*` and `/mcp/chatgpt` unchanged (an extra origin is
+      not reflected on `/mcp/chatgpt`).
 Acceptance: `npm test` in the gateway green; no live call.
 
 <!-- Command Hub tenant picker UI is deferred to a separate DEV-COMHU lane (see plan.md

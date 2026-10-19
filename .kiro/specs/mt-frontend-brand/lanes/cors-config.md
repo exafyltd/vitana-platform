@@ -22,8 +22,9 @@ Plan: `.kiro/specs/mt-frontend-brand/plan.md` and the `cors-config` section of `
 This is `services/gateway/src/**`, NOT a governance path (`.github/**`, `.claude/**`,
 `.kiro/steering/**`, `.kiro/automations/**`, `scripts/collab/**`, `CLAUDE.md`,
 `docs/programs/areas.yaml`), so a Kiro lane may change it. Seat `jtadic` (uncovered-platform
-gateway work). Keep every current origin in the compiled default; the config/env list only
-adds. Executor rules (collaboration §7a): no VTID allocation, no `_plan` claim, no edit of
+gateway work). Keep every current origin in the compiled default; `CORS_EXTRA_ORIGINS` (read
+once at module load) only appends to `ALLOWED_ORIGINS`; patterns and the MCP/.well-known rules
+stay untouched (tasks CC1, round-1 R1-F1). Executor rules (collaboration §7a): no VTID allocation, no `_plan` claim, no edit of
 `handoff.md`/another lane, no merge/approve/deploy/dispatch, no AWS writes. The lane adds its
 own `docs/validation/<vtid>/`. Branch `kiro/mt-frontend-brand/cors-config`; PR title
 `VTID-xxxxx (mt-frontend-brand/cors-config): …`; trailers `Collab-Session`/`Collab-Lane`. On PR
