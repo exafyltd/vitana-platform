@@ -10,10 +10,11 @@ paths:
   - services/gateway/src/providers/bedrock*.ts
   - services/gateway/src/services/llm-router.ts
   - services/gateway/src/services/llm-telemetry-service.ts
+  - services/gateway/src/types/llm-telemetry.ts
   - services/gateway/src/services/plan-sparring/**
   - services/gateway/src/constants/llm-defaults.ts
   - services/gateway/test/plan-sparring-*.test.ts
-updated: 2026-10-19T17:50Z
+updated: 2026-10-19T18:00Z
 ---
 # Lane: partner-caching-code
 
@@ -30,3 +31,6 @@ Lane created with the plan. The scope is the Bedrock provider path (`providers/b
 ### 2026-10-19T17:50Z · kiro-hotmail-202610151618-b437 · ready
 Sparring round 1: paths gain `services/gateway/src/services/llm-telemetry-service.ts` so the cache tokens reach the
 OASIS `llm.call.completed` event (R1-F2).
+### 2026-10-19T18:00Z · kiro-hotmail-202610151618-b437 · ready
+Sparring round 2: paths gain `services/gateway/src/types/llm-telemetry.ts`, where `LLMTelemetryPayload` gets the
+optional cache fields (R2-F1).

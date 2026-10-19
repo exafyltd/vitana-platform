@@ -89,7 +89,10 @@ Lane `partner-caching-code` (Kiro, seat jtadic, reviewer hotmail):
      `quota_tokens = input + cache_write + 5 × output` (constant `CLAUDE_OUTPUT_BURNDOWN = 5`). Both partner
      `modelLog.push` sites (primary :133, fallback :155) fill them.
    - OASIS telemetry: `CompleteLLMCallResult` (`llm-telemetry-service.ts` :156-164) gains optional
-     `cacheReadTokens` / `cacheWriteTokens`; `buildLLMCallCompleted` writes them to the payload as
+     `cacheReadTokens` / `cacheWriteTokens`. `LLMTelemetryPayload` (`types/llm-telemetry.ts` :22-66, today only
+     `input_tokens?`/`output_tokens?`) gains optional `cache_read_input_tokens?` / `cache_creation_input_tokens?`,
+     because `buildLLMCallCompleted` builds a typed literal (:184) and an undeclared key fails `tsc`.
+     `buildLLMCallCompleted` spreads them into the payload as
      `cache_read_input_tokens` / `cache_creation_input_tokens` only when present (other stages' events are
      unchanged). The router's `completeLLMCallDetached` call (`llm-router.ts` :1346-1350 on origin/main 4e0e7d1f)
      forwards them from `result.usage`, so `llm.call.completed` shows the real quota cost of cached turns.
@@ -139,7 +142,7 @@ New `services/gateway/test/plan-sparring-token-efficiency.test.ts` (fakes only, 
 - T-d Router: with `jest.mock('../src/providers/bedrock')`, `callViaRouter('plan_sparring', …, { promptCache: true })`
   reaches `invokeBedrock` with `prompt_cache: true`. Without the opt the field is absent. Cache usage comes back on
   `result.usage`, and `buildLLMCallCompleted` given cache tokens puts `cache_read_input_tokens` /
-  `cache_creation_input_tokens` in the payload (absent when not given).
+  `cache_creation_input_tokens` in the payload (absent when not given); the payload type-checks under `tsc`.
 - T-e `runPartnerPass` with a fake `callLlm`: `opts.promptCache === true` by default and absent when
   `PLAN_SPARRING_PROMPT_CACHE=off`; `maxTokens` equals the right-sized default; modelLog entries carry
   `cache_read_tokens`, `cache_write_tokens` and the correct `quota_tokens`.
@@ -199,6 +202,9 @@ Round 1 (session b2df0328): cache usage now reaches the OASIS `llm.call.complete
 `llm-telemetry-service.ts`); `READ_FILE_MAX_LINES` is exported and tested; throttled calls are stated to count 0
 toward `spent`, with a test. The cache prefix order was re-checked against the Anthropic docs (tools → system →
 messages) and the system checkpoint kept.
+Round 2: `LLMTelemetryPayload` in `services/gateway/src/types/llm-telemetry.ts` gains the two optional cache fields
+(the typed literal in `buildLLMCallCompleted` would not compile otherwise); that file joins the lane paths, and T-d
+asserts the fields on the built payload.
 ## Out of scope
 
 Partner prompt wording (`PARTNER_SYSTEM_PROMPT`), the partner model choice (Opus 4.6 primary, Sonnet 4.6 throttle
