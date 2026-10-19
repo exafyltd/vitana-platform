@@ -5,11 +5,12 @@
   PR TITLE (must carry both the ledger VTID and the DEV-COMHU ownership token):
     VTID-05082 / DEV-COMHU-0205: Command Hub operator inline SVG rendering
 
-  The three validator markers below are REQUIRED in the PR body:
-    - VALIDATION_PROFILE: selects the command_hub_frontend validator profile.
-    - OASIS_IMPACT: no — this change emits no OASIS events.
-    (No DEPENDENCY_CHANGE: marker is needed — the jsdom devDependency was
-    dropped during the merge so no lockfile changes; see the jsdom note below.)
+  The required validator markers are the plain lines immediately below this
+  comment. VALIDATOR-CHECK greps the FIRST occurrence of each marker token, so
+  this comment deliberately does not spell those tokens out followed by prose
+  (an earlier version did and the parser read the wrong word). The profile is
+  command_hub_frontend; this change emits no OASIS events; no dependency change
+  (the jsdom devDependency was dropped during the merge, lockfiles unchanged).
 -->
 
 VALIDATION_PROFILE: command_hub_frontend
