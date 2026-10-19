@@ -1,7 +1,7 @@
 ---
 lane: floor-retry-code
 state: ready
-next_actor: claude
+next_actor: kiro
 depends_on: []
 executor: claude
 seat: claude
@@ -16,7 +16,8 @@ paths:
   - services/gateway/test/vtid-04868-plan-sparring-service.test.ts
   - services/gateway/test/vtid-04868-plan-sparring-stage.test.ts
   - docs/validation/**
-updated: 2026-10-18T20:05Z
+updated: 2026-10-19T18:31Z
+vtid: VTID-05240
 ---
 # Lane: floor-retry-code
 
@@ -30,3 +31,6 @@ Lane created with the plan.
 
 ### 2026-10-18T20:05Z · kiro-exafy-202610181845-661d · ready
 Scope widened with the round-1 answer: `partner.ts` (the `codeAccessFailed` relabel) and the stage test.
+
+### 2026-10-19T18:31Z · ci-plan-spar · ready (VTID allocated)
+VTID-05240 allocated after policy approval (converged-auto-v1).

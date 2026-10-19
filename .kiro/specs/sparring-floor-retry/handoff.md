@@ -3,9 +3,11 @@ slug: sparring-floor-retry
 author: kiro
 author_seat: exafy
 executor: claude
-next_actor: claude
-state: drafted
-updated: 2026-10-18T22:12Z
+next_actor: kiro
+state: approved
+updated: 2026-10-19T18:31Z
+sparring_record: .kiro/specs/sparring-floor-retry/sparring/verdict.md
+vtids: [VTID-05240]
 ---
 # Handoff — sparring-floor-retry
 
@@ -63,3 +65,6 @@ Session 12379be3 hit the round cap with R3-F1 (the `reclassified` marker was not
 path) and R3-F2 (the migration gate excluded legacy `partner_output_invalid` entries, which are infra:true). Both
 are fixed in the plan text: state.json is written on the non-matching path, and the gate is `retryable === false`
 only. This push starts session 2, the last.
+
+### 2026-10-19T18:31Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
