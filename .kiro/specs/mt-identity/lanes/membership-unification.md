@@ -11,7 +11,7 @@ paths:
   - supabase/migrations/20261101031100_vtid_xxxxx_memberships_view_dualwrite.sql
   - supabase/migrations/20261101031200_vtid_xxxxx_membership_drift_report.sql
   - supabase/migrations/20261101031000_vtid_xxxxx_membership_unification_rollback.sql
-updated: 2026-10-17T16:55Z
+updated: 2026-10-19T17:45Z
 ---
 # membership-unification — user_tenants canonical, memberships → view, dual-write + drift report (DB)
 
@@ -26,7 +26,8 @@ nightly drift report (reads 0 when converged). The dual-write trigger body (stea
 writes `INSERT INTO user_tenants … ON CONFLICT (tenant_id, user_id) DO NOTHING`, so a legacy idempotent re-insert of
 an existing row is a no-op and never re-fires the four AFTER INSERT triggers (the VTID-03990 duplicate-welcome-DM
 shape, program §3/S-E); a pgTAP test asserts re-inserting a known row yields zero extra chat_messages/founding
-seats/autopilot rows/live rooms. Expand/contract only (§4.7); snapshot before any data move; the
+seats/autopilot rows/live rooms. The Vitana bot user (`lib/vitana-bot.ts:9`, `…0001`) and every
+`service_bot_accounts` user are excluded from the backfill and the drift report's member counts. Expand/contract only (§4.7); snapshot before any data move; the
 `memberships` → view cutover is a contract step that must not break the four `user_tenants` AFTER INSERT triggers (N1
 side-effect guard). This lane does not touch `current_tenant_id()` or the hook.
 
@@ -42,3 +43,6 @@ Created by the mt-identity planner. Held pending PLAN-SPAR VTID allocation.
 Minor R1-F5: specified the dual-write trigger steady-state path uses `ON CONFLICT (tenant_id, user_id) DO NOTHING` so
 a legacy re-insert never re-fires the four AFTER INSERT triggers (VTID-03990 shape), with a zero-side-effect pgTAP
 test. Paths unchanged.
+### 2026-10-19T17:45Z · kiro-hotmail-202610151618-b437 · ready (answered sparring s2 session ee011de1 R1-F4)
+The bot user `…0001` and every `service_bot_accounts` user are excluded from the backfill and the drift report's
+member counts; pgTAP asserts a bot `memberships` insert yields zero `chat_messages`. Paths unchanged.

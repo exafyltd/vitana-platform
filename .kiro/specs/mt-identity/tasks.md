@@ -42,7 +42,8 @@ Allowed paths:
 - `supabase/migrations/20261101031000_vtid_xxxxx_membership_unification_rollback.sql`
 
 - [ ] M1 Backfill the drifted memberships-only rows into `user_tenants` (expand/contract, snapshot first), suppressing
-      the four `user_tenants` AFTER INSERT triggers for the backfill transaction (N1). Re-verify counts read-only.
+      the four `user_tenants` AFTER INSERT triggers for the backfill transaction (N1). Exclude the bot user `…0001`
+      and every `service_bot_accounts` user from the backfill and drift counts. Re-verify counts read-only.
 - [ ] M2 Replace `memberships` with a view over `user_tenants`; dual-write trigger keeps legacy writers working.
 - [ ] M3 Nightly drift report (reads 0 when converged); rollback migration; MIGRATION-QUEUE rows + read-only checks in
       `docs/validation/<vtid>/`.
@@ -102,6 +103,13 @@ Allowed paths:
 - `services/gateway/src/routes/dev-auth.ts`
 - `services/gateway/src/services/orb-memory-bridge.ts`
 - `services/gateway/test/mt-identity-slug-cleanup.test.ts`
+- `services/gateway/src/routes/autopilot-prompts.ts`
+- `services/gateway/src/middleware/auth-supabase-jwt-repository.ts`
+- `services/gateway/src/routes/presence.ts`
+- `services/gateway/src/routes/presence-repository.ts`
+- `services/gateway/src/routes/presence-did-you-know.ts`
+- `services/gateway/src/routes/presence-did-you-know-repository.ts`
+- `services/gateway/test/mt-identity-primary-tenant-readers.test.ts`
 
 - [ ] T1 `tenantDb(ctx)` wrapping the service-role client and injecting the tenant predicate for a schema-derived
       `TENANT_TABLES`; raw access allowlisted to platform/cron code. Dark behind `MT_RESOLUTION_V2` /
@@ -111,7 +119,13 @@ Allowed paths:
 - [ ] T3 Remove the slug maps / fake tenant ids / `limit(1)` at `routes/me.ts:15-26`, `routes/dev-auth.ts:26-29`,
       `services/orb-memory-bridge.ts` `DEV_IDENTITY` (~lines 65-77); resolve through `TenantContext` + the DB registry.
 - [ ] T4 Vitest: `tenantDb` predicate injection; `isHealthTable()` matches the health set and health tables are absent
-      from `TENANT_TABLES`; `healthDb` resolves the frozen home tenant; no `…0001`/`…0002` literal remains.
+      from `TENANT_TABLES`; `healthDb` resolves the frozen home tenant; `me.ts`/`dev-auth.ts`/`orb-memory-bridge.ts`
+      hold no `…0001`–`…0004` literal; ratchet: other `…0001` literals outside `lib/vitana-bot.ts` never exceed the
+      recorded baseline.
+- [ ] T4b Move the last `fetchPrimaryTenantForUser` callers (`routes/autopilot-prompts.ts:109`, `routes/presence.ts:55`,
+      `routes/presence-did-you-know.ts:63`) to `resolvePrimaryTenant()` behind the flag; mark the three repo fns
+      `@deprecated` and rewrite the `auth-supabase-jwt-repository.ts:17` forward-reference; Vitest
+      `mt-identity-primary-tenant-readers.test.ts`; `vtid-05121-autopilot-prompts-…` stays green.
 - [ ] T5 Read-only staging spec + `docs/validation/<vtid>/` (scope.json, staging-tests.json).
 
 Acceptance: all Vitest green; full gateway suite green; `npm run test:support` (42c) + `npm run test:operator` (42e)

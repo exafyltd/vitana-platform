@@ -18,7 +18,14 @@ paths:
   - services/gateway/src/routes/dev-auth.ts
   - services/gateway/src/services/orb-memory-bridge.ts
   - services/gateway/test/mt-identity-slug-cleanup.test.ts
-updated: 2026-10-17T17:20Z
+  - services/gateway/src/routes/autopilot-prompts.ts
+  - services/gateway/src/middleware/auth-supabase-jwt-repository.ts
+  - services/gateway/src/routes/presence.ts
+  - services/gateway/src/routes/presence-repository.ts
+  - services/gateway/src/routes/presence-did-you-know.ts
+  - services/gateway/src/routes/presence-did-you-know-repository.ts
+  - services/gateway/test/mt-identity-primary-tenant-readers.test.ts
+updated: 2026-10-19T17:45Z
 ---
 # tenant-db-and-slug-cleanup — tenantDb/TENANT_TABLES, canonical isHealthTable()/healthDb, remove slug maps (CODE)
 
@@ -43,10 +50,16 @@ Scope (gateway code, all dark behind `MT_RESOLUTION_V2` / `tenant_settings.featu
   of the DB registry / `TenantContext` (VTID-05149). (b) `services/orb-memory-bridge.ts:66` `DEV_IDENTITY` is a
   single dev-only fallback CONSTANT (user `…0099`) pinned to `TENANT_ID='…0001'`/`TENANT_SLUG='vitana'`, NOT a map and
   with no session to resolve — drive it from a `DEV_TENANT_SLUG` env var defaulting to `vitana` (DB-registry-backed in
-  the sandbox), keep the pinned dev user. A Vitest lint asserts no `…0001` literal survives in gateway TS source
-  outside exactly two intentional sites — `lib/vitana-bot.ts` (`VITANA_BOT_USER_ID`, the bot USER id, program §2) and
-  `DEV_IDENTITY`'s resolved `DEV_TENANT_SLUG` default; the removed slug-map files are NOT exempt, so a partial removal
-  fails the lint.
+  the sandbox), keep the pinned dev user; `dev-auth.ts:364` (`DEV_TENANT_ID || '…0001'`) falls back to
+  `getDefaultTenantId()`. (c) The last `fetchPrimaryTenantForUser` callers — `routes/autopilot-prompts.ts:109` (repo fn
+  `middleware/auth-supabase-jwt-repository.ts:35`; its VTID-05149 comment at `:17` defers it to this slice) and the
+  local copies in `routes/presence.ts:55` / `routes/presence-did-you-know.ts:63` — resolve via `resolvePrimaryTenant()`
+  behind the flag; the three repo fns are marked `@deprecated` (removed in the contract step after the flag is on) and
+  the `:17` comment is rewritten to say so. Other ad-hoc `is_primary` reads are inventoried in the PR, not moved here.
+  Literal lint, two parts: (1) `me.ts`, `dev-auth.ts`, `orb-memory-bridge.ts` hold NO `…0001`–`…0004` literal (no
+  carve-out, so a partial removal fails); (2) a ratchet: `…0001` literals in gateway TS outside the ONE intentional
+  site `lib/vitana-bot.ts` (`VITANA_BOT_USER_ID`, bot USER id, program §2) never exceed the baseline recorded in the
+  test (d28–d51 engine dev constants, zod defaults, `orb-live.ts` sandbox fallbacks etc. — WS2 cleanup).
 
 Does NOT redefine `current_tenant_id()` and does NOT enable the hook (DB lanes own those). No new route → no
 nav-registry / screen-manifest / parity-ledger change. New user-visible strings (none expected) would be i18n DE-first.
@@ -75,3 +88,7 @@ lane 5a deletes = false safe harbour for a partial removal) and incomplete (omit
 `VITANA_BOT_USER_ID`, a legitimate bot USER id per program §2 / MULTI-TENANT-PLAN.md:28). Verified `vitana-bot.ts:9`.
 Rewrote the lint to exempt exactly `lib/vitana-bot.ts` and `DEV_IDENTITY`'s resolved default, and to NOT exempt the
 removed slug-map files. Paths unchanged.
+### 2026-10-19T17:45Z · kiro-hotmail-202610151618-b437 · ready (answered sparring s2 session ee011de1 round-1)
+R1-F1 (major) accepted: added the three `fetchPrimaryTenantForUser` callers (autopilot-prompts, presence,
+presence-did-you-know) + their repo files + a new readers test to paths. R1-F3 accepted: the literal lint is now
+zero-in-touched-files + a repo-wide ratchet with `lib/vitana-bot.ts` as the ONE exempt site.

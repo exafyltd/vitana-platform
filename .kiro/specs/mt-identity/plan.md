@@ -24,8 +24,8 @@ pieces are still open and verified today against platform `origin/main`:
    Of the 18 program-listed tables, 7 are the health set (already carry `AND user_id = current_user_id()` —
    §4.9/O1, excluded), 2 (`tenants`, `relationship_edges`) carry no bare policy (tenants = `USING(true)` public
    registry + service-role; relationship_edges = all guarded/service-role), and **5 have NO RLS policy at all** —
-   `access_audit_log`, `consents`, `retrieval_traces`, `role_sessions`, `user_roles` (grep: no `CREATE POLICY … ON`
-   for any of them in `supabase/migrations/**`). No `tenant_id_for_policies()` or `is_member()` helper exists.
+   `access_audit_log`, `consents`, `retrieval_traces`, `role_sessions`, `user_roles`. No `tenant_id_for_policies()` or
+   `is_member()` helper exists.
 3. Membership stores disagree: `memberships` vs `user_tenants` (program §2: 15 rows only in one, 18 only in the
    other), plus `user_permitted_roles` / `role_preferences` / `active_role` as competing role sources.
 4. `tenantDb`/`TENANT_TABLES`/`isHealthTable`/`healthDb` do not exist (only a forward-reference comment at
@@ -57,8 +57,7 @@ D14), not here.
    **19 bare policies on the 11 tables above** to `user_id = auth.uid() AND tenant_id = (select tenant_id_for_policies())`
    (user-private) or `(select is_member(tenant_id))` (tenant-shared, owner-tagged). The 5 named tables with NO policy
    (`access_audit_log`, `consents`, `retrieval_traces`, `role_sessions`, `user_roles`) are **out of scope for a
-   rewrite** — their RLS hardening is tracked under WS2/WS10 (noted in Out of scope), not invented here; this lane
-   neither creates nor relaxes a policy on them. Add the N3 bare-policy lint (counts bare `current_tenant_id()`
+   rewrite** (WS2/WS10, see Out of scope); this lane neither creates nor relaxes a policy on them. Add the N3 bare-policy lint (counts bare `current_tenant_id()`
    policies outside an owner-tagged tenant-shared allowlist; must read ZERO). This lane neither redefines
    `current_tenant_id()` nor enables the hook. **The executor re-runs the recount at implementation** (same parser)
    and records the exact set in the PR before rewriting; if a migration landed since this review changed the count,
@@ -68,7 +67,10 @@ D14), not here.
    dual-write trigger for legacy writers; a nightly drift report reads 0 when converged. The dual-write trigger body
    (steady state, not just the backfill) writes `INSERT INTO user_tenants … ON CONFLICT (tenant_id, user_id) DO
    NOTHING`, so a legacy idempotent re-insert of an existing `memberships` row is a no-op and NEVER re-fires the four
-   `user_tenants` AFTER INSERT triggers (the VTID-03990 duplicate-welcome-DM shape, program §3/S-E). Expand/contract;
+   `user_tenants` AFTER INSERT triggers (the VTID-03990 duplicate-welcome-DM shape, program §3/S-E). The Vitana bot
+   user (`lib/vitana-bot.ts:9`, user id `…0001` — same literal as the vitana tenant id, different column, so no key
+   clash) and every `service_bot_accounts` user are EXCLUDED from the backfill and from the drift report's member
+   counts, so the bot is never counted as a member. Expand/contract;
    snapshot first; the view cutover must not perturb the four AFTER INSERT triggers (N1 side-effect guard).
 3. **access-token-hook-shadow (DB).** The hook function reads the active `user_tenants` membership (treating
    `app_metadata.active_tenant_id` as a preference only) and emits `tenant_id_shadow` ONLY, failing open
@@ -87,11 +89,16 @@ D14), not here.
    two four-entry slug maps — `me.ts:15`+`:23`, `dev-auth.ts:26` — and the `limit(1)` are REMOVED, resolving through
    the DB registry + `TenantContext`. (b) `orb-memory-bridge.ts:66` `DEV_IDENTITY` is a dev-only fallback constant with
    no session to resolve, so it is NOT iterated like a map: drive `TENANT_ID`/`TENANT_SLUG` from a `DEV_TENANT_SLUG`
-   env var defaulting to `vitana` (DB-registry-backed in the sandbox), keeping the pinned dev user `…0099`. A test
-   asserts no `…0001` literal survives in gateway TS source outside exactly two intentional sites — `lib/vitana-bot.ts`
-   (`VITANA_BOT_USER_ID`, bot USER id, program §2) and `DEV_IDENTITY`'s resolved `DEV_TENANT_SLUG` default; the removed
-   slug-map files are NOT exempt (so a partial removal fails the lint). All reads dark behind `MT_RESOLUTION_V2` /
-   `tenant_settings.feature_flags.mt.*`.
+   env var defaulting to `vitana` (DB-registry-backed in the sandbox), keeping the pinned dev user `…0099`; so no
+   `…0001` literal remains in that file. `dev-auth.ts:364` (`DEV_TENANT_ID || '…0001'`) falls back to
+   `getDefaultTenantId()` instead. (c) The last `fetchPrimaryTenantForUser` callers — `routes/autopilot-prompts.ts:109`
+   (repo fn `middleware/auth-supabase-jwt-repository.ts:35`, whose VTID-05149 comment at `:17` defers it to this slice)
+   and the two local copies `routes/presence.ts:55` / `routes/presence-did-you-know.ts:63` (repo fns
+   `presence-repository.ts:22`, `presence-did-you-know-repository.ts:23`) — resolve via `resolvePrimaryTenant()`
+   (`tenant-context.ts:43`) behind the flag; the three repo fns are marked `@deprecated` (removed in the contract step
+   after the flag is on) and the `:17` comment is rewritten to say so. The other ad-hoc `.eq('is_primary', true)` reads
+   are inventoried in the PR and move route by route as each adopts `tenantDb`, not here. All reads dark behind
+   `MT_RESOLUTION_V2` / `tenant_settings.feature_flags.mt.*`.
 
 ## Migrations
 Range `20261101030000`–`20261101035959` (verified free: newest existing migration is `20261015180000`). Files
@@ -114,16 +121,21 @@ data move. Applied by Claude via RUN-MIGRATION after merge (sessions never apply
   error) and emits only `tenant_id_shadow`; `is_member()`/degraded fallback resolve the right tenant with the hook
   OFF. `tenant_claim_mismatch_log` denies a read by the `authenticated` role (RLS, no policy) and admits
   `service_role`. Re-inserting an already-present `memberships` row through the dual-write trigger creates ZERO extra
-  `chat_messages`/founding seats/autopilot rows/live rooms (VTID-03990 contract applied to the steady-state trigger).
+  `chat_messages`/founding seats/autopilot rows/live rooms (VTID-03990 contract applied to the steady-state trigger);
+  inserting a `memberships` row for the bot user `…0001` likewise yields zero `chat_messages`, and the backfill
+  touches no bot/`service_bot_accounts` user.
   An EXPLAIN check bounds the per-row `is_member()` cost on the largest tenant-shared table (`live_rooms`).
 - Local-stack test with the hook OFF after the policy rewrite: members still see their own rows and nothing of the
   other tenant.
 - Vitest (gateway): `tenantDb` injects the tenant predicate; `isHealthTable()` matches the health table set and
   health tables are absent from `TENANT_TABLES`; `healthDb` resolves the frozen home tenant; the two slug maps are
-  gone and resolution goes through `TenantContext`; and no `…0001` literal survives in gateway TypeScript source
-  OUTSIDE exactly two intentional sites — `lib/vitana-bot.ts` (`VITANA_BOT_USER_ID`, the bot USER id, program §2) and
-  `DEV_IDENTITY`'s resolved `DEV_TENANT_SLUG` default in `orb-memory-bridge.ts`. The removed slug-map files are NOT
-  carved out (lane 5a deletes them), so a leftover `…0001` there fails the lint — catching a partial removal.
+  gone and resolution goes through `TenantContext`; with the flag on, the three former `fetchPrimaryTenantForUser`
+  callers resolve via `resolvePrimaryTenant()` (existing `vtid-05121-autopilot-prompts-…` test stays green). Literal
+  lint, two parts: (1) `me.ts`, `dev-auth.ts`, `orb-memory-bridge.ts` contain NO `…0001`–`…0004` literal (no carve-out,
+  so a partial removal fails); (2) ratchet: `…0001` literals in gateway TS outside the ONE intentional site
+  `lib/vitana-bot.ts` (`VITANA_BOT_USER_ID`, bot USER id, program §2) never exceed the baseline recorded in the test at
+  implementation (today ~30: d28–d51 engine dev constants, zod `.default()`s, `orb-live.ts` sandbox fallbacks, a
+  duplicate bot id in `admin-tenants-repository.ts:57`) — those are WS2 cleanup, not this spec.
 - Required suites when touched: `npm run test:support` (42c), `npm run test:operator` (42e), `npm run test:roles`
   (42h — the role-source lane touches the role registry path). Maxina golden suite unchanged (program WS0).
 
@@ -143,6 +155,8 @@ follow the §4.7 slice protocol and are applied by Claude via RUN-MIGRATION afte
   must read 0 before any go-live lane; pgTAP per table.
 - The `memberships` → view cutover breaks a legacy writer or fires an N1 side-effect trigger. Mitigation: dual-write
   trigger, suppression guard on the backfill, drift report, snapshot + rollback.
+- The bot user id `…0001` equals the vitana tenant id literal; counted as a member it would skew seat counts.
+  Mitigation: backfill + drift report exclude it and `service_bot_accounts`; pgTAP zero-side-effect check.
 - Hook latency/error on login. Mitigation: shadow-only here, fail-open, single indexed lookup, short statement
   timeout, 7-day mismatch soak before any go-live.
 - `tenant_id_for_policies()` per-row cost on hot tables. Mitigation: `(select …)` initPlan evaluation; shared lookup
@@ -154,9 +168,8 @@ follow the §4.7 slice protocol and are applied by Claude via RUN-MIGRATION afte
 - Redefining `current_tenant_id()` as an alias of `tenant_id_for_policies()` (the final go-live migration, later lane).
 - WS2 data cleanup, WS3 community/network isolation, WS0 CI lint/isolation-suite wiring, and the health-table policy
   move to `user_id = auth.uid()` (WS10) — their own specs.
-- Creating or hardening RLS on the 5 named tables that currently have NO policy (`access_audit_log`, `consents`,
-  `retrieval_traces`, `role_sessions`, `user_roles`) — the rewrite lane only rewrites existing bare policies; adding
-  net-new policies to these tables is WS2/WS10 scope, not this spec.
+- Creating or hardening RLS on the 5 no-policy tables named above (WS2/WS10).
+- Cleaning the ~30 other gateway `…0001` literals (ratcheted, WS2) and moving every ad-hoc `is_primary` read.
 
 ## Depends on
 - Done: VTID-05147 (S-M), VTID-05149 (A: `tenants.is_default`/`is_platform`, `TenantContext`, resolver), VTID-05150,

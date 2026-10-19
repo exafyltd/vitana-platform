@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-18T20:27Z
+updated: 2026-10-19T17:45Z
 ---
 # Handoff — mt-identity (WS1 identity, tenancy resolution & roles — the "rest" after VTID-05149)
 
@@ -132,3 +132,13 @@ The sparring partner could not review (model_unavailable). Not a plan problem: C
 
 ### 2026-10-18T20:27Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+### 2026-10-19T17:45Z · kiro-hotmail-202610151618-b437 · drafted (answered sparring session ee011de1, round 1)
+New session `ee011de1` raised R1-F1 (major), R1-F3, R1-F4 (minor); all ACCEPTED after verifying on platform
+`origin/main`. F1: `fetchPrimaryTenantForUser` is still called at `routes/autopilot-prompts.ts:109` (plus local copies in
+`presence.ts:55` / `presence-did-you-know.ts:63`) and the VTID-05149 comment at `auth-supabase-jwt-repository.ts:17`
+defers it to this slice — lane `tenant-db-and-slug-cleanup` now moves them to `resolvePrimaryTenant()` behind the flag,
+marks the repo fns `@deprecated` and gains 7 paths (tasks.md T4b). F3: the `…0001` lint was unsatisfiable as written
+(~30 other gateway literals exist) and its `DEV_IDENTITY` carve-out vanishes after 5b — now zero literals in the three
+touched files plus a baseline ratchet with `lib/vitana-bot.ts` the ONE exempt site. F4: bot user `…0001` and
+`service_bot_accounts` excluded from the membership backfill/drift counts, pgTAP zero-side-effect check. Newest
+migration re-verified `20261015180000` (range free). Parent plan not amended. No live-system calls.
