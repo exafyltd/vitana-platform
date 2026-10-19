@@ -1,77 +1,67 @@
 # Sparring round 2 — in_progress
 
-Session: `e7f1e151-ad1e-46c8-9a28-5e9f53d72117` · plan hash `1a917310ee314d11c61e61ff2642889e3db7632806df93a45160a614a17e5616`
+Session: `496d49e4-e3b5-4421-86d0-edaa18ddb659` · plan hash `84ba14e712975c7e1bee81ebc36af98c5990f462f748932f49f1fd5bfe1126df`
 
 ## Summary
 
-All three R1 findings were accepted and addressed in the revision. Two major and one minor new finding arise from the revision itself. The most critical new gap is that pgTAP/pg_prove installation mechanism is completely unspecified: the plan's closest CI analogue (SQL-TENANT-FOUNDATION.yml) uses postgres:16 with no pgTAP and gives no apt/cpan/image guidance; the "same versions pinned across local and CI" determinism guarantee the plan promises is therefore unjustified. The second major gap is a governance hole: the "report-only first" claim relies on the PR-GATE config.json enforce flag, but that flag only controls checks wired into PR-GATE.yml's Verdict OUTCOMES — standalone SQL/shell workflows (the kind the new CI checks will produce) are entirely outside that mechanism. A minor inconsistency is also introduced by the resolution of R1-F1: the revised plan places pgTAP spec files in supabase/tests/mt/ while the runner goes into scripts/ci/sql-tests/, a hybrid that matches neither the VTID-05149 analogue (both runner and SQL in scripts/ci/sql-tests/) nor the vtid-05147 pattern (SQL in supabase/tests/, runner uses initdb/pg_ctl).
+All three round-1 findings were accepted and are properly addressed in the revised plan. Two new major gaps are present in the revision: (1) the supabase/postgres image tag and pg_prove apt package version are declared "pinned" but no actual values are given, leaving two independent executors to choose different pins; (2) the report_only flag mechanism for the new SQL-*.yml workflows is wholly unspecified and has no prior art in the existing SQL-*.yml codebase.
 
 ## Findings
 
 ### R2-F1 [major]
 
-The plan asserts 'lane 1 pins pgtap/pg_prove versions in the local-stack setup and ci-wiring installs the same versions in the job, so the suite is deterministic across local and CI' but never specifies the installation mechanism. The closest CI analogue — SQL-TENANT-FOUNDATION.yml, which the plan explicitly endorses as the model for the isolation suite runner location — uses a plain postgres:16 service container with zero additional installation steps and no pgTAP. pgTAP requires two distinct packages: (a) the pgtap PostgreSQL extension (e.g. apt-get install postgresql-16-pgtap, or a pgtap-enabled Docker image), and (b) the pg_prove Perl tool (e.g. libtap-parser-sourcehandler-pgtap-perl or CPAN). Neither is present in postgres:16. Without specifying the mechanism, the two implementers (lane 1/kiro and lane 6/ci-wiring/claude) have no shared contract; they can independently choose different images or install different versions, breaking the 'same versions' determinism guarantee the plan offers as its key risk mitigation for introducing pgTAP for the first time.
+The plan says lane 1 and lane 6 use 'the identical install mechanism: pinned `supabase/postgres` image + pinned `pg_prove` apt version, named verbatim'. No actual image tag or apt package version appears anywhere in the plan. Without explicit values, two independent executors (lane 1: kiro; lane 6: claude) will each independently choose a tag that satisfies 'pinned by exact tag' and may choose differently, breaking the determinism guarantee. Every existing SQL-*.yml pins `postgres:16` as a floating tag; this spec requires a stricter digest/minor-version pin for `supabase/postgres` but supplies no string to copy.
 
-- `exafyltd/vitana-platform:.github/workflows/SQL-TENANT-FOUNDATION.yml:32` — services:
-        postgres:
-          image: postgres:16
-          env:
-            POSTGRES_PASSWORD: postgres
-          ports: ['5432:5432']
-          options: >-
-            --health-cmd pg_isready
-- `exafyltd/vitana-platform:.github/workflows/SQL-TENANT-FOUNDATION.yml:45` —       - name: Run the tenant foundation test
-          env:
-            PGHOST: 127.0.0.1
-            PGPORT: '5432'
-            PGUSER: postgres
-            PGPASSWORD: postgres
-          run: |
-            set -o pipefail
-            bash scripts/ci/sql-tests/run-tenant-foundation-test.sh 2>&1 | tee /tmp/tenant-foundation.log
+- `exafyltd/vitana-platform:.github/workflows/SQL-TENANT-FOUNDATION.yml:33` — services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+- `exafyltd/vitana-platform:.github/workflows/SQL-HEALTH-STORE.yml:25` — services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+- `exafyltd/vitana-platform:.github/workflows/SQL-MEMORY-SENSITIVITY.yml:23` — services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
 
-Suggestion: Add a concrete, pinned installation block to the plan for both environments. For CI: specify whether ci-wiring uses `apt-get install postgresql-16-pgtap libtap-parser-sourcehandler-pgtap-perl` (with pinned package versions) or switches to a pgtap-capable Docker image (e.g. supabase/postgres which ships pgtap). For the local stack: specify the same mechanism in the local-stack setup script. Both lanes must reference the same specification so the 'same versions' guarantee is verifiable before implementation begins.
+Suggestion: Add an explicit 'Pinned versions' table to the plan with e.g. `supabase/postgres:15.8.1.020` and `libtap-parser-sourcehandler-pgtap-perl=3.35-3` (or whatever the chosen values are). Both lane 1 and lane 6 copy these verbatim strings from the plan. The plan's own risk section calls this pinning the single determinism mechanism — supply the values that make it actionable.
 
 ### R2-F2 [major]
 
-The plan states 'New CI checks land report-only first (PR-GATE scripts/ci/pr-gate/config.json pattern) and are flipped to enforcing by a later governance change.' But the config.json enforce flag only controls checks wired into PR-GATE.yml's Verdict OUTCOMES variable — currently scope, kiro-steering, sparring, weakening, and red-green. The established pattern for a report-only check inside PR-GATE.yml is 'continue-on-error: true on the step plus absent from OUTCOMES', as the Collab handoff step demonstrates. Standalone SQL/shell workflows — the type of workflow the new WS0 checks (SQL-MT-ISOLATION.yml, MIGRATION-QUEUE-LINT.yml) will follow, given their analogue is SQL-TENANT-FOUNDATION.yml — are separate GitHub Actions workflows entirely unaffected by config.json. SQL-TENANT-FOUNDATION.yml has no report-only mode: it fails hard from day one. Without specifying whether new checks go into PR-GATE.yml as steps or as standalone workflows, the 'flip to enforcing by a later governance change' commitment is unjustified, because standalone workflows have no enforce flag to flip.
+The plan says 'each new workflow reads a committed `scripts/ci/mt/config.json` `report_only` flag (default `true`) and, while true, warns-and-exits-0 even on failure', and the Tests section requires 'a test asserts each new `SQL-*.yml` honours the flag'. But all three existing SQL-*.yml workflows use an identical two-step pattern — run the shell script, then `grep -q '^PASS …'` — with no JSON config reading anywhere. The plan specifies no mechanism for how the YAML reads the flag (GitHub Actions `fromJSON` expression? a bash jq step? a Node.js helper?) nor how 'warn-and-exit-0' overrides the grep-for-PASS step. Without a specified mechanism the test ('asserts each new SQL-*.yml honours the flag') is self-referential: it tests whatever lane 6 invents rather than a defined contract.
 
-- `exafyltd/vitana-platform:.github/workflows/PR-GATE.yml:106` —           OUTCOMES: >-
-            scope=${{ steps.scope.outcome }}
-            kiro-steering=${{ steps.kirosteering.outcome }}
-            sparring=${{ steps.sparring.outcome }}
-            weakening=${{ steps.weakening.outcome }}
-            red-green=${{ steps.redgreen.outcome }}
-- `exafyltd/vitana-platform:.github/workflows/PR-GATE.yml:62` —         # VTID-05145: ... Report-only until 2026-10-20:
-        # it is not in the Verdict OUTCOMES yet; add `collab=${{ steps.collab.outcome }}` there to make it count.
-        - name: Collab handoff
-          id: collab
-          continue-on-error: true
-- `exafyltd/vitana-platform:scripts/ci/pr-gate/config.json:1` — {
-  "enforce": false,
-  "note": "VTID-04950: PR-GATE starts report-only (plan rollout: 3 days on real PRs). Set enforce=true by PR to block on failures; set it back to false as the owner's kill switch."
+- `exafyltd/vitana-platform:.github/workflows/SQL-HEALTH-STORE.yml:43` —           run: |
+            set -o pipefail
+            scripts/ci/sql-tests/run-health-store-test.sh 2>&1 | tee /tmp/health-store.log
+        - name: Assert the test ran to the end
+          run: |
+            grep -q '^PASS vtid-05158 health store' /tmp/health-store.log
+            grep -q '^PASS vtid-05158 placement guard' /tmp/health-store.log
+- `exafyltd/vitana-platform:.github/workflows/SQL-MEMORY-SENSITIVITY.yml:40` —           run: |
+            set -o pipefail
+            scripts/ci/sql-tests/run-memory-sensitivity-test.sh 2>&1 | tee /tmp/sensitivity.log
+        - name: Assert the test ran to the end
+          run: grep -q '^PASS vtid-04798 memory sensitivity' /tmp/sensitivity.log
+- `exafyltd/vitana-platform:.github/workflows/SQL-TENANT-FOUNDATION.yml:51` —           run: |
+            set -o pipefail
+            bash scripts/ci/sql-tests/run-tenant-foundation-test.sh 2>&1 | tee /tmp/tenant-foundation.log
+        - name: Assert the test ran to the end
+          run: grep -q '^PASS vtid-05149 tenant foundation' /tmp/tenant-foundation.log
+- `exafyltd/vitana-platform:scripts/ci/aurora-migration-inventory.cjs:1` — #!/usr/bin/env node
+/**
+ * VTID-03494 — inventory the Supabase surface
 
-Suggestion: Choose one of two explicit paths and state it in the plan. Path A (for checks that run on every PR): add each new WS0 check as a step in PR-GATE.yml with continue-on-error: true and absent from OUTCOMES, following the Collab handoff pattern at PR-GATE.yml:65; a later governance PR adds it to OUTCOMES to make it enforcing. Path B (for path-triggered checks like SQL-MT-ISOLATION.yml): create each standalone workflow with an explicit REPORT_ONLY output that makes the job always exit 0 with a warning annotation until a governance PR removes the flag. Either way, ci-wiring must name the chosen path so the 'flip to enforcing' governance step has a concrete, mechanically verifiable target.
-
-### R2-F3 [minor]
-
-The revision resolves R1-F1 by adopting the VTID-05149 external-psql pattern and placing the runner in scripts/ci/sql-tests/run-mt-isolation-test.sh, but places the pgTAP spec files in supabase/tests/mt/**. In the VTID-05149 analogue the plan explicitly endorses, the .test.sql files live in scripts/ci/sql-tests/ alongside the runner (vtid-05149-tenant-foundation.test.sql), and SQL-TENANT-FOUNDATION.yml's paths: trigger watches scripts/ci/sql-tests/vtid-05149-tenant-foundation.test.sql. The convention in supabase/tests/ is used exclusively by initdb/pg_ctl tests (vtid_05147_s_m_lockdown.test.sql is 'run by scripts/ci/test-vtid-05147-s-m-lockdown.sh'). The hybrid placement — scripts/ci/sql-tests/ runner + supabase/tests/mt/ SQL — matches neither pattern, and the new SQL-MT-ISOLATION.yml workflow's paths: trigger will need to watch supabase/tests/mt/** rather than scripts/ci/sql-tests/**, silently departing from the convention encoded in every other SQL-*.yml workflow.
-
-- `exafyltd/vitana-platform:.github/workflows/SQL-TENANT-FOUNDATION.yml:17` —         - 'scripts/ci/sql-tests/run-tenant-foundation-test.sh'
-        - 'scripts/ci/sql-tests/vtid-05149-tenant-foundation.test.sql'
-        - '.github/workflows/SQL-TENANT-FOUNDATION.yml'
-- `exafyltd/vitana-platform:scripts/ci/sql-tests/run-tenant-foundation-test.sh:23` — FIXTURE="$ROOT/scripts/ci/sql-tests/vtid-05149-tenant-foundation.test.sql"
-- `exafyltd/vitana-platform:supabase/tests/vtid_05147_s_m_lockdown.test.sql:1` — -- VTID-05147 (Track S / S-M) assertions, run by
--- scripts/ci/test-vtid-05147-s-m-lockdown.sh after the fixture and the
--- migration (applied twice). Every failure RAISEs; ON_ERROR_STOP ends the run.
-
-Suggestion: Follow the VTID-05149 analogue consistently: place the pgTAP .test.sql files in scripts/ci/sql-tests/ (e.g. mt-isolation.test.sql) alongside run-mt-isolation-test.sh. This keeps the new SQL-MT-ISOLATION.yml paths: trigger consistent with every other SQL-*.yml workflow. If there is a strong reason to prefer supabase/tests/mt/ (e.g. IDE pgTAP integration), state it explicitly and acknowledge the departure from the VTID-05149 pattern.
+Suggestion: Specify the mechanism in the lane 6 spec. The simplest approach consistent with existing workflows: (1) the workflow YAML adds a step before the runner that executes `echo "REPORT_ONLY=$(jq -r .report_only scripts/ci/mt/config.json)" >> $GITHUB_ENV`; (2) the 'Assert the test ran to the end' step is wrapped in `if: env.REPORT_ONLY != 'true'` with a parallel step emitting `::warning::` when it is true; (3) the `node --test` self-test mocks the JSON file and asserts both exit codes. State this mechanism in the plan so the implementer and test author share the same contract.
 
 ## Acknowledgements of earlier responses
 
-- R1-F1: acknowledged — Properly addressed. The revision removes the initdb/pg_ctl contradiction, adopts the external-psql pattern from scripts/ci/sql-tests/, depends on lane 1's running stack, and uses pg_prove. The residual SQL file placement inconsistency (supabase/tests/mt/ vs scripts/ci/sql-tests/) is raised as R2-F3.
-- R1-F2: acknowledged — Properly addressed. pgTAP is reinstated as the parent plan requires, path (a) is taken (no parent amendment needed), and the plan correctly notes this is the first introduction of pgTAP into the repo. The unspecified installation mechanism is raised as R2-F1.
-- R1-F3: acknowledged — Properly addressed. The plan now correctly narrows the claim to 'no DB-schema-reading inventory/lint generator' and directs lane-2 implementers to aurora-migration-inventory.cjs for output format conventions.
+- R1-F1: acknowledged — Properly addressed. The revised plan explicitly states: dump is pg_dump --schema=public --schema-only, enforced by the regenerate script which refuses any other --schema; auth/storage/realtime never re-created; fixtures INSERT into the existing auth.users — never CREATE it (with an explicit contrast to vtid-05149-tenant-foundation.test.sql:13 which CREATEs auth.users because it runs on postgres:16); smoke test asserts to_regclass('auth.users') is non-null before fixtures load.
+- R1-F2: acknowledged — Properly addressed. The revised plan now says SQL-MT-ISOLATION.yml's paths: uses the scripts/ci/sql-tests/** glob like SQL-HEALTH-STORE.yml/SQL-MEMORY-SENSITIVITY.yml, not SQL-TENANT-FOUNDATION.yml's per-file list. Both reference workflows confirmed to use the glob.
+- R1-F3: acknowledged — Properly addressed. The revised plan requires run-mt-isolation-test.sh to start with the PGHOST guard copied verbatim from run-tenant-foundation-test.sh:18-20 (pattern *supabase*|*amazonaws*|*rds*, exit 2); Tests section adds a case asserting PGHOST=x.supabase.co exits 2 before connecting; lane 6 states SQL-MT-ISOLATION.yml's PGHOST is only the service container, never a live endpoint.
 
 ## Next
 
