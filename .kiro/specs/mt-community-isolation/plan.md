@@ -139,10 +139,28 @@ safe to apply ahead of activation. DB lanes are split from code lanes (§4.7).
   verified active tenant: `social-context-builder.ts`, `person-context-builder.ts`,
   `community-activity-builder.ts`, `social-read-tools.ts`, `social-memory-service.ts`,
   `routes/memory-social.ts`, `intent-find-match.ts:277`, `orb-tools/p0-gap-tools.ts:71`,
-  `discovery-tools.ts` (incl. `tool_browse_news_feed`, `:313`). **Out of scope, stated:**
+  `discovery-tools.ts` (incl. `tool_browse_news_feed`, `:313`). **`fetchPeople` hydration contract:**
+  `fetchPeople(userIds, scope?)` takes an optional `scope: { memberIds: Set<string> }` and, when given,
+  intersects `userIds` with it **before** the `.in('user_id', …)` at `:78`; `scope` is omitted only
+  when the flag is off. Callers resolve `memberIds` once per request via `fetchActiveTenantMemberIds`
+  and pass it explicitly: internal `fetchFollowEdges` (`:151`), `fetchMatches` (`:231`),
+  `fetchPersonById` (`:680`, and so `resolvePersonByName`); external `discovery-tools.ts:195` (posts
+  authors) and `:368` (news feed), `community-activity-builder.ts:107`, `social-context-builder.ts:161`.
+  The chat-derived hydrations `fetchRecentMessageContacts` (`:287`), `fetchUnreadMessageSummary`
+  (`:354`) and `social-read-tools.ts:132` call `fetchPeople` **without** `scope` — deterministic and
+  unchanged, because their peer ids come from chat rows already `.eq('tenant_id')`. **Out of scope, stated:**
   `fetchExclusions` (`:99`) and `fetchFollowFlags` (`:622`) read only the viewer's own rows (`.eq('user_id', userId)`) and return no other member; the `chat_*` reads are
   already `.eq('tenant_id')` (`:259,:337,:378,:612,:710`) and chat scope belongs to the Network sibling
-  spec; `fetchActiveLifeCompassGoal` (`:685`) is viewer-own. (f) `connect-people` → (M).
+  spec; `fetchActiveLifeCompassGoal` (`:685`) is viewer-own. (f) `connect-people`
+  (`automation-handlers/connect-people-repository.ts`, scoped by the automation run's `ctx.tenantId`,
+  `connect-people.ts:108`): the `daily_matches` readers `countTodaysUnviewedMatches` (`:77`),
+  `fetchTopMatch` (`:86`), `fetchMatchById` (`:96`) and `fetchReciprocalAcceptedMatch` (`:100`) → (C)
+  `.eq('tenant_id', tenantId)` (content table, class (i); legacy NULL-`tenant_id` matches are not
+  surfaced with the flag on); `fetchTopUserInterests`/`fetchUserInterestNames` (`:112,:116`),
+  `fetchUserDisplayName`/`fetchUserDisplayNamesIn` (`:122,:126`) and `fetchGroupMembersAmong` (`:198`)
+  → (M); already `.eq('tenant_id')`, unchanged: `fetchPrimaryTenantUsers`, `fetchNotificationPrefs`,
+  the `relationship_edges` reads, `countMessagesBetween`, `fetchPeerOpportunities`;
+  `fetchGroupRecommendations` (`:186`) is viewer-own.
   **Social-memory resolver fix is a membership CHECK, not
   a rename**: verify `input.tenant_id` (`social-memory-service.ts:26`) is an active membership via WS1
   `is_member()` before any read, and reject a caller override. **Verified already scoped, no code change,
@@ -171,7 +189,10 @@ after the WS1 resolver/membership migrations, in the order community tables → 
   an active membership (not merely ignores a tool arg); `fetchCandidatePosts`/`tool_browse_news_feed`
   and `fetchUpcomingEvents` return only the active tenant's posts/events once the `tenantId` parameter
   is threaded; `tool_global_search` people/posts/events lanes scoped while groups/products/services are
-  unchanged; a read-only test asserts `resolve_recipient_candidates` stays tenant-scoped (no code change).
+  unchanged; a read-only test asserts `resolve_recipient_candidates` stays tenant-scoped (no code change);
+  the `connect-people` daily-match deliver / nudge / mutual-accept introduction paths surface only
+  same-tenant `matched_user_id`s; `fetchPeople` with `scope` drops non-member ids at every listed
+  internal and external call site, and the chat-derived hydrations are byte-identical.
 - vitana-v1 Vitest: `generate-daily-matches` pool scoped; `daily_matches` tenant written.
 - Isolation-suite semantics (program plan §4.11): Community surfaces return only the active tenant's
   rows; nothing private reachable. `npm run test:support` / `test:operator` only if those pipelines

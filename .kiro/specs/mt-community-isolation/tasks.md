@@ -119,7 +119,10 @@ VTID: allocated by PLAN-SPAR after approval.
       (`community-members-repository.ts`) and scope every reader listed in plan Fix (a)–(d),(f) — the
       ranker, members directory, superlatives, `tool_global_search` people/posts/events and
       `connect-people` — by (M) `.in(<user-id column>, memberIds)` before order/limit, chunked at 200,
-      for per-user tables, or (C) `.eq('tenant_id')` for column tables. `resolve_recipient_candidates`
+      for per-user tables, or (C) `.eq('tenant_id')` for column tables. In `connect-people-repository.ts`
+      (scope = the run's `ctx.tenantId`) the `daily_matches` readers `countTodaysUnviewedMatches`,
+      `fetchTopMatch`, `fetchMatchById`, `fetchReciprocalAcceptedMatch` are (C); `user_interests` /
+      `app_users` / `fetchGroupMembersAmong` reads are (M). `resolve_recipient_candidates`
       is already scoped: read-only test only, no code change. Flag off = unchanged.
 - [ ] G2 Social-memory: verify `input.tenant_id` is an active membership (reject otherwise), then give
       every reader in plan Fix (e) a `tenantId` parameter (`fetchPeople`, `fetchFollowEdges`,
@@ -127,13 +130,20 @@ VTID: allocated by PLAN-SPAR after approval.
       `fetchEventParticipants`, `fetchEventsForUsers`, `fetchGroupsForUsers`, `fetchGroupNames`,
       `fetchEventTitles`, `fetchInterests`, `resolvePersonByName`, `fetchPersonById`) and update every
       importer (`social-memory/**`, `routes/memory-social.ts`, `intent-find-match.ts`,
-      `orb-tools/p0-gap-tools.ts`, `discovery-tools.ts` incl. `tool_browse_news_feed`). Viewer-own reads (`fetchExclusions`, `fetchFollowFlags`,
+      `orb-tools/p0-gap-tools.ts`, `discovery-tools.ts` incl. `tool_browse_news_feed`).
+      `fetchPeople(userIds, scope?)` intersects with `scope.memberIds` before `.in(...)`; pass it from
+      `fetchFollowEdges`, `fetchMatches`, `fetchPersonById`/`resolvePersonByName`,
+      `discovery-tools.ts:195,:368`, `community-activity-builder.ts:107`, `social-context-builder.ts:161`;
+      the chat-derived `fetchRecentMessageContacts`, `fetchUnreadMessageSummary` and
+      `social-read-tools.ts:132` call it without `scope` (unchanged). Viewer-own reads (`fetchExclusions`, `fetchFollowFlags`,
       `fetchActiveLifeCompassGoal`) and the already-scoped `chat_*` reads are unchanged.
 - [ ] G3 `countFoundingSeats` / `/founding-status` report per the viewer's tenant (read-only).
 - [ ] G4 A lint/test banning a community read scoped only by visibility (no tenant predicate).
 - [ ] G5 Jest in `services/gateway/test/**`: each reader returns only the active tenant's members with
       the flag on, byte-identical with it off — one case per reader in G1/G2, incl. top-N index
-      scores filled from the active tenant; resolver rejects a non-member tenant.
+      scores filled from the active tenant; resolver rejects a non-member tenant; `connect-people`
+      daily-match deliver/nudge/introduction surface only same-tenant `matched_user_id`s; `fetchPeople`
+      with `scope` drops non-member ids at each listed call site, chat-derived hydrations unchanged.
 
 Acceptance: dark by default, Network scope untouched, lint green, full gateway test suite green,
 Maxina golden suite byte-identical. Kiro never writes to a live system.
