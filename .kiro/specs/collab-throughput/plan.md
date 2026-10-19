@@ -50,11 +50,21 @@ Measured 2026-10-18 on the owner's Windows checkout and in CI:
   responses with `live.rounds[n-1].review.findings[].id`. Collect three lists: unknown ids, duplicate ids, and
   missing ids.
 - If any list is non-empty: send nothing to the gateway and return `{ action: 'responses_invalid', problems }`.
-  `step()` writes no file outside its spec directory. `main()` sees that action, writes a plain-language report to
-  the step summary and to the path given by a new `--comment-file <path>` argument (PLAN-SPAR.yml passes
-  `$RUNNER_TEMP/plan-spar-comment.md`), and exits 1. The report names each id and states the rule ("answer every
-  finding of round n exactly once; earlier rounds' findings go in the plan text"). `main()` also writes the
-  comment file for the health failure in C and for any gateway 4xx on create or round.
+  `step()` writes no file outside its spec directory.
+- **One failure path in `main()`:** `main()` takes a new `--comment-file <path>` argument (PLAN-SPAR.yml passes
+  `$RUNNER_TEMP/plan-spar-comment.md`) and handles every failure the same way:
+  - a returned failure action (`responses_invalid` here, `code_access_down` from C): `main()` writes the report
+    to the step summary and the comment file, then returns 1;
+  - a thrown error from `step()`: `main()` wraps `await step(…)` in `try/catch`. That covers `client.create` /
+    `client.round` / `client.allocate` errors (`create: HTTP <status> …`, `round <n>: HTTP <status> …`, e.g.
+    `already_approved` 409, `plan_text_too_large` 400, `store_error` 502), `waitFor` timeouts and
+    `parseResponses` errors. The catch writes a report naming the step, the HTTP status and the gateway's `error`
+    field when present, then returns 1 (2 for `Usage`, as today). It never re-throws, so the comment file always
+    exists when the job fails.
+  - The report always ends with the next action ("fix responses-<n>.md and push" / "partner outage: push again
+    later" / "gateway rejected the request: <error>").
+  - The `responses_invalid` report names each id and states the rule ("answer every finding of round n exactly
+    once; earlier rounds' findings go in the plan text").
 - PLAN-SPAR.yml `Comment` step: `if: always() && steps.guard.outputs.skip != 'true'`. Use
   `--body-file "$RUNNER_TEMP/plan-spar-comment.md"` when that file exists, otherwise today's body. The `Commit the
   round` step stays success-only.
@@ -69,9 +79,12 @@ Measured 2026-10-18 on the owner's Windows checkout and in CI:
   `router.get('/health', …)` is registered **before** `router.get('/:id', …)` in `plans-spar.ts` (Express matches
   in order, and `/:id` would take `id = 'health'` and fail the UUID check). A Jest test pins that
   `GET /api/v1/plans/spar/health` reaches the health handler, not the session read.
-- `plan-spar.mjs`: before `client.create` / `client.round`, call the health route once. If `ok: false`, exit 1 with
-  "sparring partner cannot read code (<repo>: HTTP <status>); no session was started". That way an outage never
-  creates a session the plan has to pay for. The comment step from B carries the message.
+- `plan-spar.mjs`: `step()` calls the health route once, before `client.create` / `client.round`. If it says
+  `ok: false`, `step()` returns `{ action: 'code_access_down', repos }` without calling either.
+  `main()`'s single failure path from B writes "sparring partner cannot read code (<repo>: HTTP <status>); no
+  session was started" and returns 1. That way an outage never creates a session the plan has to pay for. If the
+  health call itself fails (network, 5xx, 404 from an older gateway), `step()` carries on as today. Only an explicit
+  `ok: false` blocks, so the check never blocks sparring on a gateway that predates it.
 - `.github/workflows/ALERT-PLAN-SPARRING-CODE-ACCESS.yml`: every 30 min plus `workflow_dispatch`. It GETs the
   **staging** gateway health route (PLAN-SPAR spars through staging, `vars.PLAN_SPAR_GATEWAY_URL`) with
   `secrets.GATEWAY_SERVICE_TOKEN`, and fails the job on a non-200, a non-JSON answer, or `ok: false`. Same shape as
@@ -144,7 +157,11 @@ not `depends_on`.
   - B: unknown, duplicate, missing and malformed responses each give `responses_invalid` with the right ids, no
     gateway `round` call, and a comment file. A valid set still calls `round`.
   - C: health `ok: false` means no `create` / `round` call and exit 1.
-  - B/C: `step()` writes nothing outside the spec directory; `main()` with `--comment-file` writes the report.
+  - B/C: `step()` writes nothing outside the spec directory. `main()` with `--comment-file` writes the report
+    for a returned `responses_invalid`, a returned `code_access_down`, a `client.round` that throws a simulated
+    `round 2: HTTP 400 {"error":"plan_text_too_large"}`, and a `client.create` that throws a 409. Each case writes
+    the comment file containing the status and gateway error, and exits 1. A health call that fails with a network
+    error does not block (`create` is still called).
 - Gateway Jest (D): a third concurrent pass waits until one of two running passes finishes, and its deadline
   starts at acquisition; the throttle escalation's round file names the cause and says to push again later.
 - Gateway Jest: the health route answers 401 without auth, `ok: true` when both reads return 200, `ok: false` with a
