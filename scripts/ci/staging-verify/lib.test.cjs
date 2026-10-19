@@ -92,6 +92,32 @@ test('planRange: suites run, missing ones fail only after the rule took effect',
   assert.equal(plan.relevant.length, 4, 'the docs-only commit is not part of the gateway build');
 });
 
+test('VTID-05236: commit-coverage maps a no-VTID commit onto a covering suite', () => {
+  const SHA = 'a'.repeat(40);
+  const { coverage, errors } = lib.parseCommitCoverage({
+    covers: [
+      { sha: SHA, vtid: 'VTID-00007', reason: 'covers it', approved_by: 'owner' },
+      { sha: 'abc123', vtid: 'VTID-00007', reason: 'r', approved_by: 'o' },
+      { sha: 'b'.repeat(40), vtid: 'VTID-00007', reason: '', approved_by: 'o' },
+    ],
+  });
+  assert.deepEqual(coverage, { [SHA]: 'VTID-00007' });
+  assert.equal(errors.length, 2, 'short sha and missing reason are rejected');
+  const manifests = { 'VTID-00007': { vtid: 'VTID-00007', service: 'gateway', tests: [{ kind: 'http', path: '/alive' }] } };
+  const commits = [
+    { sha: SHA, date: '2026-10-18T10:00:00Z', subject: 'plan(x): no vtid', files: ['services/gateway/src/a.ts'] },
+    { sha: 'c'.repeat(40), date: '2026-10-18T11:00:00Z', subject: 'also no vtid', files: ['services/gateway/src/b.ts'] },
+  ];
+  const plan = lib.planRange({ service: 'gateway', commits, manifests, coverage });
+  assert.deepEqual(plan.suites.map((s) => s.vtid), ['VTID-00007']);
+  assert.deepEqual(plan.covered.map((c) => c.sha), [SHA]);
+  assert.deepEqual(plan.missing.map((m) => m.sha), ['c'.repeat(40)], 'an uncovered no-VTID commit is still missing');
+  // A covering VTID without a suite is still missing, never silently passed.
+  const none = lib.planRange({ service: 'gateway', commits: [commits[0]], manifests: { 'VTID-00007': null }, coverage });
+  assert.equal(none.missing.length, 1);
+  assert.equal(lib.parseCommitCoverage(null).errors.length, 0);
+});
+
 test('planRange: an invalid manifest is reported, not run', () => {
   const plan = lib.planRange({
     service: 'gateway',
