@@ -1,42 +1,65 @@
 # Sparring round 2 — in_progress
 
-Session: `2cc96038-ed5f-40e6-b7df-b6595046f5a7` · plan hash `ecc1dda469b3c2aa0bfdc0a736d77acb339b875b2a5e0eb1d7e0817c8e91c083`
+Session: `ee011de1-a1ce-4dd8-aaf3-d7e19e0cee14` · plan hash `43658ee32db00aa824f8777fad076586e803798b55b9620ebefc7ea08cb7e7ef`
 
 ## Summary
 
-All five R1 findings were accepted and are addressed in the revised plan. One new major finding (R2-F1): the lane-5 `…0001` lint-test carve-out is simultaneously self-contradictory (it exempts the two slug-map sites that lane 5a removes) and incomplete (it does not exempt `services/gateway/src/lib/vitana-bot.ts:9`, which holds a legitimate, intentional `…0001` use as the bot user ID). The two flaws interact: the stale slug-map carve-out creates a false safe harbour for partial removal, while the missing `vitana-bot.ts` carve-out means the test will either spuriously fail or be silently scoped away from `vitana-bot.ts`, giving false assurance.
+All three R1 findings were accepted and are substantively addressed in the revised plan. One new major finding: the plan removes `SLUG_TO_TENANT_ID` from `me.ts` and `dev-auth.ts` and says resolution goes "through the DB registry + TenantContext", but `tenant-context.ts` exports no slug→id lookup function and `loadTenantFlags()` builds only a `byId` map. `dev-auth.ts:491` has a hard runtime dependency on slug→id resolution that has no replacement in the current API. A `getTenantIdBySlug()` function must be explicitly added to the plan scope.
 
 ## Findings
 
 ### R2-F1 [major]
 
-The lane-5 Vitest `…0001` lint assertion carves out 'the two slug-map sites' that lane 5a is removing, creating a false safe harbour for partial removal, and simultaneously omits `services/gateway/src/lib/vitana-bot.ts:9` (`VITANA_BOT_USER_ID = '00000000-0000-0000-0000-000000000001'`) — a legitimate, intentional `…0001` use as the bot user ID that the test will encounter on every run.
+The plan removes `SLUG_TO_TENANT_ID` from `me.ts:23` and `dev-auth.ts:26` and states resolution will go 'through the DB registry + TenantContext', but `tenant-context.ts` has no slug→id lookup function. `loadTenantFlags()` builds only a `byId: Map<string, TenantMeta>` (tenant_id→meta) and a `defaultId`; there is no `bySlug` map and no exported `getTenantIdBySlug()`. `dev-auth.ts:491` calls `SLUG_TO_TENANT_ID[tenant_slug.toLowerCase()]` to resolve a tenant UUID from a caller-supplied slug and returns a hard 400 if it is absent — after the map is deleted this call site has no replacement and will return `undefined`, causing every `/dev/auth/role` request with a valid slug to fail with an `INVALID_TENANT_SLUG` 400 at runtime.
 
-- `exafyltd/vitana-platform:services/gateway/src/lib/vitana-bot.ts:9` — export const VITANA_BOT_USER_ID = '00000000-0000-0000-0000-000000000001';
-- `exafyltd/vitana-platform:services/gateway/src/routes/me.ts:15` — const TENANT_SLUGS: Record<string, string> = {
-  '00000000-0000-0000-0000-000000000001': 'vitana',
-  '00000000-0000-0000-0000-000000000002': 'maxina',
-  '00000000-0000-0000-0000-000000000003': 'alkalma',
-  '00000000-0000-0000-0000-000000000004': 'earthlings',
-};
 - `exafyltd/vitana-platform:services/gateway/src/routes/dev-auth.ts:26` — const SLUG_TO_TENANT_ID: Record<string, string> = {
   'vitana': '00000000-0000-0000-0000-000000000001',
   'maxina': '00000000-0000-0000-0000-000000000002',
   'alkalma': '00000000-0000-0000-0000-000000000003',
   'earthlings': '00000000-0000-0000-0000-000000000004',
 };
-- `exafyltd/vitana-platform:docs/MULTI-TENANT-PLAN.md:28` — NOTE: `…0001` is BOTH the dev tenant id (`orb-memory-bridge.ts:66-70`) AND the bot user id (`lib/vitana-bot.ts:9`) — in `fire_welcome_chat_on_membership`/`notify_on_chat_message` it is the bot USER id (tenant comes from NEW.tenant_id), so those functions are not tenant-hardcoded.
-- `exafyltd/vitana-platform:supabase/migrations/20260625000000_alle_beisammen_chat_group.sql:55` — v_bot          UUID := '00000000-0000-0000-0000-000000000001';
+- `exafyltd/vitana-platform:services/gateway/src/routes/dev-auth.ts:491` — const tenantId = SLUG_TO_TENANT_ID[tenant_slug.toLowerCase()];
+    if (!tenantId) {
+      return res.status(400).json({
+        ok: false,
+        error: 'INVALID_TENANT_SLUG',
+        message: `tenant_slug must be one of: ${Object.keys(SLUG_TO_TENANT_ID).join(', ')}`,
+      });
+- `exafyltd/vitana-platform:services/gateway/src/services/tenancy/tenant-context-repository.ts:29` — /** VTID-05149: every tenant's identity flags (2 rows today); cached by the caller. */
+export async function fetchTenantFlags(sb: SupabaseClient, signal?: AbortSignal) {
+  let query = sb.from('tenants').select('tenant_id, slug, is_default, is_platform');
+  if (signal) query = query.abortSignal(signal);
+  return query;
+}
+- `exafyltd/vitana-platform:services/gateway/src/services/tenancy/tenant-context.ts:70` — async function loadTenantFlags(): Promise<{ byId: Map<string, TenantMeta>; defaultId: string | null } | null> {
+    if (tenantMetaCache && tenantMetaCache.expiresAt > Date.now()) return tenantMetaCache;
+    ...
+    const byId = new Map<string, TenantMeta>();
+    let defaultId: string | null = null;
+    for (const t of data ...) {
+      byId.set(t.tenant_id, { slug: t.slug ?? '', isPlatform: t.is_platform === true, isDefault: t.is_default === true });
+      if (t.is_default === true) defaultId = t.tenant_id;
+    }
+    tenantMetaCache = { byId, defaultId, expiresAt: ... };
+- `exafyltd/vitana-platform:services/gateway/src/services/tenancy/tenant-context.ts:94` — /** Slug and flags of one tenant; null when unknown or the lookup failed. */
+export async function getTenantMeta(tenantId: string): Promise<TenantMeta | null> {
+  const flags = await loadTenantFlags();
+  return flags?.byId.get(tenantId) ?? null;
+}
 
-Suggestion: Replace the test assertion with: 'no `…0001` literal survives in gateway TypeScript source outside (1) `services/gateway/src/lib/vitana-bot.ts` (VITANA_BOT_USER_ID — bot user ID, intentional per program plan §2) and (2) `DEV_IDENTITY`'s resolved `DEV_TENANT_SLUG` default in `orb-memory-bridge.ts`.' Remove the stale 'two slug-map sites' carve-out — those files are deleted by lane 5a, so exempting them from the lint allows a partially-applied lane 5a to pass undetected. Add the `vitana-bot.ts` carve-out explicitly so the test does not fail spuriously and the reviewer can see exactly what is intentionally allowed.
+/** The tenant new members land in (tenants.is_default); null when unresolved. */
+export async function getDefaultTenantId(): Promise<string | null> {
+  const flags = await loadTenantFlags();
+  return flags?.defaultId ?? null;
+}
+
+Suggestion: Lane 5a must explicitly add `getTenantIdBySlug(slug: string): Promise<string | null>` to `tenant-context.ts`, backed by a `bySlug: Map<string, string>` built inside `loadTenantFlags()` from the already-fetched `slug` column. Replace `SLUG_TO_TENANT_ID[tenant_slug.toLowerCase()]` at `dev-auth.ts:491` with `await getTenantIdBySlug(tenant_slug.toLowerCase())` and handle the null (DB-unavailable) case — either fall through to a 503 or keep the 400 with a dynamic slug list from `Array.from(bySlug.keys())`. The id→slug direction (`TENANT_SLUGS` at `me.ts:270`/`:408`) can be replaced directly with `(await getTenantMeta(tenantId))?.slug ?? null`, which is already supported. Add a Vitest test that stubs `loadTenantFlags` and asserts both `getTenantMeta(id)` and `getTenantIdBySlug(slug)` round-trip correctly, and that `getTenantIdBySlug` returns null for an unknown slug.
 
 ## Acknowledgements of earlier responses
 
-- R1-F1: acknowledged — Addressed. The revised plan explicitly specifies REVOKE ALL ON public.tenant_claim_mismatch_log FROM PUBLIC, anon, authenticated; GRANT ALL TO service_role; ENABLE RLS with no policy in lane 3, and adds a pgTAP test asserting authenticated deny and service_role admit.
-- R1-F2: acknowledged — Addressed. The revised plan correctly splits the two shapes: (a) slug maps at me.ts:15+23 and dev-auth.ts:26 are removed, resolving via DB registry + TenantContext; (b) DEV_IDENTITY.TENANT_ID/TENANT_SLUG is driven by DEV_TENANT_SLUG env var defaulting to 'vitana'. The test clause introduced by this fix contains a new defect that is raised as R2-F1.
-- R1-F3: acknowledged — Addressed. The revised plan now includes explicit TypeScript signatures for the O1 contract: type TENANT_TABLES, isHealthTable(tableName: string): boolean, tenantDb(ctx: TenantContext), and healthDb(userId: string) in lane 5.
-- R1-F4: acknowledged — Addressed in the sub-plan. The revised plan correctly splits the cost claim: (select tenant_id_for_policies()) is uncorrelated and hoists to an initPlan on user-private tables; (select is_member(tenant_id)) is correlated on the outer column, per-row on tenant-shared tables. Note that docs/MULTI-TENANT-PLAN.md line 53 at the pinned commit still carries the un-split wording, but that is the program plan document and would be updated as part of this plan's implementation.
-- R1-F5: acknowledged — Addressed. The revised plan now explicitly states the dual-write trigger body uses INSERT INTO user_tenants … ON CONFLICT (tenant_id, user_id) DO NOTHING for the steady-state path, and adds a pgTAP test that re-inserting a known memberships row creates zero extra chat_messages, founding seats, autopilot rows, and live rooms.
+- R1-F1: acknowledged — The revised plan explicitly adds all three `fetchPrimaryTenantForUser` call sites (autopilot-prompts.ts:109, presence.ts:55, presence-did-you-know.ts:63) and both their repository files (presence-repository.ts:22, presence-did-you-know-repository.ts:23) to lane 5c, migrates them to `resolvePrimaryTenant()` behind MT_RESOLUTION_V2, marks the three repo fns @deprecated, and rewrites the VTID-05149 comment at auth-supabase-jwt-repository.ts:17. All call sites are confirmed in the pinned code. Rationale is sound.
+- R1-F3: acknowledged — The revised lint is restructured into two well-defined parts: (1) a zero-tolerance check that me.ts, dev-auth.ts, and orb-memory-bridge.ts contain no `…0001`–`…0004` literals (no carve-out), and (2) a ratchet bounding `…0001` literals outside the single exempt site lib/vitana-bot.ts. orb-memory-bridge.ts is removed from the carve-out. The ~30 other literals (d28–d51 constants, admin-tenants-repository.ts:57 duplicate, etc.) are explicitly named as WS2 cleanup under the ratchet. Rationale is sound.
+- R1-F4: acknowledged — The revised plan excludes the bot user (lib/vitana-bot.ts:9, `…0001`) and every `service_bot_accounts` user from both the backfill query and the drift report member counts, and adds a pgTAP check that inserting a memberships row for the bot yields zero chat_messages. The collision between bot USER_ID and vitana TENANT_ID is noted in Risks. Rationale is sound.
 
 ## Next
 
