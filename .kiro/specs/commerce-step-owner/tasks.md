@@ -5,6 +5,11 @@
       sets `owner` on open required steps (1.2).
 - [ ] T2 `commerce-mcp.ts`: derive `ON_SCREEN_STEPS` from the checklist module; `owner` on open steps and
       `next_action`; one `INSTRUCTIONS` sentence (1.3).
+      **Sparring R2-F1 (minor, raised in the converging round):** derive it as "fixed owner `supplier` AND an entry in
+      `STEP_SUPPLIER_ACTIONS`", which is exactly today's five keys (terms, dpa, billing_mandate, results_channel,
+      tracking_test). `team` (owner `supplier`, no supplier action, never `not_required`) must NOT gain
+      `done_on_vitanaland`/`link`; this keeps the plan's "byte for byte" promise. A Jest case asserts the derived set
+      equals those five keys.
 - [ ] T3 Jest: the `stepOwner` table per step key and per verification code (unknown → supplier, review_note →
       supplier); `buildChecklist` adds only `owner`; `shapeStatus` keeps every existing field; `ON_SCREEN_STEPS` /
       `STEP_TOOLS` consistency.

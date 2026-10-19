@@ -35,3 +35,9 @@ accepted and folded into the plan block; answers in `sparring/responses-1.md`. N
 
 ### 2026-10-19T13:36Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-10-19T13:37Z · kiro-jtadic-202610191323-d24a · approved (R2-F1 recorded)
+Converged in round 2; policy-approved (converged-auto-v1), VTID-05237 (gateway-step-owner) and VTID-05238
+(frontend-still-needed). The converging round's one minor finding, R2-F1, is resolved with the partner's option (a)
+and recorded as an acceptance note on T2 in `tasks.md`, without editing the approved plan block. Next: seat `exafy`
+builds `gateway-step-owner`; seat `exafyltd` builds `frontend-still-needed` after it is on staging.
