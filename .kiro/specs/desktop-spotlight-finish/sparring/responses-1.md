@@ -30,3 +30,5 @@ its line. The `file:line` refs below are vitana-v1 at that commit.
   }
 ]
 ```
+
+### Re-trigger 2026-10-19T17:29:31Z — Bedrock quota restored; round-2 was an infra failure (model_unavailable: too many tokens/day), not a finding. Requesting the partner re-run to converge. (owner confirmed quota restored 2026-10-19)
