@@ -9,7 +9,7 @@ depends_on: [local-test-stack, generated-inventories]
 paths:
   - scripts/ci/sql-tests/mt-isolation.test.sql
   - scripts/ci/sql-tests/run-mt-isolation-test.sh
-updated: 2026-10-19T18:00Z
+updated: 2026-10-19T20:20Z
 ---
 # Isolation suite (pgTAP) — mt-guardrails/isolation-suite (repo vitana-platform)
 Plan: `.kiro/specs/mt-guardrails/plan.md` (authoritative) and the `isolation-suite` section of
@@ -33,7 +33,9 @@ VTID-05149 analogue co-locates `vtid-05149-tenant-foundation.test.sql` with
 `run-tenant-foundation-test.sh`, so `SQL-MT-ISOLATION.yml`'s `paths:` uses the `scripts/ci/sql-tests/**`
 glob like `SQL-HEALTH-STORE.yml`/`SQL-MEMORY-SENSITIVITY.yml` (not `SQL-TENANT-FOUNDATION.yml`'s file list).
 The runner MUST start with the PGHOST guard copied from `run-tenant-foundation-test.sh:18-20`
-(`*supabase*|*amazonaws*|*rds*` → exit 2). For the health tables
+(`*supabase*|*amazonaws*|*rds*` → exit 2), runs under `set -euo pipefail`, and prints
+`PASS mt-isolation` as its last line only after `pg_prove` exits 0 — the marker `ci-wiring`'s
+`report-gate.mjs --expect '^PASS mt-isolation'` checks. For the health tables
 use the shared health-table-list constant from `generated-inventories` (switching to mt-identity's
 `isHealthTable()` when it ships), never a scattered local copy (CROSS-SPEC O1). Work only inside the
 allowed paths; add this lane's own `docs/validation/<vtid>/`.
@@ -70,3 +72,6 @@ stack this suite depends on is the pinned `supabase/postgres` image (ships `pgta
 R1-F2 (accepted): `SQL-TENANT-FOUNDATION.yml` uses a per-file `paths:` list, so the glob is now modelled on
 `SQL-HEALTH-STORE.yml`/`SQL-MEMORY-SENSITIVITY.yml`. R1-F3 (accepted): the runner copies the PGHOST
 production guard from `run-tenant-foundation-test.sh:18-20`. `paths` unchanged.
+### 2026-10-19T20:20Z · kiro-hotmail-202610151618-b437 · spar round-2 (session 496d49e4) → PASS marker
+R2-F2 (accepted): the runner prints `PASS mt-isolation` last, only after `pg_prove` exits 0, so `ci-wiring`'s
+report-gate step has a defined marker. `paths` unchanged.

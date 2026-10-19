@@ -11,7 +11,7 @@ paths:
   - supabase/tests/local-stack/**
   - scripts/mt/stack/**
   - docs/multitenancy/LOCAL-STACK.md
-updated: 2026-10-19T18:00Z
+updated: 2026-10-19T20:20Z
 ---
 # D11 local Supabase stack + fixtures — mt-guardrails/local-test-stack (repo vitana-platform)
 Plan: `.kiro/specs/mt-guardrails/plan.md` (authoritative) and the `local-test-stack` section of
@@ -24,10 +24,11 @@ system. The schema snapshot comes from a `pg_dump --schema=public --schema-only`
 data; the regenerate script refuses any other schema — `auth`/`storage`/`realtime` are pre-installed by
 `supabase/postgres` and never re-created); fixtures INSERT into the existing `auth.users`, never
 `CREATE` it (do not copy `vtid-05149-tenant-foundation.test.sql:13`, written for `postgres:16`); fixtures are
-synthetic (D11/D13). This lane brings up Postgres from the **`supabase/postgres` image pinned by exact
-tag** (it ships the `pgtap` extension; stock `postgres:16` does not) and installs **`pg_prove` from a
-pinned `libtap-parser-sourcehandler-pgtap-perl` apt version** on the host — the one install mechanism
-`ci-wiring` reuses verbatim, so local and CI never diverge (R2-F1). pgTAP is required by the
+synthetic (D11/D13). This lane brings up Postgres from `supabase/postgres:17.4.1.074` (index digest
+`sha256:dc436b5b4ebeb0f3bdf6d8dda2b390cc094e14d24cd434d5fe02840459e67670`; ships `pgtap`, stock
+`postgres:16` does not) and runs `pg_prove` from `libtap-parser-sourcehandler-pgtap-perl=3.36-2` inside
+an `ubuntu:24.04` container — the plan's "Pinned versions" table, which `ci-wiring` copies verbatim, so
+local and CI never diverge. pgTAP is required by the
 hash-stamped parent plan §4.2/§4.9 (R1-F2) and is first introduced into the repo here, so the
 `isolation-suite` lane can run its pgTAP assertions against this running stack over external `psql`.
 Record the pinned image tag and apt version. Work only inside the allowed paths. Add this lane's own
@@ -56,3 +57,6 @@ updated accordingly; `paths` unchanged.
 R1-F1 (accepted): the dump is scoped to `--schema=public` and enforced by the regenerate script; fixtures
 INSERT into the image's pre-installed `auth.users`; the smoke test asserts `auth.users` pre-exists. T1/T2/T5
 updated; `paths` unchanged.
+### 2026-10-19T20:20Z · kiro-hotmail-202610151618-b437 · spar round-2 (session 496d49e4) → concrete pins
+R2-F1 (accepted): the pins are now literal values — `supabase/postgres:17.4.1.074` (production's version) +
+its index digest, `libtap-parser-sourcehandler-pgtap-perl=3.36-2` (noble), `ubuntu:24.04`. T4 updated; `paths` unchanged.
