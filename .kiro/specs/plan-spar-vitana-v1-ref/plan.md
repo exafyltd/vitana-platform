@@ -45,14 +45,24 @@ commit, and it is not declared or reviewable in the PR diff.
 This plan generalizes that into a per-plan, reviewable declaration: a plan names the exact
 companion commit (a 40-hex SHA) it needs in `handoff.md` front matter.
 
-**Explicit precedence between the CLI arg and `spar_refs` (R1-F1).** Both the always-on
+**Explicit precedence between the CLI arg and `spar_refs` (R1-F1, R2-F1).** Both the always-on
 `--extra-ref-vitana-v1` arg and `spar_refs` target the same map key `exafyltd/vitana-v1`, so the merge
-order must be pinned in code, not left to intent. The rule: `main()` first builds the CLI-arg map
-(today's `extraRefs = /^[0-9a-f]{40}$/.test(v1Sha) ? { 'exafyltd/vitana-v1': v1Sha } : {}`), then
-overlays the parsed `spar_refs` on top of it (`{ ...cliRefs, ...sparRefs }`), so a plan that declares a
-specific companion commit in `spar_refs` **wins** for that key and the always-`main` CLI value is
-replaced; a plan that declares nothing keeps the CLI arg's value. Only when `spar_refs` is absent AND
-the CLI arg resolves nothing is `extra_refs` omitted entirely.
+order must be pinned in code, not left to intent. The **logical precedence rule** is: the CLI-arg map
+(today's `extraRefs = /^[0-9a-f]{40}$/.test(v1Sha) ? { 'exafyltd/vitana-v1': v1Sha } : null`) is the
+base, and the parsed `spar_refs` overlay it (`{ ...(cliRefs || {}), ...sparRefs }`), so a plan that
+declares a specific companion commit in `spar_refs` **wins** for that key and the always-`main` CLI
+value is replaced; a plan that declares nothing keeps the CLI arg's value. Only when `spar_refs` is
+absent AND the CLI arg resolves nothing is `extra_refs` omitted entirely.
+
+**This is a precedence rule, not a statement of where the merge runs (R2-F1).** `main()` is unchanged:
+it builds the CLI-arg map from `--extra-ref-vitana-v1` and passes it (or `null`) into `step()` as
+`extraRefs`, exactly as today (`plan-spar.mjs:317-319` → the single `client.create` spread at
+`:192-196`). The physical location of the `handoff.md` read, the `parseSparRefs` call, the
+`{ ...(cliRefs || {}), ...sparRefs }` merge, the `resolveRef` call and the fail-loud throw is **inside
+`step()`'s `if (!cur || retryInfra || replan)` create branch** — never in `main()` and never before
+`step()`. Placing the merge/read in `main()` would run it on every invocation, including a `round` on
+an existing in-progress session, which is exactly the R1-F3 bug (a moved/deleted companion ref
+fail-louding during a round and blocking the planner from answering findings).
 
 Because the CLI arg is still present and already sends `extra_refs` for every plan PR in production
 CI, the no-op guarantee is stated precisely: **relative to `step()`'s default `extraRefs = null` (not
@@ -100,6 +110,12 @@ the common single-repo plan:
   `parseSparRefs(handoffFrontMatter)` and an exported `resolveRef(repo, ref, { ownRepo })` that
   returns a verbatim 40-hex SHA and throws loudly on a non-SHA cross-repo ref; `step()` reads
   `handoff.md` and parses its front matter for `spar_refs`.
+- **Missing `handoff.md` at create time (R2-F2):** if `handoff.md` does not exist when `step()`
+  enters the create branch, `parseSparRefs` returns `{}` (no companion refs declared) and no error is
+  thrown. The read is behind an `existsSync` guard matching the pattern already used in the
+  converged/escalated write-back paths (`plan-spar.mjs:258`, `:274`), so a brand-new plan PR with no
+  `handoff.md` yet spars normally rather than failing the create step with a spurious `ENOENT` that
+  would masquerade as a fail-loud `spar_refs` validation error.
 - **Resolve inside the create branch only (R1-F3):** `extra_refs` is consumed only by `client.create`;
   a later `client.round` forwards nothing (the gateway pins refs from the stored round's `repo_refs`,
   `plan-sparring-service.ts:356-358`). So the merge (CLI arg overlaid by `spar_refs`), the `resolveRef`
