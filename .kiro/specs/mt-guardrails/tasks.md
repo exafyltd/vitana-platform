@@ -11,15 +11,20 @@ Allowed paths:
 - `docs/multitenancy/LOCAL-STACK.md`
 - [ ] T1 Commit a local-stack config snapshot (schema from a production `--schema-only` dump, structure
       only, never data) under `supabase/tests/local-stack/` with a regenerate script in `scripts/mt/stack/`.
+      The dump is `pg_dump --schema=public --schema-only` (the script refuses any other schema);
+      `auth`/`storage`/`realtime` are pre-installed by `supabase/postgres` and never re-created.
 - [ ] T2 Fixture seed in `supabase/tests/fixtures/`: tenants T_A/T_B; members a_member, a_admin,
-      b_member, b_admin, ab_dual; `CANARY_A_<uuid>` markers in representative T_A rows; idempotent.
+      b_member, b_admin, ab_dual; `CANARY_A_<uuid>` markers in representative T_A rows; idempotent. Users are INSERTed into the
+      pre-existing `auth.users` — never `CREATE TABLE auth.users` (do not copy
+      `vtid-05149-tenant-foundation.test.sql:13`, which targets `postgres:16`).
 - [ ] T3 `scripts/mt/stack/up.*` brings the disposable local Postgres up and seeds it with no live call.
 - [ ] T4 Bring the stack up from the **`supabase/postgres` image pinned by exact tag** (ships `pgtap`;
       stock `postgres:16` does not) and install **`pg_prove` from a pinned
       `libtap-parser-sourcehandler-pgtap-perl` apt version** on the host — the one install mechanism
       ci-wiring reuses verbatim (R2-F1). First introduction of pgTAP into the repo, mandated by parent
       plan §4.2/§4.9 (R1-F2). Record the pinned image tag and apt version so lane 6 matches exactly.
-- [ ] T5 Smoke test asserts the fixtures load and `pgtap`/`pg_prove` are available; document in
+- [ ] T5 Smoke test asserts `auth.users` pre-exists (`to_regclass`), the fixtures load and
+      `pgtap`/`pg_prove` are available; document in
       `docs/multitenancy/LOCAL-STACK.md`.
 Acceptance: the up+seed script runs green locally and in a CI service container; `pgtap`/`pg_prove`
 installed and version-pinned; no call to any live system; fixtures idempotent. PR title
@@ -57,8 +62,8 @@ Allowed paths:
 - `scripts/ci/sql-tests/run-mt-isolation-test.sh`
 - [ ] P1 `scripts/ci/sql-tests/mt-isolation.test.sql` **pgTAP** specs — placed beside the runner in
       `scripts/ci/sql-tests/`, exactly as VTID-05149 places `vtid-05149-tenant-foundation.test.sql`
-      next to its runner, so `SQL-MT-ISOLATION.yml`'s `paths:` trigger stays on `scripts/ci/sql-tests/**`
-      like every `SQL-*.yml` (R2-F3). The hash-stamped parent plan §4.2 at `:51` and §4.9 at `:61`
+      next to its runner, so `SQL-MT-ISOLATION.yml`'s `paths:` uses the `scripts/ci/sql-tests/**` glob
+      like `SQL-HEALTH-STORE.yml`/`SQL-MEMORY-SENSITIVITY.yml` — not `SQL-TENANT-FOUNDATION.yml`'s file list. The hash-stamped parent plan §4.2 at `:51` and §4.9 at `:61`
       mandate pgTAP; parent hash `869182cc6aef344b107c6a8915fe2271bbd1bc982febb198f09027e7eb451326`.
       For each of the 18 tenant tables (plan §2) and the health tables (via the shared health-table-list
       constant from `generated-inventories`), assert b_member sees 0 T_A/`CANARY_A` rows. First
@@ -69,7 +74,9 @@ Allowed paths:
       over **external `psql`** against lane 1's running local stack (both files co-located in
       `scripts/ci/sql-tests/`, like `run-tenant-foundation-test.sh` + its `.test.sql`, R2-F3), NOT
       `initdb`/`pg_ctl` (R1-F1). The pinned `supabase/postgres` image (ships `pgtap`) and `pg_prove`
-      are provided by the `local-test-stack` lane.
+      are provided by the `local-test-stack` lane. The runner starts with the PGHOST guard copied from
+      `run-tenant-foundation-test.sh:18-20` (`*supabase*|*amazonaws*|*rds*` → exit 2); a self-test case
+      with `PGHOST=x.supabase.co` exits 2 before connecting.
 Acceptance: `scripts/ci/sql-tests/run-mt-isolation-test.sh` green (`pg_prove`) against the local stack;
 no production access. Depends on `local-test-stack` (running stack + `pgtap`/`pg_prove`) and
 `generated-inventories`. PR title `VTID-xxxxx (mt-guardrails/isolation-suite): —`; trailers
@@ -117,8 +124,8 @@ Allowed paths:
 - `scripts/ci/mt/**`
 - [ ] C1 `MT-GUARDRAILS.yml` runs the inventory/lint generators, the gateway scope lint, the contract
       tests and the golden suite; the pgTAP isolation suite gets its OWN standalone
-      `SQL-MT-ISOLATION.yml` (modelled on `SQL-TENANT-FOUNDATION.yml`, `paths:` on
-      `scripts/ci/sql-tests/**`). Both land **report-only via a `scripts/ci/mt/config.json`
+      `SQL-MT-ISOLATION.yml` (modelled on `SQL-TENANT-FOUNDATION.yml`, but `paths:` on the
+      `scripts/ci/sql-tests/**` glob like `SQL-HEALTH-STORE.yml`). Both land **report-only via a `scripts/ci/mt/config.json`
       `report_only` flag (default `true`): warn-and-exit-0 even on failure** — NOT PR-GATE's `enforce`,
       which gates only the Verdict `OUTCOMES` checks (R2-F2). Flip target: a later governance PR setting
       `report_only=false`.
@@ -128,7 +135,8 @@ Allowed paths:
 - [ ] C3 `SQL-MT-ISOLATION.yml` uses lane 1's **identical install mechanism** — the pinned
       `supabase/postgres` image (ships `pgtap`) as the Postgres service + `pg_prove` from the same
       pinned `libtap-parser-sourcehandler-pgtap-perl` apt version — then runs
-      `scripts/ci/sql-tests/run-mt-isolation-test.sh` (R2-F1 / R1-F2 / R1-F1); wire a shrinking baseline
+      `scripts/ci/sql-tests/run-mt-isolation-test.sh` (R2-F1 / R1-F2 / R1-F1); `paths:` uses the glob form of
+      `SQL-HEALTH-STORE.yml`; PGHOST is only the service container, never a live endpoint; wire a shrinking baseline
       (the drift-check pattern). Fold the row-21b fix: align `MORNING-SYSTEM-HEALTH-CHECK.yml` row 21b's
       `SUPABASE_URL` binding to `vars.DATA_REST_URL || secrets.SUPABASE_URL` (matching rows 5—12/21).
 Acceptance: `node --test scripts/ci/mt/*.test.mjs` green; the workflow runs report-only on its own PR;

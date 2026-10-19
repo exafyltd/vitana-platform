@@ -9,7 +9,7 @@ depends_on: [local-test-stack, generated-inventories]
 paths:
   - scripts/ci/sql-tests/mt-isolation.test.sql
   - scripts/ci/sql-tests/run-mt-isolation-test.sh
-updated: 2026-10-18T18:40Z
+updated: 2026-10-19T18:00Z
 ---
 # Isolation suite (pgTAP) — mt-guardrails/isolation-suite (repo vitana-platform)
 Plan: `.kiro/specs/mt-guardrails/plan.md` (authoritative) and the `isolation-suite` section of
@@ -30,8 +30,10 @@ would introduce it, so no parent amendment is made (R1-F2). The runner invokes `
 (`scripts/ci/sql-tests/mt-isolation.test.sql`) and the runner
 (`scripts/ci/sql-tests/run-mt-isolation-test.sh`) live in `scripts/ci/sql-tests/`, exactly as the
 VTID-05149 analogue co-locates `vtid-05149-tenant-foundation.test.sql` with
-`run-tenant-foundation-test.sh`, so `SQL-MT-ISOLATION.yml`'s `paths:` trigger stays on
-`scripts/ci/sql-tests/**` like every other `SQL-*.yml` (R1-F1 / R2-F3). For the health tables
+`run-tenant-foundation-test.sh`, so `SQL-MT-ISOLATION.yml`'s `paths:` uses the `scripts/ci/sql-tests/**`
+glob like `SQL-HEALTH-STORE.yml`/`SQL-MEMORY-SENSITIVITY.yml` (not `SQL-TENANT-FOUNDATION.yml`'s file list).
+The runner MUST start with the PGHOST guard copied from `run-tenant-foundation-test.sh:18-20`
+(`*supabase*|*amazonaws*|*rds*` → exit 2). For the health tables
 use the shared health-table-list constant from `generated-inventories` (switching to mt-identity's
 `isHealthTable()` when it ships), never a scattered local copy (CROSS-SPEC O1). Work only inside the
 allowed paths; add this lane's own `docs/validation/<vtid>/`.
@@ -64,3 +66,7 @@ R2-F3 (accepted): moved the pgTAP spec from `supabase/tests/mt/**` to
 `paths` and tasks.md Allowed paths updated to the two co-located files. R2-F1 (accepted): the running
 stack this suite depends on is the pinned `supabase/postgres` image (ships `pgtap`) + pinned `pg_prove`
 — the one mechanism lane 1 and lane 6 share.
+### 2026-10-19T18:00Z · kiro-hotmail-202610151618-b437 · spar round-1 (session 496d49e4) → PGHOST guard, glob wording
+R1-F2 (accepted): `SQL-TENANT-FOUNDATION.yml` uses a per-file `paths:` list, so the glob is now modelled on
+`SQL-HEALTH-STORE.yml`/`SQL-MEMORY-SENSITIVITY.yml`. R1-F3 (accepted): the runner copies the PGHOST
+production guard from `run-tenant-foundation-test.sh:18-20`. `paths` unchanged.

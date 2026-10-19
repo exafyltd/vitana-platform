@@ -11,7 +11,7 @@ paths:
   - supabase/tests/local-stack/**
   - scripts/mt/stack/**
   - docs/multitenancy/LOCAL-STACK.md
-updated: 2026-10-18T18:40Z
+updated: 2026-10-19T18:00Z
 ---
 # D11 local Supabase stack + fixtures — mt-guardrails/local-test-stack (repo vitana-platform)
 Plan: `.kiro/specs/mt-guardrails/plan.md` (authoritative) and the `local-test-stack` section of
@@ -20,7 +20,10 @@ Plan: `.kiro/specs/mt-guardrails/plan.md` (authoritative) and the `local-test-st
 lane's VTID after the plan converges. Do not start before then.
 Rules for the executor (collaboration §7a): no VTID allocation, no `_plan` claim, no edit of
 `handoff.md`, no merge/approve/deploy/workflow dispatch, no Supabase or AWS writes against any live
-system. The schema snapshot comes from a `--schema-only` dump (structure only, never data); fixtures are
+system. The schema snapshot comes from a `pg_dump --schema=public --schema-only` dump (structure only, never
+data; the regenerate script refuses any other schema — `auth`/`storage`/`realtime` are pre-installed by
+`supabase/postgres` and never re-created); fixtures INSERT into the existing `auth.users`, never
+`CREATE` it (do not copy `vtid-05149-tenant-foundation.test.sql:13`, written for `postgres:16`); fixtures are
 synthetic (D11/D13). This lane brings up Postgres from the **`supabase/postgres` image pinned by exact
 tag** (it ships the `pgtap` extension; stock `postgres:16` does not) and installs **`pg_prove` from a
 pinned `libtap-parser-sourcehandler-pgtap-perl` apt version** on the host — the one install mechanism
@@ -49,3 +52,7 @@ verbatim — the `supabase/postgres` image pinned by exact tag (ships `pgtap`; s
 not) for the server, and `pg_prove` from a pinned `libtap-parser-sourcehandler-pgtap-perl` apt version
 on the host — so the "same versions across local and CI" determinism guarantee is now verifiable. T4
 updated accordingly; `paths` unchanged.
+### 2026-10-19T18:00Z · kiro-hotmail-202610151618-b437 · spar round-1 (session 496d49e4) → public-only dump
+R1-F1 (accepted): the dump is scoped to `--schema=public` and enforced by the regenerate script; fixtures
+INSERT into the image's pre-installed `auth.users`; the smoke test asserts `auth.users` pre-exists. T1/T2/T5
+updated; `paths` unchanged.

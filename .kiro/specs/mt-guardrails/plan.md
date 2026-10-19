@@ -27,8 +27,7 @@ guardrails that must exist before any isolation work. Verified against platform 
    for exactly these assertions — `docs/MULTI-TENANT-PLAN.md` §4.2 (`:51`, 18 tables + health tables)
    and §4.9 (`:61`, ab_dual), parent plan-body hash
    `869182cc6aef344b107c6a8915fe2271bbd1bc982febb198f09027e7eb451326` (`:1`). So the suite **uses
-   pgTAP/`pg_prove`**, introduced for the first time here — path (a); the parent already assumed WS0
-   would introduce it, so no new framework decision and no parent amendment (R1-F2). The repo has
+   pgTAP/`pg_prove`**, first introduced here — no parent amendment (R1-F2). The repo has
    **two** SQL-test harnesses: the self-contained `scripts/ci/test-vtid-05147-s-m-lockdown.sh:18`
    (own `initdb`/`pg_ctl` cluster) and the external-psql `scripts/ci/sql-tests/` runners. The closest
    analogue — the VTID-05149 tenant-foundation tests (same `ci_tenant_isolation_health()` RPC and
@@ -68,7 +67,13 @@ it ships.
    identically here and in lane 6:** Postgres from the **`supabase/postgres` image pinned by exact
    tag** (ships `pgtap`; stock `postgres:16` does not) + **`pg_prove` from a pinned
    `libtap-parser-sourcehandler-pgtap-perl` apt version** on the host. pgTAP's first repo introduction,
-   mandated by parent §4.2/§4.9 (R1-F2). No production access of any kind.
+   mandated by parent §4.2/§4.9 (R1-F2). No production access of any kind. **Schema scope (496d R1-F1):**
+   the dump is `pg_dump --schema=public --schema-only`, enforced by the regenerate script (it refuses
+   any other `--schema`); `auth`/`storage`/`realtime` are pre-installed by `supabase/postgres` and are
+   never re-created in the dump or fixtures. The fixture INSERTs rows into the existing `auth.users`
+   — it never `CREATE`s it (unlike `vtid-05149-tenant-foundation.test.sql:13`, which runs on
+   `postgres:16` and must NOT be copied for this). The smoke test asserts `to_regclass('auth.users')`
+   is non-null on the stack before the dump/fixtures load.
 2. **`generated-inventories`** (kiro, seat hotmail, repo platform) — generators that read the local
    schema (never production) and emit checked-in inventories of tables, functions, routes, edge
    functions, realtime tables and storage buckets, plus the DB lints (nullable `tenant_id`, missing
@@ -86,15 +91,17 @@ it ships.
 3. **`isolation-suite`** (kiro, seat hotmail, repo platform) — **pgTAP** specs in
    `scripts/ci/sql-tests/mt-isolation.test.sql`, next to the runner
    `scripts/ci/sql-tests/run-mt-isolation-test.sh` — both in `scripts/ci/sql-tests/`, as VTID-05149
-   places its `.test.sql` beside its runner, so `SQL-MT-ISOLATION.yml`'s `paths:` stays on
-   `scripts/ci/sql-tests/**` like every `SQL-*.yml` (R2-F3). The runner invokes `pg_prove` over
+   places its `.test.sql` beside its runner, so `SQL-MT-ISOLATION.yml`'s `paths:` uses the
+   `scripts/ci/sql-tests/**` glob like `SQL-HEALTH-STORE.yml:13` and `SQL-MEMORY-SENSITIVITY.yml:10`
+   — NOT the per-file list of `SQL-TENANT-FOUNDATION.yml:13` (496d R1-F2). The runner invokes `pg_prove` over
    **external `psql`** against lane 1's running stack, **NOT** `initdb`/`pg_ctl` — lane 1 provides the
-   Postgres and `pgtap`/`pg_prove`. Asserts b_member sees 0 T_A rows and a
+   Postgres and `pgtap`/`pg_prove`. **Production guard (496d R1-F3):** the runner starts with the PGHOST
+   guard copied from `run-tenant-foundation-test.sh:18-20` (`*supabase*|*amazonaws*|*rds*` → exit 2).
+   Asserts b_member sees 0 T_A rows and a
    T_A-tenant write by b_member fails, per the 18 tenant tables and the health tables (via the shared
    health-table-list constant from `generated-inventories`, switching to mt-identity's `isHealthTable()`
    when it ships — never a scattered local copy); plus the ab_dual read/write single-series health
-   assertion (§4.9). pgTAP is required by the hash-stamped parent §4.2/§4.9 and is first introduced
-   here, so there is no competing-framework decision and no parent amendment (R1-F2). Depends on
+   assertion (§4.9). pgTAP: parent §4.2/§4.9 mandate (R1-F2). Depends on
    `local-test-stack` (running stack + `pgtap`/`pg_prove`) and `generated-inventories`.
 4. **`gateway-scope-lint-contract`** (kiro, seat jtadic, repo platform) — a static lint over
    `services/gateway/src` repositories banning header/query-supplied tenant outside admin routes; a
@@ -110,37 +117,36 @@ it ships.
    (CROSS-SPEC O3). Independent of the other kiro lanes.
 6. **`ci-wiring`** (claude, governance) — wires lanes 2–5 and the MIGRATION-QUEUE validator into CI
    (`.github/workflows/**`, `scripts/ci/**`) as standalone `SQL-*.yml`/check workflows modelled on
-   `SQL-TENANT-FOUNDATION.yml`, not PR-GATE steps. **Report-only path (R2-F2, path B):** each new
+   `SQL-TENANT-FOUNDATION.yml` (except `paths:`, below), not PR-GATE steps. **Report-only path (R2-F2, path B):** each new
    workflow reads a committed `scripts/ci/mt/config.json` `report_only` flag (default `true`) and,
    while true, warns-and-exits-0 even on failure; the flip target is a later governance PR setting
-   `report_only=false`. PR-GATE's own `config.json` `enforce` gates only the Verdict `OUTCOMES` checks,
-   so it cannot gate these standalone workflows — hence their own flag. The isolation workflow uses
+   `report_only=false` (PR-GATE's `enforce` gates only Verdict `OUTCOMES`). The isolation workflow uses
    lane 1's **identical install mechanism** (pinned `supabase/postgres` image + pinned `pg_prove` apt
-   version, R2-F1), then runs `scripts/ci/sql-tests/run-mt-isolation-test.sh`. Adds the MIGRATION-QUEUE
+   version, R2-F1), then runs `scripts/ci/sql-tests/run-mt-isolation-test.sh`; its `paths:` copies the
+   glob form of `SQL-HEALTH-STORE.yml` (not `SQL-TENANT-FOUNDATION.yml`'s file list) and its PGHOST
+   is only the service container, never a live endpoint (496d R1-F2/F3). Adds the MIGRATION-QUEUE
    check (file shape, apply order, one row per migration file) replacing the review rule, and folds the
    one-line fix aligning `MORNING-SYSTEM-HEALTH-CHECK.yml` row 21b's `SUPABASE_URL` to
    `vars.DATA_REST_URL || secrets.SUPABASE_URL` (rows 5–12/21). Governance → `executor`/`next_actor:
    claude`. Depends on lanes 2–5.
 ## Migrations
 None. `ci_tenant_isolation_health()` already exists (VTID-05149, `20261014000300`, applied). The
-bare-policy lint and inventories read the schema read-only; the isolation suite runs on the pinned
-`supabase/postgres` image (which ships `pgtap`), not a production migration. Reserved range if a WS0 slice later needs one:
+bare-policy lint and inventories read the schema read-only; the isolation suite needs no migration. Reserved range if a WS0 slice later needs one:
 `20261101020000`–`20261101025959` (NN=02); none used in this spec.
 MIGRATION-QUEUE position: none (adds no migration).
 ## Tests
 - `local-test-stack`: a smoke script brings the pinned `supabase/postgres` stack up, installs the
-  pinned `pg_prove`, and asserts the fixtures load and `pgtap` is present; no live calls.
+  pinned `pg_prove`, and asserts the fixtures load, `pgtap` is present and `auth.users` pre-exists
+  (fixtures INSERT, never CREATE, 496d R1-F1); no live calls.
 - `generated-inventories`: unit tests on each generator over a tiny fixture schema; the committed
   inventories regenerate byte-identically (drift test).
-- `isolation-suite`: `scripts/ci/sql-tests/run-mt-isolation-test.sh` runs `pg_prove` green against
-  lane 1's local stack (external `psql`, same harness location as
-  `scripts/ci/sql-tests/run-tenant-foundation-test.sh`).
+- `isolation-suite`: `run-mt-isolation-test.sh` runs `pg_prove` green against lane 1's stack
+  (external `psql`); with `PGHOST=x.supabase.co` it exits 2 before connecting (496d R1-F3).
 - `gateway-scope-lint-contract`: Jest — lint flags a header/query-tenant repository, passes a clean
   one; route-inventory test; contract tests over fixtures (no `CANARY_A` leak).
 - `maxina-golden-suite`: Jest byte-equality; required suites `npm run test:support` (rule 42c),
-  `npm run test:operator` (rule 42e), `npm run test:roles` (rule 42h) stay green — all three are
-  verified present in `services/gateway/package.json` ("test:support"/"test:operator"/"test:roles"
-  scripts), so the dependency is real, not assumed.
+  `npm run test:operator` (rule 42e), `npm run test:roles` (rule 42h) stay green (all three exist in
+  `services/gateway/package.json`).
 - `ci-wiring`: `node --test` self-tests for the new scripts; a test asserts each new `SQL-*.yml` honours
   the `scripts/ci/mt/config.json` `report_only` flag (warn-and-exit-0 while true).
 ## Staging verification
@@ -164,8 +170,7 @@ step. No Gate 2 (deploys nothing).
   `pgtap`) + fixed `pg_prove` apt version — no stock `postgres:16`, no unpinned install (R2-F1).
 - Golden byte-equality is brittle to intended copy changes; the suite documents the regenerate step and
   mt-packs P4's O3 fixture update is a declared, reviewed golden change.
-- Cross-repo temptation: the What's New drafter golden is kept in the gateway golden lane (same repo as
-  the drafter prompt) to avoid a cross-repo lane (CROSS-SPEC lane rule).
+- The What's New drafter golden stays in the gateway lane (same repo as its prompt): no cross-repo lane.
 ## Out of scope
 Policy classification and the resolver cutover (WS1, N3 — this spec only *counts* bare policies);
 membership unification; the access-token hook (D14, owner-only); WS2 data cleanup; any migration that

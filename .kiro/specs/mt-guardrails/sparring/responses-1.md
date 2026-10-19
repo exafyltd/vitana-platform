@@ -1,23 +1,24 @@
-# Sparring responses — round 1
+# Responses — round 1 (session 496d49e4)
+
 ```json
 [
   {
     "finding_id": "R1-F1",
     "disposition": "accepted",
-    "rationale": "Correct, and verified against code. There are TWO SQL-test harnesses, not one. (a) scripts/ci/test-vtid-05147-s-m-lockdown.sh:18 is fully self-contained: it runs its own cluster from a mktemp dir via initdb/pg_ctl and depends on no external stack. (b) scripts/ci/sql-tests/ is the external-psql harness — PSQL=(psql -X -q -v ON_ERROR_STOP=1) against a pre-existing/disposable server with createdb/dropdb per case; the VTID-05149 tenant-foundation tests, the closest analogue to this isolation suite (same ci_tenant_isolation_health() RPC and tenant fixtures), live there: scripts/ci/sql-tests/vtid-05149-tenant-foundation.test.sql + scripts/ci/sql-tests/run-tenant-foundation-test.sh:1. The plan's 'one SQL-test harness across the repo' claim and its initdb/pg_ctl-vs-local-stack self-contradiction are both removed. Decision: the isolation suite CONNECTS to lane 1's running local stack over external psql (consistent with scripts/ci/sql-tests/ and with lane 1 providing a running Postgres) and uses pg_prove/pgTAP over that connection — NO initdb/pg_ctl in this lane. Specs live under supabase/tests/mt/** and the runner under scripts/ci/sql-tests/run-mt-isolation-test.sh, alongside run-tenant-foundation-test.sh, extending that harness location rather than inventing a third. The lane is made internally consistent: it depends on lane 1's running stack and uses pg_prove over external psql.",
-    "deferred_to": ""
+    "rationale": "Verified: scripts/ci/sql-tests/vtid-05149-tenant-foundation.test.sql:13 does CREATE SCHEMA IF NOT EXISTS auth; CREATE TABLE auth.users because SQL-TENANT-FOUNDATION.yml:33 runs on postgres:16, while this suite runs on supabase/postgres where auth is pre-installed. Plan lane 1 now states: dump is pg_dump --schema=public --schema-only, enforced by the regenerate script (refuses any other schema); auth/storage/realtime are never re-created; fixtures INSERT into the existing auth.users, never CREATE it, and the 05149 fixture must not be copied for this. The smoke test asserts to_regclass('auth.users') is non-null before the dump/fixtures load (an existence assertion, equivalent to the suggested 'CREATE fails' check without a DDL side effect). tasks.md T1/T2/T5 and lanes/local-test-stack.md updated; paths unchanged.",
+    "deferred_to": null
   },
   {
     "finding_id": "R1-F2",
     "disposition": "accepted",
-    "rationale": "Correct, and it reverses the prior round's raw-psql choice. The hash-stamped parent program plan explicitly MANDATES pgTAP for exactly these isolation assertions: docs/MULTI-TENANT-PLAN.md:51 (§4.2 Ordering gate N3) 'pgTAP asserts a_member cannot read a_admin's user-private rows on every one of the 18 tables (and the health tables)', and docs/MULTI-TENANT-PLAN.md:61 (§4.9 Health data & tenancy) 'pgTAP + contract test: ab_dual ... pgTAP for ab_dual.' The parent carries plan-body hash 869182cc6aef344b107c6a8915fe2271bbd1bc982febb198f09027e7eb451326 (docs/MULTI-TENANT-PLAN.md:1). A sub-plan cannot say 'deliberately NOT pgTAP' for these exact tests without formally amending that hash-locked parent. We take resolution path (a), NOT (b): pgTAP is REINSTATED. Lane 1 (local-test-stack) installs the pgtap extension + pg_prove; the isolation suite (lane 3) uses pgTAP/pg_prove as the parent requires; ci-wiring installs pg_prove/pgtap in the job. The plan notes explicitly that this spec is the FIRST introduction of pgTAP into the repo — which the parent §4.2/§4.9 already assumed WS0 would do — so it is not a new framework decision and needs no parent amendment; MULTI-TENANT-PLAN.md is left unchanged. The sub-plan's old rationale ('pgtap/pg_prove exists nowhere in the repo') is consistent with path (a): WS0 introduces it.",
-    "deferred_to": ""
+    "rationale": "Verified: SQL-TENANT-FOUNDATION.yml:13 lists specific files, while SQL-HEALTH-STORE.yml:13 and SQL-MEMORY-SENSITIVITY.yml:10 use scripts/ci/sql-tests/**. Plan lane 3 and lane 6 now say SQL-MT-ISOLATION.yml's paths: uses the glob like SQL-HEALTH-STORE.yml/SQL-MEMORY-SENSITIVITY.yml, not SQL-TENANT-FOUNDATION.yml's file list (which stays the model for everything except paths:). tasks.md P1/C1/C3 and lanes/isolation-suite.md updated.",
+    "deferred_to": null
   },
   {
     "finding_id": "R1-F3",
     "disposition": "accepted",
-    "rationale": "Correct. scripts/ci/aurora-migration-inventory.cjs (VTID-03494) exists and is a static inventory generator: it scans TypeScript/JavaScript source and emits inventories of tables (.from()), RPCs (.rpc()), auth calls, realtime channels (.channel()) and storage buckets (.storage.from()) — the same categories lane 2 generates. It reads source code, not DB schema, so it does NOT satisfy WS0's DB-lint/DB-reading need, but the lane-2 implementer should know it exists to reuse its output-format conventions and avoid reinvention. The plan's premise is narrowed from 'scripts/ci/ has check-migration-drift.cjs and VTID-specific checks only; no inventory/lint generator' to 'no DB-schema-reading inventory/lint generator', and the generated-inventories lane now points implementers to scripts/ci/aurora-migration-inventory.cjs as a reference for format and the table/RPC/realtime/storage inventory categories it already establishes.",
-    "deferred_to": ""
+    "rationale": "Verified: scripts/ci/sql-tests/run-tenant-foundation-test.sh:18-20 refuses PGHOST matching *supabase*|*amazonaws*|*rds* with exit 2. Plan lane 3 now requires run-mt-isolation-test.sh to start with that guard verbatim, the Tests section adds a case asserting PGHOST=x.supabase.co exits 2 before connecting, and lane 6 states SQL-MT-ISOLATION.yml's PGHOST is only the service container, never a live endpoint. tasks.md P3/C3 and lanes/isolation-suite.md updated.",
+    "deferred_to": null
   }
 ]
 ```
