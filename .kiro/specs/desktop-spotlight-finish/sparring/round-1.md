@@ -1,58 +1,45 @@
 # Sparring round 1 — in_progress
 
-Session: `0291f464-87b6-4fdc-a464-8150ed38b087` · plan hash `16a15d0424ba52590cd354da4d6a61e6c5da9592b00babe65132ee87f820919a`
+Session: `5fbb73a2-eba8-4ea2-8f51-05767b2a7bd2` · plan hash `2f479af2f0878f55f1ebf4870c9558aad162c05c4965ecd71d7c76e646bdbd9a`
 
 ## Summary
 
-The plan's factual premises about CI tooling and repository structure cannot be verified against the pinned commit. Three key issues: (1) the `ratchet-design` gate subcommand the test plan depends on does not exist in `gate.mjs`; (2) the `baseline/design.json` file the plan references does not exist and cannot be created by the current baseline tooling; (3) the `.kiro/specs/desktop-spotlight/` spec directory, `src/design/screen-manifest.json`, `docs/design-system/SPOTLIGHT_RULES.md`, and all `src/components`/`src/pages` paths referenced in the plan do not exist in vitana-platform at the pinned commit — they presumably live in vitana-v1, which is not pinned for verification. The PR-GATE is also currently report-only (`enforce: false`), so ratchet checks would not actually block merges.
+The plan is structurally well-designed for a large design-system cleanup, but it contains a blocker-class governance gap and a major enforcement gap, both centred on the same root cause: `plan-spar.mjs` does not pass `extra_refs` to the gateway, so vitana-v1 is inaccessible in every sparring session this workflow creates. The plan acknowledges this and proposes a future governance lane (`native-g1-wiring/spar-vitana-v1-ref`) as the fix, but that lane has no spec, no code, and no SHA-sourcing mechanism anywhere in the repo. Until that chain is fully implemented and merged, the plan's own gating guarantee ("no lane moves approved → executing until a vitana-v1-ref session has sparred it") cannot be honoured, and every one of the ~20 specific vitana-v1 premises embedded in the plan remains unverifiable. A second, independent major finding is that even if a vitana-v1 session eventually ran, there is no code hook that would block VTID allocation or lane approval from proceeding without it.
 
 ## Findings
 
 ### R1-F1 [blocker]
 
-The test plan references `gate.mjs ratchet-design` as the CI ratchet check, but no such subcommand exists in gate.mjs. The available subcommands are: scope, sparring, weakening, ratchet-tsc, ratchet-eslint, red-green, migrations, baseline-tsc, baseline-eslint. The plan's per-lane done criterion ('gate.mjs ratchet-design vs base') cannot execute.
+`plan-spar.mjs` does not send `extra_refs` for vitana-v1, and the entire chain needed to ever do so is unimplemented. The gateway API does accept `extra_refs` (plan-sparring-service.ts:92, `extra_refs?: Record<string, string>`) and vitana-v1 is in the allowed-repos enum (github-tools.ts:21, `PLAN_SPARRING_REPOS = ['exafyltd/vitana-platform', 'exafyltd/vitana-v1']`). But plan-spar.mjs line 192-194 passes only `{ plan_text, producer, change_class, base_ref, repo, approval_policy }` — no `extra_refs`. The gateway therefore builds `refs = { 'exafyltd/vitana-platform': baseSha }` (plan-sparring-service.ts:266) and the partner gets the 'no pinned ref for exafyltd/vitana-v1' error seen in this session. Three further pieces of the chain are also absent: (1) the `native-g1-wiring/spar-vitana-v1-ref` governance lane that the plan says will add the feature has no entry in `.kiro/specs` and zero code-search hits; (2) `PLAN-SPAR.yml` line 81 hard-codes `--repo "${{ github.repository }}"` and passes only `--base-sha "$BASE_SHA"` (the vitana-platform base SHA) — it has no mechanism to source or forward a vitana-v1 commit SHA; (3) plan-spar.mjs has no argument or logic to accept a secondary repo SHA. The plan asserts this chain will be built before any lane executes, but provides no specification for how PLAN-SPAR.yml obtains the vitana-v1 SHA or how plan-spar.mjs exposes it to the gateway. Because all code premises in this plan are in vitana-v1 and none can be read, the sparring session cannot discharge its governance obligation regardless of how many rounds it runs.
 
-- `exafyltd/vitana-platform:scripts/ci/pr-gate/gate.mjs:50` — const checks = { scope() {...}, sparring() {...}, weakening() {...}, 'ratchet-tsc'() {...}, 'ratchet-eslint'() {...}, 'baseline-tsc'() {...}, 'baseline-eslint'() {...}, 'red-green'() {...},
-- `exafyltd/vitana-platform:scripts/ci/pr-gate/gate.mjs:192` — if (!checks[check]) {
-    console.error(`unknown check "${check}". Known: ${Object.keys(checks).join(', ')}`);
-    process.exit(2);
+- `exafyltd/vitana-platform:scripts/collab/plan-spar.mjs:192` — session = await client.create({ plan_text: planText, producer: `ci-plan-spar.${slug}`, change_class: changeClass, base_ref: baseSha, repo, approval_policy: POLICY, });
+- `exafyltd/vitana-platform:services/gateway/src/services/plan-sparring/plan-sparring-service.ts:86` — export interface CreateInput { ... extra_refs?: Record<string, string>; ...
+- `exafyltd/vitana-platform:services/gateway/src/services/plan-sparring/plan-sparring-service.ts:266` — const refs: Record<string, string> = { ...(input.extra_refs ?? {}), [input.repo as string]: input.base_ref };
+- `exafyltd/vitana-platform:services/gateway/src/services/plan-sparring/github-tools.ts:21` — export const PLAN_SPARRING_REPOS = ['exafyltd/vitana-platform', 'exafyltd/vitana-v1'] as const;
+- `exafyltd/vitana-platform:.github/workflows/PLAN-SPAR.yml:79` — node base/scripts/collab/plan-spar.mjs --dir head --base-sha "$BASE_SHA" --repo "${{ github.repository }}" --changed ...
+- `exafyltd/vitana-platform:.kiro/specs` — directory listing shows: claude-sessions-handover, health-native, life-timeline, multi-tenant, new-member-welcome, pm-agent, profile-vitana-cards — no native-g1-wiring entry
 
-Suggestion: Clarify whether the plan intends to (a) add a new `ratchet-design` subcommand to gate.mjs (which would be new CI scope and should be declared), or (b) use the existing `ratchet-eslint` command with a filtered ESLint output containing only `design/*` rules. Either way, the plan must specify the actual command and any required changes to gate.mjs.
+Suggestion: The plan must either (a) fully specify the `native-g1-wiring/spar-vitana-v1-ref` governance lane — what changes to plan-spar.mjs (`--extra-refs` flag or plan-text parsing), what changes to PLAN-SPAR.yml (how to source the vitana-v1 SHA, e.g. a repository variable or a fetch step), and its own sparring/approval path — and make that lane a prerequisite for this plan's approval; or (b) move the spec and its code into vitana-v1, where PLAN-SPAR would run natively and `--repo exafyltd/vitana-v1` would pin the correct repo without any extra_refs plumbing.
 
-### R1-F2 [blocker]
+### R1-F2 [major]
 
-The plan references `scripts/ci/pr-gate/baseline/design.json` as the ratchet baseline file (stating it carries 3,705 errors), but the `baseline` directory does not exist at the pinned commit. The gate.mjs baseline mechanism only creates `tsc.json` and `eslint.json` via `writeBaseline()`, never `design.json`. The plan's error-count target and ratchet mechanism have no functioning anchor.
+The plan's sole guard against premature execution — 'no lane of this spec moves `approved → executing` until a session with the vitana-v1 ref has sparred it' — is a prose rule with no code enforcement. `plan-spar.mjs` writes `state: approved, next_actor: kiro` (ALLOCATE=true) or `state: sparred, next_actor: claude` (ALLOCATE=false) on convergence without any check that a vitana-v1-ref session has been completed. With the current ALLOCATE=false posture, Claude Code is handed `next_actor` and expected to follow the prose instruction before allocating VTIDs. Nothing in plan-spar.mjs, PLAN-SPAR.yml, or queue.mjs checks for a companion session record before writing lane approvals. The plan-spar.test.mjs confirms the converged path writes `state: approved, next_actor: kiro` and allocates VTIDs immediately (lines 112-115) without any secondary-session gate.
 
-- `exafyltd/vitana-platform:scripts/ci/pr-gate/gate.mjs:185` — function writeBaseline(kind, counts) {
-    mkdirSync(BASELINE_DIR, { recursive: true });
-    const sorted = Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)));
-    writeFileSync(join(BASELINE_DIR, `${kind}.json`), ...);
-- `exafyltd/vitana-platform:scripts/ci/pr-gate/gate.mjs:25` — const BASELINE_DIR = 'scripts/ci/pr-gate/baseline';
+- `exafyltd/vitana-platform:scripts/collab/plan-spar.mjs:228` — if (session.verdict === 'converged' && session.policy_approved_at) { ... write(handoffPath, ... state: approved ? 'approved' : 'sparred', next_actor: approved ? 'kiro' : 'claude' ...)
+- `exafyltd/vitana-platform:scripts/collab/plan-spar.test.mjs:112` — assert.equal(h.state, 'approved'); assert.equal(h.next_actor, 'kiro'); assert.deepEqual(h.vtids, ['VTID-09001', 'VTID-09002']);
+- `exafyltd/vitana-platform:.github/workflows/PLAN-SPAR.yml:40` — if: vars.PLAN_SPAR_ENABLED == 'true' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.title, 'plan(')
 
-Suggestion: Either the plan must create the baseline directory and `design.json` as a prerequisite step (and add the `ratchet-design` subcommand), or specify how the existing `eslint.json` baseline accommodates design-rule-specific ratcheting. This prerequisite must be explicit in the plan.
+Suggestion: Either (a) add a machine-readable marker to the plan's state.json (e.g., `vitana_v1_session_id`) that plan-spar.mjs checks before writing `approved` or allocating VTIDs, so the gate is code-enforced rather than prose-enforced; or (b) accept this as a process control and explicitly document in `handoff.md` the mandatory checklist Claude must satisfy before calling `vtid/allocate` — including quoting the vitana-v1 session ID and its convergence verdict.
 
 ### R1-F3 [major]
 
-The PR-GATE is currently in report-only mode (`enforce: false` in config.json). The plan relies on 'PR-GATE design ratchet' as a per-lane done criterion and a merge-blocking quality gate, but in report-only mode these checks will not actually block any PR merge. A lane could regress the baseline and still merge.
+The lane done criterion 'PR-GATE summary shows ✅ design ratchet and `design`, `eslint`, `tsc`, `scope` and `build` are absent from any would-fail line' depends on vitana-v1's PR-GATE.yml having a named 'Design ratchet' step at lines 150-153 and a Verdict step at lines 181-190. Vitana-platform's PR-GATE.yml is 145 lines total and has no design-ratchet step at all (confirmed by reading the full file); its Verdict step is at lines 104-122. The plan explicitly states these line references are for vitana-v1's PR-GATE.yml. Because vitana-v1 cannot be read in this session (consequence of R1-F1), it is impossible to verify whether the step name, its `continue-on-error` flag, and its inclusion in the Verdict OUTCOMES string are correctly described. If the step does not exist or is named differently in vitana-v1, every reviewer checking for '✅ design ratchet' in the PR-GATE summary will be looking for a signal that never appears, silently passing lanes that failed the design check.
 
-- `exafyltd/vitana-platform:scripts/ci/pr-gate/config.json:1` — {
-  "enforce": false,
-  "note": "VTID-04950: PR-GATE starts report-only (plan rollout: 3 days on real PRs). Set enforce=true by PR to block on failures; set it back to false as the owner's kill switch.",
-  "report_only_since": "2026-10-07",
+- `exafyltd/vitana-platform:.github/workflows/PR-GATE.yml:1` — Full file is 145 lines; steps are: Gate self-test, Live PR title, Kiro steering, Collab handoff, Scope guard, Sparring record, Test-weakening guard, Gateway deps, Red→green proof, Verdict (lines 104-122). No 'Design ratchet' step exists.
+- `exafyltd/vitana-platform:.github/workflows/PR-GATE.yml:104` — - name: Verdict ... OUTCOMES: scope=... kiro-steering=... sparring=... weakening=... red-green=...
+- `exafyltd/vitana-platform:scripts/ci/pr-gate/gate.mjs:50` — const checks = { scope(), sparring(), weakening(), 'ratchet-tsc'(), 'ratchet-eslint'(), 'baseline-tsc'(), 'baseline-eslint'(), 'red-green'(), async migrations() ... } — no ratchet-design or baseline-design command
 
-Suggestion: The plan should declare a dependency on `enforce: true` being set (at least for the ratchet checks) before any lane merges, or explain how ratchet regression is prevented when the gate is report-only.
-
-### R1-F4 [blocker]
-
-The plan's spec directory `.kiro/specs/desktop-spotlight/` (containing lane definitions, tasks.md, etc.) does not exist in vitana-platform at the pinned commit. The `.kiro/specs/` directory contains only: claude-sessions-handover, health-native, life-timeline, multi-tenant, new-member-welcome, pm-agent, profile-vitana-cards. Similarly, `src/design/screen-manifest.json`, `docs/design-system/SPOTLIGHT_RULES.md`, `src/components/layout/spotlight/skeletons/`, and all `src/pages`/`src/components` paths referenced in the plan do not exist in this repository. The plan appears to target vitana-v1 (the frontend app), but is pinned to vitana-platform (the backend/infrastructure repo), making it impossible to verify any premise about the codebase being changed.
-
-- `exafyltd/vitana-platform:scripts/ci/pr-gate/config.json:5` — "red_green": {
-    "test_pattern": "^services/gateway/test/.*\\.test\\.ts$",
-    "cwd": "services/gateway",
-    "cmd": ["npx", "jest"]
-  }
-
-Suggestion: The plan must be pinned to the correct repository (likely vitana-v1) where the frontend code, screen manifest, ESLint design rules, and Kiro specs actually live. Without this, no premise about the existing codebase can be verified. If the work spans both repos, both must be pinned and the cross-repo dependency made explicit.
+Suggestion: Before this plan can converge, a vitana-v1-ref session (once R1-F1 is resolved) must read vitana-v1's `.github/workflows/PR-GATE.yml` and confirm: (a) a step named exactly 'Design ratchet' exists at or near line 150; (b) it runs `gate.mjs ratchet-design`; (c) it appears in the Verdict OUTCOMES string so its failure is captured in the 'would fail' line. Until confirmed, the done criterion for every lane is unverifiable.
 
 ## Next
 

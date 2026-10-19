@@ -1,16 +1,14 @@
 {
   "sessions": [
     {
-      "id": "0291f464-87b6-4fdc-a464-8150ed38b087",
-      "submitted": [
-        1
-      ],
+      "id": "5fbb73a2-eba8-4ea2-8f51-05767b2a7bd2",
+      "submitted": [],
       "plan_text_sha": "716fe513",
-      "rounds": 2,
-      "verdict": "escalated",
-      "infra": true,
-      "retryable": true,
-      "final_plan_hash": "2f479af2f0878f55f1ebf4870c9558aad162c05c4965ecd71d7c76e646bdbd9a",
+      "rounds": 1,
+      "verdict": "in_progress",
+      "infra": false,
+      "retryable": false,
+      "final_plan_hash": null,
       "policy_approved_at": null
     }
   ]
