@@ -88,20 +88,18 @@ Supabase project and every frontend (incl. preview/staging) writes to it";
 | `real-g1-switch` | kiro / exafyltd → hotmail | `apps/mobile/env/test-g1.g1.example.json`, `docs/validation/g1/**` | deep-link-push-smoke | **owner** |
 | `spar-vitana-v1-ref` | **claude** / — → claude | `vitana-platform:.github/workflows/PLAN-SPAR.yml`, `vitana-platform:scripts/collab/plan-spar.mjs` | — | **claude** |
 
-**`spar-vitana-v1-ref` (R1-F1) gates convergence.** The sparring partner cannot verify this plan's
-vitana-v1 `file:line` premises because the session is created pinned only to `vitana-platform`. This lane
-(`executor: claude`, governance paths `vitana-platform:.github/workflows/PLAN-SPAR.yml` and
-`vitana-platform:scripts/collab/plan-spar.mjs`) makes the fix in **two files, no gateway change** — the
-gateway already accepts `extra_refs` and `github-tools.ts` already allowlists `exafyltd/vitana-v1`:
-`plan-spar.mjs` sends `extra_refs: { 'exafyltd/vitana-v1': <main SHA> }`, and `PLAN-SPAR.yml` resolves that
-SHA (`gh api repos/exafyltd/vitana-v1/commits/main --jq .sha`) and passes it in. It is a durable tracked
-artefact (its own lane file, branch, PR, VTID — collaboration §1/§2), to land in one Claude Code PR with
-`plan(sparring-floor-retry)` #4186's `floor-retry-code` lane (both edit `plan-spar.mjs`). **Refs pin at
-session creation**, so the current session cannot read vitana-v1 even after the fix — a fresh session (a
-later plan-text push) is needed. **This plan's `approved→executing` transition is blocked until
-`spar-vitana-v1-ref` merges and the native plans re-spar in a new session with the vitana-v1 ref live** —
-so no implementation lane ratifies an unverifiable premise. Only Claude Code can execute it (governance
-path); the planner seat cannot.
+**`spar-vitana-v1-ref` (R1-F1) — RESOLVED, merged to main.** The sparring partner could not verify this
+plan's vitana-v1 `file:line` premises while the session was pinned only to `vitana-platform`. The fix is
+now merged and in production: `scripts/collab/plan-spar.mjs` sends
+`extra_refs: { 'exafyltd/vitana-v1': <main SHA> }` and `.github/workflows/PLAN-SPAR.yml` resolves that SHA
+(`gh api repos/exafyltd/vitana-v1/commits/main --jq .sha`) — two files, no gateway change (the gateway
+already accepted `extra_refs` and `github-tools.ts` already allowlisted `exafyltd/vitana-v1`). Because
+**refs pin at session creation**, the earlier session (`2d48c240…`, escalated at round 3) could never read
+vitana-v1; this plan-text change opens a **fresh session** that pins the vitana-v1 ref, so the partner can
+now read `apps/mobile/**` and the native `file:line` premises become partner-verifiable. The self-block is
+therefore **lifted**: `approved→executing` is no longer gated on this lane (it is merged), only on this
+fresh session converging. (Original gating language, now satisfied — the ref lane is merged, so no
+implementation lane ratifies an unverifiable premise.)
 
 Path ownership (R1-F3, R1-F4): no file is in two lanes and no in-scope file is orphaned. Paths that are
 **not** under `apps/mobile/**`, listed explicitly:

@@ -1,6 +1,6 @@
 ---
 lane: spar-vitana-v1-ref
-state: ready
+state: done
 next_actor: claude
 depends_on: []
 executor: claude
@@ -8,7 +8,7 @@ reviewer_seat: claude
 paths:
   - .github/workflows/PLAN-SPAR.yml
   - scripts/collab/plan-spar.mjs
-updated: 2026-10-18T21:30Z
+updated: 2026-10-19T00:00Z
 ---
 # Give the sparring partner a vitana-v1 ref (R1-F1)
 
@@ -68,3 +68,8 @@ Narrowed to the exact fix (owner guidance): two files only — `plan-spar.mjs` s
 Added `scripts/collab/plan-spar.mjs` to `paths`. Flagged the `plan-spar.mjs` overlap with #4186's
 `floor-retry-code` lane — both must land in one Claude Code PR. Noted that refs pin at session creation,
 so the fix needs a fresh session to take effect.
+### 2026-10-19T00:00Z · kiro-202610151913-51bd · ready → done
+Owner reports the two-file ref fix merged and published to production (PLAN-SPAR.yml resolves the
+vitana-v1 main SHA; plan-spar.mjs sends `extra_refs: { 'exafyltd/vitana-v1': <sha> }`). Marked done. The
+earlier native-g1-wiring session `2d48c240…` escalated at round 3 with refs pinned pre-fix; a fresh
+plan-text push now opens a new session that can read vitana-v1. Self-block on `approved→executing` lifted.
