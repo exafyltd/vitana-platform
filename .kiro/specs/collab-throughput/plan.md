@@ -40,6 +40,10 @@ Measured 2026-10-18 on the owner's Windows checkout and in CI:
 - Read all candidate `(ref, path)` contents with one `git cat-file --batch` process (stdin `ref:path` lines),
   replacing the per-file `git show`. Specs on `main` use the same batch.
 - Behaviour kept: newest `updated` wins across refs, `--days` default 30, the output rows and table are identical.
+- Deterministic tie-break (s2 R1-F5): `consider()` keeps its strict newest-`updated` rule. Candidates are fed in a
+  fixed order: main first, then branch refs sorted lexically. On equal `updated` the first one wins, so main
+  beats any branch and otherwise the lexically smallest ref wins, independent of git log output order. The fixture
+  includes two branches with an identical `updated` to pin the `branch` column.
 - Known difference: `--source` names the first ref that reached a commit. When several branches carry the same spec
   commit, only one is reported as its source. The `consider()` newest-`updated` rule then picks the same file
   content, but the `branch` column may name a different branch that carries it. The test pins this.
@@ -51,8 +55,13 @@ Measured 2026-10-18 on the owner's Windows checkout and in CI:
   missing ids.
 - If any list is non-empty: send nothing to the gateway and return `{ action: 'responses_invalid', problems }`.
   `step()` writes no file outside its spec directory.
+- **Missing review guard:** if `live.rounds[n-1]?.review` is absent (a partner-error round), `step()` sends nothing
+  and returns `{ action: 'responses_invalid', problems: ['no_review_to_answer: round <n> has no findings to
+  answer'] }` without indexing `.findings` (s2 R1-F3).
 - **One failure path in `main()`:** `main()` takes a new `--comment-file <path>` argument (PLAN-SPAR.yml passes
-  `$RUNNER_TEMP/plan-spar-comment.md`) and handles every failure the same way:
+  `$RUNNER_TEMP/plan-spar-comment.md`). Its whole body, including argument parsing, runs inside one `try/catch`.
+  `--comment-file` is read first, before any validation, so even a `Usage` error writes the comment file (exit 2,
+  as today; s2 R1-F2). It handles every failure the same way:
   - a returned failure action (`responses_invalid` here, `code_access_down` from C): `main()` writes the report
     to the step summary and the comment file, then returns 1;
   - a thrown error from `step()`: `main()` wraps `await step(…)` in `try/catch`. That covers `client.create` /
@@ -94,24 +103,19 @@ Measured 2026-10-18 on the owner's Windows checkout and in CI:
 Measured 2026-10-18: on account 472838866351 both Bedrock partner models returned `Too many tokens per day`,
 including the Sonnet 4.6 fallback (session model logs 798679a9…, b9c1eb9b…, d0be51a3…: primary and fallback both
 throttled). Since #4192 (VTID-05236) a DeepSeek tier sits behind Sonnet, so a pass no longer escalates at that
-point. It still spends the shared Bedrock budget first, so the budget work below still applies.
+point. It still spends the shared Bedrock budget first.
 Sonnet 4.6 took ~6.6M input tokens in the 19:16–20:16Z hour, during a batch of ~13 concurrent plan pushes.
 Service Quotas lists only per-minute token quotas for both models, so this daily limit is not a quota we can
 raise. Every gateway stage in `llm-defaults.ts` (planner, worker, validator, operator, memory, triage, vision,
 classifier) also runs on `eu.anthropic.claude-sonnet-4-6` in the same account, so sparring draws from the
 budget member-facing calls use.
-- **Concurrency cap:** an in-process semaphore in `plan-sparring-service.ts` wraps every `runPartnerPass` call
-  (create and round). At most `PLAN_SPARRING_MAX_CONCURRENT_PASSES` (default 2) passes run at once **per gateway
-  process**. It is not coordinated across ECS tasks, so with N tasks the account-wide ceiling is 2·N. Staging runs
-  one gateway task today, and a cross-task lock is out of scope. A waiting request is held open (no 429). The
-  session row is written before the wait, so `GET /:id` already shows it `in_progress` with no new round. If
-  PLAN-SPAR's HTTP call times out or the proxy drops it, the existing `waitFor` poll in `plan-spar.mjs` recovers
-  the result, as it does for a slow pass today. The pass deadline starts when the slot is acquired, so waiting
-  never counts against it.
-- **Not here:** prompt caching, per-session token budgets and per-turn quota accounting are
-  `plan(sparring-token-efficiency)` #4189 (seat hotmail). That plan keeps old tool results untrimmed so the cached
-  prefix holds, so this plan no longer clips history. The concurrency cap is the only budget item here, and it
-  composes with #4189: caching lowers the cost per pass, and the cap limits how many passes run at once.
+- **No concurrency cap (removed after sparring, s2 R1-F4).** A server-side queue would hold round requests with
+  nothing written to the store. A round queued longer than PLAN-SPAR's 25-min wait would then fail with no
+  recoverable record. Making that safe needs a durable pending-round state, which is a larger change than this plan
+  should carry. Cost per pass is handled by `plan(sparring-token-efficiency)` #4189 (prompt caching and a
+  per-session token budget, seat hotmail). Bursts of pushes are an operating rule, not code: push plans a few at a
+  time.
+- **Not here:** prompt caching, per-session token budgets and per-turn quota accounting are all #4189.
 - **A throttle is an outage:** when both models are throttled, the round escalates `model_unavailable` (already
   infra and retryable). This change only adds the cause and the next try time to the round file ("partner models
   throttled until the daily limit resets; push again after it").
@@ -162,8 +166,10 @@ not `depends_on`.
     `round 2: HTTP 400 {"error":"plan_text_too_large"}`, and a `client.create` that throws a 409. Each case writes
     the comment file containing the status and gateway error, and exits 1. A health call that fails with a network
     error does not block (`create` is still called).
-- Gateway Jest (D): a third concurrent pass waits until one of two running passes finishes, and its deadline
-  starts at acquisition; the throttle escalation's round file names the cause and says to push again later.
+- Gateway Jest (D): a throttle escalation's round file names the cause and says to push again later.
+- `plan-spar.test.mjs` (s2): a prior round without a review gives `responses_invalid` with `no_review_to_answer`; a
+  missing `--dir` still writes the comment file and exits 2; two branches with identical `updated` resolve to the
+  lexically smaller ref.
 - Gateway Jest: the health route answers 401 without auth, `ok: true` when both reads return 200, `ok: false` with a
   per-repo status when one fails, and `token_configured: false` when the token is unset. `npx tsc --noEmit`.
 - After merge and the staging deploy: `GET https://preview-aws-gateway.vitanaland.com/api/v1/plans/spar/health`

@@ -12,6 +12,5 @@
 
 Acceptance: requirements 1–5 hold, and all listed suites are green.
 
-- [ ] T5 (D) Partner-pass concurrency cap (`PLAN_SPARRING_MAX_CONCURRENT_PASSES`, default 2, in-process semaphore,
-      deadline starts at acquisition); the throttle escalation names its cause and when to retry. Jest for each.
-      Caching, budgets and token accounting are in #4189, not here.
+- [ ] T5 (D) The throttle escalation's round file names its cause and when to retry (Jest). There is no concurrency
+      cap (removed in sparring). Caching, budgets and token accounting are in #4189.
