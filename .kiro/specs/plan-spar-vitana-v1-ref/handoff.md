@@ -4,8 +4,9 @@ author: kiro
 author_seat: exafy
 executor: kiro
 next_actor: claude
-state: drafted
-updated: 2026-10-15T22:03Z
+state: sparred
+updated: 2026-10-19T23:07Z
+sparring_record: .kiro/specs/plan-spar-vitana-v1-ref/sparring/verdict.md
 ---
 # Handoff — plan-spar-vitana-v1-ref
 
@@ -45,3 +46,6 @@ validator/merge at `plan-sparring-service.ts:108–117`/`:266`, and the already-
 `--extra-ref-vitana-v1` arg on `main` (this plan generalizes it). No VTID allocated by this session —
 VTIDs come only from PLAN-SPAR convergence → policy approval. Pushed as the plan( PR for PLAN-SPAR to
 spar. Next: PLAN-SPAR round 1.
+
+### 2026-10-19T23:07Z · ci-plan-spar · drafted → sparred
+Converged; approved by policy converged-auto-v1. VTID allocation is off — next_actor claude allocates.
