@@ -41,3 +41,7 @@ Converged in round 2; policy-approved (converged-auto-v1), VTID-05237 (gateway-s
 (frontend-still-needed). The converging round's one minor finding, R2-F1, is resolved with the partner's option (a)
 and recorded as an acceptance note on T2 in `tasks.md`, without editing the approved plan block. Next: seat `exafy`
 builds `gateway-step-owner`; seat `exafyltd` builds `frontend-still-needed` after it is on staging.
+
+### 2026-10-19T13:38Z · kiro-jtadic-202610191323-d24a · correction
+The entry above swapped the VTIDs. Per the lane files: `gateway-step-owner` is **VTID-05238**,
+`frontend-still-needed` is **VTID-05237**.
