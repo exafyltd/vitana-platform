@@ -1,14 +1,16 @@
 ---
 lane: spar-vitana-v1-ref
-state: ready
-next_actor: claude
+state: done
+next_actor: kiro
 depends_on: []
 executor: claude
 reviewer_seat: claude
+pr: https://github.com/exafyltd/vitana-platform/pull/4201
+updated: 2026-10-19T20:15Z
 paths:
   - .github/workflows/PLAN-SPAR.yml
   - scripts/collab/plan-spar.mjs
-updated: 2026-10-19T01:30Z
+  - scripts/collab/plan-spar.test.mjs
 ---
 # Give the sparring partner a vitana-v1 ref (R1-F1)
 
@@ -80,3 +82,10 @@ Retracted the premature "done". Verified in code: `extra_refs` appears 0 times i
 (round-1 R1-F2). Lane is back to `ready`, still `next_actor: claude`. Convergence stays blocked until the
 two-file fix is genuinely on main (verified by `extra_refs` present) and a fresh session's tool_log shows a
 successful `read_file(repo: "exafyltd/vitana-v1", …)`.
+### 2026-10-19T20:15Z · kiro-202610151913-51bd · ready → done (merged)
+Implemented and merged end to end (owner directive to run the whole process): PR #4201, merge commit
+`fa73aabd0`. plan-spar.mjs forwards `extra_refs: { 'exafyltd/vitana-v1': <sha> }`; PLAN-SPAR.yml resolves
+the vitana-v1 main SHA; plan-spar.test.mjs 10/10, node --check clean, all 8 PR checks green incl. Lane
+scope. Next: a fresh native-g1-wiring session must show a `read_file(repo: "exafyltd/vitana-v1")` in its
+tool_log to confirm the fix end to end — the current session `185a911c` predates the merge and stays
+vitana-v1-blind.
