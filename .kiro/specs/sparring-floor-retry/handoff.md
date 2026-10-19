@@ -52,3 +52,8 @@ outside this one item.
 
 ### 2026-10-18T22:12Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-19T17:30Z · kiro-exafy-202610181845-661d · drafted (re-spar after the daily-limit outage)
+Session 798679a9 escalated `model_unavailable` (Opus and Sonnet both hit the daily limit). That is an infra outage
+and is retryable. Pushing again now that the DeepSeek last-resort tier (#4192) is live on staging and production
+(4e0e7d1f).
