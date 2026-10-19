@@ -9,11 +9,14 @@
   `DEV_IDENTITY.TENANT_ID = …0001`); `vitana-v1/.env:17` (`VITE_VITANA_BOT_USER_ID = …0001`).
 - Legacy NULL→`…0001` tenant writers (now dormant): `database/migrations/20260103_vtid_01144_…sql:193,454`,
   `20260103_vtid_01139_…sql:224,431,559`, `20260103_vtid_01138_…sql:224,310,450,511`,
-  `20260102_vtid_01137_…sql:269,376,573`, `20260102_vtid_01135_…sql:357,540`.
+  `20260102_vtid_01137_…sql:269,376,573`, `20260102_vtid_01135_…sql:357,540`,
+  `supabase/migrations/20260102200000_vtid_01127_availability_readiness_engine.sql:271,356,418,497,542`.
+  `01142_d48` / `01143_d49` carry no fallback (verified) — baseline count only. All repointed in Lane 1.
 - Bot-as-sender (not hardcoded tenant) in `fire_welcome_chat_on_membership` / `notify_on_chat_message` (tenant from
   `NEW.tenant_id`).
-- `product_analytics_events` schema: `DATABASE_SCHEMA.md:2536` (nullable `tenant_id`, service-role insert, no client
-  RLS).
+- Hot-table `tenant_id` is NOT NULL in DDL: `user_notifications` `20260225000000_notification_system.sql:27`,
+  `product_analytics_events` `20260612140000_BOOTSTRAP_product_analytics_events.sql:33`, `chat_messages` (parent
+  §4.11). `DATABASE_SCHEMA.md:2542` omits the marker (doc gap, fixed in Lane 4).
 - Canonical membership source: mt-identity `membership-unification` (unified `user_tenants` with
   `is_primary`/`active_role`) — a predecessor spec; its handoff is `.kiro/specs/mt-identity/handoff.md`.
 - `ci_tenant_isolation_health()` (VTID-05149) — production isolation monitor this spec's cleanup helps turn green.
@@ -46,14 +49,16 @@
   0/2+ stay NULL and are listed (reused by the quarantine review). Column stays nullable. Snapshot + rollback.
 
 ### hot-tables-not-null-expand-contract (DB; depends on orphan-analysis-and-quarantine + profiles-tenant-backfill)
-- `chat_messages` and `user_notifications`: §4.7 expand/contract — BEFORE INSERT trigger fills `tenant_id` from the
-  actor's resolved tenant → batched backfill of residual NULLs → `ADD CONSTRAINT <t>_tenant_not_null CHECK (tenant_id
-  IS NOT NULL) NOT VALID` → `VALIDATE CONSTRAINT` → `ALTER COLUMN tenant_id SET NOT NULL` → `DROP CONSTRAINT`. All
-  under `lock_timeout` + retries, off-peak.
-- `product_analytics_events`: insert-time tenant default (payload `tenant_id` when present, else the actor's resolved
-  tenant, else quarantine — never Maxina) + the same CHECK→VALIDATE→SET NOT NULL; no client RLS so no policy change.
-- Rollback drops NOT NULL and the trigger/default.
-
+- Assertion-only migration: a DO block RAISEs if `information_schema.columns.is_nullable = 'YES'` for `tenant_id` on
+  `chat_messages`, `user_notifications`, `product_analytics_events`, or if any row's `tenant_id` is not in `tenants`.
+  No trigger, backfill, default or `SET NOT NULL` (the columns are already NOT NULL). If it fires, §4.7
+  expand/contract is re-planned in a new sparred plan.
+- `DATABASE_SCHEMA.md` records `tenant_id UUID NOT NULL` for these tables. Rollback: no-op file.
+### Writer repoint (part of orphan-analysis-and-quarantine)
+- Precondition DO block RAISEs if `user_tenants.is_primary` is absent or has no `true` row. Then every NULL-fallback
+  function of 01127/01135/01137/01138/01139/01144 is `CREATE OR REPLACE`d to resolve the single primary
+  `user_tenants` row; 0/2+ primaries fail closed (existing jsonb error shape, else raise), never `…0001`; same
+  signatures, grants and SECURITY mode. pgTAP call-tests run on the local stack only.
 ## Rules every successor follows
 1. **Migrations:** apply strictly in `docs/multitenancy/MIGRATION-QUEUE.md` order, one `RUN-MIGRATION.yml` dispatch
    per file, **by Claude only**, with read-only pre/post checks. New multi-tenant migrations take the next version in

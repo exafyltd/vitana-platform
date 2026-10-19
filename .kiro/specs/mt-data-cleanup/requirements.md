@@ -15,8 +15,8 @@ them.
 
 ## Goal
 Resolve every orphan / mis-tenanted row left by the single-tenant era without ever remapping test data or ambiguous
-rows to Maxina, snapshot everything before moving it, and make the hot tenant tables `tenant_id NOT NULL` safely
-(§4.7 expand/contract) — all as DB migrations applied by Claude, with read-only counting SQL written for Claude to run
+rows to Maxina, snapshot everything before moving it, stop the legacy writers re-creating `…0001` rows, and pin
+the hot tenant tables' existing `tenant_id NOT NULL` — all as DB migrations applied by Claude, with read-only counting SQL written for Claude to run
 (Kiro never runs SQL).
 
 ## R1 — Orphan analysis, snapshot, remap and quarantine (lane `orphan-analysis-and-quarantine`)
@@ -36,6 +36,9 @@ rows to Maxina, snapshot everything before moving it, and make the hot tenant ta
    Maxina.
 7. THE SYSTEM SHALL move rows in batches (1–5k/txn) under `lock_timeout` with retries, off-peak, and SHALL provide a
    pre-approved rollback migration that restores from the `bak_*` snapshot.
+8. THE SYSTEM SHALL repoint every NULL-fallback writer function of the six migrations in plan premise 7 to the member's
+   single primary `user_tenants` row, failing closed on 0/2+ primaries and never writing `…0001`, behind a
+   precondition gate that aborts the apply if no primary membership row exists.
 
 ## R2 — memory_facts supersede-merge (lane `memory-facts-supersede-merge`)
 1. AFTER R1 reassignment, FOR each `(user_id, key)` with more than one current fact THE SYSTEM SHALL keep the fact
@@ -47,14 +50,13 @@ rows to Maxina, snapshot everything before moving it, and make the hot tenant ta
    with 0 or 2+ memberships SHALL stay NULL and be listed for the R1 quarantine review, never defaulted to Maxina.
 2. THE column SHALL stay nullable in this spec (NOT NULL on `profiles` is WS3/WS10 scope).
 
-## R4 — NOT NULL on hot tables via expand/contract (lane `hot-tables-not-null-expand-contract`)
-1. THE SYSTEM SHALL make `chat_messages.tenant_id` and `user_notifications.tenant_id` NOT NULL using §4.7
-   expand/contract (nullable → BEFORE INSERT backfill trigger → batched backfill → `CHECK … NOT VALID` → `VALIDATE`
-   → `SET NOT NULL`), with `lock_timeout` + retries and an off-peak window, so no live writer breaks mid-migration.
-2. THE SYSTEM SHALL make `product_analytics_events.tenant_id` NOT NULL via an insert-time tenant default plus the same
-   `CHECK → VALIDATE → SET NOT NULL`, with no client RLS rewrite (service-role insert only).
-3. THE SYSTEM SHALL depend on R1 and R3 having resolved the NULL residue, and SHALL provide a rollback that removes
-   NOT NULL and the trigger.
+## R4 — assert and pin NOT NULL on the hot tables (lane `hot-tables-not-null-expand-contract`)
+1. `chat_messages`, `user_notifications` and `product_analytics_events` already have `tenant_id NOT NULL` in their
+   authoritative DDL (plan premise 5). THE SYSTEM SHALL ship an assertion-only migration that fails the apply loudly if
+   any of those columns is nullable or holds a tenant id not in `tenants`; it SHALL NOT add a trigger, backfill,
+   default or `SET NOT NULL`. If it ever fires, §4.7 expand/contract is re-planned in a new sparred plan.
+2. THE SYSTEM SHALL record `tenant_id UUID NOT NULL` for these tables in `DATABASE_SCHEMA.md`.
+3. THE SYSTEM SHALL run after R1 and R3 (its assertion includes their zero-orphan state); its rollback is a no-op.
 
 ## Non-functional (all lanes)
 - Production is read-only for Kiro and every test (rules 31/31b/48); DB changes are migration files in the lane PR,

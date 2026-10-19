@@ -16,7 +16,7 @@ updated: 2026-11-01T13:00Z
 # Orphan analysis, snapshot, remap and quarantine — mt-data-cleanup (repo vitana-platform)
 
 Plan: `.kiro/specs/mt-data-cleanup/plan.md` (authoritative) and the `orphan-analysis-and-quarantine` group of
-`tasks.md` (tasks O1–O8, allowed paths, acceptance). Design and the rules you must follow: `design.md`.
+`tasks.md` (tasks O1–O9; O8 repoints the NULL-fallback writers of six migrations, allowed paths, acceptance). Design and the rules you must follow: `design.md`.
 
 **Held:** `next_actor: owner` until PLAN-SPAR allocates this lane's VTID; it then flips `next_actor` to kiro itself.
 This lane is the foundation of the spec — the other three depend on it.

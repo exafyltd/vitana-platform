@@ -7,7 +7,8 @@ Allowed paths: `supabase/migrations/20261101040*.sql`, `supabase/tests/vtid_mt_d
 `docs/multitenancy/MIGRATION-QUEUE.md`, `scripts/ci/migration-drift-baseline.json`,
 `supabase/migrations/20261101041*.sql`, `supabase/tests/vtid_mt_data_cleanup_memfacts_*.sql`,
 `supabase/migrations/20261101042*.sql`, `supabase/tests/vtid_mt_data_cleanup_profiles_*.sql`,
-`supabase/migrations/20261101043*.sql`, `supabase/tests/vtid_mt_data_cleanup_notnull_*.sql`
+`supabase/migrations/20261101043*.sql`, `supabase/tests/vtid_mt_data_cleanup_notnull_*.sql`,
+`DATABASE_SCHEMA.md`
 
 <!-- lane: orphan-analysis-and-quarantine -->
 ## orphan-analysis-and-quarantine — orphan analysis, snapshot, remap, quarantine (repo vitana-platform)
@@ -31,7 +32,12 @@ Allowed paths: `supabase/migrations/20261101040*.sql`, `supabase/tests/vtid_mt_d
 - [ ] O7 pgTAP `supabase/tests/vtid_mt_data_cleanup_orphan_*.sql`: `…0099`→quarantine and in no live tenant; bot row
       → recipient tenant; single-membership owner remapped; 0/2+ owner → quarantine, never Maxina; rollback restores
       snapshot counts.
-- [ ] O8 Add the MIGRATION-QUEUE rows (forward + rollback) after mt-identity's WS1 migrations; baseline-json entry for
+- [ ] O8 Repoint migration: precondition DO block (RAISE if `user_tenants.is_primary` absent or no primary row), then
+      `CREATE OR REPLACE` every NULL-fallback function of 01127/01135/01137/01138/01139/01144 (plan premise 7) to the
+      single primary `user_tenants` row; 0/2+ primaries fail closed (existing error shape, else raise), never `…0001`;
+      same signatures/grants. pgTAP call-tests per function: 1 primary → writes that tenant; 0 and 2 → no `…0001` row;
+      gate RAISEs on a zero-primary fixture. Post-check: no repointed body contains `…0001` (`pg_get_functiondef`).
+- [ ] O9 Add the MIGRATION-QUEUE rows (forward + rollback) after mt-identity's WS1 migrations; baseline-json entry for
       any not-yet-live table, removed after apply.
 
 Acceptance: pgTAP green on the local stack; `analyze_orphan_rows()` is read-only (no write); no row owned by `…0099`
@@ -82,24 +88,25 @@ orphan-analysis-and-quarantine honoured; PR gate green; PR title `VTID-xxxxx
 runs SQL against a live system.
 
 <!-- lane: hot-tables-not-null-expand-contract -->
-## hot-tables-not-null-expand-contract — NOT NULL on hot tables via §4.7 (repo vitana-platform)
+## hot-tables-not-null-expand-contract — assert and pin NOT NULL on the hot tables (repo vitana-platform)
 
 Allowed paths: `supabase/migrations/20261101043*.sql`, `supabase/tests/vtid_mt_data_cleanup_notnull_*.sql`,
-`docs/multitenancy/MIGRATION-QUEUE.md`
+`docs/multitenancy/MIGRATION-QUEUE.md`, `DATABASE_SCHEMA.md`
 
-- [ ] H1 Forward migration(s) (`20261101043000_…`): §4.7 expand/contract to `tenant_id NOT NULL` on `chat_messages`
-      and `user_notifications` — BEFORE INSERT backfill trigger → batched backfill of residual NULLs → `CHECK … NOT
-      VALID` → `VALIDATE` → `SET NOT NULL` → drop CHECK; `lock_timeout` + retries, off-peak.
-- [ ] H2 `product_analytics_events`: insert-time tenant default (payload tenant_id, else actor's resolved tenant, else
-      quarantine — never Maxina) + CHECK→VALIDATE→SET NOT NULL; no client RLS change.
-- [ ] H3 Pre-approved rollback migration dropping NOT NULL and the trigger/default.
-- [ ] H4 `docs/validation/<vtid>/`: read-only pre/post counts (NULL `tenant_id` rows → 0; constraint present),
-      rollback-check SQL; `plan-sparring.md` copy, `scope.json`, `staging-tests.json`.
-- [ ] H5 pgTAP `supabase/tests/vtid_mt_data_cleanup_notnull_*.sql`: INSERT with NULL tenant_id is trigger-filled;
-      NOT NULL holds after contract; rollback removes it.
+- [ ] H1 Forward migration (`20261101043000_…`), assertion only (plan premise 5 — all three columns are NOT NULL in
+      DDL): a DO block that RAISEs if `information_schema.columns.is_nullable = 'YES'` for `tenant_id` on
+      `chat_messages`, `user_notifications` or `product_analytics_events`, or if any row's `tenant_id` is not in
+      `tenants`. No trigger, no backfill, no `SET NOT NULL`, no default.
+- [ ] H2 `DATABASE_SCHEMA.md`: mark `tenant_id UUID NOT NULL` for `product_analytics_events` (line 2542) and on the
+      `user_notifications` entry.
+- [ ] H3 Rollback file (no-op; the forward migration has no DDL) kept for the queue contract.
+- [ ] H4 `docs/validation/<vtid>/`: read-only pre/post check (the same `information_schema` query + zero-orphan
+      count); `plan-sparring.md` copy, `scope.json`, `staging-tests.json`.
+- [ ] H5 pgTAP `supabase/tests/vtid_mt_data_cleanup_notnull_*.sql`: the assertion passes on the real schema and RAISEs
+      on a fixture with a nullable `tenant_id` and on one with a non-existent tenant.
 - [ ] H6 MIGRATION-QUEUE rows last in this spec (after orphan + profiles lanes).
 
-Acceptance: pgTAP green; `chat_messages`/`user_notifications`/`product_analytics_events` `tenant_id` NOT NULL with no
-writer broken; rollback clean; depends_on orphan-analysis-and-quarantine + profiles-tenant-backfill honoured; PR gate
+Acceptance: pgTAP green; the assertion applies cleanly on the NOT NULL schema and fails loudly otherwise;
+`DATABASE_SCHEMA.md` records NOT NULL; depends_on orphan-analysis-and-quarantine + profiles-tenant-backfill honoured; PR gate
 green; PR title `VTID-xxxxx (mt-data-cleanup/hot-tables-not-null-expand-contract): …`; `Collab-Lane:
 mt-data-cleanup/hot-tables-not-null-expand-contract`. Kiro never runs SQL against a live system.
