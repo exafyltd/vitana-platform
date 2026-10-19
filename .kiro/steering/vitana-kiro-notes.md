@@ -15,16 +15,20 @@ inclusion: always
   plan PR → PLAN-SPAR → converge (policy approval) → VTID (CI) → build → independent review → merge → staging deploy →
   STAGING-VERIFY → Gate 2 message to the owner.
   - **Merge (§7b):** you may merge only when all of these hold:
-    - the owner explicitly instructed that merge in this conversation, per PR or as a set they listed;
+    - the owner explicitly instructed that merge in this conversation, per PR or as a set they listed. A standing
+      "merge everything", the Gate 1 "yes" and the policy approval do not count;
     - the PR targets `main` and its deploy path is staging only;
     - the review is from another reviewer, on the current head;
-    - every required check is green.
+    - every required check is green, or is a known false positive on a governance-artifact check (see below).
 
     Record the owner's instruction and the merge SHA in the lane log (or the plan's handoff). Use `--admin` only for a
     known false positive on a governance-artifact check, never for a failing test or build.
   - **Never:**
-    - deploy production (PUBLISH, `publish-to-prod.sh`, any `AWS-PROD-DEPLOY-*`): that is the owner's Gate 2;
-    - allocate a VTID by hand, or before sparring has converged;
+    - deploy production (PUBLISH, `publish-to-prod.sh`, any `AWS-PROD-DEPLOY-*`), even after the owner's Gate 2
+      "yes": that "yes" is carried out by PUBLISH or Claude Code;
+    - dispatch a workflow;
+    - approve a PR on GitHub;
+    - allocate a VTID (CI does);
     - review your own lane;
     - test against production;
     - write to a live system outside the staging pipeline, even though your credentials allow it. That means no

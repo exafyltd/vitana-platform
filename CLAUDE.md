@@ -125,7 +125,15 @@ is approved by policy; the Project Manager merges by rule and sends Gate 2; Clau
 the Project Manager runs `live`, a Kiro session may merge a PR and let it auto-deploy to **staging** when the owner
 explicitly instructed that merge in the conversation (per PR or a named set), recording the instruction and merge SHA in
 the lane log. Kiro never deploys production (PUBLISH / `AWS-PROD-*` stay the owner's Gate 2) and never writes to a live
-system outside that staging pipeline. See `.claude/rules/collaboration.md` §7–§7b.
+system outside that staging pipeline. **For a Kiro session**, three rules apply:
+- The Gate 1 "yes" and the policy approval are **not** a §7b merge instruction. The Autonomy Contract's "standing
+  instruction … merge without asking" and "never ask about merge timing" lines apply to Claude Code only.
+- Kiro never dispatches the production workflow after a Gate 2 "yes". PUBLISH or Claude Code carries that out.
+- A §7b merge also needs a PR to `main` with a staging-only deploy path, an independent review on the current head
+  and green checks (or a governance-artifact false positive, §7b). The full conditions are in
+  `.kiro/steering/vitana-kiro-notes.md`.
+
+See `.claude/rules/collaboration.md` §7–§7b.
 
 ---
 
