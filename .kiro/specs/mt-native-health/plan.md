@@ -33,7 +33,7 @@ verified on platform origin/main:
    device is never returned. VTID-05177 added `NATIVE_PUSH_DIRECT_ENABLED` (`notifications.ts:25,77`) but not this.
 
 4. **The native app's tenant resolution contract is unverified against the program invariant** (program §8, N1).
-   `apps/mobile/` (vitana-v1) is a built Expo/React Native app (NOT the Capacitor shell the program plan assumed;
+   `apps/mobile/` (vitana-v1) is a built Expo/React Native app (not the Capacitor shell the program assumed;
    drift corrected here) with a tenant layer (`src/identity/TenantProvider.tsx`, `tenant-registry.ts`,
    `useMemberships.ts`), deep-link routing (`src/linking/resolve-link.ts`, `app/+native-intent.tsx`) and
    tenant/deep-link Maestro flows (`maestro/shell/08-tenants.yaml`, `10-deep-link-admin.yaml`). The N1 invariant —
@@ -56,9 +56,10 @@ verified on platform origin/main:
   `health-repository.ts`). **Generate the inventory FIRST** and classify each entry: (a) convert-to-`healthDb` (`health_features_daily`,
   `vitana_index_scores`, `biomarker_results`, `wearable_workouts`, written/read with a session tenant); (b) already
   user-keyed, no injection (`wearables-repository.ts:72` `wearable_rollup_7d`, `:77` `wearable_daily_metrics`); (c)
-  service-role job. **The lint ships warning-only and is promoted to build-failing in the SAME PR that clears every
-  (a)** — otherwise it breaks the build day 1, e.g.
-  `health-repository.ts:51` `fetchVitanaIndexScoreForDate` reads `vitana_index_scores` by `date` only). **Writers
+  service-role job. **R2-F1:** `fetchVitanaIndexScoreForDate` (`health-repository.ts:51`, date-only `.single()`, sole
+  caller GET /summary `health.ts:529`, user-JWT client) is (a) WITH a signature change: `(sb, userId, date)` filtering
+  `user_id` (+ home tenant via `healthDb`), userId from `auth.getUser()` as at `health.ts:643-647`. **The lint
+  ships warning-only, build-failing in the SAME PR that clears every (a).** **Writers
   and readers convert together (R1-F4):** the two writers (`upsertHealthFeatureDaily`, `integrations-repository.ts:72`,
   `diary-health-extractor-repository.ts:23`) and the readers switch in ONE PR behind ONE flag, `MT_RESOLUTION_V2`, so
   write and read tenant come from one resolver. Flag off = today's `limit(1)` path. The conflict target includes

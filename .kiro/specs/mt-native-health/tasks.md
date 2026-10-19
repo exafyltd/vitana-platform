@@ -34,6 +34,7 @@ Allowed paths:
 - `services/gateway/src/routes/integrations-repository.ts`
 - `services/gateway/src/services/diary-health-extractor-repository.ts`
 - `services/gateway/src/routes/health-repository.ts`
+- `services/gateway/src/routes/health.ts`
 - `services/gateway/src/services/automation-handlers/health-wellness-repository.ts`
 - `services/gateway/src/services/automation-handlers/health-action-initiative-repository.ts`
 - `services/gateway/scripts/gen-health-reader-inventory.mjs`
@@ -50,7 +51,10 @@ Allowed paths:
 - [ ] A3 `gen-health-reader-inventory.mjs`: generate the inventory of `.from('<health table>')` sites across
       `services/gateway/src` FIRST; classify each entry (a) convert-to-`healthDb`, (b) user-keyed-already (e.g.
       `wearables-repository.ts:72` `wearable_rollup_7d`, `:77` `wearable_daily_metrics` — `user_id`-only), or
-      (c) service-role job. Table set from mt-identity's `isHealthTable()` (round-1 F5).
+      (c) service-role job. Table set from mt-identity's `isHealthTable()` (round-1 F5). R2-F1:
+      `fetchVitanaIndexScoreForDate` (`health-repository.ts:51`, date-only) is (a): signature `(sb, userId, date)`,
+      filter `user_id` + home tenant via `healthDb`; its caller GET /summary (`health.ts:529`) passes `userId` from
+      `auth.getUser()` (pattern at `health.ts:643-647`).
 - [ ] A4 `health-reader-inventory.test.ts`: lint ships WARNING-ONLY and is promoted to build-failing in the SAME PR
       that clears every (a) conversion (round-1 F5); allowlist = (b)+(c) + the accessor; fails on a planted
       session-tenant health read once promoted.

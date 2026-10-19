@@ -97,3 +97,6 @@ off-path vs frozen home tenant); writers+readers flip together behind one flag, 
 read-only pre-flip count. R1-F3: local `HEALTH_TABLES` dropped per CROSS-SPEC O1; guard imports mt-identity's
 `isHealthTable` (stated cross-spec dependency) and commits its inventory as a fixture. Also dropped the earlier F4 edit
 of the hash-locked `docs/MULTI-TENANT-PLAN.md`. Next: PLAN-SPAR round 2.
+### 2026-10-20T10:00Z · kiro-hotmail-202610151618-b437 · drafted (answered sparring round 2, session fca982e6)
+R2-F1 accepted: `fetchVitanaIndexScoreForDate` gets an explicit (a) disposition with a `(sb, userId, date)` signature;
+`routes/health.ts` (its sole caller, GET /summary) added to health-tenant-accessor's paths.
