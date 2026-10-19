@@ -10,6 +10,7 @@ Depends on `plan-spar-reasons`.
 Allowed paths:
 - services/gateway/src/providers/bedrock*.ts
 - services/gateway/src/services/llm-router.ts
+- services/gateway/src/services/llm-telemetry-service.ts
 - services/gateway/src/services/plan-sparring/**
 - services/gateway/src/constants/llm-defaults.ts
 - services/gateway/test/plan-sparring-*.test.ts
@@ -23,12 +24,12 @@ Allowed paths:
 - [ ] T2: `providers/bedrock.ts`: add `prompt_cache` to the request, place the markers in `buildBedrockRequestBody`,
   and add `parseBedrockUsage` with the cache fields.
   Acceptance (R1.2, R1.3, R2.1): T-a, T-b, T-c pass.
-- [ ] T3: `llm-router.ts`: pass `promptCache` through and map the cache usage in `bedrockAdapter`. Other adapters stay
-  untouched.
+- [ ] T3: `llm-router.ts`: pass `promptCache` through and map the cache usage in `bedrockAdapter`; forward the cache tokens to
+  `completeLLMCallDetached` and add them (optional) to `CompleteLLMCallResult` / `buildLLMCallCompleted` in
+  `llm-telemetry-service.ts`. Other adapters stay untouched.
   Acceptance (R1.4, R2.1): T-d passes; `npm run test:operator` and the router tests stay green.
 - [ ] T4: `plan-sparring/types.ts`, `partner.ts`, `github-tools.ts`, `plan-sparring-service.ts`: add the
-  `promptCache` opt, the right-sized caps, `quota_tokens` logging, the budget check before every invoke, the
-  `token_budget` reason, and the exported `RETRYABLE_REASONS` including it.
+  `promptCache` opt, the right-sized caps, `quota_tokens` logging, the budget check before every invoke, the exported `READ_FILE_MAX_LINES = 250`, the 0-token throttle accounting comment, the `token_budget` reason, and the exported `RETRYABLE_REASONS` including it.
   Acceptance (R2.2, R3, R4.1, R4.2): T-e, T-f, T-g, T-h pass.
 - [ ] T5: `services/gateway/test/plan-sparring-token-efficiency.test.ts` covers T-a..T-h with fakes only. Run it with
   `npx tsc --noEmit` and the `vtid-04868-plan-sparring-*` suites.

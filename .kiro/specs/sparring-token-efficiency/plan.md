@@ -67,8 +67,13 @@ Lane `partner-caching-code` (Kiro, seat jtadic, reviewer hotmail):
      (:1291-1304). Only `bedrockAdapter` honours them and sets `prompt_cache: true` on `BedrockInvokeRequest`. Every
      other adapter ignores them. No other stage sets the opt.
    - `buildBedrockRequestBody` (pure) with `prompt_cache`:
-     (a) `system` becomes `[{ type: 'text', text, cache_control: { type: 'ephemeral' } }]`. The prefix order is
-     tools → system → messages, so this one checkpoint covers the tool definitions and the system prompt.
+     (a) `system` becomes `[{ type: 'text', text, cache_control: { type: 'ephemeral' } }]`. The cache prefix order
+     is tools → system → messages ([Anthropic prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching):
+     "Cache prefixes are created in the following order: tools, system, then messages"), so this one checkpoint
+     covers the tool definitions and the system prompt. The key order of the JSON body in `buildBedrockRequestBody`
+     (`system` before `messages` before `tools`, bedrock.ts :267-285) is irrelevant: the prefix is defined by the
+     API, not by object key order. Tools are not marked separately, because a marker on the last tool would cache
+     the tools alone and the system checkpoint already includes them.
      (b) Rolling checkpoint: `cache_control` on the last content block of the last message. A string content becomes
      one text block.
      (c) A second checkpoint on the last block of the previous user message (the one turn k-1 cached), so a turn
@@ -83,11 +88,17 @@ Lane `partner-caching-code` (Kiro, seat jtadic, reviewer hotmail):
    - `ModelLogEntry` gains optional `cache_read_tokens`, `cache_write_tokens`, `quota_tokens`, where
      `quota_tokens = input + cache_write + 5 × output` (constant `CLAUDE_OUTPUT_BURNDOWN = 5`). Both partner
      `modelLog.push` sites (primary :133, fallback :155) fill them.
+   - OASIS telemetry: `CompleteLLMCallResult` (`llm-telemetry-service.ts` :156-164) gains optional
+     `cacheReadTokens` / `cacheWriteTokens`; `buildLLMCallCompleted` writes them to the payload as
+     `cache_read_input_tokens` / `cache_creation_input_tokens` only when present (other stages' events are
+     unchanged). The router's `completeLLMCallDetached` call (`llm-router.ts` :1346-1350 on origin/main 4e0e7d1f)
+     forwards them from `result.usage`, so `llm.call.completed` shows the real quota cost of cached turns.
 3. Right-size output and tool results.
    - `PARTNER_MAX_OUTPUT_TOKENS` 16_000 → 8_000 by default. `PLAN_SPARRING_MAX_OUTPUT_TOKENS` overrides it, clamped
      to 2_000..16_000. T0 reads the stored `model_log` output_tokens read-only. If any ok turn used more than 6,000,
      the default becomes 12_000.
-   - `TOOL_RESULT_MAX_CHARS` 20_000 → 12_000 and `READ_FILE_MAX_LINES` 400 → 250. The truncation hint stays, so the
+   - `TOOL_RESULT_MAX_CHARS` 20_000 → 12_000 and `READ_FILE_MAX_LINES` 400 → 250 (now exported for the test;
+     today it is a module-private `const`, github-tools.ts :23). The truncation hint stays, so the
      partner reads narrower ranges. The evidence floor counts reads, not size, and is unchanged. Old tool results are
      never trimmed, because trimming would break the cached prefix.
 4. Per-session token budget with the new retryable reason `token_budget`.
@@ -98,6 +109,11 @@ Lane `partner-caching-code` (Kiro, seat jtadic, reviewer hotmail):
      later rounds (:370).
    - Before every invoke, including the Sonnet 4.6 throttle retry: if `spent + maxTokens × 5 > budget`, end the pass
      with `fail('token_budget', …)`. No further model call is made. The check is logged.
+   - Throttled calls: a Bedrock throttle is rejected before the model runs, and the error path returns no usage
+     (`llm-router.ts` bedrockAdapter `!result.ok` branch), so its modelLog entry records 0 tokens and adds 0 to
+     `spent`. This is deliberate and stated in a code comment at the budget check: the up-front `max_tokens`
+     reservation of a rejected request is not charged, and the retry is still bounded by the `maxTokens × 5`
+     headroom term of the check.
    - `token_budget` is added to `EscalationReason` (`types.ts` :19-26) and to the gateway `RETRYABLE_REASONS`
      (`plan-sparring-service.ts` :46, exported for the test). A retry is a new gateway session with a fresh budget.
      It runs only on a push, never in a loop.
@@ -122,15 +138,19 @@ New `services/gateway/test/plan-sparring-token-efficiency.test.ts` (fakes only, 
 - T-c `parseBedrockUsage` maps `cache_read_input_tokens` / `cache_creation_input_tokens`; absent fields give 0.
 - T-d Router: with `jest.mock('../src/providers/bedrock')`, `callViaRouter('plan_sparring', …, { promptCache: true })`
   reaches `invokeBedrock` with `prompt_cache: true`. Without the opt the field is absent. Cache usage comes back on
-  `result.usage`.
+  `result.usage`, and `buildLLMCallCompleted` given cache tokens puts `cache_read_input_tokens` /
+  `cache_creation_input_tokens` in the payload (absent when not given).
 - T-e `runPartnerPass` with a fake `callLlm`: `opts.promptCache === true` by default and absent when
   `PLAN_SPARRING_PROMPT_CACHE=off`; `maxTokens` equals the right-sized default; modelLog entries carry
   `cache_read_tokens`, `cache_write_tokens` and the correct `quota_tokens`.
 - T-f Budget: the fake returns usage that crosses the budget on turn 3, so the result is
   `{ ok: false, reason: 'token_budget' }` and `callLlm` was called exactly 3 times. `priorQuotaTokens` near the
-  budget stops the pass before the first call. The throttle-retry path also checks the budget.
+  budget stops the pass before the first call. The throttle-retry path also checks the budget. Throttle case: the
+  fake primary returns a throttle error with `usage` undefined; the entry records 0 tokens, `spent` stays 0 and the
+  Sonnet 4.6 retry is invoked.
 - T-g `RETRYABLE_REASONS` includes `token_budget`, and `createSparringSession` re-creates a session escalated with it.
-- T-h `TOOL_RESULT_MAX_CHARS === 12_000`, and `clip` truncates with the hint.
+- T-h `TOOL_RESULT_MAX_CHARS === 12_000`, `READ_FILE_MAX_LINES === 250`, `clip` truncates with the hint, and the
+  `read_file` handler (fake fetch) on a 400-line file returns lines 1-250 plus the hint.
 
 Unchanged and green: `vtid-04868-plan-sparring-*.test.ts`, the router tests, `npm run test:operator` (rule 42e: the
 router is touched), and `npx tsc --noEmit`. Lane `plan-spar-reasons`: `node --test scripts/collab/plan-spar.test.mjs`
@@ -174,6 +194,11 @@ Kill switches through task-def env, no redeploy of code: `PLAN_SPARRING_PROMPT_C
 - PR #4186 (`plan(sparring-floor-retry)`) may edit the same lines of `plan-spar.mjs`; `plan-spar-reasons` rebases on
   it.
 
+## Sparring history
+Round 1 (session b2df0328): cache usage now reaches the OASIS `llm.call.completed` event (lane paths gain
+`llm-telemetry-service.ts`); `READ_FILE_MAX_LINES` is exported and tested; throttled calls are stated to count 0
+toward `spent`, with a test. The cache prefix order was re-checked against the Anthropic docs (tools → system →
+messages) and the system checkpoint kept.
 ## Out of scope
 
 Partner prompt wording (`PARTNER_SYSTEM_PROMPT`), the partner model choice (Opus 4.6 primary, Sonnet 4.6 throttle

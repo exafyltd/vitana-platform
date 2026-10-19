@@ -9,10 +9,11 @@ reviewer_seat: hotmail
 paths:
   - services/gateway/src/providers/bedrock*.ts
   - services/gateway/src/services/llm-router.ts
+  - services/gateway/src/services/llm-telemetry-service.ts
   - services/gateway/src/services/plan-sparring/**
   - services/gateway/src/constants/llm-defaults.ts
   - services/gateway/test/plan-sparring-*.test.ts
-updated: 2026-10-18T22:12Z
+updated: 2026-10-19T17:50Z
 ---
 # Lane: partner-caching-code
 
@@ -26,3 +27,6 @@ Lane created with the plan. The scope is the Bedrock provider path (`providers/b
 `bedrockAdapter` in `llm-router.ts`), `plan-sparring/**`, `llm-defaults.ts` and `test/plan-sparring-*.test.ts`.
 `llm-router.ts` is included because the router builds the Bedrock request and drops the usage fields
 (:984-1056). No VTID yet; CI allocates it on convergence.
+### 2026-10-19T17:50Z · kiro-hotmail-202610151618-b437 · ready
+Sparring round 1: paths gain `services/gateway/src/services/llm-telemetry-service.ts` so the cache tokens reach the
+OASIS `llm.call.completed` event (R1-F2).
