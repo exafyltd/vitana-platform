@@ -5,13 +5,11 @@ change_class: standard
 
 <!-- plan:begin -->
 ## Problem
-Multi-tenant program plan `docs/MULTI-TENANT-PLAN.md` v5.1 §6 WS2. All premises re-verified read-only against
-current platform `origin/main` today; the program's own file:line refs are from 2026-10-06/10 and had drifted, so
-these are the current citations.
+Multi-tenant program plan `docs/MULTI-TENANT-PLAN.md` v5.1 §6 WS2. Premises re-verified read-only on current
+platform `origin/main` (the program's 2026-10 refs had drifted).
 
-1. **The orphan tenant id `…0001` is overloaded.** `services/gateway/src/services/orb-memory-bridge.ts:65-76`
-   defines `export const DEV_IDENTITY` (line 65) with `USER_ID: '00000000-0000-0000-0000-000000000099'` (line 67) and
-   `TENANT_ID: '00000000-0000-0000-0000-000000000001'` (line 69); `services/gateway/src/lib/vitana-bot.ts:9` `VITANA_BOT_USER_ID` (parent v5.1 line 28; client mirror
+1. **The orphan tenant id `…0001` is overloaded.** `services/gateway/src/services/orb-memory-bridge.ts:65-69`
+   `DEV_IDENTITY` has `USER_ID` `…0099` (line 67) and `TENANT_ID` `…0001` (line 69); `services/gateway/src/lib/vitana-bot.ts:9` `VITANA_BOT_USER_ID` (parent v5.1 line 28; client mirror
    `vitana-v1/.env:17`) makes `…0001` the **bot user id** too. So an
    orphan row's `…0001` means different things by column: `tenant_id = …0001` is the dead dev tenant;
    `sender_id/user_id = …0001` is the bot user; `user_id = …0099` is the dev test user. Cleanup MUST split every
@@ -20,8 +18,7 @@ these are the current citations.
    full list in premise 7). The program verified
    (2026-10-06) the resulting orphan rows under nonexistent tenant `…0001`: all 1,067 `memory_facts` belong to dev
    user `…0099` (test data, zero real members); 305 `chat_messages` from 2 senders, 236 sent by the bot user `…0001`;
-   135 `memory_items`; 9 `user_notifications`; 3 rows under fake `550e8400…`. Newest orphan row 2026-07-21 — not
-   being written now.
+   135 `memory_items`; 9 `user_notifications`; 3 rows under fake `550e8400…`. Newest orphan row 2026-07-21.
 3. **`…0001` is the bot USER id, not a hardcoded tenant, in the welcome/notify triggers.** In
    `fire_welcome_chat_on_membership` / `notify_on_chat_message` the `…0001` is the bot sender (tenant comes from
    `NEW.tenant_id`), so bot-sent `chat_messages` carry a **recipient's** real tenant context, not the dev tenant.
@@ -43,7 +40,9 @@ these are the current citations.
    migration dirs for the `v_tenant_id := '…0001'` literal):
    `01135_boundary_consent.sql:357,540`, `01137_d43_…sql:269,376,573`, `01138_d44_…sql:224,310,450,511`,
    `01139_d45_…sql:224,431,559`, `01144_…sql:193,454`, and `supabase/migrations/20260102200000_vtid_01127_availability_readiness_engine.sql:271,356,418,497,542`
-   (JWT `tenant_id` claim, else `…0001`). `01142_d48` / `01143_d49` carry **no** fallback and no INSERT
+   (JWT `tenant_id` claim, else `…0001`). The five 01127 functions ALSO default a NULL `auth.uid()` to the dev user
+   (`v_user_id := '…0099'`, `01127_…sql:275,360,422,501,546`; R2-F1) — the only such user fallback in any migration
+   (full `git grep`). `01142_d48` / `01143_d49` carry **no** fallback and no INSERT
    (`01142_…sql:137-386`, `01143_…sql:122-318`) — baseline count only.
    01135 reads `profiles.tenant_id` (NULL for all, premise 4) so its fallback is unconditional today. Unrepointed, the
    zero-orphan post-check re-pollutes. DB objects → WS2 work, not the mt-identity CODE cleanup.
@@ -79,6 +78,9 @@ under `docs/validation/<vtid>/`.
      AND is_primary = true` (exactly one row); on 0/2+ primaries it **fails closed** — returns the function's existing
      error shape (`{ok:false, error:'TENANT_UNRESOLVED'}`) where it already returns jsonb errors, else raises — and
      never writes `…0001`. Same signatures, grants and SECURITY mode (no privilege widening).
+   - **01127 user fallback cleared too (R2-F1):** in all five 01127 functions the `v_user_id := '…0099'` branch is
+     removed; a NULL `auth.uid()` returns `{ok:false, error:'UNAUTHENTICATED'}` before the tenant lookup and before any
+     INSERT, so no writer can recreate `…0099`-owned availability rows after the cleanup.
    - **Precondition gate (R1-F4):** the repoint migration opens with a DO block that RAISEs (aborting the apply) if
      `user_tenants.is_primary` is absent or no `is_primary = true` row exists — so a DDL-only `membership-unification`
      (column present, backfill not run) can never leave every repointed writer failing.
@@ -123,15 +125,16 @@ the zero-orphan state that 1 and 3 produce).
   restores the `bak_*` snapshot row-for-row.
 - **Writer call-tests (R1-F3/F4) in pgTAP, on the local stack (never staging — the writers INSERT):** every repointed
   function of all six migrations, called as a member with exactly one `is_primary` row, succeeds and writes that
-  tenant; called as a member with 0 and with 2 primaries, it fails closed and writes no row with `…0001`; the
+  tenant; called as a member with 0 and with 2 primaries, it fails closed and writes no row with `…0001`; each 01127
+  function called with NULL `auth.uid()` returns UNAUTHENTICATED and writes no `…0099` row (R2-F1); the
   precondition gate RAISEs on a fixture with the column but zero primary rows. `has_function_privilege('authenticated',
   '<fn>','EXECUTE')` is false for every function this spec creates.
-- **Read-only post-check (for Claude):** no deployed function body contains the `…0001` fallback
-  (`pg_get_functiondef` over the repointed names), and the count of real members with exactly one primary row is
+- **Read-only post-check (for Claude):** no deployed function body contains the `…0001` or `…0099` fallback
+  (`pg_get_functiondef` over the repointed names), zero `availability_assessments`/`availability_overrides` rows have
+  `user_id = …0099`, and the count of real members with exactly one primary row is
   reported next to the 0/2+ list — proving the lookup path is live without calling a writer on a shared database.
 - **Snapshot/rollback drill** in pgTAP: apply forward, assert moved counts, apply rollback, assert original counts.
-- Required repo suites unaffected (no gateway/app code changes): a touched-nothing run of `npm run test:support`
-  (rule 42c) and `npm run test:operator` (rule 42e) stays green.
+- No gateway/app code changes: `npm run test:support` (42c) and `npm run test:operator` (42e) stay green.
 - Read-only counting SQL (for Claude) proves the premise-2 numbers before and the zero-orphan state after.
 
 ## Staging verification
@@ -143,9 +146,9 @@ lists these read-only checks. No suite ever points at `vitanaland.com`.
 ## Rollout
 Pure DB, applied by Claude via `RUN-MIGRATION.yml` after merge, strictly in MIGRATION-QUEUE order, each with its
 read-only pre-check (must match the premise-2 baseline) and post-check. `bak_*` snapshots retained 30 days; a
-pre-approved rollback migration per lane restores from them. No feature flag applies (a data move / NOT NULL cannot be
-dark — program §4.7); the safety is the snapshot + rollback + off-peak window + `lock_timeout`, not a flag. Owner-named
-steps: none beyond the standard `RUN-MIGRATION` dispatch (no auth-hook, no production write by Kiro).
+pre-approved rollback migration per lane restores from them. No feature flag (a data move cannot be dark, §4.7); safety
+is snapshot + rollback + off-peak + `lock_timeout`. No other
+owner-named steps; no production write by Kiro.
 
 ## Risks
 - **Mislabelling bot content as dev test data** if `…0001` is read as a tenant on a `sender_id` column. Mitigation:
@@ -158,8 +161,7 @@ steps: none beyond the standard `RUN-MIGRATION` dispatch (no auth-hook, no produ
 - **Dependency drift**: this spec reads mt-identity's unified `user_tenants`. Mitigation: lane 1 is held until
   mt-identity `membership-unification` is done (stated in the lane body and `## Depends on`); its post-check asserts
   the canonical membership source is present.
-- **Irreversible delete**: dev-user rows are moved to quarantine, not deleted, so the move is reversible from the
-  snapshot; a later purge of the quarantine table is a separate owner-approved step, out of scope here.
+- **Irreversible delete**: none — dev-user rows are quarantined, not deleted; reversible from the snapshot.
 
 ## Out of scope
 - WS1 identity/resolution/membership unification itself (mt-identity) — a dependency, not re-planned here.
@@ -177,9 +179,7 @@ steps: none beyond the standard `RUN-MIGRATION` dispatch (no auth-hook, no produ
 - Within this spec: lanes 2, 3 depend on lane 1; lane 4 depends on lanes 1 and 3 (see `depends_on:` in each lane).
 
 ## Owner decisions
-Implements decided items — program §6 WS2 and the standing rules (never remap dev/test data to Maxina; never default
-ambiguous owners to Maxina; §4.7 expand/contract; snapshots before data moves; read-only SQL for Claude). No new owner
-decision proposed.
+Implements decided items only (program §6 WS2 + standing rules). No new owner decision proposed.
 <!-- plan:end -->
 
 ## Open questions for sparring

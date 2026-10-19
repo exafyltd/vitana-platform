@@ -35,8 +35,11 @@ Allowed paths: `supabase/migrations/20261101040*.sql`, `supabase/tests/vtid_mt_d
 - [ ] O8 Repoint migration: precondition DO block (RAISE if `user_tenants.is_primary` absent or no primary row), then
       `CREATE OR REPLACE` every NULL-fallback function of 01127/01135/01137/01138/01139/01144 (plan premise 7) to the
       single primary `user_tenants` row; 0/2+ primaries fail closed (existing error shape, else raise), never `…0001`;
-      same signatures/grants. pgTAP call-tests per function: 1 primary → writes that tenant; 0 and 2 → no `…0001` row;
-      gate RAISEs on a zero-primary fixture. Post-check: no repointed body contains `…0001` (`pg_get_functiondef`).
+      same signatures/grants. The five 01127 functions also drop their `v_user_id := '…0099'` fallback (R2-F1): NULL
+      `auth.uid()` returns `{ok:false, error:'UNAUTHENTICATED'}` before any lookup or INSERT. pgTAP call-tests per
+      function: 1 primary → writes that tenant; 0 and 2 → no `…0001` row; 01127 with NULL `auth.uid()` → UNAUTHENTICATED,
+      no `…0099` row; gate RAISEs on a zero-primary fixture. Post-check: no repointed body contains `…0001` or `…0099`
+      (`pg_get_functiondef`); zero availability rows with `user_id = …0099`.
 - [ ] O9 Add the MIGRATION-QUEUE rows (forward + rollback) after mt-identity's WS1 migrations; baseline-json entry for
       any not-yet-live table, removed after apply.
 
