@@ -12,14 +12,14 @@
       "policy_approved_at": null
     },
     {
-      "id": "999fd8dd-02fa-4ccf-9ebe-673260c3391b",
+      "id": "ee011de1-a1ce-4dd8-aaf3-d7e19e0cee14",
       "submitted": [],
       "plan_text_sha": "4bd6bce8",
       "rounds": 1,
-      "verdict": "escalated",
-      "infra": true,
-      "retryable": true,
-      "final_plan_hash": "7ccc7b8b067165b7097fb2b45e705fc54f872a98a9042a01068e32371a917bca",
+      "verdict": "in_progress",
+      "infra": false,
+      "retryable": false,
+      "final_plan_hash": null,
       "policy_approved_at": null
     }
   ]
