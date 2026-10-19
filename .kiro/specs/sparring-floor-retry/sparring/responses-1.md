@@ -1,10 +1,9 @@
-# Responses — round 1
+# Responses — round 1 (session 12379be3)
 
 ```json
 [
-  {"finding_id": "R1-F1", "disposition": "accepted", "rationale": "Every migration test now overrides c.get (pattern at plan-spar.test.mjs:185) and asserts on c.calls containing (or not containing) a create, so a nothing_to_do path cannot pass vacuously. Scenarios (a)-(d) in the plan spell out the stubs and assertions."},
-  {"finding_id": "R1-F2", "disposition": "accepted", "rationale": "The migration runs only for escalated entries with infra=false, retryable=false and no 'reclassified' key, and it writes reclassified=false after one check. Each legacy session costs at most one GET, ever. Test (c) asserts c.get is never called for an already-checked entry."},
-  {"finding_id": "R1-F3", "disposition": "accepted", "rationale": "Removed test-vtid-04868-plan-sparring.sh from verification and noted why (DB layer only). Coverage is plan-spar.test.mjs plus the two gateway Jest suites and tsc."},
-  {"finding_id": "R1-F4", "disposition": "accepted", "rationale": "Verified read-only via GET /api/v1/plans/spar/:id for all 10 sessions: every reason is evidence_floor_not_met, none is partner_output_invalid. The same read showed every round-1 tool_log with 15-30 attempts and 0 ok entries, all between 2026-10-17T18:39Z and 18:44Z, so the plan now keys on 'every code read failed' instead of the reason string. That also covers partner_output_invalid from the turn cap (change 1 handles both exits, change 2 both reasons), which closes this gap even though no current session hits it."}
+  {"finding_id": "R1-F1", "disposition": "accepted", "rationale": "Change 1 now applies the check at all three failure exits of runPartnerPass: the nudge exit (~L177), invalid submissions (~L242) and the turn cap (~L253). A test covers each exit."},
+  {"finding_id": "R1-F2", "disposition": "accepted", "rationale": "The predicate now considers read_file only (the only tool the floor counts) and requires each failure to be an access failure: github-tools.ts records status (HTTP status, 0 for network/no token, absent for local refusals), and only 0/401/403/5xx count. 404, invalid path and too-large files keep the original reason. Legacy sessions have no status (verified on all 10), so they get a separate rule: >=3 read_file attempts, none ok, no status, and created before the 2026-10-18T12:00Z token fix. The relaxed rule can never match new sessions. Residual single-token assumption documented."},
+  {"finding_id": "R1-F3", "disposition": "accepted", "rationale": "Change 3 now runs the migration right after cur is read and before retryInfra/replan are computed. Test (a) asserts a create call, not just the flags."}
 ]
 ```

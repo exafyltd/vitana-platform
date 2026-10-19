@@ -46,28 +46,47 @@ Observed: the re-pushes at 2026-10-18T18:42–18:45Z ran PLAN-SPAR green and com
 
 ## Changes
 
-1. `services/gateway/src/services/plan-sparring/partner.ts`: one helper,
-   `codeAccessFailed(toolLog) = toolLog.length > 0 && toolLog.every((e) => !e.ok)`. At the
-   invalid-submission exit (~L242) and the turn-cap exit (~L253), if it is true, return
-   `fail('code_access_unavailable', 'every code read failed this round (N attempts): <first error>')` instead of
-   `evidence_floor_not_met` / `partner_output_invalid`.
+1. `services/gateway/src/services/plan-sparring/`:
+   - `github-tools.ts`: every failed tool call records `status` in its `ToolLogEntry`. That is the GitHub HTTP
+     status, `0` for a network error or a missing token, and absent for a local refusal (invalid path, not a
+     readable file, no pinned ref).
+   - `partner.ts` exports
+     `codeAccessFailed(toolLog) = reads.length > 0 && reads.every((e) => !e.ok && isAccessStatus(e.status))`,
+     where `reads = toolLog.filter((e) => e.name === 'read_file')` and `isAccessStatus(s) = s === 0 || s === 401 ||
+     s === 403 || s >= 500` (R1-F2). It only considers `read_file`, because that is the only tool the evidence
+     floor counts (`citesReadFile`). A working `list_dir` or `search` does not hide a broken contents read. A 404,
+     an invalid path or a too-large file is a reachable GitHub plus a wrong target. That is a real partner
+     problem and is never relabelled. Residual assumption: all three tools share one token.
+   - All three failure exits of `runPartnerPass` check it: the nudge exit (~L177, R1-F1), the invalid-submission
+     exit (~L242) and the turn-cap exit (~L253). When it holds, they return
+     `fail('code_access_unavailable', 'every read_file failed on access this round (N attempts, statuses …)')`
+     instead of `partner_output_invalid` / `evidence_floor_not_met`.
 2. `services/gateway/src/services/plan-sparring/plan-sparring-service.ts`: in the create dedup (~L251), a stored
    session is also retryable when its reasons include `evidence_floor_not_met` or `partner_output_invalid` **and**
-   its round-1 `tool_log` meets the same `codeAccessFailed` test. This covers the 10 legacy sessions, which were
-   stored before change 1. The test is exported from `partner.ts` and used in both places.
-   `human_approved_by` still blocks a re-run.
-3. `scripts/collab/plan-spar.mjs`: legacy-state migration in `step()`. Run it only when the current entry is
+   it is a legacy all-failed session. Legacy entries have no `status` (verified on the 10 sessions), so they get
+   their own predicate, `legacyCodeAccessFailed(round1.tool_log)`: at least 3 `read_file` attempts, none `ok`, and no
+   entry carrying `status`. The session must also be created before `2026-10-18T12:00Z`, the token fix, so the
+   relaxed rule can never match a session recorded under the new logging. Sessions recorded after change 1 already
+   carry `code_access_unavailable` and need no special case. `human_approved_by` still blocks a re-run.
+3. `scripts/collab/plan-spar.mjs`: legacy-state migration in `step()`. It runs right after `cur` is read and
+   **before** `retryInfra` / `replan` are computed (~L186), so the updated flags drive the decision. A test asserts
+   the migrated entry produces a `create` call (R1-F3). Run it only when the current entry is
    `verdict: 'escalated'`, `infra === false`, `retryable === false` **and** has no `reclassified` key (R1-F2:
    each legacy session is checked at most once, and a normal no-op push makes no network call):
    - call `client.get(cur.id)`. If the live session's `producer` is `ci-plan-spar.<slug>`, its reasons include
      `evidence_floor_not_met` / `partner_output_invalid`, and its round-1 `tool_log` has entries with none `ok`,
-     set `cur.infra = cur.retryable = true`. The existing `retryInfra` path then pops it and creates a new session.
+     set `cur.infra = cur.retryable = true`. The same legacy rule as change 2 applies (≥3 read_file attempts, none
+     ok, no `status`, created before the token fix), using the live session's `created_at`. The existing `retryInfra` path then pops it and creates a new session.
    - otherwise set `cur.reclassified = false` and continue as today.
    New escalations need no list change: change 1 reports them as `code_access_unavailable`, which is already in both
    lists.
 4. Tests:
    - `services/gateway/test/vtid-04868-plan-sparring-service.test.ts`:
-     - a pass whose tool executor fails every read escalates `code_access_unavailable`;
+     - a pass whose tool executor fails every read_file with 401 escalates `code_access_unavailable`, from each of
+       the three exits (nudge, invalid submissions, turn cap);
+     - read_file failures that are all 404 / invalid path keep the original reason;
+     - read_file all 401 plus ok `search` / `list_dir` results is still relabelled `code_access_unavailable`;
+     - a legacy session (no `status`, created after the cutoff) is not re-run;
      - a pass with ≥1 ok read and too few cited premises still escalates `evidence_floor_not_met`;
      - create with the same plan hash as a stored floor session whose round-1 `tool_log` is all failed starts a
        new session;

@@ -11,6 +11,8 @@ paths:
   - scripts/collab/plan-spar.test.mjs
   - services/gateway/src/services/plan-sparring/plan-sparring-service.ts
   - services/gateway/src/services/plan-sparring/partner.ts
+  - services/gateway/src/services/plan-sparring/github-tools.ts
+  - services/gateway/src/services/plan-sparring/types.ts
   - services/gateway/test/vtid-04868-plan-sparring-service.test.ts
   - services/gateway/test/vtid-04868-plan-sparring-stage.test.ts
   - docs/validation/**
