@@ -55,8 +55,9 @@ Observed: the re-pushes at 2026-10-18T18:42–18:45Z ran PLAN-SPAR green and com
      readable file, no pinned ref).
    - `partner.ts` exports
      `codeAccessFailed(toolLog) = reads.length > 0 && reads.every((e) => !e.ok && isAccessStatus(e.status))`,
-     where `reads = toolLog.filter((e) => e.name === 'read_file')` and `isAccessStatus(s) = s === 0 || s === 401 ||
-     s === 403 || s >= 500` (R1-F2). It only considers `read_file`, because that is the only tool the evidence
+     where `reads = (toolLog ?? []).filter((e) => e.name === 'read_file')` and `isAccessStatus(s) = s === 0 ||
+     s === 401 || s === 403 || s === 429 || s >= 500` (R1-F2; 429 added in session 2, R1-F2: GitHub rate limiting
+     is a code-access outage too). It only considers `read_file`, because that is the only tool the evidence
      floor counts (`citesReadFile`). A working `list_dir` or `search` does not hide a broken contents read. A 404,
      an invalid path or a too-large file is a reachable GitHub plus a wrong target. That is a real partner
      problem and is never relabelled. Residual assumption: all three tools share one token.
@@ -74,7 +75,12 @@ Observed: the re-pushes at 2026-10-18T18:42–18:45Z ran PLAN-SPAR green and com
 3. `scripts/collab/plan-spar.mjs`: legacy-state migration in `step()`. It runs right after `cur` is read and
    **before** `retryInfra` / `replan` are computed (~L186), so the updated flags drive the decision. A test asserts
    the migrated entry produces a `create` call (R1-F3). Run it only when the current entry is
-   `verdict: 'escalated'`, `retryable === false` **and** has no `reclassified` key. `infra` may be either value,
+   `verdict: 'escalated'`, `retryable === false`, has no `reclassified` key **and** its live session's
+   `escalation_reasons` include `evidence_floor_not_met` or `partner_output_invalid`. Because the reasons are not in
+   `state.json`, the gate is checked in two steps. First, the stored entry must be escalated, not retryable and not
+   reclassified, which is the condition for the single `client.get`. Then the live reasons decide. A
+   `round_cap_reached` / `disputed_items` entry is recorded `reclassified: false` after that one call and never
+   fetched again (session 2 R1-F3: one network call per such entry, ever). `infra` may be either value,
    because a legacy `partner_output_invalid` entry is already `infra: true` and still needs the migration (session
    1 R3-F2). Each legacy session is checked at most once, and a normal no-op push makes no network call:
    - call `client.get(cur.id)`. If the live session's `producer` is `ci-plan-spar.<slug>`, its reasons include
