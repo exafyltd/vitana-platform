@@ -61,7 +61,9 @@ Measured 2026-10-18 on the owner's Windows checkout and in CI:
 - **One failure path in `main()`:** `main()` takes a new `--comment-file <path>` argument (PLAN-SPAR.yml passes
   `$RUNNER_TEMP/plan-spar-comment.md`). Its whole body, including argument parsing, runs inside one `try/catch`.
   `--comment-file` is read first, before any validation, so even a `Usage` error writes the comment file (exit 2,
-  as today; s2 R1-F2). It handles every failure the same way:
+  as today; s2 R1-F2). `--comment-file` is optional. When it is absent (a manual run), every report goes to stdout
+  and the step summary only, and nothing is written to a file, so a missing path can never turn a Usage report into
+  a crash (s2 R2-F2). It handles every failure the same way:
   - a returned failure action (`responses_invalid` here, `code_access_down` from C): `main()` writes the report
     to the step summary and the comment file, then returns 1;
   - a thrown error from `step()`: `main()` wraps `await step(…)` in `try/catch`. That covers `client.create` /
@@ -82,8 +84,11 @@ Measured 2026-10-18 on the owner's Windows checkout and in CI:
 
 ### C. Sparring code-access health (gateway + scheduled alert)
 - Gateway: `GET /api/v1/plans/spar/health` (same auth as the other `plans-spar` routes:
-  `requireServiceOrAdmin`). For each repo in `PLAN_SPARRING_REPOS` it does one contents read of `README.md` at that
-  repo's `main` HEAD with `PLAN_SPARRING_GITHUB_TOKEN`. It returns
+  `requireServiceOrAdmin`). For each repo in `PLAN_SPARRING_REPOS` it does one contents read of `README.md` with
+  `PLAN_SPARRING_GITHUB_TOKEN` and **no `ref` parameter**, so GitHub serves the repo's own default branch whatever
+  it is named (s2 R2-F1). A 404 (no README on the default branch) counts as reachable (`ok: true`, status recorded),
+  because only 0/401/403/429/5xx mean the token cannot read. The Jest test pins that the request URL has no `ref=`
+  and that a 404 gives `ok: true`. It returns
   `{ ok, repos: { <repo>: { ok, status } }, token_configured }`. It sends no model call and writes nothing.
   `router.get('/health', …)` is registered **before** `router.get('/:id', …)` in `plans-spar.ts` (Express matches
   in order, and `/:id` would take `id = 'health'` and fail the UUID check). A Jest test pins that
@@ -168,7 +173,8 @@ not `depends_on`.
     error does not block (`create` is still called).
 - Gateway Jest (D): a throttle escalation's round file names the cause and says to push again later.
 - `plan-spar.test.mjs` (s2): a prior round without a review gives `responses_invalid` with `no_review_to_answer`; a
-  missing `--dir` still writes the comment file and exits 2; two branches with identical `updated` resolve to the
+  missing `--dir` still writes the comment file and exits 2; a run with neither `--dir` nor `--comment-file` prints
+  the Usage report and exits 2 without throwing; two branches with identical `updated` resolve to the
   lexically smaller ref.
 - Gateway Jest: the health route answers 401 without auth, `ok: true` when both reads return 200, `ok: false` with a
   per-repo status when one fails, and `token_configured: false` when the token is unset. `npx tsc --noEmit`.
