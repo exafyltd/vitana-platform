@@ -5,11 +5,9 @@ change_class: standard
 
 <!-- plan:begin -->
 ## Problem
-Track S (`docs/MULTI-TENANT-PLAN.md` §3) and the four Health Phase 0 live defects called out in WS10 were the
-multi-tenant program's highest priority: live security exposures to fix before any tenancy work. Re-verified in current
-code 2026-10-15, **almost all of Track S has already shipped** (VTID-05040..05055, 05147). Each premise below is marked
-CLOSED (with the migration/route that closed it, cited at current `file:line`) or OPEN. Only the OPEN items are planned
-(## Fix); the CLOSED ones are recorded so no successor re-plans shipped work (collaboration §7a, program §3).
+Track S (`docs/MULTI-TENANT-PLAN.md` §3) + the four WS10 Health Phase 0 live defects are the program's top priority.
+Re-verified in code, **almost all has shipped** (VTID-05040..05055, 05147). Each item is CLOSED (cited `file:line`) or
+OPEN; only OPEN is planned, CLOSED is recorded so no successor re-plans shipped work (collaboration §7a).
 
 1. **S-A** `GET /orb/debug/context-bootstrap` was anonymous and leaked any user's memory/context. **CLOSED** — now
    `requireAuth, requireExafyAdmin` (`services/gateway/src/routes/orb-live.ts:15554`, VTID-05040).
@@ -49,13 +47,11 @@ CLOSED (with the migration/route that closed it, cited at current `file:line`) o
 10. **S-J** `/debug/*` routes and non-private realtime channels. **MOSTLY CLOSED, one residual OPEN** — `/debug/tts`
     and `/debug/context-bootstrap` are exafy_admin (`orb-live.ts:15513,15554`), `/debug/memory` and `/debug/intent` are
     dev-sandbox-only and ANONYMOUS (no `requireAuth`; 404 outside dev-sandbox, `:15332,15421`) — adding
-    `requireAuth` is a WS0 backlog item (## Out of scope). **OPEN:** the dead `linkedin-import` edge function is still shipped (flagged for
-    removal by VTID-05049) and there is no committed route/channel inventory test proving every mounted route has an
-    auth gate. The broader "generated route inventory" and realtime-channel RLS are WS0 (M0), not Track S.
+    `requireAuth` is a WS0 backlog item (## Out of scope). **OPEN:** the dead `linkedin-import` (VTID-05049) still
+    ships, and no committed edge-function auth inventory exists. Generated route inventory + channel RLS are WS0.
 11. **S-K** billing `fetchTenantSettingsFeatureFlags` was an unscoped `.maybeSingle()` (silently null since the 2nd
     `tenant_settings` row). **CLOSED** — the admin-metrics path reads all rows and aggregates per tenant, no
-    `.maybeSingle()` (`services/gateway/src/routes/billing.ts:1305-1322`,
-    `billing-repository.ts:281-289`, VTID-05044 — the same VTID that closed S-G; both call sites carry its annotation).
+    `.maybeSingle()` (`services/gateway/src/routes/billing.ts:1305-1322`, `billing-repository.ts:281-289`, VTID-05044).
 12. **S-L** tenant admins saw every tenant's lab orders/results via `requirePartnerHealthAccess`. **CLOSED** — the
     tenant-admin branch is removed; only exafy_admin or a partner-org membership grants access
     (`services/gateway/src/routes/admin-partner-health.ts:62-100`, VTID-05042). This also closes two WS10 defects
@@ -74,20 +70,27 @@ CLOSED (with the migration/route that closed it, cited at current `file:line`) o
 Net: of 13 Track S items + 4 WS10 defects, **16 are CLOSED and 1 (S-J) has a small open residual.**
 
 ## Fix
-One lane only — the S-J residual. Everything else is already live; this spec exists to record that with evidence and to
-close the last gap without re-touching shipped code.
+Two lanes, both the S-J residual. Everything else is live; this spec records that and closes the last gap.
 
 - **Lane `s-j-route-inventory` (vitana-v1, seat `exafyltd`, repo vitana-v1).** Remove the dead `linkedin-import` edge
   function that VTID-05049 flagged for removal, and add a node inventory gate
   (`vitana-v1/scripts/check-edge-function-auth.mjs`, wired into `package.json` `"test"` beside the existing
-  `check-edge-data-client.mjs`/`check-realtime-helper.mjs`) that exits non-zero if a Supabase edge function under
-  `vitana-v1/supabase/functions/**` lacks a caller-auth gate (imports `_shared/caller-auth.ts` / calls `requireUser`,
-  or is on an explicit public allowlist with a stated reason). A node script, not a vitest `.test.ts`: `vitest.config.ts:19`
-  `include` is `src/**/*.test.{ts,tsx}`, so a test under `supabase/functions/**` is never collected. This is the
-  in-repo half of S-J's "route inventory"; the gateway-side generated inventory and realtime-channel RLS stay in WS0
-  (M0). Confirm no app code imports `linkedin-import` before
-  deleting it (grep `functions.invoke('linkedin-import'` / string references — `social-media-import` replaced it per
-  VTID-05049). Code-only, no migration. The lane adds its own `docs/validation/<vtid>/`.
+  `check-edge-data-client.mjs`/`check-realtime-helper.mjs`) — a **ratchet**, enumerated at `vitana-v1@32a82e6b6`
+  (s2 R2-F2): 65 functions; **class A** (6) import `_shared/caller-auth.ts` — `fetch-user-context`, `linkedin-import`
+  (deleted here), `process-campaign-queue`, `queue-campaign-recipients`, `send-welcome-discount`, `social-media-import`;
+  the other **59** predate it and go on a frozen in-script `LEGACY` map, each tagged with its observed pattern —
+  **B-user** (33, own `auth.getUser`/`getClaims`, e.g. `get-proactive-context`, `generate-proactive-greeting`,
+  `remove_super_admin`), **B-sig** (1, `stripe-webhook`), **B-secret** (3, `send-test-user-confirmation`,
+  `test-api-integration`, `verify-package-payment`), **C-unreviewed** (22, no recognised gate: `api-event-by-slug`,
+  `appilix-push`, `autopilot-profile`, `cj-get-product-details`, `cj-get-token`, `cj-search-products`,
+  `cj-webhook-handler`, `crewai-proxy`, `distribute-post`, `extract-video-meta`, `google-cloud-tts`,
+  `google-gemini-tts`, `integration-discovery`, `list_my_memberships`, `og-campaign`, `og-event`, `og-share`,
+  `og-short`, `run-uptime-checks`, `send-appointment-reminder`, `trigger-scheduled-campaigns`, `vertex-auth`). The gate
+  fails if any function NOT in `LEGACY` lacks the caller-auth import + call, or if a `LEGACY` key has no folder (the
+  map only shrinks). The map lives inside the script, so no function file enters `paths`; no legacy function is
+  edited. The 22 C entries are a tracked residual (## Out of scope). A node script, not vitest: `vitest.config.ts:19`
+  collects only `src/**/*.test.{ts,tsx}`. The gateway-side generated inventory and realtime-channel RLS stay in WS0.
+  Code-only, no migration; the lane adds its own `docs/validation/<vtid>/`.
   **vitana-v1 citations pinned to `exafyltd/vitana-v1@32a82e6b6`** (re-verified 2026-10-19; the partner has no v1
   ref, so these are the planner's verified reads): `supabase/config.toml:72-73` `[functions.linkedin-import]` +
   `verify_jwt = true`; `vitest.config.ts:19` `include: ['src/**/*.test.{ts,tsx}']`; `package.json:29` `"test"` =
@@ -96,69 +99,60 @@ close the last gap without re-touching shipped code.
   (excl. its own dir) hits ONLY the s4 test, no `functions.invoke` in v1 or platform `services/`;
   `SUPABASE-FUNCTIONS-RETIRE.yml:42-45` `ALLOWLIST` lacks it. T1 re-checks all of these at the lane's base commit
   first; any mismatch stops the lane (log + `next_actor: claude`).
-  Deleting the function requires two companion edits in the same lane so `npm test` stays green (verified 2026-10-15):
-  (i) remove the orphaned `[functions.linkedin-import]` block from `vitana-v1/supabase/config.toml:72-74`; and
-  (ii) update the **collected** vitest suite `vitana-v1/src/lib/edge-functions-caller-identity.s4.test.ts`, which reads
-  `linkedin-import/index.ts` and asserts on it at four spots — the five-functions loop `:77-88`, the profile-import
-  loop `:90-92`, the `flagged for removal` case `:107-110`, and the `arrayContaining([...])` scan `:272` (plus the `:6` header comment) — dropping
-  `linkedin-import` from all (keeping `social-media-import`/`fetch-user-context`). That file is under `src/**`, so
-  vitest collects it and it must be in the lane's `paths` or Lane-scope CI reddens the PR.
+  Two companion edits keep `npm test` green: (i) drop the `[functions.linkedin-import]` block (`config.toml:72-74`);
+  (ii) drop `linkedin-import` from the **collected** suite `src/lib/edge-functions-caller-identity.s4.test.ts` at
+  `:77-88`, `:90-92`, `:107-110`, `:272` (+ `:6` header), keeping `social-media-import`/`fetch-user-context`. Both are
+  in the lane `paths`.
 
-Because this lane changes only vitana-v1 code + a test, it ships dark-exempt (there is no runtime behaviour to flag —
-deleting an uncalled function and adding a test change nothing a member can reach), stated here as the one named
-exception, mirroring how prior Track S slices shipped (each was a security fix, not a flagged read path).
+Both lanes ship dark-exempt (deleting an uncalled function and adding a CI gate change nothing a member can reach) —
+the one named exception, as prior Track S security slices shipped.
 
-**Source deletion does NOT undeploy the function (verified 2026-10-18).** `supabase-functions-deploy.yml` only
-redeploys changed folders and never deletes removed ones, so dropping the directory just stops `linkedin-import` being
-re-deployed; a deployed copy stays invocable. Undeploy is only via `SUPABASE-FUNCTIONS-RETIRE.yml` (dispatch-only
-`supabase functions delete`, `ALLOWLIST`-gated — `linkedin-import` not yet on it — refusing any name still under
-`supabase/functions/`). So closure is two moves: (1) **this lane's PR** deletes source + config block + test refs
-(Kiro); (2) **after merge** a governance follow-up adds `linkedin-import` to the RETIRE `ALLOWLIST` and dispatches it
-(executor **claude** — it edits `.github/workflows/**`, dispatches a workflow and writes to live Supabase, none of
-which Kiro does). No second lane for (2); it is a one-line governance action tracked in `handoff.md`. The retire
-`Confirm` step (a read of the function list) is the proof — STAGING-VERIFY can't (invoking is a POST the guard aborts,
-rule 48).
+**Source deletion does NOT undeploy the function (verified 2026-10-18).** `supabase-functions-deploy.yml` never
+deletes removed folders, so a deployed copy stays invocable. Undeploy is only via `SUPABASE-FUNCTIONS-RETIRE.yml`
+(dispatch-only `supabase functions delete`, `ALLOWLIST`-gated at `:42-45` — `linkedin-import` not on it — refusing any
+name still under `supabase/functions/`). So closure is a **second lane** (s2 R2-F1):
+
+- **Lane `s-j-retire-function` (vitana-v1, executor `claude`, `depends_on: [s-j-route-inventory]`, its own VTID
+  allocated by PLAN-SPAR with the first).** `paths`: `.github/workflows/SUPABASE-FUNCTIONS-RETIRE.yml`,
+  `docs/validation/**`. One commit adds `linkedin-import` to `ALLOWLIST` (a governance path, so `executor: claude` per
+  collaboration §3a; the Lane-scope gate enforces it). After that PR merges, the same lane, under its VTID, dispatches
+  the workflow and records the `Confirm` step (a read of the project function list) in its `docs/validation/<vtid>/`.
+  S-J closes when that lane is `done` — Kiro never dispatches or writes live (§7a).
 
 ## Migrations
-None. (The realtime-channel RLS that S-J alludes to is a WS0 item, not this slice; this spec adds no migration, so its
-reserved range `20261101010000`–`20261101015959` stays unused and is recorded here only to reserve it against drift.)
+None. Reserved range `20261101010000`–`20261101015959` stays unused (realtime-channel RLS is WS0).
 
 ## Tests
 - `s-j-route-inventory`: a node inventory script `scripts/check-edge-function-auth.mjs` (the repo's convention for an
   edge-function gate — see `scripts/check-edge-data-client.mjs`, both wired into `package.json` `"test"`) over
-  `vitana-v1/supabase/functions/**`, asserting each function BOTH imports `_shared/caller-auth.ts` AND actually calls
-  one of its gate functions (`requireUser` / `isServiceRoleCaller` / `isTriggerSecretCaller`), or is on a documented
-  in-file public allowlist with a stated reason; it exits non-zero if `linkedin-import` reappears without a gate.
-  It is a static heuristic (an unused import alone does not pass), not control-flow proof — the functions are Deno that
-  node/Vitest cannot execute, the constraint the s4 suite already states; before-the-body ordering (`await requireUser`
-  precedes `req.json()`) is already asserted there, so this gate is the tree-wide floor that no NEW function is ungated.
-  It runs inside the `"test"` chain, so a plain `npm test` executes it. The rest of
-  `npm test` (nav registry, design manifest, i18n lint) stays green — no App.tsx route added, so no nav-registry /
-  screen-manifest / parity-ledger change. 42c/42e/42h untouched (no support/operator/role surface changed).
+  `vitana-v1/supabase/functions/**`: every function not in the frozen `LEGACY` map (## Fix) must BOTH import
+  `_shared/caller-auth.ts` AND call a gate (`requireUser` / `isServiceRoleCaller` / `isTriggerSecretCaller`); a
+  `LEGACY` key without a folder also fails. Exits 0 on the 64 functions left at `32a82e6b6`, non-zero on a planted
+  ungated function and on `linkedin-import` reappearing ungated. Static heuristic, not control-flow proof (Deno that
+  node cannot run); ordering stays asserted by the s4 suite. It runs in the `"test"` chain; the rest of `npm test` stays
+  green — no App.tsx route, so no nav-registry / screen-manifest / parity-ledger change. 42c/42e/42h untouched.
+- `s-j-retire-function`: no code test (a one-line ALLOWLIST edit); proof is the retire run's `Confirm` read.
 - No pgTAP/contract/golden here (no DB change, no shared instruction surface touched).
 
 ## Staging verification
-Read-only (rule 48). The source-level proof is the CI inventory gate + the updated Vitest suite, both against committed
-source, not a live service; the deployed-surface proof is the retire workflow's own `Confirm` step (## Rollout), a read
-of the project function list. No staging invoke confirms the removal — invoking an edge function is a POST the staging
-guard aborts, so it cannot run read-only. A read-only staging spec, if added, only signs in as the test user
-(`a27552a3-0257-4305-8ed0-351a80fd3701`) and loads a GET-only page. No production probe (rules 31/31b/48).
+Read-only (rule 48). Source proof: the CI gate + updated Vitest suite. Deployed proof: the retire run's `Confirm` read.
+No staging invoke (an edge-function call is a POST the guard aborts). No production probe (rules 31/31b/48).
 
 ## Rollout
 Code-only; dark-exempt as stated in ## Fix. Kiro PR → reviewer_seat review → Project Manager merge → staging deploy →
-STAGING-VERIFY → Gate 2 → PUBLISH. No DB apply. Reversible by reverting the PR; no data touched. Then the retire
-follow-up described in ## Fix (executor claude, the only live-system step, outside the Kiro lane).
+STAGING-VERIFY → Gate 2 → PUBLISH. No DB apply. Reversible by reverting the PR. Then lane `s-j-retire-function`
+(executor claude, the only live-system step): ALLOWLIST PR → merge → dispatch → `Confirm` read recorded.
 
 ## Risks
 - A hidden consumer of `linkedin-import`. Mitigation: T1's both-repo grep (pin block in ## Fix) before deleting.
-- The inventory gate over-fits or misses a function. Mitigation: it walks `supabase/functions/**` for the gate
-  import-and-call pair or allowlist membership, so a new ungated function fails CI in the `"test"` chain.
+- The gate fires on legacy functions. Mitigation: all 59 pre-caller-auth functions are enumerated in `LEGACY`
+  (## Fix), so the first run is green and only NEW functions are held to the import-and-call rule.
+- `LEGACY` blesses a weak function. It does not: entries are tagged, not approved; the 22 C entries stay a residual.
 - Deleting `linkedin-import` breaks the existing collected suite `src/lib/edge-functions-caller-identity.s4.test.ts`
   (it reads the gone file). Mitigation: that file is in the lane `paths` and T2a updates its four `linkedin-import`
   assertions in the same PR, so `npm test` stays green; the suite still covers `social-media-import`/`fetch-user-context`.
 - Source deletion leaves an already-deployed `linkedin-import` live (the deploy workflow never deletes removed
-  functions). Mitigation: the ## Rollout retire follow-up (ALLOWLIST add + dispatch, executor claude) undeploys it and
-  confirms; S-J's "still shipped" is satisfied only once that run reports it absent — tracked, not assumed.
+  functions). Mitigation: lane `s-j-retire-function` (own VTID) undeploys it; S-J closes only when that lane is done.
 
 ## Out of scope
 - Everything already CLOSED above (S-A..S-I, S-K, S-L, S-M, WS10 a–d) — do not re-touch shipped code or migrations.
@@ -169,18 +163,19 @@ follow-up described in ## Fix (executor claude, the only live-system step, outsi
   `open_signup AND is_active AND NOT is_platform` (matching the VTID-05149 signup triggers) — the parent §3 S-E rule
   is `open_signup` only and hands the full join flow to WS3, so it belongs to that slice; today `open_signup` defaults
   `false` and no tenant has `is_platform` (`20261014000100_vtid_05149_…sql:13,44`). (b) `requireAuth` on the anonymous
-  dev-sandbox `/debug/memory` / `/debug/intent` — WS0 route-inventory backlog.
+  dev-sandbox `/debug/memory` / `/debug/intent` — WS0 route-inventory backlog. (c) security review of the 22
+  `LEGACY` C-unreviewed edge functions (## Fix) — WS0 route-inventory backlog; fixes leave `LEGACY` as they land.
 
 ## Depends on
 - Done VTIDs this spec builds on and must not duplicate: VTID-05040 (S-A), VTID-05041 (S-B/S-D), VTID-04981 (S-C),
   VTID-05043 (S-E), VTID-05042 (S-F/S-L), VTID-05044 (S-G + S-K — one VTID closed both; see Problem #11),
   VTID-05049/05120 (S-H), VTID-05048 (S-I), VTID-05030 (WS10 tokens), VTID-05031 (WS10 webhooks), VTID-05055 (WS10
   confirmation/audit), VTID-05147 (S-M).
-- No lane in another mt-* spec; no lane dependency inside this spec (single lane).
+- No lane in another mt-* spec. Inside: `s-j-retire-function` depends on `s-j-route-inventory` (RETIRE refuses while
+  the source folder exists).
 
 ## Owner decisions
-None new. The dark-by-default exception for this code-only, member-invisible lane is stated in ## Fix for the record.
-D13 (no synthetic tenant in production) and the production-read-only posture stand.
+None new (dark-exempt stated in ## Fix). D13 and the production-read-only posture stand.
 <!-- plan:end -->
 
 ## Open questions for sparring

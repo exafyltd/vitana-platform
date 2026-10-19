@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: claude
 state: drafted
-updated: 2026-10-18T22:47Z
+updated: 2026-10-19T18:00Z
 ---
 # Handoff — mt-track-s (Track S security hotfixes S-A..S-L + Health Phase 0 live defects / WS10)
 
@@ -22,6 +22,13 @@ Lanes:
   **vitana-v1**, `ready`. Removes the dead `linkedin-import` edge function (flagged for removal by VTID-05049) and adds
   an edge-function caller-auth inventory test. Code-only, no migration. HELD at `next_actor: owner` until PLAN-SPAR
   allocates its VTID (then it flips to `kiro`).
+- `s-j-retire-function` — executor **claude** (reviewer_seat `jtadic`), repo **vitana-v1**, `ready`,
+  `depends_on: [s-j-route-inventory]`. Adds `linkedin-import` to the `SUPABASE-FUNCTIONS-RETIRE.yml` `ALLOWLIST`,
+  then dispatches it and records the `Confirm` read. HELD at `next_actor: owner` until PLAN-SPAR allocates its VTID.
+
+Tracked residuals (not these lanes): (a) `switch_to_tenant_by_slug` lookup hardening — WS3 join-flow slice;
+(b) `requireAuth` on dev-sandbox `/debug/memory` + `/debug/intent` — WS0 backlog; (c) security review of the 22
+`LEGACY` C-unreviewed edge functions listed in `plan.md` ## Fix — WS0 route-inventory backlog.
 
 Migrations: none. Reserved range `20261101010000`–`20261101015959` is unused and recorded only to reserve it.
 
@@ -153,3 +160,11 @@ comment `:6` added). R1-F2: S-E record corrected — `switch_to_tenant_by_slug` 
 S-E rule). Tracked residual (not this lane): harden its lookup to `open_signup AND is_active AND NOT is_platform` in
 the WS3 join-flow slice. R1-F3: `/debug/memory` + `/debug/intent` recorded as anonymous dev-sandbox-only; tracked
 residual: `requireAuth` in the WS0 route-inventory backlog. No lane/path change. No live system touched.
+### 2026-10-19T18:00Z · kiro-hotmail-202610151618-b437 · drafted (s2 round-2 answered, session d0c274cd)
+R2-F1 accepted: the RETIRE follow-up is now lane `s-j-retire-function` (executor claude, vitana-v1, paths
+`.github/workflows/SUPABASE-FUNCTIONS-RETIRE.yml` + `docs/validation/**`, depends on `s-j-route-inventory`, own VTID).
+R2-F2 accepted: enumerated all 65 vitana-v1 edge functions at `32a82e6b6` — 6 import `_shared/caller-auth.ts` (each
+calls a gate), 59 predate it (33 own getUser/getClaims, 1 stripe signature, 3 shared secret, 22 no recognised gate).
+The gate is now a ratchet: the 59 go on a frozen in-script `LEGACY` map (no function file enters `paths`); new
+functions must import + call caller-auth. The 22 C-unreviewed are tracked residual (c). Validators re-run (0 errors).
+No live system touched.

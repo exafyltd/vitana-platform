@@ -35,9 +35,11 @@ collected vitest suite `src/lib/edge-functions-caller-identity.s4.test.ts` are i
       (`:272`). Keep `social-media-import` / `fetch-user-context` coverage unchanged. This file is under `src/**`, so
       vitest collects it; without this edit `npm test` fails on the missing file.
 - [ ] T3 Add `vitana-v1/scripts/check-edge-function-auth.mjs` (follow the shape of `scripts/check-edge-data-client.mjs`:
-      walk `supabase/functions/**`): enumerate every `supabase/functions/*/index.ts`, pass each that imports
-      `_shared/caller-auth.ts` or calls `requireUser` (or is on an explicit in-file public allowlist with a one-line
-      stated reason, e.g. a webhook that verifies a vendor signature), exit non-zero otherwise. Add it to `package.json`
+      walk `supabase/functions/**`): enumerate every `supabase/functions/*/index.ts`; each function NOT in a frozen
+      in-script `LEGACY` map must import `_shared/caller-auth.ts` AND call `requireUser`/`isServiceRoleCaller`/
+      `isTriggerSecretCaller`; a `LEGACY` key with no folder also fails (the map only shrinks). `LEGACY` = the 59
+      pre-caller-auth functions enumerated in `plan.md` ## Fix, each tagged B-user / B-sig / B-secret / C-unreviewed.
+      Do not edit any legacy function. Add it to `package.json`
       `"test"` next to the two existing `check-*.mjs` scripts (…`&& node scripts/check-edge-function-auth.mjs && vitest run`).
       The gate must fail if `linkedin-import` reappears ungated.
 - [ ] T4 `docs/validation/<vtid>/`: copy of `plan-sparring.md`, `scope.json` (kind chore, the allowed paths),
@@ -51,3 +53,16 @@ nav registry, design manifest, i18n lint unaffected — no App.tsx route added);
 `VTID-xxxxx (mt-track-s/s-j-route-inventory): …`; commits carry `Collab-Session: <kiro id>` and
 `Collab-Lane: mt-track-s/s-j-route-inventory`. Kiro never calls a write endpoint against any live system; staging
 verification is read-only.
+
+<!-- lane: s-j-retire-function -->
+## s-j-retire-function — undeploy `linkedin-import` via the RETIRE workflow (VTID: allocated by PLAN-SPAR after approval, Claude Code, repo vitana-v1)
+Allowed paths:
+- `.github/workflows/SUPABASE-FUNCTIONS-RETIRE.yml`
+- `docs/validation/**`
+(Identical to `lanes/s-j-retire-function.md` `paths:`. `.github/**` is a governance path, so `executor: claude`.
+Depends on `s-j-route-inventory`: the RETIRE workflow refuses any name still under `supabase/functions/`.)
+- [ ] R1 Add `linkedin-import` to the `ALLOWLIST` in `vitana-v1/.github/workflows/SUPABASE-FUNCTIONS-RETIRE.yml`
+      (`:42-45`); one commit, PR under this lane's VTID.
+- [ ] R2 After merge, dispatch the RETIRE workflow for `linkedin-import` under this lane's VTID; record the run link and
+      its `Confirm` step output (a read of the project function list showing it absent) in `docs/validation/<vtid>/`.
+Acceptance: `linkedin-import` absent from the deployed function list per the retire run's `Confirm` step; S-J closed.
