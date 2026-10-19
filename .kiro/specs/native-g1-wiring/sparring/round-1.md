@@ -1,97 +1,43 @@
 # Sparring round 1 — in_progress
 
-Session: `2d48c240-26ae-4ed6-99da-f843e1ec59c9` · plan hash `28ed4bfb2f6669fe156b759f84d73bda99a5485f6359698b886714d2592d8cba`
+Session: `185a911c-d850-4c75-bdd6-89c59beb4e3a` · plan hash `8082ef945073212e56807c43796e7568f6bc3e8c15f3ac7d79ec908369d21324`
 
 ## Summary
 
-The plan is structurally sound at a high level (env profiles, fixture-only smoke, gated owner switch) but has two blockers and three major findings that must be resolved before implementation. The central problem is that the sparring session is pinned exclusively to `vitana-platform` while every line of implementation code lives in `vitana-v1` — making all code-level premises unverifiable. Two additional findings (a fabricated CLAUDE.md section citation and a cross-repo lane that will break Lane scope enforcement) are independent of that root issue and must also be fixed.
+I verified the plan's premises against the pinned commit of vitana-platform. Two key factual citations are wrong or unverifiable: (1) the CLAUDE.md rule number cited for the single-Supabase-project constraint is incorrect, and (2) the vitana-v1 extra_refs fix claimed as "merged to main" is not present in the pinned code, leaving all native-code file:line premises unverifiable in this session. The MOBILE-DEVICE-E2E.yml and handoff.md premises hold as stated.
 
 ## Findings
 
-### R1-F1 [blocker]
+### R1-F1 [major]
 
-The sparring session is pinned only to vitana-platform, but every piece of implementation code the plan premises are drawn from lives in vitana-v1. This means the partner cannot read — and therefore cannot verify — any of the cited file:line claims: `apps/mobile/src/config/env.ts:82/105/189`, `apps/mobile/app.config.ts:36`, `tools/orb-fake-gateway/server.js:1`, `src/push/provider.ts:52`, the parity ledger, the shell, the push/linking scaffolding. PLAN-SPAR.yml checks out only `vitana-platform` (line 50: `ref: ${{ github.event.pull_request.base.sha }}`). There is no pinned ref for vitana-v1 in this session. The `program.md` confirms the mobile app lives in vitana-v1 ('Expo / React Native, `apps/mobile/` in vitana-v1') and `handoff.md` repeats it. CLAUDE.md rule 52 requires the partner to 'verify the plan's premises against the code (`file:line`)'. A sparring session that cannot read any of the cited code cannot perform that function — the governance gate has no evidence to stand on.
+The plan cites 'CLAUDE.md rule 31 (VTID-03506)' as stating 'There is exactly one Supabase project and every frontend (incl. preview/staging) writes to it.' In reality, CLAUDE.md rule 31 (lines 756-760) is about Bedrock unconfigured behaviour: 'IF Bedrock is unconfigured (BEDROCK_ROLE_ARN unset) → THEN the adapter reports not_configured and the router SKIPS it.' The single-Supabase-project fact does exist in the codebase (handoff.md line 100: 'the staging frontend uses the production Supabase'), but it is NOT rule 31 and its VTID is not VTID-03506. A plan whose safety argument ('never points any build at production or staging') rests on a mis-cited governance rule should correct the citation before implementation.
 
-- `exafyltd/vitana-platform:.github/workflows/PLAN-SPAR.yml:47` — - name: Base checkout (trusted code)
-          uses: actions/checkout@v4
-          with:
-            ref: ${{ github.event.pull_request.base.sha }}
-            path: base
-            persist-credentials: false
-- `exafyltd/vitana-platform:docs/programs/native-app/program.md:9` — - vitana-v1:docs/programs/native-app/NATIVE-APP-PLAN.md
-...exit_criteria:
-    - The exit criteria of vitana-v1 docs/programs/native-app/NATIVE-APP-PLAN.md are met
-- `exafyltd/vitana-platform:.kiro/specs/health-native/handoff.md:22` — | Native Maxina app (Expo / React Native, `apps/mobile/` in vitana-v1, replaces the Appilix wrapper) | VTID-05021 | vitana-v1 `docs/programs/native-app/NATIVE-APP-PLAN.md`
-- `exafyltd/vitana-platform:CLAUDE.md:486` — 52. **The partner is independent and adversarial.** It sees the plan and the
-      code, never the planner's reasoning; it verifies the plan's premises
-      against the code (`file:line`) and its findings are kept verbatim.
+- `exafyltd/vitana-platform:CLAUDE.md:756` — 31. **IF** Bedrock is unconfigured (`BEDROCK_ROLE_ARN` unset) → **THEN the adapter reports `not_configured` and the router SKIPS it.** Flipping routing to `bedrock` before that var is set does not fail loudly — it quietly serves the fallback instead. Configure and verify Bedrock FIRST, then flip routing. Never the other way round.
+- `exafyltd/vitana-platform:.kiro/specs/health-native/handoff.md:100` — Never test against production; staging specs are read-only; the staging frontend uses the production Supabase.
 
-Suggestion: Either (a) add `vitana-v1` as a second checkout in `PLAN-SPAR.yml` so the partner has a pinned ref for it, or (b) move the spec to `vitana-v1` per the collaboration rule §2 ('`.kiro/specs/<slug>/` in the repo where most code changes'). The collaboration.md explicitly states 'plans that span both repos: `vitana-platform`' — but this plan's code changes are entirely in vitana-v1, so the spec belongs there. Whichever fix is chosen, the sparring must be re-run with the partner able to read the actual code files.
+Suggestion: Find the correct rule number and VTID for the single-Supabase-project constraint (it may be in §3 of backend.md or infrastructure.md under a different rule number). The safety argument itself is sound — production and staging share one database — but the evidence trail must cite the right source. Search for 'VTID-03506' to locate the actual rule it belongs to.
 
-### R1-F2 [blocker]
+### R1-F2 [major]
 
-The plan cites `docs/programs/native-app/NATIVE-APP-PLAN.md:95` as the source of the §2a G1 gate claim, but this file does not exist in vitana-platform at the pinned commit. The `docs/programs/native-app/` directory contains only `program.md`, which itself confirms the plan lives in `vitana-v1:docs/programs/native-app/NATIVE-APP-PLAN.md`. An unqualified path citation that resolves to a 404 in the pinned repo provides no verifiable governance basis for the G1-gated exit criterion.
+The plan declares `spar-vitana-v1-ref` as 'RESOLVED, merged to main' and states that this fresh session can now read vitana-v1 files. However, at the pinned commit (7b6425b) the `plan-spar.mjs` `client.create` call (lines 192-194) sends `{ plan_text, producer, change_class, base_ref, repo, approval_policy }` with NO `extra_refs` parameter. PLAN-SPAR.yml (lines 80-82) likewise does not resolve a vitana-v1 SHA or pass any extra ref to the script. Attempts to read vitana-v1 files in this session returned 'no pinned ref for exafyltd/vitana-v1 in this session', confirming the fix is not live at this pin. Every vitana-v1 file:line premise in the plan (env.ts production guards, push provider injection, app.config.ts APP_PROFILE, orb-fake-gateway structure, parity ledger stats, etc.) is therefore unverifiable by the sparring partner.
 
-- `exafyltd/vitana-platform:docs/programs/native-app/program.md:1` — docs:
-    - vitana-v1:docs/programs/native-app/NATIVE-APP-PLAN.md
-...
-- `exafyltd/vitana-platform:.kiro/specs/health-native/handoff.md:19` — | Program | Umbrella VTID | Plan | ...
-| Native Maxina app ... | VTID-05021 | vitana-v1 `docs/programs/native-app/NATIVE-APP-PLAN.md`
+- `exafyltd/vitana-platform:scripts/collab/plan-spar.mjs:192` — session = await client.create({
+  plan_text: planText, producer: `ci-plan-spar.${slug}`, change_class: changeClass, base_ref: baseSha, repo, approval_policy: POLICY,
+});
+- `exafyltd/vitana-platform:.github/workflows/PLAN-SPAR.yml:80` — git -C head diff --name-only "$BASE_SHA"...HEAD > "$RUNNER_TEMP/changed.txt"
+node base/scripts/collab/plan-spar.mjs --dir head --base-sha "$BASE_SHA" --repo "${{ github.repository }}" \
+  --changed "$RUNNER_TEMP/changed.txt" --summary "$GITHUB_STEP_SUMMARY"
 
-Suggestion: All citations to plan governance documents must be repo-qualified: `vitana-v1:docs/programs/native-app/NATIVE-APP-PLAN.md:95`. Additionally, since that file is in vitana-v1 and this sparring session cannot pin vitana-v1, the plan cannot substantiate its governance premise — this feeds directly into R1-F1.
+Suggestion: The plan cannot claim the lane is resolved until the fix is verifiably present at the session's pinned commit. Either re-pin this sparring session to a commit that includes the extra_refs fix so vitana-v1 premises can be verified, or do not mark the lane as resolved — the plan should remain at 'approved→executing blocked on spar-vitana-v1-ref' rather than claiming a resolution that the partner cannot confirm. The dozen-plus vitana-v1 file:line citations (env.ts:82, :105, :189; push/provider.ts:52; app.config.ts:36; tools/orb-fake-gateway/server.js:1; etc.) are the foundation of the design decisions and cannot be taken on trust.
 
-### R1-F3 [major]
+### R1-F3 [minor]
 
-The plan states 'All `paths` are under `apps/mobile/**` except `build-profiles` (`.github/**`) and `real-g1-switch` (`docs/validation/g1/**`)' and claims a self-check confirms no in-scope file is orphaned. This is false. The `fixture-gateway` lane scope is declared as `tools/fixture-gateway/**` and `tests/fixture-gateway/**`. The plan itself compares this new tool to the ORB fake at `tools/orb-fake-gateway/server.js` (unqualified path, not `apps/mobile/tools/`), making clear `tools/` is at the vitana-v1 repo root, not inside `apps/mobile/`. Neither `tools/fixture-gateway/**` nor `tests/fixture-gateway/**` is under `apps/mobile/**`. The self-check claim is false and the Lane scope enforcement (`PR-GATE` step) will either reject the PR or silently ignore those paths, leaving the fixture gateway ungoverned.
+The plan's Decisions section cites `design.md §2`, `§3`, `§4`, `§5`, `§6` roughly ten times as the sole grounding for each decision. Those sections live in `.kiro/specs/native-g1-wiring/design.md`, which does not exist at the pinned commit because PLAN-SPAR runs against the base branch and the spec is authored in the PR head. Per the collaboration protocol, the sparring partner reads the base branch as trusted code and the PR head only as data. Since design.md is data (PR head) and not verifiable by read_file against the base, every decision that is only grounded in design.md — rather than in actual code — is unconfirmable by the partner.
 
-- `exafyltd/vitana-platform:.claude/rules/collaboration.md:99` — paths:                       # the only files the lane may change (Lane scope); required from executing on
-...
-The PR-GATE check **Lane scope** fails a lane PR that changes anything else
-- `exafyltd/vitana-platform:.kiro/specs/health-native/handoff.md:33` — Native Wave 1 + 1b — the whole stack is on vitana-v1 main:
-  N1 `@vitana/core` + `@vitana/tokens` (05183, #1396), N2 UI kit (05176, #1395), N3 shell + i18n keys
-  (05186, #1397 + #1400), N4-APP push/links/remote config (05178, #1390)
+- `exafyltd/vitana-platform:.github/workflows/PLAN-SPAR.yml:9` — Security: `pull_request_target` runs THIS file from the base branch, and scripts/collab/plan-spar.mjs is run from the base checkout. The PR head is checked out only as data (read files, write the round files, push them back) — nothing from the PR is executed while the token is in the environment.
+- `exafyltd/vitana-platform:.kiro/specs/health-native/handoff.md:70` — `native-g1-wiring` — point dev/QA builds at the G1 test backend once it exists (env profiles, EAS profiles); until then, fake-gateway / fixture tests only. Wave 1 exit: signed-in G1 member navigates the full shell, gets a push and opens its deep link on both platforms.
 
-Suggestion: Add `tools/fixture-gateway/**` and `tests/fixture-gateway/**` (and any other root-level vitana-v1 paths) to the explicit exceptions list in the path ownership summary. Also verify that `tests/g1-smoke/**` in `deep-link-push-smoke` is similarly under `apps/mobile/` or needs the same exception treatment.
-
-### R1-F4 [major]
-
-The `build-profiles` lane declares scope `eas.json, .github/workflows/NATIVE-CI.yml` and the plan maps its paths to `.github/**`. But `eas.json` is an Expo build-profile file that must live at `apps/mobile/eas.json` in vitana-v1, while `NATIVE-CI.yml` lives in vitana-platform's `.github/workflows/`. A single lane cannot span two repos under the collaboration protocol — lane files carry one `branch:` and one `pr:`. If `eas.json`'s path is declared as `apps/mobile/eas.json`, the Lane scope check will reject the `.github/**` PR for touching a path not in its declared scope, and vice-versa. The plan gives no account of how a cross-repo lane is executed or reviewed.
-
-- `exafyltd/vitana-platform:.claude/rules/collaboration.md:50` — lane: <lane-id>              # = file name, lowercase-dashes
-state: ready | executing | in-review | verified | done | parked
-...
-branch: <branch>
-pr: <url>
-- `exafyltd/vitana-platform:.claude/rules/collaboration.md:98` — paths:                       # the only files the lane may change (Lane scope); required from executing on
-    - src/pages/messages/**
-...
-The PR-GATE check **Lane scope** fails a lane PR that changes anything else
-
-Suggestion: Split `build-profiles` into two lanes: one `executor: claude` lane in vitana-platform covering `.github/workflows/NATIVE-CI.yml` only, and a second `executor: kiro` lane in vitana-v1 covering `apps/mobile/eas.json`. Each gets its own branch, PR, and VTID. The dependency order is preserved (eas.json lane depends on env-profiles; NATIVE-CI lane depends on eas.json lane).
-
-### R1-F5 [major]
-
-The plan cites `root CLAUDE.md "Why no host is exempt"` as the source for the production/staging safety justification. Reading all 1016 lines of CLAUDE.md at the pinned commit, no section, heading, or quoted phrase matching 'Why no host is exempt' exists. Rule 31 covers the same concept ('NEVER write as this account — on ANY host. Reading is fine everywhere. There is exactly one Supabase project and every frontend (incl. preview/staging) writes to it — the host selects which code runs, not which database gets written') but is not titled or indexed with that phrase. Citing a non-existent heading as governance evidence is a fabricated citation.
-
-- `exafyltd/vitana-platform:CLAUDE.md:599` — 31. **NEVER write as this account — on ANY host. Reading is fine everywhere.**
-      Not a post, comment, like, profile edit, onboarding step, or wallet call.
-      **There is exactly one Supabase project and every frontend (incl. preview/
-      staging) writes to it** — the host selects which code runs, not which
-      database gets written, so "do it on the preview instead" mitigates
-      nothing.
-
-Suggestion: Replace the fabricated heading citation with the actual rule reference: `CLAUDE.md rule 31 (VTID-03506): "There is exactly one Supabase project and every frontend (incl. preview/staging) writes to it."` The underlying safety reasoning is valid; only the citation is wrong.
-
-### R1-F6 [minor]
-
-The plan creates `.github/workflows/NATIVE-CI.yml` without acknowledging `MOBILE-DEVICE-E2E.yml`, which already exists in the same directory and covers iOS simulator testing of the Vitana app. No rationale is given for creating a new workflow rather than extending the existing one, and there is no analysis of whether both workflows would trigger on the same paths or events, creating duplicate CI cost.
-
-- `exafyltd/vitana-platform:.github/workflows/MOBILE-DEVICE-E2E.yml:1` — # MOBILE-DEVICE-E2E — real-device-layer frontend testing via sim-use
-...
-# Runs the Vitana web frontend on a REAL iOS Simulator (macOS runner) and
-# drives it through the platform accessibility tree
-
-Suggestion: The plan should explicitly state that `MOBILE-DEVICE-E2E.yml` runs the web frontend in Safari (not the native Expo bundle) and is therefore a different concern. A one-line note to that effect, plus confirmation that the new NATIVE-CI.yml uses `workflow_dispatch` only (to avoid macOS runner cost), would close this gap.
+Suggestion: For each decision grounded only in design.md, inline the key factual claim directly into plan.md with a code citation the partner can verify. Decisions 1–5 each have a rejected alternative; the rationale for the rejection should cite the actual code (e.g. env.ts line numbers, provider.ts injection point) rather than a section of a file the partner cannot read. This is partially moot if R1-F2 is resolved (once vitana-v1 is pinned the env.ts/provider.ts cites become checkable), but design.md itself will still be unreadable.
 
 ## Next
 
