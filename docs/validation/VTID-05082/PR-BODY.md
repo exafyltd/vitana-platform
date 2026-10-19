@@ -14,6 +14,9 @@
 
 VALIDATION_PROFILE: command_hub_frontend
 OASIS_IMPACT: no
+SCOPE_ALLOWLIST: services/gateway/src/frontend/command-hub/operator-console.js services/gateway/src/frontend/command-hub/index.html services/gateway/src/frontend/command-hub/styles.css services/gateway/dist/frontend/command-hub/operator-console.js services/gateway/dist/frontend/command-hub/app.js services/gateway/dist/frontend/command-hub/index.html services/gateway/test/command-hub/vtid-05082-svg-render.test.ts docs/validation/VTID-05082/**
+ACCEPTANCE: docs/validation/VTID-05082/acceptance.md (AC-1..AC-16). 12 unit tests incl. mandatory hostile-SVG pass locally where jsdom is present; CI Command Hub gates (Golden Fingerprint, Path Ownership, Bundle Syntax, Lane scope, pr-gate) green. AC-7 lightbox desktop+mobile screenshots owed on the staging walkthrough.
+MERGE_PAYLOAD_PREVIEW: Command Hub operator chat renders assistant-reply SVG as a sanitized <img src=data:image/svg+xml;base64,...>; single hook in renderOperatorChat (operator-console.js), no API/route/DB change, no OASIS events, staging-only deploy.
 
 ## 🎯 VTID Reference
 
