@@ -491,9 +491,14 @@ email intake, routines. Procedure: skill `.claude/skills/plan-sparring/`.
     two passes for every change class; cap 3 rounds (standard). A rejection
     the partner still disputes is unresolved and goes to the owner.
 53. **Partner model: Claude Opus 4.6 on AWS Bedrock** (owner decision
-    2026-10-04), one config value (`PLAN_SPARRING_MODEL`). **No fallback** —
-    a failed partner call escalates to the owner; never Sonnet, DeepSeek or
-    Google silently.
+    2026-10-04), one config value (`PLAN_SPARRING_MODEL`). **Fallback chain
+    (owner decision 2026-10-19 — sparring must never stop on burned quota):**
+    Opus 4.6 → Bedrock Sonnet 4.6 (`PLAN_SPARRING_FALLBACK_MODEL`) → DeepSeek
+    `deepseek-v4-pro` (`PLAN_SPARRING_LAST_RESORT_MODEL`; kill switch
+    `PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED=false`). The chain lives in the
+    partner pass (`plan-sparring/partner.ts`), is sticky per round, logged
+    loudly and recorded per entry in `model_log.fallback_tier`. Only when all
+    three fail does the session escalate `model_unavailable`. Never Google.
 54. **The gate is the database**, not this text: a `vtid_ledger` trigger
     checks every new VTID for a converged-or-escalated, owner-approved
     sparring record (or a converged, policy-approved one) with a matching plan hash. It runs in log mode first,

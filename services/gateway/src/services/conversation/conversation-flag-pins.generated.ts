@@ -157,6 +157,8 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   ORCHESTRATOR_DELEGATION_PERSIST_ENABLED: { staging: "true", prod: "true" },
   ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED: { staging: "true", prod: "true" },
   PHONE_VERIFY_ENABLED: { staging: "false | true", prod: null },
+  PM_AGENT_ENABLED: { staging: "true", prod: null },
+  PM_MODE: { staging: "live", prod: null },
   REMINDERS_INPROCESS_DISPATCH_ENABLED: { staging: "true", prod: "true" },
   REMINDERS_STAGING_DISPATCH_OVERRIDE: { staging: "true", prod: null },
   REWARD_SWEEP_ENABLED: { staging: null, prod: "true" },
