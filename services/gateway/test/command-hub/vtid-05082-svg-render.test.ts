@@ -53,6 +53,13 @@ interface SvgHelpers {
  * The module is a self-contained IIFE, so running it as-is is the faithful test.
  */
 function loadSvgHelpers(): SvgHelpers {
+  // describe.skip still EVALUATES the describe body, so this runs even when the
+  // suite is skipped (jsdom absent in CI). Return an inert stub in that case —
+  // the skipped it()s never call it, so the stub is never exercised.
+  if (!JSDOM) {
+    const noop = () => { throw new Error('jsdom not installed — suite is skipped'); };
+    return { extractSvgPayloads: noop as any, sanitizeSvgMarkup: noop as any, toUtf8Base64Safe: noop as any, buildSvgDataUrl: noop as any };
+  }
   const dom = new JSDOM('<!DOCTYPE html><body></body>');
   const w = dom.window as unknown as Record<string, unknown>;
   // jsdom's window lacks btoa/unescape in this environment; wire the globals
