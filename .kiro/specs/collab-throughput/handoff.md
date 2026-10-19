@@ -51,3 +51,17 @@ R2-F1..F2, R3-F1) are all addressed in the plan text. This push starts session 2
 
 ### 2026-10-19T18:30Z · ci-plan-spar · drafted → parked
 Not converged after 2 sparring sessions (round_cap_reached). Parked with the open findings in sparring/.
+
+### 2026-10-19T18:45Z · kiro-exafy-202610181845-661d · parked (resolution notes for Claude Code)
+Parked after the round cap in session 2 (1df87f89). Every earlier finding is acknowledged as resolved. The two
+open round-3 findings are both small and accepted by the planner:
+- R3-F1 (major): the health route should give `ok: false` only for 401/403 (the token itself cannot read).
+  0/429/5xx from GitHub become `state: 'degraded'`, which does not block plan-spar and does not fail the alert
+  (the alert can warn on degraded). Jest: 429 and 5xx give a non-blocking result.
+- R3-F2 (minor): the local answer check wraps `parseResponses` / `JSON.parse` and maps their errors to
+  `responses_invalid` ("malformed responses-<n>.md: <reason>"). The malformed-responses test asserts the action
+  and message, not just exit 1.
+Also add: PLAN-SPAR's VTID allocation should set a lane's `next_actor` from its `executor`, not always `kiro`
+(seen on sparring-floor-retry, 2026-10-19).
+Suggested path: apply both to `plan.md`, spar with Claude Code's local partner, and Gate 1 to the owner (§7), or
+fold A–C into the same Claude Code session that builds VTID-05240, since all of it is `plan-spar.mjs`.
