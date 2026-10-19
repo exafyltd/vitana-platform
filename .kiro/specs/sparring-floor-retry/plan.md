@@ -74,13 +74,16 @@ Observed: the re-pushes at 2026-10-18T18:42–18:45Z ran PLAN-SPAR green and com
 3. `scripts/collab/plan-spar.mjs`: legacy-state migration in `step()`. It runs right after `cur` is read and
    **before** `retryInfra` / `replan` are computed (~L186), so the updated flags drive the decision. A test asserts
    the migrated entry produces a `create` call (R1-F3). Run it only when the current entry is
-   `verdict: 'escalated'`, `infra === false`, `retryable === false` **and** has no `reclassified` key (R1-F2:
-   each legacy session is checked at most once, and a normal no-op push makes no network call):
+   `verdict: 'escalated'`, `retryable === false` **and** has no `reclassified` key. `infra` may be either value,
+   because a legacy `partner_output_invalid` entry is already `infra: true` and still needs the migration (session
+   1 R3-F2). Each legacy session is checked at most once, and a normal no-op push makes no network call:
    - call `client.get(cur.id)`. If the live session's `producer` is `ci-plan-spar.<slug>`, its reasons include
      `evidence_floor_not_met` / `partner_output_invalid`, and its round-1 `tool_log` has entries with none `ok`,
      set `cur.infra = cur.retryable = true`. The same legacy rule as change 2 applies (≥3 read_file attempts, none
      ok, no `status`, created before the token fix), using the live session's `created_at`. The existing `retryInfra` path then pops it and creates a new session.
-   - otherwise set `cur.reclassified = false` and continue as today.
+   - otherwise set `cur.reclassified = false`, **write `state.json` immediately** (adding it to `wrote`, so the
+     CI commit step persists it), and continue as today (R3-F1). The `nothing_to_do` return path therefore still
+     records the check, and the next push makes no `client.get` call for that entry.
    New escalations need no list change: change 1 reports them as `code_access_unavailable`, which is already in both
    lists.
 4. Tests:

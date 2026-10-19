@@ -11,3 +11,7 @@
       mt-identity yields a new session with read_file-cited findings, and the session count stays 1.
 
 Acceptance: requirements 1–4 hold, and all listed suites are green.
+
+Session-2 test additions: a non-matching legacy entry persists `reclassified: false` in state.json, and a second push
+makes zero `client.get` calls. A legacy `partner_output_invalid` entry with `infra: true, retryable: false` and
+all-failed reads is migrated and re-created.

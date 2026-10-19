@@ -57,3 +57,9 @@ The sparring partner could not review (model_unavailable). Not a plan problem: C
 Session 798679a9 escalated `model_unavailable` (Opus and Sonnet both hit the daily limit). That is an infra outage
 and is retryable. Pushing again now that the DeepSeek last-resort tier (#4192) is live on staging and production
 (4e0e7d1f).
+
+### 2026-10-19T18:25Z · kiro-exafy-202610181845-661d · drafted (re-plan, session 2)
+Session 12379be3 hit the round cap with R3-F1 (the `reclassified` marker was not persisted on the nothing_to_do
+path) and R3-F2 (the migration gate excluded legacy `partner_output_invalid` entries, which are infra:true). Both
+are fixed in the plan text: state.json is written on the non-matching path, and the gate is `retryable === false`
+only. This push starts session 2, the last.
