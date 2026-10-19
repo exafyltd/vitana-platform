@@ -12,19 +12,25 @@ Allowed paths: `supabase/migrations/20261101060*.sql`, `docs/multitenancy/MIGRAT
 
 VTID: allocated by PLAN-SPAR after approval.
 
-- [ ] T1 Add `tenant_id uuid` (nullable) + FK to `tenants` on `profile_posts`, the four
-      `global_community_*` tables (`global_community_profiles`, `global_community_groups`,
-      `global_community_events`, `global_community_group_members`), `media_uploads`,
+- [ ] T1 Add `tenant_id uuid` (nullable) + FK to `tenants` on the tenant-scoped content tables
+      `profile_posts`, `global_community_groups`, `global_community_events`, `media_uploads`,
       `community_live_streams`, `calendar_events`, `content_reports`, `feedback_tickets`,
-      `daily_matches`; BEFORE INSERT trigger filling it from the actor's resolved tenant. Version
-      `20261101060000`.
-- [ ] T2 Batched membership-join backfill of existing rows (1–5k/txn, off-peak), `bak_*` snapshot
-      first; then `CHECK (tenant_id IS NOT NULL) NOT VALID` → `VALIDATE`. **No `SET NOT NULL`** (WS2).
+      `daily_matches` (BEFORE INSERT trigger fills the writer's active tenant) and on the child table
+      `global_community_group_members` (trigger copies the parent group's `tenant_id`). **No
+      `tenant_id` on the per-user `global_community_profiles`** (`user_id` UNIQUE, users are 1:N in
+      `user_tenants`) — it is scoped by a membership predicate in T3. Version `20261101060000`.
+- [ ] T2 Deterministic batched backfill (1–5k/txn, off-peak), `bak_*` snapshot first: content rows get
+      the author's only membership, else their single `is_primary` membership, else stay NULL (no
+      guess; read-only pre-check counts them); group members copy their group's `tenant_id`. Then
+      `CHECK (tenant_id IS NOT NULL) NOT VALID`, `VALIDATE` only once the NULL count is 0. **No `SET
+      NOT NULL`** (WS2).
 - [ ] T3 These tables already have RLS enabled with permissive policies — **rewrite** (do not newly
       enable) every policy: user-private (`user_id = auth.uid() AND tenant_id =
       tenant_id_for_policies()`), tenant-shared (`is_member(tenant_id)`), admin-only
       (`is_tenant_admin(tenant_id)`); confirm `ROW LEVEL SECURITY` is enabled on each; add the realtime
-      tenant predicate for realtime-reachable tables. Rewritten SELECT policies keep author-owned
+      tenant predicate for realtime-reachable tables. `global_community_profiles` policies use the
+      membership predicate `EXISTS (user_tenants WHERE user_id = row.user_id AND is_member(tenant_id))`
+      instead of a column. Rewritten SELECT policies keep author-owned
       (`user_id = auth.uid()`) read access for NULL-`tenant_id` rows. For `content_reports` rewrite
       `tenant_id` + base RLS only — mt-tenant-admin's `moderator-tenant-scope-db` (`070600`) layers
       moderation policies on top (O4). **The policy rewrite is NOT flag-gated**; its MIGRATION-QUEUE
@@ -32,7 +38,8 @@ VTID: allocated by PLAN-SPAR after approval.
 - [ ] T4 Rollback migration + `live-before.sql` / `post-apply-checks.sql` under
       `docs/validation/<VTID>/`; add MIGRATION-QUEUE rows after the WS1 resolver/membership rows.
 - [ ] T5 pgTAP `supabase/tests/mt_community_isolation_*.sql`: `b_member` reads 0 `T_A` rows per table;
-      a foreign-tenant write fails; RLS enabled; realtime predicate present.
+      a foreign-tenant write fails; RLS enabled; realtime predicate present; a `T_A`+`T_B` member's
+      profile is visible in both tenants; an ambiguous author's post stays NULL and author-only.
 
 Acceptance: migrations expand-only, `lock_timeout`+retries, snapshot before data move, rollback +
 pre/post checks present, MIGRATION-QUEUE updated, pgTAP green. No `SET NOT NULL`. Kiro never applies a
@@ -100,23 +107,33 @@ Allowed paths: `services/gateway/src/services/voice-tools/community-member-ranke
 `services/gateway/src/routes/users-resolve-repository.ts`,
 `services/gateway/src/routes/billing.ts`, `services/gateway/src/routes/billing-repository.ts`,
 `services/gateway/src/services/orb-tools/discovery-tools.ts`,
-`services/gateway/src/services/social-memory/**`,
+`services/gateway/src/services/social-memory/**`, `services/gateway/src/routes/memory-social.ts`,
+`services/gateway/src/services/intent-find-match.ts`, `services/gateway/src/services/orb-tools/p0-gap-tools.ts`,
 `services/gateway/src/services/automation-handlers/connect-people.ts`,
 `services/gateway/src/services/automation-handlers/connect-people-repository.ts`,
 `services/gateway/test/**`.
 
 VTID: allocated by PLAN-SPAR after approval.
 
-- [ ] G1 Behind `feature_flags.mt.community_scope`, add the active-tenant membership-join filter to the
-      `community-member-ranker` pool, members directory, superlatives, `tool_global_search`,
-      `resolve_recipient_candidates` (community branch), and `connect-people`. Flag off = unchanged.
-- [ ] G2 Social-memory resolver takes the active tenant from `TenantContext`, never a tool/call
-      argument (`social-memory-service.ts`, `social-context-builder.ts`, `person-context-builder.ts`,
-      `social-memory-repository.ts`).
+- [ ] G1 Behind `feature_flags.mt.community_scope`, add `fetchActiveTenantMemberIds(sb, tenantId)`
+      (`community-members-repository.ts`) and scope every reader listed in plan Fix (a)–(d),(f) — the
+      ranker, members directory, superlatives, `tool_global_search` people/posts/events and
+      `connect-people` — by (M) `.in(<user-id column>, memberIds)` before order/limit, chunked at 200,
+      for per-user tables, or (C) `.eq('tenant_id')` for column tables. `resolve_recipient_candidates`
+      is already scoped: read-only test only, no code change. Flag off = unchanged.
+- [ ] G2 Social-memory: verify `input.tenant_id` is an active membership (reject otherwise), then give
+      every reader in plan Fix (e) a `tenantId` parameter (`fetchPeople`, `fetchFollowEdges`,
+      `fetchMatches`, `fetchCandidatePosts`, `fetchPersonPosts`, `fetchUpcomingEvents`,
+      `fetchEventParticipants`, `fetchEventsForUsers`, `fetchGroupsForUsers`, `fetchGroupNames`,
+      `fetchEventTitles`, `fetchInterests`, `resolvePersonByName`, `fetchPersonById`) and update every
+      importer (`social-memory/**`, `routes/memory-social.ts`, `intent-find-match.ts`,
+      `orb-tools/p0-gap-tools.ts`, `discovery-tools.ts` incl. `tool_browse_news_feed`). Viewer-own reads (`fetchExclusions`, `fetchFollowFlags`,
+      `fetchActiveLifeCompassGoal`) and the already-scoped `chat_*` reads are unchanged.
 - [ ] G3 `countFoundingSeats` / `/founding-status` report per the viewer's tenant (read-only).
 - [ ] G4 A lint/test banning a community read scoped only by visibility (no tenant predicate).
 - [ ] G5 Jest in `services/gateway/test/**`: each reader returns only the active tenant's members with
-      the flag on, byte-identical with it off; resolver ignores a supplied tenant.
+      the flag on, byte-identical with it off — one case per reader in G1/G2, incl. top-N index
+      scores filled from the active tenant; resolver rejects a non-member tenant.
 
 Acceptance: dark by default, Network scope untouched, lint green, full gateway test suite green,
 Maxina golden suite byte-identical. Kiro never writes to a live system.

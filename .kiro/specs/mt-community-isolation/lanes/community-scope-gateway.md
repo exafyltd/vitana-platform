@@ -20,6 +20,9 @@ paths:
   - services/gateway/src/routes/billing-repository.ts
   - services/gateway/src/services/orb-tools/discovery-tools.ts
   - services/gateway/src/services/social-memory/**
+  - services/gateway/src/routes/memory-social.ts
+  - services/gateway/src/services/intent-find-match.ts
+  - services/gateway/src/services/orb-tools/p0-gap-tools.ts
   - services/gateway/src/services/automation-handlers/connect-people.ts
   - services/gateway/src/services/automation-handlers/connect-people-repository.ts
   - services/gateway/test/**
@@ -35,10 +38,11 @@ Behind `tenant_settings.feature_flags.mt.community_scope` (dark by default), fil
 read pool to the viewer's **active** tenant via `TenantContext.tenantId` (WS1), scoping by membership
 join since `profiles.tenant_id` is empty until WS2: `community-member-ranker.ts` candidate pool
 (:265-281), members directory (`community-members.ts:98-128`), superlatives, ORB `tool_global_search`
-(`discovery-tools.ts`), `resolve_recipient_candidates` community branch (`users-resolve.ts`),
-`connect-people` automations, and the social-memory resolver (take the active tenant from
-`TenantContext`, never a tool/call argument — `social-memory-service.ts` / `social-context-builder.ts`
-/ `person-context-builder.ts` / `social-memory-repository.ts`). Also makes `countFoundingSeats` /
+(`discovery-tools.ts`), `resolve_recipient_candidates` (already scoped, read-only test only),
+`connect-people` automations, and every social-memory reader (plan Fix (e): verify the session tenant is
+an active membership, then thread `tenantId` through each reader and every importer, incl.
+`routes/memory-social.ts`, `intent-find-match.ts`, `orb-tools/p0-gap-tools.ts`). Per-user tables are
+scoped by `fetchActiveTenantMemberIds` member ids, content tables by `tenant_id`. Also makes `countFoundingSeats` /
 `/founding-status` report per the viewer's tenant (read-only; the schema is the DB lane). A lint bans
 a community read scoped only by visibility. With the flag off, behaviour is byte-identical.
 

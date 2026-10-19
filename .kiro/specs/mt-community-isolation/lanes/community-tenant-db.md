@@ -19,7 +19,7 @@ it then flips this lane to `kiro`. Plan: `../plan.md`; tasks + allowed paths + a
 `../tasks.md` (`<!-- lane: community-tenant-db -->`); design + successor rules: `../design.md`.
 
 Adds `tenant_id` (nullable → BEFORE INSERT trigger filling from the actor's resolved tenant →
-batched membership-join backfill → `CHECK … NOT VALID` → `VALIDATE`; **no `SET NOT NULL`** — WS2
+deterministic batched backfill → `CHECK … NOT VALID` → `VALIDATE`; **no `SET NOT NULL`** — WS2
 backfills existing rows) and, because these tables **already have RLS enabled with permissive
 policies** (verified: `vitana-v1/.../20250917153624_*.sql`, `.../20251010065205_*.sql`),
 **rewrites** every policy user-private / tenant-shared (`is_member`) / admin-only (`is_tenant_admin`)
@@ -27,6 +27,10 @@ rather than newly enabling RLS, plus the realtime tenant predicate, on `profile_
 `global_community_*` tables (`global_community_profiles`, `global_community_groups`,
 `global_community_events`, `global_community_group_members`), `media_uploads`,
 `community_live_streams`, `calendar_events`, `content_reports`, `feedback_tickets`, `daily_matches`.
+**Per-user vs content rows:** `global_community_profiles` (one row per user, users 1:N in
+`user_tenants`) gets **no** `tenant_id` — its policies use a membership predicate; `global_community_group_members` copies its group's `tenant_id`; content rows backfill
+deterministically (author's only membership, else single `is_primary`, else NULL — no guess), and
+the `CHECK` is VALIDATEd only once the NULL count is 0.
 Rewritten SELECT policies keep author-owned (`user_id = auth.uid()`) read access for NULL-`tenant_id`
 rows. For `content_reports` this lane owns only `tenant_id` + base RLS — mt-tenant-admin's
 `moderator-tenant-scope-db` (`070600`, sorts after) layers moderation policies on top (cross-spec O4).

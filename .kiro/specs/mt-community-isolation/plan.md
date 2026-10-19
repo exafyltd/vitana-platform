@@ -36,7 +36,11 @@ rewrite, Network groups — is a sibling spec, out of scope here). Verified read
    with permissive policies (`vitana-v1/.../20250917153624_*.sql`, `.../20251010065205_*.sql`), so this
    spec **rewrites existing live policies**, it does not newly enable RLS. `profiles.tenant_id` is NULL
    for all 236 members (WS2 backfills it), so scope by a **membership join** (`user_tenants`), not by
-   `profiles.tenant_id`.
+   `profiles.tenant_id`. **Per-user rows cannot carry one tenant:** `global_community_profiles` is one row
+   per user (`user_id UUID NOT NULL UNIQUE`, `vitana-v1/.../20250917153624_*.sql:7`) while `user_tenants`
+   is 1:N (`UNIQUE (tenant_id, user_id)`, `20251231000000_vtid_01101_phase_a_bootstrap.sql:89-98`, and
+   `is_primary` has no uniqueness constraint), so a single backfilled `tenant_id` on a per-user table is
+   non-deterministic and would hide a multi-tenant member from every tenant but one.
 5. **Founding pool cap and seat numbering are global, not per tenant.** `founding_members` ALREADY has
    `tenant_id uuid NOT NULL` (populated) and `claim_founding_seat(p_user_id, p_tenant_id)` resolves the
    tenant from `user_tenants` (`supabase/migrations/20261003100000_vtid_04859_founding_1000.sql:66,107-115`;
@@ -51,7 +55,7 @@ rewrite, Network groups — is a sibling spec, out of scope here). Verified read
 7. **Realtime community subscriptions carry no tenant predicate** (program plan §2/§3-S-J:
    realtime-reachable tables without tenant RLS leak once `current_tenant_id()` resolves).
 8. **The ranker's `community_groups`/`community_group_members` are DISTINCT from the `global_community_*`
-   tables.** `community-member-ranker-repository.ts:87` reads VTID-01084 `community_groups` (which ALREADY
+   tables.** `community-member-ranker-repository.ts:89,93` reads VTID-01084 `community_groups` (which ALREADY
    has `tenant_id NOT NULL` + tenant-aware RLS,
    `supabase/migrations/20251231100000_vtid_01084_community_personalization_v1.sql:35,133,146-147`) and
    `community_group_members` (no migration in tree; best-effort read). So neither is a column/RLS target of
@@ -63,10 +67,20 @@ Dependency: WS1 (identity/resolver — `tenant_id_for_policies()`, `is_member(te
 call. This spec is **dark by default** (`tenant_settings.feature_flags.mt.community_scope`) and its
 read-path filters are no-ops until WS1's resolver is live; the migrations expand-only so they are
 safe to apply ahead of activation. DB lanes are split from code lanes (§4.7).
-- **Lane `community-tenant-db` (DB, platform).** Add `tenant_id` (nullable → trigger-fill → backfill by
-  membership join → `CHECK NOT VALID` → VALIDATE; **no `SET NOT NULL`** — that waits for WS2) on
-  `profile_posts`, `global_community_*`, `media_uploads`, `community_live_streams`, `calendar_events`,
-  `content_reports`, `feedback_tickets`; **rewrite** the existing RLS policies classified user-private /
+- **Lane `community-tenant-db` (DB, platform).** Tables split into three classes:
+  (i) **tenant-scoped content** — `profile_posts`, `global_community_groups`, `global_community_events`,
+  `media_uploads`, `community_live_streams`, `calendar_events`, `content_reports`, `feedback_tickets`,
+  `daily_matches`: add `tenant_id` (nullable → BEFORE INSERT trigger fills the writer's ACTIVE tenant →
+  deterministic backfill → `CHECK NOT VALID` → VALIDATE; **no `SET NOT NULL`** — WS2). Backfill rule:
+  the author's membership if they hold exactly one; else their single `is_primary` membership; else
+  **leave NULL** (no guess) — a read-only pre-check counts the ambiguous rows, the NULL rows stay
+  author-only readable (Rollout) and WS2 resolves them; the `CHECK` is therefore added `NOT VALID` and
+  VALIDATEd only when that count is 0. (ii) **child rows** — `global_community_group_members`: `tenant_id`
+  is copied from its parent `global_community_groups.tenant_id` (trigger + backfill by `group_id`
+  join; deterministic). (iii) **per-user rows** — `global_community_profiles`: **NO `tenant_id` column**;
+  its RLS and every reader scope by a membership predicate at read time (`EXISTS (SELECT 1 FROM
+  user_tenants ut WHERE ut.user_id = <row>.user_id AND ut.tenant_id = <active tenant>)`), so a member
+  of two tenants is visible in both. **Rewrite** the existing RLS policies classified user-private /
   tenant-shared (`is_member`) / admin-only (`is_tenant_admin`); confirm RLS on each realtime-reachable
   table; add the realtime tenant predicate. The policy rewrite is not flag-gated and is QUEUE-sequenced
   per Rollout. For `content_reports` this spec owns only `tenant_id` + base RLS; mt-tenant-admin's
@@ -90,14 +104,46 @@ safe to apply ahead of activation. DB lanes are split from code lanes (§4.7).
   inside spec 07's gap — cross-spec C3; keep exactly). pgTAP: a platform-only account never appears
   in any community surface.
 - **Lane `community-scope-gateway` (CODE, platform, dark).** Behind `feature_flags.mt.community_scope`,
-  thread the viewer's ACTIVE tenant (WS1 `TenantContext.tenantId`) into exactly these readers:
-  (a) ranker pool (`community-member-ranker-repository.ts:20`) + its `community_groups` read (`:87` — add
-  the `.eq('tenant_id', …)` it omits; the column already exists); (b) members directory (`:24`);
-  (c) superlatives; (d) `tool_global_search` **people (`discovery-tools.ts:172`), posts (`:198`), events
-  (`:214`) lanes ONLY** (groups/products/services already scoped, `:225+`); (e) `fetchCandidatePosts`
-  (`social-memory-repository.ts:420`) and `fetchUpcomingEvents` (`:487`) — **both gain a new `tenantId`
-  parameter (breaking signature change)**; update every caller (`social-context-builder.ts:141`,
-  `tool_browse_news_feed`); (f) `connect-people`. **Social-memory resolver fix is a membership CHECK, not
+  thread the viewer's ACTIVE tenant (WS1 `TenantContext.tenantId`) into exactly these readers.
+  **Two scope mechanisms, nothing else:** (M) *member-id scope* for per-user tables that get no
+  `tenant_id` (`profiles`, `app_users`, `global_community_profiles`, `vitana_index_scores`,
+  `relationships`, `user_interests`, `memory_facts`, `user_follows`, `user_matches`): one new helper
+  `fetchActiveTenantMemberIds(sb, tenantId)` in `community-members-repository.ts` (`user_tenants.user_id
+  WHERE tenant_id = $1`, once per request) and each read adds `.in('user_id' | 'to_user_id' |
+  'followee_id' | 'following_id' | 'follower_id', memberIds)` **before** ordering/limit (so top-N reads
+  are not starved), chunked at 200 ids like the existing `fetchPeople` slice (`:78`) — each chunk keeps
+  the same order/limit/cursor and the results are merged, re-sorted and cut to N (counts summed); by-id hydration
+  intersects its id list with `memberIds`. (C) *column scope* `.eq('tenant_id', tenantId)` for the
+  content tables that get the column (`profile_posts`, `global_community_groups`/`_events`/
+  `_group_members`, `daily_matches`) and `community_groups` (column exists). Per reader:
+  (a) ranker (`community-member-ranker-repository.ts`): `fetchVisibleProfileUserIds` (`:19`),
+  `fetchProfilesByIds`, the three `profiles.service_offerings` searches, `fetchUsersByIds`,
+  `searchBioByKeyword`, `searchMemoryFactsByKeyword`/`searchExpertiseFacts`, `fetchRecentIndexScoresSince`/
+  `fetchTopMentalPillarScores` → (M); `searchGroupsByTopicOrName`/`searchEntertainmentGroups` on
+  `community_groups` (`:89,:93`) → (C); `fetchGroupMembersByGroupIds` → (M) on `user_id`;
+  (b) members directory (`community-members-repository.ts`): `fetchHiddenCommunityProfileUserIds` (`:23`),
+  `countProfilesExcludingSelf` (`:27`), `buildMembersListQuery` (`:31`) → (M);
+  (c) superlatives (`superlatives-repository.ts`): `fetchHiddenCommunityProfileUserIds` (`:20`),
+  `fetchAppUsersForHydration`, `fetchProfilesForHydration`,
+  `fetchTopVitanaIndexScores` (`:35`), `fetchTopPillarScores`, `fetchProfilesByRegistrationOrder`,
+  `fetchRelationshipsToUserIdProbe`/`FolloweeIdProbe` → (M); (d) `tool_global_search` **people
+  (`discovery-tools.ts:172`) → (M), posts (`:198`) and events (`:214`) → (C); lanes ONLY**
+  (groups/products/services already scoped, `:225+`); (e) **every** social-memory reader in
+  `social-memory-repository.ts` that is not already `.eq('tenant_id')`: `fetchPeople` (`:72`),
+  `fetchFollowEdges` (`:126`, followee/follower ids via `fetchPeople`), `fetchMatches` (`:169`, daily → (C),
+  `user_matches` → (M)), `fetchCandidatePosts` (`:420`), `fetchPersonPosts` (`:472`), `fetchUpcomingEvents`
+  (`:487`), `fetchEventParticipants` (`:500`, events pre-scoped (C) + participants (M)), `fetchEventsForUsers`
+  (`:521`), `fetchGroupsForUsers` (`:539`), `fetchGroupNames` (`:557`), `fetchEventTitles` (`:570`),
+  `fetchInterests` (`:583`), `resolvePersonByName` (`:649`), `fetchPersonById` (`:679`) — **each gains a
+  `tenantId` parameter (breaking signature change)** and every importer of the repository passes the
+  verified active tenant: `social-context-builder.ts`, `person-context-builder.ts`,
+  `community-activity-builder.ts`, `social-read-tools.ts`, `social-memory-service.ts`,
+  `routes/memory-social.ts`, `intent-find-match.ts:277`, `orb-tools/p0-gap-tools.ts:71`,
+  `discovery-tools.ts` (incl. `tool_browse_news_feed`, `:313`). **Out of scope, stated:**
+  `fetchExclusions` (`:99`) and `fetchFollowFlags` (`:622`) read only the viewer's own rows (`.eq('user_id', userId)`) and return no other member; the `chat_*` reads are
+  already `.eq('tenant_id')` (`:259,:337,:378,:612,:710`) and chat scope belongs to the Network sibling
+  spec; `fetchActiveLifeCompassGoal` (`:685`) is viewer-own. (f) `connect-people` → (M).
+  **Social-memory resolver fix is a membership CHECK, not
   a rename**: verify `input.tenant_id` (`social-memory-service.ts:26`) is an active membership via WS1
   `is_member()` before any read, and reject a caller override. **Verified already scoped, no code change,
   read-only test only:** `resolve_recipient_candidates` (`p_global:false`). A lint bans a community read
@@ -138,7 +184,7 @@ gateway. Writes/RLS proven by pgTAP + Vitest only (staging uses the production S
 The gateway/edge **read path** is dark by default (`tenant_settings.feature_flags.mt.community_scope`),
 flipped per tenant only after WS1's resolver is live and the isolation suite is green. The **RLS
 policy-rewrite migration is NOT flag-gated**: it is sequenced in MIGRATION-QUEUE strictly after the
-WS1 resolver/membership migrations AND after this spec's own membership-join `tenant_id` backfill, and
+WS1 resolver/membership migrations AND after this spec's own deterministic `tenant_id` backfill, and
 the rewritten read policies keep author-owned (`user_id = auth.uid()`) access for NULL-`tenant_id` rows
 so an apply ahead of WS2 cannot deny reads. Migrations applied by Claude via RUN-MIGRATION after merge
 with read-only post-checks. `SET NOT NULL` deferred to WS2. No owner-only step beyond RUN-MIGRATION.
