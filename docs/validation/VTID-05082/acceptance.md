@@ -2,7 +2,7 @@
 
 Command Hub operator chat inline SVG rendering.
 
-VALIDATION_PROFILE: command_hub_frontend
+VALIDATION_PROFILE: gateway_backend
 OASIS_IMPACT: no
 JSDOM NOTE: the sanitizer unit test needs a real XML DOM (DOMParser/XMLSerializer).
 jsdom is NOT in the gateway pnpm lockfile and a Kiro session cannot regenerate
