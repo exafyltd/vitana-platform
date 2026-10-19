@@ -28,10 +28,15 @@ Measured 2026-10-18 on the owner's Windows checkout and in CI:
 ## Changes
 
 ### A. Queue in one pass (`queue.mjs`)
-- Replace the per-branch loop in `collect()` with one call:
-  `git log --remotes=origin --not <main> --since=<days>.days --source --name-only --format=%x1e%S -- .kiro/specs`.
-  For each record keep the `%S` source ref and the changed paths that `classifyPath` accepts. Skip
-  `collab-claim/*` and `origin/HEAD`, as today.
+- Replace the per-branch loop in `collect()` with one call (argv array, no shell):
+  `git log --exclude=refs/remotes/origin/collab-claim/* --exclude=refs/remotes/origin/HEAD --remotes=origin
+  --not <main> --since=<days>.days.ago --source --name-only --format=%x1e%S -- .kiro/specs`.
+  - `--since` uses the explicit `<days>.days.ago` form (R2-F1).
+  - `%S` comes back as a full refname (`refs/remotes/origin/<branch>`). Normalise each value with
+    `ref.replace(/^refs\/remotes\//, '')` before any comparison, so the existing guards (`origin/HEAD`, `origin`,
+    `origin/collab-claim/…`) keep working. Claim refs are also kept out at the source by `--exclude`, which must
+    come before `--remotes` (R2-F2).
+  - For each record keep the normalised source ref and the changed paths that `classifyPath` accepts.
 - Read all candidate `(ref, path)` contents with one `git cat-file --batch` process (stdin `ref:path` lines),
   replacing the per-file `git show`. Specs on `main` use the same batch.
 - Behaviour kept: newest `updated` wins across refs, `--days` default 30, the output rows and table are identical.
@@ -131,9 +136,11 @@ not `depends_on`.
 ## Verification
 
 - `node --test scripts/collab/queue.test.mjs scripts/collab/plan-spar.test.mjs`:
-  - A: one-pass `collect()` produces the same rows as the old implementation on a fixture repo with main + 3
-    branches (one with no spec change, two with competing lane versions), and spawns a fixed number of processes
-    whatever the branch count.
+  - A: one-pass `collect()` produces the same rows as the old implementation on a fixture repo with main + 4
+    branches (one with no spec change, two with competing lane versions, and one `collab-claim/<slug>/<lane>` ref
+    on a spec commit). The claim ref never appears as a row's branch. The process count is fixed whatever the
+    branch count. The spawned `git log` argv contains `--since=<days>.days.ago`, and every reported ref is in the
+    short `origin/…` form.
   - B: unknown, duplicate, missing and malformed responses each give `responses_invalid` with the right ids, no
     gateway `round` call, and a comment file. A valid set still calls `round`.
   - C: health `ok: false` means no `create` / `round` call and exit 1.
