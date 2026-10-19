@@ -1,0 +1,37 @@
+---
+lane: d10-consents
+state: in-review
+next_actor: owner
+vtid: VTID-05092
+depends_on: []
+executor: claude
+reviewer_seat: claude
+paths:
+  - "services/gateway/src/**"
+  - "services/gateway/test/**"
+  - "supabase/migrations/**"
+  - "scripts/ci/sql-tests/**"
+  - "DATABASE_SCHEMA.md"
+  - "docs/programs/health-hub/**"
+  - "docs/validation/**"
+  - "src/**"
+  - "i18n-source-stamps/**"
+  - "docs/SCREEN_INVENTORY.md"
+  - "docs/validation/**"
+  - "tests/**"
+updated: 2026-10-15T18:59Z
+---
+# D10 WP1+WP2 (+C3 copy) — per-category health consent
+
+Tasks: `tasks.md` section "d10-consents".
+
+PRs: vitana-platform #4100 (VTID-05092, consent backend + migration), vitana-v1 #1377 (VTID-05093, Privacy
+switches and consent dialog on real consents), vitana-v1 #1383 (VTID-05166, C3 consent copy keys; base branch is
+#1377's branch — refresh it by merging that branch, not main).
+
+Blocked on: the owner applies `supabase/migrations/20261012180000_vtid_05092_health_consent_categories.sql`.
+C3 additionally needs counsel's final wording (keys ship with `_pending_review`). Merge order #4100 → #1377 → #1383.
+
+## Log
+### 2026-10-15T18:59Z · session_01VuZPi9pvHaUverAXRC1WvU · (backfill) → in-review
+Handed over to Kiro with the health-native spec. next_actor: owner.

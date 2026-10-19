@@ -70,6 +70,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { vtidRouter } = require('./routes/vtid');
   // VTID-04868: Plan Sparring Gate routes (/api/v1/plans/spar)
   const { plansSparRouter } = require('./routes/plans-spar');
+  // VTID-05216: Project Manager read route (/api/v1/project-manager) — observe + decide (dry_run).
+  const { projectManagerRouter } = require('./routes/project-manager');
   // VTID-03177 (PROFILE): RUM beacon receiver from vitana-v1 frontend
   const { rumBeaconRouter } = require('./routes/rum-beacon');
   // VTID-SCREEN-LOAD-01: synthetic screen-load-time basic test — ingest +
@@ -172,6 +174,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const onboardingCoachRouter = require('./routes/onboarding-coach').default;
   // VTID-05099: Vitana Companion Messages — read-only engine status
   const companionRouter = require('./routes/companion').default;
+  // VTID-05205: team welcome DMs (Mariia, Jovana, Alex Blue) — read-only tick status
+  const welcomeTeamRouter = require('./routes/community-welcome-team').default;
   // Real-time My Journey celebrations — daily-goal, phase milestone, progress thresholds
   const celebrationsRouter = require('./routes/celebrations').default;
   // VTID-02601: Reminders feature — voice-creatable + audio-interrupt delivery
@@ -783,6 +787,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/vtid', vtidRouter, { owner: 'vtid' });
   // VTID-04868: Plan Sparring Gate (gateway tier) — partner rounds + verified approval.
   mountRouterSync(app, '/api/v1/plans/spar', plansSparRouter, { owner: 'plans-spar' });
+  // VTID-05216: Project Manager — read-only status (mode + current decision list).
+  mountRouterSync(app, '/api/v1/project-manager', projectManagerRouter, { owner: 'project-manager' });
   // VTID-03177 (PROFILE): RUM beacon — POST /api/v1/rum/beacon
   mountRouterSync(app, '/api/v1/rum', rumBeaconRouter, { owner: 'rum-beacon' });
   // VTID-SCREEN-LOAD-01: POST /api/v1/frontend/screen-load/report, GET /api/v1/frontend/screen-load/health
@@ -1197,6 +1203,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/scheduled-notifications', scheduledNotificationsRouter, { owner: 'scheduled-notifications' });
   mountRouterSync(app, '/api/v1/onboarding-coach', onboardingCoachRouter, { owner: 'onboarding-coach' });
   mountRouterSync(app, '/api/v1/companion', companionRouter, { owner: 'companion' });
+  mountRouterSync(app, '/api/v1/welcome-team', welcomeTeamRouter, { owner: 'community-welcome-team' });
   mountRouterSync(app, '/api/v1/celebrations', celebrationsRouter, { owner: 'celebrations' });
   mountRouterSync(app, '/api/v1/reminders', remindersRouter, { owner: 'reminders' });
 
@@ -1859,6 +1866,40 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ Autopilot heartbeat loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-05216: Project Manager decide loop (P3 — observe + decide, dry_run).
+      // No-op unless PM_AGENT_ENABLED=true. It only ever runs the deterministic
+      // decide step and reports pm.decision; it NEVER acts (no merge, deploy,
+      // dispatch or write). `live` act is P4. The P3 loop uses the stub observer
+      // (p1/p2 live readers are not merged yet) and takes no pm_lease (lease is
+      // in the tick loop, out of P3 scope).
+      try {
+        const pm = require('./services/project-manager');
+        if (pm.pmAgentEnabled() && pm.pmMode() !== 'off') {
+          const PM_TICK_MS = pm.pmTickIntervalMs();
+          let pmRunning = false;
+          const runPmTick = async () => {
+            if (pmRunning) return; // skip if a previous tick is still running
+            pmRunning = true;
+            try {
+              const decisions = await pm.runDecideTick();
+              if (decisions.length > 0) {
+                console.log(`[PM] mode=${pm.pmMode()} decisions=${decisions.length} (dry_run — reported only, no act)`);
+              }
+            } catch (err: any) {
+              console.warn('[PM] decide tick error:', err?.message || err);
+            } finally {
+              pmRunning = false;
+            }
+          };
+          setInterval(runPmTick, PM_TICK_MS);
+          console.log(`🗂️ Project Manager decide loop started (mode=${pm.pmMode()}, interval: ${PM_TICK_MS}ms, dry_run — no act)`);
+        } else {
+          console.log('⏸️ Project Manager loop disabled — set PM_AGENT_ENABLED=true (PM_MODE=dry_run) to enable');
+        }
+      } catch (error) {
+        console.warn('⚠️ Project Manager loop initialization failed (non-fatal):', error);
       }
 
       // VTID-04320: in-process reminder dispatch (tick every 30s, sweeper every

@@ -43,12 +43,21 @@ SVG is treated as untrusted:
 Single hook: only `renderOperatorChat`'s reply path (`!isSent`) changed;
 `renderManualMarkdown` and `kiro-console.js` are untouched.
 
+> NOTE (merge with main): VTID-05073 extracted `renderOperatorChat` and the
+> operator-chat helpers out of `app.js` into `operator-console.js` after this
+> branch was cut. The SVG helper block and the reply-path hook now live in
+> `services/gateway/src/frontend/command-hub/operator-console.js` (not `app.js`),
+> which is where `renderOperatorChat` resides on current `main`. `app.js` is
+> unchanged from `main`. Any "app.js" reference in the acceptance notes below
+> refers to this now-relocated operator-chat renderer. The 12 unit tests slice
+> and exercise the block from `operator-console.js` and pass.
+
 ## ✅ Changes
 
-- [x] `app.js` — SVG extract/sanitize/base64/preview/lightbox helpers + reply-path call
+- [x] `operator-console.js` — SVG extract/sanitize/base64/preview/lightbox helpers + reply-path call in `renderOperatorChat`
 - [x] `styles.css` — `.chat-svg-*` preview/lightbox classes (no inline style)
-- [x] `index.html` — `?v=` bumped to `20261121-vtid-05082` on both assets
-- [x] `dist/frontend/command-hub/{app.js,styles.css,index.html}` — built mirror committed (Build Gate)
+- [x] `index.html` — `?v=` bumped to `20261121-vtid-05082` on operator-console.js + app.js
+- [x] `dist/frontend/command-hub/{operator-console.js,app.js,styles.css,index.html}` — built mirror committed (Build Gate)
 - [x] `scripts/ci/command-hub-ownership-guard.js` — one documenting allowlist comment (no pattern edit)
 - [x] `test/command-hub/vtid-05082-svg-render.test.ts` — 12 tests incl. mandatory hostile-SVG
 - [x] `package.json` / `package-lock.json` — test-only `jsdom` devDependency (declared above)

@@ -6,8 +6,8 @@
  * untrusted: it is allowlist-sanitized before any data URI is built, and shown
  * only through an <img> (never inline in the live DOM).
  *
- * app.js is a plain browser script with no build step, so — matching this
- * repo's established pattern for app.js (see
+ * operator-console.js is a plain browser script with no build step, so —
+ * matching this repo's established pattern (see
  * test/command-hub/escape-html.test.ts) — the SVG helper block is sliced out of
  * the source and evaluated directly against a jsdom window that supplies the
  * browser globals the helpers use (DOMParser, XMLSerializer, btoa, document,
@@ -18,7 +18,10 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { JSDOM } from 'jsdom';
 
-const APP_JS_PATH = join(__dirname, '../../src/frontend/command-hub/app.js');
+// VTID-05073 moved renderOperatorChat (and the SVG helper block that lives
+// beside it) out of app.js into operator-console.js. The helpers are sliced
+// from operator-console.js, which is where they are defined and shipped.
+const APP_JS_PATH = join(__dirname, '../../src/frontend/command-hub/operator-console.js');
 const APP_JS = readFileSync(APP_JS_PATH, 'utf8');
 
 interface SvgHelpers {

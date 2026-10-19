@@ -120,3 +120,25 @@ jobs:
           fi
           echo "### ⚠️ PR-GATE (report-only) would fail: $FAILED" >> "$GITHUB_STEP_SUMMARY"
           echo "::warning::PR-GATE report-only — would fail: $FAILED"
+
+  # VTID-05213: Lane scope — a lane PR changes only its lane's declared `paths`; governance paths need an
+  # `executor: claude` lane; a kiro/ branch names its lane in trailers. Its own job and check run (not part of the
+  # report-only Verdict) because the Project Manager merges only when this check is green.
+  lane-scope:
+    name: Lane scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE: ${{ github.event.pull_request.base.sha }}
+      HEAD: ${{ github.event.pull_request.head.sha }}
+      HEAD_REF: ${{ github.head_ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Lane scope
+        run: node scripts/collab/queue.mjs scope-check --base "$BASE" --head "$HEAD" --branch "$HEAD_REF" --summary "$GITHUB_STEP_SUMMARY"

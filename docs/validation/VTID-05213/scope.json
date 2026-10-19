@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05213",
+  "kind": "infra",
+  "paths": [
+    "docs/validation/VTID-05213/**",
+    ".kiro/specs/pm-agent/**",
+    "scripts/collab/**",
+    ".github/workflows/PR-GATE.yml"
+  ],
+  "sparring_record": "docs/validation/VTID-05213/plan-sparring.md",
+  "collab_allow_initial": ["pm-agent"],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

@@ -6,6 +6,12 @@ VALIDATION_PROFILE: command_hub_frontend
 OASIS_IMPACT: no
 DEPENDENCY_CHANGE: added jsdom (gateway devDependency) solely for the VTID-05082 SVG sanitizer unit test — the shipped Command Hub code uses the browser's native DOMParser/XMLSerializer and adds no runtime dependency.
 
+> MERGE NOTE: VTID-05073 moved renderOperatorChat and the operator-chat helpers
+> from app.js into operator-console.js after this branch was cut. The SVG block
+> and reply-path hook now live in operator-console.js; app.js is unchanged from
+> main. "app.js" references below mean this relocated operator-chat renderer.
+> The 12 unit tests slice the block from operator-console.js and pass.
+
 Each criterion below is one `AC-N` line with exactly one `TEST:` / `UI:` token
 within 12 lines. There are no HTTP endpoints added, so there is no `CURL:`.
 AC-7 is `UI:` (requires a staging walkthrough); every other criterion is

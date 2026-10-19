@@ -20,14 +20,23 @@
  */
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { readCommandHubBundle, extractedOperatorBlock } from './bundle';
 
 const FE = join(__dirname, '../../src/frontend/command-hub');
 const APP_JS = readFileSync(join(FE, 'app.js'), 'utf8');
 // VTID-05067: the approval-card / Stop rules moved to kiro-console.css.
 const CSS = readFileSync(join(FE, 'styles.css'), 'utf8') + readFileSync(join(FE, 'kiro-console.css'), 'utf8');
-const START = APP_JS.indexOf('function operatorThreadEngine(thread) {');
-const END = APP_JS.indexOf('function renderOperatorLiveTranscript() {');
-const BLOCK = APP_JS.slice(START, END);
+// VTID-05073: the operatorThreadEngine..renderOperatorLiveTranscript functions
+// were extracted to operator-console.js; the module vars they close over stayed
+// in app.js. extractedOperatorBlock() rebuilds the original executable slice
+// (extracted functions + referenced app.js module vars). Call-site source
+// checks read the full bundle. Boundaries and every assertion are unchanged.
+const BUNDLE = readCommandHubBundle();
+const BLOCK = extractedOperatorBlock(
+  'function operatorThreadEngine(thread) {',
+  'function renderOperatorLiveTranscript() {',
+  ['state', 'document', 'fetch', 'buildContextHeaders', 'renderApp', 'saveOperatorThreadsIndex', 'updateOperatorLiveTranscriptDom', 'showToast', 'console'],
+);
 
 class El {
   tag: string; className = ''; textContent = ''; title = ''; type = ''; disabled = false;
@@ -150,19 +159,19 @@ describe('VTID-04975 Kiro actions', () => {
 
 describe('VTID-04975 wiring (source check)', () => {
   it('the request names the engine only for a Kiro thread', () => {
-    expect(APP_JS).toContain("engine: activeOperatorEngine() === 'kiro' ? 'kiro' : undefined,");
+    expect(BUNDLE).toContain("engine: activeOperatorEngine() === 'kiro' ? 'kiro' : undefined,");
   });
   // VTID-05067: a Kiro thread's pane and sends belong to kiro-console.js; the LLM stream ignores kiro.* frames.
   it('a Kiro thread hands its chat pane and its sends to kiro-console.js', () => {
-    expect(APP_JS).toContain("if (frame.event && frame.event.indexOf('kiro.') === 0) return;");
-    expect(APP_JS).toContain("container.appendChild(window.KiroConsole.renderPane(state.operatorActiveThreadId, { legacyMessages: state.chatMessages }));");
-    expect(APP_JS).toContain('window.KiroConsole.send(state.operatorActiveThreadId);');
+    expect(BUNDLE).toContain("if (frame.event && frame.event.indexOf('kiro.') === 0) return;");
+    expect(BUNDLE).toContain("container.appendChild(window.KiroConsole.renderPane(state.operatorActiveThreadId, { legacyMessages: state.chatMessages }));");
+    expect(BUNDLE).toContain('window.KiroConsole.send(state.operatorActiveThreadId);');
   });
   it('a server thread keeps its engine, and a Kiro thread shows its tag and workspace card', () => {
     expect(APP_JS).toContain("if (st.engine === 'kiro') local.engine = 'kiro';");
     expect(APP_JS).toContain("if (st.engine === 'kiro') thread.engine = 'kiro';");
-    expect(APP_JS).toContain("tag.className = 'chat-engine-tag';");
-    expect(APP_JS).toContain("renderEmptyPanel: function () { return renderKiroThreadPanel(); },");
+    expect(BUNDLE).toContain("tag.className = 'chat-engine-tag';");
+    expect(BUNDLE).toContain("renderEmptyPanel: function () { return renderKiroThreadPanel(); },");
   });
   it('every class the block uses has a rule in styles.css', () => {
     const classes = new Set<string>();
