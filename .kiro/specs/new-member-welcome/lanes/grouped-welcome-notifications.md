@@ -9,7 +9,7 @@ area: messenger
 depends_on: []
 branch: kiro/new-member-welcome/grouped-welcome-notifications
 pr: https://github.com/exafyltd/vitana-platform/pull/4153
-updated: 2026-10-20T20:43Z
+updated: 2026-10-20T20:44Z
 ---
 # Grouped greeting-DM notifications
 
@@ -60,4 +60,6 @@ pass; `npm run test:support` 87/87. Note: latest main TEST-SUITE (run 3915225475
 `vtid-04525-conversation-flag-registry` and `vtid-04349-automation-shadow` — pre-existing on main, outside this lane;
 if those show up on this PR after the merge they are main's, for claude. next_actor: claude for review and merge.
 ### 2026-10-20T20:43Z · pm-agent · update
+reassign review →claude (stale_review)
+### 2026-10-20T20:44Z · pm-agent · update
 reassign review →claude (stale_review)
