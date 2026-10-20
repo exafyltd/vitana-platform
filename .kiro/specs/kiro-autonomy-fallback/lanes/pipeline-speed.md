@@ -23,7 +23,8 @@ paths:
   - scripts/ci/staging-verify/lib.test.cjs
   - services/gateway/test/vtid-05077-planner-fallback-and-thinking.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-20T17:20Z
+updated: 2026-10-20T17:49Z
+vtid: VTID-05272
 ---
 # pipeline-speed — continuous plan driver, Jest shards, PLAN-SPAR slots, per-lane STAGING-VERIFY attribution, unblock main
 Plan: `.kiro/specs/kiro-autonomy-fallback/plan.md` §4.7, §7 and §5 H, and the `pipeline-speed` section of `tasks.md` are
@@ -42,3 +43,6 @@ workflow files, so the PM never merges this lane; it lands under §7b. Shared fi
 Owner instruction 2026-10-20: "no more approvals, you run it end to end" and "remove the waits, parallel by default,
 measurement" — §7b merge instruction for this plan's named set, approvals from the reviewer agent on claude-sonnet-5.5;
 lands after `steering-rules`. Lane created with the plan. Next: PLAN-SPAR; once `vtid:` is set, seat exafy claims it.
+
+### 2026-10-20T17:49Z · ci-plan-spar · ready (VTID allocated)
+VTID-05272 allocated after policy approval (converged-auto-v1).

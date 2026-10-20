@@ -15,7 +15,8 @@ paths:
   - services/gateway/src/index.ts
   - services/gateway/test/project-manager/**
   - docs/validation/VTID-*/**
-updated: 2026-10-20T17:20Z
+updated: 2026-10-20T17:49Z
+vtid: VTID-05274
 ---
 # pm-fallback — the PM acts live, falls back to the exceptions seat, merges on the reviewer agent's accept, sends Gate 2
 Plan: `.kiro/specs/kiro-autonomy-fallback/plan.md` §3, §4 and §5 C, and the `pm-fallback` section of `tasks.md` are
@@ -32,3 +33,6 @@ legacy `reviewer_seat` exafyltd. Shared files: none. Pre-existing `main` red (vt
 Owner instruction 2026-10-20: "no more approvals, you run it end to end" — §7b merge instruction for this plan's named
 set, approvals from the reviewer agent on claude-sonnet-5.5; lands after `steering-rules` and `scope-check`. Lane
 created with the plan. Next: PLAN-SPAR; once `vtid:` is set and `scope-check` is done, seat exafy claims it.
+
+### 2026-10-20T17:49Z · ci-plan-spar · ready (VTID allocated)
+VTID-05274 allocated after policy approval (converged-auto-v1).

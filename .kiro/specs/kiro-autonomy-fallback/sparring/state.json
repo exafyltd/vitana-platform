@@ -2,14 +2,16 @@
   "sessions": [
     {
       "id": "697e758a-de29-42e1-831b-b85c35bae398",
-      "submitted": [],
-      "plan_text_sha": "d9c57fb9",
-      "rounds": 1,
-      "verdict": "in_progress",
+      "submitted": [
+        1
+      ],
+      "plan_text_sha": "c530d6f8",
+      "rounds": 2,
+      "verdict": "converged",
       "infra": false,
       "retryable": false,
-      "final_plan_hash": null,
-      "policy_approved_at": null
+      "final_plan_hash": "451fd850e1b43446af98b9414d847ece2c77744c595f3df5898e602ccdf686db",
+      "policy_approved_at": "2026-10-20T17:47:55.962+00:00"
     }
   ]
 }

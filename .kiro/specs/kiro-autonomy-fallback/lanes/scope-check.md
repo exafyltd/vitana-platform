@@ -15,7 +15,8 @@ paths:
   - scripts/collab/protected-gate-files.json
   - .github/workflows/PR-GATE.yml
   - docs/validation/VTID-*/**
-updated: 2026-10-20T17:20Z
+updated: 2026-10-20T17:49Z
+vtid: VTID-05276
 ---
 # scope-check — governance changes by Kiro with the reviewer agent (protected files excepted), lanes from the open plan( PR, Collab handoff check
 Plan: `.kiro/specs/kiro-autonomy-fallback/plan.md` §4 and §5 D, and the `scope-check` section of `tasks.md` are
@@ -33,3 +34,6 @@ never merges this lane; it lands under §7b. Shared files: none.
 Owner instruction 2026-10-20: "no more approvals, you run it end to end" — §7b merge instruction for this plan's named
 set, approvals from the reviewer agent on claude-sonnet-5.5; lands after `steering-rules`. Lane created with the plan.
 Next: PLAN-SPAR; once `vtid:` is set, seat exafy claims it.
+
+### 2026-10-20T17:49Z · ci-plan-spar · ready (VTID allocated)
+VTID-05276 allocated after policy approval (converged-auto-v1).

@@ -12,7 +12,8 @@ repos: [exafyltd/vitana-platform]
 paths:
   - services/gateway/test/kiro-autonomy-fallback-proof.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-20T17:20Z
+updated: 2026-10-20T17:49Z
+vtid: VTID-05277
 ---
 # staging-proof — the pipeline proven on staging in fallback mode with zero Claude Code actions
 Plan: `.kiro/specs/kiro-autonomy-fallback/plan.md` §4.6, §4.9 and §5 F, and the `staging-proof` section of `tasks.md`
@@ -29,3 +30,6 @@ Not a governance path. Shared files: none.
 Owner instruction 2026-10-20: "no more approvals, you run it end to end" — §7b merge instruction for this plan's named
 set, approvals from the reviewer agent on claude-sonnet-5.5; this lane proves the pipeline with zero Claude actions.
 Lane created with the plan. Next: PLAN-SPAR; once `vtid:` is set and all other lanes are done, seat exafyltd claims it.
+
+### 2026-10-20T17:49Z · ci-plan-spar · ready (VTID allocated)
+VTID-05277 allocated after policy approval (converged-auto-v1).

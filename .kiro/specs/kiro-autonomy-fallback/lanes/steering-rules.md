@@ -18,7 +18,8 @@ paths:
   - .kiro/steering/vitana-collaboration.md
   - .kiro/steering/vitana-pipeline.md
   - docs/validation/VTID-*/**
-updated: 2026-10-20T17:20Z
+updated: 2026-10-20T17:49Z
+vtid: VTID-05278
 ---
 # steering-rules — rule text first: Claude optional, PM merge rule, plan driver, parallel rule, measurement (both repos)
 Plan: `.kiro/specs/kiro-autonomy-fallback/plan.md` §5 A and the `steering-rules` section of `tasks.md` are authoritative.
@@ -36,3 +37,6 @@ Shared files: none.
 Owner instruction 2026-10-20: "no more approvals, you run it end to end" — §7b merge instruction for this plan's named
 set (plan PR + every lane PR, both repos), approvals from the reviewer agent on claude-sonnet-5.5, this lane lands first.
 Lane created with the plan. Next: PLAN-SPAR; once `vtid:` is set, seat exafyltd claims it.
+
+### 2026-10-20T17:49Z · ci-plan-spar · ready (VTID allocated)
+VTID-05278 allocated after policy approval (converged-auto-v1).

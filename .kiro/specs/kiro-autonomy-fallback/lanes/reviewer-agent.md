@@ -22,7 +22,8 @@ paths:
   - .kiro/workflows/vitana-pipeline.workflow.json
   - .kiro/hooks/vitana-pipeline-start.json
   - docs/validation/VTID-*/**
-updated: 2026-10-20T17:20Z
+updated: 2026-10-20T17:49Z
+vtid: VTID-05275
 ---
 # reviewer-agent — reviewer agent + pipeline recipe (vitana-lane-reviewer on claude-sonnet-5.5, runbooks, IDE workflow, SessionStart hook)
 Plan: `.kiro/specs/kiro-autonomy-fallback/plan.md` §4.1, §4.2 and §5 G, and the `reviewer-agent` section of `tasks.md`
@@ -39,3 +40,6 @@ Owner instruction 2026-10-20: "no more approvals, you run it end to end" — §7
 set, approvals from the reviewer agent on claude-sonnet-5.5 (this lane defines it), pipeline as default for every future
 Kiro IDE and Kiro Web session; lands after `steering-rules`. Lane created with the plan. Next: PLAN-SPAR; once `vtid:` is
 set, seat exafy claims it.
+
+### 2026-10-20T17:49Z · ci-plan-spar · ready (VTID allocated)
+VTID-05275 allocated after policy approval (converged-auto-v1).

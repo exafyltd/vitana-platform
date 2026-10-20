@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-20T17:20Z
+state: approved
+updated: 2026-10-20T17:49Z
+sparring_record: .kiro/specs/kiro-autonomy-fallback/sparring/verdict.md
+vtids: [VTID-05271, VTID-05272, VTID-05273, VTID-05274, VTID-05275, VTID-05276, VTID-05277, VTID-05278]
 ---
 # Handoff — kiro-autonomy-fallback (Claude optional; Kiro runs the pipeline end to end; the waits removed)
 Planner: Kiro seat `exafyltd` (session kiro-exafyltd-202610201618-c018). Plan: `plan.md` (between the plan markers),
@@ -38,3 +40,6 @@ Production stays forbidden. Premises checked against vitana-platform@e6ed415a9 (
 named) and vitana-v1@996bfaf1d, from eight read-only lane investigations. No VTID allocated, no code changed, no live
 system touched. Next: PLAN-SPAR spars this PR; this session answers each round in `sparring/responses-<n>.md`; on
 convergence CI allocates the VTIDs and the plan PR is merged to `main` under the instruction above.
+
+### 2026-10-20T17:49Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 8 lane(s) got a VTID and are handed to Kiro.
