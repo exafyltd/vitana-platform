@@ -22,3 +22,13 @@ Invoke-WebRequest -Method Get -Uri https://preview-aws-gateway.vitanaland.com/co
   -> 200, length 196797, contains sanitizeSvgMarkup: False (why the old test #3 failed)
 git diff origin/main -- docs/validation/VTID-05082/staging-tests.json
   -> only note and test #3 name/path/reason changed; tests #1, #2 unchanged
+
+# Review iteration 2 (finding F1, lane-staging-test-05082-review.md). Read-only commands only.
+gh pr checks 4223 --repo exafyltd/vitana-platform   (head f89f77ba)
+  -> VALIDATOR-CHECK validate: pass, validate-pr: pass; pr-gate, unit, scan, change-suite, phase-2b: pass
+  -> Lane scope: fail (run 39466196242) - lane file not on main yet
+node scripts/collab/queue.mjs scope-check --base 1acb6b92d --head f89f77ba --branch kiro/fix-4182-test-fallout/staging-test-05082
+  -> 1 problem: .kiro/specs/fix-4182-test-fallout/lanes/staging-test-05082.md not found, exit 1
+gh pr view 4222 --repo exafyltd/vitana-platform --json state,mergedAt,mergeStateStatus
+  -> OPEN, not merged, BLOCKED. Lane scope turns green only after plan PR #4222 merges and this branch is rebased onto it.
+  -> Lane file NOT added here (lane files come only from a _plan commit). Kiro does not merge #4222. Captured: outputs/pr-checks-iter2.txt

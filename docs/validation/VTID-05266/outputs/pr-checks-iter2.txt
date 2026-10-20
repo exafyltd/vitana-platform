@@ -1,0 +1,19 @@
+﻿# gh pr checks 4223 at head f89f77ba (2026-10-20, review iteration 2)
+Lane scope	fail	18s	https://github.com/exafyltd/vitana-platform/actions/runs/39466196242/job/118778123655	
+Enforce Phase 2B Naming Standards	pass	49s	https://github.com/exafyltd/vitana-platform/actions/runs/39466196214/job/118778125083	
+change-suite	pass	24s	https://github.com/exafyltd/vitana-platform/actions/runs/39466196379/job/118778124463	
+check-phase-2b-docs	pass	13s	https://github.com/exafyltd/vitana-platform/actions/runs/39466196252/job/118778124110	
+pr-gate	pass	27s	https://github.com/exafyltd/vitana-platform/actions/runs/39466196242/job/118778124097	
+scan	pass	20s	https://github.com/exafyltd/vitana-platform/actions/runs/39466196405/job/118778125408	
+unit	pass	19s	https://github.com/exafyltd/vitana-platform/actions/runs/39466196230/job/118778124951	
+validate	pass	1m53s	https://github.com/exafyltd/vitana-platform/actions/runs/39466196143/job/118778122441	
+validate-pr	pass	2m4s	https://github.com/exafyltd/vitana-platform/actions/runs/39466196234/job/118778124475	
+
+# node scripts/collab/queue.mjs scope-check --base 1acb6b92d --head f89f77ba --branch kiro/fix-4182-test-fallout/staging-test-05082
+Γ¥î **lane scope** ΓÇö 1 problem(s) (lane fix-4182-test-fallout/staging-test-05082):
+- lane fix-4182-test-fallout/staging-test-05082: .kiro/specs/fix-4182-test-fallout/lanes/staging-test-05082.md not found in this repo or vitana-platform
+
+exit 1
+# gh pr view 4222 --json state,mergedAt,mergeStateStatus
+{"mergeStateStatus":"BLOCKED","mergedAt":null,"state":"OPEN"}
+
