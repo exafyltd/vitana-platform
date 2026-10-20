@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05259",
+  "kind": "infra",
+  "paths": [
+    "scripts/collab/queue.mjs",
+    "scripts/collab/queue.test.mjs",
+    "docs/validation/VTID-05259/**",
+    ".kiro/specs/retire-claude-code/**"
+  ],
+  "sparring_record": ".kiro/specs/retire-claude-code/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

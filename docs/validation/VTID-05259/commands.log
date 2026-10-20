@@ -1,0 +1,8 @@
+$ node --test scripts/collab/queue.test.mjs
+# tests 43
+# pass 43
+# fail 0
+$ node --test scripts/collab/plan-spar.test.mjs
+# tests 10
+# pass 10
+# fail 0
