@@ -51,3 +51,13 @@ W, order lines, re-run allowlist, cron `0 * * * *`), `areas.yaml` `exceptions_se
 `.kiro/pipeline/driver.md`, `scripts/collab/automations.test.mjs` (red on base 8/9 fail, green 9/9). PR #4228, review by
 agent:vitana-lane-reviewer (claude-sonnet-5.5). State stays `executing` in this PR (`queue.mjs validate` allows only
 ready → executing against base; precedent #4210). Evidence: `docs/validation/VTID-05271/`. Next: the reviewer agent.
+### 2026-10-20T18:55Z · kiro-exafyltd-202610201855-06c5 · review
+review: changes
+head: 3d4ba48a41ccde3f9082943fa2ea4a540ead7d26
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4228
+Findings (blocking): validate-pr fails on this head ('REJECTED: VALIDATION_PROFILE missing in PR body', run 39477901654);
+add a 'VALIDATION_PROFILE: <profile>' line to the PR body (as #4210) and re-run validate-pr. No code change needed.
+Non-blocking: re-run allowlist, E1-E6 duties, driver wake-up contract and the 9 automations tests (red on base,
+green on head) check out; all other checks green.
+Entry committed by the land step on the reviewer agent's behalf. Next: coder adds VALIDATION_PROFILE, then re-review.
