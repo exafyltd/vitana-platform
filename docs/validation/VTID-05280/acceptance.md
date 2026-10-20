@@ -19,7 +19,7 @@ resolves to a kept label, the `AI-n` alias or the retired-number index (full swe
 TEST: node docs/validation/VTID-05280/check.mjs xref  # => PASS every label cited in .claude/rules/** and .kiro/steering/** resolves
 
 AC-5: IF–THEN 20 (`git reset --hard origin/main` before deploying) is deleted, not reworded.
-TEST: git grep -c "git reset --hard" -- CLAUDE.md  # => no output (0 matches)
+TEST: git grep -n "git reset --hard" -- CLAUDE.md  # => exactly one hit, the retired-number index row "IF–THEN 20 (… before deploy) | deleted"
 
 AC-6: No trivial-change sparring exemption is added; the gate states there is none.
 TEST: git grep -c "There is no" -- CLAUDE.md  # => CLAUDE.md:1 ("There is no trivial-change exemption.")
