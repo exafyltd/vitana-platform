@@ -3,9 +3,11 @@ slug: retire-claude-code
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-10-20T10:45Z
+updated: 2026-10-20T10:51Z
+sparring_record: .kiro/specs/retire-claude-code/sparring/verdict.md
+vtids: [VTID-05255, VTID-05256, VTID-05257, VTID-05258, VTID-05259]
 ---
 # Handoff — Retire Claude Code; every step done by Kiro
 Owner decision 2026-10-20 (Kiro Web session): "let's eliminate Claude Code completely … so everything is done by
@@ -21,3 +23,6 @@ Wrote requirements, design, tasks, plan and 5 lanes. No VTID allocated, no code 
 Expected: Collab handoff flags the four governance lanes (today's rule needs executor: claude). That is the
 bootstrap false positive described in plan.md; it disappears once lane `scope-rules` is on main.
 Next: PLAN-SPAR spars this PR; this session (seat exafyltd) answers each round in `sparring/responses-<n>.md`.
+
+### 2026-10-20T10:51Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 5 lane(s) got a VTID and are handed to Kiro.

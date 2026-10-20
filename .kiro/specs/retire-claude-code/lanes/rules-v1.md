@@ -16,7 +16,8 @@ paths:
   - .kiro/steering/vitana-standing-rules.md
   - .kiro/steering/vitana-collaboration.md
   - docs/validation/VTID-*/**
-updated: 2026-10-20T10:45Z
+updated: 2026-10-20T10:51Z
+vtid: VTID-05258
 ---
 # Rule text without Claude Code (vitana-v1 — PR in exafyltd/vitana-v1)
 Plan: `.kiro/specs/retire-claude-code/` — `plan.md` and the `tasks.md` section `<!-- lane: rules-v1 -->` are
@@ -26,3 +27,6 @@ authoritative. VTID: assigned by CI after PLAN-SPAR converges; do not start befo
 ## Log
 ### 2026-10-20T10:45Z · kiro-exafyltd-202610201041-ab5d · created → ready
 Lane drafted with the plan. Next: PLAN-SPAR; once `vtid:` is set, seat exafyltd claims it.
+
+### 2026-10-20T10:51Z · ci-plan-spar · ready (VTID allocated)
+VTID-05258 allocated after policy approval (converged-auto-v1).
