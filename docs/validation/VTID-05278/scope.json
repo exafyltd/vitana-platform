@@ -1,0 +1,18 @@
+{
+  "vtid": "VTID-05278",
+  "kind": "docs",
+  "paths": [
+    ".claude/rules/collaboration.md",
+    "CLAUDE.md",
+    ".kiro/steering/vitana-kiro-notes.md",
+    ".kiro/steering/vitana-load-project-rules.md",
+    ".kiro/steering/vitana-standing-rules.md",
+    ".kiro/steering/vitana-collaboration.md",
+    ".kiro/steering/vitana-pipeline.md",
+    ".kiro/specs/kiro-autonomy-fallback/lanes/steering-rules.md",
+    "docs/validation/VTID-05278/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05278/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

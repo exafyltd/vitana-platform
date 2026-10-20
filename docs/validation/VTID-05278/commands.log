@@ -1,0 +1,28 @@
+# VTID-05278 — verification commands (kiro-autonomy-fallback / steering-rules), 2026-10-20, Windows, node --test
+# Base: vitana-platform origin/main 422a7b045ce5883f56acadcc3b4dd0440aeb7aaa, vitana-v1 origin/main 996bfaf1d91736cb825ea607310e91ee2e3cd699
+# Docs-only lane: no new test (plan §5 A "Tests: none new"); red->green not applicable (kind: docs).
+
+[vitana-platform] node --test scripts/ci/kiro-steering/guard.test.cjs   -> tests 8, pass 8, fail 0
+[vitana-platform] node scripts/ci/kiro-steering/guard.cjs .             -> kiro-steering: OK (exit 0)
+[vitana-v1]       node --test scripts/ci/kiro-steering/guard.test.cjs   -> tests 8, pass 8, fail 0
+[vitana-v1]       node scripts/ci/kiro-steering/guard.cjs .             -> kiro-steering: OK (exit 0)
+
+sha256 (working tree, both repos equal):
+  .claude/rules/collaboration.md               540A586808D387A859B17588F5F452DC857CFF15AE3FDB8B923A34033547AE46
+  .kiro/steering/vitana-kiro-notes.md          8851EB8A6DCA4C480A7A6AD262FB6C3DF1C9F684305DBA04184E6D5FE55BF52A
+  .kiro/steering/vitana-load-project-rules.md  7CA17FC03E1F10B030A52A0981B8D7AD443F7CCA358EA86EF2005603F77A302F
+  .kiro/steering/vitana-standing-rules.md      D5747A1A81CDDAC9736BB256DCE55170660AB25C113775A8EB6B9DFC2CEAF001
+  .kiro/steering/vitana-collaboration.md       0C2D1F9CB32C158F18290AD874F2DF960D4B11540D34D06D0C6C8F421DC126C4
+  .kiro/steering/vitana-pipeline.md            734CE6F6E9B13716B56C540ADD44771C88D15B99298097EA7B8D8E2A9A753F22
+
+Select-String .kiro/steering/*.md 'implementer|IMPLEMENTER|Claude merges|Claude Code plans, reviews, merges|hand back to Claude Code|next_actor: claude|ask the owner before'
+  -> vitana-platform 0 hits, vitana-v1 0 hits
+vitana-pipeline.md: no front matter (always included), no #[[file:.claude/rules/...]] link (both repos)
+
+Committed (kiro-agent[bot], trailers Collab-Session/Collab-Lane, no Co-Authored-By): platform 6d15434c88cfe2b16d860a9add6add7be9f6f9f9, v1 31ef5230109e458382e306167181b775cd0b608b
+collaboration.md committed-blob sha256: platform = v1 = 540A586808D387A859B17588F5F452DC857CFF15AE3FDB8B923A34033547AE46
+[vitana-platform] node scripts/collab/queue.mjs validate --base origin/main --head HEAD --branch kiro/kiro-autonomy-fallback/steering-rules -> collab handoff: 1 lane file changed, all valid (exit 0)
+[vitana-platform] node scripts/collab/queue.mjs scope-check --base origin/main --head HEAD --branch ... -> lane scope: every change inside its paths (exit 0)
+[vitana-v1] node <platform>/scripts/collab/queue.mjs validate --repo <v1> --base origin/main --head HEAD --lane-repo exafyltd/vitana-platform -> all valid (exit 0)
+[vitana-v1] node <platform>/scripts/collab/queue.mjs scope-check --repo <v1> --base origin/main --head HEAD --lane-repo exafyltd/vitana-platform -> every change inside its paths (exit 0)
+PRs: https://github.com/exafyltd/vitana-platform/pull/4226 , https://github.com/exafyltd/vitana-v1/pull/1468
