@@ -10,6 +10,7 @@ specs:
   - vitana-platform:retire-claude-code
   - vitana-v1:chat-ux
   - vitana-v1:vitana-chat-markdown
+  - vitana-platform:collab-kiro-governance
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
