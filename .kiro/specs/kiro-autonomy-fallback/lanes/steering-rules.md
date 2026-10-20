@@ -1,6 +1,6 @@
 ---
 lane: steering-rules
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: claude
@@ -18,7 +18,9 @@ paths:
   - .kiro/steering/vitana-collaboration.md
   - .kiro/steering/vitana-pipeline.md
   - docs/validation/VTID-*/**
-updated: 2026-10-20T17:49Z
+claimed_by: kiro-exafyltd-202610201618-c018
+branch: kiro/kiro-autonomy-fallback/steering-rules
+updated: 2026-10-20T18:22Z
 vtid: VTID-05278
 ---
 # steering-rules — rule text first: Claude optional, PM merge rule, plan driver, parallel rule, measurement (both repos)
@@ -40,3 +42,12 @@ Lane created with the plan. Next: PLAN-SPAR; once `vtid:` is set, seat exafyltd 
 
 ### 2026-10-20T17:49Z · ci-plan-spar · ready (VTID allocated)
 VTID-05278 allocated after policy approval (converged-auto-v1).
+### 2026-10-20T18:22Z · kiro-exafyltd-202610201618-c018 · ready → executing
+Claimed (`collab-claim/kiro-autonomy-fallback/steering-rules`, df72a7970a). Owner instruction 2026-10-20 ("no more
+approvals, you run it end to end", plan §6, collaboration.md §7b named set) covers building, merging this lane's two PRs
+and the protected gate file `CLAUDE.md` (roles paragraph only). Implemented plan §5 A / tasks A1-A4: collaboration.md
+(intro, §2, §3, §3a, §4, §5, §7, §7a, §7b PM merge rule, §8 plan driver, new §8a parallel execution, new §8b
+measurement, §9), CLAUDE.md roles paragraph, the four steering files and the new `vitana-pipeline.md`; vitana-v1
+mirror on the same branch name with byte-identical files. Lane state stays `executing` in the PR (base `ready` →
+`in-review` is not a legal single-PR transition for `queue.mjs validate`); the PR is open for review by
+agent:vitana-lane-reviewer (claude-sonnet-5.5). Next: review → land (lands first).
