@@ -1,0 +1,6 @@
+# read-only GETs against staging (https://preview-aws-gateway.vitanaland.com), 2026-10-20T19:24:11.9344520+02:00
+# GATEWAY_SERVICE_TOKEN present: True (value never printed)
+GET /command-hub/svg-preview.js?v=20261121-vtid-05082 -> 200 length=17084 contains_sanitizeSvgMarkup=True contains_svg-preview_tag=False
+GET /alive -> 200 length=74 contains_sanitizeSvgMarkup=False contains_svg-preview_tag=False
+GET /command-hub/index.html -> 200 length=3171 contains_sanitizeSvgMarkup=False contains_svg-preview_tag=True
+GET /command-hub/operator-console.js?v=20261121-vtid-05082 -> 200 length=196797 contains_sanitizeSvgMarkup=False contains_svg-preview_tag=False

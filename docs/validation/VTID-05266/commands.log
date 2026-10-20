@@ -1,0 +1,24 @@
+# 2026-10-20, Kiro IDE (Windows, PowerShell 5.1), branch kiro/fix-4182-test-fallout/staging-test-05082 (from origin/main 1acb6b92d)
+# Session kiro-hotmail-202610151618-b437. Read-only: staging GETs only, no production, no writes.
+node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" docs/validation/VTID-05082/staging-tests.json
+  -> parse ok, exit 0
+node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" docs/validation/VTID-05266/staging-tests.json
+  -> parse ok, exit 0
+node -e "const lib=require('./scripts/ci/staging-verify/lib.cjs');...lib.validateManifest(m,{vtid:'VTID-05082',service:'gateway'})..." docs/validation/VTID-05082/staging-tests.json
+  -> validateManifest ok, exit 0
+node -e "const lib=require('./scripts/ci/staging-verify/lib.cjs');...lib.validateManifest(m,{vtid:'VTID-05266',service:'gateway'})..." docs/validation/VTID-05266/staging-tests.json
+  -> validateManifest ok, exit 0
+cd services/gateway
+npx jest test/vtid-04696-staging-checks-follow-asset-bumps.test.ts
+  -> 1 suite, 1 passed, exit 0
+cd ../..
+Invoke-WebRequest -Method Get -Uri https://preview-aws-gateway.vitanaland.com/command-hub/svg-preview.js?v=20261121-vtid-05082 (Authorization: Bearer $env:GATEWAY_SERVICE_TOKEN, present, not printed)
+  -> 200, length 17084, contains sanitizeSvgMarkup: True
+Invoke-WebRequest -Method Get -Uri https://preview-aws-gateway.vitanaland.com/alive
+  -> 200
+Invoke-WebRequest -Method Get -Uri https://preview-aws-gateway.vitanaland.com/command-hub/index.html
+  -> 200, length 3171, contains svg-preview.js?v=20261121-vtid-05082: True
+Invoke-WebRequest -Method Get -Uri https://preview-aws-gateway.vitanaland.com/command-hub/operator-console.js?v=20261121-vtid-05082
+  -> 200, length 196797, contains sanitizeSvgMarkup: False (why the old test #3 failed)
+git diff origin/main -- docs/validation/VTID-05082/staging-tests.json
+  -> only note and test #3 name/path/reason changed; tests #1, #2 unchanged
