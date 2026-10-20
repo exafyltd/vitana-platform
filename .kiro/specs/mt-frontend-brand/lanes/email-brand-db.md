@@ -7,9 +7,10 @@ executor: kiro
 seat: hotmail
 reviewer_seat: exafyltd
 paths:
-  - supabase/migrations/20261101090000_vtid_xxxxx_tenant_email_branding.sql
+  - supabase/migrations/20261101090000_vtid_05245_tenant_email_branding.sql
+  - docs/validation/VTID-05245/**
   - docs/multitenancy/MIGRATION-QUEUE.md
-updated: 2026-10-19T20:32Z
+updated: 2026-10-20T08:43Z
 vtid: VTID-05245
 ---
 # email-brand-db — tenant-keyed email branding helper (repo vitana-v1, DB)
@@ -40,3 +41,9 @@ branding so behaviour is byte-identical until a tenant overrides. Seat `hotmail`
 
 ### 2026-10-19T20:32Z · ci-plan-spar · ready (VTID allocated)
 VTID-05245 allocated after policy approval (converged-auto-v1).
+### 2026-10-20T08:43Z · kiro-hotmail-202610151618-b437 · paths fix
+`paths`: migration file name now carries the allocated VTID (`vtid_xxxxx` → `vtid_05245`), and
+`docs/validation/VTID-05245/**` added, as the lane body already says the lane adds its own
+`docs/validation/<vtid>/` (rollback.sql, pre/post-check SQL, scope.json). `MIGRATION-QUEUE.md`
+does not exist in vitana-v1; the program's single queue is in vitana-platform, so row 9 ships as a
+separate platform PR: https://github.com/exafyltd/vitana-platform/pull/4204
