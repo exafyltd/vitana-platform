@@ -136,3 +136,28 @@ Allowed paths:
 Acceptance: all Vitest green; full gateway suite green; `npm run test:support` (42c) + `npm run test:operator` (42e)
 green; no fake-tenant literal remains; nothing calls a live write. Depends on `helpers-and-policy-rewrite`. PR title
 `VTID-xxxxx (mt-identity/tenant-db-and-slug-cleanup): …`.
+
+## Escalation carry-over (owner approved escalated, 2026-10-20)
+
+The plan was round-capped and escalated (session `ee011de1`, s2 round 3); the owner approved it as escalated on
+2026-10-20 ("yes, A all 4 approved"). The open last-round findings are folded into the lane tasks here; `plan.md`
+is unchanged.
+
+- R3-F1 [major] — "Lane 5b replaces `dev-auth.ts:364`'s `DEV_TENANT_ID || '…0001'` with `getDefaultTenantId()`,
+  which is declared `Promise<string | null>`."
+  Lane `tenant-db-and-slug-cleanup`, added task:
+  - [ ] T3c In `dev-auth.ts` (~:364), when the body has no `tenant_id`, `DEV_TENANT_ID` is unset and
+        `getDefaultTenantId()` resolves `null`, return `503 { ok: false, error: 'REGISTRY_UNAVAILABLE' }` before
+        `bootstrapRequestContext` runs and before any token is minted; a null tenant never reaches
+        `bootstrapRequestContext`.
+        Acceptance (carry-over R3-F1): a test (in `mt-identity-slug-cleanup.test.ts`) with `getDefaultTenantId()`
+        stubbed to `null` and no `tenant_id` asserts `POST /dev/auth/token` returns 503 (not 200) and
+        `bootstrapRequestContext` is not called.
+- R3-F2 [minor] — "Lane 5c migrates `fetchPrimaryTenantForUser` in `presence.ts:55` and `presence-did-you-know.ts:63`
+  (via `presence-repository.ts:22` and `presence-did-you-know-repository.ts:23`) to `resolvePrimaryTenant()`."
+  Lane `tenant-db-and-slug-cleanup`, added task:
+  - [ ] T4c Add one test per presence route (in `mt-identity-primary-tenant-readers.test.ts`) that stubs the route's
+        repository `fetchPrimaryTenantForUser` and, with `MT_RESOLUTION_V2` on, asserts the tenant used matches
+        `resolvePrimaryTenant()`'s return value and the deprecated repo function is never called.
+        Acceptance (carry-over R3-F2): both `presence.ts` and `presence-did-you-know.ts` tenant resolution are
+        covered and green.

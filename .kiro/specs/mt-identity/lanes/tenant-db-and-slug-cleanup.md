@@ -27,7 +27,7 @@ paths:
   - services/gateway/test/mt-identity-primary-tenant-readers.test.ts
   - services/gateway/src/services/tenancy/tenant-context.ts
   - services/gateway/test/mt-identity-tenant-slug-lookup.test.ts
-updated: 2026-10-19T18:00Z
+updated: 2026-10-20T08:30Z
 ---
 # tenant-db-and-slug-cleanup — tenantDb/TENANT_TABLES, canonical isHealthTable()/healthDb, remove slug maps (CODE)
 
@@ -73,6 +73,13 @@ nav-registry / screen-manifest / parity-ledger change. New user-visible strings 
 in this PR. Branch `kiro/mt-identity/tenant-db-and-slug-cleanup`;
 PR title `VTID-xxxxx (mt-identity/tenant-db-and-slug-cleanup): …`;
 trailers `Collab-Session` + `Collab-Lane: mt-identity/tenant-db-and-slug-cleanup`.
+
+Escalation carry-over (owner approved escalated, 2026-10-20) — R3-F1 and R3-F2, tasks T3c and T4c in `tasks.md`.
+Acceptance (R3-F1): with no `tenant_id`, no `DEV_TENANT_ID` and `getDefaultTenantId()` resolving `null`,
+`POST /dev/auth/token` returns 503 `REGISTRY_UNAVAILABLE` (not 200), `bootstrapRequestContext` is not called, and
+a test in `mt-identity-slug-cleanup.test.ts` asserts it. Acceptance (R3-F2): `mt-identity-primary-tenant-readers.test.ts`
+has one test per presence route asserting, with `MT_RESOLUTION_V2` on, the tenant matches `resolvePrimaryTenant()`
+and the deprecated repo `fetchPrimaryTenantForUser` is never called.
 
 ## Log
 ### 2026-11-01T00:00Z · kiro-hotmail-202610151618-b437 · created → ready
