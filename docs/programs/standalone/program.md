@@ -7,6 +7,7 @@ repos: [vitana-platform, vitana-v1]
 specs:
   - vitana-platform:pm-agent
   - vitana-platform:claude-sessions-handover
+  - vitana-platform:i18n-audit-nightly-off
   - vitana-v1:chat-ux
   - vitana-v1:vitana-chat-markdown
 docs:
@@ -25,5 +26,6 @@ belong to none of the named programmes are listed here until the owner assigns t
 
 - `vitana-platform:pm-agent` — Project Manager Agent
 - `vitana-platform:claude-sessions-handover` — handover of ongoing Claude Code sessions to Kiro
+- `vitana-platform:i18n-audit-nightly-off` — stop the nightly i18n audit in vitana-v1, keep the manual one
 - `vitana-v1:chat-ux` — chat UX
 - `vitana-v1:vitana-chat-markdown` — Vitana chat replies render Markdown
