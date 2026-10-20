@@ -9,7 +9,8 @@ program records; it does not copy them.
   assets), VTID-05151 (C: `resolve_tenant`, public registry, DB-driven `useTenant`). Records:
   `docs/validation/VTID-0514{7,9}/**`, `docs/validation/VTID-0515{0,1}/**`, `docs/multitenancy/MIGRATION-QUEUE.md`.
 - **Cross-spec:** **mt-tenant-admin** owns deactivate/archive (O2); **mt-network** owns Network groups; **mt-identity**
-  supplies `tenant_id_for_policies()`/`is_member()`; **mt-frontend-brand** already reads `tenant_domains` hosts for the
+  supplies `tenant_id_for_policies()`/`TenantContext` (the gateway membership check is VTID-05043
+  `lookupTenantMembership()`); **mt-frontend-brand** already reads `tenant_domains` hosts for the
   CORS allowlist (this spec creates that table).
 - **This spec (M3):** the deferred "generally provisionable" items — custom-domain plumbing (`tenant_domains`, host
   resolution, AASA/assetlinks per-domain release handling), member tenant switching UI, per-tenant monitoring, ERP
@@ -26,7 +27,7 @@ program records; it does not copy them.
    unverified host, or a host on an inactive or platform tenant, SHALL resolve to nothing and fall through to the
    existing slug arm. A host that collides with a reserved slug SHALL be rejected at write time. The host arm SHALL NOT
    add any `tenant_domains` column to the returned set — the Lane C 8-column whitelist is unchanged.
-3. WHEN the gateway resolves a request THE host arm SHALL run before the slug/claim arms and SHALL set tenant context
+3. WHEN the gateway resolves a request THE host arm SHALL run before the token and primary arms and SHALL set tenant context
    only; data access SHALL still require membership (host tenant ≠ member → the existing join posture, never a silent
    default). Because the host arm only sets context, an unverified/inactive/platform host MUST resolve empty at the DB
    (R1.2) rather than relying on the membership check, which gates data, not which tenant the context is set to. Dark

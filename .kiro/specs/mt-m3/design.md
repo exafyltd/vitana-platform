@@ -27,7 +27,7 @@
 ### tenant-domains-db (vitana-platform, DB)
 `20261101140000_…_mt_tenant_domains.sql`: `tenant_domains(id, tenant_id uuid fk tenants, host citext, is_primary bool,
 verified_at timestamptz, created_at)` — unique on `host`; RLS enabled, no client policy (service-role/exafy-admin only);
-host format check; reject a host equal to a reserved slug (consult `reserved_tenant_slugs`).
+host format CHECK; reserved-slug hosts rejected by a BEFORE INSERT OR UPDATE OF host trigger reading `reserved_tenant_slugs` (a CHECK cannot read another table).
 `20261101140100_…_mt_resolve_tenant_host.sql`: add a separate no-DEFAULT 2-arg overload `resolve_tenant(p_host text,
 p_slug text)`; the 1-arg `resolve_tenant(p_slug)` is untouched and pinned byte-identical — a verified host wins, else slug. **The host arm resolves a host ONLY when its
 `tenant_domains` row has `verified_at IS NOT NULL`, and resolves it THROUGH `_tenant_public_registry()`** (the same
@@ -39,8 +39,10 @@ MIGRATION-QUEUE rows after the live last row (mt-m3 range note); `tenant_domains
 applied, removed in the post-apply PR. Expand-only.
 
 ### host-resolution-gw (vitana-platform, gateway code)
-Host arm in `tenant-context.ts` + the middleware read: resolve `req.hostname` through `resolve_tenant(host,…)` before
-slug/claim; context only — data still requires `is_member`; host tenant ≠ member → the existing join posture. Dark behind
+Host arm in `tenant-context.ts` + the middleware read: resolve `req.hostname` through `resolve_tenant(host,…)` as the new
+first arm of `getTenantContext()`, ahead of the existing token and primary arms (no slug/claim arm exists); context only —
+data still requires VTID-05043 `lookupTenantMembership()` on the host tenant; `not_member` → the existing join posture,
+`unavailable` → 503. Dark behind
 `MT_RESOLUTION_V2`. Depends on `tenant-domains-db`.
 
 ### tenant-switcher-ui (vitana-v1, frontend)

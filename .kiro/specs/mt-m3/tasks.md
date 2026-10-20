@@ -13,8 +13,10 @@ Allowed paths: `supabase/migrations/20261101140000_vtid_*_mt_tenant_domains.sql`
 `docs/validation/<vtid>/`.
 
 - [ ] D1 `20261101140000` `tenant_domains(id, tenant_id uuid FK tenants, host citext UNIQUE, is_primary bool,
-      verified_at, created_at)`; RLS enabled with NO client policy (service-role/exafy-admin only); host format check;
-      reject a host equal to a `reserved_tenant_slugs` entry. Rollback drops the table.
+      verified_at, created_at)`; RLS enabled with NO client policy (service-role/exafy-admin only); host format CHECK;
+      reserved-slug hosts rejected by a `BEFORE INSERT OR UPDATE OF host` trigger `tenant_domains_reject_reserved()`
+      (`EXISTS (SELECT 1 FROM reserved_tenant_slugs r WHERE r.slug = lower(btrim(NEW.host)))` → RAISE) — a CHECK cannot
+      read another table. Rollback drops trigger, fn and table.
 - [ ] D2 `20261101140100` add a SEPARATE 2-arg overload `resolve_tenant(p_host text, p_slug text)` with NO parameter
       DEFAULTs; the VTID-05151 1-arg `resolve_tenant(p_slug text)` is NOT touched (its caller v1
       `src/lib/tenant-registry.ts:219` passes `{ p_slug }` and keeps binding it). The overload resolves a host ONLY when
@@ -23,7 +25,8 @@ Allowed paths: `supabase/migrations/20261101140000_vtid_*_mt_tenant_domains.sql`
       inactive/platform host resolves empty and falls through to slug. Same 8-column return and grants as the 1-arg —
       no `tenant_domains` column (Lane C whitelist). Rollback drops only the 2-arg overload.
 - [ ] D3 pgTAP: `tenant_domains` RLS (anon/b_member cannot read or write; service/exafy-admin can); `resolve_tenant`
-      resolves a VERIFIED host, falls back to slug, rejects a reserved-slug host; an UNVERIFIED host (`verified_at IS
+      resolves a VERIFIED host, falls back to slug; INSERT and UPDATE of a host equal to a reserved slug both raise
+      (trigger); an UNVERIFIED host (`verified_at IS
       NULL`) and a host on an INACTIVE or PLATFORM tenant BOTH resolve empty; the 1-arg `resolve_tenant(p_slug)` output
       is byte-identical before/after and a `{p_slug}`-only call binds it; both overloads return the same 8 columns.
 - [ ] D4 MIGRATION-QUEUE rows appended after the current live last row (today row 8 `20261014000700`), + an mt-m3
@@ -41,8 +44,9 @@ Allowed paths: `services/gateway/src/services/tenancy/tenant-context.ts`,
 `services/gateway/src/middleware/auth-supabase-jwt.ts`, `services/gateway/test/mt-m3-host-resolution*.test.ts`. The lane
 also creates `docs/validation/<vtid>/`.
 
-- [ ] H1 Add a host arm: resolve `req.hostname` through `resolve_tenant(host,…)` BEFORE the slug/claim arms; sets context
-      only. Add `'host'` to the `TenantSource` union (`tenant-context.ts:22`) and update every consumer so TS compiles
+- [ ] H1 Add a host arm as the NEW FIRST arm of `getTenantContext()` (`auth-supabase-jwt.ts:635-650`): resolve
+      `req.hostname` through `resolve_tenant(host,…)`, then the unchanged token arm (`:639-646`), then the primary
+      fallback (`:647-649`) — the gateway has no slug/claim arm; sets context only. Add `'host'` to the `TenantSource` union (`tenant-context.ts:22`) and update every consumer so TS compiles
       (`auth-supabase-jwt.ts:35,579,607,617` — `PrimaryTenantOutcome`, `tokenTenantOrigin`, the `source` param). Dark
       behind `MT_RESOLUTION_V2`.
 - [ ] H1b Hot-path budget (`AUTH_LOOKUP_TIMEOUT_MS=2500`, `auth-supabase-jwt.ts:63-69`): look up ONLY when the flag is
@@ -50,8 +54,12 @@ also creates `docs/validation/<vtid>/`.
       `localhost`, staging/ALB hosts); bounded host→tenant cache (hits and misses) with the 60s `tenantMetaCache` TTL
       (`tenant-context.ts:66-86`); RPC under `abortAfter(AUTH_LOOKUP_TIMEOUT_MS)` (`:71`); timeout/error → logged, the
       host arm yields nothing and the next arm runs.
-- [ ] H2 Membership still required for data: host tenant ≠ member → the existing join posture, never a silent default.
-- [ ] H3 Jest/Vitest: host arm precedence; no data without membership (contract test); flag-off path byte-identical to
+- [ ] H2 Membership still required for data: re-check the host-resolved tenant through the existing VTID-05043
+      `lookupTenantMembership(user_id, tenant_id)` (`:531`; positive cached 60s, negatives never cached), exafy_admin
+      skip as at `:640`; `not_member` → the existing join posture, `unavailable` → fail-closed 503 as in
+      `applyTenantMembershipResult` (`:656-680`). No new membership RPC, never a silent default.
+- [ ] H3 Jest/Vitest: host arm precedence over token/primary; no data without membership (contract test: the
+      host-resolved tenant_id is passed to `lookupTenantMembership`, a repeat hits its cache, no other membership query); flag-off path byte-identical to
       today; no RPC for a platform host; cache hit skips the RPC; timeout falls through to the next arm. `npm run test:support` + `npm run test:operator` stay green if touched.
 - [ ] H4 `docs/validation/<vtid>/`: `scope.json`, `staging-tests.json` (read-only), plan-sparring copy.
 
