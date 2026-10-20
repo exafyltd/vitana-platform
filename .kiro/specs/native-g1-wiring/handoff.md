@@ -2,10 +2,12 @@
 slug: native-g1-wiring
 author: kiro
 executor: kiro
-next_actor: claude
-state: drafted
+next_actor: kiro
+state: approved
 author_seat: exafyltd
-updated: 2026-10-18T21:03Z
+updated: 2026-10-20T08:41Z
+sparring_record: .kiro/specs/native-g1-wiring/sparring/verdict.md
+vtids: [VTID-05247, VTID-05248, VTID-05249, VTID-05250, VTID-05251, VTID-05252, VTID-05253]
 ---
 # Handoff — Point dev/QA native builds at the G1 test backend (Wave 1 exit)
 Native app program VTID-05021 (`docs/programs/native-app/NATIVE-APP-PLAN.md`), Wave 1 exit (§5 row at
@@ -62,3 +64,6 @@ The sparring partner could not review (model_unavailable). Not a plan problem: C
 
 ### 2026-10-18T21:03Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-20T08:41Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 7 lane(s) got a VTID and are handed to Kiro.

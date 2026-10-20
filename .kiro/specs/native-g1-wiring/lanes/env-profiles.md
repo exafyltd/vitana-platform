@@ -14,7 +14,8 @@ paths:
   - docs/validation/VTID-*/scope.json
   - docs/validation/VTID-*/staging-tests.json
   - docs/validation/VTID-*/plan-sparring.md
-updated: 2026-10-17T10:56Z
+updated: 2026-10-20T08:41Z
+vtid: VTID-05249
 ---
 # Per-profile env source for native builds (decision 1)
 Plan: `.kiro/specs/native-g1-wiring/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -39,3 +40,6 @@ writes to Supabase/AWS, no test against production; never point a build at a rea
 Lane drafted with the plan (`state: drafted` in `handoff.md`). Paths computed so no file is shared with
 another lane. Next: PLAN-SPAR spars the plan; once a VTID is written here, seat `exafyltd` claims the lane
 (`queue.mjs claim native-g1-wiring/env-profiles --session <id>`).
+
+### 2026-10-20T08:41Z · ci-plan-spar · ready (VTID allocated)
+VTID-05249 allocated after policy approval (converged-auto-v1).

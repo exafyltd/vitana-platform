@@ -1,7 +1,7 @@
 ---
 lane: real-g1-switch
 state: ready
-next_actor: owner
+next_actor: kiro
 depends_on: [vitana-v1-verified, deep-link-push-smoke]
 executor: kiro
 seat: exafyltd
@@ -13,7 +13,8 @@ paths:
   - docs/validation/VTID-*/scope.json
   - docs/validation/VTID-*/staging-tests.json
   - docs/validation/VTID-*/plan-sparring.md
-updated: 2026-10-17T10:56Z
+updated: 2026-10-20T08:41Z
+vtid: VTID-05251
 ---
 # Point a test-g1 build at the REAL G1 backend (decision 5) — DEPENDS ON OWNER
 Plan: `.kiro/specs/native-g1-wiring/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -48,3 +49,6 @@ Lane drafted with the plan, `next_actor: owner`. Its own files (`env/test-g1.g1.
 `docs/validation/g1/**`) so the four buildable lanes never block on the owner gate. Depends on
 `deep-link-push-smoke` (the suite re-run against real G1). Next: PLAN-SPAR spars the plan; the document
 tasks (G1–G2) can be done once a VTID is set, but the switch (G3) waits for the owner to provision G1.
+
+### 2026-10-20T08:41Z · ci-plan-spar · ready (VTID allocated)
+VTID-05251 allocated after policy approval (converged-auto-v1).

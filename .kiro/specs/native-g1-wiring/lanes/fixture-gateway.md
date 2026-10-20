@@ -13,7 +13,8 @@ paths:
   - docs/validation/VTID-*/scope.json
   - docs/validation/VTID-*/staging-tests.json
   - docs/validation/VTID-*/plan-sparring.md
-updated: 2026-10-17T10:56Z
+updated: 2026-10-20T08:41Z
+vtid: VTID-05250
 ---
 # Local fixture gateway for the shell/push/deep-link HTTP contract (decision 3)
 Plan: `.kiro/specs/native-g1-wiring/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -40,3 +41,6 @@ writes to Supabase/AWS, no test against production; the fixture is local-only an
 Lane drafted with the plan. Independent of `env-profiles` for its own code; the smoke lane depends on both.
 Next: PLAN-SPAR spars the plan; once a VTID is written here, seat `exafyltd` claims the lane
 (`queue.mjs claim native-g1-wiring/fixture-gateway --session <id>`).
+
+### 2026-10-20T08:41Z · ci-plan-spar · ready (VTID allocated)
+VTID-05250 allocated after policy approval (converged-auto-v1).

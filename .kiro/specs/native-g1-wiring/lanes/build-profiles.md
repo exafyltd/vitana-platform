@@ -1,7 +1,7 @@
 ---
 lane: build-profiles
 state: ready
-next_actor: claude
+next_actor: kiro
 depends_on: [vitana-v1-verified, env-profiles]
 executor: claude
 area: frontend
@@ -12,7 +12,8 @@ paths:
   - docs/validation/VTID-*/scope.json
   - docs/validation/VTID-*/staging-tests.json
   - docs/validation/VTID-*/plan-sparring.md
-updated: 2026-10-17T10:56Z
+updated: 2026-10-20T08:41Z
+vtid: VTID-05247
 ---
 # EAS/local build profiles + offline per-profile CI bundle (decision 2) — GOVERNANCE PATH
 Plan: `.kiro/specs/native-g1-wiring/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -41,3 +42,6 @@ Lane drafted with the plan. Marked `executor: claude` / `reviewer_seat: claude` 
 that edits `.github/**`. Depends on `env-profiles` (it feeds that env source into the bundle). Next:
 PLAN-SPAR spars the plan; once a VTID is written here, Claude Code picks it up (exceptions / governance
 lanes, collaboration §7).
+
+### 2026-10-20T08:41Z · ci-plan-spar · ready (VTID allocated)
+VTID-05247 allocated after policy approval (converged-auto-v1).

@@ -1,13 +1,14 @@
 ---
 lane: vitana-v1-verified
 state: ready
-next_actor: claude
+next_actor: kiro
 depends_on: [spar-vitana-v1-ref]
 executor: claude
 reviewer_seat: claude
 paths:
   - docs/validation/VTID-*/vitana-v1-spar-evidence.md
-updated: 2026-10-19T21:10Z
+updated: 2026-10-20T08:41Z
+vtid: VTID-05253
 ---
 # Sentinel: machine-enforce that the plan was sparred with vitana-v1 readable (R2-F2)
 
@@ -40,3 +41,6 @@ dispatch workflows or deploy.
 Created in response to sparring R2-F2 (session 2): the R1-F1 self-block was prose-only with no machine
 enforcement. This sentinel wires the gate through `depends_on`. next_actor: claude — Claude Code sets it
 `done` only after a converging session's tool_log proves a successful vitana-v1 read.
+
+### 2026-10-20T08:41Z · ci-plan-spar · ready (VTID allocated)
+VTID-05253 allocated after policy approval (converged-auto-v1).
