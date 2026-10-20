@@ -9,7 +9,7 @@ area: messenger
 depends_on: []
 branch: kiro/new-member-welcome/grouped-welcome-notifications
 pr: https://github.com/exafyltd/vitana-platform/pull/4153
-updated: 2026-10-20T20:44Z
+updated: 2026-10-20T20:46Z
 ---
 # Grouped greeting-DM notifications
 
@@ -62,4 +62,6 @@ if those show up on this PR after the merge they are main's, for claude. next_ac
 ### 2026-10-20T20:43Z · pm-agent · update
 reassign review →claude (stale_review)
 ### 2026-10-20T20:44Z · pm-agent · update
+reassign review →claude (stale_review)
+### 2026-10-20T20:46Z · pm-agent · update
 reassign review →claude (stale_review)
