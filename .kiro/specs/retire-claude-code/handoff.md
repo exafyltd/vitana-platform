@@ -5,7 +5,7 @@ executor: kiro
 next_actor: kiro
 state: approved
 author_seat: exafyltd
-updated: 2026-10-20T10:58Z
+updated: 2026-10-20T11:30Z
 sparring_record: .kiro/specs/retire-claude-code/sparring/verdict.md
 vtids: [VTID-05255, VTID-05256, VTID-05257, VTID-05258, VTID-05259]
 ---
@@ -36,3 +36,9 @@ lane `ci-runner-v1` without reopening the plan, as the narrower, conservative re
   regex, not literal strings.
 
 Next: the owner's explicit merge instruction for this plan PR (bootstrap merge 1). Then lane `scope-rules`.
+
+### 2026-10-20T11:30Z · kiro-exafyltd-202610201041-ab5d · approved (bootstrap merge 1 recorded)
+- owner-instruction: "merge #4209" (owner, 2026-10-20, Kiro Web conversation)
+- merge: 2e3c9f1200b26e3e1ddbf8497df9605bb856baa8 (squash of PR #4209; all checks green, no override used)
+
+Next: lane `scope-rules` (VTID-05259) is being built by this session (seat exafyltd); its merge is bootstrap merge 2.
