@@ -12,8 +12,9 @@ paths:
   - .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
   - services/gateway/test/kaf-staging-claude-available-wiring.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-20T23:20Z
+updated: 2026-10-20T23:41Z
 branch: kiro/kaf-fallback-env/ff-stage-env
+vtid: VTID-05282
 ---
 # ff-stage-env — `CLAUDE_AVAILABLE` from the repo variable into the staging task definition
 Plan: `.kiro/specs/kaf-fallback-env/plan.md` §3 and §5 A, and the `ff-stage-env` section of `tasks.md`, are
@@ -27,3 +28,6 @@ Shared files: none.
 ### 2026-10-20T23:20Z · kiro-exafyltd-202610202314-cfd9 · created → ready
 Lane created with the plan (fix-forward of kiro-autonomy-fallback / VTID-05277). Next: PLAN-SPAR; once `vtid:` is set,
 seat exafyltd claims it.
+
+### 2026-10-20T23:41Z · ci-plan-spar · ready (VTID allocated)
+VTID-05282 allocated after policy approval (converged-auto-v1).

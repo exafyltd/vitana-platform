@@ -13,8 +13,9 @@ paths:
   - services/gateway/src/services/project-manager/observe-live.ts
   - services/gateway/test/project-manager/observe-live.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-20T23:20Z
+updated: 2026-10-20T23:41Z
 branch: kiro/kaf-fallback-env/ff-pm-flag
+vtid: VTID-05281
 ---
 # ff-pm-flag — an unreadable `CLAUDE_AVAILABLE` repo variable falls back to the env; the 4 h rule stays
 Plan: `.kiro/specs/kaf-fallback-env/plan.md` §3 and §5 B, and the `ff-pm-flag` section of `tasks.md`, are
@@ -29,3 +30,6 @@ the owner instruction 2026-10-20 (plan §7) and records the finding. Seat `exafy
 ### 2026-10-20T23:20Z · kiro-exafyltd-202610202314-cfd9 · created → ready
 Lane created with the plan (fix-forward of kiro-autonomy-fallback / VTID-05277). Next: PLAN-SPAR; once `vtid:` is set,
 seat exafy claims it.
+
+### 2026-10-20T23:41Z · ci-plan-spar · ready (VTID allocated)
+VTID-05281 allocated after policy approval (converged-auto-v1).
