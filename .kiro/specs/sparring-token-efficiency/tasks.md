@@ -57,3 +57,18 @@ Allowed paths:
 - [ ] C2: Add a `plan-spar.test.mjs` case: a `token_budget` escalation leads the next run to action `retry`, and
   `state.sessions.length` is unchanged.
   Acceptance (R4.3, R5.2): `node --test scripts/collab/plan-spar.test.mjs` is green.
+
+## Escalation carry-over (owner approved escalated, 2026-10-20)
+
+The plan was round-capped and escalated (session `b2df0328`, round 3); the owner approved it as escalated on
+2026-10-20 ("yes, A all 4 approved"). The open last-round findings are folded into the lane tasks here; `plan.md`
+is unchanged.
+
+- R3-F1 [major] — "T-d has no assertion that the `void completeLLMCallDetached(ctx, {…})` call inside
+  `callViaRouter` actually passes `cacheReadTokens`/`cacheWriteTokens`."
+  Lane `partner-caching-code`, added task:
+  - [ ] T3a: In T-d, spy on `completeLLMCallDetached` (`jest.spyOn` or a mock of the `llm-telemetry-service` module)
+    and assert the call made inside `callViaRouter` (`llm-router.ts` ~:1325) receives `cacheReadTokens` and
+    `cacheWriteTokens` equal to the values the mocked Bedrock response returned.
+    Acceptance (R1.4, R2.1, carry-over R3-F1): T-d fails if the cache fields are dropped from the
+    `completeLLMCallDetached` spread, even when `result.usage` carries them.
