@@ -1,0 +1,15 @@
+# VTID-05272 local verification (Windows, worktree on branch kiro/kiro-autonomy-fallback/pipeline-speed)
+$ node --test scripts/ci/test-suite/shard-union.test.mjs scripts/ci/test-suite/rerun-policy.test.mjs scripts/ci/plan-spar-slot/slot.test.mjs scripts/ci/staging-verify/lib.test.cjs scripts/collab/plan-driver.test.mjs
+tests 91, pass 91, fail 0 (exit 0)
+$ cd services/gateway && npx jest test/vtid-05077-planner-fallback-and-thinking.test.ts
+Test Suites: 1 passed, 1 total; Tests: 15 passed, 15 total (exit 0)
+$ cd services/gateway && npm run typecheck
+exit 0, 0 errors
+$ cd services/gateway && npx jest --listTests ; npx jest --listTests --shard=N/4 (N=1..4)
+1730 files = 433 + 433 + 432 + 432, 0 missing, 0 duplicates
+$ node --test scripts/collab/queue.test.mjs scripts/collab/plan-spar.test.mjs scripts/collab/plan-driver.test.mjs
+52 tests, 51 pass, 1 fail = queue.test.mjs "programme registry" (Windows C:\C:\ path), identical on base 422a7b045
+# Red on base 422a7b045 (new tests copied onto base files)
+lib.test.cjs: lib.summarizeByVtid is not a function (exit 1)
+plan-driver / shard-union / rerun-policy / slot tests: ERR_MODULE_NOT_FOUND (exit 1)
+vtid-05077 jest: 1 failed, 14 passed (expected 20261120-vtid-05148) (exit 1)
