@@ -33,10 +33,16 @@ Let Kiro finish its own pipeline without Claude Code: (1) an owner-named Kiro la
    `governance: owner` and states the owner's instruction; it is still sparred, gets a VTID, is reviewed by
    `reviewer_seat`, and merges only on the owner's explicit merge instruction in the conversation. Never in an
    unattended run. Production stays forbidden. `CLAUDE.md` and `.kiro/steering/vitana-kiro-notes.md` point at it.
-5. **Bootstrap, once.** This lane's own PR changes the rule that guards it, so Lane scope cannot pass on it. §7b
-   already allows an `--admin` override of a governance-artifact check that is a known false positive for the change.
-   That applies here, once, to Lane scope only. Every real test must be green. Every later governance lane passes
-   normally.
+5. **Bootstrap, once.** The rule guards itself, so two governance-artifact checks are red until Change A is on `main`,
+   and both are known false positives for exactly this change:
+   - on **this plan PR**, `Collab handoff` (`queue.mjs validate`) reports both lane files' `paths` as reaching a
+     governance path (`:180`). That step is report-only today (`.github/workflows/PR-GATE.yml` `continue-on-error`,
+     not in the Verdict), so it does not block the plan merge;
+   - on **lane `owner-governance`'s PR**, `Lane scope` (`:471`) rejects the governance files. §7b already allows an
+     `--admin` override of a governance-artifact check that is a known false positive for the change; it is used once,
+     here, on Lane scope only, with every real test green.
+   Lane `retry-partner-invalid` is created with `governance: owner` by a `_plan` commit after Change A merges, so its
+   PR passes `validate` and Lane scope with no override. Every later governance lane passes normally.
 
 ## Change B — lane `retry-partner-invalid` (retry a review that never happened)
 1. `plan-spar.mjs:35`: add `partner_output_invalid` to `RETRYABLE_REASONS`.
@@ -64,8 +70,8 @@ Change suites: `existing` entries running those suites (no staging surface chang
 
 ## Lanes
 - `owner-governance` — executor kiro, `governance: owner`, seat `exafy` (platform), reviewer `jtadic`.
-- `retry-partner-invalid` — executor kiro, `governance: owner`, seat `exafy`, reviewer `jtadic`; depends on
-  `owner-governance`.
+- `retry-partner-invalid` — executor kiro, seat `exafy`, reviewer `jtadic`; depends on `owner-governance`. Its
+  `governance: owner` is added by a `_plan` commit once Change A is on `main` (A.5).
 
 ## Risks
 - Kiro changing its own guard rails: bounded. Each such lane needs the owner's instruction in its plan, sparring, a VTID,
