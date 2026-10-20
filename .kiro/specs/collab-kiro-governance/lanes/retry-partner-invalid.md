@@ -12,6 +12,7 @@ paths:
   - scripts/collab/plan-spar.test.mjs
   - services/gateway/src/services/plan-sparring/plan-sparring-service.ts
   - services/gateway/src/services/plan-sparring/plan-sparring-repository.ts
+  - services/gateway/src/routes/plans-spar.ts
   - services/gateway/test/vtid-04868-plan-sparring-service.test.ts
   - docs/validation/**
 updated: 2026-10-20T11:11Z

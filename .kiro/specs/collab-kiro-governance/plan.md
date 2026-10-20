@@ -32,10 +32,13 @@ Let Kiro finish its own pipeline without Claude Code: (1) an owner-named Kiro la
    (`:453`) is `['executor','seat','reviewer_seat','paths']` and the fold-back (`:460`) copies only those, while
    `validate` judges the head file (`:349`). So: add `governance` to `PERM` in `scopeCheck`; the fold-back then
    takes `governance` from the base revision, so a lane PR that adds or changes it is rejected and never gains it.
-   In `validate`, a lane commit (`Collab-Lane: <slug>/<lane>`, not `_plan`) that changes `governance` in a lane
-   file that already exists at the base is an error; only a `_plan` commit may write it, and only when it creates
-   the lane. A `_plan` commit may also add it to an existing `ready` lane, the same way PLAN-SPAR writes the VTID
-   into a `ready` lane today (`:386`), so the plan author can grant it but the lane's own builder cannot.
+   In `validate` (sparring R2-N2): the check goes in `validateRange`, next to the transition check, where each touched
+   file's base and head front matter are already read (`:356`–`:357`). `validateLane` judges the head file only
+   (`:346`–`:349`), so it keeps just the field-shape rule from A.2. New check: for a lane file that exists at the merge
+   base, `before.governance !== after.governance` is an error unless every commit in range that touches the file is a
+   `_plan` commit and the lane is `ready` at head, the same rule PLAN-SPAR uses to write a VTID into a `ready` lane
+   (`:386`). So the plan author can grant the field before building starts, and the lane's own builder never can.
+   Self-grant is refused twice: by `scopeCheck` (`PERM`) and by `validateRange`.
 4. `collaboration.md` §7b gains: the owner may name a lane for Kiro to build on governance paths; its plan carries
    `governance: owner` and states the owner's instruction; it is still sparred, gets a VTID, is reviewed by
    `reviewer_seat`, and merges only on the owner's explicit merge instruction in the conversation. Never in an
@@ -59,13 +62,17 @@ Let Kiro finish its own pipeline without Claude Code: (1) an owner-named Kiro la
    `partner_output_invalid` per **producer** (`ci-plan-spar.<slug>`, `plan-spar.mjs:195`, stable across plan edits),
    not per plan hash, so editing `plan.md` does not reset it.
    - Gateway: `createSparringSession` counts escalated `partner_output_invalid` sessions for the producer (one count
-     query in `plan-sparring-repository.ts`). Below 2 → re-run (not dedup); at 2 → dedup, and the returned session
-     carries `retry_exhausted: true`.
-   - CI: `plan-spar.mjs` records `entry.retryable = false` when the create answer is deduplicated or carries
-     `retry_exhausted`, so `retryInfra` (`:188`) stops and the plan waits for a person as today. A push never
-     re-retries an exhausted plan.
-4. Tests: `plan-spar.test.mjs:193` becomes "is retried on the next push, at most twice": a third push after two
-   failed retries does nothing (`retry_exhausted`). Gateway Jest: a stored `partner_output_invalid` session is re-run
+     query in `plan-sparring-repository.ts`). Below 2 → re-run (not dedup); at 2 → dedup. The create route already
+     returns the top-level `deduplicated` (`routes/plans-spar.ts:49`–`:50`); it also returns a top-level
+     `retry_exhausted: true` on that dedup. Both are response fields, not stored session columns, so
+     `SparringSession`, `SESSION_COLUMNS` and the table do not change.
+   - CI (sparring R2-N1): `gatewayClient.create` (`plan-spar.mjs:114`–`:121`) today returns only `r.json.session`
+     and drops `deduplicated`. It will return `{ session, deduplicated, retry_exhausted }`, including from its
+     lost-response re-post path, and `step()` reads them. Then `entry.retryable = <reasons retryable> &&
+     !deduplicated && !retry_exhausted`, so `retryInfra` (`:188`) stops and the plan waits for a person as today.
+4. Tests: `plan-spar.test.mjs:193` becomes "is retried on the next push, at most twice": with the fake client
+   answering `deduplicated: true` / `retry_exhausted: true`, a third push does not create again and the plan stays
+   `next_actor: claude`. Gateway Jest: a stored `partner_output_invalid` session is re-run
    rather than deduplicated; the third attempt for the same producer is deduplicated with `retry_exhausted`, also
    when the plan text (hash) changed in between.
 5. Lane `governance: owner` (touches `scripts/collab/**`). Depends on `owner-governance`, so it passes Lane scope
