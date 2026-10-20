@@ -15,7 +15,7 @@ paths:
   - scripts/collab/protected-gate-files.json
   - .github/workflows/PR-GATE.yml
   - docs/validation/VTID-*/**
-updated: 2026-10-20T19:40Z
+updated: 2026-10-20T18:48Z
 vtid: VTID-05276
 claimed_by: kiro-exafy-202610201807-2a87
 branch: kiro/kiro-autonomy-fallback/scope-check
@@ -40,9 +40,9 @@ Next: PLAN-SPAR; once `vtid:` is set, seat exafy claims it.
 ### 2026-10-20T17:49Z · ci-plan-spar · ready (VTID allocated)
 VTID-05276 allocated after policy approval (converged-auto-v1).
 
-### 2026-10-20T19:40Z · kiro-exafy-202610201807-2a87 · ready → executing (claimed, built)
-Claimed `kiro-autonomy-fallback/scope-check` (claim ref `collab-claim/kiro-autonomy-fallback/scope-check`, commit
-`8f4c6cef81feaa6ccc055ad75fc82f201b293576`). Built by Kiro seat exafy under the owner instruction of 2026-10-20 ("no
+### 2026-10-20T18:48Z · kiro-exafy-202610201807-2a87 · ready → executing (claimed, built)
+Claimed `kiro-autonomy-fallback/scope-check` at 2026-10-20T18:19Z (claim ref
+`collab-claim/kiro-autonomy-fallback/scope-check`, commit `8f4c6cef81feaa6ccc055ad75fc82f201b293576`). Built by Kiro seat exafy under the owner instruction of 2026-10-20 ("no
 more approvals, you run it end to end", collaboration.md §7b owner-directed merge instruction for this plan's named
 set; plan §6). Protected gate files changed (owner instruction, plan §6): `scripts/collab/queue.mjs`,
 `scripts/collab/protected-gate-files.json` (new), `.github/workflows/PR-GATE.yml`. D1-D6 done:
