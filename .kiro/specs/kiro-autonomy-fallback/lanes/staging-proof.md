@@ -17,28 +17,28 @@ vtid: VTID-05277
 claimed_by: kiro-exafyltd-202610201618-c018
 branch: kiro/kiro-autonomy-fallback/staging-proof
 ---
-# staging-proof — the pipeline proven on staging in fallback mode with zero Claude Code actions
-Plan: `.kiro/specs/kiro-autonomy-fallback/plan.md` §4.6, §4.9 and §5 F, and the `staging-proof` section of `tasks.md`
+# staging-proof â€” the pipeline proven on staging in fallback mode with zero Claude Code actions
+Plan: `.kiro/specs/kiro-autonomy-fallback/plan.md` Â§4.6, Â§4.9 and Â§5 F, and the `staging-proof` section of `tasks.md`
 are authoritative. VTID: assigned by CI after PLAN-SPAR converges; do not start before `vtid:` is set here and every
 `depends_on` lane is done. Repo vitana-platform. **Deploys** (a gateway test file): ships
 `docs/validation/<VTID>/staging-tests.json`; done when STAGING-VERIFY passed on its merge commit and the PM posted Gate 2.
-**Merged by the PM in fallback mode, never self-merged first** (plan §5 F): repo variable `CLAUDE_AVAILABLE=false` set
+**Merged by the PM in fallback mode, never self-merged first** (plan Â§5 F): repo variable `CLAUDE_AVAILABLE=false` set
 before the PR is ready (stays false afterwards); the PM's W1 verify commit and merge are the proof. `docs/validation/VTID-*/**`
 covers this lane's evidence and the plan's `timings.json` at the plan VTID. Acceptance by
 `agent:vitana-lane-reviewer (claude-sonnet-5.5)`; review entry committed under the legacy `reviewer_seat` jtadic.
 Not a governance path. Shared files: none.
 ## Log
-### 2026-10-20T17:20Z · kiro-exafyltd-202610201618-c018 · created → ready
-Owner instruction 2026-10-20: "no more approvals, you run it end to end" — §7b merge instruction for this plan's named
+### 2026-10-20T17:20Z Â· kiro-exafyltd-202610201618-c018 Â· created â†’ ready
+Owner instruction 2026-10-20: "no more approvals, you run it end to end" â€” Â§7b merge instruction for this plan's named
 set, approvals from the reviewer agent on claude-sonnet-5.5; this lane proves the pipeline with zero Claude actions.
 Lane created with the plan. Next: PLAN-SPAR; once `vtid:` is set and all other lanes are done, seat exafyltd claims it.
 
-### 2026-10-20T17:49Z · ci-plan-spar · ready (VTID allocated)
+### 2026-10-20T17:49Z Â· ci-plan-spar Â· ready (VTID allocated)
 VTID-05277 allocated after policy approval (converged-auto-v1).
 
-### 2026-10-20T21:10Z · kiro-exafyltd-202610201618-c018 · ready → executing (claimed, built)
+### 2026-10-20T21:10Z Â· kiro-exafyltd-202610201618-c018 Â· ready â†’ executing (claimed, built)
 Claimed (claim commit e794d5641) under the owner instruction 2026-10-20 ("no more approvals, you run it end to end",
-§7b named set of plan kiro-autonomy-fallback). Built F2 `services/gateway/test/kiro-autonomy-fallback-proof.test.ts`
+Â§7b named set of plan kiro-autonomy-fallback). Built F2 `services/gateway/test/kiro-autonomy-fallback-proof.test.ts`
 (13 tests; red on plan base e6ed415a9: 12 failed / 1 passed; green on head: 13/13) and F3
 `docs/validation/VTID-05277/staging-tests.json` (/alive, /mode expect `kiro_fallback`, /status 401 probe, existing
 jest; validateManifest ok). typecheck and build green.
@@ -46,28 +46,37 @@ F1 precondition: the other seven lanes are on main; pm-fallback deployed to stag
 39492705377 on 8e7d44a81, build-info confirms); repo variable CLAUDE_AVAILABLE=false set 21:00:47Z; staging /status
 read once per tick (read-only, service token): mode live, last_lease acquired.
 **PM does not observe the flag:** two ticks after the variable was set (21:02:35Z, 21:04:37Z) /status still reports
-claude {available: true} and /mode `claude_primary`. Cause (code read, not changed — outside this lane):
+claude {available: true} and /mode `claude_primary`. Cause (code read, not changed â€” outside this lane):
 `GithubRestReader.variable()` (observe-live.ts) returns null on a non-200 (most likely the staging GitHub token cannot
 read Actions variables; not verified) instead of throwing, so `observeClaude` never reaches its env fallback, and `CLAUDE_AVAILABLE` is not
 pinned in the staging task definition. Needed fix-forward (pm-fallback paths): treat a non-200 variable read as
-unknown → env fallback, and give the PM token Actions-variables read or pin `CLAUDE_AVAILABLE` at stage deploy. Until
+unknown â†’ env fallback, and give the PM token Actions-variables read or pin `CLAUDE_AVAILABLE` at stage deploy. Until
 then the `/mode` staging test fails loudly; it is kept as the plan states it, not loosened.
 Decisions taken: red recorded against the plan base (origin/main already carries pm-fallback, so the proof test is
 green on origin/main by design).
 
-### 2026-10-20T21:20Z · kiro-exafyltd-202610201618-c018 · executing → in-review
+### 2026-10-20T21:20Z Â· kiro-exafyltd-202610201618-c018 Â· executing â†’ in-review
 PR opened for head 8a4d27e95; review by `agent:vitana-lane-reviewer (claude-sonnet-5.5)`. Merge by the PM (W1 verify, then
-merge), not by the land step (plan §5 F).
-### 2026-10-20T21:20Z · agent:vitana-lane-reviewer · review
+merge), not by the land step (plan Â§5 F).
+### 2026-10-20T21:20Z Â· agent:vitana-lane-reviewer Â· review
 Reviewed head 2a433c4531edb672e049a4f765c73b7b5a91fb42 (PR https://github.com/exafyltd/vitana-platform/pull/4237). Verdict: changes.
 Blocking: validate-pr fails (Evidence Pack Gate: missing docs/validation/VTID-05277/outputs/). Non-blocking: Collab handoff failed, re-check; staging /mode kiro_fallback test red until pm-fallback fix-forward; zero-claude-proof is F4 post-Gate-2.
 Entry committed by the land step on the reviewer agent's behalf. Next: coder fix pass (changes requested).
 
-### 2026-10-20T21:22Z · kiro-exafyltd-202610201618-c018 · in-review → executing (review fix 1)
+### 2026-10-20T21:22Z Â· kiro-exafyltd-202610201618-c018 Â· in-review â†’ executing (review fix 1)
 Blocking finding fixed: `docs/validation/VTID-05277/outputs/jest-kiro-autonomy-fallback-proof.txt` added (13/13 pass,
 red on base 12/13 failed). The local validate-pr preflight then showed AC-4 had no `TEST:/CURL:/UI:` line (exit 41);
 added a `CURL:` line naming the staging-only `/mode` read STAGING-VERIFY runs. Collab handoff: the lane state goes back
-to `executing` (base `ready` → `in-review` in one PR is not a legal edge; the merged lanes of this plan land at
+to `executing` (base `ready` â†’ `in-review` in one PR is not a legal edge; the merged lanes of this plan land at
 `executing`). Residual: review commit a6ef6e8f carries `Collab-Review: changes` instead of the lane key (+
 `Collab-Verdict`), which `queue.mjs validate` rejects; it cannot be rewritten without a force-push (blockers.md).
 The staging `/mode` `kiro_fallback` expectation is unchanged.
+
+### 2026-10-20T21:25Z · agent:vitana-lane-reviewer · review
+Reviewed head 46baea9b1126c229f428c7f72e6331877ec723c7 (PR https://github.com/exafyltd/vitana-platform/pull/4237). Verdict: changes.
+Blocking: Collab handoff fails on a6ef6e8f (Collab-Lane none; its Collab-Review trailer was accept/changes, not the lane key). Prior Evidence Pack blocker fixed. Non-blocking: staging /mode kiro_fallback red until PM observes the flag; /status only 401-probed; zero-claude-proof is F4; CI shards still running.
+
+Collab-Review: changes
+Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+Collab-Session: kiro-202610202123-70a4
+Collab-Review-Lane: kiro-autonomy-fallback/staging-proof
