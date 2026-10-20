@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-20T11:11Z
+state: approved
+updated: 2026-10-20T11:26Z
+sparring_record: .kiro/specs/collab-kiro-governance/sparring/verdict.md
+vtids: [VTID-05260, VTID-05261]
 ---
 # Handoff — collab-kiro-governance
 
@@ -19,3 +21,6 @@ sparring round that ended without a review is retried. Plan: `plan.md`. Lanes: `
 Owner instruction 2026-10-20: "Eliminate Claude Code, I want everything done by Kiro end-to-end"; "go with option B
 and the real fix". Trigger: `gateway-test-cachebust` (#4207) stuck on `partner_output_invalid` in round 3. Pushed as
 a `plan(` PR. No VTID, no code.
+
+### 2026-10-20T11:26Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
