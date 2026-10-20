@@ -1,12 +1,13 @@
 ---
 lane: fixture-gateway
-state: ready
+state: done
 next_actor: kiro
 depends_on: [vitana-v1-verified]
 executor: kiro
 seat: exafyltd
 area: frontend
 reviewer_seat: hotmail
+pr: https://github.com/exafyltd/vitana-v1/pull/1465
 paths:
   - apps/mobile/tools/fixture-gateway/**
   - apps/mobile/tests/fixture-gateway/**
@@ -44,3 +45,7 @@ Next: PLAN-SPAR spars the plan; once a VTID is written here, seat `exafyltd` cla
 
 ### 2026-10-20T08:41Z · ci-plan-spar · ready (VTID allocated)
 VTID-05250 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-20T10:30Z · kiro-202610151913-51bd · (lane-status) → done
+Code merged to vitana-v1 main: PR #1465 (db3e0766b). Local fixture gateway implemented (CommonJS,
+loopback-bind, listen-only), reviewed APPROVED, 15/15 fixture tests pass. Marked done.
