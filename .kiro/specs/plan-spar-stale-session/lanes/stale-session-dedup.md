@@ -1,7 +1,8 @@
 ---
 lane: stale-session-dedup
-state: ready
+state: in-review
 next_actor: kiro
+pr: https://github.com/exafyltd/vitana-platform/pull/4208
 depends_on: []
 executor: kiro
 seat: hotmail
@@ -11,7 +12,7 @@ paths:
   - services/gateway/src/services/plan-sparring/plan-sparring-repository.ts
   - services/gateway/test/plan-sparring-stale-session.test.ts
   - docs/validation/**
-updated: 2026-10-20T10:13Z
+updated: 2026-10-20T10:28Z
 vtid: VTID-05254
 ---
 # stale-session-dedup — re-run dead round-1 sparring sessions (repo vitana-platform)
@@ -34,3 +35,7 @@ dead `in_progress` session with 0 rounds forever, because only an escalated sess
 
 ### 2026-10-20T10:13Z · ci-plan-spar · ready (VTID allocated)
 VTID-05254 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-20T10:28:14Z · kiro-hotmail-202610151618-b437 · ready → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4208, head `c6f3f0f06a40fd7bc13f298f80a28cf818130d6a`.
+Tests: stale-session 17/17, with vtid-04868 service+repository 79/79, plan-sparring 117 passed/1 skipped; typecheck clean.
