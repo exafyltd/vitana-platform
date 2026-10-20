@@ -350,12 +350,12 @@ export function governanceRecord(baseText, headText) {
   const body = (t) => String(t || '').replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '').split(/\r?\n/);
   const old = new Set(body(baseText).map((l) => l.trim()));
   const added = body(headText).map((l) => l.trim()).filter((l) => l && !old.has(l));
-  const instr = added.find((l) => /^-?\s*owner-instruction:\s*"[^"]{2,}"/.test(l) && !/"\s*(todo|tbd|none|n\/a|-+)\s*"/i.test(l));
-  const merge = added.map((l) => /^-?\s*merge:\s*([0-9a-f]{7,40})\b/.exec(l)).find(Boolean)?.[1] || null;
-  return { instruction: !!instr, merge };
+  const instr = added.find((l) => /^-?\s*owner-instruction:\s*"\s*\S[^"]*\S\s*"/.test(l) && !/"\s*(todo|tbd|none|n\/a|-+)\s*"/i.test(l));
+  const m = added.map((l) => /^-?\s*merge:\s*(?:([a-z][a-z0-9-]*)@)?([0-9a-f]{7,40})\b/.exec(l)).find(Boolean);
+  return { instruction: !!instr, merge: m ? m[2] : null, mergeRepo: m ? m[1] || null : null };
 }
 
-export function validateRange(repo, { base, head, branch = '', allowInitial = [], fetchLane = null }) {
+export function validateRange(repo, { base, head, branch = '', allowInitial = [], fetchLane = null, verifyMerge = null }) {
   const errors = [];
   const warnings = [];
   const changed = git(repo, ['diff', '--name-only', `${base}...${head}`]).split('\n').filter(Boolean);
@@ -391,7 +391,17 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
       const rec = governanceRecord(showFile(repo, mergeBase, p), showFile(repo, head, p));
       if (after.state === 'verified' && !rec.instruction) errors.push(`${p}: a governance lane needs a new log line owner-instruction: "<the owner's words>" (date) before verified`);
       if (after.state === 'done' && !rec.merge) errors.push(`${p}: a governance lane needs a new log line merge: <sha> before done`);
-      if (after.state === 'done' && rec.merge && gitOk(repo, ['cat-file', '-e', `${rec.merge}^{commit}`]) === null) errors.push(`${p}: merge: ${rec.merge} is not a commit of this repository`);
+      // The merge must be a commit already on the base branch: a commit of this PR (never merged) does not count. A
+      // lane merged in the other repo writes `merge: <repo>@<sha>`, verified there through verifyMerge (fail closed).
+      if (after.state === 'done' && rec.merge) {
+        if (rec.mergeRepo && rec.mergeRepo !== repoNameOf(repo)) {
+          let ok = false;
+          try { ok = !!(verifyMerge && verifyMerge(rec.mergeRepo, rec.merge)); } catch { ok = false; }
+          if (!ok) errors.push(`${p}: merge: ${rec.mergeRepo}@${rec.merge} could not be verified as a commit on ${rec.mergeRepo} main`);
+        } else if (gitOk(repo, ['cat-file', '-e', `${rec.merge}^{commit}`]) === null || gitOk(repo, ['merge-base', '--is-ancestor', rec.merge, base]) === null) {
+          errors.push(`${p}: merge: ${rec.merge} is not a commit on the base branch of this repository`);
+        }
+      }
     }
     // VTID-05259: with Claude Code retired, no new executor: claude lane is created.
     if (c.kind === 'lane' && !before && after?.executor === 'claude') errors.push(`${p}: new lanes are not executor: claude (Claude Code is retired, retire-claude-code)`);
@@ -415,7 +425,20 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
       const key = `${c.slug}/${c.lane}`;
       if (k.lane === key) continue;
       // The coordinator declares the lanes: a `_plan` commit may create a lane file, never edit one.
-      if (c.kind === 'lane' && k.lane === `${c.slug}/${PLAN_LANE}` && showFile(repo, `${k.sha}^`, f) === null) continue;
+      if (c.kind === 'lane' && k.lane === `${c.slug}/${PLAN_LANE}` && showFile(repo, `${k.sha}^`, f) === null) {
+        // VTID-05259: a NEW governance lane is born only with a new plan that PLAN-SPAR approves in this same PR, and
+        // only from the plan's author seat — never added to an existing (already converged) plan.
+        if (parseFrontMatter(showFile(repo, k.sha, f))?.governance === 'true') {
+          const hp = `.kiro/specs/${c.slug}/handoff.md`;
+          const hb = parseFrontMatter(showFile(repo, mergeBase, hp));
+          const hh = parseFrontMatter(showFile(repo, head, hp));
+          const approvedHere = !hb && hh?.state !== 'drafted' && commits.some((x) => x.session === CI_PLAN_SPAR && x.files.includes(hp));
+          if (!approvedHere || !seatOf(k.session) || seatOf(k.session) !== hh?.author_seat) {
+            errors.push(`${short}: creates governance lane ${f} — only the author seat of a new plan, in the plan PR that PLAN-SPAR approves`);
+          }
+        }
+        continue;
+      }
       // VTID-05214: PLAN-SPAR.yml writes the allocated VTID into a lane that is still `ready`.
       if (c.kind === 'lane' && k.session === CI_PLAN_SPAR && k.lane === `${c.slug}/${PLAN_LANE}`
         && parseFrontMatter(showFile(repo, k.sha, f))?.state === 'ready') continue;
@@ -494,11 +517,13 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null }) 
     const PERM = ['executor', 'seat', 'reviewer_seat', 'paths', 'governance'];
     const changed = PERM.filter((k) => JSON.stringify(asList(baseFm[k])) !== JSON.stringify(asList(fm[k])));
     const sessions = new Set(commits.filter((k) => k.files.includes(lanePath)).map((k) => k.session));
-    const claudeOnly = sessions.size > 0 && [...sessions].every((x) => /^session_/.test(x));
-    if (changed.length && !(baseFm.executor === 'claude' && claudeOnly)) {
-      errors.push(`lane ${key}: ${changed.join(', ')} changed in a lane PR — lane permissions come from the base revision (only Claude Code may change them, on an executor: claude lane)`);
+    // VTID-05259: Claude Code is retired, so no session may change a lane's permissions in a lane PR (the old
+    // session_… route on executor: claude lanes is closed — a session_ id is self-declared like any other).
+    void sessions;
+    if (changed.length) {
+      errors.push(`lane ${key}: ${changed.join(', ')} changed in a lane PR — lane permissions come from the base revision (a permission change is a new lane in a new plan)`);
     }
-    if (!(baseFm.executor === 'claude' && claudeOnly)) fm = { ...fm, ...Object.fromEntries(PERM.map((k) => [k, baseFm[k]])) };
+    fm = { ...fm, ...Object.fromEntries(PERM.map((k) => [k, baseFm[k]])) };
   }
   const paths = asList(fm.paths);
   const changed = git(repo, ['diff', '--name-only', `${base}...${head}`]).split('\n').filter(Boolean);
@@ -509,8 +534,8 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null }) 
     for (const f of changed) {
       if (own(f)) continue;
       if (!matchesAny(f, paths)) errors.push(`${f} is outside lane ${key} (paths: ${paths.join(', ')})`);
-      else if (matchesAny(f, GOVERNANCE_PATHS) && newLane) errors.push(`${f} is a governance path; lane ${key} is created in this PR, so it grants no governance (its plan PR must merge first)`);
-      else if (fm.executor !== 'claude' && fm.governance !== 'true' && matchesAny(f, GOVERNANCE_PATHS)) errors.push(`${f} is a governance path; lane ${key} is not governance: true (executor ${fm.executor || 'unset'})`);
+      else if (newLane) errors.push(`${f}: lane ${key} is created in this PR, so it grants no paths yet (its plan PR must merge first)`);
+      else if (fm.governance !== 'true' && matchesAny(f, GOVERNANCE_PATHS)) errors.push(`${f} is a governance path; lane ${key} is not governance: true (executor ${fm.executor || 'unset'}; legacy executor: claude lanes no longer reach governance paths)`);
     }
   }
   const buildSeats = new Set(commits.filter((k) => k.lane === key).map((k) => seatOf(k.session) || k.session));
@@ -561,7 +586,21 @@ export function ghFetcher(repoSlug = 'exafyltd/vitana-platform') {
     try {
       return execFileSync('gh', ['api', '-H', 'Accept: application/vnd.github.raw', `repos/${repoSlug}/contents/${p}?ref=main`],
         { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    } catch { return null; }
+    } catch (e) {
+      // VTID-05259: only "not found" means "not there"; any other failure must not fall back to a PR-local copy.
+      const msg = `${e?.stderr || ''} ${e?.message || ''}`;
+      if (/HTTP 404|Not Found/i.test(msg)) return null;
+      throw new Error(`could not read ${p} from ${repoSlug} (failing closed): ${msg.trim().slice(0, 200)}`);
+    }
+  };
+}
+
+/** VTID-05259: is `sha` a commit on `repo`'s main (exafyltd/<repo>)? Through the GitHub CLI; throws when unknown. */
+export function ghMergeVerifier(owner = 'exafyltd') {
+  return (repoName, sha) => {
+    const out = execFileSync('gh', ['api', `repos/${owner}/${repoName}/compare/${sha}...main`, '--jq', '.status'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    return out === 'ahead' || out === 'identical';
   };
 }
 
@@ -742,7 +781,7 @@ function main(argv) {
       try { allowInitial.push(...asList(JSON.parse(showFile(repo, args.head, p) || '{}').collab_allow_initial)); } catch { /* scope guard reports bad JSON */ }
     }
     const r = validateRange(repo, { base: args.base, head: args.head, branch: args.branch || '', allowInitial,
-      fetchLane: args['lane-repo'] ? ghFetcher(args['lane-repo']) : null });
+      fetchLane: args['lane-repo'] ? ghFetcher(args['lane-repo']) : null, verifyMerge: ghMergeVerifier() });
     const programs = loadPrograms(repo, args.head);
     r.errors.push(...validatePrograms(programs));
     // Seats are checked against areas.yaml from this repo, else from vitana-platform main (fetchLane reads any file).

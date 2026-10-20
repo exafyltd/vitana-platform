@@ -68,3 +68,27 @@ each one refused:
 - New `executor: claude` lanes are refused.
 
 Tests: 39 pass (9 for VTID-05259). The 30 pre-existing tests are unchanged.
+
+### 2026-10-20T12:55Z · kiro-exafyltd-202610201041-ab5d · executing (round-2 review fixes)
+`semantic_reviewer` round 2 (changes) found 6 gaps left by the round-1 fixes. All are fixed, and its harness
+(N1–N6) now shows each one refused:
+- N1: `merge:` must be a commit already on the base branch (`merge-base --is-ancestor`), so a commit of the PR itself
+  doesn't count.
+- N2: a lane merged in the other repo writes `merge: vitana-v1@<sha>`. That is verified on that repo's main via
+  `gh api …/compare/<sha>...main` and fails closed when it can't be checked.
+- N3: `ghFetcher` returns null only on 404 and fails closed on any other error. A lane file that is new in the PR
+  now grants **no paths at all** (not just no governance paths) until its plan PR has merged.
+- N4: `owner-instruction:` needs real words inside the quotes; whitespace only is refused.
+- N5: the `session_…` permission route on `executor: claude` lanes is closed, and legacy `executor: claude` lanes no
+  longer reach governance paths. Existing lane permissions now change only through a new lane in a new plan.
+- N6: a new `governance: true` lane is created only by the author seat of a **new** plan, in the plan PR where
+  PLAN-SPAR approves it. It can't be added to an already converged plan.
+
+**Decisions** (narrower than the plan):
+- The 10 open `executor: claude` lanes (health-native ×5, native-g1-wiring ×2, pm-agent p1/p7,
+  sparring-floor-retry) can still change non-governance paths. Their governance work needs re-planning as Kiro
+  governance lanes.
+- The contract change to two existing tests (claude lanes and `session_…` permission changes are now refused) is
+  intentional; the PR body states it.
+
+Tests: 40/40.
