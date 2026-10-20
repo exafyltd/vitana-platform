@@ -1,0 +1,33 @@
+﻿$ npx jest test/command-hub/vtid-05082-svg-render.test.ts --silent
+
+PASS test/command-hub/vtid-05082-svg-render.test.ts
+  VTID-05082: extractSvgPayloads
+    ✓ pulls an SVG out of a ```svg fenced block (18 ms)
+    ✓ pulls a raw <svg>…</svg> out of prose with no fence
+    ✓ returns [] when there is no SVG at all
+    ✓ skips an over-cap (>200KB) payload (1 ms)
+  VTID-05082: sanitizeSvgMarkup (the hostile-SVG security boundary)
+    ✓ MANDATORY — a <script> + onload hostile SVG is stripped, geometry survives (12 ms)
+    ✓ removes <foreignObject> entirely (AC-5) (5 ms)
+    ✓ removes <image> and remote references, keeps local #fragment refs (AC-6) (7 ms)
+    ✓ rejects a DOCTYPE / ENTITY payload (billion-laughs shape) → empty
+    ✓ returns "" for a fully-hostile payload with no drawable child (1 ms)
+    ✓ returns "" for malformed XML (1 ms)
+  VTID-05082: buildSvgDataUrl (base64, UTF-8 safe round-trip)
+    ✓ produces a data:image/svg+xml;base64, URL (7 ms)
+    ✓ round-trips non-ASCII (emoji + €) through base64 (AC-16) (5 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       12 passed, 12 total
+Snapshots:   0 total
+Time:        6.68 s
+
+jest-exit=0
+
+----
+Guard regression suites (ownership guard + bundle manifest), same run environment:
+
+$ npx jest test/scripts/command-hub-ownership-guard.test.ts test/command-hub/vtid-05072-bundle-manifest.test.ts --silent
+Test Suites: 2 passed, 2 total
+Tests:       28 passed, 28 total
+jest-exit=0

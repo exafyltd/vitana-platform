@@ -1,0 +1,12 @@
+Live partner pass, round 1, real callViaRouter, Bedrock unavailable (2026-10-19)
+
+model_log:
+  bedrock  eu.anthropic.claude-opus-4-6-v1  ok=false  tier=primary           (bedrock not_configured)
+  bedrock  eu.anthropic.claude-sonnet-4-6   ok=false  tier=bedrock_fallback  (bedrock not_configured)
+  deepseek deepseek-v4-pro                  ok=true   tier=deepseek  (5 turns: ~3.3s, 3.5s, 2.8s, 2.8s, 105.6s)
+
+tool calls: 9 (read_file/list_dir on partner.ts, llm-router.ts, llm-defaults.ts)
+result: ok=true, valid submit_review
+evidenceFloor: {"required":3,"verified":3,"met":true}
+findings: 3, premise_checks: 3
+partner summary (excerpt): "All three premises the plan asks me to verify hold in the pinned commit ..."

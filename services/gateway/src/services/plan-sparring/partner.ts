@@ -8,12 +8,15 @@
  * Opus 4.6); every thinking / redacted_thinking block is handed back verbatim
  * on the assistant turn it came from, which the API requires across tool turns.
  *
- * A failed model call ends the pass with `model_unavailable` and no other
- * provider is called — EXCEPT a retryable throttle on the primary (Opus 4.6),
- * which triggers exactly ONE retry of that turn on the Bedrock Sonnet 4.6
- * fallback (VTID sparring-model-fallback). That retry is logged loudly, is
- * Bedrock-only (the provider!=='bedrock' guard still holds), and is not a
- * router-level fallback (plan_sparring stays in NO_FALLBACK_STAGES).
+ * Partner tiers (owner decision 2026-10-19 — "build a fallback so sparring
+ * never stops on burned quota"): Bedrock Opus 4.6 → Bedrock Sonnet 4.6 →
+ * DeepSeek (`deepseek-v4-pro`). A failing Bedrock tier moves the pass to the
+ * next tier for the rest of the round (sticky); only the last tier's failure
+ * ends the pass with `model_unavailable`. Every switch is logged loudly and
+ * every entry in model_log carries `fallback_tier`. The tiers live here, not in
+ * the router: plan_sparring stays in NO_FALLBACK_STAGES, and the router only
+ * lets the stage run on DeepSeek for a call flagged `planSparringLastResort`.
+ * Kill switch for the DeepSeek tier: PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED=false.
  */
 
 import type {
@@ -23,7 +26,11 @@ import type {
   LLMRouterToolCall,
   LLMStage,
 } from '../llm-router';
-import { resolvePlanSparringFallbackModel } from '../../constants/llm-defaults';
+import {
+  isPlanSparringDeepseekFallbackEnabled,
+  resolvePlanSparringFallbackModel,
+  resolvePlanSparringLastResortModel,
+} from '../../constants/llm-defaults';
 import { PARTNER_CODE_TOOLS, type ToolExecution } from './github-tools';
 import {
   PARTNER_SYSTEM_PROMPT,
@@ -63,6 +70,24 @@ export function isRetryableThrottle(error: string | undefined): boolean {
     /too many requests/.test(e) ||
     /\b429\b/.test(e)
   );
+}
+
+/** One partner model tier (see runPartnerPass). */
+export interface PartnerTier {
+  name: 'primary' | 'bedrock_fallback' | 'deepseek';
+  provider: 'bedrock' | 'deepseek';
+  /** Omitted for the primary: the stage's own policy model (PLAN_SPARRING_MODEL). */
+  model?: string;
+}
+
+/**
+ * Owner decision 2026-10-19: a failing Bedrock tier (burned quota, throttle,
+ * daily token cap, subscription/access error, outage) never ends the pass —
+ * the next tier is tried. Only the LAST tier's failure ends the pass with
+ * model_unavailable.
+ */
+export function shouldTryNextTier(tier: PartnerTier, _error: string | undefined): boolean {
+  return tier.provider === 'bedrock';
 }
 
 export interface PartnerPassInput {
@@ -105,10 +130,24 @@ export async function runPartnerPass(input: PartnerPassInput): Promise<PartnerPa
   let nudged = false;
   let lastProblem = '';
   const fallbackModel = resolvePlanSparringFallbackModel();
+  const lastResortModel = resolvePlanSparringLastResortModel();
+
+  // Partner tiers, tried in order: Opus 4.6 (primary) → Sonnet 4.6 (Bedrock
+  // fallback) → DeepSeek (last resort, owner decision 2026-10-19). The tier is
+  // STICKY for the rest of the pass: once a model is out of quota it is not
+  // retried on every following turn.
+  const tiers: PartnerTier[] = [
+    { name: 'primary', provider: 'bedrock' },
+    { name: 'bedrock_fallback', provider: 'bedrock', model: fallbackModel },
+    ...(isPlanSparringDeepseekFallbackEnabled()
+      ? [{ name: 'deepseek' as const, provider: 'deepseek' as const, model: lastResortModel }]
+      : []),
+  ];
+  let tierIndex = 0;
 
   const fail = (reason: EscalationReason, error: string): PartnerPassResult => ({ ok: false, reason, error, toolLog, modelLog });
 
-  const invoke = (p: string, useFallback: boolean): Promise<LLMRouterResult> =>
+  const invoke = (p: string, tier: PartnerTier): Promise<LLMRouterResult> =>
     input.callLlm(PARTNER_STAGE, p, {
       service: 'plan-sparring',
       vtid: null,
@@ -119,56 +158,52 @@ export async function runPartnerPass(input: PartnerPassInput): Promise<PartnerPa
       maxTokens: PARTNER_MAX_OUTPUT_TOKENS,
       thinking: { type: 'adaptive' },
       effort: 'high',
-      // VTID (sparring-model-fallback): the throttle fallback overrides only the
-      // model, still on bedrock, so the provider!=='bedrock' guard below stays
-      // satisfied and no Google/Anthropic-direct answer can slip through.
-      ...(useFallback ? { providerOverride: 'bedrock' as const, modelOverride: fallbackModel } : {}),
+      // VTID (sparring-model-fallback): the Sonnet tier overrides only the
+      // model, still on bedrock.
+      ...(tier.name === 'bedrock_fallback' ? { providerOverride: 'bedrock' as const, modelOverride: tier.model } : {}),
+      // Last resort: DeepSeek, explicitly flagged so the router lets the
+      // no-fallback stage run on it for this one call. Thinking off: DeepSeek's
+      // thinking mode needs reasoning_content handed back across tool turns,
+      // which the OpenAI-shaped history does not carry.
+      ...(tier.name === 'deepseek'
+        ? { providerOverride: 'deepseek' as const, modelOverride: tier.model, planSparringLastResort: true, deepseekThinking: 'disabled' as const }
+        : {}),
     });
 
   for (let turn = 1; turn <= PARTNER_MAX_TURNS_PER_ROUND; turn++) {
     if (now() - startedAt > input.deadlineMs) return fail('deadline_exceeded', `partner pass exceeded ${input.deadlineMs}ms`);
 
-    const t0 = now();
-    let r = await invoke(prompt, false);
-    modelLog.push({
-      round: input.round,
-      provider: r.provider,
-      model: r.model,
-      latency_ms: now() - t0,
-      input_tokens: r.usage?.inputTokens ?? 0,
-      output_tokens: r.usage?.outputTokens ?? 0,
-      ok: r.ok,
-      ...(r.ok ? {} : { error: (r.error || 'unknown').slice(0, 500) }),
-    });
-
-    // VTID (sparring-model-fallback): on a RETRYABLE throttle only (e.g. the
-    // Opus 4.6 fresh-subscription daily cap), retry this turn ONCE on the
-    // Sonnet 4.6 fallback. Logged loudly; never silent. Any other failure
-    // falls through to model_unavailable with no retry.
-    if (!r.ok && isRetryableThrottle(r.error)) {
-      console.warn(
-        `[plan-sparring] primary partner model throttled (${(r.error || '').slice(0, 120)}); ` +
-          `falling back to ${fallbackModel} for round ${input.round}, turn ${turn}`,
-      );
-      const tf = now();
-      r = await invoke(prompt, true);
+    let r: LLMRouterResult;
+    for (;;) {
+      const tier = tiers[tierIndex];
+      const t0 = now();
+      r = await invoke(prompt, tier);
       modelLog.push({
         round: input.round,
         provider: r.provider,
         model: r.model,
-        latency_ms: now() - tf,
+        latency_ms: now() - t0,
         input_tokens: r.usage?.inputTokens ?? 0,
         output_tokens: r.usage?.outputTokens ?? 0,
         ok: r.ok,
-        fallback: true,
+        ...(tier.name !== 'primary' ? { fallback: true, fallback_tier: tier.name } : {}),
         ...(r.ok ? {} : { error: (r.error || 'unknown').slice(0, 500) }),
       });
+      if (r.ok || !shouldTryNextTier(tier, r.error) || tierIndex >= tiers.length - 1) break;
+      const next = tiers[tierIndex + 1];
+      console.warn(
+        `[plan-sparring] partner tier ${tier.name} (${r.model ?? tier.model ?? 'primary'}) failed ` +
+          `(${(r.error || '').slice(0, 160)}); switching to ${next.name} (${next.provider}/${next.model}) ` +
+          `for the rest of round ${input.round}, from turn ${turn}`,
+      );
+      tierIndex += 1;
     }
 
     if (!r.ok) return fail('model_unavailable', r.error || 'partner model call failed');
-    // Defence in depth: the router never falls back for this stage, but if a
-    // future change made it, the answer did not come from the partner model.
-    if (r.fallbackUsed || r.provider !== 'bedrock') {
+    // Defence in depth: the router never falls back for this stage. The answer
+    // must come from the provider of the tier that was asked.
+    const expectedProvider = tiers[tierIndex].provider;
+    if (r.fallbackUsed || r.provider !== expectedProvider) {
       return fail('model_unavailable', `partner answered by ${r.provider} (fallbackUsed=${String(r.fallbackUsed)}) — refused`);
     }
 

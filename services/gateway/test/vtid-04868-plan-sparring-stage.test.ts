@@ -203,6 +203,32 @@ describe('VTID-04868 router: plan_sparring never falls back', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
+  it('runs on DeepSeek ONLY for an explicit last-resort call, never falling back from it', async () => {
+    getActivePolicy.mockResolvedValue({ policy: LIVE_LIKE_POLICY });
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'from deepseek' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1 } }),
+      text: async () => '',
+    });
+    const r = await callViaRouter('plan_sparring', 'hi', {
+      service: 'test', providerOverride: 'deepseek', modelOverride: 'deepseek-v4-pro', planSparringLastResort: true,
+    });
+    expect(r.ok).toBe(true);
+    expect(r.provider).toBe('deepseek');
+    expect(r.fallbackUsed).toBe(false);
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('the last-resort flag never unlocks any provider other than DeepSeek', async () => {
+    getActivePolicy.mockResolvedValue({ policy: LIVE_LIKE_POLICY });
+    const r = await callViaRouter('plan_sparring', 'hi', {
+      service: 'test', providerOverride: 'openai', modelOverride: 'gpt-x', planSparringLastResort: true,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/must run on bedrock/);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   it('refuses a per-call provider override to a non-Bedrock provider', async () => {
     getActivePolicy.mockResolvedValue({ policy: LIVE_LIKE_POLICY });
     const r = await callViaRouter('plan_sparring', 'hi', { service: 'test', providerOverride: 'deepseek', modelOverride: 'deepseek-flash' });
