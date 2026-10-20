@@ -1,6 +1,6 @@
 ---
 lane: reviewer-agent
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -22,7 +22,9 @@ paths:
   - .kiro/workflows/vitana-pipeline.workflow.json
   - .kiro/hooks/vitana-pipeline-start.json
   - docs/validation/VTID-*/**
-updated: 2026-10-20T17:49Z
+claimed_by: kiro-exafy-202610201807-2a87
+branch: kiro/kiro-autonomy-fallback/reviewer-agent
+updated: 2026-10-20T18:41Z
 vtid: VTID-05275
 ---
 # reviewer-agent — reviewer agent + pipeline recipe (vitana-lane-reviewer on claude-sonnet-5.5, runbooks, IDE workflow, SessionStart hook)
@@ -43,3 +45,15 @@ set, seat exafy claims it.
 
 ### 2026-10-20T17:49Z · ci-plan-spar · ready (VTID allocated)
 VTID-05275 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-20T18:41Z · kiro-exafy-202610201807-2a87 · ready → executing
+Claimed (`collab-claim/kiro-autonomy-fallback/reviewer-agent` 67e9402d9) and built on branch
+`kiro/kiro-autonomy-fallback/reviewer-agent` under the owner instruction of 2026-10-20 ("no more approvals, you run it
+end to end"; collaboration.md §7b named set of plan kiro-autonomy-fallback). Added `.kiro/agents/vitana-lane-reviewer.md`
+(claude-sonnet-5.5, read + allow-listed read-only shell, fail loudly with `model_unavailable`, §4.1/§4.2 output; a
+protected gate file, plan §4.3, created under that owner instruction), `.kiro/pipeline/{README,common-rules,planning,
+lane-code,lane-review,lane-land}.md` (generic), `.kiro/workflows/vitana-pipeline.workflow.json` (input `task` only, 6
+lane slots, review steps pinned to `vitana-lane-reviewer` / `claude-sonnet-5.5`, merge lock),
+`.kiro/hooks/vitana-pipeline-start.json` (SessionStart, agent action), and `guard.cjs checkAgents` / `validateWorkflow`
+with 23 new tests (red on base, `docs/validation/VTID-05275/`). Next: the reviewer agent reviews the PR head; the land
+step merges under §7b after `steering-rules` lands.
