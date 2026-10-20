@@ -1,0 +1,15 @@
+{
+  "sessions": [
+    {
+      "id": "80edad05-1908-4025-ab32-de26dd7a4700",
+      "submitted": [],
+      "plan_text_sha": "8d8b29b9",
+      "rounds": 1,
+      "verdict": "in_progress",
+      "infra": false,
+      "retryable": false,
+      "final_plan_hash": null,
+      "policy_approved_at": null
+    }
+  ]
+}
