@@ -202,3 +202,31 @@ test('review fix: partner_output_invalid goes to Claude but is not auto-retried 
     assert.equal(c.calls.filter((x) => x[0] === 'create').length, 1);
   } finally { f.done(); }
 });
+
+test('R1-F1: extraRefs is forwarded to create as extra_refs (and omitted when null)', async () => {
+  const V1 = 'b'.repeat(40);
+
+  // With a vitana-v1 ref: create carries extra_refs keyed by the repo.
+  const f1 = spec();
+  const c1 = fakeClient([sess('S1', [[finding('R1-F1')]], 'in_progress')]);
+  await step({ dir: f1.dir, slug: 'cards', baseSha: SHA, repo: 'exafyltd/vitana-platform', client: c1, extraRefs: { 'exafyltd/vitana-v1': V1 } });
+  const create1 = c1.calls.find((c) => c[0] === 'create')[1];
+  assert.deepEqual(create1.extra_refs, { 'exafyltd/vitana-v1': V1 });
+  f1.done();
+
+  // Without a ref (platform-only plan): no extra_refs key at all — behaviour unchanged.
+  const f2 = spec();
+  const c2 = fakeClient([sess('S1', [[finding('R1-F1')]], 'in_progress')]);
+  await step({ dir: f2.dir, slug: 'cards', baseSha: SHA, repo: 'exafyltd/vitana-platform', client: c2 });
+  const create2 = c2.calls.find((c) => c[0] === 'create')[1];
+  assert.ok(!('extra_refs' in create2));
+  f2.done();
+
+  // Empty object is treated as "none" (never sends an empty extra_refs).
+  const f3 = spec();
+  const c3 = fakeClient([sess('S1', [[finding('R1-F1')]], 'in_progress')]);
+  await step({ dir: f3.dir, slug: 'cards', baseSha: SHA, repo: 'exafyltd/vitana-platform', client: c3, extraRefs: {} });
+  const create3 = c3.calls.find((c) => c[0] === 'create')[1];
+  assert.ok(!('extra_refs' in create3));
+  f3.done();
+});
