@@ -92,13 +92,16 @@ reuses VTID-05082: its pack belongs to #4182, and VALIDATOR-CHECK keys every lat
     within the next 12 lines.
   - `staging-tests.json`, both lanes: `vtid` equals the lane VTID and `service: "gateway"` (`lib.cjs:187-196`
     `validateManifest`), read-only `http` GETs plus an `existing` Jest ref, like VTID-05254. It is required for Lane B
-    (check-pr `run.mjs:484-500`, rule 47). Lane A deploys nothing, so check-pr never reads it; Lane A ships one anyway
-    as its record, and it is held to the same validity because the VTID-04696 test reads every suite.
+    (check-pr `run.mjs:484-500`, rule 47). Lane A deploys nothing, so check-pr returns before reading it
+    (`run.mjs:469-472`); Lane A ships one anyway as its record. No CI gate checks that record's shape: the VTID-04696
+    test only checks its `asset?v=` pins against `index.html` (`vtid-04696-staging-checks-follow-asset-bumps.test.ts:35-46`),
+    not `kind`, `expect_*`, `existing` or `service`. So Lane A runs `lib.validateManifest` on it by hand before the PR
+    (task A6) and records the result in `commands.log`/`outputs/`; that is a local check, not a gate.
   - No route is added in either lane, so the Route Mount Evidence Gate does not fire (`VALIDATOR-CHECK.yml:271-301`).
 - **Lane A pack** (`docs/validation/VTID-A/`): `acceptance.md` (AC-1 test #3 points at `svg-preview.js` → `CURL:` the
   staging GET; AC-2 tests #1/#2 unchanged → `TEST:` `git diff`; AC-3 every suite pin matches `index.html` → `TEST:`
-  the VTID-04696 Jest test), `commands.log`, `outputs/` (JSON parse result, staging GET result, VTID-04696 Jest
-  output), `staging-tests.json` (GET `/alive`; GET `/command-hub/svg-preview.js?v=20261121-vtid-05082` contains
+  the VTID-04696 Jest test), `commands.log`, `outputs/` (JSON parse result, `validateManifest` result, staging GET
+  result, VTID-04696 Jest output), `staging-tests.json` (GET `/alive`; GET `/command-hub/svg-preview.js?v=20261121-vtid-05082` contains
   `sanitizeSvgMarkup`; `existing`: the VTID-04696 Jest test).
 - **Lane B pack** (`docs/validation/VTID-B/`): `acceptance.md` (AC-1 `:212` expects the shipped key → `TEST:` the
   VTID-05077 file; AC-2 suite pins match `index.html` → `TEST:` the VTID-04696 test; AC-3 no positive pin of the old
@@ -114,7 +117,11 @@ After Lane B, the value `/command-hub/app.js?v=20261121-vtid-05082` that this pl
 3. `docs/validation/VTID-B/staging-tests.json` (new, Lane B): created at the value of (1).
 
 They are kept consistent today by construction: (2) and (3) are written from (1) in the same PR, and task B5 greps
-that no positive `toContain`/suite pin of `app.js?v=20261120-vtid-05148` remains. On a future bump the two copies are
+that no `toContain` assertion in `services/gateway/test` and no `docs/validation/*/staging-tests.json` suite pin of
+`app.js?v=20261120-vtid-05148` remains. That grep scope is deliberate: the old key also survives as prose in
+`docs/validation/VTID-05148/acceptance.md:13` (VTID-05148's CURL_PROOF, a historical record of what staging served
+then). It is not a suite pin, the VTID-04696 test only reads `staging-tests.json` files (`:36-38`), so no gate reads
+it; it is a known, benign leftover and stays unedited. On a future bump the two copies are
 not equally exposed: (3), like every `docs/validation/*/staging-tests.json` pin (Lane A's `svg-preview.js?v=` pin
 included), is enforced mechanically by
 `services/gateway/test/vtid-04696-staging-checks-follow-asset-bumps.test.ts:31-49`, which fails the bumping PR if
@@ -161,6 +168,8 @@ evidence pack, so the two cannot conflict in substance. Kiro does not close #420
 - Lane `staging-test-05082`:
   - `node -e "JSON.parse(require('fs').readFileSync('<file>','utf8'))"` succeeds for
     `docs/validation/VTID-05082/staging-tests.json` and `docs/validation/VTID-A/staging-tests.json`.
+  - `lib.validateManifest` (`scripts/ci/staging-verify/lib.cjs:187`) returns `ok` for both files, each with its own
+    `vtid` and `service: "gateway"` (task A6; local only, because check-pr skips this docs-only PR).
   - `cd services/gateway; npx jest test/vtid-04696-staging-checks-follow-asset-bumps.test.ts` passes.
   - A read-only, unauthenticated GET of `https://preview-aws-gateway.vitanaland.com/command-hub/svg-preview.js?v=20261121-vtid-05082`
     returns 200 and the body contains `sanitizeSvgMarkup`. Staging only. No suite targets production.
@@ -192,4 +201,9 @@ change in this plan:
 - **R2-F2** (minor): new section "The app.js cache-key pin and its other places" names the three places with
   `file:line`, explains why only the test changes (`index.html:32` is the source of truth), adds task B5 (grep for a
   leftover old-key pin) and the VTID-04696 test to Lane B's acceptance, and narrows the out-of-scope regex line.
+
+Session 2 round 1 (two minors, both accepted): the B5 grep scope is stated exactly, with
+`docs/validation/VTID-05148/acceptance.md:13` named as an ungated prose leftover; and Lane A's record suite is no
+longer said to be "held to the same validity" by VTID-04696. Lane A now validates it locally with
+`lib.validateManifest` (task A6).
 <!-- plan:end -->

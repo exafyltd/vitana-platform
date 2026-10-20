@@ -30,10 +30,17 @@ Allowed paths:
   AC-2 tests #1/#2 unchanged (`TEST:` `git diff origin/main -- docs/validation/VTID-05082/staging-tests.json`);
   AC-3 every suite pin matches `index.html` (`TEST:` the VTID-04696 Jest test). `commands.log` lists every command
   with its result; `outputs/` holds the JSON-parse output, the staging GET result and the VTID-04696 Jest output.
-- [ ] A5. Open the PR with the title and body above (profile `gateway_backend`).
+- [ ] A5. Open the PR with the title and body above (profile `gateway_backend`), after A6.
+- [ ] A6. Structural check (s2 R1-F2), local only because check-pr skips this docs-only PR (`run.mjs:469-472`) and the
+  VTID-04696 test checks only `asset?v=` pins: for each of `docs/validation/VTID-05082/staging-tests.json`
+  (vtid `VTID-05082`) and `docs/validation/<VTID>/staging-tests.json` (vtid `<VTID>`), run
+  `node -e "const lib=require('./scripts/ci/staging-verify/lib.cjs');const m=JSON.parse(require('fs').readFileSync('<file>','utf8'));const v=lib.validateManifest(m,{vtid:'<vtid>',service:'gateway'});if(!v.ok){console.error(v.errors.join('\n'));process.exit(1)}"`
+  from the repo root (`validateManifest` at `scripts/ci/staging-verify/lib.cjs:187`). Record both results in
+  `commands.log` and `outputs/`.
 
 Acceptance:
-- Both JSON files parse (`node -e "JSON.parse(require('fs').readFileSync('<file>','utf8'))"`).
+- Both JSON files parse (`node -e "JSON.parse(require('fs').readFileSync('<file>','utf8'))"`) and pass the A6
+  `validateManifest` check.
 - `cd services/gateway; npx jest test/vtid-04696-staging-checks-follow-asset-bumps.test.ts` passes.
 - A read-only GET of `https://preview-aws-gateway.vitanaland.com/command-hub/svg-preview.js?v=20261121-vtid-05082`
   returns 200 and the body contains `sanitizeSvgMarkup`.
@@ -64,6 +71,9 @@ Allowed paths:
   corrected VTID-05082 manifest and its STAGING-VERIFY run proves both lanes.
 - [ ] B5. Pin consistency (R2-F2): `git grep -n "20261120-vtid-05148" -- services/gateway/test "docs/validation/*/staging-tests.json"`
   returns nothing, and the three places (`index.html:32`, the test `:212`, B2's suite) all name `app.js?v=20261121-vtid-05082`.
+  Scope (s2 R1-F1): the grep covers only Jest `toContain` assertions under `services/gateway/test` and suite pins in
+  `docs/validation/*/staging-tests.json`. The old key's prose mention in `docs/validation/VTID-05148/acceptance.md:13`
+  (VTID-05148's CURL_PROOF record) is out of scope, read by no gate, and stays unedited.
 - [ ] B6. `docs/validation/<VTID>/acceptance.md`: AC-1 `:212` expects the shipped key (`TEST:` the VTID-05077 file);
   AC-2 suite pins match `index.html` (`TEST:` the VTID-04696 test); AC-3 no old-key pin remains (`TEST:` the B5 grep).
   `commands.log` lists every command with its result; `outputs/` holds the Jest output and the grep result.
@@ -84,6 +94,8 @@ Acceptance:
 - R2-F1: the shared "Both lane PRs" block plus A3–A5 and B2, B6, B7 (title VTID, body markers, full evidence pack, suite).
   Both lane files already allow `docs/validation/**` (which holds `docs/validation/<VTID>/**`); the "Allowed paths"
   above narrow it. The lane files themselves are unchanged: a `_plan` commit may not edit a lane file
-  (`scripts/collab/queue.mjs:384`), and they defer to this file for steps (A1–A5, B1–B7 supersede their "A1–A3"/"B1–B3").
+  (`scripts/collab/queue.mjs:384`), and they defer to this file for steps (A1–A6, B1–B7 supersede their "A1–A3"/"B1–B3").
 - R2-F2: B1/B2 name `index.html:32` as the source of the value, new B5 checks the three places, and the VTID-04696
   test joins both lanes' acceptance.
+- s2 R1-F1: B5 states its grep scope and names `VTID-05148/acceptance.md:13` as an ungated prose leftover.
+- s2 R1-F2: new A6 runs `validateManifest` locally on both Lane A suites; Lane A acceptance requires it.
