@@ -1,6 +1,7 @@
 ---
 lane: owner-governance
-state: in-review
+state: parked
+parked_from: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -17,7 +18,7 @@ paths:
 claimed_by: kiro-exafy-202610201154-1d48
 branch: kiro/collab-kiro-governance/owner-governance
 pr: https://github.com/exafyltd/vitana-platform/pull/4214
-updated: 2026-10-20T12:40Z
+updated: 2026-10-20T13:20Z
 vtid: VTID-05260
 ---
 # Lane: owner-governance (repo vitana-platform)
@@ -52,3 +53,15 @@ vitana-v1 companion exafyltd/vitana-v1#1467 (identical rule files only).
 - Not merged (owner: "Do not merge").
 Next: reviewer seat `jtadic` reviews #4214 and #1467 against `tasks.md` T1–T3 and plan Change A. After Change A is on
 `main`, the plan author adds `governance: owner` to `retry-partner-invalid` with a `_plan` commit.
+
+### 2026-10-20T13:20Z · kiro-exafy-202610201154-1d48 · in-review → parked
+Owner decision in this Kiro session (2026-10-20): "let's go with Option A". That means keeping `governance: true` from
+`retire-claude-code` (#4210, VTID-05259 `scope-rules`) and closing this lane's PRs. The two plans define the same lane
+field differently and rewrite the same lines of `queue.mjs`, so only one can merge.
+- Closed unmerged, each with a comment pointing at #4210: exafyltd/vitana-platform#4214 and exafyltd/vitana-v1#1467.
+  Branch `kiro/collab-kiro-governance/owner-governance` is kept for reference in both repos.
+- Not reused: this lane's rule text (§7b addition). `retire-claude-code/rules-platform` writes the rule text as §7c.
+Next, for the plan author (seat `exafyltd`, holder of `collab-kiro-governance/_plan`): edit `plan.md` so that
+`retry-partner-invalid` depends on `retire-claude-code/scope-rules` being on `main` rather than on this lane, and
+carries `governance: true`. Under #4210's rules that is a permission change, so it needs a `plan.md` change and a
+re-spar. This lane stays parked; it never returns to in-review.
