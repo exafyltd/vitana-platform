@@ -124,3 +124,11 @@ refused:
 - PR body corrected: validate's rules run in the Collab handoff step, which is still report-only in PR-GATE.
 
 Tests: 42/42.
+
+### 2026-10-20T14:05Z · kiro-exafyltd-202610201041-ab5d · executing (review round 5: approve; non-blocking finding fixed)
+`semantic_reviewer` round 5: **approve**. Its one non-blocking finding is fixed: the `merge:` commit must also change at
+least one of the lane's `paths` (checked locally via `git diff <sha>^1 <sha>`, and through `gh api` for the other repo).
+So the plan commit that declared the lane, or an unrelated commit naming it, no longer counts. The legitimate PLAN-SPAR
+flow (repro5 R1) still passes Lane scope. Tests: 43/43.
+Next: an independent review entry from seat `jtadic` on the current head, then the owner's explicit merge instruction
+(bootstrap merge 2).

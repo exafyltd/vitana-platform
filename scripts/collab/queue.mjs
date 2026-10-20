@@ -419,12 +419,14 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
         const laneKey = `${c.slug}/${c.lane}`;
         if (rec.mergeRepo && rec.mergeRepo !== repoNameOf(repo)) {
           let ok = false;
-          try { ok = !!(verifyMerge && verifyMerge(rec.mergeRepo, rec.merge, laneKey)); } catch { ok = false; }
+          try { ok = !!(verifyMerge && verifyMerge(rec.mergeRepo, rec.merge, laneKey, asList(after.paths))); } catch { ok = false; }
           if (!ok) errors.push(`${p}: merge: ${rec.mergeRepo}@${rec.merge} could not be verified as a commit of ${laneKey} on ${rec.mergeRepo} main`);
         } else if (gitOk(repo, ['cat-file', '-e', `${rec.merge}^{commit}`]) === null || gitOk(repo, ['merge-base', '--is-ancestor', rec.merge, base]) === null) {
           errors.push(`${p}: merge: ${rec.merge} is not a commit on the base branch of this repository`);
         } else if (!namesLane(gitOk(repo, ['log', '-1', '--format=%B', rec.merge]) || '', laneKey)) {
           errors.push(`${p}: merge: ${rec.merge} does not name ${laneKey} in its message`);
+        } else if (!(gitOk(repo, ['diff', '--name-only', `${rec.merge}^1`, rec.merge]) || '').split('\n').filter(Boolean).some((x) => matchesAny(x, asList(after.paths)))) {
+          errors.push(`${p}: merge: ${rec.merge} changes none of the lane's paths (not the lane's merge)`);
         }
       }
     }
@@ -629,12 +631,12 @@ export function namesLane(message, laneKey) {
 
 /** VTID-05259: is `sha` a commit on `repo`'s main (exafyltd/<repo>)? Through the GitHub CLI; throws when unknown. */
 export function ghMergeVerifier(owner = 'exafyltd') {
-  return (repoName, sha, laneKey) => {
+  return (repoName, sha, laneKey, paths = []) => {
     const opt = { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] };
     const status = execFileSync('gh', ['api', `repos/${owner}/${repoName}/compare/${sha}...main`, '--jq', '.status'], opt).trim();
     if (status !== 'ahead' && status !== 'identical') return false;
-    const msg = execFileSync('gh', ['api', `repos/${owner}/${repoName}/commits/${sha}`, '--jq', '.commit.message'], opt);
-    return !laneKey || namesLane(msg, laneKey);
+    const c = JSON.parse(execFileSync('gh', ['api', `repos/${owner}/${repoName}/commits/${sha}`, '--jq', '{m: .commit.message, f: [.files[].filename]}'], opt));
+    return (!laneKey || namesLane(c.m, laneKey)) && (!paths.length || c.f.some((x) => matchesAny(x, paths)));
   };
 }
 

@@ -663,6 +663,7 @@ test('VTID-05259 validate: a governance lane reaches verified only with a new ow
     const fm = (state) => ({ ...GOV, next_actor: 'kiro', vtid: 'VTID-00002', state });
     write(f.work, '.kiro/specs/cards/handoff.md', planMd({ state: 'executing', sparring_record: 'x.md', vtids: ['VTID-00002'], executor: 'kiro', next_actor: 'kiro' }));
     write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', fm('in-review')));
+    write(f.work, '.github/workflows/x.yml', 'merged');
     const base = commit(f.work, 'VTID-00002 (cards/a): merged lane', { 'Collab-Session': S2, 'Collab-Lane': 'cards/_plan' });
     sh(f.work, 'push', '-q', 'origin', 'main');
     let n = 0;
@@ -768,6 +769,7 @@ test('VTID-05259 round 2: merge must be on base (or verified in the other repo);
     const fm = (state) => ({ ...GOV, next_actor: 'kiro', vtid: 'VTID-00002', state });
     write(f.work, '.kiro/specs/cards/handoff.md', planMd({ state: 'executing', sparring_record: 'x.md', vtids: ['VTID-00002'], executor: 'kiro', next_actor: 'kiro' }));
     write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', fm('verified')));
+    write(f.work, '.github/workflows/x.yml', 'merged');
     const base = commit(f.work, 'VTID-00002 (cards/a): merged lane', { 'Collab-Session': S2, 'Collab-Lane': 'cards/_plan' });
     sh(f.work, 'push', '-q', 'origin', 'main');
     sh(f.work, 'checkout', '-q', '-b', 'kiro/cards/a');
@@ -896,4 +898,26 @@ test('VTID-05259 round 4: approval is PLAN-SPAR\'s own commit; lane keys match w
   assert.ok(!namesLane('VTID-00003 (cards/ab): other lane', 'cards/a'));
   assert.ok(!namesLane('VTID-1 (x/p10): y', 'x/p1'));
   assert.ok(!namesLane('VTID-1 (ccards/a): y', 'cards/a'));
+});
+
+test('VTID-05259 round 5: the merge commit must change one of the lane\'s paths', () => {
+  const EX2 = 'kiro-exafyltd-202610201041-ab5d';
+  const f = fixture();
+  try {
+    const fm = (state) => ({ ...GOV, next_actor: 'kiro', vtid: 'VTID-00002', state });
+    write(f.work, '.kiro/specs/cards/handoff.md', planMd({ state: 'executing', sparring_record: 'x.md', vtids: ['VTID-00002'], executor: 'kiro', next_actor: 'kiro' }));
+    write(f.work, '.kiro/specs/cards/lanes/a.md', `${laneMd('a', fm('verified'))}- owner-instruction: "merge it" (2026-10-20)\n`);
+    const declared = commit(f.work, 'plan(cards): declare lane cards/a', { 'Collab-Session': S2, 'Collab-Lane': 'cards/_plan' });
+    write(f.work, '.github/workflows/x.yml', 'lane work');
+    const merged = commit(f.work, 'VTID-00002 (cards/a): the lane (#1)');
+    sh(f.work, 'push', '-q', 'origin', 'main');
+    const done = (sha) => {
+      sh(f.work, 'checkout', '-q', '-B', 'kiro/cards/a', merged);
+      write(f.work, '.kiro/specs/cards/lanes/a.md', `${laneMd('a', fm('done'))}- owner-instruction: "merge it" (2026-10-20)\n- merge: ${sha}\n`);
+      return validateRange(f.work, { base: merged, head: commit(f.work, 'done', { 'Collab-Session': EX2, 'Collab-Lane': 'cards/a' }) }).errors;
+    };
+    const ed = done(declared);
+    assert.ok(ed.some((x) => x.includes("changes none of the lane's paths")), `the declaring plan commit is not the merge: ${ed.join('\n')}`);
+    assert.deepEqual(done(merged), []);
+  } finally { f.done(); }
 });
