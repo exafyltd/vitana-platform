@@ -33,8 +33,11 @@ Change class: **governance** (rule text and the seat automations only). Pinned: 
 3. **Migrations have no Kiro path.** Every agent text says "a database change is a migration file in the PR"; nothing
    says who applies it. The appliers are (s2 R1-F1), all `workflow_dispatch` only:
    - vitana-platform `RUN-MIGRATION.yml` (target input; honours `MIGRATION_FREEZE`);
-   - vitana-platform `APPLY-FB061-DEBOUNCER-FIX.yml`;
-   - the 21 per-file vitana-v1 `apply-*.yml` workflows. Each posts one hardcoded SQL file to the production Supabase
+   - the 21 per-file vitana-v1 `apply-*.yml` workflows.
+
+   `APPLY-FB061-DEBOUNCER-FIX.yml` is not one of them (s2 R2-F1): it is a one-shot, self-deleting code-patch workflow
+   that pushes to a feature branch and touches no database. Like any other non-staging workflow, Kiro never dispatches
+   it under §7d. Each posts one hardcoded SQL file to the production Supabase
      ref (`inmkhvwdcuyhnxkgfvsb`) and has no target input, hash check or freeze guard.
    Merging a migration file applies nothing: the push-triggered `SQL-*` workflows run against a CI Postgres service
    container and reference no live database secret. Staging shares the production Supabase project, so **every applied
@@ -134,14 +137,19 @@ no longer written by Kiro, except for the legacy `executor: claude` lanes until 
    - Then it writes the Gate 2 message to the plan's handoff log (`gate2: ready`) and gives it to the owner — in the
      same reply if interactive, otherwise in the next interactive session's first reply.
 6. **Migrations, owner-approved only (R1-F3, s2 R1-F1).**
-   - **Applier list.** B.6 covers every migration applier: `RUN-MIGRATION.yml`, `APPLY-FB061-DEBOUNCER-FIX.yml`
-     and every vitana-v1 `apply-*.yml`.
+   - **Applier list.** B.6 covers every migration applier: `RUN-MIGRATION.yml` and every vitana-v1 `apply-*.yml`.
      - For a per-file applier, the owner's approval names the workflow file and the SQL path it applies. The target
        is always the production Supabase project, which the session confirms from the workflow's `PROJECT_REF`.
      - The `migration-approval:` line records the workflow, the SQL path with its sha256, and `target:supabase`.
      - The session confirms the workflow on `main` still applies exactly that SQL path.
-     - Those workflows have no freeze guard, so the session checks `MIGRATION_FREEZE` (repo variable) itself and
-       does not dispatch while it is `true`.
+     - Freeze (s2 R2-F2): `MIGRATION_FREEZE` is a vitana-platform variable that only `RUN-MIGRATION.yml` enforces.
+       The vitana-v1 per-file appliers have no freeze mechanism, and repo variables are not readable from a Kiro
+       session (HTTP 403). So, for those appliers:
+       - the session does not dispatch during an Aurora cutover freeze window recorded in the cutover runbook or the
+         `aurora-cutover` programme;
+       - the owner's approval must be given in the same conversation as the dispatch.
+
+       Adding a freeze guard to those workflows is a separate, non-rule change.
    - **Every `RUN-MIGRATION.yml` apply is a production database write.** Its targets are the production Supabase
      project (default, `MIGRATION_TARGET` unset) or Aurora, and staging shares that project. So approving a migration
      is the §D.2 owner decision itself: the approval is the owner's "yes" to that production write. No other
@@ -304,7 +312,7 @@ files, `docs/validation/<VTID>/`. vitana-v1 has no `.kiro/automations/`.
   - the sentence "Kiro never merges, deploys or writes to a live system" no longer appears in `CLAUDE.md`
     (s2 R1-F2);
   - no automation file grants a merge.
-- **Workflow inventory (s2 R1-F3):** every vitana-v1 `apply-*.yml` and platform `APPLY-*.yml` is
+- **Workflow inventory (s2 R1-F3):** every vitana-v1 `apply-*.yml` (and the platform code-patch `APPLY-*.yml`) is
   `workflow_dispatch`-only (no `push`), checked by reading each file's `on:` block. The result goes in the PR's
   acceptance.
 - Change suites: `existing` entries for these checks. No staging surface changes, so no browser suite.
