@@ -1,0 +1,31 @@
+# VTID-05260 — session kiro-exafy-202610201154-1d48, 2026-10-20, branch kiro/collab-kiro-governance/owner-governance
+# base = merge-base(origin/main 817dd8975, HEAD)
+
+$ node --test scripts/collab/queue.test.mjs scripts/collab/plan-spar.test.mjs      # on origin/main, before the change
+# tests 40 # pass 40 # fail 0
+
+$ node --test scripts/collab/queue.test.mjs scripts/collab/plan-spar.test.mjs      # with the change -> outputs/collab-tests.txt
+# tests 44 # pass 44 # fail 0      (40 existing + 4 new VTID-05260 tests)
+
+$ node mutate.mjs   # 9 mutations of queue.mjs on copies outside the repo, each runs queue.test.mjs -> outputs/mutation.txt
+# 9/9 KILLED
+
+$ node scripts/collab/queue.mjs scope-check --base <base> --head <head> --branch kiro/collab-kiro-governance/owner-governance
+# exit 1 — 5 governance files refused: the expected bootstrap red (plan A.5) -> outputs/scope-check.txt
+
+$ node scripts/collab/queue.mjs validate --base <base> --head <head> --branch kiro/collab-kiro-governance/owner-governance
+# exit 1 — 7 lines: the lane files' governance `paths` without governance: owner (same bootstrap; report-only step)
+#          -> outputs/collab-validate.txt
+
+$ cmp / diff of the rule-file pairs (vitana-platform vs vitana-v1); node scripts/ci/kiro-steering/guard.cjs (both repos)
+# collaboration.md identical; vitana-kiro-notes.md identical; CLAUDE.md collaboration section identical; guard OK x2
+#          -> outputs/pair-identity.txt
+
+$ node scripts/ci/pr-gate/gate.mjs scope|sparring|weakening --base <base> --head <head> --title "<PR title>"
+# scope ✅ (all changed files inside scope.json) · sparring record ✅ · test weakening ✅
+
+$ node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base <base> --head <head> --title "<PR title>"
+# PR touches no gateway deploy path — nothing deploys, no staging suite needed. (exit 0)
+
+$ node scripts/ci/validate-pr-locally.cjs --title "<PR title>" --body-file pr-body.md --base main
+# see outputs/validate-pr-locally.txt

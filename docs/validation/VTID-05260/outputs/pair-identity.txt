@@ -1,0 +1,10 @@
+$ cmp vitana-platform/.claude/rules/collaboration.md vitana-v1/.claude/rules/collaboration.md
+identical
+$ cmp vitana-platform/.kiro/steering/vitana-kiro-notes.md vitana-v1/.kiro/steering/vitana-kiro-notes.md
+identical
+$ diff <(CLAUDE.md "CLAUDE CODE ↔ KIRO COLLABORATION" section, vitana-platform) <(same, vitana-v1)
+identical
+$ node scripts/ci/kiro-steering/guard.cjs .            (vitana-platform)
+kiro-steering: OK
+$ node scripts/ci/kiro-steering/guard.cjs ../vitana-v1 (vitana-v1)
+kiro-steering: OK

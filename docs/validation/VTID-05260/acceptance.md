@@ -28,10 +28,11 @@ AC-9: Rules (T2). `.claude/rules/collaboration.md` §7b gains the owner-named go
   TEST: cmp / diff in outputs/pair-identity.txt; node scripts/ci/kiro-steering/guard.cjs (both repos OK)
 
 ## Known red check on this PR (bootstrap, plan A.5)
-**Lane scope** is red on this PR only. The lane file on `main` has no `governance: owner`, because the field becomes
-valid only with this change, and the lane cannot grant it to itself (AC-4). So scope-check refuses the 4 governance
-files this lane changes (`scripts/collab/queue.mjs`, `scripts/collab/queue.test.mjs`, `.claude/rules/collaboration.md`,
-`CLAUDE.md`). `.kiro/steering/vitana-kiro-notes.md` lies outside every governance glob except `.kiro/steering/**`, so it
-is refused as well (5 files in total, see outputs/scope-check.txt). The plan names this as the one-time known false
-positive that §7b allows to be overridden. Every real test is green. The report-only `Collab handoff` step shows the
-same bootstrap finding on the lane file's governance `paths`.
+**Lane scope** is red on this PR only. The lane file on `main` has no `governance: owner`: the field becomes valid only
+with this change, and the lane cannot grant it to itself (AC-4). So scope-check refuses all 5 governance files the lane
+changes (outputs/scope-check.txt): `scripts/collab/queue.mjs`, `scripts/collab/queue.test.mjs`,
+`.claude/rules/collaboration.md`, `CLAUDE.md` and `.kiro/steering/vitana-kiro-notes.md`. Each one is inside the lane's
+`paths`. Plan A.5 names this as the one-time known false positive that §7b allows to be overridden. Every real test is
+green. The report-only **Collab handoff** step (outputs/collab-validate.txt) shows the same bootstrap finding as
+7 lines. They cover the governance `paths` of both lane files: 5 for `owner-governance` and 2 for
+`retry-partner-invalid`, whose `governance: owner` the plan author adds by a `_plan` commit after this merges.

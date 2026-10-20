@@ -1,0 +1,6 @@
+❌ **lane scope** — 5 problem(s) (lane collab-kiro-governance/owner-governance):
+- .claude/rules/collaboration.md is a governance path; lane collab-kiro-governance/owner-governance has executor kiro (needs claude, or kiro with governance: owner)
+- .kiro/steering/vitana-kiro-notes.md is a governance path; lane collab-kiro-governance/owner-governance has executor kiro (needs claude, or kiro with governance: owner)
+- CLAUDE.md is a governance path; lane collab-kiro-governance/owner-governance has executor kiro (needs claude, or kiro with governance: owner)
+- scripts/collab/queue.mjs is a governance path; lane collab-kiro-governance/owner-governance has executor kiro (needs claude, or kiro with governance: owner)
+- scripts/collab/queue.test.mjs is a governance path; lane collab-kiro-governance/owner-governance has executor kiro (needs claude, or kiro with governance: owner)
