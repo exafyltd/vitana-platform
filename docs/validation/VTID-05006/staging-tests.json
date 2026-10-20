@@ -28,7 +28,7 @@
       "path": "/command-hub/",
       "expect_status": 200,
       "expect_content_type": "text/html",
-      "expect_body_contains": "app.js?v=20261120-vtid-05148"
+      "expect_body_contains": "app.js?v=20261121-vtid-05082"
     },
     {
       "kind": "http",

@@ -7,7 +7,9 @@
  * next push starts the next round.
  *
  *   node scripts/collab/plan-spar.mjs --dir <PR head checkout> --base-sha <sha> --repo exafyltd/vitana-platform \
- *        --changed <file with changed paths> [--summary <file>]
+ *        --changed <file with changed paths> [--summary <file>] [--extra-ref-vitana-v1 <vitana-v1 commit sha>]
+ *   --extra-ref-vitana-v1 (optional): a 40-hex vitana-v1 commit; forwarded as extra_refs so the partner can
+ *     read exafyltd/vitana-v1 (native plans premise on apps/mobile/** there). Omitted/invalid ⇒ unchanged.
  *   env: GATEWAY_URL, GATEWAY_SERVICE_TOKEN, PLAN_SPAR_ALLOCATE ("true" to allocate VTIDs after policy approval)
  *
  * Files under `.kiro/specs/<slug>/`:
@@ -163,7 +165,7 @@ const iso = (t) => new Date(t).toISOString().slice(0, 16) + 'Z';
  * One step for one plan. Returns { action, wrote: [paths] }. `client` is gatewayClient(); `env` carries
  * PLAN_SPAR_ALLOCATE. Reads and writes only below `<dir>/.kiro/specs/<slug>/`.
  */
-export async function step({ dir, slug, baseSha, repo, client, allocate = false, now = Date.now }) {
+export async function step({ dir, slug, baseSha, repo, client, allocate = false, extraRefs = null, now = Date.now }) {
   const spec = path.join(dir, '.kiro/specs', slug);
   const rel = (p) => path.relative(dir, p);
   const planPath = path.join(spec, 'plan.md');
@@ -191,6 +193,12 @@ export async function step({ dir, slug, baseSha, repo, client, allocate = false,
     if (retryInfra) state.sessions.pop();
     session = await client.create({
       plan_text: planText, producer: `ci-plan-spar.${slug}`, change_class: changeClass, base_ref: baseSha, repo, approval_policy: POLICY,
+      // VTID-05215/R1-F1: native plans premise on code in exafyltd/vitana-v1, which the base-repo
+      // (vitana-platform) session cannot read. Pin a vitana-v1 ref so the partner's read_file/search_code
+      // tools can verify those file:line claims. Only sent when a ref was resolved (platform-only plans
+      // leave extraRefs null, so their sessions are byte-for-byte unchanged). The gateway validates each
+      // key against PLAN_SPARRING_REPOS and refuses an unpinned repo.
+      ...(extraRefs && Object.keys(extraRefs).length ? { extra_refs: extraRefs } : {}),
     });
     state.sessions.push({ id: session.id, submitted: [], plan_text_sha: sha(planText) });
   } else if (cur.verdict === 'in_progress') {
@@ -303,7 +311,12 @@ async function main(argv) {
   const { GATEWAY_URL, GATEWAY_SERVICE_TOKEN } = process.env;
   if (!GATEWAY_URL || !GATEWAY_SERVICE_TOKEN) { say('❌ **plan-spar** — GATEWAY_URL / GATEWAY_SERVICE_TOKEN not configured'); return 1; }
   const client = gatewayClient({ baseUrl: GATEWAY_URL.replace(/\/$/, ''), token: GATEWAY_SERVICE_TOKEN });
-  const r = await step({ dir: a.dir, slug, baseSha: a['base-sha'], repo: a.repo, client, allocate: process.env.PLAN_SPAR_ALLOCATE === 'true' });
+  // VTID-05215/R1-F1: a resolved vitana-v1 commit SHA (from PLAN-SPAR.yml) lets the partner read
+  // exafyltd/vitana-v1 for native plans. Optional and validated: only a 40-hex SHA is forwarded, and only
+  // under the exafyltd/vitana-v1 key, so a missing/garbage value simply leaves platform-only behaviour.
+  const v1Sha = (a['extra-ref-vitana-v1'] || '').trim();
+  const extraRefs = /^[0-9a-f]{40}$/.test(v1Sha) ? { 'exafyltd/vitana-v1': v1Sha } : null;
+  const r = await step({ dir: a.dir, slug, baseSha: a['base-sha'], repo: a.repo, client, allocate: process.env.PLAN_SPAR_ALLOCATE === 'true', extraRefs });
   say(`✅ **plan-spar** — ${slug}: ${r.action}${r.verdict ? ` (verdict ${r.verdict})` : ''}; wrote ${r.wrote.length} file(s)`);
   return 0;
 }
