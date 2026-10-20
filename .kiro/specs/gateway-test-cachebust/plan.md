@@ -30,8 +30,10 @@ Removing exact-tag pins from tests in general; any change to the planner, `dev-a
 suite green in CI. Change suite `docs/validation/<VTID>/staging-tests.json`: one `existing` entry running that file
 (test-only change; nothing on staging changes). `kind: "existing"` is a runner kind
 (`scripts/ci/staging-verify/lib.cjs:169`), used by e.g. `docs/validation/VTID-05209/staging-tests.json` and
-`VTID-04527`. Evidence folder `docs/validation/<VTID>/` also carries `plan-sparring.md`, `scope.json` and an
-`acceptance.md` with `AC-` entries, which `VALIDATOR-CHECK.yml:148` and `:158` require.
+`VTID-04527`. Evidence folder `docs/validation/<VTID>/` also carries `plan-sparring.md`, `scope.json`, an
+`acceptance.md` with `AC-` entries, a `commands.log` with the commands run and their results, and an `outputs/` folder
+with the Jest output (e.g. `outputs/jest-vtid-05077.txt`); `VALIDATOR-CHECK.yml:148`–`:150` and `:158` require all of
+them, as VTID-05082 and VTID-05238 have.
 
 ## Lane
 `fix-pin` — executor kiro, seat `exafy` (platform area; no area covers `services/gateway/test/**`), reviewer `jtadic`.
