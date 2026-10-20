@@ -42,3 +42,17 @@ Next: PLAN-SPAR spars this PR. This session (seat `exafyltd`) answers each round
 
 ### 2026-10-20T14:13Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-10-20T14:10Z · kiro-exafyltd-202610201346-3bb3 · approved (R3-F1, R3-F2 recorded)
+- PLAN-SPAR converged in round 3 and the plan is policy-approved (`converged-auto-v1`). VTID-05262 went to lane
+  `retry-invalid`.
+- Rounds 1 and 2 raised 4 findings, all accepted and fixed in the plan block:
+  - R1-F1 (blocker): the cap check runs before every insert, whatever the plan hash;
+  - R1-F2: the flags are kept on every `create` path;
+  - R2-F1: the new return shape is wired through `step()` and `fakeClient`;
+  - R2-F2: the test at `plan-spar.test.mjs:140` moves to `next_actor: kiro`.
+- The converging round's two minor findings (R3-F1, the `retryInfra` formula; R3-F2, a stale comment) are recorded as
+  acceptance notes in `tasks.md`.
+- The approved plan block and the lane's permission fields are unchanged.
+- Next: the owner's merge instruction for this plan PR (#4215). After that, and after #4210 (VTID-05259) is on `main`,
+  seat `exafyltd` builds `retry-invalid`.
