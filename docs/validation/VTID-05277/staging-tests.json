@@ -1,0 +1,43 @@
+{
+  "vtid": "VTID-05277",
+  "service": "gateway",
+  "note": "Read-only. Plan kiro-autonomy-fallback §5 F: staging runs with the repo variable CLAUDE_AVAILABLE=false and the live PM reports kiro_fallback on the deployed commit. Behaviour is proven by Jest; staging proves the deployed build reports the mode and keeps /status guarded. Nothing here targets production.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "read-only GET: the proof build boots"
+    },
+    {
+      "kind": "http",
+      "name": "PM reports Kiro-fallback mode",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/project-manager/mode",
+      "expect_status": 200,
+      "expect_json": { "ok": true, "enabled": true, "mode": "live", "executor_mode": "kiro_fallback" },
+      "reason": "read-only anonymous GET: staging runs the PM live in Kiro-fallback mode at the verified commit"
+    },
+    {
+      "kind": "http",
+      "name": "PM status stays auth-gated",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/project-manager/status",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "reason": "read-only GET with an invalid bearer: /status is mounted and requireServiceOrAdmin still guards the fallback detail"
+    },
+    {
+      "kind": "existing",
+      "name": "fallback proof suite",
+      "ref": "npx jest test/kiro-autonomy-fallback-proof.test.ts",
+      "cwd": "services/gateway",
+      "reason": "claudeAvailability cases, /mode and /status bodies incl. executor_mode, end of rotation and parks never go to claude while unavailable"
+    }
+  ]
+}
