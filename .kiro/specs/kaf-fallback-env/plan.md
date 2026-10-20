@@ -48,6 +48,17 @@ Plan sparring is never skipped (CLAUDE.md rule 51), so this fix-forward is its o
 - Tests: `test/project-manager/observe-live.test.ts:179-186` covers a reader that throws; no test exercises
   `GithubRestReader` or `gh()` with `fetch`, and no test pins the PM env block of the staging workflow.
 
+Premises the plan stands on (each one a file read on the base ref; session 1 escalated with
+`evidence_floor_not_met`, 0 premise checks, so they are listed for direct checking):
+- P1 `services/gateway/src/services/project-manager/observe-live.ts:563-591` — env fallback only inside `catch`.
+- P2 `services/gateway/src/services/project-manager/observe-live.ts:697-700` — `variable()` returns `null` on a 404.
+- P3 `services/gateway/src/services/project-manager/github-rest.ts:41-46` — `gh()` 404 → `{status:404,data:null}`,
+  other non-2xx throw.
+- P4 `.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml:1193` and `:1220-1221` — strip list and upserts without
+  `CLAUDE_AVAILABLE`.
+- P5 `services/gateway/src/services/project-manager/decide.ts:73-82` — only `flag === false` gives `flag_false`.
+- P6 `services/gateway/src/types/cicd.ts:1338-1342` — `.github/workflows/` is a sensitive path for PM safe-merge.
+
 ## 3. Semantics (unchanged from kiro-autonomy-fallback plan §3, now implemented as written)
 `GithubReader.variable(repo, name)`: resolves the string on a 200 with a string `value`; resolves `null` only when a
 reader can prove "unset"; **throws** when unreadable — a REST 404 (unset or no access, indistinguishable) or a 200
