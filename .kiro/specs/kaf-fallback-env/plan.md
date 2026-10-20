@@ -24,8 +24,10 @@ allocates without a sparring round, and `handoff.md` cannot go back to `drafted`
 Plan sparring is never skipped (CLAUDE.md rule 51), so this fix-forward is its own sparred plan.
 
 ## 2. Today (verified, file:line on 49007cf73)
-- PM loop: `loop.ts:89` builds `new GithubObserver({ gh: new GithubRestReader(), data: … })` with no `env`, so
-  `observe()` reads `process.env` each tick (`observe-live.ts:286`) and passes it to `observeClaude` (`:481`).
+- PM loop: `loop.ts:89` builds `new GithubObserver({ gh: new GithubRestReader(), data: new SupabasePmDataReader() })`
+  with no `env`; `GithubObserverDeps` declares `env?: NodeJS.ProcessEnv` (`observe-live.ts:94`) and `observe()` resolves
+  `const env = this.deps.env ?? process.env;` each tick (`observe-live.ts:286`), then passes it to `observeClaude`
+  (`:481`). So on the live path `env.CLAUDE_AVAILABLE` is the task-definition variable.
 - `observeClaude` (`observe-live.ts:563-591`): `:568` reads the repo variable; the env fallback (`:569-571`) runs only
   in `catch`. `:572-590` compute the 4 h inputs (`oldest_assigned_at`, `last_action_at`) whatever the flag is.
 - `GithubRestReader.variable` (`observe-live.ts:697-700`) returns `r.data?.value ?? null`. `gh()`
@@ -75,7 +77,11 @@ staging deploy (documented, staging only).
 - None in code. `ff-pm-flag` reads `process.env.CLAUDE_AVAILABLE` (name exact, values `true`/`false`); `ff-stage-env`
   sets exactly that name in the staging task-definition env. Neither lane imports the other's files.
 - Merge order (not a `depends_on`, both build in parallel): `ff-stage-env` first, then `ff-pm-flag`, so the
-  `ff-pm-flag` deploy already carries the env and its STAGING-VERIFY can prove `/mode`.
+  `ff-pm-flag` deploy already carries the env and its STAGING-VERIFY can prove `/mode`. Enforcement: the land step
+  merges in the order recorded in the pipeline run's `run.json` `merge_order` under one `merge.lock`. If the order still
+  slips, nothing is re-run and nothing is loosened: the STAGING-VERIFY that counts for `/mode` is the one on the merge
+  commit of whichever lane lands **second** (it contains both changes and its deploy carries the env); the earlier
+  run's `/mode` failure is expected and reported in Gate 2.
 
 ## 5. Lanes (two; no two lanes edit the same file; no depends_on)
 Two lanes, not one, because the Project Manager's safe-merge refuses `.github/workflows/**` (SENSITIVE_PATHS,
@@ -148,7 +154,7 @@ Gate 2.
   (Evidence Pack Gate, `VALIDATOR-CHECK.yml:142`).
 - `bash -n` in the bash-syntax test needs bash on PATH (Git Bash on Windows); CI is the authority.
 - `node scripts/collab/queue.mjs validate --base origin/main --head HEAD` green before each push.
-- STAGING-VERIFY (`STAGING-VERIFY.yml`) on the merge commit of `ff-pm-flag`: the VTID-05277 suite and this plan's
+- STAGING-VERIFY (`STAGING-VERIFY.yml`) on the merge commit of the second lane to land (normally `ff-pm-flag`, §4): the VTID-05277 suite and this plan's
   suites pass. Read-only GETs and Jest only; nothing targets production.
 
 ## 9. Measurement
@@ -165,8 +171,8 @@ merge-conflict count, STAGING-VERIFY failure count; `null` where a source is mis
 4. Treating 404 as unreadable sends a truly unset variable to the env; with the workflow default `'true'` the result is
    "available", as today — no silent switch into fallback.
 5. If the PM token gets Variables read access later, the variable wins live and the env becomes a no-op.
-6. The intermediate STAGING-VERIFY after `ff-stage-env` still fails VTID-05277 (`/mode`); the verdict that counts is the
-   one on `ff-pm-flag`'s merge commit.
+6. The intermediate STAGING-VERIFY after the first lane merges still fails VTID-05277 (`/mode`); the verdict that
+   counts is the one on the second lane's merge commit (normally `ff-pm-flag`, §4).
 
 ## 11. Unchanged
 `AWS-PROD-DEPLOY-GATEWAY.yml` and every `AWS-PROD-*` file; `decide.ts`, `governance.ts`, `github-rest.ts`, `loop.ts`,
