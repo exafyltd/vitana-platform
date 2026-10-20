@@ -1,6 +1,6 @@
 ---
 lane: pipeline-speed
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: claude
@@ -23,8 +23,10 @@ paths:
   - scripts/ci/staging-verify/lib.test.cjs
   - services/gateway/test/vtid-05077-planner-fallback-and-thinking.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-20T17:49Z
+updated: 2026-10-20T18:45Z
 vtid: VTID-05272
+claimed_by: kiro-exafy-202610201807-2a87
+branch: kiro/kiro-autonomy-fallback/pipeline-speed
 ---
 # pipeline-speed — continuous plan driver, Jest shards, PLAN-SPAR slots, per-lane STAGING-VERIFY attribution, unblock main
 Plan: `.kiro/specs/kiro-autonomy-fallback/plan.md` §4.7, §7 and §5 H, and the `pipeline-speed` section of `tasks.md` are
@@ -46,3 +48,9 @@ lands after `steering-rules`. Lane created with the plan. Next: PLAN-SPAR; once 
 
 ### 2026-10-20T17:49Z · ci-plan-spar · ready (VTID allocated)
 VTID-05272 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-20T18:45Z · kiro-exafy-202610201807-2a87 · ready → executing
+Claimed (`collab-claim/kiro-autonomy-fallback/pipeline-speed`, 16c6bb899) by seat exafy under the owner instruction of
+2026-10-20 ("no more approvals, you run it end to end"; collaboration.md §7b named set, plan §6). Building H0-H5 on
+`kiro/kiro-autonomy-fallback/pipeline-speed`. Protected gate file in scope: `.github/workflows/PLAN-SPAR.yml` (one
+step + `actions: read`), covered by that owner instruction for this plan only.

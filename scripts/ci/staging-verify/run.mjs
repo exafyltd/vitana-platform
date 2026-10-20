@@ -446,6 +446,8 @@ async function verify(args) {
     full: args.full === 'true',
     superseded_by: supersededBy || null,
     attribution_cutoff: attributionCutoff,
+    // VTID-05272: per-lane attribution for the PM / plan driver; the outcome above is unchanged.
+    per_vtid: lib.summarizeByVtid(results, [...shipping.flatMap((c) => lib.extractVtids(c.subject)), ...plan.suites.map((s) => s.vtid)]),
     chain,
     results,
     plan: { suites: plan.suites.map((s) => s.vtid), missing: plan.missing, invalid: plan.invalid, legacy_count: plan.legacy.length, lockfile_only: plan.lockfileOnly },
