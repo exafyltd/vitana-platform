@@ -1,7 +1,10 @@
 ---
 lane: fixture-gateway
-state: ready
+state: in-review
 next_actor: kiro
+claimed_by: kiro-202610151913-51bd
+branch: kiro/native-g1-wiring/fixture-gateway
+pr: https://github.com/exafyltd/vitana-v1/pull/1465
 depends_on: [vitana-v1-verified]
 executor: kiro
 seat: exafyltd
@@ -13,7 +16,7 @@ paths:
   - docs/validation/VTID-*/scope.json
   - docs/validation/VTID-*/staging-tests.json
   - docs/validation/VTID-*/plan-sparring.md
-updated: 2026-10-20T08:41Z
+updated: 2026-10-20T09:37Z
 vtid: VTID-05250
 ---
 # Local fixture gateway for the shell/push/deep-link HTTP contract (decision 3)
@@ -44,3 +47,18 @@ Next: PLAN-SPAR spars the plan; once a VTID is written here, seat `exafyltd` cla
 
 ### 2026-10-20T08:41Z · ci-plan-spar · ready (VTID allocated)
 VTID-05250 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-20T09:37Z · kiro-202610151913-51bd · ready → in-review
+Built the fixture gateway lane and opened its PR. `apps/mobile/tools/fixture-gateway/`
+(plain CommonJS, loopback-only / private-LAN behind an explicit flag, listen-only, never
+proxies out) answers `GET /api/v1/app-config` (body passes the real `parseAppConfigResponse`,
+flags + min-version togglable), `GET /api/v1/auth/me` (signed-in fixture member, 401 togglable),
+`POST /api/v1/notifications/token` (records token + `device_type`, 400 on bad input) and the
+`.dev` AASA / `assetlinks.json` well-known documents; unknown routes 404. No app-code change —
+owns only `tools/` + its tests, imports no web `src/` or Supabase/gateway client.
+Checks: fixture jest suite green (15/15), `npm run typecheck` (`tsc --noEmit`) green, loopback-only
+bind proven by the suite (`isAllowedBindHost` + `createFixtureGateway` refusing `0.0.0.0`/public),
+lane scope clean. Validation artifacts added under `docs/validation/VTID-05250/`
+(`scope.json`, read-only `staging-tests.json`, verbatim `plan-sparring.md`).
+PR: https://github.com/exafyltd/vitana-v1/pull/1465 · branch `kiro/native-g1-wiring/fixture-gateway`.
+Next: reviewer seat `hotmail` checks the acceptance criteria.
