@@ -21,3 +21,4 @@ Programme registry entry (VTID-05215). Links only; the specification is the sour
 - Specification: `vitana-platform:docs/COMMERCE-SELF-SERVICE-PARTNER-ONBOARDING-SPEC.md`
 - Architecture: `vitana-platform:docs/COMMERCE-SUPPLIER-INFRASTRUCTURE-ARCHITECTURE.md`
 - Spec: `vitana-platform:.kiro/specs/commerce-step-owner/` (follow-up 2 of VTID-05204: who finishes each open step)
+- Status and roadmap (2026-10-20, not a sparred plan): `vitana-platform:docs/programs/commerce-portal/roadmap.md`
