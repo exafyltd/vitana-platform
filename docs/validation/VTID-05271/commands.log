@@ -21,3 +21,7 @@ node scripts/collab/queue.mjs scope-check --repo . --base origin/main --head HEA
   "lane kiro-autonomy-fallback/exceptions-seat: every change is inside its paths"
 
 ## after the lane-file / evidence commit: re-run of the same commands, recorded in the PR body / lane log
+
+## CI fix pass 1 (2026-10-20): kiro-steering guard (main via #4229) rejected slug-specific text in .kiro/pipeline/driver.md
+node --test scripts/ci/kiro-steering/guard.test.cjs (before fix)                                     exit 1 (1 fail: driver.md slug-specific text)
+node --test scripts/ci/kiro-steering/guard.test.cjs scripts/collab/automations.test.mjs (after fix)   exit 0 (40 tests, 40 pass)

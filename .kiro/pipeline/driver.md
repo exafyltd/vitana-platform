@@ -1,7 +1,7 @@
 # Plan driver — Kiro Web (one continuous session) — VTID-05271
 
 One driver per approved plan runs it 24/7, weekends included, from the `plan(` PR to Gate 2 (`.claude/rules/collaboration.md`
-§8, plan `kiro-autonomy-fallback` §4.7 and §5 E). This file is the sequential version of the pipeline for **one Kiro Web
+§8 and §8a). This file is the sequential version of the pipeline for **one Kiro Web
 session**: every step runs in this session, one after the other. It needs no subagents and no parallel workers; the
 only other agent it calls is the reviewer agent for a review (step 4), and the plan goes on without it when it cannot run.
 Kiro IDE runs the same steps through `.kiro/workflows/vitana-pipeline.workflow.json` (lane `reviewer-agent`).
