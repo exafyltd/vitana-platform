@@ -2,7 +2,7 @@
 lane: build-profiles
 state: ready
 next_actor: claude
-depends_on: [env-profiles]
+depends_on: [vitana-v1-verified, env-profiles]
 executor: claude
 area: frontend
 reviewer_seat: claude

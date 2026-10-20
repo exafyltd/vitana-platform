@@ -2,7 +2,7 @@
 lane: deep-link-push-smoke
 state: ready
 next_actor: kiro
-depends_on: [env-profiles, fixture-gateway]
+depends_on: [vitana-v1-verified, env-profiles, fixture-gateway]
 executor: kiro
 seat: exafyltd
 area: frontend

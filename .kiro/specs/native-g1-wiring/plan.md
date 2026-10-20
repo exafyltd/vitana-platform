@@ -67,7 +67,8 @@ the Bedrock-unconfigured rule at line 756); the single-Supabase fact is the form
    untouched. If any lane needed a member-visible route it would add all four in that PR; none does.
 7. **File ownership:** every file this plan touches belongs to exactly one lane (disjoint `paths`,
    `design.md §1`); only `native-ci-workflow` touches a governance path
-   (`vitana-platform:.github/workflows/NATIVE-CI.yml`) and is therefore `executor: claude`,
+   (`vitana-v1:.github/workflows/NATIVE-CI.yml` — R2-F3: created in **vitana-v1**, not vitana-platform;
+   `.github/**` is a governance path in either repo) and is therefore `executor: claude`,
    `reviewer_seat: claude` (collaboration §3a). All other lanes are `executor: kiro`, `seat: exafyltd`,
    `reviewer_seat: hotmail`.
 8. **`NATIVE-CI.yml` lives in `vitana-v1`, where `apps/mobile/` is** (R1-F6, R2-F1, R2-F2). A workflow in
@@ -92,25 +93,30 @@ the Bedrock-unconfigured rule at line 756); the single-Supabase fact is the form
 ## Lanes (all `ready`; no `vtid` until CI assigns it)
 | Lane | Executor / seat → reviewer | Scope | depends_on | next_actor |
 |---|---|---|---|---|
-| `env-profiles` | kiro / exafyltd → hotmail | `apps/mobile/src/config/env.ts`, `apps/mobile/env/**`, `apps/mobile/tests/env*` | — | kiro |
-| `eas-profiles` | kiro / exafyltd → hotmail | `apps/mobile/eas.json` | env-profiles | kiro |
-| `native-ci-workflow` | **claude** / — → claude | `vitana-v1:.github/workflows/NATIVE-CI.yml` | eas-profiles | claude |
-| `fixture-gateway` | kiro / exafyltd → hotmail | `tools/fixture-gateway/**`, `tests/fixture-gateway/**` (vitana-v1 repo root) | — | kiro |
-| `deep-link-push-smoke` | kiro / exafyltd → hotmail | `apps/mobile/tests/g1-smoke/**`, `apps/mobile/src/push/g1-test-provider.ts` | env-profiles, fixture-gateway | kiro |
-| `real-g1-switch` | kiro / exafyltd → hotmail | `apps/mobile/env/test-g1.g1.example.json`, `docs/validation/g1/**` | deep-link-push-smoke | **owner** |
+| `env-profiles` | kiro / exafyltd → hotmail | `apps/mobile/src/config/env.ts`, `apps/mobile/env/**`, `apps/mobile/tests/env*` | vitana-v1-verified | kiro |
+| `eas-profiles` | kiro / exafyltd → hotmail | `apps/mobile/eas.json` | vitana-v1-verified, env-profiles | kiro |
+| `native-ci-workflow` | **claude** / — → claude | `vitana-v1:.github/workflows/NATIVE-CI.yml` | vitana-v1-verified, eas-profiles | claude |
+| `fixture-gateway` | kiro / exafyltd → hotmail | `tools/fixture-gateway/**`, `tests/fixture-gateway/**` (vitana-v1 repo root) | vitana-v1-verified | kiro |
+| `deep-link-push-smoke` | kiro / exafyltd → hotmail | `apps/mobile/tests/g1-smoke/**`, `apps/mobile/src/push/g1-test-provider.ts` | vitana-v1-verified, env-profiles, fixture-gateway | kiro |
+| `real-g1-switch` | kiro / exafyltd → hotmail | `apps/mobile/env/test-g1.g1.example.json`, `docs/validation/g1/**` | vitana-v1-verified, deep-link-push-smoke | **owner** |
 | `spar-vitana-v1-ref` | **claude** / — → claude | `vitana-platform:.github/workflows/PLAN-SPAR.yml`, `vitana-platform:scripts/collab/plan-spar.mjs`, `vitana-platform:scripts/collab/plan-spar.test.mjs` | — | **done** (PR #4201, merged `fa73aabd0`) |
+| `vitana-v1-verified` | **claude** / — → claude | `docs/validation/VTID-*/vitana-v1-spar-evidence.md` | spar-vitana-v1-ref | **claude** (sentinel: machine-enforces R1-F1) |
 
-**`spar-vitana-v1-ref` (R1-F1/R1-F2) — STILL PENDING, gates convergence.** Correction (verified in code,
-not assumed): `extra_refs` appears **0 times** in `scripts/collab/plan-spar.mjs` on `origin/main`, so the
-vitana-v1 ref fix is **not merged** and this session still cannot read vitana-v1 (the partner's R1-F2 is
-correct; an earlier claim that it was "resolved/published" was wrong and is retracted). The fix is still
-two files, no gateway change — `plan-spar.mjs` must send
-`extra_refs: { 'exafyltd/vitana-v1': <main SHA> }` and `.github/workflows/PLAN-SPAR.yml` must resolve that
-SHA (`gh api repos/exafyltd/vitana-v1/commits/main --jq .sha`) — tracked in the `spar-vitana-v1-ref` lane
-(`executor: claude`), to land in one Claude Code PR with `plan(sparring-floor-retry)` #4186's
-`floor-retry-code` lane (both edit `plan-spar.mjs`). **Refs pin at session creation**, so even once merged
-a brand-new session (a later plan-text push) is required. **UPDATE: `spar-vitana-v1-ref` is now MERGED to
-main** (PR #4201, merge commit `fa73aabd0`): `plan-spar.mjs` forwards
+**The R1-F1 gate is machine-enforced by the `vitana-v1-verified` sentinel lane (R2-F2), not prose.** The
+lane state machine has no `blocked` state, so a prose "approved→executing self-block" is advisory only and
+every `ready` lane with no `depends_on` would be claimable the moment the plan converges. Instead, a
+sentinel lane `vitana-v1-verified` (`executor: claude`) sits between `spar-vitana-v1-ref` and all
+implementation lanes: **every implementation lane (`env-profiles`, `eas-profiles`, `native-ci-workflow`,
+`fixture-gateway`, `deep-link-push-smoke`, `real-g1-switch`) has `vitana-v1-verified` in its `depends_on`**,
+so the existing `depends_on` machinery (which the queue honours as `blocked`) keeps them un-claimable until
+`vitana-v1-verified` is `done`. That lane's only job: a fresh PLAN-SPAR session has read `exafyltd/vitana-v1`
+(a `tool_log` entry `read_file(repo: "exafyltd/vitana-v1")` with `ok: true`) and the plan converged on
+partner-verified native premises; Claude Code records that evidence in
+`docs/validation/<VTID>/vitana-v1-spar-evidence.md` and sets the lane `done`, which unblocks the rest. This
+turns the gate into real `depends_on` enforcement instead of a prose promise.
+
+**`spar-vitana-v1-ref` (R1-F1/R1-F2) — DONE, merged to main** (PR #4201, merge commit `fa73aabd0`; R2-F1:
+the stale "still pending" paragraph is removed, one consistent status): `plan-spar.mjs` forwards
 `extra_refs: { 'exafyltd/vitana-v1': <sha> }` and `PLAN-SPAR.yml` resolves the vitana-v1 `main` SHA, with a
 test (`plan-spar.test.mjs` 10/10). The current session `185a911c` was created before the merge and stays
 vitana-v1-blind; this plan-text change plus the current session reaching a terminal state opens a **fresh

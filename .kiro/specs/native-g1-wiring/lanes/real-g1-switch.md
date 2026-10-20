@@ -2,7 +2,7 @@
 lane: real-g1-switch
 state: ready
 next_actor: owner
-depends_on: [deep-link-push-smoke]
+depends_on: [vitana-v1-verified, deep-link-push-smoke]
 executor: kiro
 seat: exafyltd
 area: frontend

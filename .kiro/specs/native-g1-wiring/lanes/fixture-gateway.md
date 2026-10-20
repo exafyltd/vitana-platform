@@ -2,7 +2,7 @@
 lane: fixture-gateway
 state: ready
 next_actor: kiro
-depends_on: []
+depends_on: [vitana-v1-verified]
 executor: kiro
 seat: exafyltd
 area: frontend
