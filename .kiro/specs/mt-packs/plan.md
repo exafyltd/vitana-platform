@@ -15,24 +15,43 @@ product with its own identity and Maxina's behaviour cannot be golden-tested as 
    three-names rule, safety, role separation) with the tenant block (community name, anchor person, story,
    offer, tone). `PERSONALITY_DEFAULTS` (`:81`), `PersonalitySurfaceKey` (`:36`) and `VALID_SURFACE_KEYS`
    (`:65`) are the surface list.
-2. **`getEffectiveConfig(surfaceKey, tenantId)` already exists** (`ai-personality-service.ts:659`) layering
+2. **`getEffectiveConfig(surfaceKey, tenantId)` already exists** (`ai-personality-service.ts:658`, async) layering
    code default ← global DB (`getPersonalityConfig`) ← tenant override from `tenant_assistant_config`
    (`system_prompt_override`, `voice_config_override`, `tool_overrides`, `model_routing_override`,
    `extra_config`). It is consumed by `routes/tenant-admin/assistant-config.ts:21,62`. **Its tenant override
-   replaces `base_identity` WHOLESALE** -- `ai-personality-service.ts:687`
+   replaces `base_identity` WHOLESALE** -- `ai-personality-service.ts:688`
    `merged.base_identity = tenantConfig.system_prompt_override` overwrites the entire string, including the
    fixed Vitana name/pronunciation/three-names/safety rules, not just the tenant block, so the fixed Vitana
    identity is NOT structurally protected by today's merge. The orb profile already carries
    `personaKey: PersonalitySurfaceKey | null` (`orb/profile/role-registry.ts:40`, `assistant-profile.ts:63`);
    `orb/live/surface.ts` imports `PersonalitySurfaceKey` (`:16`) and documents the voice_live overlay (`:63`).
-   The live instruction builders do not call `getEffectiveConfig` per tenant.
+   The live instruction builders do not call `getEffectiveConfig` per tenant. The sync read they use today is
+   `getPersonalityConfigSync(surfaceKey)`, DEFINED in `ai-personality-service.ts:460` (imported by
+   `live-system-instruction.ts:26`, called at `:576`/`:594`): it reads the module-level `configCache` Map (`:351`,
+   30 s TTL `CACHE_TTL_MS` `:344`, `isCacheValid` `:353`) keyed by surface only — there is no per-tenant sync cache
+   and no `getEffectiveConfigSync` today.
+   The only tenant literal inside `voice_live` defaults is the community clause of `base_identity` (`:86`, community
+   name + pronunciation + "Join the Maxina Community"). `tenure_opening_shapes` (`:137`, incl. the `:143` platform
+   mission phrase) and `last_interaction_acknowledgements` (`:159`) have no reader in `src/`; the other fields carry
+   no tenant literal.
 3. **Pre-login story + greetings are Maxina-literal; the anonymous builder is a 128-line hot-file block.**
    `routes/orb-live.ts:7413` `buildAnonymousSystemInstruction` is ~128 lines (`:7413`–`:7541`) inside the
    18k-line `orb-live.ts`, hardcoding the Maxina identity/story (`:7437`, `:7492`) on the UNAUTHENTICATED path —
    no JWT, no resolved `TenantContext` (called `:7651`–`:7652` with `session.clientContext`, no `tenantId`).
    `buildFirstTimeWelcomeLine` (`orb/instruction/greeting-pools.ts:177`) returns FINISHED spoken sentences with
-   "Maxina" literals across de/en/es/sr (`:181`–`:186`) — a rule-41 violation in the voice path. All must be
-   composed by the model from English INTENTS + FACTS, never templated sentences.
+   "Maxina" literals across de/en/es/sr (`:181`–`:186`) — a rule-41 violation, but it is now DEAD on the voice
+   path: VTID-04420 replaced its only use with an intent (`services/conversation/compute-greeting-decision.ts:1226-
+   1233`), `orb-live.ts:413` only imports it (no call anywhere in `src/`), and only
+   `test/orb/instruction/first-time-welcome.test.ts` exercises it (asserting the literal `/Welcome to Maxina/` at
+   `:26`). The live first-time welcome is the intent at `compute-greeting-decision.ts:1232` — "Welcome them warmly to
+   Maxina" — a hardcoded tenant FACT inside an English intent. The rule-41 guard
+   `test/orb/live/characterization/no-hardcoded-spoken-wording.test.ts` reads only `orb-live.ts`,
+   `compute-greeting-decision.ts`, `reconnect-recovery-prompt.ts`, `voice-wake-brief.ts` (`:27-39`), not
+   `greeting-pools.ts`. All spoken wording must be composed by the model from English INTENTS + FACTS.
+   The anonymous session starts at `POST /live/session/start` (`orb-live.ts:16010` → `handleLiveSessionStart`,
+   `orb/live/session/live-session-controller.ts:982`; body typed `LiveSessionStartRequest`, `orb/live/types.ts:42`,
+   read at `:1099`; `isAnonymousSession = !hasJwtIdentity` `:1161`, stored `isAnonymous` `:1185`). The body has no
+   tenant field today.
 4. **KB is pinned to one pack.** `kb/instruction-manual/maxina/*` is referenced as the sole manual in
    `orb/live/instruction/live-system-instruction.ts:1282`, `services/orb-tools-shared.ts:1991`,
    `services/retrieval-router.ts:95`, `services/guided-journey/checklist-regenerate.ts:125-131`. No tenant
@@ -54,19 +73,55 @@ unless the lane names an exception; Maxina renders byte-identical (golden equali
   story, offer, tone) + English INTENTS. The FIXED block is built from code, never from `system_prompt_override`,
   so a pack supplies only TENANT facts/intents and can never overwrite name/pronunciation/three-names/safety
   (closing the wholesale overwrite at `ai-personality-service.ts:687`); a test asserts it survives a tenant
-  override. **F1 sync/async:** `buildLiveSystemInstruction` (`live-system-instruction.ts:463`) is SYNC, reads
-  `getPersonalityConfigSync` (`:26/:576/:594`), and must stay sync (its `orb-live.ts:7678` call site + hot-file
-  §8 cap forbid an async cascade); so the tenant config is PRE-FETCHED at session start and the resolved object
-  passed in as a new parameter (one-argument call-site change, no `async`). A `getEffectiveConfigSync` over a
-  session-start cache (mirrors `getPersonalityConfigSync`) covers builders off the envelope. **F2+F3 anonymous:**
-  `buildAnonymousSystemInstruction` is first EXTRACTED verbatim out of `orb-live.ts` into
-  `orb/live/instruction/anonymous-system-instruction.ts` (behaviour-identical, snapshot-gated, mirroring the
-  earlier `buildLiveSystemInstruction` lift), leaving a ~3-line import+call (§8). That path has NO
-  `TenantContext`, so the extracted builder takes a `tenantId` param: the widget passes a slug/host to the
-  anonymous session-start endpoint (`frontend-brand-neutralise` F2), the server VALIDATES it against `tenants`
-  (never client-trusted) and threads `tenantId` in; unknown/absent slug → null → Maxina baseline (byte-identical).
-  **F4 welcome:** `buildFirstTimeWelcomeLine` (`greeting-pools.ts:177`) is rewritten to emit FACTS+INTENTS (name
-  from the resolved pack), never finished sentences; a rule-41 guard test enforces it; Maxina golden-matched.
+  override. **FIXED vs TENANT field map (voice_live):** TENANT-driven = ONLY the community clause of
+  `base_identity` (`:86`: community name, its pronunciation, the "Join the … Community" example). FIXED = the Vitana
+  name/pronunciation/three-names rule of `base_identity` (incl. the platform name "Vitanaland"), `general_behavior`,
+  `greeting_rules`, `interruption_handling`, `repetition_prevention`, `tools_section`, `important_section`,
+  `role_descriptions`, `forbidden_openings` (`:125`), `silent_honor`, `tenure_opening_shapes` (`:137-154`) and
+  `last_interaction_acknowledgements` (`:159-174`) — still globally admin-editable via `ai_personality_config` as
+  today, never per tenant pack. The last two have NO reader anywhere in `services/gateway/src` (their only
+  occurrences are the definitions `:137`/`:159` and the comment `:157`; the "read by vitana-brain.ts
+  buildProactiveGuideBlock" note at `:115-116` is stale — `vitana-brain.ts:539` never reads them), so they reach no
+  instruction today and cannot drift Maxina's output; their `:143` "Vitanaland — longevity mission" phrase is
+  platform wording. A future reader of these fields must take any tenant fact from the pack (recorded in the lane).
+  The golden fixture covers the FULL assembled output of both builders (`buildLiveSystemInstruction`, the extracted
+  anonymous builder) and the first-time welcome intent, not just `base_identity`.
+  **F1 sync/async:** `buildLiveSystemInstruction` (`live-system-instruction.ts:463`) is SYNC and reads
+  `getPersonalityConfigSync` (defined `ai-personality-service.ts:460`, surface-keyed `configCache` `:351`, no tenant
+  dimension); it must stay sync (its `orb-live.ts:7678` call site + hot-file §8 cap forbid an async cascade). The
+  lane BUILDS the per-tenant primitive in `ai-personality-service.ts` beside `:460`: a second Map
+  `tenantConfigCache` keyed `${tenantId}:${surfaceKey}` (same `CACHE_TTL_MS`/`isCacheValid`), filled by a new
+  `async prewarmEffectiveConfig(tenantId, surfaces)` that awaits the existing `getEffectiveConfig` (`:658`) and
+  stores the merged object, and read by a new `getEffectiveConfigSync(surfaceKey, tenantId)` returning the cached
+  merged object, or `getPersonalityConfigSync(surfaceKey)` when `tenantId` is null or the entry is missing/expired
+  (= today's output). `prewarmEffectiveConfig` is awaited ONCE in `handleLiveSessionStart`
+  (`live-session-controller.ts:982`) after the tenant is known (JWT tenant, or the validated anonymous tenant below),
+  in parallel with the existing `clientContextPromise` (`:1025`); the resolved `voice_live` object is stored on the
+  session and passed to `buildLiveSystemInstruction` as one new trailing parameter (one-argument call-site change at
+  `orb-live.ts:7678`, no `async`). Jest: `getEffectiveConfigSync` returns the tenant-merged config after prewarm, the
+  global config with no tenant/expired entry, and builders off the envelope read it synchronously.
+  **F2+F3 anonymous:** `buildAnonymousSystemInstruction` (`orb-live.ts:7413-7541`) is first EXTRACTED verbatim into
+  `orb/live/instruction/anonymous-system-instruction.ts` (behaviour-identical, snapshot-gated, mirroring the earlier
+  `buildLiveSystemInstruction` lift). Exact contract: (1) `LiveSessionStartRequest` (`orb/live/types.ts:42`) gains
+  optional `tenant_slug?: string`, sent by the widget (`frontend-brand-neutralise` F2) on `POST /live/session/start`;
+  (2) `handleLiveSessionStart` reads it from the body (`:1099`) ONLY when `isAnonymousSession` (`:1161`) — a JWT
+  session ignores it (its tenant comes from the token); (3) the server validates it with a new
+  `getTenantIdBySlug(slug)` in `services/tenancy/tenant-context.ts`, built on the existing `loadTenantFlags()` cache
+  (`:81-82`, a `bySlug` map beside `byId`): the slug must match `^[a-z0-9-]{1,63}$` and an existing non-platform
+  tenant, else `null` — never client-trusted, never an error; (4) the result is stored on the session as
+  `anonTenantId: string | null` (session object `:1185`); (5) the extracted builder's signature becomes
+  `buildAnonymousSystemInstruction(lang, voiceStyle, ctx?, conversationHistory?, isReconnect?, tenantId: string |
+  null = null)` — `null` renders the Maxina baseline byte-identically. **`orb-live.ts` diff, enumerated against §8:**
+  (a) the 128-line body `:7413-7541` moved out (pure deletion of moved code); (b) +1 import line for the extracted
+  builder; (c) +1 argument `session.anonTenantId ?? null` at the `:7652` call; (d) +1 argument (the prewarmed
+  `voice_live` config) at the `:7678` call; (e) −1 identifier `buildFirstTimeWelcomeLine` from the `:413` import
+  list. Net hand-written change ≤ 5 lines plus the verbatim move.
+  **F4 welcome:** `buildFirstTimeWelcomeLine` (`greeting-pools.ts:177-187`) is dead (no `src/` caller; `orb-live.ts:413`
+  import only) and is a rule-41 violation, so it is DELETED together with its import and
+  `test/orb/instruction/first-time-welcome.test.ts` (which asserts the removed literal). The live first-time welcome
+  intent (`compute-greeting-decision.ts:1232`, "Welcome them warmly to Maxina") takes the community name as a FACT
+  from the resolved pack (default Maxina → byte-identical). `no-hardcoded-spoken-wording.test.ts` is extended to read
+  `greeting-pools.ts` (and the new `anonymous-system-instruction.ts`) so a finished spoken sentence there fails CI.
   Greetings, journey-modes and tool descriptions emit INTENTS only (rule 41). No tenant override → every surface
   byte-identical to today. Reads only; no migration.
 - **Lane `kb-overlay-db` (kiro, platform supabase/migrations).** Expand-only migration adding
@@ -113,8 +168,12 @@ unless the lane names an exception; Maxina renders byte-identical (golden equali
   today (Maxina golden suite); a second fixture tenant's facts produce its block; the FIXED Vitana block
   survives a tenant `system_prompt_override`; the extracted `anonymous-system-instruction.ts` passes a
   behaviour-identity snapshot for Maxina and renders a fixture tenant's facts when a validated slug resolves a
-  `tenantId`; `buildFirstTimeWelcomeLine` emits no finished spoken sentence (rule 41 guard) and golden-matches
-  Maxina; `npm run test:roles` (42h) green; `npm run test:support` (42c), `npm run test:operator` (42e) green.
+  `tenantId`; `getTenantIdBySlug` returns null for unknown/malformed/platform slugs and the anonymous session
+  ignores `tenant_slug` when a JWT is present; `getEffectiveConfigSync` returns the tenant-merged config after
+  `prewarmEffectiveConfig` and today's global config otherwise; `no-hardcoded-spoken-wording.test.ts` now also
+  scans `greeting-pools.ts` + `anonymous-system-instruction.ts` (and `buildFirstTimeWelcomeLine` +
+  `first-time-welcome.test.ts` are removed); the first-time welcome intent golden-matches Maxina and renders a
+  fixture tenant's name; `npm run test:roles` (42h) green; `npm run test:support` (42c), `npm run test:operator` (42e) green.
 - `kb-overlay-db`: pgTAP (`supabase/tests/mt/`, run by mt-guardrails' `scripts/mt/pgtap/run.*` + CI `pg_prove`
   from `ci-wiring`) — column exists, nullable, FK present; a baseline (NULL) doc still resolves.
 - `kb-overlay-code`: Jest — baseline-only tenant resolves Maxina manual unchanged; an overlay doc for a
@@ -150,17 +209,20 @@ with mt-guardrails. Creating a real tenant pack is a later owner-approved step (
 - Extracting `buildAnonymousSystemInstruction` from `orb-live.ts` (hot file) could drift the anonymous prompt.
   Mitigation: the extraction is a verbatim behaviour-identical move gated by a snapshot test BEFORE any
   tenant-parameterisation; the `orb-live.ts` edit is a ~3-line import+call swap within the §8 cap.
-- An anonymous tenant slug is attacker-controllable. Mitigation: the server validates the slug against
-  `tenants` and never trusts the client; an unknown slug falls back to the Maxina baseline, never errors.
+- An anonymous tenant slug is attacker-controllable. Mitigation: `tenant_slug` is read only for a no-JWT session,
+  format-checked, and resolved by `getTenantIdBySlug` against the cached `tenants` list; an unknown/platform slug
+  falls back to the Maxina baseline, never errors. It only selects public pack FACTS for the pre-login prompt.
+- A stale per-tenant config cache. Mitigation: same 30 s TTL as `configCache`; a miss falls back to today's
+  global config, never to another tenant's entry (key includes `tenantId`).
 - i18n neutralisation is wide (~120 files). Mitigation: `{{brand}}` default = Maxina; ESLint i18n gate;
   per-shard review; DE-first.
 - CROSS-SPEC O3 golden coupling. Mitigation: `whats-new-drafter` depends on mt-guardrails `v1-golden-edge`;
   the fixture regeneration is declared and reviewed in the same PR.
 
 ## Out of scope
-- `orb-live.ts` large edits beyond the behaviour-identical extraction of `buildAnonymousSystemInstruction`
-  into its own module plus the resulting ~3-line import+call swap and the one-argument additions at the two
-  builder call sites (all within the program §8 ≤20-line hot-file cap). No logic is rewritten inside `orb-live.ts`.
+- `orb-live.ts` edits beyond the enumerated diff (a)–(e) in the persona-pack bullet: the verbatim move of
+  `buildAnonymousSystemInstruction`, +1 import, +1 argument at `:7652`, +1 argument at `:7678`, −1 import
+  identifier at `:413` (within the program §8 ≤20-line hot-file cap). No logic is rewritten inside `orb-live.ts`.
 - Per-tenant navigation, per-tenant voice persona (M3+).
 - Creating a real tenant content pack / Tenant Pack intake (WS8).
 - Network/Discover/scope work (mt-network, mt-community-isolation, mt-discover).

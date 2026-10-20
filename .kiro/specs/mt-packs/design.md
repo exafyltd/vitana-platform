@@ -7,15 +7,19 @@
   `docs/validation/VTID-05151/**`, `docs/multitenancy/LANE-C.md`.
 - **Persona + effective config:** `services/gateway/src/services/ai-personality-service.ts` —
   `PersonalitySurfaceKey` (36), `PERSONALITY_DEFAULTS` (81), `voice_live.base_identity` with the hardcoded
-  "Maxina Community" (86), `VALID_SURFACE_KEYS` (65), `getPersonalityConfig` (373), `getEffectiveConfig(surfaceKey,
-  tenantId)` (659; code default ← global DB ← `tenant_assistant_config` override), `getTenantAssistantConfig`
+  "Maxina Community" (86), `VALID_SURFACE_KEYS` (65), `getPersonalityConfig` (373), `getPersonalityConfigSync` (460; surface-keyed `configCache` 351, 30 s TTL 344),
+  `getEffectiveConfig(surfaceKey, tenantId)` (658, async; code default ← global DB ← `tenant_assistant_config` override), `getTenantAssistantConfig`
   (719), `upsertTenantAssistantConfig` (742). Consumers: `routes/tenant-admin/assistant-config.ts:21,62`,
   `routes/ai-personality.ts`.
 - **Orb profile wiring:** `orb/profile/role-registry.ts` (`personaKey`, `toolPacks`, `knowledgePacks`),
   `orb/profile/assistant-profile.ts` (`personaKey`), `orb/live/surface.ts:64` (`SURFACE_PERSONA_KEY`).
 - **Live instruction / pre-login story / greetings:** `orb/live/instruction/live-system-instruction.ts`
   (`buildLiveSystemInstruction`; KB manual reference at 1282), `routes/orb-live.ts:7413`
-  `buildAnonymousSystemInstruction` (called 7652), `orb/instruction/greeting-pools.ts`.
+  `buildAnonymousSystemInstruction` (called 7652), `orb/instruction/greeting-pools.ts` (`buildFirstTimeWelcomeLine` 177 — dead: only imported at
+  `orb-live.ts:413`; the live first-time welcome is the intent at `services/conversation/compute-greeting-decision.ts:1232`).
+  Anonymous session start: `POST /live/session/start` (`orb-live.ts:16010`) → `handleLiveSessionStart`
+  (`orb/live/session/live-session-controller.ts:982`, body `LiveSessionStartRequest` `orb/live/types.ts:42`). Rule-41 guard:
+  `test/orb/live/characterization/no-hardcoded-spoken-wording.test.ts` (reads 4 files, `:27-39`).
 - **KB manual (baseline):** `services/gateway/src/kb/instruction-manual/maxina/*` (92 chapters); readers
   `live-system-instruction.ts:1282`, `services/orb-tools-shared.ts:1991`, `services/retrieval-router.ts:95`,
   `services/guided-journey/checklist-regenerate.ts:125-131`. Table: `knowledge_docs`.
@@ -30,8 +34,14 @@ Split `voice_live.base_identity` (and the surface defaults that embed tenant fac
 - a FIXED block (Vitana identity, pronunciations, three-names rule, safety, role separation) — lifted verbatim,
   Maxina-free;
 - a TENANT block assembled from pack FACTS (`tenant_assistant_config` / brand pack) + English INTENTS.
-The live builders resolve the tenant block via `getEffectiveConfig(surfaceKey, ctx.tenantId)` keyed on the
-resolved `TenantContext`. Greetings/journey-modes/first-time-welcome/tool descriptions emit INTENTS (rule 41).
+TENANT = only the community clause of `base_identity`; every other `voice_live` field is FIXED (`tenure_opening_shapes` /
+`last_interaction_acknowledgements` have no `src/` reader). The SYNC builders read the tenant block via the new
+`getEffectiveConfigSync(surfaceKey, tenantId)` over `tenantConfigCache` (`:`), filled once per session by
+`prewarmEffectiveConfig` in `handleLiveSessionStart`; fallback = `getPersonalityConfigSync`. Anonymous: `tenant_slug` on the
+session-start body, read only without a JWT, resolved by `getTenantIdBySlug` (`tenancy/tenant-context.ts`) → `session.anonTenantId`
+→ the extracted `anonymous-system-instruction.ts` builder's trailing `tenantId`. `buildFirstTimeWelcomeLine` + its test are deleted;
+the welcome intent takes the community name as a FACT; the rule-41 guard also reads `greeting-pools.ts`. Greetings/
+journey-modes/tool descriptions emit INTENTS (rule 41).
 Maxina's facts seed its pack row so the assembled output is byte-identical when no override exists. Hot-file
 rule (program §8): `orb-live.ts` touches ≤20 lines in their own PR; the assembly logic lives in
 `ai-personality-service.ts` / `live-system-instruction.ts`.
