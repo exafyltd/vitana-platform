@@ -46,3 +46,8 @@ Split the dispatch sites into six direct pins + one fallback (groups-events-tool
 ### 2026-10-20T17:30Z · kiro-hotmail-202610151618-b437 · spar session 2 round 1 (76c3c99c) — no path change
 R1-F1: `resolvePrimaryTenant` already exists (`services/tenancy/tenant-context.ts:43`, VTID-05149); the resolver reuses
 it instead of reading `user_tenants` directly.
+
+### 2026-10-20T17:45Z · kiro-hotmail-202610151618-b437 · spar session 2 round 2 — no path change
+R2-F2: actor per site — `req.identity` only at `community.ts:382`; the bearer token `sub` (after the user-scoped call
+succeeded) at `community.ts:274/482`, `match-feedback.ts:280`, `matchmaking.ts:576`; the new user `auth_user_id` at the
+public `/log-result` (`admin-signups.ts:205`); the ORB tool identity at `groups-events-tools.ts:360`.

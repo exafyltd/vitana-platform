@@ -37,6 +37,7 @@ Allowed paths:
 - `services/gateway/src/routes/scheduled-notifications.ts`
 - `services/gateway/src/routes/automations.ts`
 - `services/gateway/src/services/jobs/job-tenant-loop-repository.ts`
+- `services/gateway/src/services/automation-executor.ts`
 - `services/gateway/test/`
 - `docs/validation/`
 
@@ -49,12 +50,16 @@ Allowed paths:
       non-platform tenants ∪ `DEFAULT_TENANT_ID`), `tenantTimezone(settings)` (`Europe/Berlin` only when the tenant has
       no `tenant_settings` row), `forEachActiveTenant(sb, fn)`, `resolveJobTenants(req, sb)` (body/identity tenant ⇒
       that one; none + master on ⇒ `activeTenantIds`; none + off ⇒ `[DEFAULT_TENANT_ID]`), and
-      `resolveActorTenant(identity)` (identity tenant, else the existing `resolvePrimaryTenant` from
-      `services/tenancy/tenant-context.ts:43`; never `DEFAULT_TENANT_ID`, never a new `user_tenants` read).
+      `resolveActorTenant({ tenantId, userId })` (known tenant, else the existing `resolvePrimaryTenant(userId)` from
+      `services/tenancy/tenant-context.ts:43`; unresolvable ⇒ null, never `DEFAULT_TENANT_ID`, never a new
+      `user_tenants` read) and `jwtSubject(token)` (the `sub` decode the routes already do, `community.ts:287`).
 - [ ] L3 Heartbeat loop (`index.ts:1841-1866`; assignment `:1844`, gate `:1845`, `runHeartbeatCycle` `:1853`,
       `setInterval` registered once at startup `:1849`): gate becomes `heartbeatEnabled && (heartbeatTenantId ||
       MT_RESOLUTION_V2 === 'true')`; the tenant list is evaluated INSIDE each tick, never at init; empty list ⇒ no-op.
       Master off ⇒ today's single `DEFAULT_TENANT_ID` pass. A mid-flight flip takes effect next tick.
+- [ ] L3b `services/automation-executor.ts`: re-key `lastHeartbeatRun` (`:386`; read `:405`, writes `:418`, `:424`) as
+      `` `${tenantId}:${def.id}` `` so each tenant keeps its own heartbeat clock inside `runHeartbeatCycle` (`:392`);
+      single-tenant behaviour unchanged. Jest: two tenants both run a due heartbeat automation in one tick.
 - [ ] L4 `automations.ts` `/cron/:id` (`:162-168`, `getAdminTargetTenantId` `:64-66`) and the `scheduled-notifications.ts`
       `getTenantId`-driven routes use `resolveJobTenants`: explicit tenant ⇒ one pass (so AP-0501 → `/morning-briefing`,
       `engagement-events.ts:439-442`, never re-fans out); no tenant ⇒ fan-out (on) / `DEFAULT_TENANT_ID` (off).
@@ -86,10 +91,16 @@ Allowed paths:
 - [ ] A1 Replace `process.env.DEFAULT_TENANT_ID` with `resolveActorTenant` (from `jobs-tenant-loop`, built on the
       existing `resolvePrimaryTenant`) when the flag is on at the six direct-pin sites (`community.ts:274,382,482`,
       `match-feedback.ts:280`, `matchmaking.ts:576`, `admin-signups.ts:205`) and the one fallback site
-      `groups-events-tools.ts:357-360` (`id.tenant_id || DEFAULT_TENANT_ID`); off, unchanged. Annotate the fallback
-      site: its `id.tenant_id`-present path must stay un-regressed.
+      `groups-events-tools.ts:357-360` (`id.tenant_id || DEFAULT_TENANT_ID`); off, unchanged. Actor per site:
+      `community.ts:382` ⇒ `{ tenantId: req.identity.tenant_id, userId: req.identity.user_id }` (`requireAuth`);
+      `community.ts:274`, `community.ts:482`, `match-feedback.ts:280`, `matchmaking.ts:576` (raw bearer, no identity)
+      ⇒ `{ userId: jwtSubject(token) }`, read after the route's user-scoped Supabase call succeeded;
+      `admin-signups.ts:205` (public `/log-result`) ⇒ `{ userId: auth_user_id }` (the new user); `groups-events-tools.ts:360`
+      ⇒ `{ tenantId: id.tenant_id, userId: id.user_id }`. Unresolvable ⇒ no tenant dispatch, logged. Annotate the
+      fallback site: its `id.tenant_id`-present path must stay un-regressed.
 - [ ] A2 Jest: a non-Maxina actor's event carries that actor's tenant (on) and `DEFAULT_TENANT_ID` (off); never
-      Maxina for a non-Maxina actor; `resolvePrimaryTenant` not `'found'` ⇒ no Maxina tag. Dedicated
+      Maxina for a non-Maxina actor; `resolvePrimaryTenant` not `'found'` ⇒ no Maxina tag; `/log-result` tags
+      `auth_user_id`'s primary tenant; a raw-bearer route resolves the token `sub`'s tenant. Dedicated
       `groups-events-tools` case: an `id.tenant_id`-present dispatch keeps that tenant on both flag states.
 - [ ] A3 `docs/validation/<vtid>/`: plan copy, `scope.json`, `staging-tests.json`.
 

@@ -13,6 +13,7 @@ paths:
   - services/gateway/src/routes/scheduled-notifications.ts
   - services/gateway/src/routes/automations.ts
   - services/gateway/src/services/jobs/job-tenant-loop-repository.ts
+  - services/gateway/src/services/automation-executor.ts
   - services/gateway/test/
   - docs/validation/
 updated: 2026-10-15T16:40Z
@@ -27,7 +28,9 @@ that gate the mt-launch APIs and the M2 flag flips, and converts the heartbeat l
 `setInterval` registered once at startup `:1849`), the automation cron route (`automations.ts:162-168`) and the
 `scheduled-notifications.ts` routes to iterate active tenants under the flag through one `resolveJobTenants` rule
 (explicit tenant ⇒ one pass, so AP-0501 → `/morning-briefing` never re-fans out). DB reads only in
-`job-tenant-loop-repository.ts`; the actor resolver reuses `resolvePrimaryTenant` (`tenancy/tenant-context.ts:43`). The flag + `activeTenantIds` are evaluated INSIDE each tick (per-tenant settings on that tick), never at init,
+`job-tenant-loop-repository.ts`; the actor resolver reuses `resolvePrimaryTenant` (`tenancy/tenant-context.ts:43`).
+`runHeartbeatCycle`'s `lastHeartbeatRun` map (`automation-executor.ts:386`) is re-keyed `${tenantId}:${def.id}` so the
+second tenant in a tick is not skipped by the first tenant's timestamp. The flag + `activeTenantIds` are evaluated INSIDE each tick (per-tenant settings on that tick), never at init,
 so a mid-flight flip takes effect on the next tick with no restart. Flag off ⇒ byte-for-byte today. No migration.
 Keep `npm run test:operator` green.
 
@@ -51,3 +54,8 @@ R1-F1/F2/F6/F7: the actor resolver reuses the shipped `resolvePrimaryTenant`; th
 EventBridge → `/automations/cron/AP-0501` → `/morning-briefing`, so `automations.ts` joins the lane and the fan-out
 happens at one level only. `paths` + `routes/automations.ts`, `services/jobs/job-tenant-loop-repository.ts` (no other
 lane claims them).
+
+### 2026-10-20T17:45Z · kiro-hotmail-202610151618-b437 · spar session 2 round 2 — paths changed
+R2-F1: `lastHeartbeatRun` (`automation-executor.ts:386`) re-keyed per tenant so the multi-tenant heartbeat tick runs
+every tenant's due automations. `paths` + `services/automation-executor.ts` (no other lane claims it). R2-F2: the
+shared `resolveActorTenant({ tenantId, userId })` + `jwtSubject(token)` helpers take the per-site actor.

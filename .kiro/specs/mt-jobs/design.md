@@ -41,8 +41,12 @@ against the AWS estate by Claude/owner, never by a Kiro mutating AWS call.
 - `services/gateway/src/services/jobs/job-tenant-loop.ts`: `activeTenantIds(sb)` (flag-on active non-platform
   tenants ∪ `DEFAULT_TENANT_ID`), `tenantTimezone(settings)`, `forEachActiveTenant(sb, fn)` (one context per tenant),
   `resolveJobTenants(req, sb)` (explicit tenant ⇒ one pass; none ⇒ fan-out on / `DEFAULT_TENANT_ID` off) and
-  `resolveActorTenant(identity)` (identity tenant, else the existing `resolvePrimaryTenant` from
-  `services/tenancy/tenant-context.ts:43`; never `DEFAULT_TENANT_ID`, no new `user_tenants` read).
+  `resolveActorTenant({ tenantId, userId })` (known tenant, else the existing `resolvePrimaryTenant(userId)` from
+  `services/tenancy/tenant-context.ts:43`; never `DEFAULT_TENANT_ID`, no new `user_tenants` read; the per-site actor is
+  `req.identity` only at `community.ts:382`, the bearer token `sub` at the four raw-bearer routes, the new user
+  `auth_user_id` at the public `/log-result`, and the ORB tool identity at `groups-events-tools.ts:360`).
+- `services/automation-executor.ts`: `lastHeartbeatRun` (`:386`) re-keyed `${tenantId}:${def.id}` so each tenant has its own
+  heartbeat clock in a multi-tenant tick.
 - Convert the heartbeat loop (registration gate `index.ts:1845` also opens on `MT_RESOLUTION_V2`), the automation cron
   route `automations.ts:162-168` and the `scheduled-notifications.ts` routes through `resolveJobTenants` — the fan-out
   happens at exactly one level (AP-0501 → `/morning-briefing` carries its tenant); off, the single
