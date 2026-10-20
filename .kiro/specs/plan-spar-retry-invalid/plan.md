@@ -37,7 +37,7 @@ plan is Change B of `collab-kiro-governance`, re-planned as a new lane on that r
    `PARTNER_INVALID_CAP = 2` and `PARTNER_INVALID_WINDOW_MS = 24 h` are the same constants on both sides.
    - **Gateway (sparring R1-F1).** The cap check runs on every create, before any session is inserted:
      - Where it sits: after the existing producer + hash lookup and its dedup returns (`plan-sparring-service.ts:267`–`:285`),
-       and immediately before `insertSession` (`:288`), outside the `if (existing.data)` block. So a create whose plan
+       and immediately before `insertSession` (`:289`), outside the `if (existing.data)` block. So a create whose plan
        hash changed (no `existing.data`) is counted too.
      - The count is one new query in `plan-sparring-repository.ts`, next to `fetchSessionByPlanHash` (`:75`): the
        producer's `escalated` sessions whose `escalation_reasons` contain `partner_output_invalid`, created within the
@@ -57,8 +57,18 @@ plan is Change B of `collab-kiro-governance`, re-planned as a new lane on that r
      - `waitFor` polls `GET /:id`, which carries no flags, so the flags are never read from it. A missing flag is read
        as `false` only on the first create, where the gateway cannot have capped anything; the next create's response
        always carries the gateway's answer.
-     - `step()` sets `entry.retryable = <reason retryable> && !deduplicated && !retry_exhausted` (`:228`). When
-       `retry_exhausted`, it also records `entry.exhausted_at` (ISO).
+     - **The new return shape is wired through every caller (sparring R2-F1):**
+       - in `step()`, `let deduplicated = false; let retryExhausted = false;` sit next to `let session` (`:186`), so
+         they are in scope on every path, including the `round` path (`:215`), where they stay `false`;
+       - the call site at `:194` becomes `({ session, deduplicated, retry_exhausted: retryExhausted } = await
+         client.create({…}))`, so `state.sessions.push({ id: session.id, … })` (`:203`) and the shared block from
+         `:222` keep reading the unwrapped `session`;
+       - `client.round` keeps returning a bare session;
+       - in `plan-spar.test.mjs`, `fakeClient.create` (`:39`) returns `{ session: take(), deduplicated: false,
+         retry_exhausted: false }`, and a script entry may carry `{ flags: { deduplicated, retry_exhausted } }` for the
+         cap tests. Every existing test keeps scripting bare sessions, and their assertions are unchanged.
+     - `step()` sets `entry.retryable = <reason retryable> && !deduplicated && !retryExhausted` (`:228`). When
+       `retryExhausted`, it also records `entry.exhausted_at` (ISO).
    - **After the window.** `retryInfra` (`:188`) is also true for an entry with `retry_exhausted` whose `exhausted_at`
      is older than the window. So the next push after 24 h tries once more, and the gateway allows it because its
      window has passed. The bound stays 2 passes per producer per 24 h on both sides; nothing loops faster.
@@ -96,6 +106,14 @@ plan is Change B of `collab-kiro-governance`, re-planned as a new lane on that r
   - `create` is called exactly twice;
   - `handoff.md` shows `next_actor: kiro` after the first escalation and `owner` after the cap;
   - with `now` moved past the window, the next push creates once more.
+- `plan-spar.test.mjs:140` changes too (sparring R2-F2). Every reason already in `RETRYABLE_REASONS` takes the new
+  rule:
+  - it is renamed "a partner outage is retried by Kiro on the next push, is never parked, and the retry does not use
+    up a session";
+  - `next_actor` becomes `'kiro'` (was `'claude'`), and the log line says that the next push re-runs the partner;
+  - its retry and session assertions are unchanged.
+- One new test: a non-retryable infra reason, or `retry_exhausted`, sets `next_actor: 'owner'`. No test asserts
+  `'claude'` after this lane.
 - **The flags on every create path** (R1-F2):
   - the fake client answers through the lost-response re-post path with `retry_exhausted: true`, and `step()` does not
     retry;
