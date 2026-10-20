@@ -1,0 +1,295 @@
+# cd services/gateway; npx jest test/plan-sparring-stale-session.test.ts test/vtid-04868-plan-sparring-service.test.ts test/vtid-04868-plan-sparring-repository.test.ts --verbose --ci
+# 2026-10-20, Kiro IDE (Windows), PR head c6f3f0f06 + evidence pack; in-memory fakes only
+PASS test/vtid-04868-plan-sparring-repository.test.ts
+  VTID-04868 plan-sparring repository (hardening)
+    ok finding 1: insertSession never sends `rounds` (column default applies) (45 ms)
+    ok finding 4: appendRound sends the expected round number (4 ms)
+    ok finding 4: a PS409 RPC error is a round conflict; an { ok: false } reply is an error, not a success (3 ms)
+    ok finding 5: the ledger read is a keyset page over (created_at, id) within [since, until) (2 ms)
+    ok finding 5: the first page has no keyset filter (2 ms)
+PASS test/plan-sparring-stale-session.test.ts
+  VTID-05254 stale round-1 session dedup
+    ok (a) escalates a stale in_progress session with 0 rounds and re-runs round 1 on a fresh session (58 ms)
+    ok (b) a fresh in_progress session with 0 rounds is still deduped, with no model call (5 ms)
+    ok (c) an old in_progress session with round 1 written (waiting on the planner) is still deduped (3 ms)
+    ok (d) an escalated session with a non-retryable reason is still deduped (2 ms)
+    ok (d2) the existing retryable-escalated path is unchanged: re-run without escalating again (4 ms)
+    ok (e) lost race: the guard updates nothing, the re-read row comes back deduplicated, no insert, no model call (2 ms)
+    ok (g) isDeadRoundOne is false for a missing/unparsable timestamp or an approved session (3 ms)
+    ok (h) partial failure: escalation succeeds, insert fails -> 502; the next create recovers via the retryable branch (5 ms)
+    ok (i) a store error from the escalation throws 502 store_error, with no insert and no re-read (2 ms)
+    (f) boundary, light
+      ok STALE_AFTER_MS - 1 ms is deduped (1 ms)
+      ok STALE_AFTER_MS + 1 ms is re-run (3 ms)
+    (f) boundary, standard
+      ok STALE_AFTER_MS - 1 ms is deduped (1 ms)
+      ok STALE_AFTER_MS + 1 ms is re-run (4 ms)
+    (f) boundary, expedited
+      ok STALE_AFTER_MS - 1 ms is deduped (2 ms)
+      ok STALE_AFTER_MS + 1 ms is re-run (2 ms)
+  VTID-05254 escalateDeadRoundOne (real guard chain)
+    ok updates only an unapproved in_progress row older than the cutoff and selects the ids (3 ms)
+    ok passes a store error through (2 ms)
+    [plan-sparring] partner tier primary (m) failed (Bedrock invoke_failed: AccessDeniedException); switching to bedrock_fallback (bedrock/eu.anthropic.claude-sonnet-4-6) for the rest of round 1, from turn 1
+      192 |       if (r.ok || !shouldTryNextTier(tier, r.error) || tierIndex >= tiers.length - 1) break;
+      193 |       const next = tiers[tierIndex + 1];
+          |               ^
+      195 |         `[plan-sparring] partner tier ${tier.name} (${r.model ?? tier.model ?? 'primary'}) failed ` +
+      196 |           `(${(r.error || '').slice(0, 160)}); switching to ${next.name} (${next.provider}/${next.model}) ` +
+      197 |           `for the rest of round ${input.round}, from turn ${turn}`,
+    [plan-sparring] partner tier bedrock_fallback (eu.anthropic.claude-sonnet-4-6) failed (Bedrock invoke_failed: Too many tokens per day); switching to deepseek (deepseek/deepseek-v4-pro) for the rest of round 1, from turn 1
+      192 |       if (r.ok || !shouldTryNextTier(tier, r.error) || tierIndex >= tiers.length - 1) break;
+      193 |       const next = tiers[tierIndex + 1];
+          |               ^
+      195 |         `[plan-sparring] partner tier ${tier.name} (${r.model ?? tier.model ?? 'primary'}) failed ` +
+      196 |           `(${(r.error || '').slice(0, 160)}); switching to ${next.name} (${next.provider}/${next.model}) ` +
+      197 |           `for the rest of round ${input.round}, from turn ${turn}`,
+    [plan-sparring] partner tier primary (primary) failed (down); switching to bedrock_fallback (bedrock/eu.anthropic.claude-sonnet-4-6) for the rest of round 1, from turn 1
+      192 |       if (r.ok || !shouldTryNextTier(tier, r.error) || tierIndex >= tiers.length - 1) break;
+      193 |       const next = tiers[tierIndex + 1];
+          |               ^
+      195 |         `[plan-sparring] partner tier ${tier.name} (${r.model ?? tier.model ?? 'primary'}) failed ` +
+      196 |           `(${(r.error || '').slice(0, 160)}); switching to ${next.name} (${next.provider}/${next.model}) ` +
+      197 |           `for the rest of round ${input.round}, from turn ${turn}`,
+    [plan-sparring] partner tier bedrock_fallback (eu.anthropic.claude-sonnet-4-6) failed (down); switching to deepseek (deepseek/deepseek-v4-pro) for the rest of round 1, from turn 1
+      192 |       if (r.ok || !shouldTryNextTier(tier, r.error) || tierIndex >= tiers.length - 1) break;
+      193 |       const next = tiers[tierIndex + 1];
+          |               ^
+      195 |         `[plan-sparring] partner tier ${tier.name} (${r.model ?? tier.model ?? 'primary'}) failed ` +
+      196 |           `(${(r.error || '').slice(0, 160)}); switching to ${next.name} (${next.provider}/${next.model}) ` +
+      197 |           `for the rest of round ${input.round}, from turn ${turn}`,
+    [plan-sparring] partner tier primary (primary) failed (down); switching to bedrock_fallback (bedrock/eu.anthropic.claude-sonnet-4-6) for the rest of round 2, from turn 1
+      192 |       if (r.ok || !shouldTryNextTier(tier, r.error) || tierIndex >= tiers.length - 1) break;
+      193 |       const next = tiers[tierIndex + 1];
+          |               ^
+      195 |         `[plan-sparring] partner tier ${tier.name} (${r.model ?? tier.model ?? 'primary'}) failed ` +
+      196 |           `(${(r.error || '').slice(0, 160)}); switching to ${next.name} (${next.provider}/${next.model}) ` +
+      197 |           `for the rest of round ${input.round}, from turn ${turn}`,
+    [plan-sparring] partner tier bedrock_fallback (eu.anthropic.claude-sonnet-4-6) failed (down); switching to deepseek (deepseek/deepseek-v4-pro) for the rest of round 2, from turn 1
+      192 |       if (r.ok || !shouldTryNextTier(tier, r.error) || tierIndex >= tiers.length - 1) break;
+      193 |       const next = tiers[tierIndex + 1];
+          |               ^
+      195 |         `[plan-sparring] partner tier ${tier.name} (${r.model ?? tier.model ?? 'primary'}) failed ` +
+      196 |           `(${(r.error || '').slice(0, 160)}); switching to ${next.name} (${next.provider}/${next.model}) ` +
+      197 |           `for the rest of round ${input.round}, from turn ${turn}`,
+    [plan-sparring] partner tier primary (eu.anthropic.claude-opus-4-6-v1) failed (Bedrock invoke_failed: Too many tokens per day); switching to bedrock_fallback (bedrock/eu.anthropic.claude-sonnet-4-6) for the rest of round 1, from turn 1
+      192 |       if (r.ok || !shouldTryNextTier(tier, r.error) || tierIndex >= tiers.length - 1) break;
+      193 |       const next = tiers[tierIndex + 1];
+          |               ^
+      195 |         `[plan-sparring] partner tier ${tier.name} (${r.model ?? tier.model ?? 'primary'}) failed ` +
+      196 |           `(${(r.error || '').slice(0, 160)}); switching to ${next.name} (${next.provider}/${next.model}) ` +
+      197 |           `for the rest of round ${input.round}, from turn ${turn}`,
+    [plan-sparring] partner tier primary (eu.anthropic.claude-opus-4-6-v1) failed (Bedrock invoke_failed: AccessDeniedException); switching to bedrock_fallback (bedrock/eu.anthropic.claude-sonnet-4-6) for the rest of round 1, from turn 1
+      192 |       if (r.ok || !shouldTryNextTier(tier, r.error) || tierIndex >= tiers.length - 1) break;
+      193 |       const next = tiers[tierIndex + 1];
+          |               ^
+      195 |         `[plan-sparring] partner tier ${tier.name} (${r.model ?? tier.model ?? 'primary'}) failed ` +
+      196 |           `(${(r.error || '').slice(0, 160)}); switching to ${next.name} (${next.provider}/${next.model}) ` +
+      197 |           `for the rest of round ${input.round}, from turn ${turn}`,
+    [plan-sparring] partner tier primary (eu.anthropic.claude-opus-4-6-v1) failed (Bedrock invoke_failed: Too many tokens per day); switching to bedrock_fallback (bedrock/eu.anthropic.claude-sonnet-4-6) for the rest of round 1, from turn 1
+      192 |       if (r.ok || !shouldTryNextTier(tier, r.error) || tierIndex >= tiers.length - 1) break;
+      193 |       const next = tiers[tierIndex + 1];
+          |               ^
+      195 |         `[plan-sparring] partner tier ${tier.name} (${r.model ?? tier.model ?? 'primary'}) failed ` +
+      196 |           `(${(r.error || '').slice(0, 160)}); switching to ${next.name} (${next.provider}/${next.model}) ` +
+      197 |           `for the rest of round ${input.round}, from turn ${turn}`,
+    [plan-sparring] partner tier bedrock_fallback (eu.anthropic.claude-sonnet-4-6) failed (Bedrock invoke_failed: ThrottlingException: Too many tokens per day); switching to deepseek (deepseek/deepseek-v4-pro) for the rest of round 1, from turn 1
+      192 |       if (r.ok || !shouldTryNextTier(tier, r.error) || tierIndex >= tiers.length - 1) break;
+      193 |       const next = tiers[tierIndex + 1];
+          |               ^
+      195 |         `[plan-sparring] partner tier ${tier.name} (${r.model ?? tier.model ?? 'primary'}) failed ` +
+      196 |           `(${(r.error || '').slice(0, 160)}); switching to ${next.name} (${next.provider}/${next.model}) ` +
+      197 |           `for the rest of round ${input.round}, from turn ${turn}`,
+    [plan-sparring] partner tier primary (eu.anthropic.claude-opus-4-6-v1) failed (Bedrock invoke_failed: Too many tokens per day); switching to bedrock_fallback (bedrock/eu.anthropic.claude-sonnet-4-6) for the rest of round 1, from turn 1
+      192 |       if (r.ok || !shouldTryNextTier(tier, r.error) || tierIndex >= tiers.length - 1) break;
+      193 |       const next = tiers[tierIndex + 1];
+          |               ^
+      195 |         `[plan-sparring] partner tier ${tier.name} (${r.model ?? tier.model ?? 'primary'}) failed ` +
+      196 |           `(${(r.error || '').slice(0, 160)}); switching to ${next.name} (${next.provider}/${next.model}) ` +
+      197 |           `for the rest of round ${input.round}, from turn ${turn}`,
+    [plan-sparring] partner tier primary (eu.anthropic.claude-opus-4-6-v1) failed (Bedrock invoke_failed: Too many tokens per day); switching to bedrock_fallback (bedrock/eu.anthropic.claude-sonnet-4-6) for the rest of round 1, from turn 1
+      192 |       if (r.ok || !shouldTryNextTier(tier, r.error) || tierIndex >= tiers.length - 1) break;
+      193 |       const next = tiers[tierIndex + 1];
+          |               ^
+      195 |         `[plan-sparring] partner tier ${tier.name} (${r.model ?? tier.model ?? 'primary'}) failed ` +
+      196 |           `(${(r.error || '').slice(0, 160)}); switching to ${next.name} (${next.provider}/${next.model}) ` +
+      197 |           `for the rest of round ${input.round}, from turn ${turn}`,
+    [plan-sparring] partner tier bedrock_fallback (eu.anthropic.claude-sonnet-4-6) failed (Bedrock invoke_failed: ThrottlingException: Too many tokens per day); switching to deepseek (deepseek/deepseek-v4-pro) for the rest of round 1, from turn 1
+      192 |       if (r.ok || !shouldTryNextTier(tier, r.error) || tierIndex >= tiers.length - 1) break;
+      193 |       const next = tiers[tierIndex + 1];
+          |               ^
+      195 |         `[plan-sparring] partner tier ${tier.name} (${r.model ?? tier.model ?? 'primary'}) failed ` +
+      196 |           `(${(r.error || '').slice(0, 160)}); switching to ${next.name} (${next.provider}/${next.model}) ` +
+      197 |           `for the rest of round ${input.round}, from turn ${turn}`,
+    [plan-sparring] partner tier primary (primary) failed (down); switching to bedrock_fallback (bedrock/eu.anthropic.claude-sonnet-4-6) for the rest of round 1, from turn 1
+      192 |       if (r.ok || !shouldTryNextTier(tier, r.error) || tierIndex >= tiers.length - 1) break;
+      193 |       const next = tiers[tierIndex + 1];
+          |               ^
+      195 |         `[plan-sparring] partner tier ${tier.name} (${r.model ?? tier.model ?? 'primary'}) failed ` +
+      196 |           `(${(r.error || '').slice(0, 160)}); switching to ${next.name} (${next.provider}/${next.model}) ` +
+      197 |           `for the rest of round ${input.round}, from turn ${turn}`,
+    [plan-sparring] partner tier bedrock_fallback (eu.anthropic.claude-sonnet-4-6) failed (down); switching to deepseek (deepseek/deepseek-v4-pro) for the rest of round 1, from turn 1
+      192 |       if (r.ok || !shouldTryNextTier(tier, r.error) || tierIndex >= tiers.length - 1) break;
+      193 |       const next = tiers[tierIndex + 1];
+          |               ^
+      195 |         `[plan-sparring] partner tier ${tier.name} (${r.model ?? tier.model ?? 'primary'}) failed ` +
+      196 |           `(${(r.error || '').slice(0, 160)}); switching to ${next.name} (${next.provider}/${next.model}) ` +
+      197 |           `for the rest of round ${input.round}, from turn ${turn}`,
+    [plan-sparring] partner tier primary (eu.anthropic.claude-opus-4-6-v1) failed (Bedrock invoke_failed: AccessDeniedException: not subscribed); switching to bedrock_fallback (bedrock/eu.anthropic.claude-sonnet-4-6) for the rest of round 1, from turn 1
+      192 |       if (r.ok || !shouldTryNextTier(tier, r.error) || tierIndex >= tiers.length - 1) break;
+      193 |       const next = tiers[tierIndex + 1];
+          |               ^
+      195 |         `[plan-sparring] partner tier ${tier.name} (${r.model ?? tier.model ?? 'primary'}) failed ` +
+      196 |           `(${(r.error || '').slice(0, 160)}); switching to ${next.name} (${next.provider}/${next.model}) ` +
+      197 |           `for the rest of round ${input.round}, from turn ${turn}`,
+    [plan-sparring] partner tier bedrock_fallback (eu.anthropic.claude-sonnet-4-6) failed (Bedrock invoke_failed: AccessDeniedException: not subscribed); switching to deepseek (deepseek/deepseek-v4-pro) for the rest of round 1, from turn 1
+      192 |       if (r.ok || !shouldTryNextTier(tier, r.error) || tierIndex >= tiers.length - 1) break;
+      193 |       const next = tiers[tierIndex + 1];
+          |               ^
+      195 |         `[plan-sparring] partner tier ${tier.name} (${r.model ?? tier.model ?? 'primary'}) failed ` +
+      196 |           `(${(r.error || '').slice(0, 160)}); switching to ${next.name} (${next.provider}/${next.model}) ` +
+      197 |           `for the rest of round ${input.round}, from turn ${turn}`,
+    [plan-sparring] allocation event emit failed for VTID-1: down
+      530 |     });
+      531 |   } catch (err) {
+          |             ^
+      533 |   }
+      534 | }
+      535 |
+    [plan-sparring-reconciler] 4 detection(s): trigger_disabled, break_glass, ledger_rows_without_sparring, config_changed
+      180 |   }
+      181 |   if (detections.length > 0) {
+          |             ^
+      183 |   }
+      184 |   return detections;
+      185 | }
+    [plan-sparring-reconciler] 1 detection(s): ledger_rows_without_sparring
+      180 |   }
+      181 |   if (detections.length > 0) {
+          |             ^
+      183 |   }
+      184 |   return detections;
+      185 | }
+    [plan-sparring-reconciler] 1 detection(s): ledger_rows_without_sparring
+      180 |   }
+      181 |   if (detections.length > 0) {
+          |             ^
+      183 |   }
+      184 |   return detections;
+      185 | }
+    [plan-sparring-reconciler] 1 detection(s): ledger_read_failed
+      180 |   }
+      181 |   if (detections.length > 0) {
+          |             ^
+      183 |   }
+      184 |   return detections;
+      185 | }
+    [plan-sparring-reconciler] 1 detection(s): ledger_rows_without_sparring
+      180 |   }
+      181 |   if (detections.length > 0) {
+          |             ^
+      183 |   }
+      184 |   return detections;
+      185 | }
+    [plan-sparring-reconciler] 1 detection(s): ledger_rows_without_sparring
+      180 |   }
+      181 |   if (detections.length > 0) {
+          |             ^
+      183 |   }
+      184 |   return detections;
+      185 | }
+    [plan-sparring-reconciler] 1 detection(s): ledger_rows_without_sparring
+      180 |   }
+      181 |   if (detections.length > 0) {
+          |             ^
+      183 |   }
+      184 |   return detections;
+      185 | }
+    [plan-sparring-reconciler] 2 detection(s): trigger_status_unreadable, config_missing
+      180 |   }
+      181 |   if (detections.length > 0) {
+          |             ^
+      183 |   }
+      184 |   return detections;
+      185 | }
+    [plan-sparring-reconciler] 1 detection(s): policy_approval_on_non_converged
+      180 |   }
+      181 |   if (detections.length > 0) {
+          |             ^
+      183 |   }
+      184 |   return detections;
+      185 | }
+PASS test/vtid-04868-plan-sparring-service.test.ts (8.768 s)
+  canonical plan hash (N6)
+    ok hashes only the text between the markers (36 ms)
+    ok is invariant to BOM, CRLF/CR, trailing whitespace, blank runs, NFD vs NFC, trailing newlines (4 ms)
+    ok changes when the plan content changes (1 ms)
+    ok pins a known vector (2 ms)
+    ok rejects missing, duplicated or out-of-order markers and empty bodies (5 ms)
+  round 1: partner pass
+    ok runs read-only tools, stores the review VERBATIM and stays in_progress (≥2 passes) (27 ms)
+    ok rejects a round-1 review below the evidence floor, lets the partner fix it (5 ms)
+    ok rejects citations of files that were never read with read_file (5 ms)
+    ok escalates evidence_floor_not_met when the partner never meets the floor (4 ms)
+    ok every tier fails ⇒ escalated / model_unavailable after Opus, Sonnet and DeepSeek were each tried once (79 ms)
+    ok refuses an answer that did not come from the Bedrock partner (fallbackUsed) (2 ms)
+    ok no PLAN_SPARRING_GITHUB_TOKEN ⇒ escalated code_access_unavailable with ZERO model calls (2 ms)
+    ok caps tool calls per round (6 ms)
+    ok nudges once when the partner answers in text, then escalates on a second refusal (4 ms)
+    ok dedups an identical plan from the same producer (N7) without a model call (11 ms)
+    ok re-runs instead of dedup when the earlier session never got a review (model_unavailable) (14 ms)
+    ok validates input (3 ms)
+  later rounds + verdict
+    ok every finding must be answered (4 ms)
+    ok converges when the revision closes every serious item; final_plan_hash = revised plan (6 ms)
+    ok a disputed rejection keeps the session open; a re-raised major at the class cap escalates round_cap_reached (6 ms)
+    ok light class escalates with round_cap_reached + disputed_items on pass 2 (2 ms)
+    ok silence on a rejected serious finding counts as disputed (1 ms)
+    ok passes the expected round number to the append RPC (round 1, then 2) (3 ms)
+    ok two racing POST /:id/rounds for the same round: one lands, the other is 409 round_conflict (6 ms)
+    ok a non-conflict append failure is a 502 store_error, not a conflict (4 ms)
+    ok model failure in a later round escalates; no rounds accepted after a terminal verdict (12 ms)
+  sparring-model-fallback: throttle retries once on the Bedrock fallback
+    ok a "Too many tokens per day" throttle retries ONCE on the fallback model and the round proceeds on success (7 ms)
+    ok any Bedrock failure on Opus (AccessDenied) moves on to Sonnet — the round still proceeds (6 ms)
+  plan-sparring DeepSeek last-resort tier
+    ok Opus and Sonnet out of quota ⇒ DeepSeek serves the round, sticky for every following turn (11 ms)
+    ok kill switch PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED=false ⇒ no DeepSeek call, escalates after Sonnet (6 ms)
+    ok an answer from a provider other than the asked tier is still refused (9 ms)
+  approval (verified exafy_admin actor only)
+    ok records the verified actor, time and evidence; second approval is refused (5 ms)
+    ok refuses a hash the approver did not see (3 ms)
+    ok refuses in_progress sessions and requires explicit acknowledgement for escalated ones (11 ms)
+    ok refuses attested records (gateway pass required) and unverified actors (4 ms)
+    ok GET returns the record; unknown id is 404 (3 ms)
+  real router path: Opus -> Sonnet -> DeepSeek, one call each, nothing else
+    ok Bedrock down on both models and DeepSeek out of balance ⇒ escalated; Bedrock twice, DeepSeek once (21 ms)
+  GitHub tools (read-only, pinned, dedicated token)
+    ok uses PLAN_SPARRING_GITHUB_TOKEN, never GITHUB_TOKEN / GITHUB_SAFE_MERGE_TOKEN (4 ms)
+    ok without the dedicated token every tool fails closed (no fallback to GITHUB_TOKEN) (2 ms)
+    ok refuses other repos, path traversal and unpinned repos (2 ms)
+    ok search is marked approximate and is not read_file evidence (1 ms)
+    ok tool schemas expose no ref parameter (the ref is pinned, not chosen) (1 ms)
+  OASIS at allocation
+    ok emits attached with a sparring id, missing without (3 ms)
+    ok never throws into the allocation path (5 ms)
+    ok parseSparringId accepts only UUIDs (2 ms)
+  reconciler (hourly, read-only, off by default)
+    ok is disabled unless PLAN_SPARRING_RECONCILER_ENABLED=true (1 ms)
+    ok clean run emits nothing (4 ms)
+    ok detects a disabled trigger, ledger rows without sparring_id, break-glass rows and config change (12 ms)
+    ok pages the ledger to exhaustion: 450 rows across 3 pages are all reported, none skipped, none re-reported (22 ms)
+    ok a failed ledger read does not advance the cursor: the window is re-read next run (9 ms)
+    ok hitting the page cap advances only to the last row read (never skips the rest) (4071 ms)
+    ok an unreadable trigger status or missing config is reported, never assumed fine (5 ms)
+  VTID-05214 policy approval
+    ok rejects an unknown approval policy at creation (2 ms)
+    ok a converged session that asked for converged-auto-v1 is approved by policy; rounds and owner approval are then refused (6 ms)
+    ok without the policy a converged session waits for the owner (no policy approval) (3 ms)
+    ok an escalated session is never policy-approved (3 ms)
+    ok reconciler reports a policy approval on a non-converged session (6 ms)
+Test Suites: 3 passed, 3 total
+Tests:       79 passed, 79 total
+Snapshots:   0 total
+Time:        11.01 s
+Ran all test suites matching /test\\plan-sparring-stale-session.test.ts|test\\vtid-04868-plan-sparring-service.test.ts|test\\vtid-04868-plan-sparring-repository.test.ts/i.
