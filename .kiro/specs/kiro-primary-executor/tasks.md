@@ -10,6 +10,15 @@ Start only after `retire-claude-code/scope-rules`, `rules-platform` and `rules-v
 - [ ] R5 `docs/validation/<VTID>/` (plan-sparring, scope.json, acceptance.md); PR body carries the account-level
       steering text for the owner.
 
+**Converging-round notes (PLAN-SPAR s2 round 3, minor, recorded without editing the approved plan block):**
+- R3-F1: the change class is **governance** (plan body, both lanes `governance: true`); the PLAN-SPAR header's
+  "standard" is the submit default and does not change merge handling — both lane PRs merge only on the owner's
+  explicit per-PR instruction.
+- R3-F2: B.6's vitana-v1 freeze check is made checkable: the session also refuses to dispatch any vitana-v1
+  `apply-*.yml` while any lane of programme `aurora-cutover` is `executing` (read with
+  `queue.mjs --program aurora-cutover`), in addition to the compensating control already in the plan (owner approval in
+  the same conversation as the dispatch). §7d's text states both.
+
 **Acceptance:** requirements 1–7 hold in the text; `queue.mjs validate` and `scripts/ci/kiro-steering/guard.cjs` green;
 grep shows no routine hand-back to Claude Code, no production dispatch outside Gate 2, no session-tool live write;
 sha256 of `collaboration.md` in the PR body.
