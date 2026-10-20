@@ -13,7 +13,7 @@ paths:
   - scripts/collab/plan-spar.mjs
   - scripts/collab/plan-spar.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-20T18:35Z
+updated: 2026-10-20T19:05Z
 vtid: VTID-05273
 claimed_by: kiro-exafy-202610201807-2a87
 branch: kiro/kiro-autonomy-fallback/plan-spar-allocation
@@ -52,3 +52,10 @@ PR https://github.com/exafyltd/vitana-platform/pull/4227. Deploys nothing; done 
 ### 2026-10-20 · agent:vitana-lane-reviewer (claude-sonnet-5.5) · review
 Reviewed head a1f6cba924d6629833170d776dcfd2e9276ea5c5. Verdict: changes. Late-lane retry, idempotence, single sparring binding, kiro handoff with reason, untouched partner chain and no hand allocation all check out; 9 new tests red->green. One blocking item: validate-pr fails because the PR body lacks VALIDATION_PROFILE. Add it to PR #4227 body. Non-blocking: PR-GATE wiring of plan-spar.test.mjs belongs to lane scope-check.
 PR: https://github.com/exafyltd/vitana-platform/pull/4227
+
+### 2026-10-20T19:05Z · kiro-exafy-202610201807-2a87 · executing (review fix 1)
+Blocking finding fixed under the owner instruction 2026-10-20 (§7b, plan §6): PR body now carries `VALIDATION_PROFILE:
+gateway_backend`, `SCOPE_ALLOWLIST:`, `ACCEPTANCE:`, `MERGE_PAYLOAD_PREVIEW:`, `OASIS_IMPACT: no`; evidence pack
+`docs/validation/VTID-05273/` gains `acceptance.md` (AC-1..AC-8, each mapped to a TEST:), `commands.log`, `outputs/`
+(the Evidence Pack and Acceptance Mapping gates VALIDATOR-CHECK runs next). No code change; plan-spar.test 19/19.
+Next: re-review by agent:vitana-lane-reviewer (claude-sonnet-5.5).
