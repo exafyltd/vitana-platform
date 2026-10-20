@@ -7,6 +7,7 @@ repos: [vitana-platform, vitana-v1]
 specs:
   - vitana-platform:pm-agent
   - vitana-platform:claude-sessions-handover
+  - vitana-platform:retire-claude-code
   - vitana-v1:chat-ux
   - vitana-v1:vitana-chat-markdown
 docs:
