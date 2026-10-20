@@ -1,6 +1,6 @@
 ---
 lane: staging-proof
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: [steering-rules, plan-spar-allocation, pm-fallback, scope-check, exceptions-seat, reviewer-agent, pipeline-speed]
 executor: kiro
@@ -12,7 +12,7 @@ repos: [exafyltd/vitana-platform]
 paths:
   - services/gateway/test/kiro-autonomy-fallback-proof.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-20T21:10Z
+updated: 2026-10-20T21:20Z
 vtid: VTID-05277
 claimed_by: kiro-exafyltd-202610201618-c018
 branch: kiro/kiro-autonomy-fallback/staging-proof
@@ -54,3 +54,7 @@ unknown → env fallback, and give the PM token Actions-variables read or pin `C
 then the `/mode` staging test fails loudly; it is kept as the plan states it, not loosened.
 Decisions taken: red recorded against the plan base (origin/main already carries pm-fallback, so the proof test is
 green on origin/main by design).
+
+### 2026-10-20T21:20Z · kiro-exafyltd-202610201618-c018 · executing → in-review
+PR opened for head 8a4d27e95; review by `agent:vitana-lane-reviewer (claude-sonnet-5.5)`. Merge by the PM (W1 verify, then
+merge), not by the land step (plan §5 F).
