@@ -6,7 +6,8 @@ Author: Kiro, session `kiro-202610201939-ee07`. Owner instruction in chat 2026-1
 changes you recommend here" (after asking which rules a frontier model already follows). Spans
 `exafyltd/vitana-platform` (lane `rules-trim`) and `exafyltd/vitana-v1` (lane `rules-trim-v1`). Docs only, deploys
 nothing. Premises are pinned to `exafyltd/vitana-platform@3619021bc` and `exafyltd/vitana-v1@05cca2209` (both
-`origin/main` at plan time). Detail per lane: `tasks.md`; acceptance: `requirements.md`; mapping: `design.md`.
+`origin/main` at plan time; platform `origin/main` `d28e465c0` has no diff to the pin in any file cited here). The
+spec is registered in `docs/programs/standalone/program.md`. Detail per lane: `tasks.md`; acceptance: `requirements.md`; mapping: `design.md`.
 <!-- plan:begin -->
 ## Goal
 Remove from the agent rule files what a frontier model does anyway (generic "be careful" rules), stale or historical
