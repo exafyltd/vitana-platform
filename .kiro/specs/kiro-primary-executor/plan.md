@@ -102,6 +102,13 @@ no longer written by Kiro, except for the legacy `executor: claude` lanes until 
       `DEPLOY-CLOUDFLARE-WORKERS.yml`, which deploys live Workers on a push touching `cloudflare/**` with no freeze.
       So is a production workflow whose freeze is gone.
    4. The list is recorded as a `deploys:` line in the lane log before the merge.
+   5. **Enumeration is mechanical (R2-F3).** The list comes from reading the workflow files on `main`; it is never
+      written from memory.
+      - Interactive sessions use the read-only listing recorded in §7d, a `git show origin/main:.github/workflows/…`
+        loop over every file's `on.push` block.
+      - Automation runs get B.4 merge authority only after a follow-up plan, `merge-deploy-guard`, adds that listing
+        as a `queue.mjs` command with tests. The owner's Gate 1 "yes" lets the planner draft that plan next. Until it
+        is merged, automations stop at `verified` even if the owner chose the wider scope.
 
    On merge the session appends `merge: <sha>` and `authority: §7d standing` to the lane log.
 
@@ -123,14 +130,18 @@ no longer written by Kiro, except for the legacy `executor: claude` lanes until 
      is the §D.2 owner decision itself: the approval is the owner's "yes" to that production write. No other
      production approval is implied or needed for it, and no other production write is covered by it.
    - Kiro dispatches `RUN-MIGRATION.yml` for a migration file only when the owner has explicitly approved that file
-     **and its target database** in the conversation, or approved a plan or Gate 1 message that lists both by path
-     and target.
+     **and its target database** in an owner conversation. That means either an in-conversation instruction naming
+     both, or the owner's own Gate 1 "yes" to a message that lists both by path and target (R2-F1).
+   - A plan's policy approval (`converged-auto-v1`) never authorises a migration apply.
    - The session records `migration-approval: "<owner's words>" (<date>) <path> sha256:<hash> target:<supabase|aurora>`
      in the lane log before the dispatch.
    - Required:
      - the target resolved at dispatch, read from the `target` input or the repo variable `MIGRATION_TARGET`, equals
        the approved target, and the dispatch passes `target` explicitly (never `default`);
      - the file's hash at dispatch equals the recorded hash;
+     - `allow_non_transactional` is `false` unless the owner's approval names a non-transactional apply. Such an
+       apply cannot be rolled back atomically, so it is also a §D.3 irreversible-action decision. The
+       `migration-approval:` line records `non_transactional:true|false` (R2-F2);
      - the lane's `docs/validation/<VTID>/` has the rollback file and the read-only pre/post checks;
      - `MIGRATION_FREEZE` is not set;
      - the order in any migration queue the plan names (e.g. `docs/multitenancy/MIGRATION-QUEUE.md`) is respected.
