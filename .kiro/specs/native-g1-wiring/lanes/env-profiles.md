@@ -1,12 +1,15 @@
 ---
 lane: env-profiles
-state: ready
+state: in-review
 next_actor: kiro
 depends_on: [vitana-v1-verified]
 executor: kiro
 seat: exafyltd
 area: frontend
 reviewer_seat: hotmail
+claimed_by: kiro-202610151913-51bd
+branch: kiro/native-g1-wiring/env-profiles
+pr: https://github.com/exafyltd/vitana-v1/pull/1466
 paths:
   - apps/mobile/src/config/env.ts
   - apps/mobile/env/**
@@ -14,7 +17,7 @@ paths:
   - docs/validation/VTID-*/scope.json
   - docs/validation/VTID-*/staging-tests.json
   - docs/validation/VTID-*/plan-sparring.md
-updated: 2026-10-20T08:41Z
+updated: 2026-10-20T11:54Z
 vtid: VTID-05249
 ---
 # Per-profile env source for native builds (decision 1)
@@ -43,3 +46,12 @@ another lane. Next: PLAN-SPAR spars the plan; once a VTID is written here, seat 
 
 ### 2026-10-20T08:41Z · ci-plan-spar · ready (VTID allocated)
 VTID-05249 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-20T11:54Z · kiro-202610151913-51bd · ready → in-review
+Implemented the lane in vitana-v1 (`apps/mobile/env/development.json`, `apps/mobile/env/test-g1.example.json`,
+`apps/mobile/src/config/env.ts` `resolveProfileConfig()`, `apps/mobile/tests/env.test.ts`, plus
+`docs/validation/VTID-05249/{scope,staging-tests,plan-sparring}`). Ran the lane checks (apps/mobile,
+Windows/PowerShell): `npm ci`, `npm run typecheck` clean, `npm test -- tests/env.test.ts` 47/47 pass,
+`APP_PROFILE=development EXPO_OFFLINE=1 npm run bundle` and `APP_PROFILE=test-g1 EXPO_OFFLINE=1 npm run bundle`
+both exported offline (exit 0). Pushed branch `kiro/native-g1-wiring/env-profiles` and opened the v1 PR
+https://github.com/exafyltd/vitana-v1/pull/1466. Handed off to the reviewer seat (hotmail) — `next_actor: kiro`.
