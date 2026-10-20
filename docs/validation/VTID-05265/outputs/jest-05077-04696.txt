@@ -1,0 +1,32 @@
+﻿# cd services/gateway
+# npx jest test/vtid-05077-planner-fallback-and-thinking.test.ts test/vtid-04696-staging-checks-follow-asset-bumps.test.ts --verbose
+# exit 0 (console.log/warn noise from the llm-router fakes omitted; result lines kept verbatim)
+
+PASS test/vtid-04696-staging-checks-follow-asset-bumps.test.ts
+  VTID-04696 staging checks follow Command Hub asset bumps
+    √ every asset version named in a staging suite is the one index.html loads (866 ms)
+PASS test/vtid-05077-planner-fallback-and-thinking.test.ts (6.516 s)
+  VTID-05077 router: per-call fallback override and DeepSeek thinking
+    √ a failed DeepSeek primary is served by the override (Opus 4.6), not the policy fallback (1284 ms)
+    √ without an override the policy fallback applies exactly as before (199 ms)
+    √ a vertex fallback override is refused; the policy fallback applies (399 ms)
+    √ a anthropic fallback override is refused; the policy fallback applies (178 ms)
+    √ a claude_subscription fallback override is refused; the policy fallback applies (316 ms)
+    √ the override never writes into the cached policy (the next call without it uses the policy fallback) (170 ms)
+    √ a no-fallback stage ignores a fallback override (161 ms)
+    √ deepseekThinking=disabled is sent as thinking:{type:"disabled"}; omitted, the body has no thinking field (342 ms)
+    √ an empty capped reply names its reasoning tokens in the error (152 ms)
+  VTID-05077 tool loop passes the fallback override and thinking switch to every turn
+    √ each turn receives fallbackOverride and deepseekThinking (17 ms)
+  VTID-05077 planner model choice and result mapping
+    √ the planner fallback defaults to Bedrock Opus 4.6 and refuses Google, direct Anthropic and claude_subscription (18 ms)
+    √ plannerCallResult never returns a bare "unknown error" and records who answered (1148 ms)
+  VTID-05077 planner fallback rate on the autopilot screen
+    √ summarizePlannerFallback counts plans written by a non-primary provider, ignoring rows from before the columns (1 ms)
+    √ the spend route returns the planner summary and the screen shows it as a chip (19 ms)
+    √ plan versions record who wrote them (migration + insert) (6 ms)
+Test Suites: 2 passed, 2 total
+Tests:       16 passed, 16 total
+Snapshots:   0 total
+Time:        8.972 s, estimated 10 s
+Ran all test suites matching /test\\vtid-05077-planner-fallback-and-thinking.test.ts|test\\vtid-04696-staging-checks-follow-asset-bumps.test.ts/i.

@@ -1,0 +1,9 @@
+﻿# git grep -n "20261120-vtid-05148" -- services/gateway/test "docs/validation/*/staging-tests.json"
+# exit 1 (1 = no match: no Jest or suite pin of the old key remains)
+(no output)
+
+# the three app.js cache-key pin locations (R2-F2), all 20261121-vtid-05082
+services/gateway/src/frontend/command-hub/index.html:32: <script src="/command-hub/app.js?v=20261121-vtid-05082"></script>
+services/gateway/test/vtid-05077-planner-fallback-and-thinking.test.ts:212: expect(html).toContain('/command-hub/app.js?v=20261121-vtid-05082');
+docs/validation/VTID-05265/staging-tests.json:4: "note": "Read-only. Test-only change: services/gateway/test/vtid-05077-planner-fallback-and-thinking.test.ts:212 now pins the app.js cache key that index.html:32 actually ships (/command-hub/app.js?v=20261121-vtid-05082, bumped by #4182 / VTID-05082). No product code changes; staging proves the deployed index.html carries that same key and the gateway still serves.",
+docs/validation/VTID-05265/staging-tests.json:22: "expect_body_contains": "/command-hub/app.js?v=20261121-vtid-05082",

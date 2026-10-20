@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-05265",
+  "service": "gateway",
+  "note": "Read-only. Test-only change: services/gateway/test/vtid-05077-planner-fallback-and-thinking.test.ts:212 now pins the app.js cache key that index.html:32 actually ships (/command-hub/app.js?v=20261121-vtid-05082, bumped by #4182 / VTID-05082). No product code changes; staging proves the deployed index.html carries that same key and the gateway still serves.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after deploy",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "read-only GET: the build carrying the corrected test pin boots and serves"
+    },
+    {
+      "kind": "http",
+      "name": "deployed index.html loads app.js with the VTID-05082 cache key",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/command-hub/index.html",
+      "expect_status": 200,
+      "expect_body_contains": "/command-hub/app.js?v=20261121-vtid-05082",
+      "reason": "read-only GET: the value the Jest pin now expects is the value staging serves (index.html:32 is the source of truth)"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05077-planner-fallback-and-thinking.test.ts test/vtid-04696-staging-checks-follow-asset-bumps.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the VTID-05077 planner-fallback chip test with the corrected app.js pin, and the VTID-04696 guard that every staging-tests.json asset?v= pin matches what index.html loads"
+    }
+  ]
+}
