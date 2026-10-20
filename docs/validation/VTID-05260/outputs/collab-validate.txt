@@ -1,4 +1,4 @@
-❌ **collab handoff** — 7 problem(s):
+❌ **collab handoff** — 8 problem(s):
 - .kiro/specs/collab-kiro-governance/lanes/owner-governance.md: paths "scripts/collab/queue.mjs" reaches a governance path; such a lane needs executor: claude, or executor: kiro with governance: owner
 - .kiro/specs/collab-kiro-governance/lanes/owner-governance.md: paths "scripts/collab/queue.test.mjs" reaches a governance path; such a lane needs executor: claude, or executor: kiro with governance: owner
 - .kiro/specs/collab-kiro-governance/lanes/owner-governance.md: paths ".claude/rules/collaboration.md" reaches a governance path; such a lane needs executor: claude, or executor: kiro with governance: owner
@@ -6,6 +6,7 @@
 - .kiro/specs/collab-kiro-governance/lanes/owner-governance.md: paths ".kiro/steering/vitana-kiro-notes.md" reaches a governance path; such a lane needs executor: claude, or executor: kiro with governance: owner
 - .kiro/specs/collab-kiro-governance/lanes/retry-partner-invalid.md: paths "scripts/collab/plan-spar.mjs" reaches a governance path; such a lane needs executor: claude, or executor: kiro with governance: owner
 - .kiro/specs/collab-kiro-governance/lanes/retry-partner-invalid.md: paths "scripts/collab/plan-spar.test.mjs" reaches a governance path; such a lane needs executor: claude, or executor: kiro with governance: owner
+- .kiro/specs/collab-kiro-governance/lanes/owner-governance.md: illegal transition "ready" → "in-review"
 
 <details><summary>Collab queue</summary>
 
@@ -14,7 +15,7 @@
 | vitana-platform |  | claude-sessions-handover | _plan |  | drafted | kiro | session_01EaJyEtmFbjS8jj5PzqgJva |  |  | origin/main | 2026-10-15T19:12Z |  |
 | vitana-platform |  | claude-sessions-handover | main |  | drafted | kiro | — |  |  | origin/main | 2026-10-15T19:12Z |  |
 | vitana-platform |  | collab-kiro-governance | _plan |  | approved | kiro | — |  | VTID-05260 VTID-05261 | origin/kiro/collab-kiro-governance/merge-log | 2026-10-20T11:32Z | 2026-10-20T11:32Z · kiro-exafyltd-202610201024-84c9 · plan merged to main (§7b) |
-| vitana-platform |  | collab-kiro-governance | owner-governance | exafy | ready | kiro | kiro-exafy-202610201154-1d48 |  | VTID-05260 | origin/main | 2026-10-20T11:26Z | 2026-10-20T11:26Z · ci-plan-spar · ready (VTID allocated) |
+| vitana-platform |  | collab-kiro-governance | owner-governance | exafy | in-review | kiro | kiro-exafy-202610201154-1d48 |  | VTID-05260 | https://github.com/exafyltd/vitana-platform/pull/4214 | 2026-10-20T12:40Z | 2026-10-20T12:40Z · kiro-exafy-202610201154-1d48 · executing → in-review |
 | vitana-platform |  | collab-kiro-governance | retry-partner-invalid | exafy | ready | kiro | — | blocked | VTID-05261 | origin/main | 2026-10-20T11:26Z | 2026-10-20T11:26Z · ci-plan-spar · ready (VTID allocated) |
 | vitana-platform |  | collab-queue-perf | _plan |  | drafted | claude | kiro-202610181950-f0b7 |  |  | origin/kiro/collab-queue-perf/plan | 2026-10-18T20:30Z | 2026-10-18T20:30Z · ci-plan-spar · escalated (partner unavailable) |
 | vitana-platform |  | collab-queue-perf | queue-batch-read |  | ready | claude | — |  |  | origin/kiro/collab-queue-perf/plan | 2026-10-18T20:10Z | 2026-10-18T20:10Z · kiro-202610181950-f0b7 · ready |
@@ -72,13 +73,13 @@
 | vitana-platform |  | mt-discover | discover-shared-predicate | jtadic | ready | owner | — | blocked |  | origin/kiro/mt-discover/plan | 2026-10-17T15:10Z | 2026-10-15T17:05Z · kiro-hotmail-202610151618-b437 · sparring round-1 fix R1-F1 (ready) |
 | vitana-platform |  | mt-discover | supplier-onboarding-communities | jtadic | ready | owner | — | blocked |  | origin/kiro/mt-discover/plan | 2026-10-15T16:40Z | 2026-10-15T16:40Z · kiro-hotmail-202610151618-b437 · created → ready |
 | vitana-platform |  | mt-discover | supplier-relationships-db | hotmail | ready | owner | — |  |  | origin/kiro/mt-discover/plan | 2026-10-15T17:05Z | 2026-10-15T17:05Z · kiro-hotmail-202610151618-b437 · sparring round-1 fixes (ready) |
-| vitana-platform |  | mt-frontend-brand | _plan |  | approved | kiro | — |  | VTID-05241 VTID-05242 VTID-05243 VTID-05244 VTID-05245 VTID-05246 | origin/kiro/mt-frontend-brand/plan | 2026-10-19T20:32Z | 2026-10-19T20:32Z · ci-plan-spar · drafted → approved |
-| vitana-platform |  | mt-frontend-brand | adminfetch-header | exafyltd | ready | kiro | — |  | VTID-05241 | origin/kiro/mt-frontend-brand/plan | 2026-10-19T20:32Z | 2026-10-19T20:32Z · ci-plan-spar · ready (VTID allocated) |
-| vitana-platform |  | mt-frontend-brand | brand-surface | exafyltd | ready | kiro | — |  | VTID-05242 | origin/kiro/mt-frontend-brand/plan | 2026-10-19T20:32Z | 2026-10-19T20:32Z · ci-plan-spar · ready (VTID allocated) |
-| vitana-platform |  | mt-frontend-brand | cors-config | jtadic | ready | kiro | — |  | VTID-05243 | origin/kiro/mt-frontend-brand/plan | 2026-10-19T20:32Z | 2026-10-19T20:32Z · ci-plan-spar · ready (VTID allocated) |
-| vitana-platform |  | mt-frontend-brand | email-brand-code | exafyltd | ready | kiro | — | blocked | VTID-05244 | origin/kiro/mt-frontend-brand/plan | 2026-10-19T20:32Z | 2026-10-19T20:32Z · ci-plan-spar · ready (VTID allocated) |
+| vitana-platform |  | mt-frontend-brand | _plan |  | approved | kiro | — |  | VTID-05241 VTID-05242 VTID-05243 VTID-05244 VTID-05245 VTID-05246 | origin/main | 2026-10-19T20:32Z | 2026-10-19T20:32Z · ci-plan-spar · drafted → approved |
+| vitana-platform |  | mt-frontend-brand | adminfetch-header | exafyltd | ready | kiro | — |  | VTID-05241 | origin/main | 2026-10-19T20:32Z | 2026-10-19T20:32Z · ci-plan-spar · ready (VTID allocated) |
+| vitana-platform |  | mt-frontend-brand | brand-surface | exafyltd | ready | kiro | — |  | VTID-05242 | origin/main | 2026-10-19T20:32Z | 2026-10-19T20:32Z · ci-plan-spar · ready (VTID allocated) |
+| vitana-platform |  | mt-frontend-brand | cors-config | jtadic | ready | kiro | — |  | VTID-05243 | origin/main | 2026-10-19T20:32Z | 2026-10-19T20:32Z · ci-plan-spar · ready (VTID allocated) |
+| vitana-platform |  | mt-frontend-brand | email-brand-code | exafyltd | ready | kiro | — | blocked | VTID-05244 | origin/main | 2026-10-19T20:32Z | 2026-10-19T20:32Z · ci-plan-spar · ready (VTID allocated) |
 | vitana-platform |  | mt-frontend-brand | email-brand-db | hotmail | in-review | kiro | — |  | VTID-05245 | https://github.com/exafyltd/vitana-v1/pull/1464 | 2026-10-20T08:46Z | 2026-10-20T08:46Z · kiro-hotmail-202610151618-b437 · ready → in-review |
-| vitana-platform |  | mt-frontend-brand | theme-tokens | exafyltd | ready | kiro | — |  | VTID-05246 | origin/kiro/mt-frontend-brand/plan | 2026-10-19T20:32Z | 2026-10-19T20:32Z · ci-plan-spar · ready (VTID allocated) |
+| vitana-platform |  | mt-frontend-brand | theme-tokens | exafyltd | ready | kiro | — |  | VTID-05246 | origin/main | 2026-10-19T20:32Z | 2026-10-19T20:32Z · ci-plan-spar · ready (VTID allocated) |
 | vitana-platform |  | mt-guardrails | _plan |  | drafted | claude | — |  |  | origin/kiro/mt-guardrails/plan | 2026-10-18T21:09Z | 2026-10-18T21:09Z · ci-plan-spar · escalated (partner unavailable) |
 | vitana-platform |  | mt-guardrails | ci-wiring |  | ready | claude | — | blocked |  | origin/kiro/mt-guardrails/plan | 2026-10-20T08:30Z | 2026-10-19T20:20Z · kiro-hotmail-202610151618-b437 · spar round-2 (session 496d49e4) → report-gate helper |
 | vitana-platform |  | mt-guardrails | gateway-scope-lint-contract | jtadic | ready | owner | — | blocked |  | origin/kiro/mt-guardrails/plan | 2026-10-16T21:44Z | 2026-10-16T21:44Z · kiro-hotmail-202610151618-b437 · created → ready |
@@ -166,7 +167,7 @@
 | vitana-platform |  | new-member-welcome | new-member-card-optin | exafyltd | executing | claude | — |  | VTID-05206 | https://github.com/exafyltd/vitana-v1/pull/1441 | 2026-10-16T11:40Z | 2026-10-16T11:40Z · kiro-exafyltd-202610161022-9aff · ready → executing (PR opened, ready for review) |
 | vitana-platform |  | new-member-welcome | say-hello-composer | exafyltd | ready | kiro | — | blocked | VTID-05207 | origin/main | 2026-10-15T13:00Z | 2026-10-15T13:00Z · session_01LKkSBuw1tGgnKzjhfcmAxj · ready → ready (handed to Kiro) |
 | vitana-platform |  | new-member-welcome | team-welcome-backend |  | executing | claude | — |  | VTID-05205 | https://github.com/exafyltd/vitana-platform/pull/4133 | 2026-10-15T14:35Z | 2026-10-15T14:30Z · kiro-202610150924-9ecd · ready → executing (PR opened, ready for review) |
-| vitana-platform |  | plan-spar-stale-session | _plan |  | approved | kiro | — |  | VTID-05254 | origin/kiro/plan-spar-stale-session/plan | 2026-10-20T10:13Z | 2026-10-20T10:13Z · ci-plan-spar · drafted → approved |
+| vitana-platform |  | plan-spar-stale-session | _plan |  | approved | kiro | — |  | VTID-05254 | origin/main | 2026-10-20T10:13Z | 2026-10-20T10:13Z · ci-plan-spar · drafted → approved |
 | vitana-platform |  | plan-spar-stale-session | stale-session-dedup | hotmail | in-review | kiro | — |  | VTID-05254 | https://github.com/exafyltd/vitana-platform/pull/4208 | 2026-10-20T10:28Z | 2026-10-20T10:28:14Z · kiro-hotmail-202610151618-b437 · ready → in-review |
 | vitana-platform |  | plan-spar-vitana-v1-ref | _plan |  | sparred | claude | — |  |  | origin/kiro/plan-spar-vitana-v1-ref/plan | 2026-10-19T23:07Z | 2026-10-19T23:07Z · ci-plan-spar · drafted → sparred |
 | vitana-platform |  | plan-spar-vitana-v1-ref | wire-extra-refs | exafy | ready | claude | — |  |  | origin/kiro/plan-spar-vitana-v1-ref/plan | 2026-10-15T22:03Z | 2026-10-15T22:03Z · kiro-202610152203-0347 · ready |

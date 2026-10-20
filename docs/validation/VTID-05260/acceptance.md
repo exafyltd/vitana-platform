@@ -35,4 +35,6 @@ changes (outputs/scope-check.txt): `scripts/collab/queue.mjs`, `scripts/collab/q
 `paths`. Plan A.5 names this as the one-time known false positive that §7b allows to be overridden. Every real test is
 green. The report-only **Collab handoff** step (outputs/collab-validate.txt) shows the same bootstrap finding as
 7 lines. They cover the governance `paths` of both lane files: 5 for `owner-governance` and 2 for
-`retry-partner-invalid`, whose `governance: owner` the plan author adds by a `_plan` commit after this merges.
+`retry-partner-invalid`, whose `governance: owner` the plan author adds by a `_plan` commit after this merges. Its 8th
+line is the lane's `ready` → `in-review`: validate compares the merge base with head, so a lane built in one PR always
+shows it.

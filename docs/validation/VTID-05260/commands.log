@@ -14,8 +14,9 @@ $ node scripts/collab/queue.mjs scope-check --base <base> --head <head> --branch
 # exit 1 — 5 governance files refused: the expected bootstrap red (plan A.5) -> outputs/scope-check.txt
 
 $ node scripts/collab/queue.mjs validate --base <base> --head <head> --branch kiro/collab-kiro-governance/owner-governance
-# exit 1 — 7 lines: the lane files' governance `paths` without governance: owner (same bootstrap; report-only step)
-#          -> outputs/collab-validate.txt
+# exit 1 — 8 lines (report-only step): 7 = the lane files' governance `paths` without governance: owner (same
+#          bootstrap); 1 = lane `ready` → `in-review` across this one PR (validate compares merge base with head)
+#          -> outputs/collab-validate.txt (captured at the in-review head)
 
 $ cmp / diff of the rule-file pairs (vitana-platform vs vitana-v1); node scripts/ci/kiro-steering/guard.cjs (both repos)
 # collaboration.md identical; vitana-kiro-notes.md identical; CLAUDE.md collaboration section identical; guard OK x2
