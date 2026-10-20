@@ -206,8 +206,12 @@ non-destructive staging work, merge sequencing, implementation details, VTIDs, b
 1. `.claude/rules/collaboration.md` (R1-F4), relative to the text `retire-claude-code` leaves on `main`:
    - new §7d (A–D above), inserted directly after §7c;
    - §7c is kept byte for byte;
-   - §7, §7a and §7b keep their text, and each only gains one pointer sentence to §7d (§7b stays the rule for
-     governance lanes and the record format);
+   - §7 and §7b keep their text, and each only gains one pointer sentence to §7d (§7b stays the rule for governance
+     lanes and the record format);
+   - §7a's prohibition sentence itself is amended (R3-F1). Its exception clause "— except under the owner-directed
+     exception in §7b below" becomes "— except under §7b (owner-directed, governance lanes) or §7d (standing
+     authority) below", and its live-write bullet names the B.5/B.6 workflows as the only §7d exceptions. No flat
+     "never dispatch/deploy" remains that §7d contradicts;
    - §8 gains one sentence saying automations may merge under B.4 if the owner chose that scope.
 2. `CLAUDE.md`:
    - the Autonomy contract's "Stop and ask mid-flight only for" becomes the §D list plus the five-part format;
@@ -219,6 +223,9 @@ non-destructive staging work, merge sequencing, implementation details, VTIDs, b
    - step 1's "never" list follows §C;
    - step 6 stops only for §D items, a governance path or a migration apply;
    - Reviewer B no longer leaves `verified` to Claude Code;
+   - the closing line "The Project Manager (or, until it runs, Claude Code) merges verified lanes, watches staging and
+     sends the owner Gate 2." is replaced by "Kiro merges verified lanes under §7d B.4, watches staging and prepares
+     Gate 2 (§7d B.5)" (R3-F2);
    - new item **D. Finish a verified lane:** a lane of the run's seat in `in-review` with a reviewer-seat `approve` on
      the current head. The run sets `verified`, merges under B.4 and, after the merge, appends the staging result
      when it exists. Order: A, B, D, C.
@@ -258,6 +265,7 @@ files, `docs/validation/<VTID>/`. vitana-v1 has no `.kiro/automations/`.
 - `collaboration.md` sha256 identical across the repos.
 - **Structure check (R1-F4):**
   - `collaboration.md` contains the headings §7, §7a, §7b, §7c and §7d, in that order;
+  - §7a's exception clause names both §7b and §7d (R3-F1);
   - `git diff <base> -- .claude/rules/collaboration.md` shows no removed line inside §7c;
   - the diff only adds §7d and the pointer sentences.
 - **Scoped grep (R1-F6),** over the files the lanes change:
