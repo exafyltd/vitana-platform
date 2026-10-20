@@ -4,8 +4,10 @@ author: kiro
 author_seat: hotmail
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-20T10:00Z
+state: approved
+updated: 2026-10-20T10:13Z
+sparring_record: .kiro/specs/plan-spar-stale-session/sparring/verdict.md
+vtids: [VTID-05254]
 ---
 # Handoff — plan-spar-stale-session
 Planner: Kiro seat `hotmail` (session kiro-hotmail-202610151618-b437). Plan: `plan.md` (between the plan
@@ -29,3 +31,6 @@ runs it, the five specs recover on their next push with no data change. Until th
 terminalize the five rows (`escalated`, `deadline_exceeded`) if they are in the way. That is a live write, and
 Kiro does not do it. Overlap: `sparring-floor-retry/floor-retry-code` (VTID-05240) edits the same `retryable`
 expression (`plan-sparring-service.ts:250-251`). Whichever merges second rebases and keeps both.
+
+### 2026-10-20T10:13Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.

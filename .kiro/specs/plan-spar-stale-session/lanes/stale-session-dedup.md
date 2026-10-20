@@ -11,7 +11,8 @@ paths:
   - services/gateway/src/services/plan-sparring/plan-sparring-repository.ts
   - services/gateway/test/plan-sparring-stale-session.test.ts
   - docs/validation/**
-updated: 2026-10-20T10:00Z
+updated: 2026-10-20T10:13Z
+vtid: VTID-05254
 ---
 # stale-session-dedup — re-run dead round-1 sparring sessions (repo vitana-platform)
 Plan: `.kiro/specs/plan-spar-stale-session/plan.md` and the `stale-session-dedup` section of `tasks.md`
@@ -30,3 +31,6 @@ On PR open: `state: in-review`, `next_actor: kiro`, `pr: <url>`, a log entry, th
 Created and held. Premise: `createSparringSession` dedup (`plan-sparring-service.ts:246-253`) returns a
 dead `in_progress` session with 0 rounds forever, because only an escalated session with a retryable reason
 (`:46`) is re-run. Reviewer seat `exafyltd` (≠ `hotmail`).
+
+### 2026-10-20T10:13Z · ci-plan-spar · ready (VTID allocated)
+VTID-05254 allocated after policy approval (converged-auto-v1).
