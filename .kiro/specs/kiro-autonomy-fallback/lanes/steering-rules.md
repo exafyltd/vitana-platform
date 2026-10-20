@@ -20,6 +20,7 @@ paths:
   - docs/validation/VTID-*/**
 claimed_by: kiro-exafyltd-202610201618-c018
 branch: kiro/kiro-autonomy-fallback/steering-rules
+pr: https://github.com/exafyltd/vitana-platform/pull/4226
 updated: 2026-10-20T18:22Z
 vtid: VTID-05278
 ---
@@ -50,4 +51,4 @@ and the protected gate file `CLAUDE.md` (roles paragraph only). Implemented plan
 measurement, §9), CLAUDE.md roles paragraph, the four steering files and the new `vitana-pipeline.md`; vitana-v1
 mirror on the same branch name with byte-identical files. Lane state stays `executing` in the PR (base `ready` →
 `in-review` is not a legal single-PR transition for `queue.mjs validate`); the PR is open for review by
-agent:vitana-lane-reviewer (claude-sonnet-5.5). Next: review → land (lands first).
+agent:vitana-lane-reviewer (claude-sonnet-5.5). Next: review → land (lands first).PRs: https://github.com/exafyltd/vitana-platform/pull/4226 (platform), https://github.com/exafyltd/vitana-v1/pull/1468 (vitana-v1 mirror).

@@ -18,3 +18,11 @@ sha256 (working tree, both repos equal):
 Select-String .kiro/steering/*.md 'implementer|IMPLEMENTER|Claude merges|Claude Code plans, reviews, merges|hand back to Claude Code|next_actor: claude|ask the owner before'
   -> vitana-platform 0 hits, vitana-v1 0 hits
 vitana-pipeline.md: no front matter (always included), no #[[file:.claude/rules/...]] link (both repos)
+
+Committed (kiro-agent[bot], trailers Collab-Session/Collab-Lane, no Co-Authored-By): platform 6d15434c88cfe2b16d860a9add6add7be9f6f9f9, v1 31ef5230109e458382e306167181b775cd0b608b
+collaboration.md committed-blob sha256: platform = v1 = 540A586808D387A859B17588F5F452DC857CFF15AE3FDB8B923A34033547AE46
+[vitana-platform] node scripts/collab/queue.mjs validate --base origin/main --head HEAD --branch kiro/kiro-autonomy-fallback/steering-rules -> collab handoff: 1 lane file changed, all valid (exit 0)
+[vitana-platform] node scripts/collab/queue.mjs scope-check --base origin/main --head HEAD --branch ... -> lane scope: every change inside its paths (exit 0)
+[vitana-v1] node <platform>/scripts/collab/queue.mjs validate --repo <v1> --base origin/main --head HEAD --lane-repo exafyltd/vitana-platform -> all valid (exit 0)
+[vitana-v1] node <platform>/scripts/collab/queue.mjs scope-check --repo <v1> --base origin/main --head HEAD --lane-repo exafyltd/vitana-platform -> every change inside its paths (exit 0)
+PRs: https://github.com/exafyltd/vitana-platform/pull/4226 , https://github.com/exafyltd/vitana-v1/pull/1468
