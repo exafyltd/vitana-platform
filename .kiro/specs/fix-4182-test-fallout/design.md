@@ -27,14 +27,18 @@
 - **Keep the assertion's intent.** Lane A still asserts that the sanitizer is served on staging. Lane B still
   asserts that `index.html` loads `app.js` with the current cache key.
 - **Exact strings, not regexes.** That matches each file's existing style and is the smallest diff.
-- **Two lanes, no dependency.** They touch disjoint files and are proven by different checks
-  (STAGING-VERIFY and Jest).
+- **Two lanes, merge order A then B.** They touch disjoint files. STAGING-VERIFY reads manifests from the deployed
+  commit (`STAGING-VERIFY.yml` `target` checkout at `env.SHA`), and Lane A (`docs/validation/**`) is not a deploy path
+  (`lib.cjs:41`, `:102`), so Lane A's fix is proven by the next gateway deploy that contains it. Lane B
+  (`services/gateway/test/**`) is a deploy path, so merging it after Lane A makes its STAGING-VERIFY run the proof.
+  Lane A has no Gate 2 of its own.
 - **Stale comments stay.** `index.html:28` and the `svg-preview.js` header are out of scope, because they sit on product
   and deploy paths.
 
 ## Verification
 - Lane `staging-test-05082`: both JSON files parse with `node -e "JSON.parse(...)"`. A read-only GET of
   `https://preview-aws-gateway.vitanaland.com/command-hub/svg-preview.js?v=20261121-vtid-05082` returns 200 and
-  contains `sanitizeSvgMarkup`. The next gateway STAGING-VERIFY passes VTID-05082 #3.
+  contains `sanitizeSvgMarkup`. The STAGING-VERIFY run of the next gateway deploy containing the fix (normally Lane B's
+  merge) passes VTID-05082 #3.
 - Lane `jest-05077-cachebuster`: `cd services/gateway; npx jest test/vtid-05077-planner-fallback-and-thinking.test.ts`
   passes. The lane's own `staging-tests.json` parses.

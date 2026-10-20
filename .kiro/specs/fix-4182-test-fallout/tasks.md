@@ -22,6 +22,8 @@ Acceptance:
 - A read-only GET of `https://preview-aws-gateway.vitanaland.com/command-hub/svg-preview.js?v=20261121-vtid-05082`
   returns 200 and the body contains `sanitizeSvgMarkup`.
 - The diff touches only the allowed paths.
+- Docs-only: no staging deploy, no Gate 2. Merges before `jest-05077-cachebuster`; the STAGING-VERIFY run of the next
+  gateway deploy containing this fix (normally that lane's merge) is the proof, recorded in this lane's log.
 <!-- lane: staging-test-05082 -->
 
 <!-- lane: jest-05077-cachebuster -->
@@ -37,6 +39,8 @@ Allowed paths:
   returns 200 and contains `/command-hub/app.js?v=20261121-vtid-05082`. Record the Jest command and its result in `commands.log`.
 - [ ] B3. Before opening the PR, check #4207 (`gateway-test-cachebust/fix-pin`). If it has already fixed `:212` on
   `main`, B1 is an empty diff: record that in the lane log and hand the lane back as done, with no PR.
+- [ ] B4. Open the PR only after `staging-test-05082` has merged, so this lane's staging deploy carries the
+  corrected VTID-05082 manifest and its STAGING-VERIFY run proves both lanes.
 
 Acceptance:
 - `cd services/gateway; npx jest test/vtid-05077-planner-fallback-and-thinking.test.ts` passes.

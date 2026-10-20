@@ -26,8 +26,10 @@ expectations. The product code is correct in both cases. Premises are checked ag
 5. Every gateway STAGING-VERIFY run since #4182 has failed on this test, and on nothing else in the last run:
    39390425454, 39391474724, 39398336187, and 39456004226 (21/22, verified commit `3063c954`). Production is at
    `4e0e7d1f`, before 05082, so this suite is in every release range. It blocks Gate 2 for every gateway release
-   (VTID-05208, VTID-05254 and later) until it is fixed. `scripts/ci/staging-verify/run.mjs` `loadManifest`
-   reads the manifest from the checkout, so a corrected file on `main` takes effect on the next run.
+   (VTID-05208, VTID-05254 and later) until it is fixed. `scripts/ci/staging-verify/run.mjs:202` `loadManifest`
+   reads the manifest from the `target` checkout, and `STAGING-VERIFY.yml` checks `target` out at the
+   **deployed** commit (`ref: ${{ env.SHA }}`), not at `main`. So the corrected file takes effect only on a
+   STAGING-VERIFY run whose deployed commit already contains it (see "How Lane A's fix gets verified").
 
 **Which side is stale: the test.** The module move was deliberate and is documented in the commit message.
 
@@ -48,7 +50,7 @@ expectations. The product code is correct in both cases. Premises are checked ag
 
 **Which side is stale: the test.** The bumped cache key is the intended shipped value.
 
-## Change (two independent lanes, test data only, no product code)
+## Change (two lanes, test data only, no product code; Lane A merges before Lane B)
 1. Lane `staging-test-05082`: edit `docs/validation/VTID-05082/staging-tests.json`.
    - Test #3: path becomes `/command-hub/svg-preview.js?v=20261121-vtid-05082`, and the name becomes "deployed
      svg-preview.js contains the SVG sanitizer/renderer". `expect_status: 200` and
@@ -64,6 +66,26 @@ expectations. The product code is correct in both cases. Premises are checked ag
    cache bump has to update it, as the asset-bump gate already requires for its sibling pins.
    - The lane's own record, `docs/validation/<VTID>/`, holds a read-only `staging-tests.json`: GET `/alive`,
      and GET `/command-hub/index.html` contains `/command-hub/app.js?v=20261121-vtid-05082`.
+
+## How Lane A's fix gets verified (sparring round 1)
+- Lane A is docs-only. `docs/validation/**` is not a gateway deploy path (`scripts/ci/staging-verify/lib.cjs:41`,
+  `touchesService` at `:102`), and `AWS-STAGE-DEPLOY-GATEWAY.yml` only triggers on `services/gateway/**` and its own
+  file. So Lane A's merge triggers no staging deploy, `STAGING-TESTS-REQUIRED` (check-pr) skips its PR, and its VTID is
+  never range-verified (`planRange` skips commits that do not touch the service, `lib.cjs:279`). Lane A deploys
+  nothing, so it has no Gate 2 of its own: it is done when merged with green checks. The plan does not claim that
+  Lane A's own commit is verified by the range or that its own suite blocks Gate 2.
+- The fix is proven by the **next gateway deploy whose commit contains it**. Lane B touches
+  `services/gateway/test/**`, which is a deploy path, so Lane B's merge is that deploy. Order: **Lane A merges
+  first, Lane B second** (task B4: Lane B opens its PR only after Lane A has merged). The STAGING-VERIFY run
+  for Lane B's merge commit then checks out a tree with the corrected manifest, runs the VTID-05082 suite (05082 is
+  still in the production..staging range) and must pass test #3. That run's result is the evidence for both lanes,
+  and Lane B's Gate 2 lists both lanes.
+- Staging already serves the module: `80e2b3553` is deployed on staging (verified commit `3063c954` contains it),
+  and a read-only GET of `svg-preview.js?v=20261121-vtid-05082` on 2026-10-20 returned 200 containing
+  `sanitizeSvgMarkup`. Production being at `4e0e7d1f` does not matter for the test: STAGING-VERIFY targets staging only.
+- If Lane B ends with an empty diff (B3: #4207 fixed `:212` first), the next gateway-deploying merge of any kind is the
+  proving run, and the nightly full run (`STAGING-VERIFY-NIGHTLY.yml`, `full=true`, deployed commit) also runs the
+  corrected suite once a deploy contains it. Lane A's log records which run proved it.
 
 ## Out of scope
 - `index.html`, `svg-preview.js`, `operator-console.js` and every other product file. That includes the two
@@ -84,7 +106,8 @@ in substance. Kiro does not close #4207 itself.
     succeeds, and the same check passes for the lane's own `staging-tests.json`.
   - A read-only, unauthenticated GET of `https://preview-aws-gateway.vitanaland.com/command-hub/svg-preview.js?v=20261121-vtid-05082`
     returns 200 and the body contains `sanitizeSvgMarkup`. Staging only. No suite targets production.
-  - After merge, the next gateway STAGING-VERIFY passes VTID-05082 test #3.
+  - After merge, the STAGING-VERIFY run for the next gateway deploy that contains the fix (normally Lane B's merge)
+    passes VTID-05082 test #3. Lane A itself deploys nothing and has no Gate 2.
 - Lane `jest-05077-cachebuster`:
   - `cd services/gateway; npx jest test/vtid-05077-planner-fallback-and-thinking.test.ts` passes, all tests in the file.
   - The lane's `staging-tests.json` parses as JSON. The gateway Jest job in TEST-SUITE is green on the lane PR.
