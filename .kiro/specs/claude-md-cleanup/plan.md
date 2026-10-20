@@ -94,7 +94,9 @@ a pinned commit ships the full snapshot including every ancestor; diff it agains
 `/api/v1/admin/build-info` reports as live; stop and tell the user if the range holds commits they did not approve;
 a PUBLISH promotion needs no extra scoping.
 
-**F.** IF–THEN AI 26 (`:726-730`) loses the "supersedes the former rules 26 and 27 (Gemini Pro/Flash)" history.
+**F.** IF–THEN AI 26 (`:726-730`) loses the "supersedes the former rules 26 and 27 (Gemini Pro/Flash)" history and,
+being a duplicate of ALWAYS 10a/10b, folds into ALWAYS 10a (its "route at `provider: 'bedrock'`, never `'anthropic'`"
+wording kept there); number retired (see Numbering).
 
 **G. Incident narratives** shrink to one "why" clause each, VTID refs kept (NEVER 1 `:250-257`, 10b `:179-187`,
 41 `:309-319`, 43–44 `:402-427`, rule 32 `:617-625`, §4 criterion 5 `:871-877`, Part 2 / CHANGE LOG relocation prose
@@ -115,19 +117,26 @@ Live / Live Rooms); sidebar changes are forbidden.
   per the v1 screen/registry/parity rules (screen manifest, `screens.json`/`exclusions.json`, parity ledger).
 
 **J. Numbering** (see below) and a cross-reference sweep: `git grep` both repos (`CLAUDE.md`, `.claude/**`,
-`.kiro/**`, `docs/**`, `scripts/**`) for references to any number that changes; fix the ones inside lane paths; list
-the ones outside lane paths in the PR body (not edited here).
+`.kiro/**`, `docs/**`, `scripts/**`) for references to any number that changes or retires; fix the ones inside lane
+paths; for the ones outside lane paths (not edited here) the PR body lists each with the kept number, `AI-n` alias or
+retired-number index entry it resolves to.
 
 **K. Codebase intelligence** (`:933-1021`, ~89 lines) becomes a short "recommended" section: use RepoWise / Graphify
 for unfamiliar or cross-module work; the tool list kept compactly (`get_overview`, `search_codebase`, `get_context`,
 `get_symbol`, `get_why`, `get_risk`; `graphify query|path|explain`, `graphify update .`). Dropped: the mandatory
 freshness check, the mandatory pre-execution code map, the "no broad grep" ban and the mandatory re-index of both
-indexes after every change.
+indexes after every change. **This is an intentional process-rule downgrade (mandatory → recommended), owner
+instruction 2026-10-20** (R1-F3): it is not in MUST KEEP, and the lane's `outputs/diff-review.md` lists it in its own
+"weakened on purpose" row (with the K items for v1) so the reviewer and the owner confirm it as a decision, not an
+accidental loss. Kept as a rule: source and tests stay the final authority over any index result.
 
-**M. Collaboration paragraph** (`:115-127`) agrees with `collaboration.md` §7/§7b: Kiro plans, builds and reviews
+**M. Collaboration paragraph** (`:115-127`) agrees with `collaboration.md` §3a/§7/§7b: Kiro plans, builds and reviews
 through the reviewer agent `vitana-lane-reviewer`; CI spars and allocates VTIDs; the Project Manager merges under §7b
 (owner-directed staging-only merge rule; the plan driver applies it while the PM is not live); Claude Code is optional
-and handles exceptions; Kiro never deploys to production and never writes a live system from session tools.
+and handles exceptions (`executor: claude` lanes, built by the exceptions seat while Claude is unavailable); a change
+to a protected gate file (§3a, e.g. `CLAUDE.md`) never merges on a reviewer-agent accept alone and needs a legacy
+Claude or owner review on the current head (R1-F4); Kiro never deploys to production and never writes a live system
+from session tools.
 
 **Steering (platform).** `vitana-kiro-notes.md` and `vitana-load-project-rules.md` keep pointing at
 `collaboration.md` §7–§7b as the single source of truth for roles (Kiro plans, builds, reviews; never allocates a VTID
@@ -152,14 +161,30 @@ Paths: `CLAUDE.md`, `.kiro/steering/vitana-kiro-notes.md`, `.kiro/steering/vitan
   i18n rules, RTL, AI locale rule.
 
 ## Numbering (J)
-Stable numbers, no reuse: every surviving rule keeps its current number, so the external references (premise 4) stay
-valid. Deleted numbers are retired, not reused (gaps are allowed). A merged rule keeps the lowest number of its group
-(B → ALWAYS 20; H → ALWAYS 31; I → NEVER 27). Collisions are removed by section prefixes on the two ranges that
-collide: the generic NEVER rules 1–40 become `N1`–`N40` (same digits); the standing-rule blocks keep their plain
-numbers 41–55 and 42a–42h; the IF–THEN rules become `T1`–`Tn`, numbered once in reading order (they collide with each
-other today, so they need new numbers). ALWAYS keeps plain 1–40 with 2b and 10a–10c. Cross-references inside the file
-("rules 51–55", "rule 2b", "§4.1", "ALWAYS 10a/10b", "Part 1 rules 46–50") are checked and stay valid; any reference to
-a `NEVER n` or IF–THEN number is rewritten to the new label.
+Stable digits, no reuse, no new labels except where a collision survives (R1-F1). Every surviving rule in ALWAYS
+(1–40, 2b, 10a–10c), NEVER (1–40) and the standing-rule blocks (41–55, 42a–42h) keeps its plain current number; ALWAYS,
+NEVER and IF–THEN stay separately named sections, so "ALWAYS n", "NEVER n" and "IF–THEN n" remain distinct labels.
+Deleted numbers are retired, not reused (gaps allowed). A merged rule keeps the lowest number of its group (B →
+ALWAYS 20; H → ALWAYS 31; I → NEVER 27). The edits themselves remove most collisions: ALWAYS 21–22 (infra) retire into
+ALWAYS 20, so database 21–22 are unique; IF–THEN deployment-verification 16–20 and memory 16–20 retire; IF–THEN
+frontend 21–25 retire (into ALWAYS 31, N27 and ALWAYS 36–40), so CI/CD 21–26 are unique; the visual-verification steps
+26–30 become one unnumbered paragraph (C); IF–THEN AI 26 (a duplicate of ALWAYS 10a/10b) folds into ALWAYS 10a. The only
+collision left is IF–THEN 31 (test account, cited as "rule 31/31b/32" in ~25 places) vs IF–THEN AI 31 (Bedrock
+ordering, cited as "IF-THEN 31" in ~8 places). The test-account rules keep plain 31/31b/32; the AI rules become
+`AI-27`–`AI-31` (same digits) under a header line "cited elsewhere as IF–THEN 27–31". So every external reference
+found today (`.claude/rules/backend.md`, `.claude/rules/infrastructure.md`, `scripts/**`, `docs/**`: "IF-THEN 26" =
+CI/CD 26, "IF-THEN 27/31" = AI-27/AI-31, "rule 31/31b/32" = test account, "rules 31–33" sidebar = ALWAYS 31) still
+resolves to the rule it meant, with no edit outside the lane paths.
+**Retired-number index.** A short table at the end of Part 1 lists every retired number with where its substance now
+lives ("ALWAYS 21–22 (infra) → ALWAYS 20", "NEVER 21–23 → ALWAYS 31", "IF–THEN 25 → NEVER 27", "IF–THEN 20 → deleted:
+deploys go through CI, ALWAYS 17") or "generic, removed" for the A deletions, so an old reference to a retired number
+(e.g. "NEVER rule 31" in a plan doc) still lands somewhere explicit instead of dangling.
+**Sweep.** `git grep` both repos (`CLAUDE.md`, `.claude/**`, `.kiro/**`, `docs/**`, `scripts/**`, code comments) for
+every changed or retired label; fix those inside lane paths; the rest must each resolve via a kept number, the AI-n
+alias or the retired-number index — the lane evidence (`outputs/xref-sweep.md`) lists each hit with how it resolves,
+and the lane fails acceptance if any hit in a loaded rules file (`.claude/rules/**`, `.kiro/steering/**`) resolves to
+nothing. Cross-references inside the file ("rules 51–55", "rule 2b", "§4.1", "ALWAYS 10a/10b", "Part 1 rules 46–50",
+"rules 31–32" in rule 48) stay valid.
 
 ## MUST KEEP (L) — only condense wording, never weaken
 absolute no-testing-on-production; single Supabase project for all hosts; test/service account allowlists
@@ -176,17 +201,28 @@ VTID format, target roles + INFRA exclusive, task lifecycle, worker eligibility 
 ## Decisions
 1. **No trivial-change sparring exemption.** The owner's global steering requires sparring for every plan, however
    small, and the `vtid_ledger` trigger enforces it; rules 51–55 are condensed only.
-2. **Executor.** Kiro builds both lanes (owner instruction 2026-10-20). The Lane scope check on an `executor: kiro`
-   lane touching `CLAUDE.md`/`.kiro/steering/**` is a known false positive for this owner-instructed change, and the
-   builder stays Kiro. Because `queue.mjs validate` refuses an `executor: kiro` lane that declares the protected gate
-   file `CLAUDE.md` at all (premise 9), the lane files carry the validator's required value `executor: claude` — the
-   same bootstrap as `kiro-autonomy-fallback/steering-rules` (VTID-05278) — with `next_actor: kiro` and the lane log
-   naming Kiro as the builder. No gate script is changed to make this pass.
+2. **Executor — a named owner exception, not a routine bootstrap (R1-F2).** `executor: claude` is the route
+   `collaboration.md` §7 gives a lane that touches a protected gate file: Claude Code builds it when available, else
+   the exceptions seat (`CLAUDE_AVAILABLE` is `false` today, read-only `gh variable get`). This plan uses that route
+   and names the exception explicitly: **the builder is Kiro, by the owner's instruction in chat 2026-10-20 ("ok,
+   update claude.md and make changes you recommend here")**, recorded (a) here, (b) in each lane file's log entry
+   written with the claim on the lane branch ("Owner exception: executor: claude, built by Kiro"; a `_plan` commit may
+   not edit an existing lane file, `queue.mjs:468`, and the lane bodies already name Kiro as the builder), and (c) as
+   the first section of each lane PR body, which asks the owner to confirm the mechanism together with the content. The field does not unlock a
+   merge: a protected gate file never merges without a legacy Claude or owner review on the current head (§3a,
+   §7b), and that review is the owner's sign-off on both the diff and this exception. No gate script is changed, and
+   nothing in this plan treats the field value as a precedent for other lanes.
 3. **Lane PRs are not merged by Kiro.** `CLAUDE.md` is a protected gate file (`collaboration.md` §3a, §7b last
    bullet): it needs owner (or legacy Claude) review on the current head. Both lane PRs stop open, ready for review,
-   all real checks green.
+   all real checks green. **Review path (R1-F4):** for these `executor: claude` protected-gate lanes the accepting
+   review is the owner / legacy Claude review (§3a), not a reviewer-agent `Collab-Verdict`; the lane files carry no
+   `reviewer_seat`. The reviewer agent `vitana-lane-reviewer` still runs on each diff as the independent,
+   non-author check the Verification section requires (weakened rules, lost facts), and its result is posted to the
+   PR as advisory input for the owner's review.
 4. **`.claude/CLAUDE.md` is not edited** in either repo (Repowise-generated, regenerated by the tool).
-5. Numbering keeps every surviving number stable (premise 4); retired numbers are not reused.
+5. Numbering keeps every surviving rule's digits stable in every section (premise 4, R1-F1); the only new labels
+   are `AI-27`–`AI-31` (same digits, aliased to "IF–THEN 27–31"); retired numbers are not reused and are listed in the
+   retired-number index.
 6. IF–THEN 20 (`git reset --hard`) is deleted, not reworded (B).
 7. The steering role rewrite was already done by VTID-05278 (premise 5); this plan only removes the stale line count
    and duplicated text, and keeps the files byte-identical across repos.
@@ -194,6 +230,8 @@ VTID format, target roles + INFRA exclusive, task lifecycle, worker eligibility 
    PR the builder checks for other open PRs touching that file and rebases onto latest `main`.
 9. Docs only, no deploy: no `staging-tests.json`, no STAGING-VERIFY, no Gate 2; done is "lane PRs open, green, awaiting
    owner review". No deploy, no `workflow_dispatch`, no writes to Supabase/AWS/gateway.
+10. K (codebase intelligence mandatory → recommended) is an intentional, owner-instructed process-rule downgrade,
+   flagged as such in the diff review (R1-F3).
 
 ## Verification
 - Per changed file, a "removed / condensed / kept" table in the lane's `docs/validation/<VTID>/outputs/`.
@@ -204,7 +242,11 @@ VTID format, target roles + INFRA exclusive, task lifecycle, worker eligibility 
   `EXECUTION_DISARMED`, `X-BYPASS-ORCHESTRATOR`, `test:support`, `test:operator`, `test:roles`,
   `persona-voice-gender`, `a27552a3-0257-4305-8ed0-351a80fd3701` (v1: the subset its file carries today, plus
   `20260805160000`).
-- Line counts before/after in `commands.log`; a grep that no Part 1 rule label appears twice.
+- Line counts before/after in `commands.log`; a grep that no Part 1 rule label appears twice within a section.
+- `outputs/xref-sweep.md`: every external reference to a changed or retired label, with what it resolves to; none in
+  `.claude/rules/**` or `.kiro/steering/**` resolves to nothing.
+- `outputs/diff-review.md` has a "weakened on purpose" row: K only (R1-F3); every other row is removed / condensed /
+  kept.
 - `node scripts/collab/queue.mjs validate --base origin/main --head HEAD` (platform) on each branch, and any
   markdown/doc lint the repos run in CI.
 - PR bodies satisfy each repo's PR gate (platform `validate-pr`: `VTID:`, `VALIDATION_PROFILE: gateway_backend`,

@@ -31,19 +31,25 @@ intelligence + graphify `:486-574` (K). Steering files in both repos: `vitana-ki
 `vitana-load-project-rules.md` (26 lines), byte-identical across repos today.
 
 ## Decisions
-- **Stable numbers.** Surviving rules keep their numbers; deleted numbers are retired; merged rules keep the lowest
-  number. Generic NEVER rules get the prefix `N` (same digits); IF–THEN rules become `T1`–`Tn` in reading order.
-  ALWAYS (1–40, 2b, 10a–10c) and the standing-rule blocks (41–55, 42a–42h) keep plain numbers, so the ~530 external
-  references (`docs/validation/**`, `docs/*.md`, `.kiro/specs/**`, code comments) stay valid.
+- **Stable numbers (R1-F1).** Every surviving rule keeps its plain digits in ALWAYS, NEVER, IF–THEN and the
+  standing-rule blocks; deleted numbers are retired and listed in a retired-number index; merged rules keep the
+  lowest number. The edits remove every collision but one; IF–THEN AI 27–31 become `AI-27`–`AI-31` (same digits,
+  aliased "cited elsewhere as IF–THEN 27–31") so the test-account rules keep plain 31/31b/32. The ~530 external
+  references (`.claude/rules/**`, `docs/**`, `.kiro/specs/**`, `scripts/**`, code comments) all resolve; the sweep
+  evidence (`outputs/xref-sweep.md`) shows how.
+- **Codebase intelligence downgrade (R1-F3).** Mandatory → recommended is recorded as an intentional,
+  owner-instructed weakening in the diff review, not hidden among condensations.
 - **Condense, never reword meaning.** For every MUST KEEP item the new text keeps the trigger, the action and the
   named file/flag/endpoint; only narrative, duplicated explanation and incident numbers go.
 - **One "why" clause per incident**, VTID kept (for example: "a test account once sent 445 identical DMs
   (VTID-03990)").
 - **Steering files stay byte-identical** across the two repos after the change.
-- **Lane executor.** `executor: claude` in the lane files is the value `queue.mjs validateLane` (`:231-235`) requires
-  for a lane that declares the protected gate file `CLAUDE.md`; Kiro builds the lanes (owner instruction 2026-10-20),
-  as in `kiro-autonomy-fallback/steering-rules`. No gate script is touched.
-- **No merge by Kiro.** Protected gate file → owner review on the current head.
+- **Lane executor — named owner exception (R1-F2).** `executor: claude` is the §7 route for a protected-gate lane
+  (Claude Code, else the exceptions seat); Kiro builds these lanes on the owner's explicit instruction of 2026-10-20,
+  recorded in plan Decision 2, each lane's claim log entry and the first section of each lane PR body, where the owner confirms it
+  with the content. No gate script is touched; not a precedent.
+- **No merge by Kiro; review path (R1-F4).** Protected gate file → owner / legacy Claude review on the current head
+  is the accepting review (§3a); the reviewer agent's review is advisory, non-author input. No `reviewer_seat`.
 
 ## Flow per lane
 ```
