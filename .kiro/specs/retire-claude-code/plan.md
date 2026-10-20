@@ -32,37 +32,71 @@ replacement. Nothing becomes less protected than today.
   (community-app run 39397664080, gateway run 39398336187). 10 workflows in vitana-platform, 3 in vitana-v1.
 
 ## Changes (5 lanes)
-1. `scope-rules` (platform) — `queue.mjs` + tests: a lane with `governance: true` and `executor: kiro` may declare and
-   change governance paths; `validate` then requires `reviewer_seat` to be a Kiro seat ≠ `seat` (never `claude`).
-   Lane permission fields may change in a `_plan` commit by a session of the plan's `author_seat`. `reviewer_seat:
-   claude` on existing lanes accepts a review from any Kiro seat ≠ `seat`. `executor: claude` stays valid (no data
-   migration) but is no longer created. Everything else in validate/scope-check is unchanged.
+1. `scope-rules` (platform) — `queue.mjs` + tests. What code enforces (R1-F2/F3):
+   - a lane may declare or change a governance path only with `governance: true`; such a lane's `seat` and
+     `reviewer_seat` must both be seats listed in `docs/programs/areas.yaml`, and different (`claude` refused);
+   - on a governance lane every build commit's session names the lane's `seat` and every review entry's session names
+     `reviewer_seat` (`kiro-<seat>-…`). Unseated `kiro-YYYY…` ids and `session_…` ids are refused there;
+   - a governance lane moving to `verified` or `done` needs a log entry with an `owner-instruction:` line (the
+     owner's words + date) and a `merge:` line (merge SHA). This is the audit record of the human step;
+   - lane permission fields (`executor`, `seat`, `reviewer_seat`, `paths`, `governance`) may change only in a `_plan`
+     commit by a session of the plan's `author_seat`, and only in a PR that also changes that plan's `plan.md`, so
+     PLAN-SPAR re-spars every permission change;
+   - legacy `reviewer_seat: claude` on non-governance lanes accepts a named Kiro seat ≠ `seat`; `executor: claude`
+     stays valid for existing lanes but is no longer created.
+   **What code cannot enforce:** all Kiro accounts share the `exafyltd` GitHub identity, so a seat in a session id is
+   self-declared and no check can tell two Kiro accounts apart. The seat rules keep honest sessions apart and make
+   every step attributable. The real boundary for a governance change is the owner's explicit per-PR merge
+   instruction, a human act no agent can produce. The plan states this rather than claiming more.
 2. `rules-platform` (platform, governance) — `.claude/rules/collaboration.md` (§7 roles, §7a, §7b kept, new §7c
-   production options, governance guard), `CLAUDE.md` roles paragraph, `.kiro/steering/*` role text,
+   production options, governance guard), `CLAUDE.md` roles paragraph, and the role text in exactly these steering
+   files (R1-F5): `vitana-load-project-rules.md`, `vitana-kiro-notes.md`, `vitana-standing-rules.md` (:6),
+   `vitana-collaboration.md` (title only; it stays a `#[[file:]]` link). `scripts/ci/kiro-steering/guard.cjs` must
+   stay green;
    `.kiro/automations/*.md` (housekeeping from the routine moves to seat `exafyltd`'s run; every automation skips
    governance lanes and never merges or deploys), `routine-prompt.md` marked retired. `docs/programs/areas.yaml`
    unchanged.
-3. `rules-v1` (vitana-v1, governance) — the same `collaboration.md` (byte-identical), `CLAUDE.md`, steering.
-4. `ci-runner-platform` (platform, governance) — `runs-on: ubuntu-24.04` on every job that installs Playwright, in the
-   10 workflows. No Playwright version change, no test change.
+3. `rules-v1` (vitana-v1, governance) — the same `collaboration.md` (byte-identical), `CLAUDE.md`, and the same four
+   steering files.
+4. `ci-runner-platform` (platform, governance) — `runs-on: ubuntu-24.04` on every job that runs a browser, whether the
+   install is in the YAML or in a script: STAGING-VERIFY installs Chromium inside
+   `scripts/ci/staging-verify/run.mjs:255`, not in its YAML (R1-F4). Files: `ANDROID-DEVICE-E2E.yml`,
+   `E2E-ORB-MONITOR.yml`, `E2E-TEST-RUN.yml`, `MOBILE-DEVICE-E2E.yml`, `MORNING-SYSTEM-HEALTH-CHECK.yml`,
+   `SCREEN-LOAD-TIMING.yml`, `STAGING-TESTS-REQUIRED.yml`, `STAGING-VERIFY-NIGHTLY.yml`, `STAGING-VERIFY.yml`,
+   `VISUAL-VERIFY-FRONTEND.yml`. A new test `scripts/ci/playwright-runner-pin.test.mjs` scans `.github/workflows/`
+   in both checkouts it is given. Any job on `ubuntu-latest` whose steps run `playwright install`,
+   `@playwright/test`, `playwright test` or `staging-verify/run.mjs` fails it. It is wired into the PR-GATE step that
+   already runs `node --test scripts/collab/queue.test.mjs` (`PR-GATE.yml:71`). No Playwright version change.
 5. `ci-runner-v1` (vitana-v1, governance) — the same pin in `PR-GATE.yml`, `E2E-PREVIEW-ORB.yml`,
-   `STAGING-TESTS-REQUIRED.yml`.
+   `STAGING-TESTS-REQUIRED.yml`; the platform test is run against this checkout in the PR body.
 
 Order: `scope-rules` first; then the other four in parallel (the two CI lanes first in practice: they unblock Gate 2
 for every change, incl. VTID-05229).
 
-## Bootstrap
-Today's Lane scope check (fetched from platform main) refuses every governance path from a Kiro lane, so the
-`scope-rules` PR — and this plan PR's lane files, which `validate` flags — fail Collab handoff / Lane scope by
-construction. That is the governance-artifact false positive §7b allows the owner to `--admin`-override, on an
-explicit per-PR instruction. After `scope-rules` is on main the override is never needed again.
+## Bootstrap (R1-F1, verified 2026-10-20)
+Today's checker (fetched from platform main) refuses every governance path from a Kiro lane, so this plan PR (Collab
+handoff) and the `scope-rules` PR (Collab handoff, Lane scope) are red by construction. Neither check is a required
+status check:
+- vitana-platform `main` requires only `validate` (`ENFORCE-FRONTEND-CANONICAL-SOURCE.yml`), and it passes here;
+- vitana-v1 `main` has no branch protection and no rulesets.
+
+So GitHub merges these PRs with those checks red, and no `--admin` or override flag is needed. The only merger that
+waits for a green Lane scope is the Project Manager, which is not live (`PM_MODE` dry_run). The bootstrap is
+therefore exactly two merges, each on the owner's explicit per-PR instruction:
+1. this plan PR;
+2. the `scope-rules` PR. Its reviewer seat must confirm that every red line in Lane scope and Collab handoff is the
+   old governance refusal and nothing else.
+
+Both are recorded with the instruction and merge SHA. From then on, Lane scope is fetched from main with the new
+rules and must be green for every lane.
 
 ## Tests
 - `scope-rules`: `queue.test.mjs` cases for every new rule and every unchanged refusal (governance path without
   `governance: true`; governance lane with `reviewer_seat: claude` or = `seat`; permission change by another seat or
   outside `_plan`; legacy `executor: claude` lane still validates). `node --test scripts/collab/` green.
 - Text lanes: `queue.mjs validate` green; `collaboration.md` byte-identical across repos (sha256 in the PR).
-- CI lanes: the PR's own preview-e2e installs Chromium and runs; after merge STAGING-VERIFY for community-app at the
+- CI lanes: `scripts/ci/playwright-runner-pin.test.mjs` green on both checkouts, and red on origin/main (negative
+  control); the PR's own preview-e2e installs Chromium and runs; after merge STAGING-VERIFY for community-app at the
   latest main commit passes its browser step (first: VTID-05229 at 32a82e6b6 or later).
 - No staging or production data touched; no test targets production.
 

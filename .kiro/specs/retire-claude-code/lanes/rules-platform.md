@@ -17,6 +17,8 @@ paths:
   - .kiro/automations/exafyltd.md
   - .kiro/automations/jtadic.md
   - scripts/collab/routine-prompt.md
+  - .kiro/steering/vitana-standing-rules.md
+  - .kiro/steering/vitana-collaboration.md
   - docs/validation/VTID-*/**
 updated: 2026-10-20T10:45Z
 ---

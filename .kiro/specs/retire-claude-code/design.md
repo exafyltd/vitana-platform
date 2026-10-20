@@ -10,6 +10,11 @@
     revision only when every commit touching the lane file is a `_plan` commit (`Collab-Lane: <slug>/_plan`) by a
     session whose seat equals the plan's `author_seat`, or (legacy) a `session_…` commit on an `executor: claude` lane;
   - `reviewer_seat: claude` review entries: accept a Kiro session whose seat ≠ lane `seat` (and still `session_…`).
+- governance lanes (`governance: true`): `seat` and `reviewer_seat` must be keys of `seats:` in
+  `docs/programs/areas.yaml` and differ; build commits must come from `kiro-<seat>-…` sessions, review entries from
+  `kiro-<reviewer_seat>-…`; unseated and `session_…` ids refused; a move to `verified`/`done` requires a log entry with
+  `owner-instruction:` and `merge:` lines;
+- permission changes additionally require the same PR to change the plan's `plan.md` (so PLAN-SPAR re-spars them);
 - `GOVERNANCE_PATHS` unchanged.
 
 ## 2. Rule text (lanes `rules-platform`, `rules-v1`)
@@ -24,8 +29,10 @@
 - `routine-prompt.md`: one-line header "Retired 2026-10-20 (retire-claude-code); kept for history."
 
 ## 3. CI runner pin (lanes `ci-runner-platform`, `ci-runner-v1`)
-In each listed workflow, every job whose steps run `playwright install` (or `scripts/ci/staging-verify/run.mjs`, which
-installs it): `runs-on: ubuntu-latest` → `runs-on: ubuntu-24.04`. Other jobs untouched.
+In each listed workflow, every job whose steps run `playwright install`, `@playwright/test`, `playwright test` or
+`scripts/ci/staging-verify/run.mjs` (which installs Chromium at :255): `runs-on: ubuntu-latest` →
+`runs-on: ubuntu-24.04`. Other jobs untouched. `scripts/ci/playwright-runner-pin.test.mjs` (node:test) enforces it and
+runs in PR-GATE next to `queue.test.mjs`.
 
 ## 4. Tests
 `scripts/collab/queue.test.mjs` (`node --test`), one case per rule in §1 including the unchanged refusals. CI lanes

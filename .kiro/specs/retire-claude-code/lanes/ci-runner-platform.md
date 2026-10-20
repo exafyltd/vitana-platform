@@ -19,6 +19,8 @@ paths:
   - .github/workflows/STAGING-VERIFY-NIGHTLY.yml
   - .github/workflows/STAGING-VERIFY.yml
   - .github/workflows/VISUAL-VERIFY-FRONTEND.yml
+  - .github/workflows/PR-GATE.yml
+  - scripts/ci/playwright-runner-pin.test.mjs
   - docs/validation/VTID-*/**
 updated: 2026-10-20T10:45Z
 ---

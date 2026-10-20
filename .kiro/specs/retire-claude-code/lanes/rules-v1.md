@@ -13,6 +13,8 @@ paths:
   - CLAUDE.md
   - .kiro/steering/vitana-load-project-rules.md
   - .kiro/steering/vitana-kiro-notes.md
+  - .kiro/steering/vitana-standing-rules.md
+  - .kiro/steering/vitana-collaboration.md
   - docs/validation/VTID-*/**
 updated: 2026-10-20T10:45Z
 ---
