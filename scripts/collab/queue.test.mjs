@@ -9,7 +9,7 @@ import {
   validateRegistry, loadSeats,
   parseFrontMatter, classifyPath, validatePlan, validateLane, checkTransition,
   collect, buildQueue, validateRange, claim, release, listClaims, sessionId,
-  scopeCheck, globToRegex, matchesAny, globTouchesGovernance, isSessionId, seatOf, loadPrograms, validatePrograms, programIndex,
+  scopeCheck, governanceRecord, globToRegex, matchesAny, globTouchesGovernance, isSessionId, seatOf, loadPrograms, validatePrograms, programIndex,
 } from './queue.mjs';
 
 const S1 = 'kiro-202610131200-ab12';
@@ -621,7 +621,7 @@ test('VTID-05259 scope-check: legacy reviewer_seat claude accepts another named 
   } finally { f.done(); }
 });
 
-test('VTID-05259 validate: the plan author seat may change a lane in a _plan commit only together with plan.md', () => {
+test('VTID-05259 validate: an existing lane is never edited by a _plan commit — permissions change only in a new plan', () => {
   const f = fixture();
   try {
     write(f.work, '.kiro/specs/cards/handoff.md', planMd({ state: 'approved', sparring_record: 'x.md', vtids: ['VTID-00002'], executor: 'kiro', next_actor: 'kiro', author_seat: 'exafyltd' }));
@@ -629,21 +629,30 @@ test('VTID-05259 validate: the plan author seat may change a lane in a _plan com
     write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', { next_actor: 'kiro', vtid: 'VTID-00002', ...LANE }));
     const base = commit(f.work, 'seed', { 'Collab-Session': S2, 'Collab-Lane': 'cards/_plan' });
     sh(f.work, 'push', '-q', 'origin', 'main');
-    const edit = (session, { plan = true, state = 'ready' } = {}) => {
-      sh(f.work, 'checkout', '-q', '-B', `p-${session.slice(5, 12)}-${plan}-${state}`, base);
-      if (plan) write(f.work, '.kiro/specs/cards/plan.md', 'plan v2\n');
-      write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', { next_actor: 'kiro', vtid: 'VTID-00002', ...LANE, paths: ['src/backoffice/**', 'src/more/**'], state }));
+    const edit = (session, handoffSeat) => {
+      sh(f.work, 'checkout', '-q', '-B', `p-${session.slice(5, 12)}-${handoffSeat}`, base);
+      if (handoffSeat) write(f.work, '.kiro/specs/cards/handoff.md', planMd({ state: 'approved', sparring_record: 'x.md', vtids: ['VTID-00002'], executor: 'kiro', next_actor: 'kiro', author_seat: handoffSeat }));
+      write(f.work, '.kiro/specs/cards/plan.md', 'plan v2\n');
+      write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', { next_actor: 'kiro', vtid: 'VTID-00002', ...LANE, governance: 'true', paths: ['.github/**'] }));
       return validateRange(f.work, { base, head: commit(f.work, 'edit', { 'Collab-Session': session, 'Collab-Lane': 'cards/_plan' }) }).errors;
     };
-    assert.deepEqual(edit(EX), []);
-    assert.ok(edit(EX, { plan: false }).some((x) => x.includes('lanes/a.md')), 'without a plan.md change');
-    assert.ok(edit(JT).some((x) => x.includes('lanes/a.md')), 'not the author seat');
-    assert.ok(edit(S1).some((x) => x.includes('lanes/a.md')), 'unseated id');
-    assert.ok(edit(EX, { state: 'executing' }).some((x) => x.includes('lanes/a.md')), 'state stays untouched');
+    assert.ok(edit(EX).some((x) => x.includes('lanes/a.md')), 'even the author seat, with a plan.md change');
+    assert.ok(edit(JT, 'jtadic').some((x) => x.includes('lanes/a.md')), 'rewriting author_seat in the same PR does not help');
   } finally { f.done(); }
 });
 
-test('VTID-05259 validate: a governance lane reaches verified only with owner-instruction:, done only with merge: <sha>', () => {
+test('VTID-05259 governanceRecord: only new, quoted log lines count', () => {
+  const lane = (body, fmx = '') => `---\nlane: a\n${fmx}---\n## Log\n${body}`;
+  assert.deepEqual(governanceRecord(lane(''), lane('- owner-instruction: "merge #4211" (2026-10-20)\n- merge: 2e3c9f12\n')), { instruction: true, merge: '2e3c9f12' });
+  assert.equal(governanceRecord(lane(''), lane('', 'owner-instruction: "merge it"\nmerge: deadbeef\n')).instruction, false, 'front matter does not count');
+  assert.equal(governanceRecord(lane(''), lane('', 'merge: deadbeef\n')).merge, null);
+  const old = '- owner-instruction: "merge #1" (old cycle)\n';
+  assert.equal(governanceRecord(lane(old), lane(old)).instruction, false, 'an older entry does not count');
+  for (const ph of ['TODO', 'none', '-', 'tbd']) assert.equal(governanceRecord(lane(''), lane(`- owner-instruction: "${ph}"\n`)).instruction, false, ph);
+  assert.equal(governanceRecord(lane(''), lane('- owner-instruction: merge it\n')).instruction, false, 'unquoted');
+});
+
+test('VTID-05259 validate: a governance lane reaches verified only with a new owner-instruction, done only with a real merge commit', () => {
   const f = fixture();
   try {
     const EX2 = 'kiro-exafyltd-202610201041-ab5d';
@@ -652,17 +661,91 @@ test('VTID-05259 validate: a governance lane reaches verified only with owner-in
     write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', fm('in-review')));
     const base = commit(f.work, 'seed', { 'Collab-Session': S2, 'Collab-Lane': 'cards/_plan' });
     sh(f.work, 'push', '-q', 'origin', 'main');
+    let n = 0;
     const move = (state, extra, from = base) => {
-      sh(f.work, 'checkout', '-q', '-B', `m-${state}-${extra.length}`, from);
+      sh(f.work, 'checkout', '-q', '-B', `m-${n++}`, from);
       write(f.work, '.kiro/specs/cards/lanes/a.md', `${laneMd('a', fm(state))}${extra}`);
       const h = commit(f.work, 'move', { 'Collab-Session': EX2, 'Collab-Lane': 'cards/a' });
       return { h, e: validateRange(f.work, { base: from, head: h }).errors };
     };
-    assert.ok(move('verified', '').e.some((x) => x.includes('owner-instruction:')));
-    const ok = move('verified', '### 2026-10-20 · verified\n- owner-instruction: "merge #4211" (2026-10-20)\n');
+    assert.ok(move('verified', '').e.some((x) => x.includes('owner-instruction')));
+    assert.ok(move('verified', '- owner-instruction: "TODO"\n').e.some((x) => x.includes('owner-instruction')));
+    const instr = '- owner-instruction: "merge #4211" (2026-10-20)\n';
+    const ok = move('verified', instr);
     assert.deepEqual(ok.e, []);
-    sh(f.work, 'push', '-q', '-f', 'origin', `m-verified-${'### 2026-10-20 · verified\n- owner-instruction: "merge #4211" (2026-10-20)\n'.length}:main`);
-    assert.ok(move('done', '- owner-instruction: "merge #4211"\n', ok.h).e.some((x) => x.includes('merge: <sha>')));
-    assert.deepEqual(move('done', '- owner-instruction: "merge #4211"\n- merge: 2e3c9f1200b26e3e\n', ok.h).e, []);
+    assert.ok(move('done', instr, ok.h).e.some((x) => x.includes('merge: <sha>')));
+    assert.ok(move('done', `${instr}- merge: deadbeefcafe\n`, ok.h).e.some((x) => x.includes('not a commit')));
+    assert.deepEqual(move('done', `${instr}- merge: ${base}\n`, ok.h).e, []);
+  } finally { f.done(); }
+});
+
+test('VTID-05259 review fixes: _plan and review commits cannot carry code; new lanes grant no governance; v1 cannot shadow a platform lane', () => {
+  const EX2 = 'kiro-exafyltd-202610201041-ab5d';
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, { ...GOV, state: 'executing', claimed_by: EX2 });
+    write(f.work, '.github/workflows/x.yml', 'a');
+    const built = commit(f.work, 'build', { 'Collab-Session': EX2, 'Collab-Lane': 'cards/card-01' });
+    // F1: a _plan-labelled commit that changes governance code is not exempt
+    for (const who of [JT, S1, S2]) {
+      sh(f.work, 'checkout', '-q', '-B', `kiro/cards/card-01`, built);
+      write(f.work, '.github/workflows/evil.yml', who);
+      const h = commit(f.work, 'p', { 'Collab-Session': who, 'Collab-Lane': 'cards/_plan' });
+      assert.ok(scopeCheck(f.work, { base, head: h, branch: 'kiro/cards/card-01' }).errors.some((x) => x.includes('built only by seat exafyltd')), who);
+    }
+    // a _plan commit touching only the spec folder stays fine
+    sh(f.work, 'checkout', '-q', '-B', 'kiro/cards/card-01', built);
+    write(f.work, '.kiro/specs/cards/handoff.md', planMd({ state: 'executing', sparring_record: 'x.md', vtids: ['VTID-00002'], executor: 'kiro', next_actor: 'kiro' }).replace('## Log', '## Log\n### note'));
+    assert.deepEqual(scopeCheck(f.work, { base, head: commit(f.work, 'log', { 'Collab-Session': EX2, 'Collab-Lane': 'cards/_plan' }), branch: 'kiro/cards/card-01' }).errors, []);
+    // F2: the reviewer rewrites code under Collab-Review
+    sh(f.work, 'checkout', '-q', '-B', 'kiro/cards/card-01', built);
+    write(f.work, '.github/workflows/x.yml', 'rewritten by reviewer');
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', `${laneMd('card-01', { next_actor: 'kiro', vtid: 'VTID-00002', ...GOV, state: 'executing', claimed_by: EX2 })}### review: approve\n`);
+    const hr = commit(f.work, 'review', { 'Collab-Session': JT, 'Collab-Review': 'cards/card-01' });
+    assert.ok(scopeCheck(f.work, { base, head: hr, branch: 'kiro/cards/card-01' }).errors.some((x) => x.includes('may change only')));
+  } finally { f.done(); }
+  // F3: a governance lane created in the PR that uses it; and no new executor: claude lane
+  const g = fixture();
+  try {
+    const base = scopeFixture(g, LANE);
+    sh(g.work, 'checkout', '-q', '-B', 'kiro/cards/card-09');
+    write(g.work, '.kiro/specs/cards/lanes/card-09.md', laneMd('card-09', { ...GOV, seat: 'jtadic', reviewer_seat: 'exafyltd', paths: ['.github/**', 'CLAUDE.md'] }));
+    commit(g.work, 'create', { 'Collab-Session': JT, 'Collab-Lane': 'cards/_plan' });
+    write(g.work, 'CLAUDE.md', 'x');
+    const h = commit(g.work, 'build', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-09' });
+    assert.ok(scopeCheck(g.work, { base, head: h, branch: 'kiro/cards/card-09' }).errors.some((x) => x.includes('created in this PR')));
+    sh(g.work, 'checkout', '-q', '-B', 'kiro/cards/card-10', base);
+    write(g.work, '.kiro/specs/cards/lanes/card-10.md', laneMd('card-10', { executor: 'claude', next_actor: 'kiro', paths: ['.github/**'] }));
+    const h2 = commit(g.work, 'create', { 'Collab-Session': JT, 'Collab-Lane': 'cards/_plan' });
+    assert.ok(validateRange(g.work, { base, head: h2 }).errors.some((x) => x.includes('not executor: claude')));
+  } finally { g.done(); }
+  // F4: a vitana-v1 PR that adds its own copy of a platform lane is judged by the platform copy
+  const v = fixture();
+  try {
+    const base = sh(v.work, 'rev-parse', 'HEAD');
+    sh(v.work, 'checkout', '-q', '-b', 'kiro/cards/rules-v1');
+    write(v.work, '.kiro/specs/cards/handoff.md', planMd());
+    write(v.work, '.kiro/specs/cards/lanes/rules-v1.md', laneMd('rules-v1', { ...GOV, paths: ['**'] }));
+    commit(v.work, 'shadow', { 'Collab-Session': EX2, 'Collab-Lane': 'cards/_plan' });
+    write(v.work, 'CLAUDE.md', 'x');
+    const h = commit(v.work, 'build', { 'Collab-Session': EX2, 'Collab-Lane': 'cards/rules-v1' });
+    const platform = () => laneMd('rules-v1', { ...GOV, paths: ['.github/workflows/PR-GATE.yml'], state: 'executing', vtid: 'VTID-00003', claimed_by: EX2 });
+    const r = scopeCheck(v.work, { base, head: h, branch: 'kiro/cards/rules-v1', fetchLane: platform });
+    assert.equal(r.source, 'vitana-platform');
+    assert.ok(r.errors.some((x) => x.startsWith('CLAUDE.md is outside')), r.errors.join('\n'));
+    assert.ok(scopeCheck(v.work, { base, head: h, branch: 'kiro/cards/rules-v1', fetchLane: () => null }).errors.some((x) => x.includes('created in this PR')));
+  } finally { v.done(); }
+});
+
+test('VTID-05259 review fixes: a seatless legacy reviewer_seat claude lane is not self-reviewed; a reviewer that built is refused', () => {
+  const f = fixture();
+  try {
+    const L = { executor: 'kiro', reviewer_seat: 'claude', paths: ['src/backoffice/**'], state: 'executing', claimed_by: JT };
+    const base = scopeFixture(f, L);
+    write(f.work, 'src/backoffice/a.ts', 'x');
+    commit(f.work, 'build', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', `${laneMd('card-01', { next_actor: 'kiro', vtid: 'VTID-00002', ...L })}### review: approve\n`);
+    const h = commit(f.work, 'review', { 'Collab-Session': JT, 'Collab-Review': 'cards/card-01' });
+    assert.ok(scopeCheck(f.work, { base, head: h }).errors.some((x) => x.includes('reviewer_seat is claude')));
   } finally { f.done(); }
 });

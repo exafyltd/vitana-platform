@@ -47,3 +47,24 @@ Built S1–S3 in `scripts/collab/queue.mjs`:
 
 Tests (`queue.test.mjs`): 36 pass. The 6 new tests fail on origin/main's `queue.mjs`; the 30 old ones pass on both.
 `plan-spar.test.mjs` 10/10.
+
+### 2026-10-20T12:20Z · kiro-exafyltd-202610201041-ab5d · executing (fixes after the independent bypass review)
+`semantic_reviewer` (round 1, changes) reproduced 8 bypasses. All 8 are fixed, and the reviewer's harness now shows
+each one refused:
+1. `_plan` commits on a governance lane PR are exempt only when they touch nothing outside `.kiro/specs/<slug>/`.
+2. A `Collab-Review` commit may change only the lane file. A reviewer seat that built in the PR may not review.
+3. A lane file new in the PR grants no governance path.
+4. vitana-v1 cannot shadow a platform lane: when the lane is new locally, the vitana-platform copy is authoritative.
+5. and 6. Removed the plan-author lane-edit exception (see Decisions).
+7. `governanceRecord()` counts only new, quoted log lines below the front matter: placeholders, front-matter keys
+   and older entries don't count. `merge:` must name a commit of the repo.
+8. A legacy `reviewer_seat: claude` lane accepts a Kiro reviewer only when the lane names a `seat`, the reviewer seat
+   differs from it, and that seat built nothing.
+
+**Decisions** (narrower than plan Changes item 1; nothing grants more):
+- Existing lanes' permission fields can no longer be changed by any `_plan` commit. PLAN-SPAR doesn't re-spar a
+  converged plan (F6), so "changes plan.md" guaranteed nothing. A permission change is now a new lane in a new
+  `plan(` PR.
+- New `executor: claude` lanes are refused.
+
+Tests: 39 pass (9 for VTID-05259). The 30 pre-existing tests are unchanged.

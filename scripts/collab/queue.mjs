@@ -341,14 +341,18 @@ function frontMatterChanged(repo, sha, p) {
   return fm(a) !== fm(b);
 }
 
-/** VTID-05259: a `_plan` commit by the plan's `author_seat` editing a lane file, in a PR that changes plan.md. */
-function planAuthorLaneEdit(repo, { head, changed, slug, k, f }) {
-  const seat = seatOf(k.session);
-  const author = parseFrontMatter(showFile(repo, head, `.kiro/specs/${slug}/handoff.md`))?.author_seat;
-  if (!seat || seat !== author || !changed.includes(`.kiro/specs/${slug}/plan.md`)) return false;
-  const a = parseFrontMatter(showFile(repo, `${k.sha}^`, f)) || {};
-  const b = parseFrontMatter(showFile(repo, k.sha, f)) || {};
-  return a.state !== 'done' && a.state === b.state && (a.claimed_by || '') === (b.claimed_by || '');
+/**
+ * VTID-05259: the owner's governance record — `owner-instruction: "<words>"` and `merge: <sha>` log lines ADDED by this
+ * PR below the front matter (not a front-matter key, not an older entry, not a placeholder). A merge SHA must name a
+ * commit this checkout knows when it can be checked.
+ */
+export function governanceRecord(baseText, headText) {
+  const body = (t) => String(t || '').replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '').split(/\r?\n/);
+  const old = new Set(body(baseText).map((l) => l.trim()));
+  const added = body(headText).map((l) => l.trim()).filter((l) => l && !old.has(l));
+  const instr = added.find((l) => /^-?\s*owner-instruction:\s*"[^"]{2,}"/.test(l) && !/"\s*(todo|tbd|none|n\/a|-+)\s*"/i.test(l));
+  const merge = added.map((l) => /^-?\s*merge:\s*([0-9a-f]{7,40})\b/.exec(l)).find(Boolean)?.[1] || null;
+  return { instruction: !!instr, merge };
 }
 
 export function validateRange(repo, { base, head, branch = '', allowInitial = [], fetchLane = null }) {
@@ -383,11 +387,14 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
     if (ciSparred) continue;
     for (const x of checkTransition(c.kind, before, after, { allowInitial: allowInitial.includes(c.slug) })) errors.push(`${p}: ${x}`);
     // VTID-05259: the owner's merge instruction for a governance lane leaves a record the check can see.
-    if (c.kind === 'lane' && after?.governance === 'true' && before?.state !== after.state) {
-      const text = showFile(repo, head, p) || '';
-      if (after.state === 'verified' && !/^\s*-?\s*owner-instruction:\s*\S/m.test(text)) errors.push(`${p}: a governance lane needs an "owner-instruction:" log line (the owner's words and date) before verified`);
-      if (after.state === 'done' && !/^\s*-?\s*merge:\s*[0-9a-f]{7,40}\b/m.test(text)) errors.push(`${p}: a governance lane needs a "merge: <sha>" log line before done`);
+    if (c.kind === 'lane' && after?.governance === 'true' && before?.state !== after.state && ['verified', 'done'].includes(after.state)) {
+      const rec = governanceRecord(showFile(repo, mergeBase, p), showFile(repo, head, p));
+      if (after.state === 'verified' && !rec.instruction) errors.push(`${p}: a governance lane needs a new log line owner-instruction: "<the owner's words>" (date) before verified`);
+      if (after.state === 'done' && !rec.merge) errors.push(`${p}: a governance lane needs a new log line merge: <sha> before done`);
+      if (after.state === 'done' && rec.merge && gitOk(repo, ['cat-file', '-e', `${rec.merge}^{commit}`]) === null) errors.push(`${p}: merge: ${rec.merge} is not a commit of this repository`);
     }
+    // VTID-05259: with Claude Code retired, no new executor: claude lane is created.
+    if (c.kind === 'lane' && !before && after?.executor === 'claude') errors.push(`${p}: new lanes are not executor: claude (Claude Code is retired, retire-claude-code)`);
   }
 
   const laneTrailers = new Set(commits.map((k) => k.lane).filter(Boolean).flatMap((l) => l.split(',').map((s) => s.trim())));
@@ -409,9 +416,6 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
       if (k.lane === key) continue;
       // The coordinator declares the lanes: a `_plan` commit may create a lane file, never edit one.
       if (c.kind === 'lane' && k.lane === `${c.slug}/${PLAN_LANE}` && showFile(repo, `${k.sha}^`, f) === null) continue;
-      // VTID-05259: the plan's author seat may change an existing lane (its permissions) in a `_plan` commit when the
-      // same PR changes the plan's plan.md, so PLAN-SPAR re-spars the change. State and claim stay untouched.
-      if (c.kind === 'lane' && k.lane === `${c.slug}/${PLAN_LANE}` && planAuthorLaneEdit(repo, { head, changed, slug: c.slug, k, f })) continue;
       // VTID-05214: PLAN-SPAR.yml writes the allocated VTID into a lane that is still `ready`.
       if (c.kind === 'lane' && k.session === CI_PLAN_SPAR && k.lane === `${c.slug}/${PLAN_LANE}`
         && parseFrontMatter(showFile(repo, k.sha, f))?.state === 'ready') continue;
@@ -477,7 +481,15 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null }) 
   // `executor`, `seat` or `reviewer_seat`. Only a Claude Code session (session_…) may change them, and only on a lane
   // that already was `executor: claude`. A lane that is new in this PR is created by its plan (`_plan` commit).
   const mergeBase = gitOk(repo, ['merge-base', base, head]);
-  const baseFm = source === 'this repo' && mergeBase ? parseFrontMatter(showFile(repo, mergeBase, lanePath)) : null;
+  let baseFm = source === 'this repo' && mergeBase ? parseFrontMatter(showFile(repo, mergeBase, lanePath)) : null;
+  // VTID-05259: a lane file that is new in this PR grants nothing by itself. When vitana-platform holds the lane, its
+  // copy is authoritative (a vitana-v1 PR cannot shadow it); otherwise the new lane may not reach governance paths.
+  const newHere = source === 'this repo' && !baseFm;
+  if (newHere && fetchLane) {
+    const remote = fetchLane(lanePath);
+    if (remote) { fm = parseFrontMatter(remote) || {}; baseFm = null; source = 'vitana-platform'; }
+  }
+  const newLane = newHere && source === 'this repo';
   if (baseFm) {
     const PERM = ['executor', 'seat', 'reviewer_seat', 'paths', 'governance'];
     const changed = PERM.filter((k) => JSON.stringify(asList(baseFm[k])) !== JSON.stringify(asList(fm[k])));
@@ -497,16 +509,24 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null }) 
     for (const f of changed) {
       if (own(f)) continue;
       if (!matchesAny(f, paths)) errors.push(`${f} is outside lane ${key} (paths: ${paths.join(', ')})`);
+      else if (matchesAny(f, GOVERNANCE_PATHS) && newLane) errors.push(`${f} is a governance path; lane ${key} is created in this PR, so it grants no governance (its plan PR must merge first)`);
       else if (fm.executor !== 'claude' && fm.governance !== 'true' && matchesAny(f, GOVERNANCE_PATHS)) errors.push(`${f} is a governance path; lane ${key} is not governance: true (executor ${fm.executor || 'unset'})`);
     }
   }
+  const buildSeats = new Set(commits.filter((k) => k.lane === key).map((k) => seatOf(k.session) || k.session));
   for (const k of commits) {
+    // VTID-05259: a review commit only appends to this lane's file — a reviewer never ships code it then approves.
+    if (k.review === key && k.lane !== key && k.files.some((f) => f !== lanePath)) {
+      errors.push(`${k.sha.slice(0, 8)}: a Collab-Review commit may change only ${lanePath} (it changes ${k.files.filter((f) => f !== lanePath).join(', ')})`);
+    }
     if (!k.files.includes(lanePath)) continue;
     const short = k.sha.slice(0, 8);
     const seat = seatOf(k.session);
     if (k.review === key && k.lane !== key) {
-      // VTID-05259: a legacy `reviewer_seat: claude` lane also accepts a named Kiro seat other than the lane's own.
-      const ok = fm.reviewer_seat === 'claude' ? /^session_/.test(k.session) || (!!seat && seat !== fm.seat) : !fm.reviewer_seat || seat === fm.reviewer_seat;
+      // VTID-05259: a legacy `reviewer_seat: claude` lane also accepts a named Kiro seat — only when the lane names its
+      // own seat, the reviewer is a different seat, and that seat built nothing in this PR.
+      const kiroOk = !!seat && !!fm.seat && seat !== fm.seat && !buildSeats.has(seat);
+      const ok = fm.reviewer_seat === 'claude' ? /^session_/.test(k.session) || kiroOk : !fm.reviewer_seat || seat === fm.reviewer_seat;
       if (!ok) errors.push(`${short}: review entry on ${key} from ${k.session || 'no session'}, but reviewer_seat is ${fm.reviewer_seat}`);
     } else if (fm.seat && seat && seat !== fm.seat) {
       errors.push(`${short}: ${k.session} (seat ${seat}) edits lane ${key}, which belongs to seat ${fm.seat}`);
@@ -521,9 +541,10 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null }) 
     for (const k of commits) {
       const short = k.sha.slice(0, 8);
       const seat = seatOf(k.session);
-      const plan = (k.lane || '').split(',').map((x) => x.trim()).every((l) => l.endsWith(`/${PLAN_LANE}`)) && !!k.lane;
+      const plan = (k.lane || '').split(',').map((x) => x.trim()).every((l) => l === `${slug}/${PLAN_LANE}`) && !!k.lane
+        && k.files.every((f) => f.startsWith(`.kiro/specs/${slug}/`));
       if (k.review === key && k.lane !== key) {
-        if (!seat || seat !== fm.reviewer_seat) errors.push(`${short}: governance lane ${key} is reviewed only by seat ${fm.reviewer_seat} (session ${k.session || 'none'})`);
+        if (!seat || seat !== fm.reviewer_seat || buildSeats.has(seat)) errors.push(`${short}: governance lane ${key} is reviewed only by seat ${fm.reviewer_seat} (session ${k.session || 'none'})`);
       } else if (plan) {
         continue;
       } else if (!seat || seat !== fm.seat) {
