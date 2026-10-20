@@ -1,0 +1,20 @@
+# VTID-05273 — commands run for lane kiro-autonomy-fallback/plan-spar-allocation (session kiro-exafy-202610201807-2a87)
+# Working tree: .worktrees/kaf-plan-spar-allocation, branch kiro/kiro-autonomy-fallback/plan-spar-allocation
+
+# RED: new tests against the base plan-spar.mjs (origin/main 422a7b0)
+node --test scripts/collab/plan-spar.test.mjs
+# -> tests 19, pass 12, fail 7 (the 7 new behaviour tests; the 2 guard tests pass on both)
+
+# GREEN: lane branch
+node --test scripts/collab/plan-spar.test.mjs
+# -> tests 19, pass 19, fail 0 (outputs/plan-spar-test.txt)
+
+node --test scripts/collab/queue.test.mjs
+# -> tests 30, pass 29, fail 1 locally on Windows only (test 25 spawns `node \C:\...` from URL.pathname;
+#    queue.mjs/queue.test.mjs untouched by this lane; passes on Linux in PR-GATE)
+
+# Review fix (verdict changes @ a1f6cba): VALIDATOR-CHECK validate-pr exit 11, VALIDATION_PROFILE missing.
+# Added VALIDATION_PROFILE: gateway_backend + SCOPE_ALLOWLIST/ACCEPTANCE/MERGE_PAYLOAD_PREVIEW/OASIS_IMPACT to the
+# PR body and this evidence pack (acceptance.md, commands.log, outputs/) required by the Evidence Pack Gate.
+node --test --test-reporter=tap scripts/collab/plan-spar.test.mjs
+# -> tests 19, pass 19, fail 0
