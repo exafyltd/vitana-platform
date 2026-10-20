@@ -3,8 +3,10 @@ slug: claude-md-cleanup
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-20T19:55Z
+state: approved
+updated: 2026-10-20T21:21Z
+sparring_record: .kiro/specs/claude-md-cleanup/sparring/verdict.md
+vtids: [VTID-05279, VTID-05280]
 ---
 # Handoff — claude-md-cleanup
 Planner: Kiro (session kiro-202610201939-ee07). Plan: `plan.md` (between the plan markers), sparred by CI PLAN-SPAR.
@@ -22,3 +24,6 @@ read-only review of both `CLAUDE.md` files and the Kiro steering files at vitana
 `05cca2209`. Docs only, deploys nothing. Both lanes edit the protected gate file `CLAUDE.md`, so the lane PRs stop
 open for owner review (not merged). Lane files declare `executor: claude` because `queue.mjs validateLane`
 (`:231-235`) requires it for that path; Kiro builds them (plan Decision 2). Next: PLAN-SPAR.
+
+### 2026-10-20T21:21Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.

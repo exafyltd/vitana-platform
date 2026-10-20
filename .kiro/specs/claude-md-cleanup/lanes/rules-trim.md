@@ -10,7 +10,8 @@ paths:
   - CLAUDE.md
   - .kiro/steering/vitana-kiro-notes.md
   - .kiro/steering/vitana-load-project-rules.md
-updated: 2026-10-20T19:55Z
+updated: 2026-10-20T21:21Z
+vtid: VTID-05280
 ---
 # rules-trim — trim platform CLAUDE.md to project-specific rules; fix Kiro steering (repo vitana-platform)
 Plan: `.kiro/specs/claude-md-cleanup/plan.md` (lane `rules-trim`, items A–M, Numbering, MUST KEEP) and the
@@ -26,3 +27,6 @@ Branch `kiro/claude-md-cleanup/rules-trim`; PR title `VTID-xxxxx (claude-md-clea
 ## Log
 ### 2026-10-20T19:55Z · kiro-202610201939-ee07 · created → ready
 Lane created with the plan. Next: PLAN-SPAR; once `vtid:` is set, Kiro claims and builds it.
+
+### 2026-10-20T21:21Z · ci-plan-spar · ready (VTID allocated)
+VTID-05280 allocated after policy approval (converged-auto-v1).
