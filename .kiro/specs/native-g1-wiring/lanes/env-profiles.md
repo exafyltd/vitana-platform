@@ -1,12 +1,13 @@
 ---
 lane: env-profiles
-state: ready
+state: done
 next_actor: kiro
 depends_on: [vitana-v1-verified]
 executor: kiro
 seat: exafyltd
 area: frontend
 reviewer_seat: hotmail
+pr: https://github.com/exafyltd/vitana-v1/pull/1466
 paths:
   - apps/mobile/src/config/env.ts
   - apps/mobile/env/**
@@ -43,3 +44,8 @@ another lane. Next: PLAN-SPAR spars the plan; once a VTID is written here, seat 
 
 ### 2026-10-20T08:41Z · ci-plan-spar · ready (VTID allocated)
 VTID-05249 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-20T10:30Z · kiro-202610151913-51bd · (lane-status) → done
+Code merged to vitana-v1 main: PR #1466 (50873056a). Per-profile env source implemented, reviewed
+(APPROVED, all four acceptance cases proven, guards byte-identical to origin/main), both profiles bundle
+offline. Marked done.

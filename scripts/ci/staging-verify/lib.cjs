@@ -485,6 +485,29 @@ function decideOutcome({ superseded, results, plan }) {
   return 'passed';
 }
 
+// VTID-05272 (plan kiro-autonomy-fallback §5 H): which lane a failed run is
+// about. `smoke` covers the service smoke suite and the static deploy rows;
+// when it failed, every VTID is `failed` (nothing in the build can be
+// trusted). Otherwise a VTID is `failed` when one of its own rows failed,
+// `passed` when all ran green, `not_attributed` when none of its rows count
+// (no suite ran for it, or the rows ran after a newer image took over).
+// Information only: decideOutcome stays the single outcome rule (rule 50).
+const VTID_SUITE_RE = /^VTID-\d{4,5}$/;
+function summarizeByVtid(results, vtids = []) {
+  const counted = (results || []).filter((r) => r && r.attributed !== false);
+  const smokeRows = counted.filter((r) => r.suite === 'smoke' || r.suite === 'deploy');
+  const smoke = smokeRows.length === 0 ? 'not_run' : smokeRows.every((r) => r.ok) ? 'passed' : 'failed';
+  const ids = new Set((vtids || []).filter((v) => VTID_SUITE_RE.test(v)));
+  for (const r of results || []) if (r && VTID_SUITE_RE.test(r.suite)) ids.add(r.suite);
+  const out = { smoke };
+  for (const v of [...ids].sort()) {
+    const rows = counted.filter((r) => r.suite === v);
+    if (smoke === 'failed') out[v] = 'failed';
+    else if (rows.length === 0) out[v] = 'not_attributed';
+    else out[v] = rows.every((r) => r.ok) ? 'passed' : 'failed';
+  }
+  return out;
+}
 function short(sha) {
   return String(sha || '').slice(0, 12);
 }
@@ -734,6 +757,7 @@ module.exports = {
   DEPLOY_COMPLETED_MARGIN_MS,
   DEPLOY_LOOKBACK_MS,
   decideOutcome,
+  summarizeByVtid,
   buildReadyMessage,
   isAutopilotCommit,
 };
