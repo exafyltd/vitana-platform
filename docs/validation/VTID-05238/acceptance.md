@@ -30,10 +30,14 @@ not-required and `not_required` steps carry none. `buildChecklist` sets it addit
 
 AC-2 (req 2): the verification step's owner follows its open checks — `facts_changed` (stale row, old
 `detail.missing` ignored) → assistant; `review_note` → supplier; `email_not_verified`/`domain_proof` → supplier;
-`website`/`vat_id`/`vat_invalid`/`*_check_unavailable` → assistant; `business_verification*`/`licence*`/`in_progress`
-→ vitanaland; an unknown code → supplier.
-  TEST: services/gateway/test/vtid-05238-step-owner.test.ts ("stepOwner — verification, first match wins" and the
-  stale-row / website cases under "buildChecklist")
+an unknown code → supplier, and an unknown code wins over an assistant code checked alongside it
+(`['vat_id','some_new_check']` → supplier, R2-F2); `website`/`vat_id`/`vat_invalid`/`*_check_unavailable` →
+assistant; `business_verification*`/`licence*` → vitanaland, and `in_progress` with no code → vitanaland; a
+never-checked `todo`/`failed` verification with no codes → assistant (R2-F1), because "run the checks" is the
+assistant's job — `vitanaland` applies only to a `business_verification*`/`licence*` code or `in_progress`.
+  TEST: services/gateway/test/vtid-05238-step-owner.test.ts ("stepOwner — verification, first match wins" incl. the
+  never-checked todo/failed (R2-F1) and unknown-wins (R2-F2) cases, and the stale-row / website cases under
+  "buildChecklist")
 
 AC-3 (req 3): the Commerce MCP status carries the same `owner` per open step and on `next_action`
 (typeless business_type → assistant; checklist complete → assistant; no step → null); `done_on_vitanaland`, `link`,

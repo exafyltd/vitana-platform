@@ -119,6 +119,20 @@ describe('stepOwner — verification, first match wins', () => {
     expect(stepOwner(v({ missing: ['some_new_future_check'] }))).toBe('supplier');
   });
 
+  it('a never-checked verification (todo, no codes) → assistant, not vitanaland (R2-F1)', () => {
+    // A required todo/failed verification with no missing and no detail.missing
+    // means "run the checks" — the assistant's job, not a Vitanaland review.
+    expect(stepOwner(v({ status: 'todo' }))).toBe('assistant');
+    expect(stepOwner(v({ status: 'failed' }))).toBe('assistant');
+  });
+
+  it('an unknown code alongside an assistant code → supplier (unknown wins, R2-F2)', () => {
+    // The unknown-code check runs before the assistant-code match, so a
+    // brand-new check never silently claims the AI can do it.
+    expect(stepOwner(v({ detail: { missing: ['vat_id', 'some_new_check'] } }))).toBe('supplier');
+    expect(stepOwner(v({ missing: ['vat_id', 'some_new_check'] }))).toBe('supplier');
+  });
+
   it('union of step.missing and detail.missing is considered when facts_changed is absent', () => {
     expect(stepOwner(v({ missing: [], detail: { missing: ['vat_id'] } }))).toBe('assistant');
   });

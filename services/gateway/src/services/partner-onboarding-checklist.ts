@@ -262,13 +262,21 @@ const SUPPLIER_VERIFICATION_CODES: ReadonlySet<string> = new Set(['email_not_ver
  *        stale verification `buildChecklist` keeps the stored row's `detail`
  *        (lines ~258–267), so its codes describe the old facts (R1-F1).
  *     2. `step.detail.review_note` present → `supplier`.
- *     3. the codes in `step.missing` ∪ `step.detail.missing`: any supplier code
- *        (`email_not_verified`, `domain_proof`) → `supplier`; else any assistant
- *        code (`website`, `vat_id`, `vat_invalid`, `*_check_unavailable`) →
- *        `assistant`; else (`business_verification*`, `licence*`, or
- *        `in_progress` with no code) → `vitanaland`.
- *     4. an unknown code → `supplier`, so a new check never silently claims the
- *        AI can do it.
+ *     3. the codes in `step.missing` ∪ `step.detail.missing`:
+ *        a. any supplier code (`email_not_verified`, `domain_proof`) →
+ *           `supplier`.
+ *        b. any unknown code (not supplier/assistant/`business_verification*`/
+ *           `licence*`) → `supplier`, so a brand-new check never silently
+ *           claims the AI can do it — this is checked BEFORE the assistant
+ *           codes, so `['vat_id','some_new_check']` → `supplier` (R2-F2).
+ *        c. any assistant code (`website`, `vat_id`, `vat_invalid`,
+ *           `*_check_unavailable`) → `assistant`.
+ *        d. any `business_verification*`/`licence*` code → `vitanaland`.
+ *     4. no codes: `in_progress` → `vitanaland` (a review is under way);
+ *        `todo`/`failed` → `assistant` — a never-checked step with no codes
+ *        means "run the checks", which is the assistant's job (R2-F1). So
+ *        `vitanaland` applies only to a `business_verification*`/`licence*`
+ *        code or to `in_progress` with no code, never to an empty todo/failed.
  */
 export function stepOwner(step: ChecklistStep): StepOwner | null {
   if (!step.required) return null;
@@ -289,13 +297,22 @@ export function stepOwner(step: ChecklistStep): StepOwner | null {
       ? ((step.detail as Record<string, unknown>).missing as unknown[]).filter((c): c is string => typeof c === 'string')
       : [];
     const codes = [...own, ...detailMissing];
+    // a. a supplier code: only the supplier can resolve it.
     if (codes.some((c) => SUPPLIER_VERIFICATION_CODES.has(c))) return 'supplier';
-    if (codes.some((c) => ASSISTANT_VERIFICATION_CODES.has(c))) return 'assistant';
+    // b. an unknown code takes precedence over an assistant code, so a new
+    //    check never silently claims the AI can do it (R2-F2). business_
+    //    verification*/licence* are known-vitanaland, not unknown.
+    const isVitanalandCode = (c: string) => /^(business_verification|licence)/.test(c);
     const known = new Set([...SUPPLIER_VERIFICATION_CODES, ...ASSISTANT_VERIFICATION_CODES]);
-    const unknownCode = codes.find((c) => !known.has(c) && !/^(business_verification|licence)/.test(c));
+    const unknownCode = codes.find((c) => !known.has(c) && !isVitanalandCode(c));
     if (unknownCode) return 'supplier';
-    // business_verification*, licence*, or in_progress with no code.
-    return 'vitanaland';
+    // c. an assistant code: the assistant can resolve it.
+    if (codes.some((c) => ASSISTANT_VERIFICATION_CODES.has(c))) return 'assistant';
+    // d. a business_verification*/licence* code → Vitanaland review.
+    if (codes.some(isVitanalandCode)) return 'vitanaland';
+    // No codes at all: an in_progress review is Vitanaland's; a never-checked
+    // todo/failed means "run the checks", which is the assistant's job (R2-F1).
+    return step.status === 'in_progress' ? 'vitanaland' : 'assistant';
   }
 
   return null;
