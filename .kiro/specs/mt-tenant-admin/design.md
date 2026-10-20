@@ -72,9 +72,12 @@ rollbacks + pre/post checks + queue rows.
   `targetTenantId` read in the lane's listed files.
 - Backfill: `admin-autopilot.ts` local → `resolveSingleTenant` (same result, regression-pinned);
   `admin-community-marketplace.ts` `/listings` → `resolveScopedTenant`, cross-tenant for an exafy-admin only with
-  `MT_RESOLUTION_V2` on (flag off = today's own-tenant result); its writes → `resolveSingleTenant` (unchanged).
-- Deactivate/archive handlers emit `tenant.deactivated` / `tenant.archived` via the `emit()` union (`:301`), payload
-  `{ tenant_id, slug, changed }`.
+  `MT_RESOLUTION_V2` on (flag off = today's own-tenant result); its writes → `resolveSingleTenant` (unchanged);
+  `emitAdminActivity` (`:37-53`) takes `tenantId` as a parameter instead of reading the dropped local at `:50`, each
+  call site passing its resolved tenant (payload unchanged).
+- Deactivate/archive handlers emit `tenant.deactivated` / `tenant.archived` via `emit()` (`:301`) parameterised with a
+  `vtid` argument defaulting to `PROVISION_VTID` (`:193`); the lifecycle handlers pass `LIFECYCLE_VTID` (this lane's
+  VTID), the existing three callers stay on `VTID-05150`. Payload `{ tenant_id, slug, changed }`.
 - `/admin/init-events`: NOT a gateway route and NOT touched by this lane — guarded in vitana-v1 at its existing path
   (lane `tenant-admin-pages`); `e2e/fixtures/routes.ts` already lists it as admin-only and is unchanged.
 - Extend `GET /admin/tenants/:id/readiness` (via `gatherReadiness`) with first-admin-invitation delivery + lifecycle.

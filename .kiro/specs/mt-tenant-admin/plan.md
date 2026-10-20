@@ -89,13 +89,25 @@ read-only):
   `repo.fetchSettingsFull(supabase, tenantId)` needs one tenant), so no behaviour change, pinned by a Jest regression.
   `admin-community-marketplace.ts` drops its local (`:30-31`) for `resolveScopedTenant` on the `/listings` queue read
   (`:61`): with `MT_RESOLUTION_V2` on, an exafy-admin sees the cross-tenant queue (repository `.eq` skipped for
-  `null`); with the flag off (default) it keeps today's own-tenant result. Its writes (PATCH/bulk) keep today's
-  resolution via `resolveSingleTenant`. Jest regressions: exafy-admin sees T_A + T_B listings (flag on), own tenant
-  only (flag off), tenant-admin sees only its own either way.
-  **OASIS events (REQUIRED, R1-F1):** the deactivate/archive handlers emit `tenant.deactivated` / `tenant.archived`
-  through the existing `emit()` in `admin-tenants.ts` (`:301`, union widened by these two types; pattern
-  `emit('tenant.provisioned', …)` at `:353-359`), payload `{ tenant_id, slug, changed }` with `changed=false` for an
-  idempotent re-call; a Jest assertion per handler checks the event. The lane also extends readiness
+  `null`); with the flag off (default) it keeps today's own-tenant result. Every other handler in the file (the
+  writes `:88,147,225,268,314,351` and the `/reports` `:290` / `/categories` `:341` reads) keeps today's resolution
+  via `resolveSingleTenant` (router mounted at `/api/v1/admin/community-marketplace`, `index.ts:1266`, no
+  `:tenantId` param, so identical result). The file's OASIS helper `emitAdminActivity` (`:37-53`, 12 call sites) also
+  read the dropped local for its payload (`:50`, `tenant_id: getTenantId(req)`): it gains an explicit
+  `tenantId: string | null` parameter and every call site passes the value that handler already resolved
+  (`resolveSingleTenant(req)` — for these routes, which carry no `:tenantId` param, that is `identity.tenant_id`
+  for both roles, so the event payload is byte-identical to today; no guard-test exception is needed). Jest
+  regressions: exafy-admin sees T_A + T_B listings (flag on), own tenant only (flag off), tenant-admin sees only its
+  own either way; an `emitAdminActivity` payload still carries the caller's `tenant_id`.
+  **OASIS events (REQUIRED, R1-F1/R2-F1):** the deactivate/archive handlers emit `tenant.deactivated` /
+  `tenant.archived` with THIS spec's VTID, never the provisioning one. The existing `emit()` in `admin-tenants.ts`
+  (`:301`) hardcodes `vtid: PROVISION_VTID` (`:193`, `'VTID-05150'`), so the lane parameterises it —
+  `emit(type, message, actorId, payload, vtid = PROVISION_VTID)`, union widened by the two types — leaving the three
+  existing callers (`:353`, `:455`, `:520`) unchanged, and adds `const LIFECYCLE_VTID = 'VTID-xxxxx'` (the
+  tenant-admin-api lane's allocated VTID; a named TODO until PLAN-SPAR writes it) that both lifecycle handlers pass.
+  Payload `{ tenant_id, slug, changed }` with `changed=false` for an idempotent re-call. Jest per handler asserts the
+  event type AND `vtid === LIFECYCLE_VTID` (≠ `PROVISION_VTID`), and that `tenant.provisioned` still carries
+  `VTID-05150`. The lane also extends readiness
   (invitation-delivery + lifecycle), wires the deactivate/archive RPCs behind exafy-admin routes, defines the
   deactivated-tenant gateway API posture (O2). (`/admin/init-events` is NOT here — it is a frontend route guarded in
   tenant-admin-pages at its existing path; `e2e/fixtures/routes.ts` is not edited, see Problem 3.)

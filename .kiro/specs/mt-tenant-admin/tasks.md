@@ -74,12 +74,16 @@ not create `admin-invitations.ts` and does not edit the existing route.
       (`:23-24`) → `resolveSingleTenant` (same result for both roles); `admin-community-marketplace.ts` local
       (`:30-31`) → `resolveScopedTenant` on `/listings` (`:61`; cross-tenant for an exafy-admin only with
       `MT_RESOLUTION_V2` on, `community-marketplace-repository.ts:339` `.eq` skipped for `null`) and
-      `resolveSingleTenant` on its writes (unchanged). (`/admin/init-events` is NOT in this lane and
+      `resolveSingleTenant` on its writes (unchanged); its `emitAdminActivity` (`:37-53`) gains a
+      `tenantId: string | null` parameter replacing the `:50` `getTenantId(req)` read, every call site passing its
+      resolved tenant (payload unchanged). (`/admin/init-events` is NOT in this lane and
       `e2e/fixtures/routes.ts` is not edited — the page is guarded at its existing path in `tenant-admin-pages`.)
 - [ ] A4 Extend `GET /admin/tenants/:id/readiness` with first-admin-invitation delivery + lifecycle.
 - [ ] A5 exafy-admin deactivate/archive routes over the lifecycle RPCs; deactivated-tenant posture (member → default,
       exafy-admin read ok). Each handler emits `tenant.deactivated` / `tenant.archived` via the `emit()` in
-      `admin-tenants.ts:301` (union widened; pattern `:353-359`), payload `{ tenant_id, slug, changed }`. Dark behind
+      `admin-tenants.ts:301`, parameterised with `vtid = PROVISION_VTID` (`:193`) and called with
+      `LIFECYCLE_VTID = 'VTID-xxxxx'` (this lane's VTID, named TODO until allocated); existing callers unchanged;
+      payload `{ tenant_id, slug, changed }`. Jest asserts `vtid === LIFECYCLE_VTID` per handler. Dark behind
       `MT_RESOLUTION_V2` + `tenant_settings.feature_flags.mt.*`.
 - [ ] A6 Jest in `services/gateway/test/mt-tenant-admin-*.test.ts`: scoped reads (b_admin sees 0 T_A rows); **an
       exafy-admin still sees cross-tenant rows on the new scoped endpoints**; both resolvers unit-tested;

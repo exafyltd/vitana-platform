@@ -48,11 +48,13 @@ scoped handler uses only these, and `test/mt-tenant-admin-scope-helper.test.ts` 
 `identity.tenant_id` / `identity?.tenant_id` / `targetTenantId` read in the lane's listed files. **Backfill:**
 `admin-autopilot.ts:23-24` → `resolveSingleTenant` (same result); `admin-community-marketplace.ts:30-31` →
 `resolveScopedTenant` on `/listings` (cross-tenant for an exafy-admin only with `MT_RESOLUTION_V2` on; repository
-`.eq` skipped for `null`) and `resolveSingleTenant` on writes (unchanged). `/admin/init-events` is NOT in this lane:
+`.eq` skipped for `null`) and `resolveSingleTenant` on writes (unchanged); its `emitAdminActivity` (`:37-53`) takes
+`tenantId` as a parameter instead of the `:50` local read (payload unchanged). `/admin/init-events` is NOT in this lane:
 the page is guarded at its existing path in `tenant-admin-pages` and `e2e/fixtures/routes.ts` is not edited.
 Extend `GET /admin/tenants/:id/readiness` with first-admin-invitation delivery + lifecycle; expose exafy-admin
 deactivate/archive routes over the lifecycle RPCs, each emitting OASIS `tenant.deactivated` / `tenant.archived` via the
-`admin-tenants.ts:301` `emit()` (Jest-asserted), and define the deactivated-tenant gateway posture (O2). Dark behind
+`admin-tenants.ts:301` `emit()` parameterised with a `vtid` argument (default `PROVISION_VTID`, `:193`) and called with
+this lane's `LIFECYCLE_VTID` (Jest asserts the vtid), and define the deactivated-tenant gateway posture (O2). Dark behind
 `MT_RESOLUTION_V2` + `tenant_settings.feature_flags.mt.*`. The lane adds its own `docs/validation/<vtid>/` in the PR.
 
 Rules for the executor (collaboration §7a): no VTID allocation, no `_plan` claim, no edit of `handoff.md`, no

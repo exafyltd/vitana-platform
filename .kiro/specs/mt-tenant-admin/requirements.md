@@ -59,7 +59,8 @@ frontend page that consumes it and introduces no new gateway accept route and no
 3. THE gateway SHALL define the deactivated-tenant API posture (member sessions resolve to default; exafy-admin reads
    of the deactivated tenant still work for archival).
 4. WHEN a tenant is deactivated or archived THE gateway SHALL emit the OASIS event `tenant.deactivated` /
-   `tenant.archived` (same `emit()` as `tenant.provisioned`, `admin-tenants.ts:301,353`).
+   `tenant.archived` (same `emit()` as `tenant.provisioned`, `admin-tenants.ts:301,353`), attributed to this spec's
+   VTID — not the provisioning `PROVISION_VTID` (`:193`).
 
 ### R5 — Command Hub tenant module (lane `command-hub-tenant-module`)
 1. THE SYSTEM SHALL add a NEW Command Hub module (`tenant-admin.js`, `kind:"module"`) exposing
