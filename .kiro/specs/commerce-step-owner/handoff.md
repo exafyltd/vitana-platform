@@ -5,7 +5,7 @@ author_seat: jtadic
 executor: kiro
 next_actor: kiro
 state: approved
-updated: 2026-10-19T13:36Z
+updated: 2026-10-20T09:01Z
 sparring_record: .kiro/specs/commerce-step-owner/sparring/verdict.md
 vtids: [VTID-05237, VTID-05238]
 ---
@@ -45,3 +45,11 @@ builds `gateway-step-owner`; seat `exafyltd` builds `frontend-still-needed` afte
 ### 2026-10-19T13:38Z · kiro-jtadic-202610191323-d24a · correction
 The entry above swapped the VTIDs. Per the lane files: `gateway-step-owner` is **VTID-05238**,
 `frontend-still-needed` is **VTID-05237**.
+
+### 2026-10-20T09:01Z · kiro-jtadic-202610191323-d24a · plan branch cleaned for merge
+Dropped the lane-state commit cb76fbba4 (exafy's `gateway-step-owner: ready → in-review`) from this plan
+branch: carrying the gateway-lane trailer here made Lane scope validate the `_plan` file
+`docs/programs/commerce-portal/program.md` against the gateway lane's `paths` and fail. The plan branch is now
+`_plan`-only (tip 59166d0da); Lane scope reports "not a lane PR". The gateway lane's `in-review` state and PR link
+live with lane PR #4198. Remaining validator note "`_plan`: commits from 2 sessions (jtadic, ci-plan-spar)" is the
+PLAN-SPAR multi-session case, report-only until 2026-10-20 — not worked around.
