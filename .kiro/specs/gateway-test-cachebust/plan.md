@@ -28,7 +28,10 @@ Removing exact-tag pins from tests in general; any change to the planner, `dev-a
 ## Tests
 `npx jest test/vtid-05077-planner-fallback-and-thinking.test.ts` green (was red on that case), and the gateway Jest
 suite green in CI. Change suite `docs/validation/<VTID>/staging-tests.json`: one `existing` entry running that file
-(test-only change; nothing on staging changes).
+(test-only change; nothing on staging changes). `kind: "existing"` is a runner kind
+(`scripts/ci/staging-verify/lib.cjs:169`), used by e.g. `docs/validation/VTID-05209/staging-tests.json` and
+`VTID-04527`. Evidence folder `docs/validation/<VTID>/` also carries `plan-sparring.md`, `scope.json` and an
+`acceptance.md` with `AC-` entries, which `VALIDATOR-CHECK.yml:148` and `:158` require.
 
 ## Lane
 `fix-pin` — executor kiro, seat `exafy` (platform area; no area covers `services/gateway/test/**`), reviewer `jtadic`.
