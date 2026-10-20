@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-05260",
+  "kind": "infra",
+  "paths": [
+    "scripts/collab/queue.mjs",
+    "scripts/collab/queue.test.mjs",
+    ".claude/rules/collaboration.md",
+    "CLAUDE.md",
+    ".kiro/steering/vitana-kiro-notes.md",
+    ".kiro/specs/collab-kiro-governance/**",
+    "docs/validation/VTID-05260/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05260/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

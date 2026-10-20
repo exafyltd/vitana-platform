@@ -119,10 +119,14 @@ Git is the only channel between Claude Code and Kiro sessions — the owner neve
 `next_actor` is you; state your session id + lane in your first reply; claim a lane before touching it, one session per
 lane; push and update the lane file before ending. Full rules: `.claude/rules/collaboration.md`.
 **Roles (owner decisions 2026-10-14, Project Manager plan v2, VTID-05218 — replaces VTID-05192):** Kiro plans, builds
-and reviews (one Kiro account reviews another's lane); CI spars every `plan(` PR (`PLAN-SPAR.yml`) and a converged plan
-is approved by policy; the Project Manager merges by rule and sends Gate 2; Claude Code handles exceptions only
-(governance-path lanes, unpicked or parked work, partner outages). Kiro never merges, deploys or writes to a live
-system. See `.claude/rules/collaboration.md` §7–§7a.
+and reviews (one Kiro account reviews another's lane); CI spars every `plan(` PR (`PLAN-SPAR.yml` in vitana-platform)
+and a converged plan is approved by policy; the Project Manager merges by rule and sends Gate 2; Claude Code handles
+exceptions only (governance-path lanes, unpicked or parked work, partner outages). Kiro never merges, deploys or writes
+to a live system, except as `.claude/rules/collaboration.md` §7b allows: a staging-only merge the owner explicitly
+instructs for that PR, and an **owner-named governance lane** (VTID-05260) — an `executor: kiro` lane with
+`governance: owner`, set only by its plan's `_plan` commit while the lane is `ready`, may change the governance paths
+in its `paths`; it is sparred, reviewed by its `reviewer_seat` and merged only on the owner's explicit instruction.
+See `.claude/rules/collaboration.md` §7–§7b.
 
 ---
 

@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-05260",
+  "service": "gateway",
+  "note": "No gateway change: this PR changes CI tooling (scripts/collab/queue.mjs) and rule files only, none of them a gateway deploy path, so the staging build is unaffected. The behaviour is proven by `node --test scripts/collab/queue.test.mjs scripts/collab/plan-spar.test.mjs`, which PR-GATE's Collab handoff step runs on every PR; the manifest format admits only npm/jest/vitest `existing` refs, so that suite is recorded in commands.log and outputs/ instead. The staging probe below is read-only.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after deploy",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "read-only GET: a staging build that includes this commit still boots and serves (no gateway code changed)"
+    }
+  ]
+}

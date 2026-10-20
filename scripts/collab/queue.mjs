@@ -65,7 +65,13 @@ const CI_PLAN_SPAR = 'ci-plan-spar';
 export const seatOf = (s) => (/^kiro-([a-z]{1,12})-\d{12}-[0-9a-f]{4}$/.exec(s || '') || [])[1] || '';
 
 // VTID-05213: paths that only an `executor: claude` lane may change (governance: CI, rules, steering, automations,
-// this script, the seat map). A Kiro lane that declares or touches one is refused by validate and scope-check.
+// this script, the seat map). A Kiro lane that declares or touches one is refused by validate and scope-check —
+// unless it is an owner-named governance lane (VTID-05260, below).
+// VTID-05260: an `executor: kiro` lane whose front matter says exactly `governance: owner` (strict comparison, sparring
+// R3-N1) may change governance paths inside its own `paths`. Only a `_plan` commit on a `ready` lane may set or change
+// the field, and scope-check reads it from the base revision, so a lane can never grant it to itself.
+export const GOVERNANCE_OWNER = 'owner';
+export const isOwnerGovernanceLane = (fm) => !!fm && fm.executor === 'kiro' && fm.governance === GOVERNANCE_OWNER;
 export const GOVERNANCE_PATHS = ['.github/**', '.claude/**', '.kiro/steering/**', '.kiro/automations/**', 'scripts/collab/**',
   'CLAUDE.md', 'docs/programs/areas.yaml'];
 
@@ -177,7 +183,14 @@ export function validateLane(fm, slug, lane, laneIds) {
   }
   const paths = asList(fm.paths);
   if (fm.executor && fm.state && fm.state !== 'ready' && fm.state !== 'parked' && paths.length === 0) e.push(`paths required in state ${fm.state} for a lane that declares an executor`);
-  if (fm.executor === 'kiro') for (const g of paths) if (globTouchesGovernance(g)) e.push(`paths "${g}" reaches a governance path; such a lane needs executor: claude`);
+  // VTID-05260: `governance` is either absent or exactly "owner", and only on an `executor: kiro` lane.
+  if (fm.governance !== undefined) {
+    if (fm.governance !== GOVERNANCE_OWNER) e.push(`governance ${JSON.stringify(fm.governance)} is invalid; the only value is "${GOVERNANCE_OWNER}"`);
+    if (fm.executor !== 'kiro') e.push(`governance: ${GOVERNANCE_OWNER} is valid only with executor: kiro (executor is ${fm.executor || 'unset'})`);
+  }
+  if (fm.executor === 'kiro' && fm.governance !== GOVERNANCE_OWNER) {
+    for (const g of paths) if (globTouchesGovernance(g)) e.push(`paths "${g}" reaches a governance path; such a lane needs executor: claude, or executor: kiro with governance: ${GOVERNANCE_OWNER}`);
+  }
   if (fm.state === 'parked' && !LANE_EDGES[fm.parked_from]) e.push('parked_from must name the non-terminal state the lane was parked from');
   for (const d of asList(fm.depends_on)) {
     if (d === lane) e.push('a lane cannot depend on itself');
@@ -331,6 +344,21 @@ function frontMatterChanged(repo, sha, p) {
   return fm(a) !== fm(b);
 }
 
+const splitTrailer = (v) => String(v || '').split(',').map((s) => s.trim()).filter(Boolean);
+
+/**
+ * VTID-05260: does commit `sha` only grant/withdraw `governance` on lane file `p`, which is `ready` before and after?
+ * Every other front-matter key except `updated` must be unchanged.
+ */
+function isPlanGovernanceGrant(repo, sha, p) {
+  const a = parseFrontMatter(showFile(repo, `${sha}^`, p));
+  const b = parseFrontMatter(showFile(repo, sha, p));
+  if (!a || !b || a.state !== 'ready' || b.state !== 'ready') return false;
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  const diff = [...keys].filter((k) => JSON.stringify(a[k] ?? null) !== JSON.stringify(b[k] ?? null));
+  return diff.includes('governance') && diff.every((k) => k === 'governance' || k === 'updated');
+}
+
 export function validateRange(repo, { base, head, branch = '', allowInitial = [], fetchLane = null }) {
   const errors = [];
   const warnings = [];
@@ -362,6 +390,17 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
       && ['drafted', 'sparred', undefined].includes(before?.state) && ['drafted', 'sparred', 'approved', 'parked'].includes(after?.state);
     if (ciSparred) continue;
     for (const x of checkTransition(c.kind, before, after, { allowInitial: allowInitial.includes(c.slug) })) errors.push(`${p}: ${x}`);
+    // VTID-05260 (plan A.3a, no self-grant): `governance` may differ between the merge base and head only when every
+    // commit in range that touches the lane file is a `_plan` commit and the lane is still `ready` at head — the plan
+    // author grants it before building starts; the lane's own builder never can. A new lane file is judged the same.
+    if (c.kind === 'lane' && after && JSON.stringify(before?.governance ?? null) !== JSON.stringify(after.governance ?? null)) {
+      const by = commits.filter((k) => k.files.includes(p));
+      const isPlanCommit = (k) => { const l = splitTrailer(k.lane); return l.length > 0 && l.every((x) => x === `${c.slug}/${PLAN_LANE}`); };
+      const planOnly = by.length > 0 && by.every(isPlanCommit);
+      if (!(planOnly && after.state === 'ready')) {
+        errors.push(`${p}: governance changed (${JSON.stringify(before?.governance ?? null)} → ${JSON.stringify(after.governance ?? null)}) — only a ${c.slug}/${PLAN_LANE} commit may set it, on a lane that is ready (no self-grant)`);
+      }
+    }
   }
 
   const laneTrailers = new Set(commits.map((k) => k.lane).filter(Boolean).flatMap((l) => l.split(',').map((s) => s.trim())));
@@ -386,6 +425,9 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
       // VTID-05214: PLAN-SPAR.yml writes the allocated VTID into a lane that is still `ready`.
       if (c.kind === 'lane' && k.session === CI_PLAN_SPAR && k.lane === `${c.slug}/${PLAN_LANE}`
         && parseFrontMatter(showFile(repo, k.sha, f))?.state === 'ready') continue;
+      // VTID-05260: the plan author grants or withdraws `governance` on a lane that is still `ready` (plan A.3a/A.5);
+      // that commit may change only `governance` (and `updated`) in the lane's front matter.
+      if (c.kind === 'lane' && k.lane === `${c.slug}/${PLAN_LANE}` && isPlanGovernanceGrant(repo, k.sha, f)) continue;
       if (c.kind === 'lane' && k.review === key && !frontMatterChanged(repo, k.sha, f)) continue; // reviewer appends a log entry
       errors.push(`${short}: changes ${f} but its Collab-Lane is "${k.lane || 'none'}" (needs "${key}"${c.kind === 'lane' ? `, or Collab-Review: ${key} with the front matter unchanged` : ''})`);
     }
@@ -445,17 +487,18 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null }) 
   if (text === null || text === undefined) { errors.push(`lane ${key}: ${lanePath} not found in this repo or vitana-platform`); return { applies: true, errors, warnings, lane: key }; }
   let fm = parseFrontMatter(text) || {};
   // The lane's permissions are the BASE revision's (VTID-05213 review): a lane PR must not widen its own `paths`,
-  // `executor`, `seat` or `reviewer_seat`. Only a Claude Code session (session_…) may change them, and only on a lane
-  // that already was `executor: claude`. A lane that is new in this PR is created by its plan (`_plan` commit).
+  // `executor`, `seat`, `reviewer_seat` or `governance` (VTID-05260). Only a Claude Code session (session_…) may change
+  // them, and only on a lane that already was `executor: claude`. A lane that is new in this PR is created by its plan
+  // (`_plan` commit); `governance` is granted only by a `_plan` commit on a `ready` lane (validateRange).
   const mergeBase = gitOk(repo, ['merge-base', base, head]);
   const baseFm = source === 'this repo' && mergeBase ? parseFrontMatter(showFile(repo, mergeBase, lanePath)) : null;
   if (baseFm) {
-    const PERM = ['executor', 'seat', 'reviewer_seat', 'paths'];
+    const PERM = ['executor', 'seat', 'reviewer_seat', 'paths', 'governance'];
     const changed = PERM.filter((k) => JSON.stringify(asList(baseFm[k])) !== JSON.stringify(asList(fm[k])));
     const sessions = new Set(commits.filter((k) => k.files.includes(lanePath)).map((k) => k.session));
     const claudeOnly = sessions.size > 0 && [...sessions].every((x) => /^session_/.test(x));
     if (changed.length && !(baseFm.executor === 'claude' && claudeOnly)) {
-      errors.push(`lane ${key}: ${changed.join(', ')} changed in a lane PR — lane permissions come from the base revision (only Claude Code may change them, on an executor: claude lane)`);
+      errors.push(`lane ${key}: ${changed.join(', ')} changed in a lane PR — lane permissions come from the base revision (only Claude Code may change them, on an executor: claude lane; governance only a _plan commit, on a ready lane)`);
     }
     if (!(baseFm.executor === 'claude' && claudeOnly)) fm = { ...fm, ...Object.fromEntries(PERM.map((k) => [k, baseFm[k]])) };
   }
@@ -468,7 +511,9 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null }) 
     for (const f of changed) {
       if (own(f)) continue;
       if (!matchesAny(f, paths)) errors.push(`${f} is outside lane ${key} (paths: ${paths.join(', ')})`);
-      else if (fm.executor !== 'claude' && matchesAny(f, GOVERNANCE_PATHS)) errors.push(`${f} is a governance path; lane ${key} has executor ${fm.executor || 'unset'} (needs claude)`);
+      else if (fm.executor !== 'claude' && !isOwnerGovernanceLane(fm) && matchesAny(f, GOVERNANCE_PATHS)) {
+        errors.push(`${f} is a governance path; lane ${key} has executor ${fm.executor || 'unset'}${fm.governance !== undefined ? ` and governance ${JSON.stringify(fm.governance)}` : ''} (needs claude, or kiro with governance: ${GOVERNANCE_OWNER})`);
+      }
     }
   }
   for (const k of commits) {

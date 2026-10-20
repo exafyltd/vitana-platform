@@ -10,6 +10,7 @@ import {
   parseFrontMatter, classifyPath, validatePlan, validateLane, checkTransition,
   collect, buildQueue, validateRange, claim, release, listClaims, sessionId,
   scopeCheck, globToRegex, matchesAny, globTouchesGovernance, isSessionId, seatOf, loadPrograms, validatePrograms, programIndex,
+  isOwnerGovernanceLane,
 } from './queue.mjs';
 
 const S1 = 'kiro-202610131200-ab12';
@@ -535,4 +536,125 @@ test('VTID-05213 review: seats must exist in areas.yaml; a touched spec must be 
     assert.ok(validateRegistry(f.work, { head, touched, repoName: 'work', seats: null, programs: prog }).some((x) => x.includes('not listed by any')));
     assert.deepEqual(validateRegistry(f.work, { head, touched, repoName: 'work', seats: null, programs: [{ ...prog[0], fm: { specs: ['work:cards'] } }] }), []);
   } finally { f.done(); }
+});
+
+// ── VTID-05260: owner-named governance lanes (`governance: owner`) ──
+
+const GOV = { executor: 'kiro', seat: 'jtadic', reviewer_seat: 'exafyltd', paths: ['scripts/collab/**', 'CLAUDE.md'] };
+
+test('VTID-05260 validateLane: governance: owner lets a kiro lane declare governance paths; strict value, kiro only (R3-N1)', () => {
+  const v = (o) => validateLane(parseFrontMatter(laneMd('a', o)), 'cards', 'a', new Set(['a']));
+  assert.equal(isOwnerGovernanceLane({ executor: 'kiro', governance: 'owner' }), true);
+  assert.deepEqual(v({ ...GOV, governance: 'owner' }), []);
+  assert.deepEqual(v({ ...GOV, governance: 'owner', state: 'executing', vtid: 'VTID-00002' }), []);
+  assert.deepEqual(v({ executor: 'kiro', governance: 'owner', paths: ['src/**'] }), []);
+  // without the field today's error stays
+  assert.ok(v(GOV).some((e) => e.includes('reaches a governance path')));
+  // any other value is an error, and does not unlock governance paths
+  for (const bad of ['owners', 'bob', 'Owner', '""']) {
+    const e = v({ ...GOV, governance: bad });
+    assert.ok(e.some((x) => x.startsWith('governance ') && x.includes('invalid')), `${bad}: ${e.join('; ')}`);
+    assert.ok(e.some((x) => x.includes('reaches a governance path')), `${bad}: ${e.join('; ')}`);
+  }
+  // an empty `governance:` line parses as an empty list: also invalid
+  const empty = validateLane(parseFrontMatter('---\nlane: a\nstate: ready\nnext_actor: kiro\nupdated: x\nexecutor: kiro\ngovernance:\n---\n'), 'cards', 'a', new Set(['a']));
+  assert.ok(empty.some((x) => x.includes('invalid')), empty.join('; '));
+  // the field on a claude lane, or on a lane without executor: kiro, is an error
+  assert.ok(v({ executor: 'claude', governance: 'owner', paths: ['CLAUDE.md'] }).some((e) => e.includes('valid only with executor: kiro')));
+  assert.ok(v({ governance: 'owner', paths: ['CLAUDE.md'] }).some((e) => e.includes('valid only with executor: kiro')));
+});
+
+test('VTID-05260 scope-check: a governance: owner lane may change governance files inside its paths; without it, still refused', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, { ...GOV, governance: 'owner' });
+    write(f.work, 'CLAUDE.md', 'x');
+    write(f.work, 'scripts/collab/queue.mjs', 'x');
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { ...GOV, governance: 'owner', state: 'executing', vtid: 'VTID-00002', claimed_by: JT }));
+    const head = commit(f.work, 'work', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+    assert.deepEqual(scopeCheck(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors, []);
+    // still only inside the lane's paths
+    write(f.work, '.github/workflows/x.yml', 'x');
+    const h2 = commit(f.work, 'more', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+    const e2 = scopeCheck(f.work, { base, head: h2, branch: 'kiro/cards/card-01' }).errors;
+    assert.deepEqual(e2, ['.github/workflows/x.yml is outside lane cards/card-01 (paths: scripts/collab/**, CLAUDE.md)']);
+  } finally { f.done(); }
+  for (const lane of [GOV, { ...GOV, governance: 'owners' }, { ...GOV, executor: 'bob', governance: 'owner' }]) {
+    const g = fixture();
+    try {
+      const base = scopeFixture(g, lane);
+      write(g.work, 'CLAUDE.md', 'x');
+      const head = commit(g.work, 'work', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+      const e = scopeCheck(g.work, { base, head, branch: 'kiro/cards/card-01' }).errors;
+      assert.ok(e.some((x) => x.startsWith('CLAUDE.md is a governance path')), `${JSON.stringify(lane)}: ${e.join('; ')}`);
+    } finally { g.done(); }
+  }
+});
+
+test('VTID-05260 no self-grant: a lane PR adding or changing governance fails scope-check (PERM) and validate', () => {
+  for (const [from, to] of [[undefined, 'owner'], ['owners', 'owner'], ['owner', 'owners']]) {
+    const f = fixture();
+    try {
+      const base = scopeFixture(f, from === undefined ? GOV : { ...GOV, governance: from });
+      write(f.work, 'CLAUDE.md', 'x');
+      write(f.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { ...GOV, governance: to, state: 'executing', vtid: 'VTID-00002', claimed_by: JT }));
+      const head = commit(f.work, 'grant myself', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+      const s = scopeCheck(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors;
+      assert.ok(s.some((x) => x.includes('governance changed in a lane PR')), `${from}→${to}: ${s.join('; ')}`);
+      if (from !== 'owner') assert.ok(s.some((x) => x.startsWith('CLAUDE.md is a governance path')), `judged by the base field: ${s.join('; ')}`);
+      const v = validateRange(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors;
+      assert.ok(v.some((x) => x.includes('lanes/card-01.md: governance changed')), `${from}→${to}: ${v.join('; ')}`);
+    } finally { f.done(); }
+  }
+  // a lane PR that creates its own lane file with the field is refused by validate as well
+  const g = fixture();
+  try {
+    write(g.work, '.kiro/specs/cards/handoff.md', planMd({ state: 'executing', sparring_record: 'x.md', vtids: ['VTID-00002'], executor: 'kiro', next_actor: 'kiro' }));
+    const base = commit(g.work, 'plan', { 'Collab-Session': S2, 'Collab-Lane': 'cards/_plan' });
+    sh(g.work, 'checkout', '-q', '-b', 'kiro/cards/card-01');
+    write(g.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { ...GOV, governance: 'owner', next_actor: 'kiro' }));
+    const head = commit(g.work, 'new lane', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+    assert.ok(validateRange(g.work, { base, head }).errors.some((x) => x.includes('governance changed')));
+  } finally { g.done(); }
+});
+
+test('VTID-05260: a _plan commit may add governance to a ready lane; not to a working lane, and not together with other fields', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, GOV);
+    sh(f.work, 'checkout', '-q', '-b', 'kiro/cards/_plan', base);
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { next_actor: 'kiro', vtid: 'VTID-00002', ...GOV, governance: 'owner', updated: '2026-10-20T12:00Z' }));
+    const head = commit(f.work, 'grant', { 'Collab-Session': S1, 'Collab-Lane': 'cards/_plan' });
+    assert.deepEqual(validateRange(f.work, { base, head }).errors, []);
+    assert.equal(scopeCheck(f.work, { base, head }).applies, false);
+    // ...and the lane's later PR then passes Lane scope on a governance file, judged by the granted base field
+    sh(f.work, 'checkout', '-q', 'main');
+    sh(f.work, 'merge', '-q', '--ff-only', head);
+    sh(f.work, 'checkout', '-q', '-b', 'kiro/cards/card-01-built', head);
+    write(f.work, 'scripts/collab/queue.mjs', 'x');
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { ...GOV, governance: 'owner', state: 'executing', vtid: 'VTID-00002', claimed_by: JT }));
+    const built = commit(f.work, 'build', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+    assert.deepEqual(scopeCheck(f.work, { base: head, head: built }).errors, []);
+    assert.deepEqual(validateRange(f.work, { base: head, head: built, branch: 'kiro/cards/card-01' }).errors, []);
+  } finally { f.done(); }
+  // the lane is already executing → refused
+  const g = fixture();
+  try {
+    const base = scopeFixture(g, { ...GOV, state: 'executing', claimed_by: JT });
+    sh(g.work, 'checkout', '-q', '-b', 'kiro/cards/_plan', base);
+    write(g.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { next_actor: 'kiro', vtid: 'VTID-00002', ...GOV, state: 'executing', claimed_by: JT, governance: 'owner' }));
+    const head = commit(g.work, 'grant late', { 'Collab-Session': S1, 'Collab-Lane': 'cards/_plan' });
+    const e = validateRange(g.work, { base, head }).errors;
+    assert.ok(e.some((x) => x.includes('governance changed')), e.join('; '));
+    assert.ok(e.some((x) => x.includes('card-01.md but its Collab-Lane')), e.join('; '));
+  } finally { g.done(); }
+  // a _plan commit that also widens paths is an ordinary lane edit → refused
+  const h = fixture();
+  try {
+    const base = scopeFixture(h, GOV);
+    sh(h.work, 'checkout', '-q', '-b', 'kiro/cards/_plan', base);
+    write(h.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { next_actor: 'kiro', vtid: 'VTID-00002', ...GOV, paths: ['**'], governance: 'owner' }));
+    const head = commit(h.work, 'grant + widen', { 'Collab-Session': S1, 'Collab-Lane': 'cards/_plan' });
+    assert.ok(validateRange(h.work, { base, head }).errors.some((x) => x.includes('card-01.md but its Collab-Lane')));
+  } finally { h.done(); }
 });
