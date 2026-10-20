@@ -1,15 +1,15 @@
 ---
 lane: grouped-welcome-notifications
-state: in-review
+state: parked
 next_actor: claude
-claimed_by: kiro-202610182052-5ce2
 vtid: VTID-05208
 seat: exafyltd
 area: messenger
 depends_on: []
 branch: kiro/new-member-welcome/grouped-welcome-notifications
 pr: https://github.com/exafyltd/vitana-platform/pull/4153
-updated: 2026-10-20T21:02Z
+updated: 2026-10-20T21:04Z
+parked_from: in-review
 ---
 # Grouped greeting-DM notifications
 
@@ -81,3 +81,5 @@ reassign review →claude (stale_review)
 reassign review →claude (stale_review)
 ### 2026-10-20T21:02Z · pm-agent · update
 reassign review →claude (stale_review)
+### 2026-10-20T21:04Z · pm-agent · in-review → parked
+park (stale_claim); claim released
