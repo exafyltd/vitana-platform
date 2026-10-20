@@ -11,7 +11,7 @@ pr: https://github.com/exafyltd/vitana-platform/pull/4149
 depends_on: [p0-lane-scope]
 paths:
   - docs/programs/*/program.md
-updated: 2026-10-20T21:08Z
+updated: 2026-10-20T21:10Z
 parked_from: executing
 ---
 # P2 — programme registry content (VTID-05215)
@@ -63,4 +63,6 @@ park (stale_claim); claim released
 ### 2026-10-20T21:06Z · pm-agent · update
 park (stale_claim); claim released
 ### 2026-10-20T21:08Z · pm-agent · update
+park (stale_claim); claim released
+### 2026-10-20T21:10Z · pm-agent · update
 park (stale_claim); claim released
