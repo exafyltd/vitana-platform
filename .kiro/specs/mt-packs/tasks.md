@@ -41,11 +41,14 @@ Allowed paths:
       in `loadTenantFlags` `:70-85`; `^[a-z0-9-]{1,63}$`, existing non-platform tenant, else null) and store
       `anonTenantId` on the session (`:1185`); the `orb-live.ts:7652` call gains `session.anonTenantId ?? null`.
       `orb-live.ts` diff is exactly: verbatim move out, +1 import, +1 arg `:7652`, +1 arg `:7678`, −1 import
-      identifier `:413`.
+      identifier `:413`, +1 `communityName: session.packFacts.communityName,` line in each of the three
+      `GreetingDecisionContext` literals (`:10917`, `:11297`, `:11584`). After the prewarm set
+      `session.packFacts = getEffectiveConfigSync('voice_live', tenantId).pack_facts ?? MAXINA_PACK_FACTS`.
 - [ ] P3b Delete the dead rule-41 violation `buildFirstTimeWelcomeLine` (`greeting-pools.ts:177-187`; no `src/`
-      caller, `orb-live.ts:413` import only) and `test/orb/instruction/first-time-welcome.test.ts`. Make the live
-      first-time welcome intent (`compute-greeting-decision.ts:1232`) take the community name as a pack FACT
-      (default Maxina, byte-identical). Extend `no-hardcoded-spoken-wording.test.ts` (`:27-39`) to read
+      caller, `orb-live.ts:413` import only) and `test/orb/instruction/first-time-welcome.test.ts`. In the PURE
+      `computeGreetingDecision`: add optional `communityName?: string | null` to `GreetingDecisionContext` (`:238`)
+      and replace the `:1233` literal `Maxina` with `${ctx.communityName || 'Maxina'}` (default = today's exact
+      directive string). Extend `no-hardcoded-spoken-wording.test.ts` (`:27-39`) to read
       `greeting-pools.ts` and `anonymous-system-instruction.ts`. Greetings/journey-modes/tool descriptions emit
       INTENTS only.
 - [ ] P4 Dark by default (`MT_RESOLUTION_V2` + `tenant_settings.feature_flags.mt.packs`): no tenant override →

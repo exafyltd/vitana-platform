@@ -16,7 +16,7 @@
 - **Live instruction / pre-login story / greetings:** `orb/live/instruction/live-system-instruction.ts`
   (`buildLiveSystemInstruction`; KB manual reference at 1282), `routes/orb-live.ts:7413`
   `buildAnonymousSystemInstruction` (called 7652), `orb/instruction/greeting-pools.ts` (`buildFirstTimeWelcomeLine` 177 — dead: only imported at
-  `orb-live.ts:413`; the live first-time welcome is the intent at `services/conversation/compute-greeting-decision.ts:1232`).
+  `orb-live.ts:413`; the live first-time welcome is the intent at `services/conversation/compute-greeting-decision.ts:1233`).
   Anonymous session start: `POST /live/session/start` (`orb-live.ts:16010`) → `handleLiveSessionStart`
   (`orb/live/session/live-session-controller.ts:982`, body `LiveSessionStartRequest` `orb/live/types.ts:42`). Rule-41 guard:
   `test/orb/live/characterization/no-hardcoded-spoken-wording.test.ts` (reads 4 files, `:27-39`).

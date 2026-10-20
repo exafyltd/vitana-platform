@@ -33,8 +33,8 @@ no templated spoken sentence, no `{{brand}}` in spoken strings. Maxina output by
 (golden equality). Dark by default (`MT_RESOLUTION_V2`, `tenant_settings.feature_flags.mt.packs`).
 `buildLiveSystemInstruction` stays SYNC — the tenant config is pre-fetched at session start and passed in as a
 parameter; `buildAnonymousSystemInstruction` is extracted verbatim into
-`orb/live/instruction/anonymous-system-instruction.ts` (snapshot-gated) and takes a server-validated `tenantId` (anonymous `tenant_slug` on `POST /live/session/start` → `getTenantIdBySlug` → `session.anonTenantId`). The dead `buildFirstTimeWelcomeLine` is deleted; the live welcome intent (`compute-greeting-decision.ts:1232`) takes the community name as a pack FACT; the rule-41 guard is extended to `greeting-pools.ts`.
-`orb-live.ts` is touched ONLY for the verbatim move, +1 import, +1 argument at `:7652`, +1 argument at `:7678`, −1 import identifier at `:413` (program §8
+`orb/live/instruction/anonymous-system-instruction.ts` (snapshot-gated) and takes a server-validated `tenantId` (anonymous `tenant_slug` on `POST /live/session/start` → `getTenantIdBySlug` → `session.anonTenantId`). The dead `buildFirstTimeWelcomeLine` is deleted; the live welcome intent (`compute-greeting-decision.ts:1233`) takes the community name from a new optional `GreetingDecisionContext.communityName` (default `'Maxina'`, set from `session.packFacts` at the three context literals `orb-live.ts:10917/11297/11584`); the rule-41 guard is extended to `greeting-pools.ts`.
+`orb-live.ts` is touched ONLY for the verbatim move, +1 import, +1 argument at `:7652`, +1 argument at `:7678`, −1 import identifier at `:413`, +1 `communityName` field line at `:10917`/`:11297`/`:11584` (program §8
 hot-file cap; no logic rewritten there). This lane adds its own
 `docs/validation/<vtid>/` (plan-sparring.md copy, scope.json, staging-tests.json).
 
@@ -71,3 +71,6 @@ with Maxina literals (`:7437`, `:7492`) on the no-JWT anonymous path (`:7651`); 
 
 ### 2026-10-20T16:55Z · kiro-hotmail-202610151618-b437 · spar session 2 round 1 (eb308b4e) — paths changed
 R1-F1..F4. Named the sync per-tenant primitive (`tenantConfigCache`, `prewarmEffectiveConfig`, `getEffectiveConfigSync`; `getPersonalityConfigSync` itself is at `ai-personality-service.ts:460`); delete dead `buildFirstTimeWelcomeLine` + its test and extend `no-hardcoded-spoken-wording.test.ts`; exact anonymous slug contract (`LiveSessionStartRequest.tenant_slug`, `getTenantIdBySlug`, `anonTenantId`) and the enumerated `orb-live.ts` diff; FIXED/TENANT field map for `voice_live`. `paths` + `live-session-controller.ts`, `orb/live/types.ts`, `tenancy/tenant-context.ts`, `compute-greeting-decision.ts`, the two test files. No other lane claims them.
+
+### 2026-10-20T17:10Z · kiro-hotmail-202610151618-b437 · spar session 2 round 2 — no path change
+R2-F1/F2: the first-time welcome directive (`compute-greeting-decision.ts:1233`) reads an optional `GreetingDecisionContext.communityName` (default `'Maxina'` = today's exact string), set from `session.packFacts` at the three `orb-live.ts` context literals; `PackFacts`/`MAXINA_PACK_FACTS` defined. `compute-greeting-decision.ts` was already in `paths`.

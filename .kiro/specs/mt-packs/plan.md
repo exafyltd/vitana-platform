@@ -43,7 +43,7 @@ product with its own identity and Maxina's behaviour cannot be golden-tested as 
    path: VTID-04420 replaced its only use with an intent (`services/conversation/compute-greeting-decision.ts:1226-
    1233`), `orb-live.ts:413` only imports it (no call anywhere in `src/`), and only
    `test/orb/instruction/first-time-welcome.test.ts` exercises it (asserting the literal `/Welcome to Maxina/` at
-   `:26`). The live first-time welcome is the intent at `compute-greeting-decision.ts:1232` — "Welcome them warmly to
+   `:26`). The live first-time welcome is the intent at `compute-greeting-decision.ts:1233` — "Welcome them warmly to
    Maxina" — a hardcoded tenant FACT inside an English intent. The rule-41 guard
    `test/orb/live/characterization/no-hardcoded-spoken-wording.test.ts` reads only `orb-live.ts`,
    `compute-greeting-decision.ts`, `reconnect-recovery-prompt.ts`, `voice-wake-brief.ts` (`:27-39`), not
@@ -115,12 +115,27 @@ unless the lane names an exception; Maxina renders byte-identical (golden equali
   (a) the 128-line body `:7413-7541` moved out (pure deletion of moved code); (b) +1 import line for the extracted
   builder; (c) +1 argument `session.anonTenantId ?? null` at the `:7652` call; (d) +1 argument (the prewarmed
   `voice_live` config) at the `:7678` call; (e) −1 identifier `buildFirstTimeWelcomeLine` from the `:413` import
-  list. Net hand-written change ≤ 5 lines plus the verbatim move.
+  list; (f) +1 field line `communityName: session.packFacts.communityName,` in each of the three
+  `GreetingDecisionContext` literals (`_baseCtxSF` `:10917`, `_baseCtxSync` `:11297`, `_ctxNS` `:11584` — the only
+  places a context is built; `decide-conversation-flow.ts:144` forwards one). Net hand-written change ≤ 8 lines plus
+  the verbatim move (§8 cap 20).
+  **Pack FACTS on the session:** the tenant block's facts are a typed `PackFacts` object (`communityName` plus the
+  other TENANT facts) carried in the effective `voice_live` config as `pack_facts`; code holds Maxina's facts as the
+  default (`MAXINA_PACK_FACTS`, `communityName: 'Maxina'`). `handleLiveSessionStart` sets
+  `session.packFacts = getEffectiveConfigSync('voice_live', tenantId).pack_facts ?? MAXINA_PACK_FACTS` right after
+  the prewarm (tenantId = the JWT tenant, or `anonTenantId`, or null → Maxina).
   **F4 welcome:** `buildFirstTimeWelcomeLine` (`greeting-pools.ts:177-187`) is dead (no `src/` caller; `orb-live.ts:413`
   import only) and is a rule-41 violation, so it is DELETED together with its import and
   `test/orb/instruction/first-time-welcome.test.ts` (which asserts the removed literal). The live first-time welcome
-  intent (`compute-greeting-decision.ts:1232`, "Welcome them warmly to Maxina") takes the community name as a FACT
-  from the resolved pack (default Maxina → byte-identical). `no-hardcoded-spoken-wording.test.ts` is extended to read
+  intent is built inline in the PURE `computeGreetingDecision` (`compute-greeting-decision.ts:699`; impurity injected
+  by the caller, header `:21-29`) at `:1232-1237` with the literal "Welcome them warmly to Maxina" (`:1233`), and its
+  input `GreetingDecisionContext` (`:238-417`) has no tenant field. The lane therefore (1) adds an OPTIONAL
+  `communityName?: string | null` to `GreetingDecisionContext` (optional so every existing test/fixture context still
+  type-checks), (2) replaces the `:1233` literal with `${ctx.communityName || 'Maxina'}` — the default reproduces
+  today's directive string byte-for-byte, (3) sets it at the three orb-live.ts context literals (diff item (f)). The
+  community name is a FACT inside an English INTENT, never a finished sentence. Golden: with no `communityName` and
+  with `'Maxina'` the directive equals today's exact string; with a fixture tenant's name it carries that name and
+  nothing else changes. `no-hardcoded-spoken-wording.test.ts` is extended to read
   `greeting-pools.ts` (and the new `anonymous-system-instruction.ts`) so a finished spoken sentence there fails CI.
   Greetings, journey-modes and tool descriptions emit INTENTS only (rule 41). No tenant override → every surface
   byte-identical to today. Reads only; no migration.
@@ -172,8 +187,8 @@ unless the lane names an exception; Maxina renders byte-identical (golden equali
   ignores `tenant_slug` when a JWT is present; `getEffectiveConfigSync` returns the tenant-merged config after
   `prewarmEffectiveConfig` and today's global config otherwise; `no-hardcoded-spoken-wording.test.ts` now also
   scans `greeting-pools.ts` + `anonymous-system-instruction.ts` (and `buildFirstTimeWelcomeLine` +
-  `first-time-welcome.test.ts` are removed); the first-time welcome intent golden-matches Maxina and renders a
-  fixture tenant's name; `npm run test:roles` (42h) green; `npm run test:support` (42c), `npm run test:operator` (42e) green.
+  `first-time-welcome.test.ts` are removed); the first-time welcome directive (`compute-greeting-decision.ts:1233`) equals today's exact
+  string with `communityName` absent or `'Maxina'` and carries a fixture tenant's name otherwise; `npm run test:roles` (42h) green; `npm run test:support` (42c), `npm run test:operator` (42e) green.
 - `kb-overlay-db`: pgTAP (`supabase/tests/mt/`, run by mt-guardrails' `scripts/mt/pgtap/run.*` + CI `pg_prove`
   from `ci-wiring`) — column exists, nullable, FK present; a baseline (NULL) doc still resolves.
 - `kb-overlay-code`: Jest — baseline-only tenant resolves Maxina manual unchanged; an overlay doc for a
@@ -220,9 +235,9 @@ with mt-guardrails. Creating a real tenant pack is a later owner-approved step (
   the fixture regeneration is declared and reviewed in the same PR.
 
 ## Out of scope
-- `orb-live.ts` edits beyond the enumerated diff (a)–(e) in the persona-pack bullet: the verbatim move of
+- `orb-live.ts` edits beyond the enumerated diff (a)–(f) in the persona-pack bullet: the verbatim move of
   `buildAnonymousSystemInstruction`, +1 import, +1 argument at `:7652`, +1 argument at `:7678`, −1 import
-  identifier at `:413` (within the program §8 ≤20-line hot-file cap). No logic is rewritten inside `orb-live.ts`.
+  identifier at `:413`, +1 `communityName` field line at each of `:10917`/`:11297`/`:11584` (within the program §8 ≤20-line hot-file cap). No logic is rewritten inside `orb-live.ts`.
 - Per-tenant navigation, per-tenant voice persona (M3+).
 - Creating a real tenant content pack / Tenant Pack intake (WS8).
 - Network/Discover/scope work (mt-network, mt-community-isolation, mt-discover).
