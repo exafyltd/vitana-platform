@@ -325,7 +325,7 @@ export function renderTable(rows) {
 
 function commitsInRange(repo, base, head) {
   const fmt = '%H%x1f%(trailers:key=Collab-Session,valueonly,separator=%x2c)%x1f%(trailers:key=Collab-Lane,valueonly,separator=%x2c)%x1f%(trailers:key=Collab-Review,valueonly,separator=%x2c)%x1e';
-  const out = git(repo, ['log', '--no-merges', `--format=${fmt}`, `${base}..${head}`]);
+  const out = git(repo, ['log', '--no-merges', '--topo-order', `--format=${fmt}`, `${base}..${head}`]);
   return out.split('\x1e').map((s) => s.trim()).filter(Boolean).map((rec) => {
     const [sha, session, lane, review] = rec.split('\x1f');
     const files = git(repo, ['diff-tree', '--no-commit-id', '--name-only', '-r', sha]).split('\n').filter(Boolean);
@@ -366,8 +366,10 @@ export function laneApprovedInPr(repo, { mergeBase, head, slug, lanePath, commit
   const hp = `.kiro/specs/${slug}/handoff.md`;
   if (parseFrontMatter(showFile(repo, mergeBase, hp))) return false; // an existing plan: never re-sparred here
   if (!APPROVED_STATES.includes(parseFrontMatter(showFile(repo, head, hp))?.state)) return false;
-  const spar = commits.find((x) => x.session === CI_PLAN_SPAR && x.files.includes(hp)); // newest first
-  if (!spar) return false;
+  const spar = commits.find((x) => x.session === CI_PLAN_SPAR && x.files.includes(hp)); // newest first (topo order)
+  // The approval is PLAN-SPAR's own: its commit wrote an approved state. An author writing `approved` after a round
+  // that did not converge is not an approval this check can see (that needs the owner's Gate 1).
+  if (!spar || !APPROVED_STATES.includes(parseFrontMatter(showFile(repo, spar.sha, hp))?.state)) return false;
   const at = parseFrontMatter(showFile(repo, spar.sha, lanePath));
   const now = parseFrontMatter(showFile(repo, head, lanePath));
   return !!at && !!now && LANE_PERM.every((k) => JSON.stringify(asList(at[k])) === JSON.stringify(asList(now[k])));
@@ -421,7 +423,7 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
           if (!ok) errors.push(`${p}: merge: ${rec.mergeRepo}@${rec.merge} could not be verified as a commit of ${laneKey} on ${rec.mergeRepo} main`);
         } else if (gitOk(repo, ['cat-file', '-e', `${rec.merge}^{commit}`]) === null || gitOk(repo, ['merge-base', '--is-ancestor', rec.merge, base]) === null) {
           errors.push(`${p}: merge: ${rec.merge} is not a commit on the base branch of this repository`);
-        } else if (!(gitOk(repo, ['log', '-1', '--format=%B', rec.merge]) || '').includes(laneKey)) {
+        } else if (!namesLane(gitOk(repo, ['log', '-1', '--format=%B', rec.merge]) || '', laneKey)) {
           errors.push(`${p}: merge: ${rec.merge} does not name ${laneKey} in its message`);
         }
       }
@@ -619,6 +621,12 @@ export function ghFetcher(repoSlug = 'exafyltd/vitana-platform') {
   };
 }
 
+/** VTID-05259: does a commit message name lane `<slug>/<lane>` as a whole token (not `cards/ab` for `cards/a`)? */
+export function namesLane(message, laneKey) {
+  const k = String(laneKey).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^A-Za-z0-9_/-])${k}(?![A-Za-z0-9_/-])`).test(String(message || ''));
+}
+
 /** VTID-05259: is `sha` a commit on `repo`'s main (exafyltd/<repo>)? Through the GitHub CLI; throws when unknown. */
 export function ghMergeVerifier(owner = 'exafyltd') {
   return (repoName, sha, laneKey) => {
@@ -626,7 +634,7 @@ export function ghMergeVerifier(owner = 'exafyltd') {
     const status = execFileSync('gh', ['api', `repos/${owner}/${repoName}/compare/${sha}...main`, '--jq', '.status'], opt).trim();
     if (status !== 'ahead' && status !== 'identical') return false;
     const msg = execFileSync('gh', ['api', `repos/${owner}/${repoName}/commits/${sha}`, '--jq', '.commit.message'], opt);
-    return !laneKey || msg.includes(laneKey);
+    return !laneKey || namesLane(msg, laneKey);
   };
 }
 

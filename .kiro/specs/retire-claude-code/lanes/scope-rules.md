@@ -111,3 +111,16 @@ explicit per-PR merge instruction stays the boundary for governance changes. The
 validate is still report-only in PR-GATE; making it count is a PR-GATE (governance) change outside this lane.
 
 Tests: 41/41.
+
+### 2026-10-20T13:45Z · kiro-exafyltd-202610201041-ab5d · executing (round-4 review fixes)
+`semantic_reviewer` round 4 (changes): 2 bypasses and a PR-body accuracy issue. All fixed, and repro4 Q1–Q2 are
+refused:
+- The approval is PLAN-SPAR's own: the newest `ci-plan-spar` commit must itself have written an approved state. An
+  author writing `approved` after a non-converged round doesn't count, which also covers plan+build.
+  `commitsInRange` now uses `--topo-order`. (Checked: PLAN-SPAR's converged commit on #4209, 76042a7f8, wrote
+  `approved`.)
+- The lane key in the merge message must match as a whole token (`namesLane`), so `cards/ab` doesn't satisfy
+  `cards/a` and `x/p10` doesn't satisfy `x/p1`. This applies locally and in `ghMergeVerifier`.
+- PR body corrected: validate's rules run in the Collab handoff step, which is still report-only in PR-GATE.
+
+Tests: 42/42.

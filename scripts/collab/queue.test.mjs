@@ -9,7 +9,7 @@ import {
   validateRegistry, loadSeats,
   parseFrontMatter, classifyPath, validatePlan, validateLane, checkTransition,
   collect, buildQueue, validateRange, claim, release, listClaims, sessionId,
-  scopeCheck, governanceRecord, globToRegex, matchesAny, globTouchesGovernance, isSessionId, seatOf, loadPrograms, validatePrograms, programIndex,
+  scopeCheck, governanceRecord, namesLane, globToRegex, matchesAny, globTouchesGovernance, isSessionId, seatOf, loadPrograms, validatePrograms, programIndex,
 } from './queue.mjs';
 
 const S1 = 'kiro-202610131200-ab12';
@@ -868,4 +868,32 @@ test('VTID-05259 round 3: governance lanes only inside the approved plan; plan+b
     { files: { [H]: approved, '.kiro/specs/new/lanes/g.md': laneMd('g', { ...GOVE, vtid: 'VTID-09001' }) }, trailers: spar },
     { files: { '.github/workflows/x.yml': 'x' }, trailers: { 'Collab-Session': EX2, 'Collab-Lane': 'new/g' } }]);
   assert.ok(pbGov.s.errors.some((x) => x.includes('no governance paths')), 'governance waits for main');
+});
+
+test('VTID-05259 round 4: approval is PLAN-SPAR\'s own commit; lane keys match whole tokens', () => {
+  const EX2 = 'kiro-exafyltd-202610201041-ab5d';
+  const n = fixture();
+  try {
+    const base = sh(n.work, 'rev-parse', 'HEAD');
+    sh(n.work, 'checkout', '-q', '-b', 'kiro/new/b');
+    const plan = (o = {}) => planMd({ slug: 'new', author_seat: 'exafyltd', ...o });
+    const L2 = { executor: 'kiro', seat: 'exafyltd', reviewer_seat: 'jtadic', paths: ['src/**'], next_actor: 'kiro', vtid: 'VTID-09001' };
+    write(n.work, '.kiro/specs/new/handoff.md', plan());
+    write(n.work, '.kiro/specs/new/lanes/b.md', laneMd('b', L2));
+    write(n.work, '.kiro/specs/new/lanes/g.md', laneMd('g', { ...GOV, next_actor: 'kiro', vtid: 'VTID-09001' }));
+    commit(n.work, 'plan', { 'Collab-Session': EX2, 'Collab-Lane': 'new/_plan' });
+    write(n.work, '.kiro/specs/new/handoff.md', plan({ state: 'sparred', sparring_record: 'x.md' }));
+    commit(n.work, 'round 1, not converged', { 'Collab-Session': 'ci-plan-spar', 'Collab-Lane': 'new/_plan' });
+    write(n.work, '.kiro/specs/new/handoff.md', plan({ state: 'approved', sparring_record: 'x.md', vtids: ['VTID-09001'], next_actor: 'kiro' }));
+    commit(n.work, 'author self-approves', { 'Collab-Session': EX2, 'Collab-Lane': 'new/_plan' });
+    write(n.work, 'src/x.ts', 'x');
+    const h = commit(n.work, 'build', { 'Collab-Session': EX2, 'Collab-Lane': 'new/b' });
+    assert.ok(scopeCheck(n.work, { base, head: h }).errors.some((x) => x.includes('grants no paths yet')), 'plan+build needs PLAN-SPAR\'s approval');
+    assert.ok(validateRange(n.work, { base, head: h }).errors.some((x) => x.includes('creates governance lane')), 'governance lane needs it too');
+  } finally { n.done(); }
+  assert.ok(namesLane('VTID-00002 (cards/a): x', 'cards/a'));
+  assert.ok(namesLane('Collab-Lane: cards/a\n', 'cards/a'));
+  assert.ok(!namesLane('VTID-00003 (cards/ab): other lane', 'cards/a'));
+  assert.ok(!namesLane('VTID-1 (x/p10): y', 'x/p1'));
+  assert.ok(!namesLane('VTID-1 (ccards/a): y', 'cards/a'));
 });
