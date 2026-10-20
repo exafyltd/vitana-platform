@@ -9,6 +9,7 @@ specs:
   - vitana-platform:claude-sessions-handover
   - vitana-v1:chat-ux
   - vitana-v1:vitana-chat-markdown
+  - vitana-platform:sparring-token-efficiency
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -27,3 +28,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:claude-sessions-handover` — handover of ongoing Claude Code sessions to Kiro
 - `vitana-v1:chat-ux` — chat UX
 - `vitana-v1:vitana-chat-markdown` — Vitana chat replies render Markdown
+- `vitana-platform:sparring-token-efficiency` — Bedrock prompt caching + token budget for the sparring partner
