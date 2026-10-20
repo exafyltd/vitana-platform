@@ -7,9 +7,11 @@ repos: [vitana-platform, vitana-v1]
 specs:
   - vitana-platform:pm-agent
   - vitana-platform:claude-sessions-handover
+  - vitana-platform:retire-claude-code
   - vitana-platform:plan-spar-stale-session
   - vitana-v1:chat-ux
   - vitana-v1:vitana-chat-markdown
+  - vitana-platform:collab-kiro-governance
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
