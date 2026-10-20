@@ -23,7 +23,9 @@ Plan: `.kiro/specs/mt-jobs/plan.md` (authoritative) and the `jobs-automation-act
 
 Six direct-pin sites (`community.ts:274,382,482`, `match-feedback.ts:280`, `matchmaking.ts:576`,
 `admin-signups.ts:205`) and one fallback site (`groups-events-tools.ts:357-360`, `id.tenant_id || DEFAULT_TENANT_ID`)
-resolve the actor's real tenant via `resolveActorTenant` (from `jobs-tenant-loop`) when the flag is on; off,
+resolve the actor's real tenant via `resolveActorTenant` (from `jobs-tenant-loop`, built on the already-shipped
+`resolvePrimaryTenant`, `services/tenancy/tenant-context.ts:43`, VTID-05149 — no direct `user_tenants` read) when the
+flag is on; off,
 `DEFAULT_TENANT_ID` unchanged. The fallback site already tries the session tenant first — annotate it separately and
 pin its `id.tenant_id`-present path with a dedicated no-regression test (A2). Depends on `jobs-tenant-loop` for the
 resolver.
@@ -40,3 +42,7 @@ Supabase/AWS write. Work only inside the allowed paths. Branch `kiro/mt-jobs/job
 Depends on `jobs-tenant-loop` (shared resolver). Seat `jtadic`, reviewer `exafy`.
 ### 2026-10-18T20:07Z u{00B7} kiro-hotmail-202610151618-b437 u{00B7} re-spar round (s2-round-1 R1-F3)
 Split the dispatch sites into six direct pins + one fallback (groups-events-tools.ts:357-360). The fallback''s id.tenant_id-present path is already correct and gets a dedicated no-regression test. Paths unchanged.
+
+### 2026-10-20T17:30Z · kiro-hotmail-202610151618-b437 · spar session 2 round 1 (76c3c99c) — no path change
+R1-F1: `resolvePrimaryTenant` already exists (`services/tenancy/tenant-context.ts:43`, VTID-05149); the resolver reuses
+it instead of reading `user_tenants` directly.

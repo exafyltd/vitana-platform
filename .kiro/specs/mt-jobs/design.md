@@ -35,19 +35,27 @@ against the AWS estate by Claude/owner, never by a Kiro mutating AWS call.
 - `services/gateway/src/services/mt-flags.ts`: `isJobsTenantLoopEnabled(env, settings)` — true only when
   `env.MT_RESOLUTION_V2` is set AND `settings.feature_flags?.mt?.jobs_tenant_loop` is truthy. The shared flag module
   mt-launch imports.
-- `services/gateway/src/services/jobs/job-tenant-loop.ts`: `activeTenantIds(sb)`,
-  `tenantTimezone(sb, tenantId)` (fallback `Europe/Berlin`), `forEachActiveTenant(sb, fn)` (one context per tenant),
-  and `resolveActorTenant(sb, identity)` (uses `resolvePrimaryTenant` when present, else the primary `user_tenants`
-  row; never `DEFAULT_TENANT_ID`).
-- Convert the heartbeat loop and the `scheduled-notifications.ts` routes: when the flag is on, wrap the existing
-  per-tenant body in `forEachActiveTenant`; off, keep the single `DEFAULT_TENANT_ID` pass unchanged.
+- `services/gateway/src/services/jobs/job-tenant-loop-repository.ts`: the only DB access — `fetchActiveTenants`,
+  `fetchTenantSettings(ids)` (`tenant_settings.tenant_id, timezone, feature_flags`; table `20260412300000`, timezone
+  `20261014000400:44`).
+- `services/gateway/src/services/jobs/job-tenant-loop.ts`: `activeTenantIds(sb)` (flag-on active non-platform
+  tenants ∪ `DEFAULT_TENANT_ID`), `tenantTimezone(settings)`, `forEachActiveTenant(sb, fn)` (one context per tenant),
+  `resolveJobTenants(req, sb)` (explicit tenant ⇒ one pass; none ⇒ fan-out on / `DEFAULT_TENANT_ID` off) and
+  `resolveActorTenant(identity)` (identity tenant, else the existing `resolvePrimaryTenant` from
+  `services/tenancy/tenant-context.ts:43`; never `DEFAULT_TENANT_ID`, no new `user_tenants` read).
+- Convert the heartbeat loop (registration gate `index.ts:1845` also opens on `MT_RESOLUTION_V2`), the automation cron
+  route `automations.ts:162-168` and the `scheduled-notifications.ts` routes through `resolveJobTenants` — the fan-out
+  happens at exactly one level (AP-0501 → `/morning-briefing` carries its tenant); off, the single
+  `DEFAULT_TENANT_ID` pass unchanged.
 
 ### jobs-automation-actor-tenant (DB-free code, seat jtadic)
 The seven dispatch sites call `resolveActorTenant` (lane 2) when the flag is on; off, keep `DEFAULT_TENANT_ID`.
 Depends on lane 2 for the resolver.
 
 ### jobs-community-scan-tenant (DB-free code, seat jtadic)
-`runCommunityScan(sb, { tenantId?, … })` + the `/community-scan` route loop active tenants under the flag; the
+`runCommunityScan(sb, { tenantId?, … })` (member query `is_primary` AND `tenant_id` — each member once, under their
+primary tenant) + the `/community-scan` route loop active tenants under the flag, emitting ONE event per tick that
+keeps today's six top-level payload fields (counts summed) plus `per_tenant`; the
 memory-backfill loop's tenant source becomes `activeTenantIds(sb)` under the flag (env override otherwise). Depends
 on lane 2.
 

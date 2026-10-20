@@ -11,6 +11,8 @@ paths:
   - services/gateway/src/services/jobs/job-tenant-loop.ts
   - services/gateway/src/index.ts
   - services/gateway/src/routes/scheduled-notifications.ts
+  - services/gateway/src/routes/automations.ts
+  - services/gateway/src/services/jobs/job-tenant-loop-repository.ts
   - services/gateway/test/
   - docs/validation/
 updated: 2026-10-15T16:40Z
@@ -21,9 +23,11 @@ Plan: `.kiro/specs/mt-jobs/plan.md` (authoritative) and the `jobs-tenant-loop` s
 allowed paths, acceptance). Design: `design.md`.
 
 Adds the shared `services/gateway/src/services/mt-flags.ts` and `services/gateway/src/services/jobs/job-tenant-loop.ts`
-that gate the mt-launch APIs and the M2 flag flips, and converts the heartbeat loop (`index.ts:1840-1866`, `setInterval`
-registered once at startup `:1848`) and the `scheduled-notifications.ts` routes to iterate active tenants under the
-flag. The flag + `activeTenantIds` are evaluated INSIDE each tick (per-tenant settings on that tick), never at init,
+that gate the mt-launch APIs and the M2 flag flips, and converts the heartbeat loop (`index.ts:1841-1866`, registration gate `:1845` also opening on `MT_RESOLUTION_V2`,
+`setInterval` registered once at startup `:1849`), the automation cron route (`automations.ts:162-168`) and the
+`scheduled-notifications.ts` routes to iterate active tenants under the flag through one `resolveJobTenants` rule
+(explicit tenant ⇒ one pass, so AP-0501 → `/morning-briefing` never re-fans out). DB reads only in
+`job-tenant-loop-repository.ts`; the actor resolver reuses `resolvePrimaryTenant` (`tenancy/tenant-context.ts:43`). The flag + `activeTenantIds` are evaluated INSIDE each tick (per-tenant settings on that tick), never at init,
 so a mid-flight flip takes effect on the next tick with no restart. Flag off ⇒ byte-for-byte today. No migration.
 Keep `npm run test:operator` green.
 
@@ -40,3 +44,10 @@ First code lane; the shared gate (`mt-flags.ts`, `job-tenant-loop.ts`) the other
 build on. Seat `jtadic` (uncovered platform gateway work per the brief's lane rule), reviewer `exafy`.
 ### 2026-10-18T20:08Z u{00B7} kiro-hotmail-202610151618-b437 u{00B7} re-spar round (s2-round-1 R1-F5)
 Clarified that the heartbeat setInterval is registered once at startup (index.ts:1848), so the flag + activeTenantIds are evaluated inside each tick, not at init; corrected the block range to index.ts:1840-1866. L3/L5 updated. Paths unchanged.
+
+### 2026-10-20T17:30Z · kiro-hotmail-202610151618-b437 · spar session 2 round 1 (76c3c99c) — paths changed
+R1-F1/F2/F6/F7: the actor resolver reuses the shipped `resolvePrimaryTenant`; the `tenant_settings` schema is cited and
+`job-tenant-loop-repository.ts` named; the heartbeat gate opens on `MT_RESOLUTION_V2`; the live morning-brief path is
+EventBridge → `/automations/cron/AP-0501` → `/morning-briefing`, so `automations.ts` joins the lane and the fan-out
+happens at one level only. `paths` + `routes/automations.ts`, `services/jobs/job-tenant-loop-repository.ts` (no other
+lane claims them).

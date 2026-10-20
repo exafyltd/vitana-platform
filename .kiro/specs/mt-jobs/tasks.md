@@ -35,25 +35,40 @@ Allowed paths:
 - `services/gateway/src/services/jobs/job-tenant-loop.ts`
 - `services/gateway/src/index.ts`
 - `services/gateway/src/routes/scheduled-notifications.ts`
+- `services/gateway/src/routes/automations.ts`
+- `services/gateway/src/services/jobs/job-tenant-loop-repository.ts`
 - `services/gateway/test/`
 - `docs/validation/`
 
 - [ ] L1 `mt-flags.ts`: `isJobsTenantLoopEnabled(env, settings)` (true only when `MT_RESOLUTION_V2` set AND
-      `settings.feature_flags.mt.jobs_tenant_loop` truthy).
-- [ ] L2 `jobs/job-tenant-loop.ts`: `activeTenantIds(sb)`, `tenantTimezone(sb, tenantId)` (fallback `Europe/Berlin`),
-      `forEachActiveTenant(sb, fn)`, `resolveActorTenant(sb, identity)` (primary-tenant resolver, never `DEFAULT_TENANT_ID`).
-- [ ] L3 Heartbeat loop (`index.ts:1840-1866`; `heartbeatTenantId` assignment `:1844`, `runHeartbeatCycle` call
-      `:1853`, `setInterval` registered once at startup `:1848`): evaluate `isJobsTenantLoopEnabled` + `activeTenantIds`
-      INSIDE each tick (per-tenant settings fetched on that tick), never at init; flag on ⇒ `runHeartbeatCycle` per
-      active tenant, off ⇒ the single `DEFAULT_TENANT_ID` pass unchanged. A mid-flight flip takes effect next tick.
-- [ ] L4 `scheduled-notifications.ts`: `getTenantId`-driven routes iterate `forEachActiveTenant` under the flag; off,
-      unchanged. Per-user `getUserTimezone` untouched.
-- [ ] L5 Vitest: flag matrix; `activeTenantIds` excludes `is_platform`/inactive; `tenantTimezone` fallback; each
-      converted site = one `DEFAULT_TENANT_ID` pass off / two passes on with two active tenants; a flag flipped off
-      between two ticks stops the tenant loop on the next tick with no restart (per-tick evaluation, R1-F5).
+      `settings.feature_flags.mt.jobs_tenant_loop` truthy; the key is new inside the existing `tenant_settings.feature_flags`
+      JSONB, `20260412300000_tenant_settings.sql:12`).
+- [ ] L2 `jobs/job-tenant-loop-repository.ts` (`fetchActiveTenants` = `tenants.select('id').eq('is_active', true)
+      .eq('is_platform', false)`; `fetchTenantSettings(ids)` = `tenant_settings.select('tenant_id, timezone,
+      feature_flags').in('tenant_id', ids)`) + `jobs/job-tenant-loop.ts`: `activeTenantIds(sb)` (flag-on active
+      non-platform tenants ∪ `DEFAULT_TENANT_ID`), `tenantTimezone(settings)` (`Europe/Berlin` only when the tenant has
+      no `tenant_settings` row), `forEachActiveTenant(sb, fn)`, `resolveJobTenants(req, sb)` (body/identity tenant ⇒
+      that one; none + master on ⇒ `activeTenantIds`; none + off ⇒ `[DEFAULT_TENANT_ID]`), and
+      `resolveActorTenant(identity)` (identity tenant, else the existing `resolvePrimaryTenant` from
+      `services/tenancy/tenant-context.ts:43`; never `DEFAULT_TENANT_ID`, never a new `user_tenants` read).
+- [ ] L3 Heartbeat loop (`index.ts:1841-1866`; assignment `:1844`, gate `:1845`, `runHeartbeatCycle` `:1853`,
+      `setInterval` registered once at startup `:1849`): gate becomes `heartbeatEnabled && (heartbeatTenantId ||
+      MT_RESOLUTION_V2 === 'true')`; the tenant list is evaluated INSIDE each tick, never at init; empty list ⇒ no-op.
+      Master off ⇒ today's single `DEFAULT_TENANT_ID` pass. A mid-flight flip takes effect next tick.
+- [ ] L4 `automations.ts` `/cron/:id` (`:162-168`, `getAdminTargetTenantId` `:64-66`) and the `scheduled-notifications.ts`
+      `getTenantId`-driven routes use `resolveJobTenants`: explicit tenant ⇒ one pass (so AP-0501 → `/morning-briefing`,
+      `engagement-events.ts:439-442`, never re-fans out); no tenant ⇒ fan-out (on) / `DEFAULT_TENANT_ID` (off).
+      Per-user `getUserTimezone` and the `findRecentlyNotified` idempotency check (`scheduled-notifications.ts:497-499`)
+      untouched.
+- [ ] L5 Jest: flag matrix; `activeTenantIds` excludes `is_platform`/inactive and always keeps `DEFAULT_TENANT_ID`;
+      `tenantTimezone` fallback; `resolveJobTenants` precedence; `/cron/AP-0501` flag on with two tenants ⇒ two
+      `executeAutomation` calls and each nested `/morning-briefing` runs once for its tenant; each converted site =
+      one `DEFAULT_TENANT_ID` pass off / two passes on; heartbeat registered with master on and no `DEFAULT_TENANT_ID`;
+      a flag flipped off between two ticks stops the tenant loop on the next tick with no restart; a user with a
+      scheduler-written `morning_briefing_ready` row in that tenant within 20 h is skipped.
 - [ ] L6 `docs/validation/<vtid>/`: plan copy, `scope.json`, `staging-tests.json` (read-only health + active-count read).
 
-Acceptance: `npm run build` (gateway) + the new Vitest green; `npm run test:operator` green; flag off is byte-for-byte
+Acceptance: `npm run build` (gateway) + the new Jest tests green; `npm run test:operator` green; flag off is byte-for-byte
 today; no migration; executor kiro.
 
 <!-- lane: jobs-automation-actor-tenant -->
@@ -68,17 +83,17 @@ Allowed paths:
 - `services/gateway/test/`
 - `docs/validation/`
 
-- [ ] A1 Replace `process.env.DEFAULT_TENANT_ID` with `resolveActorTenant` (from `jobs-tenant-loop`) when the flag
-      is on at the six direct-pin sites (`community.ts:274,382,482`, `match-feedback.ts:280`, `matchmaking.ts:576`,
-      `admin-signups.ts:205`) and the one fallback site `groups-events-tools.ts:357-360`
-      (`id.tenant_id || DEFAULT_TENANT_ID`); off, unchanged. Annotate the fallback site: its `id.tenant_id`-present
-      path must stay un-regressed.
-- [ ] A2 Vitest: a non-Maxina actor's event carries that actor's tenant (on) and `DEFAULT_TENANT_ID` (off); never
-      Maxina for a non-Maxina actor. Dedicated `groups-events-tools` case: an `id.tenant_id`-present dispatch keeps
-      that tenant on both flag states (no regression of the already-correct path).
+- [ ] A1 Replace `process.env.DEFAULT_TENANT_ID` with `resolveActorTenant` (from `jobs-tenant-loop`, built on the
+      existing `resolvePrimaryTenant`) when the flag is on at the six direct-pin sites (`community.ts:274,382,482`,
+      `match-feedback.ts:280`, `matchmaking.ts:576`, `admin-signups.ts:205`) and the one fallback site
+      `groups-events-tools.ts:357-360` (`id.tenant_id || DEFAULT_TENANT_ID`); off, unchanged. Annotate the fallback
+      site: its `id.tenant_id`-present path must stay un-regressed.
+- [ ] A2 Jest: a non-Maxina actor's event carries that actor's tenant (on) and `DEFAULT_TENANT_ID` (off); never
+      Maxina for a non-Maxina actor; `resolvePrimaryTenant` not `'found'` ⇒ no Maxina tag. Dedicated
+      `groups-events-tools` case: an `id.tenant_id`-present dispatch keeps that tenant on both flag states.
 - [ ] A3 `docs/validation/<vtid>/`: plan copy, `scope.json`, `staging-tests.json`.
 
-Acceptance: `npm run build` + Vitest green; depends on `jobs-tenant-loop` for the resolver; executor kiro.
+Acceptance: `npm run build` + Jest green; depends on `jobs-tenant-loop` for the resolver; executor kiro.
 
 <!-- lane: jobs-community-scan-tenant -->
 ## jobs-community-scan-tenant — community scan & memory backfill per active tenant (repo vitana-platform)
@@ -90,15 +105,21 @@ Allowed paths:
 - `services/gateway/test/`
 - `docs/validation/`
 
-- [ ] C1 `runCommunityScan(sb, { tenantId?, … })` + `/community-scan` route loop active tenants under the flag (each
-      tenant's members, that tenant's timezone); off, platform-wide as today. Emit ONE aggregated
-      `community_autopilot.scan.completed` OASIS event after the full loop (collect each tenant's `ScanRunSummary`
-      into the payload), replacing the current per-call emit (`autopilot-recommendations.ts:2299-2309`) — never N
-      events per tick.
+- [ ] C1 `runCommunityScan(sb, { tenantId?, … })`: with `tenantId` the member query (`scan-runner.ts:265`) adds
+      `.eq('tenant_id', tenantId)` to today's `.eq('is_primary', true)` — each member scanned once, under their primary
+      tenant; the per-member timezone chain (`:274-284`) keeps today's order with that tenant's `tenant_settings.timezone`
+      as the final default. The `/community-scan` route loops active tenants under the flag; off, platform-wide as
+      today.
+- [ ] C1b ONE `community_autopilot.scan.completed` event per tick (`autopilot-recommendations.ts:2299-2309`): the six
+      top-level fields keep today's names/types (`enabled`, `dry_run`, and the four counts SUMMED) plus
+      `per_tenant: [{ tenant_id, members_considered, members_due, members_scanned, rows_inserted }]`; flag off ⇒
+      payload identical to today. The route response keeps the same top-level summary fields.
 - [ ] C2 Memory-embedding backfill loop takes its tenant set from `activeTenantIds(sb)` under the flag;
       `MEMORY_EMBEDDING_BACKFILL_TENANT_IDS` stays the off/pinned override.
-- [ ] C3 Vitest: two-tenant scan processes each tenant's members only and emits exactly ONE aggregated OASIS event
-      per tick (not one per tenant); backfill tenant source = DB on / env off.
+- [ ] C3 Jest: two-tenant scan, a member primary in A and secondary in B is scanned only in A's pass; members whose
+      primary tenant is inactive/platform are in no pass (flag on); exactly ONE event per tick with backward-compatible
+      top-level totals (the existing `test/routes/autopilot-recommendations.test.ts:1655` assertion stays green);
+      backfill tenant source = DB on / env off.
 - [ ] C4 `docs/validation/<vtid>/`: plan copy, `scope.json`, `staging-tests.json`.
 
-Acceptance: `npm run build` + Vitest green; depends on `jobs-tenant-loop`; executor kiro.
+Acceptance: `npm run build` + Jest green; depends on `jobs-tenant-loop`; executor kiro.
