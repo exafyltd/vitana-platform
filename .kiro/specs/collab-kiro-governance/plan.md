@@ -27,8 +27,15 @@ Let Kiro finish its own pipeline without Claude Code: (1) an owner-named Kiro la
 2. `validateLane`: an `executor: kiro` lane may reach governance paths when it declares `governance: owner`; without
    it, today's error stays.
 3. `scopeCheck`: a governance file is in scope for a lane with `executor: kiro` + `governance: owner` (still only
-   inside the lane's `paths`). The base-revision rule (`:446`–`:457`) applies unchanged, so a lane PR cannot add
-   `governance: owner` to itself: it must already be on `main`, written by the plan that created the lane.
+   inside the lane's `paths`).
+3a. **No self-grant (sparring R1-F1).** Today `governance` would not be a base-revision permission: `PERM`
+   (`:453`) is `['executor','seat','reviewer_seat','paths']` and the fold-back (`:460`) copies only those, while
+   `validate` judges the head file (`:349`). So: add `governance` to `PERM` in `scopeCheck`; the fold-back then
+   takes `governance` from the base revision, so a lane PR that adds or changes it is rejected and never gains it.
+   In `validate`, a lane commit (`Collab-Lane: <slug>/<lane>`, not `_plan`) that changes `governance` in a lane
+   file that already exists at the base is an error; only a `_plan` commit may write it, and only when it creates
+   the lane. A `_plan` commit may also add it to an existing `ready` lane, the same way PLAN-SPAR writes the VTID
+   into a `ready` lane today (`:386`), so the plan author can grant it but the lane's own builder cannot.
 4. `collaboration.md` §7b gains: the owner may name a lane for Kiro to build on governance paths; its plan carries
    `governance: owner` and states the owner's instruction; it is still sparred, gets a VTID, is reviewed by
    `reviewer_seat`, and merges only on the owner's explicit merge instruction in the conversation. Never in an
@@ -48,12 +55,19 @@ Let Kiro finish its own pipeline without Claude Code: (1) an owner-named Kiro la
 1. `plan-spar.mjs:35`: add `partner_output_invalid` to `RETRYABLE_REASONS`.
 2. `plan-sparring-service.ts:46`: add `partner_output_invalid` to the gateway's `RETRYABLE_REASONS`. Both lists move
    together, or the gateway dedups the retry (`:252`).
-3. Loop guard: at most 2 automatic retries per plan hash for `partner_output_invalid`. The gateway counts escalated
-   sessions with that reason for the hash (`fetchSessionByPlanHash` / one count query); after 2 the session is
-   not retryable and the plan waits as today. The CI side needs no count, because it follows the gateway's answer.
-4. Tests: `plan-spar.test.mjs:193` becomes "is retried on the next push"; gateway Jest: a stored
-   `partner_output_invalid` session is re-run rather than deduplicated, and the third attempt for the same hash is
-   deduplicated.
+3. Loop guard, one count, both sides (sparring R1-F2, R1-F3): at most 2 automatic retries for
+   `partner_output_invalid` per **producer** (`ci-plan-spar.<slug>`, `plan-spar.mjs:195`, stable across plan edits),
+   not per plan hash, so editing `plan.md` does not reset it.
+   - Gateway: `createSparringSession` counts escalated `partner_output_invalid` sessions for the producer (one count
+     query in `plan-sparring-repository.ts`). Below 2 → re-run (not dedup); at 2 → dedup, and the returned session
+     carries `retry_exhausted: true`.
+   - CI: `plan-spar.mjs` records `entry.retryable = false` when the create answer is deduplicated or carries
+     `retry_exhausted`, so `retryInfra` (`:188`) stops and the plan waits for a person as today. A push never
+     re-retries an exhausted plan.
+4. Tests: `plan-spar.test.mjs:193` becomes "is retried on the next push, at most twice": a third push after two
+   failed retries does nothing (`retry_exhausted`). Gateway Jest: a stored `partner_output_invalid` session is re-run
+   rather than deduplicated; the third attempt for the same producer is deduplicated with `retry_exhausted`, also
+   when the plan text (hash) changed in between.
 5. Lane `governance: owner` (touches `scripts/collab/**`). Depends on `owner-governance`, so it passes Lane scope
    normally with no override.
 
@@ -65,7 +79,8 @@ path; production deploy rules.
 `node --test scripts/collab/queue.test.mjs scripts/collab/plan-spar.test.mjs`; gateway Jest
 `test/vtid-04868-plan-sparring-service.test.ts`; `tsc --noEmit`. New `queue.test.mjs` cases: a `governance: owner`
 lane passes `validateLane` and `scopeCheck` on a governance file; without it, both still fail; the field on a
-`claude` lane or without `executor: kiro` is an error; a lane PR adding the field to itself fails (base revision).
+`claude` lane or without `executor: kiro` is an error; a lane PR adding or changing the field fails in both
+`scopeCheck` (base revision, `PERM`) and `validate` (lane commit); a `_plan` commit adding it to a `ready` lane passes.
 Change suites: `existing` entries running those suites (no staging surface change).
 
 ## Lanes
@@ -75,6 +90,7 @@ Change suites: `existing` entries running those suites (no staging surface chang
 
 ## Risks
 - Kiro changing its own guard rails: bounded. Each such lane needs the owner's instruction in its plan, sparring, a VTID,
-  a reviewer from another seat and the owner's explicit merge. The field cannot be self-granted (base-revision rule).
-- Retry loop: capped at 2 per plan hash.
+  a reviewer from another seat and the owner's explicit merge. The field cannot be self-granted: it is a base-revision
+  permission and only a `_plan` commit may write it (A.3a).
+- Retry loop: capped at 2 per producer, visible to both the gateway and CI (B.3).
 <!-- plan:end -->
