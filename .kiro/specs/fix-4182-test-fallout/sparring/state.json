@@ -15,14 +15,16 @@
     },
     {
       "id": "f3ffa6df-ea61-477c-a7c7-4bfea858d756",
-      "submitted": [],
-      "plan_text_sha": "10250ee6",
-      "rounds": 1,
-      "verdict": "in_progress",
+      "submitted": [
+        1
+      ],
+      "plan_text_sha": "525ed2e2",
+      "rounds": 2,
+      "verdict": "converged",
       "infra": false,
       "retryable": false,
-      "final_plan_hash": null,
-      "policy_approved_at": null
+      "final_plan_hash": "29d596b5a184228664514b713581d2b99b26e0fb013b200868a0b27345b1d7e3",
+      "policy_approved_at": "2026-10-20T17:14:08.608+00:00"
     }
   ]
 }

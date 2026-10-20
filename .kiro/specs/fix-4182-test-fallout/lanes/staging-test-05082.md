@@ -9,7 +9,8 @@ reviewer_seat: exafyltd
 paths:
   - docs/validation/VTID-05082/staging-tests.json
   - docs/validation/**
-updated: 2026-10-20T16:30Z
+updated: 2026-10-20T17:15Z
+vtid: VTID-05266
 ---
 # staging-test-05082 — point the VTID-05082 staging suite at svg-preview.js (repo vitana-platform)
 Plan: `.kiro/specs/fix-4182-test-fallout/plan.md` and the `staging-test-05082` section of `tasks.md`
@@ -26,3 +27,6 @@ On PR open: set `state: in-review`, `next_actor: kiro`, `pr: <url>`, add a log e
 Created and held. Premise: VTID-05082 staging test #3 expects `sanitizeSvgMarkup` in `operator-console.js`, but
 `5aef4396c` (#4182) moved it to `svg-preview.js`. Staging serves `svg-preview.js?v=20261121-vtid-05082` with it,
 and this check fails every gateway STAGING-VERIFY (run 39456004226). Reviewer seat `exafyltd` (≠ `hotmail`).
+
+### 2026-10-20T17:15Z · ci-plan-spar · ready (VTID allocated)
+VTID-05266 allocated after policy approval (converged-auto-v1).

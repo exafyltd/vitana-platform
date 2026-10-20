@@ -9,7 +9,8 @@ reviewer_seat: exafyltd
 paths:
   - services/gateway/test/vtid-05077-planner-fallback-and-thinking.test.ts
   - docs/validation/**
-updated: 2026-10-20T16:30Z
+updated: 2026-10-20T17:15Z
+vtid: VTID-05265
 ---
 # jest-05077-cachebuster — update the stale app.js pin in the VTID-05077 test (repo vitana-platform)
 Plan: `.kiro/specs/fix-4182-test-fallout/plan.md` and the `jest-05077-cachebuster` section of `tasks.md`
@@ -27,3 +28,6 @@ Created and held. Premise: `vtid-05077-planner-fallback-and-thinking.test.ts:212
 `/command-hub/app.js?v=20261120-vtid-05148`. `80e2b3553` (#4182) bumped `index.html:32` to `?v=20261121-vtid-05082`.
 The failure is in TEST-SUITE run 39421080981 (gateway Jest, 1 failed). Overlap: #4207 `gateway-test-cachebust/fix-pin`
 (escalated). Reviewer seat `exafyltd` (≠ `hotmail`).
+
+### 2026-10-20T17:15Z · ci-plan-spar · ready (VTID allocated)
+VTID-05265 allocated after policy approval (converged-auto-v1).
