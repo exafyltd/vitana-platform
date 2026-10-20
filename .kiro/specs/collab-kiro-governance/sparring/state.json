@@ -2,9 +2,11 @@
   "sessions": [
     {
       "id": "c73e91d4-70f2-4497-b4aa-4855ab6f6096",
-      "submitted": [],
-      "plan_text_sha": "f7b00869",
-      "rounds": 1,
+      "submitted": [
+        1
+      ],
+      "plan_text_sha": "22be1eaa",
+      "rounds": 2,
       "verdict": "in_progress",
       "infra": false,
       "retryable": false,
