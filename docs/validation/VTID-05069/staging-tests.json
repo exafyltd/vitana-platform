@@ -38,7 +38,7 @@
       "expect_body_contains": [
         "pipeline-tree.js?v=20261112-vtid-05069",
         "pipeline-tree.css?v=20261112-vtid-05069",
-        "app.js?v=20261120-vtid-05148"
+        "app.js?v=20261121-vtid-05082"
       ]
     },
     {
@@ -69,7 +69,7 @@
     {
       "kind": "http",
       "name": "served app.js calls the two pipeline tree hooks",
-      "path": "/command-hub/app.js?v=20261120-vtid-05148",
+      "path": "/command-hub/app.js?v=20261121-vtid-05082",
       "expect_status": 200,
       "expect_content_type": "javascript",
       "expect_body_contains": [

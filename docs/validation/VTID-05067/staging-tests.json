@@ -19,7 +19,7 @@
       "path": "/command-hub/",
       "expect_status": 200,
       "expect_content_type": "text/html",
-      "expect_body_contains": ["/command-hub/kiro-console.js?v=20261114-vtid-05071", "/command-hub/kiro-console.css?v=20261114-vtid-05071", "/command-hub/app.js?v=20261120-vtid-05148"],
+      "expect_body_contains": ["/command-hub/kiro-console.js?v=20261114-vtid-05071", "/command-hub/kiro-console.css?v=20261114-vtid-05071", "/command-hub/app.js?v=20261121-vtid-05082"],
       "reason": "index.html on staging references the module, its styles and the bumped app.js; read-only"
     },
     {
