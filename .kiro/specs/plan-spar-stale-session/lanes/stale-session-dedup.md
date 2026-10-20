@@ -12,7 +12,7 @@ paths:
   - services/gateway/src/services/plan-sparring/plan-sparring-repository.ts
   - services/gateway/test/plan-sparring-stale-session.test.ts
   - docs/validation/**
-updated: 2026-10-20T10:28Z
+updated: 2026-10-20T12:18Z
 vtid: VTID-05254
 ---
 # stale-session-dedup — re-run dead round-1 sparring sessions (repo vitana-platform)
@@ -39,3 +39,25 @@ VTID-05254 allocated after policy approval (converged-auto-v1).
 ### 2026-10-20T10:28:14Z · kiro-hotmail-202610151618-b437 · ready → in-review
 PR https://github.com/exafyltd/vitana-platform/pull/4208, head `c6f3f0f06a40fd7bc13f298f80a28cf818130d6a`.
 Tests: stale-session 17/17, with vtid-04868 service+repository 79/79, plan-sparring 117 passed/1 skipped; typecheck clean.
+
+### 2026-10-20T12:18Z · kiro-hotmail-202610151618-b437 · merged (§7b owner-directed)
+Owner instruction in conversation 2026-10-20: "you do it, claude is off , you have to do it, we have changed the
+rule" (in reply to the list naming #4172, #4206, #4208), under collaboration.md §7b. Staging-only deploy path; no
+production workflow dispatched.
+- #4206 (plan PR) merged (squash) as `ac33c17411f4b63fed30d17c5b9bbc4cf07fc9fd`, 2026-10-20T12:02Z. The
+  `docs/programs/standalone/program.md` conflict was resolved by keeping both rows (main's `retire-claude-code` +
+  this plan's `plan-spar-stale-session`), merge commit `f389b1395e48b3a5ce93aa77cb3d73d98527a7f5`. PLAN-SPAR `spar`
+  passed with no new commit; `state.json` still `converged`. Required check `validate` green. Non-required `Lane scope`
+  flagged only `docs/programs/standalone/program.md` (the programme registry row a plan PR adds; governance-artifact
+  false positive). Merged without `--admin`.
+- #4208 (this lane, VTID-05254) merged (squash) as `3063c95430c089fa157e6e66932bd3eb9d2bc787`,
+  2026-10-20T12:16Z, head `e10d4f7bad8f1bf5ced752d730f5270dc854497c` (main merged in). `Lane scope` green,
+  `validate` (the only required check) green. Merged without `--admin`.
+- Jest decision: pre-existing main failure from #4182, identical failure set, non-required check. `Gateway (Jest,
+  ~7.5k tests)`, `Gateway Service Tests` and `Test Suite Summary` were red on #4208 (TEST-SUITE run 39419950441,
+  OASIS Persistence CI run 39419950381). Main's latest runs (39396752827, 39396752521 on `0d35512b`) fail the same
+  way. Both have 1 failing suite / 1 failing test,
+  `test/vtid-05077-planner-fallback-and-thinking.test.ts` › "the spend route returns the planner summary and the
+  screen shows it as a chip": it expects `/command-hub/app.js?v=20261120-vtid-05148`, but #4182 (`80e2b355`) bumped
+  it to `20261121-vtid-05082`. No plan-sparring test fails. The PR added 18 passing tests (28466 vs 28448 passed).
+  Required contexts on `main`: `["validate"]` only.
