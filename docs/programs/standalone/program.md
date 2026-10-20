@@ -13,6 +13,7 @@ specs:
   - vitana-v1:vitana-chat-markdown
   - vitana-platform:collab-kiro-governance
   - vitana-platform:kiro-primary-executor
+  - vitana-platform:kiro-autonomy-fallback
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -32,3 +33,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:plan-spar-stale-session` — PLAN-SPAR re-runs dead in_progress sparring sessions
 - `vitana-v1:chat-ux` — chat UX
 - `vitana-v1:vitana-chat-markdown` — Vitana chat replies render Markdown
+- `vitana-platform:kiro-autonomy-fallback` — Claude Code optional; Kiro runs the pipeline end to end
