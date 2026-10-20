@@ -8,7 +8,7 @@ reviewer_seat: jtadic
 paths:
   - .github/workflows/SUPABASE-FUNCTIONS-RETIRE.yml
   - docs/validation/**
-updated: 2026-10-19T18:00:00Z
+updated: 2026-10-20T08:30:00Z
 ---
 # s-j-retire-function — undeploy `linkedin-import` via the RETIRE workflow (repo vitana-v1)
 Plan: `.kiro/specs/mt-track-s/plan.md` (authoritative, between the plan markers) and the `s-j-retire-function` section
@@ -24,6 +24,11 @@ Work: (R1) one commit adding `linkedin-import` to `ALLOWLIST`, PR under this lan
 workflow for `linkedin-import` and record the run link + its `Confirm` step (a read of the project function list) in
 `docs/validation/<vtid>/`. Branch `claude/mt-track-s/s-j-retire-function`; commit trailer
 `Collab-Lane: mt-track-s/s-j-retire-function`. S-J closes when this lane is `done`.
+Escalation carry-over (owner approved escalated, 2026-10-20) — R3-F1, task R2' in `tasks.md`, replaces (R2) above.
+Acceptance: the executor does R1 only and never dispatches a workflow (§7a covers Claude Code executing a lane);
+after merge the Project Manager (or the owner) dispatches `SUPABASE-FUNCTIONS-RETIRE.yml` for `linkedin-import`;
+the run link and `Confirm` output are recorded in `docs/validation/<vtid>/` by the Project Manager or by Claude Code
+as a coordinator follow-up outside lane execution; S-J closes when that output shows `linkedin-import` absent.
 ## Log
 ### 2026-10-19T18:00:00Z · kiro-hotmail-202610151618-b437 · created → ready
 Lane created by the mt-track-s planner in answer to s2 round 2 R2-F1 (the retire follow-up needs its own VTID and an

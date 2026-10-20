@@ -66,3 +66,22 @@ Depends on `s-j-route-inventory`: the RETIRE workflow refuses any name still und
 - [ ] R2 After merge, dispatch the RETIRE workflow for `linkedin-import` under this lane's VTID; record the run link and
       its `Confirm` step output (a read of the project function list showing it absent) in `docs/validation/<vtid>/`.
 Acceptance: `linkedin-import` absent from the deployed function list per the retire run's `Confirm` step; S-J closed.
+
+## Escalation carry-over (owner approved escalated, 2026-10-20)
+
+The plan was round-capped and escalated (session `d0c274cd`, s2 round 3); the owner approved it as escalated on
+2026-10-20 ("yes, A all 4 approved"). The open last-round finding is folded into the lane tasks here; `plan.md` is
+unchanged. Where R2 above conflicts with this section, this section wins.
+
+- R3-F1 [blocker] — "The s-j-retire-function lane plan assigns the SUPABASE-FUNCTIONS-RETIRE.yml workflow dispatch
+  to Claude Code during lane execution."
+  Lane `s-j-retire-function`, R2 is replaced by:
+  - [ ] R2' The lane's executor (Claude Code) does R1 only and never dispatches the workflow (collaboration §7a
+        applies to Claude Code whenever it executes a lane). After the R1 PR merges, the Project Manager (or the
+        owner) dispatches `SUPABASE-FUNCTIONS-RETIRE.yml` for `linkedin-import` under this lane's VTID. The run
+        link and its `Confirm` step output (a read of the project function list showing it absent) are recorded
+        in `docs/validation/<vtid>/` by the Project Manager, or by Claude Code afterwards as a coordinator
+        follow-up outside lane execution — not as a lane-execution step.
+        Acceptance (carry-over R3-F1): the lane's PR contains no workflow dispatch by the executor; the dispatch
+        actor named in `docs/validation/<vtid>/` is the Project Manager or the owner; S-J closes when the
+        recorded `Confirm` output shows `linkedin-import` absent.
