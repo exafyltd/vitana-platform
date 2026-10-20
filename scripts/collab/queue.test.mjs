@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -11,6 +11,8 @@ import {
   collect, buildQueue, validateRange, claim, release, listClaims, sessionId,
   scopeCheck, globToRegex, matchesAny, globTouchesGovernance, isSessionId, seatOf, loadPrograms, validatePrograms, programIndex,
 } from './queue.mjs';
+// VTID-05276: newer exports are read through the namespace so each new test fails on its own on an older queue.mjs.
+import * as Q from './queue.mjs';
 
 const S1 = 'kiro-202610131200-ab12';
 const S2 = 'session_01ABCdef';
@@ -535,4 +537,283 @@ test('VTID-05213 review: seats must exist in areas.yaml; a touched spec must be 
     assert.ok(validateRegistry(f.work, { head, touched, repoName: 'work', seats: null, programs: prog }).some((x) => x.includes('not listed by any')));
     assert.deepEqual(validateRegistry(f.work, { head, touched, repoName: 'work', seats: null, programs: [{ ...prog[0], fm: { specs: ['work:cards'] } }] }), []);
   } finally { f.done(); }
+});
+
+// ── VTID-05276 (kiro-autonomy-fallback/scope-check): governance by the reviewer agent, protected gate files,
+//    lanes from the open plan( PR, pm-agent exemption, Collab handoff check ──
+
+const AG = 'agent:vitana-lane-reviewer';
+const AGS = 'agent-vitana-lane-reviewer-202610201700-ab12';
+const KA = { executor: 'kiro', seat: 'jtadic', reviewer_seat: AG, paths: ['.kiro/steering/**', 'src/backoffice/**'] };
+const HEAD40 = 'c'.repeat(40);
+const planLane = (laneFm, o = {}) => ({
+  text: laneMd('card-01', { next_actor: 'kiro', vtid: 'VTID-00002', ...laneFm }),
+  handoffText: planMd({ state: 'approved', sparring_record: 'x.md', vtids: ['VTID-00002'], executor: 'kiro', next_actor: 'kiro' }),
+  lastSession: 'ci-plan-spar', pr: 4224, sha: HEAD40, ...o,
+});
+const SECTION_43 = ['CLAUDE.md', 'scripts/collab/plan-spar.mjs', 'scripts/collab/queue.mjs', 'scripts/collab/protected-gate-files.json',
+  'services/gateway/src/services/plan-sparring/**', 'services/gateway/src/services/project-manager/governance.ts',
+  '.github/workflows/PLAN-SPAR.yml', '.github/workflows/PR-GATE.yml', '.github/workflows/AWS-PROD-*.yml',
+  '.kiro/agents/vitana-lane-reviewer.md', 'supabase/migrations/*vtid_ledger*.sql', 'supabase/migrations/*plan_sparring*.sql'];
+
+test('VTID-05276 T1-T3: validateLane — kiro lane with the agent reviewer may declare governance paths, never a protected gate file; the agent needs executor kiro', () => {
+  const v = (o) => validateLane(parseFrontMatter(laneMd('a', o)), 'cards', 'a', new Set(['a']));
+  assert.deepEqual(v({ executor: 'kiro', seat: 'jtadic', reviewer_seat: AG, paths: ['.kiro/steering/**', '.claude/rules/collaboration.md'] }), []);
+  for (const g of ['CLAUDE.md', 'scripts/collab/queue.mjs', '.github/workflows/**', '.github/workflows/PLAN-SPAR.yml', 'scripts/collab/**']) {
+    const e = v({ executor: 'kiro', seat: 'jtadic', reviewer_seat: AG, paths: [g] });
+    assert.ok(e.some((x) => x.includes('protected gate')), `${g}: ${e.join('\n')}`);
+  }
+  const t3 = v({ executor: 'claude', seat: 'jtadic', reviewer_seat: AG, paths: ['src/**'] });
+  assert.ok(t3.some((x) => x.includes('executor: kiro')), t3.join('\n'));
+  // without the agent a Kiro governance lane is refused exactly as before
+  assert.ok(v({ executor: 'kiro', seat: 'jtadic', reviewer_seat: 'exafyltd', paths: ['.kiro/steering/**'] }).some((x) => x.includes('governance')));
+});
+
+test('VTID-05276 guard: validateLane does not newly refuse Kiro lanes on non-governance gate code (scope-check refuses the change itself)', () => {
+  const v = (o) => validateLane(parseFrontMatter(laneMd('a', o)), 'cards', 'a', new Set(['a']));
+  assert.deepEqual(v({ executor: 'kiro', seat: 'exafy', reviewer_seat: 'exafyltd', paths: ['services/gateway/src/services/project-manager/**'] }), []);
+  assert.deepEqual(v({ executor: 'kiro', seat: 'exafy', reviewer_seat: 'exafyltd', paths: ['.kiro/agents/vitana-lane-reviewer.md'] }), []);
+});
+
+test('VTID-05276 T4: scope-check passes a governance file on a kiro lane with the agent reviewer from main', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, KA);
+    write(f.work, '.kiro/steering/x.md', 'x');
+    const head = commit(f.work, 'w', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+    assert.deepEqual(scopeCheck(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors, []);
+  } finally { f.done(); }
+});
+
+test('VTID-05276 T5: protected gate files never pass for a kiro lane, whatever its reviewer or paths', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, { executor: 'kiro', seat: 'jtadic', reviewer_seat: AG, paths: ['**'] });
+    for (const p of ['CLAUDE.md', 'scripts/collab/queue.mjs', 'services/gateway/src/services/plan-sparring/x.ts', '.kiro/agents/vitana-lane-reviewer.md']) write(f.work, p, 'x');
+    const head = commit(f.work, 'w', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+    const e = scopeCheck(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors;
+    for (const p of ['CLAUDE.md', 'scripts/collab/queue.mjs', 'services/gateway/src/services/plan-sparring/x.ts', '.kiro/agents/vitana-lane-reviewer.md']) {
+      assert.ok(e.some((x) => x.startsWith(`${p} is a protected gate file`)), `${p}: ${e.join('\n')}`);
+    }
+  } finally { f.done(); }
+});
+
+test('VTID-05276 T6: a lane PR cannot grant itself the agent reviewer', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, { ...KA, reviewer_seat: 'exafyltd' });
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { ...KA, state: 'executing', vtid: 'VTID-00002', claimed_by: JT }));
+    write(f.work, '.kiro/steering/x.md', 'x');
+    const head = commit(f.work, 'w', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+    const e = scopeCheck(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors;
+    assert.ok(e.some((x) => x.includes('reviewer_seat changed in a lane PR')), e.join('\n'));
+    assert.ok(e.some((x) => x.startsWith('.kiro/steering/x.md is a governance path') && x.includes(AG)), e.join('\n'));
+  } finally { f.done(); }
+});
+
+test('VTID-05276 T7: an agent review entry passes scope-check and validate; the same entry from a Kiro seat fails', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, KA);
+    const fmSame = laneMd('card-01', { next_actor: 'kiro', vtid: 'VTID-00002', ...KA });
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', `${fmSame}### 2026-10-20T17:00Z · ${AGS} · review\nreview: accept\n`);
+    const head = commit(f.work, 'review', { 'Collab-Session': AGS, 'Collab-Review': 'cards/card-01', 'Collab-Verdict': 'accept',
+      'Collab-Reviewer': 'agent:vitana-lane-reviewer (claude-sonnet-5.5)', 'Collab-Reviewed-Head': HEAD40 });
+    assert.deepEqual(scopeCheck(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors, []);
+    assert.deepEqual(validateRange(f.work, { base, head }).errors, []);
+    sh(f.work, 'checkout', '-q', '-b', 'kiro/review-seat', base);
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', `${fmSame}### review\n`);
+    const h2 = commit(f.work, 'review', { 'Collab-Session': EX, 'Collab-Review': 'cards/card-01' });
+    const e = scopeCheck(f.work, { base, head: h2, branch: 'kiro/review-seat' }).errors;
+    assert.ok(e.some((x) => x.includes(`reviewer_seat is ${AG}`)), e.join('\n'));
+  } finally { f.done(); }
+});
+
+test('VTID-05276 T8: agent session ids — format, agentOf, session-id for a listed agent only', () => {
+  assert.ok(isSessionId(AGS));
+  assert.equal(Q.agentOf(AGS), AG);
+  assert.equal(Q.agentOf(JT), '');
+  assert.equal(seatOf(AGS), '');
+  assert.ok(Q.isReviewerAgent(AG));
+  assert.ok(!Q.isReviewerAgent('agent:other'));
+  const id = sessionId(AG, new Date(Date.UTC(2026, 9, 20, 17, 0)));
+  assert.match(id, /^agent-vitana-lane-reviewer-202610201700-[0-9a-f]{4}$/);
+  assert.ok(isSessionId(id));
+  assert.throws(() => sessionId('agent:other'));
+  assert.throws(() => sessionId('claude'));
+  for (const bad of ['agent-202610201700-ab12', 'agent-X-202610201700-ab12', 'agent-vitana-lane-reviewer-2026102017-ab12']) assert.ok(!isSessionId(bad), bad);
+});
+
+test('VTID-05276 T9: a lane only on a qualifying open plan( PR is read from there and trusted', () => {
+  const f = fixture();
+  try {
+    const base = sh(f.work, 'rev-parse', 'HEAD');
+    sh(f.work, 'checkout', '-q', '-b', 'kiro/cards/card-01');
+    write(f.work, 'src/backoffice/a.ts', 'x');
+    const head = commit(f.work, 'w', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+    const asked = [];
+    const fetchPlanLane = (slug, p) => { asked.push([slug, p]); return planLane(LANE); };
+    const r = scopeCheck(f.work, { base, head, branch: 'kiro/cards/card-01', fetchPlanLane });
+    assert.deepEqual(asked[0], ['cards', '.kiro/specs/cards/lanes/card-01.md']);
+    assert.equal(r.source, 'plan-pr');
+    assert.deepEqual(r.errors, []);
+  } finally { f.done(); }
+});
+
+test('VTID-05276 T10: plan-PR permissions win over a lane file the lane PR widened', () => {
+  const f = fixture();
+  try {
+    const base = sh(f.work, 'rev-parse', 'HEAD');
+    sh(f.work, 'checkout', '-q', '-b', 'kiro/cards/card-01');
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { ...LANE, paths: ['**'], state: 'executing', vtid: 'VTID-00002', claimed_by: JT }));
+    write(f.work, 'src/other.ts', 'x');
+    const head = commit(f.work, 'w', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+    const e = scopeCheck(f.work, { base, head, branch: 'kiro/cards/card-01', fetchPlanLane: () => planLane(LANE) }).errors;
+    assert.ok(e.some((x) => x.startsWith('src/other.ts is outside')), e.join('\n'));
+    assert.ok(e.some((x) => x.includes('paths changed in a lane PR')), e.join('\n'));
+  } finally { f.done(); }
+});
+
+test('VTID-05276 T11: an unqualified plan( PR is never trusted for a governance change', () => {
+  const variants = {
+    drafted: { handoffText: planMd({ state: 'drafted', executor: 'kiro', next_actor: 'kiro' }) },
+    'no sparring record': { handoffText: planMd({ state: 'approved', vtids: ['VTID-00002'], executor: 'kiro', next_actor: 'kiro' }) },
+    'not ci-plan-spar': { lastSession: JT },
+    'vtid not in handoff': { handoffText: planMd({ state: 'approved', sparring_record: 'x.md', vtids: ['VTID-00009'], executor: 'kiro', next_actor: 'kiro' }) },
+  };
+  const f = fixture();
+  try {
+    const base = sh(f.work, 'rev-parse', 'HEAD');
+    sh(f.work, 'checkout', '-q', '-b', 'kiro/cards/card-01');
+    write(f.work, '.kiro/steering/x.md', 'x');
+    const head = commit(f.work, 'w', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+    for (const [name, o] of Object.entries(variants)) {
+      assert.equal(Q.planLaneQualifies(planLane(KA, o)), false, name);
+      const e = scopeCheck(f.work, { base, head, branch: 'kiro/cards/card-01', fetchPlanLane: () => planLane(KA, o) }).errors;
+      assert.ok(e.some((x) => x.startsWith('.kiro/steering/x.md is a governance path')), `${name}: ${e.join('\n')}`);
+    }
+    assert.equal(Q.planLaneQualifies(planLane(KA)), true);
+    assert.deepEqual(scopeCheck(f.work, { base, head, branch: 'kiro/cards/card-01', fetchPlanLane: () => planLane(KA) }).errors, []);
+    // fail closed: the fetcher found nothing → not found, never a pass
+    assert.ok(scopeCheck(f.work, { base, head, branch: 'kiro/cards/card-01', fetchPlanLane: () => null }).errors.some((x) => x.includes('not found')));
+  } finally { f.done(); }
+});
+
+test('VTID-05276 T12: a lane file only in the lane PR head gets no governance exemption', () => {
+  const f = fixture();
+  try {
+    const base = sh(f.work, 'rev-parse', 'HEAD');
+    sh(f.work, 'checkout', '-q', '-b', 'kiro/cards/card-01');
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { ...KA, state: 'executing', vtid: 'VTID-00002', claimed_by: JT }));
+    write(f.work, '.kiro/steering/x.md', 'x');
+    const head = commit(f.work, 'w', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+    const e = scopeCheck(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors;
+    assert.ok(e.some((x) => x.startsWith('.kiro/steering/x.md is a governance path') && x.includes(AG)), e.join('\n'));
+  } finally { f.done(); }
+});
+
+test('VTID-05276 T13: findPlanPr picks the one same-repo plan(<slug>) PR; ghPlanLaneFetcher reads the ci-plan-spar revision and fails closed', () => {
+  const prs = [
+    { number: 1, title: 'plan(cards): x', headRefOid: HEAD40, isCrossRepository: false },
+    { number: 2, title: 'plan(cards-2): y', headRefOid: HEAD40, isCrossRepository: false },
+    { number: 3, title: 'plan(cards): fork', headRefOid: HEAD40, isCrossRepository: true },
+    { number: 4, title: 'VTID-00001: plan(cards)', headRefOid: HEAD40, isCrossRepository: false },
+  ];
+  assert.equal(Q.findPlanPr(prs, 'cards').number, 1);
+  assert.equal(Q.findPlanPr([...prs, { number: 5, title: 'plan(cards): again', headRefOid: HEAD40, isCrossRepository: false }], 'cards'), null);
+  assert.equal(Q.findPlanPr([], 'cards'), null);
+  const lanePath = '.kiro/specs/cards/lanes/card-01.md';
+  const spar = 'd'.repeat(40);
+  const calls = [];
+  const run = (args) => {
+    calls.push(args.join(' '));
+    if (args[0] === 'pr') return JSON.stringify(prs);
+    const url = args[args.length - 1];
+    if (url.startsWith('repos/o/r/commits?')) return JSON.stringify([
+      { sha: 'e'.repeat(40), commit: { message: 'later edit\n\nCollab-Session: kiro-exafyltd-202610201700-ab12' } },
+      { sha: spar, commit: { message: 'spar\n\nCollab-Session: ci-plan-spar\nCollab-Lane: cards/_plan' } },
+    ]);
+    if (url === `repos/o/r/contents/.kiro/specs/cards/handoff.md?ref=${HEAD40}`) return 'HANDOFF';
+    if (url === `repos/o/r/contents/${lanePath}?ref=${spar}`) return 'LANE@SPAR';
+    throw new Error(`unexpected ${url}`);
+  };
+  const got = Q.ghPlanLaneFetcher('o/r', run)('cards', lanePath);
+  assert.deepEqual(got, { text: 'LANE@SPAR', handoffText: 'HANDOFF', lastSession: 'ci-plan-spar', pr: 1, sha: spar });
+  assert.equal(Q.ghPlanLaneFetcher('o/r', () => { throw new Error('gh: rate limited'); })('cards', lanePath), null);
+  assert.equal(Q.ghPlanLaneFetcher('o/r', (a) => (a[0] === 'pr' ? 'not json' : ''))('cards', lanePath), null);
+});
+
+test('VTID-05276 T14: the registry accepts the reviewer agent as reviewer_seat', () => {
+  const f = fixture();
+  try {
+    write(f.work, 'docs/programs/areas.yaml', 'seats:\n  jtadic:   { account: a }\n');
+    write(f.work, '.kiro/specs/cards/handoff.md', planMd());
+    write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', { seat: 'jtadic', reviewer_seat: AG }));
+    const head = commit(f.work, 'x');
+    const seats = loadSeats(f.work, head);
+    assert.deepEqual(validateRegistry(f.work, { head, touched: ['.kiro/specs/cards/lanes/a.md'], repoName: 'work', seats, programs: [] }), []);
+  } finally { f.done(); }
+});
+
+test('VTID-05276 T15: pm-agent lane-state commits are exempt from one-session-per-lane and claimed_by; any other change is refused', () => {
+  const f = fixture();
+  try {
+    const IR = { ...LANE, state: 'in-review', claimed_by: JT };
+    const base = scopeFixture(f, IR);
+    const at = (o) => laneMd('card-01', { next_actor: 'kiro', vtid: 'VTID-00002', ...IR, ...o });
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', `${at({})}### work\n`);
+    write(f.work, 'src/backoffice/a.ts', 'x');
+    commit(f.work, 'work', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', `${at({ state: 'verified', updated: '2026-10-20T18:00Z' })}### work\n### pm · verified\n`);
+    const head = commit(f.work, 'pm W1', { 'Collab-Session': 'pm-agent', 'Collab-Lane': 'cards/card-01' });
+    assert.deepEqual(validateRange(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors, []);
+    assert.deepEqual(scopeCheck(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors, []);
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', `${at({ state: 'verified', updated: '2026-10-20T18:00Z', paths: ['**'] })}### work\n### pm · verified\n`);
+    const h2 = commit(f.work, 'pm widens', { 'Collab-Session': 'pm-agent', 'Collab-Lane': 'cards/card-01' });
+    const e = validateRange(f.work, { base, head: h2, branch: 'kiro/cards/card-01' }).errors;
+    assert.ok(e.some((x) => x.includes('pm-agent may only change') && x.includes('paths')), e.join('\n'));
+  } finally { f.done(); }
+  const g = fixture();
+  try {
+    // W2 bookkeeping: a pm-agent `_plan` commit moves a verified lane to done
+    const V = { ...LANE, state: 'verified', claimed_by: JT };
+    const base = scopeFixture(g, V);
+    sh(g.work, 'checkout', '-q', '-b', 'pm-agent/cards', base);
+    const { claimed_by: _released, ...done } = { ...V, state: 'done' };
+    write(g.work, '.kiro/specs/cards/lanes/card-01.md', `${laneMd('card-01', { next_actor: 'kiro', vtid: 'VTID-00002', ...done })}### pm · done\n`);
+    const head = commit(g.work, 'pm W2', { 'Collab-Session': 'pm-agent', 'Collab-Lane': 'cards/_plan' });
+    assert.deepEqual(validateRange(g.work, { base, head, branch: 'pm-agent/cards' }).errors, []);
+  } finally { g.done(); }
+});
+
+test('VTID-05276 T16: protected-gate-files.json parses, equals plan §4.3 and the loaded list; every entry is governance or gate code', () => {
+  const json = JSON.parse(readFileSync(new URL('./protected-gate-files.json', import.meta.url), 'utf8'));
+  assert.ok(Array.isArray(json.globs) && json.globs.length > 0);
+  assert.deepEqual(json.globs, SECTION_43);
+  assert.deepEqual([...Q.PROTECTED_GATE_PATHS], SECTION_43);
+  assert.deepEqual(Q.PROTECTED_GATE_BUILTIN, SECTION_43, 'the compiled-in copy (single-file runs in CI and vitana-v1) equals the JSON');
+  const GATE_CODE = ['services/gateway/src/services/plan-sparring/', 'services/gateway/src/services/project-manager/governance.ts',
+    '.kiro/agents/vitana-lane-reviewer.md', 'supabase/migrations/'];
+  for (const g of json.globs) {
+    assert.equal(typeof g, 'string');
+    assert.ok(Q.globTouchesGovernance(g) || GATE_CODE.some((p) => g.startsWith(p)), g);
+    globToRegex(g); // compiles
+  }
+});
+
+test('VTID-05276 T17: PR-GATE runs a "Collab handoff" job over every collab test and Lane scope with the base revision\'s checker', () => {
+  const y = readFileSync(new URL('../../.github/workflows/PR-GATE.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  const jobs = y.slice(y.indexOf('\njobs:\n')).split(/\n(?= {2}[a-z][\w-]*:\n)/).slice(1);
+  const job = (name) => jobs.find((j) => j.includes(`\n    name: ${name}\n`));
+  const collab = job('Collab handoff');
+  assert.ok(collab, 'a job named exactly "Collab handoff"');
+  assert.match(collab, /node --test scripts\/collab\/\*\.test\.mjs/);
+  assert.match(collab, /queue\.mjs validate/);
+  assert.doesNotMatch(collab, /continue-on-error/);
+  const lane = job('Lane scope');
+  assert.ok(lane, 'a job named "Lane scope"');
+  assert.match(lane, /GH_TOKEN: \$\{\{ github\.token \}\}/);
+  assert.match(lane, /git show "\$BASE:scripts\/collab\/queue\.mjs" > "\$RUNNER_TEMP\/queue\.mjs"/);
+  assert.match(lane, /node "\$RUNNER_TEMP\/queue\.mjs" scope-check/);
+  assert.doesNotMatch(lane, /node scripts\/collab\/queue\.mjs scope-check/);
 });
