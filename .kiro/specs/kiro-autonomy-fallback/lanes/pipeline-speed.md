@@ -1,6 +1,6 @@
 ---
 lane: pipeline-speed
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: claude
@@ -23,8 +23,10 @@ paths:
   - scripts/ci/staging-verify/lib.test.cjs
   - services/gateway/test/vtid-05077-planner-fallback-and-thinking.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-20T17:49Z
+updated: 2026-10-20T18:45Z
 vtid: VTID-05272
+claimed_by: kiro-exafy-202610201807-2a87
+branch: kiro/kiro-autonomy-fallback/pipeline-speed
 ---
 # pipeline-speed — continuous plan driver, Jest shards, PLAN-SPAR slots, per-lane STAGING-VERIFY attribution, unblock main
 Plan: `.kiro/specs/kiro-autonomy-fallback/plan.md` §4.7, §7 and §5 H, and the `pipeline-speed` section of `tasks.md` are
@@ -46,3 +48,21 @@ lands after `steering-rules`. Lane created with the plan. Next: PLAN-SPAR; once 
 
 ### 2026-10-20T17:49Z · ci-plan-spar · ready (VTID allocated)
 VTID-05272 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-20T18:45Z · kiro-exafy-202610201807-2a87 · ready → executing
+Claimed (`collab-claim/kiro-autonomy-fallback/pipeline-speed`, 16c6bb899) by seat exafy under the owner instruction of
+2026-10-20 ("no more approvals, you run it end to end"; collaboration.md §7b named set, plan §6). Building H0-H5 on
+`kiro/kiro-autonomy-fallback/pipeline-speed`. Protected gate file in scope: `.github/workflows/PLAN-SPAR.yml` (one
+step + `actions: read`), covered by that owner instruction for this plan only.
+### 2026-10-20 21:19:17Z · agent:vitana-lane-reviewer · in_review → changes
+Reviewed head 3a2867d5aabff5c080b16c47d06bcacf159babed, PR https://github.com/exafyltd/vitana-platform/pull/4231. Verdict: changes. Blocking: validate-pr fails (VALIDATION_PROFILE missing in PR body). Non-blocking: timings.json owned by pm-fallback; some jobs still running at review.
+
+Collab-Review: changes
+Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+Collab-Session: kiro-202610201919-2b69
+### 2026-10-20 21:34:05Z · agent:vitana-lane-reviewer · in_review → accept
+Reviewed head e32b4ff92e41e4f95e3ae520f6623b08cd523503, PR https://github.com/exafyltd/vitana-platform/pull/4231. Verdict: accept. No blocking findings; prior VALIDATION_PROFILE blocker fixed. Non-blocking: slot wait fails open after 90 min; timings.json owned by pm-fallback; Lane scope red is the logged PLAN-SPAR.yml false positive.
+
+Collab-Review: accept
+Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+Collab-Session: kiro-202610201934-3583
