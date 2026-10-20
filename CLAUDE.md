@@ -120,9 +120,10 @@ Git is the only channel between Claude Code and Kiro sessions — the owner neve
 lane; push and update the lane file before ending. Full rules: `.claude/rules/collaboration.md`.
 **Roles (owner decisions 2026-10-14, Project Manager plan v2, VTID-05218 — replaces VTID-05192):** Kiro plans, builds
 and reviews (one Kiro account reviews another's lane); CI spars every `plan(` PR (`PLAN-SPAR.yml`) and a converged plan
-is approved by policy; the Project Manager merges by rule and sends Gate 2; Claude Code handles exceptions only
-(governance-path lanes, unpicked or parked work, partner outages). Kiro never merges, deploys or writes to a live
-system. See `.claude/rules/collaboration.md` §7–§7a.
+is approved by policy; the Project Manager merges by rule and sends Gate 2; Claude Code is optional; when it is
+unavailable Kiro and the exceptions seat run the pipeline (§7). Kiro merges to `main`/staging only under the PM merge
+rule §7b, never deploys to production and never writes a live system from session tools. See
+`.claude/rules/collaboration.md` §7–§8b.
 
 ---
 

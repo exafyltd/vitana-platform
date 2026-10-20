@@ -1,0 +1,50 @@
+name: CI-SCRIPTS-TEST
+# VTID-05272 (plan kiro-autonomy-fallback §5 H): unit tests for the CI helper
+# scripts of the pipeline-speed lane — the TEST-SUITE shard union and re-run
+# policy, the PLAN-SPAR sparring slot, and the plan driver — plus the static
+# checks those tests run on TEST-SUITE.yml, TEST-SUITE-RERUN.yml and
+# PLAN-SPAR.yml. Read-only: no secrets, no writes.
+on:
+  pull_request:
+    paths:
+      - 'scripts/ci/test-suite/**'
+      - 'scripts/ci/plan-spar-slot/**'
+      - 'scripts/collab/plan-driver.mjs'
+      - 'scripts/collab/plan-driver.test.mjs'
+      - 'scripts/collab/queue.mjs'
+      - '.github/workflows/TEST-SUITE.yml'
+      - '.github/workflows/TEST-SUITE-RERUN.yml'
+      - '.github/workflows/PLAN-SPAR.yml'
+      - '.github/workflows/CI-SCRIPTS-TEST.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/ci/test-suite/**'
+      - 'scripts/ci/plan-spar-slot/**'
+      - 'scripts/collab/plan-driver.mjs'
+      - 'scripts/collab/plan-driver.test.mjs'
+      - 'scripts/collab/queue.mjs'
+      - '.github/workflows/TEST-SUITE.yml'
+      - '.github/workflows/TEST-SUITE-RERUN.yml'
+      - '.github/workflows/PLAN-SPAR.yml'
+      - '.github/workflows/CI-SCRIPTS-TEST.yml'
+permissions:
+  contents: read
+concurrency:
+  group: ci-scripts-test-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  test:
+    name: CI scripts (node --test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+      - name: Fetch main (PLAN-SPAR.yml diff check)
+        run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+      - name: Run tests
+        run: |
+          node --test scripts/ci/test-suite/*.test.mjs scripts/ci/plan-spar-slot/*.test.mjs scripts/collab/plan-driver.test.mjs
