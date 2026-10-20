@@ -1,0 +1,21 @@
+Detected VTID=VTID-05260 PROFILE=gateway_backend
+Changed files: 16
+NOT JUDGED — 6 file(s) outside this gate's remit:
+  .claude/rules/collaboration.md
+  .kiro/specs/collab-kiro-governance/lanes/owner-governance.md
+  .kiro/steering/vitana-kiro-notes.md
+  CLAUDE.md
+  scripts/collab/queue.mjs
+  scripts/collab/queue.test.mjs
+  These trees have no governance gate of their own. That is a real gap,
+  not an approval — see VTID-03696.
+APPROVED: 10 in-remit file(s) match the gateway_backend allowlist
+Acceptance mapping OK
+CSP scan: no pattern hits in added lines.
+Build Gate SKIPPED (pass --build to run npm ci && npm run build locally too).
+Route Mount Evidence Gate: no route registration added, skipped.
+OASIS Traceability Gate: OASIS_IMPACT=no.
+APPROVED
+VTID=VTID-05260
+PROFILE=gateway_backend
+Evidence=docs/validation/VTID-05260/
