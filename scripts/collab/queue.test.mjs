@@ -536,3 +536,133 @@ test('VTID-05213 review: seats must exist in areas.yaml; a touched spec must be 
     assert.deepEqual(validateRegistry(f.work, { head, touched, repoName: 'work', seats: null, programs: [{ ...prog[0], fm: { specs: ['work:cards'] } }] }), []);
   } finally { f.done(); }
 });
+
+// ── VTID-05259 (retire-claude-code): governance lanes without Claude Code ──
+
+const GOV = { executor: 'kiro', seat: 'exafyltd', reviewer_seat: 'jtadic', governance: 'true', paths: ['.github/workflows/**', 'scripts/x.mjs'] };
+const omit = (o, k) => Object.fromEntries(Object.entries(o).filter(([key]) => key !== k));
+
+test('VTID-05259 validateLane: governance: true lets a Kiro lane declare governance paths, with two different Kiro seats', () => {
+  const v = (o) => validateLane(parseFrontMatter(laneMd('a', o)), 'cards', 'a', new Set(['a']));
+  assert.deepEqual(v(GOV), []);
+  assert.ok(v({ ...GOV, governance: 'false' }).some((e) => e.includes('needs governance: true')), 'false = not a governance lane');
+  assert.ok(v({ executor: 'kiro', paths: ['.github/workflows/x.yml'] }).some((e) => e.includes('needs governance: true')));
+  assert.ok(v({ ...GOV, governance: 'yes' }).some((e) => e.includes('governance must be true or false')));
+  assert.ok(v({ ...GOV, reviewer_seat: 'claude' }).some((e) => e.includes('not claude')));
+  assert.ok(v(omit(GOV, 'reviewer_seat')).some((e) => e.includes('reviewer_seat')));
+  assert.ok(v({ ...GOV, reviewer_seat: 'exafyltd' }).some((e) => e.includes('reviewer_seat must differ')));
+  assert.ok(v(omit(GOV, 'seat')).some((e) => e.includes('needs a seat')));
+  assert.ok(v({ ...GOV, executor: 'claude' }).some((e) => e.includes('for executor: kiro lanes')));
+  assert.deepEqual(v({ executor: 'claude', paths: ['.github/workflows/x.yml'] }), [], 'legacy claude lanes unchanged');
+});
+
+test('VTID-05259 scope-check: a governance lane may change governance paths, built by its seat and reviewed by reviewer_seat only', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, GOV);
+    const EX2 = 'kiro-exafyltd-202610201041-ab5d';
+    write(f.work, '.github/workflows/x.yml', 'runs-on: ubuntu-24.04');
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { ...GOV, state: 'executing', vtid: 'VTID-00002', claimed_by: EX2 }));
+    const head = commit(f.work, 'pin', { 'Collab-Session': EX2, 'Collab-Lane': 'cards/card-01' });
+    assert.deepEqual(scopeCheck(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors, []);
+    // review entry from reviewer_seat passes; from the builder's seat, unseated or session_ ids fails
+    const review = (session) => {
+      sh(f.work, 'checkout', '-q', '-B', `kiro/rv-${session.slice(0, 12)}`, head);
+      write(f.work, '.kiro/specs/cards/lanes/card-01.md', `${laneMd('card-01', { ...GOV, state: 'executing', vtid: 'VTID-00002', claimed_by: EX2 })}### review: approve\n`);
+      const h = commit(f.work, 'review', { 'Collab-Session': session, 'Collab-Review': 'cards/card-01' });
+      return scopeCheck(f.work, { base, head: h, branch: 'kiro/cards/card-01' }).errors;
+    };
+    assert.deepEqual(review(JT), []);
+    assert.ok(review('kiro-exafyltd-202610201200-ee01').some((x) => x.includes('reviewed only by seat jtadic')), 'builder seat may not review');
+    assert.ok(review(S1).some((x) => x.includes('reviewed only by seat jtadic')), 'unseated id refused');
+    assert.ok(review(S2).some((x) => x.includes('reviewed only by seat jtadic')), 'session_ id refused');
+    // built by another seat, or by an unseated id: refused
+    for (const s of [JT, S1, S2]) {
+      sh(f.work, 'checkout', '-q', '-B', `kiro/b-${s.slice(0, 12)}`, base);
+      write(f.work, '.github/workflows/x.yml', 'y');
+      const h = commit(f.work, 'pin', { 'Collab-Session': s, 'Collab-Lane': 'cards/card-01' });
+      assert.ok(scopeCheck(f.work, { base, head: h, branch: 'kiro/cards/card-01' }).errors.some((x) => x.includes('built only by seat exafyltd')), s);
+    }
+    // still bounded by its paths
+    sh(f.work, 'checkout', '-q', '-B', 'kiro/out', base);
+    write(f.work, 'CLAUDE.md', 'x');
+    const h5 = commit(f.work, 'out', { 'Collab-Session': EX2, 'Collab-Lane': 'cards/card-01' });
+    assert.ok(scopeCheck(f.work, { base, head: h5, branch: 'kiro/cards/card-01' }).errors.some((x) => x.startsWith('CLAUDE.md is outside')));
+  } finally { f.done(); }
+});
+
+test('VTID-05259 scope-check: a lane PR cannot make itself a governance lane; a non-governance Kiro lane still cannot touch governance', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, { ...LANE, paths: ['.github/workflows/**'] });
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { ...LANE, paths: ['.github/workflows/**'], governance: 'true', state: 'executing', vtid: 'VTID-00002', claimed_by: JT }));
+    write(f.work, '.github/workflows/x.yml', 'x');
+    const head = commit(f.work, 'self-grant', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+    const e = scopeCheck(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors;
+    assert.ok(e.some((x) => x.includes('governance changed in a lane PR')), e.join('\n'));
+    assert.ok(e.some((x) => x.includes('is a governance path')), 'judged as the base (non-governance) lane: ' + e.join('\n'));
+  } finally { f.done(); }
+});
+
+test('VTID-05259 scope-check: legacy reviewer_seat claude accepts another named Kiro seat, not the lane seat', () => {
+  const f = fixture();
+  try {
+    const L = { ...LANE, reviewer_seat: 'claude' };
+    const base = scopeFixture(f, L);
+    const review = (session) => {
+      sh(f.work, 'checkout', '-q', '-B', `kiro/r-${session.slice(0, 12)}`, base);
+      write(f.work, '.kiro/specs/cards/lanes/card-01.md', `${laneMd('card-01', { next_actor: 'kiro', vtid: 'VTID-00002', ...L })}### review\n`);
+      return scopeCheck(f.work, { base, head: commit(f.work, 'r', { 'Collab-Session': session, 'Collab-Review': 'cards/card-01' }) }).errors;
+    };
+    assert.deepEqual(review(EX), []);
+    assert.deepEqual(review(S2), []);
+    assert.ok(review(JT).some((x) => x.includes('reviewer_seat is claude')), 'the lane seat never reviews its own lane');
+    assert.ok(review(S1).some((x) => x.includes('reviewer_seat is claude')), 'unseated id refused');
+  } finally { f.done(); }
+});
+
+test('VTID-05259 validate: the plan author seat may change a lane in a _plan commit only together with plan.md', () => {
+  const f = fixture();
+  try {
+    write(f.work, '.kiro/specs/cards/handoff.md', planMd({ state: 'approved', sparring_record: 'x.md', vtids: ['VTID-00002'], executor: 'kiro', next_actor: 'kiro', author_seat: 'exafyltd' }));
+    write(f.work, '.kiro/specs/cards/plan.md', 'plan v1\n');
+    write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', { next_actor: 'kiro', vtid: 'VTID-00002', ...LANE }));
+    const base = commit(f.work, 'seed', { 'Collab-Session': S2, 'Collab-Lane': 'cards/_plan' });
+    sh(f.work, 'push', '-q', 'origin', 'main');
+    const edit = (session, { plan = true, state = 'ready' } = {}) => {
+      sh(f.work, 'checkout', '-q', '-B', `p-${session.slice(5, 12)}-${plan}-${state}`, base);
+      if (plan) write(f.work, '.kiro/specs/cards/plan.md', 'plan v2\n');
+      write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', { next_actor: 'kiro', vtid: 'VTID-00002', ...LANE, paths: ['src/backoffice/**', 'src/more/**'], state }));
+      return validateRange(f.work, { base, head: commit(f.work, 'edit', { 'Collab-Session': session, 'Collab-Lane': 'cards/_plan' }) }).errors;
+    };
+    assert.deepEqual(edit(EX), []);
+    assert.ok(edit(EX, { plan: false }).some((x) => x.includes('lanes/a.md')), 'without a plan.md change');
+    assert.ok(edit(JT).some((x) => x.includes('lanes/a.md')), 'not the author seat');
+    assert.ok(edit(S1).some((x) => x.includes('lanes/a.md')), 'unseated id');
+    assert.ok(edit(EX, { state: 'executing' }).some((x) => x.includes('lanes/a.md')), 'state stays untouched');
+  } finally { f.done(); }
+});
+
+test('VTID-05259 validate: a governance lane reaches verified only with owner-instruction:, done only with merge: <sha>', () => {
+  const f = fixture();
+  try {
+    const EX2 = 'kiro-exafyltd-202610201041-ab5d';
+    const fm = (state) => ({ ...GOV, next_actor: 'kiro', vtid: 'VTID-00002', state });
+    write(f.work, '.kiro/specs/cards/handoff.md', planMd({ state: 'executing', sparring_record: 'x.md', vtids: ['VTID-00002'], executor: 'kiro', next_actor: 'kiro' }));
+    write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', fm('in-review')));
+    const base = commit(f.work, 'seed', { 'Collab-Session': S2, 'Collab-Lane': 'cards/_plan' });
+    sh(f.work, 'push', '-q', 'origin', 'main');
+    const move = (state, extra, from = base) => {
+      sh(f.work, 'checkout', '-q', '-B', `m-${state}-${extra.length}`, from);
+      write(f.work, '.kiro/specs/cards/lanes/a.md', `${laneMd('a', fm(state))}${extra}`);
+      const h = commit(f.work, 'move', { 'Collab-Session': EX2, 'Collab-Lane': 'cards/a' });
+      return { h, e: validateRange(f.work, { base: from, head: h }).errors };
+    };
+    assert.ok(move('verified', '').e.some((x) => x.includes('owner-instruction:')));
+    const ok = move('verified', '### 2026-10-20 · verified\n- owner-instruction: "merge #4211" (2026-10-20)\n');
+    assert.deepEqual(ok.e, []);
+    sh(f.work, 'push', '-q', '-f', 'origin', `m-verified-${'### 2026-10-20 · verified\n- owner-instruction: "merge #4211" (2026-10-20)\n'.length}:main`);
+    assert.ok(move('done', '- owner-instruction: "merge #4211"\n', ok.h).e.some((x) => x.includes('merge: <sha>')));
+    assert.deepEqual(move('done', '- owner-instruction: "merge #4211"\n- merge: 2e3c9f1200b26e3e\n', ok.h).e, []);
+  } finally { f.done(); }
+});

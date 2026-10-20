@@ -64,8 +64,9 @@ const CI_PLAN_SPAR = 'ci-plan-spar';
 /** The seat named in a seat-scoped Kiro session id, else ''. */
 export const seatOf = (s) => (/^kiro-([a-z]{1,12})-\d{12}-[0-9a-f]{4}$/.exec(s || '') || [])[1] || '';
 
-// VTID-05213: paths that only an `executor: claude` lane may change (governance: CI, rules, steering, automations,
-// this script, the seat map). A Kiro lane that declares or touches one is refused by validate and scope-check.
+// VTID-05213: governance paths (CI, rules, steering, automations, this script, the seat map). VTID-05259
+// (retire-claude-code): a Kiro lane may declare and change them only with `governance: true`, built by its `seat` and
+// reviewed by a different named Kiro `reviewer_seat`; legacy `executor: claude` lanes keep working.
 export const GOVERNANCE_PATHS = ['.github/**', '.claude/**', '.kiro/steering/**', '.kiro/automations/**', 'scripts/collab/**',
   'CLAUDE.md', 'docs/programs/areas.yaml'];
 
@@ -177,7 +178,16 @@ export function validateLane(fm, slug, lane, laneIds) {
   }
   const paths = asList(fm.paths);
   if (fm.executor && fm.state && fm.state !== 'ready' && fm.state !== 'parked' && paths.length === 0) e.push(`paths required in state ${fm.state} for a lane that declares an executor`);
-  if (fm.executor === 'kiro') for (const g of paths) if (globTouchesGovernance(g)) e.push(`paths "${g}" reaches a governance path; such a lane needs executor: claude`);
+  // VTID-05259: governance lanes. `governance: true` is the only way a Kiro lane reaches a governance path; such a lane
+  // names both seats, and the reviewer is a different Kiro seat (never `claude`, never the builder).
+  if (fm.governance !== undefined && !['true', 'false'].includes(fm.governance)) e.push('governance must be true or false');
+  const gov = fm.governance === 'true';
+  if (fm.executor === 'kiro' && !gov) for (const g of paths) if (globTouchesGovernance(g)) e.push(`paths "${g}" reaches a governance path; such a lane needs governance: true`);
+  if (gov) {
+    if (fm.executor !== 'kiro') e.push('governance: true is for executor: kiro lanes');
+    if (!fm.seat) e.push('a governance lane needs a seat');
+    if (!fm.reviewer_seat || fm.reviewer_seat === 'claude') e.push('a governance lane needs a reviewer_seat that is a Kiro seat (not claude)');
+  }
   if (fm.state === 'parked' && !LANE_EDGES[fm.parked_from]) e.push('parked_from must name the non-terminal state the lane was parked from');
   for (const d of asList(fm.depends_on)) {
     if (d === lane) e.push('a lane cannot depend on itself');
@@ -331,6 +341,16 @@ function frontMatterChanged(repo, sha, p) {
   return fm(a) !== fm(b);
 }
 
+/** VTID-05259: a `_plan` commit by the plan's `author_seat` editing a lane file, in a PR that changes plan.md. */
+function planAuthorLaneEdit(repo, { head, changed, slug, k, f }) {
+  const seat = seatOf(k.session);
+  const author = parseFrontMatter(showFile(repo, head, `.kiro/specs/${slug}/handoff.md`))?.author_seat;
+  if (!seat || seat !== author || !changed.includes(`.kiro/specs/${slug}/plan.md`)) return false;
+  const a = parseFrontMatter(showFile(repo, `${k.sha}^`, f)) || {};
+  const b = parseFrontMatter(showFile(repo, k.sha, f)) || {};
+  return a.state !== 'done' && a.state === b.state && (a.claimed_by || '') === (b.claimed_by || '');
+}
+
 export function validateRange(repo, { base, head, branch = '', allowInitial = [], fetchLane = null }) {
   const errors = [];
   const warnings = [];
@@ -362,6 +382,12 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
       && ['drafted', 'sparred', undefined].includes(before?.state) && ['drafted', 'sparred', 'approved', 'parked'].includes(after?.state);
     if (ciSparred) continue;
     for (const x of checkTransition(c.kind, before, after, { allowInitial: allowInitial.includes(c.slug) })) errors.push(`${p}: ${x}`);
+    // VTID-05259: the owner's merge instruction for a governance lane leaves a record the check can see.
+    if (c.kind === 'lane' && after?.governance === 'true' && before?.state !== after.state) {
+      const text = showFile(repo, head, p) || '';
+      if (after.state === 'verified' && !/^\s*-?\s*owner-instruction:\s*\S/m.test(text)) errors.push(`${p}: a governance lane needs an "owner-instruction:" log line (the owner's words and date) before verified`);
+      if (after.state === 'done' && !/^\s*-?\s*merge:\s*[0-9a-f]{7,40}\b/m.test(text)) errors.push(`${p}: a governance lane needs a "merge: <sha>" log line before done`);
+    }
   }
 
   const laneTrailers = new Set(commits.map((k) => k.lane).filter(Boolean).flatMap((l) => l.split(',').map((s) => s.trim())));
@@ -383,6 +409,9 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
       if (k.lane === key) continue;
       // The coordinator declares the lanes: a `_plan` commit may create a lane file, never edit one.
       if (c.kind === 'lane' && k.lane === `${c.slug}/${PLAN_LANE}` && showFile(repo, `${k.sha}^`, f) === null) continue;
+      // VTID-05259: the plan's author seat may change an existing lane (its permissions) in a `_plan` commit when the
+      // same PR changes the plan's plan.md, so PLAN-SPAR re-spars the change. State and claim stay untouched.
+      if (c.kind === 'lane' && k.lane === `${c.slug}/${PLAN_LANE}` && planAuthorLaneEdit(repo, { head, changed, slug: c.slug, k, f })) continue;
       // VTID-05214: PLAN-SPAR.yml writes the allocated VTID into a lane that is still `ready`.
       if (c.kind === 'lane' && k.session === CI_PLAN_SPAR && k.lane === `${c.slug}/${PLAN_LANE}`
         && parseFrontMatter(showFile(repo, k.sha, f))?.state === 'ready') continue;
@@ -450,7 +479,7 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null }) 
   const mergeBase = gitOk(repo, ['merge-base', base, head]);
   const baseFm = source === 'this repo' && mergeBase ? parseFrontMatter(showFile(repo, mergeBase, lanePath)) : null;
   if (baseFm) {
-    const PERM = ['executor', 'seat', 'reviewer_seat', 'paths'];
+    const PERM = ['executor', 'seat', 'reviewer_seat', 'paths', 'governance'];
     const changed = PERM.filter((k) => JSON.stringify(asList(baseFm[k])) !== JSON.stringify(asList(fm[k])));
     const sessions = new Set(commits.filter((k) => k.files.includes(lanePath)).map((k) => k.session));
     const claudeOnly = sessions.size > 0 && [...sessions].every((x) => /^session_/.test(x));
@@ -468,7 +497,7 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null }) 
     for (const f of changed) {
       if (own(f)) continue;
       if (!matchesAny(f, paths)) errors.push(`${f} is outside lane ${key} (paths: ${paths.join(', ')})`);
-      else if (fm.executor !== 'claude' && matchesAny(f, GOVERNANCE_PATHS)) errors.push(`${f} is a governance path; lane ${key} has executor ${fm.executor || 'unset'} (needs claude)`);
+      else if (fm.executor !== 'claude' && fm.governance !== 'true' && matchesAny(f, GOVERNANCE_PATHS)) errors.push(`${f} is a governance path; lane ${key} is not governance: true (executor ${fm.executor || 'unset'})`);
     }
   }
   for (const k of commits) {
@@ -476,12 +505,30 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null }) 
     const short = k.sha.slice(0, 8);
     const seat = seatOf(k.session);
     if (k.review === key && k.lane !== key) {
-      const ok = fm.reviewer_seat === 'claude' ? /^session_/.test(k.session) : !fm.reviewer_seat || seat === fm.reviewer_seat;
+      // VTID-05259: a legacy `reviewer_seat: claude` lane also accepts a named Kiro seat other than the lane's own.
+      const ok = fm.reviewer_seat === 'claude' ? /^session_/.test(k.session) || (!!seat && seat !== fm.seat) : !fm.reviewer_seat || seat === fm.reviewer_seat;
       if (!ok) errors.push(`${short}: review entry on ${key} from ${k.session || 'no session'}, but reviewer_seat is ${fm.reviewer_seat}`);
     } else if (fm.seat && seat && seat !== fm.seat) {
       errors.push(`${short}: ${k.session} (seat ${seat}) edits lane ${key}, which belongs to seat ${fm.seat}`);
     } else if (fm.seat && /^kiro-\d{12}-/.test(k.session)) {
       warnings.push(`${short}: ${k.session} names no seat; lane ${key} belongs to seat ${fm.seat}`);
+    }
+  }
+  // VTID-05259: on a governance lane every commit is attributable: built by a session naming the lane's seat, reviewed
+  // by one naming reviewer_seat. Unseated kiro-YYYY… and session_… ids are refused (seats are self-declared — all Kiro
+  // accounts share one GitHub identity — so the owner's per-PR merge instruction stays the real boundary).
+  if (fm.governance === 'true') {
+    for (const k of commits) {
+      const short = k.sha.slice(0, 8);
+      const seat = seatOf(k.session);
+      const plan = (k.lane || '').split(',').map((x) => x.trim()).every((l) => l.endsWith(`/${PLAN_LANE}`)) && !!k.lane;
+      if (k.review === key && k.lane !== key) {
+        if (!seat || seat !== fm.reviewer_seat) errors.push(`${short}: governance lane ${key} is reviewed only by seat ${fm.reviewer_seat} (session ${k.session || 'none'})`);
+      } else if (plan) {
+        continue;
+      } else if (!seat || seat !== fm.seat) {
+        errors.push(`${short}: governance lane ${key} is built only by seat ${fm.seat} (session ${k.session || 'none'})`);
+      }
     }
   }
   return { applies: true, errors, warnings, lane: key, source, paths };
