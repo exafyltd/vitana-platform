@@ -59,15 +59,16 @@ command and pass/fail counts, red-on-base output for every new test). Acceptance
 - [ ] C6 Live seams: `PgLeaseManager`, `GithubObserver`, `GithubRepoFileWriter` (W1/W2), `loop.ts startPmLoop`;
       `index.ts:1877-1903` calls it.
 - [ ] C7 Routes: `/status` fields; public `/mode`.
-- [ ] C8 Tests T1-T25 and mutations M1-M7 of plan §5 C.
+- [ ] C8 Tests T1-T26 and mutations M1-M7 of plan §5 C.
 - [ ] C9 `docs/validation/<VTID>/staging-tests.json` (plan §5 C item 9).
 **Acceptance:**
 - In `services/gateway`: `npx jest test/project-manager` green (the 77 base tests still pass, updated only where the
   plan changes a value: tick default, reasons), `npm run test:operator` green, `npm run typecheck` clean,
   `npm run build` green; every T/M case present and recorded red on base (guards marked).
-- M1 holds for every entry of `scripts/collab/protected-gate-files.json`; the parity test reads that file.
-- `/mode` answers 200 without a token with exactly `ok, enabled, mode, claude_available, claude_reason,
-  executor_mode`; `/status` still 401 without a token.
+- M1 holds for every entry of `scripts/collab/protected-gate-files.json`; `PROTECTED_GATE_GLOBS` is a compiled-in constant (runtime never
+  reads the JSON); only the parity test reads that file and fails when it is absent.
+- `/mode` answers 200 without a token with exactly `ok, enabled, mode, executor_mode` (no `claude_available` /
+  `claude_reason`); `/status` still 401 without a token and carries `claude`, `fallback`, `last_lease`.
 - No deploy, dispatch or allocate call reachable from any new decision kind (M7); `pmMode()` default unchanged; no
   workflow, migration or task-definition file changed.
 - Diff limited to the lane's paths; `index.ts` change confined to the PM block.
@@ -112,7 +113,8 @@ command and pass/fail counts, red-on-base output for every new test). Acceptance
 
 <!-- lane: staging-proof -->
 ## Lane `staging-proof` — proof run in fallback mode
-- [ ] F1 Precondition check (other seven lanes on `main`, `pm-fallback` deployed to staging, `CLAUDE_AVAILABLE=false`).
+- [ ] F1 Precondition check (other seven lanes on `main`, `pm-fallback` deployed to staging, `CLAUDE_AVAILABLE=false`,
+      staging `/status` read once with the service token shows `mode: live` and `last_lease: acquired`; plan §5 F).
 - [ ] F2 `services/gateway/test/kiro-autonomy-fallback-proof.test.ts`.
 - [ ] F3 `docs/validation/<VTID>/staging-tests.json` (plan §5 F).
 - [ ] F4 After Gate 2: `zero-claude-proof.md` and the plan's `timings.json` (plan §4.6, §4.9) in a docs-only follow-up.
@@ -144,8 +146,8 @@ command and pass/fail counts, red-on-base output for every new test). Acceptance
 
 <!-- lane: pipeline-speed -->
 ## Lane `pipeline-speed` — driver, shards, sparring slots, per-lane attribution, unblock main
-- [ ] H0 Fix the stale pin in `services/gateway/test/vtid-05077-planner-fallback-and-thinking.test.ts:212` (only if
-      `main` still fails there), keeping every assertion.
+- [ ] H0 Fix the stale test pin in `services/gateway/test/vtid-05077-planner-fallback-and-thinking.test.ts:212` to the
+      served `index.html:32` pin (test is stale, plan §5 H0), keeping every assertion; no-op if `main` already has it.
 - [ ] H1 `scripts/collab/plan-driver.mjs` + `plan-driver.test.mjs` (heartbeat, heartbeat-age, next, caps, hot files).
 - [ ] H2 `TEST-SUITE.yml` 4 shards + union job; `TEST-SUITE-RERUN.yml` + `scripts/ci/test-suite/{shard-union,rerun-policy}.mjs` + tests.
 - [ ] H3 `PLAN-SPAR.yml` slot step + `scripts/ci/plan-spar-slot/slot.mjs` + test.
@@ -160,5 +162,6 @@ command and pass/fail counts, red-on-base output for every new test). Acceptance
 - Rerun policy never reruns a job whose Jest step printed a summary; at most one rerun.
 - PLAN-SPAR: `paths`, round count, `MAX_SESSIONS`, partner chain unchanged; slot step before `Spar`, cap 2.
 - STAGING-VERIFY outcome logic unchanged (only `per_vtid` added).
-- H0 changes no assertion other than the pin literal and adds the `app.js` chip assertion.
+- H0 changes no assertion other than the pin literal and adds the `app.js` chip assertion; `index.html` untouched.
+- `Test Suite Summary` keeps its name and needs `[gateway, gateway-shard-union, services]`; required checks on `main` unchanged.
 - Diff limited to the lane's paths; changed workflow YAML parses.

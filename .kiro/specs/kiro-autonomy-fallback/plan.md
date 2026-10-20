@@ -84,11 +84,15 @@ Claude"*; *"no more approvals, you run it end to end"*. Final scope approved by 
   (`EXCEPTIONS_SEAT`): end-of-rotation reassigns, parks, stale claims, `executor: claude` items reassigned, STAGING-VERIFY
   fix-forward (max 3, then park). Only protected gate files (§4.3) still wait for owner/Claude review. Available →
   today's routing, unchanged.
-- **Exposed:** `/status` (auth-gated, unchanged gate) and a new public `GET /api/v1/project-manager/mode` returning only
-  `{ok, enabled, mode, claude_available, claude_reason, executor_mode}` with `claude_reason ∈ {flag_false,
-  no_action_4h, null}` and `executor_mode ∈ {claude_primary, kiro_fallback}`. **Security note:** this route is
-  unauthenticated on purpose so the read-only STAGING-VERIFY runner can prove the mode; it returns two enums, two
-  booleans and a mode string, no lane, PR, user or decision data (same class as `/api/v1/admin/build-info`).
+- **Exposed:** `/status` (auth-gated, unchanged gate) carries the detail: `claude: {available, reason}` with `reason ∈
+  {flag_false, no_action_4h, null}`, `fallback`, `last_lease`. A new public `GET /api/v1/project-manager/mode` returns
+  only `{ok, enabled, mode, executor_mode}` with `executor_mode ∈ {claude_primary, kiro_fallback}` — no
+  `claude_available`, no `claude_reason`, no lane, PR, user or decision data. **Security note (deliberate decision,
+  R1-F3):** `/mode` is unauthenticated on purpose so the read-only STAGING-VERIFY runner (no credential,
+  `lib.cjs:351-362`) can prove the mode. Disclosed persistently: which executor routing is active (one enum), nothing
+  about why or about Claude's availability; the reason and the 4 h evidence stay behind `requireServiceOrAdmin`.
+  Accepted residual: an anonymous caller can see that the pipeline runs in `kiro_fallback`; it grants no capability
+  (every merge still needs the §4.1 review on the current head, green checks and §4.3).
 
 ## 4. Interfaces between lanes (defined here; agents do not invent them)
 ### 4.1 Review entry (written for the reviewer agent; parsed by PM and scope-check)
@@ -165,9 +169,15 @@ Deploying lanes (touch `services/gateway/**`): `pm-fallback`, `pipeline-speed`, 
 `docs/validation/<VTID>/staging-tests.json` (read-only: GET or `rejected_probe`). The others deploy nothing and are
 done at merge with green checks.
 ### 4.9 "Zero Claude actions"
-No commit, review entry, claim, merge, VTID allocation or Gate 2 message from a **Claude Code session** (`session_…`
-id, or a `mergedBy` Claude identity) between the plan PR's first commit and Gate 2. The Claude model inside Kiro is not
-a Claude action. From now on Kiro commits carry no `Co-Authored-By: Claude` trailer (identity `kiro-agent[bot]`).
+Measured window: from this plan PR's first commit `70d6af4010251d7f08bfba395bccde0c0f5e5a4e` (2026-10-20T17:30:55Z) to
+the Gate 2 message. In that window: no commit, review entry, claim, merge, VTID allocation or Gate 2 message from a
+**Claude Code session** (`Collab-Session: session_…`, or a `mergedBy` Claude identity). The Claude model inside Kiro is
+not a Claude action. **Trailer cutover = that same commit:** every Kiro commit of this run (author/committer
+`kiro-agent[bot]`, env-var identity) carries no `Co-Authored-By: Claude` trailer — already true for `70d6af401` and
+`ba3d3ee98` (verified with `git log --format=%(trailers)`). F's `zero-claude-proof.md` asserts both over the window:
+(a) actor ids per step and (b) `git log <window> --format=%(trailers)` on `main` and every lane branch of this plan
+shows zero `Co-Authored-By: Claude` lines; a hit is listed and the proof marked incomplete, never rewritten (no
+history rewrite, no force-push).
 
 ## 5. Lanes (eight; ids exact; no two lanes edit the same file)
 ### A. `steering-rules` — rule text first (both repos), no depends_on, lands first
@@ -243,7 +253,10 @@ requires a file linking a rules file to be `fileMatch`).
 `services/gateway/src/services/project-manager/**`, `services/gateway/src/routes/project-manager.ts`,
 `services/gateway/src/index.ts` (the PM block `:1877-1903` only), `services/gateway/test/project-manager/**`.
 depends_on: `scope-check` (parity with `protected-gate-files.json`, the `Collab handoff` check run, the `pm-agent` exemption).
-1. `governance.ts` (new; protected): `REVIEWER_AGENT`, `PROTECTED_GATE_GLOBS` (= §4.3, parity test reads the JSON),
+1. `governance.ts` (new; protected): `REVIEWER_AGENT`, `PROTECTED_GATE_GLOBS` (= §4.3 as a compiled-in constant
+   literal; the runtime never reads the JSON, so a missing or empty JSON can never empty the list; only the parity test
+   T25 reads `scripts/collab/protected-gate-files.json` and fails when it is absent or differs; an empty constant fails
+   M1),
    `isAgentReview`, `reviewOnCurrentHead` (via `ObservedPr.review_only_since`), `touchesProtectedGate(files)`,
    `reviewSatisfiesLane`, `governanceMergeAllowed(lane, pr, review) → {ok} | {ok:false, reason: 'protected_gate_file' |
    'no_agent_accept' | 'stale_head'}`; `GOVERNANCE_PATHS`/`GOVERNANCE_REVIEWER` move here, re-exported from `types.ts`.
@@ -274,14 +287,20 @@ depends_on: `scope-check` (parity with `protected-gate-files.json`, the `Collab 
    `OperatorChatGate2Poster` posts one message with `GATE2_QUESTION` to the Operator Chat thread of the plan's VTIDs
    (else a PM thread) and records `pm.gate2.posted` + a `pm_digests` row (observable as `gate2_sent`). Posting only; no
    deploy capability is injected. `timings.ts` `planTimings(...)` → W2 bookkeeping PR writes `timings.json`.
-6. Live seams: `PgLeaseManager` on `pm_lease` (`supabase/migrations/20261015180000_…:222-240`), `GithubObserver`
+6. Live seams: `PgLeaseManager` on `pm_lease` — the table is created by
+   `supabase/migrations/20261015180000_vtid_05214_plan_sparring_policy_approval.sql:222-240` (VTID-05214, on `main`;
+   one seeded row `:227`, asserted by `supabase/tests/vtid_05214_policy_approval.test.sql:13`); `lease.ts:12-19,38-52`
+   predates that merge and still says "P1 not merged". No new migration. `PgLeaseManager` keeps the fail-safe: missing
+   relation → `table_absent`, any error → `error`, both a no-op tick; the last outcome is exposed as `/status`
+   `last_lease` and logged once per change, so a silently non-acting PM is visible. `GithubObserver`
    (lane files from `main` + open `plan(` PR heads, lane PRs by branch `<kiro|claude>/<slug>/<lane>` or `pr:`, head,
    check runs, files, mergeable, `behind_by`, commits + §4.1 trailers after the review, repo variable, driver refs,
    `session_…` commits, OASIS verify events, ledger status), `GithubRepoFileWriter` (W1/W2), `startPmLoop({pm, deps})` in
    `loop.ts` calling `runActTick` in `live` and `runDecideTick` otherwise; `index.ts:1877-1903` calls it. `pmMode()`
    default unchanged (`dry_run`); staging stays pinned `live`.
-7. Routes: `/status` gains `claude`, `fallback`, `build_lanes_in_flight`; new public `/mode` (§3, mounted before the
-   auth middleware with a `// public-route` comment).
+7. Routes: `/status` gains `claude: {available, reason}`, `fallback`, `build_lanes_in_flight`, `last_lease`
+   (`acquired|held_by_other|table_absent|error|null`); new public `/mode` returning only `{ok, enabled, mode,
+   executor_mode}` (§3, mounted before the auth middleware with a `// public-route` comment).
 8. Tests (each red on base unless marked guard): new `test/project-manager/fallback.test.ts`, `governance.test.ts`,
    `loop.test.ts`, `timings.test.ts`, `observe-live.test.ts`, plus `decide.test.ts`, `act.test.ts`, `route.test.ts`,
    `tick-and-config.test.ts` updates — the table T1-T25 and mutations M1-M7 below. `npm run test:operator` green.
@@ -292,8 +311,11 @@ depends_on: `scope-check` (parity with `protected-gate-files.json`, the `Collab 
    T15 claim 5 h, no driver → park; T16 two eligible → one merge; T17 behind → `update_branch`; T18 spec-only plan PR →
    `merge_plan`, and none for a file outside the spec / hash mismatch / non-bot head / non-converged; T19 parked sibling →
    `all_verified`; T20 tick default 120000; T21 `planTimings` fixture exact, missing source → null; T22 ledger decision
-   once; T23 Gate 2 evidence fields present; T24 `/status` + `/mode` shape, `/mode` without token → 200, `/status`
-   without token → 401; T25 parity with `scripts/collab/protected-gate-files.json`.
+   once; T23 Gate 2 evidence fields present; T24 `/status` + `/mode` shape, `/mode` without token → 200 with exactly
+   the keys `ok, enabled, mode, executor_mode` (no `claude_available`/`claude_reason`), `/status` without token → 401;
+   T25 parity with `scripts/collab/protected-gate-files.json` (absent file → test fails); T26 `PgLeaseManager` against
+   an injected pg client: row free → `acquired`, held → `held_by_other`, `42P01` → `table_absent`, other error →
+   `error`, and `last_lease` reflects each.
    M1 protected file (each §4.3 entry) + agent accept only → `governance_blocked: protected_gate_file`, `safeMerge` never
    called; M2 stale-head review → no merge; M3 `reviewer: agent:someone-else` / null / `…-fake` → no merge; M4 `changes`
    → no merge; M5 agent review from an executing session → no merge; M6 Claude available → `claude`; M7 the act layer never
@@ -380,13 +402,19 @@ depends_on: `scope-check` (parity with `protected-gate-files.json`, the `Collab 
 (`staging-tests.json`, `zero-claude-proof.md`, and this plan's `timings.json` at the plan VTID).
 - Precondition: the other seven lanes on `main`, `pm-fallback` deployed to staging (successful
   `AWS-STAGE-DEPLOY-GATEWAY.yml` run on a `main` commit containing it), repo variable `CLAUDE_AVAILABLE=false` set
-  (reversible repo config under the owner instruction; it stays `false` afterwards, Gate 2 says so).
+  (reversible repo config under the owner instruction; it stays `false` afterwards, Gate 2 says so), and **the PM
+  really holds its lease on staging**: the driver (not the STAGING-VERIFY runner) reads the staging gateway's auth-gated
+  `GET /api/v1/project-manager/status` once, read-only, with `Authorization: Bearer $env:GATEWAY_SERVICE_TOKEN`
+  (presence check only, never printed) and requires `mode: "live"` and `last_lease: "acquired"` on a tick after the
+  deploy. `table_absent`/`error` → the proof is blocked: logged in the lane and Gate 2 as "PM not acting on staging:
+  <last_lease>", no merge-by-PM claimed (the §5 F 60-min fallback applies). Token unset → no gateway call; the PM-merge
+  evidence (`mergedBy` + `pm-agent` W1 commit) decides instead.
 - The lane is the proof: its VTID came from CI, a Kiro seat builds it, the reviewer agent accepts, **the PM merges it**
   (W1 verify then merge; the land step does not self-merge), staging deploys, STAGING-VERIFY passes, the PM posts Gate 2.
 - Jest test: `claudeAvailability` cases, `/mode` and `/status` bodies via `createProjectManagerRouter` with an injected
   snapshot, end-of-rotation never `claude` while unavailable.
 - `staging-tests.json`: GET `/alive`; GET `/api/v1/project-manager/mode` with `expect_json {"ok": true, "enabled": true,
-  "mode": "live", "claude_available": false, "executor_mode": "kiro_fallback"}`; `/status` `rejected_probe` 401;
+  "mode": "live", "executor_mode": "kiro_fallback"}`; `/status` `rejected_probe` 401;
   `existing` `npx jest test/kiro-autonomy-fallback-proof.test.ts`.
 - After Gate 2, a follow-up docs-only commit/PR on the lane: `zero-claude-proof.md` (one row per step: actor id,
   evidence link, SHA — per §4.9, from commit trailers, claims, lane logs, `gh pr view --json mergedBy`, PM logs, OASIS)
@@ -429,9 +457,15 @@ depends_on: `scope-check` (parity with `protected-gate-files.json`, the `Collab 
 (new), `.github/workflows/PLAN-SPAR.yml` (protected; one step), `scripts/ci/plan-spar-slot/**` (new),
 `scripts/ci/staging-verify/run.mjs`, `lib.cjs`, `lib.test.cjs`,
 `services/gateway/test/vtid-05077-planner-fallback-and-thinking.test.ts`.
-- H0 unblock main (only if TEST-SUITE on `main` still fails on that test when the lane starts): line `:212` expects the
-  pin `index.html:32` actually serves, and the test additionally asserts that pin's `app.js` contains the chip markup
-  (no assertion dropped). Needed because every gateway lane is red while `main` is.
+- H0 unblock main (deterministic; H is the only lane owning
+  `services/gateway/test/vtid-05077-planner-fallback-and-thinking.test.ts`). **The test is stale, the served pin is
+  correct:** `index.html:32` was bumped to `app.js?v=20261121-vtid-05082` by VTID-05082 (`80e2b3553`, 2026-10-20) after
+  the test was last edited by VTID-05148 (`e7a4c90fb`, 2026-10-13); four other suites already expect the served pin
+  (`test/command-hub/vtid-05067-kiro-console.test.ts:567`, `vtid-05069-pipeline-tree.test.ts:184`,
+  `vtid-05071-kiro-approval-visibility.test.ts:182`, `vtid-05084-loops-screen.test.ts:148`). So `:212` changes its
+  literal to the served pin and gains one assertion that `app.js` contains the chip markup the test exists for;
+  `index.html` is not touched; no assertion is dropped or loosened. If `main` already carries the identical fix when
+  the lane starts, H0 is a recorded no-op. Needed because every gateway lane is red while `main` is.
 - `plan-driver.mjs` (deterministic Node, no LLM; imports `collect`, `buildQueue`, `parseFrontMatter`, `listClaims` from
   `queue.mjs`, which it does not edit): `heartbeat --slug --session` (§4.7, exit 3 on a live foreign driver),
   `heartbeat-age --slug` (ms or `none`), `next --slug --repo … [--cap 6] --json` → ordered actions: answer an open
@@ -443,7 +477,13 @@ depends_on: `scope-check` (parity with `protected-gate-files.json`, the `Collab 
 - `TEST-SUITE.yml`: gateway as matrix `shard: [1,2,3,4]`, `fail-fast: false`, `npx jest --silent --maxWorkers=100%
   --shard=${{ matrix.shard }}/4 --json --outputFile=…`, job name `Gateway (Jest, shard N/4)` (consumers of the old name
   found by grep keep working); `gateway-shard-union` job (`if: always()`): `npx jest --listTests` vs the union of the 4
-  JSON results — any missing or duplicate file fails; `summary.needs` adds it. Nothing new skipped.
+  JSON results — any missing or duplicate file fails; the existing rollup job keeps its name `Test Suite Summary`
+  (`TEST-SUITE.yml:97-99`), its `needs` becomes `[gateway, gateway-shard-union, services]` and it fails when any of
+  them is not `success` (a skipped/cancelled shard or union counts as failure). Branch protection: the only required
+  status check on `main` is `validate` (read via `GET /repos/…/branches/main/protection/required_status_checks`,
+  2026-10-20) — unchanged, no TEST-SUITE job name is in it, so the rename cannot open a required-check gap. The merge
+  rule (§7b, C, the land step) treats "checks green" as **every** check run on the head (all four shards, the union and
+  the summary), not only required ones. Nothing new skipped.
 - `TEST-SUITE-RERUN.yml`: on `workflow_run` failure, attempt 1: `scripts/ci/test-suite/rerun-policy.mjs` reruns failed
   jobs once only when every failed job died before its test step or that step printed no Jest summary
   (`docs/DEPLOYMENT-PIPELINE.md:192`); a real red is never rerun.
@@ -472,9 +512,18 @@ instruction of 2026-10-20 ("no more approvals, you run it end to end"), recorded
 owner-directed merge instruction for the named set: this plan's `plan(` PR and every lane PR of this plan (both repos,
 fix-forward PRs included): merge to `main` + staging auto-deploy only; the PM merges if it acts first. Acceptance comes
 from the reviewer agent (§4.1/§4.2), never from another Kiro seat; the review entry is committed by the calling Kiro
-session under the legacy `reviewer_seat` id. Where Lane scope fails ONLY because of the executor/governance/reviewer rule
-or because the spec is not on `main` yet, the PR is merged with `gh pr merge --admin` under §7b and logged (lane log +
-`merges.md`: owner-instruction reference, reason, merge SHA). A real red test or build is never overridden. Protected gate
+session under the legacy `reviewer_seat` id.
+**Merge authority, one table (R1-F2):**
+| Who merges | Path | When |
+|---|---|---|
+| PM (C, once live) | gateway safe-merge | non-workflow lanes only; safe-merge's `BLOCKED_FILE_PATTERNS` refusal of `.github/workflows/` (`github-service.ts:709-748`) is final for the PM and is never worked around by the PM |
+| Kiro land step | `gh pr merge` (no `--admin`) | any lane of this plan incl. the workflow-file lanes D/H, under the §7b owner instruction above, when every check run on the current head is green |
+| Kiro land step | `gh pr merge --admin` | only when the one red check is **Lane scope** and its log shows solely the executor/governance/reviewer rule (`queue.mjs:180,471,479`) or "lane file not found" because the spec is not on `main`; the run log is linked in `merges.md` |
+`--admin` is a GitHub branch-protection override; it does not call safe-merge and is not used to get past safe-merge's
+workflow refusal (the PM simply never merges D/H). It is never used for any other red: a failing test, build,
+typecheck, PR-GATE verdict, TEST-SUITE shard/union, STAGING-VERIFY, or a Lane scope error naming a path outside the
+lane's `paths` or a §4.3 protected file without this owner instruction. Each merge is logged (lane log + `merges.md`:
+owner-instruction reference, which row, reason, merge SHA). Protected gate
 files changed by this plan (`CLAUDE.md`; `plan-spar.mjs`; `queue.mjs`, `protected-gate-files.json`, `PR-GATE.yml`;
 `project-manager/governance.ts`; `.kiro/agents/vitana-lane-reviewer.md`; `PLAN-SPAR.yml`) are covered by the owner's
 explicit instruction for this plan only, each logged. The `plan(` PR is merged to `main` right after convergence (lanes
@@ -498,7 +547,9 @@ a time (already: `AWS-STAGE-DEPLOY-GATEWAY.yml:103-105`); a STAGING-VERIFY failu
 defined in the plan (as §4 here), not by the agents.
 Shared files in this plan: none (each file has exactly one owning lane). Text-only cross references (no merge order):
 A names the tokens of §3/§4; E's `driver.md` names H's CLI; G's workflow names E's `driver.md` and A's
-`vitana-pipeline.md`. Real dependencies: `pm-fallback → scope-check`; `staging-proof → all`.
+`vitana-pipeline.md`. Real dependencies: `pm-fallback → scope-check` (so `protected-gate-files.json`, the `Collab
+handoff` check and the `pm-agent` exemption are on `main` before C's `governanceMergeAllowed` can merge; until C is on
+`main` the old claude-only guard `act.ts:170-173` stays in force); `staging-proof → all`.
 
 ## 8. Tests, commands and test plan
 Every lane runs its checks locally before each push and records commands + counts in its evidence:
@@ -542,8 +593,9 @@ day, from ≥ 9-10 h on a weekday and days over a weekend or with Claude down).
    merges first, the later PR merges `main` and reconciles; nothing of theirs is edited or deleted here.
 8. `claude-sonnet-5.5` model id not confirmed locally; the agent fails loudly, never substitutes.
 9. Kiro Web: `gh` availability and the app.kiro.dev cron are not in git (owner setup facts; reported in Gate 2).
-10. safe-merge refuses workflow-file PRs, so D and H are never PM-merged (merged under §7b in this plan; later
-    workflow-file lanes need §7b or Claude).
+10. safe-merge refuses workflow-file PRs, so D and H are never PM-merged; in this plan they are merged by the Kiro land
+    step with plain `gh pr merge` under the §7b owner instruction (§6 table; `--admin` only for the Lane-scope false
+    positive, never for a workflow refusal); later workflow-file lanes need a §7b owner instruction or Claude.
 11. Driver refs `collab-driver/<slug>` accumulate; pruned when a plan is `done` (driver's last action).
 12. PLAN-SPAR on a large plan: standard class, cap 3 rounds; if it escalates, the owner is asked (the one allowed stop).
 
