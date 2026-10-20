@@ -31,27 +31,43 @@ plan is Change B of `collab-kiro-governance`, re-planned as a new lane on that r
 1. `plan-spar.mjs:35`: add `partner_output_invalid` to `RETRYABLE_REASONS`.
 2. `plan-sparring-service.ts:46`: add `partner_output_invalid` to the gateway's `RETRYABLE_REASONS`. Both lists move
    together, or the gateway dedups the retry (`:285`).
-3. **Loop guard: one count, enforced on both sides.** The cap is **2 partner passes in total per producer** for
-   `partner_output_invalid`: the first pass plus one automatic re-run. It is counted per producer
+3. **Loop guard: one count, one window, enforced on both sides.** The cap is **2 partner passes per producer per 24 h**
+   for `partner_output_invalid`: the first pass plus one automatic re-run. It is counted per producer
    (`ci-plan-spar.<slug>`, `plan-spar.mjs:195`), not per plan hash, so editing `plan.md` does not reset it.
-   - **Gateway:** before re-running a stored `partner_output_invalid` session, `createSparringSession` counts the
-     producer's `escalated` sessions whose `escalation_reasons` contain `partner_output_invalid`. This is one new
-     count query in `plan-sparring-repository.ts`, next to `fetchSessionByPlanHash` (`:75`).
-     - Count below 2: re-run, not dedup.
-     - Count at 2: dedup, and the create route also returns a top-level `retry_exhausted: true`, next to the existing
-       `deduplicated` (`routes/plans-spar.ts:49`–`:50`).
-     - Both are response fields, not stored columns, so `SparringSession`, `SESSION_COLUMNS` (`:39`) and the table do
-       not change. Every other reason keeps today's rule.
-   - **CI:** `gatewayClient.create` (`plan-spar.mjs:114`–`:121`) today returns only the session and drops
-     `deduplicated`. It will return `{ session, deduplicated, retry_exhausted }`, also from its lost-response re-post
-     path (`:119`–`:121`). `step()` reads them and sets
-     `entry.retryable = <reason retryable> && !deduplicated && !retry_exhausted` (`:228`). So once the cap is reached,
-     `retryInfra` (`:188`) is false and the plan waits.
+   `PARTNER_INVALID_CAP = 2` and `PARTNER_INVALID_WINDOW_MS = 24 h` are the same constants on both sides.
+   - **Gateway (sparring R1-F1).** The cap check runs on every create, before any session is inserted:
+     - Where it sits: after the existing producer + hash lookup and its dedup returns (`plan-sparring-service.ts:267`–`:285`),
+       and immediately before `insertSession` (`:288`), outside the `if (existing.data)` block. So a create whose plan
+       hash changed (no `existing.data`) is counted too.
+     - The count is one new query in `plan-sparring-repository.ts`, next to `fetchSessionByPlanHash` (`:75`): the
+       producer's `escalated` sessions whose `escalation_reasons` contain `partner_output_invalid`, created within the
+       window.
+     - Count at or above 2: no insert. The service returns the producer's newest session with `deduplicated: true` and
+       `retry_exhausted: true`.
+     - Below 2, a stored `partner_output_invalid` session for the same hash is re-run (Change 2), not deduplicated.
+     - `retry_exhausted` is a top-level response field of the create route, next to `deduplicated`
+       (`routes/plans-spar.ts:49`–`:50`). It is not a stored column, so `SparringSession`, `SESSION_COLUMNS` (`:39`)
+       and the table do not change.
+     - Sessions with other reasons are not counted, and they keep today's rule.
+   - **CI (sparring R1-F2).** `gatewayClient.create` (`plan-spar.mjs:114`–`:121`) returns `{ session, deduplicated,
+     retry_exhausted }` on all three paths:
+     - the direct response returns the flags from `r.json`;
+     - the `waitFor` path (`:116`) takes the flags from `r.json` before it polls;
+     - the lost-response re-post (`:119`–`:121`) takes the flags from `again.json` before calling `waitFor`.
+     - `waitFor` polls `GET /:id`, which carries no flags, so the flags are never read from it. A missing flag is read
+       as `false` only on the first create, where the gateway cannot have capped anything; the next create's response
+       always carries the gateway's answer.
+     - `step()` sets `entry.retryable = <reason retryable> && !deduplicated && !retry_exhausted` (`:228`). When
+       `retry_exhausted`, it also records `entry.exhausted_at` (ISO).
+   - **After the window.** `retryInfra` (`:188`) is also true for an entry with `retry_exhausted` whose `exhausted_at`
+     is older than the window. So the next push after 24 h tries once more, and the gateway allows it because its
+     window has passed. The bound stays 2 passes per producer per 24 h on both sides; nothing loops faster.
 4. **No hand-off to Claude** (`plan-spar.mjs:278`–`:281`):
    - an infra escalation that will be retried sets `next_actor: kiro`, with the log line "the next push to this PR
      re-runs the partner";
    - an infra escalation that will not be retried (another reason, or `retry_exhausted`), and a plan parked after
-     `MAX_SESSIONS`, set `next_actor: owner`;
+     `MAX_SESSIONS`, set `next_actor: owner`. For `retry_exhausted` the log line also says when the next try is
+     possible (`exhausted_at` + 24 h, on the next push);
    - the log line names the reason. Nothing else in the handoff changes.
 5. **Lane fields:**
    - `executor: kiro`, `governance: true` (it changes `scripts/collab/**`);
@@ -73,25 +89,32 @@ plan is Change B of `collab-kiro-governance`, re-planned as a new lane on that r
 
 ## Tests
 - `node --test scripts/collab/queue.test.mjs scripts/collab/plan-spar.test.mjs`.
-- `plan-spar.test.mjs:193` becomes "is retried on the next push, at most once":
+- `plan-spar.test.mjs:193` becomes "is retried on the next push, at most once per 24 h":
   - the first push re-creates;
   - a second escalation with `retry_exhausted: true` does not create again;
   - a third push does nothing;
   - `create` is called exactly twice;
-  - `handoff.md` shows `next_actor: kiro` after the first escalation and `owner` after the cap.
+  - `handoff.md` shows `next_actor: kiro` after the first escalation and `owner` after the cap;
+  - with `now` moved past the window, the next push creates once more.
+- **The flags on every create path** (R1-F2):
+  - the fake client answers through the lost-response re-post path with `retry_exhausted: true`, and `step()` does not
+    retry;
+  - the same holds for the `waitFor` path.
 - **Gateway Jest** (`test/vtid-04868-plan-sparring-service.test.ts`):
   - a stored `partner_output_invalid` session is re-run, not deduplicated;
-  - with 2 such sessions for the producer, the next create is deduplicated with `retry_exhausted`, also when the plan
-    hash changed in between;
+  - with 2 such sessions for the producer inside the window, the next create inserts nothing and returns
+    `deduplicated` + `retry_exhausted`, also when the plan hash changed in between (no `existing` row: R1-F1);
+  - with those 2 sessions older than the window, the create inserts;
   - `model_unavailable` keeps today's behaviour;
   - `test/plan-sparring-stale-session.test.ts` (VTID-05254) stays green.
 - `tsc --noEmit`.
 - Change suite: `existing` entries running those Jest files, and a read-only `GET /alive` after the staging deploy.
 
 ## Risks
-- **Retry loop:** bounded at 2 passes per producer, enforced on both sides (Change 3).
+- **Retry loop:** bounded at 2 passes per producer per 24 h, enforced on both sides. The gateway check runs before
+  every insert, whatever the plan hash (Change 3).
 - **A real model problem behind `partner_output_invalid`:** after one re-run the plan goes to `owner` with the reason
-  logged; it does not loop.
+  logged. It can try again at most once per day after that, never in a tight loop.
 - **Governance lane built by Kiro:** it goes through #4210's rules (a different-seat review, and an owner-instruction
   plus merge record) and merges only on the owner's explicit per-PR instruction.
 <!-- plan:end -->
