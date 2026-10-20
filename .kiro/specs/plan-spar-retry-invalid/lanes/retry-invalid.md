@@ -16,7 +16,8 @@ paths:
   - services/gateway/src/routes/plans-spar.ts
   - services/gateway/test/vtid-04868-plan-sparring-service.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-20T13:50Z
+updated: 2026-10-20T14:13Z
+vtid: VTID-05262
 ---
 # Lane: retry-invalid (repo vitana-platform)
 Tasks T1–T4 in `tasks.md`. Start only after exafyltd/vitana-platform#4210 (VTID-05259, `governance: true`) is on
@@ -27,3 +28,6 @@ on convergence.
 ### 2026-10-20T13:50Z · kiro-exafyltd-202610201346-3bb3 · ready
 Lane created with the plan. It replaces `collab-kiro-governance/retry-partner-invalid` (VTID-05261, retired: see that
 plan's handoff).
+
+### 2026-10-20T14:13Z · ci-plan-spar · ready (VTID allocated)
+VTID-05262 allocated after policy approval (converged-auto-v1).

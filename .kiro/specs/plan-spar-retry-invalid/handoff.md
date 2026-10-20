@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-20T13:50Z
+state: approved
+updated: 2026-10-20T14:13Z
+sparring_record: .kiro/specs/plan-spar-retry-invalid/sparring/verdict.md
+vtids: [VTID-05262]
 ---
 # Handoff — plan-spar-retry-invalid
 
@@ -37,3 +39,6 @@ No VTID, no code, no live system touched.
 refusal until #4210 merges.
 
 Next: PLAN-SPAR spars this PR. This session (seat `exafyltd`) answers each round in `sparring/responses-<n>.md`.
+
+### 2026-10-20T14:13Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
