@@ -212,6 +212,8 @@ VTID format, target roles + INFRA exclusive, task lifecycle, worker eligibility 
   lines, `commands.log`, `outputs/`; v1: whatever its PR gate workflow requires, read before opening).
 - An independent reviewer (the reviewer agent, not the author) reviews each lane diff for any weakened safety or
   governance rule and any lost project-specific fact before the PRs are marked ready.
+- All verification is local and read-only: no deploy, no `workflow_dispatch`, no write to Supabase, AWS or the
+  gateway, no staging suite (docs only, deploys nothing).
 
 ## Deferred (listed in the lane PR bodies as follow-ups, not built here)
 - One canonical shared rules file linked from both repos.
