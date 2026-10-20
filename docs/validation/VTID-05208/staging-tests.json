@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-05208",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive", "path": "/alive" },
+    {
+      "kind": "http",
+      "name": "an unsigned DM send is refused (route still mounted after the greeting-grouping change)",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/api/v1/chat/send",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "reason": "rejected probe, nothing is written"
+    },
+    {
+      "kind": "http",
+      "name": "an unsigned unread-count read is refused (chat router mounted)",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/chat/unread-count",
+      "expect_status": 401,
+      "reason": "unauthenticated GET, nothing is written"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05208-new-member-greeting-push.test.ts test/vtid-05208-greeting-send-route.test.ts test/vtid-05137-chat-push-coalescing.test.ts test/i18n/catalog-coverage.test.ts test/chat-vitana-reply.test.ts",
+      "cwd": "services/gateway",
+      "reason": "greeting grouping (first pushes, N greetings → N rows / 1 push, localized summary, read does not reset, distinct greeters, fail-open fallback, off switch, test/service accounts excluded fail-closed), /send wiring and i18n keys in all 11 locales; every behaviour needs a write so it is proven in CI, never on staging"
+    }
+  ]
+}
