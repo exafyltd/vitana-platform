@@ -1,6 +1,6 @@
 ---
 lane: staging-proof
-state: in-review
+state: executing
 next_actor: kiro
 depends_on: [steering-rules, plan-spar-allocation, pm-fallback, scope-check, exceptions-seat, reviewer-agent, pipeline-speed]
 executor: kiro
@@ -12,7 +12,7 @@ repos: [exafyltd/vitana-platform]
 paths:
   - services/gateway/test/kiro-autonomy-fallback-proof.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-20T21:20Z
+updated: 2026-10-20T21:22Z
 vtid: VTID-05277
 claimed_by: kiro-exafyltd-202610201618-c018
 branch: kiro/kiro-autonomy-fallback/staging-proof
@@ -62,3 +62,12 @@ merge), not by the land step (plan §5 F).
 Reviewed head 2a433c4531edb672e049a4f765c73b7b5a91fb42 (PR https://github.com/exafyltd/vitana-platform/pull/4237). Verdict: changes.
 Blocking: validate-pr fails (Evidence Pack Gate: missing docs/validation/VTID-05277/outputs/). Non-blocking: Collab handoff failed, re-check; staging /mode kiro_fallback test red until pm-fallback fix-forward; zero-claude-proof is F4 post-Gate-2.
 Entry committed by the land step on the reviewer agent's behalf. Next: coder fix pass (changes requested).
+
+### 2026-10-20T21:22Z · kiro-exafyltd-202610201618-c018 · in-review → executing (review fix 1)
+Blocking finding fixed: `docs/validation/VTID-05277/outputs/jest-kiro-autonomy-fallback-proof.txt` added (13/13 pass,
+red on base 12/13 failed). The local validate-pr preflight then showed AC-4 had no `TEST:/CURL:/UI:` line (exit 41);
+added a `CURL:` line naming the staging-only `/mode` read STAGING-VERIFY runs. Collab handoff: the lane state goes back
+to `executing` (base `ready` → `in-review` in one PR is not a legal edge; the merged lanes of this plan land at
+`executing`). Residual: review commit a6ef6e8f carries `Collab-Review: changes` instead of the lane key (+
+`Collab-Verdict`), which `queue.mjs validate` rejects; it cannot be rewritten without a force-push (blockers.md).
+The staging `/mode` `kiro_fallback` expectation is unchanged.

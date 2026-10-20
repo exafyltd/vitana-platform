@@ -16,6 +16,7 @@ to the exceptions seat `exafyltd`, never `claude`; with Claude available the end
 TEST: npx jest test/kiro-autonomy-fallback-proof.test.ts (services/gateway)
 AC-4 — Staging (read-only STAGING-VERIFY on the merge commit): `/alive` 200; `/api/v1/project-manager/mode` 200 with
 `{ok: true, enabled: true, mode: "live", executor_mode: "kiro_fallback"}`; `/status` invalid-bearer probe 401.
+CURL: GET https://preview-aws-gateway.vitanaland.com/api/v1/project-manager/mode (staging only, run by STAGING-VERIFY from `staging-tests.json`)
 ROUTE_MOUNT: no route added; `GET /api/v1/project-manager/mode` and `/status` exist on main (VTID-05274).
 FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/project-manager/mode (staging)
 CURL_PROOF: no request by hand for the suite; the staging proof is the STAGING-VERIFY run of `staging-tests.json` on

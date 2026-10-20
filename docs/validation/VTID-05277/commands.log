@@ -22,3 +22,6 @@ $ GET /api/v1/project-manager/mode -> {"ok":true,"enabled":true,"mode":"live","e
 Finding: the staging PM holds its lease and runs live, but does not observe CLAUDE_AVAILABLE=false two ticks after it
 was set (see the lane log, "PM does not observe the flag"). The staging suite keeps the plan's expectation
 (`executor_mode: kiro_fallback`); it is not loosened.
+# Review round 1 fix (Evidence Pack Gate exit 33): outputs/ added
+$ cd services/gateway && npx jest test/kiro-autonomy-fallback-proof.test.ts --json
+Tests: 13 passed, 0 failed, 13 total (exit 0) -> outputs/jest-kiro-autonomy-fallback-proof.txt
