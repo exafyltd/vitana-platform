@@ -351,8 +351,26 @@ export function governanceRecord(baseText, headText) {
   const old = new Set(body(baseText).map((l) => l.trim()));
   const added = body(headText).map((l) => l.trim()).filter((l) => l && !old.has(l));
   const instr = added.find((l) => /^-?\s*owner-instruction:\s*"\s*\S[^"]*\S\s*"/.test(l) && !/"\s*(todo|tbd|none|n\/a|-+)\s*"/i.test(l));
-  const m = added.map((l) => /^-?\s*merge:\s*(?:([a-z][a-z0-9-]*)@)?([0-9a-f]{7,40})\b/.exec(l)).find(Boolean);
+  const m = added.map((l) => /^-?\s*merge:\s*(?:(vitana-v1|vitana-platform)@)?([0-9a-f]{7,40})\b/.exec(l)).find(Boolean);
   return { instruction: !!instr, merge: m ? m[2] : null, mergeRepo: m ? m[1] || null : null };
+}
+
+const APPROVED_STATES = ['approved', 'executing', 'in-review', 'verified', 'done'];
+const LANE_PERM = ['executor', 'seat', 'reviewer_seat', 'paths', 'governance'];
+/**
+ * VTID-05259: was this NEW plan approved by PLAN-SPAR inside this PR, with `lanePath` already part of the approved
+ * plan (present, same permissions, in the tree of the LAST ci-plan-spar commit on handoff.md)? A lane added after
+ * the approval was never sparred.
+ */
+export function laneApprovedInPr(repo, { mergeBase, head, slug, lanePath, commits }) {
+  const hp = `.kiro/specs/${slug}/handoff.md`;
+  if (parseFrontMatter(showFile(repo, mergeBase, hp))) return false; // an existing plan: never re-sparred here
+  if (!APPROVED_STATES.includes(parseFrontMatter(showFile(repo, head, hp))?.state)) return false;
+  const spar = commits.find((x) => x.session === CI_PLAN_SPAR && x.files.includes(hp)); // newest first
+  if (!spar) return false;
+  const at = parseFrontMatter(showFile(repo, spar.sha, lanePath));
+  const now = parseFrontMatter(showFile(repo, head, lanePath));
+  return !!at && !!now && LANE_PERM.every((k) => JSON.stringify(asList(at[k])) === JSON.stringify(asList(now[k])));
 }
 
 export function validateRange(repo, { base, head, branch = '', allowInitial = [], fetchLane = null, verifyMerge = null }) {
@@ -393,13 +411,18 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
       if (after.state === 'done' && !rec.merge) errors.push(`${p}: a governance lane needs a new log line merge: <sha> before done`);
       // The merge must be a commit already on the base branch: a commit of this PR (never merged) does not count. A
       // lane merged in the other repo writes `merge: <repo>@<sha>`, verified there through verifyMerge (fail closed).
+      // The commit must also name the lane (`<slug>/<lane>`, as every lane PR title does), so an unrelated commit on
+      // main does not satisfy it.
       if (after.state === 'done' && rec.merge) {
+        const laneKey = `${c.slug}/${c.lane}`;
         if (rec.mergeRepo && rec.mergeRepo !== repoNameOf(repo)) {
           let ok = false;
-          try { ok = !!(verifyMerge && verifyMerge(rec.mergeRepo, rec.merge)); } catch { ok = false; }
-          if (!ok) errors.push(`${p}: merge: ${rec.mergeRepo}@${rec.merge} could not be verified as a commit on ${rec.mergeRepo} main`);
+          try { ok = !!(verifyMerge && verifyMerge(rec.mergeRepo, rec.merge, laneKey)); } catch { ok = false; }
+          if (!ok) errors.push(`${p}: merge: ${rec.mergeRepo}@${rec.merge} could not be verified as a commit of ${laneKey} on ${rec.mergeRepo} main`);
         } else if (gitOk(repo, ['cat-file', '-e', `${rec.merge}^{commit}`]) === null || gitOk(repo, ['merge-base', '--is-ancestor', rec.merge, base]) === null) {
           errors.push(`${p}: merge: ${rec.merge} is not a commit on the base branch of this repository`);
+        } else if (!(gitOk(repo, ['log', '-1', '--format=%B', rec.merge]) || '').includes(laneKey)) {
+          errors.push(`${p}: merge: ${rec.merge} does not name ${laneKey} in its message`);
         }
       }
     }
@@ -429,10 +452,8 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
         // VTID-05259: a NEW governance lane is born only with a new plan that PLAN-SPAR approves in this same PR, and
         // only from the plan's author seat — never added to an existing (already converged) plan.
         if (parseFrontMatter(showFile(repo, k.sha, f))?.governance === 'true') {
-          const hp = `.kiro/specs/${c.slug}/handoff.md`;
-          const hb = parseFrontMatter(showFile(repo, mergeBase, hp));
-          const hh = parseFrontMatter(showFile(repo, head, hp));
-          const approvedHere = !hb && hh?.state !== 'drafted' && commits.some((x) => x.session === CI_PLAN_SPAR && x.files.includes(hp));
+          const hh = parseFrontMatter(showFile(repo, head, `.kiro/specs/${c.slug}/handoff.md`));
+          const approvedHere = laneApprovedInPr(repo, { mergeBase, head, slug: c.slug, lanePath: f, commits });
           if (!approvedHere || !seatOf(k.session) || seatOf(k.session) !== hh?.author_seat) {
             errors.push(`${short}: creates governance lane ${f} — only the author seat of a new plan, in the plan PR that PLAN-SPAR approves`);
           }
@@ -513,6 +534,9 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null }) 
     if (remote) { fm = parseFrontMatter(remote) || {}; baseFm = null; source = 'vitana-platform'; }
   }
   const newLane = newHere && source === 'this repo';
+  // A lane new in this PR may still be built in its own plan PR (plan + build, e.g. #4184) for non-governance paths,
+  // when PLAN-SPAR approved that new plan here with the lane already in it. Governance paths always wait for main.
+  const newApproved = newLane && laneApprovedInPr(repo, { mergeBase, head, slug, lanePath, commits });
   if (baseFm) {
     const PERM = ['executor', 'seat', 'reviewer_seat', 'paths', 'governance'];
     const changed = PERM.filter((k) => JSON.stringify(asList(baseFm[k])) !== JSON.stringify(asList(fm[k])));
@@ -534,7 +558,7 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null }) 
     for (const f of changed) {
       if (own(f)) continue;
       if (!matchesAny(f, paths)) errors.push(`${f} is outside lane ${key} (paths: ${paths.join(', ')})`);
-      else if (newLane) errors.push(`${f}: lane ${key} is created in this PR, so it grants no paths yet (its plan PR must merge first)`);
+      else if (newLane && (!newApproved || matchesAny(f, GOVERNANCE_PATHS))) errors.push(`${f}: lane ${key} is created in this PR, so it grants ${newApproved ? 'no governance paths' : 'no paths'} yet (its plan must be approved by PLAN-SPAR in this PR, and governance paths wait until it is on main)`);
       else if (fm.governance !== 'true' && matchesAny(f, GOVERNANCE_PATHS)) errors.push(`${f} is a governance path; lane ${key} is not governance: true (executor ${fm.executor || 'unset'}; legacy executor: claude lanes no longer reach governance paths)`);
     }
   }
@@ -597,10 +621,12 @@ export function ghFetcher(repoSlug = 'exafyltd/vitana-platform') {
 
 /** VTID-05259: is `sha` a commit on `repo`'s main (exafyltd/<repo>)? Through the GitHub CLI; throws when unknown. */
 export function ghMergeVerifier(owner = 'exafyltd') {
-  return (repoName, sha) => {
-    const out = execFileSync('gh', ['api', `repos/${owner}/${repoName}/compare/${sha}...main`, '--jq', '.status'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-    return out === 'ahead' || out === 'identical';
+  return (repoName, sha, laneKey) => {
+    const opt = { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] };
+    const status = execFileSync('gh', ['api', `repos/${owner}/${repoName}/compare/${sha}...main`, '--jq', '.status'], opt).trim();
+    if (status !== 'ahead' && status !== 'identical') return false;
+    const msg = execFileSync('gh', ['api', `repos/${owner}/${repoName}/commits/${sha}`, '--jq', '.commit.message'], opt);
+    return !laneKey || msg.includes(laneKey);
   };
 }
 

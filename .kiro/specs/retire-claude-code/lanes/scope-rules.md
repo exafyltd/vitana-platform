@@ -92,3 +92,22 @@ Tests: 39 pass (9 for VTID-05259). The 30 pre-existing tests are unchanged.
   intentional; the PR body states it.
 
 Tests: 40/40.
+
+### 2026-10-20T13:25Z · kiro-exafyltd-202610201041-ab5d · executing (round-3 review fixes)
+`semantic_reviewer` round 3 (changes) found 6 issues. All are fixed; its harness repro3 (P1–P3) is now refused, and
+N1–N6 and A–H stay refused.
+1. New governance lanes: `laneApprovedInPr()` requires the plan to be new, its head state to be `approved` or later
+   (not `sparred` or `parked`), and the lane to be in the tree of the **last** `ci-plan-spar` commit with the same
+   permissions. A lane added after the approval was never sparred, so it is refused.
+2. A plan PR that also builds a lane (#4184 shape) still works for **non-governance** paths, when PLAN-SPAR approved
+   that new plan in the same PR with the lane already in it. Governance paths wait until the lane is on main.
+3. `merge:` accepts only `vitana-v1@` or `vitana-platform@`. The merge commit's message must name the lane key
+   (`<slug>/<lane>`, as every lane PR title does), checked locally and through `gh api` for the other repo.
+4. PR body updated (test count, the contract change to two existing tests).
+
+**Accepted limitation (stated in the plan):** a session can forge `Collab-Session: ci-plan-spar`, as it already could
+for the VTID-05214 exemptions. Seats and trailers are self-declared under one GitHub identity, so the owner's
+explicit per-PR merge instruction stays the boundary for governance changes. The Collab handoff step that runs
+validate is still report-only in PR-GATE; making it count is a PR-GATE (governance) change outside this lane.
+
+Tests: 41/41.

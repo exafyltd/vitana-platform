@@ -663,7 +663,7 @@ test('VTID-05259 validate: a governance lane reaches verified only with a new ow
     const fm = (state) => ({ ...GOV, next_actor: 'kiro', vtid: 'VTID-00002', state });
     write(f.work, '.kiro/specs/cards/handoff.md', planMd({ state: 'executing', sparring_record: 'x.md', vtids: ['VTID-00002'], executor: 'kiro', next_actor: 'kiro' }));
     write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', fm('in-review')));
-    const base = commit(f.work, 'seed', { 'Collab-Session': S2, 'Collab-Lane': 'cards/_plan' });
+    const base = commit(f.work, 'VTID-00002 (cards/a): merged lane', { 'Collab-Session': S2, 'Collab-Lane': 'cards/_plan' });
     sh(f.work, 'push', '-q', 'origin', 'main');
     let n = 0;
     const move = (state, extra, from = base) => {
@@ -768,7 +768,7 @@ test('VTID-05259 round 2: merge must be on base (or verified in the other repo);
     const fm = (state) => ({ ...GOV, next_actor: 'kiro', vtid: 'VTID-00002', state });
     write(f.work, '.kiro/specs/cards/handoff.md', planMd({ state: 'executing', sparring_record: 'x.md', vtids: ['VTID-00002'], executor: 'kiro', next_actor: 'kiro' }));
     write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', fm('verified')));
-    const base = commit(f.work, 'seed', { 'Collab-Session': S2, 'Collab-Lane': 'cards/_plan' });
+    const base = commit(f.work, 'VTID-00002 (cards/a): merged lane', { 'Collab-Session': S2, 'Collab-Lane': 'cards/_plan' });
     sh(f.work, 'push', '-q', 'origin', 'main');
     sh(f.work, 'checkout', '-q', '-b', 'kiro/cards/a');
     write(f.work, '.github/workflows/x.yml', 'noise');
@@ -781,7 +781,17 @@ test('VTID-05259 round 2: merge must be on base (or verified in the other repo);
     };
     assert.ok(done(`- merge: ${own}\n`).some((x) => x.includes('not a commit on the base branch')), 'a commit of the PR itself');
     assert.deepEqual(done(`- merge: ${base}\n`), []);
-    assert.deepEqual(done('- merge: vitana-v1@4f0c2a9e1b7d\n', (r, sha) => r === 'vitana-v1' && sha === '4f0c2a9e1b7d'), []);
+    assert.deepEqual(done('- merge: vitana-v1@4f0c2a9e1b7d\n', (r, sha, key) => r === 'vitana-v1' && sha === '4f0c2a9e1b7d' && key === 'cards/a'), []);
+    assert.ok(done('- merge: some-other-repo@4f0c2a9e1b7d\n', () => true).some((x) => x.includes('merge: <sha>')), 'only vitana-v1 / vitana-platform');
+    // an unrelated commit on main does not count: the merge commit names the lane
+    sh(f.work, 'checkout', '-q', 'main');
+    write(f.work, 'README.md', 'other');
+    const unrelated = commit(f.work, 'VTID-00009 (other/x): something else');
+    sh(f.work, 'push', '-q', 'origin', 'main');
+    sh(f.work, 'checkout', '-q', '-B', 'kiro/cards/a', own);
+    write(f.work, '.kiro/specs/cards/lanes/a.md', `${laneMd('a', fm('done'))}- merge: ${unrelated}\n`);
+    const hu = commit(f.work, 'done', { 'Collab-Session': EX2, 'Collab-Lane': 'cards/a' });
+    assert.ok(validateRange(f.work, { base: unrelated, head: hu }).errors.some((x) => x.includes('does not name cards/a')));
     assert.ok(done('- merge: vitana-v1@4f0c2a9e1b7d\n', () => false).some((x) => x.includes('could not be verified')));
     assert.ok(done('- merge: vitana-v1@4f0c2a9e1b7d\n', () => { throw new Error('gh down'); }).some((x) => x.includes('could not be verified')), 'fail closed');
     assert.ok(done('- merge: vitana-v1@4f0c2a9e1b7d\n', null).some((x) => x.includes('could not be verified')), 'no verifier = fail closed');
@@ -816,4 +826,46 @@ test('VTID-05259 round 2: merge must be on base (or verified in the other repo);
     assert.ok(mk(JT).after.some((x) => x.includes('creates governance lane')), 'not the author seat');
     assert.ok(mk(S1).after.some((x) => x.includes('creates governance lane')), 'unseated');
   } finally { n.done(); }
+});
+
+test('VTID-05259 round 3: governance lanes only inside the approved plan; plan+build PRs keep non-governance paths', () => {
+  const EX2 = 'kiro-exafyltd-202610201041-ab5d';
+  const GOVE = { ...GOV, next_actor: 'kiro' };
+  const run = (steps) => {
+    const n = fixture();
+    try {
+      const base = sh(n.work, 'rev-parse', 'HEAD');
+      sh(n.work, 'checkout', '-q', '-b', 'kiro/new/plan');
+      let h = base;
+      for (const st of steps) { for (const [p, t] of Object.entries(st.files)) write(n.work, p, t); h = commit(n.work, 'step', st.trailers); }
+      return { v: validateRange(n.work, { base, head: h }).errors, s: scopeCheck(n.work, { base, head: h }) };
+    } finally { n.done(); }
+  };
+  const H = '.kiro/specs/new/handoff.md';
+  const plan = (o = {}) => planMd({ slug: 'new', author_seat: 'exafyltd', ...o });
+  const approved = plan({ state: 'approved', sparring_record: 'x.md', vtids: ['VTID-09001'], next_actor: 'kiro' });
+  const author = { 'Collab-Session': EX2, 'Collab-Lane': 'new/_plan' };
+  const spar = { 'Collab-Session': 'ci-plan-spar', 'Collab-Lane': 'new/_plan' };
+  // P1: approval state must be approved or later (sparred is not)
+  const p1 = run([{ files: { [H]: plan(), '.kiro/specs/new/lanes/g.md': laneMd('g', GOVE) }, trailers: author },
+    { files: { [H]: plan({ state: 'sparred', sparring_record: 'x.md' }) }, trailers: spar }]);
+  assert.ok(p1.v.some((x) => x.includes('creates governance lane')), 'sparred is not approved');
+  // P2: a governance lane added after the approval commit was never sparred
+  const p2 = run([{ files: { [H]: plan(), '.kiro/specs/new/lanes/a.md': laneMd('a', { ...LANE, seat: 'exafyltd', reviewer_seat: 'jtadic', next_actor: 'kiro' }) }, trailers: author },
+    { files: { [H]: approved }, trailers: spar },
+    { files: { '.kiro/specs/new/lanes/g.md': laneMd('g', GOVE) }, trailers: author }]);
+  assert.ok(p2.v.some((x) => x.includes('creates governance lane')), 'added after approval');
+  // plan + build in one PR: non-governance paths of an approved new lane are fine; governance paths wait for main
+  const L2 = { executor: 'kiro', seat: 'exafyltd', reviewer_seat: 'jtadic', paths: ['src/**'], next_actor: 'kiro', vtid: 'VTID-09001' };
+  const pb = run([{ files: { [H]: plan(), '.kiro/specs/new/lanes/b.md': laneMd('b', { ...L2, vtid: undefined }).replace('vtid: undefined\n', '') }, trailers: author },
+    { files: { [H]: approved, '.kiro/specs/new/lanes/b.md': laneMd('b', L2) }, trailers: spar },
+    { files: { 'src/x.ts': 'x' }, trailers: { 'Collab-Session': EX2, 'Collab-Lane': 'new/b' } }]);
+  assert.deepEqual(pb.s.errors, [], pb.s.errors.join('\n'));
+  const pbNo = run([{ files: { [H]: plan(), '.kiro/specs/new/lanes/b.md': laneMd('b', L2) }, trailers: author },
+    { files: { 'src/x.ts': 'x' }, trailers: { 'Collab-Session': EX2, 'Collab-Lane': 'new/b' } }]);
+  assert.ok(pbNo.s.errors.some((x) => x.includes('grants no paths yet')), 'not approved by PLAN-SPAR');
+  const pbGov = run([{ files: { [H]: plan(), '.kiro/specs/new/lanes/g.md': laneMd('g', GOVE) }, trailers: author },
+    { files: { [H]: approved, '.kiro/specs/new/lanes/g.md': laneMd('g', { ...GOVE, vtid: 'VTID-09001' }) }, trailers: spar },
+    { files: { '.github/workflows/x.yml': 'x' }, trailers: { 'Collab-Session': EX2, 'Collab-Lane': 'new/g' } }]);
+  assert.ok(pbGov.s.errors.some((x) => x.includes('no governance paths')), 'governance waits for main');
 });
