@@ -47,8 +47,14 @@ Change class: **governance** (rule text and the seat automations only). Pinned: 
 ## Change — new §7d "Kiro is the primary executor" (both repos), and the texts that point at it
 
 ### A. Standing authority
-The owner's instruction to start a workstream (or a plan's policy approval `converged-auto-v1`, or a Gate 1 "yes") is
-the standing instruction for every routine step of that workstream's lanes. A Kiro session carries them without
+**Activation (R1-F1).** §7d is not activated by this plan's policy approval. It takes effect only when the owner
+answers this plan's Gate 1 with an explicit "yes", including the B.4 scope choice (interactive and automation runs,
+or interactive only). The answer is recorded verbatim with the date in `handoff.md` and
+`docs/validation/<VTID>/plan-sparring.md`, and each lane then needs the owner's per-PR merge instruction (governance).
+Until both lanes are merged, §7b applies unchanged.
+
+Once active: the owner's instruction to start a workstream, a plan's policy approval `converged-auto-v1`, or a Gate 1
+"yes" is the standing instruction for every routine step of that workstream's lanes. A Kiro session carries them without
 asking, in this order:
 plan → PLAN-SPAR → VTID → build → reviewer-seat review → fix-forward → `verified` → merge → owner-approved migrations
 → staging deploy + STAGING-VERIFY → the next dependent lane → `done` → Gate 2.
@@ -64,10 +70,12 @@ no longer written by Kiro, except for the legacy `executor: claude` lanes until 
      `plan-spar-retry-invalid` (VTID-05262).
    - If it is still escalated after those retries, the plan stays `drafted` on the board, the session reports it and
      moves to other work. This is never an owner question.
-2. **VTID.** PLAN-SPAR allocates on convergence, as today. When a plan is converged and policy-approved, or
-   owner-approved at Gate 1, and a lane still has no VTID, the session allocates it through the gateway
-   (`POST /api/v1/vtid/allocate`) citing the sparring record. The `vtid_ledger` trigger still refuses any VTID without
-   a converged, approved record. No VTID ever comes from `execute_sql`.
+2. **VTID (R1-F5).** PLAN-SPAR allocates on convergence, as today. A lane executor never allocates. When a plan is
+   converged and policy-approved, or owner-approved at Gate 1, and a lane still has no VTID, the **coordinator** fixes
+   it: the session holding that plan's `_plan` claim, which must be a session of the plan's `author_seat`. It
+   allocates through the gateway (`POST /api/v1/vtid/allocate`) citing the sparring record and plan hash, and writes
+   the VTID in a `_plan` commit. The `vtid_ledger` trigger still refuses any VTID without a converged, approved record
+   with a matching hash. No VTID ever comes from `execute_sql`.
 3. **Verified.** The session holding the lane claim sets `verified` from an `approve` entry by the lane's
    `reviewer_seat` on the PR's current head. Self-review stays forbidden. The reviewer seat's automation picks up the
    review, so waiting for it is not a hand-back: the session works other lanes meanwhile.
@@ -77,8 +85,23 @@ no longer written by Kiro, except for the legacy `executor: claude` lanes until 
    - every check on the head is green, incl. Lane scope and Collab handoff;
    - no merge conflict;
    - every `depends_on` lane is `done`;
-   - the merge deploys to staging only;
-   - the lane is not `governance: true`.
+   - the PR targets `main` of `exafyltd/vitana-platform` or `exafyltd/vitana-v1`;
+   - the lane is not `governance: true`, and the diff touches no governance path;
+   - the staging-only check below passes.
+
+   **Staging-only check (R1-F2), mechanical, before every merge.**
+   1. The session lists every workflow on the target repo's `main` that runs on `push` to `main` and whose `paths`
+      filter (or no filter) matches the PR's changed files.
+   2. Each listed workflow must be one of:
+      - (a) staging or verification: `AWS-STAGE-*`, `STAGING-VERIFY*`, preview, test, lint or CI workflows that
+        deploy nothing;
+      - (b) a production workflow whose push path is frozen by its `cutover_gate`: platform `AUTO-DEPLOY.yml`;
+        vitana-v1 `DEPLOY.yml` and `supabase-functions-deploy.yml`. Freezing is time-based since 2026-06-08; the
+        session reads the gate's logic on `main` and confirms it still freezes the push path.
+   3. Any other deploying workflow is not staging-only, and the merge is a §D.1 stop. An example is
+      `DEPLOY-CLOUDFLARE-WORKERS.yml`, which deploys live Workers on a push touching `cloudflare/**` with no freeze.
+      So is a production workflow whose freeze is gone.
+   4. The list is recorded as a `deploys:` line in the lane log before the merge.
 
    On merge the session appends `merge: <sha>` and `authority: §7d standing` to the lane log.
 
@@ -88,15 +111,25 @@ no longer written by Kiro, except for the legacy `executor: claude` lanes until 
 5. **Staging.**
    - Kiro may dispatch or re-run staging and verification workflows only: `AWS-STAGE-*`, `STAGING-VERIFY*`, preview
      and PR CI re-runs.
+   - Never dispatched by Kiro outside Gate 2: `AUTO-DEPLOY.yml`, vitana-v1 `DEPLOY.yml`,
+     `supabase-functions-deploy.yml`, `DEPLOY-CLOUDFLARE-WORKERS.yml`, `AWS-PROD-*` and PUBLISH. A manual dispatch of
+     these deploys production.
    - It watches the deploy and STAGING-VERIFY for its merge commit and fixes forward.
    - Then it writes the Gate 2 message to the plan's handoff log (`gate2: ready`) and gives it to the owner — in the
      same reply if interactive, otherwise in the next interactive session's first reply.
-6. **Migrations, owner-approved only.**
-   - Kiro dispatches `RUN-MIGRATION.yml` (target from `MIGRATION_TARGET`) for a migration file only when the owner has
-     explicitly approved that file in the conversation, or approved a plan or Gate 1 message that lists it by path.
-     The session records `migration-approval: "<owner's words>" (<date>) <path> sha256:<hash>` in the lane log
-     before the dispatch.
+6. **Migrations, owner-approved only (R1-F3).**
+   - **Every `RUN-MIGRATION.yml` apply is a production database write.** Its targets are the production Supabase
+     project (default, `MIGRATION_TARGET` unset) or Aurora, and staging shares that project. So approving a migration
+     is the §D.2 owner decision itself: the approval is the owner's "yes" to that production write. No other
+     production approval is implied or needed for it, and no other production write is covered by it.
+   - Kiro dispatches `RUN-MIGRATION.yml` for a migration file only when the owner has explicitly approved that file
+     **and its target database** in the conversation, or approved a plan or Gate 1 message that lists both by path
+     and target.
+   - The session records `migration-approval: "<owner's words>" (<date>) <path> sha256:<hash> target:<supabase|aurora>`
+     in the lane log before the dispatch.
    - Required:
+     - the target resolved at dispatch, read from the `target` input or the repo variable `MIGRATION_TARGET`, equals
+       the approved target, and the dispatch passes `target` explicitly (never `default`);
      - the file's hash at dispatch equals the recorded hash;
      - the lane's `docs/validation/<VTID>/` has the rollback file and the read-only pre/post checks;
      - `MIGRATION_FREEZE` is not set;
@@ -159,11 +192,12 @@ Never asked: CI failures, test fixes, plan corrections, documentation, lane tran
 non-destructive staging work, merge sequencing, implementation details, VTIDs, branch names, PR titles, re-runs.
 
 ### Files (lane `rules-platform-autonomy`, vitana-platform)
-1. `.claude/rules/collaboration.md`:
-   - new §7d (A–D above);
-   - §7 and §7a point at it;
-   - §7b stays for governance lanes and as the record format;
-   - §8 says automations may merge under B.4.
+1. `.claude/rules/collaboration.md` (R1-F4), relative to the text `retire-claude-code` leaves on `main`:
+   - new §7d (A–D above), inserted directly after §7c;
+   - §7c is kept byte for byte;
+   - §7, §7a and §7b keep their text, and each only gains one pointer sentence to §7d (§7b stays the rule for
+     governance lanes and the record format);
+   - §8 gains one sentence saying automations may merge under B.4 if the owner chose that scope.
 2. `CLAUDE.md`:
    - the Autonomy contract's "Stop and ask mid-flight only for" becomes the §D list plus the five-part format;
    - the collaboration roles paragraph names §7d.
@@ -185,9 +219,11 @@ files, `docs/validation/<VTID>/`. vitana-v1 has no `.kiro/automations/`.
 
 ### Order and bootstrap
 - Both lanes are `governance: true`. They need `retire-claude-code/scope-rules` (#4210) on `main`; until then
-  `queue.mjs` refuses Kiro governance lanes. They are built after `retire-claude-code/rules-platform` and `rules-v1`
-  are merged, so the two plans never edit the same text at once. §7d is written on top of their §7/§7c text.
-  This ordering is stated here because `depends_on` is per spec.
+  `queue.mjs` refuses Kiro governance lanes.
+- Hard prerequisite (R1-F4): `retire-claude-code/rules-platform` and `rules-v1` are `done` (merged) and their merge
+  commits' checks are green before either lane here is claimed. The builder branches from that `main`, so the two
+  plans never edit the same text at once.
+- This ordering is stated here because `depends_on` is per spec.
 - This plan PR flags both lanes in Collab handoff on today's `main` for the same reason. That is the known bootstrap
   false positive described in `retire-claude-code` plan "Bootstrap". It is not a required check (`main` requires only
   `validate`).
@@ -209,10 +245,18 @@ files, `docs/validation/<VTID>/`. vitana-v1 has no `.kiro/automations/`.
 - `queue.mjs validate` green on both lane PRs (after #4210).
 - `node scripts/ci/kiro-steering/guard.cjs` green.
 - `collaboration.md` sha256 identical across the repos.
-- A grep proves:
-  - no remaining text tells Kiro to hand a routine step to Claude Code;
-  - no text permits a production dispatch outside Gate 2;
-  - no text permits a session-tool write to a live system.
+- **Structure check (R1-F4):**
+  - `collaboration.md` contains the headings §7, §7a, §7b, §7c and §7d, in that order;
+  - `git diff <base> -- .claude/rules/collaboration.md` shows no removed line inside §7c;
+  - the diff only adds §7d and the pointer sentences.
+- **Scoped grep (R1-F6),** over the files the lanes change:
+  - none of these patterns remains:
+    - `stop and go to step 9 with \`next_actor: claude\``;
+    - `(or, until it runs, Claude Code) merges`;
+    - `Claude Code (later the Project Manager) sets \`verified\``;
+    - `Blocked → a log entry and \`next_actor: claude\``;
+  - every remaining `next_actor: claude` occurrence is in a sentence about legacy `executor: claude` lanes;
+  - no added line permits dispatching the B.5 production workflows, or a session-tool live write.
 - Change suites: `existing` entries for these checks. No staging surface changes, so no browser suite.
 
 ## Lanes
@@ -230,7 +274,10 @@ files, `docs/validation/<VTID>/`. vitana-v1 has no `.kiro/automations/`.
   - automatic rollback on production post-deploy checks is unchanged.
 
   All seats share one GitHub identity, so "another seat" is self-declared (as stated in `retire-claude-code`). The
-  owner may narrow B.4 to interactive sessions only. That is the one alternative offered at Gate 1.
+  owner may narrow B.4 to interactive sessions only. That is the one alternative offered at Gate 1, and the owner's
+  answer is part of activation (§A).
+- **A merge that deploys production by path** (e.g. `cloudflare/**`) is caught by the B.4 staging-only check and
+  becomes a §D.1 stop.
 - **Migrations are production writes.** Bounded by the per-file owner approval with a hash, interactive sessions only,
   rollback + checks in the evidence pack, and `MIGRATION_FREEZE`.
 - **More merges, faster.** STAGING-VERIFY stays the gate to Gate 2. A red STAGING-VERIFY blocks the next merge on the
