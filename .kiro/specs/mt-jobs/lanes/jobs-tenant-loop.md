@@ -1,7 +1,7 @@
 ---
 lane: jobs-tenant-loop
 state: ready
-next_actor: owner
+next_actor: kiro
 depends_on: []
 executor: kiro
 seat: jtadic
@@ -16,7 +16,8 @@ paths:
   - services/gateway/src/services/automation-executor.ts
   - services/gateway/test/
   - docs/validation/
-updated: 2026-10-15T16:40Z
+updated: 2026-10-20T17:43Z
+vtid: VTID-05270
 ---
 # jobs-tenant-loop — shared mt-flags + active-tenant loop (repo vitana-platform)
 
@@ -59,3 +60,6 @@ lane claims them).
 R2-F1: `lastHeartbeatRun` (`automation-executor.ts:386`) re-keyed per tenant so the multi-tenant heartbeat tick runs
 every tenant's due automations. `paths` + `services/automation-executor.ts` (no other lane claims it). R2-F2: the
 shared `resolveActorTenant({ tenantId, userId })` + `jwtSubject(token)` helpers take the per-site actor.
+
+### 2026-10-20T17:43Z · ci-plan-spar · ready (VTID allocated)
+VTID-05270 allocated after policy approval (converged-auto-v1).

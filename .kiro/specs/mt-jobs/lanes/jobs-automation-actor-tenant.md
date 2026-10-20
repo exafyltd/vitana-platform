@@ -1,7 +1,7 @@
 ---
 lane: jobs-automation-actor-tenant
 state: ready
-next_actor: owner
+next_actor: kiro
 depends_on: [jobs-tenant-loop]
 executor: kiro
 seat: jtadic
@@ -14,7 +14,8 @@ paths:
   - services/gateway/src/services/orb-tools/groups-events-tools.ts
   - services/gateway/test/
   - docs/validation/
-updated: 2026-10-15T16:40Z
+updated: 2026-10-20T17:43Z
+vtid: VTID-05267
 ---
 # jobs-automation-actor-tenant — automation events carry the actor's real tenant (repo vitana-platform)
 
@@ -51,3 +52,6 @@ it instead of reading `user_tenants` directly.
 R2-F2: actor per site — `req.identity` only at `community.ts:382`; the bearer token `sub` (after the user-scoped call
 succeeded) at `community.ts:274/482`, `match-feedback.ts:280`, `matchmaking.ts:576`; the new user `auth_user_id` at the
 public `/log-result` (`admin-signups.ts:205`); the ORB tool identity at `groups-events-tools.ts:360`.
+
+### 2026-10-20T17:43Z · ci-plan-spar · ready (VTID allocated)
+VTID-05267 allocated after policy approval (converged-auto-v1).

@@ -1,7 +1,7 @@
 ---
 lane: jobs-community-scan-tenant
 state: ready
-next_actor: owner
+next_actor: kiro
 depends_on: [jobs-tenant-loop]
 executor: kiro
 seat: jtadic
@@ -12,7 +12,8 @@ paths:
   - services/gateway/src/services/memory-embedding-backfill-loop.ts
   - services/gateway/test/
   - docs/validation/
-updated: 2026-10-15T16:40Z
+updated: 2026-10-20T17:43Z
+vtid: VTID-05268
 ---
 # jobs-community-scan-tenant — community scan & memory backfill per active tenant (repo vitana-platform)
 
@@ -46,3 +47,6 @@ Added the OASIS aggregation decision: the per-call emit at autopilot-recommendat
 ### 2026-10-20T17:30Z · kiro-hotmail-202610151618-b437 · spar session 2 round 1 (76c3c99c) — no path change
 R1-F3/F4: a tenant pass scans members by primary membership in that tenant (each member once); the one event per tick
 keeps today's six top-level payload fields (backward-compatible) and adds `per_tenant`.
+
+### 2026-10-20T17:43Z · ci-plan-spar · ready (VTID allocated)
+VTID-05268 allocated after policy approval (converged-auto-v1).

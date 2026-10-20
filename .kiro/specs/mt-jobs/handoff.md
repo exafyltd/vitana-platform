@@ -3,9 +3,11 @@ slug: mt-jobs
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: claude
-state: drafted
-updated: 2026-10-18T20:36Z
+next_actor: kiro
+state: approved
+updated: 2026-10-20T17:43Z
+sparring_record: .kiro/specs/mt-jobs/sparring/verdict.md
+vtids: [VTID-05267, VTID-05268, VTID-05269, VTID-05270]
 ---
 # Handoff — mt-jobs (WS6: jobs & events loop over active tenants)
 
@@ -75,3 +77,6 @@ The sparring partner could not review (model_unavailable). Not a plan problem: C
 
 ### 2026-10-18T20:36Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-20T17:43Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 4 lane(s) got a VTID and are handed to Kiro.
