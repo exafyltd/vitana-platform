@@ -5,7 +5,7 @@ executor: kiro
 next_actor: kiro
 state: approved
 author_seat: exafyltd
-updated: 2026-10-20T10:51Z
+updated: 2026-10-20T10:58Z
 sparring_record: .kiro/specs/retire-claude-code/sparring/verdict.md
 vtids: [VTID-05255, VTID-05256, VTID-05257, VTID-05258, VTID-05259]
 ---
@@ -26,3 +26,13 @@ Next: PLAN-SPAR spars this PR; this session (seat exafyltd) answers each round i
 
 ### 2026-10-20T10:51Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 5 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-10-20T10:58Z · kiro-exafyltd-202610201041-ab5d · approved (PLAN-SPAR converged, round 2)
+Policy approval `converged-auto-v1`; VTIDs written to the lanes by CI. Round 2 left one minor finding (R2-F1), handled in
+lane `ci-runner-v1` without reopening the plan, as the narrower, conservative reading:
+- `vitana-v1/.github/workflows/STAGING-TESTS-REQUIRED.yml` runs `run.mjs check-pr` only and never a browser, so it is
+  left unpinned;
+- the pin test matches any `playwright` install/test invocation (incl. `npx -y`/`bunx`) and `run.mjs verify` by
+  regex, not literal strings.
+
+Next: the owner's explicit merge instruction for this plan PR (bootstrap merge 1). Then lane `scope-rules`.
