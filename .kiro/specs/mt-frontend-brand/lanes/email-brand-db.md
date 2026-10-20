@@ -1,7 +1,8 @@
 ---
 lane: email-brand-db
-state: ready
+state: in-review
 next_actor: kiro
+pr: https://github.com/exafyltd/vitana-v1/pull/1464
 depends_on: []
 executor: kiro
 seat: hotmail
@@ -10,7 +11,7 @@ paths:
   - supabase/migrations/20261101090000_vtid_05245_tenant_email_branding.sql
   - docs/validation/VTID-05245/**
   - docs/multitenancy/MIGRATION-QUEUE.md
-updated: 2026-10-20T08:43Z
+updated: 2026-10-20T08:46Z
 vtid: VTID-05245
 ---
 # email-brand-db — tenant-keyed email branding helper (repo vitana-v1, DB)
@@ -47,3 +48,6 @@ VTID-05245 allocated after policy approval (converged-auto-v1).
 `docs/validation/<vtid>/` (rollback.sql, pre/post-check SQL, scope.json). `MIGRATION-QUEUE.md`
 does not exist in vitana-v1; the program's single queue is in vitana-platform, so row 9 ships as a
 separate platform PR: https://github.com/exafyltd/vitana-platform/pull/4204
+### 2026-10-20T08:46Z · kiro-hotmail-202610151618-b437 · ready → in-review
+Migration `20261101090000_vtid_05245_tenant_email_branding.sql` + rollback/pre/post-check/scope.json shipped
+(not applied), PR https://github.com/exafyltd/vitana-v1/pull/1464 opened; awaiting review by seat exafyltd.
