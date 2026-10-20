@@ -1,6 +1,6 @@
 ---
 lane: exceptions-seat
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: claude
@@ -18,7 +18,10 @@ paths:
   - docs/programs/areas.yaml
   - .kiro/pipeline/driver.md
   - docs/validation/VTID-*/**
-updated: 2026-10-20T17:49Z
+claimed_by: kiro-exafy-202610201807-2a87
+branch: kiro/kiro-autonomy-fallback/exceptions-seat
+pr: https://github.com/exafyltd/vitana-platform/pull/4228
+updated: 2026-10-20T18:36Z
 vtid: VTID-05271
 ---
 # exceptions-seat — Claude Routine jobs to seat exafyltd, automations as driver wake-ups, Kiro Web driver
@@ -39,3 +42,12 @@ Next: PLAN-SPAR; once `vtid:` is set, seat exafy claims it.
 
 ### 2026-10-20T17:49Z · ci-plan-spar · ready (VTID allocated)
 VTID-05271 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-20T18:36Z · kiro-exafy-202610201807-2a87 · ready → executing
+Claimed (`collab-claim/kiro-autonomy-fallback/exceptions-seat` 5ccb96323). Owner instruction 2026-10-20: "no more
+approvals, you run it end to end" — §7b owner-directed merge instruction for plan kiro-autonomy-fallback (plan §6);
+bootstrap `executor: claude`, built by Kiro seat exafy. Built E1–E5: automation files (exceptions seat E1–E6, wake-up
+W, order lines, re-run allowlist, cron `0 * * * *`), `areas.yaml` `exceptions_seat: exafyltd`, Routine retired header,
+`.kiro/pipeline/driver.md`, `scripts/collab/automations.test.mjs` (red on base 8/9 fail, green 9/9). PR #4228, review by
+agent:vitana-lane-reviewer (claude-sonnet-5.5). State stays `executing` in this PR (`queue.mjs validate` allows only
+ready → executing against base; precedent #4210). Evidence: `docs/validation/VTID-05271/`. Next: the reviewer agent.
