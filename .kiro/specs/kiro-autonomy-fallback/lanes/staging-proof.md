@@ -1,6 +1,6 @@
 ---
 lane: staging-proof
-state: ready
+state: executing
 next_actor: kiro
 depends_on: [steering-rules, plan-spar-allocation, pm-fallback, scope-check, exceptions-seat, reviewer-agent, pipeline-speed]
 executor: kiro
@@ -12,8 +12,10 @@ repos: [exafyltd/vitana-platform]
 paths:
   - services/gateway/test/kiro-autonomy-fallback-proof.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-20T17:49Z
+updated: 2026-10-20T21:10Z
 vtid: VTID-05277
+claimed_by: kiro-exafyltd-202610201618-c018
+branch: kiro/kiro-autonomy-fallback/staging-proof
 ---
 # staging-proof — the pipeline proven on staging in fallback mode with zero Claude Code actions
 Plan: `.kiro/specs/kiro-autonomy-fallback/plan.md` §4.6, §4.9 and §5 F, and the `staging-proof` section of `tasks.md`
@@ -33,3 +35,22 @@ Lane created with the plan. Next: PLAN-SPAR; once `vtid:` is set and all other l
 
 ### 2026-10-20T17:49Z · ci-plan-spar · ready (VTID allocated)
 VTID-05277 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-20T21:10Z · kiro-exafyltd-202610201618-c018 · ready → executing (claimed, built)
+Claimed (claim commit e794d5641) under the owner instruction 2026-10-20 ("no more approvals, you run it end to end",
+§7b named set of plan kiro-autonomy-fallback). Built F2 `services/gateway/test/kiro-autonomy-fallback-proof.test.ts`
+(13 tests; red on plan base e6ed415a9: 12 failed / 1 passed; green on head: 13/13) and F3
+`docs/validation/VTID-05277/staging-tests.json` (/alive, /mode expect `kiro_fallback`, /status 401 probe, existing
+jest; validateManifest ok). typecheck and build green.
+F1 precondition: the other seven lanes are on main; pm-fallback deployed to staging (AWS-STAGE-DEPLOY-GATEWAY
+39492705377 on 8e7d44a81, build-info confirms); repo variable CLAUDE_AVAILABLE=false set 21:00:47Z; staging /status
+read once per tick (read-only, service token): mode live, last_lease acquired.
+**PM does not observe the flag:** two ticks after the variable was set (21:02:35Z, 21:04:37Z) /status still reports
+claude {available: true} and /mode `claude_primary`. Cause (code read, not changed — outside this lane):
+`GithubRestReader.variable()` (observe-live.ts) returns null on a non-200 (most likely the staging GitHub token cannot
+read Actions variables; not verified) instead of throwing, so `observeClaude` never reaches its env fallback, and `CLAUDE_AVAILABLE` is not
+pinned in the staging task definition. Needed fix-forward (pm-fallback paths): treat a non-200 variable read as
+unknown → env fallback, and give the PM token Actions-variables read or pin `CLAUDE_AVAILABLE` at stage deploy. Until
+then the `/mode` staging test fails loudly; it is kept as the plan states it, not loosened.
+Decisions taken: red recorded against the plan base (origin/main already carries pm-fallback, so the proof test is
+green on origin/main by design).
