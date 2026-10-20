@@ -98,7 +98,7 @@ the Bedrock-unconfigured rule at line 756); the single-Supabase fact is the form
 | `fixture-gateway` | kiro / exafyltd → hotmail | `tools/fixture-gateway/**`, `tests/fixture-gateway/**` (vitana-v1 repo root) | — | kiro |
 | `deep-link-push-smoke` | kiro / exafyltd → hotmail | `apps/mobile/tests/g1-smoke/**`, `apps/mobile/src/push/g1-test-provider.ts` | env-profiles, fixture-gateway | kiro |
 | `real-g1-switch` | kiro / exafyltd → hotmail | `apps/mobile/env/test-g1.g1.example.json`, `docs/validation/g1/**` | deep-link-push-smoke | **owner** |
-| `spar-vitana-v1-ref` | **claude** / — → claude | `vitana-platform:.github/workflows/PLAN-SPAR.yml`, `vitana-platform:scripts/collab/plan-spar.mjs` | — | **claude** |
+| `spar-vitana-v1-ref` | **claude** / — → claude | `vitana-platform:.github/workflows/PLAN-SPAR.yml`, `vitana-platform:scripts/collab/plan-spar.mjs`, `vitana-platform:scripts/collab/plan-spar.test.mjs` | — | **done** (PR #4201, merged `fa73aabd0`) |
 
 **`spar-vitana-v1-ref` (R1-F1/R1-F2) — STILL PENDING, gates convergence.** Correction (verified in code,
 not assumed): `extra_refs` appears **0 times** in `scripts/collab/plan-spar.mjs` on `origin/main`, so the
