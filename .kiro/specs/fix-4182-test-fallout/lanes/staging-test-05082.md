@@ -1,6 +1,6 @@
 ---
 lane: staging-test-05082
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -9,8 +9,11 @@ reviewer_seat: exafyltd
 paths:
   - docs/validation/VTID-05082/staging-tests.json
   - docs/validation/**
-updated: 2026-10-20T17:15Z
+updated: 2026-10-20T23:30Z
 vtid: VTID-05266
+claimed_by: kiro-hotmail-202610151618-b437
+branch: kiro/fix-4182-test-fallout/staging-test-05082
+pr: https://github.com/exafyltd/vitana-platform/pull/4223
 ---
 # staging-test-05082 — point the VTID-05082 staging suite at svg-preview.js (repo vitana-platform)
 Plan: `.kiro/specs/fix-4182-test-fallout/plan.md` and the `staging-test-05082` section of `tasks.md`
@@ -30,3 +33,5 @@ and this check fails every gateway STAGING-VERIFY (run 39456004226). Reviewer se
 
 ### 2026-10-20T17:15Z · ci-plan-spar · ready (VTID allocated)
 VTID-05266 allocated after policy approval (converged-auto-v1).
+### 2026-10-20T23:30Z · kiro-hotmail-202610151618-b437 · ready → executing
+Pipeline run wf_51b9f6f561a73c5d, slot 2. Claim held by this session. Tasks A1–A4 and A6 done in `f89f77bae` (VTID-05082 test #3 and `note` retargeted to `svg-preview.js`; VTID-05266 evidence pack). Merged `origin/main` (spec #4222 now on main) so Lane scope reads the merged lane file; local `queue.mjs scope-check` and `validate` pass. PR https://github.com/exafyltd/vitana-platform/pull/4223. Next: agent:vitana-lane-reviewer review on the current head; merge before `jest-05077-cachebuster`.
