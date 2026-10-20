@@ -3,9 +3,9 @@ slug: gateway-test-cachebust
 author: kiro
 author_seat: exafyltd
 executor: kiro
-next_actor: kiro
+next_actor: claude
 state: drafted
-updated: 2026-10-20T10:25Z
+updated: 2026-10-20T10:37Z
 ---
 # Handoff — gateway-test-cachebust
 
@@ -17,3 +17,6 @@ tag and missed this test. Plan: `plan.md`. Lane: `fix-pin` (seat exafy, reviewer
 ### 2026-10-20T10:25Z · kiro-exafyltd-202610201024-84c9 · drafted
 Owner instruction 2026-10-20: everything by Kiro end to end. Found while reviewing #4198 (VTID-05238), whose gateway
 Jest checks inherit this red from `main`. Pushed as a `plan(` PR for PLAN-SPAR. No VTID, no product code.
+
+### 2026-10-20T10:37Z · ci-plan-spar · escalated (partner unavailable)
+The sparring partner could not review (partner_output_invalid). Not a plan problem: Claude Code looks at the partner, then re-runs.
