@@ -1,18 +1,18 @@
 ---
 lane: p2-registry
-state: executing
-next_actor: kiro
+state: parked
+next_actor: claude
 vtid: VTID-05215
 executor: kiro
 seat: exafyltd
 reviewer_seat: jtadic
-claimed_by: kiro-202610151913-51bd
 branch: kiro/pm-agent/p2-registry
 pr: https://github.com/exafyltd/vitana-platform/pull/4149
 depends_on: [p0-lane-scope]
 paths:
   - docs/programs/*/program.md
-updated: 2026-10-15T22:53Z
+updated: 2026-10-20T20:43Z
+parked_from: executing
 ---
 # P2 — programme registry content (VTID-05215)
 
@@ -36,3 +36,5 @@ already allows the lane's own spec folder and `docs/validation/VTID-05215/`, and
 Implementation approved; branch pushed and PR opened. Reviewer seat `jtadic` picks it up (`next_actor: kiro`).
 `in-review` is not reachable from `ready` in one PR (`LANE_EDGES`: ready → executing only), so the lane records
 `executing` here; the reviewer moves it to `in-review`. Pushed `3ab9f4f21` (ls-remote verified); PR #4149.
+### 2026-10-20T20:43Z · pm-agent · executing → parked
+park (stale_claim); claim released
