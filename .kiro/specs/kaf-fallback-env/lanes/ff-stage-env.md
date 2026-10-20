@@ -1,0 +1,29 @@
+---
+lane: ff-stage-env
+state: ready
+next_actor: kiro
+depends_on: []
+executor: kiro
+seat: exafyltd
+reviewer_seat: agent:vitana-lane-reviewer
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+repos: [exafyltd/vitana-platform]
+paths:
+  - .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
+  - services/gateway/test/kaf-staging-claude-available-wiring.test.ts
+  - docs/validation/VTID-*/**
+updated: 2026-10-20T23:20Z
+branch: kiro/kaf-fallback-env/ff-stage-env
+---
+# ff-stage-env — `CLAUDE_AVAILABLE` from the repo variable into the staging task definition
+Plan: `.kiro/specs/kaf-fallback-env/plan.md` §3 and §5 A, and the `ff-stage-env` section of `tasks.md`, are
+authoritative. VTID: assigned by CI after PLAN-SPAR converges; do not start before `vtid:` is set here. Repo
+vitana-platform. **Deploys** (staging task definition): ships `docs/validation/<VTID>/staging-tests.json`; done when
+STAGING-VERIFY passed on its merge commit. Governance path (`.github/**`), not a protected gate file: merges on the
+reviewer agent's accept on the current head + every check green; the PM refuses workflow files, so the land step merges
+it (owner instruction 2026-10-20, plan §7). Never touches an `AWS-PROD-*` file. Merges before `ff-pm-flag`.
+Shared files: none.
+## Log
+### 2026-10-20T23:20Z · kiro-exafyltd-202610202314-cfd9 · created → ready
+Lane created with the plan (fix-forward of kiro-autonomy-fallback / VTID-05277). Next: PLAN-SPAR; once `vtid:` is set,
+seat exafyltd claims it.
