@@ -17,6 +17,7 @@ updated: 2026-10-20T18:35Z
 vtid: VTID-05273
 claimed_by: kiro-exafy-202610201807-2a87
 branch: kiro/kiro-autonomy-fallback/plan-spar-allocation
+pr: https://github.com/exafyltd/vitana-platform/pull/4227
 ---
 # plan-spar-allocation — CI allocates late lane VTIDs (retry, idempotent), no hand-off to Claude
 Plan: `.kiro/specs/kiro-autonomy-fallback/plan.md` §5 B and the `plan-spar-allocation` section of `tasks.md` are
@@ -45,3 +46,6 @@ unbound, adopt an orphaned bound VTID, per-lane try/catch, idempotent per lane),
 + `reason: lanes_missing|allocation_pending` with allocation on, `claude` only when allocation is off, partial failure
 exits 0). `plan-spar.test.mjs`: 19/19 (7 new tests red on origin/main 422a7b0, 2 guards green on both). Evidence:
 `docs/validation/VTID-05273/local-tests.md`. Next: review by agent:vitana-lane-reviewer (claude-sonnet-5.5).
+
+### 2026-10-20T18:36Z · kiro-exafy-202610201807-2a87 · executing (PR opened)
+PR https://github.com/exafyltd/vitana-platform/pull/4227. Deploys nothing; done when merged with green checks.
