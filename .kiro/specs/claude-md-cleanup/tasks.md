@@ -23,11 +23,11 @@ Allowed paths:
 - [ ] P4. Steering: remove the "about 1,000 lines" claim and duplicated session-start text; roles keep pointing at
   `collaboration.md` §7–§7b; keep "never test against production" and the session-start steps once.
 - [ ] P5. After: token grep (`outputs/must-keep-after.txt`, every token present), duplicate-label grep (none), line
-  counts, a removed/condensed/kept table per file (`outputs/diff-review.md`) with a "weakened on purpose" row for K.
+  counts, a removed/condensed/kept table per file (`outputs/diff-review.md`): per-removal table per plan "Removal table" (every retired number, flag rows on top) plus a "weakened on purpose" row for K.
 - [ ] P6. Evidence pack `docs/validation/<VTID>/` (`acceptance.md` with `AC-n` + `TEST:` lines, `commands.log`,
   `outputs/`); `node scripts/collab/queue.mjs validate --base origin/main --head HEAD`.
 - [ ] P7. PR `VTID-xxxxx (claude-md-cleanup/rules-trim): …`; first body section "Owner exception: executor: claude,
-  built by Kiro" (plan Decision 2), then the platform PR-GATE body fields, the external references list and the
+  built by Kiro" (plan Decision 2), then the Removal table for per-row owner confirmation (Decision 11), then the platform PR-GATE body fields, the external references list and the
   deferred list. Reviewer agent review (advisory); accepting review = owner / legacy Claude (§3a). Do not merge.
 
 Acceptance:

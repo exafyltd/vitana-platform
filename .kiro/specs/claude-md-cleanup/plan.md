@@ -57,7 +57,8 @@ lane's own `docs/validation/<VTID>/` evidence, which Lane scope allows). Edits o
 2, 5, 6, 18, 19, 20, 31, 32, 37, 40; IF–THEN "Memory" 16–20 (`:708-714`); IF–THEN "Frontend & UX" 22–24
 (`:719-721`, duplicates of ALWAYS 36–40). The real constraints those generic lines gestured at stay as specific
 rules: governance gates (ALWAYS 4, IF–THEN 6–8, §5), tenant isolation (ALWAYS 22, NEVER 7–8), silent fallback
-(NEVER 35, 10b/10c), schema docs (ALWAYS 24, NEVER 16).
+(NEVER 35, 10b/10c), schema docs (ALWAYS 24, NEVER 16). Five of these are folded, not dropped (ALWAYS 18, NEVER 2
+and 40, IF–THEN memory 18 and frontend 24); every retired number is in the Removal table below.
 
 **B. One deployment-verification rule** replaces ALWAYS 20–22 (`:212-214`) and IF–THEN 16–19 (`:552-555`): grep the
 deploy source for the critical routes/features before building; after the deploy curl the critical endpoints and
@@ -186,6 +187,45 @@ and the lane fails acceptance if any hit in a loaded rules file (`.claude/rules/
 nothing. Cross-references inside the file ("rules 51–55", "rule 2b", "§4.1", "ALWAYS 10a/10b", "Part 1 rules 46–50",
 "rules 31–32" in rule 48) stay valid.
 
+## Removal table (R2-N1, R2-N2) — every retired number, platform `CLAUDE.md`
+The owner's instruction approved the specific recommendation list given in chat (items A–M above, reproduced from it),
+not a blanket rewrite. This table names every retired number, why it is safe to drop and where its substance now
+lives. It is reproduced in the lane PR body right after the owner-exception section, one row per rule, and the owner's
+protected-gate review (§3a) confirms it **per row**; a row the owner rejects is restored before anything merges.
+Rows marked **flag** are substantive and called out for explicit confirmation. Conservative choices (R2-N2): NEVER 2
+and 40 fold into NEVER 38, ALWAYS 18 into AI-29, IF–THEN 24 into ALWAYS 40, IF–THEN 18 (memory) into ALWAYS 28 —
+substance kept, number retired.
+| Retired | Rule | Disposition | Substance now lives in |
+|---|---|---|---|
+| ALWAYS 3 | check memory first | removed, generic | ALWAYS 26–29 (memory_items canonical, retrieve selectively, scope) |
+| ALWAYS 8 | assume defense-in-depth | removed, generic | the gates themselves: ALWAYS 4, IF–THEN 6–8, §5, rules 46–55 |
+| ALWAYS 9 / NEVER 5 | prefer existing systems / never rebuild | removed, generic | — (no project-specific content) |
+| ALWAYS 10 | fail loudly on a missing invariant | removed, generic | NEVER 35, 38; ALWAYS 10c |
+| ALWAYS 18 **flag** | log provider, model, latency for AI calls | folded | AI-29: "log provider, model and latency on every AI call; a fallback is logged explicitly" (with rule 53 `model_log.fallback_tier`, NEVER 35) |
+| ALWAYS 19 | CI/CD is governed | removed, duplicate | ALWAYS 17, NEVER 17 |
+| ALWAYS 21–22 (infra) | verify after deploy / deploy source on `origin/main` | merged | ALWAYS 20 (B); hand-deploy check unneeded under ALWAYS 17 |
+| ALWAYS 32–34 | sidebar 10 items, Start Stream | merged | ALWAYS 31 (H) |
+| NEVER 2 **flag** | never bypass governance gates | folded | NEVER 38: "never bypass, hide or skip a governance gate or validation step"; IF–THEN 6–7 |
+| NEVER 6 | never assume unverified context | removed, generic | IF–THEN 10 + autonomy contract ("verify a fact read-only first") |
+| NEVER 18 | never assume deploy success | merged | ALWAYS 20 (B) |
+| NEVER 19 **flag** | never silence errors | removed, generic | NEVER 35, 38; ALWAYS 10c (no silent fallback) |
+| NEVER 20 | never auto-fix without root cause | removed, generic | — |
+| NEVER 21–23 | Start Stream / sidebar | merged | ALWAYS 31 (H) |
+| NEVER 31, 32 | never hallucinate data / invent memory | removed, generic | ALWAYS 26 (memory_items canonical) |
+| NEVER 37 | never respond confidently when uncertain | removed, generic | IF–THEN 10 |
+| NEVER 40 **flag** | never bypass validation | folded | NEVER 38 (as above); rule 50 (never skip, disable or loosen a test); AI-28 |
+| IF–THEN 16–19 (deploy) | grep source / curl / `text/html` | merged | ALWAYS 20 (B) |
+| IF–THEN 20 (deploy) | `git reset --hard origin/main` before deploy | deleted | ALWAYS 17 (deploys go through CI); conflicts with git safety |
+| IF–THEN 16–20 (memory) **flag** | retrieve / don't inject / tenant context / write-fail event / schema migrate | removed, generic | ALWAYS 26–29 (retrieve, scope by tenant+role), ALWAYS 7 (OASIS events), ALWAYS 24 + NEVER 16 (schema docs); IF–THEN 18 folds into ALWAYS 28: "scope memory by tenant + role; missing tenant context → do not proceed" |
+| IF–THEN 21 (frontend) | sidebar forbidden | merged | ALWAYS 31 (H) |
+| IF–THEN 22 | JS must be external | removed, duplicate | ALWAYS 36–37, NEVER 24–25 |
+| IF–THEN 23 | canon wins | removed, generic | IF–THEN 9 (prefer the stricter rule) |
+| IF–THEN 24 **flag** | accessibility fails → block release | folded | ALWAYS 40: "WCAG 2.2 AA; a failing accessibility check blocks the release" |
+| IF–THEN 25 | screen not in inventory | merged | NEVER 27 (I) |
+| IF–THEN 26–30 (visual) | visual verification steps | condensed | one unnumbered paragraph (C), every step kept |
+| IF–THEN 26 (AI) | route Claude at bedrock | folded | ALWAYS 10a (F) |
+The v1 lane deletes no numbered rule; its condensations (K, "Why no host is exempt") get the same per-row table.
+
 ## MUST KEEP (L) — only condense wording, never weaken
 absolute no-testing-on-production; single Supabase project for all hosts; test/service account allowlists
 (service_bot_accounts + notification_test_actors, rules 43–45); Bedrock-only Claude, never provider anthropic, no
@@ -232,6 +272,12 @@ VTID format, target roles + INFRA exclusive, task lifecycle, worker eligibility 
    owner review". No deploy, no `workflow_dispatch`, no writes to Supabase/AWS/gateway.
 10. K (codebase intelligence mandatory → recommended) is an intentional, owner-instructed process-rule downgrade,
    flagged as such in the diff review (R1-F3).
+11. **Owner confirmation of removals (R2-N1).** No extra pre-build owner gate: the plan is CI-sparred and
+   policy-approved (`converged-auto-v1`), the change is docs-only and nothing merges before the owner's per-row
+   confirmation of the Removal table in the protected-gate review (§3a). The owner already chose these items from the
+   itemised recommendation in chat; the per-row review is the explicit approval of each removal, not a blanket one.
+12. **Conservative folds (R2-N2).** NEVER 2 and 40 fold into NEVER 38, ALWAYS 18 into AI-29, IF–THEN 24 into
+   ALWAYS 40, IF–THEN 18 (memory: missing tenant context) into ALWAYS 28 instead of a bare deletion: the numbers retire (the owner's item A), the substance stays.
 
 ## Verification
 - Per changed file, a "removed / condensed / kept" table in the lane's `docs/validation/<VTID>/outputs/`.
@@ -245,8 +291,10 @@ VTID format, target roles + INFRA exclusive, task lifecycle, worker eligibility 
 - Line counts before/after in `commands.log`; a grep that no Part 1 rule label appears twice within a section.
 - `outputs/xref-sweep.md`: every external reference to a changed or retired label, with what it resolves to; none in
   `.claude/rules/**` or `.kiro/steering/**` resolves to nothing.
-- `outputs/diff-review.md` has a "weakened on purpose" row: K only (R1-F3); every other row is removed / condensed /
-  kept.
+- `outputs/diff-review.md` is a per-removal table (R2-N2): every retired number with its substance, why it is safe
+  to drop and where it now lives (the "Removal table" above, checked against the real diff), plus a "weakened on
+  purpose" row for K (R1-F3); the **flag** rows (ALWAYS 18, NEVER 2/19/40, IF–THEN memory 16–20, IF–THEN 24) are
+  listed again at the top for the reviewer and the owner. A retired number missing from the table fails the lane.
 - `node scripts/collab/queue.mjs validate --base origin/main --head HEAD` (platform) on each branch, and any
   markdown/doc lint the repos run in CI.
 - PR bodies satisfy each repo's PR gate (platform `validate-pr`: `VTID:`, `VALIDATION_PROFILE: gateway_backend`,
