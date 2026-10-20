@@ -44,10 +44,10 @@ i18n'd copy. The page enforces nothing itself and shows only the roles the route
 role-allowlist enforcement lives in the route already; mt-track-s adds a second, auth-layer line of defence).
 (2) the **scoped tenant-admin pages** (moderation, signups, notifications, users, audit) consuming the
 tenant-scoped gateway reads. This lane also **governs the `/admin/init-events` frontend route**
-(`src/pages/admin/InitEvents.tsx`, a static dev helper that calls no gateway endpoint): wrap it in the admin
-`RouteGuard` in `App.tsx` as the other `/admin/*` pages are, or remove the page if dead; the matching gateway fixture
-entry (`e2e/fixtures/routes.ts`, `ADMIN_ROUTES`) is updated in the `tenant-admin-api` lane so the route-inventory test
-stays green. **A new App.tsx route also needs its `screens.json`/`exclusions.json` row, its
+(`src/pages/admin/InitEvents.tsx`, a static dev helper that calls no gateway endpoint): mount it in `App.tsx` under
+the admin `RouteGuard` at its existing path `/admin/init-events`, as the other `/admin/*` pages are (guard, never
+remove). The gateway fixture entry (`e2e/fixtures/routes.ts:193`, `ADMIN_ROUTES`) already lists it as admin-only and is
+NOT edited, so this lane is the only change for that route. **A new App.tsx route also needs its `screens.json`/`exclusions.json` row, its
 `SCREEN_INVENTORY.md` entry (`npm run i18n:inventory`) and its `apps/mobile/parity/ledger.json` row
 (`node scripts/native/parity-ledger.mjs --sync`)** — `npm test` fails otherwise. Spotlight tokens only, logical
 start/end, skeletons; i18n DE-first du-form (`src/i18n/de/tenantAdmin.json` first, mirror to `en/`); RTL via logical

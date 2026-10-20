@@ -15,21 +15,25 @@
 - **Invitation accept route (DONE — VTID-05044, build the page on it, do NOT re-create it):**
   `services/gateway/src/routes/tenant-admin/invitations.ts` exports `acceptRouter`
   (`acceptRouter.post('/accept/:token', requireAuth, …)`, `:186`), mounted at `/api/v1/admin/invitations`
-  (`index.ts:501,1429`). It already enforces confirmed-email + email-match (403 `EMAIL_UNVERIFIED`/`EMAIL_MISMATCH`,
+  (`index.ts:503,1433`). It already enforces confirmed-email + email-match (403 `EMAIL_UNVERIFIED`/`EMAIL_MISMATCH`,
   `:208-233`), role allowlist re-check incl. super-admin-only refusal (409 `INVITATION_ROLES_INVALID`, `:237-268`),
   expiry (410 `EXPIRED`, `:200`), atomic claim-before-grant (409 `ALREADY_USED`, `:289-299`), and grants only the
   validated roles (`upsertUserPermittedRole`, `:312-319`). Repository: `services/gateway/src/services/tenant-invitations/
   tenant-invitations-repository.ts`. There is NO `admin-invitations.ts` and this spec creates none.
 - Tenant-admin gate: `services/gateway/src/middleware/require-tenant-admin.ts` (`requireTenantAdmin`): Step 2 bypasses
-  for exafy-admin (`:97-99`); otherwise it resolves the target tenant `req.params.tenantId || req.identity.tenant_id`
+  for exafy-admin (`:96-99`); otherwise it resolves the target tenant `req.params.tenantId || req.identity.tenant_id`
   (`:102`), rejects a cross-tenant mismatch (`:114`), requires `active_role='admin'` + a permitted admin role, and
-  attaches `req.targetTenantId` (`:160`) for the handler. There is **no exported `getTenantId(req)` helper** — scope the
-  reads by `req.targetTenantId`. Only per-file locals exist (`admin-marketplace.ts:31`,
-  `admin-community-marketplace.ts:30`, both reading `req.identity.tenant_id`). `admin-autopilot.ts:4-6` confirms the
-  gate serves both exafy-admin and tenant-admin.
+  attaches `req.targetTenantId` (`:159`) for the handler. The exafy-admin bypass returns at `:96` BEFORE `:159`, so
+  `req.targetTenantId` is unset for an exafy-admin. There is **no exported tenant helper today** — this spec adds
+  `resolveScopedTenant` / `resolveSingleTenant` to `require-tenant-admin.ts` (lane `tenant-admin-api`). Only per-file
+  locals exist: `admin-autopilot.ts:23-24` (`targetTenantId || identity.tenant_id`), `admin-community-marketplace.ts:30-31`
+  (`identity.tenant_id`), `admin-marketplace.ts:31`. `admin-autopilot.ts:4-6` confirms the gate serves both
+  exafy-admin and tenant-admin.
+- OASIS events: `admin-tenants.ts:301` local `emit()` over `emitOasisEvent` (`:24`), used by `tenant.provisioned`
+  (`:353-359`), `tenant.brand_pack.updated` (`:455`), `tenant.asset.uploaded` (`:520`).
 - `/admin/init-events`: a vitana-v1 **frontend** React page (`vitana-v1/src/pages/admin/InitEvents.tsx`, static dev
-  helper, no gateway call, not currently routed in `App.tsx`); present in the gateway route-inventory fixture
-  `e2e/fixtures/routes.ts` under `ADMIN_ROUTES`.
+  helper, no gateway call, not currently routed in `App.tsx`); present in the gateway e2e route fixture
+  `e2e/fixtures/routes.ts:193` under `ADMIN_ROUTES` (`:148`), visited only by admin-role smoke specs (`:391`).
 - Command Hub module system: `services/gateway/src/frontend/command-hub/modules.json` (ordered list, `kind` of
   `module`/`extracted`/`app`/`post_app`) + `index.html` script tags. Pattern to follow: `loops-catalog.js` defines
   `window.LoopsCatalog`, `app.js` calls `render()` from its render switch (`loops-catalog.js:12-15`). CSP: no inline
@@ -58,13 +62,21 @@ rollbacks + pre/post checks + queue rows.
   `routes/tenant-admin/invitations.ts`, see "What exists"). This lane neither creates `admin-invitations.ts` nor edits
   the existing route. The application-layer email-match + role-allowlist enforcement is already live there; mt-track-s
   adds a second, auth-layer line of defence. This spec adds no enforcement at either layer.
-- Scope every moderation/signups/notifications/users/audit admin read by `req.targetTenantId` (from
-  `requireTenantAdmin`; the caller's own tenant is `req.identity.tenant_id`), keeping the exafy-admin bypass. Add tenant
-  predicates in the repositories (`admin-moderation-repository.ts`, `admin-tenants-repository.ts`,
-  `admin-community-marketplace.ts`), not the client.
-- `/admin/init-events`: NOT a gateway route — the guard is a frontend `RouteGuard` in vitana-v1's `App.tsx` (lane
-  `tenant-admin-pages`). This lane only updates the matching fixture entry in `e2e/fixtures/routes.ts` (`ADMIN_ROUTES`)
-  so the route-inventory test stays green after the frontend route is guarded or removed.
+- Shared resolvers in `require-tenant-admin.ts`: `resolveScopedTenant(req)` → `{scope:'all'}` for an exafy-admin,
+  `{scope:'tenant', tenantId}` (from `req.targetTenantId`) otherwise — for list/queue reads; `resolveSingleTenant(req)`
+  → `req.targetTenantId`, or `req.params.tenantId || req.identity.tenant_id` for an exafy-admin — for single-tenant
+  config endpoints. Every new scoped moderation/signups/notifications/users/audit handler calls one of them only; the
+  repositories (`admin-moderation-repository.ts`, `admin-tenants-repository.ts`, `community-marketplace-repository.ts`)
+  take `tenantId: string | null` and add the predicate only when non-null. Guard test
+  `test/mt-tenant-admin-scope-helper.test.ts` fails on a direct `identity.tenant_id` / `identity?.tenant_id` /
+  `targetTenantId` read in the lane's listed files.
+- Backfill: `admin-autopilot.ts` local → `resolveSingleTenant` (same result, regression-pinned);
+  `admin-community-marketplace.ts` `/listings` → `resolveScopedTenant`, cross-tenant for an exafy-admin only with
+  `MT_RESOLUTION_V2` on (flag off = today's own-tenant result); its writes → `resolveSingleTenant` (unchanged).
+- Deactivate/archive handlers emit `tenant.deactivated` / `tenant.archived` via the `emit()` union (`:301`), payload
+  `{ tenant_id, slug, changed }`.
+- `/admin/init-events`: NOT a gateway route and NOT touched by this lane — guarded in vitana-v1 at its existing path
+  (lane `tenant-admin-pages`); `e2e/fixtures/routes.ts` already lists it as admin-only and is unchanged.
 - Extend `GET /admin/tenants/:id/readiness` (via `gatherReadiness`) with first-admin-invitation delivery + lifecycle.
 - exafy-admin routes over the lifecycle RPCs; the deactivated-tenant posture (member → default, exafy-admin read ok).
 - Dark behind `MT_RESOLUTION_V2` + `tenant_settings.feature_flags.mt.*`.
@@ -85,9 +97,9 @@ route reports granted. Scoped tenant-admin pages (moderation, signups, notificat
 `src/lib/tenant-admin-api.ts` (wrappers over `adminFetch`). A new App.tsx route also needs its `screens.json`/
 `exclusions.json` row, `SCREEN_INVENTORY.md` entry, and `apps/mobile/parity/ledger.json` row. Spotlight tokens only,
 logical start/end, skeletons; i18n DE-first du-form; RTL logical properties. No What's New entry (admin-only).
-**`/admin/init-events`:** wrap `InitEvents.tsx` in the admin `RouteGuard` in `App.tsx` (same guard the other `/admin/*`
-pages use) so it is no longer ungoverned, or remove the page if it is dead; the gateway fixture entry is updated by the
-tenant-admin-api lane to match.
+**`/admin/init-events`:** mount `InitEvents.tsx` in `App.tsx` under the admin `RouteGuard` (same guard the other
+`/admin/*` pages use) at its existing path — guard, never remove — so it is no longer ungoverned. The gateway fixture
+entry (`e2e/fixtures/routes.ts:193`) already matches and is not edited.
 
 ## Rules every successor follows
 1. **Migrations:** apply strictly in `MIGRATION-QUEUE.md` order, one `RUN-MIGRATION.yml` dispatch per file, by Claude

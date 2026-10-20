@@ -44,14 +44,16 @@ archive `070350`); pgTAP green. No Supabase/AWS writes. PR title `VTID-xxxxx (mt
 …`; commits carry `Collab-Session` / `Collab-Lane: mt-tenant-admin/tenant-lifecycle-db`.
 
 <!-- lane: tenant-admin-api -->
-## tenant-admin-api — accept, scoped reads, init-events, readiness, lifecycle (repo vitana-platform)
+## tenant-admin-api — scoped reads + shared tenant resolver, readiness, lifecycle (repo vitana-platform)
 
 Allowed paths: `services/gateway/src/routes/admin-tenants.ts`,
 `services/gateway/src/routes/admin-tenants-repository.ts`, `services/gateway/src/routes/admin-signups.ts`,
 `services/gateway/src/routes/admin-community-marketplace.ts`, `services/gateway/src/routes/admin-moderation.ts`,
 `services/gateway/src/routes/admin-moderation-repository.ts`,
 `services/gateway/src/routes/index.ts`, `services/gateway/src/services/tenant-provisioning/**`,
-`services/gateway/test/mt-tenant-admin-*.test.ts`, `e2e/fixtures/routes.ts`. The lane also creates
+`services/gateway/src/middleware/require-tenant-admin.ts`, `services/gateway/src/routes/admin-autopilot.ts`,
+`services/gateway/src/services/community-marketplace/community-marketplace-repository.ts`,
+`services/gateway/test/mt-tenant-admin-*.test.ts`. (`e2e/fixtures/routes.ts` is NOT edited.) The lane also creates
 `docs/validation/<vtid>/`. Depends on `tenant-admin-moderation-db` + `tenant-lifecycle-db`. The invitation-accept route
 is NOT in scope — it already exists and is hardened (`routes/tenant-admin/invitations.ts`, VTID-05044); this lane does
 not create `admin-invitations.ts` and does not edit the existing route.
@@ -61,26 +63,36 @@ not create `admin-invitations.ts` and does not edit the existing route.
       `admin-moderation.ts:25,51` inline `verifyExafyAdmin`). Do NOT replace those guards (that would widen
       exafy-admin-only funnel/report data to tenant-admins) unless the owner approved the widening in the plan's
       `## Owner decisions`.
-- [ ] A2 In each new scoped read, derive the tenant from `req.targetTenantId` for a tenant-admin AND branch on
-      `req.identity.exafy_admin` to OMIT the tenant filter — because `require-tenant-admin.ts:96` returns before
-      `:159`, so `req.targetTenantId` is unset for an exafy-admin and a bare `targetTenantId || identity.tenant_id`
-      (the `admin-autopilot.ts:23-24` pattern) would silently scope the exafy-admin to their own tenant. No exported
-      `getTenantId(req)` helper exists — do not call one. Add the tenant predicate in the repositories.
-- [ ] A3 Update the `/admin/init-events` entry in `e2e/fixtures/routes.ts` (`ADMIN_ROUTES`) to match the frontend
-      guard/removal done in the `tenant-admin-pages` lane, so the route-inventory test stays green. (No gateway
-      `admin-init-events.ts` route is created — `/admin/init-events` is a vitana-v1 frontend page.)
+- [ ] A2 Export `resolveScopedTenant(req)` (`{scope:'all'}` for `req.identity.exafy_admin`, else
+      `{scope:'tenant', tenantId: req.targetTenantId}`, throw if unset) and `resolveSingleTenant(req)`
+      (`req.targetTenantId`, or `req.params.tenantId || req.identity.tenant_id` for an exafy-admin) from
+      `services/gateway/src/middleware/require-tenant-admin.ts`. Needed because `:96` returns before `:159`, so
+      `req.targetTenantId` is unset for an exafy-admin and a bare `targetTenantId || identity.tenant_id`
+      (`admin-autopilot.ts:23-24`) silently scopes them to their own tenant. Every new scoped handler calls one of
+      the two helpers only; repositories take `tenantId: string | null` and add the predicate only when non-null.
+- [ ] A3 Backfill the two existing divergent files onto the helpers: `admin-autopilot.ts` local `getTenantId`
+      (`:23-24`) → `resolveSingleTenant` (same result for both roles); `admin-community-marketplace.ts` local
+      (`:30-31`) → `resolveScopedTenant` on `/listings` (`:61`; cross-tenant for an exafy-admin only with
+      `MT_RESOLUTION_V2` on, `community-marketplace-repository.ts:339` `.eq` skipped for `null`) and
+      `resolveSingleTenant` on its writes (unchanged). (`/admin/init-events` is NOT in this lane and
+      `e2e/fixtures/routes.ts` is not edited — the page is guarded at its existing path in `tenant-admin-pages`.)
 - [ ] A4 Extend `GET /admin/tenants/:id/readiness` with first-admin-invitation delivery + lifecycle.
 - [ ] A5 exafy-admin deactivate/archive routes over the lifecycle RPCs; deactivated-tenant posture (member → default,
-      exafy-admin read ok). Dark behind `MT_RESOLUTION_V2` + `tenant_settings.feature_flags.mt.*`.
-- [ ] A6 Jest/Vitest in `services/gateway/test/mt-tenant-admin-*.test.ts`: scoped reads (b_admin
-      sees 0 T_A rows); **an exafy-admin still sees cross-tenant rows on the new scoped endpoints (the
-      `req.identity.exafy_admin` branch is exercised, not scoped to one tenant)**; route-inventory test green with the
-      updated `/admin/init-events` fixture entry; readiness shape; deactivated-tenant posture. (The accept route is
-      covered by VTID-05044, not re-tested here.) Plus `npm run test:support` + `npm run test:operator` stay green.
+      exafy-admin read ok). Each handler emits `tenant.deactivated` / `tenant.archived` via the `emit()` in
+      `admin-tenants.ts:301` (union widened; pattern `:353-359`), payload `{ tenant_id, slug, changed }`. Dark behind
+      `MT_RESOLUTION_V2` + `tenant_settings.feature_flags.mt.*`.
+- [ ] A6 Jest in `services/gateway/test/mt-tenant-admin-*.test.ts`: scoped reads (b_admin sees 0 T_A rows); **an
+      exafy-admin still sees cross-tenant rows on the new scoped endpoints**; both resolvers unit-tested;
+      `mt-tenant-admin-scope-helper.test.ts` guard (fails on a direct `identity.tenant_id` / `identity?.tenant_id` /
+      `targetTenantId` read in an explicit list of this lane's files); backfill regressions (`admin-autopilot.ts`
+      unchanged result; `/listings` flag on = cross-tenant for exafy-admin, flag off = today's, tenant-admin own-only
+      either way); each lifecycle handler emits its OASIS event; readiness shape; deactivated-tenant posture. (The
+      accept route is covered by VTID-05044, not re-tested here.) Plus `npm run test:support` +
+      `npm run test:operator` stay green.
 - [ ] A7 `docs/validation/<vtid>/`: `scope.json`, `staging-tests.json` (read-only specs), plan-sparring copy.
 
-Acceptance: full gateway test suite green; scoped reads prove tenant isolation (via `req.targetTenantId`); the
-`/admin/init-events` fixture entry updated and route-inventory test green; dark by default. Never calls a write
+Acceptance: full gateway test suite green; scoped reads prove tenant isolation via the shared resolvers; the
+scope-helper guard test green; lifecycle OASIS events emitted; `e2e/fixtures/routes.ts` unchanged; dark by default. Never calls a write
 endpoint against a live system. PR title `VTID-xxxxx
 (mt-tenant-admin/tenant-admin-api): …`; commits carry `Collab-Session` / `Collab-Lane: mt-tenant-admin/
 tenant-admin-api`.
@@ -130,9 +142,10 @@ Allowed paths: `src/pages/admin/InvitationAccept.tsx`, `src/pages/admin/tenant-a
       outcomes in i18n'd copy — 403 `EMAIL_UNVERIFIED`/`EMAIL_MISMATCH`, 409 `INVITATION_ROLES_INVALID`/`ALREADY_USED`,
       410 `EXPIRED`, and the granted roles on success. The page enforces nothing itself and shows only the roles the
       route reports granted.
-- [ ] P2b Govern `/admin/init-events` (`src/pages/admin/InitEvents.tsx`): wrap it in the admin `RouteGuard` in
-      `App.tsx` the same way the other `/admin/*` pages are, or remove the page if it is dead. The gateway fixture entry
-      is updated in the `tenant-admin-api` lane (A3) to match.
+- [ ] P2b Govern `/admin/init-events` (`src/pages/admin/InitEvents.tsx`): mount it in `App.tsx` under the admin
+      `RouteGuard` at its existing path `/admin/init-events`, the same way the other `/admin/*` pages are (guard, never
+      remove). The gateway fixture entry (`e2e/fixtures/routes.ts:193`, `ADMIN_ROUTES`) already lists it as admin-only
+      and is NOT edited. Vitest: the route renders only through the admin guard.
 - [ ] P3 Scoped tenant-admin pages (moderation, signups, notifications, users, audit) under
       `src/pages/admin/tenant-admin/**` + `src/components/admin/tenant-admin/**`, consuming the scoped reads; Spotlight
       tokens, logical start/end, skeletons.

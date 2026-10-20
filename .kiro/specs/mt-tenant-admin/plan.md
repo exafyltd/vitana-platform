@@ -13,7 +13,7 @@ read-only):
    `accept_path:/admin/invitations/accept/<token>` (`admin-tenants.ts:371`). That path is ALREADY served by
    `services/gateway/src/routes/tenant-admin/invitations.ts` `acceptRouter`
    (`acceptRouter.post('/accept/:token', requireAuth, …)`, `:186`), mounted at `/api/v1/admin/invitations`
-   (`index.ts:1429`), built under **VTID-05044**. It already enforces email-match (403 `EMAIL_MISMATCH`), role-allowlist
+   (`index.ts:1433`; `:1429` is the moderation mount), built under **VTID-05044**. It already enforces email-match (403 `EMAIL_MISMATCH`), role-allowlist
    re-check (409 `INVITATION_ROLES_INVALID`), expiry (410 `EXPIRED`) and atomic claim-before-grant (409 `ALREADY_USED`).
    What is MISSING is the **frontend accept page** — no page at `/admin/invitations/accept/:token` in `vitana-v1/src/pages`.
    So this spec owns only the accept-page UX consuming the existing endpoint; no new gateway accept route, no
@@ -31,13 +31,21 @@ read-only):
    users / audit admin reads do not all pin the caller's tenant, and today several are exafy-admin-only
    (`admin-signups.ts:32,62,113,… requireExafyAdmin`; `admin-moderation.ts:25,51` inline `verifyExafyAdmin`), so the
    fix must both scope the tenant-admin view AND preserve the exafy-admin cross-tenant view with an explicit
-   `req.identity.exafy_admin` branch — the `targetTenantId || tenant_id` fallback alone regresses it.
+   `req.identity.exafy_admin` branch — the `targetTenantId || tenant_id` fallback alone regresses it. Two existing
+   `requireTenantAdmin` files already carry the two divergent locals: `admin-autopilot.ts:23-24`
+   (`targetTenantId || identity.tenant_id`, single-tenant config endpoints `/settings`, `/bindings` — `:37,65,112`)
+   and `admin-community-marketplace.ts:26,30-31` (`router.use(requireTenantAdmin)`, `identity.tenant_id` only, used by
+   the `/listings` queue read `:61` whose repository pins `.eq('tenant_id', f.tenantId)` —
+   `community-marketplace-repository.ts:329-339`). For an exafy-admin the listings queue is silently own-tenant.
 3. **`/admin/init-events` is an ungoverned FRONTEND surface.** The route is a vitana-v1 React page
    (`vitana-v1/src/pages/admin/InitEvents.tsx`, a static dev helper that shows a SQL script and `window.open`s the
    Supabase dashboard — it calls no gateway endpoint; not currently mounted in `App.tsx`). It appears in the gateway
-   route-inventory fixture `e2e/fixtures/routes.ts` under `ADMIN_ROUTES` (the `/admin/init-events` entry). The guard
-   belongs in vitana-v1's `App.tsx` (admin `RouteGuard`) or the page is removed; the fixture entry is updated so the
-   route-inventory test stays green. **No gateway `admin-init-events.ts` route exists or is created.**
+   e2e route fixture `e2e/fixtures/routes.ts` under `ADMIN_ROUTES` (`:148`, the `/admin/init-events` entry at
+   `:193`), which only the admin-role smoke specs visit (`admin: [...COMMUNITY_BASE_ROUTES, ...ADMIN_ROUTES]`, `:391`).
+   **Decision: the page is GUARDED at its existing path, never removed** — vitana-v1's `App.tsx` mounts it under the
+   admin `RouteGuard` at `/admin/init-events`. The fixture entry is then already correct (an admin-only route in the
+   admin-only list), so **`e2e/fixtures/routes.ts` is NOT edited** and there is no cross-repo two-lane split to order.
+   **No gateway `admin-init-events.ts` route exists or is created.**
 4. **No deactivate/archive.** `tenants` has `is_active`/`is_platform`/`is_default` (read at
    `admin-tenants.ts:253`, which already excludes `is_active === false` and `is_platform === true` from the
    switch-target set), but there is no RPC to deactivate/archive a tenant, no resolution rule for a deactivated
@@ -64,13 +72,33 @@ read-only):
   the current endpoints.** This avoids widening exafy-admin-only data (e.g. `admin-signups.ts`' cross-tenant funnel
   counts/emails) to tenant-admins by default. Any route where the owner wants the SAME endpoint to serve both roles
   (replacing the guard with `requireTenantAdmin`) is a deliberate widening listed under `## Owner decisions` and held
-  for owner approval before implementation. Each new scoped read derives the tenant from `req.targetTenantId` for a
-  tenant-admin, **and MUST branch on `req.identity.exafy_admin` to omit the tenant filter** (because the middleware
-  leaves `req.targetTenantId` unset for an exafy-admin, `require-tenant-admin.ts:96`) so the exafy-admin cross-tenant
-  view is preserved, never silently scoped by a bare `targetTenantId || tenant_id` fallback. The lane also extends
-  readiness (invitation-delivery + lifecycle), wires the deactivate/archive RPCs behind exafy-admin routes, defines the
-  deactivated-tenant gateway API posture (O2). (The `/admin/init-events` guard is NOT here — it is a frontend route,
-  owned by tenant-admin-pages.)
+  for owner approval before implementation.
+  **One shared tenant resolver (REQUIRED, R1-F2):** the lane exports two helpers from
+  `services/gateway/src/middleware/require-tenant-admin.ts` (beside `requireTenantAdmin`, so the gate and the reader
+  of its result live in one file): `resolveScopedTenant(req)` → `{ scope: 'all' }` when `req.identity.exafy_admin`,
+  else `{ scope: 'tenant', tenantId: req.targetTenantId }` (throws if a non-exafy caller reached it without
+  `targetTenantId`), for LIST/queue reads; and `resolveSingleTenant(req)` → `req.targetTenantId`, or for an exafy-admin
+  `req.params.tenantId || req.identity.tenant_id`, for single-tenant config endpoints where "all tenants" has no
+  meaning. Every new scoped handler calls one of them and nothing else; repositories take `tenantId: string | null`
+  and add the `tenant_id` predicate only when non-null. A Jest guard test
+  (`services/gateway/test/mt-tenant-admin-scope-helper.test.ts`) reads an explicit list of the files this lane owns
+  (the new scoped handlers + the two backfilled files below) and fails if any reads `identity.tenant_id`,
+  `identity?.tenant_id` or `targetTenantId` directly instead of the helpers.
+  **Backfill of the two existing divergent files (R1-F4):** `admin-autopilot.ts` drops its local `getTenantId`
+  (`:23-24`) for `resolveSingleTenant` — identical result for both roles today (single-tenant settings/bindings,
+  `repo.fetchSettingsFull(supabase, tenantId)` needs one tenant), so no behaviour change, pinned by a Jest regression.
+  `admin-community-marketplace.ts` drops its local (`:30-31`) for `resolveScopedTenant` on the `/listings` queue read
+  (`:61`): with `MT_RESOLUTION_V2` on, an exafy-admin sees the cross-tenant queue (repository `.eq` skipped for
+  `null`); with the flag off (default) it keeps today's own-tenant result. Its writes (PATCH/bulk) keep today's
+  resolution via `resolveSingleTenant`. Jest regressions: exafy-admin sees T_A + T_B listings (flag on), own tenant
+  only (flag off), tenant-admin sees only its own either way.
+  **OASIS events (REQUIRED, R1-F1):** the deactivate/archive handlers emit `tenant.deactivated` / `tenant.archived`
+  through the existing `emit()` in `admin-tenants.ts` (`:301`, union widened by these two types; pattern
+  `emit('tenant.provisioned', …)` at `:353-359`), payload `{ tenant_id, slug, changed }` with `changed=false` for an
+  idempotent re-call; a Jest assertion per handler checks the event. The lane also extends readiness
+  (invitation-delivery + lifecycle), wires the deactivate/archive RPCs behind exafy-admin routes, defines the
+  deactivated-tenant gateway API posture (O2). (`/admin/init-events` is NOT here — it is a frontend route guarded in
+  tenant-admin-pages at its existing path; `e2e/fixtures/routes.ts` is not edited, see Problem 3.)
 - **command-hub-tenant-module** (gateway frontend, seat jtadic): a NEW `tenant-admin.js` `kind:"module"` + CSS,
   registered in `modules.json` and `index.html`, exposing `window.TenantAdmin.render()`; app.js gets only the
   one render-switch case line (no large app.js edits). Lists tenants, shows readiness/lifecycle, triggers
@@ -88,9 +116,10 @@ read-only):
   `EMAIL_UNVERIFIED`, 409, 410 as user-readable states; the page adds no enforcement of its own) and the scoped
   tenant-admin pages (moderation, signups, notifications, users, audit) consuming the scoped gateway reads; Spotlight
   tokens, i18n DE-first du-form, RTL logical properties. Also
-  **governs the `/admin/init-events` frontend route** — wrap it in the admin `RouteGuard` in `App.tsx` (or remove the
-  page). The matching gateway fixture entry (`e2e/fixtures/routes.ts`, `ADMIN_ROUTES`) is updated in the
-  tenant-admin-api lane so the route-inventory test stays green.
+  **governs the `/admin/init-events` frontend route** — mounts `InitEvents.tsx` in `App.tsx` under the admin
+  `RouteGuard` at its existing path `/admin/init-events` (guard, not remove). The gateway fixture entry
+  (`e2e/fixtures/routes.ts:193`, `ADMIN_ROUTES`) already lists it as admin-only and is NOT edited, so the change lands
+  in one repo, one PR.
 
 ## Migrations
 Range `20261101070000`–`20261101075959` (NN=07). Files, all with a paired rollback under the lane's
@@ -108,15 +137,19 @@ its own queue rows in the same PR that adds the files; a not-yet-live table is a
 owner-approved, off-peak; expand/contract only, `lock_timeout` + retries, snapshot before any data move.
 
 ## Tests
-- Vitest/Jest (gateway): each new scoped read returns only the caller's tenant (b_admin sees 0 T_A rows) AND an
-  exafy-admin still sees cross-tenant rows (the `req.identity.exafy_admin` branch, F2); readiness shape; deactivated-
-  tenant posture (member → default, exafy-admin read ok); route-inventory green with the updated `/admin/init-events`
-  fixture. Accept route NOT re-tested (VTID-05044 owns it).
+- Jest (gateway): each new scoped read returns only the caller's tenant (b_admin sees 0 T_A rows) AND an
+  exafy-admin still sees cross-tenant rows (via `resolveScopedTenant`); helper unit tests for both resolvers; the
+  scope-helper guard test (no direct `identity.tenant_id`/`targetTenantId` reads in the listed files); backfill
+  regressions for `admin-autopilot.ts` (unchanged result) and `admin-community-marketplace.ts` `/listings` (flag on:
+  cross-tenant for exafy-admin; flag off: today's result); deactivate/archive emit `tenant.deactivated` /
+  `tenant.archived`; readiness shape; deactivated-tenant posture (member → default, exafy-admin read ok). Accept
+  route NOT re-tested (VTID-05044 owns it). `e2e/fixtures/routes.ts` unchanged.
 - pgTAP: P2/P3 moderation + moderator tenant-scope (moderator of T_B sees 0 T_A reports);
   `deactivate_tenant`/`archive_tenant` idempotent; deactivated member resolves to default, never locked out; rollback
   restores.
 - Vitest (vitana-v1): accept page renders outside the admin guard, surfaces email-mismatch/409/410; scoped pages
-  render; no write on render; i18n keys resolve.
+  render; `/admin/init-events` is reachable only through the admin `RouteGuard`; no write on render; i18n keys
+  resolve.
 - Contract: scoped reads over route × role × tenant (no `CANARY_A` in a b_admin body).
 - Required: `npm run test:support` (42c), `npm run test:operator` (42e). Maxina golden unchanged (no role-routing
   change).
@@ -136,13 +169,18 @@ auth-hook (D14) is untouched. Creating/deactivating a real tenant is owner-appro
 ## Risks
 - Scoping an admin read could silently break an exafy-admin "all tenants" view: the middleware returns at
   `require-tenant-admin.ts:96` before setting `targetTenantId`, so a bare `targetTenantId || identity.tenant_id`
-  fallback scopes an exafy-admin to their own tenant. Mitigation: every scoped read has an explicit
-  `req.identity.exafy_admin` branch that omits the tenant filter; a Vitest asserts an exafy-admin still sees
-  cross-tenant rows and a tenant-admin sees only their own.
+  fallback scopes an exafy-admin to their own tenant. Mitigation: one exported resolver pair
+  (`resolveScopedTenant` / `resolveSingleTenant`) is the only way the lane's handlers read the tenant, enforced by a
+  Jest guard test; Jest asserts an exafy-admin still sees cross-tenant rows and a tenant-admin sees only their own.
+- Backfilling `admin-community-marketplace.ts` `/listings` changes the exafy-admin queue from own-tenant to
+  cross-tenant. Mitigation: only behind `MT_RESOLUTION_V2` (dark default = today's result); writes unchanged;
+  `admin-autopilot.ts` backfill is result-identical.
 - Command Hub CI ownership guard blocks the module PR if its VTID is not in `ALLOWED_VTID_PATTERN`
   (`command-hub-ownership-guard.js:1051`). Mitigation: the lane edits the guard in the same PR (above) and the guard
   file is in the lane's `paths`.
 - Deactivate resolution must never lock a member out → the switch RPC falls back to the default tenant; pgTAP pins it.
+- Lifecycle changes invisible to downstream consumers → deactivate/archive emit OASIS `tenant.deactivated` /
+  `tenant.archived` like provisioning does (`admin-tenants.ts:353`); Jest pins each emit.
 - Moderator tenant-scope migration ordering vs mt-community-isolation C3 → fixed order with C3 reserved at `070160`.
 - Command Hub app.js coupling → one render-switch case line only; module owns its own render tree (CSP: no inline JS).
 

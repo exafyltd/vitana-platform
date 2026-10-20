@@ -17,7 +17,7 @@ of the WS4 rest; it links the program's records instead of copying them.
 
 ### R1 — Invitation accept PAGE outside the admin guard (lane `tenant-admin-pages`)
 The gateway accept route already exists and is hardened (VTID-05044, `services/gateway/src/routes/tenant-admin/
-invitations.ts` `acceptRouter`, mounted at `/api/v1/admin/invitations` in `index.ts:1429`); this spec adds only the
+invitations.ts` `acceptRouter`, mounted at `/api/v1/admin/invitations` in `index.ts:1433`); this spec adds only the
 frontend page that consumes it and introduces no new gateway accept route and no application-layer enforcement.
 1. THE SYSTEM SHALL serve a frontend invitation-accept page at `/admin/invitations/accept/:token` that is NOT behind
    the admin `RouteGuard` (an invited first admin is not yet an admin), POSTing the token to the existing
@@ -33,16 +33,22 @@ frontend page that consumes it and introduces no new gateway accept route and no
 ### R2 — Scoped tenant-admin surfaces (lanes `tenant-admin-api`, `tenant-admin-pages`)
 1. EVERY tenant-admin read (moderation, signups, notifications, users, audit) SHALL return only the tenant resolved by
    `requireTenantAdmin` — `req.targetTenantId` (the caller's own tenant is `req.identity.tenant_id`,
-   `require-tenant-admin.ts:102,160`) — keeping the exafy-admin super-admin bypass the middleware already provides
-   (`require-tenant-admin.ts:97-99`). There is no shared `getTenantId(req)` helper to call.
+   `require-tenant-admin.ts:102,159`) — keeping the exafy-admin super-admin bypass the middleware already provides
+   (`require-tenant-admin.ts:96`), so an exafy-admin still sees all tenants on list reads.
+3. EVERY such handler SHALL read the tenant only through the shared resolvers `resolveScopedTenant` /
+   `resolveSingleTenant` exported from `require-tenant-admin.ts`; a guard test SHALL fail on a direct
+   `identity.tenant_id` / `targetTenantId` read in the lane's files. The existing `admin-autopilot.ts` and
+   `admin-community-marketplace.ts` locals SHALL be moved onto them (autopilot unchanged; the listings queue
+   cross-tenant for an exafy-admin only behind `MT_RESOLUTION_V2`).
 2. A tenant admin of tenant B SHALL see zero tenant-A rows on every scoped surface (contract test: no `CANARY_A`).
 
-### R3 — `/admin/init-events` governed (lanes `tenant-admin-pages`, `tenant-admin-api`)
+### R3 — `/admin/init-events` governed (lane `tenant-admin-pages`)
 1. THE SYSTEM SHALL guard the `/admin/init-events` **frontend route** (`vitana-v1/src/pages/admin/InitEvents.tsx`)
-   behind the admin `RouteGuard` in `vitana-v1/src/App.tsx`, or remove the page (lane `tenant-admin-pages`). It is a
-   frontend dev helper that calls no gateway endpoint, so there is no gateway route to guard.
-2. THE gateway route-inventory fixture entry (`e2e/fixtures/routes.ts`, `ADMIN_ROUTES`) SHALL be updated to match so
-   the route-inventory test stays green (lane `tenant-admin-api`, which owns that file).
+   behind the admin `RouteGuard` in `vitana-v1/src/App.tsx` at its existing path (guard, never remove; lane
+   `tenant-admin-pages`). It is a frontend dev helper that calls no gateway endpoint, so there is no gateway route to
+   guard.
+2. THE gateway e2e fixture entry (`e2e/fixtures/routes.ts:193`, `ADMIN_ROUTES`) already lists the route as admin-only
+   and SHALL stay unchanged, so the change lands in one repo and one PR.
 
 ### R4 — Deactivate / archive (lanes `tenant-lifecycle-db`, `tenant-admin-api`) — cross-spec O2
 1. THE SYSTEM SHALL provide `deactivate_tenant(slug)` and `archive_tenant(slug)` RPCs, idempotent, expand/contract,
@@ -52,6 +58,8 @@ frontend page that consumes it and introduces no new gateway accept route and no
    `admin-tenants.ts:253`).
 3. THE gateway SHALL define the deactivated-tenant API posture (member sessions resolve to default; exafy-admin reads
    of the deactivated tenant still work for archival).
+4. WHEN a tenant is deactivated or archived THE gateway SHALL emit the OASIS event `tenant.deactivated` /
+   `tenant.archived` (same `emit()` as `tenant.provisioned`, `admin-tenants.ts:301,353`).
 
 ### R5 — Command Hub tenant module (lane `command-hub-tenant-module`)
 1. THE SYSTEM SHALL add a NEW Command Hub module (`tenant-admin.js`, `kind:"module"`) exposing
