@@ -4,8 +4,10 @@ author: kiro
 author_seat: jtadic
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-20T16:40Z
+state: approved
+updated: 2026-10-20T15:07Z
+sparring_record: .kiro/specs/kiro-primary-executor/sparring/verdict.md
+vtids: [VTID-05263, VTID-05264]
 ---
 # Handoff — kiro-primary-executor
 
@@ -36,3 +38,6 @@ Folded into the plan block (activation, B.4, §7/§8, automation item D, Risks).
 (d6caa531) on the round-3 answers; its round-1 findings (vitana-v1 `apply-*.yml` appliers, CLAUDE.md "Kiro never
 merges" sentence, workflow inventory) are accepted in `sparring/s2-responses-1.md` — all tighten the plan inside the
 owner's conditions. Next: PLAN-SPAR round 2; on convergence VTIDs are allocated; merge #4218 on green (owner-authorised).
+
+### 2026-10-20T15:07Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
