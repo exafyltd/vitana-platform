@@ -82,4 +82,13 @@ Exact `paths` globs are in each `lanes/<id>.md`; the 27 rows partition with 0 ov
   stay `next_actor: owner` until it exists.
 - macOS minutes / G3 for iOS-on-device screenshots (program STATUS row 8b) — not needed for the JS build.
 - Whether `home` or `news` owns the `NewsArticleCard` twin (decision 3 default: `news`).
+
+## Re-spar note (2026-10-20)
+The first sparring session (`759e1c03`) escalated on infrastructure (the pipeline was being fixed — code
+access, Bedrock subscription, daily-token cap, and the vitana-v1 ref). Those are all resolved now: the
+vitana-v1 ref fix is merged to main (PR #4201, `fa73aabd0`), so `PLAN-SPAR` forwards
+`extra_refs: { 'exafyltd/vitana-v1': <sha> }` and a session created from this branch (which now has the fix
+in its base, main merged in) can read `exafyltd/vitana-v1` to verify this plan's `apps/mobile/**` and web
+screen premises. The sibling plan `native-g1-wiring` already converged and allocated VTIDs the same way.
+This note re-triggers a fresh sparring session on the fixed pipeline.
 <!-- plan:end -->
