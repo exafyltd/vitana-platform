@@ -31,7 +31,11 @@ Change class: **governance** (rule text and the seat automations only). Pinned: 
    A plan that escalated in PLAN-SPAR (partner unavailable) also waits for `claude`: 13 such `_plan` rows in today's
    queue (both repos).
 3. **Migrations have no Kiro path.** Every agent text says "a database change is a migration file in the PR"; nothing
-   says who applies it. The only applier is `RUN-MIGRATION.yml` (workflow_dispatch; honours `MIGRATION_FREEZE`).
+   says who applies it. The appliers are (s2 R1-F1), all `workflow_dispatch` only:
+   - vitana-platform `RUN-MIGRATION.yml` (target input; honours `MIGRATION_FREEZE`);
+   - vitana-platform `APPLY-FB061-DEBOUNCER-FIX.yml`;
+   - the 21 per-file vitana-v1 `apply-*.yml` workflows. Each posts one hardcoded SQL file to the production Supabase
+     ref (`inmkhvwdcuyhnxkgfvsb`) and has no target input, hash check or freeze guard.
    Merging a migration file applies nothing: the push-triggered `SQL-*` workflows run against a CI Postgres service
    container and reference no live database secret. Staging shares the production Supabase project, so **every applied
    migration is a production database write**.
@@ -48,10 +52,15 @@ Change class: **governance** (rule text and the seat automations only). Pinned: 
 
 ### A. Standing authority
 **Activation (R1-F1).** §7d is not activated by this plan's policy approval. It takes effect only when the owner
-answers this plan's Gate 1 with an explicit "yes", including the B.4 scope choice (interactive and automation runs,
-or interactive only). The answer is recorded verbatim with the date in `handoff.md` and
-`docs/validation/<VTID>/plan-sparring.md`, and each lane then needs the owner's per-PR merge instruction (governance).
-Until both lanes are merged, §7b applies unchanged.
+answers this plan's Gate 1 with an explicit "yes", including the B.4 scope choice. The answer is recorded verbatim
+with the date in `handoff.md` and `docs/validation/<VTID>/plan-sparring.md`, and each lane then needs the owner's
+per-PR merge instruction (governance). Until both lanes are merged, §7b applies unchanged.
+
+**Owner's Gate 1 (2026-10-20): "Gate 1 approved — interactive only."**
+- §7d applies only to **interactive Kiro sessions started by the owner**.
+- Automation runs may plan, build, review and reach `verified`. They may not merge until the follow-up
+  `merge-deploy-guard` is implemented and tested, and even then only after a separate owner decision. This plan
+  does not enable automation merge authority.
 
 Once active: the owner's instruction to start a workstream, a plan's policy approval `converged-auto-v1`, or a Gate 1
 "yes" is the standing instruction for every routine step of that workstream's lanes. A Kiro session carries them without
@@ -79,8 +88,8 @@ no longer written by Kiro, except for the legacy `executor: claude` lanes until 
 3. **Verified.** The session holding the lane claim sets `verified` from an `approve` entry by the lane's
    `reviewer_seat` on the PR's current head. Self-review stays forbidden. The reviewer seat's automation picks up the
    review, so waiting for it is not a hand-back: the session works other lanes meanwhile.
-4. **Merge (replaces §7b's per-PR instruction for non-governance lanes).** A Kiro session (interactive or automation)
-   merges a lane PR when all of these hold. This is the Project Manager rule, applied by Kiro until the PM runs `live`:
+4. **Merge (replaces §7b's per-PR instruction for non-governance lanes).** An interactive Kiro session started by
+   the owner (never an automation run) merges a lane PR when all of these hold. This is the Project Manager rule, applied by Kiro until the PM runs `live`:
    - the lane is `verified`;
    - every check on the head is green, incl. Lane scope and Collab handoff;
    - no merge conflict;
@@ -106,9 +115,9 @@ no longer written by Kiro, except for the legacy `executor: claude` lanes until 
       written from memory.
       - Interactive sessions use the read-only listing recorded in §7d, a `git show origin/main:.github/workflows/…`
         loop over every file's `on.push` block.
-      - Automation runs get B.4 merge authority only after a follow-up plan, `merge-deploy-guard`, adds that listing
-        as a `queue.mjs` command with tests. The owner's Gate 1 "yes" lets the planner draft that plan next. Until it
-        is merged, automations stop at `verified` even if the owner chose the wider scope.
+      - Automation runs have no merge authority (owner Gate 1, interactive only). A follow-up plan,
+        `merge-deploy-guard`, adds the listing as a tested `queue.mjs` command. Any automation merge authority after
+        that is a separate owner decision.
 
    On merge the session appends `merge: <sha>` and `authority: §7d standing` to the lane log.
 
@@ -124,7 +133,15 @@ no longer written by Kiro, except for the legacy `executor: claude` lanes until 
    - It watches the deploy and STAGING-VERIFY for its merge commit and fixes forward.
    - Then it writes the Gate 2 message to the plan's handoff log (`gate2: ready`) and gives it to the owner — in the
      same reply if interactive, otherwise in the next interactive session's first reply.
-6. **Migrations, owner-approved only (R1-F3).**
+6. **Migrations, owner-approved only (R1-F3, s2 R1-F1).**
+   - **Applier list.** B.6 covers every migration applier: `RUN-MIGRATION.yml`, `APPLY-FB061-DEBOUNCER-FIX.yml`
+     and every vitana-v1 `apply-*.yml`.
+     - For a per-file applier, the owner's approval names the workflow file and the SQL path it applies. The target
+       is always the production Supabase project, which the session confirms from the workflow's `PROJECT_REF`.
+     - The `migration-approval:` line records the workflow, the SQL path with its sha256, and `target:supabase`.
+     - The session confirms the workflow on `main` still applies exactly that SQL path.
+     - Those workflows have no freeze guard, so the session checks `MIGRATION_FREEZE` (repo variable) itself and
+       does not dispatch while it is `true`.
    - **Every `RUN-MIGRATION.yml` apply is a production database write.** Its targets are the production Supabase
      project (default, `MIGRATION_TARGET` unset) or Aurora, and staging shares that project. So approving a migration
      is the §D.2 owner decision itself: the approval is the owner's "yes" to that production write. No other
@@ -212,10 +229,17 @@ non-destructive staging work, merge sequencing, implementation details, VTIDs, b
      exception in §7b below" becomes "— except under §7b (owner-directed, governance lanes) or §7d (standing
      authority) below", and its live-write bullet names the B.5/B.6 workflows as the only §7d exceptions. No flat
      "never dispatch/deploy" remains that §7d contradicts;
-   - §8 gains one sentence saying automations may merge under B.4 if the owner chose that scope.
+   - §7's "the Project Manager (until it runs, Claude Code) sets `verified` … and merges" and "Until it runs `live`,
+     Claude Code merges a `verified` lane on the same rule" are rewritten (s2 R1-F2). In interactive owner-started
+     sessions, Kiro sets `verified` and merges under §7d B.3/B.4. Automations stop at `verified`. The Project
+     Manager takes over when it runs `live`;
+   - §8 gains one sentence: automations never merge (owner Gate 1, interactive only), until a separate owner
+     decision after `merge-deploy-guard`.
 2. `CLAUDE.md`:
    - the Autonomy contract's "Stop and ask mid-flight only for" becomes the §D list plus the five-part format;
-   - the collaboration roles paragraph names §7d.
+   - the collaboration roles paragraph's flat sentence "Kiro never merges, deploys or writes to a live system" is
+     replaced (s2 R1-F2) by: "Kiro merges and dispatches staging/migration workflows only under §7d (interactive
+     owner-started sessions); production stays behind Gate 2; no session-tool live writes."
 3. `.kiro/steering/vitana-load-project-rules.md` and `.kiro/steering/vitana-kiro-notes.md`: the role text says
    "primary executor, §7d". The "never" list keeps only the items in §C. `next_actor: claude` on a block is replaced
    by §D or fix-forward.
@@ -226,9 +250,10 @@ non-destructive staging work, merge sequencing, implementation details, VTIDs, b
    - the closing line "The Project Manager (or, until it runs, Claude Code) merges verified lanes, watches staging and
      sends the owner Gate 2." is replaced by "Kiro merges verified lanes under §7d B.4, watches staging and prepares
      Gate 2 (§7d B.5)" (R3-F2);
-   - new item **D. Finish a verified lane:** a lane of the run's seat in `in-review` with a reviewer-seat `approve` on
-     the current head. The run sets `verified`, merges under B.4 and, after the merge, appends the staging result
-     when it exists. Order: A, B, D, C.
+   - new item **D. Mark a reviewed lane verified:** a lane of the run's seat in `in-review` with a reviewer-seat
+     `approve` on the current head. The run sets `verified` and stops. It never merges; the next interactive
+     owner-started session merges under B.4. Order: A, B, D, C;
+   - in the closing line above, "Kiro merges" reads "an interactive owner-started Kiro session merges".
 5. `docs/validation/<VTID>/`: plan-sparring copy, `scope.json`, `acceptance.md`.
 
 ### Files (lane `rules-v1-autonomy`, vitana-v1)
@@ -275,7 +300,13 @@ files, `docs/validation/<VTID>/`. vitana-v1 has no `.kiro/automations/`.
     - `Claude Code (later the Project Manager) sets \`verified\``;
     - `Blocked → a log entry and \`next_actor: claude\``;
   - every remaining `next_actor: claude` occurrence is in a sentence about legacy `executor: claude` lanes;
-  - no added line permits dispatching the B.5 production workflows, or a session-tool live write.
+  - no added line permits dispatching the B.5 production workflows, or a session-tool live write;
+  - the sentence "Kiro never merges, deploys or writes to a live system" no longer appears in `CLAUDE.md`
+    (s2 R1-F2);
+  - no automation file grants a merge.
+- **Workflow inventory (s2 R1-F3):** every vitana-v1 `apply-*.yml` and platform `APPLY-*.yml` is
+  `workflow_dispatch`-only (no `push`), checked by reading each file's `on:` block. The result goes in the PR's
+  acceptance.
 - Change suites: `existing` entries for these checks. No staging surface changes, so no browser suite.
 
 ## Lanes
@@ -284,7 +315,7 @@ files, `docs/validation/<VTID>/`. vitana-v1 has no `.kiro/automations/`.
   `exafyltd`; depends on `rules-platform-autonomy`.
 
 ## Risks
-- **Automations merge unattended.** Bounded by:
+- **Merges without a per-PR instruction.** Only interactive owner-started sessions (owner Gate 1). Bounded by:
   - the reviewer-seat approve on the current head;
   - all checks green;
   - staging-only deploy;
@@ -292,9 +323,8 @@ files, `docs/validation/<VTID>/`. vitana-v1 has no `.kiro/automations/`.
   - production still behind Gate 2;
   - automatic rollback on production post-deploy checks is unchanged.
 
-  All seats share one GitHub identity, so "another seat" is self-declared (as stated in `retire-claude-code`). The
-  owner may narrow B.4 to interactive sessions only. That is the one alternative offered at Gate 1, and the owner's
-  answer is part of activation (§A).
+  All seats share one GitHub identity, so "another seat" is self-declared (as stated in `retire-claude-code`).
+  Automations do not merge.
 - **A merge that deploys production by path** (e.g. `cloudflare/**`) is caught by the B.4 staging-only check and
   becomes a §D.1 stop.
 - **Migrations are production writes.** Bounded by the per-file owner approval with a hash, interactive sessions only,
