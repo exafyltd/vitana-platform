@@ -24,9 +24,16 @@
   need a scheduler and its own failure handling, for no extra coverage.
 - **Signal:** `rounds.length === 0` plus age of `updated_at ?? created_at`. Sessions waiting on the planner
   (`rounds ≥ 1`) can legitimately stay `in_progress` for days, so they are excluded.
-- **Threshold:** `PASS_DEADLINE_MS[change_class] + STALE_MARGIN_MS` with `STALE_MARGIN_MS = 10 min`. The
-  deadline is soft (checked between turns), so a 5 min margin could kill a live pass in a slow final call.
-  Standard (25 min) then equals the client's `WAIT_MS`, so the resume right after a client timeout recovers.
+- **Threshold:** a flat `STALE_AFTER_MS = 60 min` for every change class. A dead pass and a slow live pass
+  look the same on the row (no heartbeat; `model_log` is written only after the pass, `service.ts:294,301`).
+  The deadline is soft (checked between turns, `partner.ts:174`) and one Bedrock call has no request timeout
+  (`providers/bedrock.ts:218-229`). 60 min leaves 45 min past the longest deadline (standard, 15 min), so a
+  false positive is practically unreachable. If one happens anyway, the old pass ends in 409 `round_conflict`
+  and only that pass is wasted (plan item 1, residual trade-off). Cost: a newly dead session recovers on the
+  first push 60 min or more after creation.
+- **Partial failure:** escalate succeeds, insert fails → 502; the orphan `escalated` + `deadline_exceeded`
+  row is re-run by the existing retryable branch (`service.ts:250-252`) on the next create (test (h)).
+  Escalate stays before insert because the guarded UPDATE is what serialises two racing creates.
 - **Terminal state for the dead row:** `escalated` + `deadline_exceeded`. That reason already means "no real
   review happened, re-run" in the gateway (`RETRYABLE_REASONS`) and in the client (`INFRA_REASONS` and
   `RETRYABLE_REASONS`). `final_plan_hash` stays null, so the row can never be approved.
