@@ -10,7 +10,7 @@ paths:
   - .github/workflows/SQL-MT-ISOLATION.yml
   - .github/workflows/MORNING-SYSTEM-HEALTH-CHECK.yml
   - scripts/ci/mt/**
-updated: 2026-10-19T20:20Z
+updated: 2026-10-20T08:30Z
 ---
 # CI wiring + MIGRATION-QUEUE check — mt-guardrails/ci-wiring (governance, repo vitana-platform)
 Plan: `.kiro/specs/mt-guardrails/plan.md` (authoritative) and the `ci-wiring` section of `tasks.md`
@@ -40,6 +40,10 @@ shrinking baseline like `check-migration-drift`.
 Branch `claude/mt-guardrails/ci-wiring`; PR title `VTID-xxxxx (mt-guardrails/ci-wiring): —`; commit
 trailers `Collab-Session: <session id>` and `Collab-Lane: mt-guardrails/ci-wiring`. Add this lane's own
 `docs/validation/<vtid>/`.
+Escalation carry-over (owner approved escalated, 2026-10-20) — R3-F1, task C0 in `tasks.md`. Acceptance: a spike
+proves `supabase/postgres:17.4.1.074` boots as a GitHub Actions `service:` container and records its exact
+healthcheck/env/init contract (or the adapter used) in the PR body and `docs/validation/<vtid>/`; C3 and the
+workflow-shape test use that contract; the smoke test is never silently skipped when the digest check cannot run.
 ## Log
 ### 2026-10-16T21:44Z · kiro-hotmail-202610151618-b437 · created → ready
 Created from the WS0 plan as a Claude governance lane: wires the five kiro lanes' checks into CI and

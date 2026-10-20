@@ -151,3 +151,40 @@ the queue check flags a malformed row and passes the current file. Governance la
 `next_actor: claude`). Depends on `local-test-stack`, `generated-inventories`, `isolation-suite`,
 `gateway-scope-lint-contract`, `maxina-golden-suite`. PR title `VTID-xxxxx (mt-guardrails/ci-wiring): —`;
 trailers `Collab-Lane: mt-guardrails/ci-wiring`.
+
+## Escalation carry-over (owner approved escalated, 2026-10-20)
+
+The plan was round-capped and escalated (session `496d49e4`, round 3); the owner approved it as escalated on
+2026-10-20 ("yes, A all 4 approved"). The open last-round findings are folded into the lane tasks here; `plan.md`
+is unchanged.
+
+- R3-F1 [major] — "Lane 6 (ci-wiring) runs the isolation suite in CI by spinning up `supabase/postgres:17.4.1.074`
+  as a GitHub Actions `service:` container and installing `pg_prove` on the runner."
+  Lane `ci-wiring`, added task (runs before C1/C3 assert the service shape):
+  - [ ] C0 Spike: prove `supabase/postgres:17.4.1.074` (pinned digest) boots as a GitHub Actions `service:`
+        container on `ubuntu-24.04`, and record the exact healthcheck, env and init contract it needs (not assumed
+        to be the `postgres:16` `pg_isready` shape of `SQL-TENANT-FOUNDATION.yml`), including whether its own
+        migrations must finish before `pg_prove` connects. If it cannot run as a service, record the adapter used
+        (e.g. a `docker run` step with an explicit wait).
+        Acceptance (carry-over R3-F1): the spike's run link and the recorded contract are in the PR body and in
+        `docs/validation/<vtid>/`; C3 and the workflow-shape test use that recorded contract; the smoke test is
+        never silently skipped when the digest check cannot run (it fails instead).
+- R3-F2 [minor] — "Lane 1's spec states both 'Schema from a production *schema* dump (structure only, never data)'
+  and 'No production access of any kind'."
+  Lane `local-test-stack`, added task:
+  - [ ] T1a Document in `docs/multitenancy/LOCAL-STACK.md` and the regenerate script's header that the
+        `pg_dump --schema=public --schema-only` is a single, explicit, manual, read-only step run once by a seated
+        engineer on a workstation (never by CI, never by the local stack at runtime), and is the only sanctioned
+        production connection in this spec; "no production access" applies to the local stack and every CI
+        workflow.
+        Acceptance (carry-over R3-F2): both texts state this; no CI workflow and no `scripts/mt/stack/up.*` path
+        invokes `pg_dump` or any live endpoint.
+- R3-F3 [minor] — "The 'Pinned versions' table pin `supabase/postgres:17.4.1.074`, justified as 'the version
+  production reports', is the exact version the plan's own cited source flags as vulnerable."
+  Lane `local-test-stack`, added task:
+  - [ ] T4a Next to the four pinned values in `docs/multitenancy/LOCAL-STACK.md`, record that `17.4.1.074` is the
+        version `docs/SUPABASE-SECURITY-ADVISOR-AUDIT-2026-08-28.md:58` flags as `vulnerable_postgres_version`
+        (patches outstanding); it is pinned only for production-parity determinism of the throwaway local stack,
+        which holds no real data and reaches no live endpoint; the digest guard does not cover upstream
+        vulnerabilities; a bump of the pin table is the upgrade path.
+        Acceptance (carry-over R3-F3): the note is present beside the pins in `LOCAL-STACK.md`.

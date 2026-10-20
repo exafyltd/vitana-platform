@@ -11,7 +11,7 @@ paths:
   - supabase/tests/local-stack/**
   - scripts/mt/stack/**
   - docs/multitenancy/LOCAL-STACK.md
-updated: 2026-10-19T20:20Z
+updated: 2026-10-20T08:30Z
 ---
 # D11 local Supabase stack + fixtures — mt-guardrails/local-test-stack (repo vitana-platform)
 Plan: `.kiro/specs/mt-guardrails/plan.md` (authoritative) and the `local-test-stack` section of
@@ -37,6 +37,14 @@ Branch `kiro/mt-guardrails/local-test-stack`; PR title `VTID-xxxxx (mt-guardrail
 commit trailers `Collab-Session: <your kiro session id>` and `Collab-Lane:
 mt-guardrails/local-test-stack`. When the PR is open: set `state: in-review`, `next_actor: kiro`,
 `pr: <url>`, append a log entry, release the claim.
+Escalation carry-over (owner approved escalated, 2026-10-20) — R3-F2 and R3-F3, tasks T1a and T4a in `tasks.md`.
+Acceptance (R3-F2): `LOCAL-STACK.md` and the regenerate script's header state that the `pg_dump --schema=public
+--schema-only` is a single, manual, read-only step run once by a seated engineer on a workstation (never CI, never
+the local stack at runtime), the only sanctioned production connection; "no production access" covers the local
+stack and every CI workflow, and none of them invokes `pg_dump` or a live endpoint. Acceptance (R3-F3): beside the
+pins, `LOCAL-STACK.md` records that `17.4.1.074` is the version the 2026-08-28 security-advisor audit flags as
+vulnerable (patches outstanding), pinned only for production-parity determinism of the throwaway stack; the digest
+guard does not cover upstream vulnerabilities; bumping the pin table is the upgrade path.
 ## Log
 ### 2026-10-16T21:44Z · kiro-hotmail-202610151618-b437 · created → ready
 Created from the WS0 plan. First lane of the chain: `generated-inventories` and `isolation-suite`
