@@ -29,15 +29,32 @@ export interface PmDecisionEmitter {
  */
 export class LoggingDecisionEmitter implements PmDecisionEmitter {
   async emit(decision: PmDecision): Promise<void> {
-    const summary =
-      decision.kind === 'merge'
-        ? `merge ${decision.slug}/${decision.lane} (${decision.vtid}) @ ${decision.head_sha}`
-        : decision.kind === 'reassign'
-          ? `reassign ${decision.slug}/${decision.lane} ${decision.target} ${decision.from_seat}→${decision.to_actor} (${decision.reason})`
-          : decision.kind === 'park'
-            ? `park ${decision.slug}/${decision.lane} (${decision.reason})`
-            : `gate2 ${decision.slug} [${decision.vtids.join(', ')}] (${decision.reason})`;
-    console.log(`[pm.decision] ${summary}`);
+    console.log(`[pm.decision] ${summarizeDecision(decision)}`);
+  }
+}
+
+/** One-line summary of a decision (log + status). */
+export function summarizeDecision(decision: PmDecision): string {
+  switch (decision.kind) {
+    case 'merge':
+      return `merge ${decision.slug}/${decision.lane} (${decision.vtid}) @ ${decision.head_sha}`;
+    case 'reassign':
+      return `reassign ${decision.slug}/${decision.lane} ${decision.target} ${decision.from_seat}→${decision.to_actor} (${decision.reason}${decision.fallback ? ', fallback' : ''})`;
+    case 'park':
+      return `park ${decision.slug}/${decision.lane} (${decision.reason}) → ${decision.to_actor ?? 'claude'}`;
+    case 'gate2':
+      return `gate2 ${decision.slug} [${decision.vtids.join(', ')}] (${decision.reason})`;
+    // VTID-05274
+    case 'verify':
+      return `verify ${decision.slug}/${decision.lane} (${decision.vtid}) @ ${decision.head_sha}`;
+    case 'update_branch':
+      return `update_branch ${decision.slug}/${decision.lane} (${decision.behind_by} behind) @ ${decision.head_sha}`;
+    case 'merge_plan':
+      return `merge_plan ${decision.slug} (${decision.vtid}) @ ${decision.head_sha}`;
+    case 'merge_bookkeeping':
+      return `merge_bookkeeping ${decision.slug} (${decision.vtid}) @ ${decision.head_sha}`;
+    case 'ledger':
+      return `ledger ${decision.vtid} → ${decision.set.status}/${decision.set.spec_status}`;
   }
 }
 

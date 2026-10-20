@@ -1,0 +1,22 @@
+# VTID-05274 local verification (Windows, worktree on branch kiro/kiro-autonomy-fallback/pm-fallback)
+# Red on base (src = origin/main 22034fd4d; new + updated tests, src untouched, new governance.ts moved aside)
+$ cd services/gateway && npx jest test/project-manager
+Test Suites: 8 failed, 2 passed, 10 total; Tests: 46 failed, 77 passed, 123 total (exit 1)
+# Green on head (branch merged with origin/main d18050e27)
+$ cd services/gateway && npx jest test/project-manager
+Test Suites: 10 passed, 10 total; Tests: 177 passed, 177 total (exit 0)
+$ cd services/gateway && npm run typecheck
+exit 0, 0 errors
+$ cd services/gateway && npm run build   (script shell: Git bash; the prebuild `rm -rf dist` needs a POSIX shell)
+exit 0
+$ cd services/gateway && npm run test:operator
+Tests: 1 failed, 70 passed, 71 total (exit 1) — the failure ("runner jest targets include every suite that names
+app.js") is a Windows path separator (test\command-hub\...); identical on base with this lane's src stashed; the
+suite imports no file this change touches. CI (Linux) is authoritative.
+$ node scripts/collab/queue.mjs validate --base origin/main --head HEAD
+exit 0
+$ node scripts/collab/queue.mjs scope-check --base origin/main --head HEAD
+exit 1 — one finding: services/gateway/src/services/project-manager/governance.ts is a protected gate file on an
+executor: kiro lane (expected: this lane creates the guard; owner instruction 2026-10-20, plan §6)
+$ node -e "validateManifest(docs/validation/VTID-05274/staging-tests.json)"
+{"ok":true,"errors":[]}

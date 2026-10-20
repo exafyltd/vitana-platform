@@ -1,0 +1,12 @@
+PASS test/project-manager/fallback.test.ts
+PASS test/project-manager/timings.test.ts
+PASS test/project-manager/decide.test.ts
+PASS test/project-manager/loop.test.ts
+PASS test/project-manager/act.test.ts
+PASS test/project-manager/tick-and-config.test.ts
+PASS test/project-manager/governance.test.ts
+PASS test/project-manager/observe-live.test.ts
+PASS test/project-manager/safe-merge-fn.test.ts
+PASS test/project-manager/route.test.ts
+Test Suites: 10 passed, 10 total
+Tests:       177 passed, 177 total
