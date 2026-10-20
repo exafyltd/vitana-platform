@@ -20,7 +20,9 @@ Green on the lane head:
   JSON.parse .kiro/hooks/vitana-pipeline-start.json                         -> parses
   js-yaml load of the agent front matter -> name vitana-lane-reviewer, model claude-sonnet-5.5, tools [read, shell],
     excludedTools [fs_write, fs_append, str_replace, delete_file], 6 permission rules
-  node scripts/collab/queue.mjs validate --base origin/main --head HEAD     -> see the second block below
-  node scripts/collab/queue.mjs scope-check                                 -> see the second block below
+  node scripts/collab/queue.mjs validate --base origin/main --head HEAD --branch kiro/kiro-autonomy-fallback/reviewer-agent
+    -> exit 0 (on commit 2bcd9c147)
+  node scripts/collab/queue.mjs scope-check --base origin/main --head HEAD --branch kiro/kiro-autonomy-fallback/reviewer-agent
+    -> "lane kiro-autonomy-fallback/reviewer-agent: every change is inside its paths", exit 0 (on commit 2bcd9c147)
 
 Not run (deploys nothing; no gateway / frontend code touched): jest, typecheck, build, staging suite.

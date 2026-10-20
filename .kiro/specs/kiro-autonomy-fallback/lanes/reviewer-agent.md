@@ -24,7 +24,8 @@ paths:
   - docs/validation/VTID-*/**
 claimed_by: kiro-exafy-202610201807-2a87
 branch: kiro/kiro-autonomy-fallback/reviewer-agent
-updated: 2026-10-20T18:41Z
+pr: https://github.com/exafyltd/vitana-platform/pull/4229
+updated: 2026-10-20T18:48Z
 vtid: VTID-05275
 ---
 # reviewer-agent — reviewer agent + pipeline recipe (vitana-lane-reviewer on claude-sonnet-5.5, runbooks, IDE workflow, SessionStart hook)
