@@ -1,6 +1,6 @@
 ---
 lane: p1-plan-spar
-state: executing
+state: parked
 next_actor: claude
 vtid: VTID-05214
 executor: claude
@@ -15,9 +15,9 @@ paths:
   - services/gateway/src/routes/plans-spar.ts
   - services/gateway/test/**
   - DATABASE_SCHEMA.md
-claimed_by: session_01J2m8CtCfCH4VEGqmp6HrDh
 branch: ccr-ca63b286-optl8c
-updated: 2026-10-15T19:30Z
+updated: 2026-10-20T20:43Z
+parked_from: executing
 ---
 # P1 — PLAN-SPAR.yml + policy approval of converged plans (VTID-05214)
 
@@ -33,3 +33,5 @@ Migration (policy approval, 4 touch points, pm_digests, pm_lease) + Postgres har
 scripts/collab/plan-spar.mjs + PLAN-SPAR.yml (pull_request_target, base code only, PLAN_SPAR_ENABLED off by default);
 validator allowance for ci-plan-spar commits. Paths extended to the harness, SQL tests and scripts/collab (the client
 and the validator live there).
+### 2026-10-20T20:43Z · pm-agent · executing → parked
+park (stale_claim); claim released
