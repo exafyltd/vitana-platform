@@ -80,18 +80,21 @@ the Bedrock-unconfigured rule at line 756); the single-Supabase fact is the form
    jest-expo; no simulator, device, or macOS runner, so no macOS cost). It does not overlap
    `vitana-platform:.github/workflows/MOBILE-DEVICE-E2E.yml`, which is dispatch-only on macOS and runs the
    **web** frontend in an iOS Simulator via Safari — a different concern from bundling the native Expo JS.
-   **Because NATIVE-CI.yml is a vitana-v1 workflow (the native app's own build pipeline), not a
-   vitana-platform governance file, the `native-ci-workflow` lane is `executor: kiro`, `seat: exafyltd`,
-   `reviewer_seat: hotmail`** — it edits `.github/workflows/**` in vitana-v1, which is this program's own
-   repo, not the shared-governance paths the collaboration rule reserves for Claude Code in
-   vitana-platform. Its acceptance pins `runs-on: ubuntu-latest`.
+   **`native-ci-workflow` is `executor: claude` / `reviewer_seat: claude` (R3-F1).** It edits
+   `.github/workflows/NATIVE-CI.yml`, and the collaboration rule lists `.github/**` as a governance path
+   **unqualified by repo** (`vitana-platform:.claude/rules/collaboration.md:100`) and states the rules file
+   is identical in both repos (`:10`). So a `.github/workflows/**` edit in *either* repo is a governance
+   change only a Claude Code (`executor: claude`) lane may make, which PR-GATE Lane scope enforces. (This
+   corrects an earlier draft that wrongly flipped it to `executor: kiro` on a repo-scoped distinction the
+   rule does not make; the relocation into vitana-v1 per R2-F1 stands — only the executor was wrong, and
+   Decision 7 was right all along.) Its acceptance pins `runs-on: ubuntu-latest`.
 
 ## Lanes (all `ready`; no `vtid` until CI assigns it)
 | Lane | Executor / seat → reviewer | Scope | depends_on | next_actor |
 |---|---|---|---|---|
 | `env-profiles` | kiro / exafyltd → hotmail | `apps/mobile/src/config/env.ts`, `apps/mobile/env/**`, `apps/mobile/tests/env*` | — | kiro |
 | `eas-profiles` | kiro / exafyltd → hotmail | `apps/mobile/eas.json` | env-profiles | kiro |
-| `native-ci-workflow` | kiro / exafyltd → hotmail | `vitana-v1:.github/workflows/NATIVE-CI.yml` | eas-profiles | kiro |
+| `native-ci-workflow` | **claude** / — → claude | `vitana-v1:.github/workflows/NATIVE-CI.yml` | eas-profiles | claude |
 | `fixture-gateway` | kiro / exafyltd → hotmail | `tools/fixture-gateway/**`, `tests/fixture-gateway/**` (vitana-v1 repo root) | — | kiro |
 | `deep-link-push-smoke` | kiro / exafyltd → hotmail | `apps/mobile/tests/g1-smoke/**`, `apps/mobile/src/push/g1-test-provider.ts` | env-profiles, fixture-gateway | kiro |
 | `real-g1-switch` | kiro / exafyltd → hotmail | `apps/mobile/env/test-g1.g1.example.json`, `docs/validation/g1/**` | deep-link-push-smoke | **owner** |
@@ -122,14 +125,15 @@ Path ownership (R1-F3, R1-F4): no file is in two lanes and no in-scope file is o
   root** (mirroring `tools/orb-fake-gateway/`), not inside `apps/mobile/`.
 - `deep-link-push-smoke`: its tests live under `apps/mobile/tests/g1-smoke/**` (inside `apps/mobile/`).
 - `native-ci-workflow`: `vitana-v1:.github/workflows/NATIVE-CI.yml` — the native app's own CI, in
-  vitana-v1 (R2-F1: a vitana-platform workflow can't trigger on vitana-v1 pushes). It is this program's own
-  repo, not the shared vitana-platform governance paths, so this lane is `executor: kiro`.
+  vitana-v1 (R2-F1: a vitana-platform workflow can't trigger on vitana-v1 pushes). `.github/**` is a
+  governance path in *either* repo (R3-F1), so this lane is `executor: claude`, `reviewer_seat: claude`.
 - `real-g1-switch`: `docs/validation/g1/**` (vitana-v1 repo root).
 
 **`build-profiles` is split into two lanes (R1-F4):** a cross-repo lane is illegal (one `branch:`/`pr:`
 per lane). `eas-profiles` (`executor: kiro`, vitana-v1, `apps/mobile/eas.json`) and `native-ci-workflow`
-(`executor: kiro`, vitana-v1, `.github/workflows/NATIVE-CI.yml` — the native app's own CI, R2-F1) each get
-their own branch/PR/VTID; `native-ci-workflow` depends on `eas-profiles`, which depends on `env-profiles`.
+(`executor: claude`, vitana-v1, `.github/workflows/NATIVE-CI.yml` — the native app's own CI, R2-F1;
+`.github/**` is a governance path in either repo so it stays `executor: claude`, R3-F1) each get their own
+branch/PR/VTID; `native-ci-workflow` depends on `eas-profiles`, which depends on `env-profiles`.
 
 **Validation docs are in each lane's scope (R2-F1).** Every lane commits
 `docs/validation/<VTID>/{scope.json,staging-tests.json,plan-sparring.md}` at the **vitana-v1 repo root**
