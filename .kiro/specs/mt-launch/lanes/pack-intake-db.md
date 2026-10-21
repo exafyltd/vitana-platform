@@ -4,6 +4,7 @@ state: executing
 next_actor: kiro
 claimed_by: kiro-hotmail-202610211408-c407
 branch: kiro/mt-launch/pack-intake-db
+pr: https://github.com/exafyltd/vitana-platform/pull/4265
 depends_on: []
 executor: kiro
 seat: hotmail
@@ -14,40 +15,40 @@ paths:
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
   - services/gateway/test/mt-launch-pack-intake-pgtap.test.ts
-updated: 2026-10-21T16:05Z
+updated: 2026-10-21T16:30Z
 vtid: VTID-05324
 ---
-# pack-intake-db — tenant pack intake + content pipeline tables (repo vitana-platform)
+# pack-intake-db â€” tenant pack intake + content pipeline tables (repo vitana-platform)
 
-Plan: `../plan.md` (authoritative) and the `pack-intake-db` section of `../tasks.md` (tasks P1–P5, allowed paths,
+Plan: `../plan.md` (authoritative) and the `pack-intake-db` section of `../tasks.md` (tasks P1â€“P5, allowed paths,
 acceptance). Design + successor rules: `../design.md`.
 
-**HELD:** `next_actor: owner` until PLAN-SPAR spars this plan, converges and allocates this lane's VTID — PLAN-SPAR then
+**HELD:** `next_actor: owner` until PLAN-SPAR spars this plan, converges and allocates this lane's VTID â€” PLAN-SPAR then
 flips `next_actor` to `kiro` itself. Do not build before that.
 
-Rules for the executor (collaboration §7a): no VTID allocation, no `_plan` claim, no edit of `handoff.md` or another
+Rules for the executor (collaboration Â§7a): no VTID allocation, no `_plan` claim, no edit of `handoff.md` or another
 lane file, no merge/approve/deploy/workflow dispatch, no Supabase or AWS write. A database change is a migration file in
 this PR; it is applied in production by Claude via RUN-MIGRATION after merge, in MIGRATION-QUEUE order, AFTER WS5's
 `tenant_content_overrides`. Expand-only, service-role-only RLS. The lane adds its own `docs/validation/<vtid>/`
 (rollback SQL + read-only pre/post checks). Renumber the two migrations if a later one exists at build time.
 
-Branch `kiro/mt-launch/pack-intake-db`; PR title `VTID-xxxxx (mt-launch/pack-intake-db): …`; commit trailers
+Branch `kiro/mt-launch/pack-intake-db`; PR title `VTID-xxxxx (mt-launch/pack-intake-db): â€¦`; commit trailers
 `Collab-Session: <your kiro session id>` and `Collab-Lane: mt-launch/pack-intake-db`. When the PR is open: set
 `state: in-review`, `next_actor: kiro` (reviewer seat `exafy`), `pr: <url>`, append a log entry, release the claim.
 
 ## Log
-### 2026-10-15T16:40Z · kiro-hotmail-202610151618-b437 · created → ready
+### 2026-10-15T16:40Z Â· kiro-hotmail-202610151618-b437 Â· created â†’ ready
 Created and held. Two expand-only tables (`tenant_pack_intake`, `tenant_content_pipeline`) + a read-only
 `get_tenant_launch_readiness()` that never reads a health table. seat `hotmail` (DB/migrations), reviewer `exafy`.
 
-### 2026-10-20T19:00Z · kiro-hotmail-202610151618-b437 · spar session 2 round 1 (0de6a378) — no path change
+### 2026-10-20T19:00Z Â· kiro-hotmail-202610151618-b437 Â· spar session 2 round 1 (0de6a378) â€” no path change
 R1-F5: `get_tenant_launch_readiness` is SECURITY INVOKER, STABLE, `SET search_path = public, pg_catalog`, EXECUTE only
 for service_role.
 
-### 2026-10-21T13:58Z · ci-plan-spar · ready (VTID allocated)
+### 2026-10-21T13:58Z Â· ci-plan-spar Â· ready (VTID allocated)
 VTID-05324 allocated after policy approval (converged-auto-v1).
 
-### 2026-10-21T16:05Z · kiro-hotmail-202610211408-c407 · ready → executing
+### 2026-10-21T16:05Z Â· kiro-hotmail-202610211408-c407 Â· ready â†’ executing
 Claimed (collab-claim/mt-launch/pack-intake-db), driver run wf_2eb625e1fdb2dda6. P1 `tenant_pack_intake` (PK
 `(tenant_id, item_key)`, 13-key checklist + status CHECKs, FK `tenants(tenant_id)`), P2 `tenant_content_pipeline`
 (`unique (tenant_id, locale, key)`, review_state CHECK), both service-role-only RLS with client privileges revoked; P3
@@ -56,3 +57,8 @@ only, reads only intake + `tenants`. P4 MIGRATION-QUEUE rows 9-10 after WS5 `ten
 baseline. P5 `mt-launch-pack-intake-pgtap.test.ts` 17/17 green on head, 17/17 red on base; pgTAP plan, rollback and
 read-only pre/post checks in `docs/validation/VTID-05324/`. No renumber needed (latest on main 20261021140000).
 Nothing applied anywhere. Next: reviewer agent on the PR head.
+### 2026-10-21T16:30Z Â· kiro-hotmail-202610211408-c407 Â· executing (PR open)
+PR https://github.com/exafyltd/vitana-platform/pull/4265. Local: jest 17/17, tsc, `npm run build`, drift test 8/8,
+`queue.mjs validate` + `scope-check` and `validate-pr-locally` all green (`docs/validation/VTID-05324/outputs/`). State
+stays `executing` in this PR (`ready â†’ in-review` is not a legal single-PR transition). Claim released. Next: reviewer
+agent `agent:vitana-lane-reviewer (claude-sonnet-5.5)` on the PR head, then the land step under Â§7b.

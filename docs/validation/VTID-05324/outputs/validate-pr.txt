@@ -1,0 +1,20 @@
+Detected VTID=VTID-05324 PROFILE=gateway_backend
+Changed files: 20
+NOT JUDGED — 5 file(s) outside this gate's remit:
+  .kiro/specs/mt-launch/lanes/pack-intake-db.md
+  docs/multitenancy/MIGRATION-QUEUE.md
+  scripts/ci/migration-drift-baseline.json
+  supabase/migrations/20261101110000_mt_launch_tenant_pack_intake.sql
+  supabase/migrations/20261101110100_mt_launch_tenant_content_pipeline.sql
+  These trees have no governance gate of their own. That is a real gap,
+  not an approval — see VTID-03696.
+APPROVED: 15 in-remit file(s) match the gateway_backend allowlist
+Acceptance mapping OK
+CSP scan: no pattern hits in added lines.
+Build Gate SKIPPED (pass --build to run npm ci && npm run build locally too).
+Route Mount Evidence Gate: no route registration added, skipped.
+OASIS Traceability Gate: OASIS_IMPACT=no.
+APPROVED
+VTID=VTID-05324
+PROFILE=gateway_backend
+Evidence=docs/validation/VTID-05324/
