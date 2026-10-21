@@ -72,29 +72,39 @@ export async function keysByMessageId(
   return out;
 }
 
+/** The Set key of a viewed (user, tenant, conversation). */
+export function viewingKey(userId: string, tenantId: string | null | undefined, key: string): string {
+  return `${userId}|${tenantId ?? ''}|${key}`;
+}
+
 /**
- * Which (user, key) pairs are being viewed right now. One read for all pairs.
- * Returns a Set of `${userId}|${key}`. Errors → empty set (push as before).
+ * Which (user, tenant, key) triples are being viewed right now. One read for
+ * all of them. The presence row must be of the push's tenant (plan I4); a push
+ * without a tenant is never suppressed. Returns a Set of viewingKey(...).
+ * Errors → empty set (push as before).
  */
 export async function viewingPairs(
   sb: SupabaseClient<any, any, any>,
-  pairs: Array<{ userId: string; key: string }>,
+  pairs: Array<{ userId: string; tenantId: string | null | undefined; key: string }>,
   now: number = Date.now(),
 ): Promise<Set<string>> {
   const out = new Set<string>();
   if (!isChatViewingSuppressionEnabled()) return out;
-  const wanted = new Set(pairs.map((p) => `${p.userId}|${p.key}`));
-  const userIds = Array.from(new Set(pairs.map((p) => p.userId)));
+  const scoped = pairs.filter((p) => !!p.tenantId);
+  const wanted = new Set(scoped.map((p) => viewingKey(p.userId, p.tenantId, p.key)));
+  const userIds = Array.from(new Set(scoped.map((p) => p.userId)));
+  const tenantIds = Array.from(new Set(scoped.map((p) => p.tenantId as string)));
   if (userIds.length === 0) return out;
   try {
     const { data, error } = await sb
       .from('chat_viewing_presence')
-      .select('user_id, conversation_key, expires_at')
+      .select('user_id, tenant_id, conversation_key, expires_at')
       .in('user_id', userIds)
+      .in('tenant_id', tenantIds)
       .gt('expires_at', new Date(now).toISOString());
     if (error) throw new Error(error.message);
-    for (const r of (data as Array<{ user_id: string; conversation_key: string; expires_at: string }> | null) ?? []) {
-      const k = `${r.user_id}|${r.conversation_key}`;
+    for (const r of (data as Array<{ user_id: string; tenant_id: string | null; conversation_key: string; expires_at: string }> | null) ?? []) {
+      const k = viewingKey(r.user_id, r.tenant_id, r.conversation_key);
       if (wanted.has(k) && new Date(r.expires_at).getTime() > now) out.add(k);
     }
   } catch (err: any) {
@@ -107,17 +117,18 @@ export async function viewingPairs(
 export async function isViewingChat(
   sb: SupabaseClient<any, any, any>,
   userId: string,
+  tenantId: string | null | undefined,
   type: string,
   data: Data,
   now: number = Date.now(),
 ): Promise<boolean> {
-  if (!CHAT_PUSH_TYPES.has(type) || !isChatViewingSuppressionEnabled()) return false;
+  if (!CHAT_PUSH_TYPES.has(type) || !isChatViewingSuppressionEnabled() || !tenantId) return false;
   let key = chatConversationKeyFromData(data);
   if (!key) {
     const mid = messageIdOf(data);
     if (mid) key = (await keysByMessageId(sb, [mid])).get(mid) ?? null;
   }
   if (!key) return false;
-  const viewing = await viewingPairs(sb, [{ userId, key }], now);
-  return viewing.has(`${userId}|${key}`);
+  const viewing = await viewingPairs(sb, [{ userId, tenantId, key }], now);
+  return viewing.has(viewingKey(userId, tenantId, key));
 }

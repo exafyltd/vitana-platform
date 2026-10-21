@@ -41,7 +41,7 @@ import {
   WHATS_NEW_CREATED_BY_PREFIX, WHATS_NEW_MIN_GAP_HOURS,
 } from '../services/whats-new-publisher';
 import * as repo from './scheduled-notifications-repository';
-import { CHAT_PUSH_TYPES, chatConversationKeyFromData, keysByMessageId, messageIdOf, viewingPairs } from '../services/chat-viewing-presence';
+import { CHAT_PUSH_TYPES, chatConversationKeyFromData, keysByMessageId, messageIdOf, viewingKey, viewingPairs } from '../services/chat-viewing-presence';
 import { isNotificationTypeAllowed, isMemberInQuietHours, normalizeSourceKey } from '../services/notification-controls/notification-controls-service';
 import { runRemindersTick, runRemindersSweeper } from '../services/reminders-dispatch';
 import { wideTodayWindow, pickFirstEventTodayPerUser } from '../services/calendar-today';
@@ -1334,7 +1334,8 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
       }
       const mids = Array.from(new Set(Array.from(keptByPair.keys()).map((p) => p.split('|')[1])));
       if (mids.length > 0) {
-        const { data: pushed } = await repo.fetchPushedChatSiblings(supa, mids);
+        const uids = Array.from(new Set(Array.from(keptByPair.keys()).map((p) => p.split('|')[0])));
+        const { data: pushed } = await repo.fetchPushedChatSiblings(supa, mids, uids);
         for (const r of (pushed as Array<{ id: string; user_id: string; message_id: string }> | null) ?? []) {
           const kept = keptByPair.get(`${r.user_id}|${r.message_id}`);
           if (kept && kept !== r.id) chatDuplicateIds.add(kept);
@@ -1352,10 +1353,10 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
       }
       const viewing = await viewingPairs(supa, chatRows
         .filter((n: any) => keyByRow.has(n.id))
-        .map((n: any) => ({ userId: n.user_id, key: keyByRow.get(n.id)! })));
+        .map((n: any) => ({ userId: n.user_id, tenantId: n.tenant_id, key: keyByRow.get(n.id)! })));
       for (const n of chatRows) {
         const key = keyByRow.get(n.id);
-        if (key && viewing.has(`${n.user_id}|${key}`)) chatViewingIds.add(n.id);
+        if (key && viewing.has(viewingKey(n.user_id, n.tenant_id, key))) chatViewingIds.add(n.id);
       }
     } catch (err: any) {
       console.warn(`[PushDispatch] chat dedup/viewing check failed (pushing as before): ${err?.message || err}`);

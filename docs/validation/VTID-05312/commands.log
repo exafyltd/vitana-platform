@@ -3,3 +3,7 @@ $ npx jest test/vtid-05312-chat-viewing-presence.test.ts   # base (lane 1 head):
 $ npx jest vtid-05312 05310 05137 04962 05208 04926 04928 05104 04674 chat-vitana-reply 04917 04560 05027 05177   # 385 passed
 $ npx jest notification push scheduled   # 362 passed
 $ npx tsc --noEmit   # clean
+
+## Review fixes (semantic_reviewer, /projects/sandbox/reviews/pr4259.md)
+$ npx jest test/vtid-05312-chat-viewing-presence.test.ts   # 36 passed (was 29)
+Fixed: tenant-scoped viewing check (plan I4) incl. a cross-tenant test and aligned fixtures; the five missing acceptance tests (cron call counts, suppressed row never re-sent after expiry, group viewing vs non-viewing member, push after active:false, no email fallback); sibling read scoped to the batch's recipients (limit 1000); the dedup UPDATE's error is now logged; active:false with a key clears only that conversation's row; tenant_id NOT NULL; migration comments corrected (lock held through VALIDATE; table + CHECK land in one transaction, so viewing suppression can't run against the old CHECK); DATABASE_SCHEMA.md documents the table and outcomes.

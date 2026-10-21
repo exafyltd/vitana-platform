@@ -4,7 +4,8 @@
  *
  *   POST /  { conversation_key: 'dm:<peerId>' | 'group:<groupId>', device_id, active }
  *     active: true  → upsert (caller, device) with expires_at = now + 45 s
- *     active: false → delete (caller, device)
+ *     active: false → delete (caller, device) — only that conversation's row when
+ *                     a conversation_key is sent (a late false for A can't clear B)
  *
  * The client sends active:true every 20 s while the conversation is open,
  * visible and focused, and active:false on blur / hide / leave. Chat pushes
@@ -48,7 +49,11 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     // The caller's expired rows go on every write (presence never accumulates).
     await sb.from('chat_viewing_presence').delete().eq('user_id', identity.user_id).lt('expires_at', new Date(now).toISOString());
     if (!active) {
-      const { error } = await sb.from('chat_viewing_presence').delete().eq('user_id', identity.user_id).eq('device_id', device_id);
+      let del = sb.from('chat_viewing_presence').delete().eq('user_id', identity.user_id).eq('device_id', device_id);
+      if (typeof conversation_key === 'string' && CONVERSATION_KEY_RE.test(conversation_key)) {
+        del = del.eq('conversation_key', conversation_key.toLowerCase());
+      }
+      const { error } = await del;
       if (error) throw new Error(error.message);
       return res.json({ ok: true, active: false });
     }

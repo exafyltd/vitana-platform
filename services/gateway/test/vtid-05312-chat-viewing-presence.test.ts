@@ -28,6 +28,7 @@ const MID = '55555555-5555-4555-8555-555555555555';
 type Row = Record<string, any>;
 const db: Record<string, Row[]> = { chat_viewing_presence: [], chat_messages: [], user_notifications: [] };
 let presenceReadFails = false;
+const selectCount: Record<string, number> = {};
 class Q {
   private f: Array<(r: Row) => boolean> = [];
   private op: 'select' | 'delete' | 'update' | 'upsert' = 'select';
@@ -42,10 +43,13 @@ class Q {
   is(c: string, v: null) { this.f.push((r) => (r[c] ?? null) === v); return this; }
   not(c: string, _op: string, _v: null) { this.f.push((r) => (r[c] ?? null) !== null); return this; }
   gt(c: string, v: string) { this.f.push((r) => r[c] > v); return this; }
+  gte(c: string, v: string) { this.f.push((r) => r[c] >= v); return this; }
+  order() { return this; }
   lt(c: string, v: string) { this.f.push((r) => r[c] < v); return this; }
   limit() { return this; }
   then(resolve: any, reject: any) { return this.run().then(resolve, reject); }
   private async run() {
+    if (this.op === 'select') selectCount[this.t] = (selectCount[this.t] ?? 0) + 1;
     if (this.t === 'chat_viewing_presence' && this.op === 'select' && presenceReadFails) return { data: null, error: { message: 'boom' } };
     const rows = (db[this.t] ??= []);
     if (this.op === 'upsert') {
@@ -96,7 +100,7 @@ jest.mock('../src/services/notification-controls/notification-controls-service',
 jest.mock('../src/services/jev/gates/community-ranking-gates', () => ({ shadowNotificationWorth: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../src/middleware/auth-supabase-jwt', () => ({
   resolveVitanaId: jest.fn().mockResolvedValue(null),
-  requireAuth: (req: any, _res: any, next: any) => { req.identity = { user_id: '22222222-2222-4222-8222-222222222222', tenant_id: 'tenant-1' }; next(); },
+  requireAuth: (req: any, _res: any, next: any) => { req.identity = { user_id: '22222222-2222-4222-8222-222222222222', tenant_id: 't1' }; next(); },
   requireTenant: (_req: any, _res: any, next: any) => next(),
 }));
 
@@ -114,8 +118,8 @@ beforeAll(() => {
 
 const future = () => new Date(Date.now() + VIEWING_TTL_MS).toISOString();
 const past = () => new Date(Date.now() - 1000).toISOString();
-function viewing(userId: string, key: string, device = 'tab-aaaaaaa1', expires = future()) {
-  db.chat_viewing_presence.push({ user_id: userId, device_id: device, tenant_id: 't1', conversation_key: key, expires_at: expires });
+function viewing(userId: string, key: string, device = 'tab-aaaaaaa1', expires = future(), tenant = 't1') {
+  db.chat_viewing_presence.push({ user_id: userId, device_id: device, tenant_id: tenant, conversation_key: key, expires_at: expires });
 }
 
 beforeEach(() => {
@@ -123,6 +127,7 @@ beforeEach(() => {
   db.chat_messages = [];
   db.user_notifications = [];
   presenceReadFails = false;
+  for (const k of Object.keys(selectCount)) delete selectCount[k];
   delete process.env.CHAT_PUSH_VIEWING_SUPPRESSION_ENABLED;
   jest.clearAllMocks();
   nrepo.insertUserNotification.mockResolvedValue({ data: { id: 'notif-1' }, error: null });
@@ -140,34 +145,44 @@ describe('key = the recipient\'s view', () => {
 
   it('DM A→B: B viewing dm:<A> → viewing; B viewing dm:<C> → not; A\'s own presence never counts', async () => {
     viewing(B, `dm:${A}`);
-    expect(await isViewingChat(sb as any, B, 'new_chat_message', { sender_id: A })).toBe(true);
+    expect(await isViewingChat(sb as any, B, 't1', 'new_chat_message', { sender_id: A })).toBe(true);
     db.chat_viewing_presence = [];
     viewing(B, `dm:${C}`);
     viewing(A, `dm:${B}`);
-    expect(await isViewingChat(sb as any, B, 'new_chat_message', { sender_id: A })).toBe(false);
+    expect(await isViewingChat(sb as any, B, 't1', 'new_chat_message', { sender_id: A })).toBe(false);
   });
 
   it('an expired row does not count; another device or tab does', async () => {
     viewing(B, `dm:${A}`, 'tab-old00001', past());
-    expect(await isViewingChat(sb as any, B, 'new_chat_message', { sender_id: A })).toBe(false);
+    expect(await isViewingChat(sb as any, B, 't1', 'new_chat_message', { sender_id: A })).toBe(false);
     viewing(B, `dm:${A}`, 'phone-000001');
-    expect(await isViewingChat(sb as any, B, 'new_chat_message', { sender_id: A })).toBe(true);
+    expect(await isViewingChat(sb as any, B, 't1', 'new_chat_message', { sender_id: A })).toBe(true);
   });
 
   it('only chat types; a read error or the off switch → not viewing (push as before)', async () => {
     viewing(B, `dm:${A}`);
-    expect(await isViewingChat(sb as any, B, 'listing_interest', { sender_id: A })).toBe(false);
+    expect(await isViewingChat(sb as any, B, 't1', 'listing_interest', { sender_id: A })).toBe(false);
     presenceReadFails = true;
-    expect(await isViewingChat(sb as any, B, 'new_chat_message', { sender_id: A })).toBe(false);
+    expect(await isViewingChat(sb as any, B, 't1', 'new_chat_message', { sender_id: A })).toBe(false);
     presenceReadFails = false;
     process.env.CHAT_PUSH_VIEWING_SUPPRESSION_ENABLED = 'false';
-    expect(await viewingPairs(sb as any, [{ userId: B, key: `dm:${A}` }])).toEqual(new Set());
+    expect(await viewingPairs(sb as any, [{ userId: B, tenantId: 't1', key: `dm:${A}` }])).toEqual(new Set());
+  });
+
+  it('the presence must be of the push\'s tenant; a push without a tenant is never suppressed', async () => {
+    viewing(B, `dm:${A}`, 'tab-aaaaaaa1', future(), 't2');
+    expect(await isViewingChat(sb as any, B, 't1', 'new_chat_message', { sender_id: A })).toBe(false);
+    expect(await isViewingChat(sb as any, B, 't2', 'new_chat_message', { sender_id: A })).toBe(true);
+    expect(await isViewingChat(sb as any, B, '', 'new_chat_message', { sender_id: A })).toBe(false);
+    const r = await notifyUser(B, 't1', 'new_chat_message', { title: 'T', body: 'b', data: { sender_id: A } }, sb as any);
+    expect(nrepo.setNotificationPushOutcome).toHaveBeenCalledWith(expect.anything(), 'notif-1', expect.stringMatching(/^delivered_/));
+    expect(r).toEqual(expect.objectContaining({ inapp: true }));
   });
 
   it('a payload with only message_id is keyed by one chat_messages lookup', async () => {
     db.chat_messages.push({ id: MID, sender_id: A, group_id: null });
     viewing(B, `dm:${A}`);
-    expect(await isViewingChat(sb as any, B, 'new_chat_message', { message_id: MID })).toBe(true);
+    expect(await isViewingChat(sb as any, B, 't1', 'new_chat_message', { message_id: MID })).toBe(true);
   });
 });
 
@@ -200,6 +215,38 @@ describe('notifyUser (every caller, no caller edited)', () => {
     db.chat_viewing_presence = [];
     await notifyUser(B, 't1', type, { title: 'T', body: 'b', data }, sb as any);
     expect(nrepo.setNotificationPushOutcome).toHaveBeenCalledWith(expect.anything(), 'notif-2', expect.stringMatching(/^delivered_/));
+  });
+
+  it('group: a viewing member gets no push for a message or a mention, a non-viewing member of the same group does', async () => {
+    viewing(B, `group:${G}`);
+    for (const type of ['new_chat_message', 'chat_mention']) {
+      jest.clearAllMocks();
+      nrepo.insertUserNotification.mockResolvedValue({ data: { id: 'n-b' }, error: null });
+      await notifyUser(B, 't1', type, { title: 'T', body: 'b', data: { group_id: G, sender_id: A, message_id: MID } }, sb as any);
+      expect(nrepo.setNotificationPushOutcome).toHaveBeenCalledWith(expect.anything(), 'n-b', 'suppressed_viewing');
+      nrepo.insertUserNotification.mockResolvedValue({ data: { id: 'n-c' }, error: null });
+      await notifyUser(C, 't1', type, { title: 'T', body: 'b', data: { group_id: G, sender_id: A, message_id: MID } }, sb as any);
+      expect(nrepo.setNotificationPushOutcome).toHaveBeenCalledWith(expect.anything(), 'n-c', expect.stringMatching(/^delivered_/));
+    }
+  });
+
+  it('a suppressed_viewing row is never sent later by /push-dispatch, even after the presence expired (push_sent_at at INSERT)', async () => {
+    viewing(B, `dm:${A}`);
+    await notifyUser(B, 't1', 'new_chat_message', { title: 'T', body: 'b', data: { sender_id: A, message_id: MID } }, sb as any);
+    const inserted = nrepo.insertUserNotification.mock.calls[0][1];
+    expect(inserted.push_sent_at).toEqual(expect.any(String));
+    db.chat_viewing_presence = []; // presence gone
+    db.user_notifications.push({ id: 'notif-1', ...inserted, created_at: new Date().toISOString() });
+    const { fetchPendingPushNotifications: realPending } = jest.requireActual('../src/routes/scheduled-notifications-repository');
+    const { data } = await realPending(sb, new Date(Date.now() - 3600_000).toISOString());
+    expect((data as Row[]).map((r) => r.id)).not.toContain('notif-1');
+  });
+
+  it('the email fallback never runs for suppressed_viewing / suppressed_duplicate', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { EMAIL_FALLBACK_OUTCOMES } = jest.requireActual('../src/services/email/notification-email-fallback');
+    expect(EMAIL_FALLBACK_OUTCOMES).not.toContain('suppressed_viewing');
+    expect(EMAIL_FALLBACK_OUTCOMES).not.toContain('suppressed_duplicate');
   });
 
   it('listing_interest is never suppressed', async () => {
@@ -268,6 +315,16 @@ describe('/push-dispatch', () => {
     expect(dispatchPush).not.toHaveBeenCalled();
   });
 
+  it('a batch of N rows that need the message lookup: one chat_messages read and one presence read', async () => {
+    const ids = ['66666666-6666-4666-8666-000000000001', '66666666-6666-4666-8666-000000000002', '66666666-6666-4666-8666-000000000003'];
+    for (const id of ids) db.chat_messages.push({ id, sender_id: A, group_id: null });
+    viewing(B, `dm:${A}`);
+    await runCron(ids.map((id, i) => pendingRow(`r${i}`, B, { message_id: id, url: '/inbox' }, 'new_chat_message', `2026-10-21T10:00:0${i}Z`)));
+    expect(selectCount.chat_messages).toBe(1);
+    expect(selectCount.chat_viewing_presence).toBe(1);
+    expect(outcomes()).toEqual({ r0: 'suppressed_viewing', r1: 'suppressed_viewing', r2: 'suppressed_viewing' });
+  });
+
   it('not viewing → pushed', async () => {
     db.chat_messages.push({ id: MID, sender_id: A, group_id: null });
     await runCron([pendingRow('r1', B, { message_id: MID, url: '/inbox' })]);
@@ -314,12 +371,28 @@ describe('POST /chat/viewing', () => {
     expect(r1.status).toBe(200);
     await request(app).post('/chat/viewing').send({ conversation_key: `group:${G}`, device_id: 'tab-abcdef01', active: true });
     expect(db.chat_viewing_presence).toHaveLength(1);
-    expect(db.chat_viewing_presence[0]).toMatchObject({ user_id: B, conversation_key: `group:${G}`, tenant_id: 'tenant-1' });
+    expect(db.chat_viewing_presence[0]).toMatchObject({ user_id: B, conversation_key: `group:${G}`, tenant_id: 't1' });
     const ttl = new Date(db.chat_viewing_presence[0].expires_at).getTime() - Date.now();
     expect(ttl).toBeGreaterThan(40_000);
     expect(ttl).toBeLessThanOrEqual(45_000);
     await request(app).post('/chat/viewing').send({ device_id: 'tab-abcdef01', active: false });
     expect(db.chat_viewing_presence).toHaveLength(0);
+  });
+
+  it('active:false with a conversation_key clears only that conversation (a late false for A keeps B)', async () => {
+    await request(app).post('/chat/viewing').send({ conversation_key: `group:${G}`, device_id: 'tab-abcdef01', active: true });
+    await request(app).post('/chat/viewing').send({ conversation_key: `dm:${A}`, device_id: 'tab-abcdef01', active: false });
+    expect(db.chat_viewing_presence).toHaveLength(1);
+    await request(app).post('/chat/viewing').send({ conversation_key: `group:${G}`, device_id: 'tab-abcdef01', active: false });
+    expect(db.chat_viewing_presence).toHaveLength(0);
+  });
+
+  it('after active:false the next chat push goes out', async () => {
+    await request(app).post('/chat/viewing').send({ conversation_key: `dm:${A}`, device_id: 'tab-abcdef01', active: true });
+    expect(await isViewingChat(sb as any, B, 't1', 'new_chat_message', { sender_id: A })).toBe(true);
+    await request(app).post('/chat/viewing').send({ device_id: 'tab-abcdef01', active: false });
+    await notifyUser(B, 't1', 'new_chat_message', { title: 'T', body: 'b', data: { sender_id: A } }, sb as any);
+    expect(nrepo.setNotificationPushOutcome).toHaveBeenCalledWith(expect.anything(), 'notif-1', expect.stringMatching(/^delivered_/));
   });
 
   it('expired rows of the caller are removed on write', async () => {

@@ -2,14 +2,18 @@
 --
 -- 1. chat_viewing_presence — one row per (member, device/tab) while a conversation is open, visible and
 --    focused; written by POST /api/v1/chat/viewing every 20 s, each row lives 45 s (expires_at). The gateway
---    (service role) is the only reader/writer: RLS is on and there are no client policies. tenant_id scopes
---    the rows for cleanup. Expired rows of a member are deleted on that member's next write.
+--    (service role) is the only reader/writer: RLS is on and there are no client policies. tenant_id is
+--    required: a push is only suppressed by a presence row of the push's own tenant. Expired rows of a
+--    member are deleted on that member's next write.
 -- 2. user_notifications.push_outcome CHECK gains 'suppressed_viewing' (the recipient was viewing that
 --    conversation) and 'suppressed_duplicate' (a second row for the same recipient and chat message).
---    Re-created NOT VALID, then validated (every existing value stays allowed; SHARE UPDATE EXCLUSIVE lock).
---    Same pattern as 20261013180000_vtid_05137_chat_push_coalescing.sql. Until applied, the gateway's
---    outcome write fails and is logged (best effort, recordPushOutcome) and the presence read fails open
---    (pushes as before).
+--    Re-created NOT VALID, then validated in the same transaction, so the ACCESS EXCLUSIVE lock of the
+--    DROP/ADD is held through the validation scan (sub-second at ~100k rows; same pattern and cost as
+--    20261013180000_vtid_05137_chat_push_coalescing.sql). Every existing value stays allowed.
+-- Order: the table and the widened CHECK land in ONE transaction. Before this migration the presence read
+--    fails (no table) and fails open, so nothing is ever suppressed for viewing — no suppressed_viewing row
+--    can be written against the old CHECK. Only the dedup outcome 'suppressed_duplicate' can hit the old
+--    CHECK; then the gateway logs the failed write and the row keeps push_sent_at (never re-pushed).
 --
 -- Additive and idempotent. Rollback: docs/validation/VTID-05312/rollback.sql.
 
@@ -18,7 +22,7 @@ BEGIN;
 CREATE TABLE IF NOT EXISTS public.chat_viewing_presence (
   user_id          uuid        NOT NULL,
   device_id        text        NOT NULL,
-  tenant_id        uuid        NULL,
+  tenant_id        uuid        NOT NULL,
   conversation_key text        NOT NULL CHECK (conversation_key ~ '^(dm|group):[0-9a-f-]{36}$'),
   expires_at       timestamptz NOT NULL,
   updated_at       timestamptz NOT NULL DEFAULT now(),

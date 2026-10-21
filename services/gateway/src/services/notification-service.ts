@@ -879,7 +879,7 @@ export async function notifyUser(
   // row is written exactly like a coalesced one (push_sent_at set at INSERT, so
   // /push-dispatch never sends it later) with outcome suppressed_viewing.
   const pushViewing = pushAllowed && !pushCoalesced && CHAT_PUSH_TYPES.has(type)
-    && (await isViewingChat(supabase, userId, type, payload.data));
+    && (await isViewingChat(supabase, userId, tenantId, type, payload.data));
   const shouldSendPush = pushAllowed && !pushCoalesced && !pushViewing;
 
   // VTID-05312: dedup — an unpushed row for the same recipient and message
@@ -888,7 +888,8 @@ export async function notifyUser(
   const chatMessageId = CHAT_PUSH_TYPES.has(type) ? messageIdOf(payload.data) : null;
   if (chatMessageId && meta.channel !== 'push') {
     try {
-      await repo.markUnpushedChatDuplicatesHandled(supabase, userId, chatMessageId);
+      const { error: dedupError } = (await repo.markUnpushedChatDuplicatesHandled(supabase, userId, chatMessageId)) ?? {};
+      if (dedupError) throw new Error(dedupError.message);
     } catch (err: any) {
       console.warn(`[Notifications] chat dedup failed (ignored): ${err?.message || err}`);
     }
