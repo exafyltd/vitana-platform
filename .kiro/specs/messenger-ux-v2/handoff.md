@@ -3,9 +3,10 @@ slug: messenger-ux-v2
 author: kiro
 author_seat: exafyltd
 executor: kiro
-next_actor: kiro
-state: drafted
-updated: 2026-10-21T12:00Z
+next_actor: claude
+state: parked
+updated: 2026-10-21T12:31Z
+parked_from: drafted
 ---
 # Handoff — messenger-ux-v2 (Messenger: reliable sending, scroll, replies, media, search, sharing, push suppression)
 Planner: Kiro seat `exafyltd` (session kiro-exafyltd-202610211130-c65e). Plan: `plan.md` (between the plan markers), sparred by CI PLAN-SPAR.
@@ -18,3 +19,6 @@ PLAN-SPAR allocates each lane's VTID. vitana-platform: `api-send-reliability` �
 ### 2026-10-21T12:00Z · kiro-exafyltd-202610211130-c65e · created → drafted
 Owner spec "Vitanaland Messenger — UX Improvements & Functional Requirements" given to this session on 2026-10-21
 (recorded in `requirements.md`). The owner gave no merge instruction for this plan; merges follow §7b.
+
+### 2026-10-21T12:31Z · ci-plan-spar · drafted → parked
+Not converged after 2 sparring sessions (evidence_floor_not_met). Parked with the open findings in sparring/.
