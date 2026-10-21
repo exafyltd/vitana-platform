@@ -1,0 +1,172 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/kaf-fallback-env-ff-stage-env/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/kaf-fallback-env-ff-stage-env/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/vtid-05127-phone-verify-switch-wiring.test.ts
+  VTID-05127 production wiring step
+    √ reads both repository variables and calls the shared wiring script on the partial task definition (200 ms)
+    √ runs after the checkout and before step 2/2, so env_overrides can still switch it off (2 ms)
+    √ step 2/2 never strips the phone settings by name (24 ms)
+    √ the secret is only ever a valueFrom reference, never a plain value (36 ms)
+    √ pins the exact anchored ARN pattern (11 ms)
+  VTID-05127 wiring decision (scripts/ci/phone-verify-wiring.sh)
+    ○ skipped ARN + enabled → secret wired, PHONE_VERIFY_ENABLED=true, other entries kept
+    ○ skipped ARN + not enabled → secret wired, PHONE_VERIFY_ENABLED=false
+    ○ skipped no ARN + enabled → fails (on without its secret)
+    ○ skipped no ARN + not enabled → PHONE_VERIFY_ENABLED=false and the stale secret ref removed
+    ○ skipped rejects an ARN with wrong prefix
+    ○ skipped rejects an ARN with other account
+    ○ skipped rejects an ARN with suffix too short
+    ○ skipped rejects an ARN with trailing text
+    ○ skipped rejects an ARN with another secret with the same prefix
+    ○ skipped enabled value "TRUE" is off
+    ○ skipped enabled value " true" is off
+    ○ skipped enabled value "true " is off
+    ○ skipped enabled value "1" is off
+    ○ skipped enabled value "yes" is off
+  VTID-05127 staging wiring step
+    √ looks up the staging secret and never fails the deploy when it is absent (1 ms)
+    √ absent → PHONE_VERIFY_ENABLED=false; present → secret ref + true (merged by name via connected-apps.json) (1 ms)
+    √ runs before the roll step, which merges connected-apps.json by name and does not strip the phone settings itself (1 ms)
+  VTID-05127 setup script
+    √ grants only SendTextMessage, scoped to this account and region (2 ms)
+    × dry run without credentials stops at the account check and changes nothing (16 ms)
+    √ never prints the secret value (2 ms)
+
+  ● VTID-05127 setup script › dry run without credentials stops at the account check and changes nothing
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "nothing was changed"
+    Received string:    "undefinedundefined"
+
+    [0m [90m 189 |[39m     })[33m;[39m
+     [90m 190 |[39m     expect(res[33m.[39mstatus)[33m.[39mnot[33m.[39mtoBe([35m0[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 191 |[39m     expect([32m`${res.stdout}${res.stderr}`[39m)[33m.[39mtoContain([32m'nothing was changed'[39m)[33m;[39m
+     [90m     |[39m                                          [31m[1m^[22m[39m
+     [90m 192 |[39m   })[33m;[39m
+     [90m 193 |[39m
+     [90m 194 |[39m   test([32m'never prints the secret value'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/vtid-05127-phone-verify-switch-wiring.test.ts:191:42)
+
+FAIL test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts (14.76 s)
+  VTID-03788: every run: step in the gateway deploy workflows is valid bash
+    √ AWS-STAGE-DEPLOY-GATEWAY.yml: YAML parses and has at least one bash run: step (167 ms)
+    × AWS-STAGE-DEPLOY-GATEWAY.yml: every run: step passes bash -n (8698 ms)
+    √ AWS-STAGE-DEPLOY-GATEWAY.yml: no single run: step exceeds 20,000 characters (GitHub Actions workflow-file size limit) (7 ms)
+    √ AWS-PROD-DEPLOY-GATEWAY.yml: YAML parses and has at least one bash run: step (8 ms)
+    × AWS-PROD-DEPLOY-GATEWAY.yml: every run: step passes bash -n (2900 ms)
+    √ AWS-PROD-DEPLOY-GATEWAY.yml: no single run: step exceeds 20,000 characters (GitHub Actions workflow-file size limit) (7 ms)
+    √ AWS-STAGE-DEPLOY-GATEWAY.yml: the task-definition update step has no apostrophe inside its jq program (VTID-03787/VTID-03788 regression) (6 ms)
+
+  ● VTID-03788: every run: step in the gateway deploy workflows is valid bash › AWS-STAGE-DEPLOY-GATEWAY.yml: every run: step passes bash -n
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  -  1
+    + Received  + 24
+
+    - Array []
+    + Array [
+    +   "job \"build-push-deploy\" step \"Pinned commit must already be on main (VTID-04709)\": ",
+    +   "job \"build-push-deploy\" step \"Stage codeintel source (VTID-04118 — RepoWise/Graphify image indexing)\": ",
+    +   "job \"build-push-deploy\" step \"Resolve commit metadata + refresh BUILD_INFO\": ",
+    +   "job \"build-push-deploy\" step \"Preflight — verify ECR repo + ECS service exist\": ",
+    +   "job \"build-push-deploy\" step \"Build and push image\": ",
+    +   "job \"build-push-deploy\" step \"Resolve Connected Apps sign-in config\": ",
+    +   "job \"build-push-deploy\" step \"Resolve Jev decision config\": ",
+    +   "job \"build-push-deploy\" step \"Resolve Live Rooms Daily key\": ",
+    +   "job \"build-push-deploy\" step \"Resolve dev-memory pack token\": ",
+    +   "job \"build-push-deploy\" step \"Resolve Kiro runner config\": ",
+    +   "job \"build-push-deploy\" step \"Audiobook Google narration flags\": ",
+    +   "job \"build-push-deploy\" step \"Community MCP flags\": ",
+    +   "job \"build-push-deploy\" step \"Resolve phone verification config\": ",
+    +   "job \"build-push-deploy\" step \"Register task-definition revision + roll the service (1/2 — build the task definition)\": ",
+    +   "job \"build-push-deploy\" step \"Register task-definition revision + roll the service\": ",
+    +   "job \"build-push-deploy\" step \"Diagnose failed rollout (service events + stopped tasks)\": ",
+    +   "job \"build-push-deploy\" step \"Smoke — env=staging + deployed commit live\": ",
+    +   "job \"build-push-deploy\" step \"Smoke — Nova Sonic health surface present\": ",
+    +   "job \"build-push-deploy\" step \"Report DAILY_API_KEY presence (live task definition, read-only)\": ",
+    +   "job \"build-push-deploy\" step \"Emit OASIS event + software_versions row (best-effort)\": ",
+    +   "job \"build-push-deploy\" step \"Summary\": ",
+    +   "job \"build-push-deploy\" step \"Record deployed commit for STAGING-VERIFY (VTID-04715)\": ",
+    + ]
+
+    [0m [90m 113 |[39m       }
+     [90m 114 |[39m
+    [31m[1m>[22m[39m[90m 115 |[39m       expect(failures)[33m.[39mtoEqual([])[33m;[39m
+     [90m     |[39m                        [31m[1m^[22m[39m
+     [90m 116 |[39m     })[33m;[39m
+     [90m 117 |[39m
+     [90m 118 |[39m     [90m// VTID-03788 — the actual defect: GitHub Actions rejects the WHOLE[39m[0m
+
+      at Object.<anonymous> (test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts:115:24)
+
+  ● VTID-03788: every run: step in the gateway deploy workflows is valid bash › AWS-PROD-DEPLOY-GATEWAY.yml: every run: step passes bash -n
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  -  1
+    + Received  + 30
+
+    - Array []
+    + Array [
+    +   "job \"build-push-deploy\" step \"Resolve commit metadata + refresh BUILD_INFO\": ",
+    +   "job \"build-push-deploy\" step \"Preflight — verify ECR repo + ECS service exist\": ",
+    +   "job \"build-push-deploy\" step \"Resolve deploy source (promote-staging vs rebuild-main)\": ",
+    +   "job \"build-push-deploy\" step \"Build and push image (rebuild-main only)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (1/2 — image, commit stamp, always-pinned flags)\": ",
+    +   "job \"build-push-deploy\" step \"Capture rollback target (task definition live before this deploy)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (Jev gates)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (drop dead secret refs)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (internal token)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (Live Rooms Daily key)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (Kiro runner)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (dev-memory pack token)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (reward payouts on)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (routine runner on)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (onboarding coach shadow mode on)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (reminders dispatch on)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (Commerce MCP)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (calendar gates)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (data backend — VTID-05023)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (phone verification)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (2/2 — optional overrides) + register + roll the service\": ",
+    +   "job \"build-push-deploy\" step \"Smoke — env=production + deployed commit live\": ",
+    +   "job \"build-push-deploy\" step \"Verify reward sweep setting (live task definition)\": ",
+    +   "job \"build-push-deploy\" step \"Post-deploy verification (read-only)\": ",
+    +   "job \"build-push-deploy\" step \"Report DAILY_API_KEY presence (live task definition, read-only)\": ",
+    +   "job \"build-push-deploy\" step \"Roll back to the previous task definition\": ",
+    +   "job \"build-push-deploy\" step \"Emit OASIS event + software_versions row (best-effort)\": ",
+    +   "job \"build-push-deploy\" step \"Summary\": ",
+    + ]
+
+    [0m [90m 113 |[39m       }
+     [90m 114 |[39m
+    [31m[1m>[22m[39m[90m 115 |[39m       expect(failures)[33m.[39mtoEqual([])[33m;[39m
+     [90m     |[39m                        [31m[1m^[22m[39m
+     [90m 116 |[39m     })[33m;[39m
+     [90m 117 |[39m
+     [90m 118 |[39m     [90m// VTID-03788 — the actual defect: GitHub Actions rejects the WHOLE[39m[0m
+
+      at Object.<anonymous> (test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts:115:24)
+
+Test Suites: 2 failed, 2 total
+Tests:       3 failed, 14 skipped, 15 passed, 32 total
+Snapshots:   0 total
+Time:        17.086 s
+Ran all test suites matching /test\\orb\\live\\upstream\\staging-deploy-workflow-bash-syntax.test.ts|test\\vtid-05127-phone-verify-switch-wiring.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

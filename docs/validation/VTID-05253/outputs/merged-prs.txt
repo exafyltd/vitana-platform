@@ -1,0 +1,4 @@
+env-profiles  VTID-05249  PR exafyltd/vitana-v1#1466  state=MERGED  mergeCommit=50873056a
+fixture-gateway  VTID-05250  PR exafyltd/vitana-v1#1465  state=MERGED  mergeCommit=db3e0766b
+plan spec + lane files on vitana-platform main via PR #4179  mergeCommit=6bab918f8
+ref fix (PLAN-SPAR reads vitana-v1) on main via PR #4201  mergeCommit=fa73aabd0
