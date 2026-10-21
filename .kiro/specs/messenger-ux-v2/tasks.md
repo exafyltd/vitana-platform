@@ -34,6 +34,8 @@ table.
 - `/delivered` with ids of messages received by someone else updates 0 rows; > 200 ids → 400; `/delivered` and the
   bubble never apply to group messages.
 - `around` on a message of another conversation → 404; result ascending with `has_older`/`has_newer`.
+- Read endpoints: a row whose `metadata.reply_to` points into another conversation is returned with
+  `reply_to_message_id: null`; an in-conversation target is returned; one batched check per page.
 - Requests without the new fields behave exactly as before (existing chat tests unchanged and green).
 
 <!-- lane: api-viewing-presence -->
@@ -50,6 +52,11 @@ table.
       `PushOutcome` type extended.
 - [ ] Off switch `CHAT_PUSH_VIEWING_SUPPRESSION_ENABLED` (default on); fails open.
 **Acceptance:**
+- Jest key matrix: DM A→B with B viewing `dm:<A>` → suppressed; B viewing `dm:<C>` → pushed; A viewing `dm:<B>` does
+  not affect B's push; a payload whose `conversation_key` disagrees with `sender_id` uses `sender_id` (logged).
+- Jest caller matrix, one case per I4 caller (chat.ts DM, chat.ts invite, new-member greeting, chat-groups fanout
+  message + mention + invite, welcome refanout, orb-tools-shared, messaging-depth-tools ×3, calendar-social-tools,
+  welcome-team): viewing → suppressed, not viewing → pushed; `listing_interest` never suppressed.
 - Jest: viewing `dm:<sender>` suppresses that DM's push only; another conversation still pushes; group member viewing
   `group:<id>` gets no push for a message or a mention while a non-viewing member does; expired row (> 45 s) does not
   suppress; two devices, one viewing → suppressed; `active:false` → pushed.

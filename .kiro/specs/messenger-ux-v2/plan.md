@@ -70,14 +70,18 @@ same pair returns `200 {ok:true, data:<existing row>, duplicate:true}` and sends
 `201`. Concurrent duplicates: the insert's unique violation (SQLSTATE `23505` on that index) is caught, the existing row
 re-fetched by `(sender_id, client_message_id)` and returned as the duplicate response — never a 500. `reply_to_message_id` must be a message of the same conversation (same DM pair or same group) visible to the
 sender, else `400 invalid_reply_target`; stored as `metadata.reply_to = {message_id}` (no copied content, so an edit or
-delete of the parent is reflected and nothing leaks). Read endpoints expose it as `reply_to_message_id`. Readers trust
-it only inside the same conversation: the quote is resolved from that conversation's rows or I3 (which 404s outside
-it), so a value forged through a direct RLS insert shows "original message not available", never foreign content. Rows returned by every read endpoint include
+delete of the parent is reflected and nothing leaks). Read endpoints expose it as `reply_to_message_id`. **Server-side read check:** a direct RLS insert can set any `metadata.reply_to` (`users_send_messages` checks only
+`sender_id`, `20260225200000_chat_messages.sql:23`). So every read endpoint exposes `reply_to_message_id` only after
+one batched check per page: the target exists in the same DM pair or the same group; otherwise null. The client
+also resolves quotes only from that conversation's rows or I3. A forged value shows no quote, never foreign
+content. Rows returned by every read endpoint include
 `client_message_id`, `delivered_at`.
 **I2 delivery (api-send-reliability).** Nullable `chat_messages.delivered_at timestamptz`. `POST /chat/delivered
 {message_ids: uuid[] ≤ 200}` sets `delivered_at = now()` only where `receiver_id = caller` and `delivered_at IS NULL`
-(DMs only). `read_at` set by `/chat/read` also sets `delivered_at` when NULL. Senders observe both through realtime
-UPDATE on `chat_messages` (`sender_id=eq.<me>`; existing SELECT RLS). **Groups have no per-message delivered/read
+(DMs only). `read_at` set by `/chat/read` also sets `delivered_at` when NULL. Senders observe both through realtime UPDATE on `chat_messages` (`sender_id=eq.<me>`): Realtime authorises an
+UPDATE event with the row's SELECT policy, and `users_read_own_messages` admits `sender_id = auth.uid()`
+(`20260225200000_chat_messages.sql:19-21`). The client does not depend on it alone: thread focus/visibility already
+refetches (`useGlobalMessages.ts:1716-1730`), so a missed event converges on the next refetch. **Groups have no per-message delivered/read
 state** (read state is `chat_group_members.last_read_at`, `20260525000000_VTID_03089_chat_groups.sql:26`): a group
 message's ladder is Sending → Sent | Failed only, and the bubble never shows Delivered/Read for a group message.
 **I3 context window (api-send-reliability).** `GET /chat/conversation/:peerId?around=<messageId>&limit=N` and
@@ -92,6 +96,13 @@ The client sends `active:true` every 20 s while the conversation is open AND the
 (Appilix: visible), and `active:false` on blur, hide, unmount and conversation change (on `pagehide` via
 `fetch(…, {keepalive:true})` with the normal `Authorization` header — `sendBeacon` cannot carry it; a lost final call
 is bounded by the 45 s expiry). Any unexpired row for (recipient, key) on any device or tab = "viewing".
+**Key = the recipient's own view.** The viewer posts `dm:<the other party>` or `group:<id>`. A push to recipient R
+from sender S is checked as `user_id = R AND conversation_key = dm:<S>` (DM) or `group:<group_id>` (group). For a DM
+the other party R sees is exactly S, so `dm:<data.sender_id>` is the recipient-perspective key. This is the same
+convention as the existing coalescer key (`chatConversationKey({senderId})` = `dm:<sender>`,
+`chat-push-coalescer.ts:48`, used for the recipient's rows). `chatConversationKeyFromData` therefore uses
+`group_id` first, then `sender_id`, then the `message_id` lookup, and uses `data.conversation_key` only to
+cross-check (a mismatch is logged and `group_id`/`sender_id` wins).
 **One check, at the two places every chat push passes.** Chat pushes are produced by many callers (`chat.ts` /send
 incl. calendar invites and the new-member-greeting branch `chat.ts:252` → `new-member-greeting-push.ts`,
 `chat-groups.ts` fanout `:570-673` incl. mentions and invites, `chat-groups.ts:867` welcome refanout,
@@ -99,15 +110,15 @@ incl. calendar invites and the new-member-greeting branch `chat.ts:252` → `new
 `welcome-team/welcome-team-service.ts:284`); all of them end in `notifyUser` (`notification-service.ts:809`) or, for
 rows written without it, in `/push-dispatch` (`scheduled-notifications.ts:1252`). So the check lives in a new
 `services/chat-viewing-presence.ts`, called from exactly those two places, and no caller changes:
-- `chatConversationKeyFromData(data)` = `data.conversation_key` ?? (`data.group_id` → `group:<group_id>`) ??
-  (`data.sender_id` → `dm:<sender_id>`) ?? (`data.message_id` → one lookup in `chat_messages(sender_id, group_id)`) ??
-  null (null = not suppressed). Every caller above already sets `group_id` or `sender_id`.
+- `chatConversationKeyFromData(data)` = (`data.group_id` → `group:<group_id>`) ?? (`data.sender_id` →
+  `dm:<sender_id>`) ?? (`data.message_id` → batched lookup in `chat_messages(sender_id, group_id)`) ?? null (null = not
+  suppressed). Every caller above already sets `group_id` or `sender_id`.
 - `notifyUser`, for `type ∈ {new_chat_message, chat_mention}` when the push would otherwise go out: viewing → the
   in-app row is written exactly like the `coalesced` branch (`notification-service.ts:870-899`): `push_sent_at` set at
   INSERT, no push, `push_outcome 'suppressed_viewing'`, so `/push-dispatch` never re-selects it after the presence
   expires. `NotifyUserOptions` is unchanged (the decision is internal). Mentions in a viewed group are suppressed too.
-  **Deliberate scope (owner R13: no push for incoming messages while the recipient views that conversation):**
-  calendar invites sent into a viewed DM/group are messages of that conversation and are suppressed too — the
+  **Deliberate behaviour change, flagged for the owner at Gate 2 ("Decisions taken"); owner R13: no push for incoming
+  messages while the recipient views that conversation):** calendar invites sent into a viewed DM/group are messages of that conversation and are suppressed too — the
   invite card appears live in the open chat and the in-app row is kept. This replaces, for the viewing case only, the
   coalescer's rule that invites are never coalesced (`chat.ts:268`), which stays unchanged for bursts. Types other
   than `new_chat_message` / `chat_mention` (e.g. `listing_interest`, `chat.ts:228-236`) are never suppressed.
@@ -130,9 +141,11 @@ rows written without it, in `/push-dispatch` (`scheduled-notifications.ts:1252`)
 `new_chat_message` row (url `/inbox`, `push_sent_at` NULL) for a DM that the gateway also notifies; its guard runs at
 INSERT time, before the gateway's row exists. Measured read-only 2026-10-21: no such row in the last 120 days (the
 trigger's insert does not land today; its live body also differs from the repo's last migration — drift recorded by
-the lane, trigger not changed by this plan). Defensive rule, owned by the push path, both orders: (a) `/push-dispatch`
-marks an unpushed chat row `suppressed_duplicate` when another row of the same `user_id` and `data->>'message_id'`
-already has `push_sent_at`; (b) `notifyUser`, before writing a chat row with a `message_id`, marks unpushed rows of
+the lane, trigger not changed by this plan). Defensive rule, owned by the push path, both orders: (a) `/push-dispatch`, before sending anything in a batch, groups its unpushed chat rows by (`user_id`,
+`data->>'message_id'`): of rows in the same group the oldest is kept and the rest are marked `suppressed_duplicate`; a
+kept row is also marked `suppressed_duplicate` when another row of that pair already has `push_sent_at`. Overlapping
+cron ticks are already serialised by `markHandled` writing `push_sent_at` first (VTID-04962); a re-enabled or changed
+trigger would only add rows this rule handles; (b) `notifyUser`, before writing a chat row with a `message_id`, marks unpushed rows of
 the same user and `message_id` `suppressed_duplicate`.
 **I5 search (api-message-search).** `GET /chat/search?q=&scope=all|dm:<peerId>|group:<groupId>&from=&to=&type=
 any|image|video|file|voice|link&sender=<userId>&cursor=&limit≤50` → `{results:[{message_id, conversation_key,
