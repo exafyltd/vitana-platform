@@ -5,7 +5,7 @@ author_seat: exafy
 executor: claude
 next_actor: claude
 state: approved
-updated: 2026-10-21T12:03Z
+updated: 2026-10-21T22:04Z
 sparring_record: .kiro/specs/sparring-floor-retry/sparring/verdict.md
 vtids: [VTID-05240]
 ---
@@ -98,3 +98,16 @@ driver from building a governance or `executor: claude` lane. No open sparring r
 converged/approved). Plan PR convergence/merge and the open `pm-agent` PR #4249 are the Project Manager's /
 an interactive driver's, not an automation run's. Lane left `ready` for Claude Code (the exceptions seat
 `exafyltd` while Claude is unavailable). `_plan` claim released at end of run; next wake-up resumes from git.
+
+### 2026-10-21T22:04Z · kiro-exafy-202610212201-56cb · driver resume (automation wake-up W)
+Fallback wake-up for seat `exafy`. The previous driver heartbeat
+(`refs/heads/collab-driver/sparring-floor-retry`, tip by kiro-exafy-202610212101-7f9c) was ~57.9 min old
+(stale, > 45 min), so this run took it over and wrote a fresh heartbeat (sha 29e7e1e8…); held the `_plan`
+claim.
+No action available to an automation-started driver: the only lane `floor-retry-code` is `executor: claude`
+and a governance path (`scripts/collab/**`), and `.kiro/pipeline/driver.md` forbids an automation-started
+driver from building a governance or `executor: claude` lane. No open sparring round awaits a response (plan
+converged/approved, both responses files present). Merge of the plan PR is left to the Project Manager / an
+interactive driver (an automation run never merges). The PM has reassigned the lane `seat` claude→exafyltd
+(`stale_ready`, Claude unavailable) on its branch; the lane stays `ready` for the exceptions seat `exafyltd`,
+still `executor: claude`. `_plan` claim released at end of run; next wake-up resumes from git.
