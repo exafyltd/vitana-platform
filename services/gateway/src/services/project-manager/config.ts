@@ -21,8 +21,16 @@ export function pmMode(env: NodeJS.ProcessEnv = process.env): PmMode {
   return 'dry_run';
 }
 
-/** The decide loop interval. 10 minutes (plan §6). */
+/** VTID-05274 (plan kiro-autonomy-fallback §5 C3): the default tick is 2 minutes (was 10). */
+export const DEFAULT_PM_TICK_MS = 120000;
+
+/** The decide/act loop interval. */
 export function pmTickIntervalMs(env: NodeJS.ProcessEnv = process.env): number {
-  const n = parseInt(env.PM_TICK_INTERVAL_MS ?? '600000', 10);
-  return Number.isFinite(n) && n > 0 ? n : 600000;
+  const n = parseInt(env.PM_TICK_INTERVAL_MS ?? String(DEFAULT_PM_TICK_MS), 10);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_PM_TICK_MS;
+}
+
+/** VTID-05274: the pm_lease TTL = tick − 30 s (at least 30 s), so a lease never outlives its tick. */
+export function pmLeaseTtlMs(env: NodeJS.ProcessEnv = process.env): number {
+  return Math.max(30000, pmTickIntervalMs(env) - 30000);
 }

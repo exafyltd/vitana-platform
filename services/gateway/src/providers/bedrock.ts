@@ -1,5 +1,6 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { NodeHttpHandler } from '@smithy/node-http-handler';
+import { modelAcceptsEffort } from '../constants/llm-defaults';
 
 /**
  * Anthropic-via-Bedrock provider (VTID-03181 VOICE-LAT W1; wired in
@@ -254,8 +255,17 @@ export async function invokeBedrock(
 /**
  * Build the InvokeModel JSON body. Pure; exported for tests (VTID-04868).
  * Without `thinking`/`output_config` the body is exactly what shipped before.
+ *
+ * VTID (sparring-model-fallback): `output_config` (which carries `effort`) is
+ * sent ONLY to models that accept it (`modelAcceptsEffort`). Opus 4.6 accepts
+ * it; Opus 4.5 and (conservatively) every other model do not — Opus 4.5
+ * rejected it with "output_config.effort: Extra inputs are not permitted", so
+ * sending it to the Sonnet 4.6 throttle-fallback would break every invoke.
+ * `thinking` is left as-is (adaptive thinking is broadly accepted); if a future
+ * fallback model rejects it too, extend the gate the same way.
  */
 export function buildBedrockRequestBody(req: BedrockInvokeRequest): Record<string, unknown> {
+  const sendOutputConfig = !!req.output_config && modelAcceptsEffort(req.model);
   return {
     anthropic_version: 'bedrock-2023-05-31',
     max_tokens: req.max_tokens ?? 2048,
@@ -270,6 +280,6 @@ export function buildBedrockRequestBody(req: BedrockInvokeRequest): Record<strin
     ...(req.tools && req.tools.length > 0 ? { tools: req.tools } : {}),
     ...(req.tool_choice ? { tool_choice: req.tool_choice } : {}),
     ...(req.thinking ? { thinking: req.thinking } : {}),
-    ...(req.output_config ? { output_config: req.output_config } : {}),
+    ...(sendOutputConfig ? { output_config: req.output_config } : {}),
   };
 }

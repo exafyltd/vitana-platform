@@ -232,7 +232,7 @@ describe('act layer — never deploys, dispatches, or allocates', () => {
 
     const decisions: PmDecision[] = [
       mergeDecisionFor(mergeL),
-      { kind: 'reassign', slug: reassignL.slug, lane: 'stale', target: 'lane', from_seat: 'jtadic', to_actor: 'exafyltd', reason: 'stale_ready_24h' },
+      { kind: 'reassign', slug: reassignL.slug, lane: 'stale', target: 'lane', from_seat: 'jtadic', to_actor: 'exafyltd', reason: 'stale_ready', window_ms: 86400000, fallback: false },
       { kind: 'park', slug: parkL.slug, lane: 'bad', reason: 'ci_failed_3_consecutive', release_claim: false },
       { kind: 'gate2', slug: gate2L.slug, vtids: ['VTID-05217'], reason: 'all_verified' },
     ];
@@ -402,7 +402,7 @@ describe('act layer — reassign and park write lane-file state', () => {
     const l = lane({ state: 'ready' });
     const fake = new FakeSafeMerge(new Map());
     const writer = new FakeLaneWriter();
-    const d: ReassignDecision = { kind: 'reassign', slug: 'pm-agent', lane: 'p4-act', target: 'lane', from_seat: 'jtadic', to_actor: 'exafyltd', reason: 'stale_ready_24h' };
+    const d: ReassignDecision = { kind: 'reassign', slug: 'pm-agent', lane: 'p4-act', target: 'lane', from_seat: 'jtadic', to_actor: 'exafyltd', reason: 'stale_ready', window_ms: 86400000, fallback: false };
     await actOnDecisions([d], stateWith([l]), baseDeps(fake, { laneWriter: writer }));
     expect(writer.changes[0]).toMatchObject({ seat: 'exafyltd', next_actor: 'exafyltd' });
   });
@@ -412,7 +412,7 @@ describe('act layer — reassign and park write lane-file state', () => {
     const l = lane({ state: 'ready' });
     const fake = new FakeSafeMerge(new Map());
     const writer = new FakeLaneWriter();
-    const d: ReassignDecision = { kind: 'reassign', slug: 'pm-agent', lane: 'p4-act', target: 'lane', from_seat: 'jtadic', to_actor: 'claude', reason: 'stale_ready_24h' };
+    const d: ReassignDecision = { kind: 'reassign', slug: 'pm-agent', lane: 'p4-act', target: 'lane', from_seat: 'jtadic', to_actor: 'claude', reason: 'stale_ready', window_ms: 86400000, fallback: false };
     await actOnDecisions([d], stateWith([l]), baseDeps(fake, { laneWriter: writer }));
     expect(writer.changes[0].next_actor).toBe('claude');
     expect(writer.changes[0].seat).toBeUndefined();
@@ -423,7 +423,7 @@ describe('act layer — reassign and park write lane-file state', () => {
     const l = lane({ state: 'executing' });
     const fake = new FakeSafeMerge(new Map());
     const writer = new FakeLaneWriter();
-    const d: ParkDecision = { kind: 'park', slug: 'pm-agent', lane: 'p4-act', reason: 'stale_claim_48h', release_claim: true };
+    const d: ParkDecision = { kind: 'park', slug: 'pm-agent', lane: 'p4-act', reason: 'stale_claim', window_ms: 172800000, release_claim: true };
     await actOnDecisions([d], stateWith([l]), baseDeps(fake, { laneWriter: writer }));
     expect(writer.changes[0]).toMatchObject({ state: 'parked', next_actor: 'claude', release_claim: true });
   });

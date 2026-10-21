@@ -1,0 +1,54 @@
+{
+  "verdict": "CHANGES_REQUESTED",
+  "findings": [
+    {
+      "id": "MEDIUM-1",
+      "severity": "MEDIUM",
+      "title": "parseFrontMatter import cited at plan-spar.mjs:40; it is actually line 26",
+      "where": "design.md — \"Technology stack (locked)\" paragraph",
+      "problem": "The design states parseFrontMatter is 'already imported at plan-spar.mjs:40'. The live file imports it at plan-spar.mjs:26 (lines 24-26 are the path/url/queue imports; line 40 is inside the INFRA_REASONS region). A flat factual error in a citation the round-2 response claims was re-verified against live source.",
+      "fix": "Change 'plan-spar.mjs:40' to 'plan-spar.mjs:26' in the Technology stack paragraph. The behavioural claim (parseFrontMatter is already imported and reused) is correct; only the line number is wrong."
+    },
+    {
+      "id": "MEDIUM-2",
+      "severity": "MEDIUM",
+      "title": "queue.mjs range citations for parseFrontMatter (:102-121) and clean() (:123-125) are off by one at both ends",
+      "where": "design.md (Technology stack, Front-matter shape, parseSparRefs comment, Input validation, round-2 items 2 & 5) and requirements.md A1",
+      "problem": "Live queue.mjs: parseFrontMatter opens at line 103 and closes at line 122 (design pins :102-121; line 102 is blank, line 122 is the closing brace). clean() is lines 123-126 (design pins :123-125, stopping one line short of the closing brace). The interior lines the argument leans on are correct and should stay: out[listKey].push(clean(item[1])) at :111 and the scalar-only strip const v = kv[2].replace(/\\s+#.*$/,'') at :114. The MEDIUM-2 reasoning (block-list items never hit the :114 strip) is factually right; only the two range citations are wrong.",
+      "fix": "Replace queue.mjs:102-121 with queue.mjs:103-122 and queue.mjs:123-125 with queue.mjs:123-126 everywhere in design.md and requirements.md."
+    },
+    {
+      "id": "NIT-1",
+      "severity": "NIT",
+      "title": "Round >= 2 pinned-refs prompt line reads previous.repo_refs, not extra_refs",
+      "where": "design.md — Current behavior / F2, citing plan-sparring-service.ts:142",
+      "problem": "round1Prompt (:142) builds the pinned-refs line from refs (merged with extra_refs at :266). For round >= 2 the equivalent is nextRoundPrompt (:166), which reads previous.repo_refs (set at :358 from the same refs). The persistence claim is true but is carried by the stored per-round repo_refs, not by re-reading extra_refs.",
+      "fix": "Optional: cite plan-sparring-service.ts:166 (nextRoundPrompt) / :358 (round N refs = previous.repo_refs) alongside :142 where round persistence is discussed."
+    },
+    {
+      "id": "NIT-2",
+      "severity": "NIT",
+      "title": "repo_refs is a SparringRound field, not a top-level session field",
+      "where": "requirements.md FR6 and F2; design.md F2",
+      "problem": "repo_refs is declared on the round interface at types.ts:120. 'the session's repo_refs' is shorthand for 'repo_refs on each round of the session returned by GET /api/v1/plans/spar/:id'. The design mostly says 'per-round repo_refs' correctly; FR6 could still be misread as a top-level session field.",
+      "fix": "Optional: phrase the follow-up check as 'exafyltd/vitana-v1 in session.rounds.at(-1).repo_refs' so the array-of-rounds shape is explicit."
+    },
+    {
+      "id": "NIT-3",
+      "severity": "NIT",
+      "title": "PLAN_SPARRING_REPOS local-copy drift note is asymmetric",
+      "where": "design.md — New code in plan-spar.mjs section 3",
+      "problem": "The gateway re-validation (:112) catches an ADDED repo loudly. The 'source of truth' comment is the only guard against the local copy going stale in the permissive direction (gateway removes a repo). Still fails loud server-side, so safe, but worth stating the drift is caught in both directions.",
+      "fix": "Optional: add one sentence to section 3 that the gateway :112 re-validation catches drift in both directions, so the local copy can never cause a wrong repo to actually be pinned."
+    },
+    {
+      "id": "NIT-4",
+      "severity": "NIT",
+      "title": "main()->step() token thread (non-injected fetch) covered only by live run, not a unit test",
+      "where": "design.md — Test plan",
+      "problem": "All nine tests inject fetchImpl, so the production wiring (main() passing token and omitting fetchImpl so global fetch is used) is never unit-tested, only exercised by the live workflow. Reasonable scoping and the design states it, but the AC-to-test mapping should say so plainly.",
+      "fix": "Optional: add a line under 'What is integration-only' noting the main()->step() token thread and the global-fetch default are covered by the first live two-repo PLAN-SPAR run, not a unit test."
+    }
+  ],
+  "reviewDoc": "c:\\Users\\dstev\\vitana-platform-1\\.kiro\\specs\\plan-spar-vitana-v1-ref\\design-review.md"
+}

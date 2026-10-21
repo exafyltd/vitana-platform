@@ -17,7 +17,7 @@
       "name": "operator-console.js is served and carries a moved function",
       "target": "gateway",
       "method": "GET",
-      "path": "/command-hub/operator-console.js?v=20261120-vtid-05148",
+      "path": "/command-hub/operator-console.js?v=20261121-vtid-05082",
       "expect_status": 200,
       "expect_body_contains": "function clearOperatorChatSession",
       "reason": "read-only GET: the newly extracted bundle file is reachable and serves a function moved out of app.js"

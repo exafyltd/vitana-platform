@@ -1,0 +1,58 @@
+# [sources at 0e93e3701f82230ed73a2f73d73b148aab3c2317; lane code unchanged since b62b27556 (git diff --stat b62b27556 0e93e3701f82230ed73a2f73d73b148aab3c2317 -- services/ is empty)]
+# npx jest test/project-manager/observe-live.test.ts --ci; exit 0
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pipeline-main/.worktrees/kaf-fallback-env-ff-pm-flag/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [PM] observe: exafyltd/vitana-platform#4240: 502
+
+    [0m [90m 283 |[39m
+     [90m 284 |[39m   [36mprivate[39m log(msg[33m:[39m string)[33m:[39m [36mvoid[39m {
+    [31m[1m>[22m[39m[90m 285 |[39m     ([36mthis[39m[33m.[39mdeps[33m.[39mlog [33m?[39m[33m?[39m ((m[33m:[39m string) [33m=>[39m console[33m.[39mwarn([32m`[PM] observe: ${m}`[39m)))(msg)[33m;[39m
+     [90m     |[39m                                               [31m[1m^[22m[39m
+     [90m 286 |[39m   }
+     [90m 287 |[39m
+     [90m 288 |[39m   [36masync[39m observe(mode[33m:[39m [33mPmMode[39m)[33m:[39m [33mPromise[39m[33m<[39m[33mObservedState[39m[33m>[39m {[0m
+
+      at src/services/project-manager/observe-live.ts:285:47
+      at GithubObserver.log (src/services/project-manager/observe-live.ts:285:75)
+      at GithubObserver.observe (src/services/project-manager/observe-live.ts:410:16)
+      at Object.<anonymous> (test/project-manager/observe-live.test.ts:208:15)
+
+PASS test/project-manager/observe-live.test.ts
+  parsers
+    ΓêÜ parseTrailers reads the ┬º4.1 trailers (11 ms)
+    ΓêÜ parseLaneLog splits executing entries, review entries and decisions (3 ms)
+    ΓêÜ parseLaneLog accepts the " - " separator (1 ms)
+    ΓêÜ reviewOnlySince: heads after which only review / pm-agent lane commits follow (1 ms)
+    ΓêÜ reviewOnlySince stops at a commit that changes another file (1 ms)
+  GithubObserver
+    ΓêÜ builds lanes, PR, reviews (trailers win), review_only_since, behind_by, ledger, claim, rotations and Claude flag (10 ms)
+    ΓêÜ variable unreadable ΓåÆ env CLAUDE_AVAILABLE fallback, else null (2 ms)
+    ΓêÜ 4 h rule inputs: oldest item with next_actor claude, newest session_ commit (2 ms)
+    ΓêÜ driver heartbeat ref: committer date read; a lane PR that fails to load is dropped, not thrown (46 ms)
+    ΓêÜ staging verify + gate2 sent are read from the data reader (2 ms)
+  GithubRestReader.variable + env fallback (VTID-05281)
+    ΓêÜ B1: rejects on a 404 (unset or no access ΓÇö unreadable) (71 ms)
+    ΓêÜ B2: resolves the value on a 200 with a string value (24 ms)
+    ΓêÜ B3: rejects on a 403 (22 ms)
+    ΓêÜ B4: a 404 on the variable ΓåÆ observer uses env CLAUDE_AVAILABLE=false (1 ms)
+    ΓêÜ B5: a 404 + env true ΓåÆ true; a 404 + no env ΓåÆ null (1 ms)
+    ΓêÜ B6: a readable variable wins over the env (1 ms)
+    ΓêÜ B7: the 4 h rule still applies ΓÇö 404 + env true + a claude item > 4 h old with no session_ commit ΓåÆ no_action_4h (2 ms)
+  applyLaneChange + GithubRepoFileWriter (W1 / W2, Collab-Session pm-agent)
+    ΓêÜ applyLaneChange edits only the allowed keys and appends one log entry (3 ms)
+    ΓêÜ W1 (verify) commits on the lane PR branch with Collab-Lane <slug>/<lane> (2 ms)
+    ΓêÜ W2 (bookkeeping) commits on pm-agent/<slug> with Collab-Lane <slug>/_plan and opens the PR once (2 ms)
+System.Management.Automation.RemoteException
+Test Suites: 1 passed, 1 total
+Tests:       20 passed, 20 total
+Snapshots:   0 total
+Time:        1.829 s
+Ran all test suites matching /test\\project-manager\\observe-live.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

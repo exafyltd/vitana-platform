@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05299",
+  "kind": "infra",
+  "paths": [
+    "docs/validation/VTID-05299/**",
+    ".kiro/specs/plan-spar-vitana-v1-ref/**",
+    "scripts/collab/plan-spar.mjs",
+    "scripts/collab/plan-spar.test.mjs",
+    ".github/workflows/PLAN-SPAR.yml"
+  ],
+  "sparring_record": ".kiro/specs/plan-spar-vitana-v1-ref/sparring/verdict.md",
+  "collab_allow_initial": ["plan-spar-vitana-v1-ref"],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

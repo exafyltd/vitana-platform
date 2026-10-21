@@ -1,0 +1,44 @@
+# 2026-10-20, Kiro IDE (Windows, PowerShell 5.1), branch kiro/fix-4182-test-fallout/staging-test-05082 (from origin/main 1acb6b92d)
+# Session kiro-hotmail-202610151618-b437. Read-only: staging GETs only, no production, no writes.
+node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" docs/validation/VTID-05082/staging-tests.json
+  -> parse ok, exit 0
+node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" docs/validation/VTID-05266/staging-tests.json
+  -> parse ok, exit 0
+node -e "const lib=require('./scripts/ci/staging-verify/lib.cjs');...lib.validateManifest(m,{vtid:'VTID-05082',service:'gateway'})..." docs/validation/VTID-05082/staging-tests.json
+  -> validateManifest ok, exit 0
+node -e "const lib=require('./scripts/ci/staging-verify/lib.cjs');...lib.validateManifest(m,{vtid:'VTID-05266',service:'gateway'})..." docs/validation/VTID-05266/staging-tests.json
+  -> validateManifest ok, exit 0
+cd services/gateway
+npx jest test/vtid-04696-staging-checks-follow-asset-bumps.test.ts
+  -> 1 suite, 1 passed, exit 0
+cd ../..
+Invoke-WebRequest -Method Get -Uri https://preview-aws-gateway.vitanaland.com/command-hub/svg-preview.js?v=20261121-vtid-05082 (Authorization: Bearer $env:GATEWAY_SERVICE_TOKEN, present, not printed)
+  -> 200, length 17084, contains sanitizeSvgMarkup: True
+Invoke-WebRequest -Method Get -Uri https://preview-aws-gateway.vitanaland.com/alive
+  -> 200
+Invoke-WebRequest -Method Get -Uri https://preview-aws-gateway.vitanaland.com/command-hub/index.html
+  -> 200, length 3171, contains svg-preview.js?v=20261121-vtid-05082: True
+Invoke-WebRequest -Method Get -Uri https://preview-aws-gateway.vitanaland.com/command-hub/operator-console.js?v=20261121-vtid-05082
+  -> 200, length 196797, contains sanitizeSvgMarkup: False (why the old test #3 failed)
+git diff origin/main -- docs/validation/VTID-05082/staging-tests.json
+  -> only note and test #3 name/path/reason changed; tests #1, #2 unchanged
+
+# Review iteration 2 (finding F1, lane-staging-test-05082-review.md). Read-only commands only.
+gh pr checks 4223 --repo exafyltd/vitana-platform   (head f89f77ba)
+  -> VALIDATOR-CHECK validate: pass, validate-pr: pass; pr-gate, unit, scan, change-suite, phase-2b: pass
+  -> Lane scope: fail (run 39466196242) - lane file not on main yet
+node scripts/collab/queue.mjs scope-check --base 1acb6b92d --head f89f77ba --branch kiro/fix-4182-test-fallout/staging-test-05082
+  -> 1 problem: .kiro/specs/fix-4182-test-fallout/lanes/staging-test-05082.md not found, exit 1
+gh pr view 4222 --repo exafyltd/vitana-platform --json state,mergedAt,mergeStateStatus
+  -> OPEN, not merged, BLOCKED. Lane scope turns green only after plan PR #4222 merges and this branch is rebased onto it.
+  -> Lane file NOT added here (lane files come only from a _plan commit). Kiro does not merge #4222. Captured: outputs/pr-checks-iter2.txt
+
+# 2026-10-20T23:35Z re-verify after merging origin/main (4b5a475fc, plan #4222 merged) into the lane branch
+node scripts/collab/queue.mjs scope-check --repo . --base origin/main --head HEAD --branch kiro/fix-4182-test-fallout/staging-test-05082 --plan-repo exafyltd/vitana-platform
+  -> pass (every change is inside its paths)
+node scripts/collab/queue.mjs validate --base origin/main --head HEAD --branch kiro/fix-4182-test-fallout/staging-test-05082
+  -> pass (1 handoff/lane file changed, all valid), exit 0
+node -e "...lib.validateManifest(...)" docs/validation/VTID-05082/staging-tests.json (vtid VTID-05082)  -> ok, exit 0
+node -e "...lib.validateManifest(...)" docs/validation/VTID-05266/staging-tests.json (vtid VTID-05266)  -> ok, exit 0
+cd services/gateway; npx jest test/vtid-04696-staging-checks-follow-asset-bumps.test.ts
+  -> PASS, Suites 1 passed, Tests 1 passed
