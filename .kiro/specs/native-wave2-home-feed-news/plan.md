@@ -24,7 +24,11 @@ no `App.tsx` route, no registry/manifest change — only native route files and 
   `lib/feed-compose.ts` (98), `lib/news-feed-ranker.ts` (351), `hooks/useNewsFeed.ts` (306),
   `hooks/useAllNewsFeed.ts` (676); card twin `components/crossover/NewsArticleCard.tsx` (187); routes at
   `src/App.tsx:946-1016` (home/news/post), `:1226-1287` (groups/members/open-asks/find-partner),
-  `:1488-1526` (search/matches/intents).
+  `:1488-1526` (search/matches/intents). (R1-F2: these line counts are an **approximate** snapshot for
+  scoping — a few files have grown since, e.g. `news-feed-ranker.ts`/`useAllNewsFeed.ts`/`FindPartner.tsx`;
+  exact counts are not load-bearing. The ONE load-bearing check — that `feed-compose.ts` is IO-free — is
+  confirmed at `origin/main`: 98 lines, a single `import type { FeedItem, FeedItemKind } from
+  "@/lib/news-feed-ranker"`, no runtime import anywhere including the tail, so it extracts as class A.)
 - Wave 1 is on main: N3 shell + resolver route (`apps/mobile/app/(app)/[...path].tsx`, VTID-05186), N2 UI kit
   (`@vitana/ui`, VTID-05176), N1 `@vitana/core`/`@vitana/tokens` (VTID-05183). Prop map, ports and conventions in
   `apps/mobile/README.md`. The native app has no production profile; `assertNotProduction()` refuses prod/staging hosts.
@@ -92,8 +96,16 @@ exclusion rows the home lane flips to `native` (exact `shapeOf` match, not prefi
   compose/comments/notif deep-links; news reader/post not-found/deleted; community list/detail/search/intents; i18n
   no-raw-text + RTL start/end; React 19 `ReactElement`), `APP_PROFILE=development npm run bundle`,
   `APP_PROFILE=development EXPO_OFFLINE=1 npm run deps:check`. From the repo root —
-  `node scripts/native/core-closure.mjs --check` and `node scripts/native/parity-ledger.mjs --check` (rows `native`,
-  routes present). NATIVE-CI (shell source-pin + ports), PR-GATE **Collab handoff** + **Lane scope** green.
+  `node scripts/native/parity-ledger.mjs --check` (rows `native`, routes present).
+- **Core extraction deliverable (R1-F1): run `--write` AND commit the generated files, not just `--check`.** The PR
+  that adds the `feed-compose`/`news-feed-ranker` re-export entries to `packages/core/src/` MUST also run
+  `node scripts/native/core-closure.mjs --write` and commit the regenerated
+  `packages/core/closure.generated.json` and `scripts/native/mobile-ci-paths.generated.json` in the SAME PR, then
+  `node scripts/native/core-closure.mjs --check` passes. Without the `--write`+commit, `--check` fails in NATIVE-CI
+  with "stale generated file" regardless of whether the modules are class A. (Confirmed IO-free premise: at
+  `origin/main`, `src/lib/feed-compose.ts` is 98 lines with a single `import type … from "@/lib/news-feed-ranker"`
+  and no runtime import through its tail — so after `--write` the core copy is class A.)
+- NATIVE-CI (shell source-pin + ports), PR-GATE **Collab handoff** + **Lane scope** green.
 - **i18n:** 11 locales (ar de en es fr pl pt ru sr tr zh), any new key DE-first (du-form) then mirrored; RTL (`ar`)
   rendered per screen.
 - **Deferred to G1 (owner gate, `next_actor: owner`):** Maestro `maestro/<lane>/*.yaml`, iOS simulator + Android
