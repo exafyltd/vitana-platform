@@ -94,3 +94,12 @@ The sparring partner could not review (model_unavailable). Not a plan problem: C
 
 ### 2026-10-21T13:58Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 5 lane(s) got a VTID and are handed to Kiro.
+### 2026-10-21T14:45Z · kiro-hotmail-202610211408-c407 · approved (driver: plan PR update for landing)
+Plan driver (seat hotmail, workflow wf_9e9eb50f8defc4b4) holds `_plan` and the heartbeat `refs/heads/collab-driver/mt-launch`.
+Updated PR #4175 with `main` (06f5eef7) and listed the spec in `docs/programs/multi-tenant/program.md` (3bf815db).
+`Collab handoff` stays red only on the history of this plan PR: the planner's sparring-answer commits 5d59c75b and
+0d2ab816 edit lane files under `Collab-Lane: mt-launch/_plan`, and `_plan` carries commits from several sessions
+(planner, ci-plan-spar, driver). History cannot be rewritten (no force-push). Same class as the messenger-ux-v2 plan PR
+(#4253), which landed with `--admin` as a known §7b false positive. This driver run allows `--admin` only for the
+Lane-scope spec-not-on-main case, so it does not merge. Next: an actor allowed to use the §7b false-positive `--admin`
+merge (Project Manager, or a driver/owner instruction covering it) merges #4175; then `pack-intake-db` (seat hotmail) builds.
