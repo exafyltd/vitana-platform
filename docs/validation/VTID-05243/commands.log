@@ -1,0 +1,22 @@
+# VTID-05243 (mt-frontend-brand/cors-config) — local verification, Windows, session kiro-hotmail-202610211102-7ed9
+# Worktree: sparse checkout (disk had <400 MB free); services/gateway/node_modules is a junction to an
+# identical-package.json install (kaf-pm-fallback worktree), so tsc runs with --preserveSymlinks to avoid TS2742
+# path-portability errors caused only by the junction. CI runs the canonical commands.
+
+## red on base (tests first, src/middleware/cors.ts at origin/main bc27dd354)
+cd services/gateway; npx jest test/middleware/cors.test.ts
+  -> FAIL: 2 failed, 46 passed, 48 total (red-on-base.txt)
+     failing: "allows configured extra origins (trimmed) and keeps the compiled list",
+              "an extra origin gets the generic CORS reply on a normal route"
+
+## green after the change
+cd services/gateway; npx jest test/middleware/cors.test.ts
+  -> PASS: 48 passed, 48 total
+cd services/gateway; npx jest test/middleware/cors.test.ts test/commerce-mcp-cors.test.ts
+  -> PASS: 2 suites, 61 passed, 61 total
+cd services/gateway; npx tsc --noEmit --preserveSymlinks   (npm run typecheck = tsc --noEmit)
+  -> PASS: exit 0, 0 errors
+cd services/gateway; npx tsc --preserveSymlinks --outDir %TEMP%/cors-dist   (compile step of npm run build)
+  -> PASS: exit 0; dist/middleware/cors.js emitted and contains CORS_EXTRA_ORIGINS
+  note: `npm run build` itself stops at its prebuild `rm -rf dist` (no rm on Windows cmd); copy-frontend/copy-data
+        are unaffected by this lane. CI runs the full build.

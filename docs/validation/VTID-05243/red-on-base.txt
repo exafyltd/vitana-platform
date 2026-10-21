@@ -1,0 +1,628 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/mt-frontend-brand-cors-config/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [CORS] Blocked origin: https://evil.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:28:17
+      at checkOrigin (test/middleware/cors.test.ts:27:10)
+      at test/middleware/cors.test.ts:73:34
+
+  console.warn
+    [CORS] Blocked origin: http://vitanaland.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:28:17
+      at checkOrigin (test/middleware/cors.test.ts:27:10)
+      at test/middleware/cors.test.ts:73:34
+
+  console.warn
+    [CORS] Blocked origin: https://vitanaland.com.evil.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:28:17
+      at checkOrigin (test/middleware/cors.test.ts:27:10)
+      at test/middleware/cors.test.ts:73:34
+
+  console.warn
+    [CORS] Blocked origin: https://foo.lovable.app.evil.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:28:17
+      at checkOrigin (test/middleware/cors.test.ts:27:10)
+      at test/middleware/cors.test.ts:73:34
+
+  console.warn
+    [CORS] Blocked origin: https://xlovable.app
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:28:17
+      at checkOrigin (test/middleware/cors.test.ts:27:10)
+      at test/middleware/cors.test.ts:73:34
+
+  console.warn
+    [CORS] Blocked origin: https://community-app-abc.run.app.evil.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:28:17
+      at checkOrigin (test/middleware/cors.test.ts:27:10)
+      at test/middleware/cors.test.ts:73:34
+
+  console.warn
+    [CORS] Blocked origin: https://sub.preview.vitanaland.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:28:17
+      at checkOrigin (test/middleware/cors.test.ts:27:10)
+      at test/middleware/cors.test.ts:73:34
+
+  console.warn
+    [CORS] Blocked origin: https://evil.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at origin (src/middleware/cors.ts:62:15)
+      at ../../../kaf-pm-fallback/services/gateway/node_modules/cors/lib/index.js:219:13
+      at optionsCallback (../../../kaf-pm-fallback/services/gateway/node_modules/cors/lib/index.js:199:9)
+      at corsMiddleware (../../../kaf-pm-fallback/services/gateway/node_modules/cors/lib/index.js:204:7)
+      at src/middleware/cors.ts:131:12
+      at Layer.handle [as handle_request] (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at expressInit (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/middleware/init.js:40:5)
+      at Layer.handle [as handle_request] (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at query (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/middleware/query.js:45:5)
+      at Layer.handle [as handle_request] (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at router.handle (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at app.handle (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/application.js:181:10)
+      at Server.app (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/express.js:39:9)
+
+  console.warn
+    [CORS] Blocked origin: https://tenant-brand.example.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:234:21
+      at checkWith (test/middleware/cors.test.ts:233:10)
+      at test/middleware/cors.test.ts:273:27
+
+  console.warn
+    [CORS] Blocked origin: https://tenant-brand.example.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:234:21
+      at checkWith (test/middleware/cors.test.ts:233:10)
+      at test/middleware/cors.test.ts:273:27
+
+  console.warn
+    [CORS] Blocked origin: https://tenant-brand.example.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:234:21
+      at checkWith (test/middleware/cors.test.ts:233:10)
+      at test/middleware/cors.test.ts:273:27
+
+  console.warn
+    [CORS] Blocked origin: https://tenant-brand.example.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:234:21
+      at checkWith (test/middleware/cors.test.ts:233:10)
+      at Object.<anonymous> (test/middleware/cors.test.ts:280:36)
+
+  console.warn
+    [CORS] Blocked origin: http://insecure.example.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:234:21
+      at checkWith (test/middleware/cors.test.ts:233:10)
+      at Object.<anonymous> (test/middleware/cors.test.ts:300:29)
+
+  console.warn
+    [CORS] Blocked origin: https://*.wild.example.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:234:21
+      at checkWith (test/middleware/cors.test.ts:233:10)
+      at Object.<anonymous> (test/middleware/cors.test.ts:300:29)
+
+  console.warn
+    [CORS] Blocked origin: *
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:234:21
+      at checkWith (test/middleware/cors.test.ts:233:10)
+      at Object.<anonymous> (test/middleware/cors.test.ts:300:29)
+
+  console.warn
+    [CORS] Blocked origin: https://path.example.com/app
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:234:21
+      at checkWith (test/middleware/cors.test.ts:233:10)
+      at Object.<anonymous> (test/middleware/cors.test.ts:300:29)
+
+  console.warn
+    [CORS] Blocked origin: https://trailing.example.com/
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:234:21
+      at checkWith (test/middleware/cors.test.ts:233:10)
+      at Object.<anonymous> (test/middleware/cors.test.ts:300:29)
+
+  console.warn
+    [CORS] Blocked origin: https://query.example.com?x=1
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:234:21
+      at checkWith (test/middleware/cors.test.ts:233:10)
+      at Object.<anonymous> (test/middleware/cors.test.ts:300:29)
+
+  console.warn
+    [CORS] Blocked origin: not-a-url
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:234:21
+      at checkWith (test/middleware/cors.test.ts:233:10)
+      at Object.<anonymous> (test/middleware/cors.test.ts:300:29)
+
+  console.warn
+    [CORS] Blocked origin: https://
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:234:21
+      at checkWith (test/middleware/cors.test.ts:233:10)
+      at Object.<anonymous> (test/middleware/cors.test.ts:300:29)
+
+  console.warn
+    [CORS] Blocked origin: https://user@cred.example.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:234:21
+      at checkWith (test/middleware/cors.test.ts:233:10)
+      at Object.<anonymous> (test/middleware/cors.test.ts:300:29)
+
+  console.warn
+    [CORS] Blocked origin: https://path.example.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:234:21
+      at checkWith (test/middleware/cors.test.ts:233:10)
+      at Object.<anonymous> (test/middleware/cors.test.ts:300:29)
+
+  console.warn
+    [CORS] Blocked origin: https://trailing.example.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:234:21
+      at checkWith (test/middleware/cors.test.ts:233:10)
+      at Object.<anonymous> (test/middleware/cors.test.ts:300:29)
+
+  console.warn
+    [CORS] Blocked origin: https://query.example.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:234:21
+      at checkWith (test/middleware/cors.test.ts:233:10)
+      at Object.<anonymous> (test/middleware/cors.test.ts:300:29)
+
+  console.warn
+    [CORS] Blocked origin: https://cred.example.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:234:21
+      at checkWith (test/middleware/cors.test.ts:233:10)
+      at Object.<anonymous> (test/middleware/cors.test.ts:300:29)
+
+  console.warn
+    [CORS] Blocked origin: https://x.wild.example.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:234:21
+      at checkWith (test/middleware/cors.test.ts:233:10)
+      at Object.<anonymous> (test/middleware/cors.test.ts:300:29)
+
+  console.warn
+    [CORS] Blocked origin: https://evil.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:234:21
+      at checkWith (test/middleware/cors.test.ts:233:10)
+      at Object.<anonymous> (test/middleware/cors.test.ts:303:27)
+
+  console.warn
+    [CORS] Blocked origin: https://tenant-brand.example.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at origin (src/middleware/cors.ts:62:15)
+      at ../../../kaf-pm-fallback/services/gateway/node_modules/cors/lib/index.js:219:13
+      at optionsCallback (../../../kaf-pm-fallback/services/gateway/node_modules/cors/lib/index.js:199:9)
+      at corsMiddleware (../../../kaf-pm-fallback/services/gateway/node_modules/cors/lib/index.js:204:7)
+      at src/middleware/cors.ts:131:12
+      at Layer.handle [as handle_request] (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at expressInit (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/middleware/init.js:40:5)
+      at Layer.handle [as handle_request] (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at query (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/middleware/query.js:45:5)
+      at Layer.handle [as handle_request] (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at router.handle (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at app.handle (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/application.js:181:10)
+      at Server.app (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/express.js:39:9)
+
+  console.warn
+    [CORS] Blocked origin: https://tenant-brand.example.com
+
+    [0m [90m 60 |[39m       callback([36mnull[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 61 |[39m     } [36melse[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m       console[33m.[39mwarn([32m`[CORS] Blocked origin: ${origin}`[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 63 |[39m       callback([36mnew[39m [33mError[39m([32m"Not allowed by CORS"[39m))[33m;[39m
+     [90m 64 |[39m     }
+     [90m 65 |[39m   }[33m,[39m[0m
+
+      at origin (src/middleware/cors.ts:62:15)
+      at ../../../kaf-pm-fallback/services/gateway/node_modules/cors/lib/index.js:219:13
+      at optionsCallback (../../../kaf-pm-fallback/services/gateway/node_modules/cors/lib/index.js:199:9)
+      at corsMiddleware (../../../kaf-pm-fallback/services/gateway/node_modules/cors/lib/index.js:204:7)
+      at src/middleware/cors.ts:131:12
+      at Layer.handle [as handle_request] (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at expressInit (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/middleware/init.js:40:5)
+      at Layer.handle [as handle_request] (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at query (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/middleware/query.js:45:5)
+      at Layer.handle [as handle_request] (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at router.handle (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at app.handle (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/application.js:181:10)
+      at Server.app (../../../kaf-pm-fallback/services/gateway/node_modules/express/lib/express.js:39:9)
+
+FAIL test/middleware/cors.test.ts (5.997 s)
+  corsOptions.origin callback
+    √ allows requests without an Origin header (server-to-server / curl) (21 ms)
+    √ allows exact allowlisted origin https://vitanaland.com (2 ms)
+    √ allows exact allowlisted origin https://www.vitanaland.com (2 ms)
+    √ allows exact allowlisted origin https://preview.vitanaland.com (1 ms)
+    √ allows exact allowlisted origin https://preview-gateway.vitanaland.com (5 ms)
+    √ allows exact allowlisted origin https://gateway.vitanaland.com (7 ms)
+    √ allows exact allowlisted origin https://dr-app.vitanaland.com (1 ms)
+    √ allows exact allowlisted origin https://community-app-86804897789.us-central1.run.app (1 ms)
+    √ allows dynamic pattern origin https://my-project-preview.lovableproject.com (2 ms)
+    √ allows dynamic pattern origin https://some-app-123.lovable.app (2 ms)
+    √ allows dynamic pattern origin https://community-app-00030-abc.run.app (1 ms)
+    √ allows dynamic pattern origin https://community-app-xyz9.us-central1.run.app (1 ms)
+    √ blocks disallowed origin https://evil.com (48 ms)
+    √ blocks disallowed origin http://vitanaland.com (25 ms)
+    √ blocks disallowed origin https://vitanaland.com.evil.com (25 ms)
+    √ blocks disallowed origin https://foo.lovable.app.evil.com (8 ms)
+    √ blocks disallowed origin https://xlovable.app (7 ms)
+    √ blocks disallowed origin https://community-app-abc.run.app.evil.com (7 ms)
+    √ blocks disallowed origin https://sub.preview.vitanaland.com (20 ms)
+    √ keeps credentials disabled (VTID-02036 revert regression guard) (5 ms)
+  setupCors (Express integration)
+    √ sets Access-Control-Allow-Origin for an allowed origin (91 ms)
+    √ answers preflight OPTIONS for an allowed origin (18 ms)
+    √ errors (500, no CORS headers) for a blocked origin (156 ms)
+  sseHeaders
+    √ leaves the Kiro run stream alone: the route sets its own SSE headers after auth (VTID-05065) (2 ms)
+    √ leaves the pipeline-tree stream alone: the route sets its own SSE headers after auth (VTID-05069) (1 ms)
+    √ sets SSE headers on GET /stream paths (41 ms)
+    √ does NOT set SSE headers on the JSON route GET /api/v1/oasis/events (VTID-04695) (2 ms)
+    √ does NOT set SSE headers on the JSON route GET /api/v1/calendar/events/window (VTID-04695) (1 ms)
+    √ does NOT set SSE headers on the JSON route GET /api/v1/calendar/events (VTID-04695)
+    √ does NOT set SSE headers on the JSON route GET /api/v1/universal-cart/events (VTID-04695) (1 ms)
+    √ sets SSE headers on GET /events when the client asks for a stream (EventSource) (1 ms)
+    √ does NOT set SSE headers on POST /stream/send (JSON route regression)
+    √ does NOT set SSE headers on Command Hub page /command-hub/oasis/events/ (VTID-04615)
+    √ does NOT set SSE headers on Command Hub page /command-hub/oasis/streams/ (VTID-04615) (1 ms)
+    √ does NOT set SSE headers on Command Hub page /command-hub/command-hub/events/ (VTID-04615) (7 ms)
+    √ does NOT set SSE headers on Command Hub page /command-hub/events.js (VTID-04615)
+    √ still sets SSE headers on the API stream the Command Hub opens (1 ms)
+    √ does NOT set SSE headers on the calendar JSON API: /api/v1/calendar/events (VTID-04680) (1 ms)
+    √ does NOT set SSE headers on the calendar JSON API: /api/v1/calendar/events/window (VTID-04680)
+    √ does NOT set SSE headers on the calendar JSON API: /api/v1/calendar/events/abc-123 (VTID-04680)
+    √ does NOT set SSE headers on unrelated GET paths (1 ms)
+  CORS_EXTRA_ORIGINS (VTID-05243)
+    √ env undefined keeps every compiled origin and pattern, blocks unknown (18 ms)
+    √ env "" keeps every compiled origin and pattern, blocks unknown (17 ms)
+    √ env " , ," keeps every compiled origin and pattern, blocks unknown (22 ms)
+    × allows configured extra origins (trimmed) and keeps the compiled list (29 ms)
+    √ ignores malformed, non-https, path and wildcard entries (93 ms)
+    × an extra origin gets the generic CORS reply on a normal route (45 ms)
+    √ leaves /.well-known/* and /mcp/chatgpt unchanged: an extra origin never widens the MCP rule (95 ms)
+
+  ● CORS_EXTRA_ORIGINS (VTID-05243) › allows configured extra origins (trimmed) and keeps the compiled list
+
+    expect(received).toBeNull()
+
+    Received: [Error: Not allowed by CORS]
+
+    [0m [90m 279 |[39m     [36mfor[39m ([36mconst[39m origin [36mof[39m [[32m'https://tenant-brand.example.com'[39m[33m,[39m [32m'https://app.other-tenant.org:8443'[39m[33m,[39m [33m...[39m[33mCOMPILED_ORIGINS[39m[33m,[39m [33m...[39m[33mPATTERN_ORIGINS[39m]) {
+     [90m 280 |[39m       [36mconst[39m { err[33m,[39m allow } [33m=[39m [36mawait[39m checkWith(mod[33m,[39m origin)[33m;[39m
+    [31m[1m>[22m[39m[90m 281 |[39m       expect(err)[33m.[39mtoBeNull()[33m;[39m
+     [90m     |[39m                   [31m[1m^[22m[39m
+     [90m 282 |[39m       expect(allow)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 283 |[39m     }
+     [90m 284 |[39m   })[33m;[39m[0m
+
+      at Object.<anonymous> (test/middleware/cors.test.ts:281:19)
+
+  ● CORS_EXTRA_ORIGINS (VTID-05243) › an extra origin gets the generic CORS reply on a normal route
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 500
+
+    [0m [90m 311 |[39m     app[33m.[39m[36mget[39m([32m'/ping'[39m[33m,[39m (_req[33m,[39m res) [33m=>[39m res[33m.[39mjson({ ok[33m:[39m [36mtrue[39m }))[33m;[39m
+     [90m 312 |[39m     [36mconst[39m res [33m=[39m [36mawait[39m request(app)[33m.[39m[36mget[39m([32m'/ping'[39m)[33m.[39m[36mset[39m([32m'Origin'[39m[33m,[39m [32m'https://tenant-brand.example.com'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 313 |[39m     expect(res[33m.[39mstatus)[33m.[39mtoBe([35m200[39m)[33m;[39m
+     [90m     |[39m                        [31m[1m^[22m[39m
+     [90m 314 |[39m     expect(res[33m.[39mheaders[[32m'access-control-allow-origin'[39m])[33m.[39mtoBe([32m'https://tenant-brand.example.com'[39m)[33m;[39m
+     [90m 315 |[39m   })[33m;[39m
+     [90m 316 |[39m[0m
+
+      at Object.<anonymous> (test/middleware/cors.test.ts:313:24)
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 46 passed, 48 total
+Snapshots:   0 total
+Time:        7.124 s, estimated 49 s
+Ran all test suites matching /test\\middleware\\cors.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

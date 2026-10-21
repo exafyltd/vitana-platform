@@ -37,6 +37,14 @@ const ALLOWED_ORIGINS = [
   "https://dr-app.vitanaland.com",                             // AWS production DR frontend (community-app-awsdr)
   "https://dr-gateway.vitanaland.com",                         // AWS production DR gateway (Command Hub same-origin POSTs)
 ];
+// VTID-05243: per-tenant frontend origins from CORS_EXTRA_ORIGINS (comma-separated), read ONCE
+// at module load (restart/deploy to apply). Only exact https:// origins (host[:port], no path,
+// no wildcard, no userinfo) are kept, and they are APPENDED: the compiled list above stays.
+const EXACT_HTTPS_ORIGIN = /^https:\/\/[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:\d{1,5})?$/;
+for (const raw of (process.env.CORS_EXTRA_ORIGINS || "").split(",")) {
+  const o = raw.trim().toLowerCase();
+  if (EXACT_HTTPS_ORIGIN.test(o) && !ALLOWED_ORIGINS.includes(o)) ALLOWED_ORIGINS.push(o);
+}
 
 // VTID-01226: Dynamic origin patterns for Lovable-hosted frontends
 // VTID-NAV-HOTFIX3: Also allow any Cloud Run community-app revision URL so

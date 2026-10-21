@@ -201,3 +201,142 @@ describe('sseHeaders', () => {
     expect(next).toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// VTID-05243: CORS_EXTRA_ORIGINS — read once at module load, appended to the
+// compiled list. Each env value gets a fresh module via jest.resetModules() +
+// a dynamic require inside jest.isolateModules (the static import above is
+// never reused for these cases).
+// ---------------------------------------------------------------------------
+
+type CorsModule = typeof import('../../src/middleware/cors');
+
+function loadCors(extra: string | undefined): CorsModule {
+  const saved = process.env.CORS_EXTRA_ORIGINS;
+  if (extra === undefined) delete process.env.CORS_EXTRA_ORIGINS;
+  else process.env.CORS_EXTRA_ORIGINS = extra;
+  let mod: CorsModule | undefined;
+  try {
+    jest.resetModules();
+    jest.isolateModules(() => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      mod = require('../../src/middleware/cors');
+    });
+  } finally {
+    if (saved === undefined) delete process.env.CORS_EXTRA_ORIGINS;
+    else process.env.CORS_EXTRA_ORIGINS = saved;
+  }
+  return mod as CorsModule;
+}
+
+function checkWith(mod: CorsModule, origin: string): Promise<{ err: Error | null; allow?: boolean }> {
+  return new Promise((resolve) => {
+    mod.corsOptions.origin(origin, (err: Error | null, allow?: boolean) => resolve({ err, allow }));
+  });
+}
+
+// Every compiled origin on main before VTID-05243 — unset env must keep all of them.
+const COMPILED_ORIGINS = [
+  'https://vitana-gateway-86804897789.us-central1.run.app',
+  'https://gateway-86804897789.us-central1.run.app',
+  'https://gateway-q74ibpv6ia-uc.a.run.app',
+  'https://gateway.vitanaland.com',
+  'https://vitana-dev-gateway-86804897789.us-central1.run.app',
+  'https://community-app-86804897789.us-central1.run.app',
+  'https://community-app-q74ibpv6ia-uc.a.run.app',
+  'https://id-preview--vitana-v1.lovable.app',
+  'https://vitanaland.com',
+  'https://www.vitanaland.com',
+  'https://preview.vitanaland.com',
+  'https://preview-gateway.vitanaland.com',
+  'https://gateway-staging-q74ibpv6ia-uc.a.run.app',
+  'https://preview-aws.vitanaland.com',
+  'https://preview-aws-gateway.vitanaland.com',
+  'https://dr-app.vitanaland.com',
+  'https://dr-gateway.vitanaland.com',
+];
+const PATTERN_ORIGINS = [
+  'https://my-project-preview.lovableproject.com',
+  'https://some-app-123.lovable.app',
+  'https://community-app-00030-abc.run.app',
+  'https://community-app-xyz9.us-central1.run.app',
+];
+
+describe('CORS_EXTRA_ORIGINS (VTID-05243)', () => {
+  it.each([undefined, '', ' , ,'])('env %p keeps every compiled origin and pattern, blocks unknown', async (env) => {
+    const mod = loadCors(env);
+    for (const origin of [...COMPILED_ORIGINS, ...PATTERN_ORIGINS]) {
+      const { err, allow } = await checkWith(mod, origin);
+      expect(err).toBeNull();
+      expect(allow).toBe(true);
+    }
+    const blocked = await checkWith(mod, 'https://tenant-brand.example.com');
+    expect(blocked.err).toBeInstanceOf(Error);
+  });
+
+  it('allows configured extra origins (trimmed) and keeps the compiled list', async () => {
+    const mod = loadCors(' https://tenant-brand.example.com ,https://app.other-tenant.org:8443');
+    for (const origin of ['https://tenant-brand.example.com', 'https://app.other-tenant.org:8443', ...COMPILED_ORIGINS, ...PATTERN_ORIGINS]) {
+      const { err, allow } = await checkWith(mod, origin);
+      expect(err).toBeNull();
+      expect(allow).toBe(true);
+    }
+  });
+
+  it('ignores malformed, non-https, path and wildcard entries', async () => {
+    const bad = [
+      'http://insecure.example.com',
+      'https://*.wild.example.com',
+      '*',
+      'https://path.example.com/app',
+      'https://trailing.example.com/',
+      'https://query.example.com?x=1',
+      'not-a-url',
+      'https://',
+      'https://user@cred.example.com',
+    ];
+    const mod = loadCors(bad.join(','));
+    for (const origin of [...bad, 'https://path.example.com', 'https://trailing.example.com', 'https://query.example.com', 'https://cred.example.com', 'https://x.wild.example.com']) {
+      const { err } = await checkWith(mod, origin);
+      expect(err).toBeInstanceOf(Error);
+    }
+    const unknown = await checkWith(mod, 'https://evil.com');
+    expect(unknown.err).toBeInstanceOf(Error);
+  });
+
+  it('an extra origin gets the generic CORS reply on a normal route', async () => {
+    const mod = loadCors('https://tenant-brand.example.com');
+    const app = express();
+    mod.setupCors(app);
+    app.get('/ping', (_req, res) => res.json({ ok: true }));
+    const res = await request(app).get('/ping').set('Origin', 'https://tenant-brand.example.com');
+    expect(res.status).toBe(200);
+    expect(res.headers['access-control-allow-origin']).toBe('https://tenant-brand.example.com');
+  });
+
+  it('leaves /.well-known/* and /mcp/chatgpt unchanged: an extra origin never widens the MCP rule', async () => {
+    const mod = loadCors('https://tenant-brand.example.com');
+    const app = express();
+    mod.setupCors(app);
+    app.get('/.well-known/oauth-authorization-server', (_req, res) => res.json({ ok: true }));
+    app.post('/mcp/chatgpt', (_req, res) => res.json({ ok: true }));
+
+    const wk = await request(app).get('/.well-known/oauth-authorization-server').set('Origin', 'https://tenant-brand.example.com');
+    expect(wk.headers['access-control-allow-origin']).toBe('*');
+
+    const openai = await request(app).options('/mcp/chatgpt').set('Origin', 'https://platform.openai.com').set('Access-Control-Request-Method', 'POST');
+    expect(openai.status).toBe(204);
+    expect(openai.headers['access-control-allow-origin']).toBe('https://platform.openai.com');
+    expect(openai.headers['access-control-expose-headers']).toContain('Mcp-Session-Id');
+
+    for (const method of ['POST', 'OPTIONS']) {
+      const req: any = { path: '/mcp/chatgpt', method, headers: { origin: 'https://tenant-brand.example.com' } };
+      const res: any = { setHeader: jest.fn() };
+      expect(mod.applyDiscoveryCors(req, res)).toBe(false);
+      expect(res.setHeader).not.toHaveBeenCalled();
+    }
+    const extra = await request(app).options('/mcp/chatgpt').set('Origin', 'https://tenant-brand.example.com').set('Access-Control-Request-Method', 'POST');
+    expect(extra.headers['access-control-expose-headers']).toBeUndefined();
+    expect(String(extra.headers['access-control-allow-headers'] || '')).not.toContain('Mcp-Session-Id');
+  });
+});

@@ -1,6 +1,6 @@
 ---
 lane: cors-config
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -9,8 +9,11 @@ reviewer_seat: exafyltd
 paths:
   - services/gateway/src/middleware/cors.ts
   - services/gateway/test/middleware/cors.test.ts
-updated: 2026-10-19T20:32Z
+updated: 2026-10-21T11:50Z
 vtid: VTID-05243
+claimed_by: kiro-hotmail-202610211102-7ed9
+branch: kiro/mt-frontend-brand/cors-config
+pr: pending
 ---
 # cors-config — config-driven CORS allowlist (repo vitana-platform)
 
@@ -40,3 +43,11 @@ question (plan.md): if sparring prefers Claude for platform chrome, flip to
 
 ### 2026-10-19T20:32Z · ci-plan-spar · ready (VTID allocated)
 VTID-05243 allocated after policy approval (converged-auto-v1).
+### 2026-10-21T11:50Z · kiro-hotmail-202610211102-7ed9 · ready → executing
+Claimed by the plan driver (seat hotmail, workflow wf_f1c732c4eeddbd8d). `cors.ts`: `CORS_EXTRA_ORIGINS`
+comma-split once at module load; only exact `https://host[:port]` origins kept (lower-cased, deduped) and
+appended to `ALLOWED_ORIGINS` (8 added lines). Patterns, `isOriginAllowed`, `allowedHeaders` and
+`applyDiscoveryCors` untouched. `cors.test.ts`: isolated-module cases (unset/empty env keeps every compiled
+origin + pattern; extra origins allowed; malformed/wildcard/path/http ignored; unknown blocked;
+`/.well-known/*` and `/mcp/chatgpt` unchanged). Red on base 2/48 failed → green 48/48; with
+`commerce-mcp-cors.test.ts` 61/61; tsc 0 errors. Evidence: `docs/validation/VTID-05243/`.
