@@ -1,5 +1,7 @@
 # Routine prompt — Claude Code collaboration queue (VTID-05145)
 
+> **Retired as primary 2026-10-20 (kiro-autonomy-fallback): runs only while Claude is available; the jobs moved to `.kiro/automations/exafyltd.md` E1–E6** (VTID-05271). Kept for history and for the times Claude Code is available.
+
 This file is the prompt of the cloud Routine that wakes Claude Code for the Claude Code ↔ Kiro protocol
 (`.claude/rules/collaboration.md`). It is versioned here so the Routine can be recreated: one `create_trigger`
 call with this text (from "## Prompt" on) as `prompt`, cron `CRON_TZ=Europe/Berlin 48 7,12,17 * * 1-5`, bound to a

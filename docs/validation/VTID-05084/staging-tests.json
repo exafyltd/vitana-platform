@@ -11,8 +11,8 @@
       "expect_body_contains": [
         "loops-catalog.css?v=20261117-vtid-05098",
         "loops-catalog.js?v=20261121-vtid-05153",
-        "app.js?v=20261120-vtid-05148",
-        "styles.css?v=20261120-vtid-05148"
+        "app.js?v=20261121-vtid-05082",
+        "styles.css?v=20261121-vtid-05082"
       ]
     },
     {
@@ -41,7 +41,7 @@
     {
       "kind": "http",
       "name": "served app.js has the Loops tab in Autonomy and redirects the old placeholder",
-      "path": "/command-hub/app.js?v=20261120-vtid-05148",
+      "path": "/command-hub/app.js?v=20261121-vtid-05082",
       "expect_status": 200,
       "expect_content_type": "javascript",
       "expect_body_contains": [

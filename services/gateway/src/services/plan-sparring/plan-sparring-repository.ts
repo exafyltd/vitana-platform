@@ -179,6 +179,30 @@ export async function recordPolicyApproval(
   return { data: (r.data as Array<{ id: string }> | null) ?? null, error: r.error ?? null };
 }
 
+/**
+ * VTID-05254: mark a dead round-1 session (its partner pass died before writing anything) as
+ * `escalated` + `deadline_exceeded`, so the create path can re-run the plan on a fresh session.
+ * Guarded on `verdict = 'in_progress'`, `updated_at < cutoffIso` and no human/policy approval: of two
+ * racing creates only one escalates, and a pass that wrote in the meantime is never overwritten.
+ * Writes only columns service_role may UPDATE; `final_plan_hash` stays null, so the row is never approvable.
+ */
+export async function escalateDeadRoundOne(
+  sb: SupabaseClient,
+  sessionId: string,
+  cutoffIso: string,
+): Promise<DbResult<Array<{ id: string }>>> {
+  const r = await sb
+    .from('plan_sparring_sessions')
+    .update({ verdict: 'escalated', escalation_reasons: ['deadline_exceeded'], updated_at: new Date().toISOString() })
+    .eq('id', sessionId)
+    .eq('verdict', 'in_progress')
+    .lt('updated_at', cutoffIso)
+    .is('human_approved_by', null)
+    .is('policy_approved_at', null)
+    .select('id');
+  return { data: (r.data as Array<{ id: string }> | null) ?? null, error: r.error ?? null };
+}
+
 // ---------------------------------------------------------------------------
 // Reconciler reads (all read-only)
 // ---------------------------------------------------------------------------

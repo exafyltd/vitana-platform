@@ -1,0 +1,264 @@
+{
+  "name": "vitana-pipeline",
+  "description": "Vitana pipeline (VTID-05275): owner task -> plan( PR -> CI PLAN-SPAR -> CI VTIDs -> up to 6 parallel lanes (code / vitana-lane-reviewer on claude-sonnet-5.5 / land with merge lock) -> staging -> STAGING-VERIFY -> Gate 2. Runbooks: .kiro/pipeline/*.md. Kiro Web: .kiro/pipeline/driver.md.",
+  "inputs": {
+    "task": "prompt"
+  },
+  "steps": [
+    {
+      "type": "step",
+      "id": "setup",
+      "agent": "wf-coder",
+      "effortLevel": "low",
+      "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Owner task (verbatim):\n<owner_task>\n{{task}}\n</owner_task>\n\nRun section 1 (Setup) of <vitana-platform>/.kiro/pipeline/planning.md: create RUN with lanes/, reviews/, timings/, investigate/; write the owner task verbatim to RUN/task.md; session ids into RUN/run.json; fetch both repos; save the queue to RUN/queue.txt; resume an existing open plan for the same task if one exists (record its slug and which steps are already done in RUN/run.json); record CLAUDE_AVAILABLE and the 4 h rule result; pick the slug. Commit nothing. Final message: RUN path, slug, resumed or new, mode."
+    },
+    {
+      "type": "parallel",
+      "id": "investigate",
+      "joinPolicy": "allSettled",
+      "branches": [
+        {
+          "type": "step",
+          "id": "inv-code",
+          "agent": "wf-planner",
+          "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Owner task (verbatim):\n<owner_task>\n{{task}}\n</owner_task>\n\nRead-only investigation, section 2 of <vitana-platform>/.kiro/pipeline/planning.md, angle: code paths, entry points, interfaces between the pieces that must change, exact files per likely lane. Read RUN/run.json first; if it says the plan already exists and is past planning, write nothing and finish. Evidence from origin/main with file:line. Write only RUN/investigate/inv-code.md. No code changes, no commits, no PR, no gateway or live calls. Final message: the file path and a five-line summary."
+        },
+        {
+          "type": "step",
+          "id": "inv-tests",
+          "agent": "wf-planner",
+          "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Owner task (verbatim):\n<owner_task>\n{{task}}\n</owner_task>\n\nRead-only investigation, section 2 of <vitana-platform>/.kiro/pipeline/planning.md, angle: existing tests and CI checks that cover the change, how each new behaviour gets a test that fails on origin/main, whether a staging deploy is reached and what read-only staging test proves it. Read RUN/run.json first; if it says the plan already exists and is past planning, write nothing and finish. Evidence from origin/main with file:line. Write only RUN/investigate/inv-tests.md. No code changes, no commits, no PR, no gateway or live calls. Final message: the file path and a five-line summary."
+        },
+        {
+          "type": "step",
+          "id": "inv-rules",
+          "agent": "wf-planner",
+          "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Owner task (verbatim):\n<owner_task>\n{{task}}\n</owner_task>\n\nRead-only investigation, section 2 of <vitana-platform>/.kiro/pipeline/planning.md, angle: governance and protected gate files touched (scripts/collab/protected-gate-files.json, collaboration.md section 3a), hot files of collaboration.md section 8a, open overlapping PRs and plans, risks. Read RUN/run.json first; if it says the plan already exists and is past planning, write nothing and finish. Evidence from origin/main with file:line. Write only RUN/investigate/inv-rules.md. No code changes, no commits, no PR, no gateway or live calls. Final message: the file path and a five-line summary."
+        }
+      ]
+    },
+    {
+      "type": "step",
+      "id": "spec",
+      "agent": "wf-planner",
+      "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Owner task (verbatim):\n<owner_task>\n{{task}}\n</owner_task>\n\nWrite (or update in place) the spec, section 3 of <vitana-platform>/.kiro/pipeline/planning.md, from RUN/investigate/*.md: .kiro/specs/<slug>/plan.md (between the plan markers), tasks.md (one group per lane with Acceptance), handoff.md, lanes/<lane-id>.md, in a worktree <vitana-platform>/.worktrees/<slug>-plan on branch kiro/<slug>/plan from origin/main. Lanes run in parallel by default, at most 6, no two lanes edit the same file, real depends_on only, a small task (at most 3 files) is one lane. Skip if RUN/run.json says the plan PR already exists. Do not commit. Final message: the spec paths and the lane list."
+    },
+    {
+      "type": "step",
+      "id": "plan-pr",
+      "agent": "wf-coder",
+      "effortLevel": "medium",
+      "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Section 4 (Plan PR) of <vitana-platform>/.kiro/pipeline/planning.md: run queue.mjs validate on the spec worktree, fix format errors only, commit with the trailers and the kiro-agent[bot] identity, push with the push protocol, open the PR titled plan(<slug>): <summary> (reuse an open one), save number, url and head to RUN/run.json. Final message: PR URL and head SHA."
+    },
+    {
+      "type": "repeat",
+      "id": "spar-loop",
+      "maxIterations": 12,
+      "onMaxIterations": "continue",
+      "stopWhen": "{{spar.output}} contains VITANA_SPAR_DONE",
+      "steps": [
+        {
+          "type": "step",
+          "id": "spar",
+          "agent": "wf-coder",
+          "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. One iteration of section 5 (Spar loop) of <vitana-platform>/.kiro/pipeline/planning.md for the plan PR in RUN/run.json: wait (bounded, poll 2-3 min, up to 40 min) for the PLAN-SPAR run on the current head, answer a new round in sparring/responses-<n>.md and push, or record convergence, VTIDs or escalation in RUN/spar-state.json. Never allocate a VTID; never call the sparring partner. Stop contract: when RUN/spar-state.json has done true (converged with a VTID on every lane, or escalated), your final message ends with the line VITANA_SPAR_DONE; never write that token otherwise."
+        }
+      ]
+    },
+    {
+      "type": "step",
+      "id": "merge-plan",
+      "agent": "wf-coder",
+      "effortLevel": "medium",
+      "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Section 6 of <vitana-platform>/.kiro/pipeline/planning.md. If RUN/spar-state.json says escalated, merge nothing, write RUN/slots.json with every slot null and an empty queue, and finish. Otherwise merge the converged, policy-approved plan( PR under the collaboration.md section 7b rule once its checks are green (the PM may merge it first), record it in RUN/merges.md, then write RUN/lanes/<lane-id>/state.json for every lane and RUN/slots.json (slots '1'..'6' in dependency order, the rest in queue). Final message: merge SHA, lanes, slot assignment."
+    },
+    {
+      "type": "parallel",
+      "id": "lanes",
+      "joinPolicy": "allSettled",
+      "branches": [
+        {
+          "type": "repeat",
+          "id": "lane-slot-1",
+          "maxIterations": 40,
+          "onMaxIterations": "continue",
+          "stopWhen": "{{land-1.output}} contains VITANA_SLOT_DONE",
+          "steps": [
+            {
+              "type": "step",
+              "id": "code-1",
+              "agent": "wf-coder",
+              "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Lane coder for slot 1: follow <vitana-platform>/.kiro/pipeline/lane-code.md exactly with N=1 (LANE = RUN/slots.json slots['1']). At most 3 review fix passes and 3 CI fix attempts per lane, then park. If the only way to satisfy a review finding changes behaviour beyond the converged plan, do not make it: log it as deferred in RUN/blockers.md (common rule 5) and continue. Slot stop contract: the slot loop stops when the land step's final message ends with VITANA_SLOT_DONE; only the land step writes done and that token."
+            },
+            {
+              "type": "step",
+              "id": "review-1",
+              "agent": "vitana-lane-reviewer",
+              "modelId": "claude-sonnet-5.5",
+              "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). You are the review step for slot 1. Read <vitana-platform>/.kiro/pipeline/lane-review.md. LANE = RUN/slots.json slots['1']; read RUN/lanes/<LANE>/state.json. Review only when the lane has done false, status in_review and RUN/reviews/<LANE>-<first 7 hex of head_sha>.json does not exist; otherwise answer exactly 'no review needed (<status>)'. Inputs: lane key <slug>/<LANE>, PR URL(s) and head SHA(s) from the state file, the spec on origin/main (.kiro/specs/<slug>/lanes/<LANE>.md, tasks.md, plan.md), RUN/lanes/<LANE>/impl-notes.md and docs/validation/<VTID>/. If RUN/decisions.md records an owner instruction covering this plan's protected gate files, apply checklist item 9 accordingly. Return exactly the two output blocks of your definition (verdict JSON, then the lane-log review entry), or the model_unavailable line. You write nothing; the land step stores your output."
+            },
+            {
+              "type": "step",
+              "id": "land-1",
+              "agent": "wf-coder",
+              "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Lane land for slot 1: follow <vitana-platform>/.kiro/pipeline/lane-land.md exactly with N=1 (LANE = RUN/slots.json slots['1']). The review step's output for this iteration is between the markers:\n<review_output>\n{{review-1.output}}\n</review_output>\nStore it as lane-review.md says and act on it. One merge at a time: take RUN/merge.lock before any update-branch or merge and release it at the end. Merge only under the collaboration.md section 7b rule; never production. Slot stop contract: end your final message with the line VITANA_SLOT_DONE only when this slot's lane is done and RUN/slots.json queue is empty (or the slot is empty); never write that token otherwise."
+            }
+          ]
+        },
+        {
+          "type": "repeat",
+          "id": "lane-slot-2",
+          "maxIterations": 40,
+          "onMaxIterations": "continue",
+          "stopWhen": "{{land-2.output}} contains VITANA_SLOT_DONE",
+          "steps": [
+            {
+              "type": "step",
+              "id": "code-2",
+              "agent": "wf-coder",
+              "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Lane coder for slot 2: follow <vitana-platform>/.kiro/pipeline/lane-code.md exactly with N=2 (LANE = RUN/slots.json slots['2']). At most 3 review fix passes and 3 CI fix attempts per lane, then park. If the only way to satisfy a review finding changes behaviour beyond the converged plan, do not make it: log it as deferred in RUN/blockers.md (common rule 5) and continue. Slot stop contract: the slot loop stops when the land step's final message ends with VITANA_SLOT_DONE; only the land step writes done and that token."
+            },
+            {
+              "type": "step",
+              "id": "review-2",
+              "agent": "vitana-lane-reviewer",
+              "modelId": "claude-sonnet-5.5",
+              "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). You are the review step for slot 2. Read <vitana-platform>/.kiro/pipeline/lane-review.md. LANE = RUN/slots.json slots['2']; read RUN/lanes/<LANE>/state.json. Review only when the lane has done false, status in_review and RUN/reviews/<LANE>-<first 7 hex of head_sha>.json does not exist; otherwise answer exactly 'no review needed (<status>)'. Inputs: lane key <slug>/<LANE>, PR URL(s) and head SHA(s) from the state file, the spec on origin/main (.kiro/specs/<slug>/lanes/<LANE>.md, tasks.md, plan.md), RUN/lanes/<LANE>/impl-notes.md and docs/validation/<VTID>/. If RUN/decisions.md records an owner instruction covering this plan's protected gate files, apply checklist item 9 accordingly. Return exactly the two output blocks of your definition (verdict JSON, then the lane-log review entry), or the model_unavailable line. You write nothing; the land step stores your output."
+            },
+            {
+              "type": "step",
+              "id": "land-2",
+              "agent": "wf-coder",
+              "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Lane land for slot 2: follow <vitana-platform>/.kiro/pipeline/lane-land.md exactly with N=2 (LANE = RUN/slots.json slots['2']). The review step's output for this iteration is between the markers:\n<review_output>\n{{review-2.output}}\n</review_output>\nStore it as lane-review.md says and act on it. One merge at a time: take RUN/merge.lock before any update-branch or merge and release it at the end. Merge only under the collaboration.md section 7b rule; never production. Slot stop contract: end your final message with the line VITANA_SLOT_DONE only when this slot's lane is done and RUN/slots.json queue is empty (or the slot is empty); never write that token otherwise."
+            }
+          ]
+        },
+        {
+          "type": "repeat",
+          "id": "lane-slot-3",
+          "maxIterations": 40,
+          "onMaxIterations": "continue",
+          "stopWhen": "{{land-3.output}} contains VITANA_SLOT_DONE",
+          "steps": [
+            {
+              "type": "step",
+              "id": "code-3",
+              "agent": "wf-coder",
+              "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Lane coder for slot 3: follow <vitana-platform>/.kiro/pipeline/lane-code.md exactly with N=3 (LANE = RUN/slots.json slots['3']). At most 3 review fix passes and 3 CI fix attempts per lane, then park. If the only way to satisfy a review finding changes behaviour beyond the converged plan, do not make it: log it as deferred in RUN/blockers.md (common rule 5) and continue. Slot stop contract: the slot loop stops when the land step's final message ends with VITANA_SLOT_DONE; only the land step writes done and that token."
+            },
+            {
+              "type": "step",
+              "id": "review-3",
+              "agent": "vitana-lane-reviewer",
+              "modelId": "claude-sonnet-5.5",
+              "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). You are the review step for slot 3. Read <vitana-platform>/.kiro/pipeline/lane-review.md. LANE = RUN/slots.json slots['3']; read RUN/lanes/<LANE>/state.json. Review only when the lane has done false, status in_review and RUN/reviews/<LANE>-<first 7 hex of head_sha>.json does not exist; otherwise answer exactly 'no review needed (<status>)'. Inputs: lane key <slug>/<LANE>, PR URL(s) and head SHA(s) from the state file, the spec on origin/main (.kiro/specs/<slug>/lanes/<LANE>.md, tasks.md, plan.md), RUN/lanes/<LANE>/impl-notes.md and docs/validation/<VTID>/. If RUN/decisions.md records an owner instruction covering this plan's protected gate files, apply checklist item 9 accordingly. Return exactly the two output blocks of your definition (verdict JSON, then the lane-log review entry), or the model_unavailable line. You write nothing; the land step stores your output."
+            },
+            {
+              "type": "step",
+              "id": "land-3",
+              "agent": "wf-coder",
+              "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Lane land for slot 3: follow <vitana-platform>/.kiro/pipeline/lane-land.md exactly with N=3 (LANE = RUN/slots.json slots['3']). The review step's output for this iteration is between the markers:\n<review_output>\n{{review-3.output}}\n</review_output>\nStore it as lane-review.md says and act on it. One merge at a time: take RUN/merge.lock before any update-branch or merge and release it at the end. Merge only under the collaboration.md section 7b rule; never production. Slot stop contract: end your final message with the line VITANA_SLOT_DONE only when this slot's lane is done and RUN/slots.json queue is empty (or the slot is empty); never write that token otherwise."
+            }
+          ]
+        },
+        {
+          "type": "repeat",
+          "id": "lane-slot-4",
+          "maxIterations": 40,
+          "onMaxIterations": "continue",
+          "stopWhen": "{{land-4.output}} contains VITANA_SLOT_DONE",
+          "steps": [
+            {
+              "type": "step",
+              "id": "code-4",
+              "agent": "wf-coder",
+              "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Lane coder for slot 4: follow <vitana-platform>/.kiro/pipeline/lane-code.md exactly with N=4 (LANE = RUN/slots.json slots['4']). At most 3 review fix passes and 3 CI fix attempts per lane, then park. If the only way to satisfy a review finding changes behaviour beyond the converged plan, do not make it: log it as deferred in RUN/blockers.md (common rule 5) and continue. Slot stop contract: the slot loop stops when the land step's final message ends with VITANA_SLOT_DONE; only the land step writes done and that token."
+            },
+            {
+              "type": "step",
+              "id": "review-4",
+              "agent": "vitana-lane-reviewer",
+              "modelId": "claude-sonnet-5.5",
+              "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). You are the review step for slot 4. Read <vitana-platform>/.kiro/pipeline/lane-review.md. LANE = RUN/slots.json slots['4']; read RUN/lanes/<LANE>/state.json. Review only when the lane has done false, status in_review and RUN/reviews/<LANE>-<first 7 hex of head_sha>.json does not exist; otherwise answer exactly 'no review needed (<status>)'. Inputs: lane key <slug>/<LANE>, PR URL(s) and head SHA(s) from the state file, the spec on origin/main (.kiro/specs/<slug>/lanes/<LANE>.md, tasks.md, plan.md), RUN/lanes/<LANE>/impl-notes.md and docs/validation/<VTID>/. If RUN/decisions.md records an owner instruction covering this plan's protected gate files, apply checklist item 9 accordingly. Return exactly the two output blocks of your definition (verdict JSON, then the lane-log review entry), or the model_unavailable line. You write nothing; the land step stores your output."
+            },
+            {
+              "type": "step",
+              "id": "land-4",
+              "agent": "wf-coder",
+              "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Lane land for slot 4: follow <vitana-platform>/.kiro/pipeline/lane-land.md exactly with N=4 (LANE = RUN/slots.json slots['4']). The review step's output for this iteration is between the markers:\n<review_output>\n{{review-4.output}}\n</review_output>\nStore it as lane-review.md says and act on it. One merge at a time: take RUN/merge.lock before any update-branch or merge and release it at the end. Merge only under the collaboration.md section 7b rule; never production. Slot stop contract: end your final message with the line VITANA_SLOT_DONE only when this slot's lane is done and RUN/slots.json queue is empty (or the slot is empty); never write that token otherwise."
+            }
+          ]
+        },
+        {
+          "type": "repeat",
+          "id": "lane-slot-5",
+          "maxIterations": 40,
+          "onMaxIterations": "continue",
+          "stopWhen": "{{land-5.output}} contains VITANA_SLOT_DONE",
+          "steps": [
+            {
+              "type": "step",
+              "id": "code-5",
+              "agent": "wf-coder",
+              "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Lane coder for slot 5: follow <vitana-platform>/.kiro/pipeline/lane-code.md exactly with N=5 (LANE = RUN/slots.json slots['5']). At most 3 review fix passes and 3 CI fix attempts per lane, then park. If the only way to satisfy a review finding changes behaviour beyond the converged plan, do not make it: log it as deferred in RUN/blockers.md (common rule 5) and continue. Slot stop contract: the slot loop stops when the land step's final message ends with VITANA_SLOT_DONE; only the land step writes done and that token."
+            },
+            {
+              "type": "step",
+              "id": "review-5",
+              "agent": "vitana-lane-reviewer",
+              "modelId": "claude-sonnet-5.5",
+              "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). You are the review step for slot 5. Read <vitana-platform>/.kiro/pipeline/lane-review.md. LANE = RUN/slots.json slots['5']; read RUN/lanes/<LANE>/state.json. Review only when the lane has done false, status in_review and RUN/reviews/<LANE>-<first 7 hex of head_sha>.json does not exist; otherwise answer exactly 'no review needed (<status>)'. Inputs: lane key <slug>/<LANE>, PR URL(s) and head SHA(s) from the state file, the spec on origin/main (.kiro/specs/<slug>/lanes/<LANE>.md, tasks.md, plan.md), RUN/lanes/<LANE>/impl-notes.md and docs/validation/<VTID>/. If RUN/decisions.md records an owner instruction covering this plan's protected gate files, apply checklist item 9 accordingly. Return exactly the two output blocks of your definition (verdict JSON, then the lane-log review entry), or the model_unavailable line. You write nothing; the land step stores your output."
+            },
+            {
+              "type": "step",
+              "id": "land-5",
+              "agent": "wf-coder",
+              "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Lane land for slot 5: follow <vitana-platform>/.kiro/pipeline/lane-land.md exactly with N=5 (LANE = RUN/slots.json slots['5']). The review step's output for this iteration is between the markers:\n<review_output>\n{{review-5.output}}\n</review_output>\nStore it as lane-review.md says and act on it. One merge at a time: take RUN/merge.lock before any update-branch or merge and release it at the end. Merge only under the collaboration.md section 7b rule; never production. Slot stop contract: end your final message with the line VITANA_SLOT_DONE only when this slot's lane is done and RUN/slots.json queue is empty (or the slot is empty); never write that token otherwise."
+            }
+          ]
+        },
+        {
+          "type": "repeat",
+          "id": "lane-slot-6",
+          "maxIterations": 40,
+          "onMaxIterations": "continue",
+          "stopWhen": "{{land-6.output}} contains VITANA_SLOT_DONE",
+          "steps": [
+            {
+              "type": "step",
+              "id": "code-6",
+              "agent": "wf-coder",
+              "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Lane coder for slot 6: follow <vitana-platform>/.kiro/pipeline/lane-code.md exactly with N=6 (LANE = RUN/slots.json slots['6']). At most 3 review fix passes and 3 CI fix attempts per lane, then park. If the only way to satisfy a review finding changes behaviour beyond the converged plan, do not make it: log it as deferred in RUN/blockers.md (common rule 5) and continue. Slot stop contract: the slot loop stops when the land step's final message ends with VITANA_SLOT_DONE; only the land step writes done and that token."
+            },
+            {
+              "type": "step",
+              "id": "review-6",
+              "agent": "vitana-lane-reviewer",
+              "modelId": "claude-sonnet-5.5",
+              "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). You are the review step for slot 6. Read <vitana-platform>/.kiro/pipeline/lane-review.md. LANE = RUN/slots.json slots['6']; read RUN/lanes/<LANE>/state.json. Review only when the lane has done false, status in_review and RUN/reviews/<LANE>-<first 7 hex of head_sha>.json does not exist; otherwise answer exactly 'no review needed (<status>)'. Inputs: lane key <slug>/<LANE>, PR URL(s) and head SHA(s) from the state file, the spec on origin/main (.kiro/specs/<slug>/lanes/<LANE>.md, tasks.md, plan.md), RUN/lanes/<LANE>/impl-notes.md and docs/validation/<VTID>/. If RUN/decisions.md records an owner instruction covering this plan's protected gate files, apply checklist item 9 accordingly. Return exactly the two output blocks of your definition (verdict JSON, then the lane-log review entry), or the model_unavailable line. You write nothing; the land step stores your output."
+            },
+            {
+              "type": "step",
+              "id": "land-6",
+              "agent": "wf-coder",
+              "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Lane land for slot 6: follow <vitana-platform>/.kiro/pipeline/lane-land.md exactly with N=6 (LANE = RUN/slots.json slots['6']). The review step's output for this iteration is between the markers:\n<review_output>\n{{review-6.output}}\n</review_output>\nStore it as lane-review.md says and act on it. One merge at a time: take RUN/merge.lock before any update-branch or merge and release it at the end. Merge only under the collaboration.md section 7b rule; never production. Slot stop contract: end your final message with the line VITANA_SLOT_DONE only when this slot's lane is done and RUN/slots.json queue is empty (or the slot is empty); never write that token otherwise."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "step",
+      "id": "staging-verify",
+      "agent": "wf-coder",
+      "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Staging. For every landed lane in RUN/lanes/*/state.json whose merge touched a path a staging deploy workflow watches: find the AWS-STAGE-DEPLOY-* run for a main commit containing its merge and the STAGING-VERIFY run after it (gh run list / gh run view, poll 2-3 min, up to 120 min). Both passed on a commit containing every deploying lane of the plan -> record the run URLs, test counts and the verified commit in RUN/staging.json. STAGING-VERIFY failed -> attribute it per lane (per_vtid when present), fix forward with a new PR under the same lane's VTID through lane-code.md / lane-review.md / lane-land.md rules (reviewer agent accept, merge lock, section 7b), at most 3 attempts per lane, then park it with the five-part stop message in RUN/blockers.md. A plan that deploys nothing has no staging step: record that. Then compute docs/validation/<plan VTID>/timings.json (common rule 12) from GitHub timestamps and RUN/timings/*.jsonl; if the Project Manager has not committed it, open a docs-only PR VTID-<plan VTID> (<slug>/_plan): timings and merge it under section 7b. Never dispatch a deploy, never PUBLISH, never call production. Final message: verified commit, run links, counts, or what is parked."
+    },
+    {
+      "type": "step",
+      "id": "gate2",
+      "agent": "wf-coder",
+      "effortLevel": "medium",
+      "prompt": "<vitana-platform> = the workspace folder (or its clone) whose `git remote get-url origin` is exafyltd/vitana-platform; <vitana-v1> likewise for exafyltd/vitana-v1. RUN = <vitana-platform>/.agents/tasks/pipeline-<this workflow's id>/ (the wf_... id your step instructions give you). Binding rules: <vitana-platform>/.kiro/pipeline/common-rules.md (read it first). Never ask the owner anything and never send_message severity 'warning' or 'error' for a normal outcome; the only owner stop of the whole pipeline is the Gate 2 step. When this step's work is done, always call send_message with severity 'success'. Compose the final message of the pipeline from RUN (read-only; never deploy, dispatch or merge here). If RUN/spar-state.json is escalated: the escalation message (findings still disputed, the partner's position, a recommended answer) and nothing else. Otherwise Gate 2, built only from machine evidence: the STAGING-VERIFY run link(s) and test counts, the verified commit, every commit between the commit production runs (the head SHA of the last successful AWS-PROD-DEPLOY-* run, read with gh run list; read-only, no call to production) and the verified commit, migrations in the release, the lanes with PR, merge SHA and who merged, every 'Decisions taken' line from RUN/decisions.md, parked items from RUN/blockers.md, and the plan's timings.json numbers. End with exactly: Staging verified — ready for deployment to production? (only when staging verification passed; otherwise state what failed and what is parked). This message is the deliverable."
+    }
+  ]
+}

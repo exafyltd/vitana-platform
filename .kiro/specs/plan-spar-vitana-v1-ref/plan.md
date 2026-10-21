@@ -173,3 +173,4 @@ the common single-repo plan:
   inline-commented / multi-token / non-SHA value) — specified in design "Front-matter shape" / "Input
   validation" and covered by the validation test.
 <!-- plan:end -->
+<!-- sync: re-trigger PLAN-SPAR allocate_retry (owner 2026-10-19 collaboration.md 7b); plan text between markers unchanged -->
