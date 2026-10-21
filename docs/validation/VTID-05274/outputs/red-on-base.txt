@@ -1,0 +1,18 @@
+# jest test/project-manager on base src (origin/main 22034fd4d)
+PASS test/project-manager/act.test.ts (7.637 s)
+FAIL test/project-manager/decide.test.ts (7.772 s)
+FAIL test/project-manager/timings.test.ts
+FAIL test/project-manager/loop.test.ts
+FAIL test/project-manager/observe-live.test.ts
+FAIL test/project-manager/governance.test.ts
+FAIL test/project-manager/tick-and-config.test.ts
+FAIL test/project-manager/fallback.test.ts (8.702 s)
+PASS test/project-manager/safe-merge-fn.test.ts (15.806 s)
+FAIL test/project-manager/route.test.ts (15.04 s)
+Test Suites: 8 failed, 2 passed, 10 total
+Tests:       46 failed, 77 passed, 123 total
+# failing tests / load errors
+Cannot find module '../../src/services/project-manager/timings' from 'test/project-manager/timings.test.ts'
+Cannot find module '../../src/services/project-manager/loop' from 'test/project-manager/loop.test.ts'
+Cannot find module '../../src/services/project-manager/observe-live' from 'test/project-manager/observe-live.test.ts'
+Cannot find module '../../src/services/project-manager/governance' from 'test/project-manager/governance.test.ts'
