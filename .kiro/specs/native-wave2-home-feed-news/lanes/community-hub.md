@@ -20,7 +20,8 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/communityHubNative.json
   - docs/validation/**
-updated: 2026-10-16T12:00Z
+updated: 2026-10-21T11:19Z
+vtid: VTID-05296
 ---
 # Community hub / intents / search port — the 17 remaining `home-feed` ledger rows
 Plan: `.kiro/specs/native-wave2-home-feed-news/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -69,3 +70,6 @@ Lane drafted with the plan (`state: drafted` in `handoff.md`). The 17 rows and t
 ledger and `src/App.tsx` so no file belongs to two lanes. Next: PLAN-SPAR spars the plan; once a VTID is written here,
 seat `exafyltd` claims the lane (`queue.mjs claim native-wave2-home-feed-news/community-hub --session <id>`). No deps
 — runs in parallel with `news`.
+
+### 2026-10-21T11:19Z · ci-plan-spar · ready (VTID allocated)
+VTID-05296 allocated after policy approval (converged-auto-v1).

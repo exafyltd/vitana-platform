@@ -2,10 +2,12 @@
 slug: native-wave2-home-feed-news
 author: kiro
 executor: kiro
-next_actor: claude
-state: drafted
+next_actor: kiro
+state: approved
 author_seat: exafyltd
-updated: 2026-10-17T19:32Z
+updated: 2026-10-21T11:19Z
+sparring_record: .kiro/specs/native-wave2-home-feed-news/sparring/verdict.md
+vtids: [VTID-05296, VTID-05297, VTID-05298]
 ---
 # Handoff — Native Wave 2: Home / Feed / News screen ports
 First Wave 2 screen-port batch of the native Maxina app program (`docs/programs/native-app/NATIVE-APP-PLAN.md`,
@@ -43,3 +45,6 @@ The sparring partner could not review (model_unavailable). Not a plan problem: C
 
 ### 2026-10-17T19:32Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-21T11:19Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are handed to Kiro.
