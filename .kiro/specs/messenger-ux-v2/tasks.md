@@ -32,22 +32,24 @@ table.
 ## Lane `api-viewing-presence` — push suppressed for the conversation being viewed (vitana-platform)
 - [ ] Migration `chat_viewing_presence(user_id uuid, device_id text, conversation_key text, expires_at timestamptz,
       PRIMARY KEY (user_id, device_id))`, RLS enabled with no client policies (gateway service role only).
-- [ ] `routes/chat-viewing.ts` (I4) mounted from `chat.ts`; `device_id` ≤ 64 chars, key format validated; expired rows
-      of the caller deleted on write.
-- [ ] `chat-push-coalescer.ts`: decision reads unexpired presence rows for the recipients in the same batched call;
-      viewing → `suppressPush: 'viewing'`. `notification-service.ts`: `'viewing'` option and `suppressed_viewing`
-      outcome. `/push-dispatch`: `new_chat_message` / `chat_mention` rows of a viewing recipient are marked sent with
-      `suppressed_viewing` instead of pushed.
-- [ ] Off switch `CHAT_PUSH_VIEWING_SUPPRESSION_ENABLED` (default on); fails open (read error → push as before).
+- [ ] `routes/chat-viewing.ts` (I4) mounted from `chat.ts`; `device_id` ≤ 64 chars, key format validated; the
+      caller's expired rows deleted on write.
+- [ ] `services/chat-viewing-presence.ts`: `chatConversationKeyFromData`, batched `viewingRecipients`.
+- [ ] `notifyUser`: chat types + viewing → row written with `push_sent_at` at INSERT, no push, outcome
+      `suppressed_viewing`; dedup rule (b). `/push-dispatch`: viewing → `suppressed_viewing`; dedup rule (a).
+- [ ] Off switch `CHAT_PUSH_VIEWING_SUPPRESSION_ENABLED` (default on); fails open.
 **Acceptance:**
-- Jest: viewing `dm:<sender>` suppresses that DM's push only; a push for another conversation still goes out; group
-  key likewise; expired row (> 45 s) does not suppress; two devices, one viewing → suppressed; `active:false` → pushed.
-- In-app row still written for a suppressed push; outcome recorded.
-- `vtid-05137-chat-push-coalescing.test.ts` green unchanged; cron path: a trigger-style row (no `conversation_key`) is
-  keyed via its `message_id`, suppressed when viewing, pushed otherwise; exactly one push per DM across both paths
-  in both orders (trigger row first / gateway row first), the other row `suppressed_duplicate`.
-- Group: a member viewing `group:<id>` gets no push (message and mention), a non-viewing member does; calendar invites
-  in a viewed DM/group are suppressed through `applyViewingSuppression`.
+- Jest: viewing `dm:<sender>` suppresses that DM's push only; another conversation still pushes; group member viewing
+  `group:<id>` gets no push for a message or a mention while a non-viewing member does; expired row (> 45 s) does not
+  suppress; two devices, one viewing → suppressed; `active:false` → pushed.
+- A viewing-suppressed row has `push_sent_at` set; then presence expires and `/push-dispatch` runs → still no push.
+- Every caller listed in plan I4 is covered without being edited: one test each for the new-member-greeting DM, a
+  calendar invite (DM and group) and an ORB-tool DM payload (`sender_id` only) → suppressed when viewing.
+- Cron: a trigger-style row (`url:'/inbox'`, no `conversation_key`) is keyed via `sender_id`/`message_id`,
+  suppressed when viewing; both write orders (trigger row first / gateway row first) → exactly one push, the other
+  row `suppressed_duplicate`.
+- In-app row always written; email fallback not triggered for `suppressed_viewing`;
+  `vtid-05137-chat-push-coalescing.test.ts` and `vtid-04926-chat-group-mentions.test.ts` green unchanged.
 
 <!-- lane: api-message-search -->
 ## Lane `api-message-search` — authorised message search (vitana-platform)
@@ -65,7 +67,8 @@ table.
 ## Lane `api-shared-content` — shared post/event/product/profile cards (vitana-platform)
 - [ ] `shared_content` allowed on DM and group send (I6); the sender must be able to see the item (resolver with the
       caller-scoped client), else 403 `share_not_allowed`.
-- [ ] `services/chat-shared-content.ts` resolvers for `post`, `event`, `product`, `profile`; `GET /chat/shared-preview`.
+- [ ] `services/chat-shared-content.ts` resolvers for `post`, `event`, `product` (Discover product), `profile`, each
+      with the user-scoped client (`lib/supabase-user.ts`); `GET /chat/shared-preview`.
 - [ ] Push body from the catalog (`notif.chat_shared_content.body`, every locale), never the item content.
 **Acceptance:**
 - Jest: a deleted item → `{available:false, reason:'deleted'}`; an item the caller cannot read under RLS →
@@ -86,6 +89,8 @@ table.
   of the sender's own message does not create a second row; reconnect flushes once; after a simulated reload the
   persisted outbox re-posts a pending item with its original id and shows a failed one with Retry; user A's outbox is
   never loaded for user B; a group message never shows Delivered/Read.
+- The outbox is cleared on sign-out; the gateway-failure fallback insert carries the `client_message_id` (a `23505`
+  reconciles as sent); a legacy `global_messages` thread item is never auto-re-posted after reload.
 - Existing `MessageInput.*` suites green with `MessageInput.tsx` unchanged.
 
 <!-- lane: ui-scroll-anchoring -->
@@ -107,7 +112,8 @@ table.
 - [ ] Group reply (swipe, context menu, preview in composer through existing props).
 - [ ] Quote resolves unloaded parents (one fetch), deleted parent state, keyboard-activatable quote.
 **Acceptance:**
-- Vitest: quote tap on a loaded parent scrolls + highlights; on an unloaded parent loads `around` then jumps; 404 →
+- Vitest: a `reply_to_message_id` pointing outside the conversation renders "original message not available";
+  quote tap on a loaded parent scrolls + highlights; on an unloaded parent loads `around` then jumps; 404 →
   toast, no scroll; reply sends `reply_to_message_id` in DM and group.
 
 <!-- lane: ui-compact-grouping -->
@@ -141,7 +147,7 @@ table.
 - [ ] `useChatViewingPresence(conversationKey)` in `ConversationView` and `GroupChat`.
 **Acceptance:**
 - Vitest with fake timers: heartbeat every 20 s only while visible + focused; `active:false` on blur, hidden, unmount,
-  key change; sendBeacon on pagehide; one `device_id` per tab; no call when the gateway is unconfigured.
+  key change; `fetch` with `keepalive` + `Authorization` on pagehide; one `device_id` per tab; no call when the gateway is unconfigured.
 
 <!-- lane: ui-message-search -->
 ## Lane `ui-message-search` — global and in-conversation search (vitana-v1)

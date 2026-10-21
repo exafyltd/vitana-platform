@@ -70,7 +70,9 @@ same pair returns `200 {ok:true, data:<existing row>, duplicate:true}` and sends
 `201`. Concurrent duplicates: the insert's unique violation (SQLSTATE `23505` on that index) is caught, the existing row
 re-fetched by `(sender_id, client_message_id)` and returned as the duplicate response — never a 500. `reply_to_message_id` must be a message of the same conversation (same DM pair or same group) visible to the
 sender, else `400 invalid_reply_target`; stored as `metadata.reply_to = {message_id}` (no copied content, so an edit or
-delete of the parent is reflected and nothing leaks). Rows returned by every read endpoint include
+delete of the parent is reflected and nothing leaks). Read endpoints expose it as `reply_to_message_id`. Readers trust
+it only inside the same conversation: the quote is resolved from that conversation's rows or I3 (which 404s outside
+it), so a value forged through a direct RLS insert shows "original message not available", never foreign content. Rows returned by every read endpoint include
 `client_message_id`, `delivered_at`.
 **I2 delivery (api-send-reliability).** Nullable `chat_messages.delivered_at timestamptz`. `POST /chat/delivered
 {message_ids: uuid[] ≤ 200}` sets `delivered_at = now()` only where `receiver_id = caller` and `delivered_at IS NULL`
@@ -83,42 +85,53 @@ message's ladder is Sending → Sent | Failed only, and the bubble never shows D
 ascending, plus `{has_older, has_newer}`; 404 when the target is not in that conversation. `before`/`limit` unchanged;
 add `after=<iso>` for forward paging.
 **I4 viewing presence (api-viewing-presence).** `POST /chat/viewing {conversation_key, device_id, active}` where
-`conversation_key` is `dm:<peerId>` or `group:<groupId>` (the coalescer's key seen from the recipient: for a DM the
-viewer sends `dm:<peer>`, the sender's push checks `dm:<sender>` for the receiver). `active:true` upserts
+`conversation_key` is `dm:<peerId>` or `group:<groupId>` as seen by the viewer. `active:true` upserts
 `chat_viewing_presence(user_id, device_id, conversation_key, expires_at = now()+45s)`; `active:false` deletes the row.
 The client sends `active:true` every 20 s while the conversation is open AND the document is visible AND focused
-(Appilix: visible), and `active:false` on blur, hide, unmount and conversation change (`navigator.sendBeacon` on
-pagehide). Any unexpired row for (recipient, key) on any device → the push is suppressed; the in-app row is still
-written with `push_outcome 'suppressed_viewing'`. Mentions are suppressed too only for the conversation being viewed.
-**Where the check runs.** DM pushes reach the coalescer from `chat.ts:268`; group pushes from
-`fanoutGroupNotifications` (`chat-groups.ts:570`), which calls `coalesceChatPushes` for every recipient (`:659`) except
-calendar invites. The viewing check is one exported function in `chat-push-coalescer.ts`,
-`applyViewingSuppression(supabase, conversationKey, items)`, called inside `coalesceChatPushes` (so DM and group
-messages and mentions are covered; a mention no longer pushes when its group is being viewed) and called directly by
-the two calendar-invite branches that skip the coalescer (`chat.ts`, `chat-groups.ts` fanout).
-**Second push path.** The vitana-v1 trigger `notify_on_chat_message` also writes `new_chat_message` rows, with
-`push_sent_at` NULL and no `conversation_key`, which `/push-dispatch` pushes. The cron derives the key for such a row
-from `data->>'message_id'` → `chat_messages(sender_id, group_id)` → `dm:<sender_id>` | `group:<group_id>` (one
-batched lookup per cron batch), then applies the same viewing check. Measured read-only 2026-10-21: the trigger is
-enabled, its live body differs from the repo's last migration (drift, recorded by the lane, not changed by this plan);
-over 7 days 155 messages produced notification rows, 1 of them two rows, and 8 rows had no `conversation_key` (the
-direct-insert fallback path). Measured further (read-only, same day): in the last 120 days no `new_chat_message`
-row with the trigger's `url:'/inbox'` exists at all — the trigger's insert does not land today — while 21 rows in 21
-days come from another writer (`url` `/message…`, with `entity_id`), which the lane identifies read-only. **Dedup rule
-(owner: the push path, both orders covered):** (a) `/push-dispatch`, for an unpushed `new_chat_message` /
-`chat_mention` row, marks it handled with outcome `suppressed_duplicate` when another row of the same `user_id` and
-`data->>'message_id'` already has `push_sent_at` set; (b) `notifyUser`, before writing a chat row, marks any unpushed
-row of the same user and `message_id` handled with `suppressed_duplicate` (the gateway's own row is the one that
-pushes). This plan does not change the trigger. Tests: trigger-row-first and gateway-row-first orders → exactly one
-push; viewing → none.
+(Appilix: visible), and `active:false` on blur, hide, unmount and conversation change (on `pagehide` via
+`fetch(…, {keepalive:true})` with the normal `Authorization` header — `sendBeacon` cannot carry it; a lost final call
+is bounded by the 45 s expiry). Any unexpired row for (recipient, key) on any device or tab = "viewing".
+**One check, at the two places every chat push passes.** Chat pushes are produced by many callers (`chat.ts` /send
+incl. calendar invites and the new-member-greeting branch `chat.ts:252` → `new-member-greeting-push.ts`,
+`chat-groups.ts` fanout `:570-673` incl. mentions and invites, `chat-groups.ts:867` welcome refanout,
+`orb-tools-shared.ts:2752`, `orb-tools/messaging-depth-tools.ts:395,902,1013`, `orb-tools/calendar-social-tools.ts:418`,
+`welcome-team/welcome-team-service.ts:284`); all of them end in `notifyUser` (`notification-service.ts:809`) or, for
+rows written without it, in `/push-dispatch` (`scheduled-notifications.ts:1252`). So the check lives in a new
+`services/chat-viewing-presence.ts`, called from exactly those two places, and no caller changes:
+- `chatConversationKeyFromData(data)` = `data.conversation_key` ?? (`data.group_id` → `group:<group_id>`) ??
+  (`data.sender_id` → `dm:<sender_id>`) ?? (`data.message_id` → one lookup in `chat_messages(sender_id, group_id)`) ??
+  null (null = not suppressed). Every caller above already sets `group_id` or `sender_id`.
+- `notifyUser`, for `type ∈ {new_chat_message, chat_mention}` when the push would otherwise go out: viewing → the
+  in-app row is written exactly like the `coalesced` branch (`notification-service.ts:870-899`): `push_sent_at` set at
+  INSERT, no push, `push_outcome 'suppressed_viewing'`, so `/push-dispatch` never re-selects it after the presence
+  expires. `NotifyUserOptions` is unchanged (the decision is internal). Mentions in a viewed group are suppressed too.
+- `/push-dispatch`, for an unpushed chat row: viewing → marked handled with `suppressed_viewing` (the existing
+  `markHandled`, :1306-1309).
+- One batched presence read per `notifyUser` call / per cron batch; fails open (read error → push as before); off
+  switch `CHAT_PUSH_VIEWING_SUPPRESSION_ENABLED` (default on).
+- Interplay: the coalescer counts only really pushed rows (`wasPushed` excludes `suppressed_*`,
+  `chat-push-coalescer.ts:76-81`), so the first message after the member leaves the chat pushes normally; the email
+  fallback runs only for `no_device`/`fcm_error` (`email/notification-email-fallback.ts:34`), never for
+  `suppressed_viewing`.
+**Duplicate rows (second writer).** The vitana-v1 trigger `notify_on_chat_message` can write a second
+`new_chat_message` row (url `/inbox`, `push_sent_at` NULL) for a DM that the gateway also notifies; its guard runs at
+INSERT time, before the gateway's row exists. Measured read-only 2026-10-21: no such row in the last 120 days (the
+trigger's insert does not land today; its live body also differs from the repo's last migration — drift recorded by
+the lane, trigger not changed by this plan). Defensive rule, owned by the push path, both orders: (a) `/push-dispatch`
+marks an unpushed chat row `suppressed_duplicate` when another row of the same `user_id` and `data->>'message_id'`
+already has `push_sent_at`; (b) `notifyUser`, before writing a chat row with a `message_id`, marks unpushed rows of
+the same user and `message_id` `suppressed_duplicate`.
 **I5 search (api-message-search).** `GET /chat/search?q=&scope=all|dm:<peerId>|group:<groupId>&from=&to=&type=
 any|image|video|file|voice|link&sender=<userId>&cursor=&limit≤50` → `{results:[{message_id, conversation_key,
 sender_id, created_at, snippet, message_type}], next_cursor}`. `q` ≥ 3 characters (the shortest a trigram index serves; shorter → 400), ILIKE on `content` and attachment
 file names backed by a `pg_trgm` GIN index; scope restricted server-side to DMs where the caller is sender or receiver
 and groups where the caller is a member, within `identity.tenant_id`; rate-limited per user.
 **I6 shared content (api-shared-content).** New `message_type 'shared_content'`, `content_data = {kind:
-'post'|'event'|'product'|'profile', id}` — no title/image copied. Send validates the SENDER can see the item.
-`GET /chat/shared-preview?kind=&id=` resolves the card for the CALLER with the caller's own permissions:
+'post'|'event'|'product'|'profile', id}` (`product` = the Discover marketplace product of `GET
+/api/v1/discover/product/:id`, `routes/discover-search.ts:473`, the item `pages/discover/ProductDetail.tsx` shows; member
+community listings keep their existing "Message seller" flow) — no title/image copied. Send validates the SENDER can see the item.
+`GET /chat/shared-preview?kind=&id=` resolves the card for the CALLER with the caller's own permissions (the
+user-scoped Supabase client of `lib/supabase-user.ts`, so RLS decides, never the service role):
 `{available:true, title, description, image_url, url}` or `{available:false, reason:'deleted'|'restricted'}`. Push body
 for this type is a catalog entry (`tt()`), never the item's content.
 **I7 client outbox (ui-send-status).** `src/lib/messaging/outbox.ts`: each send gets `client_message_id =
@@ -129,6 +142,10 @@ position; retry re-posts the SAME id; reconnect retries pending items once. **Pe
 `reply_to_message_id`, `created_at`, attempts) is kept in `localStorage` under `vitana:chat:outbox:v1:<userId>` until
 the server accepts it; on mount after a reload, pending items are re-posted once (safe: same id, I1 dedup) and failed
 ones render with Retry; items older than 7 days are dropped; a storage error falls back to in-memory for that session.
+The outbox is cleared on sign-out. The gateway-failure fallback insert into `chat_messages`
+(`useGlobalMessages.ts:1229-1250`) carries the same `client_message_id`, so the unique index (I1) also dedups it
+(`23505` → treated as sent). Legacy `global_messages` threads (direct insert, no `client_message_id`) get the statuses
+and manual Retry after a definite error response, but no automatic re-post after reload (no server dedup there).
 `onSendMessage` resolves once the item is queued (the composer clears; a failure shows on the bubble, not by
 restoring the composer), so `MessageInput.tsx` is not edited.
 **I8 jump (ui-reply-jump).** `useJumpToMessage(conversation)` → `jump(messageId)`: if the row is rendered, scroll it
@@ -145,16 +162,13 @@ base.
 1. `api-send-reliability` (P0) — I1, I2, I3. Files: one migration (`client_message_id`, unique partial index,
    `delivered_at`), `routes/chat.ts`, `routes/chat-groups.ts`, `routes/chat-repository.ts`,
    `routes/chat-groups-repository.ts`, `DATABASE_SCHEMA.md`, new test `test/vtid-xxxxx-chat-send-reliability.test.ts`.
-2. `api-viewing-presence` (P1, R13) — I4. Files: one migration (`chat_viewing_presence`, RLS on, no client policies,
-   index `(user_id, conversation_key, expires_at)`, sweep of expired rows by the existing cron or `DELETE … WHERE
-   expires_at < now()` on write), new `routes/chat-viewing.ts` mounted from `chat.ts` (`router.use('/viewing', …)`),
-   `routes/chat-groups.ts` (calendar-invite fanout branch), `services/notification-service-repository.ts` (dedup),
-   `services/chat-push-coalescer.ts` (decision gains `viewing`), `services/notification-service.ts`
-   (`suppressPush: 'coalesced' | 'viewing'`, outcome `suppressed_viewing`), `routes/scheduled-notifications.ts` +
-   repository (the cron skips — marks `push_sent_at` with outcome `suppressed_viewing` — a `new_chat_message` row whose
-   recipient is viewing that conversation), `DATABASE_SCHEMA.md`, tests
-   (extend `vtid-05137-chat-push-coalescing.test.ts`, new viewing test). Depends on `api-send-reliability` (chat.ts,
-   migration order).
+2. `api-viewing-presence` (P1, R13) — I4. Files: one migration (`chat_viewing_presence`, PK `(user_id, device_id)`,
+   RLS on with no client policies, index `(user_id, conversation_key, expires_at)`, the caller's expired rows deleted
+   on write), new `routes/chat-viewing.ts` mounted from `chat.ts` (`router.use('/viewing', …)`), new
+   `services/chat-viewing-presence.ts`, `services/notification-service.ts` (+ `notification-service-repository.ts`),
+   `routes/scheduled-notifications.ts` (+ repository), `DATABASE_SCHEMA.md`, new test
+   `test/vtid-xxxxx-chat-viewing-presence.test.ts`. No push caller is edited. Depends on `api-send-reliability`
+   (`chat.ts`, migration order).
 3. `api-message-search` (P2, R12) — I5. Files: one migration (`CREATE EXTENSION IF NOT EXISTS pg_trgm`, GIN trigram
    index on `chat_messages.content`; the lane measures the table size read-only and states the lock time in the PR),
    new `routes/chat-search.ts` mounted from `chat.ts`, `DATABASE_SCHEMA.md`, tests incl. an authorization
@@ -162,7 +176,8 @@ base.
    `api-viewing-presence`.
 4. `api-shared-content` (P2, R11) — I6. Files: `routes/chat.ts` + `routes/chat-groups.ts` (allowed type, sender check,
    push copy), new `services/chat-shared-content.ts` (per-kind resolvers over `profile_posts`, `global_community_events`,
-   `community_listings`, `global_community_profiles`, each using the caller-scoped client so RLS decides; profiles also
+   the Discover product lookup of `discover-search.ts`, `global_community_profiles`, each using the user-scoped client
+   of `lib/supabase-user.ts` so RLS decides; profiles also
    exclude `service_bot_accounts` / `notification_test_actors` via `lib/excluded-test-service-accounts.ts`, CLAUDE.md IF–THEN 45), i18n catalog entries, tests.
    Depends on `api-message-search` (chat.ts).
 
@@ -206,7 +221,7 @@ base.
     `components/messages/MediaAlbum.tsx`, `ChatImageViewer.tsx`, `components/ui/attachment-preview.tsx` if needed,
     inbox i18n. Depends on `ui-compact-grouping`; waits for #1445 resolved (§8).
 11. `ui-viewing-presence` (P1, R13) — I4 client: new `hooks/useChatViewingPresence.ts` (stable per-tab `device_id` in
-    `sessionStorage`, 20 s heartbeat, `active:false` on blur/hide/unmount/switch, sendBeacon on pagehide), mounted in
+    `sessionStorage`, 20 s heartbeat, `active:false` on blur/hide/unmount/switch, on pagehide `fetch` with `keepalive` + auth header), mounted in
     `ConversationView.tsx` (DM: `dm:<peerId>`) and `GroupChat.tsx` (`group:<id>`). Depends on `ui-compact-grouping`
     (same files) and `api-viewing-presence`.
 12. `ui-message-search` (P2, R12) — global search in the inbox (search field searches thread names as today plus
@@ -264,9 +279,9 @@ base.
 `docs/validation/<plan VTID>/timings.json` (collaboration.md §8b schema), quoted at Gate 2.
 
 ## 10. Risks
-- Unique index on a large `chat_messages`: partial index on a new all-NULL column builds fast; the trigram index is
-  heavier — lane 3 measures row count read-only and uses `CREATE INDEX CONCURRENTLY` in its own migration file if the
-  migration runner allows it, else states the expected lock.
+- Index builds on `chat_messages`: measured read-only 2026-10-21 at 53,272 rows / 62 MB with `pg_trgm` installed, so
+  both the partial unique index (new all-NULL column) and the trigram GIN index build in seconds; lane 3 re-measures
+  and states the lock time in its PR.
 - Realtime UPDATE events add traffic per sent DM (two updates at most: delivered, read).
 - Presence heartbeats: one small upsert per open conversation per 20 s per tab; expired rows are deleted on write.
   A dead tab stops suppressing after ≤ 45 s, so a missed push window is bounded.
@@ -276,7 +291,7 @@ base.
 - Desktop Enter behaviour and paste land through #1445, not here.
 
 ## 11. Unchanged
-Message tables' existing columns and RLS, `chat_message_replies`, the push coalescer's 5-minute rule, notification
+Message tables' existing columns and RLS, `chat_message_replies`, the push coalescer (`chat-push-coalescer.ts`, not edited) and its 5-minute rule, every push caller listed in I4, notification
 preferences/DND, the sidebar, routes and screens, the Vitana bot reply path (`/vitana-reply`), forward, calendar
 invites, voice messages.
 <!-- plan:end -->
