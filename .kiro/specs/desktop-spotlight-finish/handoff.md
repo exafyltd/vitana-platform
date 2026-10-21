@@ -5,7 +5,7 @@ executor: kiro
 next_actor: kiro
 state: sparring
 author_seat: exafyltd
-updated: 2026-10-21T15:05Z
+updated: 2026-10-21T15:45Z
 sparring_record: .kiro/specs/desktop-spotlight-finish/sparring/verdict.md
 spar_refs:
   - exafyltd/vitana-v1: da0a959695debcca9c1b270c3efccfe0ae32094d
@@ -114,3 +114,13 @@ vitana-v1 code**, not papered over. Three spinners the plan called "action-in-pr
 `npx eslint` on the three files is clean (design/no-page-spinner = 0, no unused imports); 0 `Loader2`/`animate-spin` tokens, 7 `ArchetypeSkeleton` usages across them.
 Aligned the spec to the code (plan Decision 3/6 + lanes table + Test plan, design.md spinner inventory, requirements 3.5, tasks R1/S2, lanes/skeletons.md + lanes/remaining-screens.md): only genuinely mutation-gated spinners (`LiveRoomViewer` if action-gated, `DeleteAccount` on the real delete mutation) may keep an allow-comment; no data-load spinner is masked anywhere.
 Re-pinned `spar_refs` to a vitana-v1 SHA that **contains all three fixes**: `da0a959695debcca9c1b270c3efccfe0ae32094d`, a throwaway merge of the two lane tips (`e1a49d4c9` + `c7691afdc`, disjoint files, no conflict), pushed to `origin/kiro/desktop-spotlight-finish/spar-integration` read-only so the partner can read the fixed code at the premises R3-F1 cited. Reset `sparring/state.json` to `{"sessions": []}` and archived the two prior sessions in-tree (`sparring/archive/session-6963fb88/`, `.../session-eeb01b78/`) for audit — the cap was only hit because those two were recorded; the defect itself is corrected. This is not a reset to dodge the finding. VTID-05285–05294 stay cleared (a fresh converged+policy-approved session auto-allocates the 10 lane VTIDs). No VTID allocated here, no live system touched.
+
+### 2026-10-21T15:45Z · kiro-202610152203-0347 · infra retry (evidence_floor_not_met, 1 of 1)
+Fresh session `ebd5ecb7` (run 39626757356, PLAN-SPAR success) escalated at round 1 with a **partner wiring error, not a
+plan finding**: `evidence_floor_not_met: round 1 needs at least 3 premise checks citing read_file (have 0)` — the same
+0-read wiring escalation session 6963fb88 hit earlier. The base checkout was `c7481256` (has `parseSparRefs`), the plan
+hash is unchanged and the R3-F1 fix is in the pinned ref, so this is infra, not a design regression. Archived that dead
+session to `sparring/archive/session-ebd5ecb7-infra/` and reset `state.json` to `{"sessions": []}` for the single
+allowed retry (autonomy rule: infra escalation → retry once; `spar_refs`/plan/fix all unchanged). If the retry escalates
+again on infra it is reported as an infra blocker; a NEW real finding would stop and surface. No VTID allocated, no
+product code changed, no live system touched.
