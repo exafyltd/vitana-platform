@@ -8,8 +8,9 @@ reviewer_seat: jtadic
 paths:
   - .github/workflows/PR-GATE.yml
   - .github/workflows/mt-launch-suites.yml
-updated: 2026-10-21T13:58Z
+updated: 2026-10-21T16:16Z
 vtid: VTID-05327
+seat: exafyltd
 ---
 # worker-test-gate — CI gate for linters, D18 guard, golden (repo vitana-platform)
 
@@ -34,3 +35,5 @@ the others; Claude builds it after the two code lanes add their suites.
 
 ### 2026-10-21T13:58Z · ci-plan-spar · ready (VTID allocated)
 VTID-05327 allocated after policy approval (converged-auto-v1).
+### 2026-10-21T16:16Z · pm-agent · update
+reassign lane →exafyltd (stale_ready, Claude unavailable)
