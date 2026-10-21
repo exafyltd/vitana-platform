@@ -14,7 +14,7 @@ paths:
   - "DATABASE_SCHEMA.md"
   - "docs/programs/health-hub/**"
   - "docs/validation/**"
-updated: 2026-10-21T09:42Z
+updated: 2026-10-21T09:44Z
 ---
 # Phase 1 data core — A2, B2, B3, C1, C2 (gateway)
 
@@ -35,4 +35,6 @@ Handed over to Kiro with the health-native spec. next_actor: owner.
 ### 2026-10-21T09:41Z · pm-agent · update
 reassign review claude→exafyltd (stale_review, Claude unavailable)
 ### 2026-10-21T09:42Z · pm-agent · update
+reassign review claude→exafyltd (stale_review, Claude unavailable)
+### 2026-10-21T09:44Z · pm-agent · update
 reassign review claude→exafyltd (stale_review, Claude unavailable)
