@@ -8,6 +8,7 @@
  *   GET    /conversations      — List recent conversations (latest message per peer)
  *   POST   /read               — Mark messages from a peer as read
  *   POST   /delivered          — Mark received DMs as delivered (VTID-05310)
+ *   POST   /viewing            — "viewing this conversation" heartbeat (VTID-05312, routes/chat-viewing.ts)
  *   GET    /unread-count       — Total unread message count
  */
 
@@ -30,9 +31,13 @@ import { tt } from '../i18n/catalog';
 import { checkInviteSend, inviteRefusedBody, INVITE_REFUSED_STATUS } from '../services/calendar-invite-guard';
 import { getUserLocale } from '../i18n/server-locale';
 import * as repo from './chat-repository';
+import chatViewingRouter from './chat-viewing';
 import { markCompanionRepliedInBackground } from '../services/companion/companion-repository';
 
 const router = Router();
+
+// VTID-05312: viewing heartbeats (push suppression for the open conversation).
+router.use('/viewing', chatViewingRouter);
 
 // VTID-03459/VTID-03470: per-user in-flight guard for POST /vitana-reply
 // (see below). Module-level because this route file is a singleton Express

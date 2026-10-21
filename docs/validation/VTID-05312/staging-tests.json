@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05312",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "unsigned POST /chat/viewing is refused (route mounted)", "target": "gateway", "method": "POST", "path": "/api/v1/chat/viewing", "rejected_probe": true, "expect_status": 401, "reason": "rejected probe, nothing written" },
+    { "kind": "existing", "ref": "npx jest test/vtid-05312-chat-viewing-presence.test.ts test/vtid-05137-chat-push-coalescing.test.ts test/vtid-04962-push-dispatch-outcome.test.ts", "cwd": "services/gateway", "reason": "suppression and dedup need writes; proven in CI only" }
+  ]
+}
