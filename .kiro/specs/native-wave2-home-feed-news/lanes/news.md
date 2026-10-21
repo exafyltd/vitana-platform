@@ -11,10 +11,13 @@ paths:
   - apps/mobile/app/(app)/news/**
   - apps/mobile/app/(app)/post/**
   - apps/mobile/src/screens/news/**
+  - apps/mobile/src/ports/news.ts
+  - apps/mobile/tests/news/**
   - apps/mobile/maestro/news/**
   - packages/core/manifest.json
   - packages/core/closure.generated.json
   - packages/core/src/**
+  - scripts/native/mobile-ci-paths.generated.json
   - apps/mobile/parity/ledger.json
   - src/i18n/*/newsNative.json
   - docs/validation/**
