@@ -1,0 +1,21 @@
+VTID-05308 (ci-github-modernization/stale-tests) — vitana-platform commands
+===========================================================================
+
+[source check, lane base] substrings asserted by the updated staging-tests.json
+  index.html has 'svg-preview.js'        => True
+  index.html has 'operator-console.js'   => True
+  svg-preview.js has 'sanitizeSvgMarkup' => True
+  svg-preview.js has 'SvgPreview'        => True
+
+[static serving] services/gateway/src/index.ts:1655
+  app.use('/command-hub', express.static(staticPath, ...))  (query string ignored;
+  unversioned /command-hub/svg-preview.js returns the same file as the ?v= path)
+
+[manifest schema] node (staging-verify lib.validateManifest, service=gateway, vtid=VTID-05082)
+  => { "ok": true, "errors": [] }
+
+Note: STAGING-VERIFY's HTTP assertions run only against the live staging gateway,
+which must not be probed from this session (CLAUDE.md rule 48 / common-rules §6).
+Red-on-base for T2 is the documented permanent-red of the staging suite; it is not
+reproducible locally because it is a live-staging read-only suite. Fix verified by
+source + schema + static-serving semantics above.
