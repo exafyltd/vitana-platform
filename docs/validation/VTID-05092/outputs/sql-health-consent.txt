@@ -1,0 +1,14 @@
+# scripts/ci/sql-tests/run-health-consent-test.sh against a throwaway local Postgres 16 (unix socket under /tmp, initdb'd for this run; never Supabase/Aurora)
+psql:../../../supabase/migrations/20261012180000_vtid_05092_health_consent_categories.sql:67: NOTICE:  policy "health_consent_categories_select" for relation "public.health_consent_categories" does not exist, skipping
+psql:../../../supabase/migrations/20261012180000_vtid_05092_health_consent_categories.sql:137: NOTICE:  trigger "trg_data_sharing_consent_events_append_only" for relation "public.data_sharing_consent_events" does not exist, skipping
+psql:../../../supabase/migrations/20261012180000_vtid_05092_health_consent_categories.sql:44: NOTICE:  relation "health_consent_categories" already exists, skipping
+psql:../../../supabase/migrations/20261012180000_vtid_05092_health_consent_categories.sql:81: NOTICE:  column "category_key" of relation "data_sharing_consents" already exists, skipping
+psql:../../../supabase/migrations/20261012180000_vtid_05092_health_consent_categories.sql:81: NOTICE:  column "text_version" of relation "data_sharing_consents" already exists, skipping
+psql:../../../supabase/migrations/20261012180000_vtid_05092_health_consent_categories.sql:81: NOTICE:  column "shown_locale" of relation "data_sharing_consents" already exists, skipping
+psql:../../../supabase/migrations/20261012180000_vtid_05092_health_consent_categories.sql:116: NOTICE:  column "category_key" of relation "data_sharing_consent_events" already exists, skipping
+psql:../../../supabase/migrations/20261012180000_vtid_05092_health_consent_categories.sql:116: NOTICE:  column "text_version" of relation "data_sharing_consent_events" already exists, skipping
+psql:../../../supabase/migrations/20261012180000_vtid_05092_health_consent_categories.sql:116: NOTICE:  column "shown_locale" of relation "data_sharing_consent_events" already exists, skipping
+psql:../../../supabase/migrations/20261012180000_vtid_05092_health_consent_categories.sql:116: NOTICE:  column "request_id" of relation "data_sharing_consent_events" already exists, skipping
+psql:../../../supabase/migrations/20261012180000_vtid_05092_health_consent_categories.sql:337: NOTICE:  column "consent_order_id" of relation "partner_health_result_inbox" already exists, skipping
+PASS vtid-05092 health consent categories
+exit 0
