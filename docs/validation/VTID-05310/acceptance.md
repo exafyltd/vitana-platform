@@ -8,6 +8,8 @@ VALIDATION_PROFILE: gateway_backend
 ROUTE_MOUNT: new `POST /api/v1/chat/delivered` on the existing chat router (`mountRouterSync(app, '/api/v1/chat', …)`);
 `GET /api/v1/chat/conversation/:peerId` and `GET /api/v1/chat/groups/:id/messages` gain `?around=` / `?after=`.
 
+FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/chat/delivered (staging; only unsigned rejected probes are sent)
+
 CURL_PROOF: staging answers 401 to unsigned `POST /api/v1/chat/delivered` and `POST /api/v1/chat/send` (rejected probes);
 every write path is proven in CI only (CLAUDE.md rule 48).
 
