@@ -10,6 +10,14 @@ Common acceptance for every lane: nothing outside the lane's `paths`; no existin
 no production test, no write as the test user, staging specs read-only; all new DB columns nullable; RLS on every new
 table.
 
+<!-- lane: test-fixture-05201 -->
+## Lane `test-fixture-05201` — make main's Vitest green again (vitana-v1)
+- [ ] `ConversationView.deeplink-scroll.vtid-05201.test.tsx`: fixture dates relative to now; `@/lib/i18n-toast` mock
+      complete (incl. `getI18nLocale`). No assertion changed.
+**Acceptance:**
+- The test fails on `origin/main` (recorded) and passes on the head; its assertions are byte-identical; full
+  `npx vitest run` green; only that file (plus the lane's `docs/validation/<VTID>/`) changes.
+
 <!-- lane: api-send-reliability -->
 ## Lane `api-send-reliability` — idempotent send, persisted replies, delivered, context window (vitana-platform)
 - [ ] Migration: `chat_messages.client_message_id uuid NULL`, unique partial index `(sender_id, client_message_id)
@@ -30,7 +38,7 @@ table.
 
 <!-- lane: api-viewing-presence -->
 ## Lane `api-viewing-presence` — push suppressed for the conversation being viewed (vitana-platform)
-- [ ] Migration `chat_viewing_presence(user_id uuid, device_id text, conversation_key text, expires_at timestamptz,
+- [ ] Migration `chat_viewing_presence(user_id uuid, tenant_id uuid, device_id text, conversation_key text, expires_at timestamptz,
       PRIMARY KEY (user_id, device_id))`, RLS enabled with no client policies (gateway service role only).
 - [ ] `routes/chat-viewing.ts` (I4) mounted from `chat.ts`; `device_id` ≤ 64 chars, key format validated; the
       caller's expired rows deleted on write.
@@ -91,14 +99,15 @@ table.
   never loaded for user B; a group message never shows Delivered/Read.
 - The outbox is cleared on sign-out; the gateway-failure fallback insert carries the `client_message_id` (a `23505`
   reconciles as sent); a legacy `global_messages` thread item is never auto-re-posted after reload.
-- Existing `MessageInput.*` suites green with `MessageInput.tsx` unchanged.
+- Existing `MessageInput.*` suites green with `MessageInput.tsx` unchanged; a real row whose server id differs from
+  the optimistic id (fallback insert) replaces the optimistic bubble (no stale "sending"); no `/chat/delivered`
+  call for a group message.
 
 <!-- lane: ui-scroll-anchoring -->
 ## Lane `ui-scroll-anchoring` — open at newest, pill, unread divider (vitana-v1)
 - [ ] `hooks/useChatScrollAnchor.ts` shared by `ConversationView` and `GroupChat`; timed retries removed.
 - [ ] `NewMessagesPill` with count; follow only at bottom; GroupChat's forced follow removed.
 - [ ] Unread divider + open at it when unread; deep link / jump target wins; paging keeps position.
-- [ ] Fix `ConversationView.deeplink-scroll.vtid-05201.test.tsx` fixture (relative dates, `getI18nLocale` mock).
 **Acceptance:**
 - Vitest: on first commit the container's `scrollTop` is at the bottom before any paint (asserted in a layout
   effect / via hidden-until-positioned), no `scrollTo({behavior:'smooth'})` on open; incoming while scrolled up →

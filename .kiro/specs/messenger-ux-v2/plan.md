@@ -86,7 +86,8 @@ ascending, plus `{has_older, has_newer}`; 404 when the target is not in that con
 add `after=<iso>` for forward paging.
 **I4 viewing presence (api-viewing-presence).** `POST /chat/viewing {conversation_key, device_id, active}` where
 `conversation_key` is `dm:<peerId>` or `group:<groupId>` as seen by the viewer. `active:true` upserts
-`chat_viewing_presence(user_id, device_id, conversation_key, expires_at = now()+45s)`; `active:false` deletes the row.
+`chat_viewing_presence(user_id, tenant_id, device_id, conversation_key, expires_at = now()+45s)` (`tenant_id` =
+`identity.tenant_id`, so rows are tenant-scoped for cleanup; the check also matches the push's tenant); `active:false` deletes the row.
 The client sends `active:true` every 20 s while the conversation is open AND the document is visible AND focused
 (Appilix: visible), and `active:false` on blur, hide, unmount and conversation change (on `pagehide` via
 `fetch(…, {keepalive:true})` with the normal `Authorization` header — `sendBeacon` cannot carry it; a lost final call
@@ -146,6 +147,11 @@ The outbox is cleared on sign-out. The gateway-failure fallback insert into `cha
 (`useGlobalMessages.ts:1229-1250`) carries the same `client_message_id`, so the unique index (I1) also dedups it
 (`23505` → treated as sent). Legacy `global_messages` threads (direct insert, no `client_message_id`) get the statuses
 and manual Retry after a definite error response, but no automatic re-post after reload (no server dedup there).
+**Swap sites migrated:** the id-based optimistic→real swaps (`useGlobalMessages.ts:1284-1286`
+`prev.map(m => m.id === optimistic.id ? realMsg : m)`, the group swap in `GroupChat.tsx` `handleSend`) are replaced by
+one `reconcileByClientId(rows, realRow)` that matches `temp-<client_message_id>` or `client_message_id`, so a real row
+with any server id (gateway or fallback insert) replaces the optimistic one. `/chat/delivered` is posted only for DM
+rows (`receiver_id` = me); group threads never call it.
 `onSendMessage` resolves once the item is queued (the composer clears; a failure shows on the bubble, not by
 restoring the composer), so `MessageInput.tsx` is not edited.
 **I8 jump (ui-reply-jump).** `useJumpToMessage(conversation)` → `jump(messageId)`: if the row is rendered, scroll it
@@ -157,6 +163,13 @@ Every UI change: Maxina tokens (`bg-card`, `text-muted-foreground`, `rounded-vca
 `src/i18n/<lang>/inbox.json` for every locale, WCAG 2.2 AA (focus order, labels, 44 px targets), Playwright screenshots
 1400×900 and 390×844 of exactly what changed. Every lane: the new behaviour's tests written first and recorded red on
 base.
+
+**vitana-v1, first**
+0. `test-fixture-05201` (P0 prerequisite) — `main`'s `Vitest (jsdom)` is red on one pre-existing test,
+   `ConversationView.deeplink-scroll.vtid-05201.test.tsx`: its fixture hard-codes `created_at` 2026-10-15 and its
+   `@/lib/i18n-toast` mock lacks `getI18nLocale`, which the date divider calls (`lib/locale-format.ts:56`). Fix the
+   test only (relative dates, complete mock), assertions unchanged, so every later lane lands on a green suite. Files:
+   that test file. No dependency; lands first in vitana-v1.
 
 **vitana-platform**
 1. `api-send-reliability` (P0) — I1, I2, I3. Files: one migration (`client_message_id`, unique partial index,
@@ -241,8 +254,8 @@ base.
 ## 6. Parallel / shared / hot files
 - Chains (shared files): platform 1→2→3→4 (`chat.ts`, migrations in timestamp order, `DATABASE_SCHEMA.md`);
   v1 5→6→7→8→{10, 11}; 11→12; {10, 12}→13 (`ConversationView.tsx`, `GroupChat.tsx`, `MessageBubble.tsx`,
-  `useChatApi.ts`, `inbox.json` shards). Lane 9 runs in parallel with everything. Lanes 1 and 9 start at once; lane 5
-  starts when lane 1 is on `main`.
+  `useChatApi.ts`, `inbox.json` shards). Lane 9 runs in parallel with everything. Lanes 0, 1 and 9 start at once; lane 5
+  starts when lanes 0 and 1 are on `main`; #1425 (chat-ux) merges after lane 0.
 - No lane touches `src/App.tsx`, `screens.json`/`exclusions.json`, the parity ledger or `CLAUDE.md`. No new screen or
   route (search and the share sheet are panels/sheets on existing screens).
 - Merges one per repo at a time, each up to date with `main`.
@@ -261,8 +274,8 @@ base.
   an unloaded message loads `around`; grouping boundaries; per-user emoji keys; album layouts; heartbeat timing and
   blur; search result navigation; unavailable card.
 - Regression: every existing Messenger suite listed in §3 stays green unchanged (no assertion loosened). The known
-  pre-existing failure `ConversationView.deeplink-scroll.vtid-05201.test.tsx` (hard-coded date + missing
-  `getI18nLocale` mock, noted on #1445) is fixed in lane `ui-scroll-anchoring`, which owns that file's subject.
+  pre-existing failure `ConversationView.deeplink-scroll.vtid-05201.test.tsx` is fixed by lane `test-fixture-05201`
+  (fixture only).
 - Staging (read-only, CLAUDE.md ALWAYS 46-48): each deploying lane ships `docs/validation/<VTID>/staging-tests.json`
   and a `tests/e2e/staging/vtid-xxxxx-*.staging.spec.ts` that reads/renders only: open an existing conversation of the
   test user and assert the newest message is in view on the first screenshot frame, pill/divider/grouping/album

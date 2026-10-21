@@ -15,7 +15,6 @@ paths:
   - src/components/messages/NewMessagesPill.tsx
   - src/components/messages/ConversationView.tsx
   - src/pages/messages/GroupChat.tsx
-  - src/components/messages/ConversationView.deeplink-scroll.vtid-05201.test.tsx
   - src/components/messages/*.vtid-*.test.tsx
   - src/pages/messages/*.vtid-*.test.tsx
   - src/i18n/*/inbox.json
