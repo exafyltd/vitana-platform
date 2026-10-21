@@ -51,3 +51,10 @@ deploys to staging only. Gate 2 / production stays the owner's PUBLISH.
 
 ### 2026-10-21T13:16Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 14 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-10-21T13:25Z · kiro-exafyltd-202610211130-c65e · approved (driver: merging the plan PR)
+Converged in session 2 round 2. Policy approved `converged-auto-v1`; VTID-05309…05322 allocated by CI. Partner
+residuals, taken into lane `api-viewing-presence`: dedup on (user_id, message_id) runs before the viewing decision;
+an unresolvable trigger row falls back to the dedup rule. Plan PR #4253 merges under the owner's named-set
+instruction (§7b). `Collab handoff` is red only on the governance artifacts of a plan PR: the `ci-plan-spar` session
+mix and lane-file edits in the round-1 answer commit. That is a known false positive, so the merge uses `--admin`.
