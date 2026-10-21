@@ -1,7 +1,7 @@
 # Plan — i18n-propagate-stale-write
 
 Spec: `.kiro/specs/i18n-propagate-stale-write/` (requirements.md, design.md, tasks.md). Code repo: **exafyltd/vitana-v1**.
-The spec lives in vitana-platform because PLAN-SPAR (`vitana-platform:.github/workflows/PLAN-SPAR.yml:22-27`, trigger
+The spec lives in vitana-platform because PLAN-SPAR (`vitana-platform:.github/workflows/PLAN-SPAR.yml:23-28`, trigger
 `pull_request_target` on this repository only) does not run on vitana-v1 PRs.
 
 <!-- plan:begin -->
@@ -23,11 +23,15 @@ while it was running. Seen on exafyltd/vitana-v1#1399: bot commit `6b698ac98` re
 5. `vitana-v1:.github/workflows/I18N-PROPAGATE.yml:261-265` — the commit is made on the fresh head, so the revert is a
    normal diff and `git pull --rebase` has nothing to merge.
 
-### Premise excerpts (verbatim, for a partner without vitana-v1 access — R1-F1)
+### Premise excerpts (verbatim)
 
-Pinned: vitana-v1 `5c4632ea91319a68724d4d17f56dec39569a8ba1`; re-checked at `origin/main`
-`704b5def4cfa0296776d21507b8d19bc5a47c31b` — `git diff --quiet 5c4632ea9 704b5def4 -- .github/workflows/I18N-PROPAGATE.yml
-.github/workflows/i18n-check.yml scripts/ci/pr-gate/__tests__` exits 0, so every line number below holds on both.
+Since vitana-platform #4201 (VTID-05215) a new PLAN-SPAR session is pinned to vitana-v1 `main` as well
+(`PLAN-SPAR.yml:97-101` → `plan-spar.mjs:383-384`, `:257` `extra_refs`), so these premises can be read directly; the
+excerpts stay as a cross-check. Pinned: vitana-v1 `5c4632ea91319a68724d4d17f56dec39569a8ba1`; re-checked at
+`origin/main` `704b5def4cfa0296776d21507b8d19bc5a47c31b` (2026-10-18) and `1a553367ff6622cc746c4720c6e3558e691b34dc`
+(2026-10-21) — `git diff 5c4632ea9 1a553367f -- .github/workflows/I18N-PROPAGATE.yml .github/workflows/i18n-check.yml
+scripts/ci/pr-gate/__tests__` is empty and `scripts/i18n-propagate-apply.mjs` does not exist yet, so every line number
+below holds on all three.
 
 - `I18N-PROPAGATE.yml:181` (fanout checkout): `ref: ${{ github.head_ref || github.ref_name }}`
 - `I18N-PROPAGATE.yml:220-222` (fanout upload): `path: |` / `src/i18n/${{ matrix.locale }}` /

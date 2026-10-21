@@ -5,7 +5,7 @@ author_seat: exafyltd
 executor: claude
 next_actor: claude
 state: drafted
-updated: 2026-10-18T22:48Z
+updated: 2026-10-21T08:56Z
 ---
 # Handoff — I18N-PROPAGATE stale-write fix
 
@@ -30,3 +30,6 @@ no workflow dispatched. next_actor: claude — the push starts PLAN-SPAR round 2
 
 ### 2026-10-18T22:48Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-21T08:56Z · kiro-202610182052-5ce2 · re-trigger sparring after infra escalation
+Session 53dfe2bf escalated at round 2 on `model_unavailable` (Bedrock daily token quota; `state.json` infra+retryable), not on a finding. Re-verified every vitana-v1 premise at origin/main 1a553367f (I18N-PROPAGATE.yml, i18n-check.yml and the pr-gate tests unchanged since 5c4632ea9; `scripts/i18n-propagate-apply.mjs` still absent) and updated the pin in the plan block, noting the new session can read vitana-v1 (#4201); corrected the PLAN-SPAR.yml trigger cite to :23-28. Appended a re-trigger note to `sparring/responses-1.md` so PLAN-SPAR retries with a new session. No VTID, no live writes, no workflow dispatched.
