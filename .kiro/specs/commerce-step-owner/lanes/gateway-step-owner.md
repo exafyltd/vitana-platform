@@ -12,10 +12,10 @@ paths:
   - services/gateway/src/services/commerce-mcp.ts
   - services/gateway/test/**
   - docs/validation/**
-claimed_by: kiro-exafy-202610201201-cd1d
+claimed_by: kiro-exafy-202610211501-8244
 branch: kiro/commerce-step-owner/gateway-step-owner
 pr: https://github.com/exafyltd/vitana-platform/pull/4198
-updated: 2026-10-20T12:05Z
+updated: 2026-10-21T15:07Z
 vtid: VTID-05238
 ---
 # Lane: gateway-step-owner (repo vitana-platform)
@@ -83,3 +83,30 @@ Nothing for the exafy executor remains in-`paths`: the one red CI job is the inh
 `test/vtid-05077-planner-fallback-and-thinking.test.ts` (VTID-05077), outside this lane's `paths` and not this
 lane's to fix. State kept `executing`, `next_actor: kiro` — the Project Manager (or Claude Code) carries the
 reviewer's approve forward and merges once `main` is green. Releasing the claim.
+
+### 2026-10-21T15:07Z · kiro-exafy-202610211501-8244 · executing (re-verified; inherited blocker corrected)
+Automation run (exafy.md). Priority order W→A→B→C: W did not apply (the one `author_seat: exafy` approved plan,
+`sparring-floor-retry`, has only an `executor: claude` governance lane on `scripts/collab/**`, which an
+automation-started driver never builds — driver.md "Automation-started driver" — and its sparring has already
+converged, so there is no driver action I may take); A did not apply (the `plan(sparring-model-fallback)` PR #4184
+is closed and its round-1 is a zero-finding infra escalation, not a planner round); B had no `reviewer_seat: exafy`
+lane in-review. Under C this lane was the oldest-`updated` `seat: exafy`, `executor: kiro`, non-governance,
+unclaimed lane with no live driver, so I claimed it.
+
+Re-verified the branch tip (head `afa451a4e`, read-only; T1–T4 already complete, nothing to re-implement):
+gateway `npm ci`; lane suites `vtid-05238-step-owner` + `vtid-04941-commerce-mcp-automation` → **73 passed, 73
+total**; `tsc --noEmit` → clean (exit 0); `queue.mjs scope-check` → green (every change inside `paths`). No
+migration, no new route, no live write.
+
+**Correction to the earlier blocker note:** the inherited-from-`main` red CI is no longer VTID-05077 (that suite
+now passes). The single red Gateway Jest job is `test/vtid-04868-plan-sparring-session-layer.test.ts` — it asserts
+`CLAUDE.md` contains `Step 0 (VTID-04868): spar the plan first.`, a string that is absent from **both** this
+branch's and `origin/main`'s `CLAUDE.md` (grep count 0 on each). It is a pre-existing `main`-health failure, not
+this lane's: this branch does not touch `CLAUDE.md` (a protected gate file §3a) and must not weaken an unrelated
+governance test. The branch is also 22 commits behind `origin/main`; bringing it current is the pre-merge step the
+Project Manager runs under §7b, which also re-runs checks on that head.
+
+Nothing for the exafy executor remains in-`paths`. State kept `executing`, `next_actor: kiro` — the Project Manager
+carries the reviewer `approve` (head `361885098`, session `kiro-exafyltd-202610201002-6dbb`) forward and merges once
+`main` is green (the VTID-04868 `CLAUDE.md` assertion is fixed on `main`) under §7b; an automation run never merges.
+Releasing the claim.
