@@ -57,9 +57,14 @@ jobs:
       # package.json (pnpm@9.0.0). Passing a version too makes it error with
       # "Multiple versions of pnpm specified" — see the note in UNIT.yml.
       - uses: pnpm/action-setup@v4
+      # VTID-05307: cache the pnpm store keyed on the root pnpm-lock.yaml so the
+      # four shards reuse one warm store instead of re-downloading every install.
+      # pnpm/action-setup must run first (it does) so setup-node can find pnpm.
       - uses: actions/setup-node@v4
         with:
           node-version: '20.x'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install
         run: pnpm install --frozen-lockfile
       - name: List tests
@@ -107,19 +112,28 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # VTID-05307: `cache`/`lockfile` drive setup-node's dependency cache per
+        # service (npm cache keyed on each service's package-lock.json; pnpm
+        # store for the pnpm-based service), so repeat runs skip re-downloading.
         include:
           - service: vcaop
             install: npm install --no-audit --no-fund
             test: npm test
             runner: jest
+            cache: npm
+            lockfile: services/vcaop/package-lock.json
           - service: oasis-projector
             install: npm ci --no-audit --no-fund
             test: npx jest --silent
             runner: jest
+            cache: npm
+            lockfile: services/oasis-projector/package-lock.json
           - service: openclaw-bridge
             install: pnpm install --frozen-lockfile
             test: npx vitest run
             runner: vitest
+            cache: pnpm
+            lockfile: services/openclaw-bridge/pnpm-lock.yaml
     defaults:
       run:
         working-directory: services/${{ matrix.service }}
@@ -130,6 +144,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20.x'
+          cache: ${{ matrix.cache }}
+          cache-dependency-path: ${{ matrix.lockfile }}
       - name: Install
         run: ${{ matrix.install }}
       - name: Run tests

@@ -1,0 +1,25 @@
+VTID-05307 speed-path-filters — red → green proof
+===================================================
+
+Behaviour added: dependency caching on the TEST-SUITE gateway shards + services matrix
+and on PR-GATE's pr-gate job, with the 4-shard gateway matrix kept intact and no gate job
+path-filtered. New assertions live in scripts/ci/test-suite/shard-union.test.mjs
+(tests "install steps declare dependency caching and the 4-shard matrix survives" and
+"PR-GATE.yml: speed caching added but the gate still runs on every PR …").
+
+RED ON BASE (origin/main 183af3e9 workflow files, new test code):
+  node --test scripts/ci/test-suite/shard-union.test.mjs
+  -> 3 failing:
+     ✗ TEST-SUITE.yml: gateway runs as 4 shards … (base-restore artifact; see note)
+     ✗ TEST-SUITE.yml: install steps declare dependency caching and the 4-shard matrix survives
+         AssertionError: input did not match /cache: pnpm/  (no cache on base)
+     ✗ PR-GATE.yml: speed caching added but the gate still runs on every PR …
+         AssertionError: input did not match /cache: npm\n\s+cache-dependency-path: services\/gateway\/package-lock\.json/
+  (full capture: RUN/_s2-red.txt)
+
+GREEN ON HEAD (this lane's workflow files):
+  node --test scripts/ci/test-suite/shard-union.test.mjs scripts/ci/test-suite/rerun-policy.test.mjs
+  -> tests 15, pass 15, fail 0
+  (full capture: RUN/_s2-green2.txt)
+
+YAML parse: both .github/workflows/TEST-SUITE.yml and PR-GATE.yml load cleanly via js-yaml; both LF.

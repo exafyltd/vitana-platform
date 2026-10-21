@@ -1,0 +1,10 @@
+# VTID-05307 speed-path-filters — verification commands
+
+[red-on-base] node --test scripts/ci/test-suite/shard-union.test.mjs (origin/main workflow files)
+  -> FAIL as expected: 3 failing (cache assertions absent on base). pass 4 / fail 3.
+
+[green-on-head] node --test scripts/ci/test-suite/shard-union.test.mjs scripts/ci/test-suite/rerun-policy.test.mjs
+  -> PASS: tests 15, pass 15, fail 0.
+
+[yaml-parse] node (js-yaml) load of .github/workflows/TEST-SUITE.yml and .github/workflows/PR-GATE.yml
+  -> OK parse both; both LF (no CRLF).
