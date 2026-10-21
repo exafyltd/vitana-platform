@@ -1,6 +1,6 @@
 ---
 lane: wire-extra-refs
-state: ready
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -12,7 +12,7 @@ paths:
   - scripts/collab/plan-spar.test.mjs
   - .github/workflows/PLAN-SPAR.yml
   - .kiro/specs/plan-spar-vitana-v1-ref/**
-updated: 2026-10-21T11:21Z
+updated: 2026-10-21T22:03Z
 vtid: VTID-05299
 ---
 # Lane: wire-extra-refs (repo vitana-platform)
@@ -32,3 +32,12 @@ Held at `next_actor: claude` until PLAN-SPAR allocates the VTID on policy approv
 
 ### 2026-10-21T11:21Z · ci-plan-spar · ready (VTID allocated)
 VTID-05299 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-21T22:03Z · kiro-202610152203-0347 · ready → in-review
+Brought the reviewed-APPROVED implementation (`b38076f91`: `plan-spar.mjs` `parseSparRefs`/`resolveRef`/
+`extra_refs` wiring, one `PLAN-SPAR.yml` `env:` line, the `plan-spar.test.mjs` suite) into the PR head
+branch by merging `origin/kiro/plan-spar-vitana-v1-ref/plan` (the VTID-titled lane + VTID-05273 allocate_retry
+on `main`) into the impl-carrying branch. One content conflict in `plan-spar.test.mjs`: kept the VTID-05273
+late-lane allocation suite and this lane's 8 `spar_refs:` AC tests; dropped the obsolete `R1-F1: extraRefs`
+test (it passes `extraRefs` into `step()`, an API this impl removed — `step()` now reads `spar_refs` from
+`handoff.md` and resolves internally). `node --check` clean. Lane → in-review for the reviewer agent.

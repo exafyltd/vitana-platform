@@ -4,8 +4,8 @@ author: kiro
 author_seat: exafy
 executor: kiro
 next_actor: kiro
-state: approved
-updated: 2026-10-21T11:21Z
+state: in-review
+updated: 2026-10-21T22:03Z
 sparring_record: .kiro/specs/plan-spar-vitana-v1-ref/sparring/verdict.md
 vtids: [VTID-05299]
 ---
@@ -53,3 +53,8 @@ Converged; approved by policy converged-auto-v1. VTID allocation is off — next
 
 ### 2026-10-21T11:21Z · ci-plan-spar · sparred → approved
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-10-21T22:03Z · kiro-202610152203-0347 · approved → in-review
+Implementation (`b38076f91`) merged into the PR head branch (#4202); the single `plan-spar.test.mjs`
+conflict was resolved keeping both the VTID-05273 late-lane suite and the lane's `spar_refs:` AC tests.
+PR retitled to the VTID-05299 form. Lane `wire-extra-refs` → in-review for the reviewer agent.
