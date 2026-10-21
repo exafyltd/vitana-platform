@@ -31,3 +31,7 @@ AC-7: ?around= returns the window ascending with has_older/has_newer and 404s ou
   TEST: services/gateway/test/vtid-05310-chat-send-reliability.test.ts ("GET ?around=" block)
 AC-8: Requests without the new fields behave exactly as before.
   TEST: services/gateway/test/chat-vitana-reply.test.ts, services/gateway/test/vtid-04917-invite-routes.test.ts, services/gateway/test/vtid-04926-chat-group-mentions.test.ts
+AC-9: A client_message_id reused for another conversation is 409 client_message_id_conflict; a retry of a sent invite gets the stored row before the invite limits run.
+  TEST: services/gateway/test/vtid-05310-chat-send-reliability.test.ts ("review findings" block)
+AC-10: A reply target in client content_data is dropped; a group duplicate answers with the stored reply target and never re-triggers the @vitana reply.
+  TEST: services/gateway/test/vtid-05310-chat-send-reliability.test.ts ("review findings" block)

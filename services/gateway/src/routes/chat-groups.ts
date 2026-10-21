@@ -296,7 +296,10 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
 
   const rawContent = typeof content === 'string' ? content : '';
   let trimmed = rawContent.trim();
-  let metadata: Record<string, unknown> = content_data && typeof content_data === 'object' ? (content_data as Record<string, unknown>) : {};
+  // VTID-05310: a reply target is never taken from client content_data.
+  let metadata: Record<string, unknown> = content_data && typeof content_data === 'object'
+    ? chatRepo.stripClientReplyTo(content_data as Record<string, unknown>)
+    : {};
 
   // VTID-04917: an invite card is built on the server from the sender's own
   // calendar entry; the client sends only { entry_id }.
@@ -323,6 +326,17 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
   const membership = await requireMembership(supabase, groupId, identity.user_id);
   if (!membership) {
     return res.status(403).json({ ok: false, error: 'not_a_member' });
+  }
+
+  // VTID-05310: a retry of a send that already went through is answered with
+  // the stored row before any check that could refuse it (e.g. invite limits).
+  if (isUuidParam(client_message_id)) {
+    const prior = await chatRepo.findPriorSend(supabase, identity.user_id, client_message_id.toLowerCase(), { kind: 'group', groupId });
+    if (prior.kind === 'conflict') return res.status(409).json({ ok: false, error: 'client_message_id_conflict' });
+    if (prior.kind === 'duplicate') {
+      const storedReply = isUuidParam(prior.row?.metadata?.reply_to?.message_id) ? prior.row.metadata.reply_to.message_id : null;
+      return res.status(200).json({ ok: true, data: { ...prior.row, reply_to_message_id: storedReply }, duplicate: true });
+    }
   }
 
   // VTID-05104: sender is a member, the group is within the invite cap, and the
@@ -362,16 +376,18 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
     message_type: msgType,
     metadata,
   };
-  const { data, error, duplicate } = sendIdentity.clientMessageId
-    ? await chatRepo.insertChatMessageIdempotent(supabase, row, sendIdentity.clientMessageId, repo.insertChatGroupMessage)
+  const { data, error, duplicate, conflict } = sendIdentity.clientMessageId
+    ? await chatRepo.insertChatMessageIdempotent(supabase, row, sendIdentity.clientMessageId, repo.insertChatGroupMessage, { kind: 'group', groupId })
     : { ...(await repo.insertChatGroupMessage(supabase, row)), duplicate: false };
 
+  if (conflict) return res.status(409).json({ ok: false, error: 'client_message_id_conflict' });
   if (error) {
     console.error('[ChatGroups] Send error:', error);
     return res.status(500).json({ ok: false, error: error.message });
   }
 
-  const replyId = sendIdentity.replyTo ?? (isUuidParam(data?.metadata?.reply_to?.message_id) ? data.metadata.reply_to.message_id : null);
+  // The stored row is the truth (a duplicate keeps its original reply target).
+  const replyId = isUuidParam(data?.metadata?.reply_to?.message_id) ? data.metadata.reply_to.message_id : null;
   // VTID-05310: a repeat of an already stored send — same row back, no fan-out, no @vitana reply.
   if (duplicate) {
     return res.status(200).json({ ok: true, data: { ...data, reply_to_message_id: replyId }, duplicate: true });

@@ -120,6 +120,29 @@ export function isMissingColumn(err: PgError, column: string): boolean {
   return (err.message || '').includes(column);
 }
 
+/**
+ * A send that carries a client_message_id: if that id is already stored, the
+ * stored row (duplicate) — or a conflict when the stored row belongs to another
+ * conversation (a reused id must never swallow a new message silently).
+ */
+export async function findPriorSend(
+  sb: SupabaseClient,
+  senderId: string,
+  clientMessageId: string,
+  scope: ConversationScope,
+): Promise<{ kind: 'none' } | { kind: 'duplicate'; row: any } | { kind: 'conflict' }> {
+  const { data, error } = await findMessageByClientId(sb, senderId, clientMessageId);
+  if (error || !data) return { kind: 'none' };
+  return rowInScope(data as ScopeRow, scope) ? { kind: 'duplicate', row: data } : { kind: 'conflict' };
+}
+
+/** Client content_data must never set a reply target; only a validated reply_to_message_id does. */
+export function stripClientReplyTo(metadata: Record<string, unknown>): Record<string, unknown> {
+  if (!('reply_to' in metadata)) return metadata;
+  const { reply_to: _ignored, ...rest } = metadata;
+  return rest;
+}
+
 export async function findMessageByClientId(sb: SupabaseClient, senderId: string, clientMessageId: string) {
   return sb
     .from('chat_messages')
@@ -184,18 +207,25 @@ export async function insertChatMessageIdempotent(
   row: Record<string, unknown>,
   clientMessageId: string | null,
   insert: (sb: SupabaseClient, row: Record<string, unknown>) => PromiseLike<{ data: any; error: any }>,
-): Promise<{ data: any; error: any; duplicate: boolean }> {
+  scope?: ConversationScope,
+): Promise<{ data: any; error: any; duplicate: boolean; conflict?: boolean }> {
   const senderId = row.sender_id as string;
   if (clientMessageId) {
     const existing = await findMessageByClientId(sb, senderId, clientMessageId);
-    if (!existing.error && existing.data) return { data: existing.data, error: null, duplicate: true };
+    if (!existing.error && existing.data) {
+      if (scope && !rowInScope(existing.data as ScopeRow, scope)) return { data: null, error: null, duplicate: false, conflict: true };
+      return { data: existing.data, error: null, duplicate: true };
+    }
   }
   const withId = clientMessageId ? { ...row, client_message_id: clientMessageId } : row;
   const first = await insert(sb, withId);
   if (!first.error) return { data: first.data, error: null, duplicate: false };
   if (clientMessageId && isUniqueViolation(first.error)) {
     const again = await findMessageByClientId(sb, senderId, clientMessageId);
-    if (!again.error && again.data) return { data: again.data, error: null, duplicate: true };
+    if (!again.error && again.data) {
+      if (scope && !rowInScope(again.data as ScopeRow, scope)) return { data: null, error: null, duplicate: false, conflict: true };
+      return { data: again.data, error: null, duplicate: true };
+    }
     return { data: null, error: first.error, duplicate: false };
   }
   if (clientMessageId && isMissingColumn(first.error, 'client_message_id')) {

@@ -228,6 +228,46 @@ describe('POST /chat/send — client_message_id (I1)', () => {
   });
 });
 
+describe('review findings (I1)', () => {
+  it('a client_message_id reused for another conversation is 409, never a silent duplicate', async () => {
+    await request(app()).post('/chat/send').send({ receiver_id: PEER, content: 'to peer', client_message_id: CID });
+    const other = await request(app()).post('/chat/send').send({ receiver_id: OTHER, content: 'to other', client_message_id: CID });
+    expect(other.status).toBe(409);
+    expect(other.body.error).toBe('client_message_id_conflict');
+    const group = await request(app()).post(`/chat/groups/${GROUP}/send`).send({ content: 'to group', client_message_id: CID });
+    expect(group.status).toBe(409);
+    expect(db.tables.chat_messages).toHaveLength(1);
+  });
+
+  it('a reply target smuggled in content_data is dropped (only reply_to_message_id is validated and stored)', async () => {
+    seed([{ id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', sender_id: OTHER, receiver_id: ME, content: 'elsewhere', created_at: '2026-10-21T07:00:00.000Z' }]);
+    const res = await request(app()).post('/chat/send')
+      .send({ receiver_id: PEER, content: 'hi', content_data: { reply_to: { message_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' } } });
+    expect(res.status).toBe(201);
+    expect(res.body.data.reply_to_message_id).toBeNull();
+    expect(dmRows().find((r) => r.content === 'hi')!.metadata.reply_to).toBeUndefined();
+    const g = await request(app()).post(`/chat/groups/${GROUP}/send`)
+      .send({ content: 'g', content_data: { reply_to: { message_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' } } });
+    expect(g.body.data.reply_to_message_id).toBeNull();
+  });
+
+  it('a group duplicate answers with the stored reply target and never triggers the @vitana reply again', async () => {
+    seed([{ id: '19191919-1919-4191-8191-191919191919', sender_id: PEER, group_id: GROUP, content: 'q', created_at: '2026-10-21T08:00:00.000Z' }]);
+    const { processConversationTurn } = jest.requireMock('../src/services/conversation-client') as { processConversationTurn: jest.Mock };
+    const first = await request(app()).post(`/chat/groups/${GROUP}/send`)
+      .send({ content: 'hey @vitana', client_message_id: CID, reply_to_message_id: '19191919-1919-4191-8191-191919191919' });
+    expect(first.status).toBe(201);
+    processConversationTurn.mockClear();
+    const again = await request(app()).post(`/chat/groups/${GROUP}/send`)
+      .send({ content: 'hey @vitana', client_message_id: CID });
+    expect(again.status).toBe(200);
+    expect(again.body.duplicate).toBe(true);
+    expect(again.body.data.reply_to_message_id).toBe('19191919-1919-4191-8191-191919191919');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(processConversationTurn).not.toHaveBeenCalled();
+  });
+});
+
 describe('replies (I1)', () => {
   it('a reply to a message of the same DM pair stores metadata.reply_to = { message_id } only', async () => {
     seed([{ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', sender_id: PEER, receiver_id: ME, content: 'parent', created_at: '2026-10-21T08:00:00.000Z' }]);

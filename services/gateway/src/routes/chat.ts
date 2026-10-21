@@ -87,7 +87,18 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
 
   const rawContent = typeof content === 'string' ? content : '';
   let trimmedContent = rawContent.trim();
-  let metadata: Record<string, unknown> = content_data && typeof content_data === 'object' ? (content_data as Record<string, unknown>) : {};
+  // VTID-05310: a reply target is never taken from client content_data.
+  let metadata: Record<string, unknown> = content_data && typeof content_data === 'object'
+    ? repo.stripClientReplyTo(content_data as Record<string, unknown>)
+    : {};
+
+  // VTID-05310: a retry of a send that already went through is answered with
+  // the stored row before any check that could refuse it (e.g. invite limits).
+  if (isUuidParam(client_message_id)) {
+    const prior = await repo.findPriorSend(getSupabase(), identity.user_id, client_message_id.toLowerCase(), { kind: 'dm', a: identity.user_id, b: receiver_id });
+    if (prior.kind === 'conflict') return res.status(409).json({ ok: false, error: 'client_message_id_conflict' });
+    if (prior.kind === 'duplicate') return res.status(200).json({ ok: true, data: withReplyId(prior.row), duplicate: true });
+  }
 
   // VTID-04917: an invite card is built on the server from the sender's own
   // calendar entry; the client sends only { entry_id }.
@@ -152,10 +163,11 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
     ...(sender_vitana_id && { sender_vitana_id }),
     ...(receiver_vitana_id && { receiver_vitana_id }),
   };
-  const { data, error, duplicate } = sendIdentity.clientMessageId
-    ? await repo.insertChatMessageIdempotent(supabase, row, sendIdentity.clientMessageId, repo.insertChatMessage)
+  const { data, error, duplicate, conflict } = sendIdentity.clientMessageId
+    ? await repo.insertChatMessageIdempotent(supabase, row, sendIdentity.clientMessageId, repo.insertChatMessage, { kind: 'dm', a: identity.user_id, b: receiver_id })
     : { ...(await repo.insertChatMessage(supabase, row)), duplicate: false };
 
+  if (conflict) return res.status(409).json({ ok: false, error: 'client_message_id_conflict' });
   if (error) {
     console.error('[Chat] Send error:', error);
     return res.status(500).json({ ok: false, error: error.message });
@@ -319,6 +331,7 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
 // request uses the new fields (or a row carries a reply target), so a request
 // without them makes exactly the calls it made before.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Local (not repo.isUuid): tests mock the repository partially.
 export function isUuidParam(v: unknown): v is string {
   return typeof v === 'string' && UUID_RE.test(v);
 }

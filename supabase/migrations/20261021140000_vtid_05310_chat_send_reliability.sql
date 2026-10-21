@@ -8,7 +8,9 @@
 --    and by POST /chat/read when still NULL. DMs only; group read state stays chat_group_members.last_read_at.
 --
 -- Both columns are nullable with no default, so ADD COLUMN is metadata-only. chat_messages is ~53k rows /
--- 62 MB (read-only count 2026-10-21); the partial index covers no rows when created, so it builds instantly.
+-- 62 MB (read-only count 2026-10-21). The partial unique index is built inside the transaction (not
+-- CONCURRENTLY): it holds a SHARE lock, which blocks inserts, while it scans the table once — expected well
+-- under a few seconds at this size; it indexes no rows yet (every client_message_id is NULL).
 -- The gateway works with or without this migration: it retries a send without client_message_id when the
 -- column is missing (PostgREST PGRST204), and /delivered answers updated: 0.
 --
