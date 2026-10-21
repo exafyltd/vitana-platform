@@ -66,7 +66,7 @@ with or without `-C`; every repeat loop of the recipe stops on the first `VITANA
 Files (exactly): `.kiro/agents/vitana-lane-reviewer.md`, `.kiro/workflows/vitana-pipeline.workflow.json`,
 `scripts/ci/kiro-steering/guard.cjs`, `scripts/ci/kiro-steering/guard.test.cjs`, `.kiro/pipeline/lane-review.md`,
 `docs/validation/<VTID>/**`. The owner named the first two; the guard pair is required or PR-GATE fails (P5);
-`lane-review.md:3` would otherwise describe the old dispatch (P6, one-line edit).
+`lane-review.md:1`, `:3` and `:34` would otherwise describe the old dispatch (P6).
 
 1. Agent file:
    - Replace the section `:59-64` with "## Model (pinned by the caller)": the caller pins the model (`modelId:
@@ -80,9 +80,18 @@ Files (exactly): `.kiro/agents/vitana-lane-reviewer.md`, `.kiro/workflows/vitana
 2. Workflow:
    - `review-1`..`review-6`: `"agent": "wf-code-reviewer"`, `"modelId": "claude-sonnet-5.5"`; prompt: load
      `.kiro/agents/vitana-lane-reviewer.md` from `origin/main` (`git show origin/main:.kiro/agents/vitana-lane-reviewer.md`)
-     and follow its body minus the front matter as the checklist (read-only: never edit, write, commit, push, comment,
-     approve, merge, dispatch); keep today's "when to review / no review needed (<status>)" rule and inputs; return the
-     two output blocks; when done call `send_message` severity `success`. Drop "or the model_unavailable line".
+     and follow its body minus the front matter as the checklist; keep today's "when to review / no review needed
+     (<status>)" rule and inputs; the final message is exactly the two output blocks (no `send_message` call: the land
+     step parses `{{review-N.output}}`, so the review step keeps today's no-signal pattern, R1-F1). Drop "or the
+     model_unavailable line". Every review prompt carries the read-only sentence verbatim: `Read-only: never edit,
+     write, delete, commit, push, merge, approve or comment, never re-run or dispatch a workflow, never call a live
+     system; only read files and run the read-only gh/git commands of the checklist.` (guard-enforced, §4.3).
+   - Why not keep the workspace agent as the dispatch (R1-F2): the owner specified `wf-code-reviewer`, and the
+     workspace-agent dispatch is what failed in both runs — model_unavailable 10 times, and earlier rounds where the
+     reviewer session had no shell at all (run `wf_f16f7c2bcc131c71` `blockers.md` 00:24Z, `decisions.md` 00:22Z), i.e.
+     its configured permissions did not reach the step. The agent file keeps its platform permissions (fixed by step 1)
+     for direct sub-agent dispatch (`dispatchKind: sub-agent`, `:15`), so its guard checks stay meaningful there; in the
+     workflow, read-only becomes prompt-enforced plus guard-enforced text, and the land step stays the only writer.
    - Done-first stop in every slot: `code-N` and `review-N` first read `RUN/slots.json` and the lane state; slot `null`,
      or lane `done: true` with an empty `queue` → no work, one line (`slot N done (<status>)` /
      `no review needed (done)`). `land-N` first: same condition → final message is that line plus the line
@@ -97,13 +106,16 @@ Files (exactly): `.kiro/agents/vitana-lane-reviewer.md`, `.kiro/workflows/vitana
    checks: the body does not contain `or cannot tell`; the allow `match` list contains `gh pr diff*`,
    `git remote get-url*` and `git diff*`. New check: every `lane-slot-<n>` repeat has `stopWhen` exactly
    `{{land-<n>.output}} contains VITANA_SLOT_DONE` and its `code-`/`review-`/`land-` prompts carry the done-first
-   sentence; the `spar` prompt carries its done-first sentence.
+   sentence; the `spar` prompt carries its done-first sentence. New check (R1-F1/F2): every `review-<n>` prompt contains
+   the read-only sentence of §4.2 verbatim and does not contain `send_message`. The existing agent-file checks
+   (`tools`, `excludedTools`, `includeMcpJson`, `includePowers`, `:145-165`) stay unchanged.
 4. Guard test (`guard.test.cjs`): `:103-105` becomes "the reviewer never refuses on model introspection" (removing the
    pin sentence or re-adding `or cannot tell` fails); `:128-138` becomes "every review step is wf-code-reviewer on
    claude-sonnet-5.5 loading the checklist" (agent `vitana-lane-reviewer`, `modelId: auto`, or a prompt without the
    checklist path each fail); `:139-146` still proves the 6-lane cap; new tests for the read-only allowlist and the
-   done-first stop (a slot whose `stopWhen` names another slot, or a prompt without the done-first sentence, fails).
-5. `lane-review.md:3` and `:34`: the review step is `wf-code-reviewer` on `claude-sonnet-5.5` with the agent file as
+   done-first stop (a slot whose `stopWhen` names another slot, or a prompt without the done-first sentence, fails),
+   and for the review prompt (removing the read-only sentence, or adding `send_message`, fails).
+5. `lane-review.md:1` (heading), `:3` and `:34`: the review step is `wf-code-reviewer` on `claude-sonnet-5.5` with the agent file as
    checklist; a `model_unavailable` line is now only a runtime failure, handled as today (blocker, lane stays
    `in_review`).
 
@@ -136,9 +148,10 @@ or build (including the PR-GATE `kiro-steering` step).
 staging fields `null` (no deploy).
 
 ## 9. Risks
-1. `wf-code-reviewer` is a bundled agent with write tools; read-only is by prompt only. Mitigation: the land step is the
-   only writer and stores the verdict; the review step's prompt forbids every write; the reviewer's PR-visible effect
-   is nil (no GitHub write). Accepted residual, same as any prompt-only rule.
+1. `wf-code-reviewer` is a bundled agent with write tools, so in the workflow read-only is no longer platform-enforced
+   (R1-F2). Mitigation: the read-only sentence is in every review prompt and CI fails without it (§4.3); the land step
+   is the only writer and stores the verdict; a review write would show up as a commit or PR event not made by the land
+   step. Accepted residual, chosen over the dispatch that failed 10 times in a row (§4.2).
 2. The checklist is loaded from `origin/main`, so a lane that changes the agent file is reviewed against the old
    checklist until it merges (intended: an agent never loosens its own gate).
 3. A workflow already running keeps its loaded recipe; the fix applies from the next workflow started after merge.
