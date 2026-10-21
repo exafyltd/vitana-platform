@@ -67,8 +67,8 @@ table.
 - Cron batch: N rows needing the `message_id` fallback → exactly one `chat_messages` select and one presence read
   (asserted on the mock call counts).
 - Cron: a trigger-style row (`url:'/inbox'`, no `conversation_key`) is keyed via `sender_id`/`message_id`,
-  suppressed when viewing; both write orders (trigger row first / gateway row first) → exactly one push, the other
-  row `suppressed_duplicate`.
+  suppressed when viewing; both write orders (trigger row first / gateway row first) and both rows unpushed in the same batch → exactly one
+  push, the other row `suppressed_duplicate` before any push is sent.
 - The outcome value is asserted as written (the `setNotificationPushOutcome` update receives `suppressed_viewing` /
   `suppressed_duplicate`), not just the absence of an error; the migration's CHECK list is a superset of the previous
   one (a test parses both migrations and compares).
@@ -102,6 +102,8 @@ table.
 <!-- lane: ui-send-status -->
 ## Lane `ui-send-status` — optimistic send, statuses, retry (vitana-v1)
 - [ ] `lib/messaging/outbox.ts` (I7) with unit tests; `useGlobalMessages` DM/legacy path and `GroupChat` send use it.
+- [ ] Realtime UPDATE subscription filter `sender_id=eq.<me>` on `chat_messages`; its handler patches only
+      `delivered_at`/`read_at` of rows already in the cache.
 - [ ] Bubble: Sending (clock), Sent (✓), Delivered (✓✓), Read (✓✓ primary), Failed (red ! + "Retry" button);
       `aria-label` per status; status never regresses.
 - [ ] Realtime UPDATE on own sent DMs (`sender_id=eq.<me>`) patches `delivered_at`/`read_at`; recipient posts
@@ -117,7 +119,8 @@ table.
   reconciles as sent); a legacy `global_messages` thread item is never auto-re-posted after reload.
 - Existing `MessageInput.*` suites green with `MessageInput.tsx` unchanged; a real row whose server id differs from
   the optimistic id (fallback insert) replaces the optimistic bubble (no stale "sending"); no `/chat/delivered`
-  call for a group message.
+  call for a group message; the UPDATE handler (filter asserted) moves a sent DM to Delivered then Read and never
+  regresses; a missed event is corrected by the focus refetch.
 
 <!-- lane: ui-scroll-anchoring -->
 ## Lane `ui-scroll-anchoring` — open at newest, pill, unread divider (vitana-v1)
