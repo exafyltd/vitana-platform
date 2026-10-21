@@ -2,14 +2,13 @@
 slug: desktop-spotlight-finish
 author: kiro
 executor: kiro
-next_actor: claude
-state: parked
+next_actor: kiro
+state: sparring
 author_seat: exafyltd
-updated: 2026-10-21T14:15Z
+updated: 2026-10-21T15:05Z
 sparring_record: .kiro/specs/desktop-spotlight-finish/sparring/verdict.md
 spar_refs:
-  - exafyltd/vitana-v1: 69d39ef344b578f1ff171e99c61295f51c4e1f50
-parked_from: sparring
+  - exafyltd/vitana-v1: da0a959695debcca9c1b270c3efccfe0ae32094d
 ---
 # Handoff — Finish the Spotlight desktop redesign
 Follow-up to `.kiro/specs/desktop-spotlight/` (Claude Code session `session_01Sxnx4eGehRHRqqwu4YmJA6`, handover
@@ -104,3 +103,14 @@ product code changed, no live system touched.
 
 ### 2026-10-21T14:15Z · ci-plan-spar · sparring → parked
 Not converged after 2 sparring sessions (round_cap_reached). Parked with the open findings in sparring/.
+
+### 2026-10-21T15:05Z · kiro-202610152203-0347 · parked → sparring (R3-F1 FIXED IN CODE, fresh re-spar)
+The real finding that escalated session eeb01b78 (R3-F1 / re-raised R1-F3) was genuine and is now **fixed in the
+vitana-v1 code**, not papered over. Three spinners the plan called "action-in-progress" are data-load gated, so under
+`no-page-spinner` (static, SR-20) they were non-compliant while the routes were "migrated" behind a false
+`design-allow-next-line`. Fixed on the lane branches:
+- `skeletons` (`e1a49d4c9`): `CreatorOnboarded.tsx` legacy `animate-spin` (`isLoading || isRefetching`) → `ArchetypeSkeleton archetype="form"`, allow-comment removed.
+- `remaining-screens` (`c7691afdc`): `RedeemVoucher.tsx` (`authLoading || voucherLoading`) → `form` skeleton; `TicketPurchaseSuccess.tsx` (`loading || verifying`) → `detail` skeleton; both allow-comments and the now-unused `Loader2` imports removed.
+`npx eslint` on the three files is clean (design/no-page-spinner = 0, no unused imports); 0 `Loader2`/`animate-spin` tokens, 7 `ArchetypeSkeleton` usages across them.
+Aligned the spec to the code (plan Decision 3/6 + lanes table + Test plan, design.md spinner inventory, requirements 3.5, tasks R1/S2, lanes/skeletons.md + lanes/remaining-screens.md): only genuinely mutation-gated spinners (`LiveRoomViewer` if action-gated, `DeleteAccount` on the real delete mutation) may keep an allow-comment; no data-load spinner is masked anywhere.
+Re-pinned `spar_refs` to a vitana-v1 SHA that **contains all three fixes**: `da0a959695debcca9c1b270c3efccfe0ae32094d`, a throwaway merge of the two lane tips (`e1a49d4c9` + `c7691afdc`, disjoint files, no conflict), pushed to `origin/kiro/desktop-spotlight-finish/spar-integration` read-only so the partner can read the fixed code at the premises R3-F1 cited. Reset `sparring/state.json` to `{"sessions": []}` and archived the two prior sessions in-tree (`sparring/archive/session-6963fb88/`, `.../session-eeb01b78/`) for audit — the cap was only hit because those two were recorded; the defect itself is corrected. This is not a reset to dodge the finding. VTID-05285–05294 stay cleared (a fresh converged+policy-approved session auto-allocates the 10 lane VTIDs). No VTID allocated here, no live system touched.
