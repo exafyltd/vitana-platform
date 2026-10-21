@@ -84,14 +84,25 @@ The owner wrote on 2026-10-16: "you can decide yourself and move on, get the red
 2. **Arbitrary sizes** — decided by Kiro under owner delegation 2026-10-16: no new size tokens; identical Tailwind
    class where one exists; nearest class when the difference is ≤ 2 px; otherwise keep with
    `// design-allow-next-line: <reason>`.
-3. **Page spinners → skeletons** — owner approved 2026-10-16 (after asking to see the mobile version too): the 22
-   data-loading page spinners become skeletons on desktop (Spotlight) **and** on mobile, using the same
-   `ArchetypeSkeleton` / `VCardSkeleton` shaped like each page's final layout — header and bottom nav stay, content
-   cross-fades in, no layout shift. One shared `SpotlightLoading` (in `src/components/layout/spotlight/skeletons/`,
-   built on the existing `ArchetypeSkeleton`, `VCardSkeleton` and shadcn `Skeleton`); no bespoke per-page skeletons.
-   The 5 action-in-progress spinners (`LiveRoomViewer`, `CreatorOnboarded`, `DeleteAccount`, `RedeemVoucher`,
-   `TicketPurchaseSuccess`) keep a spinner, each with a `design-allow-next-line` reason. An MP4 (spinner before vs
-   skeleton after, desktop and mobile) goes to the owner.
+3. **Page spinners → skeletons** — owner approved 2026-10-16 (after asking to see the mobile version too).
+   `design/no-page-spinner` has **27 findings in 24 page files** (measured state). Those 24 files split into **19
+   data-loading page files** and **5 action-in-progress files**; findings (27) exceed files (24) because three files
+   carry two spinner sites each. The **19 data-loading page spinners** become skeletons on desktop (Spotlight) **and**
+   on mobile, using the same `ArchetypeSkeleton` / `VCardSkeleton` shaped like each page's final layout — header and
+   bottom nav stay, content cross-fades in, no layout shift. One shared `SpotlightLoading` (in
+   `src/components/layout/spotlight/skeletons/`, built on the existing `ArchetypeSkeleton`, `VCardSkeleton` and shadcn
+   `Skeleton`); no bespoke per-page skeletons. The **5 action-in-progress spinners** (`LiveRoomViewer`,
+   `CreatorOnboarded`, `DeleteAccount`, `RedeemVoucher`, `TicketPurchaseSuccess`) keep a spinner, each with a
+   `design-allow-next-line: action in progress, not a data-load spinner` reason. These are action spinners (a
+   submit/redeem/delete is running), **not** data-load spinners, so SR-20 (skeleton in the archetype's shape, which
+   governs the initial data load) does not apply: each screen renders its migrated archetype immediately and only spins
+   on the user-triggered action. They therefore stay `migrated` (layout/archetype compliant) and reaching the
+   "every non-chrome entry at 0" goal is not in conflict with keeping the spinner — an allowed line is not counted by
+   `countDesign` (`lib.mjs:112`; `ALLOW_RX` suppresses the report, `_shared.js:10`), so the file still reads `0` in
+   `baseline-design`. **Lane ownership of the action-spinner pages:** `DeleteAccount`, `RedeemVoucher`,
+   `TicketPurchaseSuccess` are owned solely by `remaining-screens` (the lane that also flips their archetype in
+   Decision 4), which applies their allow reason in the same PR; `LiveRoomViewer` and `CreatorOnboarded` stay in
+   `skeletons`. An MP4 (spinner before vs skeleton after, desktop and mobile) goes to the owner.
 4. **Older open items** — decided by Kiro under owner delegation 2026-10-16: public profile `/u/:identifier` and
    `/me/profile` → `detail` (contract §A lists public profile under `detail`); `/redeem`, `/delete-account` → `form`;
    `/tickets/success`, `/tickets/demo` → `detail`; `/shop` → `immersive` inside the app shell (SR-04); Commerce portal →
@@ -102,18 +113,21 @@ The owner wrote on 2026-10-16: "you can decide yourself and move on, get the red
 5. **`desktop_spotlight` production flag** — decided by Kiro under owner delegation 2026-10-16: unchanged, no flag
    flip; it is an owner/production decision → open owner item.
 6. **File ownership** (Kiro, within the plan): every file with findings belongs to exactly one lane, and that lane
-   clears every `design/*` rule in it, so no two PRs edit one file. Shared: the two ratchet baselines (every lane) and
-   `docs/SCREEN_INVENTORY.md` (the three lanes that add copy, each in its own new i18n shard).
+   clears every `design/*` rule in it, so no two PRs edit one file. In particular the three action-spinner pages that
+   Decision 4 also re-archetypes — `DeleteAccount`, `RedeemVoucher`, `TicketPurchaseSuccess` — belong only to
+   `remaining-screens` (archetype flip and action-spinner allow reason in one PR), never also to `skeletons`. Shared:
+   the two ratchet baselines (every lane) and `docs/SCREEN_INVENTORY.md` (the three lanes that add copy, each in its
+   own new i18n shard).
 7. **Raw `Card` and physical directions** (Kiro, within the contract): content items → `VCard`, panels → `Panel`
    (identical DOM); logical properties, centring/slide/sheet-direction cases keep the escape hatch.
 
 ## Lanes (all `ready`, executor kiro; seat → reviewer_seat)
 | Lane | Seat → reviewer | Scope (files with findings) | depends_on |
 |---|---|---|---|
-| `skeletons` | exafyltd → hotmail | `SpotlightLoading` + 20 spinner pages (21 → skeletons, 2 action spinners kept) | — |
+| `skeletons` | exafyltd → hotmail | `SpotlightLoading` + 19 data-loading spinner pages → skeletons + 2 action-spinner pages kept (`LiveRoomViewer`, `CreatorOnboarded`) | — |
 | `public-profile` | exafyltd → hotmail | `src/components/profile/**` + 3 profile pages (67) | skeletons |
 | `commerce-shell` | exafyltd → hotmail | commerce components/pages, `ShopFeed`, `UniversalCart`, portal login (28) | — |
-| `remaining-screens` | exafyltd → hotmail | redeem, tickets, delete-account, phone fallbacks, tickets/voucher components (17) + manifest generator/test, design-contract spec | skeletons, public-profile, commerce-shell |
+| `remaining-screens` | exafyltd → hotmail | redeem, tickets, delete-account (sole owner of `DeleteAccount`/`RedeemVoucher`/`TicketPurchaseSuccess`: archetype flip + action-spinner allow reason), phone fallbacks, tickets/voucher components (17) + manifest generator/test, design-contract spec | skeletons, public-profile, commerce-shell |
 | `colours-batch-2` | exafyltd → hotmail | health, journey, supplements, diary, memory (86) | — |
 | `colours-batch-3` | exafyltd → hotmail | community, sharing, event game, live rooms, meetups, events, crossover, feed, home (81) | — |
 | `colours-batch-4` | exafyltd → hotmail | discover, wallet, payment, calendar, business, reseller, orders, subscription, intents (96) | — |
@@ -132,6 +146,13 @@ files outside every lane (chrome excepted). Eight lanes can run in parallel; `pu
   design violations"; then `node scripts/ci/pr-gate/gate.mjs baseline-design $TMP/eslint.json` and commit
   `scripts/ci/pr-gate/baseline/design.json` with only the lane's own files lowered (any other file's line changing
   in that diff is a lane-scope error). Same for `ratchet-eslint` / `baseline-eslint` (`baseline/eslint.json`).
+  **Per-lane zero assertion (not just "ratchet passed"):** the ratchet only proves no file *gained* violations, never
+  the plan's done-criterion "every non-chrome entry at 0", and PR-GATE is `enforce:false`, so the done check is
+  explicit and machine-checkable per lane — after `baseline-design`, the lane asserts that **every file it owns**
+  (its `paths` globs, chrome excepted) reads `0` or is absent in the regenerated `baseline/design.json` (grep the
+  lane's files out of the committed baseline and assert each is absent/0). This assertion is part of the lane's own
+  verification step and its result (0 for every owned file) is what the reviewer records — not merely the repo-wide
+  `✅ design ratchet` total line.
 - **PR-GATE is report-only.** vitana-v1 `scripts/ci/pr-gate/config.json:2` has `"enforce": false`, so the
   "Design ratchet" step (`PR-GATE.yml:150-153`, `continue-on-error`) only reports; the Verdict step
   (`PR-GATE.yml:166-190`: OUTCOMES incl. `design=` at `:177`, `FAILED` list at `:181`, `enforce` read at `:182`,
