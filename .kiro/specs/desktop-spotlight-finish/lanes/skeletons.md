@@ -33,7 +33,8 @@ paths:
   - tests/e2e/staging/vtid-*-skeletons.staging.spec.ts
   - scripts/ci/pr-gate/baseline/design.json
   - scripts/ci/pr-gate/baseline/eslint.json
-updated: 2026-10-16T09:56Z
+updated: 2026-10-21T09:24Z
+vtid: VTID-05294
 ---
 # Page spinners → archetype skeletons on desktop Spotlight and mobile (owner decision 3) (repo vitana-v1)
 Plan: `.kiro/specs/desktop-spotlight-finish/` — `plan.md` (plan block) and the `tasks.md` section marked `<!-- lane: skeletons -->`
@@ -66,3 +67,6 @@ file belongs to two lanes. Next: PLAN-SPAR spars the plan; once a VTID is writte
 ### 2026-10-16T10:30Z · kiro-202610152203-0347 · scope updated (owner approved 2026-10-16)
 Owner approved the skeleton switch after asking to see the mobile version: skeletons on desktop and mobile for the
 22 data-loading spinners (21 here, 1 in `public-profile`); the 5 action spinners keep a spinner with a reason.
+
+### 2026-10-21T09:24Z · ci-plan-spar · ready (VTID allocated)
+VTID-05294 allocated after policy approval (converged-auto-v1).

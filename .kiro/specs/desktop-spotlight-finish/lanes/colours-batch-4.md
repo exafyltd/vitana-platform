@@ -34,7 +34,8 @@ paths:
   - tests/e2e/staging/vtid-*-colours-batch-4.staging.spec.ts
   - scripts/ci/pr-gate/baseline/design.json
   - scripts/ci/pr-gate/baseline/eslint.json
-updated: 2026-10-16T09:56Z
+updated: 2026-10-21T09:24Z
+vtid: VTID-05288
 ---
 # Raw palette → tokens, batch 4 (owner decision 1, option A) (repo vitana-v1)
 Plan: `.kiro/specs/desktop-spotlight-finish/` — `plan.md` (plan block) and the `tasks.md` section marked `<!-- lane: colours-batch-4 -->`
@@ -64,3 +65,6 @@ Supabase/AWS, no test against production; staging specs are read-only. Sidebar/O
 Lane drafted with the plan (`state: drafted` in `handoff.md`). Paths computed from the ESLint run on 5c4632ea9 so that no
 file belongs to two lanes. Next: PLAN-SPAR spars the plan; once a VTID is written here, seat `exafyltd` claims the lane
 (`queue.mjs claim desktop-spotlight-finish/colours-batch-4 --session <id>`).
+
+### 2026-10-21T09:24Z · ci-plan-spar · ready (VTID allocated)
+VTID-05288 allocated after policy approval (converged-auto-v1).

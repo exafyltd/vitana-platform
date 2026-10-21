@@ -2,10 +2,12 @@
 slug: desktop-spotlight-finish
 author: kiro
 executor: kiro
-next_actor: claude
-state: drafted
+next_actor: kiro
+state: approved
 author_seat: exafyltd
-updated: 2026-10-21T09:21Z
+updated: 2026-10-21T09:24Z
+sparring_record: .kiro/specs/desktop-spotlight-finish/sparring/verdict.md
+vtids: [VTID-05285, VTID-05286, VTID-05287, VTID-05288, VTID-05289, VTID-05290, VTID-05291, VTID-05292, VTID-05293, VTID-05294]
 ---
 # Handoff — Finish the Spotlight desktop redesign
 Follow-up to `.kiro/specs/desktop-spotlight/` (Claude Code session `session_01Sxnx4eGehRHRqqwu4YmJA6`, handover
@@ -57,3 +59,6 @@ Answered round 1 of session 5fbb73a2 in `sparring/responses-1.md` (single sessio
 
 ### 2026-10-21T09:21Z · kiro-202610182052-5ce2 · answered sparring round 2 (session 5fbb73a2)
 Answered round 2 in `sparring/responses-2.md`. R2-F1 and R2-F2 deferred to a fresh PLAN-SPAR session: session 5fbb73a2 pins vitana-platform 7b6425b (before #4201, fa73aabd0 not an ancestor) and no vitana-v1 ref, and its refs cannot change (plan-sparring-service.ts:358 at that pin), so the partner cannot see the #4201 mechanism or read vitana-v1. The plan block now says its partner-readability cites are origin/main bd7e8e979. Expected path: this session ends, then plan-spar.mjs's replan path opens session 2 (`s2-` files) with vitana-v1 in its refs. No VTID allocated, no product code changed, no live system touched.
+
+### 2026-10-21T09:24Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 10 lane(s) got a VTID and are handed to Kiro.
