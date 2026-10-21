@@ -7,3 +7,7 @@ $ npx jest <regression set, see evidence.md>                  # head 1c6850905 -
 # After merging origin/main fd689346d (head fca8671f5):
 $ npx jest test/vtid-05270-job-tenant-loop.test.ts --ci       # -> Test Suites: 1 passed; Tests: 31 passed (outputs/jest-vtid-05270.txt)
 $ npx tsc --noEmit -p .                                       # -> TS2742 only, from the local node_modules junction (none in lane files); CI tsc on Linux is the authority
+# CI on 2f3b82375: test/vtid-04349-automation-shadow.test.ts 'gates execute / heartbeat / dispatch / cron' red (source pin router.post('/cron/:id', requireInternalOrAdmin, async). Fix: /cron/:id delegates to a withJobTenants-wrapped cronJob; behaviour unchanged.
+$ npx jest test/vtid-04349-automation-shadow.test.ts test/vtid-05270-job-tenant-loop.test.ts --ci   # -> both PASS
+# test/vtid-04868-plan-sparring-session-layer.test.ts (CLAUDE.md rules 51-55) red on main too: TEST-SUITE run 39656512476 @ b9e0db028 (pre-existing, outside the lane)
+$ npx tsc --noEmit -p .   # -> 59 x TS2742 only (local node_modules junction), none in lane files
