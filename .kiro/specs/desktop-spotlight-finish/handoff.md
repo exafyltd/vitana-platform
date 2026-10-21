@@ -150,3 +150,16 @@ is made here — this is git-text restoration + re-spar only.**
   sparring-engine outage, NOT a plan defect; the 10 VTIDs remain validly allocated against the 09:22Z clean
   convergence, re-convergence is recorded DEFERRED here pending the sparring-engine fix, and staging is not blocked.
 No VTID allocated, no ledger write, no product code changed, no live system touched.
+
+### 2026-10-21T22:55Z · kiro-202610152203-0347 · re-spar outcome: DEFERRED-INFRA (re-convergence deferred)
+PLAN-SPAR run `39667240227` on the restored/re-pinned commit `192609f0c` **re-escalated on the SAME partner-infra
+read failure** (round commit `4c6335dd0`): session `ebd5ecb7`, plan hash `d96cf3fbb…`, `verdict: escalated`,
+`evidence_floor_not_met: round 1 needs at least 3 premise checks citing read_file (have 0)`. The partner read 0 files
+and never evaluated the plan — this is **not a plan finding**. It is the known gateway-side sparring-engine outage
+(specs `sparring-floor-retry` / `collab-throughput`, not yet merged), the same 0-read wiring failure sessions
+`6963fb88` and `ebd5ecb7` hit before. Per the owner's decision rule (owner instruction 2026-10-21, full automation
+to verified staging, no approval stops): **re-convergence is DEFERRED pending the sparring-engine fix; staging is NOT
+blocked.** The 10 VTIDs (VTID-05285 … VTID-05294) remain **validly allocated** against the clean 09:22Z convergence
+of session 5fbb73a2 (policy `converged-auto-v1`, final plan hash `9883f2c3…`), whose verdict is this handoff's
+`sparring_record`. No NEW real (non-infra) sparring finding was raised. No VTID allocated, no ledger write, no product
+code changed, no live system touched. Stage 2 (lane merges to staging) may proceed.
