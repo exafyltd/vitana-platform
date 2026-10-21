@@ -12,7 +12,7 @@ paths:
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
   - services/gateway/test/mt-launch-pack-intake-pgtap.test.ts
-updated: 2026-10-21T17:10Z
+updated: 2026-10-21T17:12Z
 vtid: VTID-05324
 ---
 # pack-intake-db — tenant pack intake + content pipeline tables (repo vitana-platform)
@@ -75,4 +75,6 @@ reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
 ### 2026-10-21T17:08Z · pm-agent · update
 reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
 ### 2026-10-21T17:10Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-21T17:12Z · pm-agent · update
 reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
