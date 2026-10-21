@@ -6,27 +6,28 @@ removed workflow needs evidence its target is gone; a changed assertion matches 
 <!-- lane: dead-workflows -->
 ## Lane: dead-workflows
 
-Remove the one genuinely-live dead GCP Cloud Run workflow and correct the dead-list.
+Remove the one genuinely-live dead GCP Cloud Run workflow and correct the dead-list. Independent lane
+(R1-F1: no migration, no `depends_on`).
 
-- [ ] T1 — Confirm lane 6 has already landed the vcaop `typecheck` + run-in-band `test:guardrails` gates
-  in `TEST-SUITE.yml` (this lane `depends_on: [speed-path-filters]`). Do **not** delete `VCAOP-CICD.yml`
-  until those two gates run in TEST-SUITE — they are the only CI runners of `services/vcaop` typecheck
-  (VCAOP-CICD.yml:37-39) and the `jest --runInBand test/guardrails` guardrails gate (:40-42) today.
+- [ ] T1 — Confirm (and cite in the evidence row) that `VCAOP-GUARDRAILS-CI.yml` already runs the vcaop
+  `typecheck` (`npm run typecheck`) and `test:guardrails` (`npm run test:guardrails`, required gate) plus
+  `npm test` on the same `services/vcaop/**` triggers, so deleting `VCAOP-CICD.yml` loses no gate. No
+  migration into `TEST-SUITE.yml`; no dependency on lane 6.
 - [ ] T2 — Remove `.github/workflows/VCAOP-CICD.yml` (dead: `google-github-actions/auth@v2` :63,
   `gcloud run deploy vcaop-api-dev --region us-central1` :77-78 — decommissioned GCP, infrastructure.md
-  §1).
-- [ ] T3 — Add the evidence row under `docs/validation/<VTID>/` (what the workflow deployed, that the
-  target is gone, and that its typecheck+guardrails gates now live in TEST-SUITE) and record in the
-  inventory that EXEC-DEPLOY/STAGE-DEPLOY are already gone and UNIT.yml is already a real check (not a
-  no-op).
+  §1). Its only unique body is the dead GCP `deploy-dev` job.
+- [ ] T3 — Add the evidence row under `docs/validation/<VTID>/` (what the workflow deployed, that the GCP
+  target is gone, and that `VCAOP-GUARDRAILS-CI.yml` already covers the vcaop typecheck + guardrails
+  gates) and record in the inventory that EXEC-DEPLOY/STAGE-DEPLOY are already gone and UNIT.yml is already
+  a real check (not a no-op).
 - [ ] T4 — Add a dead-GCP-marker inventory test (`scripts/ci/ci-inventory/*.test.mjs` or a case in
   `scripts/ci/pr-gate/__tests__/`) that greps the workflow tree for live GCP/Cloud-Run deploy markers and
   fails while any such workflow exists. Run `node --test` over it green after removal.
 
-**Acceptance (R1-F3):** the vcaop typecheck + run-in-band guardrails gates run in TEST-SUITE **before**
-deletion (lane 6 landed); `VCAOP-CICD.yml` is gone; the inventory test is red on base (VCAOP present) and
-green on head; the evidence pack cites the dead target and the migrated gates; no non-dead workflow (e.g.
-`AWS-STAGE-DEPLOY-GATEWAY.yml`) is touched.
+**Acceptance (R1-F1):** the evidence row cites `VCAOP-GUARDRAILS-CI.yml` as the surviving runner of the
+vcaop typecheck/guardrails gates; `VCAOP-CICD.yml` is gone; the inventory test is red on base (VCAOP
+present) and green on head; no TEST-SUITE edit and no lane-6 dependency; no non-dead workflow (e.g.
+`AWS-STAGE-DEPLOY-GATEWAY.yml`, `VCAOP-GUARDRAILS-CI.yml`) is touched.
 
 <!-- lane: fake-checks-dedupe -->
 ## Lane: fake-checks-dedupe
@@ -62,8 +63,10 @@ lane (same file). Sequence behind #4210 / #4188.
 - [ ] T1 — In `scripts/collab/queue.mjs` `scopeCheck`, stop rejecting a reviewer-agent review entry whose
   session seat ≠ a legacy `reviewer_seat` (the agent-reviewer path at :590-599 — `seat` at :590, the `ok`
   branch :592-594), keeping every subcommand name/shape (`scope-check` is grepped literally by vitana-v1).
-- [ ] T2 — Stop counting the `ci-plan-spar` and `pm-agent` automation literals as a second session in the
-  "one session per lane" rule on a `_plan` lane.
+- [ ] T2 — Stop counting the `ci-plan-spar` automation literal as a second session in the "one session
+  per lane" rule on a `_plan` lane. (R1-F4: `pm-agent` is **already** excluded at `queue.mjs:452` —
+  `if (k.lane && k.session !== PM_AGENT)` — so only `ci-plan-spar` needs adding to that exclusion; verify
+  with a red-on-base test before touching anything, and do not re-implement the pm-agent exclusion.)
 - [ ] T3 — Stop flagging a protected-gate file changed under an owner instruction in the *check* (the
   merge-time unlock already exists in governance.ts); the check should not red a correctly-authorized PR.
 - [ ] T4 — Fix the Windows-only failures in `scripts/collab/queue.test.mjs`: the `C:\C:\` "programme
@@ -137,38 +140,32 @@ in Gate 2).
 ## Lane: speed-path-filters
 
 Caching, path filters on non-gate jobs, de-dup, shard balance — target ≤ 15 min on a typical gateway PR.
+Independent lane (R1-F1: no vcaop-matrix migration, so no `depends_on`).
 
 - [ ] T1 — Add dependency caching to the uneven install steps (e.g. TEST-SUITE's pnpm install with no npm
   cache); align with the `cache: npm` pattern already used in v1 PR-GATE.
 - [ ] T2 — Add path filters to **non-gate** jobs only; never path-filter PR-GATE / Lane scope / Collab
   handoff (a required check that never runs stays pending and wedges merges).
-- [ ] T3 — Confirm the gateway Jest shard setup (TEST-SUITE runs `--maxWorkers=100%`, not the "4 shards"
-  the brief assumed) and re-balance only if measured imbalance warrants it, using the ground-truth counts
-  (gateway ~1,737 suites / ~22,700 tests; vcaop 45/~290; vcaop-mcp 7/~58; vitana-v1 web 444/~2,840; mobile
-  61/~650), not the brief's stale "~7.5k / 4 shards". Note in the measured artifact the ~50 Playwright/e2e
-  specs and the shell/Python test scripts that no required check covers today (coverage gap for ci-health).
-- [ ] T4 — Extend `scripts/ci/test-suite/shard-union.test.mjs` / `rerun-policy.test.mjs` to pin the new
-  shard/skip contract; run `node --test` green. Record before/after critical path under
-  `docs/validation/<VTID>/`.
-- [ ] T5 — Migrate the two vcaop gates lane 1 depends on into `TEST-SUITE.yml` via **option A (conditional
-  steps on the shared `services` body)**: add `typecheck: npm run typecheck` and
-  `guardrails: npm run test:guardrails` (= `jest --runInBand test/guardrails`) **only** to the `vcaop`
-  matrix entry (:111-113), and after the existing `Run tests` step add two steps to the shared body —
-  `- name: Typecheck` (`if: matrix.typecheck != ''`, `run: ${{ matrix.typecheck }}`) and
-  `- name: Guardrails` (`if: matrix.guardrails != ''`, `run: ${{ matrix.guardrails }}`). Because an absent
-  matrix key renders as `''`, the guards are false for `oasis-projector` and `openclaw-bridge` and no empty
-  `run:` is emitted for them. `--runInBand` is required (the guardrails suite is written to fail under
-  parallel workers). This is the only TEST-SUITE edit outside the speed changes and is what lets lane 1
-  delete `VCAOP-CICD.yml` without losing a gate.
+- [ ] T3 — The gateway Jest suite already runs as a **4-shard matrix** (`TEST-SUITE.yml:43-70`:
+  `strategy.matrix.shard: [1,2,3,4]`, `npx jest … --maxWorkers=100% --shard=N/4`; R1-F2 — the brief's "4
+  shards" was correct). Re-balance those four shards only if measured imbalance warrants it, using the
+  ground-truth counts (gateway ~1,737 suites / ~22,700 tests; vcaop 45/~290; vcaop-mcp 7/~58; vitana-v1
+  web 444/~2,840; mobile 61/~650), not the brief's stale "~7.5k". Note in the measured artifact the ~50
+  Playwright/e2e specs and the shell/Python test scripts that no required check covers today (coverage gap
+  for ci-health).
+- [ ] T4 — Extend `scripts/ci/test-suite/shard-union.test.mjs` / `rerun-policy.test.mjs` to pin any new
+  shard/skip contract where logic changed; run `node --test` green. Record before/after critical path
+  under `docs/validation/<VTID>/`.
 
-**Acceptance (R5,R1-F3,R2-F2):** no required gate job is path-filtered out; the shard/rerun test is red on
-base and green on head where logic changed; the vcaop-gate proof test parses `TEST-SUITE.yml` and asserts
-(a) the `vcaop` entry carries `typecheck` and `guardrails` keys, (b) the shared `services` body has the two
-`if: matrix.typecheck != ''` / `if: matrix.guardrails != ''` guarded steps, and (c) `oasis-projector` /
-`openclaw-bridge` carry neither key — red on base, green on head; a measured before/after timings artifact
-is attached; `enforce` is NOT flipped (listed for Gate 2); `CICDL-GATEWAY-CI.yml` is not edited by this
-lane (lane 2 owns it). Protected gate (edits PR-GATE.yml) → merge needs the owner instruction naming this
-plan (surfaced in Gate 2).
+(No vcaop-matrix migration task — R1-F1 removed it: `VCAOP-GUARDRAILS-CI.yml` already runs the vcaop
+typecheck/guardrails gates, so lane 1 deletes `VCAOP-CICD.yml` without any TEST-SUITE change.)
+
+**Acceptance (R5,R1-F1,R1-F2):** no required gate job is path-filtered out; the gateway suite stays a
+4-shard matrix (not collapsed to one job); any shard/rerun test change is red on base and green on head
+where logic changed; a measured before/after timings artifact is attached; **no** `typecheck`/`guardrails`
+keys or steps are added to the `vcaop` matrix entry (that migration is removed); `enforce` is NOT flipped
+(listed for Gate 2); `CICDL-GATEWAY-CI.yml` is not edited by this lane (lane 2 owns it). Protected gate
+(edits PR-GATE.yml) → merge needs the owner instruction naming this plan (surfaced in Gate 2).
 
 <!-- lane: stale-tests -->
 ## Lane: stale-tests
