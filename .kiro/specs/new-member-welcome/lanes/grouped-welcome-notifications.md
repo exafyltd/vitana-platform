@@ -8,7 +8,7 @@ area: messenger
 depends_on: []
 branch: kiro/new-member-welcome/grouped-welcome-notifications
 pr: https://github.com/exafyltd/vitana-platform/pull/4153
-updated: 2026-10-21T22:47Z
+updated: 2026-10-21T22:49Z
 parked_from: in-review
 ---
 # Grouped greeting-DM notifications
@@ -988,4 +988,6 @@ reassign review →exafyltd (stale_review, Claude unavailable)
 ### 2026-10-21T22:12Z · pm-agent · update
 reassign review →exafyltd (stale_review, Claude unavailable)
 ### 2026-10-21T22:47Z · pm-agent · update
+reassign review →exafyltd (stale_review, Claude unavailable)
+### 2026-10-21T22:49Z · pm-agent · update
 reassign review →exafyltd (stale_review, Claude unavailable)
