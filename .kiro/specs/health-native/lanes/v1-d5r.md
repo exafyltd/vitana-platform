@@ -13,7 +13,7 @@ paths:
   - "docs/validation/**"
   - "tests/**"
   - "supabase/functions/**"
-updated: 2026-10-21T09:41Z
+updated: 2026-10-21T09:42Z
 ---
 # V1-D5R — account deletion calls member-residue erasure (vitana-v1 #1388)
 
@@ -26,4 +26,6 @@ gateway Gate 2 for `0b875e982`) and `CONNECTOR_WEBHOOK_LOG_PURGE_ENABLED=true` i
 ### 2026-10-15T18:59Z · session_01VuZPi9pvHaUverAXRC1WvU · (backfill) → in-review
 Handed over to Kiro with the health-native spec. next_actor: owner.
 ### 2026-10-21T09:41Z · pm-agent · update
+reassign review claude→exafyltd (stale_review, Claude unavailable)
+### 2026-10-21T09:42Z · pm-agent · update
 reassign review claude→exafyltd (stale_review, Claude unavailable)
