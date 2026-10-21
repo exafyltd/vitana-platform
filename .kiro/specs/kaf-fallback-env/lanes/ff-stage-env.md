@@ -1,6 +1,6 @@
 ---
 lane: ff-stage-env
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -11,10 +11,13 @@ repos: [exafyltd/vitana-platform]
 paths:
   - .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
   - services/gateway/test/kaf-staging-claude-available-wiring.test.ts
+  - services/gateway/src/services/conversation/conversation-flag-pins.generated.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-20T23:41Z
+updated: 2026-10-21T08:30Z
 branch: kiro/kaf-fallback-env/ff-stage-env
 vtid: VTID-05282
+claimed_by: kiro-202610202258-2232
+pr: https://github.com/exafyltd/vitana-platform/pull/4241
 ---
 # ff-stage-env — `CLAUDE_AVAILABLE` from the repo variable into the staging task definition
 Plan: `.kiro/specs/kaf-fallback-env/plan.md` §3 and §5 A, and the `ff-stage-env` section of `tasks.md`, are
@@ -31,3 +34,17 @@ seat exafyltd claims it.
 
 ### 2026-10-20T23:41Z · ci-plan-spar · ready (VTID allocated)
 VTID-05282 allocated after policy approval (converged-auto-v1).
+### 2026-10-20T23:58Z · kiro-202610202258-2232 · ready → executing
+Claimed by seat exafyltd (pipeline run wf_f16f7c2bcc131c71, slot 1). Changed: step `taskdef` of
+`AWS-STAGE-DEPLOY-GATEWAY.yml` (env `CLAUDE_AVAILABLE_VALUE` from `vars.CLAUDE_AVAILABLE || 'true'`, jq `--arg CLAUDE_AVAILABLE`
+before `--arg TASK_ROLE`, strip + single upsert next to `PM_MODE`), new wiring test (red on base 4/5 failed, green 5/5),
+evidence in `docs/validation/VTID-05282/`. Next: reviewer agent on the PR head.
+### 2026-10-21T08:30Z Â· kiro-202610210825-2f6b Â· executing (fix round 1 after review changes on e7deafa)
+Blocking findings of the review on e7deafa fixed: regenerated `services/gateway/src/services/conversation/conversation-flag-pins.generated.ts` (new dynamic pin `CLAUDE_AVAILABLE` for staging; `generate-flag-pins.mjs --check` and the VTID-04525 registry test were red) and added it to the lane paths; PR body gets the Validator block (`VALIDATION_PROFILE: gateway_backend`). Local: registry + wiring tests 2 suites pass, `tsc --noEmit` pass. Next: reviewer agent on the new head.
+### 2026-10-21T08:56Z · agent-vitana-lane-reviewer-202610210856-fc98 · review
+review: accept
+head: 9789793fdee21e325caa151091c7a95f485ca339
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4241
+Findings: no blockers. Non-blocking: S1-S3 match tasks.md (env line before run:, --arg before TASK_ROLE, strip + single upsert next to PM_MODE); staging workflow only, AWS-PROD-DEPLOY-GATEWAY.yml untouched and the wiring test asserts prod has no CLAUDE_AVAILABLE. Both prior blockers fixed: conversation-flag-pins.generated.ts regenerated and added to lane paths; validate-pr green on this head. Wiring test new (5 tests, red on base). The red Gateway Jest shard 1/4 / Gateway Service Tests / Test Suite Summary are the inherited vtid-04868-plan-sparring-session-layer.test.ts:42 failure (#4239 removed the pinned CLAUDE.md line on main), not caused by this PR and non-required. Lane scope / Collab handoff red = governance-artifact false positive (claimed_by seat changed between rounds), same class as the accepted #4223.
+Entry committed by the land step on the reviewer agent's behalf (finish-staging run, wf_dbe93c5aad069d99). Next: update onto main, merge under collaboration.md §7b.
