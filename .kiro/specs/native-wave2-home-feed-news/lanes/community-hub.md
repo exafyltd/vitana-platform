@@ -13,10 +13,14 @@ paths:
   - apps/mobile/app/(app)/intents/**
   - apps/mobile/app/(app)/search.tsx
   - apps/mobile/src/screens/community/**
+  - apps/mobile/src/ports/**
+  - apps/mobile/src/navigation/resolve.ts
+  - apps/mobile/tests/community/**
   - apps/mobile/maestro/community/**
   - packages/core/manifest.json
   - packages/core/closure.generated.json
   - packages/core/src/**
+  - scripts/native/mobile-ci-paths.generated.json
   - apps/mobile/parity/ledger.json
   - src/i18n/*/communityHubNative.json
   - docs/validation/**
