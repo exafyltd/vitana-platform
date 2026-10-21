@@ -1708,6 +1708,13 @@ CREATE POLICY wearable_workouts_select_own ON public.wearable_workouts AS PERMIS
 CREATE POLICY wearable_workouts_service ON public.wearable_workouts AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
 CREATE POLICY "Service role full access to worker_registry" ON public.worker_registry AS PERMISSIVE FOR ALL TO public USING ((auth.role() = 'service_role'::text));
 
+-- VTID-05092: health consent catalogue (created by migration
+-- 20261012180000_vtid_05092_health_consent_categories.sql, hence the guard).
+-- data_sharing_consents / data_sharing_consent_events keep their SELECT-only
+-- policies above; their write revokes live in aurora-cutover-restore-grants.sql.
+DO $HC05092$ BEGIN IF to_regclass('public.health_consent_categories') IS NOT NULL THEN EXECUTE $SQL05092$ALTER TABLE public.health_consent_categories ENABLE ROW LEVEL SECURITY$SQL05092$; END IF; END $HC05092$;
+DO $HC05092$ BEGIN IF to_regclass('public.health_consent_categories') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'health_consent_categories' AND policyname = 'health_consent_categories_select') THEN EXECUTE $SQL05092$CREATE POLICY health_consent_categories_select ON public.health_consent_categories AS PERMISSIVE FOR SELECT TO authenticated USING (true)$SQL05092$; END IF; END $HC05092$;
+
 -- VTID-05161: health_sources (Aurora only; created by 20261014100200_vtid_05161_health_sources.sql,
 -- which runs after the cutover). Guarded, so this file still runs before that migration.
 DO $HS05161$ BEGIN IF to_regclass('public.health_sources') IS NOT NULL THEN EXECUTE $SQL05161$ALTER TABLE public.health_sources ENABLE ROW LEVEL SECURITY$SQL05161$; END IF; END $HS05161$;

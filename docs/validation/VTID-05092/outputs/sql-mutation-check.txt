@@ -1,0 +1,11 @@
+# Each mutation of the migration must make scripts/ci/sql-tests/run-health-consent-test.sh fail (local throwaway Postgres 16).
+== mutation: s/^REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.data_sharing_consent_events FROM service_role;/-- removed/
+psql:vtid-05092-health-consent.test.sql:228: ERROR:  service_role cannot update events
+== mutation: s/^    BEFORE UPDATE ON public.data_sharing_consent_events/    BEFORE INSERT ON public.data_sharing_consent_events/
+psql:vtid-05092-health-consent.test.sql:228: ERROR:  data_sharing_consent_events is append-only (VTID-05092): INSERT is not allowed
+== mutation: s/AND NOT (p_text_version = .legacy-03885. AND v_cat.key = .partner_results.)/AND TRUE/
+psql:vtid-05092-health-consent.test.sql:228: ERROR:  legacy re-grant records the legacy label
+== mutation: s/^REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.data_sharing_consents FROM anon, authenticated;/-- removed/
+psql:vtid-05092-health-consent.test.sql:228: ERROR:  public.data_sharing_consents: anon insert revoked
+== mutation: s/AND pr.status IN (.active., .sandbox.)/AND TRUE/
+psql:vtid-05092-health-consent.test.sql:228: ERROR:  disabled partner

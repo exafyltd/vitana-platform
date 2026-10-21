@@ -1,0 +1,57 @@
+{
+  "vtid": "VTID-05092",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "health consents catalogue refuses an anonymous caller (router mounted, JSON 401 not HTML 404)",
+      "path": "/api/v1/health/consents",
+      "expect_status": 401
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "health consent history refuses an anonymous caller",
+      "path": "/api/v1/health/consents/history",
+      "expect_status": 401
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "POST",
+      "rejected_probe": true,
+      "name": "health consent grant is rejected by the auth gate before any handler runs",
+      "path": "/api/v1/health/consents/grant",
+      "expect_status": 401
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "POST",
+      "rejected_probe": true,
+      "name": "health consent revoke is rejected by the auth gate before any handler runs",
+      "path": "/api/v1/health/consents/revoke",
+      "expect_status": 401
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "legacy partner-health consent check still refuses an anonymous caller",
+      "path": "/api/v1/partner-health/consent?partner_key=doctorbox&scope=result_ingestion",
+      "expect_status": 401
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/consent/health-consent.test.ts test/consent/health-consent-premigration.test.ts test/routes/health-consent.test.ts test/partner-health-consent.test.ts test/migrations/vtid-05092-health-consent-migration.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the consent service (fail-closed check on pre-migration columns, static map equals the migration seed, every write through fn_set_health_consent, CONSENT_STORE_PENDING for a grant without the migration while a revoke still succeeds through the pre-migration write (GDPR Art. 7(3)), no DB message leaks), the member API (JWT identity only, validation codes, OASIS after commit, emit failure never fails a revoke), the legacy route delegating with partner_registry validation and text_version legacy-03885, and the migration contract. No grant/revoke runs on staging: staging writes to the production database."
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/partner-health test/partner-health-member.test.ts test/admin-partner-health.test.ts test/vtid-04560-role-separation-regression.test.ts",
+      "cwd": "services/gateway",
+      "reason": "partner-health ingestion still quarantines without consent through the unchanged checkDataSharingConsent signature, the D8 member-link and admin flows are unaffected, and the domain-atlas drift guard claims the new health-consent route file"
+    }
+  ]
+}

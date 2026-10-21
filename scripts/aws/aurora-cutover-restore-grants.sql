@@ -17,6 +17,13 @@
 -- (re-run the query in the VTID-04084 addendum of
 -- docs/AURORA-MIGRATION-STATUS-2026-09-10.md) -- do not treat this as
 -- static once other work lands on the shared Supabase project.
+--
+-- VTID-05092: the grants on data_sharing_consents / data_sharing_consent_events
+-- above follow migration 20261012180000_vtid_05092_health_consent_categories.sql
+-- (browser roles keep no INSERT/UPDATE/DELETE on either table; service_role
+-- keeps no UPDATE/DELETE on the append-only events). health_consent_categories
+-- is created by that migration, so its service_role writes at the end are
+-- guarded with to_regclass.
 
 GRANT DELETE ON TABLE public."OasisEvent" TO authenticated;
 GRANT DELETE ON TABLE public."OasisEvent" TO service_role;
@@ -330,11 +337,6 @@ GRANT DELETE ON TABLE public.daily_matches TO authenticated;
 GRANT DELETE ON TABLE public.daily_matches TO service_role;
 GRANT DELETE ON TABLE public.daily_recompute_runs TO authenticated;
 GRANT DELETE ON TABLE public.daily_recompute_runs TO service_role;
-GRANT DELETE ON TABLE public.data_sharing_consent_events TO anon;
-GRANT DELETE ON TABLE public.data_sharing_consent_events TO authenticated;
-GRANT DELETE ON TABLE public.data_sharing_consent_events TO service_role;
-GRANT DELETE ON TABLE public.data_sharing_consents TO anon;
-GRANT DELETE ON TABLE public.data_sharing_consents TO authenticated;
 GRANT DELETE ON TABLE public.data_sharing_consents TO service_role;
 GRANT DELETE ON TABLE public.dead_letter_event TO anon;
 GRANT DELETE ON TABLE public.dead_letter_event TO authenticated;
@@ -1720,11 +1722,7 @@ GRANT INSERT ON TABLE public.daily_matches TO authenticated;
 GRANT INSERT ON TABLE public.daily_matches TO service_role;
 GRANT INSERT ON TABLE public.daily_recompute_runs TO authenticated;
 GRANT INSERT ON TABLE public.daily_recompute_runs TO service_role;
-GRANT INSERT ON TABLE public.data_sharing_consent_events TO anon;
-GRANT INSERT ON TABLE public.data_sharing_consent_events TO authenticated;
 GRANT INSERT ON TABLE public.data_sharing_consent_events TO service_role;
-GRANT INSERT ON TABLE public.data_sharing_consents TO anon;
-GRANT INSERT ON TABLE public.data_sharing_consents TO authenticated;
 GRANT INSERT ON TABLE public.data_sharing_consents TO service_role;
 GRANT INSERT ON TABLE public.dead_letter_event TO anon;
 GRANT INSERT ON TABLE public.dead_letter_event TO authenticated;
@@ -3114,11 +3112,6 @@ GRANT UPDATE ON TABLE public.daily_matches TO authenticated;
 GRANT UPDATE ON TABLE public.daily_matches TO service_role;
 GRANT UPDATE ON TABLE public.daily_recompute_runs TO authenticated;
 GRANT UPDATE ON TABLE public.daily_recompute_runs TO service_role;
-GRANT UPDATE ON TABLE public.data_sharing_consent_events TO anon;
-GRANT UPDATE ON TABLE public.data_sharing_consent_events TO authenticated;
-GRANT UPDATE ON TABLE public.data_sharing_consent_events TO service_role;
-GRANT UPDATE ON TABLE public.data_sharing_consents TO anon;
-GRANT UPDATE ON TABLE public.data_sharing_consents TO authenticated;
 GRANT UPDATE ON TABLE public.data_sharing_consents TO service_role;
 GRANT UPDATE ON TABLE public.dead_letter_event TO anon;
 GRANT UPDATE ON TABLE public.dead_letter_event TO authenticated;
@@ -4192,6 +4185,11 @@ GRANT UPDATE ON TABLE public.workflow_step TO service_role;
 GRANT UPDATE ON TABLE public.workflow_version TO anon;
 GRANT UPDATE ON TABLE public.workflow_version TO authenticated;
 GRANT UPDATE ON TABLE public.workflow_version TO service_role;
+
+-- VTID-05092: health consent catalogue (browser roles read only, through RLS; no browser writes).
+DO $HC05092$ BEGIN IF to_regclass('public.health_consent_categories') IS NOT NULL THEN EXECUTE $SQL05092$GRANT DELETE ON TABLE public.health_consent_categories TO service_role$SQL05092$; END IF; END $HC05092$;
+DO $HC05092$ BEGIN IF to_regclass('public.health_consent_categories') IS NOT NULL THEN EXECUTE $SQL05092$GRANT INSERT ON TABLE public.health_consent_categories TO service_role$SQL05092$; END IF; END $HC05092$;
+DO $HC05092$ BEGIN IF to_regclass('public.health_consent_categories') IS NOT NULL THEN EXECUTE $SQL05092$GRANT UPDATE ON TABLE public.health_consent_categories TO service_role$SQL05092$; END IF; END $HC05092$;
 
 -- VTID-05161: health_sources (Aurora only, created after the cutover): member SELECT, gateway ALL.
 DO $HS05161$ BEGIN IF to_regclass('public.health_sources') IS NOT NULL THEN EXECUTE $SQL05161$GRANT SELECT ON TABLE public.health_sources TO authenticated$SQL05161$; END IF; END $HS05161$;

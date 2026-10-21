@@ -1,0 +1,10 @@
+{
+  "findings": [],
+  "counts": {
+    "blocker": 0,
+    "warning": 0,
+    "info": 0
+  },
+  "base": "2a3a73b91",
+  "head": "HEAD"
+}

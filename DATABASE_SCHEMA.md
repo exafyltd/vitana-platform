@@ -4031,6 +4031,39 @@ Migration: `supabase/migrations/20261012110000_vtid_05077_plan_version_planner_m
 
 OASIS (`CicdEventType`): `dev_autopilot.plan.fallback_used` — payload `{ finding_id, version, planner_provider, planner_model }`. `GET /api/v1/dev-autopilot/spend` returns `planner: { plans_24h, fallback_24h, fallback_rate_24h }` from these columns.
 
+## Health consent categories — `health_consent_categories`, `fn_set_health_consent()` (VTID-05092, 2026-10-12) — NOT YET APPLIED (applied at production approval, before the gateway prod deploy)
+
+Migration: `supabase/migrations/20261012180000_vtid_05092_health_consent_categories.sql` (additive). Health Hub Phase 0 / D10, WP1: per-category, revocable, auditable health consent on top of the VTID-03885 primitive. The gateway works without it (grants fail closed with 503 `CONSENT_STORE_PENDING`; revokes still succeed through the pre-migration write — withdrawal must always work, GDPR Art. 7(3); `GET /api/v1/health/consents` answers `store_pending: true`, consent checks read only pre-existing columns).
+
+### health_consent_categories (catalogue as data)
+
+| Column | Meaning |
+|---|---|
+| `key` (PK) | `wearables`, `partner_results`, `ai_health_analysis`, `health_data_analytics`, `community_insights` |
+| `resource_type` | `health_category` \| `partner_integration` \| `health_source` — the `data_sharing_consents.resource_type` it maps to |
+| `scope` | the `data_sharing_consents.scope` it maps to (`ingestion`, `result_ingestion`, `processing`) |
+| `per_resource` | true = one consent per partner_key / connector id; false = one consent with `resource_id = key` |
+| `current_text_version` | consent wording version a grant must carry (`v1`); new wording = new version via a data fix-up |
+| `processing_active` | true only where an enforcement point checks the category (seed: `partner_results` only) |
+| `sort`, `active`, `created_at` | ordering / soft retirement |
+
+RLS on; SELECT to `authenticated`; no browser writes. No default-on column — consent never defaults to granted.
+
+### data_sharing_consents / data_sharing_consent_events (VTID-03885) — new columns
+
+- `data_sharing_consents`: `category_key` (FK → catalogue), `text_version`, `shown_locale` — all nullable; NULL = granted under the VTID-03885 dialog with no recorded wording (kept valid, owner decision 2026-10-12); `text_version = 'legacy-03885'` = granted through the legacy `/api/v1/partner-health/consent` route. `granted_via` CHECK adds `settings_privacy`, `partner_link_confirm`.
+- `data_sharing_consent_events`: `category_key`, `text_version`, `shown_locale`, `request_id`. **Append-only, enforced:** BEFORE UPDATE trigger `trg_data_sharing_consent_events_append_only` raises; UPDATE/DELETE/TRUNCATE revoked from `service_role`. Rows are deleted only by `erase_user_data()` (SECURITY DEFINER owner).
+- Both tables: INSERT/UPDATE/DELETE/TRUNCATE revoked from `anon`/`authenticated` (defense in depth; RLS already denied those writes).
+
+### `fn_set_health_consent(p_tenant, p_user, p_category, p_resource_id, p_action, p_granted_via, p_text_version, p_locale, p_actor_role, p_actor_id, p_request_id) returns jsonb`
+
+SECURITY DEFINER, `search_path = public, pg_temp`, EXECUTE for `service_role` only. Grants or revokes one consent and writes its event row in one transaction (both or neither). Validates the category, the resource (`partner_registry` status `active|sandbox` on grant; never on revoke) and `text_version = current_text_version` (only `partner_results` may carry `legacy-03885`). Idempotent: same version + locale grant, or revoke of an inactive/missing consent → `changed: false`, no event. Answers `{ ok: false, code }` with `unknown_category | resource_required | unknown_resource | invalid_action | invalid_granted_via | stale_text_version`.
+
+### partner_health_result_inbox.consent_order_id
+
+`UUID REFERENCES partner_health_test_orders(id) ON DELETE SET NULL` — for `reason = 'consent_missing'`, the order the quarantined result belongs to (written and released by VTID-05020 D10 WP3).
+
+OASIS (`CicdEventType`): `health.consent.granted`, `health.consent.revoked` — payload `{ category, resource_id, text_version, locale, granted_via }`, actor = the member. API: `GET/POST /api/v1/health/consents{,/grant,/revoke,/history}`.
 ## Dev Autopilot overlap hold and frozen scope (VTID-05146, 2026-10-13) — applied before merge via `RUN-MIGRATION.yml`
 
 Migration: `supabase/migrations/20261013150000_vtid_05146_autopilot_overlap_hold.sql` (constraint/index widening + two additive columns). Phase C of the Dev Autopilot autonomy plan (`docs/validation/VTID-05146/plan-sparring.md`): the autopilot never runs or merges over an open pull request that changes the same files.
