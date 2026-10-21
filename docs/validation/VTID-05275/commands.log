@@ -1,0 +1,28 @@
+VTID-05275 (kiro-autonomy-fallback/reviewer-agent): commands and results
+Session kiro-exafy-202610201807-2a87, base origin/main 422a7b045ce5883f56acadcc3b4dd0440aeb7aaa, Windows / PowerShell 5.1, Node 22.
+
+Red on base (red-on-base.txt in this folder; base tree = git archive of origin/main):
+  A. new guard.test.cjs + base guard.cjs + base tree: node --test scripts/ci/kiro-steering/guard.test.cjs
+     -> tests 31, pass 8, fail 23 (every new test red: checkAgents / validateWorkflow do not exist), exit 1
+  B. new guard.cjs on the base tree: node scripts/ci/kiro-steering/guard.cjs .
+     -> 3 errors (vitana-lane-reviewer.md, vitana-pipeline.workflow.json, vitana-pipeline-start.json missing), exit 1
+  C. new guard.test.cjs + new guard.cjs on the base tree
+     -> tests 31, pass 8, fail 23 (incl. the existing "this repository passes"), exit 1
+
+Green on the lane head:
+  node --test --test-reporter=tap scripts/ci/kiro-steering/guard.test.cjs   -> tests 31, pass 31, fail 0, exit 0
+  node scripts/ci/kiro-steering/guard.cjs .                                 -> kiro-steering: OK, exit 0
+  guard.cjs on the vitana-v1 origin/main tree (no scripts/collab/queue.mjs) -> kiro-steering: OK, exit 0 (v1 stays green)
+  Kiro workflow schema, validation only (no launch): a transcription of the Kiro IDE workflow zod schema from the
+    installed Kiro extension bundle (root, step / sequence / repeat / parallel / watch nodes, stop conditions, strict
+    fileCheck) plus its load-time constraints (depth <= 8, <= 50 steps, unique ids, exactly one stop per repeat), run
+    with zod against .kiro/workflows/vitana-pipeline.workflow.json -> zod_success true, 0 issues, 28 steps, 37 ids, exit 0
+  JSON.parse .kiro/hooks/vitana-pipeline-start.json                         -> parses
+  js-yaml load of the agent front matter -> name vitana-lane-reviewer, model claude-sonnet-5.5, tools [read, shell],
+    excludedTools [fs_write, fs_append, str_replace, delete_file], 6 permission rules
+  node scripts/collab/queue.mjs validate --base origin/main --head HEAD --branch kiro/kiro-autonomy-fallback/reviewer-agent
+    -> exit 0 (on commit 2bcd9c147)
+  node scripts/collab/queue.mjs scope-check --base origin/main --head HEAD --branch kiro/kiro-autonomy-fallback/reviewer-agent
+    -> "lane kiro-autonomy-fallback/reviewer-agent: every change is inside its paths", exit 0 (on commit 2bcd9c147)
+
+Not run (deploys nothing; no gateway / frontend code touched): jest, typecheck, build, staging suite.

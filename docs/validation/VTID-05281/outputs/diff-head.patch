@@ -1,0 +1,192 @@
+# git diff 0688a59986da3fbf420039444871a02adcaf613c...0e93e3701f82230ed73a2f73d73b148aab3c2317 (merge base = origin/main)
+# --stat
+ .kiro/specs/kaf-fallback-env/lanes/ff-pm-flag.md   |  32 +-
+ docs/validation/VTID-05281/acceptance.md           |  25 +
+ docs/validation/VTID-05281/commands.log            |  24 +
+ .../VTID-05281/outputs/bash-syntax-head.txt        |  24 +
+ docs/validation/VTID-05281/outputs/build.txt       |  17 +
+ docs/validation/VTID-05281/outputs/green-head.txt  |  56 ++
+ .../VTID-05281/outputs/jest-pm-suite.txt           | 703 +++++++++++++++++++++
+ docs/validation/VTID-05281/outputs/lint.txt        |  17 +
+ docs/validation/VTID-05281/outputs/red-on-base.txt | 125 ++++
+ docs/validation/VTID-05281/outputs/typecheck.txt   |   4 +
+ docs/validation/VTID-05281/staging-tests.json      |  43 ++
+ .../src/services/project-manager/observe-live.ts   |  29 +-
+ .../test/project-manager/observe-live.test.ts      |  78 +++
+ 13 files changed, 1168 insertions(+), 9 deletions(-)
+# code since b62b27556 (empty = unchanged):
+
+# source diff
+diff --git a/services/gateway/src/services/project-manager/observe-live.ts b/services/gateway/src/services/project-manager/observe-live.ts
+index 8e13b7e5e..d972d6aef 100644
+--- a/services/gateway/src/services/project-manager/observe-live.ts
++++ b/services/gateway/src/services/project-manager/observe-live.ts
+@@ -14,7 +14,8 @@
+  *     `collab-driver/<slug>` (committer dates);
+  *   - `plan(` PRs (spec files, head trailer, handoff + plan.md + sparring state
+  *     at the head) and the PM's bookkeeping PRs `pm-agent/<slug>`;
+- *   - the Claude inputs: repo variable CLAUDE_AVAILABLE (env fallback), the
++ *   - the Claude inputs: repo variable CLAUDE_AVAILABLE (env CLAUDE_AVAILABLE when
++ *     the variable is unreadable, unset or unparseable ΓÇö VTID-05281), the
+  *     oldest open `next_actor: claude` item and the newest `session_ΓÇª` commit;
+  *   - from Supabase: STAGING-VERIFY passes, Gate 2 records (pm_digests),
+  *     ledger status, the sparring session of a plan PR.
+@@ -22,7 +23,7 @@
+  * merge), never a thrown tick.
+  */
+ import { canonicalPlanHash } from '../plan-sparring/canonical-hash';
+-import { gh, ghPages, supaRest } from './github-rest';
++import { GithubHttpError, gh, ghPages, supaRest } from './github-rest';
+ import type { PmObserver } from './observe';
+ import type {
+   AreaSeatRotation,
+@@ -70,7 +71,11 @@ export interface GithubReader {
+   commitFiles(repo: string, sha: string): Promise<string[]>;
+   checkRuns(repo: string, sha: string): Promise<CheckRun[]>;
+   behindBy(repo: string, base: string, head: string): Promise<number>;
+-  /** A repository Actions variable; throws when it cannot be read. */
++  /**
++   * A repository Actions variable. Resolves the value when read; `null` only when
++   * the reader can prove "unset"; throws when it cannot be read (the REST reader:
++   * a 404 ΓÇö unset or no access, indistinguishable ΓÇö or a 200 without a string value).
++   */
+   variable(repo: string, name: string): Promise<string | null>;
+   /** Committer date of a branch tip (`refs/heads/<ref>`); null when the ref does not exist. */
+   refDate(repo: string, ref: string): Promise<string | null>;
+@@ -564,10 +569,13 @@ export class GithubObserver implements PmObserver {
+     const r = this.deps.gh;
+     let flag: boolean | null = null;
+     const parseFlag = (v: string | null | undefined) => (v === 'false' ? false : v === 'true' ? true : null);
++    const envFlag = () => parseFlag(env.CLAUDE_AVAILABLE?.trim().toLowerCase());
++    // Precedence (plan kaf-fallback-env ┬º3): a readable true/false variable wins;
++    // a read that threw, or returned null / an unparseable value ΓåÆ the env.
+     try {
+-      flag = parseFlag((await r.variable(PLATFORM, 'CLAUDE_AVAILABLE'))?.trim().toLowerCase());
++      flag = parseFlag((await r.variable(PLATFORM, 'CLAUDE_AVAILABLE'))?.trim().toLowerCase()) ?? envFlag();
+     } catch {
+-      flag = parseFlag(env.CLAUDE_AVAILABLE?.trim().toLowerCase());
++      flag = envFlag();
+     }
+     const oldestMs = openItems.map((t) => Date.parse(t)).filter((n) => !Number.isNaN(n)).sort((a, b) => a - b)[0];
+     const oldest = oldestMs != null ? new Date(oldestMs).toISOString() : null;
+@@ -695,8 +703,15 @@ export class GithubRestReader implements GithubReader {
+     return r.data?.behind_by ?? 0;
+   }
+   async variable(repo: string, name: string): Promise<string | null> {
+-    const r = await gh<{ value?: string }>(repo, `actions/variables/${enc(name)}`);
+-    return r.data?.value ?? null;
++    // VTID-05281: GitHub answers 404 both for "not set" and for "this token has
++    // no Variables access", so a 404 (or a 200 without a string value) is
++    // unreadable, not unset ΓÇö throw so observeClaude falls back to the env.
++    const r = await gh<{ value?: unknown }>(repo, `actions/variables/${enc(name)}`);
++    if (r.status === 200 && typeof r.data?.value === 'string') return r.data.value;
++    throw new GithubHttpError(
++      r.status,
++      r.status === 404 ? 'variable unreadable (404: unset or no access)' : `variable unreadable (${r.status}: no string value)`,
++    );
+   }
+   async refDate(repo: string, ref: string): Promise<string | null> {
+     const r = await gh<{ commit?: { committer?: { date?: string } } }>(repo, `commits/${ref.split('/').map(enc).join('/')}`);
+diff --git a/services/gateway/test/project-manager/observe-live.test.ts b/services/gateway/test/project-manager/observe-live.test.ts
+index a7525a091..2d81f0737 100644
+--- a/services/gateway/test/project-manager/observe-live.test.ts
++++ b/services/gateway/test/project-manager/observe-live.test.ts
+@@ -5,6 +5,7 @@
+  */
+ import {
+   GithubObserver,
++  GithubRestReader,
+   parseLaneLog,
+   parseTrailers,
+   reviewOnlySince,
+@@ -18,6 +19,7 @@ import {
+   applyLaneChange,
+   type GithubWriteClient,
+ } from '../../src/services/project-manager/writers';
++import { claudeAvailability } from '../../src/services/project-manager/decide';
+ import type { CheckRun } from '../../src/services/project-manager/types';
+ 
+ const P = 'exafyltd/vitana-platform';
+@@ -221,6 +223,82 @@ describe('GithubObserver', () => {
+   });
+ });
+ 
++// VTID-05281 (kaf-fallback-env/ff-pm-flag): the REST reader's CLAUDE_AVAILABLE
++// read and the env fallback (plan kaf-fallback-env ┬º3, ┬º5 B). fetch is spied;
++// nothing leaves the process.
++describe('GithubRestReader.variable + env fallback (VTID-05281)', () => {
++  const savedToken = process.env.GITHUB_SAFE_MERGE_TOKEN;
++  let fetchSpy: jest.SpyInstance;
++
++  const respond = (status: number, body: unknown) =>
++    ({ status, ok: status >= 200 && status < 300, text: async () => (body === undefined ? '' : JSON.stringify(body)) }) as unknown as Response;
++  const fetchReturns = (status: number, body?: unknown) => {
++    fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(async () => respond(status, body));
++  };
++  /** The test reader with `variable` = the real REST reader over the spied fetch. */
++  const restVariableReader = (o: Partial<GithubReader> = {}) => {
++    const rest = new GithubRestReader();
++    return reader({ variable: (repo, name) => rest.variable(repo, name), ...o });
++  };
++
++  beforeEach(() => {
++    process.env.GITHUB_SAFE_MERGE_TOKEN = 'test-token-not-real';
++  });
++  afterEach(() => {
++    fetchSpy?.mockRestore();
++    if (savedToken === undefined) delete process.env.GITHUB_SAFE_MERGE_TOKEN;
++    else process.env.GITHUB_SAFE_MERGE_TOKEN = savedToken;
++  });
++
++  it('B1: rejects on a 404 (unset or no access ΓÇö unreadable)', async () => {
++    fetchReturns(404, { message: 'Not Found' });
++    await expect(new GithubRestReader().variable(P, 'CLAUDE_AVAILABLE')).rejects.toThrow(/404/);
++  });
++
++  it('B2: resolves the value on a 200 with a string value', async () => {
++    fetchReturns(200, { name: 'CLAUDE_AVAILABLE', value: 'false' });
++    await expect(new GithubRestReader().variable(P, 'CLAUDE_AVAILABLE')).resolves.toBe('false');
++    expect(String(fetchSpy.mock.calls[0][0])).toBe(`https://api.github.com/repos/${P}/actions/variables/CLAUDE_AVAILABLE`);
++  });
++
++  it('B3: rejects on a 403', async () => {
++    fetchReturns(403, { message: 'Resource not accessible by integration' });
++    await expect(new GithubRestReader().variable(P, 'CLAUDE_AVAILABLE')).rejects.toThrow(/403/);
++  });
++
++  it('B4: a 404 on the variable ΓåÆ observer uses env CLAUDE_AVAILABLE=false', async () => {
++    fetchReturns(404, { message: 'Not Found' });
++    const s = await new GithubObserver({ gh: restVariableReader(), data: data(), repos: [P], now: () => NOW, env: { CLAUDE_AVAILABLE: 'false' } }).observe('live');
++    expect(s.claude!.flag).toBe(false);
++  });
++
++  it('B5: a 404 + env true ΓåÆ true; a 404 + no env ΓåÆ null', async () => {
++    fetchReturns(404, { message: 'Not Found' });
++    const a = await new GithubObserver({ gh: restVariableReader(), data: data(), repos: [P], now: () => NOW, env: { CLAUDE_AVAILABLE: 'true' } }).observe('live');
++    expect(a.claude!.flag).toBe(true);
++    const b = await new GithubObserver({ gh: restVariableReader(), data: data(), repos: [P], now: () => NOW, env: {} }).observe('live');
++    expect(b.claude!.flag).toBeNull();
++  });
++
++  it('B6: a readable variable wins over the env', async () => {
++    fetchReturns(200, { name: 'CLAUDE_AVAILABLE', value: 'true' });
++    const s = await new GithubObserver({ gh: restVariableReader(), data: data(), repos: [P], now: () => NOW, env: { CLAUDE_AVAILABLE: 'false' } }).observe('live');
++    expect(s.claude!.flag).toBe(true);
++  });
++
++  it('B7: the 4 h rule still applies ΓÇö 404 + env true + a claude item > 4 h old with no session_ commit ΓåÆ no_action_4h', async () => {
++    fetchReturns(404, { message: 'Not Found' });
++    const OLD = LANE.replace('next_actor: kiro', 'next_actor: claude').replace('updated: 2026-10-20T19:30Z', 'updated: 2026-10-20T14:00Z');
++    const r = restVariableReader({
++      blob: async (_x, sha) => (sha.endsWith('pm-fallback.md') ? OLD : (await reader().blob(P, sha))),
++      commitsSince: async () => [],
++    });
++    const s = await new GithubObserver({ gh: r, data: data(), repos: [P], now: () => NOW, env: { CLAUDE_AVAILABLE: 'true' } }).observe('live');
++    expect(s.claude!.flag).toBe(true);
++    expect(claudeAvailability(s.claude, NOW)).toEqual({ available: false, reason: 'no_action_4h' });
++  });
++});
++
+ describe('applyLaneChange + GithubRepoFileWriter (W1 / W2, Collab-Session pm-agent)', () => {
+   it('applyLaneChange edits only the allowed keys and appends one log entry', () => {
+     const out = applyLaneChange(LANE, { slug: 'kiro-autonomy-fallback', lane: 'pm-fallback', state: 'parked', next_actor: 'exafyltd', seat: 'exafyltd', release_claim: true, log: 'park (stale_claim)' }, '2026-10-20T20:00:00.000Z');

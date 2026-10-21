@@ -1,0 +1,4 @@
+# cd services/gateway; npm run typecheck
+> @vitana/gateway@1.0.1 typecheck
+> tsc --noEmit
+exit 0

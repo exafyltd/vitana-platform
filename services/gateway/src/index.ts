@@ -1868,33 +1868,18 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Autopilot heartbeat loop initialization failed (non-fatal):', error);
       }
 
-      // VTID-05216: Project Manager decide loop (P3 — observe + decide, dry_run).
-      // No-op unless PM_AGENT_ENABLED=true. It only ever runs the deterministic
-      // decide step and reports pm.decision; it NEVER acts (no merge, deploy,
-      // dispatch or write). `live` act is P4. The P3 loop uses the stub observer
-      // (p1/p2 live readers are not merged yet) and takes no pm_lease (lease is
-      // in the tick loop, out of P3 scope).
+      // VTID-05216 / VTID-05274: Project Manager loop. No-op unless
+      // PM_AGENT_ENABLED=true. PM_MODE=live runs observe → decide → act (live
+      // GitHub observer, safe-merge as the only merge path, pm-agent lane writes,
+      // Operator Chat Gate 2, pm_lease); any other mode only decides and reports.
+      // It never deploys, dispatches a workflow or allocates a VTID.
       try {
         const pm = require('./services/project-manager');
         if (pm.pmAgentEnabled() && pm.pmMode() !== 'off') {
+          const { startPmLoop, liveLoopDeps } = require('./services/project-manager/loop');
           const PM_TICK_MS = pm.pmTickIntervalMs();
-          let pmRunning = false;
-          const runPmTick = async () => {
-            if (pmRunning) return; // skip if a previous tick is still running
-            pmRunning = true;
-            try {
-              const decisions = await pm.runDecideTick();
-              if (decisions.length > 0) {
-                console.log(`[PM] mode=${pm.pmMode()} decisions=${decisions.length} (dry_run — reported only, no act)`);
-              }
-            } catch (err: any) {
-              console.warn('[PM] decide tick error:', err?.message || err);
-            } finally {
-              pmRunning = false;
-            }
-          };
-          setInterval(runPmTick, PM_TICK_MS);
-          console.log(`🗂️ Project Manager decide loop started (mode=${pm.pmMode()}, interval: ${PM_TICK_MS}ms, dry_run — no act)`);
+          startPmLoop({ deps: liveLoopDeps, intervalMs: PM_TICK_MS });
+          console.log(`🗂️ Project Manager loop started (mode=${pm.pmMode()}, interval: ${PM_TICK_MS}ms${pm.pmMode() === 'live' ? ', acting under pm_lease' : ', decide + report only'})`);
         } else {
           console.log('⏸️ Project Manager loop disabled — set PM_AGENT_ENABLED=true (PM_MODE=dry_run) to enable');
         }
