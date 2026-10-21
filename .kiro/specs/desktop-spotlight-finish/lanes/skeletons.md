@@ -1,7 +1,7 @@
 ---
 lane: skeletons
 state: ready
-next_actor: kiro
+next_actor: claude
 depends_on: []
 executor: kiro
 seat: exafyltd
@@ -33,8 +33,7 @@ paths:
   - tests/e2e/staging/vtid-*-skeletons.staging.spec.ts
   - scripts/ci/pr-gate/baseline/design.json
   - scripts/ci/pr-gate/baseline/eslint.json
-updated: 2026-10-21T09:24Z
-vtid: VTID-05294
+updated: 2026-10-21T22:05Z
 ---
 # Page spinners → archetype skeletons on desktop Spotlight and mobile (owner decision 3) (repo vitana-v1)
 Plan: `.kiro/specs/desktop-spotlight-finish/` — `plan.md` (plan block) and the `tasks.md` section marked `<!-- lane: skeletons -->`
@@ -70,3 +69,9 @@ Owner approved the skeleton switch after asking to see the mobile version: skele
 
 ### 2026-10-21T09:24Z · ci-plan-spar · ready (VTID allocated)
 VTID-05294 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-21T22:05Z · kiro-202610152203-0347 · VTID reset for re-spar
+The prior VTID came from session 5fbb73a2, which converged on a vitana-platform base that predated the `extra_refs`
+mechanism, so the partner never read vitana-v1 (handoff log 2026-10-21T09:43Z). Cleared `vtid:` and set
+`next_actor: claude`; the re-spar (vitana-v1 now declared in handoff `spar_refs:`) re-converges and CI auto-allocates a
+fresh VTID bound to the new sparring record. No live system touched.

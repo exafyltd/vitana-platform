@@ -3,12 +3,12 @@ slug: desktop-spotlight-finish
 author: kiro
 executor: kiro
 next_actor: claude
-state: parked
-parked_from: approved
+state: sparring
 author_seat: exafyltd
-updated: 2026-10-21T09:43Z
+updated: 2026-10-21T22:05Z
 sparring_record: .kiro/specs/desktop-spotlight-finish/sparring/verdict.md
-vtids: [VTID-05285, VTID-05286, VTID-05287, VTID-05288, VTID-05289, VTID-05290, VTID-05291, VTID-05292, VTID-05293, VTID-05294]
+spar_refs:
+  - exafyltd/vitana-v1: 69d39ef344b578f1ff171e99c61295f51c4e1f50
 ---
 # Handoff — Finish the Spotlight desktop redesign
 Follow-up to `.kiro/specs/desktop-spotlight/` (Claude Code session `session_01Sxnx4eGehRHRqqwu4YmJA6`, handover
@@ -74,3 +74,18 @@ But PLAN-SPAR runs plan-spar.mjs from the PR's base checkout (`pull_request.base
 #4201, so the partner never read vitana-v1 and the plan's vitana-v1 premises were never verified (see fc72768ee).
 No lane moves ready → executing. Next (claude): re-spar against a base that includes #4201 (merge origin/main into
 this branch, new session), or keep the approval and record why. VTID-05285–05294 stay allocated. No live system touched.
+### 2026-10-21T22:05Z · kiro-202610152203-0347 · parked → sparring (re-spar with vitana-v1 readable)
+Re-spar to fix the one real open issue: session 5fbb73a2 converged on a base (vitana-platform 7b6425b) that predated
+the `extra_refs` mechanism, so the partner never read vitana-v1 and VTID-05285–05294 rest on planner-only premises.
+The mechanism now reads a companion ref from this handoff's own front matter: vitana-platform PR #4202
+(merge `b74135485c2f1db7211e9371f60fd8c32358a5df`, now `origin/main` HEAD) added `parseSparRefs`/`resolveRef` to
+`scripts/collab/plan-spar.mjs` (reads `spar_refs:` from head's handoff.md, a 40-hex SHA is used verbatim, folded into
+`extra_refs`) and the `GITHUB_TOKEN` env line to `.github/workflows/PLAN-SPAR.yml`. Added `spar_refs: exafyltd/vitana-v1:
+69d39ef344b578f1ff171e99c61295f51c4e1f50` (vitana-v1 origin/main, 2026-10-21). PLAN-SPAR runs plan-spar.mjs from the PR
+**base** checkout (`pull_request_target`, base = `main`), which now includes #4202, so the new session is created with
+vitana-v1 in its refs and the partner reads every vitana-v1 premise directly. Dropped the stale `vtids:`/`parked_from:`
+front matter: the prior VTIDs came from the unverified convergence; a fresh converged+policy-approved session
+auto-allocates the 10 lane VTIDs. Re-pinned the plan from vitana-v1 1a553367f to 69d39ef344 (1 commit between them;
+every premise file — PR-GATE.yml, gate.mjs, lib.mjs, config.json, design.json, the manifest, eslint.config.js,
+eslint-rules/design/** — byte-identical, so all baselines/line refs hold). Rewrote `responses-1.md` R1-F1/F2/F3 to cite
+the merged mechanism + the declared ref. No VTID allocated, no product code changed, no live system touched.

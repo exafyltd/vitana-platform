@@ -1,7 +1,7 @@
 ---
 lane: colours-batch-5
 state: ready
-next_actor: kiro
+next_actor: claude
 depends_on: []
 executor: kiro
 seat: exafyltd
@@ -96,8 +96,7 @@ paths:
   - tests/e2e/staging/vtid-*-colours-batch-5.staging.spec.ts
   - scripts/ci/pr-gate/baseline/design.json
   - scripts/ci/pr-gate/baseline/eslint.json
-updated: 2026-10-21T09:24Z
-vtid: VTID-05289
+updated: 2026-10-21T22:05Z
 ---
 # Raw palette → tokens, batch 5: shared popups, settings, AI, dev, admin, messages (owner decision 1, option A) (repo vitana-v1)
 Plan: `.kiro/specs/desktop-spotlight-finish/` — `plan.md` (plan block) and the `tasks.md` section marked `<!-- lane: colours-batch-5 -->`
@@ -129,3 +128,9 @@ file belongs to two lanes. Next: PLAN-SPAR spars the plan; once a VTID is writte
 
 ### 2026-10-21T09:24Z · ci-plan-spar · ready (VTID allocated)
 VTID-05289 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-21T22:05Z · kiro-202610152203-0347 · VTID reset for re-spar
+The prior VTID came from session 5fbb73a2, which converged on a vitana-platform base that predated the `extra_refs`
+mechanism, so the partner never read vitana-v1 (handoff log 2026-10-21T09:43Z). Cleared `vtid:` and set
+`next_actor: claude`; the re-spar (vitana-v1 now declared in handoff `spar_refs:`) re-converges and CI auto-allocates a
+fresh VTID bound to the new sparring record. No live system touched.

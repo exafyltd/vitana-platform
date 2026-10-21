@@ -9,10 +9,11 @@ live in `exafyltd/vitana-v1`, and every lane `paths:` entry is a vitana-v1 path.
 ## Repos and pinned refs
 This spec and its sparring live in `exafyltd/vitana-platform` (PLAN-SPAR runs only there). **Every code path, command
 and baseline below is in `exafyltd/vitana-v1`**, pinned at
-`exafyltd/vitana-v1@1a553367ff6622cc746c4720c6e3558e691b34dc` (origin/main, 2026-10-21; re-checked from the earlier pin
-704b5def4 — the 5 commits between them touch none of the files below except `src/components/messages/MessageInput.tsx`,
-whose `design.json` entry is unchanged at 1, and `design.json`, the manifest, `gate.mjs`, `lib.mjs`, `config.json`,
-`eslint.config.js` and `PR-GATE.yml` are byte-identical). vitana-platform carries no code change for this plan.
+`exafyltd/vitana-v1@69d39ef344b578f1ff171e99c61295f51c4e1f50` (origin/main, 2026-10-21; re-checked from the earlier pin
+1a553367f — the 1 commit between them touches none of the files below: `design.json`, the manifest, `gate.mjs`,
+`lib.mjs`, `config.json`, `eslint.config.js`, `eslint-rules/design/**`, `PR-GATE.yml` and the skeleton building blocks
+are byte-identical). This is the ref declared to the sparring partner via `spar_refs:` in `handoff.md`, so the partner
+reads these files directly. vitana-platform carries no code change for this plan.
 Premise paths, all in vitana-v1 at that ref:
 - Earlier plan: `.kiro/specs/desktop-spotlight/{requirements,design,tasks,handoff}.md` + `lanes/`.
 - Contract: `docs/design-system/SPOTLIGHT_RULES.md`. Manifest: `src/design/screen-manifest.json` (key `screens`,
@@ -33,15 +34,17 @@ Premise paths, all in vitana-v1 at that ref:
 - Skeleton building blocks: `src/components/layout/spotlight/skeletons/ArchetypeSkeleton.tsx`, `VCardSkeleton` from
   `src/components/ui/vcard` (used at `src/components/community/spotlight/SocialStates.tsx:4`).
 `exafyltd/vitana-platform:scripts/ci/pr-gate/gate.mjs` is a different gate (no design check); the vitana-v1 gate
-above is the one every lane's PR runs. **Partner readability:** merged in vitana-platform PR #4201 (VTID-05215,
-fa73aabd0, 2026-10-19T20:09Z). Line refs in this paragraph are vitana-platform **origin/main bd7e8e979**, not the
-vitana-platform pin of session 5fbb73a2 (7b6425b, created 2026-10-19T17:29Z, before #4201; fa73aabd0 is not an
-ancestor of it), so that session cannot see this code and has no vitana-v1 ref; a new session opened after #4201
-gets both. `.github/workflows/PLAN-SPAR.yml:97` resolves vitana-v1 `main` HEAD and `:101` passes
-`--extra-ref-vitana-v1 "$V1_SHA"`; `scripts/collab/plan-spar.mjs:383-384` turns it into
-`extra_refs: { 'exafyltd/vitana-v1': <sha> }` and `:257` sends it on session create. No separate gate in this plan:
-a sparring session that can read vitana-v1 verifies these premises directly, and the normal PLAN-SPAR approval path
-(converged → policy-approved) is the only gate before lanes get VTIDs.
+above is the one every lane's PR runs. **Partner readability:** this plan spans two repos, so it declares a companion
+ref in `handoff.md` front matter — `spar_refs: exafyltd/vitana-v1: 69d39ef344b578f1ff171e99c61295f51c4e1f50` — and the
+PLAN-SPAR session created for this PR reads that vitana-v1 commit directly, verifying every premise above. The
+mechanism that forwards the ref is merged on vitana-platform `origin/main` (PR #4202, merge
+`b74135485c2f1db7211e9371f60fd8c32358a5df`): `scripts/collab/plan-spar.mjs` `parseSparRefs()` reads `spar_refs:` from
+the head checkout's `handoff.md`, `resolveRef()` returns a 40-hex SHA verbatim (no API call), and `step()` folds it into
+`extra_refs` on `client.create()`; `.github/workflows/PLAN-SPAR.yml` runs plan-spar.mjs from the PR **base** checkout
+(`pull_request_target`, base = `main`, which includes #4202) and supplies the `GITHUB_TOKEN` env for `resolveRef`. The
+gateway validates each `extra_refs` key against `PLAN_SPARRING_REPOS` and the value against the SHA regex before merging
+it into the session refs. No separate gate in this plan: the sparring session reads vitana-v1 and verifies these
+premises, and the normal PLAN-SPAR approval path (converged → policy-approved) is the only gate before lanes get VTIDs.
 
 ## Goal
 Finish the Spotlight desktop redesign (vitana-v1 `.kiro/specs/desktop-spotlight/`, VTID-05105 … 05117) to its
