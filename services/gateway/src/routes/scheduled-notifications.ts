@@ -1335,7 +1335,8 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
       const mids = Array.from(new Set(Array.from(keptByPair.keys()).map((p) => p.split('|')[1])));
       if (mids.length > 0) {
         const uids = Array.from(new Set(Array.from(keptByPair.keys()).map((p) => p.split('|')[0])));
-        const { data: pushed } = await repo.fetchPushedChatSiblings(supa, mids, uids);
+        const { data: pushed, error: siblingError } = await repo.fetchPushedChatSiblings(supa, mids, uids);
+        if (siblingError) console.warn(`[PushDispatch] pushed-sibling read failed (dedup of already-pushed rows skipped this tick): ${siblingError.message}`);
         for (const r of (pushed as Array<{ id: string; user_id: string; message_id: string }> | null) ?? []) {
           const kept = keptByPair.get(`${r.user_id}|${r.message_id}`);
           if (kept && kept !== r.id) chatDuplicateIds.add(kept);

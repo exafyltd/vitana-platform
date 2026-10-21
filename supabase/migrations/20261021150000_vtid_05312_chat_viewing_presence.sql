@@ -13,7 +13,9 @@
 -- Order: the table and the widened CHECK land in ONE transaction. Before this migration the presence read
 --    fails (no table) and fails open, so nothing is ever suppressed for viewing — no suppressed_viewing row
 --    can be written against the old CHECK. Only the dedup outcome 'suppressed_duplicate' can hit the old
---    CHECK; then the gateway logs the failed write and the row keeps push_sent_at (never re-pushed).
+--    CHECK: in notifyUser the whole UPDATE is rejected (logged) and the other row stays unpushed, then the
+--    /push-dispatch cron finds its pushed sibling and marks it handled on the next tick (push_sent_at is
+--    written before the outcome there), so it is still never pushed twice.
 --
 -- Additive and idempotent. Rollback: docs/validation/VTID-05312/rollback.sql.
 

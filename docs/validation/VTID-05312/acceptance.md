@@ -20,5 +20,8 @@ AC-3: /push-dispatch suppresses viewing rows and dedups (both orders, both unpus
   TEST: services/gateway/test/vtid-05312-chat-viewing-presence.test.ts ("/push-dispatch")
 AC-4: POST /chat/viewing validates, upserts per (user, device) with 45 s expiry, deletes on active:false (only that conversation's row when a key is sent), sweeps expired rows; after active:false the next push goes out.
   TEST: services/gateway/test/vtid-05312-chat-viewing-presence.test.ts ("POST /chat/viewing")
+Known limit (fails open, as plan I4 implies): a DM push carries the sender's tenant (chat.ts) and a presence row
+the recipient's active tenant, so for members of two tenants a cross-tenant DM is pushed even while viewed.
+
 AC-5: The push_outcome CHECK keeps every earlier value and adds suppressed_viewing and suppressed_duplicate.
   TEST: services/gateway/test/vtid-05312-chat-viewing-presence.test.ts ("migration")

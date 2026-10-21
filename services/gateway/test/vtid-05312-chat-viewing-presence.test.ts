@@ -29,6 +29,7 @@ type Row = Record<string, any>;
 const db: Record<string, Row[]> = { chat_viewing_presence: [], chat_messages: [], user_notifications: [] };
 let presenceReadFails = false;
 const selectCount: Record<string, number> = {};
+const inCalls: Array<[string, string, unknown[]]> = [];
 class Q {
   private f: Array<(r: Row) => boolean> = [];
   private op: 'select' | 'delete' | 'update' | 'upsert' = 'select';
@@ -39,7 +40,7 @@ class Q {
   update(p: Row) { this.op = 'update'; this.payload = p; return this; }
   upsert(p: Row) { this.op = 'upsert'; this.payload = p; return this; }
   eq(c: string, v: unknown) { this.f.push((r) => (c === 'data->>message_id' ? r.data?.message_id === v : r[c] === v)); return this; }
-  in(c: string, vs: unknown[]) { this.f.push((r) => vs.includes(c === 'data->>message_id' ? r.data?.message_id : r[c])); return this; }
+  in(c: string, vs: unknown[]) { inCalls.push([this.t, c, vs]); this.f.push((r) => vs.includes(c === 'data->>message_id' ? r.data?.message_id : r[c])); return this; }
   is(c: string, v: null) { this.f.push((r) => (r[c] ?? null) === v); return this; }
   not(c: string, _op: string, _v: null) { this.f.push((r) => (r[c] ?? null) !== null); return this; }
   gt(c: string, v: string) { this.f.push((r) => r[c] > v); return this; }
@@ -128,6 +129,7 @@ beforeEach(() => {
   db.user_notifications = [];
   presenceReadFails = false;
   for (const k of Object.keys(selectCount)) delete selectCount[k];
+  inCalls.length = 0;
   delete process.env.CHAT_PUSH_VIEWING_SUPPRESSION_ENABLED;
   jest.clearAllMocks();
   nrepo.insertUserNotification.mockResolvedValue({ data: { id: 'notif-1' }, error: null });
@@ -249,6 +251,15 @@ describe('notifyUser (every caller, no caller edited)', () => {
     expect(EMAIL_FALLBACK_OUTCOMES).not.toContain('suppressed_duplicate');
   });
 
+  it('a failed dedup write (e.g. the old CHECK) is logged, and the push still goes out', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    nrepo.markUnpushedChatDuplicatesHandled.mockResolvedValueOnce({ error: { message: 'violates check constraint' } } as any);
+    await notifyUser(B, 't1', 'new_chat_message', { title: 'T', body: 'b', data: { sender_id: A, message_id: MID } }, sb as any);
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('chat dedup failed') && String(c[0]).includes('violates check constraint'))).toBe(true);
+    expect(nrepo.setNotificationPushOutcome).toHaveBeenCalledWith(expect.anything(), 'notif-1', expect.stringMatching(/^delivered_/));
+    warn.mockRestore();
+  });
+
   it('listing_interest is never suppressed', async () => {
     viewing(B, `dm:${A}`);
     await notifyUser(B, 't1', 'listing_interest', { title: 'T', body: 'b', data: { sender_id: A, url: `/inbox/u/${A}` } }, sb as any);
@@ -347,6 +358,8 @@ describe('/push-dispatch', () => {
     await runCron([pendingRow('trig', B, { message_id: MID, url: '/inbox' })]);
     expect(dispatchPush).not.toHaveBeenCalled();
     expect(outcomes()).toEqual({ trig: 'suppressed_duplicate' });
+    // The sibling read is scoped to the batch's recipients.
+    expect(inCalls).toContainEqual(['user_notifications', 'user_id', [B]]);
   });
 
   it('other notification types pass through untouched', async () => {
