@@ -87,3 +87,14 @@ mention them in the PR:
 
 After merge and the staging deploy: push once on each of the 10 stranded mt-* plans (author seat hotmail). Each
 should get a new session id with the session count unchanged.
+
+### 2026-10-21T17:01Z · kiro-exafy-202610211701-5a71 · approved (automation wake-up W, no automation action)
+Fallback wake-up under `kiro-autonomy-fallback` (VTID-05271), seat exafy. Took over the stale driver heartbeat
+(previous tip `kiro-exafy-202610211601-c71e`, > 45 min old) and hold the `_plan` claim. `plan-driver.mjs next`
+returns exactly one action: build the lane `floor-retry-code` (VTID-05240). That lane is `executor: claude` and
+touches governance paths (`scripts/collab/**`, `services/gateway/src/services/plan-sparring/**`), so an
+automation-started driver never builds it (`.kiro/pipeline/driver.md` "Automation-started driver"; automation
+file W.3). No sparring round is open, no lane PR exists, no `in-review` lane to review, nothing to merge. Same
+outcome as the 06:03Z and 12:04Z wake-ups today. Left `state: approved`, `next_actor: claude` unchanged for
+Claude Code / an interactive driver (or the exceptions seat `exafyltd` while Claude is unavailable, §7). No VTID,
+no live write, no merge, nothing outside this one item.
