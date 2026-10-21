@@ -1,6 +1,6 @@
 ---
 lane: jest-05077-cachebuster
-state: verified
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -9,10 +9,9 @@ reviewer_seat: exafyltd
 paths:
   - services/gateway/test/vtid-05077-planner-fallback-and-thinking.test.ts
   - docs/validation/**
-updated: 2026-10-21T22:41Z
+updated: 2026-10-21T22:50Z
 vtid: VTID-05265
 pr: https://github.com/exafyltd/vitana-platform/pull/4225
-claimed_by: kiro-hotmail-202610212137-725e
 branch: kiro/fix-4182-test-fallout/jest-05077-cachebuster
 ---
 # jest-05077-cachebuster — update the stale app.js pin in the VTID-05077 test (repo vitana-platform)
@@ -66,3 +65,10 @@ Next: `in-review → verified` (merge record), then `verified → done`.
 - This entry supersedes record PR #4246, closed because its branch name fails main's Collab handoff check.
 
 Next: `verified → done`.
+
+### 2026-10-21T22:50Z · kiro-hotmail-202610212137-725e · verified → done
+The merge record and STAGING-VERIFY result are in the entry above (merge `bd7e8e97941a875b62469fbbf35a694d50e23159`,
+STAGING-VERIFY run 39575858903 PASS). Lane closed. `claimed_by` is cleared and the lane claim is released after this
+PR merges.
+Left: the VTID-05265 ledger row is terminalized by the PM or Claude, not by Kiro (§7a). The plan `handoff.md` is
+closed by the `_plan` holder once both lanes are `done`.
