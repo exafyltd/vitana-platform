@@ -42,14 +42,22 @@ no `App.tsx` route, no registry/manifest change — only native route files and 
    they carry **no** dedicated parity row — `parity-ledger.mjs --check` covers them under `HOME.OVERVIEW` (they are
    sub-routes of `/home`), never as new rows, so the "0 orphan / only status flips" guarantee holds for the 6 rows
    and the deep-links are explicitly excluded from row accounting.
-2. **Feed-composition / ranking / feed-hook modules move into `@vitana/core`, WITH their transitive type-only deps**
-   (R1-F1). `feed-compose.ts` and `news-feed-ranker.ts` are not self-contained: `feed-compose.ts:27` imports a type
-   from `@/lib/news-feed-ranker`, and `news-feed-ranker.ts:23-24` import `MatchReason` from `@/lib/matchReason` and
-   `PostAttachedRef` from `@/lib/post-attachment`. So the extraction moves (or inlines the minimal type shapes of)
-   `feed-compose`, `news-feed-ranker`, `matchReason`, `post-attachment`, plus any transitive `@/lib/*` type imports
-   found in `useNewsFeed`/`useAllNewsFeed` — each as its own re-export PR — so the `@vitana/core` copies carry **no**
-   `@/lib/*` imports and `core-closure.mjs --write`/`--check` passes with core self-contained. (Supersedes the earlier
-   "one re-export line per module" wording, which under-scoped the transitive types.)
+2. **Only the pure IO-free compose/rank modules move into `@vitana/core`; the data-fetching hooks do NOT**
+   (R1-F1, R2-F1, R2-F2). Core gets re-export entries for exactly **`feed-compose` and `news-feed-ranker`** — both
+   pure. Their only cross-module references, `news-feed-ranker.ts:23-24`'s `import type { MatchReason }` from
+   `@/lib/matchReason` and `import type { PostAttachedRef }` from `@/lib/post-attachment`, are **type-only**, which
+   `scripts/native/extraction-deps.mjs:183` excludes from the runtime graph, and the native tsconfig `@/*` →
+   `../../src/*` alias (`apps/mobile/tsconfig.json:11`) already resolves them at compile time — so `matchReason` and
+   `post-attachment` get **no** core re-export PR. That matters: giving them a core entry would pull them into the
+   `core-closure.mjs` BFS, where their *runtime* imports (`matchReason.ts:1` → `@/lib/i18n-toast`; `post-attachment.ts:11`
+   → `@/integrations/supabase/client.ts`, a class-B module with `import.meta.env` / `localStorage` / the prod Supabase
+   URL) make `core-closure --check` fail (`core-closure.mjs:150`, `m.own !== 'A'`). The **feed hooks
+   `useNewsFeed`/`useAllNewsFeed` are NOT moved into core** either — they runtime-import `supabase/client.ts`
+   (`useAllNewsFeed.ts:18`, `useNewsFeed.ts:10`) and would fail the same closure gate; instead the `home` lane
+   **re-implements the fetching natively** (native Supabase client + native auth context) and consumes
+   `composeFeed`/`rankFeed` from core. So the core extraction is two pure modules, with `core-closure --write`/`--check`
+   passing and no class-B file reachable. (Supersedes both the earlier "one re-export line per module" and the
+   over-scoped "transitive modules each get a re-export PR" wording.)
 3. **`news` owns the `NewsArticleCard` native twin**, shared into Home via a port, so the card has one owner and the
    two lanes' `paths` stay disjoint. Therefore **`home` depends_on `news`**; `news` and `community-hub` have no deps
    and run in parallel.
