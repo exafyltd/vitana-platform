@@ -165,13 +165,15 @@ router.post('/dispatch', requireInternalOrAdmin, async (req: Request, res: Respo
 // MT_RESOLUTION_V2=true (one executeAutomation per tenant, so a nested call
 // such as AP-0501 → /morning-briefing carries its tenant and never re-fans
 // out). Master off ⇒ today's getAdminTargetTenantId pass.
-router.post('/cron/:id', requireInternalOrAdmin, withJobTenants(async (req: Request, res: Response, tenantId: string | null) => {
+const cronJob = withJobTenants(async (req: Request, res: Response, tenantId: string | null) => {
   // impact-allow-no-oasis: executeAutomation()/runHeartbeatCycle()/dispatchEvent() already emit autopilot.automation.completed / .failed per run (automation-executor.ts).
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const result = await executeAutomation(req.params.id, tenantId, 'cron', 'cloud-scheduler');
   return res.status(result.ok ? 200 : 500).json(result);
-}, getAdminTargetTenantId, { getClient: getServiceClient as any }));
+}, getAdminTargetTenantId, { getClient: getServiceClient as any });
+
+router.post('/cron/:id', requireInternalOrAdmin, async (req: Request, res: Response) => cronJob(req, res));
 
 // =============================================================================
 // Run history
