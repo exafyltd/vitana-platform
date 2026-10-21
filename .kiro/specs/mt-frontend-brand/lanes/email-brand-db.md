@@ -1,7 +1,7 @@
 ---
 lane: email-brand-db
 state: in-review
-next_actor: kiro
+next_actor: claude
 pr: https://github.com/exafyltd/vitana-v1/pull/1464
 depends_on: []
 executor: kiro
@@ -11,7 +11,7 @@ paths:
   - supabase/migrations/20261101090000_vtid_05245_tenant_email_branding.sql
   - docs/validation/VTID-05245/**
   - docs/multitenancy/MIGRATION-QUEUE.md
-updated: 2026-10-20T08:46Z
+updated: 2026-10-21T09:15Z
 vtid: VTID-05245
 ---
 # email-brand-db — tenant-keyed email branding helper (repo vitana-v1, DB)
@@ -51,3 +51,31 @@ separate platform PR: https://github.com/exafyltd/vitana-platform/pull/4204
 ### 2026-10-20T08:46Z · kiro-hotmail-202610151618-b437 · ready → in-review
 Migration `20261101090000_vtid_05245_tenant_email_branding.sql` + rollback/pre/post-check/scope.json shipped
 (not applied), PR https://github.com/exafyltd/vitana-v1/pull/1464 opened; awaiting review by seat exafyltd.
+### 2026-10-21T08:47Z · pm-agent · update
+reassign review exafyltd→claude (stale_review)
+### 2026-10-21T08:49Z · pm-agent · update
+reassign review exafyltd→claude (stale_review)
+### 2026-10-21T08:51Z · pm-agent · update
+reassign review exafyltd→claude (stale_review)
+### 2026-10-21T08:53Z · pm-agent · update
+reassign review exafyltd→claude (stale_review)
+### 2026-10-21T08:55Z · pm-agent · update
+reassign review exafyltd→claude (stale_review)
+### 2026-10-21T08:57Z · pm-agent · update
+reassign review exafyltd→claude (stale_review)
+### 2026-10-21T08:59Z · pm-agent · update
+reassign review exafyltd→claude (stale_review)
+### 2026-10-21T09:01Z · pm-agent · update
+reassign review exafyltd→claude (stale_review)
+### 2026-10-21T09:05Z · pm-agent · update
+reassign review exafyltd→claude (stale_review)
+### 2026-10-21T09:07Z · pm-agent · update
+reassign review exafyltd→claude (stale_review)
+### 2026-10-21T09:09Z · pm-agent · update
+reassign review exafyltd→claude (stale_review)
+### 2026-10-21T09:11Z · pm-agent · update
+reassign review exafyltd→claude (stale_review)
+### 2026-10-21T09:13Z · pm-agent · update
+reassign review exafyltd→claude (stale_review)
+### 2026-10-21T09:15Z · pm-agent · update
+reassign review exafyltd→claude (stale_review)
