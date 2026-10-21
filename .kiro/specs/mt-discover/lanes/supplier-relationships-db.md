@@ -57,3 +57,7 @@ user-JWT reads (R1-F2), flag-guarded (inert for Maxina, D7). Path + task D4/D6 u
 ### 2026-10-21T14:10Z · kiro-hotmail-202610151618-b437 · spar session 2 round 1 (b452b935) — no path change
 R2-F1: `product_orders.tenant_id` is nullable since VTID-04740 (`20260929120200…sql:12`); still no new column — D26
 labels a NULL buyer tenant `anonymous_buyer` in the S4 code lane. R2-F3: `tenant_catalog_overrides` RLS cited (`:807-812`).
+
+### 2026-10-21T14:25Z · kiro-hotmail-202610151618-b437 · spar session 2 round 2 — no path change
+R3-F2: no mt-identity helper in the migrations — inline `user_tenants` EXISTS + existing `current_tenant_id()`; new
+`discover_tenant_gate_enabled()` keeps the products/merchants RLS identical to today while the gate is off.

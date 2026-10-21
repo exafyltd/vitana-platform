@@ -9,7 +9,8 @@ Links (read, do not copy):
 - Done: VTID-05149 / 05150 / 05151 (M0, in production); VTID-04732 (commerce arch, design only).
 
 ## Program position
-- Predecessors: mt-identity (`tenant_id_for_policies()`, `is_member()`, policy classification), mt-community-isolation
+- Predecessors: mt-identity is NOT required (this spec uses the existing `current_tenant_id()` + an inline `user_tenants`
+  EXISTS; adopting its `is_member()`/`tenant_id_for_policies()` later is a follow-up), mt-community-isolation
   M2 (`platform_only_accounts` view — referenced, not created here, O5), M0 lanes A/B/C.
 - Successors: mt-m3 (per-tenant money, custom domains); the commerce program (eligibility engine, commission ledger).
 - Sibling: mt-network owns messenger/Network-groups scope; mt-discover owns ONLY Discover + offering distribution.

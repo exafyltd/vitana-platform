@@ -11,7 +11,7 @@
     `services/orb-tools/marketplace-va-shared-repository.ts` (`fetchProductByFuzzyTitle:44`, `fetchProductById:35`),
     `services/orb-tools/marketplace-guide-tools-repository.ts:42,:55`,
     `services/orb-tools/marketplace-journey-tools-repository.ts:33,:67`,
-    `services/automation-handlers/health-wellness-repository.ts:91` (`fetchActiveProductsByTopicKeys`),
+    `services/automation-handlers/health-wellness-repository.ts:90-92` (`fetchActiveProductsByTopicKeys`, AP-0615; gains `tenantId` from `ctx.tenantId`, `health-wellness.ts:261`),
     `services/gemini-operator-repository.ts:39,:62` (operator product search + `fetchDiscoverFeed`),
     `services/intent-matcher-repository.ts:32` (`fetchProductsByParentCategory`),
     `services/recommendation-engine/analyzers/marketplace-analyzer-repository.ts:40` (`buildCandidateProductsQuery`),
@@ -47,7 +47,10 @@
   `services/gateway/src/services/partner-onboarding-service.ts:948`; onboarding routes `routes/partner-onboarding*.ts`.
 - Referral/commission: `services/gateway/src/services/recommendation-commissions/credit-recommender.ts`
   (+ `referral-validation.ts`, `credit-recommender-repository.ts`); click attribution `routes/click-redirect.ts`.
-- Resolver helpers (from mt-identity): `tenant_id_for_policies()`, `is_member()`.
+- Tenant SQL helpers used: the existing `current_tenant_id()` (`20260218000000…:33`) and an inline `user_tenants` EXISTS
+  (precedent `20261010180200…:65`); mt-identity's `is_member()`/`tenant_id_for_policies()` do not exist yet and are a
+  later swap, not a dependency. New helper `discover_tenant_gate_enabled()` (STABLE SECURITY DEFINER, pinned
+  search_path, false when no tenant/row) guards the products/merchants RLS.
 - `platform_only_accounts` view — created by mt-community-isolation M2 (O5); referenced here, never created.
 - Frontend: `vitana-v1/src/pages/Discover.tsx` (tab pill is the tab selector, not a scope); scope mode control is
   `MobileModePill`/`SplitBar` in the utility bar (SPOTLIGHT_RULES.md §D) — the Discover scope control is a THIRD,
@@ -57,7 +60,7 @@
 ### supplier-relationships-db (DB, vitana-platform)
 - `supplier_tenant_relationships(id, supplier_id/org_id, tenant_id uuid REFERENCES tenants, status text CHECK IN
   ('proposed','active','declined','suspended'), vertical/scope, created_at, updated_at, decided_at)`; RLS: SELECT for
-  tenant members via `is_member(tenant_id)`, ALL for `service_role`; migration default seeds existing network
+  tenant members via an inline `user_tenants` EXISTS on `auth.uid()`, ALL for `service_role`; migration default seeds existing network
   merchants `active` for Maxina only (D7). Not duplicated: references `partner_tenant`/supplier id (ALWAYS 9).
 - `products.distribution text NOT NULL DEFAULT 'community' CHECK (distribution IN ('community','network'))` added
   expand/contract (add with default → existing rows `community` → drop default per §4.7).
@@ -79,8 +82,8 @@
     the FULL predicate (relationship + distribution scope + overrides hide + health gate). Verified:
     `discover-feed-repository.ts:40`, `discover-search-repository.ts:29`,
     `orb-tools/marketplace-discovery-tools.ts`, `marketplace-guide-tools-repository.ts:42,55`,
-    `marketplace-journey-tools-repository.ts:33,67`, `automation-handlers/health-wellness-repository.ts:91`
-    (`fetchActiveProductsByTopicKeys`), and the by-id initiator `discover-recommendations-repository.ts:23`
+    `marketplace-journey-tools-repository.ts:33,67`, `automation-handlers/health-wellness-repository.ts:90-92`
+    (`fetchActiveProductsByTopicKeys`, tenant from `ctx.tenantId`), and the by-id initiator `discover-recommendations-repository.ts:23`
     (`fetchActiveProductForRecommendation`, `.eq('id', productId)`).
   - **fulfilment** = a reader that HYDRATES an item the member already has (cart/saved/in-flight/past order/reorder).
     These resolve a KNOWN item by id and MUST NOT be filtered by relationship/distribution — otherwise a product a

@@ -103,3 +103,7 @@ AND saved-products hydration). A single fulfilment stamp left the video-anchor p
 tenant-ungated — a supplier active only in T_A could surface to T_B via a shop-video anchor. Fix: split the two call
 sites, route the anchor path through the predicate (DISCOVERY), keep saved-products FULFILMENT. P2/P5 + plan Problem
 2/Fix/Tests + the isolation suite updated to assert the anchor path is gated.
+
+### 2026-10-21T14:25Z · kiro-hotmail-202610151618-b437 · spar session 2 round 2 — no path change
+R3-F1: `fetchActiveProductsByTopicKeys` (`health-wellness-repository.ts:90-92`) is discovery and takes `ctx.tenantId`.
+R3-F3: by-id initiator cited at `routes/discover-recommendations-repository.ts:22-23`. Both files were already in `paths`.

@@ -15,13 +15,16 @@ Allowed paths:
 `scripts/ci/migration-drift-baseline.json`,
 `services/gateway/test/vtid-*-supplier-tenant-relationships.test.ts`
 
-- [ ] D1 `supplier_tenant_relationships` table + RLS (`is_member` read, service-role write) + default-active-for-Maxina
+- [ ] D1 `supplier_tenant_relationships` table + RLS (member read via inline `user_tenants` EXISTS — no mt-identity
+      helper; service-role write) + default-active-for-Maxina
       seed for existing network merchants (D7); expand only.
 - [ ] D2 `products.distribution` column (expand/contract: DEFAULT 'community' → backfill → drop default), CHECK.
 - [ ] D3 `partner_tenant.tenant_id` free-text → UUID/NULL backfill; snapshot `bak_*` first; unresolvable → NULL.
 - [ ] D4 Replace `products_select`/`merchants_select` RLS (`...foundation.sql:729/:735`, today `is_active = TRUE`
       only) with tenant-scoped policies (`is_active AND (distribution='network' OR EXISTS active
-      supplier_tenant_relationships for current_tenant_id())`), flag-guarded so inert for Maxina (R1-F2). NO
+      supplier_tenant_relationships for current_tenant_id())`), guarded by a new `discover_tenant_gate_enabled()`
+      (STABLE SECURITY DEFINER, `SET search_path = public, pg_catalog`, false when tenant NULL / no row) so gate off ⇒
+      identical to `is_active` only, gate on + NULL tenant ⇒ network rows only (R1-F2, R3-F2); no `is_member()`. NO
       `product_orders` column — D26 reuses the existing `product_orders.tenant_id` (R1-F3); `credit-recommender`
       selecting it is the `supplier-onboarding-communities` S4 code change, not a DB task.
 - [ ] D5 rollback files, `live-before.sql`/`post-apply-checks.sql`, `lock_timeout`+retries, MIGRATION-QUEUE rows at
@@ -78,13 +81,14 @@ Allowed paths:
 - [ ] P2 Route every DISCOVERY reader through the predicate and annotate every FULFILMENT and ADMIN/INGESTION reader.
       The lane owns the FULL swept set (2026-10-17), classified:
       **DISCOVERY (full predicate):** `discover-feed-repository.ts:40`, `discover-search-repository.ts:29,:37`,
-      `discover-recommendations-repository.ts:23` (by-id discovery initiator),
+      `routes/discover-recommendations-repository.ts:22-23` (by-id discovery initiator — a T_B recommender cannot mint a
+      share link for a T_A-only product),
       `orb-tools/marketplace-discovery-tools-repository.ts` (searchProducts :34, searchProductByTitleTop1 :47,
       fetchProductsByCategory :51, fetchDealsProducts :68, fetchProductById :43),
       `orb-tools/marketplace-va-shared-repository.ts` (fetchProductByFuzzyTitle :44, fetchProductById :35),
       `orb-tools/marketplace-guide-tools-repository.ts:42,:55`,
       `orb-tools/marketplace-journey-tools-repository.ts:33,:67`,
-      `automation-handlers/health-wellness-repository.ts:91`,
+      `automation-handlers/health-wellness-repository.ts:90-92` (thread `ctx.tenantId`, `health-wellness.ts:261`),
       `gemini-operator-repository.ts` (operator search :39, fetchDiscoverFeed :62),
       `intent-matcher-repository.ts:32`,
       `recommendation-engine/analyzers/marketplace-analyzer-repository.ts:40`,

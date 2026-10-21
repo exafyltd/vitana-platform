@@ -15,7 +15,7 @@ tenant-gated and adds the Community/Network scope, on top of the global supplier
 2. Every `products`/`merchants` reader filters only `is_active`/`availability`, no tenant/supplier gate, and there is
    no single predicate. A fresh `from('products')|from('merchants')` sweep of `services/gateway/src` (2026-10-17) is
    the plan-of-record list; **design "What exists" + tasks P2 carry the full file:line set** across three classes —
-   **discovery** (open feed/search/browse + the by-id discovery initiator `discover-recommendations-repository.ts:23`),
+   **discovery** (open feed/search/browse + the by-id discovery initiator `services/gateway/src/routes/discover-recommendations-repository.ts:22-23` `fetchActiveProductForRecommendation` (Recommend & Earn share-link mint, `routes/discover-recommendations.ts`)),
    **fulfilment** (by-explicit-id hydration of an already-held item), **admin/ingestion** (admin/supplier surface by
    `merchant_id`/org). Two classification corrections verified this round: (a) `credit-recommender-repository.ts:112
    fetchMerchantCommissionEligibility` is a by-`merchant_id` commission read on an already-placed order (no
@@ -49,26 +49,25 @@ tenant-gated and adds the Community/Network scope, on top of the global supplier
 9. Health-category offerings (labs, practitioners) have no trust-level-2 + DPA gate before listing.
 10. The lineage guard (§4.9/§4.10): no build-failing test stops a `products`/`merchants` reader query from reading
     `health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*`. It must be per-query, because
-    `health-wellness-repository.ts` (products `:91` vs health `:28/:32/:44/:50/:55/:68`) and
-    `health-action-initiative-repository.ts` (products `:81` vs health `:26/:54/:60/:64`) each read `products` in one
+    `services/gateway/src/services/automation-handlers/health-wellness-repository.ts` (products `:90-92` vs health `:28/:32/:44/:50/:55/:68`) and
+    `services/gateway/src/services/automation-handlers/health-action-initiative-repository.ts` (products `:81` vs health `:26/:54/:60/:64`) each read `products` in one
     function AND health tables in sibling functions — a module-granular guard would RED-flag this existing, unrelated
     code.
 
 ## Fix (per lane)
 - **supplier-relationships-db** (DB, repo vitana-platform): create `supplier_tenant_relationships`
   (supplier/org id, tenant_id FK, status `proposed|active|declined|suspended`, scope/vertical, timestamps; RLS:
-  tenant-member read via `is_member`, service-role write; a migration default makes existing network merchants
+  tenant-member read via an inline `user_tenants` EXISTS (no mt-identity helper), service-role write; a migration default makes existing network merchants
   `active` for Maxina only — D7); add `products.distribution text NOT NULL DEFAULT 'community'
   CHECK (distribution IN ('community','network'))` expand/contract (default stays, existing rows → `community`,
   active for Maxina only); backfill `partner_tenant.tenant_id` free-text → real tenant UUID or NULL (platform),
   referenced by — not duplicated in — `supplier_tenant_relationships` (ALWAYS 9). NO new order-tenant column: the existing nullable `product_orders.tenant_id` already IS the buyer's tenant (written
   by checkout and the Awin sync; NULL only for anonymous buyers, VTID-04740) — a second `buyer_tenant_id` column would
-  duplicate it. D26 attribution (`supplier-onboarding-communities` S4) reads the existing buyer-tenant column `product_orders.tenant_id`, which is NULLABLE since VTID-04740 (`20260929120200_vtid_04740_product_orders_tenant_nullable.sql:12`, column comment: NULL = signed-out buyer of an anonymous referral sale; the Awin sync copies the click's tenant, `product_clicks.tenant_id` also nullable). Rule: `buyer_tenant_id = product_orders.tenant_id`, with an explicit `buyer_tenant_source`: `'order'` when non-NULL, `'anonymous_buyer'` when NULL — NULL is recorded as the honest value and labelled, never replaced by the recommender's tenant, the platform tenant or `DEFAULT_TENANT_ID`. Recommender earnings follow `recommender_tenant_id = resolvePrimaryTenant(recommender_user_id)` (`services/tenancy/tenant-context.ts:43`; the recommender is always a signed-in member). M2 carries the three fields on the commission's OASIS events and the credit result; persisting them as ledger columns on `recommendation_commissions` belongs to the per-tenant money work (M3, Out of scope), so no migration here. Make RLS a REAL backstop
+  duplicate it. D26 attribution (`supplier-onboarding-communities` S4) reads the existing buyer-tenant column `product_orders.tenant_id`, which is NULLABLE since VTID-04740 (`20260929120200_vtid_04740_product_orders_tenant_nullable.sql:12`, column comment: NULL = signed-out buyer of an anonymous referral sale; the Awin sync copies the click's tenant, `product_clicks.tenant_id` also nullable). Rule: `buyer_tenant_id = product_orders.tenant_id`, with an explicit `buyer_tenant_source`: `'order'` when non-NULL, `'anonymous_buyer'` when NULL — NULL is recorded as the honest value and labelled, never replaced by the recommender's tenant, the platform tenant or `DEFAULT_TENANT_ID`. Recommender earnings follow `recommender_tenant_id = resolvePrimaryTenant(recommender_user_id)` (`services/tenancy/tenant-context.ts:43`; the recommender is always a signed-in member). M2 carries the three fields on the commission's OASIS events and the credit result; persisting them as ledger columns on `recommendation_commissions` belongs to the per-tenant money work (M3, Out of scope), so no migration here. **RLS backstop with NO mt-identity dependency (R3-F2):** `is_member()` and `tenant_id_for_policies()` do not exist in `supabase/migrations/**` today, so this spec's migrations use only functions that exist: `public.current_tenant_id()` (`20260218000000_fix_maxina_signup_tenant_association.sql:33`, granted to authenticated/service_role `:105-106`) and an inline `EXISTS (SELECT 1 FROM public.user_tenants ut WHERE ut.tenant_id = … AND ut.user_id = auth.uid())` (precedent `20261010180200_vtid_05043_s3_switch_tenant_open_signup_only.sql:65`) for the `supplier_tenant_relationships` member read. The new `products_select`/`merchants_select` policy is `is_active AND (NOT public.discover_tenant_gate_enabled() OR distribution = 'network' OR EXISTS (active supplier_tenant_relationships for merchant_id AND tenant_id = public.current_tenant_id()))`, where `discover_tenant_gate_enabled()` is a new `STABLE SECURITY DEFINER` helper with `SET search_path = public, pg_catalog` that returns `coalesce((tenant_settings.feature_flags->'mt'->>'discover_tenant_gate')::boolean, false)` for `current_tenant_id()` and `false` when that is NULL or no row exists. Gate off (the default, and every tenant today) ⇒ the policy reduces to today's `is_active` exactly; gate on with a NULL tenant (signed-out) ⇒ only `network` rows, never an error. When mt-identity ships its helpers, swapping the inline EXISTS for `is_member()` is a tracked follow-up, not a prerequisite. Make RLS a REAL backstop
   (R1-F2): today `products_select`/`merchants_select`
   (`20260416120000_vtid_02000_marketplace_foundation.sql:729/:735`) gate only `is_active = TRUE` with no tenant term;
-  replace each with a tenant-scoped policy (`is_active AND (distribution = 'network' OR EXISTS active
-  `supplier_tenant_relationships` for the row's `merchant_id` and `current_tenant_id()`)`), flag-guarded so inert for
-  Maxina (D7). This backstops authenticated/user-JWT reads only; the predicate stays the enforcement layer for
+  replace each with the gate-guarded tenant-scoped policy above, inert while `discover_tenant_gate_enabled()` is false
+  (D7). This backstops authenticated/user-JWT reads only; the predicate stays the enforcement layer for
   service-role reads (which bypass RLS). Migrations in range
   20261101120000–20261101125959, rollback files, MIGRATION-QUEUE rows at the WS11 position, read-only pre/post
   checks. DB applied by Claude via RUN-MIGRATION after merge.
@@ -92,7 +91,7 @@ tenant-gated and adds the Community/Network scope, on top of the global supplier
   SAME query that reads `products`/`merchants` also touches
   `health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*`, tolerating the mixed files of Problem 10
   (sibling-function health reads). Dark behind `MT_RESOLUTION_V2` + `mt.discover_tenant_gate` / `mt.network_enabled`.
-  Includes the Discover isolation suite (a supplier active only in T_A never in T_B discovery incl. ORB and incl. the
+  **Automation discovery reader (R3-F1):** `services/gateway/src/services/automation-handlers/health-wellness-repository.ts:90-92` `fetchActiveProductsByTopicKeys` (AP-0615 health-aware product recs, called from `health-wellness.ts:271`) is tagged `discovery`; it gains a `tenantId` parameter fed from the automation context already in scope (`const { supabase, tenantId } = ctx`, `health-wellness.ts:261`, the same tenant its sibling `fetchRecentRecommendations` uses) and goes through the predicate — no new tenant resolution path. Includes the Discover isolation suite (a supplier active only in T_A never in T_B discovery incl. ORB and incl. the
   shop-video anchor path; a fulfilment-by-id read of a known T_A product still resolves).
 - **supplier-onboarding-communities** (CODE, repo vitana-platform): add the "which communities" step to supplier
   onboarding (portal + Commerce MCP + voice) that creates `proposed` `supplier_tenant_relationships` rows; a tenant
@@ -133,7 +132,10 @@ Each has a pre-approved rollback under `docs/validation/<vtid>/`, read-only `liv
   an explicit tenant filter (service role).
 - pgTAP: `supplier_tenant_relationships` RLS (T_B member reads 0 T_A rows); `products.distribution` CHECK;
   default-active-for-maxina seed; the new tenant-scoped `products`/`merchants` RLS (R1-F2: a user-JWT T_B read
-  returns 0 rows for a T_A-only supplier; a `network` product visible to both; flag off → Maxina unchanged).
+  returns 0 rows for a T_A-only supplier; a `network` product visible to both; gate off → policy result identical
+  to the old `is_active`-only policy for every tenant; gate on + NULL `current_tenant_id()` → network rows only, no
+  error; `discover_tenant_gate_enabled()` false when no `tenant_settings` row); the migrations reference no
+  `is_member()`/`tenant_id_for_policies()`.
 - Discover isolation suite (contract): a supplier active only in T_A never in T_B feed/search/ORB **nor via a
   shop-video anchor** (R1-F1); a network offering in both; a `tenant_catalog_overrides` hide removes it in both modes;
   a FULFILMENT by-id read (saved-products/cart/checkout) of a known T_A product still resolves when the supplier is
@@ -179,8 +181,9 @@ unchanged while the flag is off.
 - Network groups (live only in mt-network); messenger scope (mt-network); the health tables' own re-keying (WS10).
 
 ## Depends on
-- Specs/lanes: mt-identity (`tenant_id_for_policies()`, `is_member()`, policy classification — the predicate uses
-  them); mt-community-isolation M2 (`platform_only_accounts` view, referenced not created, O5); mt-network owns the
+- Specs/lanes: mt-identity — NOT a prerequisite (R3-F2): this spec uses the existing `current_tenant_id()` and an inline
+  `user_tenants` EXISTS; adopting mt-identity's `is_member()`/`tenant_id_for_policies()` once they ship is a tracked
+  follow-up; mt-community-isolation M2 (`platform_only_accounts` view, referenced not created, O5); mt-network owns the
   messenger/Network-groups scope (this spec owns only Discover + offering distribution).
 - Done VTIDs: VTID-05149/05150/05151 (M0 — `is_default`/`is_platform`, `provision_tenant`, public registry; in
   production). Commerce arch VTID-04732 (design, not built).
