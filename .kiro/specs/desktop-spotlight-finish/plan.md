@@ -34,7 +34,10 @@ Premise paths, all in vitana-v1 at that ref:
   `src/components/ui/vcard` (used at `src/components/community/spotlight/SocialStates.tsx:4`).
 `exafyltd/vitana-platform:scripts/ci/pr-gate/gate.mjs` is a different gate (no design check); the vitana-v1 gate
 above is the one every lane's PR runs. **Partner readability:** merged in vitana-platform PR #4201 (VTID-05215,
-fa73aabd0, 2026-10-19T20:09Z): `.github/workflows/PLAN-SPAR.yml:97` resolves vitana-v1 `main` HEAD and `:101` passes
+fa73aabd0, 2026-10-19T20:09Z). Line refs in this paragraph are vitana-platform **origin/main bd7e8e979**, not the
+vitana-platform pin of session 5fbb73a2 (7b6425b, created 2026-10-19T17:29Z, before #4201; fa73aabd0 is not an
+ancestor of it), so that session cannot see this code and has no vitana-v1 ref; a new session opened after #4201
+gets both. `.github/workflows/PLAN-SPAR.yml:97` resolves vitana-v1 `main` HEAD and `:101` passes
 `--extra-ref-vitana-v1 "$V1_SHA"`; `scripts/collab/plan-spar.mjs:383-384` turns it into
 `extra_refs: { 'exafyltd/vitana-v1': <sha> }` and `:257` sends it on session create. No separate gate in this plan:
 a sparring session that can read vitana-v1 verifies these premises directly, and the normal PLAN-SPAR approval path
