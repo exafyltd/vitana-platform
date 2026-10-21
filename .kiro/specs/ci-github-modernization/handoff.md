@@ -3,9 +3,10 @@ slug: ci-github-modernization
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: kiro
-state: drafted
-updated: 2026-10-21T11:20Z
+next_actor: claude
+state: parked
+updated: 2026-10-21T10:16Z
+parked_from: drafted
 ---
 # Handoff — ci-github-modernization
 
@@ -48,3 +49,6 @@ gate edit into its own lane so one owner instruction can name them at Gate 2. Co
 premises (UNIT.yml already real; EXEC/STAGE-DEPLOY already gone; dead-GCP set is just VCAOP-CICD.yml;
 TEST-SUITE runs one Jest job not "4 shards"). No VTID allocated by this session. Next: push as `plan(` PR
 for PLAN-SPAR round 1.
+
+### 2026-10-21T10:16Z · ci-plan-spar · drafted → parked
+Not converged after 2 sparring sessions (round_cap_reached). Parked with the open findings in sparring/.
