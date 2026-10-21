@@ -110,11 +110,13 @@ Allowed paths:
       no change to ticket pipeline contract (keep `npm run test:support` green).
 - [ ] P3 `landing-seo.ts`: surface the tenant's `landing`/`og_image` brand-pack fields through the public registry read
       path (reuse the Lane-C whitelist; add no new registry key).
-- [ ] P3b `community-invites.ts` `/claim` (`:72-80`): add `tenant_id` (identity tenant, else `resolvePrimaryTenant`;
-      unresolved ⇒ null, never `DEFAULT_TENANT_ID`) to the attribution OASIS payload behind `mt.launch_support`.
-      `admin-signups.ts` is NOT touched (owned by mt-jobs VTID-05267).
+- [ ] P3b `community-invites.ts` `/claim` (`:72-80`): add `tenant_id` = `resolvePrimaryTenant(identity.user_id)` (service-role,
+      membership-authoritative; JWT `identity.tenant_id` not used; unresolved ⇒ null, never `DEFAULT_TENANT_ID`) to the
+      attribution OASIS payload behind `mt.launch_support`. `admin-signups.ts` is NOT touched (owned by mt-jobs
+      VTID-05267); before opening the PR verify on `origin/main` that VTID-05267 merged, else stop with
+      `next_actor: claude`.
 - [ ] P4 Jest + `npm run test:support`: resolver mapping, flag-off no-op, SEO/OG read shape, a non-default-tenant
-      `/claim` event carries its own `tenant_id`; `docs/validation/<vtid>/`.
+      `/claim` event carries its own `tenant_id`; an active-tenant ≠ primary-tenant member gets the primary; `docs/validation/<vtid>/`.
 
 Acceptance: full `npm test` + `npm run test:support` green; dark flag off = no behaviour change; Lane scope + sparring +
 weakening checks green.

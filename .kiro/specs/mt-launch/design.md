@@ -28,7 +28,7 @@
   Devon/Sage/Atlas/Mira (`orb/live/tools/live-tool-catalog.ts:1006`). Rule 42c suite: `npm run test:support`.
 - Referral/invite attribution: `routes/automations.ts` (`/referrals`), `routes/admin-signups.ts:205-229` (dispatch pinned to
   `DEFAULT_TENANT_ID` — fixed by mt-jobs VTID-05267, not here), `routes/community-invites.ts:72-80` (`/claim` OASIS event
-  without `tenant_id` — this spec's `support-landing` adds it), `routes/click-redirect.ts` referral validation.
+  without `tenant_id` — this spec's `support-landing` adds it from `resolvePrimaryTenant`, service role), `routes/click-redirect.ts` referral validation.
 - `tenant_content_overrides` does **not** exist yet — `mt-packs` creates it. This spec only publishes INTO it.
 
 ## Design per lane
