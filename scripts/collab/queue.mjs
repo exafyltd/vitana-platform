@@ -271,7 +271,8 @@ function git(repo, args, opts = {}) {
   return spawnGit(repo, args, { encoding: 'utf8', ...opts }).trimEnd();
 }
 
-const BIG_BUFFER = 512 * 1024 * 1024;
+// Batch-style calls (cat-file --batch, rev-list, log) read far more than Node's 1 MB default; overflow (ENOBUFS) throws.
+const BIG_BUFFER = 256 * 1024 * 1024;
 
 /**
  * Read many objects (`<rev>:<path>`, a commit sha, …) through ONE `git cat-file --batch` process.
@@ -391,16 +392,18 @@ export function collect(repo, { days = 30, now = Date.now() } = {}) {
       const [sha, ...parents] = line.split(' ');
       graph.set(sha, parents);
     }
-    // The handoff/lane files each of those commits touched (merges carry no change of their own).
+    // The handoff/lane files each of those commits touched. `--cc` keeps a merge commit's own conflict resolutions
+    // (a combined status has one letter per parent; a file a merge took unchanged from one parent is not listed).
     const touchedBy = new Map();
-    const log = git(repo, ['log', '--stdin', '--full-history', '--no-merges', '--no-renames', '--no-color',
+    const log = git(repo, ['log', '--stdin', '--full-history', '--cc', '--no-renames', '--no-color',
       '--format=%x00%H', '--name-status', '--', '.kiro/specs'], opts);
     for (const chunk of log.split('\0').slice(1)) {
       const [sha, ...lines] = chunk.split('\n');
       const files = [];
       for (const l of lines) {
-        const m = /^([A-Z])\d*\t(.+)$/.exec(l);
-        if (m && classifyPath(m[2])) files.push({ status: m[1], path: m[2] });
+        const m = /^([A-Z]+)\d*\t/.exec(l);
+        const p = m && l.slice(l.lastIndexOf('\t') + 1); // the path is the last tab field
+        if (p && classifyPath(p)) files.push({ status: m[1], path: p });
       }
       touchedBy.set(sha.trim(), files);
     }
@@ -412,7 +415,7 @@ export function collect(repo, { days = 30, now = Date.now() } = {}) {
         const c = stack.pop();
         if (seen.has(c) || !graph.has(c)) continue; // on main (or the boundary)
         seen.add(c);
-        for (const { status, path: p } of touchedBy.get(c) || []) touched.set(p, touched.get(p) || status === 'A');
+        for (const { status, path: p } of touchedBy.get(c) || []) touched.set(p, touched.get(p) || status.includes('A'));
         stack.push(...graph.get(c));
       }
       const paths = [...touched].filter(([p, added]) => onMain.has(p) || added).map(([p]) => p).sort(bytewise);
@@ -781,8 +784,12 @@ export function ghFetcher(repoSlug = 'exafyltd/vitana-platform') {
 export function loadPrograms(repo, ref) {
   const out = gitOk(repo, ['ls-tree', '-r', '--name-only', ref, '--', 'docs/programs']);
   if (!out) return [];
-  return out.split('\n').map((p) => /^docs\/programs\/([^/]+)\/program\.md$/.exec(p)).filter(Boolean)
-    .map((m) => ({ id: m[1], path: m[0], fm: parseFrontMatter(showFile(repo, ref, m[0])) }));
+  const found = out.split('\n').map((p) => /^docs\/programs\/([^/]+)\/program\.md$/.exec(p)).filter(Boolean);
+  const objects = catFileBatch(repo, found.map((m) => `${ref}:${m[0]}`)); // one process for every program.md
+  return found.map((m) => {
+    const raw = objects.get(`${ref}:${m[0]}`);
+    return { id: m[1], path: m[0], fm: parseFrontMatter(raw === null || raw === undefined ? null : raw.trimEnd()) };
+  });
 }
 
 export const PROGRAM_STATUSES = ['active', 'paused', 'done'];
