@@ -40,3 +40,11 @@ on: a `typecheck` step and a run-in-band `test:guardrails` step on the `vcaop` e
 :111-113). Build de-dup clarified: the real gateway-build duplicate is CICDL ↔ ENFORCE (the required
 check), handled in lane 2; this lane changes no gateway build step and still does not touch
 `CICDL-GATEWAY-CI.yml`. Paths unchanged.
+
+### 2026-10-21T12:20Z · kiro-hotmail-202610210852-0b8e · spar s2 round-2 R2-F2 accepted
+Committed the vcaop-matrix migration to one concrete mechanism (option A, conditional steps on the shared
+`services` body): add `typecheck`/`guardrails` keys to the `vcaop` matrix entry only, and two steps after
+`Run tests` guarded by `if: matrix.typecheck != ''` / `if: matrix.guardrails != ''`. Absent keys render as
+`''` for oasis-projector/openclaw-bridge so their guards are false — no empty `run:`. Proof test parses
+TEST-SUITE.yml and asserts the vcaop keys, the two guarded steps, and the absence of the keys on the other
+two entries. Paths unchanged.

@@ -100,22 +100,28 @@ gateway trees (no new PR types bitten).
 
 Make PLAN-SPAR round commits start checks on the plan PR head.
 
-- [ ] T1 — In `.github/workflows/PLAN-SPAR.yml`, make the round commit start checks on the new head via
-  the **dispatch path** (the `PLAN_SPAR_PUSH_TOKEN || github.token` fallback already exists at :61; the
-  push is at :116; the PAT secret itself is owner config → Gate 2). After the push (:116), add a step that
-  runs only when the push used `GITHUB_TOKEN` (empty `secrets.PLAN_SPAR_PUSH_TOKEN`) and explicitly
-  re-triggers the plan PR's required checks on the new head — commit to one concrete mechanism (e.g.
-  `gh api repos/{owner}/{repo}/actions/runs/{run_id}/rerun` on the latest runs after the push, or a Checks
-  API marker the PM/land step consumes), spelling out which workflows it targets and how it detects the
-  `GITHUB_TOKEN` vs PAT case. Do not rely on the token path alone (it writes no code when the secret is
-  absent).
-- [ ] T2 — Add a case to `scripts/collab/plan-spar.test.mjs` / `scripts/ci/plan-spar-slot/slot.test.mjs`
-  asserting the fix's observable contract (checks are triggered on the bot head). Run
-  `node --test scripts/collab/plan-spar.test.mjs scripts/ci/plan-spar-slot/slot.test.mjs` green.
+- [ ] T1 — In `.github/workflows/PLAN-SPAR.yml`, after the round-commit push (:116), add **one** step
+  guarded by `if: steps.guard.outputs.skip != 'true' && secrets.PLAN_SPAR_PUSH_TOKEN == ''` (the
+  `GITHUB_TOKEN`-push case; when the PAT secret is present the push already starts checks and this step is
+  skipped). The step reads the pushed head SHA (`git -C head rev-parse HEAD`) and posts a commit status via
+  `gh api -X POST repos/{owner}/{repo}/statuses/{sha}` with `context=plan-spar/needs-rebase`,
+  `state=pending`, and a `target_url` to the run. `GITHUB_TOKEN` carries `statuses: write` by default, so
+  no owner config is needed. Do **not** use re-dispatch (`gh workflow run`/`dispatches` is unavailable for
+  `pull_request`-triggered workflows), re-run (`.../runs/{id}/rerun` re-runs the old SHA), or the Checks API
+  (needs `checks:write`, which the `pull_request_target` `GITHUB_TOKEN` lacks).
+- [ ] T2 — In the PM / land step (`scripts/ci/**`, non-gate), read the `plan-spar/needs-rebase` status on
+  the PR head; when present and `pending`, run `gh pr update-branch` before evaluating merge readiness so
+  the re-push starts `pull_request` checks. Do not change any `queue.mjs` subcommand name/shape.
+- [ ] T3 — Add a case to `scripts/collab/plan-spar.test.mjs` / `scripts/ci/plan-spar-slot/slot.test.mjs`
+  pinning the observable contract: the empty-`PLAN_SPAR_PUSH_TOKEN` path posts a `plan-spar/needs-rebase`
+  status on the bot head (asserted against a stubbed `gh api statuses` call / the extracted status helper).
+  Run `node --test scripts/collab/plan-spar.test.mjs scripts/ci/plan-spar-slot/slot.test.mjs` green.
 
-**Acceptance:** the test case is red on base (today checks only start with the optional secret set) and
-green on head; no other PLAN-SPAR behaviour changes; any required repo-secret is listed for Gate 2, not
-set. Protected gate → merge needs the owner instruction naming this plan (surfaced in Gate 2).
+**Acceptance (R2-F1):** the test case is red on base (no such status is posted today) and green on head;
+exactly one dispatch mechanism is used (commit status, not re-run / re-dispatch / Checks API); when the PAT
+secret is present the status step is skipped and checks start normally; no other PLAN-SPAR behaviour
+changes; the PAT secret is listed for Gate 2, not set. Protected gate → merge needs the owner instruction
+naming this plan (surfaced in Gate 2).
 
 <!-- lane: speed-path-filters -->
 ## Lane: speed-path-filters
@@ -131,18 +137,25 @@ Caching, path filters on non-gate jobs, de-dup, shard balance — target ≤ 15 
 - [ ] T4 — Extend `scripts/ci/test-suite/shard-union.test.mjs` / `rerun-policy.test.mjs` to pin the new
   shard/skip contract; run `node --test` green. Record before/after critical path under
   `docs/validation/<VTID>/`.
-- [ ] T5 — Migrate the two vcaop gates lane 1 depends on into `TEST-SUITE.yml`: add a `typecheck` step and
-  a run-in-band `test:guardrails` step (`jest --runInBand test/guardrails`) to the `vcaop` matrix entry
-  (:111-113), which today runs only `npm test` (parallel). `--runInBand` is required (the guardrails suite
-  is written to fail under parallel workers). This is the only TEST-SUITE edit outside the speed changes
-  and is what lets lane 1 delete `VCAOP-CICD.yml` without losing a gate.
+- [ ] T5 — Migrate the two vcaop gates lane 1 depends on into `TEST-SUITE.yml` via **option A (conditional
+  steps on the shared `services` body)**: add `typecheck: npm run typecheck` and
+  `guardrails: npm run test:guardrails` (= `jest --runInBand test/guardrails`) **only** to the `vcaop`
+  matrix entry (:111-113), and after the existing `Run tests` step add two steps to the shared body —
+  `- name: Typecheck` (`if: matrix.typecheck != ''`, `run: ${{ matrix.typecheck }}`) and
+  `- name: Guardrails` (`if: matrix.guardrails != ''`, `run: ${{ matrix.guardrails }}`). Because an absent
+  matrix key renders as `''`, the guards are false for `oasis-projector` and `openclaw-bridge` and no empty
+  `run:` is emitted for them. `--runInBand` is required (the guardrails suite is written to fail under
+  parallel workers). This is the only TEST-SUITE edit outside the speed changes and is what lets lane 1
+  delete `VCAOP-CICD.yml` without losing a gate.
 
-**Acceptance (R5,R1-F3):** no required gate job is path-filtered out; the shard/rerun test is red on base
-and green on head where logic changed; the vcaop matrix now runs `typecheck` and a run-in-band
-`test:guardrails` (assertion red on base, green on head); a measured before/after timings artifact is
-attached; `enforce` is NOT flipped (listed for Gate 2); `CICDL-GATEWAY-CI.yml` is not edited by this lane
-(lane 2 owns it). Protected gate (edits PR-GATE.yml) → merge needs the owner instruction naming this plan
-(surfaced in Gate 2).
+**Acceptance (R5,R1-F3,R2-F2):** no required gate job is path-filtered out; the shard/rerun test is red on
+base and green on head where logic changed; the vcaop-gate proof test parses `TEST-SUITE.yml` and asserts
+(a) the `vcaop` entry carries `typecheck` and `guardrails` keys, (b) the shared `services` body has the two
+`if: matrix.typecheck != ''` / `if: matrix.guardrails != ''` guarded steps, and (c) `oasis-projector` /
+`openclaw-bridge` carry neither key — red on base, green on head; a measured before/after timings artifact
+is attached; `enforce` is NOT flipped (listed for Gate 2); `CICDL-GATEWAY-CI.yml` is not edited by this
+lane (lane 2 owns it). Protected gate (edits PR-GATE.yml) → merge needs the owner instruction naming this
+plan (surfaced in Gate 2).
 
 <!-- lane: stale-tests -->
 ## Lane: stale-tests

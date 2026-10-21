@@ -210,47 +210,68 @@ order. No two lanes edit the same file. Real `depends_on` only.
    autofill behaviour (red on base = current bare `exit 11`).
 
 5. **plan-spar-checks** — `executor: claude`, **protected gate** (`.github/workflows/PLAN-SPAR.yml`).
-   Make PLAN-SPAR round commits start checks on the plan PR head. The `PLAN_SPAR_PUSH_TOKEN || github.token`
-   fallback already exists (`PLAN-SPAR.yml:61`, push at :116); provisioning the PAT secret is owner config
-   and belongs in Gate 2, and the token path on its own writes no code. **So this lane takes the dispatch
-   path, unambiguously:** after the round-commit push (`PLAN-SPAR.yml:116`), add a step that runs only when
-   the push used `GITHUB_TOKEN` (i.e. `secrets.PLAN_SPAR_PUSH_TOKEN` is empty — a `GITHUB_TOKEN` push does
-   not itself start `pull_request` checks) and explicitly re-triggers the plan PR's checks on the new head.
-   Mechanism: `gh workflow run <id> --ref <head>` / `gh api .../actions/workflows/<id>/dispatches` is not
-   available for `pull_request`-triggered workflows, so instead re-dispatch via the PR's check surface —
-   the durable option is to have the step detect the empty-secret case and either (a) re-run the PR's
-   required workflows through `gh api repos/{owner}/{repo}/actions/runs/{run_id}/rerun` for the latest
-   runs on the prior head after the push, or (b) make the commit itself with a PAT when present and, when
-   absent, post a PR check via the Checks API marking the sparring push so the PM/land step knows to
-   `gh pr update-branch`. The lane must commit to one of these and spell out which workflows it targets and
-   how it detects the `GITHUB_TOKEN` vs PAT case; the test pins that observable contract. The PAT secret
-   itself stays **owner config → Gate 2**. Independent of other lanes. Blocked on an owner instruction to
+   Make PLAN-SPAR round commits visible to the merge step on the plan PR head. The
+   `PLAN_SPAR_PUSH_TOKEN || github.token` fallback already exists (`PLAN-SPAR.yml:61`, push at :116);
+   provisioning the PAT secret is owner config and belongs in Gate 2, and the token path on its own writes
+   no code. A `GITHUB_TOKEN` push does not itself start `pull_request` checks, and neither re-dispatch nor
+   re-run can create them: `gh workflow run`/`dispatches` is not available for `pull_request`-triggered
+   workflows, and `gh api .../actions/runs/{id}/rerun` re-runs the *old* run against the *old* SHA, not the
+   new bot head (R2-F1). The step also cannot post a Checks-API check-run, because `GITHUB_TOKEN` in a
+   `pull_request_target` context is not an installation token with `checks:write`.
+   **So this lane commits to exactly one mechanism — a commit status (not a check run) on the new bot
+   head:** after the round-commit push (`PLAN-SPAR.yml:116`), add one step, guarded by
+   `if: steps.guard.outputs.skip != 'true' && secrets.PLAN_SPAR_PUSH_TOKEN == ''` (the `GITHUB_TOKEN`-push
+   case; when the PAT secret is present the push already starts checks and this step is skipped), that
+   reads the just-pushed head SHA (`git -C head rev-parse HEAD`) and posts
+   `POST /repos/{owner}/{repo}/statuses/{sha}` via `gh api` with a fixed `context`
+   (`plan-spar/needs-rebase`), `state: pending`, and a `description`/`target_url` pointing at the run.
+   `GITHUB_TOKEN` carries `statuses: write` by default (statuses are not checks), so this is within the
+   token's capability with no owner config. The PM / land step reads this status context on the PR head
+   and, when present and `pending`, runs `gh pr update-branch` (which re-pushes the head under a trigger
+   that *does* start `pull_request` checks) before evaluating merge readiness — the status is the
+   observable signal, not a blocking required check. The land-step read is a non-gate `scripts/ci/**`
+   concern tracked here as part of this lane's acceptance; it does not change the `queue.mjs` subcommand
+   contract. The PAT secret itself stays **owner config → Gate 2** (with the PAT present, the status step
+   never runs and checks start normally). Independent of other lanes. Blocked on an owner instruction to
    merge (protected gate) — surface for Gate 2.
    Files: `.github/workflows/PLAN-SPAR.yml`, `scripts/collab/plan-spar.test.mjs` /
    `scripts/ci/plan-spar-slot/slot.test.mjs`, `docs/validation/<VTID>/**`.
-   Test that fails on base: a case in `plan-spar.test.mjs` / `plan-spar-slot/slot.test.mjs` asserting
-   the chosen fix's observable contract (checks are triggered on the bot head), red on base.
+   Test that fails on base: a case in `plan-spar.test.mjs` / `plan-spar-slot/slot.test.mjs` pinning the
+   observable contract — that the empty-`PLAN_SPAR_PUSH_TOKEN` path posts a `plan-spar/needs-rebase` commit
+   status on the bot head (asserted against a stubbed `gh api statuses` call / the extracted status-posting
+   helper), red on base because no such status is posted today.
 
 6. **speed-path-filters** — `executor: claude`, **protected gate** (edits `PR-GATE.yml`).
    Add caching to the uneven install steps, add path filters to **non-gate** jobs only, confirm and (if
    needed) re-balance the gateway Jest shards. Must not path-filter the required gate jobs (PR-GATE/Lane
    scope/Collab handoff) — that wedges merges. **This lane owns every `TEST-SUITE.yml` edit**, so it also
-   lands the vcaop-matrix migration lane 1 depends on: add a `typecheck` step and a run-in-band
-   `test:guardrails` step (`jest --runInBand test/guardrails`) to the `vcaop` matrix entry
-   (`TEST-SUITE.yml:111-113`), so deleting `VCAOP-CICD.yml` in lane 1 loses neither gate. The gateway
-   **build** de-dup itself is in lane 2 (CICDL ↔ ENFORCE); this lane does not change a gateway build step
-   and does not touch `CICDL-GATEWAY-CI.yml`. Record measured before/after critical path. It edits
-   `PR-GATE.yml` (protected gate) so keep it isolated. Blocked on an owner instruction to merge (protected
-   gate) — surface for Gate 2. Does **not** flip `enforce`.
+   lands the vcaop-matrix migration lane 1 depends on. The `services` job shares one `steps:` block across
+   all three matrix entries, so a new matrix key alone does not create a step (R2-F2). **Concrete
+   mechanism — option (A), conditional steps on the shared body:** add `typecheck: npm run typecheck` and
+   `guardrails: npm run test:guardrails` (= `jest --runInBand test/guardrails`) **only** to the `vcaop`
+   matrix entry (`TEST-SUITE.yml:111-113`), and after the existing `Run tests` step add two steps to the
+   shared body — `- name: Typecheck` with `if: matrix.typecheck != ''` / `run: ${{ matrix.typecheck }}`,
+   and `- name: Guardrails` with `if: matrix.guardrails != ''` / `run: ${{ matrix.guardrails }}`. An absent
+   matrix key renders as the empty string for `oasis-projector` and `openclaw-bridge`, so their `if:` is
+   false and no empty `run:` is ever emitted for them; only vcaop runs the two extra steps. The
+   `--runInBand` stays inside the `test:guardrails` script, preserving the serial-worker requirement. So
+   deleting `VCAOP-CICD.yml` in lane 1 loses neither gate. The gateway **build** de-dup itself is in lane 2
+   (CICDL ↔ ENFORCE); this lane does not change a gateway build step and does not touch
+   `CICDL-GATEWAY-CI.yml`. Record measured before/after critical path. It edits `PR-GATE.yml` (protected
+   gate) so keep it isolated. Blocked on an owner instruction to merge (protected gate) — surface for
+   Gate 2. Does **not** flip `enforce`.
    Files: `.github/workflows/PR-GATE.yml`, `.github/workflows/TEST-SUITE.yml`,
    `scripts/ci/test-suite/*.test.mjs` as needed, `docs/validation/<VTID>/**`.
    NOTE: `CICDL-GATEWAY-CI.yml` is edited **only** by lane 2 (not here). `TEST-SUITE.yml` is edited **only**
    here (lane 1's vcaop-gate migration is done in this lane; lane 1 only deletes `VCAOP-CICD.yml`).
    `depends_on: [fake-checks-dedupe]`.
    Proof: `scripts/ci/test-suite/shard-union.test.mjs` / `rerun-policy.test.mjs` extended to pin the new
-   shard/skip contract (red on base), plus the vcaop `typecheck` + run-in-band `test:guardrails` assertion
-   (red on base, where the vcaop matrix runs only `npm test`), plus a measured-timings artifact for
-   YAML-only changes.
+   shard/skip contract (red on base), plus a `scripts/ci/test-suite/*.test.mjs` assertion that **parses
+   `TEST-SUITE.yml`** and checks (a) the `vcaop` matrix entry carries `typecheck` and `guardrails` keys,
+   (b) the shared `services` body has the two `if: matrix.typecheck != ''` / `if: matrix.guardrails != ''`
+   guarded steps, and (c) the other two matrix entries carry no such keys — red on base, where the vcaop
+   matrix runs only `npm test` and the guarded steps do not exist. Plus a measured-timings artifact for the
+   YAML-only speed changes.
 
 7. **stale-tests** — `executor: kiro` (seat `exafy`, reviewer `jtadic`) — the only straightforward Kiro
    lane (product + non-governance test files).
